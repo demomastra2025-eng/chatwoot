@@ -318,7 +318,7 @@ export const APPOINTMENT_REMINDER_PRESETS = [
     key: 'appointment_rescheduled',
     templateName: 'booking_rescheduled_notice',
     eventName: 'appointment_rescheduled',
-    icon: 'i-lucide-calendar-Sync',
+    icon: 'i-lucide-calendar-sync',
     timingMode: 'relative',
     relativeAnchor: 'touch.created_at',
     relativeOffsetSeconds: 60,

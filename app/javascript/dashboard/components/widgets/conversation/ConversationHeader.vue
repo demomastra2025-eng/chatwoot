@@ -417,14 +417,14 @@ const statusMeta = computed(() => {
         <div
           v-if="hasHeaderContext"
           data-test-id="conversation-header-context-row"
-          class="flex max-w-full items-center gap-2 overflow-hidden text-xs leading-5 conversation--header--actions text-ellipsis whitespace-nowrap"
+          class="mt-0.5 flex max-w-full items-center gap-2 overflow-hidden text-xs leading-4 conversation--header--actions text-ellipsis whitespace-nowrap"
         >
           <button
             v-if="primaryDealStage"
             type="button"
             data-test-id="conversation-header-crm-stages"
             :title="dealsSummaryTooltip"
-            class="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-n-alpha-1 px-2.5 py-0.5 text-n-slate-11 transition-colors hover:bg-n-alpha-2 whitespace-nowrap"
+            class="inline-flex min-w-0 items-center gap-1.5 py-0.5 text-n-slate-11 transition-colors hover:text-n-slate-12 whitespace-nowrap cursor-pointer"
             @click="openDealsSidebar"
           >
             <span
@@ -434,7 +434,7 @@ const statusMeta = computed(() => {
               {{ labelWithColon($t('CONVERSATION.HEADER.DEAL')) }}
             </span>
             <span
-              class="h-3.5 w-0.5 shrink-0 rounded-full"
+              class="h-3 w-0.5 shrink-0 rounded-full"
               :style="{ backgroundColor: primaryDealStage.color }"
             />
             <span class="truncate text-n-slate-12">
@@ -443,17 +443,24 @@ const statusMeta = computed(() => {
             <span
               v-if="extraDealsCount > 0"
               data-test-id="conversation-header-crm-stages-more"
-              class="shrink-0 rounded-full bg-n-alpha-2 px-1.5 text-[11px] font-medium text-n-slate-11 tabular-nums"
+              class="shrink-0 text-[11px] font-medium text-n-slate-10 tabular-nums"
             >
               {{ `+${extraDealsCount}` }}
             </span>
           </button>
+          <span
+            v-if="primaryDealStage && primaryAppointmentStatus"
+            class="shrink-0 text-n-slate-8 select-none"
+            aria-hidden="true"
+          >
+            ·
+          </span>
           <button
             v-if="primaryAppointmentStatus"
             type="button"
             data-test-id="conversation-header-appointment-statuses"
             :title="appointmentsSummaryTooltip"
-            class="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-n-alpha-1 px-2.5 py-0.5 text-n-slate-11 transition-colors hover:bg-n-alpha-2 whitespace-nowrap"
+            class="inline-flex min-w-0 items-center gap-1.5 py-0.5 text-n-slate-11 transition-colors hover:text-n-slate-12 whitespace-nowrap cursor-pointer"
             @click="openAppointmentsSidebar"
           >
             <span class="shrink-0 text-n-slate-11">
@@ -474,7 +481,7 @@ const statusMeta = computed(() => {
             <span
               v-if="extraAppointmentsCount > 0"
               data-test-id="conversation-header-appointment-statuses-more"
-              class="shrink-0 rounded-full bg-n-alpha-2 px-1.5 text-[11px] font-medium text-n-slate-11 tabular-nums"
+              class="shrink-0 text-[11px] font-medium text-n-slate-10 tabular-nums"
             >
               {{ `+${extraAppointmentsCount}` }}
             </span>

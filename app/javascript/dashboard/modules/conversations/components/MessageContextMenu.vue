@@ -274,14 +274,14 @@ export default {
       <div class="menu-container">
         <div
           v-if="enabledOptions['react']"
-          class="flex items-center gap-0.5 px-1 py-0.5 select-none"
+          class="flex items-center gap-1 px-1.5 py-1 select-none"
           data-testid="quick-reaction-bar"
         >
           <button
             v-for="emoji in quickReactions"
             :key="emoji"
             type="button"
-            class="emoji-font inline-flex items-center justify-center w-7 h-7 rounded-full text-base leading-none transition-transform duration-150 hover:scale-125 hover:bg-n-alpha-2 cursor-pointer"
+            class="emoji-font inline-flex items-center justify-center w-9 h-9 rounded-full text-xl leading-none transition-transform duration-150 hover:scale-125 hover:bg-n-alpha-2 cursor-pointer"
             :class="{
               'bg-n-brand/15 ring-1 ring-n-brand/50':
                 currentUserReactionEmoji === emoji,
@@ -289,24 +289,24 @@ export default {
             :disabled="isSubmittingReaction"
             @click.stop="handleQuickReaction(emoji)"
           >
-            <AppleEmoji :emoji="emoji" size-class="size-5" />
+            <AppleEmoji :emoji="emoji" size-class="size-7" />
           </button>
           <button
             type="button"
             :title="$t('CONVERSATION.REACTIONS.MORE')"
             data-testid="open-reaction-picker"
-            class="inline-flex items-center justify-center w-7 h-7 rounded-full text-n-slate-11 hover:text-n-slate-12 hover:bg-n-alpha-2 transition-colors cursor-pointer"
+            class="inline-flex items-center justify-center w-8 h-8 rounded-full text-n-slate-11 hover:text-n-slate-12 hover:bg-n-alpha-2 transition-colors cursor-pointer"
             :class="{
               'bg-n-alpha-2 text-n-slate-12': showReactionPicker,
             }"
             @click.stop="toggleReactionPicker"
           >
-            <span class="i-lucide-plus size-4" />
+            <span class="i-lucide-plus size-5" />
           </button>
         </div>
         <div
           v-if="enabledOptions['react'] && showReactionPicker"
-          class="px-1 py-1 w-[19.5rem]"
+          class="px-1 py-1 w-[21rem]"
           @click.stop
         >
           <EmojiInput :on-click="handleQuickReaction" inline />

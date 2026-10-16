@@ -1797,17 +1797,7 @@ const loadAppointments = async () => {
       .forEach(appointment => {
         refreshPendingPatientAction(appointment).catch(() => {});
       });
-    const firstEditableAppointment = appointments.value.find(
-      appointment => !isAppointmentProviderOwned(appointment)
-    );
-    openAppointmentKeys.value = firstEditableAppointment
-      ? [appointmentKey(firstEditableAppointment)]
-      : [];
-    if (firstEditableAppointment) {
-      loadFormWindows(
-        appointmentForms[appointmentKey(firstEditableAppointment)]
-      );
-    }
+    openAppointmentKeys.value = [];
   } catch (error) {
     if (!isCurrentRequest()) return false;
     ui.error = error;
@@ -1931,8 +1921,6 @@ const manualTimeChanged = (form, field) => {
 };
 
 const cancelCreateAppointment = () => {
-  if (!appointments.value.length) return;
-
   isCreating.value = false;
   cancelFormWindows(NEW_APPOINTMENT_KEY);
   patientContextStore.clearDraft(currentDraftKey.value);
@@ -2469,8 +2457,8 @@ const initializeSidebar = async () => {
   await loadReferences();
   if (!isCurrentSidebarContext(context)) return;
   const loaded = await loadAppointments();
-  if (loaded && !restorePatientDraft() && !appointments.value.length) {
-    await startCreateAppointment({ scroll: false });
+  if (loaded && !restorePatientDraft()) {
+    resetCreateForm();
   }
 };
 
@@ -2585,8 +2573,8 @@ watch(
     await loadReferences();
     if (!isCurrentSidebarContext(context)) return;
     const loaded = await loadAppointments();
-    if (loaded && !restorePatientDraft() && !appointments.value.length) {
-      await startCreateAppointment({ scroll: false });
+    if (loaded && !restorePatientDraft()) {
+      resetCreateForm();
     }
   },
   { flush: 'sync' }
@@ -2630,9 +2618,18 @@ const isClientFieldsOpen = (form, key) =>
 
       <div
         v-else-if="!appointments.length && !isCreating"
-        class="px-4 py-6 text-sm text-n-slate-11"
+        class="flex flex-col items-start gap-3 px-4 py-6 text-sm text-n-slate-11"
       >
-        {{ $t('SCHEDULING.DIALOGS.EMPTY') }}
+        <p class="m-0">{{ $t('SCHEDULING.DIALOGS.EMPTY') }}</p>
+        <Button
+          v-if="patientContextReady"
+          size="sm"
+          color="blue"
+          icon="i-lucide-plus"
+          data-testid="scheduling-empty-create-appointment"
+          :label="$t('SCHEDULING.CALENDAR.NEW_APPOINTMENT')"
+          @click="startCreateAppointment"
+        />
       </div>
 
       <div v-else class="border-t border-n-weak">
@@ -2992,7 +2989,6 @@ const isClientFieldsOpen = (form, key) =>
 
               <div class="flex items-center justify-end gap-2">
                 <Button
-                  v-if="appointments.length"
                   size="sm"
                   slate
                   faded
@@ -3004,7 +3000,7 @@ const isClientFieldsOpen = (form, key) =>
                   color="blue"
                   :is-loading="isSavingCreate"
                   :disabled="isCreateFormInvalid"
-                  :label="$t('SCHEDULING.GENERAL.SAVE')"
+                  :label="$t('SCHEDULING.GENERAL.CREATE')"
                   @click="saveCreateAppointment"
                 />
               </div>

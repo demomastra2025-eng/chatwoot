@@ -47,6 +47,12 @@ import {
   Selection,
 } from '@chatwoot/prosemirror-schema';
 import { suggestionsPlugin } from '@chatwoot/prosemirror-schema/src/mentions/plugin';
+import { Plugin, PluginKey } from 'prosemirror-state';
+import { Decoration, DecorationSet } from 'prosemirror-view';
+import {
+  EMOJI_SEQUENCE_REGEX,
+  getAppleEmojiUrl,
+} from 'shared/helpers/appleEmoji';
 
 import {
   appendSignature,
@@ -364,12 +370,67 @@ function createSuggestionPlugin({
   });
 }
 
+const appleEmojiPluginKey = new PluginKey('appleEmoji');
+
+function buildAppleEmojiDecorations(doc) {
+  if (!doc || typeof doc.descendants !== 'function') {
+    return DecorationSet.empty;
+  }
+  const decorations = [];
+  doc.descendants((node, pos) => {
+    if (!node.isText || !node.text) return;
+    EMOJI_SEQUENCE_REGEX.lastIndex = 0;
+    let match = EMOJI_SEQUENCE_REGEX.exec(node.text);
+    while (match) {
+      const emoji = match[0];
+      const url = getAppleEmojiUrl(emoji);
+      if (url) {
+        const from = pos + match.index;
+        const to = from + emoji.length;
+        decorations.push(
+          Decoration.inline(from, to, {
+            nodeName: 'span',
+            class: 'cw-apple-emoji-editor-char',
+            style: `background-image: url("${url}")`,
+          })
+        );
+      }
+      match = EMOJI_SEQUENCE_REGEX.exec(node.text);
+    }
+  });
+  return decorations.length
+    ? DecorationSet.create(doc, decorations)
+    : DecorationSet.empty;
+}
+
+function createAppleEmojiPlugin() {
+  return new Plugin({
+    key: appleEmojiPluginKey,
+    state: {
+      init(_, { doc }) {
+        return buildAppleEmojiDecorations(doc);
+      },
+      apply(tr, oldSet) {
+        if (!tr.docChanged) return oldSet;
+        return buildAppleEmojiDecorations(tr.doc);
+      },
+    },
+    props: {
+      decorations(editorState) {
+        return this.getState(editorState);
+      },
+    },
+  });
+}
+
 const plugins = computed(() => {
+  const basePlugins = [createAppleEmojiPlugin()];
   if (!props.enableSuggestions) {
-    return [];
+    return basePlugins;
   }
 
   return [
+    ...basePlugins,
     createSuggestionPlugin({
       trigger: '@',
       showMenu: showToolsMenu,
@@ -1378,6 +1439,25 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
         @apply bg-n-slate-3;
       }
     }
+  }
+}
+
+.ProseMirror .cw-apple-emoji-editor-char {
+  display: inline-block;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  text-shadow: none;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 1.25em 1.25em;
+  min-width: 1.25em;
+  vertical-align: -0.15em;
+  caret-color: rgb(var(--slate-12));
+
+  &::selection {
+    background-color: rgba(31, 147, 255, 0.25);
+    color: transparent;
+    -webkit-text-fill-color: transparent;
   }
 }
 </style>

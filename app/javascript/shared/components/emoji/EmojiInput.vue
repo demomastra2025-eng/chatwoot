@@ -243,7 +243,7 @@ export default {
             :title="item.name"
             @click="handleClick(item.emoji)"
           >
-            <AppleEmoji :emoji="item.emoji" size-class="size-[22px]" />
+            <AppleEmoji :emoji="item.emoji" size-class="size-6" />
           </button>
         </div>
       </div>
@@ -268,7 +268,7 @@ export default {
               :title="item.name"
               @click="handleClick(item.emoji)"
             >
-              <AppleEmoji :emoji="item.emoji" size-class="size-[22px]" />
+              <AppleEmoji :emoji="item.emoji" size-class="size-6" />
             </button>
           </div>
         </div>
@@ -289,7 +289,7 @@ export default {
               :title="item.name"
               @click="handleClick(item.emoji)"
             >
-              <AppleEmoji :emoji="item.emoji" size-class="size-[22px]" />
+              <AppleEmoji :emoji="item.emoji" size-class="size-6" />
             </button>
           </div>
         </div>
@@ -344,7 +344,7 @@ export default {
             >
               <AppleEmoji
                 :emoji="getFirstEmojiByCategoryName(category.name)"
-                size-class="size-4"
+                size-class="size-5"
               />
             </button>
           </li>
@@ -401,7 +401,7 @@ export default {
   @apply box-border px-1.5 py-0.5 flex flex-wrap;
 
   .emoji--item {
-    @apply h-8 w-8 text-[1.35rem] leading-none m-0.5 hover:scale-125;
+    @apply h-9 w-9 text-[1.5rem] leading-none m-0.5 hover:scale-125;
   }
 }
 

@@ -81,7 +81,7 @@ function handleMentionClick(item = {}) {
       <span
         class="max-w-full inline-flex items-center gap-1.5 min-w-0 mb-0 text-sm font-medium text-n-slate-12 group-hover:text-n-brand truncate"
       >
-        <AppleEmoji :emoji="item.emoji" size-class="size-4" />
+        <AppleEmoji :emoji="item.emoji" size-class="size-5" />
         <p
           class="relative mb-0 truncate bottom-px"
           :class="{

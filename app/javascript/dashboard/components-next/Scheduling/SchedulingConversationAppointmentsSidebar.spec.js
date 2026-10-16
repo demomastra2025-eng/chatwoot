@@ -336,6 +336,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
     const wrapper = mountComponent(defaultCurrentChat(), patientContextProps());
     await flushPromises();
+    await wrapper.vm.startCreateAppointment({ scroll: false });
     wrapper.vm.createForm.clientFirstName = 'Draft for 84';
     wrapper.vm.createForm.clientIdentifier = '940720300129';
     await wrapper.setProps(patientContextProps(85));
@@ -1368,10 +1369,10 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     const wrapper = mountComponent();
     await flushPromises();
 
-    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledTimes(1);
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledTimes(0);
     wrapper.vm.toggleAppointment(second);
     await flushPromises();
-    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledTimes(2);
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledTimes(1);
   });
 
   it('submits the explicit deal for a new appointment while keeping edit links unchanged', async () => {
@@ -1573,10 +1574,13 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     );
   });
 
-  it('opens an existing appointment as an edit form immediately', async () => {
+  it('keeps existing appointments collapsed by default and opens on toggle', async () => {
     const wrapper = mountComponent();
     await flushPromises();
 
+    expect(wrapper.vm.openAppointmentKeys).toEqual([]);
+    wrapper.vm.toggleAppointment(existingAppointment);
+    await flushPromises();
     expect(
       wrapper
         .find('#scheduling-conversation-appointment-client-first-name-501')
@@ -3126,6 +3130,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
     const wrapper = mountComponent();
     await flushPromises();
+    await wrapper.vm.startCreateAppointment({ scroll: false });
 
     expect(
       wrapper.find('#scheduling-conversation-appointment-service').exists()
@@ -3504,6 +3509,8 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       conversation_ids: [200, 100],
     });
     await flushPromises();
+    expect(wrapper.vm.isCreating).toBe(false);
+    await wrapper.vm.startCreateAppointment({ scroll: false });
     expect(wrapper.vm.isCreating).toBe(true);
     wrapper.vm.createForm.comment = 'Keep draft';
     const initialCalls = SchedulingAppointmentsAPI.get.mock.calls.length;
