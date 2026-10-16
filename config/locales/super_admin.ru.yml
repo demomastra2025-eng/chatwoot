@@ -208,7 +208,7 @@ ru:
         current_sign_in_ip: "IP текущего входа"
         last_sign_in_ip: "IP последнего входа"
         confirmation_token: "Токен подтверждения"
-        confirmed_at: "Подтвержден"
+        confirmed_at: "E-mail подтверждён"
         confirmation_sent_at: "Дата подтверждения"
         unconfirmed_email: "Неподтвержденный email"
         tokens: "Токены"

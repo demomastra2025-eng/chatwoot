@@ -252,6 +252,7 @@ const clinicUrl = account => `/super_admin/accounts/${account.id}`;
         :series="series"
         :category-label="t('DASHBOARD.CHART.CATEGORY')"
         :height="200"
+        class="max-w-3xl"
       />
     </div>
   </div>
