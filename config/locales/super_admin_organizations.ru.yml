@@ -29,6 +29,7 @@ ru:
           attributes:
             bin:
               invalid_bin: "должен состоять из 12 цифр"
+              invalid_control_digit: "указан неверно: не совпадает контрольная цифра"
               taken: "уже указан у другой организации"
             billing_email:
               invalid: "указан неверно"

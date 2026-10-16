@@ -98,7 +98,7 @@ RSpec.describe 'Super Admin organizations', type: :request do
 
       it 'shows the requisites, the contract, the totals of the accounts and the creation date in Astana time' do
         organization = create(:organization, :with_requisites, name: 'Алатау Медикал', legal_name: 'ТОО Алатау Медикал',
-                                                               bin: '980140000123', created_at: Time.utc(2026, 10, 15, 20, 30))
+                                                               bin: '980140000124', created_at: Time.utc(2026, 10, 15, 20, 30))
         account_with(organization, name: 'Филиал 1', operators: 2, channels: 1)
         account_with(organization, name: 'Филиал 2', operators: 1, channels: 3)
         create(:account, name: 'Чужой аккаунт')
@@ -108,7 +108,7 @@ RSpec.describe 'Super Admin organizations', type: :request do
         row = page.at_css("tr[data-organization-id='#{organization.id}']")
         cells = row.css('td').map { |cell| text(cell) }
         expect(cells[0]).to eq('Алатау Медикал ТОО Алатау Медикал')
-        expect(cells[1]).to eq('980140000123')
+        expect(cells[1]).to eq('980140000124')
         expect(cells[2]).to eq('№ ДГ-12 от 15.03.2026')
         expect(cells[3..5]).to eq(%w[2 3 4])
         expect(cells[6]).to eq('16.10.2026')
@@ -163,8 +163,8 @@ RSpec.describe 'Super Admin organizations', type: :request do
     end
 
     describe 'search' do
-      let!(:alatau) { create(:organization, name: 'Alatau Group', bin: '980140000123') }
-      let!(:nur) { create(:organization, name: 'Nur Clinic', legal_name: 'LLP Nur', bin: '010203040506') }
+      let!(:alatau) { create(:organization, name: 'Alatau Group', bin: '980140000124') }
+      let!(:nur) { create(:organization, name: 'Nur Clinic', legal_name: 'LLP Nur', bin: '010203040500') }
 
       def found
         page.css('[data-testid="organizations-table"] tbody tr[data-organization-id]').pluck('data-organization-id')
@@ -177,7 +177,7 @@ RSpec.describe 'Super Admin organizations', type: :request do
       end
 
       it 'finds an organization by BIN' do
-        get '/super_admin/organizations', params: { search: '980140000123' }
+        get '/super_admin/organizations', params: { search: '980140000124' }
 
         expect(found).to eq([alatau.id.to_s])
       end
@@ -205,7 +205,7 @@ RSpec.describe 'Super Admin organizations', type: :request do
 
     describe 'the card' do
       let!(:organization) do
-        create(:organization, :with_requisites, name: 'Алатау Медикал', legal_name: 'ТОО Алатау Медикал', bin: '980140000123',
+        create(:organization, :with_requisites, name: 'Алатау Медикал', legal_name: 'ТОО Алатау Медикал', bin: '980140000124',
                                                 contract_number: 'ДГ-12', contract_date: Date.new(2026, 3, 15), notes: 'Договор на год.')
       end
 
@@ -224,7 +224,7 @@ RSpec.describe 'Super Admin organizations', type: :request do
         get "/super_admin/organizations/#{organization.id}"
 
         requisites = text(page.at_css('[data-testid="requisites-block"]'))
-        expect(requisites).to include('Реквизиты', 'Юридическое название', 'ТОО Алатау Медикал', 'БИН', '980140000123', 'Адрес',
+        expect(requisites).to include('Реквизиты', 'Юридическое название', 'ТОО Алатау Медикал', 'БИН', '980140000124', 'Адрес',
                                       'Алматы, ул. Абая, 1', 'Телефон', 'E-mail для счетов', 'billing@example.test')
         contract = text(page.at_css('[data-testid="contract-block"]'))
         expect(contract).to include('Договор', 'Номер', 'ДГ-12', 'Дата', '15.03.2026', 'Заметки', 'Договор на год.')
@@ -359,14 +359,14 @@ RSpec.describe 'Super Admin organizations', type: :request do
       it 'saves the organization, normalizes the BIN and records the creation' do
         expect do
           post '/super_admin/organizations', params: { organization: {
-            name: 'ТОО Алатау', legal_name: 'ТОО Алатау Медикал', bin: '9801 4000 0123', contract_number: 'ДГ-12',
+            name: 'ТОО Алатау', legal_name: 'ТОО Алатау Медикал', bin: '9801 4000 0124', contract_number: 'ДГ-12',
             contract_date: '2026-03-15', billing_email: 'billing@example.test', phone: '+7 727 000 00 00', address: 'Алматы', notes: 'Заметка'
           } }
         end.to change(Organization, :count).by(1)
 
         organization = Organization.last
         expect(response).to redirect_to("/super_admin/organizations/#{organization.id}")
-        expect(organization).to have_attributes(name: 'ТОО Алатау', bin: '980140000123', contract_date: Date.new(2026, 3, 15),
+        expect(organization).to have_attributes(name: 'ТОО Алатау', bin: '980140000124', contract_date: Date.new(2026, 3, 15),
                                                 billing_email: 'billing@example.test')
         follow_redirect!
         expect(page.at_css('.flashes').text).to include('Организация создана.')
@@ -374,7 +374,7 @@ RSpec.describe 'Super Admin organizations', type: :request do
         audit = audits_of(organization, 'create').sole
         expect(audit.user).to eq(super_admin)
         expect(audit.comment).to eq('super_admin')
-        expect(audit.audited_changes).to include('name' => 'ТОО Алатау', 'bin' => '980140000123', 'contract_number' => 'ДГ-12')
+        expect(audit.audited_changes).to include('name' => 'ТОО Алатау', 'bin' => '980140000124', 'contract_number' => 'ДГ-12')
       end
 
       it 'does not save a form without a name and says so in Russian' do
@@ -390,10 +390,10 @@ RSpec.describe 'Super Admin organizations', type: :request do
       end
 
       it 'does not save a BIN that another organization already has' do
-        create(:organization, bin: '980140000123')
+        create(:organization, bin: '980140000124')
 
         expect do
-          post '/super_admin/organizations', params: { organization: { name: 'Двойник', bin: '980140000123' } }
+          post '/super_admin/organizations', params: { organization: { name: 'Двойник', bin: '980140000124' } }
         end.not_to change(Organization, :count)
 
         expect(response).to have_http_status(422)
@@ -409,20 +409,20 @@ RSpec.describe 'Super Admin organizations', type: :request do
     end
 
     describe 'editing' do
-      let!(:organization) { create(:organization, :with_requisites, name: 'Старое название', bin: '980140000123', phone: '111') }
+      let!(:organization) { create(:organization, :with_requisites, name: 'Старое название', bin: '980140000124', phone: '111') }
 
       it 'shows the form filled in' do
         get "/super_admin/organizations/#{organization.id}/edit"
 
         expect(response).to have_http_status(:ok)
         expect(page.at_css('input[name="organization[name]"]')['value']).to eq('Старое название')
-        expect(page.at_css('input[name="organization[bin]"]')['value']).to eq('980140000123')
+        expect(page.at_css('input[name="organization[bin]"]')['value']).to eq('980140000124')
         expect(page.at_css('input[name="organization[contract_date]"]')['value']).to eq('2026-03-15')
         expect(page.at_css('input[type="submit"]')['value']).to eq('Сохранить')
       end
 
       it 'saves the change and records what changed' do
-        patch "/super_admin/organizations/#{organization.id}", params: { organization: { name: 'Новое название', phone: '222', bin: '980140000123' } }
+        patch "/super_admin/organizations/#{organization.id}", params: { organization: { name: 'Новое название', phone: '222', bin: '980140000124' } }
 
         expect(response).to redirect_to("/super_admin/organizations/#{organization.id}")
         expect(organization.reload).to have_attributes(name: 'Новое название', phone: '222')
@@ -446,7 +446,7 @@ RSpec.describe 'Super Admin organizations', type: :request do
 
         expect(response).to have_http_status(422)
         expect(text(page.at_css('#error_explanation'))).to include('БИН должен состоять из 12 цифр')
-        expect(organization.reload.bin).to eq('980140000123')
+        expect(organization.reload.bin).to eq('980140000124')
         expect(audits_of(organization)).to be_empty
       end
 
@@ -454,13 +454,13 @@ RSpec.describe 'Super Admin organizations', type: :request do
         patch "/super_admin/organizations/#{organization.id}", params: { organization: { bin: '', phone: '' } }
 
         expect(organization.reload).to have_attributes(bin: nil, phone: nil)
-        expect(audits_of(organization, 'update').sole.audited_changes).to eq('bin' => ['980140000123', nil], 'phone' => ['111', nil])
+        expect(audits_of(organization, 'update').sole.audited_changes).to eq('bin' => ['980140000124', nil], 'phone' => ['111', nil])
       end
     end
 
     describe 'deleting' do
       it 'deletes an organization without accounts and records it' do
-        organization = create(:organization, name: 'Лишняя', bin: '980140000123')
+        organization = create(:organization, name: 'Лишняя', bin: '980140000124')
 
         expect { delete "/super_admin/organizations/#{organization.id}" }.to change(Organization, :count).by(-1)
 
@@ -469,7 +469,7 @@ RSpec.describe 'Super Admin organizations', type: :request do
         expect(page.at_css('.flashes').text).to include('Организация удалена.')
         audit = audits_of(organization, 'destroy').sole
         expect(audit.user).to eq(super_admin)
-        expect(audit.audited_changes).to include('name' => 'Лишняя', 'bin' => '980140000123')
+        expect(audit.audited_changes).to include('name' => 'Лишняя', 'bin' => '980140000124')
       end
 
       it 'refuses while accounts are linked, says so in Russian and leaves everything as it was' do
