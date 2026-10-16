@@ -116,8 +116,9 @@ const clinicUrl = account => `/super_admin/accounts/${account.id}`;
           :class="
             item.key === 'attention' && item.value > 0 ? 'text-n-ruby-11' : ''
           "
-          >{{ item.value }}</span
         >
+          {{ item.value }}
+        </span>
       </template>
     </DsStatGroup>
 
@@ -206,7 +207,7 @@ const clinicUrl = account => `/super_admin/accounts/${account.id}`;
             status="bad"
             :label="t('DASHBOARD.TABLE.STUCK_COUNT', { count: value })"
           />
-          <span v-else class="text-n-slate-11">{{ 0 }}</span>
+          <span v-else class="text-n-slate-11">{{ value || 0 }}</span>
         </template>
 
         <template #cell-actions="{ row }">
