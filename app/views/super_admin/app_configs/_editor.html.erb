@@ -1,0 +1,92 @@
+<%#
+# Control of one installation setting
+
+The input that edits a single setting, in the form of the config pages and of the
+AI models page. The control posts `app_config[<NAME>]`; the label of the field
+points at `app_config_<NAME>`.
+
+A secret that the platform masks (SuperAdmin::AppConfigsController::
+MASKED_SECRET_CONFIG_KEYS) is NEVER rendered: the field is empty and says that
+a value is kept, and a blank submit keeps it. Other secrets are shown in a
+password field with a reveal button.
+
+## Local variables:
+
+- `key`: the name of the setting (CAPTAIN_DEFAULT_MODEL).
+- `kind`: :text, :textarea, :allowlist, :boolean, :secret, :select, :number or :prompts.
+- `value`: the stored value (nil for a masked secret).
+- `masked` (optional): true for a masked secret that is set.
+- `options` (optional): `{ "value" => "Label" }` of a select.
+- `placeholder` (optional): the hint inside an empty text field (the built-in value).
+%>
+<%
+  field_id = "app_config_#{key}"
+  field_name = "app_config[#{key}]"
+  masked = local_assigns.fetch(:masked, false)
+  placeholder = local_assigns[:placeholder].presence
+%>
+
+<% if kind == :prompts %>
+  <% current_system_prompts = Array(value).map { |entry| entry.respond_to?(:to_h) ? entry.to_h : entry } %>
+  <%= hidden_field_tag field_name, current_system_prompts.to_json, id: field_id %>
+  <div
+    id="captain-system-prompts-builder"
+    class="flex flex-col gap-3"
+    data-target-input="<%= field_id %>"
+    data-initial-prompts="<%= h(current_system_prompts.to_json) %>"
+  >
+    <div data-role="rows" class="flex flex-col gap-3"></div>
+    <button type="button" class="button button--small button--secondary add-captain-system-prompt w-fit">
+      <%= t('super_admin.app_config.captain.prompts.add') %>
+    </button>
+    <template>
+      <div data-role="prompt-row" class="flex flex-col gap-3 rounded-lg bg-n-slate-2 p-4 outline outline-1 -outline-offset-1 outline-n-weak">
+        <div class="flex items-center justify-between gap-3">
+          <p class="m-0 text-sm font-medium text-n-slate-12"><%= t('super_admin.app_config.captain.prompts.title') %></p>
+          <button type="button" class="button button--small button--danger remove-captain-system-prompt">
+            <%= t('super_admin.app_config.captain.prompts.remove') %>
+          </button>
+        </div>
+        <input type="hidden" data-field="id" />
+        <div class="flex flex-col gap-1">
+          <label class="text-xs text-n-slate-11"><%= t('super_admin.app_config.captain.prompts.group') %></label>
+          <input type="text" data-field="group" placeholder="<%= t('super_admin.app_config.captain.prompts.group_placeholder') %>" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs text-n-slate-11"><%= t('super_admin.app_config.captain.prompts.content') %></label>
+          <textarea data-field="content" rows="5" class="font-mono text-xs" placeholder="<%= t('super_admin.app_config.captain.prompts.content_placeholder') %>"></textarea>
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs text-n-slate-11"><%= t('super_admin.app_config.captain.prompts.slot') %></label>
+          <input type="text" data-field="slot" placeholder="assistant_system_context" />
+        </div>
+      </div>
+    </template>
+  </div>
+<% elsif kind == :boolean %>
+  <%= select_tag field_name,
+                 options_for_select([[t('super_admin.app_config.yes'), 'true'], [t('super_admin.app_config.no'), 'false']],
+                                    (ActiveModel::Type::Boolean.new.cast(value) || false).to_s),
+                 id: field_id %>
+<% elsif kind == :select %>
+  <%= select_tag field_name, options_for_select(local_assigns.fetch(:options, {}).map { |option_value, label| [label, option_value] }, value), id: field_id %>
+<% elsif kind == :textarea %>
+  <%= text_area_tag field_name, app_config_field_value(value), id: field_id, rows: 10, wrap: 'off', class: 'font-mono text-xs' %>
+<% elsif kind == :allowlist %>
+  <%= text_area_tag field_name, app_config_field_value(value), id: field_id, rows: 4, wrap: 'off', class: 'font-mono text-xs', placeholder: placeholder %>
+<% elsif kind == :secret %>
+  <div class="admin-secret">
+    <%= password_field_tag field_name, (masked ? nil : value), id: field_id, autocomplete: 'new-password',
+                           placeholder: (t('super_admin.app_config.secret_kept') if masked) %>
+    <button type="button" class="admin-secret__toggle toggle-password" data-target="<%= field_id %>" aria-label="<%= t('super_admin.app_config.secret_toggle') %>">
+      <svg class="eye-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 5C5.63636 5 2 12 2 12C2 12 5.63636 19 12 19C18.3636 19 22 12 22 12C22 12 18.3636 5 12 5Z"/>
+        <path d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z"/>
+      </svg>
+    </button>
+  </div>
+<% elsif kind == :number %>
+  <%= text_field_tag field_name, app_config_field_value(value), id: field_id, inputmode: 'numeric', placeholder: placeholder %>
+<% else %>
+  <%= text_field_tag field_name, app_config_field_value(value), id: field_id, placeholder: placeholder %>
+<% end %>

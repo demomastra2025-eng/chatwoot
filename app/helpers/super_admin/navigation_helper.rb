@@ -52,7 +52,7 @@ module SuperAdmin::NavigationHelper
     'audit_logs' => 'Журнал аудита',
     'disable_branding' => 'Отключение копирайта',
     'help_center' => 'База знаний',
-    'captain' => 'Captain AI',
+    'captain' => 'Модели ИИ',
     'live_chat' => 'Онлайн-чат',
     'email' => 'Электронная почта',
     'sms' => 'SMS',
@@ -78,7 +78,7 @@ module SuperAdmin::NavigationHelper
     'audit_logs' => 'Отслеживание и детальный журнал действий пользователей и администраторов.',
     'disable_branding' => 'Скрытие копирайта и водяных знаков OneLink в виджете чата и письмах.',
     'help_center' => 'Создание базы знаний и публичных порталов справочной информации.',
-    'captain' => 'Управление AI-ассистентами, LLM-моделями и автоответами для клиентов.',
+    'captain' => 'Модели ИИ-агентов, ключи OpenRouter и системные промпты платформы.',
     'live_chat' => 'Интерактивный виджет онлайн-чата на сайте для взаимодействия с клиентами.',
     'email' => 'Подключение почтовых ящиков и обработка входящих обращений по Email.',
     'sms' => 'Интеграция SMS-сообщений для оперативной связи и уведомлений клиентов.',
@@ -97,8 +97,9 @@ module SuperAdmin::NavigationHelper
     'shopify' => 'Интеграция с заказами и клиентами интернет-магазина Shopify.'
   }.freeze
 
-  def feature_label(attrs)
-    key = attrs['config_key'] || attrs[:config_key]
+  # attrs: an entry of features.yml. A function without a config page is looked up by its own key (live_chat, sms).
+  def feature_label(attrs, feature_key = nil)
+    key = attrs['config_key'] || attrs[:config_key] || feature_key.to_s
     FEATURE_LABELS[key] || attrs['name'] || attrs[:name]
   end
 

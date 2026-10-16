@@ -27,7 +27,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         expect(response.body).to include(config.value)
       end
 
-      it 'shows OpenRouter captain config fields and diagnostics for enterprise plan' do
+      it 'shows OpenRouter captain config fields and the collapsed diagnostics for enterprise plan' do
         allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
         sign_in(super_admin, scope: :super_admin)
 
@@ -35,21 +35,19 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(response.body).to include(
-          'OpenRouter API Key',
+          'Ключ OpenRouter',
           'CAPTAIN_OPENROUTER_API_KEY',
-          'OpenRouter API Endpoint',
+          'Адрес OpenRouter',
           'CAPTAIN_OPENROUTER_ENDPOINT',
-          'Ключ',
+          'Диагностика OpenRouter',
           'Каталог моделей',
-          'Изменения каталога',
-          'Изменения endpoints',
-          'Runtime',
-          'Runtime-сигналы',
-          'Политика workspace',
-          'Доступность функций',
-          'Диагностика моделей',
-          'Обновить каталог моделей'
+          'Провайдеры',
+          'События за 24 часа',
+          'Обновить каталог моделей',
+          'Проверить ключ и кредиты'
         )
+        diagnostics = Nokogiri::HTML(response.body).at_css('details#openrouter-diagnostics')
+        expect(diagnostics['open']).to be_nil
       end
 
       it 'does not render the configured OpenRouter API key value on the captain config page' do
@@ -60,7 +58,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         get '/super_admin/app_config?config=captain'
 
         expect(response).to have_http_status(:success)
-        expect(response.body).to include('Configured — leave blank to keep current key')
+        expect(response.body).to include('Задан — оставьте пустым, чтобы не менять')
         expect(response.body).not_to include('test-openrouter-secret-value')
       end
 
@@ -74,7 +72,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         get '/super_admin/app_config?config=whatsapp_embedded'
 
         expect(response).to have_http_status(:success)
-        expect(response.body).to include('Configured — leave blank to keep current key')
+        expect(response.body).to include('Задан — оставьте пустым, чтобы не менять')
         expect(response.body).not_to include(
           'test-whatsapp-app-secret',
           'test-whatsapp-verify-token',
@@ -501,7 +499,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         post '/super_admin/app_config/refresh_openrouter_models'
 
         expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
-        expect(flash[:notice]).to include('refresh queued')
+        expect(flash[:notice]).to eq('Обновление каталога моделей поставлено в очередь. Состояние и изменения появятся после его завершения.')
       end
 
       it 'does not queue the refresh job when cached OpenRouter key health is invalid' do
@@ -512,7 +510,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         post '/super_admin/app_config/refresh_openrouter_models'
 
         expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
-        expect(flash[:alert]).to include('OpenRouter API key is invalid')
+        expect(flash[:alert]).to eq('Ключ OpenRouter недействителен. Проверьте ключ перед обновлением каталога.')
       end
 
       it 'does not queue the refresh job when the global OpenRouter key is missing' do
@@ -522,7 +520,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         post '/super_admin/app_config/refresh_openrouter_models'
 
         expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
-        expect(flash[:alert]).to eq('OpenRouter API key is not configured.')
+        expect(flash[:alert]).to eq('Ключ OpenRouter не задан.')
       end
     end
   end

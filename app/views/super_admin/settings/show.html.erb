@@ -1,81 +1,71 @@
-<% content_for(:title) do %>
-  Настройки инстанса
-<% end %>
-<header class="flex px-8 py-4 items-center border-b border-n-weak" role="banner">
-  <div class="border border-n-weak mr-4 p-2 rounded-full">
-    <svg width="24" height="24"><use xlink:href="#icon-settings-2-line" /></svg>
-  </div>
-  <div class="flex flex-col h-14 justify-center">
-    <h1 class="text-base font-medium leading-6 text-n-slate-12" id="page-title">
-      <%= content_for(:title) %>
-    </h1>
-    <p class="text-sm font-normal leading-5 text-n-slate-11 m-0">Управление параметрами инстанса OneLink, настройками модулей и интеграций</p>
+<%#
+# Instance settings
+
+The identifier of this installation and the functions of the platform: which
+ones are on in this installation and a link to the settings of the ones that
+have a config page. OneLink has no editions to upgrade to, so a function that is
+not available is only marked as such.
+%>
+<% content_for(:title) { t('super_admin.settings.title') } %>
+
+<header class="main-content__header" role="banner">
+  <div class="main-content__heading">
+    <h1 class="main-content__page-title" id="page-title"><%= content_for(:title) %></h1>
+    <p class="main-content__description"><%= t('super_admin.settings.description') %></p>
   </div>
 </header>
-<section class="main-content__body px-8">
-  <% if Redis::Alfred.get(Redis::Alfred::CHATWOOT_INSTALLATION_CONFIG_RESET_WARNING) %>
-    <div class="bg-n-ruby-3 border border-n-ruby-6 text-n-ruby-11 px-4 py-3 rounded relative mb-5" role="alert">
-    <strong class="font-bold">Внимание!</strong>
-    <span class="block sm:inline">Обнаружены несанкционированные изменения премиум-параметров в OneLink. Для продолжения их использования обновите ваш тарифный план.
-      Контакты для связи:</span><span class="inline rounded-full bg-n-ruby-9 px-2 text-n-brand-contrast ml-2">sales@one-link.kz</span>
-    </div>
-  <% end %>
 
-  <div class="bg-n-solid-2 py-2 px-4 xl:px-0">
-    <%= javascript_include_tag "secretField" %>
-    <div class="flex items-center mb-6">
-      <h4 class="text-sm font-medium leading-5 h-5 text-n-slate-12 mr-4">Идентификатор установки</h4>
-      <div data-secret-text="<%= ChatwootHub.installation_identifier %>" class="cell-data__secret-field text-sm leading-5 h-5 text-n-slate-11">
+<section class="main-content__body">
+  <div class="flex flex-col gap-6">
+    <section class="admin-block" aria-labelledby="installation-title" data-testid="installation-block">
+      <div class="admin-block__head">
+        <h2 class="admin-block__title" id="installation-title"><%= t('super_admin.settings.installation_identifier') %></h2>
+        <p class="admin-block__hint"><%= t('super_admin.settings.identifier_hint') %></p>
+      </div>
+      <%= javascript_include_tag "secretField" %>
+      <%# The buttons must stay direct children of the element: secretField.js reads `parentElement`. %>
+      <div data-secret-text="<%= ChatwootHub.installation_identifier %>" class="cell-data__secret-field flex items-center gap-1 text-sm text-n-slate-11">
         <span data-secret-masked="true" class="select-none"></span>
-        <button type="button" onclick="toggleSecretField(event)" data-secret-toggler class="reset-base inline-flex items-center justify-center h-5 w-5 p-0 rounded text-n-slate-11 hover:text-n-slate-12 transition-colors focus:outline-none">
-          <svg width="20" height="20" class="w-5 h-5 fill-current">
+        <button type="button" onclick="toggleSecretField(event)" data-secret-toggler aria-label="<%= t('super_admin.settings.show_secret') %>" class="reset-base">
+          <svg width="20" height="20" class="size-5 fill-current" aria-hidden="true">
             <use xlink:href="#eye-show" />
           </svg>
         </button>
-        <button type="button" onclick="copySecretField(event)" data-secret-copier class="reset-base inline-flex items-center justify-center h-5 w-5 p-0 rounded text-n-slate-11 hover:text-n-slate-12 transition-colors focus:outline-none">
-          <svg width="20" height="20" class="w-5 h-5 fill-current">
+        <button type="button" onclick="copySecretField(event)" data-secret-copier aria-label="<%= t('super_admin.settings.copy') %>" class="reset-base">
+          <svg width="20" height="20" class="size-5 fill-current" aria-hidden="true">
             <use xlink:href="#icon-copy" />
           </svg>
         </button>
       </div>
-    </div>
-    <div class="mt-10 py-4">
-      <h3 class="h-5 leading-5 text-n-slate-12 font-medium text-base">Функции и модули платформы</h3>
-    </div>
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-2 gap-y-3">
-      <% SuperAdmin::FeaturesHelper.available_features.each do |feature, attrs| %>
-        <div class="group outline outline-1 outline-n-container p-4 rounded-lg relative shadow-sm">
-          <span class="<%= attrs[:enabled] ? 'bg-n-teal-9 text-n-brand-contrast': 'bg-n-slate-8 text-n-slate-12' %> absolute rounded-full p-1 inline-flex right-4 top-5">
-            <svg width="14" height="14"><use xlink:href="<%= attrs[:enabled] ? '#icon-tick-line': '#icon-lock-line' %>" /></svg>
-          </span>
-          <div class="visible <% if !attrs[:enabled] %> group-hover:invisible <% end %> flex items-center justify-center w-10 h-10 mb-2 border border-n-weak border-solid text-n-slate-12 rounded-full">
-            <svg width="20" height="20"><use xlink:href="#<%= attrs[:icon] %>" /></svg>
-          </div>
-          <% if !attrs[:enabled] %>
-          <div class="flex h-9 absolute top-5 items-center invisible group-hover:visible">
-            <% if ChatwootApp.enterprise? %>
-              <%= render 'upgrade_button_enterprise' %>
-            <% else %>
-              <%= render 'upgrade_button_community' %>
+    </section>
+
+    <section class="flex flex-col gap-3" aria-labelledby="features-title" data-testid="features-block">
+      <div class="admin-block__head">
+        <h2 class="admin-block__title" id="features-title"><%= t('super_admin.settings.features') %></h2>
+        <p class="admin-block__hint"><%= t('super_admin.settings.features_hint') %></p>
+      </div>
+
+      <div class="admin-feature-grid">
+        <% SuperAdmin::FeaturesHelper.available_features.each do |feature, attrs| %>
+          <% enabled = attrs[:enabled] %>
+          <div class="admin-feature" data-feature="<%= feature %>" data-enabled="<%= enabled ? 'true' : 'false' %>">
+            <div class="admin-feature__head">
+              <span class="admin-feature__icon">
+                <svg width="20" height="20" aria-hidden="true"><use xlink:href="#<%= attrs[:icon] %>" /></svg>
+              </span>
+              <span class="admin-badge <%= enabled ? 'admin-badge--teal' : 'admin-badge--quiet' %>">
+                <%= enabled ? t('super_admin.settings.feature_enabled') : t('super_admin.settings.feature_unavailable') %>
+              </span>
+            </div>
+            <h3 class="admin-feature__title"><%= feature_label(attrs, feature) %></h3>
+            <p class="admin-feature__text"><%= feature_description(feature, attrs) %></p>
+            <% if attrs[:config_key].present? && enabled %>
+              <%= link_to t('super_admin.settings.configure'), super_admin_app_config_path(config: attrs[:config_key]),
+                          class: 'button button--small button--secondary w-fit' %>
             <% end %>
           </div>
-          <% end %>
-          <div class="flex items-center justify-between mb-1.5 mt-4">
-            <div class="flex items-center gap-2">
-              <h3 class="text-n-slate-12 font-medium"><%= feature_label(attrs) %></h3>
-              <% if attrs[:enterprise] %>
-                <span class="px-2 h-4 leading-4 rounded-xl text-n-teal-11 font-medium bg-n-teal-3/70 text-xxs">EE</span>
-              <% end %>
-              <% if attrs[:config_key].present? && attrs[:enabled] %>
-                <a class="inline-flex items-center justify-center h-5 w-5 hover:bg-n-alpha-1 rounded-sm" href="/super_admin/app_config?config=<%= attrs[:config_key] %>">
-                  <svg width="18" height="18"><use xlink:href="#icon-gear" /></svg>
-                </a>
-              <% end %>
-            </div>
-          </div>
-          <p class="text-n-slate-11 mb-0"><%= feature_description(feature, attrs) %></p>
-        </div>
-      <% end %>
-    </div>
+        <% end %>
+      </div>
+    </section>
   </div>
 </section>

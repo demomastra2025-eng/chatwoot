@@ -59,7 +59,7 @@ RSpec.describe 'Super Admin times in Astana time', type: :request do
       get '/super_admin/app_config?config=captain'
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include('15.10.2026 17:05', 'Старт: 15.10.2026 17:00')
+      expect(response.body).to include('15.10.2026 17:05', 'Запуск: 15.10.2026 17:00')
       expect(response.body).not_to include('2026-10-15T12:05:09Z')
     end
 
@@ -68,9 +68,9 @@ RSpec.describe 'Super Admin times in Astana time', type: :request do
 
       get '/super_admin/app_config?config=captain'
 
-      section = response.body[%r{OpenRouter</div>.*?Модели</div>}m].to_s
-      expect(section).to include('проверен: никогда', 'неизвестно')
-      expect(section).not_to match(/\bnever\b|\bunknown\b/)
+      section = Nokogiri::HTML(response.body).at_css('#openrouter-diagnostics').text.squish
+      expect(section).to include('Проверен: никогда', 'неизвестно')
+      expect(section).not_to match(/\bnever\b|\bunknown\b|\bnot_checked\b|\bmissing\b/)
     end
   end
 

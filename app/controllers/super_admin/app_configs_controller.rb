@@ -42,6 +42,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     WIDGET_TOKEN_EXPIRY ACCOUNT_CONVERSATIONS_LIMIT ACCOUNT_NON_WEB_INBOXES_LIMIT ACCOUNT_STORAGE_BYTES_LIMIT
   ].freeze
 
+  helper SuperAdmin::AppConfigHelper
   before_action :set_config
   before_action :allowed_configs
   helper_method :masked_secret_config?
@@ -55,30 +56,30 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
                                     .to_h
     # rubocop:enable Style/HashTransformValues
     @app_config[Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG] ||= Captain::Assistant.installation_system_prompt_entries
-    @installation_configs = ConfigLoader.new.general_configs.each_with_object({}) do |config_hash, result|
-      result[config_hash['name']] = config_hash.except('name')
-    end
+    @installation_configs = config_definitions
     return unless @config == 'captain'
 
     @openrouter_diagnostics = Llm::OpenRouterDiagnostics.call
+    @ai_models_page = SuperAdmin::AiModelsPage.new(
+      keys: @allowed_configs, values: @app_config, definitions: @installation_configs, masked_keys: MASKED_SECRET_CONFIG_KEYS
+    )
   end
 
   def create
     errors = persist_app_config
 
     if errors.any?
-      redirect_to super_admin_app_config_path(config: @config), alert: errors.join(', ')
+      redirect_to super_admin_app_config_path(config: @config), alert: errors.join('; ')
     else
       expire_openrouter_key_health_cache if @config == 'captain'
       refresh_llm_config if @config == 'captain'
-      redirect_to super_admin_settings_path, notice: "Настройки конфигурации (#{@config}) успешно обновлены"
+      redirect_to super_admin_settings_path, notice: flash_text(:saved, page: SuperAdmin::AppConfigLabels.page_title(@config))
     end
   end
 
-  # rubocop:disable Rails/I18nLocaleTexts
   def refresh_openrouter_models
     unless Llm::Config.installation_provider_available?(Llm::OpenRouterModelCatalog::PROVIDER)
-      redirect_to super_admin_app_config_path(config: 'captain'), alert: 'OpenRouter API key is not configured.'
+      redirect_to super_admin_app_config_path(config: 'captain'), alert: flash_text(:openrouter_key_missing)
       return
     end
     catalog_block_reason = openrouter_catalog_refresh_block_reason
@@ -88,27 +89,35 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     end
 
     Internal::RefreshOpenRouterModelCatalogJob.perform_later
-    redirect_to(
-      super_admin_app_config_path(config: 'captain'),
-      notice: 'OpenRouter catalog refresh queued. Status and diff will update after the job finishes.'
-    )
+    redirect_to super_admin_app_config_path(config: 'captain'), notice: flash_text(:catalog_refresh_queued)
   end
 
   def refresh_openrouter_key_health
     unless Llm::OpenRouterKeyHealth.configured?
-      redirect_to super_admin_app_config_path(config: 'captain'), alert: 'OpenRouter API key is not configured.'
+      redirect_to super_admin_app_config_path(config: 'captain'), alert: flash_text(:openrouter_key_missing)
       return
     end
 
     Internal::RefreshOpenRouterKeyHealthJob.perform_later
-    redirect_to(
-      super_admin_app_config_path(config: 'captain'),
-      notice: 'OpenRouter key and credits health check queued.'
-    )
+    redirect_to super_admin_app_config_path(config: 'captain'), notice: flash_text(:key_health_queued)
   end
-  # rubocop:enable Rails/I18nLocaleTexts
 
   private
+
+  def flash_text(key, **)
+    I18n.t("super_admin.app_config.flashes.#{key}", **)
+  end
+
+  # The entries of config/installation_config.yml by name: display title, description, type, options
+  def config_definitions
+    @config_definitions ||= ConfigLoader.new.general_configs.each_with_object({}) do |config_hash, result|
+      result[config_hash['name']] = config_hash.except('name')
+    end
+  end
+
+  def config_title(key)
+    SuperAdmin::AppConfigLabels.title(key, config_definitions[key])
+  end
 
   def persist_app_config
     errors = []
@@ -126,11 +135,12 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     errors
   end
 
+  # The Russian reason the catalog cannot be refreshed with the key in its present state, or nil
   def openrouter_catalog_refresh_block_reason
-    metadata = Llm::OpenRouterKeyHealth.metadata.to_h.with_indifferent_access
-    return unless Llm::OpenRouterKeyHealth::CATALOG_REFRESH_BLOCKING_STATUSES.include?(metadata[:status].to_s)
+    status = Llm::OpenRouterKeyHealth.metadata.to_h.with_indifferent_access[:status].to_s
+    return unless Llm::OpenRouterKeyHealth::CATALOG_REFRESH_BLOCKING_STATUSES.include?(status)
 
-    Llm::OpenRouterKeyHealth.catalog_refresh_block_reason(metadata)
+    flash_text("catalog_blocked.#{status}")
   end
 
   def normalize_app_config_value(key, value, errors)
@@ -153,7 +163,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
       }
     end
   rescue JSON::ParserError
-    errors << 'Captain system prompts must be valid JSON'
+    errors << flash_text(:prompts_invalid)
     :invalid
   end
 
@@ -163,7 +173,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     result = Llm::InstallationModelConfig.normalize(key, value)
     return result.value if result.valid?
 
-    errors << "#{key}: #{result.error}"
+    errors << flash_text(:field_error, title: config_title(key), key: key, error: result.error)
     :invalid
   end
 
@@ -173,7 +183,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
 
     JSON.generate(Whatsapp::WebhookIngressConfigValidator.validate!(key: key, value: parsed_value))
   rescue JSON::ParserError, Whatsapp::WebhookIngressRouter::ConfigurationError
-    errors << "#{key.titleize} must be a supported JSON object"
+    errors << flash_text(:json_object_invalid, title: config_title(key))
     :invalid
   end
 

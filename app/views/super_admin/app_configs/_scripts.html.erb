@@ -1,0 +1,97 @@
+<%#
+# Scripts of the config pages
+
+The reveal button of a password field and the builder of the installation
+system prompts (only on the AI models page). Both look for their markup and do
+nothing when it is not there.
+%>
+<style>
+.eye-icon.eye-hide path {
+  d: path('M3 3l18 18M10.5 10.677a2 2 0 002.823 2.823M7.362 7.561C5.68 8.74 4.279 10.42 3 12c1.889 2.991 5.282 6 9 6 1.55 0 3.043-.523 4.395-1.35M12 6c4.008 0 6.701 3.009 9 6a15.66 15.66 0 01-1.078 1.5');
+}
+</style>
+
+<% content_for :javascript do %>
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.toggle-password').forEach(button => {
+      button.addEventListener('click', () => {
+        const targetId = button.dataset.target;
+        const input = document.getElementById(targetId);
+        const type = input.type === 'password' ? 'text' : 'password';
+        input.type = type;
+
+        // Toggle icon
+        const svg = button.querySelector('.eye-icon');
+        if (type === 'password') {
+          svg.classList.remove('eye-hide')
+        } else {
+          svg.classList.add('eye-hide')
+        }
+      });
+    });
+
+    const builder = document.getElementById('captain-system-prompts-builder');
+    if (!builder) return;
+
+    const hiddenInput = document.getElementById(builder.dataset.targetInput);
+    const rowsContainer = builder.querySelector('[data-role="rows"]');
+    const template = builder.querySelector('template');
+    const addButton = builder.querySelector('.add-captain-system-prompt');
+    const nextPromptId = () => `system_prompt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    const syncRows = () => {
+      const prompts = [...rowsContainer.querySelectorAll('[data-role="prompt-row"]')]
+        .map(row => ({
+          id: row.querySelector('[data-field="id"]').value || nextPromptId(),
+          type: 'system',
+          group: row.querySelector('[data-field="group"]').value.trim(),
+          content: row.querySelector('[data-field="content"]').value.trim(),
+          slot: row.querySelector('[data-field="slot"]').value.trim() || null,
+        }))
+        .filter(prompt => prompt.content);
+
+      hiddenInput.value = JSON.stringify(prompts);
+    };
+
+    const bindRow = row => {
+      row.querySelectorAll('[data-field]').forEach(field => {
+        field.addEventListener('input', syncRows);
+      });
+      row.querySelector('.remove-captain-system-prompt').addEventListener('click', () => {
+        row.remove();
+        syncRows();
+      });
+    };
+
+    const addRow = prompt => {
+      const fragment = template.content.cloneNode(true);
+      const row = fragment.querySelector('[data-role="prompt-row"]');
+      row.querySelector('[data-field="id"]').value = prompt.id || nextPromptId();
+      row.querySelector('[data-field="group"]').value = prompt.group || '';
+      row.querySelector('[data-field="content"]').value = prompt.content || '';
+      row.querySelector('[data-field="slot"]').value = prompt.slot || '';
+      bindRow(row);
+      rowsContainer.appendChild(fragment);
+      syncRows();
+    };
+
+    let initialPrompts = [];
+    try {
+      initialPrompts = JSON.parse(builder.dataset.initialPrompts || '[]');
+    } catch (error) {
+      initialPrompts = [];
+    }
+
+    // «Strict rules» is the name of the group in the stored prompts (data), not a label of the screen.
+    if (!initialPrompts.length) {
+      addRow({ group: 'Strict rules', content: '', slot: '' });
+    } else {
+      initialPrompts.forEach(addRow);
+    }
+
+    addButton.addEventListener('click', () => addRow({ group: 'Strict rules', content: '', slot: '' }));
+    builder.closest('form')?.addEventListener('submit', syncRows);
+  });
+  </script>
+<% end %>

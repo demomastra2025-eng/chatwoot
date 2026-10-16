@@ -1,0 +1,185 @@
+// Building blocks of the settings pages of the super admin: the config pages
+// (general, channels, integrations), the instance settings page and the AI
+// models page. Same rules as `_clinic.scss`: `n-*` tokens only, one rule for
+// both themes, in `@layer base` so a utility class in a view still wins.
+
+@layer base {
+  // ------------------------------------------------------------ field list
+  // A list of settings in one outlined block: the title and the hint on the
+  // left (on top on a narrow screen), the control on the right, every control
+  // the same width.
+  .admin-fields {
+    @apply flex min-w-0 flex-col rounded-xl bg-n-solid-2 outline outline-1 -outline-offset-1 outline-n-container;
+  }
+
+  .admin-field {
+    @apply grid min-w-0 grid-cols-1 gap-x-8 gap-y-2 border-t border-n-weak px-5 py-4 first:border-t-0 md:grid-cols-[minmax(12rem,20rem)_minmax(0,1fr)];
+  }
+
+  .admin-field__label {
+    @apply flex min-w-0 flex-col gap-1;
+  }
+
+  .admin-field__title {
+    @apply m-0 text-sm font-medium text-n-slate-12;
+  }
+
+  .admin-field__hint {
+    @apply m-0 text-xs text-n-slate-11;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-field__key {
+    @apply m-0 font-mono text-[11px] text-n-slate-10;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-field__control {
+    @apply min-w-0 max-w-xl;
+  }
+
+  // A secret field: the reveal button sits inside the input.
+  .admin-secret {
+    @apply relative;
+  }
+
+  .admin-secret input {
+    @apply pe-10;
+  }
+
+  .admin-secret__toggle {
+    @apply absolute end-1.5 top-1/2 -translate-y-1/2;
+  }
+
+  // The reveal button is a quiet icon button, not a primary one.
+  button.admin-secret__toggle:not(.reset-base) {
+    @apply inline-flex size-7 items-center justify-center rounded-md bg-transparent p-0 text-n-slate-11;
+    min-width: 0;
+    filter: none;
+
+    &:hover {
+      @apply bg-n-alpha-2 text-n-slate-12;
+      filter: none;
+    }
+  }
+
+  // --------------------------------------------------------------- AI slots
+  .admin-slot-grid {
+    @apply grid grid-cols-1 gap-4 xl:grid-cols-2;
+  }
+
+  .admin-slot {
+    @apply flex min-w-0 flex-col gap-3 rounded-xl bg-n-solid-2 px-5 py-4 outline outline-1 -outline-offset-1 outline-n-container;
+  }
+
+  .admin-slot--wide {
+    @apply xl:col-span-2;
+  }
+
+  .admin-slot__head {
+    @apply flex flex-wrap items-start justify-between gap-2;
+  }
+
+  .admin-slot__title {
+    @apply m-0 min-w-0 flex-1 text-sm font-medium text-n-slate-12;
+  }
+
+  .admin-slot__hint {
+    @apply m-0 text-xs text-n-slate-11;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-slot__facts {
+    @apply m-0 flex flex-col gap-1 text-xs text-n-slate-11;
+  }
+
+  .admin-slot__fact {
+    @apply flex flex-wrap items-baseline gap-x-2 gap-y-1;
+  }
+
+  .admin-slot__fact dt {
+    @apply m-0 shrink-0 text-n-slate-11;
+  }
+
+  .admin-slot__fact dd {
+    @apply m-0 min-w-0 text-n-slate-12;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-chips {
+    @apply flex flex-wrap gap-1.5;
+  }
+
+  .admin-chip {
+    @apply inline-flex items-center rounded-md bg-n-slate-3 px-2 py-0.5 font-mono text-xs text-n-slate-12;
+    overflow-wrap: anywhere;
+  }
+
+  // ------------------------------------------------------------- statistics
+  // A small tile with a label, a value and a note (the diagnostics block).
+  .admin-stat-grid {
+    @apply grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3;
+  }
+
+  .admin-stat {
+    @apply flex min-w-0 flex-col gap-1 rounded-lg bg-n-slate-2 p-3 outline outline-1 -outline-offset-1 outline-n-weak;
+  }
+
+  .admin-stat__label {
+    @apply m-0 text-xs font-medium text-n-slate-11;
+  }
+
+  .admin-stat__value {
+    @apply m-0 text-sm font-semibold text-n-slate-12;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-stat__note {
+    @apply m-0 text-xs text-n-slate-11;
+    overflow-wrap: anywhere;
+  }
+
+  // ----------------------------------------------------------- feature card
+  // A function of the platform on the instance settings page.
+  .admin-feature-grid {
+    @apply grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3;
+  }
+
+  .admin-feature {
+    @apply flex min-w-0 flex-col gap-3 rounded-xl bg-n-solid-2 p-4 outline outline-1 -outline-offset-1 outline-n-container;
+  }
+
+  .admin-feature__head {
+    @apply flex items-start justify-between gap-3;
+  }
+
+  .admin-feature__icon {
+    @apply flex size-10 shrink-0 items-center justify-center rounded-full text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-weak;
+  }
+
+  .admin-feature__title {
+    @apply m-0 text-sm font-medium text-n-slate-12;
+  }
+
+  .admin-feature__text {
+    @apply m-0 text-sm text-n-slate-11;
+  }
+
+  // ------------------------------------------------------------ switch row
+  // A switch with a title and a one-line explanation (the «Служебные» block).
+  .admin-switch-row {
+    @apply flex items-start justify-between gap-4 border-t border-n-weak py-3 first:border-t-0 first:pt-0 last:pb-0;
+  }
+
+  .admin-switch-row__text {
+    @apply flex min-w-0 flex-col gap-0.5;
+  }
+
+  .admin-switch-row__title {
+    @apply text-n-slate-12;
+  }
+
+  .admin-switch-row__hint {
+    @apply text-xs text-n-slate-11;
+  }
+}

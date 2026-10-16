@@ -1,0 +1,40 @@
+<%#
+# AI models
+
+The settings of the AI agents of the platform as cards grouped by purpose
+(SuperAdmin::AiModelsPage): the main agent model, moderation and safety,
+knowledge base search, voice, images, classifiers and service models, system
+prompts, the connection to OpenRouter. Every card says whether the value is set
+by the platform or follows the built-in default. One form saves them all; the
+diagnostics of OpenRouter sit below it, collapsed.
+
+## Local variables (controller instance variables):
+
+- `@ai_models_page`: the `SuperAdmin::AiModelsPage`.
+- `@openrouter_diagnostics`: the hash of Llm::OpenRouterDiagnostics.
+%>
+<div class="flex flex-col gap-8">
+  <%= form_with url: super_admin_app_config_url(config: @config), method: :post, local: true, class: 'flex flex-col gap-8', data: { testid: 'ai-models-form' } do %>
+    <% @ai_models_page.groups.each do |group| %>
+      <section class="flex flex-col gap-3" aria-labelledby="ai-group-<%= group.key %>" data-testid="ai-group-<%= group.key %>">
+        <div class="admin-block__head">
+          <h2 class="admin-block__title" id="ai-group-<%= group.key %>"><%= group.title %></h2>
+          <% if group.hint.present? %>
+            <p class="admin-block__hint"><%= group.hint %></p>
+          <% end %>
+        </div>
+        <div class="admin-slot-grid">
+          <% group.slots.each do |slot| %>
+            <%= render 'slot', slot: slot %>
+          <% end %>
+        </div>
+      </section>
+    <% end %>
+
+    <div class="form-actions">
+      <%= submit_tag t('super_admin.app_config.save'), name: nil %>
+    </div>
+  <% end %>
+
+  <%= render 'openrouter_diagnostics', diagnostics: @openrouter_diagnostics.to_h %>
+</div>

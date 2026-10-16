@@ -12,6 +12,8 @@
 @import './admin';
 // Blocks, badges, meters, switches and plan cards of the clinic list and card.
 @import './clinic';
+// Field lists, AI model slots, tiles and feature cards of the settings pages.
+@import './settings';
 
 body {
   font-family: Geist, -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;

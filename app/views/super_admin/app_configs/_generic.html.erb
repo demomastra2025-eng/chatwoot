@@ -1,0 +1,44 @@
+<%#
+# A config page
+
+Every config page except the AI models one: the settings of the page as one
+list, title and hint on the left, the control on the right. Titles and hints are
+Russian (SuperAdmin::AppConfigLabels); a setting without a Russian text shows
+the one of installation_config.yml. Saving posts `app_config[<NAME>]` for all
+of them to `app_config#create`.
+
+## Local variables (controller instance variables):
+
+- `@config`: the name of the page (general, facebook, ...).
+- `@allowed_configs`: the names of the settings of the page.
+- `@app_config`: name => stored value.
+- `@installation_configs`: name => entry of installation_config.yml.
+%>
+<%= form_with url: super_admin_app_config_url(config: @config), method: :post, local: true, class: 'flex flex-col gap-5' do %>
+  <div class="admin-fields" data-testid="config-fields">
+    <% @allowed_configs.each do |key| %>
+      <%
+        definition = @installation_configs[key].to_h
+        kind = app_config_editor_kind(key, definition)
+        masked = kind == :secret && masked_secret_config?(key) && @app_config[key].present?
+        hint = app_config_hint(key, definition)
+      %>
+      <div class="admin-field" data-config="<%= key %>">
+        <div class="admin-field__label">
+          <label class="admin-field__title" for="app_config_<%= key %>"><%= app_config_title(key, definition) %></label>
+          <% if hint.present? %>
+            <p class="admin-field__hint"><%= hint %></p>
+          <% end %>
+          <p class="admin-field__key"><%= key %></p>
+        </div>
+        <div class="admin-field__control">
+          <%= render 'editor', key: key, kind: kind, value: @app_config[key], masked: masked, options: definition['options'].to_h %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="form-actions">
+    <%= submit_tag t('super_admin.app_config.save'), name: nil %>
+  </div>
+<% end %>

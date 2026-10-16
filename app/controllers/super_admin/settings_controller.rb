@@ -1,10 +1,10 @@
 class SuperAdmin::SettingsController < SuperAdmin::ApplicationController
+  helper SuperAdmin::AppConfigHelper
+
   def show; end
 
   def refresh
     Internal::CheckNewVersionsJob.perform_now
-    # rubocop:disable Rails/I18nLocaleTexts
-    redirect_to super_admin_settings_path, notice: 'Статус инстанса успешно обновлен'
-    # rubocop:enable Rails/I18nLocaleTexts
+    redirect_to super_admin_settings_path, notice: I18n.t('super_admin.settings.refreshed')
   end
 end

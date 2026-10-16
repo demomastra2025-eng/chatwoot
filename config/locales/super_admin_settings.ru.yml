@@ -1,0 +1,481 @@
+# Russian texts of the settings pages of the super admin: the config pages (general, channels, integrations), the
+# AI models page, the instance settings page. The names and hints of the settings are keyed by the name of the
+# installation config (super_admin.app_config.fields.<NAME>); a setting without an entry here shows the display
+# title and description of config/installation_config.yml (see SuperAdmin::AppConfigLabels).
+ru:
+  super_admin:
+    settings:
+      description: "Параметры установки OneLink, функции платформы и подключённые интеграции."
+      refreshed: "Статус установки обновлён."
+      identifier_hint: "Нужен службе поддержки, чтобы найти эту установку."
+      features_hint: "Что умеет платформа. Параметры включённых функций открываются кнопкой «Настроить»."
+      feature_enabled: "Включена"
+      feature_unavailable: "Недоступна"
+      configure: "Настроить"
+      show_secret: "Показать или скрыть идентификатор"
+      copy: "Скопировать идентификатор"
+
+    app_config:
+      description: "Параметры установки OneLink. Изменения применяются сразу после сохранения."
+      save: "Сохранить настройки"
+      "yes": "Да"
+      "no": "Нет"
+      secret_kept: "Задан — оставьте пустым, чтобы не менять"
+      secret_toggle: "Показать или скрыть значение"
+      pages:
+        captain: "Модели ИИ"
+        internal: "Служебные параметры"
+      flashes:
+        saved: "Настройки «%{page}» сохранены."
+        field_error: "%{title} (%{key}): %{error}"
+        prompts_invalid: "Системные промпты платформы должны быть корректным JSON."
+        json_object_invalid: "%{title}: нужен допустимый JSON-объект."
+        openrouter_key_missing: "Ключ OpenRouter не задан."
+        catalog_refresh_queued: "Обновление каталога моделей поставлено в очередь. Состояние и изменения появятся после его завершения."
+        key_health_queued: "Проверка ключа и кредитов OpenRouter поставлена в очередь."
+        catalog_blocked:
+          missing: "Ключ OpenRouter не задан. Добавьте ключ, чтобы обновить каталог."
+          invalid: "Ключ OpenRouter недействителен. Проверьте ключ перед обновлением каталога."
+          expired: "Срок действия ключа OpenRouter истёк. Замените ключ перед обновлением каталога."
+          credits_exhausted: "Кредиты OpenRouter закончились. Пополните их перед обновлением каталога."
+          key_limit_exhausted: "Лимит ключа OpenRouter исчерпан. Увеличьте лимит перед обновлением каталога."
+          unavailable: "Состояние ключа OpenRouter недоступно. Проверьте ключ перед обновлением каталога."
+
+      captain:
+        description: "Какие модели ИИ использует платформа и откуда взято каждое значение: задано здесь или действует встроенное по умолчанию."
+        groups:
+          agent:
+            title: "Основная модель агентов"
+            hint: "Модель, на которой отвечают ИИ-агенты клиник, и короткий список моделей, из которого клиника выбирает свою."
+          safety:
+            title: "Модерация и защита"
+            hint: "Проверка сообщений и ответов агентов. Клиники только включают или выключают проверку и модель не выбирают."
+          knowledge:
+            title: "Поиск по базе знаний"
+            hint: "Эмбеддинги: по ним агент находит ответы в базе знаний и FAQ."
+          voice:
+            title: "Голос и расшифровка"
+            hint: "Расшифровка голосовых сообщений."
+          images:
+            title: "Картинки"
+            hint: "Распознавание изображений и документов в диалогах."
+          classifiers:
+            title: "Классификаторы и служебные модели"
+            hint: "Небольшие модели для итогов диалога, языка пациента, меток и сообщений при передаче."
+          prompts:
+            title: "Системные промпты"
+            hint: "Правила и инструкции, которые добавляются к промптам агентов на всей платформе."
+          connection:
+            title: "Подключение и лимиты"
+            hint: "Ключи и адрес OpenRouter, ключ FireCrawl, лимит токенов."
+          other:
+            title: "Прочее"
+            hint: ""
+        slot:
+          set: "Задано"
+          default: "По умолчанию"
+          secret_set: "Задан"
+          secret_unset: "Не задан"
+          in_force: "Действует"
+          in_force_default: "Действует по умолчанию"
+          default_is: "По умолчанию"
+          follows_default_model: "как у «Модели ИИ по умолчанию»"
+          not_set: "Не задано"
+          no_limit: "Без ограничения"
+        prompts:
+          title: "Системный промпт"
+          add: "Добавить системный промпт"
+          remove: "Удалить"
+          group: "Группа"
+          group_placeholder: "Строгие правила"
+          content: "Текст промпта"
+          content_placeholder: "Введите текст системного промпта"
+          slot: "Слот (необязательно)"
+        diagnostics:
+          title: "Диагностика OpenRouter"
+          hint: "Состояние ключа, кредитов, каталога моделей и провайдеров. Сами ключи здесь не показываются."
+          never: "никогда"
+          not_available: "нет данных"
+          none: "нет"
+          unknown: "неизвестно"
+          key:
+            title: "Ключ"
+            sources: "Общий ключ платформы: %{global}, ключ клиники: %{account}"
+            checked: "Проверен: %{time}"
+            type: "тип: %{type}"
+          credits:
+            title: "Кредиты и лимиты"
+            remaining: "%{value} осталось"
+            totals: "Всего: %{total}, израсходовано: %{used}"
+            management_key_needed: "Для проверки кредитов нужен management-ключ."
+            key_limit: "Лимит ключа: %{limit}, осталось: %{left}"
+          catalog:
+            title: "Каталог моделей"
+            status: "Статус: %{status}, источник: %{source}"
+            models: "Моделей: %{number}"
+            stale: "Устаревших: %{stale}, отключённых: %{disabled}"
+            started: "Запуск: %{time}"
+            last_error: "Последняя ошибка каталога: %{error}"
+          providers:
+            title: "Провайдеры"
+            endpoints: "%{number} точек доступа"
+            status: "Статус: %{status}, провайдеры: %{providers}"
+            stale: "Устаревших: %{stale}, ждут обновления: %{pending}"
+            last_error: "Предупреждение при обновлении провайдеров: %{error}"
+          events:
+            title: "События за 24 часа"
+            totals: "%{events} событий, %{requests} запросов"
+            errors: "Ошибок: %{errors}, сбоев провайдера: %{provider}"
+            cost: "Стоимость: %{cost}, последнее событие: %{last}"
+          actions:
+            check_key: "Проверить ключ и кредиты"
+            refresh_catalog: "Обновить каталог моделей"
+          details:
+            title: "Подробности"
+            catalog_changes: "Изменения каталога моделей"
+            provider_changes: "Изменения провайдеров"
+            features: "Модели по функциям"
+          diff:
+            new: "новые"
+            changed: "изменённые"
+            removed: "удалённые"
+            capability_changed: "изменились возможности"
+            price_changed: "изменились цены"
+            provider_changed: "сменился провайдер"
+            failed_model_ids: "не удалось обновить"
+          features:
+            line: "Доступно моделей: %{available}, выбрана: %{selected}, по умолчанию: %{default}"
+            warning: "Предупреждение по выбранной модели: %{reasons}"
+          feature_names:
+            editor: "Редактор текста"
+            label_suggestion: "Подсказки меток"
+            outcome_classification: "Итоги диалога"
+            language_detection: "Определение языка"
+            custom_guardrail: "Пользовательские проверки"
+            customer_notice: "Сообщения при передаче и завершении"
+            assistant: "Основной агент"
+            copilot: "Помощник оператора"
+            audio_transcription: "Расшифровка голоса"
+            image_recognition: "Распознавание изображений"
+            help_center_search: "Поиск по базе знаний"
+            knowledge_rerank: "Ранжирование результатов поиска"
+            moderation: "Модерация"
+          types:
+            chat: "чат"
+            embedding: "эмбеддинги"
+            moderation: "модерация"
+            transcription: "расшифровка"
+            rerank: "ранжирование"
+            unknown: "неизвестно"
+          statuses:
+            key:
+              valid: "Рабочий"
+              missing: "Не задан"
+              invalid: "Недействителен"
+              expired: "Истёк"
+              credits_exhausted: "Кредиты закончились"
+              key_limit_exhausted: "Лимит ключа исчерпан"
+              unavailable: "Недоступен"
+              not_checked: "Не проверялся"
+              credits_unavailable: "Кредиты недоступны"
+            credits:
+              available: "Доступны"
+              unavailable: "Недоступны"
+              management_key_required: "Нужен management-ключ"
+              not_checked: "Не проверялись"
+            refresh:
+              success: "Обновлён"
+              running: "Обновляется"
+              stale_running: "Завис при обновлении"
+              failed: "Ошибка обновления"
+              not_refreshed: "Ещё не обновлялся"
+              idle: "Не запускался"
+            source:
+              openrouter_api: "API OpenRouter"
+              fallback: "встроенный список"
+
+      fields:
+        # ---- Общие параметры
+        ENABLE_ACCOUNT_SIGNUP:
+          title: "Самостоятельная регистрация клиник"
+          hint: "Разрешить новым клиникам регистрироваться самим. Выключено — клиники создаёт только супер-админ."
+        FIREBASE_PROJECT_ID:
+          title: "Firebase: ID проекта"
+          hint: "Проект Firebase для push-уведомлений в мобильном приложении."
+        FIREBASE_CREDENTIALS:
+          title: "Firebase: ключ сервисного аккаунта"
+          hint: "Содержимое JSON-файла с ключом сервисного аккаунта Firebase."
+        WEBHOOK_TIMEOUT:
+          title: "Таймаут вебхуков, секунд"
+          hint: "Сколько секунд OneLink ждёт ответа вебхука, прежде чем считать запрос неудачным."
+        MAXIMUM_FILE_UPLOAD_SIZE:
+          title: "Максимальный размер вложения, МБ"
+          hint: "Файлы крупнее этого размера загрузить нельзя."
+        WIDGET_TOKEN_EXPIRY:
+          title: "Срок жизни токена виджета, дней"
+          hint: "Сколько дней действует токен посетителя в чате на сайте."
+        ACCOUNT_CONVERSATIONS_LIMIT:
+          title: "Лимит диалогов за 30 дней"
+          hint: "Сколько новых диалогов получает клиника за 30 дней. Действует для клиник, у которых нет собственного лимита."
+        ACCOUNT_NON_WEB_INBOXES_LIMIT:
+          title: "Лимит основных каналов"
+          hint: "Сколько каналов WhatsApp, личного Telegram и API можно подключить. Чат на сайте не считается. Действует для клиник без собственного лимита."
+        ACCOUNT_STORAGE_BYTES_LIMIT:
+          title: "Лимит хранилища, байт"
+          hint: "Общий объём файлов клиники. Пусто — без ограничения. Действует для клиник без собственного лимита."
+        # ---- Почта
+        MAILER_INBOUND_EMAIL_DOMAIN:
+          title: "Домен входящей почты"
+          hint: "Домен для адресов продолжения переписки (reply+id@домен)."
+        ACCOUNT_EMAILS_LIMIT:
+          title: "Лимит писем в день"
+          hint: "Сколько писем в сутки клиника может отправить не через почтовый канал: стенограммы, уведомления, письма автоматизаций."
+        ACCOUNT_EMAILS_PLAN_LIMITS:
+          title: "Лимиты писем по тарифам (JSON)"
+          hint: "Суточные лимиты отправки писем по тарифам в формате JSON."
+        # ---- Facebook и Messenger
+        FB_APP_ID:
+          title: "Facebook: ID приложения"
+          hint: "Идентификатор приложения Meta для Messenger."
+        FB_VERIFY_TOKEN:
+          title: "Facebook: токен проверки вебхука"
+          hint: "Токен, которым Meta проверяет вебхук Messenger."
+        FB_APP_SECRET:
+          title: "Facebook: секрет приложения"
+          hint: "Секрет приложения Meta."
+        IG_VERIFY_TOKEN:
+          title: "Instagram: токен проверки вебхука"
+          hint: "Токен, которым Meta проверяет вебхук Instagram."
+        FACEBOOK_API_VERSION:
+          title: "Facebook: версия API"
+          hint: "Меняйте, только если нужна другая версия API. Версия начинается с «v», например v18.0."
+        ENABLE_MESSENGER_CHANNEL_HUMAN_AGENT:
+          title: "Messenger: тег «человек-оператор»"
+          hint: "Позволяет отвечать клиенту дольше обычного окна. Требует отдельного одобрения приложения в Meta."
+        # ---- Instagram
+        INSTAGRAM_APP_ID:
+          title: "Instagram: ID приложения"
+          hint: "Идентификатор приложения Meta для Instagram."
+        INSTAGRAM_APP_SECRET:
+          title: "Instagram: секрет приложения"
+          hint: "Секрет приложения для входа через Instagram."
+        INSTAGRAM_VERIFY_TOKEN:
+          title: "Instagram: токен проверки вебхука"
+          hint: "Токен, которым Meta проверяет вебхук Instagram."
+        INSTAGRAM_API_VERSION:
+          title: "Instagram: версия API"
+          hint: "Меняйте, только если нужна другая версия API. Версия начинается с «v», например v22.0."
+        ENABLE_INSTAGRAM_CHANNEL_HUMAN_AGENT:
+          title: "Instagram: тег «человек-оператор»"
+          hint: "Позволяет отвечать клиенту дольше обычного окна. Требует отдельного одобрения приложения в Meta."
+        # ---- TikTok
+        TIKTOK_APP_ID:
+          title: "TikTok: ID приложения"
+          hint: "Идентификатор приложения TikTok."
+        TIKTOK_APP_SECRET:
+          title: "TikTok: секрет приложения"
+          hint: "Секрет приложения TikTok."
+        TIKTOK_API_VERSION:
+          title: "TikTok: версия API"
+          hint: "Меняйте, только если нужна другая версия API. Версия начинается с «v», например v1.3."
+        # ---- WhatsApp (быстрое подключение)
+        WHATSAPP_APP_ID:
+          title: "WhatsApp: ID приложения Meta"
+          hint: "Идентификатор приложения Meta для WhatsApp Business."
+        WHATSAPP_APP_SECRET:
+          title: "WhatsApp: секрет приложения"
+          hint: "Секрет приложения Meta. Нужен для быстрого подключения (Embedded Signup). Значение не показывается: оставьте поле пустым, чтобы не менять."
+        WHATSAPP_CONFIGURATION_ID:
+          title: "WhatsApp: ID конфигурации Embedded Signup v4"
+          hint: "Конфигурация Embedded Signup v4, созданная после 8 октября 2025 с продуктами Cloud API и WhatsApp Business app. Конфигурации версии 2 нужно заменить."
+        WHATSAPP_WEBHOOK_VERIFY_TOKEN:
+          title: "WhatsApp: токен проверки вебхука"
+          hint: "Токен, настроенный для вебхука приложения Meta. Значение не показывается: оставьте поле пустым, чтобы не менять."
+        WHATSAPP_API_VERSION:
+          title: "WhatsApp: версия API"
+          hint: "Меняйте, только если нужна другая версия API. Версия начинается с «v», например v25.0."
+        WHATSAPP_PROACTIVE_REAUTHORIZATION_ENABLED:
+          title: "Заранее предлагать переподключение WhatsApp"
+          hint: "Показывать кнопку переподключения для токенов WhatsApp Cloud, срок которых истекает. Включайте, когда все веб-серверы это поддерживают."
+        WHATSAPP_REQUIRE_NON_EXPIRING_SYSTEM_USER_TOKEN:
+          title: "Требовать бессрочные токены WhatsApp"
+          hint: "Новые и переподключаемые каналы WhatsApp Cloud должны использовать токены SYSTEM_USER без срока действия."
+        WHATSAPP_WEBHOOK_PUBLIC_INGRESS_URL:
+          title: "WhatsApp: публичный адрес приёма вебхуков"
+          hint: "Необязательный общий HTTPS-адрес /webhooks/whatsapp для всех окружений OneLink."
+        WHATSAPP_WEBHOOK_PUBLIC_VERIFY_TOKEN:
+          title: "WhatsApp: токен проверки публичного адреса"
+          hint: "Токен, который принимает общий публичный адрес. Нужен, если удалённое окружение регистрирует этот адрес. Значение не показывается: оставьте поле пустым, чтобы не менять."
+        WHATSAPP_WEBHOOK_ROUTING_RULES:
+          title: "WhatsApp: правила маршрутизации вебхуков"
+          hint: "JSON-объект: WABA или WABA:ID номера → окружения (prod, dev, MedElement). События без правила остаются в основной системе."
+        WHATSAPP_WEBHOOK_FORWARD_TARGETS:
+          title: "WhatsApp: адреса пересылки вебхуков"
+          hint: "JSON-объект с каноническими адресами DEV и MedElement. Другие хосты, пути, порты, параметры и перенаправления отклоняются."
+        WHATSAPP_WEBHOOK_FORWARD_SECRET:
+          title: "WhatsApp: внутренний секрет пересылки"
+          hint: "Общий секрет для проверки вебхуков, которые окружения пересылают друг другу. Не используйте секрет приложения Meta. Значение не показывается: оставьте поле пустым, чтобы не менять."
+        WHATSAPP_WEBHOOK_RECEIVER_DESTINATION:
+          title: "WhatsApp: имя этого окружения"
+          hint: "Имя окружения, например dev или widget. Пересланные вебхуки для другого окружения отклоняются."
+        # ---- Почта: Google и Microsoft
+        GOOGLE_OAUTH_CLIENT_ID:
+          title: "Google: Client ID"
+          hint: "Client ID приложения Google OAuth для подключения почты."
+        GOOGLE_OAUTH_CLIENT_SECRET:
+          title: "Google: Client Secret"
+          hint: "Client Secret приложения Google OAuth."
+        GOOGLE_OAUTH_REDIRECT_URI:
+          title: "Google: адрес возврата (Redirect URI)"
+          hint: "Адрес возврата, указанный в приложении Google OAuth."
+        ENABLE_GOOGLE_OAUTH_LOGIN:
+          title: "Вход через Google"
+          hint: "Показывать вход через Google, когда ключи заданы."
+        AZURE_APP_ID:
+          title: "Microsoft: ID приложения (Azure)"
+          hint: "Идентификатор приложения, через которое клиники подключают почту Microsoft."
+        AZURE_APP_SECRET:
+          title: "Microsoft: секрет приложения (Azure)"
+          hint: "Секрет приложения Azure."
+        # ---- Интеграции
+        LINEAR_CLIENT_ID:
+          title: "Linear: Client ID"
+          hint: "Идентификатор приложения Linear."
+        LINEAR_CLIENT_SECRET:
+          title: "Linear: Client Secret"
+          hint: "Секрет приложения Linear."
+        SLACK_CLIENT_ID:
+          title: "Slack: Client ID"
+          hint: "Идентификатор приложения Slack."
+        SLACK_CLIENT_SECRET:
+          title: "Slack: Client Secret"
+          hint: "Секрет приложения Slack."
+        NOTION_CLIENT_ID:
+          title: "Notion: Client ID"
+          hint: "Идентификатор приложения Notion."
+        NOTION_CLIENT_SECRET:
+          title: "Notion: Client Secret"
+          hint: "Секрет приложения Notion."
+        SHOPIFY_CLIENT_ID:
+          title: "Shopify: Client ID"
+          hint: "Client ID (API Key) из партнёрского аккаунта Shopify."
+        SHOPIFY_CLIENT_SECRET:
+          title: "Shopify: Client Secret"
+          hint: "Client Secret (API Secret Key) из партнёрского аккаунта Shopify."
+        # ---- Брендирование и вход
+        LOGO_THUMBNAIL:
+          title: "Значок сайта (favicon)"
+          hint: "Картинка 512 × 512 пикселей."
+        LOGO:
+          title: "Логотип"
+          hint: "Логотип в кабинете, на странице входа и в других местах."
+        LOGO_DARK:
+          title: "Логотип для тёмной темы"
+          hint: "Показывается вместо логотипа в тёмной теме."
+        BRAND_NAME:
+          title: "Название бренда"
+          hint: "Название в письмах и в виджете."
+        INSTALLATION_NAME:
+          title: "Название установки"
+          hint: "Название в кабинете и в заголовках страниц."
+        BRAND_URL:
+          title: "Сайт бренда"
+          hint: "Адрес в письмах под надписью «Работает на»."
+        WIDGET_BRAND_URL:
+          title: "Сайт бренда в виджете"
+          hint: "Адрес в виджете под надписью «Работает на»."
+        TERMS_URL:
+          title: "Условия использования"
+          hint: "Адрес страницы условий на странице регистрации."
+        PRIVACY_URL:
+          title: "Политика конфиденциальности"
+          hint: "Адрес страницы политики в приложении."
+        DISPLAY_MANIFEST:
+          title: "Служебные метаданные OneLink"
+          hint: "Показывать значки и служебные метаданные OneLink."
+        ENABLE_SAML_SSO_LOGIN:
+          title: "Вход через SAML SSO"
+          hint: "Показывать SAML SSO как способ входа. Нельзя выключить, пока есть пользователи, которые входят через SAML."
+        # ---- Служебные параметры
+        CHATWOOT_INBOX_TOKEN:
+          title: "Токен ящика поддержки"
+          hint: "Токен ящика поддержки в облаке."
+        CHATWOOT_INBOX_HMAC_KEY:
+          title: "HMAC-ключ ящика поддержки"
+          hint: "HMAC-ключ ящика поддержки в облаке."
+        CLOUD_ANALYTICS_TOKEN:
+          title: "Токен аналитики"
+          hint: "Ключ API системы аналитики облачной версии."
+        CLEARBIT_API_KEY:
+          title: "Ключ Clearbit"
+          hint: "Нужен, чтобы заполнять данные клиники при регистрации."
+        DASHBOARD_SCRIPTS:
+          title: "Скрипты кабинета"
+          hint: "Подключаются в конце страницы кабинета."
+        INACTIVE_WHATSAPP_NUMBERS:
+          title: "Отключённые номера WhatsApp"
+          hint: "Номера через запятую. Запросы с них отклоняются ошибкой 422."
+        SKIP_INCOMING_BCC_PROCESSING:
+          title: "Не обрабатывать скрытые копии для клиник"
+          hint: "ID клиник через запятую, для которых скрытые копии (BCC) входящих писем не обрабатываются."
+        CAPTAIN_CLOUD_PLAN_LIMITS:
+          title: "Лимиты ИИ по облачным тарифам"
+          hint: "Лимиты сервиса ИИ-агентов по тарифам в формате JSON."
+        ACCOUNT_SECURITY_NOTIFICATION_WEBHOOK_URL:
+          title: "Вебхук для сообщений о безопасности"
+          hint: "Адрес, на который отправляются сообщения о подозрительной активности клиник."
+        CHATWOOT_INSTANCE_ADMIN_EMAIL:
+          title: "E-mail администратора установки"
+          hint: "Получает уведомления, связанные с соблюдением требований."
+        OG_IMAGE_CDN_URL:
+          title: "CDN для OG-картинок"
+          hint: "Адрес CDN, с которого отдаются OG-картинки."
+        OG_IMAGE_CLIENT_REF:
+          title: "Ключ доступа к OG-картинкам"
+          hint: "Токен, который не пускает посторонних к OG-картинкам."
+        CLOUDFLARE_API_KEY:
+          title: "Cloudflare: ключ API"
+          hint: "Ключ API аккаунта Cloudflare."
+        CLOUDFLARE_ZONE_ID:
+          title: "Cloudflare: ID зоны"
+          hint: "ID зоны домена в Cloudflare."
+        BLOCKED_EMAIL_DOMAINS:
+          title: "Заблокированные почтовые домены"
+          hint: "По одному домену в строке; допускаются регулярные выражения. Такие адреса не могут регистрироваться."
+        OTEL_PROVIDER:
+          title: "OpenTelemetry: провайдер"
+          hint: "Провайдер наблюдаемости ИИ, например langfuse."
+        LANGFUSE_PUBLIC_KEY:
+          title: "Langfuse: публичный ключ"
+          hint: "Публичный ключ для входа в Langfuse."
+        LANGFUSE_SECRET_KEY:
+          title: "Langfuse: секретный ключ"
+          hint: "Секретный ключ для входа в Langfuse."
+        LANGFUSE_BASE_URL:
+          title: "Langfuse: адрес"
+          hint: "Адрес Langfuse: https://us.cloud.langfuse.com (США) или https://cloud.langfuse.com (Европа)."
+        # ---- Модели ИИ: подключение, промпты, лимит
+        CAPTAIN_OPENROUTER_API_KEY:
+          title: "Ключ OpenRouter"
+          hint: "Ключ, по которому OneLink обращается к моделям через OpenRouter. Без него агенты не отвечают. Значение не показывается: оставьте поле пустым, чтобы не менять."
+        CAPTAIN_OPENROUTER_MANAGEMENT_API_KEY:
+          title: "Management-ключ OpenRouter"
+          hint: "Необязательный ключ только для диагностики: проверка ключа и кредитов. Для запросов к моделям не используется. Значение не показывается: оставьте поле пустым, чтобы не менять."
+        CAPTAIN_OPENROUTER_ENDPOINT:
+          title: "Адрес OpenRouter (необязательно)"
+          hint: "Адрес API OpenRouter. Пусто — используется https://openrouter.ai/api/v1."
+        CAPTAIN_FIRECRAWL_API_KEY:
+          title: "Ключ FireCrawl (необязательно)"
+          hint: "Нужен, чтобы загружать страницы сайтов в базу знаний ИИ. Значение не показывается: оставьте поле пустым, чтобы не менять."
+        CAPTAIN_AI_AGENT_SYSTEM_PROMPT:
+          title: "Общая инструкция для ИИ-агентов"
+          hint: "Добавляется к промпту каждого агента и сценария, который общается с клиентами."
+        CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT:
+          title: "Общая инструкция для помощника оператора"
+          hint: "Добавляется к промпту внутреннего помощника, если он включён."
+        CAPTAIN_SYSTEM_PROMPTS:
+          title: "Системные промпты платформы"
+          hint: "Правила для всех агентов. В настройках агента их можно только включить или выключить."
+        ACCOUNT_CAPTAIN_TOKENS_LIMIT:
+          title: "Лимит токенов ИИ на клинику"
+          hint: "Сколько токенов ИИ доступно клинике, у которой нет собственного лимита. Пусто — без ограничения."
