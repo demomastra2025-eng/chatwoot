@@ -8,9 +8,11 @@ class OauthCallbackController < ApplicationController
     )
 
     handle_response
-  rescue Channels::NotAvailable
-    # Not an error of the integration: the e-mail channel is closed for this clinic, so there is nothing to report
-    redirect_to oauth_error_redirect_url, allow_other_host: true
+  rescue Channels::NotAvailable => e
+    # Not an error of the integration, so nothing is reported: the e-mail channel is closed for this clinic. The
+    # connection page of the operator app only knows the generic «не удалось подключить», so the clinic is told the real
+    # reason on a page of its own, with a way back.
+    render_channel_not_available(e)
   rescue StandardError => e
     ChatwootExceptionTracker.new(e).capture_exception
     redirect_to oauth_error_redirect_url, allow_other_host: true
@@ -123,6 +125,22 @@ class OauthCallbackController < ApplicationController
 
   def base_url
     ENV.fetch('FRONTEND_URL', 'http://localhost:3000')
+  end
+
+  def render_channel_not_available(error)
+    @message = error.message
+    @back_url = channel_not_available_back_url
+    render 'oauth_callback/channel_not_available', layout: false, status: :forbidden
+  end
+
+  # The channel list of the clinic that started the connection; the start page when the state does not name one
+  def channel_not_available_back_url
+    redirect_account = GlobalID::Locator.locate_signed(params[:state]) if params[:state].present?
+    return '/' unless redirect_account
+
+    "#{base_url}/app/accounts/#{redirect_account.id}/settings/inboxes/list"
+  rescue StandardError
+    '/'
   end
 
   def oauth_error_redirect_url

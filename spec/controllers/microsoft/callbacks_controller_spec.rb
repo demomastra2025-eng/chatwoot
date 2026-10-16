@@ -37,6 +37,38 @@ RSpec.describe 'Microsoft::CallbacksController', type: :request do
       expect(inbox.channel.imap_address).to eq 'outlook.office365.com'
     end
 
+    context 'when e-mail is closed for the clinic' do
+      before do
+        change_platform_channel_visibility('email' => 'hidden')
+        stub_request(:post, 'https://login.microsoftonline.com/common/oauth2/v2.0/token')
+          .with(body: { 'code' => code, 'grant_type' => 'authorization_code',
+                        'redirect_uri' => "#{base_url}/microsoft/callback" })
+          .to_return(status: 200, body: response_body_success.to_json, headers: { 'Content-Type' => 'application/json' })
+      end
+
+      it 'creates no mailbox, tells the clinic in Russian that the channel is closed, links back and reports no error' do
+        expect(ChatwootExceptionTracker).not_to receive(:new)
+
+        expect do
+          get microsoft_callback_url, params: { code: code, state: state }
+        end.not_to change(account.inboxes, :count)
+
+        expect(response).to have_http_status(:forbidden)
+        page = Nokogiri::HTML(response.body)
+        expect(page.at_css('#channel-not-available-message').text).to include('Канал «Email» недоступен для вашей клиники')
+        expect(page.at_css('a')['href']).to eq("#{base_url}/app/accounts/#{account.id}/settings/inboxes/list")
+        expect(response.body).not_to include('oauth_callback_failed')
+      end
+
+      it 'still renews the token of a mailbox that is already connected' do
+        channel_email = create(:channel_email, account: account, email: email)
+
+        get microsoft_callback_url, params: { code: code, state: state }
+
+        expect(response).to redirect_to app_email_inbox_settings_url(account_id: account.id, inbox_id: channel_email.inbox.id)
+      end
+    end
+
     it 'creates updates inbox channel config if inbox exists and authentication is successful' do
       inbox = create(:channel_email, account: account, email: email)&.inbox
       expect(inbox.channel.provider_config).to eq({})

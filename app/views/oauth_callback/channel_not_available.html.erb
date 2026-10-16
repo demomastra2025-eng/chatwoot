@@ -1,0 +1,38 @@
+<%#
+# The channel is closed for the clinic
+
+Shown when a clinic comes back from Google or Microsoft to connect a mailbox while
+the e-mail channel is closed for it (the platform switch «Каналы» or an exception of
+the clinic). It is a plain page of its own: the operator app cannot show this reason.
+The colours are the system ones, so the page follows the light or dark theme of the
+browser.
+
+## Instance variables:
+
+- `@message`: the Russian sentence that names the channel (Channels::NotAvailable).
+- `@back_url`: where «Вернуться в кабинет» goes.
+%>
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title><%= t('oauth_callback.channel_not_available.title', locale: :ru) %></title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: Canvas; color: CanvasText; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+      main { box-sizing: border-box; width: 100%; max-width: 30rem; padding: 2rem 1rem; }
+      h1 { margin: 0 0 0.75rem; font-size: 1.25rem; line-height: 1.3; }
+      p { margin: 0 0 1.5rem; }
+      a { display: inline-block; padding: 0.5rem 1rem; border: 1px solid currentColor; border-radius: 0.5rem; color: LinkText; text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    <main role="main">
+      <h1><%= t('oauth_callback.channel_not_available.title', locale: :ru) %></h1>
+      <p id="channel-not-available-message"><%= @message %></p>
+      <a href="<%= @back_url %>"><%= t('oauth_callback.channel_not_available.back', locale: :ru) %></a>
+    </main>
+  </body>
+</html>
