@@ -47,8 +47,6 @@ import {
   Selection,
 } from '@chatwoot/prosemirror-schema';
 import { suggestionsPlugin } from '@chatwoot/prosemirror-schema/src/mentions/plugin';
-import { Plugin, PluginKey } from 'prosemirror-state';
-import { Decoration, DecorationSet } from 'prosemirror-view';
 import {
   EMOJI_SEQUENCE_REGEX,
   getAppleEmojiUrl,
@@ -370,11 +368,40 @@ function createSuggestionPlugin({
   });
 }
 
-const appleEmojiPluginKey = new PluginKey('appleEmoji');
+const prosemirrorDecorationHelpers = (() => {
+  try {
+    const dummyDoc = messageSchema.node('doc', null, [
+      messageSchema.node('paragraph', null, [messageSchema.text('a')]),
+    ]);
+    const probe = suggestionsPlugin({ suggestionClass: 'probe' });
+    const probeSet = probe.props.decorations.call(probe, {
+      doc: dummyDoc,
+      [probe.key]: { active: true, range: { from: 1, to: 2 } },
+    });
+    return {
+      DecorationSet: probeSet?.constructor || null,
+      Decoration: probeSet?.find?.()?.[0]?.constructor || null,
+    };
+  } catch {
+    return { DecorationSet: null, Decoration: null };
+  }
+})();
+
+let lastEmojiDoc = null;
+let lastEmojiDecorations = null;
 
 function buildAppleEmojiDecorations(doc) {
-  if (!doc || typeof doc.descendants !== 'function') {
-    return DecorationSet.empty;
+  const { DecorationSet, Decoration } = prosemirrorDecorationHelpers;
+  if (
+    !DecorationSet ||
+    !Decoration ||
+    !doc ||
+    typeof doc.descendants !== 'function'
+  ) {
+    return null;
+  }
+  if (doc === lastEmojiDoc) {
+    return lastEmojiDecorations;
   }
   const decorations = [];
   doc.descendants((node, pos) => {
@@ -398,39 +425,19 @@ function buildAppleEmojiDecorations(doc) {
       match = EMOJI_SEQUENCE_REGEX.exec(node.text);
     }
   });
-  return decorations.length
+  lastEmojiDoc = doc;
+  lastEmojiDecorations = decorations.length
     ? DecorationSet.create(doc, decorations)
     : DecorationSet.empty;
-}
-
-function createAppleEmojiPlugin() {
-  return new Plugin({
-    key: appleEmojiPluginKey,
-    state: {
-      init(_, { doc }) {
-        return buildAppleEmojiDecorations(doc);
-      },
-      apply(tr, oldSet) {
-        if (!tr.docChanged) return oldSet;
-        return buildAppleEmojiDecorations(tr.doc);
-      },
-    },
-    props: {
-      decorations(editorState) {
-        return this.getState(editorState);
-      },
-    },
-  });
+  return lastEmojiDecorations;
 }
 
 const plugins = computed(() => {
-  const basePlugins = [createAppleEmojiPlugin()];
   if (!props.enableSuggestions) {
-    return basePlugins;
+    return [];
   }
 
   return [
-    ...basePlugins,
     createSuggestionPlugin({
       trigger: '@',
       showMenu: showToolsMenu,
@@ -947,6 +954,7 @@ function createEditorView() {
   editorView = new EditorView(editor.value, {
     state: state,
     editable: () => !props.disabled,
+    decorations: editorState => buildAppleEmojiDecorations(editorState?.doc),
     dispatchTransaction: tx => {
       state = state.apply(tx);
       editorView.updateState(state);
