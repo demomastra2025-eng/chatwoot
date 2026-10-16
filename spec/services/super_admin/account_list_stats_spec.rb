@@ -160,6 +160,29 @@ RSpec.describe SuperAdmin::AccountListStats do
     end
   end
 
+  describe 'storage reads' do
+    it 'reads the snapshots of the whole page with one MGET and no read per clinic' do
+      accounts = create_list(:account, 3)
+      accounts.each do |account|
+        Redis::Alfred.set(storage_key(account), JSON.generate(limits: { total_count: 100, consumed: 50, unlimited: false, current_available: 50 }))
+      end
+      single_reads = []
+      allow(Redis::Alfred).to receive(:get).and_wrap_original do |original, key|
+        single_reads << key if key.to_s.include?('storage_overview')
+        original.call(key)
+      end
+      expect(Redis::Alfred).to receive(:mget).once.and_call_original
+
+      stats = described_class.new(accounts)
+      rows = accounts.map { |account| stats.for(account) }
+
+      expect(rows.map { |row| row.storage&.percent }).to eq([50.0, 50.0, 50.0])
+      expect(single_reads).to be_empty
+    ensure
+      accounts&.each { |account| Redis::Alfred.delete(storage_key(account)) }
+    end
+  end
+
   describe 'status' do
     it 'is active, suspended or deleting (deleting wins)' do
       active = create(:account)

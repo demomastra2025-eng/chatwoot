@@ -21,6 +21,13 @@ module Redis::Alfred
       $alfred.with { |conn| conn.get(key) }
     end
 
+    # the values of many keys in one round trip, in the order of the keys (nil for a key that is not set)
+    def mget(keys)
+      return [] if keys.blank?
+
+      $alfred.with { |conn| conn.mget(*keys) }
+    end
+
     def delete(key)
       $alfred.with { |conn| conn.del(key) }
     end

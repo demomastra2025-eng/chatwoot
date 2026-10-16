@@ -4,6 +4,7 @@ class Accounts::StorageOverviewService
   REFRESH_INTERVAL = 5.minutes
   PENDING_REFRESH_TTL = 5.minutes
   PENDING_REFRESH_KEY = 'account:%<account_id>s:storage_overview_pending_v2'
+  SNAPSHOT_KEY = 'account:%<account_id>s:storage_overview_v1'
   STATEMENT_TIMEOUT = '10s'
 
   attr_reader :refresh_status
@@ -14,16 +15,27 @@ class Accounts::StorageOverviewService
     Rails.logger.warn("[StorageOverview] Could not release refresh for account #{account_id}: #{e.class.name}")
   end
 
+  # The last published snapshots of many clinics, read with ONE Redis call: { account_id => snapshot or nil }.
+  # A list of clinics uses it instead of a read per row.
+  def self.snapshots_for(accounts)
+    ids = accounts.map { |account| account.respond_to?(:id) ? account.id : account }
+    raws = Redis::Alfred.mget(ids.map { |id| format(SNAPSHOT_KEY, account_id: id) })
+    ids.zip(raws).to_h { |id, raw| [id, parse_snapshot(raw)] }
+  end
+
+  def self.parse_snapshot(raw)
+    JSON.parse(raw, symbolize_names: true) if raw
+  rescue JSON::ParserError
+    nil
+  end
+
   def initialize(account:)
     @account = account
     @refresh_status = 'idle'
   end
 
   def snapshot
-    raw = Redis::Alfred.get(snapshot_cache_key)
-    JSON.parse(raw, symbolize_names: true) if raw
-  rescue JSON::ParserError
-    nil
+    self.class.parse_snapshot(Redis::Alfred.get(snapshot_cache_key))
   end
 
   def pending?
@@ -160,7 +172,7 @@ class Accounts::StorageOverviewService
   end
 
   def snapshot_cache_key
-    "account:#{account.id}:storage_overview_v1"
+    format(SNAPSHOT_KEY, account_id: account.id)
   end
 
   def heavy_recordings_cache_key

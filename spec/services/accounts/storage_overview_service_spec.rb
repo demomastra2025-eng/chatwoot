@@ -31,6 +31,35 @@ RSpec.describe Accounts::StorageOverviewService do
     Redis::Alfred.delete(account.local_recordings_last_good_cache_key)
   end
 
+  describe '.snapshots_for' do
+    let(:other) { create(:account) }
+
+    after { Redis::Alfred.delete("account:#{other.id}:storage_overview_v1") }
+
+    it 'reads the snapshots of many clinics with one MGET, in the order of the clinics, nil where there is none' do
+      Redis::Alfred.set("account:#{account.id}:storage_overview_v1", JSON.generate(limits: { consumed: 5, total_count: 10 }))
+      expect(Redis::Alfred).to receive(:mget).once.and_call_original
+
+      snapshots = described_class.snapshots_for([account, other])
+
+      expect(snapshots.keys).to eq([account.id, other.id])
+      expect(snapshots[account.id]).to eq(limits: { consumed: 5, total_count: 10 })
+      expect(snapshots[other.id]).to be_nil
+    end
+
+    it 'treats a snapshot that is not JSON as missing, as #snapshot does' do
+      Redis::Alfred.set("account:#{other.id}:storage_overview_v1", 'not json')
+
+      expect(described_class.snapshots_for([other])).to eq(other.id => nil)
+      expect(described_class.new(account: other).snapshot).to be_nil
+    end
+
+    it 'accepts clinic ids, and an empty list is an empty answer' do
+      expect(described_class.snapshots_for([])).to eq({})
+      expect(described_class.snapshots_for([account.id])).to eq(account.id => nil)
+    end
+  end
+
   it 'queues one housekeeping refresh while the renewable five-minute pending lease is active' do
     expect do
       10.times { service.schedule_refresh(force: true) }

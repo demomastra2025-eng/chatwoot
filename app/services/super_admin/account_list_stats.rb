@@ -2,8 +2,8 @@
 
 # The numbers of one page of the clinic list: plan chips, operators used / limit, storage fill, channel count, status.
 #
-# Everything is read for the whole page at once (grouped counts, one Redis read per clinic for the storage snapshot), so
-# a page of 20 clinics costs the same number of queries as a page of 2. Storage comes from the hourly snapshot
+# Everything is read for the whole page at once (grouped counts, ONE Redis MGET for the storage snapshots), so a page
+# of 20 clinics costs the same number of queries and Redis calls as a page of 2. Storage comes from the hourly snapshot
 # (Accounts::StorageOverviewService#snapshot): the list never measures disks and never queues a refresh.
 #
 #   stats = SuperAdmin::AccountListStats.new(accounts)
@@ -24,6 +24,7 @@ class SuperAdmin::AccountListStats
     @member_counts = AccountUser.where(account_id: ids).group(:account_id).count
     @channel_counts = Inbox.where(account_id: ids).group(:account_id).count
     @excluded_counts = excluded_member_counts
+    @storage_snapshots = Accounts::StorageOverviewService.snapshots_for(@accounts)
     @global_agent_limit = GlobalConfig.get('ACCOUNT_AGENTS_LIMIT')['ACCOUNT_AGENTS_LIMIT']
   end
 
@@ -67,7 +68,7 @@ class SuperAdmin::AccountListStats
   end
 
   def storage(account)
-    summary = Accounts::StorageOverviewService.new(account: account).snapshot&.dig(:limits)
+    summary = @storage_snapshots[account.id]&.dig(:limits)
     return if summary.blank?
 
     unlimited = summary[:unlimited] ? true : false
