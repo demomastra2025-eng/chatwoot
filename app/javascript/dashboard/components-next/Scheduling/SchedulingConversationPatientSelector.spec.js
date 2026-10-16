@@ -15,7 +15,7 @@ vi.mock('vue-i18n', async importOriginal => ({
   useI18n: () => ({ t: mocks.t }),
 }));
 vi.mock('dashboard/api/scheduling/contacts', () => ({
-  default: { patients: vi.fn(), createPatient: vi.fn() },
+  default: { patients: vi.fn(), createPatient: vi.fn(), update: vi.fn() },
 }));
 
 const key = '74:9:conversation:123';
@@ -233,5 +233,51 @@ describe('conversation patient selector', () => {
     expect(first[1]).not.toHaveProperty('phone');
     wrapper.vm.startCreate();
     expect(wrapper.vm.idempotencyKey).not.toBe(first[1].idempotency_key);
+  });
+
+  it('edits the selected client in place and reloads updated details', async () => {
+    const existing = {
+      ...owner,
+      first_name: 'Алия',
+      last_name: 'Серикова',
+      middle_name: 'Маратовна',
+      identifier: '940720300129',
+      birth_date: '1994-07-20',
+      gender: 'female',
+      phone: '+77001112233',
+    };
+    SchedulingContactsAPI.patients.mockResolvedValueOnce({
+      data: { payload: { contact_id: 42, patients: [existing] } },
+    });
+    const wrapper = await mountLoaded();
+    wrapper.vm.startEdit();
+    expect(wrapper.vm.isEditing).toBe(true);
+    expect(wrapper.vm.form).toMatchObject({
+      first_name: 'Алия',
+      last_name: 'Серикова',
+      middle_name: 'Маратовна',
+      iin: '940720300129',
+      birth_date: '1994-07-20',
+      gender: 'female',
+      phone: '+77001112233',
+    });
+
+    wrapper.vm.form.last_name = 'Ахметова';
+    SchedulingContactsAPI.update.mockResolvedValueOnce({
+      data: { payload: { id: 42, account_id: 74 } },
+    });
+    SchedulingContactsAPI.patients.mockResolvedValueOnce({
+      data: {
+        payload: {
+          contact_id: 42,
+          patients: [{ ...existing, last_name: 'Ахметова' }],
+        },
+      },
+    });
+    await wrapper.vm.savePatient();
+    expect(SchedulingContactsAPI.update).toHaveBeenCalledWith(42, {
+      last_name: 'Ахметова',
+    });
+    expect(wrapper.vm.isEditing).toBe(false);
   });
 });

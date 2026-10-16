@@ -250,6 +250,21 @@ const mountChatList = async (query, componentProps = {}) => {
         Dialog: DialogStub,
         CommunicationThreadDeleteDialog: ThreadDialogStub,
         ConversationBulkActions: ConversationBulkActionsStub,
+        ChatListHeader: {
+          name: 'ChatListHeader',
+          props: [
+            'localSearchQuery',
+            'pageTitle',
+            'hasAppliedFilters',
+            'hasActiveFolders',
+            'isOnExpandedLayout',
+            'activeUnreadOnly',
+            'activeStatus',
+            'showStatusFilter',
+            'showAiStatus',
+          ],
+          template: '<div><slot /></div>',
+        },
       },
     },
   });

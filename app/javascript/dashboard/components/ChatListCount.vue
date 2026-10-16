@@ -21,11 +21,12 @@ const formattedConversationCount = computed(
 <template>
   <div
     data-test-id="conversation-count-row"
-    class="-mt-1 flex h-5 shrink-0 items-start justify-end px-3 pt-0.5 text-xxs leading-4 text-n-slate-10"
+    class="inline-flex min-w-0 shrink-0 items-center text-xxs leading-4 text-n-slate-10"
   >
     <span
       v-if="!isListLoading"
       data-test-id="conversation-count"
+      class="truncate rounded-full bg-n-alpha-2 px-1.5 py-0.5 font-medium tabular-nums text-n-slate-11"
       :title="String(conversationCount || 0)"
     >
       <template v-if="isSearchResult">

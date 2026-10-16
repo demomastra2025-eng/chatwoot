@@ -2486,6 +2486,49 @@ const initializeSidebar = async () => {
   }
 };
 
+watch(
+  () => [
+    patient.value?.id,
+    patient.value?.first_name,
+    patient.value?.firstName,
+    patient.value?.last_name,
+    patient.value?.lastName,
+    patient.value?.middle_name,
+    patient.value?.middleName,
+    patient.value?.full_name,
+    patient.value?.fullName,
+    patient.value?.name,
+    patient.value?.identifier,
+    patient.value?.birth_date,
+    patient.value?.birthDate,
+    patient.value?.gender,
+    patient.value?.phone,
+    patient.value?.phone_number,
+    patient.value?.phoneNumber,
+  ],
+  () => {
+    if (!patient.value) return;
+    const contactNameParts = schedulingContactNameParts({
+      firstName: patient.value?.first_name || patient.value?.firstName,
+      fullName: contactName.value,
+      lastName: patient.value?.last_name || patient.value?.lastName,
+      middleName: patient.value?.middle_name || patient.value?.middleName,
+    });
+    createForm.clientBirthDate = patientBirthDate(patient.value);
+    createForm.clientGender = patient.value?.gender || '';
+    createForm.clientIdentifier = contactIin.value;
+    createForm.clientIdentifierInferred = Boolean(contactIin.value);
+    createForm.clientFirstName = contactNameParts.firstName;
+    createForm.clientLastName = contactNameParts.lastName;
+    createForm.clientMiddleName = contactNameParts.middleName;
+    createForm.clientName = contactName.value;
+    createForm.clientNameStructured = true;
+    createForm.clientPhone = contactPhone.value;
+    createForm.patientContactId = selectedPatientCardId.value;
+    createForm.patientContextContactId = selectedPatientContextId.value;
+  }
+);
+
 onMounted(() => {
   initializeSidebar();
 });
@@ -2574,7 +2617,7 @@ watch(
 
     <div
       ref="scrollContainer"
-      class="flex min-h-0 flex-1 flex-col overflow-y-auto pb-5"
+      class="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-5"
     >
       <div v-if="ui.isLoading" class="flex justify-center py-12">
         <Spinner class="!h-8 !w-8" />
@@ -2656,31 +2699,6 @@ watch(
                       dropdown-placement="auto"
                       @update:model-value="createForm.status = $event"
                     />
-                  </div>
-
-                  <div class="rounded-lg border border-n-weak bg-n-alpha-1 px-2.5 py-1.5">
-                    <div class="flex items-center justify-between gap-2">
-                      <div class="flex min-w-0 items-center gap-1.5 text-xs">
-                        <span class="i-lucide-user-round size-3.5 shrink-0 text-n-slate-10" />
-                        <span class="truncate font-medium text-n-slate-12">
-                          {{ fullPatientName(createForm) || $t('SCHEDULING.PATIENT_CONTEXT.SELECT_PATIENT') }}
-                        </span>
-                        <span v-if="createForm.clientPhone" class="shrink-0 text-n-slate-10">
-                          · {{ createForm.clientPhone }}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        class="shrink-0 text-xs font-medium text-n-blue-text hover:underline"
-                        @click="toggleClientFields(NEW_APPOINTMENT_KEY)"
-                      >
-                        {{
-                          isClientFieldsOpen(createForm, NEW_APPOINTMENT_KEY)
-                            ? $t('SCHEDULING.GENERAL.CANCEL')
-                            : $t('SCHEDULING.GENERAL.EDIT')
-                        }}
-                      </button>
-                    </div>
                   </div>
 
                   <div
@@ -3332,40 +3350,6 @@ watch(
                     />
                   </div>
 
-                  <div class="rounded-lg border border-n-weak bg-n-alpha-1 px-2.5 py-1.5">
-                    <div class="flex items-center justify-between gap-2">
-                      <div class="flex min-w-0 items-center gap-1.5 text-xs">
-                        <span class="i-lucide-user-round size-3.5 shrink-0 text-n-slate-10" />
-                        <span class="truncate font-medium text-n-slate-12">
-                          {{
-                            fullPatientName(appointmentForms[appointmentKey(appointment)]) ||
-                              $t('SCHEDULING.PATIENT_CONTEXT.SELECT_PATIENT')
-                          }}
-                        </span>
-                        <span
-                          v-if="appointmentForms[appointmentKey(appointment)].clientPhone"
-                          class="shrink-0 text-n-slate-10"
-                        >
-                          · {{ appointmentForms[appointmentKey(appointment)].clientPhone }}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        class="shrink-0 text-xs font-medium text-n-blue-text hover:underline"
-                        @click="toggleClientFields(appointmentKey(appointment))"
-                      >
-                        {{
-                          isClientFieldsOpen(
-                            appointmentForms[appointmentKey(appointment)],
-                            appointmentKey(appointment)
-                          )
-                            ? $t('SCHEDULING.GENERAL.CANCEL')
-                            : $t('SCHEDULING.GENERAL.EDIT')
-                        }}
-                      </button>
-                    </div>
-                  </div>
-
                   <div
                     v-show="
                       isClientFieldsOpen(
@@ -3851,11 +3835,11 @@ watch(
 
 <style scoped>
 .scheduling-appointment-drawer-form {
-  @apply grid gap-3;
+  @apply grid min-w-0 gap-3;
 }
 
 .scheduling-appointment-drawer-section {
-  @apply grid gap-2 border-t border-n-weak pt-3;
+  @apply grid min-w-0 gap-2 border-t border-n-weak pt-3;
 }
 
 .scheduling-appointment-drawer-section:first-of-type {

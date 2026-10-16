@@ -76,7 +76,7 @@ const toggleConversationLayout = () => {
       'border-b border-n-strong': hasAppliedFiltersOrActiveFolders,
     }"
   >
-    <div class="flex min-w-0 flex-1 items-center">
+    <div class="flex min-w-0 flex-1 items-center gap-1.5">
       <ConversationStatusFilter
         v-if="showStatusFilter"
         :model-value="activeStatus"
@@ -91,6 +91,7 @@ const toggleConversationLayout = () => {
       >
         {{ pageTitle }}
       </h1>
+      <slot />
     </div>
     <div class="flex shrink-0 items-center gap-1">
       <NextButton

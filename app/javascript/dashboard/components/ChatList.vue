@@ -2409,13 +2409,14 @@ watch(bulkSelectionContextKey, contextKey => setSelectionContext(contextKey), {
       @basic-filter-change="onBasicFilterChange"
       @unread-filter-toggle="onUnreadFilterToggle"
       @status-filter-change="updateConversationStatusQuery"
-    />
-    <ChatListCount
-      :conversation-count="totalConversationCount"
-      :is-list-loading="isInitialListLoading"
-      :is-search-result="hasLocalSearch"
-      :is-count-approximate="isServerSearch && isServerSearchCapped"
-    />
+    >
+      <ChatListCount
+        :conversation-count="totalConversationCount"
+        :is-list-loading="isInitialListLoading"
+        :is-search-result="hasLocalSearch"
+        :is-count-approximate="isServerSearch && isServerSearchCapped"
+      />
+    </ChatListHeader>
 
     <div
       v-if="
