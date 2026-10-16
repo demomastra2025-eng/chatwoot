@@ -103,6 +103,15 @@ describe CustomMarkdownRenderer do
       end
     end
 
+    context 'when link uses an unsafe URL' do
+      it 'blanks the URL' do
+        output = render_markdown_link('jav&#x61;script:alert(1)')
+
+        expect(output).to include('<a href="">link</a>')
+        expect(output).not_to include('javascript:')
+      end
+    end
+
     context 'when multiple links are present' do
       it 'renders all links when present between empty lines' do
         markdown = "\n[youtube](https://www.youtube.com/watch?v=VIDEO_ID)\n\n[vimeo](https://vimeo.com/1234567)\n^ hello ^ [normal](https://example.com)"
@@ -253,6 +262,24 @@ describe CustomMarkdownRenderer do
 
         expect(output).to include('src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"')
       end
+    end
+  end
+
+  describe '#html' do
+    it 'omits raw HTML' do
+      rendered = render_markdown('<script>alert("xss")</script>')
+
+      expect(rendered).to include('<!-- raw HTML omitted -->')
+      expect(rendered).not_to include('<script>')
+    end
+  end
+
+  describe '#image' do
+    it 'blanks unsafe sources' do
+      output = render_markdown('![Sample](vbscript:alert(1))')
+
+      expect(output).to include('<img src=""')
+      expect(output).not_to include('vbscript:')
     end
   end
 end

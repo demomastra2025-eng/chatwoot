@@ -1,4 +1,6 @@
 class CustomMarkdownRenderer < CommonMarker::HtmlRenderer
+  include MarkdownRendererUrlSanitizer
+
   CONFIG_PATH = Rails.root.join('config/markdown_embeds.yml')
 
   def self.config
@@ -31,6 +33,16 @@ class CustomMarkdownRenderer < CommonMarker::HtmlRenderer
 
     # If it's not a supported embed link, render normally
     super
+  end
+
+  def image(node)
+    src = sanitized_href(node.url)
+    plain do
+      out(%(<img src="#{src}"))
+      out(' alt="', :children, '"')
+      out(%( title="#{escape_html(node.title)}")) if node.title.present?
+      out(' />')
+    end
   end
 
   private

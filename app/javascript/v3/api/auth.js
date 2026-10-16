@@ -70,9 +70,13 @@ export const verifyPasswordToken = async ({ confirmationToken }) => {
     const response = await wootAPI.post('auth/confirmation', {
       confirmation_token: confirmationToken,
     });
+    if (response.data?.redirect_url) {
+      return { redirectUrl: response.data.redirect_url };
+    }
     setAuthCredentials(response);
+    return {};
   } catch (error) {
-    throwErrorMessage(error);
+    return throwErrorMessage(error);
   }
 };
 
@@ -87,9 +91,13 @@ export const setNewPassword = async ({
       password_confirmation: confirmPassword,
       password,
     });
+    if (response.data?.redirect_url) {
+      return { redirectUrl: response.data.redirect_url };
+    }
     setAuthCredentials(response);
+    return {};
   } catch (error) {
-    throwErrorMessage(error);
+    return throwErrorMessage(error);
   }
 };
 

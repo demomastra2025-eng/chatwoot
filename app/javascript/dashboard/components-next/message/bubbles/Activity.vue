@@ -27,9 +27,10 @@ const displayContent = computed(() =>
     data-bubble-name="activity"
   >
     <span
-      v-dompurify-html="displayContent"
       class="whitespace-pre-line"
       :title="displayContent"
-    />
+    >
+      {{ displayContent }}
+    </span>
   </BaseBubble>
 </template>

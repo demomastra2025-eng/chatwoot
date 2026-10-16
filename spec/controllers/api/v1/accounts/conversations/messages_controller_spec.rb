@@ -22,6 +22,22 @@ RSpec.describe 'Conversation Messages API', type: :request do
         create(:inbox_member, inbox: conversation.inbox, user: agent)
       end
 
+      it 'returns a customer-safe error when the database query is canceled' do
+        message_builder = instance_double(Messages::MessageBuilder)
+        allow(Messages::MessageBuilder).to receive(:new).and_return(message_builder)
+        allow(message_builder).to receive(:perform)
+          .and_raise(ActiveRecord::QueryCanceled, 'PG::QueryCanceled: ERROR: canceling statement due to statement timeout')
+
+        post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
+             params: { content: 'test-message', private: true },
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq(I18n.t('errors.database.query_canceled', locale: account.locale))
+        expect(response.parsed_body['error']).not_to include('PG::QueryCanceled')
+      end
+
       it 'creates a new outgoing message' do
         params = { content: 'test-message', private: true }
 

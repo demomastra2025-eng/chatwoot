@@ -17,6 +17,8 @@ class DeviseOverrides::PasswordsController < Devise::PasswordsController
     reset_password_token = Devise.token_generator.digest(self, :reset_password_token, original_token)
     @recoverable = User.find_by(reset_password_token: reset_password_token)
     if @recoverable && reset_password_and_confirmation(@recoverable)
+      return render_mfa_sign_in_required if @recoverable.mfa_enabled?
+
       send_auth_headers(@recoverable)
       render partial: 'devise/auth', formats: [:json], locals: { resource: @recoverable }
     else
@@ -40,6 +42,13 @@ class DeviseOverrides::PasswordsController < Devise::PasswordsController
     recoverable.confirmation_token = nil
     recoverable.reset_password_sent_at = nil
     recoverable.save!
+  end
+
+  def render_mfa_sign_in_required
+    render json: {
+      message: I18n.t('messages.mfa_sign_in_required'),
+      redirect_url: '/app/login'
+    }, status: :ok
   end
 
   def build_response(message, status)

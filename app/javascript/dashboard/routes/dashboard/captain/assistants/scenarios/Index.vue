@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, ref, onMounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
 import { picoSearch } from '@scmmishra/pico-search';
@@ -33,11 +33,6 @@ const isCreatingScenario = ref(false);
 const LINK_INSTRUCTION_CLASS =
   '[&_a[href^="tool://"]]:text-n-iris-11 [&_a[href^="field://"]]:text-n-teal-11 [&_a[href^="skill://"]]:text-n-amber-11 [&_a:not([href^="tool://"]):not([href^="field://"]):not([href^="skill://"])]:text-n-slate-12 [&_a]:pointer-events-none [&_a]:cursor-default';
 
-const renderInstruction = instruction => () =>
-  h('span', {
-    class: `text-sm text-n-slate-12 py-4 prose prose-sm min-w-0 break-words ${LINK_INSTRUCTION_CLASS}`,
-    innerHTML: instruction,
-  });
 
 // Suggested example scenarios for quick add
 const scenariosExample = [
@@ -329,8 +324,12 @@ onMounted(() => {
               <span class="text-sm text-n-slate-11">
                 {{ item.description }}
               </span>
-              <component
-                :is="renderInstruction(formatMessage(item.instruction, false))"
+              <span
+                v-dompurify-html:toolLinks="
+                  formatMessage(item.instruction, false)
+                "
+                class="text-sm text-n-slate-12 py-4 prose prose-sm min-w-0 break-words"
+                :class="LINK_INSTRUCTION_CLASS"
               />
               <div class="flex flex-wrap items-center gap-2">
                 <span

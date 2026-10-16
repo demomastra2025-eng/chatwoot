@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useToggle, useElementSize } from '@vueuse/core';
 import { useVuelidate } from '@vuelidate/core';
@@ -156,11 +156,6 @@ const instructionError = computed(() =>
 const LINK_INSTRUCTION_CLASS =
   '[&_a[href^="tool://"]]:text-n-iris-11 [&_a[href^="field://"]]:text-n-teal-11 [&_a[href^="skill://"]]:text-n-amber-11 [&_a:not([href^="tool://"]):not([href^="field://"]):not([href^="skill://"])]:text-n-slate-12 [&_a]:pointer-events-none [&_a]:cursor-default';
 
-const renderInstruction = instruction => () =>
-  h('p', {
-    class: `text-sm text-n-slate-12 py-4 mb-0 prose prose-sm min-w-0 break-words max-w-none ${LINK_INSTRUCTION_CLASS}`,
-    innerHTML: instruction,
-  });
 
 const toolLabels = computed(() => ({
   search_documentation: t(
@@ -265,8 +260,10 @@ const humanizeToolId = toolId => toolLabels.value[toolId] || `@${toolId}`;
         @click="needsOverlay ? toggleInstructionExpanded() : null"
       >
         <div ref="instructionContentRef">
-          <component
-            :is="renderInstruction(formatMessage(instruction, false))"
+          <p
+            v-dompurify-html:toolLinks="formatMessage(instruction, false)"
+            class="text-sm text-n-slate-12 py-4 mb-0 prose prose-sm min-w-0 break-words max-w-none"
+            :class="LINK_INSTRUCTION_CLASS"
           />
         </div>
 

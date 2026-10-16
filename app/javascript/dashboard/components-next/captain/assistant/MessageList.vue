@@ -82,7 +82,7 @@ watch(() => props.messages.length, scrollToBottom);
           >
             {{ message.agentName }}
           </div>
-          <div v-html="formatMessage(message.content)" />
+          <div v-dompurify-html="formatMessage(message.content)" />
           <CaptainToolExecutionGroup
             v-if="message.toolTrace"
             :additional-attributes="traceAttributes(message)"

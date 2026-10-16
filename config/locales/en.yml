@@ -46,9 +46,12 @@ en:
     reset_password_saml_user: This account uses SAML authentication. Password reset is not available. Please contact your administrator.
     login_saml_user: This account uses SAML authentication. Please sign in through your organization's SAML provider.
     saml_not_available: SAML authentication is not available in this installation.
+    mfa_sign_in_required: Two-factor authentication is required for your account. Sign in to continue.
     inbox_deletetion_response: Your inbox deletion request will be processed in some time.
 
   errors:
+    database:
+      query_canceled: 'The request took too long to complete. Please try again.'
     messages:
       too_long: 'is too long (maximum is %{count} characters)'
       search:

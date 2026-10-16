@@ -21,8 +21,17 @@ class DeviseOverrides::ConfirmationsController < Devise::ConfirmationsController
   end
 
   def render_confirmation_success
+    return render_mfa_sign_in_required if @confirmable.mfa_enabled?
+
     send_auth_headers(@confirmable)
     render partial: 'devise/auth', formats: [:json], locals: { resource: @confirmable }
+  end
+
+  def render_mfa_sign_in_required
+    render json: {
+      message: I18n.t('messages.mfa_sign_in_required'),
+      redirect_url: '/app/login'
+    }, status: :ok
   end
 
   def render_confirmation_error
