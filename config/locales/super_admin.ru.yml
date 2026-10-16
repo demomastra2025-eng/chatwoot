@@ -469,7 +469,6 @@ ru:
       features: "Функции и модули платформы"
       general: "Общие параметры"
     accounts:
-      health_matrix_title: "Сводка здоровья клиентов"
       export_csv: "Экспорт в CSV"
       trial:
         inactive: "Не запускался"
@@ -544,4 +543,7 @@ ru:
         other: "Прочие файлы"
         trash: "Корзина и сохраняемые файлы"
     dashboard:
-        health_matrix_title: "Сводка здоровья клиентов"
+      title: "Сводка"
+      description: "Состояние WhatsApp, телефонии, Janus и МедЭлемента по каждой клинике."
+      updated: "Обновлено: %{time} (Астана)"
+      refresh: "Обновить"

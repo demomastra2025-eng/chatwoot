@@ -1,19 +1,37 @@
-<% content_for(:title) do %>
-  Сводка здоровья клиентов (OneLink Health Matrix)
-<% end %>
+<%#
+# Сводка
+
+The state of every clinic at a glance. The header is drawn here; the body (key figures, the table of clinics,
+the chart of conversations) is the Vue component DashboardIndex.
+
+## Local variables (controller instance variables):
+
+- `@data`: conversations per day for 30 days, `[[day, count], ...]`.
+- `@health_accounts`, `@health_summary`: one row per clinic and the totals (SuperAdmin::HealthMatrixService);
+  `@health_summary[:updated_at]` is already Astana time.
+%>
+
+<% content_for(:title) do %><%= t('super_admin.dashboard.title') %><% end %>
 
 <%# The Vue bundle is needed only here; the layout prints it in <head> via `yield :vue_entry`. %>
 <% content_for(:vue_entry) do %>
   <%= vite_javascript_tag 'superadmin_pages' %>
 <% end %>
 
-<%= render_vue_component('DashboardIndex', {
-  accountsCount: @accounts_count,
-  usersCount: @users_count,
-  inboxesCount: @inboxes_count,
-  conversationsCount: @conversations_count,
-  chartData: @data,
-  healthAccounts: @health_accounts,
-  healthSummary: @health_summary,
-  locale: I18n.locale
-}) %>
+<%= render layout: 'super_admin/shared/page_header', locals: { title: content_for(:title), description: t('super_admin.dashboard.description') } do %>
+  <% if @health_summary[:updated_at].present? %>
+    <span class="text-xs tabular-nums text-n-slate-11"><%= t('super_admin.dashboard.updated', time: @health_summary[:updated_at]) %></span>
+  <% end %>
+  <%= link_to super_admin_root_path(refresh: true), class: 'button button--secondary' do %>
+    <span class="i-lucide-refresh-cw size-4" aria-hidden="true"></span>
+    <%= t('super_admin.dashboard.refresh') %>
+  <% end %>
+<% end %>
+
+<section class="main-content__body">
+  <%= render_vue_component('DashboardIndex', {
+    chartData: @data,
+    healthAccounts: @health_accounts,
+    healthSummary: @health_summary
+  }) %>
+</section>

@@ -1,8 +1,23 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import BarChart from 'shared/components/charts/BarChart.vue';
+import {
+  DsCard,
+  DsChartFrame,
+  DsSegmented,
+  DsState,
+  DsStatGroup,
+  DsStatusDot,
+  DsTable,
+} from 'dashboard/components-next/ds';
+import {
+  chartSeries,
+  filterAccounts,
+  statusTone,
+} from '../../helpers/healthMatrix';
 
+// «Сводка»: the state of every clinic at a glance. The page title, the time of the data and the refresh
+// button are drawn by the server (app/views/super_admin/dashboard/index.html.erb), this is the body.
 const props = defineProps({
   componentData: {
     type: Object,
@@ -13,408 +28,220 @@ const props = defineProps({
 const { t } = useI18n();
 
 const searchQuery = ref('');
-const onlyNeedsAttention = ref(false);
+const view = ref('all');
 const showChart = ref(false);
-const isRefreshing = ref(false);
 
-const healthAccounts = computed(() => {
-  return props.componentData.healthAccounts || [];
-});
-
-const healthSummary = computed(() => {
-  return (
-    props.componentData.healthSummary || {
-      total_accounts: 0,
-      needs_attention: 0,
-      whatsapp_healthy: 0,
-      telephony_healthy: 0,
-      updated_at: '',
-    }
-  );
-});
-
+const healthAccounts = computed(() => props.componentData.healthAccounts || []);
+const healthSummary = computed(() => props.componentData.healthSummary || {});
 const incompleteSources = computed(
   () => healthSummary.value.incomplete_sources || []
 );
 
-const filteredAccounts = computed(() => {
-  return healthAccounts.value.filter(account => {
-    const query = searchQuery.value.toLowerCase().trim();
-    const matchesSearch =
-      !query ||
-      account.name.toLowerCase().includes(query) ||
-      account.id.toString().includes(query);
+const filteredAccounts = computed(() =>
+  filterAccounts(healthAccounts.value, {
+    query: searchQuery.value,
+    onlyNeedsAttention: view.value === 'attention',
+  })
+);
 
-    if (onlyNeedsAttention.value) {
-      return matchesSearch && account.needs_attention;
-    }
-    return matchesSearch;
-  });
-});
+const kpiItems = computed(() => [
+  {
+    key: 'clinics',
+    label: t('DASHBOARD.KPI.CLINICS'),
+    value: healthSummary.value.total_accounts ?? 0,
+    note: t('DASHBOARD.KPI.CLINICS_NOTE'),
+  },
+  {
+    key: 'attention',
+    label: t('DASHBOARD.KPI.ATTENTION'),
+    value: healthSummary.value.needs_attention ?? 0,
+    note: t('DASHBOARD.KPI.ATTENTION_NOTE'),
+  },
+  {
+    key: 'whatsapp',
+    label: t('DASHBOARD.KPI.WHATSAPP'),
+    value: healthSummary.value.whatsapp_healthy ?? 0,
+    note: t('DASHBOARD.KPI.WHATSAPP_NOTE'),
+  },
+  {
+    key: 'telephony',
+    label: t('DASHBOARD.KPI.TELEPHONY'),
+    value: healthSummary.value.telephony_healthy ?? 0,
+    note: t('DASHBOARD.KPI.TELEPHONY_NOTE'),
+  },
+]);
 
-const prepareData = sourceData => {
-  const labels = [];
-  const data = [];
-  (sourceData || []).forEach(item => {
-    labels.push(item[0]);
-    data.push(item[1]);
-  });
-  return {
-    labels,
-    datasets: [
-      {
-        type: 'bar',
-        backgroundColor: 'rgb(31, 147, 255)',
-        yAxisID: 'y',
-        label: t('HEALTH_MATRIX.CHART_LABEL'),
-        data: data,
-      },
-    ],
-  };
-};
+const viewOptions = computed(() => [
+  { value: 'all', label: t('DASHBOARD.TOOLBAR.VIEW_ALL') },
+  { value: 'attention', label: t('DASHBOARD.TOOLBAR.VIEW_ATTENTION') },
+]);
 
-const chartData = computed(() => {
-  return prepareData(props.componentData.chartData);
-});
+const columns = computed(() => [
+  { key: 'name', label: t('DASHBOARD.TABLE.CLINIC') },
+  { key: 'whatsapp', label: t('DASHBOARD.TABLE.WHATSAPP') },
+  { key: 'telephony', label: t('DASHBOARD.TABLE.TELEPHONY') },
+  { key: 'medelement', label: t('DASHBOARD.TABLE.MEDELEMENT') },
+  { key: 'failed_messages', label: t('DASHBOARD.TABLE.STUCK') },
+  { key: 'actions', label: t('DASHBOARD.TABLE.ACTIONS'), align: 'end' },
+]);
 
-const getStatusBadge = status => {
-  if (!status) return { text: '—', class: 'bg-n-slate-5 text-n-slate-11' };
-  switch (status.state) {
-    case 'healthy':
-      return {
-        text: status.label,
-        class: 'bg-n-teal-3 text-n-teal-11 border-n-teal-4',
-      };
-    case 'warning':
-      return {
-        text: status.label,
-        class: 'bg-n-amber-3 text-n-amber-11 border-n-amber-4',
-      };
-    case 'error':
-      return {
-        text: status.label,
-        class: 'bg-n-ruby-3 text-n-ruby-11 border-n-ruby-4 font-bold',
-      };
-    default:
-      return {
-        text: status.label,
-        class: 'bg-n-slate-5 text-n-slate-11 border-n-weak',
-      };
-  }
-};
+const chart = computed(() => chartSeries(props.componentData.chartData));
+const series = computed(() => [
+  {
+    key: 'conversations',
+    label: t('DASHBOARD.CHART.SERIES'),
+    values: chart.value.values,
+  },
+]);
 
-const refreshData = () => {
-  isRefreshing.value = true;
-  window.location.href = '/super_admin?refresh=true';
-};
+const clinicUrl = account => `/super_admin/accounts/${account.id}`;
 </script>
 
 <template>
-  <div class="w-full h-full p-6 bg-n-slate-3/50">
-    <!-- Header -->
-    <header class="mb-6 flex flex-wrap items-center justify-between gap-4">
-      <div>
-        <h1 class="text-2xl font-bold text-n-slate-12 tracking-tight">
-          {{ t('HEALTH_MATRIX.TITLE') }}
-        </h1>
-        <p class="text-sm text-n-slate-11 mt-1">
-          {{ t('HEALTH_MATRIX.SUBTITLE') }}
-        </p>
-      </div>
-
-      <div class="flex items-center gap-2">
-        <span
-          v-if="healthSummary.updated_at"
-          class="text-xs text-n-slate-10 font-mono mr-1"
-        >
-          {{ t('HEALTH_MATRIX.UPDATED', { time: healthSummary.updated_at }) }}
-        </span>
-
-        <button
-          class="reset-base px-3.5 py-1.5 text-xs font-medium rounded-lg border border-n-strong bg-n-solid-2 text-n-slate-12 hover:bg-n-alpha-1 transition shadow-sm flex items-center gap-1.5"
-          :disabled="isRefreshing"
-          @click="refreshData"
-        >
-          <span :class="{ 'animate-spin': isRefreshing }">{{ '🔄' }}</span>
-          <span>{{ t('HEALTH_MATRIX.REFRESH') }}</span>
-        </button>
-
-        <button
-          class="reset-base px-3.5 py-1.5 text-xs font-medium rounded-lg border border-n-strong bg-n-solid-2 text-n-slate-12 hover:bg-n-alpha-1 transition shadow-sm"
-          @click="showChart = !showChart"
-        >
-          {{
-            showChart
-              ? t('HEALTH_MATRIX.CHART_HIDE')
-              : t('HEALTH_MATRIX.CHART_SHOW')
-          }}
-        </button>
-      </div>
-    </header>
-
+  <div class="flex min-w-0 flex-col gap-5" data-testid="health-dashboard">
     <div
       v-if="incompleteSources.length"
-      class="mb-6 px-4 py-3 text-sm rounded-lg border border-n-amber-4 bg-n-amber-2 text-n-amber-11"
+      class="admin-notice admin-notice--amber"
+      role="status"
       data-testid="health-incomplete-sources"
     >
       {{
-        t('HEALTH_MATRIX.INCOMPLETE', { sources: incompleteSources.join(', ') })
+        t('DASHBOARD.INCOMPLETE', { sources: incompleteSources.join(', ') })
       }}
     </div>
 
-    <!-- KPI Summary Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-      <div
-        class="bg-n-solid-2 p-5 rounded-xl border border-n-weak shadow-sm flex flex-col justify-between"
-      >
+    <DsStatGroup :items="kpiItems" data-testid="health-kpi">
+      <template #value="{ item }">
         <span
-          class="text-xs font-semibold text-n-slate-11 uppercase tracking-wider"
-          >{{ t('HEALTH_MATRIX.KPI.TOTAL_ACCOUNTS') }}</span
-        >
-        <div class="text-3xl font-extrabold text-n-slate-12 mt-2">
-          {{ healthSummary.total_accounts }}
-        </div>
-        <span class="text-[11px] text-n-slate-10 mt-1">{{
-          t('HEALTH_MATRIX.KPI.TOTAL_ACCOUNTS_HINT')
-        }}</span>
-      </div>
-
-      <div
-        class="p-5 rounded-xl border shadow-sm flex flex-col justify-between cursor-pointer transition"
-        :class="
-          healthSummary.needs_attention > 0
-            ? 'bg-n-ruby-2/80 border-n-ruby-4 hover:bg-n-ruby-3/70'
-            : 'bg-n-solid-2 border-n-weak'
-        "
-        @click="onlyNeedsAttention = !onlyNeedsAttention"
-      >
-        <div class="flex items-center justify-between">
-          <span
-            class="text-xs font-semibold text-n-ruby-11 uppercase tracking-wider"
-            >{{ t('HEALTH_MATRIX.KPI.NEEDS_ATTENTION') }}</span
-          >
-          <span
-            v-if="healthSummary.needs_attention > 0"
-            class="inline-block w-2.5 h-2.5 rounded-full bg-n-ruby-9 animate-ping"
-          />
-        </div>
-        <div class="text-3xl font-extrabold text-n-ruby-11 mt-2">
-          {{ healthSummary.needs_attention }}
-        </div>
-        <span class="text-[11px] text-n-ruby-11 mt-1 font-medium">
-          {{
-            onlyNeedsAttention
-              ? t('HEALTH_MATRIX.KPI.FILTER_ACTIVE_HINT')
-              : t('HEALTH_MATRIX.KPI.NEEDS_ATTENTION_HINT')
-          }}
-        </span>
-      </div>
-
-      <div
-        class="bg-n-solid-2 p-5 rounded-xl border border-n-weak shadow-sm flex flex-col justify-between"
-      >
-        <span
-          class="text-xs font-semibold text-n-slate-11 uppercase tracking-wider"
-          >{{ t('HEALTH_MATRIX.KPI.WHATSAPP_HEALTHY') }}</span
-        >
-        <div class="text-3xl font-extrabold text-n-teal-11 mt-2">
-          {{ healthSummary.whatsapp_healthy }}
-        </div>
-        <span class="text-[11px] text-n-slate-10 mt-1">{{
-          t('HEALTH_MATRIX.KPI.WHATSAPP_HEALTHY_HINT')
-        }}</span>
-      </div>
-
-      <div
-        class="bg-n-solid-2 p-5 rounded-xl border border-n-weak shadow-sm flex flex-col justify-between"
-      >
-        <span
-          class="text-xs font-semibold text-n-slate-11 uppercase tracking-wider"
-          >{{ t('HEALTH_MATRIX.KPI.TELEPHONY_HEALTHY') }}</span
-        >
-        <div class="text-3xl font-extrabold text-n-blue-11 mt-2">
-          {{ healthSummary.telephony_healthy }}
-        </div>
-        <span class="text-[11px] text-n-slate-10 mt-1">{{
-          t('HEALTH_MATRIX.KPI.TELEPHONY_HEALTHY_HINT')
-        }}</span>
-      </div>
-    </div>
-
-    <!-- Filter & Search Toolbar -->
-    <div
-      class="bg-n-solid-2 p-4 rounded-xl border border-n-weak shadow-sm mb-6 flex flex-wrap items-center justify-between gap-4"
-    >
-      <div class="flex items-center gap-3 flex-1 min-w-[280px]">
-        <div class="relative w-full max-w-md">
-          <input
-            v-model="searchQuery"
-            type="text"
-            :placeholder="t('HEALTH_MATRIX.TOOLBAR.SEARCH_PLACEHOLDER')"
-            class="w-full"
-          />
-        </div>
-
-        <button
-          class="reset-base px-4 py-2 text-xs font-semibold rounded-lg border transition flex items-center gap-1.5"
           :class="
-            onlyNeedsAttention
-              ? 'bg-n-ruby-10 text-white border-n-ruby-10 shadow-sm'
-              : 'bg-n-slate-5 text-n-slate-12 border-n-weak hover:bg-n-alpha-2'
+            item.key === 'attention' && item.value > 0 ? 'text-n-ruby-11' : ''
           "
-          @click="onlyNeedsAttention = !onlyNeedsAttention"
+          >{{ item.value }}</span
         >
-          <span>{{ '⚠️' }}</span>
-          <span>{{
-            onlyNeedsAttention
-              ? t('HEALTH_MATRIX.TOOLBAR.FILTER_ON')
-              : t('HEALTH_MATRIX.TOOLBAR.FILTER_OFF')
-          }}</span>
+      </template>
+    </DsStatGroup>
+
+    <DsCard
+      :padded="false"
+      :title="t('DASHBOARD.TABLE.TITLE')"
+      :subtitle="
+        t('DASHBOARD.TABLE.SHOWING', {
+          shown: filteredAccounts.length,
+          total: healthAccounts.length,
+        })
+      "
+    >
+      <div class="flex flex-wrap items-center gap-3 px-5 pb-4">
+        <input
+          v-model="searchQuery"
+          type="search"
+          class="min-w-0 flex-1 basis-64 sm:max-w-sm"
+          :placeholder="t('DASHBOARD.TOOLBAR.SEARCH_PLACEHOLDER')"
+          :aria-label="t('DASHBOARD.TOOLBAR.SEARCH_PLACEHOLDER')"
+        />
+        <DsSegmented
+          v-model="view"
+          :options="viewOptions"
+          :label="t('DASHBOARD.TOOLBAR.VIEW')"
+        />
+      </div>
+
+      <DsState
+        v-if="!filteredAccounts.length"
+        state="empty"
+        compact
+        :title="t('DASHBOARD.TABLE.EMPTY_TITLE')"
+        :description="t('DASHBOARD.TABLE.EMPTY_HINT')"
+      />
+      <DsTable
+        v-else
+        :columns="columns"
+        :rows="filteredAccounts"
+        :caption="t('DASHBOARD.TABLE.TITLE')"
+      >
+        <template #cell-name="{ row }">
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span class="text-xs tabular-nums text-n-slate-11">
+              {{ `#${row.id}` }}
+            </span>
+            <a
+              :href="clinicUrl(row)"
+              class="font-medium text-n-slate-12 hover:text-n-brand hover:underline"
+            >
+              {{ row.name }}
+            </a>
+            <span
+              v-if="row.status === 'suspended'"
+              class="admin-badge admin-badge--amber"
+            >
+              {{ t('DASHBOARD.TABLE.SUSPENDED') }}
+            </span>
+          </div>
+        </template>
+
+        <template #cell-whatsapp="{ value }">
+          <DsStatusDot
+            :status="statusTone(value?.state)"
+            :label="value?.label || ''"
+          />
+        </template>
+
+        <template #cell-telephony="{ value }">
+          <DsStatusDot
+            :status="statusTone(value?.state)"
+            :label="value?.label || ''"
+          />
+        </template>
+
+        <template #cell-medelement="{ value }">
+          <DsStatusDot
+            :status="statusTone(value?.state)"
+            :label="value?.label || ''"
+          />
+        </template>
+
+        <template #cell-failed_messages="{ value }">
+          <DsStatusDot
+            v-if="value > 0"
+            status="bad"
+            :label="t('DASHBOARD.TABLE.STUCK_COUNT', { count: value })"
+          />
+          <span v-else class="text-n-slate-11">{{ 0 }}</span>
+        </template>
+
+        <template #cell-actions="{ row }">
+          <a
+            :href="clinicUrl(row)"
+            class="text-sm font-medium text-n-brand hover:text-n-brand hover:underline"
+          >
+            {{ t('DASHBOARD.TABLE.OPEN') }}
+          </a>
+        </template>
+      </DsTable>
+    </DsCard>
+
+    <div class="flex flex-col gap-3">
+      <div>
+        <button
+          type="button"
+          class="button button--secondary"
+          :aria-expanded="showChart"
+          data-testid="health-chart-toggle"
+          @click="showChart = !showChart"
+        >
+          <span class="i-lucide-chart-column size-4" aria-hidden="true" />
+          {{ showChart ? t('DASHBOARD.CHART.HIDE') : t('DASHBOARD.CHART.SHOW') }}
         </button>
       </div>
-
-      <div class="text-xs text-n-slate-11 font-medium">
-        {{
-          t('HEALTH_MATRIX.TOOLBAR.SHOWING', {
-            shown: filteredAccounts.length,
-            total: healthAccounts.length,
-          })
-        }}
-      </div>
-    </div>
-
-    <!-- Health Matrix Table -->
-    <div
-      class="bg-n-solid-2 rounded-xl border border-n-weak shadow-sm overflow-hidden mb-8"
-    >
-      <table class="w-full text-left text-sm">
-        <thead
-          class="bg-n-slate-5/75 text-n-slate-11 text-xs uppercase font-semibold border-b border-n-weak"
-        >
-          <tr>
-            <th class="px-5 py-3.5">{{ t('HEALTH_MATRIX.TABLE.ACCOUNT') }}</th>
-            <th class="px-4 py-3.5">{{ t('HEALTH_MATRIX.TABLE.WHATSAPP') }}</th>
-            <th class="px-4 py-3.5">
-              {{ t('HEALTH_MATRIX.TABLE.TELEPHONY') }}
-            </th>
-            <th class="px-4 py-3.5">
-              {{ t('HEALTH_MATRIX.TABLE.MEDELEMENT') }}
-            </th>
-            <th class="px-4 py-3.5">{{ t('HEALTH_MATRIX.TABLE.STUCK') }}</th>
-            <th class="px-4 py-3.5 text-right">
-              {{ t('HEALTH_MATRIX.TABLE.ACTIONS') }}
-            </th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-n-weak">
-          <tr
-            v-for="acc in filteredAccounts"
-            :key="acc.id"
-            class="hover:bg-n-alpha-1 transition-colors"
-            :class="acc.needs_attention ? 'bg-n-ruby-2/20' : ''"
-          >
-            <!-- Clinic Info -->
-            <td class="px-5 py-4">
-              <div class="flex items-center gap-2">
-                <span class="font-mono text-xs text-n-slate-10">{{
-                  `#${acc.id}`
-                }}</span>
-                <a
-                  :href="`/super_admin/accounts/${acc.id}`"
-                  class="font-semibold text-n-slate-12 hover:text-n-brand hover:underline"
-                >
-                  {{ acc.name }}
-                </a>
-                <span
-                  v-if="acc.status === 'suspended'"
-                  class="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-n-slate-7 text-n-slate-12"
-                >
-                  {{ t('HEALTH_MATRIX.TABLE.SUSPENDED') }}
-                </span>
-              </div>
-            </td>
-
-            <!-- WhatsApp -->
-            <td class="px-4 py-4">
-              <span
-                class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border"
-                :class="getStatusBadge(acc.whatsapp).class"
-              >
-                {{ getStatusBadge(acc.whatsapp).text }}
-              </span>
-            </td>
-
-            <!-- Telephony & Janus -->
-            <td class="px-4 py-4">
-              <span
-                class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border"
-                :class="getStatusBadge(acc.telephony).class"
-              >
-                {{ getStatusBadge(acc.telephony).text }}
-              </span>
-            </td>
-
-            <!-- MedElement -->
-            <td class="px-4 py-4">
-              <span
-                class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border"
-                :class="getStatusBadge(acc.medelement).class"
-              >
-                {{ getStatusBadge(acc.medelement).text }}
-              </span>
-            </td>
-
-            <!-- Stuck Messages -->
-            <td class="px-4 py-4">
-              <span
-                v-if="acc.failed_messages > 0"
-                class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-n-ruby-3 text-n-ruby-11 border border-n-ruby-4"
-              >
-                {{
-                  t('HEALTH_MATRIX.TABLE.STUCK_COUNT', {
-                    count: acc.failed_messages,
-                  })
-                }}
-              </span>
-              <span v-else class="text-xs text-n-slate-10">{{
-                acc.failed_messages || 0
-              }}</span>
-            </td>
-
-            <!-- Action -->
-            <td class="px-4 py-4 text-right">
-              <a
-                :href="`/super_admin/accounts/${acc.id}`"
-                class="text-xs font-medium text-n-brand hover:underline"
-              >
-                {{ t('HEALTH_MATRIX.TABLE.SETTINGS') }}
-              </a>
-            </td>
-          </tr>
-
-          <tr v-if="filteredAccounts.length === 0">
-            <td colspan="6" class="px-5 py-12 text-center text-n-slate-10">
-              <div class="text-lg">
-                {{ t('HEALTH_MATRIX.TABLE.EMPTY_TITLE') }}
-              </div>
-              <p class="text-xs mt-1">
-                {{ t('HEALTH_MATRIX.TABLE.EMPTY_HINT') }}
-              </p>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Collapsible Chart -->
-    <div
-      v-if="showChart"
-      class="bg-n-solid-2 p-6 rounded-xl border border-n-weak shadow-sm mb-6"
-    >
-      <h2 class="text-base font-bold text-n-slate-12 mb-4">
-        {{ t('HEALTH_MATRIX.CHART_TITLE') }}
-      </h2>
-      <BarChart class="w-full max-h-[400px]" :collection="chartData" />
+      <DsChartFrame
+        v-if="showChart"
+        :title="t('DASHBOARD.CHART.TITLE')"
+        :subtitle="t('DASHBOARD.CHART.SUBTITLE')"
+        :labels="chart.labels"
+        :series="series"
+        :category-label="t('DASHBOARD.CHART.CATEGORY')"
+        :height="200"
+      />
     </div>
   </div>
 </template>

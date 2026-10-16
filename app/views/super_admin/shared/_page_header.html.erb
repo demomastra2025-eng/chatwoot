@@ -1,0 +1,29 @@
+<%#
+# Page header
+
+The header of a super admin page that is not drawn by Administrate: the title,
+an optional line under it and the actions on the right (they drop under the
+title on a narrow screen). It is the same markup as the headers of the index,
+show and form templates, so every page starts alike.
+
+Render it with a block for the actions (an empty block when there are none):
+`render layout: 'super_admin/shared/page_header', locals: { title:, description: } do ... end`.
+
+## Local variables:
+
+- `title`: the page title (the `<h1>`).
+- `description`: a line under the title (optional).
+%>
+<% actions = yield %>
+<header class="main-content__header" role="banner">
+  <div class="main-content__heading">
+    <h1 class="main-content__page-title" id="page-title"><%= title %></h1>
+    <% if local_assigns[:description].present? %>
+      <p class="main-content__description"><%= description %></p>
+    <% end %>
+  </div>
+
+  <% if actions.present? %>
+    <div class="main-content__actions"><%= actions %></div>
+  <% end %>
+</header>

@@ -1,43 +1,44 @@
 {
-  "HEALTH_MATRIX": {
-    "TITLE": "Матрица здоровья клиентов (OneLink Health Matrix)",
-    "SUBTITLE": "Диагностика WhatsApp, телефонии, шлюзов Janus и интеграции МИС МедЭлемент в реальном времени",
-    "UPDATED": "Обновлено: {time}",
-    "REFRESH": "Обновить",
-    "CHART_SHOW": "Показать график обращений",
-    "CHART_HIDE": "Скрыть график обращений",
-    "CHART_TITLE": "График обращений за 30 дней",
-    "CHART_LABEL": "Обращения",
-    "INCOMPLETE": "Часть данных недоступна ({sources}): строки матрицы могут быть неполными.",
+  "DASHBOARD": {
+    "INCOMPLETE": "Часть данных недоступна ({sources}): строки таблицы могут быть неполными.",
     "KPI": {
-      "TOTAL_ACCOUNTS": "Всего аккаунтов",
-      "TOTAL_ACCOUNTS_HINT": "зарегистрировано в системе",
-      "NEEDS_ATTENTION": "Требуют внимания",
-      "NEEDS_ATTENTION_HINT": "Сбой WhatsApp, Janus или зависшие сообщения",
-      "FILTER_ACTIVE_HINT": "Фильтр активен (нажмите для сброса)",
-      "WHATSAPP_HEALTHY": "WhatsApp в норме",
-      "WHATSAPP_HEALTHY_HINT": "линии с действующей сессией",
-      "TELEPHONY_HEALTHY": "Телефония OK",
-      "TELEPHONY_HEALTHY_HINT": "линии с привязкой и Janus"
-    },
-    "TOOLBAR": {
-      "SEARCH_PLACEHOLDER": "Поиск аккаунта по названию или ID...",
-      "FILTER_OFF": "Фильтр: только с проблемами",
-      "FILTER_ON": "Показаны только с проблемами",
-      "SHOWING": "Отображается: {shown} из {total}"
+      "CLINICS": "Всего клиник",
+      "CLINICS_NOTE": "зарегистрировано на платформе",
+      "ATTENTION": "Требуют внимания",
+      "ATTENTION_NOTE": "сбой WhatsApp, телефонии или МедЭлемента, либо зависшие сообщения",
+      "WHATSAPP": "WhatsApp в норме",
+      "WHATSAPP_NOTE": "клиник с рабочим подключением",
+      "TELEPHONY": "Телефония в норме",
+      "TELEPHONY_NOTE": "клиник с настроенными линиями и Janus"
     },
     "TABLE": {
-      "ACCOUNT": "ID / Аккаунт",
+      "TITLE": "Состояние клиник",
+      "SHOWING": "Показано {shown} из {total}",
+      "CLINIC": "Клиника",
       "WHATSAPP": "WhatsApp",
-      "TELEPHONY": "Телефония & Janus",
+      "TELEPHONY": "Телефония и Janus",
       "MEDELEMENT": "МедЭлемент (МИС)",
       "STUCK": "Зависшие сообщения",
       "ACTIONS": "Действия",
-      "SUSPENDED": "Приостановлен",
-      "STUCK_COUNT": "⚠️ {count} застрявших",
-      "SETTINGS": "Настройки →",
-      "EMPTY_TITLE": "Аккаунтов не найдено",
-      "EMPTY_HINT": "Попробуйте изменить поисковый запрос или сбросить фильтр проблем"
+      "SUSPENDED": "Заблокирована",
+      "STUCK_COUNT": "Зависших: {count}",
+      "OPEN": "Открыть",
+      "EMPTY_TITLE": "Клиники не найдены",
+      "EMPTY_HINT": "Измените запрос или покажите все клиники."
+    },
+    "TOOLBAR": {
+      "SEARCH_PLACEHOLDER": "Поиск по названию или номеру клиники",
+      "VIEW": "Какие клиники показывать",
+      "VIEW_ALL": "Все",
+      "VIEW_ATTENTION": "Требуют внимания"
+    },
+    "CHART": {
+      "SHOW": "Показать график обращений",
+      "HIDE": "Скрыть график обращений",
+      "TITLE": "Обращения за 30 дней",
+      "SUBTITLE": "по всем клиникам",
+      "SERIES": "Обращения",
+      "CATEGORY": "День"
     }
   }
 }

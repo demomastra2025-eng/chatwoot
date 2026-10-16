@@ -1,13 +1,9 @@
-import 'chart.js';
 import { createApp, h } from 'vue';
-import VueDOMPurifyHTML from 'vue-dompurify-html';
 import { createSuperAdminI18n } from '../superadmin_pages/i18n';
 
-import PlaygroundIndex from '../superadmin_pages/views/playground/Index.vue';
 import DashboardIndex from '../superadmin_pages/views/dashboard/Index.vue';
 
 const ComponentMapping = {
-  PlaygroundIndex: PlaygroundIndex,
   DashboardIndex: DashboardIndex,
 };
 
@@ -21,8 +17,7 @@ const renderComponent = (componentName, props) => {
     },
   });
 
-  app.use(VueDOMPurifyHTML);
-  app.use(createSuperAdminI18n(props?.locale));
+  app.use(createSuperAdminI18n());
   app.mount('#app');
 };
 
