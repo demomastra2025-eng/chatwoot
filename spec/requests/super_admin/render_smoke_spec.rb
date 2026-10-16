@@ -285,7 +285,7 @@ RSpec.describe 'Super Admin render smoke', type: :request do
   # The organization pages and the account pages next to them, for an organization with and without requisites, with and
   # without accounts, and for an account with and without an organization.
   describe 'the organization pages' do
-    def open_pages(*paths)
+    def expect_pages_open(*paths)
       paths.each do |path|
         get path
         expect_shell(path)
@@ -295,7 +295,7 @@ RSpec.describe 'Super Admin render smoke', type: :request do
     it 'open for an organization without requisites and without accounts' do
       organization = create(:organization)
 
-      open_pages('/super_admin/organizations', "/super_admin/organizations/#{organization.id}",
+      expect_pages_open('/super_admin/organizations', "/super_admin/organizations/#{organization.id}",
                  "/super_admin/organizations/#{organization.id}/edit", '/super_admin/organizations/new')
     end
 
@@ -311,14 +311,14 @@ RSpec.describe 'Super Admin render smoke', type: :request do
                        custom_attributes: { 'marked_for_deletion_at' => 3.days.from_now.iso8601 })
       create(:account, name: 'Free account')
 
-      open_pages('/super_admin/organizations', "/super_admin/organizations/#{organization.id}", "/super_admin/organizations/#{organization.id}/edit")
+      expect_pages_open('/super_admin/organizations', "/super_admin/organizations/#{organization.id}", "/super_admin/organizations/#{organization.id}/edit")
       expect(page.css('input[name="organization[bin]"]').first['value']).to eq(organization.bin)
     end
 
     it 'open for a search, a sort and a search without results' do
       create(:organization, :with_requisites)
 
-      open_pages('/super_admin/organizations?search=%D0%9E%D1%80%D0%B3', '/super_admin/organizations?search=nothing-like-this',
+      expect_pages_open('/super_admin/organizations?search=%D0%9E%D1%80%D0%B3', '/super_admin/organizations?search=nothing-like-this',
                  '/super_admin/organizations?organization%5Border%5D=bin&organization%5Bdirection%5D=desc')
     end
 
@@ -328,7 +328,7 @@ RSpec.describe 'Super Admin render smoke', type: :request do
       free = create(:account, name: 'Not linked')
 
       [linked, free].each do |account|
-        open_pages('/super_admin/accounts', "/super_admin/accounts/#{account.id}", "/super_admin/accounts/#{account.id}/edit")
+        expect_pages_open('/super_admin/accounts', "/super_admin/accounts/#{account.id}", "/super_admin/accounts/#{account.id}/edit")
       end
     end
   end

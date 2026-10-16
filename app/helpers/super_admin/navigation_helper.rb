@@ -21,24 +21,17 @@ module SuperAdmin::NavigationHelper
     Rails.env.upcase
   end
 
+  # The names of the resources in the sidebar and in the titles; the Russian text of each is in `super_admin.resources`
+  RESOURCE_LABELS = {
+    'organizations' => 'Организации', 'organization' => 'Организация', 'accounts' => 'Аккаунты', 'account' => 'Аккаунт',
+    'users' => 'Пользователи', 'user' => 'Пользователь', 'platform_apps' => 'Платформенные приложения',
+    'platform_app' => 'Платформенное приложение', 'platform_banners' => 'Баннеры платформы',
+    'platform_banner' => 'Баннер платформы', 'agent_bots' => 'AI-боты', 'agent_bot' => 'AI-бот'
+  }.freeze
+
   def super_admin_resource_label(resource)
     resource_name = resource.respond_to?(:resource) ? resource.resource.to_s : resource.to_s
-
-    labels = {
-      'organizations' => I18n.t('super_admin.resources.organizations', default: 'Организации'),
-      'organization' => I18n.t('super_admin.resources.organization', default: 'Организация'),
-      'accounts' => I18n.t('super_admin.resources.accounts', default: 'Аккаунты'),
-      'account' => I18n.t('super_admin.resources.account', default: 'Аккаунт'),
-      'users' => I18n.t('super_admin.resources.users', default: 'Пользователи'),
-      'user' => I18n.t('super_admin.resources.user', default: 'Пользователь'),
-      'platform_apps' => I18n.t('super_admin.resources.platform_apps', default: 'Платформенные приложения'),
-      'platform_app' => I18n.t('super_admin.resources.platform_app', default: 'Платформенное приложение'),
-      'platform_banners' => I18n.t('super_admin.resources.platform_banners', default: 'Баннеры платформы'),
-      'platform_banner' => I18n.t('super_admin.resources.platform_banner', default: 'Баннер платформы'),
-      'agent_bots' => I18n.t('super_admin.resources.agent_bots', default: 'AI-боты'),
-      'agent_bot' => I18n.t('super_admin.resources.agent_bot', default: 'AI-бот')
-    }
-    return labels[resource_name] if labels.key?(resource_name)
+    return I18n.t("super_admin.resources.#{resource_name}", default: RESOURCE_LABELS[resource_name]) if RESOURCE_LABELS.key?(resource_name)
 
     model_name = resource_name.singularize.classify.safe_constantize&.model_name
     return model_name.human(count: 2) if model_name.present?

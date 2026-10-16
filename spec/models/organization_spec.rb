@@ -48,7 +48,7 @@ RSpec.describe Organization do
       expect(organization.bin).to eq('980140000123')
     end
 
-    ['98014000012', '9801400001234', '98014000012a', '9801-4000-0123', 'БИН'].each do |value|
+    %w[98014000012 9801400001234 98014000012a 9801-4000-0123 БИН].each do |value|
       it "refuses #{value.inspect}" do
         organization = build(:organization, bin: value)
 

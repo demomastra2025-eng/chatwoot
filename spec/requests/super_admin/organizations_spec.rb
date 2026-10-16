@@ -34,26 +34,29 @@ RSpec.describe 'Super Admin organizations', type: :request do
   describe 'for someone who is not a super admin' do
     let!(:organization) { create(:organization) }
 
-    it 'sends every page and action to the sign-in page and changes nothing' do
+    it 'sends the list and the card to the sign-in page' do
       get '/super_admin/organizations'
       expect(response).to have_http_status(:redirect)
       expect(response.location).to include('/super_admin/sign_in')
 
       get "/super_admin/organizations/#{organization.id}"
       expect(response).to have_http_status(:redirect)
+      expect(response.location).to include('/super_admin/sign_in')
+    end
 
+    it 'does not create, delete or link anything' do
       post '/super_admin/organizations', params: { organization: { name: 'Чужая' } }
       expect(response).to have_http_status(:redirect)
-      expect(Organization.count).to eq(1)
 
       account = create(:account)
       post "/super_admin/organizations/#{organization.id}/link_account", params: { account_id: account.id }
       expect(response).to have_http_status(:redirect)
-      expect(account.reload.organization).to be_nil
 
       delete "/super_admin/organizations/#{organization.id}"
       expect(response).to have_http_status(:redirect)
-      expect(Organization.count).to eq(1)
+
+      expect(Organization.pluck(:id)).to eq([organization.id])
+      expect(account.reload.organization).to be_nil
     end
 
     it 'does not let a signed-in operator in either' do
@@ -94,8 +97,8 @@ RSpec.describe 'Super Admin organizations', type: :request do
       end
 
       it 'shows the requisites, the contract, the totals of the accounts and the creation date in Astana time' do
-        organization = create(:organization, :with_requisites, name: 'Алатау Медикал', legal_name: 'ТОО Алатау Медикал',
-                                                                bin: '980140000123', created_at: Time.utc(2026, 10, 15, 20, 30))
+        organization = create(:organization, :with_requisites, name: 'Алатау Медикал', legal_name: 'ТОО Алатау Медикал', bin: '980140000123',
+                                                                created_at: Time.utc(2026, 10, 15, 20, 30))
         account_with(organization, name: 'Филиал 1', operators: 2, channels: 1)
         account_with(organization, name: 'Филиал 2', operators: 1, channels: 3)
         create(:account, name: 'Чужой аккаунт')
@@ -221,8 +224,8 @@ RSpec.describe 'Super Admin organizations', type: :request do
         get "/super_admin/organizations/#{organization.id}"
 
         requisites = text(page.at_css('[data-testid="requisites-block"]'))
-        expect(requisites).to include('Реквизиты', 'Юридическое название', 'ТОО Алатау Медикал', 'БИН', '980140000123', 'Адрес', 'Алматы, ул. Абая, 1',
-                                      'Телефон', 'E-mail для счетов', 'billing@example.test')
+        expect(requisites).to include('Реквизиты', 'Юридическое название', 'ТОО Алатау Медикал', 'БИН', '980140000123', 'Адрес',
+                                      'Алматы, ул. Абая, 1', 'Телефон', 'E-mail для счетов', 'billing@example.test')
         contract = text(page.at_css('[data-testid="contract-block"]'))
         expect(contract).to include('Договор', 'Номер', 'ДГ-12', 'Дата', '15.03.2026', 'Заметки', 'Договор на год.')
         expect(text(page.at_css('[data-testid="accounts-block"] h2'))).to eq('Аккаунты')
@@ -237,28 +240,33 @@ RSpec.describe 'Super Admin organizations', type: :request do
         expect(text(page.at_css('[data-testid="contract-block"]'))).to include('—')
       end
 
-      it 'lists the accounts with a link, plan chips, operators, channels, status and totals' do
+      # The card of an organization with two accounts (one with a plan, one suspended) next to an account of nobody
+      def open_card_with_accounts
         Accounts::ApplyPlan.new(account: account_with(organization, name: 'Филиал 1', operators: 2, channels: 1), modules: []).call
-        second = account_with(organization, name: 'Филиал 2', operators: 1, channels: 3)
-        second.update!(limits: { 'agents' => 1 }, status: :suspended)
+        account_with(organization, name: 'Филиал 2', operators: 1, channels: 3).update!(limits: { 'agents' => 1 }, status: :suspended)
         create(:account, name: 'Чужой аккаунт')
 
         get "/super_admin/organizations/#{organization.id}"
+        page.css('[data-testid="accounts-block"] tbody tr').map { |row| row.css('td').map { |cell| text(cell) } }
+      end
 
-        rows = page.css('[data-testid="accounts-block"] tbody tr')
-        expect(rows.size).to eq(2)
-        first_cells = rows.first.css('td').map { |cell| text(cell) }
-        expect(first_cells[0]).to include('Филиал 1')
-        expect(rows.first.at_css('td a')['href']).to start_with('/super_admin/accounts/')
-        expect(first_cells[1]).to include('База')
-        expect(first_cells[2]).to start_with('2')
-        expect(first_cells[3]).to eq('1')
-        expect(first_cells[4]).to eq('Активен')
-        second_cells = rows.last.css('td').map { |cell| text(cell) }
-        expect(second_cells[2]).to eq('1 / 1')
-        expect(second_cells[3]).to eq('3')
-        expect(second_cells[4]).to eq('Заблокирован')
+      it 'lists the accounts of the organization only, by name, each linking to its account' do
+        cells = open_card_with_accounts
+
+        expect(cells.size).to eq(2)
+        expect(cells.first[0]).to include('Филиал 1')
+        expect(page.at_css('[data-testid="accounts-block"] tbody td a')['href']).to start_with('/super_admin/accounts/')
         expect(response.body).not_to include('Чужой аккаунт</a>')
+      end
+
+      it 'shows the plan chips, the operators used and their limit, the channels and the status of each account' do
+        first, second = open_card_with_accounts
+
+        expect(first[1]).to include('База')
+        expect(first[2]).to start_with('2')
+        expect(first[3]).to eq('1')
+        expect(first[4]).to eq('Активен')
+        expect(second[2..4]).to eq(['1 / 1', '3', 'Заблокирован'])
       end
 
       it 'adds up the operators, their limits and the channels in the totals row' do
@@ -327,11 +335,18 @@ RSpec.describe 'Super Admin organizations', type: :request do
     end
 
     describe 'creating' do
-      it 'shows the form with Russian labels and the BIN hint' do
+      it 'shows the form with a Russian title' do
         get '/super_admin/organizations/new'
 
         expect(response).to have_http_status(:ok)
         expect(text(page.at_css('h1'))).to eq('Новая организация')
+        expect(page.at_css('input[type="submit"]')['value']).to eq('Создать')
+        expect(response.body).not_to include('translation missing')
+      end
+
+      it 'labels the fields in Russian, in two sections, with the BIN hint' do
+        get '/super_admin/organizations/new'
+
         labels = page.css('label').map { |label| text(label) }
         expect(labels).to include('Название', 'Юридическое название', 'БИН', 'Адрес', 'Телефон', 'E-mail для счетов', 'Номер договора',
                                   'Дата договора', 'Заметки')
@@ -339,7 +354,6 @@ RSpec.describe 'Super Admin organizations', type: :request do
         expect(page.css('.field-unit__hint').map { |hint| text(hint) }).to include('12 цифр')
         expect(page.at_css('input[type="date"][name="organization[contract_date]"]')).to be_present
         expect(page.at_css('textarea[name="organization[notes]"]')).to be_present
-        expect(response.body).not_to include('translation missing')
       end
 
       it 'saves the organization, normalizes the BIN and records the creation' do
