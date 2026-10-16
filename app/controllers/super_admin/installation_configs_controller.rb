@@ -1,5 +1,11 @@
 class SuperAdmin::InstallationConfigsController < SuperAdmin::ApplicationController
+  # Configs that have a page of their own and must not be edited as raw text here: the platform switch of the channels
+  # («Каналы») is a JSON map that the generic editor would let anyone break.
+  RESERVED_CONFIG_NAMES = [Channels::PlatformVisibility::CONFIG_NAME].freeze
+
   rescue_from ActiveRecord::RecordNotUnique, :with => :invalid_action_perfomed
+  before_action :reject_reserved_name, only: %i[create update]
+
   # Overwrite any of the RESTful controller actions to implement custom behavior
   # For example, you may want to send an email after a foo is updated.
   #
@@ -22,7 +28,7 @@ class SuperAdmin::InstallationConfigsController < SuperAdmin::ApplicationControl
   # this will be used to set the records shown on the `index` action.
   #
   def scoped_resource
-    resource_class.editable
+    resource_class.editable.where.not(name: RESERVED_CONFIG_NAMES)
   end
 
   # Override `resource_params` if you want to transform the submitted
@@ -44,4 +50,15 @@ class SuperAdmin::InstallationConfigsController < SuperAdmin::ApplicationControl
 
   # See https://administrate-prototype.herokuapp.com/customizing_controller_actions
   # for more information
+
+  private
+
+  # The list and the pages of a row never show a reserved config; this keeps a form from creating one or renaming another
+  # row into one.
+  def reject_reserved_name
+    name = params.dig(:installation_config, :name)
+    return unless name.is_a?(String) && RESERVED_CONFIG_NAMES.include?(name.strip.upcase)
+
+    redirect_to super_admin_installation_configs_path, alert: I18n.t('super_admin.installation_configs.reserved', name: name.strip)
+  end
 end
