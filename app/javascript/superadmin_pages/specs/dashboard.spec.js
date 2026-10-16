@@ -1,9 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
-import { mount } from '@vue/test-utils';
+import { config, mount } from '@vue/test-utils';
 import Index from '../views/dashboard/Index.vue';
 import ru from '../i18n/ru.json';
 import { createSuperAdminI18n } from '../i18n';
+
+// The page installs its own Russian i18n; the plugin of the global test setup (the operator app) must not be
+// installed next to it.
+config.global.plugins = [];
 
 const clinic = (id, name, extra = {}) => ({
   id,
