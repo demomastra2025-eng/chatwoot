@@ -53,6 +53,7 @@ RSpec.describe 'Super Admin Audits', type: :request do
       end
 
       it 'keeps the chosen filters in the form' do
+        Audited::Audit.create!(auditable: account, associated: account, action: 'apply_plan', audited_changes: {}, comment: 'super_admin')
         get '/super_admin/audits', params: { auditable_type: 'Account', audit_action: 'update', account_id: account.id }
         page = Nokogiri::HTML(response.body)
 

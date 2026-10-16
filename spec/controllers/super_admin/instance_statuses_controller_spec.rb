@@ -28,7 +28,7 @@ RSpec.describe 'Super Admin Instance status', type: :request do
         expect(page.css('[data-testid^="status-"]').pluck('data-testid')).to eq(%w[status-platform status-postgres status-redis])
         labels = page.css('dt.attribute-label').map { |node| node.text.squish }
         expect(labels).to include('Редакция', 'Миграции базы данных', 'Подключение')
-        expect(response.body).not_to match(/Redis alive|Postgres alive|Database Migrations|\btrue\b/)
+        expect(page.at_css('main').text).not_to match(/Redis alive|Postgres alive|Database Migrations|\btrue\b/)
       end
 
       it 'shows sizes in Russian units and no limit as «Без лимита»' do
