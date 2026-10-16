@@ -395,9 +395,46 @@ watch(
   ],
   scheduleClamp
 );
+const channelCapacity = ref(null);
+const fetchChannelCapacity = async () => {
+  if (!accountId.value || !selectedInboxId.value) {
+    channelCapacity.value = null;
+    return;
+  }
+  const inbox = selectedInbox.value;
+  if (inbox?.provider && inbox.provider !== 'wazo') {
+    channelCapacity.value = null;
+    return;
+  }
+  try {
+    const response = await window.axios.get(
+      `/api/v1/accounts/${accountId.value}/telephony/webphone/channel_capacity`,
+      { params: { inbox_id: selectedInboxId.value } }
+    );
+    channelCapacity.value = response?.data?.capacity || null;
+  } catch {
+    channelCapacity.value = null;
+  }
+};
+const channelCapacityLabel = computed(() => {
+  const cap = channelCapacity.value;
+  if (!cap) return '';
+  const active = cap.active_channels ?? 0;
+  const max = cap.effective_max_channels;
+  const peak = cap.peak_today ?? active;
+  return max
+    ? `Линии: ${active} / ${max} · Пик сегодня: ${peak}`
+    : `Активных линий: ${active} · Пик сегодня: ${peak}`;
+});
+
+watch([selectedInboxId, hasCall], () => {
+  fetchChannelCapacity();
+});
+
 onMounted(() => {
   WebphoneClient.addEventListener('call:sessions-changed', syncSessions);
   syncSessions();
+  fetchChannelCapacity();
 });
 onUnmounted(() => {
   WebphoneClient.removeEventListener('call:sessions-changed', syncSessions);
@@ -569,6 +606,18 @@ onUnmounted(() => {
                 {{ inbox.name }}
               </option>
             </Select>
+          </div>
+          <div
+            v-if="channelCapacityLabel"
+            class="mb-2 flex items-center justify-between rounded-md px-2.5 py-1 text-xs font-medium"
+            :class="
+              channelCapacity?.outbound_available === false
+                ? 'bg-n-ruby-3 text-n-ruby-11'
+                : 'bg-n-alpha-2 text-n-slate-11'
+            "
+            data-testid="phone-widget-channel-capacity"
+          >
+            <span class="truncate">{{ channelCapacityLabel }}</span>
           </div>
           <div class="flex items-center gap-2">
             <Input

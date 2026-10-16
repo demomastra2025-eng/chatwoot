@@ -859,6 +859,63 @@ watch(
   { immediate: true }
 );
 
+const transferPanelOpen = ref(false);
+const transferExtension = ref('');
+const transferTargets = ref([]);
+const isTransferring = ref(false);
+
+const loadTransferTargets = async call => {
+  const accountId = router.currentRoute.value.params?.accountId;
+  const inboxId = call?.inboxId || getCallInfo(call).conversation?.inbox_id;
+  if (!accountId) return;
+  try {
+    const response = await window.axios.get(
+      `/api/v1/accounts/${accountId}/telephony/webphone/channel_capacity`,
+      { params: inboxId ? { inbox_id: inboxId } : {} }
+    );
+    transferTargets.value = response?.data?.transfer_targets || [];
+    if (!transferExtension.value && transferTargets.value.length) {
+      transferExtension.value = transferTargets.value[0].internal_extension;
+    }
+  } catch {
+    transferTargets.value = [];
+  }
+};
+
+const toggleTransferPanel = call => {
+  transferPanelOpen.value = !transferPanelOpen.value;
+  if (transferPanelOpen.value) {
+    loadTransferTargets(call);
+  }
+};
+
+const submitCallTransfer = async call => {
+  const ext = transferExtension.value.trim();
+  const accountId = router.currentRoute.value.params?.accountId;
+  if (!ext || !accountId || isTransferring.value) return;
+
+  isTransferring.value = true;
+  try {
+    const inboxId = call?.inboxId || getCallInfo(call).conversation?.inbox_id;
+    const customerNumber = getCallParties(call).customerParty;
+    await window.axios.post(
+      `/api/v1/accounts/${accountId}/telephony/webphone/transfer`,
+      {
+        inbox_id: inboxId,
+        target_extension: ext,
+        customer_number: customerNumber,
+        flow: 'blind',
+      }
+    );
+    transferPanelOpen.value = false;
+    useAlert(`Звонок переведён на номер ${ext}`);
+  } catch {
+    useAlert('Не удалось перевести звонок');
+  } finally {
+    isTransferring.value = false;
+  }
+};
+
 onUnmounted(stopElapsedTimer);
 </script>
 
@@ -1044,6 +1101,22 @@ onUnmounted(stopElapsedTimer);
                 <i class="text-base i-ph-phone-x-bold" />
               </button>
               <button
+                v-if="callIsActive(call) && !isWhatsappCall(call)"
+                type="button"
+                class="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors"
+                :class="
+                  transferPanelOpen
+                    ? 'bg-n-brand text-white shadow-sm'
+                    : 'bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-1'
+                "
+                title="Перевести звонок"
+                aria-label="Перевести звонок"
+                data-testid="floating-call-transfer"
+                @click="toggleTransferPanel(call)"
+              >
+                <i class="text-base i-lucide-phone-forwarded" />
+              </button>
+              <button
                 type="button"
                 class="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-1"
                 :title="$t('CONVERSATION.VOICE_WIDGET.OPEN_CHAT')"
@@ -1051,6 +1124,48 @@ onUnmounted(stopElapsedTimer);
                 @click="openConversation(call)"
               >
                 <i class="text-base i-ph-chat-circle-bold" />
+              </button>
+            </div>
+            <div
+              v-if="
+                transferPanelOpen &&
+                callIsActive(call) &&
+                !isWhatsappCall(call)
+              "
+              class="mt-2 flex items-center gap-1.5 rounded-md bg-n-alpha-1 p-1.5"
+              data-testid="floating-call-transfer-panel"
+            >
+              <select
+                v-if="transferTargets.length"
+                v-model="transferExtension"
+                class="min-w-0 flex-1 rounded border border-n-weak bg-n-solid-1 px-2 py-1 text-xs text-n-slate-12"
+                data-testid="floating-call-transfer-select"
+              >
+                <option
+                  v-for="target in transferTargets"
+                  :key="target.internal_extension"
+                  :value="target.internal_extension"
+                >
+                  {{ target.name }} ({{ target.internal_extension }})
+                </option>
+                <option value="2001">Общая группа (2001)</option>
+              </select>
+              <input
+                v-else
+                v-model="transferExtension"
+                type="text"
+                placeholder="Внутр. номер (напр. 1002 / 2001)"
+                class="min-w-0 flex-1 rounded border border-n-weak bg-n-solid-1 px-2 py-1 text-xs text-n-slate-12"
+                data-testid="floating-call-transfer-input"
+              />
+              <button
+                type="button"
+                class="shrink-0 rounded bg-n-teal-9 px-2.5 py-1 text-xs font-medium text-white hover:bg-n-teal-10 disabled:opacity-50"
+                :disabled="!transferExtension.trim() || isTransferring"
+                data-testid="floating-call-transfer-submit"
+                @click="submitCallTransfer(call)"
+              >
+                Перевести
               </button>
             </div>
           </div>

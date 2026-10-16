@@ -11,6 +11,7 @@ class Telephony::Wazo::ApiClient # rubocop:disable Metrics/ClassLength -- explic
   USERS_PATH = '/api/confd/1.1/users'
   LINES_PATH = '/api/confd/1.1/lines'
   EXTENSIONS_PATH = '/api/confd/1.1/extensions'
+  GROUPS_PATH = '/api/confd/1.1/groups'
   TRUNKS_PATH = '/api/confd/1.1/trunks'
   REGISTRATIONS_SIP_PATH = '/api/confd/1.1/registrations/sip'
   CONTEXTS_PATH = '/api/confd/1.1/contexts'
@@ -157,6 +158,41 @@ class Telephony::Wazo::ApiClient # rubocop:disable Metrics/ClassLength -- explic
 
   def dissociate_line_sip_endpoint(line_id, endpoint_uuid)
     delete_resource("#{LINES_PATH}/#{escape(line_id)}/endpoints/sip/#{escape(endpoint_uuid)}")
+  end
+
+  # --- Confd Ring Groups & Queues APIs ---
+
+  def groups
+    payload = request(:get, GROUPS_PATH, params: { limit: 1000 })
+    Array.wrap(payload['items'])
+  end
+
+  def group(uuid_or_id)
+    request(:get, "#{GROUPS_PATH}/#{escape(uuid_or_id)}")
+  end
+
+  def create_group(payload)
+    request(:post, GROUPS_PATH, body: payload)
+  end
+
+  def update_group(uuid_or_id, payload)
+    request(:put, "#{GROUPS_PATH}/#{escape(uuid_or_id)}", body: payload)
+  end
+
+  def delete_group(uuid_or_id)
+    delete_resource("#{GROUPS_PATH}/#{escape(uuid_or_id)}")
+  end
+
+  def update_group_user_members(group_uuid, users_list)
+    request(:put, "#{GROUPS_PATH}/#{escape(group_uuid)}/members/users", body: { users: users_list })
+  end
+
+  def associate_group_extension(group_uuid, extension_id)
+    request(:put, "#{GROUPS_PATH}/#{escape(group_uuid)}/extensions/#{escape(extension_id)}")
+  end
+
+  def dissociate_group_extension(group_uuid, extension_id)
+    delete_resource("#{GROUPS_PATH}/#{escape(group_uuid)}/extensions/#{escape(extension_id)}")
   end
 
   # --- Confd Trunk, Context & Routing APIs ---

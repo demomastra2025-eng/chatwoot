@@ -539,6 +539,8 @@ Rails.application.routes.draw do
             post 'webphone/claim', to: 'webphone#claim'
             post 'webphone/answered', to: 'webphone#answered'
             post 'webphone/reject', to: 'webphone#reject'
+            get 'webphone/channel_capacity', to: 'webphone#channel_capacity'
+            post 'webphone/transfer', to: 'webphone#transfer'
           end
 
           resources :inbox_members, only: [:create, :show], param: :inbox_id do

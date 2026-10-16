@@ -9,14 +9,26 @@ class Telephony::Wazo::CallTransferService
     @default_context = default_context.to_s.strip
   end
 
-  def transfer!(initiator_call_id:, transferred_call_id: nil, target_extension: nil, target_user_id: nil, flow: 'blind', timeout: 30, variables: {})
+  def transfer!(
+    initiator_call_id: nil,
+    initiator_user_id: nil,
+    customer_number: nil,
+    transferred_call_id: nil,
+    target_extension: nil,
+    target_user_id: nil,
+    flow: 'blind',
+    timeout: 30,
+    variables: {}
+  )
     validate_flow!(flow)
     exten, context = resolve_destination!(target_extension: target_extension, target_user_id: target_user_id)
-    resolved_transferred_call = transferred_call_id.presence || resolve_transferred_call_id!(initiator_call_id)
+    resolved_initiator_call = initiator_call_id.presence ||
+                              resolve_initiator_call_id!(initiator_user_id: initiator_user_id, customer_number: customer_number)
+    resolved_transferred_call = transferred_call_id.presence || resolve_transferred_call_id!(resolved_initiator_call)
 
     response = client.initiate_transfer(
       transferred_call: resolved_transferred_call,
-      initiator_call: initiator_call_id,
+      initiator_call: resolved_initiator_call,
       context: context,
       exten: exten,
       flow: flow,
@@ -28,7 +40,7 @@ class Telephony::Wazo::CallTransferService
       transfer_id: response['id'],
       status: response['status'] || 'initiated',
       flow: flow,
-      initiator_call_id: initiator_call_id,
+      initiator_call_id: resolved_initiator_call,
       transferred_call_id: resolved_transferred_call,
       target_extension: exten,
       context: context
@@ -96,6 +108,26 @@ class Telephony::Wazo::CallTransferService
       code: 'WAZO_SIP_CONTEXT_NOT_CONFIGURED',
       message: 'Wazo SIP context is required for call transfer',
       status: :service_unavailable
+    )
+  end
+
+  def resolve_initiator_call_id!(initiator_user_id:, customer_number:)
+    profiles = initiator_user_id.present? ? account.telephony_sip_profiles.where(user_id: initiator_user_id, status: 'active', enabled: true) : []
+    user_uuids = profiles.filter_map { |p| p.metadata.to_h['wazo_user_uuid'].presence }
+    extensions = profiles.filter_map { |p| p.internal_extension.presence&.to_s }
+    clean_customer = customer_number.to_s.gsub(/\D/, '')
+
+    matched = client.active_calls.find do |call|
+      (user_uuids.present? && user_uuids.include?(call['user_uuid'].to_s)) ||
+        (extensions.present? && extensions.include?(call['caller_id_number'].to_s)) ||
+        (clean_customer.present? && call['peer_caller_id_number'].to_s.gsub(/\D/, '').end_with?(clean_customer[-10..].to_s))
+    end
+    return matched.fetch('call_id') if matched && matched['call_id'].present?
+
+    raise Telephony::Error.new(
+      code: 'WAZO_INITIATOR_CALL_NOT_FOUND',
+      message: 'Could not locate active Wazo channel for the current operator',
+      status: :not_found
     )
   end
 
