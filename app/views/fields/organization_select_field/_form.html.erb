@@ -1,0 +1,20 @@
+<%#
+# «Организация» select of the account form
+
+## Local variables:
+
+- `f`: the form builder.
+- `field`: an `OrganizationSelectField`; `field.data` is the id of the organization of the account (or nil).
+%>
+<%
+  # A form that comes back with errors keeps the organization that was picked, although it was not saved with the rest
+  sent = params[:account]
+  selected = sent.respond_to?(:key?) && sent.key?(:organization_id) ? sent[:organization_id].to_s : field.data
+%>
+
+<div class="field-unit__label">
+  <%= f.label field.attribute %>
+</div>
+<div class="field-unit__field">
+  <%= f.select(field.attribute, options_for_select(field.selectable_options, selected)) %>
+</div>

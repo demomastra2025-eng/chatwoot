@@ -1,8 +1,8 @@
 <%#
 # Clinics table
 
-The clinic list: clinic (name and #id), plan chips, operators used / limit,
-storage fill, number of channels and status. The numbers of the whole page are
+The clinic list: clinic (name and #id), its organization (a link), plan chips,
+operators used / limit, storage fill, number of channels and status. The numbers of the whole page are
 read at once (`SuperAdmin::AccountListStats`), so the page costs the same few
 queries for 2 or for 20 clinics.
 
@@ -28,7 +28,7 @@ queries for 2 or for 20 clinics.
     <thead>
       <tr>
         <th class="cell-label cell-label--string cell-label--<%= name_order %>" scope="col" role="columnheader" aria-sort="<%= sort_order(name_order) %>">
-          <%= link_to(sanitized_order_params(page, collection_field_name).merge(collection_presenter.order_params_for(:name, key: collection_field_name))) do %>
+          <%= link_to(sanitized_order_params(page, collection_field_name).merge(list_scope_params).merge(collection_presenter.order_params_for(:name, key: collection_field_name))) do %>
             <%= t('super_admin.accounts.columns.clinic') %>
             <% if sorted_by_name %>
               <span class="cell-label__sort-indicator cell-label__sort-indicator--<%= name_order %>">
@@ -37,6 +37,7 @@ queries for 2 or for 20 clinics.
             <% end %>
           <% end %>
         </th>
+        <th scope="col"><%= t('super_admin.accounts.columns.organization') %></th>
         <th scope="col"><%= t('super_admin.accounts.columns.plan') %></th>
         <th scope="col" class="cell-label--number"><%= t('super_admin.accounts.columns.operators') %></th>
         <th scope="col"><%= t('super_admin.accounts.columns.storage') %></th>
@@ -49,7 +50,7 @@ queries for 2 or for 20 clinics.
     <tbody>
       <% if rows.empty? %>
         <tr>
-          <td colspan="7" class="py-10 text-center text-n-slate-11"><%= t('super_admin.shell.empty') %></td>
+          <td colspan="8" class="py-10 text-center text-n-slate-11"><%= t('super_admin.shell.empty') %></td>
         </tr>
       <% end %>
 
@@ -59,6 +60,15 @@ queries for 2 or for 20 clinics.
           <td>
             <%= link_to account.name, super_admin_account_path(account), class: 'font-medium text-n-slate-12 hover:text-n-brand' %>
             <div class="text-xs tabular-nums text-n-slate-10">#<%= account.id %></div>
+          </td>
+
+          <td>
+            <%# The organizations of the page were read with one query (preload in AccountsController). %>
+            <% if account.organization %>
+              <%= link_to account.organization.name, super_admin_organization_path(account.organization), class: 'text-n-slate-12 hover:text-n-brand' %>
+            <% else %>
+              <span class="text-n-slate-10" title="<%= t('super_admin.accounts.list.no_organization') %>">—</span>
+            <% end %>
           </td>
 
           <td>

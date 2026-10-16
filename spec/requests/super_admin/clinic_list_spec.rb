@@ -42,11 +42,11 @@ RSpec.describe 'Super Admin clinic list', type: :request do
       expect(page.at_css('title').text).to include('Аккаунты')
     end
 
-    it 'has the columns of the clinic table' do
+    it 'has the columns of the account table' do
       get '/super_admin/accounts'
 
       headers = page.css('[data-testid="clinics-table"] thead th').map { |header| text(header) }
-      expect(headers).to eq(%w[Аккаунт Тариф Операторы Хранилище Каналы Статус Действия])
+      expect(headers).to eq(%w[Аккаунт Организация Тариф Операторы Хранилище Каналы Статус Действия])
     end
 
     it 'shows an empty state when nothing matches' do
@@ -84,7 +84,7 @@ RSpec.describe 'Super Admin clinic list', type: :request do
 
       get '/super_admin/accounts'
 
-      expect(text(cell(account, 1))).to eq('Не назначен')
+      expect(text(cell(account, 2))).to eq('Не назначен')
     end
 
     it 'shows the base and the modules as chips' do
@@ -93,9 +93,9 @@ RSpec.describe 'Super Admin clinic list', type: :request do
 
       get '/super_admin/accounts'
 
-      chips = cell(account, 1).css('.admin-badge').map { |chip| text(chip) }
+      chips = cell(account, 2).css('.admin-badge').map { |chip| text(chip) }
       expect(chips).to eq(%w[База ИИ-агенты Рассылки])
-      expect(text(cell(account, 1))).not_to include('изменён')
+      expect(text(cell(account, 2))).not_to include('изменён')
     end
 
     it 'marks a clinic whose functions were changed by hand' do
@@ -105,7 +105,7 @@ RSpec.describe 'Super Admin clinic list', type: :request do
 
       get '/super_admin/accounts'
 
-      expect(text(cell(account, 1))).to include('изменён')
+      expect(text(cell(account, 2))).to include('изменён')
     end
 
     it 'shows the remaining days of a running trial' do
@@ -114,7 +114,7 @@ RSpec.describe 'Super Admin clinic list', type: :request do
 
       get '/super_admin/accounts'
 
-      expect(text(cell(account, 1))).to eq('Пробный · осталось 3 дн.')
+      expect(text(cell(account, 2))).to eq('Пробный · осталось 3 дн.')
     end
 
     it 'shows an ended trial' do
@@ -124,7 +124,7 @@ RSpec.describe 'Super Admin clinic list', type: :request do
 
       get '/super_admin/accounts'
 
-      expect(text(cell(account, 1))).to eq('Пробный истёк')
+      expect(text(cell(account, 2))).to eq('Пробный истёк')
     end
   end
 
@@ -135,7 +135,7 @@ RSpec.describe 'Super Admin clinic list', type: :request do
 
       get '/super_admin/accounts'
 
-      expect(text(cell(account, 2))).to eq('2 / 10')
+      expect(text(cell(account, 3))).to eq('2 / 10')
     end
 
     it 'says «без лимита» when the clinic has none' do
@@ -145,7 +145,7 @@ RSpec.describe 'Super Admin clinic list', type: :request do
 
       get '/super_admin/accounts'
 
-      expect(text(cell(account, 2))).to eq('1 без лимита')
+      expect(text(cell(account, 3))).to eq('1 без лимита')
     end
 
     it 'says «без лимита» for the no-limit value a plan writes (the maximum limit)' do
@@ -154,7 +154,7 @@ RSpec.describe 'Super Admin clinic list', type: :request do
 
       get '/super_admin/accounts'
 
-      expect(text(cell(account, 2))).to eq('1 без лимита')
+      expect(text(cell(account, 3))).to eq('1 без лимита')
     end
 
     it 'turns red when there are more operators than the limit' do
@@ -163,7 +163,7 @@ RSpec.describe 'Super Admin clinic list', type: :request do
 
       get '/super_admin/accounts'
 
-      expect(cell(account, 2).at_css('.text-n-ruby-11')).to be_present
+      expect(cell(account, 3).at_css('.text-n-ruby-11')).to be_present
     end
   end
 
@@ -178,8 +178,8 @@ RSpec.describe 'Super Admin clinic list', type: :request do
 
       get '/super_admin/accounts'
 
-      expect(text(cell(account, 3))).to eq('40 ГБ из 50 ГБ')
-      fill = cell(account, 3).at_css('.admin-meter__fill')
+      expect(text(cell(account, 4))).to eq('40 ГБ из 50 ГБ')
+      fill = cell(account, 4).at_css('.admin-meter__fill')
       expect(fill['style']).to include('width: 80.0%')
       expect(fill['class']).to include('admin-meter__fill--warn')
     end
@@ -187,7 +187,7 @@ RSpec.describe 'Super Admin clinic list', type: :request do
     it 'shows a dash while there is no snapshot' do
       get '/super_admin/accounts'
 
-      expect(text(cell(account, 3))).to eq('—')
+      expect(text(cell(account, 4))).to eq('—')
     end
   end
 
@@ -198,7 +198,7 @@ RSpec.describe 'Super Admin clinic list', type: :request do
 
       get '/super_admin/accounts'
 
-      expect(text(cell(account, 4))).to eq('3')
+      expect(text(cell(account, 5))).to eq('3')
     end
 
     it 'shows the status in Russian' do
@@ -208,9 +208,9 @@ RSpec.describe 'Super Admin clinic list', type: :request do
 
       get '/super_admin/accounts'
 
-      expect(text(cell(active, 5))).to eq('Активен')
-      expect(text(cell(suspended, 5))).to eq('Заблокирован')
-      expect(text(cell(deleting, 5))).to eq('На удаление')
+      expect(text(cell(active, 6))).to eq('Активен')
+      expect(text(cell(suspended, 6))).to eq('Заблокирован')
+      expect(text(cell(deleting, 6))).to eq('На удаление')
     end
 
     it 'offers «Редактировать» in the last cell' do
@@ -218,7 +218,7 @@ RSpec.describe 'Super Admin clinic list', type: :request do
 
       get '/super_admin/accounts'
 
-      expect(cell(account, 6).at_css('a')['href']).to eq("/super_admin/accounts/#{account.id}/edit")
+      expect(cell(account, 7).at_css('a')['href']).to eq("/super_admin/accounts/#{account.id}/edit")
     end
   end
 

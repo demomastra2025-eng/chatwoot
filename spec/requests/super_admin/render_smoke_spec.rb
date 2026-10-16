@@ -332,5 +332,32 @@ RSpec.describe 'Super Admin render smoke', type: :request do
         expect_pages_open('/super_admin/accounts', "/super_admin/accounts/#{account.id}", "/super_admin/accounts/#{account.id}/edit")
       end
     end
+
+    it 'open the account list filtered by an organization, by «none», by nonsense and together with a search and a filter' do
+      organization = create(:organization, :with_requisites)
+      create(:account, name: 'Linked', organization: organization)
+      create(:account, name: 'Not linked')
+
+      expect_pages_open("/super_admin/accounts?organization_id=#{organization.id}", '/super_admin/accounts?organization_id=none',
+                        '/super_admin/accounts?organization_id=nonsense', '/super_admin/accounts?organization_id=999999',
+                        "/super_admin/accounts?organization_id=#{organization.id}&search=Link",
+                        "/super_admin/accounts?organization_id=#{organization.id}&search=active%3A",
+                        "/super_admin/accounts?organization_id=#{organization.id}&account%5Border%5D=name&account%5Bdirection%5D=desc")
+      expect(page.at_css('[data-testid="organization-filter"] select')).to be_present
+    end
+
+    it 'open the card of an account whose organization was just linked, moved and unlinked' do
+      organization = create(:organization, :with_requisites)
+      other = create(:organization)
+      account = create(:account, name: 'Moving')
+      card = "/super_admin/accounts/#{account.id}"
+
+      [organization.id, other.id, ''].each do |target|
+        post "#{card}/link_organization", params: { organization_id: target }
+        expect(response).to redirect_to(card)
+        expect_pages_open(card, "#{card}/edit")
+      end
+      expect(account.reload.organization).to be_nil
+    end
   end
 end

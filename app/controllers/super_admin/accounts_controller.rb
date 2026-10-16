@@ -45,6 +45,9 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   #
   def resource_params
     permitted_params = fine_tuning_only_request? ? ActionController::Parameters.new.permit : super
+    # The organization of the account is changed through SuperAdmin::OrganizationLinks (see #update), never by the
+    # generic save: it would leave an unsigned «update» entry in the audit log next to the signed one.
+    permitted_params.delete(:organization_id)
     # A request without `limits` (the «Тонкая настройка» switches of the card) must not wipe the limits of the clinic.
     permitted_params[:limits] = normalize_limits(permitted_params[:limits]) if permitted_params.key?(:limits)
     merge_selected_feature_flags!(permitted_params)
@@ -73,8 +76,22 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   # audit log of the clinic.
   def update
     owner_changes = owner_decision_changes
+    organization = submitted_organization
     super
-    record_owner_decision_audit(owner_changes) if owner_changes.any? && response.redirect?
+    return unless response.redirect?
+
+    record_owner_decision_audit(owner_changes) if owner_changes.any?
+    save_submitted_organization(organization)
+  end
+
+  # The select of the «Организация» block of the card: links the account to the organization, moves it to another one
+  # or, with «Без организации», unlinks it. The change and its entries in the audit log are SuperAdmin::OrganizationLinks'.
+  def link_organization
+    organization = submitted_organization
+    return redirect_to([namespace, requested_resource], alert: organization_flash(:missing)) if organization.nil? || organization == :missing
+
+    notice = change_organization(requested_resource, organization) || organization_flash(:unchanged)
+    redirect_to [namespace, requested_resource], notice: notice
   end
 
   def seed
@@ -265,6 +282,77 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   # Re-sending the name the page was drawn with would undo a rename made in another tab or by another administrator.
   def fine_tuning_only_request?
     action_name == 'update' && !params.key?(:account) && params[:enabled_features].present?
+  end
+
+  # What the organization select asked for (account[organization_id] of the edit form, organization_id of the card):
+  # nil when the request does not carry it (the account keeps its organization), :none for «Без организации», :missing
+  # for an organization that does not exist, or the Organization.
+  def submitted_organization
+    container = action_name == 'update' ? params[:account] : params
+    return unless container.respond_to?(:key?) && container.key?(:organization_id)
+
+    value = container[:organization_id]
+    return :missing unless value.is_a?(String)
+    return :none if value.strip.empty?
+
+    Organization.find_by(id: value.strip) || :missing
+  end
+
+  # The edit form saves the organization after the account itself, and only when the account was saved
+  def save_submitted_organization(organization)
+    return if organization.nil?
+
+    if organization == :missing
+      flash[:alert] = organization_flash(:missing)
+    elsif (message = change_organization(requested_resource, organization))
+      flash[:notice] = [flash[:notice], message].compact_blank.join(' ')
+    end
+  end
+
+  # Moves the account to the organization (:none unlinks it) through SuperAdmin::OrganizationLinks, which writes only the
+  # foreign key and leaves the entries of the audit log on both sides with the super admin as the actor. Returns what to
+  # tell the operator, nil when the account was where it was asked to be.
+  def change_organization(account, target)
+    links = SuperAdmin::OrganizationLinks.new(actor: current_super_admin, request: request)
+    previous = account.organization
+    if target == :none
+      return unless links.unlink(account: account)
+
+      organization_flash(:unlinked, organization: previous.name)
+    else
+      return unless links.link(account: account, organization: target)
+
+      organization_flash(previous ? :moved : :linked, organization: target.name)
+    end
+  end
+
+  def organization_flash(key, **)
+    I18n.t("super_admin.accounts.flashes.organization_#{key}", **)
+  end
+
+  # The list can be narrowed to the accounts of one organization (`organization_id`, or `none` for the accounts that have
+  # no organization); anything else asks for the whole list
+  def organization_filter
+    value = params[:organization_id]
+    return unless value.is_a?(String)
+
+    value = value.strip
+    value if value == 'none' || value.match?(/\A\d{1,18}\z/)
+  end
+
+  def list_scope_params
+    { organization_id: organization_filter }.compact
+  end
+
+  def filter_resources(resources, search_term:)
+    filter = organization_filter
+    resources = resources.where(organization_id: filter == 'none' ? nil : filter) if filter
+    super(resources, search_term: search_term)
+  end
+
+  # The organization of every account of the page is read with one query
+  def apply_collection_includes(relation)
+    super.preload(:organization)
   end
 
   def apply_trial_extension

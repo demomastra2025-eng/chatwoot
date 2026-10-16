@@ -12,7 +12,7 @@ class SuperAdmin::ApplicationController < Administrate::ApplicationController
 
   helper SuperAdmin::NavigationHelper
   helper SuperAdmin::DisplayHelper
-  helper_method :render_vue_component, :settings_open?, :settings_pages, :super_admin_resource_label
+  helper_method :render_vue_component, :settings_open?, :settings_pages, :super_admin_resource_label, :list_scope_params
   # authenticiation done via devise : SuperAdmin Model
   before_action :authenticate_super_admin!
   around_action :switch_locale
@@ -42,6 +42,12 @@ class SuperAdmin::ApplicationController < Administrate::ApplicationController
   end
 
   private
+
+  # What narrows a list apart from the search box (a filter of its own, like the organization of the account list). The
+  # sort links, the segmented filters and the search box carry these params along, so a click does not lose the filter.
+  def list_scope_params
+    {}
+  end
 
   # The attributes of the dashboard that are edited with the datetime input (Field::DateTime and its subclasses)
   def astana_input_attributes

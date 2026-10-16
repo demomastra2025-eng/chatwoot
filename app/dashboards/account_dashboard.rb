@@ -54,7 +54,10 @@ class AccountDashboard < Administrate::BaseDashboard
     locale: Field::Select.with_options(collection: -> { AccountDashboard.locale_options }),
     status: Field::Select.with_options(collection: -> { AccountDashboard.status_options }),
     account_users: Field::HasMany,
-    custom_attributes: Field::String
+    custom_attributes: Field::String,
+    # Only on the edit form. The change is not saved with the other fields: the controller links the account through
+    # SuperAdmin::OrganizationLinks (see AccountsController#update).
+    organization_id: OrganizationSelectField
   }.merge(enterprise_attribute_types).freeze
 
   # COLLECTION_ATTRIBUTES
@@ -127,7 +130,7 @@ class AccountDashboard < Administrate::BaseDashboard
                                  []
                                end
   FORM_ATTRIBUTES_EDIT = {
-    section_main: %i[name locale status],
+    section_main: %i[name locale status organization_id],
     section_limits: enterprise_limit_section,
     section_features: enterprise_feature_section
   }.reject { |_section, section_attributes| section_attributes.empty? }.freeze

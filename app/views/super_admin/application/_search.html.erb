@@ -10,6 +10,10 @@ while a term is active.
 - `resource_name`: label of the searched resource, used for the placeholder.
 %>
 <form class="search" role="search">
+  <%# What else narrows the list (the organization of the account list) stays when a term is searched. %>
+  <% list_scope_params.each do |name, value| %>
+    <%= hidden_field_tag name, value, id: nil %>
+  <% end %>
   <label class="sr-only" for="search">
     <%= t("administrate.search.label", resource: resource_name) %>
   </label>
@@ -23,7 +27,7 @@ while a term is active.
          value="<%= search_term %>">
 
   <% if search_term.present? %>
-    <%= link_to clear_search_params, class: "search__clear-link", title: t("administrate.search.clear") do %>
+    <%= link_to clear_search_params.merge(list_scope_params), class: "search__clear-link", title: t("administrate.search.clear") do %>
       <span class="i-lucide-x size-4" aria-hidden="true"></span>
       <span class="sr-only"><%= t("administrate.search.clear") %></span>
     <% end %>

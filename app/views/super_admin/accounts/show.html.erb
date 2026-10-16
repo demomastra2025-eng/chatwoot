@@ -5,7 +5,7 @@ The page of one clinic. Header: name, status, #id, creation date (Astana time),
 «Войти в аккаунт» and «Редактировать». Main column: plan (base + modules, with
 the preview of what a change does), limits and spend, channels, «Тонкая
 настройка» and «Служебные» (both collapsed), users, technical data (collapsed). Side column: trial,
-basic facts, maintenance.
+basic facts, organization, maintenance.
 
 ## Local variables:
 
@@ -87,6 +87,7 @@ basic facts, maintenance.
     <div class="flex min-w-0 flex-col gap-5">
       <%= render 'trial', account: account, state: state %>
       <%= render 'info', account: account, state: state %>
+      <%= render 'organization', account: account %>
       <%= render 'maintenance', account: account %>
     </div>
   </div>

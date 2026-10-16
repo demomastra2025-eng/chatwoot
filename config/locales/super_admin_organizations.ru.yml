@@ -36,6 +36,8 @@ ru:
 
   helpers:
     label:
+      account:
+        organization_id: "Организация"
       organization:
         id: "ID"
         name: "Название"
@@ -55,6 +57,8 @@ ru:
 
   administrate:
     field_hints:
+      account:
+        organization_id: "Платящая сторона: реквизиты, БИН и договор. Тариф, лимиты и каналы остаются у аккаунта."
       organization:
         name: "Так организация называется в списках."
         legal_name: "Название из договора, например ТОО с формой собственности."
@@ -86,6 +90,32 @@ ru:
         unlink_account: "Отвязка аккаунта"
         link_organization: "Привязка к организации"
         unlink_organization: "Отвязка от организации"
+
+    # The organization seen from the account: the column and the filter of the list, the block of the card, the select
+    # of the edit form
+    accounts:
+      columns:
+        organization: "Организация"
+      list:
+        no_organization: "Аккаунт без организации"
+      organization:
+        title: "Организация"
+        hint: "Платящая сторона: реквизиты, БИН и договор. Тариф, лимиты и каналы остаются у аккаунта."
+        empty: "Аккаунт не привязан к организации."
+        none: "Без организации"
+        select_label: "Организация аккаунта"
+        confirm: "Сменить организацию аккаунта «%{account}»? Если выбрано «Без организации», аккаунт будет отвязан. Тариф, лимиты и каналы аккаунта не изменятся."
+      organization_filter:
+        label: "Организация"
+        all: "Все организации"
+        none: "Без организации"
+        apply: "Применить"
+      flashes:
+        organization_linked: "Аккаунт привязан к организации «%{organization}»."
+        organization_moved: "Аккаунт перенесён в организацию «%{organization}»."
+        organization_unlinked: "Аккаунт отвязан от организации «%{organization}»."
+        organization_unchanged: "Организация аккаунта не изменилась."
+        organization_missing: "Выберите организацию из списка: такой организации нет."
 
     organizations:
       controller:

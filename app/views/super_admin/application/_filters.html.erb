@@ -33,11 +33,12 @@ translation shows its humanized name. An optional tooltip comes from
 
 <% if dashboard_class.const_defined?(:COLLECTION_FILTERS) && !dashboard_class::COLLECTION_FILTERS.empty? %>
   <div class="segmented" role="group" aria-label="<%= t('super_admin.shell.filter') %>">
-    <%= link_to t('super_admin.shell.filter_all'), url_for(search: nil), class: 'segmented__item', aria: { current: (current_filter.nil? ? 'true' : nil) } %>
+    <%# `list_scope_params` is what else narrows the list (the organization of the account list): a click keeps it. %>
+    <%= link_to t('super_admin.shell.filter_all'), url_for({ search: nil }.merge(list_scope_params)), class: 'segmented__item', aria: { current: (current_filter.nil? ? 'true' : nil) } %>
     <% dashboard_class::COLLECTION_FILTERS.each_key do |filter_name| %>
       <%# A filter that counts differently from what the list shows says so in a tooltip (`super_admin.shell.filter_hints.<name>`). %>
       <%= link_to t("super_admin.shell.filters.#{filter_name}", default: filter_name.to_s.titleize),
-                  url_for(search: "#{filter_name}:"),
+                  url_for({ search: "#{filter_name}:" }.merge(list_scope_params)),
                   class: 'segmented__item',
                   title: t("super_admin.shell.filter_hints.#{filter_name}", default: '').presence,
                   aria: { current: (filter_name.to_s == current_filter ? 'true' : nil) } %>

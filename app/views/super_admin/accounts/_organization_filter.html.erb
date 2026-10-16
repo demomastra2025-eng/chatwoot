@@ -1,0 +1,22 @@
+<%#
+# Filter of the account list by organization
+
+A select next to the segmented filters: «Все организации», «Без организации» and the organizations by name. It is a form
+of its own that sends the term of the search box along, so the two work together; the segmented filters, the sort link
+and the search box keep the organization (`list_scope_params`).
+%>
+<%
+  selected = list_scope_params[:organization_id].to_s
+  options = [[t('super_admin.accounts.organization_filter.all'), ''], [t('super_admin.accounts.organization_filter.none'), 'none']] +
+            SuperAdmin::OrganizationOptions.for_select
+  term = params[:search].is_a?(String) ? params[:search] : nil
+%>
+
+<%= form_with url: super_admin_accounts_path, method: :get, local: true, class: 'flex w-full flex-wrap items-center gap-2 sm:w-auto', data: { testid: 'organization-filter' } do %>
+  <%= hidden_field_tag :search, term, id: nil if term.present? %>
+  <%= label_tag :organization_id, t('super_admin.accounts.organization_filter.label'), class: 'sr-only' %>
+  <div class="w-full sm:w-64">
+    <%= select_tag :organization_id, options_for_select(options, selected) %>
+  </div>
+  <%= submit_tag t('super_admin.accounts.organization_filter.apply'), name: nil, class: 'button button--secondary' %>
+<% end %>

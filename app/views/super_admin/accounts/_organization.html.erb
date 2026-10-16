@@ -1,0 +1,44 @@
+<%#
+# «Организация» of an account
+
+The side block: the organization the account belongs to (a link to its card, with the БИН) or a note that there is none,
+and a select to link the account to an organization, move it to another one or unlink it («Без организации»). The select
+posts to `link_organization`; changing or unlinking asks first. The plan, limits and channels stay with the account.
+
+## Local variables:
+
+- `account`: the account (Account).
+%>
+<%
+  organization = account.organization
+  options = [[t('super_admin.accounts.organization.none'), '']] + SuperAdmin::OrganizationOptions.for_select
+  confirm = t('super_admin.accounts.organization.confirm', account: account.name) if organization
+%>
+
+<section class="admin-block" aria-labelledby="organization-title" data-testid="organization-block">
+  <div class="admin-block__head">
+    <h2 class="admin-block__title" id="organization-title"><%= t('super_admin.accounts.organization.title') %></h2>
+    <p class="admin-block__hint"><%= t('super_admin.accounts.organization.hint') %></p>
+  </div>
+
+  <% if organization %>
+    <div class="flex min-w-0 flex-col gap-0.5" data-testid="account-organization">
+      <%= link_to organization.name, super_admin_organization_path(organization), class: 'font-medium text-n-slate-12 hover:text-n-brand' %>
+      <% if organization.bin.present? %>
+        <span class="text-xs tabular-nums text-n-slate-10"><%= Organization.human_attribute_name(:bin) %> <%= organization.bin %></span>
+      <% end %>
+    </div>
+  <% else %>
+    <p class="admin-block__note" data-testid="account-organization"><%= t('super_admin.accounts.organization.empty') %></p>
+  <% end %>
+
+  <%= form_with url: link_organization_super_admin_account_path(account), method: :post, local: true, class: 'flex flex-col gap-2' do %>
+    <div class="flex flex-col gap-1.5">
+      <%= label_tag :organization_id, t('super_admin.accounts.organization.select_label'), class: 'text-xs text-n-slate-11' %>
+      <%= select_tag :organization_id, options_for_select(options, organization&.id.to_s) %>
+    </div>
+    <div class="admin-block__footer">
+      <%= submit_tag t('super_admin.shell.save'), name: nil, data: { confirm: confirm }.compact %>
+    </div>
+  <% end %>
+</section>
