@@ -323,10 +323,10 @@ ru:
           hint: "Имя окружения, например dev или widget. Пересланные вебхуки для другого окружения отклоняются."
         # ---- Почта: Google и Microsoft
         GOOGLE_OAUTH_CLIENT_ID:
-          title: "Google: Client ID"
+          title: "Google: ID клиента"
           hint: "Client ID приложения Google OAuth для подключения почты."
         GOOGLE_OAUTH_CLIENT_SECRET:
-          title: "Google: Client Secret"
+          title: "Google: секрет клиента"
           hint: "Client Secret приложения Google OAuth."
         GOOGLE_OAUTH_REDIRECT_URI:
           title: "Google: адрес возврата (Redirect URI)"
@@ -342,28 +342,28 @@ ru:
           hint: "Секрет приложения Azure."
         # ---- Интеграции
         LINEAR_CLIENT_ID:
-          title: "Linear: Client ID"
+          title: "Linear: ID клиента"
           hint: "Идентификатор приложения Linear."
         LINEAR_CLIENT_SECRET:
-          title: "Linear: Client Secret"
+          title: "Linear: секрет клиента"
           hint: "Секрет приложения Linear."
         SLACK_CLIENT_ID:
-          title: "Slack: Client ID"
+          title: "Slack: ID клиента"
           hint: "Идентификатор приложения Slack."
         SLACK_CLIENT_SECRET:
-          title: "Slack: Client Secret"
+          title: "Slack: секрет клиента"
           hint: "Секрет приложения Slack."
         NOTION_CLIENT_ID:
-          title: "Notion: Client ID"
+          title: "Notion: ID клиента"
           hint: "Идентификатор приложения Notion."
         NOTION_CLIENT_SECRET:
-          title: "Notion: Client Secret"
+          title: "Notion: секрет клиента"
           hint: "Секрет приложения Notion."
         SHOPIFY_CLIENT_ID:
-          title: "Shopify: Client ID"
+          title: "Shopify: ID клиента"
           hint: "Client ID (API Key) из партнёрского аккаунта Shopify."
         SHOPIFY_CLIENT_SECRET:
-          title: "Shopify: Client Secret"
+          title: "Shopify: секрет клиента"
           hint: "Client Secret (API Secret Key) из партнёрского аккаунта Shopify."
         # ---- Брендирование и вход
         LOGO_THUMBNAIL:

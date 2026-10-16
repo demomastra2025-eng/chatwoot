@@ -174,7 +174,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
 
     changes = Accounts::ChannelOverrides.new(
       account: requested_resource, actor: current_super_admin, request: request
-    ).apply(requested, expected: expected)
+    ).apply(requested, expected)
     flash_key = changes.any? ? :channel_overrides_saved : :channel_overrides_unchanged
     redirect_to_account(notice: I18n.t("super_admin.accounts.flashes.#{flash_key}"))
   rescue Accounts::ChannelOverrides::InvalidOverrides

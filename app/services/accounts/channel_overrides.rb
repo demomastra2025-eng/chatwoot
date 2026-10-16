@@ -11,7 +11,7 @@
 # keep their entry. Nothing is written, and nothing audited, when nothing changes. Every change leaves one entry in the
 # audit log (action update_channel_override) with what changed per channel.
 #
-# `expected:` is what the person saw when the page was drawn: only the channels they moved are written, and a channel
+# `expected` (the second argument) is what the person saw when the page was drawn: only the channels they moved are written, and a channel
 # that somebody else moved meanwhile raises StaleOverrides instead of being overwritten.
 class Accounts::ChannelOverrides
   DEFAULT_STATE = 'default'
@@ -31,7 +31,7 @@ class Accounts::ChannelOverrides
 
   # requested: { 'api' => 'shown' | 'hidden' | 'default' }. Raises InvalidOverrides, before writing anything, for an
   # unknown channel or state, and StaleOverrides when a channel the person moved has another state than they saw.
-  def apply(requested, expected: nil)
+  def apply(requested, expected = nil)
     desired = validate!(requested)
     seen = expected.nil? ? nil : validate!(expected)
     desired = desired.reject { |key, state| seen[key] == state } if seen

@@ -56,14 +56,22 @@ RSpec.describe 'Super Admin Installation Config API', type: :request do
       expect(response.body).not_to include(name)
     end
 
-    it 'cannot be opened or edited by its id' do
+    # a 404 ends the session of the test client, so every page is asked for in an example of its own
+    it 'cannot be opened by its id' do
       get "/super_admin/installation_configs/#{visibility.id}"
-      expect(response).to have_http_status(:not_found)
 
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it 'cannot be edited by its id' do
       get "/super_admin/installation_configs/#{visibility.id}/edit"
-      expect(response).to have_http_status(:not_found)
 
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it 'cannot be changed by its id' do
       patch "/super_admin/installation_configs/#{visibility.id}", params: { installation_config: { value: '{"api":"hidden"}' } }
+
       expect(response).to have_http_status(:not_found)
       expect(Channels::PlatformVisibility.settings).to eq('api' => 'shown')
     end

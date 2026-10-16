@@ -97,7 +97,7 @@ RSpec.describe Accounts::ChannelOverrides do
       [nil, 'api', %w[api shown], [{ 'api' => 'shown' }]].each do |requested|
         expect { service.apply(requested) }.to raise_error(described_class::InvalidOverrides), requested.inspect
       end
-      expect { service.apply({ 'api' => 'shown' }, expected: %w[api]) }.to raise_error(described_class::InvalidOverrides)
+      expect { service.apply({ 'api' => 'shown' }, %w[api]) }.to raise_error(described_class::InvalidOverrides)
       expect(overrides).to be_nil
     end
   end
@@ -108,7 +108,7 @@ RSpec.describe Accounts::ChannelOverrides do
     it 'writes only the channels the person moved' do
       service.apply('api' => 'shown') # somebody else, after the page was drawn
 
-      changes = service.apply(as_drawn.merge('sms' => 'hidden'), expected: as_drawn)
+      changes = service.apply(as_drawn.merge('sms' => 'hidden'), as_drawn)
 
       expect(changes).to eq('sms' => { 'from' => nil, 'to' => 'hidden' })
       expect(overrides).to eq('api' => 'shown', 'sms' => 'hidden')
@@ -117,7 +117,7 @@ RSpec.describe Accounts::ChannelOverrides do
     it 'raises StaleOverrides, writing nothing, when a channel the person moved was moved by somebody else to a third state' do
       service.apply('api' => 'shown')
 
-      expect { service.apply({ 'api' => 'hidden', 'sms' => 'shown' }, expected: { 'api' => 'default', 'sms' => 'default' }) }
+      expect { service.apply({ 'api' => 'hidden', 'sms' => 'shown' }, { 'api' => 'default', 'sms' => 'default' }) }
         .to raise_error(described_class::StaleOverrides, /api/)
 
       expect(overrides).to eq('api' => 'shown')
@@ -126,14 +126,14 @@ RSpec.describe Accounts::ChannelOverrides do
     it 'is not stale when somebody else moved the channel to the very state the person asks for' do
       service.apply('api' => 'shown')
 
-      changes = service.apply({ 'api' => 'shown' }, expected: { 'api' => 'default' })
+      changes = service.apply({ 'api' => 'shown' }, { 'api' => 'default' })
 
       expect(changes).to eq({})
       expect(overrides).to eq('api' => 'shown')
     end
 
     it 'treats a channel without an entry as «default»' do
-      expect { service.apply({ 'api' => 'hidden' }, expected: { 'api' => 'default' }) }.not_to raise_error
+      expect { service.apply({ 'api' => 'hidden' }, { 'api' => 'default' }) }.not_to raise_error
 
       expect(overrides).to eq('api' => 'hidden')
     end
