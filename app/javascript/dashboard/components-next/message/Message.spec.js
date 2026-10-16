@@ -154,10 +154,77 @@ describe('Message', () => {
       ref(() => ({ channel_type: 'Channel::Api' }))
     );
     useInboxMock.mockReturnValue({
+      isAWebWidgetInbox: ref(false),
       isAWhatsAppWebChannel: ref(false),
       isATelegramChannel: ref(false),
       isATelegramPersonalChannel: ref(false),
     });
+  });
+
+  it('hides edit and delete for non-private messages on channels that do not support provider deletion (e.g. Official WhatsApp)', () => {
+    const wrapper = createWrapper();
+    const contextMenu = wrapper.findComponent({ name: 'ContextMenu' });
+
+    expect(contextMenu.props('enabledOptions').edit).toBe(false);
+    expect(contextMenu.props('enabledOptions').delete).toBe(false);
+  });
+
+  it('enables delete (but not edit) for private notes on any channel', () => {
+    const wrapper = createWrapper({
+      private: true,
+    });
+    const contextMenu = wrapper.findComponent({ name: 'ContextMenu' });
+
+    expect(contextMenu.props('enabledOptions').edit).toBe(false);
+    expect(contextMenu.props('enabledOptions').delete).toBe(true);
+  });
+
+  it('enables delete (but not edit) for WebWidget messages', () => {
+    useInboxMock.mockReturnValue({
+      isAWebWidgetInbox: ref(true),
+      isAWhatsAppWebChannel: ref(false),
+      isATelegramChannel: ref(false),
+      isATelegramPersonalChannel: ref(false),
+    });
+
+    const wrapper = createWrapper();
+    const contextMenu = wrapper.findComponent({ name: 'ContextMenu' });
+
+    expect(contextMenu.props('enabledOptions').edit).toBe(false);
+    expect(contextMenu.props('enabledOptions').delete).toBe(true);
+  });
+
+  it('enables delete for WhatsApp Web outgoing messages within 48h and disables for incoming or expired messages', () => {
+    useInboxMock.mockReturnValue({
+      isAWebWidgetInbox: ref(false),
+      isAWhatsAppWebChannel: ref(true),
+      isATelegramChannel: ref(false),
+      isATelegramPersonalChannel: ref(false),
+    });
+
+    const recentOutgoing = createWrapper({
+      createdAt: Math.floor(Date.now() / 1000) - 20 * 60,
+    });
+    const expiredOutgoing = createWrapper({
+      createdAt: Math.floor(Date.now() / 1000) - 49 * 60 * 60,
+    });
+    const incoming = createWrapper({
+      messageType: MESSAGE_TYPES.INCOMING,
+    });
+
+    expect(
+      recentOutgoing.findComponent({ name: 'ContextMenu' }).props('enabledOptions')
+        .delete
+    ).toBe(true);
+    expect(
+      expiredOutgoing
+        .findComponent({ name: 'ContextMenu' })
+        .props('enabledOptions').delete
+    ).toBe(false);
+    expect(
+      incoming.findComponent({ name: 'ContextMenu' }).props('enabledOptions')
+        .delete
+    ).toBe(false);
   });
 
   it('enables edit and delete for Telegram Personal outgoing provider messages', () => {

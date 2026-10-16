@@ -127,7 +127,7 @@ class Channel::WhatsappWeb < ApplicationRecord
     end
   end
 
-  delegate :diagnostics, :send_message, :update_message, to: :provider_service
+  delegate :diagnostics, :send_message, :update_message, :delete_message, to: :provider_service
 
   def provision!
     with_provider_lifecycle_lock { provider_service.provision! }

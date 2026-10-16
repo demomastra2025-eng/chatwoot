@@ -48,5 +48,26 @@ RSpec.describe Messages::UpdateContentService do
       expect(message.reload.content).to eq('new text')
       expect(message.content_attributes['edited']).to eq(true)
     end
+
+    it 'rejects editing WhatsApp Web messages older than 15 minutes' do
+      channel = create(:channel_whatsapp_web)
+      conversation = create(:conversation, account: channel.account, inbox: channel.inbox)
+      message = create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        source_id: 'wa-old-1',
+        content: 'old text',
+        created_at: 16.minutes.ago
+      )
+
+      expect(channel).not_to receive(:update_message)
+
+      expect do
+        described_class.new(message: message, content: 'new text').perform
+      end.to raise_error(Messages::UpdateContentService::Error, 'WhatsApp Web message edit window has expired')
+    end
   end
 end

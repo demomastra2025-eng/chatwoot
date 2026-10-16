@@ -102,6 +102,20 @@ class Channel::Telegram < ApplicationRecord
     response.parsed_response
   end
 
+  def delete_message(message:)
+    response = HTTParty.post(
+      "#{telegram_api_url}/deleteMessage",
+      body: {
+        chat_id: chat_id(message),
+        message_id: message.source_id
+      }.merge(business_body(message))
+    )
+
+    raise response.parsed_response['description'] unless response.success?
+
+    response.parsed_response
+  end
+
   def mark_message_read(message:)
     business_connection_id = business_connection_id(message)
     return false if business_connection_id.blank?

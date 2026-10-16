@@ -311,6 +311,19 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
             })
   end
 
+  def delete_message(message:)
+    source_id = message.source_id.to_s.presence
+    remote_jid = normalized_remote_jid(message_remote_jid(message))
+    raise ArgumentError, 'Message source_id is required for WhatsApp Web deletes' if source_id.blank?
+    raise ArgumentError, 'Conversation remote JID is required for WhatsApp Web deletes' if remote_jid.blank?
+
+    request(:delete, "/chat/deleteMessageForEveryone/#{channel.instance_name}", body: {
+              id: source_id,
+              fromMe: true,
+              remoteJid: remote_jid
+            })
+  end
+
   def send_reaction(message:, emoji:)
     source_id = message.source_id.to_s.presence
     remote_jid = normalized_remote_jid(message_remote_jid(message))

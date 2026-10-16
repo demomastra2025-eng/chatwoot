@@ -2,6 +2,8 @@ class Messages::UpdateContentService
   class Error < StandardError; end
 
   EDITABLE_ATTACHMENT_TYPES = %w[image video].freeze
+  WHATSAPP_WEB_EDIT_WINDOW = 15.minutes
+  TELEGRAM_BOT_EDIT_WINDOW = 48.hours
 
   pattr_initialize [:message!, :content!]
 
@@ -37,6 +39,18 @@ class Messages::UpdateContentService
     raise Error, 'Deleted messages cannot be edited' if (message.content_attributes || {}).with_indifferent_access[:deleted]
     raise Error, 'Message source_id is missing' if message.source_id.blank?
     raise Error, 'Only text and media caption messages can be edited' unless editable_payload?
+
+    validate_edit_window!
+  end
+
+  def validate_edit_window!
+    return unless message.respond_to?(:created_at) && message.created_at.present?
+
+    if channel.is_a?(Channel::WhatsappWeb) && message.created_at < WHATSAPP_WEB_EDIT_WINDOW.ago
+      raise Error, 'WhatsApp Web message edit window has expired'
+    elsif channel.is_a?(Channel::Telegram) && message.created_at < TELEGRAM_BOT_EDIT_WINDOW.ago
+      raise Error, 'Telegram message edit window has expired'
+    end
   end
 
   def editable_channel?

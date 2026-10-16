@@ -160,6 +160,7 @@ const route = useRoute();
 const inboxGetter = useMapGetter('inboxes/getInbox');
 const inbox = computed(() => inboxGetter.value(props.inboxId) || {});
 const {
+  isAWebWidgetInbox,
   isAWhatsAppCloudChannel,
   isAWhatsAppWebChannel,
   isATelegramChannel,
@@ -491,54 +492,58 @@ const payloadForContextMenu = computed(() => {
 const contextMenuEnabledOptions = computed(() => {
   const hasText = !!props.content;
   const hasAttachments = !!(props.attachments && props.attachments.length > 0);
+  const hasContent = hasText || hasAttachments;
   const firstAttachmentType = props.attachments?.[0]?.fileType;
   const createdAt =
     Number(props.createdAt) > 1000000000000
       ? Math.floor(Number(props.createdAt) / 1000)
       : Number(props.createdAt);
+  const messageAgeSeconds = Math.floor(Date.now() / 1000) - createdAt;
 
   const isOutgoing = props.messageType === MESSAGE_TYPES.OUTGOING;
   const isFailedOrProcessing =
     props.status === MESSAGE_STATUS.FAILED ||
     props.status === MESSAGE_STATUS.PROGRESS;
-  const isWithinEditWindow =
-    Math.floor(Date.now() / 1000) - createdAt <= 15 * 60;
+  const isWithinEditWindow = messageAgeSeconds <= 15 * 60;
+  const isWithinDeleteWindow = messageAgeSeconds <= 48 * 60 * 60;
   const canEditOnTelegram =
-    isATelegramChannel.value || isATelegramPersonalChannel.value;
+    (isATelegramChannel?.value && isWithinDeleteWindow) ||
+    isATelegramPersonalChannel?.value;
   const canReactOnChannel =
-    isAWhatsAppCloudChannel.value ||
-    isAWhatsAppWebChannel.value ||
-    isATelegramChannel.value ||
-    isATelegramPersonalChannel.value;
+    isAWhatsAppCloudChannel?.value ||
+    isAWhatsAppWebChannel?.value ||
+    isATelegramChannel?.value ||
+    isATelegramPersonalChannel?.value;
   const isEditableAttachment =
     !hasAttachments ||
     (props.attachments.length === 1 &&
       ['image', 'video'].includes(firstAttachmentType));
-  const canDeleteOnTelegramPersonal =
-    isATelegramPersonalChannel.value &&
+  const canDeleteOnProvider =
     isOutgoing &&
     !!props.sourceId &&
-    !props.private;
+    !props.private &&
+    (isATelegramPersonalChannel?.value ||
+      ((isAWhatsAppWebChannel?.value || isATelegramChannel?.value) &&
+        isWithinDeleteWindow));
+  const canDeleteLocally =
+    hasContent && (props.private || !!isAWebWidgetInbox?.value);
 
   return {
     edit:
-      (isAWhatsAppWebChannel.value || canEditOnTelegram) &&
+      ((isAWhatsAppWebChannel?.value && isWithinEditWindow) ||
+        canEditOnTelegram) &&
       isOutgoing &&
       hasText &&
       !!props.sourceId &&
       !props.private &&
       !isFailedOrProcessing &&
       !isMessageDeleted.value &&
-      (isAWhatsAppWebChannel.value ? isWithinEditWindow : true) &&
       isEditableAttachment,
     copy: hasText,
-    delete: isATelegramPersonalChannel.value
-      ? canDeleteOnTelegramPersonal &&
-        !isFailedOrProcessing &&
-        !isMessageDeleted.value
-      : (hasText || hasAttachments) &&
-        !isFailedOrProcessing &&
-        !isMessageDeleted.value,
+    delete:
+      !isFailedOrProcessing &&
+      !isMessageDeleted.value &&
+      (canDeleteLocally || canDeleteOnProvider),
     cannedResponse: isOutgoing && hasText && !isMessageDeleted.value,
     copyLink: !isFailedOrProcessing,
     translate: !isFailedOrProcessing && !isMessageDeleted.value && hasText,

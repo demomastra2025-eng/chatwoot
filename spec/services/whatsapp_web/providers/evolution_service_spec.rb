@@ -724,6 +724,34 @@ describe WhatsappWeb::Providers::EvolutionService do
     end
   end
 
+  describe '#delete_message' do
+    it 'sends deleteMessageForEveryone payload to Evolution' do
+      service = described_class.new(channel: channel)
+      conversation = create(:conversation, account: channel.account, inbox: channel.inbox)
+      message = create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        content: 'Original text',
+        source_id: 'wa-del-1'
+      )
+
+      expect(service).to receive(:request).with(
+        :delete,
+        "/chat/deleteMessageForEveryone/#{channel.instance_name}",
+        body: {
+          id: 'wa-del-1',
+          fromMe: true,
+          remoteJid: "#{conversation.contact_inbox.source_id}@s.whatsapp.net"
+        }
+      ).and_return({})
+
+      service.delete_message(message: message)
+    end
+  end
+
   describe '#fetch_message_media' do
     it 'fetches base64 media payload for a stored provider message' do
       service = described_class.new(channel: channel)

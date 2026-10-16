@@ -69,6 +69,10 @@ class WhatsappWeb::Providers::BaseService
     raise 'Overwrite this method in child class'
   end
 
+  def delete_message(*)
+    raise 'Overwrite this method in child class'
+  end
+
   def mark_messages_read(*)
     raise 'Overwrite this method in child class'
   end

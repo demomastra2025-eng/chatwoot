@@ -61,5 +61,107 @@ RSpec.describe Messages::DeleteService do
         described_class.new(message: message).perform
       end.to raise_error(Messages::DeleteService::Error, 'Only outgoing Telegram Personal messages can be deleted')
     end
+
+    it 'deletes WhatsApp Web outgoing messages within 48 hours through the channel' do
+      channel = create(:channel_whatsapp_web)
+      conversation = create(:conversation, account: channel.account, inbox: channel.inbox)
+      message = create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        source_id: 'wa-del-1',
+        content: 'to be deleted'
+      )
+
+      expect(channel).to receive(:delete_message).with(message: message)
+
+      described_class.new(message: message).perform
+
+      expect(message.reload.deleted).to eq(true)
+    end
+
+    it 'rejects deleting WhatsApp Web messages older than 48 hours' do
+      channel = create(:channel_whatsapp_web)
+      conversation = create(:conversation, account: channel.account, inbox: channel.inbox)
+      message = create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        source_id: 'wa-del-old',
+        content: 'too old',
+        created_at: 49.hours.ago
+      )
+
+      expect(channel).not_to receive(:delete_message)
+
+      expect do
+        described_class.new(message: message).perform
+      end.to raise_error(Messages::DeleteService::Error, 'WhatsApp Web message deletion window has expired')
+    end
+
+    it 'deletes Telegram Bot outgoing messages within 48 hours through the channel' do
+      channel = create(:channel_telegram)
+      conversation = create(
+        :conversation,
+        account: channel.account,
+        inbox: channel.inbox,
+        additional_attributes: { 'chat_id' => '123' }
+      )
+      message = create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        source_id: '202',
+        content: 'telegram bot text'
+      )
+
+      expect(channel).to receive(:delete_message).with(message: message)
+
+      described_class.new(message: message).perform
+
+      expect(message.reload.deleted).to eq(true)
+    end
+
+    it 'rejects deleting non-private messages on official WhatsApp Cloud API channels' do
+      channel = create(:channel_whatsapp, sync_templates: false, validate_provider_config: false)
+      conversation = create(:conversation, account: channel.account, inbox: channel.inbox)
+      message = create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        source_id: 'wamid.123',
+        content: 'cannot be deleted from client phone'
+      )
+
+      expect do
+        described_class.new(message: message).perform
+      end.to raise_error(Messages::DeleteService::Error, 'Message deletion is not supported for Whatsapp')
+    end
+
+    it 'allows deleting internal private notes on any channel without calling provider' do
+      channel = create(:channel_whatsapp, sync_templates: false, validate_provider_config: false)
+      conversation = create(:conversation, account: channel.account, inbox: channel.inbox)
+      note = create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        private: true,
+        content: 'internal note'
+      )
+
+      described_class.new(message: note).perform
+
+      expect(note.reload.deleted).to eq(true)
+    end
   end
 end
