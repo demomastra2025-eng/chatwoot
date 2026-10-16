@@ -25,6 +25,8 @@ import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDra
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
 import SettingsLayout from '../SettingsLayout.vue';
+import leadFormsAPI from 'dashboard/api/leadForms';
+import PipelineLeadSourceModal from './PipelineLeadSourceModal.vue';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { formatCrmErrorMessage } from 'dashboard/stores/crm/shared';
 import {
@@ -56,6 +58,9 @@ const canManage = computed(() =>
 );
 
 const pipelineDrawerOpen = ref(false);
+const leadForms = ref([]);
+const leadSourceModalOpen = ref(false);
+const activeLeadSourceKind = ref('meta');
 const pipelineDeleteDialogRef = ref(null);
 const pipelinePendingDelete = ref(null);
 const stageDeleteDialogRef = ref(null);
@@ -355,6 +360,7 @@ const loadSettings = async () => {
     referencesStore.loadFieldDefinitions('deal'),
   ]);
   if (String(accountId.value) !== requestAccountId) return;
+  fetchPipelineLeadForms();
   await syncSelectedPipelineRoute();
   syncSelectedPipelineState();
 };
@@ -507,14 +513,38 @@ const deletePipeline = async () => {
   }
 };
 
-const openLeadForms = () =>
-  router.push({
-    name: 'lead_forms_index',
-    params: { accountId: accountId.value },
-    ...(selectedPipeline.value?.id
-      ? { query: { pipelineId: String(selectedPipeline.value.id) } }
-      : {}),
-  });
+const metaFormsForSelectedPipeline = computed(() =>
+  leadForms.value.filter(
+    form =>
+      form.source_kind === 'meta' &&
+      selectedPipeline.value?.id &&
+      Number(form.pipeline_id) === Number(selectedPipeline.value.id)
+  )
+);
+
+const apiFormsForSelectedPipeline = computed(() =>
+  leadForms.value.filter(
+    form =>
+      form.source_kind === 'api' &&
+      selectedPipeline.value?.id &&
+      Number(form.pipeline_id) === Number(selectedPipeline.value.id)
+  )
+);
+
+const fetchPipelineLeadForms = async () => {
+  try {
+    const response = await leadFormsAPI.get();
+    leadForms.value = response?.data?.payload || [];
+  } catch {
+    // Non-blocking for pipeline settings
+  }
+};
+
+const openLeadSourceModal = sourceKind => {
+  activeLeadSourceKind.value = sourceKind;
+  leadSourceModalOpen.value = true;
+  fetchPipelineLeadForms();
+};
 
 const togglePipelineAutoCreate = value => {
   pipelineAutoCreateEnabled.value = Boolean(value);
@@ -1135,6 +1165,66 @@ onMounted(async () => {
                     </div>
                   </section>
 
+                  <button
+                    type="button"
+                    data-testid="open-meta-lead-forms-modal"
+                    class="group grid gap-2.5 px-5 py-4 text-left transition-colors hover:bg-n-alpha-black2"
+                    @click="openLeadSourceModal('meta')"
+                  >
+                    <div class="flex items-center justify-between gap-3">
+                      <div
+                        class="flex items-center gap-2 text-sm font-medium text-n-slate-12"
+                      >
+                        <span class="i-ri-meta-fill size-4 text-n-brand" />
+                        {{ $t('CRM.SETTINGS.PIPELINES.META_LEAD_FORMS_TITLE') }}
+                      </div>
+                      <div class="flex items-center gap-1.5">
+                        <span
+                          v-if="metaFormsForSelectedPipeline.length"
+                          class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-n-brand/10 px-1.5 text-xs font-semibold text-n-brand"
+                        >
+                          {{ metaFormsForSelectedPipeline.length }}
+                        </span>
+                        <span
+                          class="i-lucide-chevron-right size-4 text-n-slate-9 transition-colors group-hover:text-n-brand"
+                        />
+                      </div>
+                    </div>
+                    <p class="mb-0 text-xs leading-5 text-n-slate-10">
+                      {{ $t('CRM.SETTINGS.PIPELINES.META_LEAD_FORMS_HELP') }}
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="open-api-lead-forms-modal"
+                    class="group grid gap-2.5 px-5 py-4 text-left transition-colors hover:bg-n-alpha-black2"
+                    @click="openLeadSourceModal('api')"
+                  >
+                    <div class="flex items-center justify-between gap-3">
+                      <div
+                        class="flex items-center gap-2 text-sm font-medium text-n-slate-12"
+                      >
+                        <span class="i-lucide-webhook size-4 text-n-brand" />
+                        {{ $t('CRM.SETTINGS.PIPELINES.API_LEAD_FORMS_TITLE') }}
+                      </div>
+                      <div class="flex items-center gap-1.5">
+                        <span
+                          v-if="apiFormsForSelectedPipeline.length"
+                          class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-n-brand/10 px-1.5 text-xs font-semibold text-n-brand"
+                        >
+                          {{ apiFormsForSelectedPipeline.length }}
+                        </span>
+                        <span
+                          class="i-lucide-chevron-right size-4 text-n-slate-9 transition-colors group-hover:text-n-brand"
+                        />
+                      </div>
+                    </div>
+                    <p class="mb-0 text-xs leading-5 text-n-slate-10">
+                      {{ $t('CRM.SETTINGS.PIPELINES.API_LEAD_FORMS_HELP') }}
+                    </p>
+                  </button>
+
                   <section
                     class="grid gap-4 px-5 py-4"
                     data-testid="crm-stage-entry-rules"
@@ -1190,27 +1280,6 @@ onMounted(async () => {
                       </label>
                     </div>
                   </section>
-
-                  <button
-                    type="button"
-                    class="group grid gap-3 px-5 py-4 text-left transition-colors hover:bg-n-alpha-black2"
-                    @click="openLeadForms"
-                  >
-                    <div class="flex items-center justify-between gap-3">
-                      <div
-                        class="flex items-center gap-2 text-sm font-medium text-n-slate-12"
-                      >
-                        <span class="i-lucide-file-input size-4 text-n-brand" />
-                        {{ $t('CRM.SETTINGS.PIPELINES.LEAD_FORMS_TITLE') }}
-                      </div>
-                      <span
-                        class="i-lucide-arrow-up-right size-4 text-n-slate-9 transition-colors group-hover:text-n-brand"
-                      />
-                    </div>
-                    <p class="mb-0 text-xs leading-5 text-n-slate-10">
-                      {{ $t('CRM.SETTINGS.PIPELINES.LEAD_FORMS_HELP') }}
-                    </p>
-                  </button>
                 </div>
               </aside>
 
@@ -1652,5 +1721,12 @@ onMounted(async () => {
         </div>
       </template>
     </Dialog>
+    <PipelineLeadSourceModal
+      v-model="leadSourceModalOpen"
+      :source-kind="activeLeadSourceKind"
+      :pipeline="selectedPipeline"
+      :forms="leadForms"
+      @updated="fetchPipelineLeadForms"
+    />
   </SettingsLayout>
 </template>

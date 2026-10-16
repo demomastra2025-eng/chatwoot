@@ -801,7 +801,18 @@
           "STATUS": "Status"
         },
         "TITLE": "Deals",
-        "UNSORTED_HELP": "Send incoming requests here first when they need manual qualification."
+        "UNSORTED_HELP": "Send incoming requests here first when they need manual qualification.",
+        "META_LEAD_FORMS_TITLE": "Meta Lead Ads",
+        "META_LEAD_FORMS_HELP": "Facebook and Instagram lead forms that create deals in this pipeline.",
+        "META_LEAD_FORMS_MODAL_DESCRIPTION": "Leads from Facebook and Instagram Lead Ads automatically create a deal in the selected stage of this pipeline and open a conversation.",
+        "API_LEAD_FORMS_TITLE": "API / Website forms",
+        "API_LEAD_FORMS_HELP": "Connect website, Tilda, and landing page forms via webhook/token to this pipeline.",
+        "API_LEAD_FORMS_MODAL_DESCRIPTION": "Send leads from your website, Tilda, or external systems using a public token right into the selected stage of this pipeline.",
+        "CONNECTED_FORMS_TITLE": "Connected pipeline forms",
+        "NO_CONNECTED_FORMS": "No forms are connected to this pipeline yet.",
+        "OTHER_ACCOUNT_FORMS_TITLE": "Other account forms",
+        "ATTACH_TO_PIPELINE": "Attach to pipeline",
+        "DETACH_FORM": "Detach from pipeline"
       },
       "STAGE_RULES": {
         "ALLOW_OVERRIDE": "Allow administrator override",

@@ -55,6 +55,14 @@ vi.mock('dashboard/api/integrations', () => ({
   default: { get: testState.integrations },
 }));
 
+vi.mock('dashboard/api/leadForms', () => ({
+  default: {
+    get: vi.fn(() => Promise.resolve({ data: { payload: [] } })),
+    create: vi.fn(() => Promise.resolve({ data: {} })),
+    update: vi.fn(() => Promise.resolve({ data: {} })),
+  },
+}));
+
 vi.mock('dashboard/composables', () => ({
   useAlert: testState.useAlert,
 }));
