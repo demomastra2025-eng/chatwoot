@@ -23,7 +23,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         sign_in(super_admin, scope: :super_admin)
         get '/super_admin/accounts'
         expect(response).to have_http_status(:success)
-        expect(response.body).to include('Новая клиника')
+        expect(response.body).to include('Новый аккаунт')
         expect(response.body).to include(account.name)
       end
     end
@@ -58,7 +58,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
       get '/super_admin/accounts/new'
 
       expect(response).to have_http_status(:success)
-      expect(response.body).to include('Создать клинику', 'Всегда включена')
+      expect(response.body).to include('Создать аккаунт', 'Всегда включена')
       expect(response.body).not_to include('Outbound emails today')
     end
   end
@@ -524,7 +524,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
 
       rows = CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true)
       statuses = rows.to_h { |row| [row['Название'], row['Статус']] }
-      expect(statuses).to include(account.name => 'Активна', 'Заблокированная' => 'Заблокирована', 'Уходящая' => 'На удаление')
+      expect(statuses).to include(account.name => 'Активен', 'Заблокированная' => 'Заблокирован', 'Уходящая' => 'На удаление')
     end
   end
 
@@ -544,12 +544,12 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
     end
 
     it 'keeps ordinary names untouched' do
-      account.update!(name: 'Клиника Север')
+      account.update!(name: 'Аккаунт Север')
       sign_in(super_admin, scope: :super_admin)
 
       get '/super_admin/accounts/export'
 
-      expect(CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true).pluck('Название')).to include('Клиника Север')
+      expect(CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true).pluck('Название')).to include('Аккаунт Север')
     end
   end
 

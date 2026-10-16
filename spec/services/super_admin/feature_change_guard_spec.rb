@@ -110,7 +110,7 @@ RSpec.describe SuperAdmin::FeatureChangeGuard do
 
       expect(message).to start_with('Изменения не сохранены.')
       expect(message).to include('Функцию «Единый вход SAML» нельзя включить: ни один тариф её не включает.')
-      expect(message).to include('Функцию «Управление операторами» нельзя выключить: она всегда нужна клинике.')
+      expect(message).to include('Функцию «Управление операторами» нельзя выключить: она всегда нужна аккаунту.')
       expect(message).to include('Функцию «Представление входящих» нельзя менять здесь: это служебная настройка платформы.')
     end
   end

@@ -19,13 +19,13 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
 
     it 'is a short form with a Russian title' do
       expect(response).to have_http_status(:ok)
-      expect(text(page.at_css('h1'))).to eq('Новая клиника')
-      expect(page.at_css('input[type="submit"]')['value']).to eq('Создать клинику')
+      expect(text(page.at_css('h1'))).to eq('Новый аккаунт')
+      expect(page.at_css('input[type="submit"]')['value']).to eq('Создать аккаунт')
       expect(response.body).not_to include('translation missing')
     end
 
     it 'asks for a name and a language, with the names of the languages' do
-      expect(text(page.at_css('label[for="account_name"]'))).to eq('Название клиники')
+      expect(text(page.at_css('label[for="account_name"]'))).to eq('Название аккаунта')
       expect(page.at_css('input[name="account[name]"]')).to be_present
       expect(text(page.at_css('label[for="account_locale"]'))).to eq('Язык')
       expect(options_of(page.at_css('select[name="account[locale]"]'))).to eq([%w[Русский ru], %w[Қазақша kk], %w[English en]])
@@ -67,18 +67,18 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
       Account.find_by(name: name)
     end
 
-    it 'applies the base and the chosen modules and says «Клиника создана.»' do
-      created = create_clinic('Клиника Север', modules: %w[quality])
+    it 'applies the base and the chosen modules and says «Аккаунт создан.»' do
+      created = create_clinic('Аккаунт Север', modules: %w[quality])
 
       expect(response).to redirect_to("/super_admin/accounts/#{created.id}")
-      expect(flash[:notice]).to eq('Клиника создана.')
+      expect(flash[:notice]).to eq('Аккаунт создан.')
       expect(created.custom_attributes).to include('plan' => 'base', 'plan_modules' => %w[quality])
       expect(created.feature_enabled?('sla')).to be(true)
       expect(created).not_to be_trial
     end
 
     it 'starts a trial on top of the plan when asked, and records it' do
-      created = create_clinic('Клиника Юг', modules: %w[quality], start_trial: '1')
+      created = create_clinic('Аккаунт Юг', modules: %w[quality], start_trial: '1')
 
       expect(created).to be_trial_active
       expect(created.custom_attributes).to include('plan' => 'base', 'plan_modules' => %w[quality])
@@ -88,7 +88,7 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
     end
 
     it 'takes the trial back without touching the plan when it ends' do
-      created = create_clinic('Клиника Запад', modules: %w[quality], start_trial: '1')
+      created = create_clinic('Аккаунт Запад', modules: %w[quality], start_trial: '1')
 
       expect(created.expire_trial!).to be(true)
 
@@ -99,7 +99,7 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
     end
 
     it 'leaves the clinic able to add operators and channels when its trial ends (the limits are not locked)' do
-      created = create_clinic('Клиника Центр', modules: %w[quality], start_trial: '1')
+      created = create_clinic('Аккаунт Центр', modules: %w[quality], start_trial: '1')
       created.update!(limits: created.limits.merge('agents' => 5, 'inboxes' => 8))
 
       expect(created.expire_trial!).to be(true)
@@ -112,7 +112,7 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
     end
 
     it 'does not lock the limits of a clinic created with a trial and no limits set either' do
-      created = create_clinic('Клиника Пустая', start_trial: '1')
+      created = create_clinic('Аккаунт Пустой', start_trial: '1')
 
       created.expire_trial!
 
@@ -123,7 +123,7 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
     it 'says on the form what happens to the limits when the trial ends' do
       get '/super_admin/accounts/new'
 
-      expect(text(page.at_css('[data-testid="new-trial-block"]'))).to include('лимиты клиники останутся как есть')
+      expect(text(page.at_css('[data-testid="new-trial-block"]'))).to include('лимиты аккаунта останутся как есть')
     end
 
     it 'keeps English when the operator picks it (only the empty form defaults to Russian)' do
@@ -133,7 +133,7 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
     end
 
     it 'ignores a trial switch that is off' do
-      created = create_clinic('Клиника Восток', start_trial: '0')
+      created = create_clinic('Аккаунт Восток', start_trial: '0')
 
       expect(created).not_to be_trial
     end
@@ -152,7 +152,7 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
   end
 
   describe 'the edit form' do
-    let(:account) { create(:account, name: 'Клиника Алатау', limits: { 'agents' => 10, 'storage_bytes' => 50.gigabytes }) }
+    let(:account) { create(:account, name: 'Аккаунт Алатау', limits: { 'agents' => 10, 'storage_bytes' => 50.gigabytes }) }
 
     before do
       Accounts::ApplyPlan.new(account: account, modules: []).call
@@ -166,7 +166,7 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
     end
 
     it 'labels the main fields in Russian and offers the names of the languages' do
-      expect(text(page.at_css('label[for="account_name"]'))).to eq('Название клиники')
+      expect(text(page.at_css('label[for="account_name"]'))).to eq('Название аккаунта')
       expect(text(page.at_css('label[for="account_locale"]'))).to eq('Язык')
       expect(text(page.at_css('label[for="account_status"]'))).to eq('Статус')
       expect(options_of(page.at_css('select[name="account[locale]"]'))).to eq([%w[Русский ru], %w[Қазақша kk], %w[English en]])
@@ -175,7 +175,7 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
     it 'shows the status in Russian and keeps the stored value' do
       select = page.at_css('select[name="account[status]"]')
 
-      expect(options_of(select)).to eq([%w[Активна active], %w[Заблокирована suspended]])
+      expect(options_of(select)).to eq([%w[Активен active], %w[Заблокирован suspended]])
       expect(select.at_css('option[selected]')['value']).to eq('active')
     end
 
@@ -187,7 +187,7 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
       expect(labels).to eq(
         ['Операторы', 'Каналы', 'Диалоги за 30 дней', 'Основные каналы', 'Хранилище, ГБ', 'Ответы ИИ', 'Документы ИИ', 'Токены ИИ', 'Письма в день']
       )
-      expect(text(page.at_css('#account_limits_agents').parent)).to include('Сколько пользователей может быть в клинике.')
+      expect(text(page.at_css('#account_limits_agents').parent)).to include('Сколько пользователей может быть в аккаунте.')
       expect(response.body).to include('Оставьте поле пустым', 'запрещает действие')
     end
 
@@ -223,14 +223,14 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
 
     it 'saves what the browser sends' do
       patch "/super_admin/accounts/#{account.id}", params: {
-        account: { name: 'Клиника Алатау 2', locale: 'kk', status: 'suspended',
+        account: { name: 'Аккаунт Алатау 2', locale: 'kk', status: 'suspended',
                    limits: { agents: '12', storage_bytes: '1.5', emails: '' }, limit_counter_excluded_user_ids_raw: '4, 5' },
         enabled_features: { feature_sla: 'true', feature_crm: 'false' }
       }
 
       expect(response).to redirect_to("/super_admin/accounts/#{account.id}")
       account.reload
-      expect(account).to have_attributes(name: 'Клиника Алатау 2', locale: 'kk', status: 'suspended')
+      expect(account).to have_attributes(name: 'Аккаунт Алатау 2', locale: 'kk', status: 'suspended')
       expect(account.limits).to eq('agents' => 12, 'storage_bytes' => 1.5.gigabytes.to_i)
       expect(account.custom_attributes['limit_counter_excluded_user_ids']).to eq([4, 5])
       expect(account.feature_enabled?('sla')).to be(true)

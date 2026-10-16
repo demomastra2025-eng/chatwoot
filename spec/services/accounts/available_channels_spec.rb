@@ -119,7 +119,7 @@ RSpec.describe Accounts::AvailableChannels do
     it 'raises with the Russian line and the channel key when the channel is not available' do
       expect { described_class.ensure_available!(account, 'api') }.to raise_error(Channels::NotAvailable) do |error|
         expect(error.channel_key).to eq('api')
-        expect(error.message).to eq('Канал «API» недоступен для вашей клиники. Чтобы его подключить, обратитесь в поддержку.')
+        expect(error.message).to eq('Канал «API» недоступен для вашего аккаунта. Чтобы его подключить, обратитесь в поддержку.')
       end
     end
 

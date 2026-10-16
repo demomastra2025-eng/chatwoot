@@ -14,7 +14,7 @@ RSpec.describe 'Super Admin AI analytics', type: :request do
         by_feature: { 'agent_reply' => 10, nil => 2 }, by_model: { 'openai/gpt-6-luna' => 12 }, by_provider: {}
       },
       top_accounts: [
-        { account_id: 5, account_name: 'Клиника «Сезим»', total_events: 100, request_count: 40, error_count: 3,
+        { account_id: 5, account_name: 'Аккаунт «Сезим»', total_events: 100, request_count: 40, error_count: 3,
           estimated_cost: 12.345, last_event_at: moment }
       ]
     }
@@ -31,7 +31,7 @@ RSpec.describe 'Super Admin AI analytics', type: :request do
     expect(page.css('[data-testid="stat"]').map { |node| node.text.squish }).to eq(
       ['События 12 450', 'Запросы в чате 3 000', 'Ошибки 7', 'Оценка стоимости $1 234,50']
     )
-    expect(page.at_css('[data-testid="ai-top"]').text).to include('Клиника «Сезим»', 'Клиника №5', '$12,35', '15.10.2026 17:05')
+    expect(page.at_css('[data-testid="ai-top"]').text).to include('Аккаунт «Сезим»', 'Аккаунт №5', '$12,35', '15.10.2026 17:05')
     expect(page.at_css('[data-testid="ai-range"]').text).to include('(Астана)')
     expect(page.at_css('[data-testid="ai-spread-features"]').text).to include('agent_reply (10)', 'не указано (2)')
     expect(page.at_css('[data-testid="ai-spread-providers"]').text).to include('нет данных')

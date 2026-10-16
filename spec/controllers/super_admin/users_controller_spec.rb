@@ -255,7 +255,7 @@ RSpec.describe 'Super Admin Users API', type: :request do
       it 'words the sign-in block in Russian, without English leftovers or emoji' do
         get "/super_admin/users/#{user.id}"
 
-        expect(response.body).to include('Вход в кабинет клиники', 'Войти под пользователем — First Impersonation Account')
+        expect(response.body).to include('Вход в кабинет аккаунта', 'Войти под пользователем — First Impersonation Account')
         expect(response.body).not_to include('Impersonate')
         expect(response.body).not_to match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/)
       end

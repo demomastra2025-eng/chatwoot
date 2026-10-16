@@ -35,11 +35,11 @@ RSpec.describe 'Super Admin sidebar', type: :request do
     it 'has four captioned groups in the agreed order' do
       captions = nav.css('[role="group"]').map { |node| node.at_css('span[id^="nav-group-"]').text.squish }
 
-      expect(captions).to eq(%w[Клиники ИИ Система Дополнительно])
+      expect(captions).to eq(%w[Управление ИИ Система Дополнительно])
     end
 
     it 'lists the clinics, AI and system entries' do
-      expect(link_texts(group('clinics'))).to eq(%w[Сводка Клиники Пользователи])
+      expect(link_texts(group('clinics'))).to eq(%w[Сводка Аккаунты Пользователи])
       expect(link_texts(group('ai'))).to eq(['Модели ИИ', 'AI-аналитика'])
       expect(link_texts(group('system')).first(6)).to eq(['Мониторинг', 'Логи', 'Очереди', 'Статус сервера', 'Журнал аудита', 'Push-диагностика'])
       expect(link_texts(group('system'))).to include('Настройки')
@@ -49,7 +49,7 @@ RSpec.describe 'Super Admin sidebar', type: :request do
     it 'links every entry to its page' do
       {
         'Сводка' => '/super_admin',
-        'Клиники' => '/super_admin/accounts',
+        'Аккаунты' => '/super_admin/accounts',
         'Пользователи' => '/super_admin/users',
         'Модели ИИ' => '/super_admin/app_config?config=captain',
         'AI-аналитика' => '/super_admin/captain_observability',
@@ -160,13 +160,13 @@ RSpec.describe 'Super Admin sidebar', type: :request do
 
     it 'marks the clinics on the list, show and edit pages' do
       get '/super_admin/accounts'
-      expect(current_labels).to eq(['Клиники'])
+      expect(current_labels).to eq(['Аккаунты'])
 
       get "/super_admin/accounts/#{account.id}"
-      expect(current_labels).to eq(['Клиники'])
+      expect(current_labels).to eq(['Аккаунты'])
 
       get "/super_admin/accounts/#{account.id}/edit"
-      expect(current_labels).to eq(['Клиники'])
+      expect(current_labels).to eq(['Аккаунты'])
     end
 
     it 'marks the users' do
@@ -228,8 +228,8 @@ RSpec.describe 'Super Admin sidebar', type: :request do
       get '/super_admin/users'
 
       expect(link('Пользователи')['class'].split).to include('bg-n-brand-solid', 'text-n-brand-contrast')
-      expect(link('Клиники')['class'].split).to include('text-n-slate-11')
-      expect(link('Клиники')['class'].split).not_to include('bg-n-brand-solid')
+      expect(link('Аккаунты')['class'].split).to include('text-n-slate-11')
+      expect(link('Аккаунты')['class'].split).not_to include('bg-n-brand-solid')
     end
   end
 

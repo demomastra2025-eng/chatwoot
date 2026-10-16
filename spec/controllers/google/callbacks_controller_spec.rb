@@ -62,7 +62,7 @@ RSpec.describe 'Google::CallbacksController', type: :request do
         page = Nokogiri::HTML(response.body)
         expect(response.media_type).to eq('text/html')
         expect(page.at_css('#channel-not-available-message').text).to eq(Channels::Catalog.unavailable_message('email'))
-        expect(page.at_css('#channel-not-available-message').text).to include('Канал «Email» недоступен для вашей клиники')
+        expect(page.at_css('#channel-not-available-message').text).to include('Канал «Email» недоступен для вашего аккаунта')
         expect(page.at_css('a')['href']).to eq("#{base_url}/app/accounts/#{account.id}/settings/inboxes/list")
         expect(response.body).not_to include('oauth_callback_failed')
       end

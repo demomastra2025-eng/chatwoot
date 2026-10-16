@@ -53,7 +53,7 @@ RSpec.describe SuperAdmin::AiModelsPage do
 
     it 'has a Russian title from the locale for the settings that have only an English one in installation_config.yml' do
       expect(slot('CAPTAIN_OPENROUTER_API_KEY').title).to eq('Ключ OpenRouter')
-      expect(slot('ACCOUNT_CAPTAIN_TOKENS_LIMIT').title).to eq('Лимит токенов ИИ на клинику')
+      expect(slot('ACCOUNT_CAPTAIN_TOKENS_LIMIT').title).to eq('Лимит токенов ИИ на аккаунт')
     end
 
     it 'says it is set when the platform stored a value, and then the stored value is in force' do

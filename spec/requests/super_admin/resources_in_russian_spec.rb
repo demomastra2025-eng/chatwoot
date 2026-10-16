@@ -47,13 +47,13 @@ RSpec.describe 'Super Admin lists and forms in Russian', type: :request do
     end
 
     it 'sizes the avatar of a user and names the clinics of a membership in Russian' do
-      account = create(:account, name: 'Клиника «Сезим»')
+      account = create(:account, name: 'Аккаунт «Сезим»')
       user = create(:user, account: account)
 
       get "/super_admin/users/#{user.id}"
 
       expect(page.at_css('dd.attribute-data--avatar-field img')).to be_present
-      expect(main_text).to include('Клиники и роли', 'Клиника «Сезим»')
+      expect(main_text).to include('Аккаунты и роли', 'Аккаунт «Сезим»')
     end
 
     it 'draws the file input as a button of its own, in Russian, with the name of the file next to it' do
@@ -66,13 +66,13 @@ RSpec.describe 'Super Admin lists and forms in Russian', type: :request do
       expect(picker.at_css('label')['for']).to eq(picker.at_css('input')['id'])
     end
 
-    it 'adds a user to a clinic with «клинику», not «аккаунт»' do
+    it 'adds a user to an account with «Добавить в аккаунт», not the English default' do
       user = create(:user)
 
       get "/super_admin/users/#{user.id}"
 
-      expect(main_text).to include('Добавить в клинику')
-      expect(main_text).not_to match(/Добавить в аккаунт/)
+      expect(main_text).to include('Добавить в аккаунт')
+      expect(main_text).not_to include('Add to account')
     end
   end
 
@@ -81,7 +81,7 @@ RSpec.describe 'Super Admin lists and forms in Russian', type: :request do
       get '/super_admin/agent_bots/new'
 
       expect(title).to eq('Новый AI-бот')
-      expect(page.css('label').map { |label| label.text.squish }).to include('Клиника')
+      expect(page.css('label').map { |label| label.text.squish }).to include('Аккаунт')
       expect(page.css('label').map { |label| label.text.squish }).not_to include('Account')
     end
 
@@ -157,10 +157,10 @@ RSpec.describe 'Super Admin lists and forms in Russian', type: :request do
   end
 
   describe 'users of a clinic' do
-    it 'titles the new page «Добавить пользователя в клинику»' do
+    it 'titles the new page «Добавить пользователя в аккаунт»' do
       get '/super_admin/account_users/new'
 
-      expect(title).to eq('Добавить пользователя в клинику')
+      expect(title).to eq('Добавить пользователя в аккаунт')
     end
   end
 end

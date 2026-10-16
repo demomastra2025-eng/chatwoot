@@ -65,14 +65,14 @@ RSpec.describe SuperAdmin::AccountPlanState do
   describe '#status' do
     it 'is active for a clinic in good standing, with its Russian name' do
       expect(state.status).to eq(:active)
-      expect(state.status_label).to eq('Активна')
+      expect(state.status_label).to eq('Активен')
     end
 
     it 'is suspended for a blocked clinic' do
       account.update!(status: :suspended)
 
       expect(state.status).to eq(:suspended)
-      expect(state.status_label).to eq('Заблокирована')
+      expect(state.status_label).to eq('Заблокирован')
     end
 
     it 'puts «на удаление» before «заблокирована»' do

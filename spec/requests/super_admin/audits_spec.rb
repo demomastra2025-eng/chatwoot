@@ -48,7 +48,7 @@ RSpec.describe 'Super Admin Audits', type: :request do
         page = Nokogiri::HTML(response.body)
 
         row = page.css('tbody tr').find { |tr| tr.text.include?("##{account.id}") }
-        expect(row.text).to include('Клиника', 'Применение тарифа')
+        expect(row.text).to include('Аккаунт', 'Применение тарифа')
         expect(page.at_css('[data-testid="audits-total"]').text).to include('Всего записей')
         expect(response.body).not_to include('translation missing')
       end

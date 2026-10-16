@@ -104,7 +104,7 @@ RSpec.describe Channels::Catalog do
   describe '.unavailable_message' do
     it 'is a Russian line that names the channel' do
       expect(described_class.unavailable_message('api'))
-        .to eq('Канал «API» недоступен для вашей клиники. Чтобы его подключить, обратитесь в поддержку.')
+        .to eq('Канал «API» недоступен для вашего аккаунта. Чтобы его подключить, обратитесь в поддержку.')
     end
   end
 

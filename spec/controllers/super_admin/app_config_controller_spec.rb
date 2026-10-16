@@ -193,7 +193,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           expect(response).to have_http_status(:success)
           expect(response.body).to include(*model_config_names, 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')
           expect(response.body).to include('Короткий список моделей для основного агента', 'Модель расшифровки голоса')
-          expect(response.body).to include('Модель определения языка пациента')
+          expect(response.body).to include('Модель определения языка клиента')
         end
 
         it 'lists the same fields on the community plan config page' do

@@ -3,10 +3,10 @@
 require 'rails_helper'
 
 # The «Служебные» block of the clinic card (the owner decisions that differ from clinic to clinic), the check that
-# refuses a switch the screens never offer, and the «Убрать из клиники» action of the users block.
+# refuses a switch the screens never offer, and the «Убрать из аккаунта» action of the users block.
 RSpec.describe 'Super admin service flags and feature changes', type: :request do
   let(:super_admin) { create(:super_admin) }
-  let(:account) { create(:account, name: 'Клиника Алатау') }
+  let(:account) { create(:account, name: 'Аккаунт Алатау') }
   let(:card_path) { "/super_admin/accounts/#{account.id}" }
   let(:page) { Nokogiri::HTML(response.body) }
 
@@ -43,8 +43,8 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
       rows = service_block.css('[data-flag]')
 
       expect(rows.pluck('data-flag')).to eq(SuperAdmin::FineTuning::OWNER_DECISION_FLAGS)
-      expect(text(rows.first)).to include('Один чат на пациента', 'Диалоги пациента из разных каналов собираются в один чат.')
-      expect(text(service_block)).to include('Автораспределение, версия 2', 'Свой ключ OpenRouter у клиники')
+      expect(text(rows.first)).to include('Один чат на контакт', 'Диалоги контакта из разных каналов собираются в один чат.')
+      expect(text(service_block)).to include('Автораспределение, версия 2', 'Свой ключ OpenRouter у аккаунта')
     end
 
     it 'posts the switches like the fine tuning does: a hidden «false» before the checkbox, to the update of the clinic' do
@@ -63,8 +63,8 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
     it 'asks a question that names the clinic before a switch is moved either way' do
       box = service_block.at_css('input#service-communication_threads')
 
-      expect(box['data-confirm-on']).to include('Клиника Алатау', 'Один чат на пациента')
-      expect(box['data-confirm-off']).to include('Клиника Алатау', 'Один чат на пациента')
+      expect(box['data-confirm-on']).to include('Аккаунт Алатау', 'Один чат на контакт')
+      expect(box['data-confirm-off']).to include('Аккаунт Алатау', 'Один чат на контакт')
       expect(response.body).to include('data-service-flags-form')
     end
 
@@ -99,7 +99,7 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
       save('communication_threads' => 'true', 'assignment_v2' => 'false', 'captain_openrouter_byok' => 'true')
 
       expect(response).to redirect_to(card_path)
-      expect(flash[:notice]).to eq('Клиника сохранена.')
+      expect(flash[:notice]).to eq('Аккаунт сохранён.')
       account.reload
       expect(account.feature_enabled?('communication_threads')).to be(true)
       expect(account.feature_enabled?('captain_openrouter_byok')).to be(true)
@@ -152,7 +152,7 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
 
       get '/super_admin/audits'
 
-      expect(response.body).to include('Изменение служебных настроек клиники')
+      expect(response.body).to include('Изменение служебных настроек аккаунта')
     end
   end
 
@@ -185,7 +185,7 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(rejected_page.at_css(%(form[action="#{card_path}"] input[name="account[name]"]))).to be_present
-      expect(account.reload.name).to eq('Клиника Алатау')
+      expect(account.reload.name).to eq('Аккаунт Алатау')
     end
 
     it 'refuses to switch off a function that must stay on' do
@@ -213,11 +213,11 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
     it 'does not refuse a function no plan enables that the clinic already has: other fields still save' do
       account.enable_features!('scheduling_finance')
 
-      patch card_path, params: { account: { name: 'Клиника Новая' }, enabled_features: { feature_scheduling_finance: 'true', feature_sla: 'true' } }
+      patch card_path, params: { account: { name: 'Аккаунт Новый' }, enabled_features: { feature_scheduling_finance: 'true', feature_sla: 'true' } }
 
       expect(response).to redirect_to(card_path)
       account.reload
-      expect(account.name).to eq('Клиника Новая')
+      expect(account.name).to eq('Аккаунт Новый')
       expect(account.feature_enabled?('scheduling_finance')).to be(true)
       expect(account.feature_enabled?('sla')).to be(true)
     end
@@ -233,7 +233,7 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
 
     it 'refuses a new clinic that asks for a function no plan enables, and creates nothing' do
       expect do
-        post '/super_admin/accounts', params: { account: { name: 'Новая клиника', locale: 'ru' }, enabled_features: { feature_saml: 'true' } }
+        post '/super_admin/accounts', params: { account: { name: 'Новый аккаунт', locale: 'ru' }, enabled_features: { feature_saml: 'true' } }
       end.not_to change(Account, :count)
 
       expect(response).to have_http_status(:unprocessable_content)
@@ -261,7 +261,7 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
     end
   end
 
-  describe 'the users block: «Убрать из клиники»' do
+  describe 'the users block: «Убрать из аккаунта»' do
     let!(:member) { create(:user, account: account, role: :agent, name: 'Мерей') }
     let(:membership) { AccountUser.find_by!(account: account, user: member) }
 
@@ -270,15 +270,15 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
 
       form = page.at_css(%(form[action="/super_admin/account_users/#{membership.id}"]))
       expect(form.at_css('input[name="_method"]')['value']).to eq('delete')
-      expect(text(form.at_css('button'))).to eq('Убрать из клиники')
-      expect(form.at_css('button')['data-confirm']).to include('Мерей', 'Клиника Алатау', 'сам пользователь и его данные не удаляются')
+      expect(text(form.at_css('button'))).to eq('Убрать из аккаунта')
+      expect(form.at_css('button')['data-confirm']).to include('Мерей', 'Аккаунт Алатау', 'сам пользователь и его данные не удаляются')
     end
 
     it 'takes the member out of the clinic and keeps the user' do
       delete "/super_admin/account_users/#{membership.id}", headers: { 'HTTP_REFERER' => card_path }
 
       expect(response).to redirect_to(card_path)
-      expect(flash[:notice]).to eq('Пользователь убран из клиники.')
+      expect(flash[:notice]).to eq('Пользователь убран из аккаунта.')
       expect(AccountUser.where(id: membership.id)).to be_empty
       expect(User.exists?(member.id)).to be(true)
     end
@@ -296,7 +296,7 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
 
       get '/super_admin/audits'
 
-      expect(response.body).to include('Пользователь убран из клиники')
+      expect(response.body).to include('Пользователь убран из аккаунта')
     end
   end
 end

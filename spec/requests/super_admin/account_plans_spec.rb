@@ -154,7 +154,7 @@ RSpec.describe 'Super admin account plans', type: :request do
     before { sign_in(super_admin, scope: :super_admin) }
 
     it 'applies the base right after the account is created' do
-      created = create_clinic('Новая клиника')
+      created = create_clinic('Новый аккаунт')
 
       expect(response).to redirect_to(super_admin_account_path(created))
       expect(created.custom_attributes).to include('plan' => 'base', 'plan_modules' => [])
@@ -164,7 +164,7 @@ RSpec.describe 'Super admin account plans', type: :request do
     end
 
     it 'applies the modules of the optional modules param' do
-      created = create_clinic('Клиника с модулями', modules: %w[quality])
+      created = create_clinic('Аккаунт с модулями', modules: %w[quality])
 
       expect(created.custom_attributes['plan_modules']).to eq(%w[quality])
       expect(created.feature_enabled?('sla')).to be(true)
@@ -172,7 +172,7 @@ RSpec.describe 'Super admin account plans', type: :request do
     end
 
     it 'keeps the limits typed into the form' do
-      created = create_clinic('Клиника с лимитами', account: { name: 'Клиника с лимитами', locale: 'ru', status: 'active', limits: { agents: '12' } })
+      created = create_clinic('Аккаунт с лимитами', account: { name: 'Аккаунт с лимитами', locale: 'ru', status: 'active', limits: { agents: '12' } })
 
       expect(created.limits).to include('agents' => 12, 'conversations' => ChatwootApp.max_limit)
     end
@@ -189,7 +189,7 @@ RSpec.describe 'Super admin account plans', type: :request do
     it 'leaves the new account created and says so when the plan cannot be written' do
       allow_any_instance_of(Accounts::ApplyPlan).to receive(:call).and_raise(StandardError, 'boom') # rubocop:disable RSpec/AnyInstance
 
-      created = create_clinic('Клиника без тарифа')
+      created = create_clinic('Аккаунт без тарифа')
 
       expect(created).to be_persisted
       expect(created.custom_attributes).not_to have_key('plan')

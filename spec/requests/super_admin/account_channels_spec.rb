@@ -174,7 +174,7 @@ RSpec.describe 'Super admin clinic channels', type: :request do
     end
   end
 
-  describe 'the «Каналы клиники» card on the clinic page' do
+  describe 'the «Каналы аккаунта» card on the clinic page' do
     before { sign_in(super_admin, scope: :super_admin) }
 
     it 'lists every channel with a three-way setting and its state for this clinic', :aggregate_failures do
@@ -186,7 +186,7 @@ RSpec.describe 'Super admin clinic channels', type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(response.body).not_to include('translation missing')
-      expect(page.at_css('#account-channels-title').text.squish).to eq('Каналы клиники')
+      expect(page.at_css('#account-channels-title').text.squish).to eq('Каналы аккаунта')
       expect(page.css('tr[data-channel]').pluck('data-channel')).to eq(Channels::Catalog.keys)
       expect(page.at_css("form[action='/super_admin/accounts/#{account.id}/channel_overrides']")).to be_present
 

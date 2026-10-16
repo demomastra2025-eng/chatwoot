@@ -80,17 +80,17 @@ RSpec.describe SuperAdmin::FineTuning do
       switches = tuning.service_switches
 
       expect(switches.map(&:name)).to eq(described_class::OWNER_DECISION_FLAGS)
-      expect(switches.map(&:label)).to eq(['Один чат на пациента', 'Автораспределение, версия 2', 'Свой ключ OpenRouter у клиники'])
+      expect(switches.map(&:label)).to eq(['Один чат на контакт', 'Автораспределение, версия 2', 'Свой ключ OpenRouter у аккаунта'])
       expect(described_class::OWNER_DECISION_FLAGS & names).to be_empty
     end
 
     it 'says in a line what each switch does and asks a question for both directions, naming the clinic' do
-      account.update!(name: 'Клиника Алатау')
+      account.update!(name: 'Аккаунт Алатау')
 
       tuning.service_switches.each do |switch|
         expect(switch.hint).to match(/\p{Cyrillic}/)
-        expect(switch.confirm_on).to include('Клиника Алатау').and match(/\p{Cyrillic}/)
-        expect(switch.confirm_off).to include('Клиника Алатау').and match(/\p{Cyrillic}/)
+        expect(switch.confirm_on).to include('Аккаунт Алатау').and match(/\p{Cyrillic}/)
+        expect(switch.confirm_off).to include('Аккаунт Алатау').and match(/\p{Cyrillic}/)
       end
     end
 

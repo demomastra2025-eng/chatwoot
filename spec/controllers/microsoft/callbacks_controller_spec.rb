@@ -55,7 +55,7 @@ RSpec.describe 'Microsoft::CallbacksController', type: :request do
 
         expect(response).to have_http_status(:forbidden)
         page = Nokogiri::HTML(response.body)
-        expect(page.at_css('#channel-not-available-message').text).to include('Канал «Email» недоступен для вашей клиники')
+        expect(page.at_css('#channel-not-available-message').text).to include('Канал «Email» недоступен для вашего аккаунта')
         expect(page.at_css('a')['href']).to eq("#{base_url}/app/accounts/#{account.id}/settings/inboxes/list")
         expect(response.body).not_to include('oauth_callback_failed')
       end

@@ -31,22 +31,22 @@ RSpec.describe 'Super Admin clinic list', type: :request do
   end
 
   describe 'the page' do
-    it 'is titled «Клиники», explains itself and offers a new clinic and the export' do
+    it 'is titled «Аккаунты», explains itself and offers a new clinic and the export' do
       get '/super_admin/accounts'
 
       expect(response).to have_http_status(:ok)
-      expect(text(page.at_css('h1.main-content__page-title'))).to eq('Клиники')
-      expect(text(page.at_css('.main-content__description'))).to include('Все клиники платформы')
-      expect(text(page.at_css('a[href="/super_admin/accounts/new"]'))).to eq('Новая клиника')
+      expect(text(page.at_css('h1.main-content__page-title'))).to eq('Аккаунты')
+      expect(text(page.at_css('.main-content__description'))).to include('Все аккаунты платформы')
+      expect(text(page.at_css('a[href="/super_admin/accounts/new"]'))).to eq('Новый аккаунт')
       expect(text(page.at_css('a[href="/super_admin/accounts/export"]'))).to eq('Экспорт в CSV')
-      expect(page.at_css('title').text).to include('Клиники')
+      expect(page.at_css('title').text).to include('Аккаунты')
     end
 
     it 'has the columns of the clinic table' do
       get '/super_admin/accounts'
 
       headers = page.css('[data-testid="clinics-table"] thead th').map { |header| text(header) }
-      expect(headers).to eq(%w[Клиника Тариф Операторы Хранилище Каналы Статус Действия])
+      expect(headers).to eq(%w[Аккаунт Тариф Операторы Хранилище Каналы Статус Действия])
     end
 
     it 'shows an empty state when nothing matches' do
@@ -66,13 +66,13 @@ RSpec.describe 'Super Admin clinic list', type: :request do
 
   describe 'the clinic cell' do
     it 'links the name to the card and shows #id' do
-      account = create(:account, name: 'Клиника Алатау')
+      account = create(:account, name: 'Аккаунт Алатау')
 
       get '/super_admin/accounts'
 
       link = cell(account, 0).at_css('a')
       expect(link['href']).to eq("/super_admin/accounts/#{account.id}")
-      expect(text(link)).to eq('Клиника Алатау')
+      expect(text(link)).to eq('Аккаунт Алатау')
       expect(text(cell(account, 0))).to include("##{account.id}")
       expect(row_of(account)['data-url']).to eq("/super_admin/accounts/#{account.id}")
     end
@@ -208,8 +208,8 @@ RSpec.describe 'Super Admin clinic list', type: :request do
 
       get '/super_admin/accounts'
 
-      expect(text(cell(active, 5))).to eq('Активна')
-      expect(text(cell(suspended, 5))).to eq('Заблокирована')
+      expect(text(cell(active, 5))).to eq('Активен')
+      expect(text(cell(suspended, 5))).to eq('Заблокирован')
       expect(text(cell(deleting, 5))).to eq('На удаление')
     end
 

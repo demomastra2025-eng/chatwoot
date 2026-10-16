@@ -42,7 +42,7 @@ RSpec.describe 'Super Admin Dashboard', type: :request do
 
         before do
           sign_in(super_admin, scope: :super_admin)
-          create(:account, name: 'Клиника «Сезим»')
+          create(:account, name: 'Аккаунт «Сезим»')
         end
 
         it 'is titled «Сводка», with no English name of the page' do
@@ -66,7 +66,7 @@ RSpec.describe 'Super Admin Dashboard', type: :request do
 
           props = JSON.parse(page.at_css('#app')['data-props'])
           expect(props.keys).to contain_exactly('chartData', 'healthAccounts', 'healthSummary')
-          expect(props['healthAccounts'].pluck('name')).to include('Клиника «Сезим»')
+          expect(props['healthAccounts'].pluck('name')).to include('Аккаунт «Сезим»')
           expect(props['healthSummary']).to include('total_accounts', 'needs_attention', 'updated_at')
         end
 

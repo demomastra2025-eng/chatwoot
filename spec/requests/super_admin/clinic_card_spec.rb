@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe 'Super Admin clinic card', type: :request do
   let(:super_admin) { create(:super_admin) }
-  let(:account) { create(:account, name: 'Клиника Алатау') }
+  let(:account) { create(:account, name: 'Аккаунт Алатау') }
   let(:card_path) { "/super_admin/accounts/#{account.id}" }
 
   before { sign_in(super_admin, scope: :super_admin) }
@@ -37,7 +37,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
     it 'titles the page with the name of the clinic' do
       open_card
 
-      expect(page.at_css('title').text).to include('Клиника Алатау')
+      expect(page.at_css('title').text).to include('Аккаунт Алатау')
     end
 
     it 'lays the blocks out as a main column and a side column' do
@@ -58,15 +58,15 @@ RSpec.describe 'Super Admin clinic card', type: :request do
 
       open_card
 
-      expect(text(page.at_css('h1'))).to eq('Клиника Алатау')
-      expect(text(block('account-status'))).to eq('Активна')
-      expect(text(block('account-meta'))).to eq("##{account.id} · создана 16.10.2026")
+      expect(text(page.at_css('h1'))).to eq('Аккаунт Алатау')
+      expect(text(block('account-status'))).to eq('Активен')
+      expect(text(block('account-meta'))).to eq("##{account.id} · создан 16.10.2026")
     end
 
     it 'shows the status of a suspended clinic and of one that is being deleted' do
       account.update!(status: :suspended)
       open_card
-      expect(text(block('account-status'))).to eq('Заблокирована')
+      expect(text(block('account-status'))).to eq('Заблокирован')
 
       account.update!(custom_attributes: account.custom_attributes.merge('marked_for_deletion_at' => 3.days.from_now.iso8601))
       open_card
@@ -280,7 +280,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       preview(%w[ai_agents])
 
       fragment = Nokogiri::HTML.fragment(response.body)
-      expect(text(fragment.at_css('span.font-medium'))).to eq('Клинике будет назначен тариф «База + ИИ-агенты». Что изменится:')
+      expect(text(fragment.at_css('span.font-medium'))).to eq('Аккаунту будет назначен тариф «База + ИИ-агенты». Что изменится:')
       expect(text(fragment.at_css('[data-preview="enable"]'))).to include('Включится:', 'ИИ-агенты', 'CRM')
       expect(text(fragment.at_css('[data-preview="disable"]'))).to include('Выключится: 1', 'Финансы записи')
       expect(text(fragment.at_css('[data-preview="limits"]'))).to include('Диалоги за 30 дней', 'Не ограничено')
@@ -404,7 +404,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
 
       open_card
 
-      expect(text(block('trial-block'))).to include('запомнит нынешние функции клиники как её собственные', 'останутся включёнными')
+      expect(text(block('trial-block'))).to include('запомнит нынешние функции аккаунта как его собственные', 'останутся включёнными')
     end
 
     it 'says that a clinic without a plan loses its operator and channel limits when the trial ends' do
@@ -421,8 +421,8 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       open_card
 
       trial = block('trial-block')
-      expect(text(trial)).to include('Лимиты клиники при этом не меняются')
-      expect(trial.at_css('form[action$="/extend_trial"] button')['data-confirm']).to include('лимиты клиники не изменятся')
+      expect(text(trial)).to include('Лимиты аккаунта при этом не меняются')
+      expect(trial.at_css('form[action$="/extend_trial"] button')['data-confirm']).to include('лимиты аккаунта не изменятся')
     end
 
     it 'asks before ending a running trial and says what happens to the limits of a clinic with a plan and a trial a super admin started' do
@@ -432,9 +432,9 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       open_card
 
       confirm = block('trial-block').at_css("form[action='#{card_path}/expire_trial'] button")['data-confirm']
-      expect(confirm).to include('остальные функции и лимиты клиники не изменятся')
+      expect(confirm).to include('остальные функции и лимиты аккаунта не изменятся')
       expect(confirm).not_to include('станут нулевыми')
-      expect(text(block('trial-block').at_css('[data-testid="trial-end-note"]'))).to include('Лимиты клиники при этом не меняются')
+      expect(text(block('trial-block').at_css('[data-testid="trial-end-note"]'))).to include('Лимиты аккаунта при этом не меняются')
     end
 
     it 'says that the end of a trial nobody chose for the clinic (self-registration) blocks operators and channels, plan or not' do
@@ -587,7 +587,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
 
       headings = fine_tuning.css('h3').map { |heading| text(heading) }
       expect(headings).to include('Каналы и почта', 'Телефония', 'CRM и запись', 'ИИ-агенты', 'Рассылки')
-      expect(text(fine_tuning)).to include('Телефония', 'Звонки WhatsApp', 'Журнал аудита', 'Запись на приём')
+      expect(text(fine_tuning)).to include('Телефония', 'Звонки WhatsApp', 'Журнал аудита', 'Запись на встречу')
     end
 
     it 'shows the state of each function and marks the ones changed by hand' do
@@ -624,7 +624,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       expect(account.feature_enabled?('sla')).to be(true)
       expect(account.feature_enabled?('crm')).to be(false)
       expect(account.limits).to eq('agents' => 5)
-      expect(flash[:notice]).to eq('Клиника сохранена.')
+      expect(flash[:notice]).to eq('Аккаунт сохранён.')
     end
 
     it 'posts only the switches, without the name, so a rename made elsewhere in the meantime is not undone' do
@@ -632,16 +632,16 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       open_card
       expect(fine_tuning.at_css('form').css('[name^="account"]')).to be_empty
 
-      account.update!(name: 'Клиника Новая') # renamed in another tab while this page was open
+      account.update!(name: 'Аккаунт Новый') # renamed in another tab while this page was open
       patch card_path, params: { enabled_features: { feature_sla: 'true', feature_crm: 'false' } }
 
       expect(response).to redirect_to(card_path)
       account.reload
-      expect(account.name).to eq('Клиника Новая')
+      expect(account.name).to eq('Аккаунт Новый')
       expect(account.feature_enabled?('sla')).to be(true)
       expect(account.feature_enabled?('crm')).to be(false)
       expect(account.limits).to eq('agents' => 5)
-      expect(flash[:notice]).to eq('Клиника сохранена.')
+      expect(flash[:notice]).to eq('Аккаунт сохранён.')
     end
 
     it 'does not touch the functions it does not show' do
@@ -667,7 +667,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       open_card
 
       expect(fine_tuning.at_css('input#feature-communication_threads')).to be_nil
-      expect(text(fine_tuning)).not_to include('Решения владельца для отдельной клиники', 'разработчик')
+      expect(text(fine_tuning)).not_to include('Решения владельца для отдельного аккаунта', 'разработчик')
       expect(page.at_css('details#service-flags input#service-communication_threads')).to be_present
     end
   end
@@ -683,8 +683,8 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       users = block('users-block')
       expect(text(users)).to include('Всего: 2')
       rows = users.css('tbody tr').to_h { |row| [row['data-user-id'].to_i, row.css('td').map { |cell| text(cell) }] }
-      expect(rows[admin.id]).to eq(['Айгерим', admin.email, 'Администратор', '15.10.2026 17:00', 'Убрать из клиники'])
-      expect(rows[agent.id]).to eq(['Мерей', agent.email, 'Оператор', '—', 'Убрать из клиники'])
+      expect(rows[admin.id]).to eq(['Айгерим', admin.email, 'Администратор', '15.10.2026 17:00', 'Убрать из аккаунта'])
+      expect(rows[agent.id]).to eq(['Мерей', agent.email, 'Оператор', '—', 'Убрать из аккаунта'])
       expect(users.at_css("a[href='/super_admin/users/#{admin.id}']")).to be_present
     end
 
@@ -700,7 +700,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
     it 'says so when the clinic has no users' do
       open_card
 
-      expect(text(block('users-block'))).to include('В клинике пока нет пользователей')
+      expect(text(block('users-block'))).to include('В аккаунте пока нет пользователей')
     end
   end
 
@@ -753,7 +753,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       open_card
 
       info = text(block('info-block'))
-      expect(info).to include('Язык', 'Создана', 'Тариф применён', "версия #{Accounts::Plans.version}")
+      expect(info).to include('Язык', 'Создан', 'Тариф применён', "версия #{Accounts::Plans.version}")
       expect(info).to include(SuperAdmin::DisplayHelper.format_time(account.reload.created_at))
     end
 
@@ -766,7 +766,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       expect(maintenance.css('button').map { |button| button['data-confirm'] }).to all(be_present)
       destroy = forms[card_path]
       expect(destroy.at_css('input[name="_method"]')['value']).to eq('delete')
-      expect(destroy.at_css('button')['data-confirm']).to include('Клиника Алатау')
+      expect(destroy.at_css('button')['data-confirm']).to include('Аккаунт Алатау')
     end
   end
 end
