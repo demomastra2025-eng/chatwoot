@@ -71,6 +71,13 @@ const resolveTeleportTarget = () => {
 
 const resolveDropdownPlacement = ({ availableAbove, availableBelow }) => {
   if (props.dropdownPlacement !== 'auto') {
+    if (
+      props.dropdownPlacement === 'bottom' &&
+      availableBelow < 180 &&
+      availableAbove > availableBelow
+    ) {
+      return 'top';
+    }
     return props.dropdownPlacement;
   }
 

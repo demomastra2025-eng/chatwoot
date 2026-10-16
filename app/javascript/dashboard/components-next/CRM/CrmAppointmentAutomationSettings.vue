@@ -4,7 +4,10 @@ import { useI18n } from 'vue-i18n';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import SettingsToggleSection from 'dashboard/components-next/Settings/SettingsToggleSection.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
-import { APPOINTMENT_AUTOMATION_EVENTS } from './appointmentAutomation';
+import {
+  APPOINTMENT_AUTOMATION_EVENTS,
+  splitMultiEventRules,
+} from './appointmentAutomation';
 
 const props = defineProps({
   pipeline: { type: Object, required: true },
@@ -59,12 +62,17 @@ const eventForRule = rule =>
     )
   );
 const rulePriority = rule => eventForRule(rule)?.priority ?? 99;
-const ruleForEvent = event =>
-  (draft.value.rules || []).find(rule =>
-    (rule.conditions || []).some(condition =>
-      event.matchConditions.includes(condition)
+const ruleForEvent = event => {
+  const rules = draft.value.rules || [];
+  return (
+    rules.find(rule => (rule.conditions || []).includes(event.key)) ||
+    rules.find(rule =>
+      (rule.conditions || []).some(condition =>
+        event.matchConditions.includes(condition)
+      )
     )
   );
+};
 const stageIdForEvent = event => ruleForEvent(event)?.stage_id ?? '';
 
 const syncAttendedSuccessMode = () => {
@@ -80,7 +88,8 @@ const syncAttendedSuccessMode = () => {
 };
 
 const setEventStage = (event, nextStageId) => {
-  const rules = draft.value.rules || (draft.value.rules = []);
+  const rules = splitMultiEventRules(draft.value.rules || []);
+  draft.value.rules = rules;
   const existingIndex = rules.findIndex(rule =>
     (rule.conditions || []).some(condition =>
       event.matchConditions.includes(condition)

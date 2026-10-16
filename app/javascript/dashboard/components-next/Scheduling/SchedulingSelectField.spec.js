@@ -129,6 +129,44 @@ describe('SchedulingSelectField', () => {
     wrapper.unmount();
   });
 
+  it('flips dropdown placement above the trigger when near the bottom of the viewport so all options remain visible', async () => {
+    const wrapper = mount(ComboBox, {
+      attachTo: document.body,
+      props: {
+        options: [
+          { label: 'Do not change stage', value: '' },
+          { label: 'Booked', value: 1 },
+          { label: 'Cancelled', value: 2 },
+        ],
+      },
+    });
+
+    wrapper.element.getBoundingClientRect = () => ({
+      bottom: window.innerHeight - 40,
+      height: 40,
+      left: 100,
+      right: 300,
+      top: window.innerHeight - 80,
+      width: 200,
+      x: 100,
+      y: window.innerHeight - 80,
+      toJSON: () => {},
+    });
+
+    wrapper.vm.open();
+    await wrapper.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+
+    const dropdown = document.body.querySelector(
+      '.dashboard-combobox-dropdown'
+    );
+    expect(dropdown.style.top).toBe('auto');
+    expect(dropdown.style.bottom).toBe('88px');
+    expect(parseInt(dropdown.style.maxHeight, 10)).toBeGreaterThan(250);
+
+    wrapper.unmount();
+  });
+
   it('shows a selected long label without truncation when requested', () => {
     const label = 'Полное наименование медицинской услуги';
     const wrapper = mount(SchedulingSelectField, {

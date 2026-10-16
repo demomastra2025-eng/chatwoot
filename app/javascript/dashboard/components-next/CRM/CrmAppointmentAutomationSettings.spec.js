@@ -277,4 +277,65 @@ describe('appointment automation settings draft', () => {
     await nextTick();
     expect(wrapper.emitted('update:selectedPipelineId')).toEqual([['20']]);
   });
+
+  it('splits legacy multi-condition rules into independent per-event rules so changing scheduled does not mutate confirmed or attended', async () => {
+    const draft = reactive(
+      appointmentAutomationDraft({
+        enabled: true,
+        rules: [
+          {
+            scope: 'any',
+            stage_id: 4,
+            conditions: ['provider_confirmed', 'patient_confirmed', 'attended'],
+          },
+          {
+            scope: 'any',
+            stage_id: 1,
+            conditions: ['scheduled'],
+          },
+        ],
+      })
+    );
+    const wrapper = mountSettings({ modelValue: draft });
+    expect(
+      wrapper
+        .findComponent('[data-testid="appointment-event-stage-scheduled"]')
+        .props('modelValue')
+    ).toBe(1);
+    expect(
+      wrapper
+        .findComponent(
+          '[data-testid="appointment-event-stage-patient_confirmed"]'
+        )
+        .props('modelValue')
+    ).toBe(4);
+    expect(
+      wrapper
+        .findComponent('[data-testid="appointment-event-stage-attended"]')
+        .props('modelValue')
+    ).toBe(4);
+
+    wrapper
+      .findComponent('[data-testid="appointment-event-stage-scheduled"]')
+      .vm.$emit('update:modelValue', 2);
+    await nextTick();
+
+    expect(
+      wrapper
+        .findComponent('[data-testid="appointment-event-stage-scheduled"]')
+        .props('modelValue')
+    ).toBe(2);
+    expect(
+      wrapper
+        .findComponent(
+          '[data-testid="appointment-event-stage-patient_confirmed"]'
+        )
+        .props('modelValue')
+    ).toBe(4);
+    expect(
+      wrapper
+        .findComponent('[data-testid="appointment-event-stage-attended"]')
+        .props('modelValue')
+    ).toBe(4);
+  });
 });

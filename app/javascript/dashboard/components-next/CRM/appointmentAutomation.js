@@ -36,6 +36,58 @@ export const APPOINTMENT_AUTOMATION_EVENTS = [
   },
 ];
 
+const matchingEventsForRule = rule =>
+  APPOINTMENT_AUTOMATION_EVENTS.filter(event =>
+    (rule?.conditions || []).some(condition =>
+      event.matchConditions.includes(condition)
+    )
+  );
+
+export const splitMultiEventRules = (rules = []) => {
+  const sourceRules = Array.isArray(rules) ? rules : [];
+  const dedicatedEventKeys = new Set();
+
+  sourceRules.forEach(rule => {
+    const events = matchingEventsForRule(rule);
+    if (events.length === 1) {
+      dedicatedEventKeys.add(events[0].key);
+    }
+  });
+
+  const result = [];
+  sourceRules.forEach(rule => {
+    const stageId = rule?.stageId ?? rule?.stage_id;
+    const scope = rule?.scope || 'any';
+    const closingReasons = [
+      ...(rule?.closingReasons || rule?.closing_reasons || []),
+    ];
+    const events = matchingEventsForRule(rule);
+
+    if (events.length <= 1) {
+      result.push({
+        stage_id: stageId,
+        scope,
+        conditions: [...(rule?.conditions || [])],
+        closing_reasons: closingReasons,
+      });
+      return;
+    }
+
+    events.forEach(event => {
+      if (dedicatedEventKeys.has(event.key)) return;
+      dedicatedEventKeys.add(event.key);
+      result.push({
+        stage_id: stageId,
+        scope,
+        conditions: [...event.saveConditions],
+        closing_reasons: [...closingReasons],
+      });
+    });
+  });
+
+  return result;
+};
+
 export const appointmentAutomationDraft = (config = {}) => {
   const calendar =
     config.autoCreateFromCalendar ?? config.auto_create_from_calendar ?? false;
@@ -55,11 +107,6 @@ export const appointmentAutomationDraft = (config = {}) => {
     manual_stage_change:
       config.manualStageChange || config.manual_stage_change || 'continue',
     success_mode: config.successMode || config.success_mode || 'manual',
-    rules: (config.rules || []).map(rule => ({
-      stage_id: rule.stageId ?? rule.stage_id,
-      scope: rule.scope || 'any',
-      conditions: [...(rule.conditions || [])],
-      closing_reasons: [...(rule.closingReasons || rule.closing_reasons || [])],
-    })),
+    rules: splitMultiEventRules(config.rules),
   };
 };
