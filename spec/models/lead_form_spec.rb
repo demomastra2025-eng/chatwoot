@@ -73,4 +73,26 @@ RSpec.describe LeadForm do
     expect(form).not_to be_valid
     expect(form.errors[:field_schema]).to include('field label is required')
   end
+
+  it 'validates pipeline and stage belong to the same account and pipeline' do
+    account = create(:account)
+    inbox = create(:inbox, account: account)
+    pipeline = create(:crm_pipeline, account: account)
+    open_stage = create(:crm_stage, account: account, pipeline: pipeline, outcome: 'open')
+    other_pipeline = create(:crm_pipeline)
+    other_stage = create(:crm_stage, account: account, pipeline: create(:crm_pipeline, account: account), outcome: 'open')
+
+    valid_form = build(:lead_form, account: account, inbox: inbox, pipeline_id: pipeline.id, stage_id: open_stage.id)
+    expect(valid_form).to be_valid
+    expect(valid_form.pipeline_id).to eq(pipeline.id)
+    expect(valid_form.stage_id).to eq(open_stage.id)
+
+    foreign_pipeline_form = build(:lead_form, account: account, inbox: inbox, pipeline_id: other_pipeline.id)
+    expect(foreign_pipeline_form).not_to be_valid
+    expect(foreign_pipeline_form.errors[:pipeline_id]).to include('must belong to the same account')
+
+    mismatched_stage_form = build(:lead_form, account: account, inbox: inbox, pipeline_id: pipeline.id, stage_id: other_stage.id)
+    expect(mismatched_stage_form).not_to be_valid
+    expect(mismatched_stage_form.errors[:stage_id]).to include('must belong to the selected pipeline')
+  end
 end

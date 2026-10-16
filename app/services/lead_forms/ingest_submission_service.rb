@@ -247,13 +247,13 @@ module LeadForms
     end
 
     def process_submission!(submission)
+      form_message = nil
       ApplicationRecord.transaction do
         submission.save! if submission.new_record?
         contact_inbox = submission.contact_inbox || create_contact_inbox!
         conversation = submission.conversation || create_conversation!(submission, contact_inbox)
-        create_message!(submission, conversation) unless conversation.messages.exists?(
-          source_id: "lead_submission:#{submission.id}"
-        )
+        form_message = conversation.messages.find_by(source_id: "lead_submission:#{submission.id}") ||
+                       create_message!(submission, conversation)
 
         submission.update!(
           contact: contact_inbox.contact,
@@ -264,8 +264,22 @@ module LeadForms
           processing_errors: {},
           processed_at: Time.current
         )
-        submission
       end
+
+      auto_create_pipeline_deal!(submission, form_message) if lead_form.pipeline_id.present?
+      submission
+    end
+
+    def auto_create_pipeline_deal!(submission, form_message)
+      return if submission.contact_inbox.blank? || submission.conversation.blank?
+
+      ::Crm::Deals::AutoCreateFromChannelContactService.new(
+        contact_inbox: submission.contact_inbox,
+        conversation: submission.conversation,
+        message: form_message
+      ).perform
+    rescue StandardError => e
+      Rails.logger.warn("LeadForm deal auto-create failed: lead_form_id=#{lead_form.id} error=#{e.class}: #{e.message}")
     end
 
     def refresh_submission_payload!(submission)

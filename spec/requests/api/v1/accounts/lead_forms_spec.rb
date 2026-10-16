@@ -116,4 +116,60 @@ RSpec.describe 'Lead Forms API', type: :request do
     expect(response).to have_http_status(:unprocessable_content)
     expect(response_body['error']).to include('Client name')
   end
+
+  it 'persists pipeline_id and stage_id on create and update and creates a deal on submission' do
+    pipeline = create(:crm_pipeline, account: account, name: 'Имплантация', auto_create_deal_on_channel_contact: false)
+    first_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Первичный лид', outcome: 'open', default: true)
+    second_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Консультация', outcome: 'open', position: 2)
+
+    post "/api/v1/accounts/#{account.id}/lead_forms",
+         params: {
+           name: 'Implant Landing Form',
+           source_kind: 'api',
+           inbox_id: inbox.id,
+           pipeline_id: pipeline.id,
+           stage_id: second_stage.id,
+           field_schema: [
+             { name: 'fullName', label: 'Full name', type: 'text', required: true },
+             { name: 'phoneNumber', label: 'Phone', type: 'tel', required: true }
+           ]
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response_body.dig('payload', 'pipeline_id')).to eq(pipeline.id)
+    expect(response_body.dig('payload', 'pipeline_name')).to eq('Имплантация')
+    expect(response_body.dig('payload', 'stage_id')).to eq(second_stage.id)
+    expect(response_body.dig('payload', 'stage_name')).to eq('Консультация')
+
+    token = response_body.dig('payload', 'public_token')
+    form_id = response_body.dig('payload', 'id')
+
+    post "/api/v1/lead_forms/#{token}/submissions",
+         params: {
+           idempotency_key: 'implant-lead-1',
+           field_values: {
+             fullName: 'Алия Пациент',
+             phoneNumber: '+77015554433'
+           }
+         },
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    deal = account.crm_deals.find_by(pipeline_id: pipeline.id)
+    expect(deal).to be_present
+    expect(deal.stage_id).to eq(second_stage.id)
+
+    patch "/api/v1/accounts/#{account.id}/lead_forms/#{form_id}",
+          params: {
+            pipeline_id: pipeline.id,
+            stage_id: first_stage.id
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'stage_id')).to eq(first_stage.id)
+  end
 end

@@ -943,14 +943,6 @@ const buildSettingsMenuItems = () =>
       to: accountScopedRoute('outbound_whatsapp_templates_index'),
     },
     {
-      name: 'Lead Forms',
-      visibilityKey: 'MyCompany:LeadForms',
-      label: t('SIDEBAR.LEAD_FORMS'),
-      icon: 'i-lucide-inbox',
-      activeOn: ['lead_forms_index'],
-      to: accountScopedRoute('lead_forms_index'),
-    },
-    {
       name: 'Settings Integrations',
       visibilityKey: 'Settings:Integrations',
       label: t('SIDEBAR.INTEGRATIONS'),
@@ -1373,7 +1365,12 @@ const menuItems = computed(() => {
         label: t('SIDEBAR.PIPELINES'),
         icon: 'i-lucide-briefcase-business',
         to: accountScopedRoute('crm_deals_index'),
-        activeOn: ['crm_deals_index', 'crm_deal_show', 'crm_settings_index'],
+        activeOn: [
+          'crm_deals_index',
+          'crm_deal_show',
+          'crm_settings_index',
+          'lead_forms_index',
+        ],
       },
       {
         name: 'CRM Tasks',

@@ -27,7 +27,24 @@ class Crm::Deals::AutoCreateFromChannelContactService
   end
 
   def auto_create_pipelines
+    return [lead_form_pipeline] if lead_form_pipeline.present?
+
     account.crm_pipelines.active.where(auto_create_deal_on_channel_contact: true).ordered
+  end
+
+  def lead_form
+    return @lead_form if defined?(@lead_form)
+
+    lead_form_id = message&.additional_attributes&.dig('lead_form_id') ||
+                   conversation&.additional_attributes&.dig('lead_form_id')
+    @lead_form = lead_form_id.present? ? account.lead_forms.find_by(id: lead_form_id) : nil
+  end
+
+  def lead_form_pipeline
+    return @lead_form_pipeline if defined?(@lead_form_pipeline)
+
+    pipeline = lead_form&.target_pipeline
+    @lead_form_pipeline = pipeline&.active? ? pipeline : nil
   end
 
   def create_deal_for_pipeline(pipeline)
@@ -100,6 +117,11 @@ class Crm::Deals::AutoCreateFromChannelContactService
   end
 
   def default_stage_for(pipeline)
+    if lead_form_pipeline&.id == pipeline.id && lead_form&.stage_id.present?
+      explicit_stage = pipeline.stages.active.where(outcome: 'open').find_by(id: lead_form.stage_id)
+      return explicit_stage if explicit_stage.present?
+    end
+
     pipeline.stages.active.where(outcome: 'open').find_by(default: true) ||
       pipeline.stages.active.where(outcome: 'open').ordered.first
   end

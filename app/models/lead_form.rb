@@ -59,6 +59,7 @@ class LeadForm < ApplicationRecord
   validate :phone_field_is_required
   validate :inbox_belongs_to_account
   validate :meta_connection_inbox_belongs_to_account
+  validate :pipeline_and_stage_belong_to_account
 
   scope :ordered, -> { order(:source_kind, :name, :id) }
   scope :active, -> { where(status: 'active') }
@@ -80,6 +81,71 @@ class LeadForm < ApplicationRecord
     source_kind == 'widget'
   end
 
+  def settings=(value)
+    normalized = value.is_a?(Hash) ? value.deep_stringify_keys : {}
+    if defined?(@assigned_pipeline_id)
+      if @assigned_pipeline_id.present?
+        normalized['pipeline_id'] = @assigned_pipeline_id
+      else
+        normalized.delete('pipeline_id')
+        normalized.delete('stage_id')
+      end
+    end
+    if defined?(@assigned_stage_id)
+      if @assigned_stage_id.present? && normalized['pipeline_id'].present?
+        normalized['stage_id'] = @assigned_stage_id
+      else
+        normalized.delete('stage_id')
+      end
+    end
+    super(normalized)
+  end
+
+  def pipeline_id
+    raw = settings.to_h['pipeline_id']
+    raw.present? ? raw.to_i : nil
+  end
+
+  def pipeline_id=(value)
+    @assigned_pipeline_id = value.present? ? value.to_i : nil
+    current = settings.to_h.deep_stringify_keys
+    if @assigned_pipeline_id.present?
+      current['pipeline_id'] = @assigned_pipeline_id
+    else
+      current.delete('pipeline_id')
+      current.delete('stage_id')
+    end
+    write_attribute(:settings, current)
+  end
+
+  def stage_id
+    raw = settings.to_h['stage_id']
+    raw.present? ? raw.to_i : nil
+  end
+
+  def stage_id=(value)
+    @assigned_stage_id = value.present? ? value.to_i : nil
+    current = settings.to_h.deep_stringify_keys
+    if @assigned_stage_id.present?
+      current['stage_id'] = @assigned_stage_id
+    else
+      current.delete('stage_id')
+    end
+    write_attribute(:settings, current)
+  end
+
+  def target_pipeline
+    return if pipeline_id.blank? || account.blank?
+
+    account.crm_pipelines.find_by(id: pipeline_id)
+  end
+
+  def target_stage
+    return if stage_id.blank? || target_pipeline.blank?
+
+    target_pipeline.stages.find_by(id: stage_id)
+  end
+
   private
 
   def ensure_public_token
@@ -90,6 +156,26 @@ class LeadForm < ApplicationRecord
     return if inbox.blank? || account_id.blank? || inbox.account_id == account_id
 
     errors.add(:inbox_id, 'must belong to the same account')
+  end
+
+  def pipeline_and_stage_belong_to_account
+    return if pipeline_id.blank? && stage_id.blank?
+
+    if pipeline_id.blank?
+      errors.add(:stage_id, 'requires a pipeline')
+      return
+    end
+
+    pipeline = target_pipeline
+    unless pipeline
+      errors.add(:pipeline_id, 'must belong to the same account')
+      return
+    end
+
+    return if stage_id.blank?
+
+    stage = pipeline.stages.find_by(id: stage_id, outcome: 'open')
+    errors.add(:stage_id, 'must belong to the selected pipeline') unless stage
   end
 
   def source_configuration_is_complete

@@ -536,7 +536,6 @@ describe('Sidebar', () => {
         'Settings Macros',
         'Channels',
         'Settings WhatsApp Templates',
-        'Lead Forms',
         'Settings Integrations',
         'Settings Agent Bots',
         'Settings Automation',

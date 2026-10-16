@@ -511,6 +511,9 @@ const openLeadForms = () =>
   router.push({
     name: 'lead_forms_index',
     params: { accountId: accountId.value },
+    ...(selectedPipelineId.value
+      ? { query: { pipelineId: String(selectedPipelineId.value) } }
+      : {}),
   });
 
 const togglePipelineAutoCreate = value => {

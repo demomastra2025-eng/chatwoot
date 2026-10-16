@@ -45,7 +45,12 @@ class Api::V1::Accounts::LeadFormsController < Api::V1::Accounts::LeadForms::Bas
       :inbox_id
     ).to_h
     permitted[:field_schema] = normalize_field_schema_param if params.key?(:field_schema)
-    permitted[:settings] = normalize_hash_param(:settings) if params.key?(:settings)
+    if params.key?(:settings)
+      base_settings = @lead_form&.settings.to_h.deep_stringify_keys
+      permitted[:settings] = base_settings.merge(normalize_hash_param(:settings))
+    end
+    permitted[:pipeline_id] = params[:pipeline_id] if params.key?(:pipeline_id)
+    permitted[:stage_id] = params[:stage_id] if params.key?(:stage_id)
     permitted
   end
 

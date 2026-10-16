@@ -563,8 +563,8 @@
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",
-    "TITLE": "Leads",
-    "DESCRIPTION": "Receive website, landing page, Meta Lead Ads, and website widget form submissions in one native intake flow. Intake creates a contact, conversation, and visual form card in the conversation; deals are created only by the standard pipeline auto-create setting.",
+    "TITLE": "Lead forms",
+    "DESCRIPTION": "Connect external lead forms from Meta Lead Ads and website/landing API forms. Each submission creates a deal in the selected pipeline and opens a conversation in the chosen channel.",
     "CREATE": "Create form",
     "CREATED": "Lead form created.",
     "REFRESH": "Refresh",
@@ -678,7 +678,13 @@
       "DATE": "Date",
       "URL": "URL",
       "SELECT": "List"
-    }
+    },
+    "BACK_TO_PIPELINES": "Back to pipeline settings",
+    "PIPELINE_LABEL": "Deal pipeline",
+    "SELECT_PIPELINE": "Do not create a deal",
+    "STAGE_LABEL": "Initial stage",
+    "SELECT_STAGE": "Default stage",
+    "UPDATED": "Lead form updated."
   },
   "EMPLOYEE_SETTINGS": {
     "TABS": {

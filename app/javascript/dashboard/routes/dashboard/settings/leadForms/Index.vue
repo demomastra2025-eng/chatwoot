@@ -5,12 +5,12 @@ import { useRoute, useRouter } from 'vue-router';
 import { useStore } from 'vuex';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
+import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
-import PreChatFormSettings from 'dashboard/routes/dashboard/settings/inbox/PreChatForm/Settings.vue';
 import { getInboxFlowRouteName } from 'dashboard/routes/dashboard/settings/inbox/helpers/inboxFlowRoutes';
 import leadFormsAPI from 'dashboard/api/leadForms';
 import { getInboxIconByType, INBOX_TYPES } from 'dashboard/helper/inbox';
@@ -20,16 +20,28 @@ const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const store = useStore();
+const referencesStore = useCrmReferencesStore();
 
 const forms = ref([]);
 const savingSource = ref('');
+const updatingFormId = ref(null);
 const activeTab = ref('meta');
-const selectedWidgetInboxId = ref('');
 const selectedMetaConnectionId = ref('');
-const apiForm = reactive({ name: '', inboxId: '' });
+const initializedDefaultPipeline = reactive({
+  api: false,
+  meta: false,
+});
+const apiForm = reactive({
+  name: '',
+  inboxId: '',
+  pipelineId: '',
+  stageId: '',
+});
 const metaForm = reactive({
   name: '',
   inboxId: '',
+  pipelineId: '',
+  stageId: '',
   metaFormId: '',
   metaPageId: '',
   verifyToken: '',
@@ -38,6 +50,68 @@ const inboxes = useMapGetter('inboxes/getInboxes');
 
 const accountId = computed(() => route.params.accountId);
 const publicApiOrigin = window.location.origin;
+
+const backToPipelinesRoute = computed(() => ({
+  name: 'crm_settings_index',
+  params: { accountId: accountId.value },
+  ...(route.query?.pipelineId
+    ? { query: { pipelineId: String(route.query.pipelineId) } }
+    : {}),
+}));
+
+const activePipelines = computed(() =>
+  (referencesStore.pipelines || []).filter(
+    pipeline => pipeline.active !== false
+  )
+);
+
+const pipelineOptions = computed(() => [
+  { value: '', label: t('LEAD_FORMS.SELECT_PIPELINE') },
+  ...activePipelines.value.map(pipeline => ({
+    value: String(pipeline.id),
+    label: pipeline.name,
+  })),
+]);
+
+const openStagesForPipeline = pipelineId => {
+  if (!pipelineId) return [];
+  const pipeline = activePipelines.value.find(
+    item => String(item.id) === String(pipelineId)
+  );
+  return (pipeline?.stages || []).filter(
+    stage => stage.active !== false && stage.outcome === 'open'
+  );
+};
+
+const stageOptionsForPipeline = pipelineId =>
+  openStagesForPipeline(pipelineId).map(stage => ({
+    value: String(stage.id),
+    label: stage.name,
+  }));
+
+const defaultStageIdForPipeline = pipelineId => {
+  const stages = openStagesForPipeline(pipelineId);
+  const defaultStage = stages.find(stage => stage.default) || stages[0];
+  return defaultStage ? String(defaultStage.id) : '';
+};
+
+const preferredPipelineId = computed(() => {
+  const queryPipelineId = Array.isArray(route.query?.pipelineId)
+    ? route.query.pipelineId[0]
+    : route.query?.pipelineId;
+  if (
+    queryPipelineId &&
+    activePipelines.value.some(
+      pipeline => String(pipeline.id) === String(queryPipelineId)
+    )
+  ) {
+    return String(queryPipelineId);
+  }
+  const defaultPipeline =
+    activePipelines.value.find(pipeline => pipeline.default) ||
+    activePipelines.value[0];
+  return defaultPipeline ? String(defaultPipeline.id) : '';
+});
 
 const defaultApiFormFields = () => [
   {
@@ -82,14 +156,10 @@ const apiForms = computed(() =>
 const metaForms = computed(() =>
   forms.value.filter(form => form.source_kind === 'meta')
 );
-const widgetForms = computed(() =>
-  forms.value.filter(form => form.source_kind === 'widget')
-);
 
 const tabs = computed(() => [
   { id: 'meta', label: t('LEAD_FORMS.TABS.META') },
   { id: 'api', label: t('LEAD_FORMS.TABS.API') },
-  { id: 'widget', label: t('LEAD_FORMS.TABS.WIDGET_CHAT') },
 ]);
 
 const activeTabIndex = computed(() =>
@@ -137,25 +207,6 @@ const metaConnectionOptions = computed(() =>
     .map(inboxOption)
 );
 
-const widgetInboxOptions = computed(() =>
-  inboxes.value
-    .filter(inbox => inbox.channel_type === INBOX_TYPES.WEB)
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map(inboxOption)
-);
-
-const widgetInboxes = computed(() =>
-  inboxes.value
-    .filter(inbox => inbox.channel_type === INBOX_TYPES.WEB)
-    .sort((a, b) => a.name.localeCompare(b.name))
-);
-
-const selectedWidgetInbox = computed(() =>
-  widgetInboxes.value.find(
-    inbox => String(inbox.id) === String(selectedWidgetInboxId.value)
-  )
-);
-
 const selectedMetaConnection = computed(() =>
   inboxes.value.find(
     inbox => String(inbox.id) === String(selectedMetaConnectionId.value)
@@ -194,6 +245,7 @@ const loadPage = async () => {
     await Promise.all([
       store.dispatch('inboxes/get'),
       store.dispatch('attributes/get'),
+      referencesStore.fetchPipelines().catch(() => []),
       fetchLeadIntake(),
     ]);
   } catch (error) {
@@ -248,6 +300,9 @@ const createApiForm = async () => {
     await leadFormsAPI.create({
       name: apiForm.name,
       inbox_id: Number(apiForm.inboxId),
+      pipeline_id: apiForm.pipelineId ? Number(apiForm.pipelineId) : null,
+      stage_id:
+        apiForm.pipelineId && apiForm.stageId ? Number(apiForm.stageId) : null,
       source_kind: 'api',
       status: 'active',
       field_schema: fieldSchema,
@@ -289,6 +344,11 @@ const createMetaForm = async () => {
     await leadFormsAPI.create({
       name: metaForm.name,
       inbox_id: Number(metaForm.inboxId),
+      pipeline_id: metaForm.pipelineId ? Number(metaForm.pipelineId) : null,
+      stage_id:
+        metaForm.pipelineId && metaForm.stageId
+          ? Number(metaForm.stageId)
+          : null,
       source_kind: 'meta',
       status: 'active',
       external_ref: metaForm.metaFormId,
@@ -314,6 +374,43 @@ const createMetaForm = async () => {
     useAlert(t('LEAD_FORMS.ERRORS.SAVE'));
   } finally {
     savingSource.value = '';
+  }
+};
+
+const updateFormPipeline = async (form, nextPipelineId) => {
+  const pipelineId = nextPipelineId ? Number(nextPipelineId) : null;
+  const nextStageId = pipelineId
+    ? Number(defaultStageIdForPipeline(pipelineId) || 0) || null
+    : null;
+  updatingFormId.value = form.id;
+  try {
+    await leadFormsAPI.update(form.id, {
+      pipeline_id: pipelineId,
+      stage_id: nextStageId,
+    });
+    useAlert(t('LEAD_FORMS.UPDATED'));
+    await fetchLeadIntake();
+  } catch (error) {
+    useAlert(t('LEAD_FORMS.ERRORS.SAVE'));
+  } finally {
+    updatingFormId.value = null;
+  }
+};
+
+const updateFormStage = async (form, nextStageId) => {
+  if (!form.pipeline_id) return;
+  updatingFormId.value = form.id;
+  try {
+    await leadFormsAPI.update(form.id, {
+      pipeline_id: Number(form.pipeline_id),
+      stage_id: nextStageId ? Number(nextStageId) : null,
+    });
+    useAlert(t('LEAD_FORMS.UPDATED'));
+    await fetchLeadIntake();
+  } catch (error) {
+    useAlert(t('LEAD_FORMS.ERRORS.SAVE'));
+  } finally {
+    updatingFormId.value = null;
   }
 };
 
@@ -414,13 +511,53 @@ watch(
 );
 
 watch(
-  widgetInboxOptions,
-  options => {
-    if (!selectedWidgetInboxId.value && options[0]) {
-      selectedWidgetInboxId.value = options[0].value;
+  preferredPipelineId,
+  defaultPipelineId => {
+    if (!defaultPipelineId) return;
+    if (!initializedDefaultPipeline.api) {
+      apiForm.pipelineId = defaultPipelineId;
+      apiForm.stageId = defaultStageIdForPipeline(defaultPipelineId);
+      initializedDefaultPipeline.api = true;
+    }
+    if (!initializedDefaultPipeline.meta) {
+      metaForm.pipelineId = defaultPipelineId;
+      metaForm.stageId = defaultStageIdForPipeline(defaultPipelineId);
+      initializedDefaultPipeline.meta = true;
     }
   },
   { immediate: true }
+);
+
+watch(
+  () => apiForm.pipelineId,
+  nextPipelineId => {
+    if (!nextPipelineId) {
+      apiForm.stageId = '';
+      return;
+    }
+    const validStages = openStagesForPipeline(nextPipelineId);
+    if (
+      !validStages.some(stage => String(stage.id) === String(apiForm.stageId))
+    ) {
+      apiForm.stageId = defaultStageIdForPipeline(nextPipelineId);
+    }
+  }
+);
+
+watch(
+  () => metaForm.pipelineId,
+  nextPipelineId => {
+    if (!nextPipelineId) {
+      metaForm.stageId = '';
+      return;
+    }
+    const validStages = openStagesForPipeline(nextPipelineId);
+    if (
+      !validStages.some(stage => String(stage.id) === String(metaForm.stageId))
+    ) {
+      metaForm.stageId = defaultStageIdForPipeline(nextPipelineId);
+    }
+  }
 );
 
 onMounted(loadPage);
@@ -430,7 +567,12 @@ onMounted(loadPage);
   <main class="flex h-full min-h-0 flex-col overflow-y-auto bg-n-surface-1 p-6">
     <section class="w-full max-w-6xl mx-auto space-y-6">
       <header class="flex flex-col gap-4">
-        <BaseSettingsHeader :title="$t('LEAD_FORMS.TITLE')" />
+        <BaseSettingsHeader
+          :title="$t('LEAD_FORMS.TITLE')"
+          :description="$t('LEAD_FORMS.DESCRIPTION')"
+          :back-button-label="$t('LEAD_FORMS.BACK_TO_PIPELINES')"
+          :back-button-url="backToPipelinesRoute"
+        />
         <TabBar
           active-text-class="text-n-slate-12 scale-100"
           :tabs="tabs"
@@ -510,6 +652,39 @@ onMounted(loadPage);
                 />
               </label>
             </div>
+
+            <div class="grid gap-3 md:grid-cols-2">
+              <label
+                class="space-y-1"
+                data-testid="meta-form-pipeline-select"
+              >
+                <span class="text-sm font-medium text-n-slate-12">
+                  {{ $t('LEAD_FORMS.PIPELINE_LABEL') }}
+                </span>
+                <ComboBox
+                  v-model="metaForm.pipelineId"
+                  :options="pipelineOptions"
+                  :placeholder="$t('LEAD_FORMS.SELECT_PIPELINE')"
+                  input-like
+                />
+              </label>
+              <label
+                v-if="metaForm.pipelineId"
+                class="space-y-1"
+                data-testid="meta-form-stage-select"
+              >
+                <span class="text-sm font-medium text-n-slate-12">
+                  {{ $t('LEAD_FORMS.STAGE_LABEL') }}
+                </span>
+                <ComboBox
+                  v-model="metaForm.stageId"
+                  :options="stageOptionsForPipeline(metaForm.pipelineId)"
+                  :placeholder="$t('LEAD_FORMS.SELECT_STAGE')"
+                  input-like
+                />
+              </label>
+            </div>
+
             <label class="block space-y-1">
               <span class="text-sm font-medium text-n-slate-12">
                 {{ $t('LEAD_FORMS.META_FORMS.NAME_LABEL') }}
@@ -583,15 +758,61 @@ onMounted(loadPage);
             >
               {{ $t('LEAD_FORMS.META_FORMS.EMPTY') }}
             </p>
-            <div v-for="form in metaForms" :key="form.id" class="px-4 py-3">
-              <p class="mb-0 font-medium text-n-slate-12">{{ form.name }}</p>
-              <p class="mb-0 text-xs text-n-slate-11">
-                {{ form.external_ref || form.settings?.meta_form_id }}
-                {{ $t('LEAD_FORMS.SEPARATOR') }}
-                {{ form.inbox_name || `Inbox #${form.inbox_id}` }}
-                {{ $t('LEAD_FORMS.SEPARATOR') }}
-                {{ statusLabel(form.status) }}
-              </p>
+            <div
+              v-for="form in metaForms"
+              :key="form.id"
+              class="space-y-3 px-4 py-3"
+            >
+              <div>
+                <p class="mb-0 font-medium text-n-slate-12">{{ form.name }}</p>
+                <p class="mb-0 text-xs text-n-slate-11">
+                  {{ form.external_ref || form.settings?.meta_form_id }}
+                  {{ $t('LEAD_FORMS.SEPARATOR') }}
+                  {{ form.inbox_name || `Inbox #${form.inbox_id}` }}
+                  <template v-if="form.pipeline_name">
+                    {{ $t('LEAD_FORMS.SEPARATOR') }}
+                    {{ form.pipeline_name }}
+                    <template v-if="form.stage_name">
+                      ({{ form.stage_name }})
+                    </template>
+                  </template>
+                  {{ $t('LEAD_FORMS.SEPARATOR') }}
+                  {{ statusLabel(form.status) }}
+                </p>
+              </div>
+              <div
+                v-if="activePipelines.length"
+                class="grid gap-3 md:grid-cols-2"
+              >
+                <label class="space-y-1">
+                  <span class="text-xs font-medium text-n-slate-11">
+                    {{ $t('LEAD_FORMS.PIPELINE_LABEL') }}
+                  </span>
+                  <ComboBox
+                    :model-value="
+                      form.pipeline_id ? String(form.pipeline_id) : ''
+                    "
+                    :options="pipelineOptions"
+                    :placeholder="$t('LEAD_FORMS.SELECT_PIPELINE')"
+                    :disabled="updatingFormId === form.id"
+                    input-like
+                    @update:model-value="updateFormPipeline(form, $event)"
+                  />
+                </label>
+                <label v-if="form.pipeline_id" class="space-y-1">
+                  <span class="text-xs font-medium text-n-slate-11">
+                    {{ $t('LEAD_FORMS.STAGE_LABEL') }}
+                  </span>
+                  <ComboBox
+                    :model-value="form.stage_id ? String(form.stage_id) : ''"
+                    :options="stageOptionsForPipeline(form.pipeline_id)"
+                    :placeholder="$t('LEAD_FORMS.SELECT_STAGE')"
+                    :disabled="updatingFormId === form.id"
+                    input-like
+                    @update:model-value="updateFormStage(form, $event)"
+                  />
+                </label>
+              </div>
             </div>
           </div>
         </article>
@@ -641,6 +862,38 @@ onMounted(loadPage);
               </label>
             </div>
 
+            <div class="grid gap-3 md:grid-cols-2">
+              <label
+                class="space-y-1"
+                data-testid="api-form-pipeline-select"
+              >
+                <span class="text-sm font-medium text-n-slate-12">
+                  {{ $t('LEAD_FORMS.PIPELINE_LABEL') }}
+                </span>
+                <ComboBox
+                  v-model="apiForm.pipelineId"
+                  :options="pipelineOptions"
+                  :placeholder="$t('LEAD_FORMS.SELECT_PIPELINE')"
+                  input-like
+                />
+              </label>
+              <label
+                v-if="apiForm.pipelineId"
+                class="space-y-1"
+                data-testid="api-form-stage-select"
+              >
+                <span class="text-sm font-medium text-n-slate-12">
+                  {{ $t('LEAD_FORMS.STAGE_LABEL') }}
+                </span>
+                <ComboBox
+                  v-model="apiForm.stageId"
+                  :options="stageOptionsForPipeline(apiForm.pipelineId)"
+                  :placeholder="$t('LEAD_FORMS.SELECT_STAGE')"
+                  input-like
+                />
+              </label>
+            </div>
+
             <p
               v-if="!leadTargetInboxOptions.length"
               class="mb-0 rounded-xl bg-n-amber-3 p-3 text-sm text-n-amber-11 outline outline-1 -outline-offset-1 outline-n-amber-6"
@@ -669,7 +922,7 @@ onMounted(loadPage);
           </form>
         </article>
 
-        <article class="min-w-0">
+        <article class="min-w-0 lg:col-span-2">
           <h2 class="text-heading-2 text-n-slate-12">
             {{ $t('LEAD_FORMS.API_FORMS.LIST_TITLE') }}
           </h2>
@@ -694,10 +947,50 @@ onMounted(loadPage);
                   </p>
                   <p class="mb-0 text-xs text-n-slate-11">
                     {{ form.inbox_name || `Inbox #${form.inbox_id}` }}
+                    <template v-if="form.pipeline_name">
+                      {{ $t('LEAD_FORMS.SEPARATOR') }}
+                      {{ form.pipeline_name }}
+                      <template v-if="form.stage_name">
+                        ({{ form.stage_name }})
+                      </template>
+                    </template>
                     {{ $t('LEAD_FORMS.SEPARATOR') }}
                     {{ statusLabel(form.status) }}
                   </p>
                 </div>
+              </div>
+              <div
+                v-if="activePipelines.length"
+                class="grid gap-3 md:grid-cols-2"
+              >
+                <label class="space-y-1">
+                  <span class="text-xs font-medium text-n-slate-11">
+                    {{ $t('LEAD_FORMS.PIPELINE_LABEL') }}
+                  </span>
+                  <ComboBox
+                    :model-value="
+                      form.pipeline_id ? String(form.pipeline_id) : ''
+                    "
+                    :options="pipelineOptions"
+                    :placeholder="$t('LEAD_FORMS.SELECT_PIPELINE')"
+                    :disabled="updatingFormId === form.id"
+                    input-like
+                    @update:model-value="updateFormPipeline(form, $event)"
+                  />
+                </label>
+                <label v-if="form.pipeline_id" class="space-y-1">
+                  <span class="text-xs font-medium text-n-slate-11">
+                    {{ $t('LEAD_FORMS.STAGE_LABEL') }}
+                  </span>
+                  <ComboBox
+                    :model-value="form.stage_id ? String(form.stage_id) : ''"
+                    :options="stageOptionsForPipeline(form.pipeline_id)"
+                    :placeholder="$t('LEAD_FORMS.SELECT_STAGE')"
+                    :disabled="updatingFormId === form.id"
+                    input-like
+                    @update:model-value="updateFormStage(form, $event)"
+                  />
+                </label>
               </div>
               <div class="space-y-2">
                 <p class="mb-0 text-xs font-medium uppercase text-n-slate-10">
@@ -722,96 +1015,6 @@ onMounted(loadPage);
             </div>
           </div>
         </article>
-      </section>
-
-      <section v-if="activeTab === 'widget'" class="space-y-4">
-        <section class="min-w-0">
-          <div
-            class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
-          >
-            <div>
-              <h2 class="text-heading-2 text-n-slate-12">
-                {{ $t('LEAD_FORMS.WIDGET_FORMS.NEW_TITLE') }}
-              </h2>
-              <p class="mb-0 text-body-main text-n-slate-11">
-                {{ $t('LEAD_FORMS.WIDGET_FORMS.NEW_DESCRIPTION') }}
-              </p>
-            </div>
-            <ComboBox
-              v-if="widgetInboxOptions.length"
-              v-model="selectedWidgetInboxId"
-              class="w-full lg:w-80"
-              :options="widgetInboxOptions"
-              :placeholder="$t('LEAD_FORMS.WIDGET_FORMS.SELECT_INBOX')"
-              input-like
-            />
-          </div>
-
-          <div v-if="selectedWidgetInbox">
-            <div class="mb-4 flex items-center gap-3">
-              <span
-                class="flex size-10 items-center justify-center rounded-xl bg-n-brand/10 text-n-brand"
-                :class="getInboxIconByType(selectedWidgetInbox.channel_type)"
-              />
-              <div>
-                <p class="mb-0 font-medium text-n-slate-12">
-                  {{ selectedWidgetInbox.name }}
-                </p>
-                <p class="mb-0 text-xs text-n-slate-11">
-                  {{
-                    selectedWidgetInbox.website_url ||
-                    selectedWidgetInbox.channel_type
-                  }}
-                </p>
-              </div>
-            </div>
-            <!-- PreChatFormSettings has its own mx-6 inset; cancel it so the
-              toggle block and fields table align with the page column. -->
-            <div class="-mx-6">
-              <PreChatFormSettings
-                :inbox="selectedWidgetInbox"
-                @saved="fetchLeadIntake"
-              />
-            </div>
-          </div>
-          <p v-else class="mb-0 py-4 text-sm text-n-slate-11">
-            {{ $t('LEAD_FORMS.WIDGET_FORMS.EMPTY') }}
-          </p>
-        </section>
-
-        <section class="min-w-0">
-          <h2 class="text-heading-2 text-n-slate-12">
-            {{ $t('LEAD_FORMS.WIDGET_FORMS.LIST_TITLE') }}
-          </h2>
-          <div
-            class="mt-3 divide-y divide-n-weak rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
-          >
-            <p
-              v-if="!widgetForms.length"
-              class="mb-0 px-4 py-3 text-sm text-n-slate-11"
-            >
-              {{ $t('LEAD_FORMS.WIDGET_FORMS.EMPTY') }}
-            </p>
-            <div v-for="form in widgetForms" :key="form.id" class="px-4 py-3">
-              <div class="flex items-start gap-3">
-                <span
-                  class="mt-0.5 size-5 shrink-0 text-n-slate-11"
-                  :class="getInboxIconByType(INBOX_TYPES.WEB)"
-                />
-                <div>
-                  <p class="mb-0 font-medium text-n-slate-12">
-                    {{ form.name }}
-                  </p>
-                  <p class="mb-0 text-xs text-n-slate-11">
-                    {{ form.inbox_name || `Inbox #${form.inbox_id}` }}
-                    {{ $t('LEAD_FORMS.SEPARATOR') }}
-                    {{ statusLabel(form.status) }}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
       </section>
     </section>
   </main>
