@@ -4,7 +4,7 @@ import { useMessageFormatter } from 'shared/composables/useMessageFormatter';
 import { ATTACHMENT_ICONS } from 'shared/constants/messages';
 import { useMapGetter } from 'dashboard/composables/store';
 import { getLocalizedActivityMessage } from 'dashboard/helper/activityMessageHelper';
-import { replaceEmojisWithAppleImg } from 'shared/helpers/appleEmoji';
+import { replaceEmojisWithAppleImages } from 'shared/helpers/appleEmoji';
 
 const escapeHtml = value =>
   String(value || '')
@@ -68,9 +68,7 @@ export default {
       );
     },
     parsedLastMessageHtml() {
-      return replaceEmojisWithAppleImg(escapeHtml(this.parsedLastMessage), {
-        className: 'woot-apple-emoji-inline',
-      });
+      return replaceEmojisWithAppleImages(escapeHtml(this.parsedLastMessage));
     },
     isVoiceNote() {
       const { content_attributes: contentAttributes = {} } = this.message;

@@ -418,6 +418,7 @@ export function isJumboEmojiText(text) {
 
 export function replaceEmojisWithAppleImages(html, { jumbo = false } = {}) {
   if (!html || typeof html !== 'string') return html;
+  if (!/[\u00a9\u00ae\u2000-\u3300\ud83c-\ud83e]/.test(html)) return html;
 
   const sizeClass = jumbo ? 'apple-emoji--jumbo' : 'apple-emoji--inline';
   // Split by HTML tags and preserve code/pre blocks
