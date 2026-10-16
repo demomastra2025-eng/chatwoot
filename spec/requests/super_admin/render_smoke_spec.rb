@@ -296,7 +296,7 @@ RSpec.describe 'Super Admin render smoke', type: :request do
       organization = create(:organization)
 
       expect_pages_open('/super_admin/organizations', "/super_admin/organizations/#{organization.id}",
-                 "/super_admin/organizations/#{organization.id}/edit", '/super_admin/organizations/new')
+                        "/super_admin/organizations/#{organization.id}/edit", '/super_admin/organizations/new')
     end
 
     it 'open for an organization with requisites and accounts in different states' do
@@ -311,7 +311,8 @@ RSpec.describe 'Super Admin render smoke', type: :request do
                        custom_attributes: { 'marked_for_deletion_at' => 3.days.from_now.iso8601 })
       create(:account, name: 'Free account')
 
-      expect_pages_open('/super_admin/organizations', "/super_admin/organizations/#{organization.id}", "/super_admin/organizations/#{organization.id}/edit")
+      expect_pages_open('/super_admin/organizations', "/super_admin/organizations/#{organization.id}",
+                        "/super_admin/organizations/#{organization.id}/edit")
       expect(page.css('input[name="organization[bin]"]').first['value']).to eq(organization.bin)
     end
 
@@ -319,7 +320,7 @@ RSpec.describe 'Super Admin render smoke', type: :request do
       create(:organization, :with_requisites)
 
       expect_pages_open('/super_admin/organizations?search=%D0%9E%D1%80%D0%B3', '/super_admin/organizations?search=nothing-like-this',
-                 '/super_admin/organizations?organization%5Border%5D=bin&organization%5Bdirection%5D=desc')
+                        '/super_admin/organizations?organization%5Border%5D=bin&organization%5Bdirection%5D=desc')
     end
 
     it 'keep the account cards, the list and the edit form working for an account with an organization and without one' do

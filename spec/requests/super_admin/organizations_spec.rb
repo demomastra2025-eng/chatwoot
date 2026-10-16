@@ -97,8 +97,8 @@ RSpec.describe 'Super Admin organizations', type: :request do
       end
 
       it 'shows the requisites, the contract, the totals of the accounts and the creation date in Astana time' do
-        organization = create(:organization, :with_requisites, name: 'Алатау Медикал', legal_name: 'ТОО Алатау Медикал', bin: '980140000123',
-                                                                created_at: Time.utc(2026, 10, 15, 20, 30))
+        organization = create(:organization, :with_requisites, name: 'Алатау Медикал', legal_name: 'ТОО Алатау Медикал',
+                                                               bin: '980140000123', created_at: Time.utc(2026, 10, 15, 20, 30))
         account_with(organization, name: 'Филиал 1', operators: 2, channels: 1)
         account_with(organization, name: 'Филиал 2', operators: 1, channels: 3)
         create(:account, name: 'Чужой аккаунт')
@@ -167,7 +167,7 @@ RSpec.describe 'Super Admin organizations', type: :request do
       let!(:nur) { create(:organization, name: 'Nur Clinic', legal_name: 'LLP Nur', bin: '010203040506') }
 
       def found
-        page.css('[data-testid="organizations-table"] tbody tr').pluck('data-organization-id')
+        page.css('[data-testid="organizations-table"] tbody tr[data-organization-id]').pluck('data-organization-id')
       end
 
       it 'finds an organization by name' do
@@ -530,11 +530,13 @@ RSpec.describe 'Super Admin organizations', type: :request do
       it 'writes nothing but the link: no automatic audit entry and the plan is untouched' do
         Accounts::ApplyPlan.new(account: account, modules: %w[ai_agents]).call
         before = account.reload.attributes.except('organization_id', 'updated_at')
+        updates = -> { audits_of(account, 'update').count }
+        updates_before = updates.call
 
         link
 
         expect(account.reload.attributes.except('organization_id', 'updated_at')).to eq(before)
-        expect(Audited::Audit.where(auditable_type: 'Account', auditable_id: account.id, action: 'update')).to be_empty
+        expect(updates.call).to eq(updates_before)
       end
 
       it 'links an account whose old data would not pass the validations of an account today' do

@@ -11,12 +11,13 @@ the current order.
 - `numeric`: true for a column of numbers (aligned to the right), optional.
 - `collection_presenter` / `page` / `collection_field_name`: the ones of the list.
 %>
-<% order = collection_presenter.ordered_html_class(attribute) %>
-<th class="cell-label cell-label--<%= order %> <%= 'cell-label--number' if local_assigns[:numeric] %>" scope="col" role="columnheader" aria-sort="<%= sort_order(order) %>">
+<%# `ordered_html_class` is :asc / :desc for the column the list is sorted by and false for the others. %>
+<% direction = collection_presenter.ordered_by?(attribute) ? collection_presenter.ordered_html_class(attribute).to_s : '' %>
+<th class="cell-label <%= "cell-label--#{direction}" if direction.present? %> <%= 'cell-label--number' if local_assigns[:numeric] %>" scope="col" role="columnheader" aria-sort="<%= sort_order(direction) %>">
   <%= link_to(sanitized_order_params(page, collection_field_name).merge(collection_presenter.order_params_for(attribute, key: collection_field_name))) do %>
     <%= label %>
     <% if collection_presenter.ordered_by?(attribute) %>
-      <span class="cell-label__sort-indicator cell-label__sort-indicator--<%= order %>">
+      <span class="cell-label__sort-indicator cell-label__sort-indicator--<%= direction %>">
         <span class="i-lucide-arrow-up size-3.5" aria-hidden="true"></span>
       </span>
     <% end %>
