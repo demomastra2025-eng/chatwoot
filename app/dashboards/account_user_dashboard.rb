@@ -69,6 +69,6 @@ class AccountUserDashboard < Administrate::BaseDashboard
   # across all pages of the admin dashboard.
   #
   def display_resource(account_user)
-    "AccountUser ##{account_user.id}"
+    I18n.t('super_admin.display.account_user', id: account_user.id)
   end
 end

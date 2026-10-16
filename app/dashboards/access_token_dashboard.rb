@@ -57,10 +57,7 @@ class AccessTokenDashboard < Administrate::BaseDashboard
     platform_app: ->(resources) { resources.where(owner_type: 'PlatformApp') }
   }.freeze
 
-  # Overwrite this method to customize how access tokens are displayed
-  # across all pages of the admin dashboard.
-  #
-  # def display_resource(access_token)
-  #   "AccessToken ##{access_token.id}"
-  # end
+  def display_resource(access_token)
+    I18n.t('super_admin.display.access_token', id: access_token.id)
+  end
 end

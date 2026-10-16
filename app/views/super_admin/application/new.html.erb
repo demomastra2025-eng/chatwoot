@@ -17,8 +17,10 @@ Copied from Administrate 0.20.1 (`administrate/application/new`) and restyled.
 [1]: http://www.rubydoc.info/gems/administrate/Administrate/Page/Form
 %>
 
+<%# Each resource names its own «new» page in super_admin.index.<resource>.new («Новый пользователь»); a lower-cased
+    resource name would break names like «AI-бот». %>
 <% content_for(:title) do %>
-  <%= t(
+  <%= I18n.t("super_admin.index.#{page.resource_name}.new", default: nil) || t(
     "administrate.actions.new_resource",
     name: display_resource_name(page.resource_name, singular: true).downcase
   ) %>

@@ -4,7 +4,8 @@ require 'rails_helper'
 # has them gets its index, new, show and edit pages opened, and every custom
 # page is opened too. The shell (sidebar, header, flashes) and the Administrate
 # templates the app owns (index, show, form, new, edit, collection, filters,
-# search) are shared by all of them, so one broken partial fails here.
+# search) are shared by all of them, so one broken partial fails here. Every page is also read for English: the
+# super admin is Russian only, so none of the words below may be part of what a person reads.
 RSpec.describe 'Super Admin render smoke', type: :request do
   # Administrate resources that have dashboards, and a record of each to open
   # its show and edit pages.
@@ -51,6 +52,21 @@ RSpec.describe 'Super Admin render smoke', type: :request do
     expect(page.at_css('nav[role="navigation"]')).to be_present, "GET #{path} has no sidebar"
     expect(page.at_css('main[role="main"]')).to be_present, "GET #{path} has no main area"
     expect(response.body).not_to include('translation missing'), "GET #{path} has a missing translation"
+    expect_no_english(path)
+  end
+
+  # What a person reads: the page without scripts, styles and the raw JSON of an audit entry.
+  def reading_text
+    body = page.at_css('body')
+    body.css('script, style, noscript, pre').each(&:remove)
+    body.text.squish
+  end
+
+  def expect_no_english(path)
+    text = reading_text
+    found = text.scan(/\b(?:#{ENGLISH_UI_WORDS.join('|')})\b/).uniq
+    expect(found).to be_empty, "GET #{path} says #{found.join(', ')} in English"
+    expect(text).not_to match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/), "GET #{path} has an emoji"
   end
 
   before do
@@ -133,6 +149,26 @@ RSpec.describe 'Super Admin render smoke', type: :request do
 
         get path
 
+        expect_shell(path)
+      end
+    end
+  end
+
+  # Every entry of the sidebar, found by reading the sidebar itself: a page added to it later is checked too.
+  describe 'every entry of the sidebar' do
+    let(:own_pages) do
+      get '/super_admin'
+      page.css('nav[role="navigation"] a').pluck('href').uniq.select { |href| href.start_with?('/super_admin') && href != '/super_admin/logout' }
+    end
+
+    it 'opens each page for a super admin, in Russian' do
+      allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
+
+      pages = own_pages
+      expect(pages.size).to be >= 14
+
+      pages.each do |path|
+        get path
         expect_shell(path)
       end
     end

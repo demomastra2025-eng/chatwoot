@@ -54,10 +54,7 @@ class PlatformAppDashboard < Administrate::BaseDashboard
   #   }.freeze
   COLLECTION_FILTERS = {}.freeze
 
-  # Overwrite this method to customize how platform apps are displayed
-  # across all pages of the admin dashboard.
-  #
-  # def display_resource(platform_app)
-  #   "PlatformApp ##{platform_app.id}"
-  # end
+  def display_resource(platform_app)
+    I18n.t('super_admin.display.platform_app', id: platform_app.id, name: platform_app.name)
+  end
 end

@@ -1,0 +1,7 @@
+<% if field.data.nil? %>
+  <span class="text-n-slate-11">—</span>
+<% elsif field.data %>
+  <span class="admin-badge admin-badge--teal"><%= t('super_admin.shell.yes') %></span>
+<% else %>
+  <span class="admin-badge"><%= t('super_admin.shell.no') %></span>
+<% end %>

@@ -1,0 +1,34 @@
+<%#
+# ActiveStorage Form Partial
+
+Replaces the partial of administrate-field-active_storage: the browser draws the
+text of a native file input («Choose File», «No file chosen») in ITS language,
+so the input is hidden and a button labelled by the page stands in for it. The
+file name appears next to the button (`file_picker` script of the shell).
+
+## Local variables:
+
+- `f`: the form builder.
+- `field`: an `Administrate::Field::ActiveStorage`.
+%>
+
+<% input_id = "#{f.object_name}_#{field.attribute}".gsub(/\W+/, '_') %>
+
+<div class="field-unit__label">
+  <%= f.label field.attribute, for: input_id %>
+</div>
+
+<div class="field-unit__field">
+  <% if field.attached? %>
+    <%= render partial: 'fields/active_storage/items', locals: { field: field } %>
+  <% end %>
+
+  <div class="file-picker">
+    <%= f.file_field field.attribute, id: input_id, multiple: field.many?, direct_upload: field.direct?, class: 'file-picker__input' %>
+    <label for="<%= input_id %>" class="button button--secondary button--small">
+      <span class="i-lucide-upload size-4" aria-hidden="true"></span>
+      <%= field.can_add_attachment? ? t('administrate.fields.active_storage.choose') : t('administrate.fields.active_storage.replace') %>
+    </label>
+    <span class="file-picker__name" data-file-picker-name data-empty="<%= t('administrate.fields.active_storage.none_chosen') %>"><%= t('administrate.fields.active_storage.none_chosen') %></span>
+  </div>
+</div>

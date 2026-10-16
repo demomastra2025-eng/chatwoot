@@ -1,0 +1,11 @@
+<%#
+# Boolean Index Partial
+
+Replaces the Administrate partial, which printed "true" and "false": a yes/no
+badge in Russian, a dash for an unknown value.
+
+## Local variables:
+
+- `field`: an `Administrate::Field::Boolean`.
+%>
+<%= render 'fields/boolean/badge', field: field %>

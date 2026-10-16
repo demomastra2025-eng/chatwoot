@@ -57,10 +57,7 @@ class InstallationConfigDashboard < Administrate::BaseDashboard
   #   }.freeze
   COLLECTION_FILTERS = {}.freeze
 
-  # Overwrite this method to customize how installation configs are displayed
-  # across all pages of the admin dashboard.
-  #
-  # def display_resource(installation_config)
-  #   "InstallationConfig ##{installation_config.id}"
-  # end
+  def display_resource(installation_config)
+    installation_config.name
+  end
 end

@@ -72,10 +72,7 @@ class AgentBotDashboard < Administrate::BaseDashboard
   #   }.freeze
   COLLECTION_FILTERS = {}.freeze
 
-  # Overwrite this method to customize how agent bots are displayed
-  # across all pages of the admin dashboard.
-  #
-  # def display_resource(agent_bot)
-  #   "AgentBot ##{agent_bot.id}"
-  # end
+  def display_resource(agent_bot)
+    I18n.t('super_admin.display.agent_bot', id: agent_bot.id, name: agent_bot.name)
+  end
 end

@@ -11,6 +11,18 @@ by providing a `content_for(:javascript)` block.
   <%= javascript_include_tag js_path %>
 <% end %>
 
+<%# The name of the chosen file next to the button that stands in for a native file input (fields/active_storage/_form). %>
+<script>
+  document.addEventListener('change', function (event) {
+    var input = event.target;
+    if (!input.matches || !input.matches('.file-picker__input')) return;
+    var label = input.parentNode.querySelector('[data-file-picker-name]');
+    if (!label) return;
+    var names = Array.prototype.map.call(input.files || [], function (file) { return file.name; });
+    label.textContent = names.length ? names.join(', ') : label.getAttribute('data-empty');
+  });
+</script>
+
 <%= yield :javascript %>
 
 <% if Rails.env.test? %>

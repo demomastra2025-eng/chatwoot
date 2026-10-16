@@ -5,6 +5,10 @@ This partial renders a polymorphic relationship,
 to be displayed on a resource's index page.
 
 By default, the relationship is rendered as a link to the associated object.
+Replaces the Administrate partial, which wrote "User #24" for a user: every
+owner is named by the display name of its own dashboard. A user (a super admin
+is a user too, and has no dashboard of its own) is named by the user dashboard
+and links to the page of the user.
 
 ## Local variables:
 
@@ -18,14 +22,8 @@ By default, the relationship is rendered as a link to the associated object.
 
 <% if field.data %>
   <% if field.data.is_a? User %>
-    <%= link_to(
-      "User ##{field.data.id}",
-      super_admin_user_path(field.data)
-    ) %>
+    <%= link_to(UserDashboard.new.display_resource(field.data), super_admin_user_path(field.data)) %>
   <% else %>
-    <%= link_to(
-      field.display_associated_resource,
-      [namespace, field.data]
-    ) %>
+    <%= link_to(field.display_associated_resource, [namespace, field.data]) %>
   <% end %>
 <% end %>

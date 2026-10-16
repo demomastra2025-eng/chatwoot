@@ -56,13 +56,13 @@ as well as a link to its edit page.
                 ><%= render_field attribute, page: page %></dd>
           <% end %>
 
-          <%# MFA closes the last group of attributes. %>
+          <%# Two-factor authentication closes the last group of attributes. %>
           <% if index == groups.size - 1 %>
-            <dt class="attribute-label" id="mfa_enabled">MFA</dt>
+            <dt class="attribute-label" id="mfa_enabled"><%= t('super_admin.users.two_factor') %></dt>
             <dd class="attribute-data attribute-data--string">
               <% mfa_enabled = page.resource.mfa_enabled? %>
               <span class="<%= mfa_enabled ? 'bg-n-teal-2 text-n-teal-11 outline-n-teal-4' : 'bg-n-slate-2 text-n-slate-12 outline-n-weak' %> inline-flex h-[22px] items-center rounded-md px-2 text-xs font-medium outline outline-1 -outline-offset-1">
-                <%= mfa_enabled ? 'Включено' : 'Выключено' %>
+                <%= mfa_enabled ? t('super_admin.users.two_factor_on') : t('super_admin.users.two_factor_off') %>
               </span>
             </dd>
           <% end %>

@@ -416,9 +416,15 @@ $administrate-buttons: 'button:not(.reset-base)',
     }
   }
 
+  // The avatar of a user or a bot is a small round picture, not the file at its natural size.
   .attribute-data--avatar-field {
     height: auto;
     width: auto;
+  }
+
+  .attribute-data--avatar-field img {
+    @apply size-14 rounded-full object-cover;
+    max-height: none;
   }
 
   .attribute--nested,
@@ -559,6 +565,47 @@ $administrate-buttons: 'button:not(.reset-base)',
 
   [type="file"]:focus-visible {
     @apply outline outline-2 outline-offset-2 outline-n-brand;
+  }
+
+  // A file input draws its text («Choose File», «No file chosen») in the language of the browser, so the
+  // forms hide the input and put a button labelled by the page next to the name of the chosen file
+  // (app/views/fields/active_storage/_form.html.erb). The input stays focusable and keeps its label.
+  .file-picker {
+    @apply flex flex-wrap items-center gap-3;
+  }
+
+  .file-picker__input {
+    @apply sr-only;
+  }
+
+  .file-picker__input:focus-visible + label {
+    @apply outline outline-2 outline-offset-2 outline-n-brand;
+  }
+
+  .file-picker__name {
+    @apply min-w-0 truncate text-sm text-n-slate-11;
+  }
+
+  // The current attachment of a form: a small round picture and the file name, not the 800px preview.
+  .attachments-listing {
+    @apply mb-2;
+  }
+
+  .attachments-listing .as-field img {
+    @apply size-14 rounded-full object-cover;
+    max-height: none;
+  }
+
+  .attachments-listing a {
+    @apply text-n-brand;
+  }
+
+  .attachments-listing hr {
+    display: none;
+  }
+
+  .remove-attachment-link {
+    @apply text-sm text-n-ruby-11;
   }
 
   // One field: label above the control, hint below it.
