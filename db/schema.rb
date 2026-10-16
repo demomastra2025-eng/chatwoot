@@ -2633,8 +2633,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_16_100000) do
     t.jsonb "custom_attributes", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["bin"], name: "index_organizations_on_bin", unique: true
     t.index "lower((name)::text)", name: "index_organizations_on_lower_name"
+    t.index ["bin"], name: "index_organizations_on_bin", unique: true
   end
 
   create_table "platform_app_permissibles", force: :cascade do |t|
