@@ -101,8 +101,11 @@ $administrate-buttons: 'button:not(.reset-base)',
     @apply rounded-xl bg-n-solid-2 outline outline-1 -outline-offset-1 outline-n-container;
   }
 
+  // A table that is wider than the screen scrolls inside its block. The block is positioned so that an
+  // absolutely placed child of a far cell (a visually hidden label, for one) is clipped by it too: without
+  // that the child widens the whole page and a phone zooms out to fit it.
   .admin-card--table {
-    @apply overflow-x-auto;
+    @apply relative overflow-x-auto;
   }
 
   .admin-card__title {
