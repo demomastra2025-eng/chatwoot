@@ -272,13 +272,17 @@ RSpec.describe 'Super Admin account organizations', type: :request do
         expect(AccountDashboard.new.search_attributes).not_to include(:organization_id)
       end
 
-      it 'saves the new organization after the account, through the links: one signed entry, no organization in the «update» entry' do
+      it 'saves the new organization after the account and says both' do
         patch "/super_admin/accounts/#{account.id}", params: { account: { name: 'Филиал 1 (новый)', organization_id: nur.id } }
 
         expect(response).to redirect_to("/super_admin/accounts/#{account.id}")
         expect(account.reload).to have_attributes(name: 'Филиал 1 (новый)', organization: nur)
         follow_redirect!
         expect(page.at_css('.flashes').text).to include('Аккаунт сохранён.', 'Аккаунт перенесён в организацию «Нур».')
+      end
+
+      it 'records the change through the links, signed by the super admin' do
+        patch "/super_admin/accounts/#{account.id}", params: { account: { name: 'Филиал 1 (новый)', organization_id: nur.id } }
 
         link_entry = audits_of(account, 'link_organization').sole
         expect(link_entry.user).to eq(super_admin)
@@ -286,8 +290,12 @@ RSpec.describe 'Super Admin account organizations', type: :request do
         expect(link_entry.audited_changes).to eq('organization_id' => [alatau.id, nur.id], 'organization_name' => %w[Алатау Нур])
         expect(audits_of(alatau, 'unlink_account').sole.user).to eq(super_admin)
         expect(audits_of(nur, 'link_account').sole.user).to eq(super_admin)
-        update_entry = audits_of(account, 'update').sole
-        expect(update_entry.audited_changes.keys).to eq(['name'])
+      end
+
+      it 'does not repeat the organization in the generic «update» entry, which holds the other fields only' do
+        patch "/super_admin/accounts/#{account.id}", params: { account: { name: 'Филиал 1 (новый)', organization_id: nur.id } }
+
+        expect(audits_of(account, 'update').sole.audited_changes.keys).to eq(['name'])
       end
 
       it 'leaves no «update» entry at all when only the organization changes' do
@@ -372,8 +380,9 @@ RSpec.describe 'Super Admin account organizations', type: :request do
 
     describe 'the account list' do
       let!(:in_alatau) { create(:account, name: 'Аккаунт Алатау', organization: alatau) }
-      let!(:in_nur) { create(:account, name: 'Аккаунт Нур', organization: nur) }
       let!(:free) { create(:account, name: 'Аккаунт Свободный') }
+
+      before { create(:account, name: 'Аккаунт Нур', organization: nur) }
 
       def names
         page.css('[data-testid="clinics-table"] tbody tr[data-account-id] td:first-child a').map { |link| text(link) }
