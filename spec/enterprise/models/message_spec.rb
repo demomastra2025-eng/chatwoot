@@ -86,6 +86,7 @@ RSpec.describe Message do
     it 'cancels each conversation run on thread takeover without opening the sibling or cancelling another account' do
       thread = create(:communication_thread, account: conversation.account, contact: conversation.contact)
       sibling = create(:conversation, account: conversation.account, contact: conversation.contact, status: :pending)
+      sibling.inbox.captain_inbox&.destroy!
       create(:captain_inbox, inbox: sibling.inbox, captain_assistant: captain_assistant)
       [conversation, sibling].each do |candidate|
         create(:communication_thread_conversation, communication_thread: thread, conversation: candidate)
