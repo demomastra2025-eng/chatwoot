@@ -110,11 +110,11 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def channels
-    preload_accessible_links([@communication_thread], include_unlinked: true)
+    preload_accessible_links([@communication_thread], include_unlinked: true, include_list_context: false)
   end
 
   def messages
-    preload_accessible_links([@communication_thread], include_unlinked: true)
+    preload_accessible_links([@communication_thread], include_unlinked: true, include_list_context: false)
     @messages = CommunicationThreadMessageFinder.new(
       communication_thread: @communication_thread,
       current_user: Current.user,
@@ -440,12 +440,18 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     raise ArgumentError, 'Cannot update communication thread without access to all linked channels'
   end
 
-  def preload_accessible_links(communication_threads, include_unlinked: false)
+  def preload_accessible_links(communication_threads, include_unlinked: false, include_list_context: true)
     @communication_threads_by_id = communication_threads.index_by(&:id)
     thread_ids = communication_threads.map(&:id)
     @accessible_links_by_thread_id = preloaded_accessible_links(thread_ids)
     preload_channel_message_state
     preload_channel_capabilities(include_unlinked)
+    return unless include_list_context
+
+    preload_list_context(communication_threads)
+  end
+
+  def preload_list_context(communication_threads)
     preload_last_public_messages_by_thread
     preload_last_non_activity_messages_by_thread
     preload_list_message_associations
@@ -487,11 +493,12 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def preload_channel_capabilities(include_unlinked)
+    available_inboxes = include_unlinked ? accessible_inboxes.to_a : []
     @channel_capabilities_by_thread_id = @accessible_links_by_thread_id.transform_values do |links|
       CommunicationThreads::ChannelCapabilitiesBuilder.new(
         links: links,
         contact: @communication_threads_by_id[links.first.communication_thread_id]&.contact,
-        available_inboxes: accessible_inboxes,
+        available_inboxes: available_inboxes,
         include_unlinked: include_unlinked,
         preferred_status: preferred_channel_status,
         unread_counts: @channel_unread_counts_by_conversation_id,

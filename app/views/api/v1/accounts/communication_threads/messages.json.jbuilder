@@ -15,11 +15,12 @@ end
 json.payload do
   json.array! @messages do |message|
     link = links_by_conversation_id[message.conversation_id]
+    inbox = link&.inbox || message.inbox
     json.partial! 'api/v1/models/message', message: message
     json.communication_thread_id @communication_thread.display_id
-    json.inbox_name link&.inbox&.name || message.inbox&.name
-    json.channel link&.inbox&.channel_type || message.inbox&.channel_type
-    json.medium message.inbox&.channel.respond_to?(:medium) ? message.inbox.channel.medium : nil
+    json.inbox_name inbox&.name
+    json.channel inbox&.channel_type
+    json.medium inbox&.channel.respond_to?(:medium) ? inbox.channel.medium : nil
     json.contact_inbox_id link&.contact_inbox_id || message.conversation&.contact_inbox_id
   end
 end

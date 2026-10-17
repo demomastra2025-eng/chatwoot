@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_16_100000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_17_140000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1124,6 +1124,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_16_100000) do
     t.boolean "primary", default: false, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.index ["account_id", "communication_thread_id", "conversation_id"], name: "idx_ctc_account_thread_conversation"
     t.index ["account_id", "conversation_id"], name: "idx_ctc_account_conversation_unique", unique: true
     t.index ["account_id"], name: "index_communication_thread_conversations_on_account_id"
     t.index ["communication_thread_id", "inbox_id"], name: "idx_ctc_thread_inbox"
@@ -1152,6 +1153,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_16_100000) do
     t.index ["account_id", "contact_id", "status"], name: "idx_communication_threads_account_contact_status"
     t.index ["account_id", "display_id"], name: "idx_communication_threads_account_display", unique: true
     t.index ["account_id", "last_activity_at"], name: "idx_communication_threads_account_activity"
+    t.index ["account_id", "status", "assignee_id"], name: "idx_communication_threads_account_status_assignee"
     t.index ["account_id"], name: "index_communication_threads_on_account_id"
     t.index ["assignee_id"], name: "index_communication_threads_on_assignee_id"
     t.index ["contact_id"], name: "index_communication_threads_on_contact_id"

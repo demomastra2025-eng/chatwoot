@@ -86,15 +86,10 @@ module BulkActionsJob::RecordProcessor
   end
 
   def process_record(record)
-    raise BulkActionsJob::SkippedRecord, 'User is no longer a member of the account' unless account_member?
+    raise BulkActionsJob::SkippedRecord, 'User is no longer a member of the account' unless batch_account_member?
 
     if record.is_a?(Conversation)
-      accessible = Conversations::PermissionFilterService.new(
-        Conversation.where(id: record.id, account_id: @account.id),
-        @user,
-        @account
-      ).perform.exists?
-      raise BulkActionsJob::SkippedRecord, 'Conversation access was revoked' unless accessible
+      raise BulkActionsJob::SkippedRecord, 'Conversation access was revoked' unless conversation_accessible?(record)
 
       skip_for_missing_required_attributes!(record) if resolved_status_requested?
     end
@@ -104,5 +99,15 @@ module BulkActionsJob::RecordProcessor
     else
       process_conversation(record)
     end
+  end
+
+  def conversation_accessible?(conversation)
+    return @batch_accessible_conversation_ids.include?(conversation.id) if @batch_accessible_conversation_ids
+
+    Conversations::PermissionFilterService.new(
+      Conversation.where(id: conversation.id, account_id: @account.id),
+      @user,
+      @account
+    ).perform.exists?
   end
 end

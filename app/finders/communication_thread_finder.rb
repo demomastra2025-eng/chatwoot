@@ -65,14 +65,21 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def self.last_message_activity_subquery_sql(conversation_scope)
-    conversation_ids_sql = conversation_scope.reselect('conversations.id', 'conversations.account_id').to_sql
+    accessible_join_sql = if unrestricted_account_conversation_scope?(conversation_scope)
+                            ''
+                          else
+                            conversation_ids_sql = conversation_scope.reselect('conversations.id', 'conversations.account_id').to_sql
+                            <<~SQL.squish
+                              INNER JOIN (#{conversation_ids_sql}) sort_accessible_conversations
+                                ON sort_accessible_conversations.id = sort_thread_links.conversation_id
+                               AND sort_accessible_conversations.account_id = sort_thread_links.account_id
+                            SQL
+                          end
 
     <<~SQL.squish
       SELECT MAX(sort_latest_messages.created_at) AS last_message_at
       FROM communication_thread_conversations sort_thread_links
-      INNER JOIN (#{conversation_ids_sql}) sort_accessible_conversations
-        ON sort_accessible_conversations.id = sort_thread_links.conversation_id
-       AND sort_accessible_conversations.account_id = sort_thread_links.account_id
+      #{accessible_join_sql}
       INNER JOIN LATERAL (#{latest_public_message_sql}) sort_latest_messages ON TRUE
       WHERE sort_thread_links.communication_thread_id = communication_threads.id
         AND sort_thread_links.account_id = communication_threads.account_id
@@ -93,7 +100,15 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def self.waiting_since_sort_sql(conversation_scope)
-    conversation_ids_sql = conversation_scope.reselect('conversations.id').to_sql
+    accessible_join_sql = if unrestricted_account_conversation_scope?(conversation_scope)
+                            ''
+                          else
+                            conversation_ids_sql = conversation_scope.reselect('conversations.id').to_sql
+                            <<~SQL.squish
+                              INNER JOIN (#{conversation_ids_sql}) sort_accessible_conversations
+                                ON sort_accessible_conversations.id = sort_waiting_links.conversation_id
+                            SQL
+                          end
 
     <<~SQL.squish
       SELECT MIN(sort_waiting_conversations.waiting_since)
@@ -101,11 +116,18 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
       INNER JOIN conversations sort_waiting_conversations
         ON sort_waiting_conversations.id = sort_waiting_links.conversation_id
        AND sort_waiting_conversations.account_id = communication_threads.account_id
-      INNER JOIN (#{conversation_ids_sql}) sort_accessible_conversations
-        ON sort_accessible_conversations.id = sort_waiting_links.conversation_id
+      #{accessible_join_sql}
       WHERE sort_waiting_links.communication_thread_id = communication_threads.id
         AND sort_waiting_links.account_id = communication_threads.account_id
     SQL
+  end
+
+  def self.unrestricted_account_conversation_scope?(conversation_scope)
+    account_id = conversation_scope.where_values_hash['account_id']
+    return false unless account_id.is_a?(Integer)
+
+    conversation_scope.reselect('conversations.id').to_sql ==
+      Conversation.where(account_id: account_id).select('conversations.id').to_sql
   end
 
   def initialize(current_user, params, current_account = current_user.account)
@@ -252,9 +274,22 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
       assigned_unread_count: all_unread_count - unassigned_unread_count,
       unassigned_unread_count: unassigned_unread_count,
       all_unread_count: all_unread_count,
-      assignee_counts: assignee_counts_for(base_thread_scope),
+      assignee_counts: thread_assignee_counts(mine_count, unassigned_count, all_count),
       unread_counts: unread_counts
     }
+  end
+
+  def thread_assignee_counts(mine_count, unassigned_count, all_count)
+    if @communication_threads.to_sql == base_thread_scope.to_sql
+      return {
+        mine_count: mine_count,
+        assigned_count: all_count - unassigned_count,
+        unassigned_count: unassigned_count,
+        all_count: all_count
+      }
+    end
+
+    assignee_counts_for(base_thread_scope)
   end
 
   def assignee_counts_for(scope)
@@ -273,17 +308,39 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
 
   def aggregate_assignment_counts(scope, include_unread: false)
     relation = CommunicationThread.where(id: scope.except(:order).select(:id))
-    counts = basic_assignment_counts(relation)
-    return counts unless include_unread
+    return basic_assignment_counts(relation) unless include_unread
 
     # With the unread filter on, every thread of the scope is already unread: recounting would only nest the
     # unread subqueries once more.
-    unread_counts = unread_only? ? counts : basic_assignment_counts(unread_thread_scope(relation))
-    counts.merge(
-      all_unread_count: unread_counts[:all_count],
-      mine_unread_count: unread_counts[:mine_count],
-      unassigned_unread_count: unread_counts[:unassigned_count]
+    if unread_only?
+      counts = basic_assignment_counts(relation)
+      return counts.merge(
+        all_unread_count: counts[:all_count],
+        mine_unread_count: counts[:mine_count],
+        unassigned_unread_count: counts[:unassigned_count]
+      )
+    end
+
+    combined_assignment_and_unread_counts(relation)
+  end
+
+  def combined_assignment_and_unread_counts(relation)
+    unread_ids_sql = unread_thread_ids_relation.distinct.to_sql
+    joined_relation = relation.joins(
+      "LEFT JOIN (#{unread_ids_sql}) unread_thread_links " \
+      'ON unread_thread_links.communication_thread_id = communication_threads.id'
     )
+    all_count, mine_count, unassigned_count, all_unread_count, mine_unread_count, unassigned_unread_count =
+      Array(joined_relation.pick(*assignment_count_columns, *unread_assignment_count_columns)).map(&:to_i)
+
+    {
+      all_count: all_count,
+      mine_count: mine_count,
+      unassigned_count: unassigned_count,
+      all_unread_count: all_unread_count,
+      mine_unread_count: mine_unread_count,
+      unassigned_unread_count: unassigned_unread_count
+    }
   end
 
   def basic_assignment_counts(relation)
@@ -299,6 +356,15 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     ]
   end
 
+  def unread_assignment_count_columns
+    unread_filter = 'unread_thread_links.communication_thread_id IS NOT NULL'
+    [
+      Arel.sql("COUNT(*) FILTER (WHERE #{unread_filter})"),
+      Arel.sql("COUNT(*) FILTER (WHERE #{unread_filter} AND communication_threads.assignee_id = #{current_user.id.to_i})"),
+      Arel.sql("COUNT(*) FILTER (WHERE #{unread_filter} AND communication_threads.assignee_id IS NULL)")
+    ]
+  end
+
   # Only the team badge is shown in the dashboard, see Conversations::SidebarUnreadCountService.
   def unread_counts
     Conversations::SidebarUnreadCountService.unread_counts_with(teams: team_unread_counts)
@@ -311,12 +377,16 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def unread_thread_scope(scope)
+    base_scope = CommunicationThread.where(id: scope.except(:order).select(:id))
+    base_scope.where(id: unread_thread_ids_relation)
+  end
+
+  def unread_thread_ids_relation
     unread_conversations = Conversations::UnreadScopeBuilder.new(
       scope: accessible_conversations,
       account: current_account
     ).perform.select(:id)
-    base_scope = CommunicationThread.where(id: scope.except(:order).select(:id))
-    base_scope.where(id: thread_ids_for_conversations(unread_conversations))
+    thread_ids_for_conversations(unread_conversations)
   end
 
   def thread_ids_for_conversations(conversations)

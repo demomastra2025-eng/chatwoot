@@ -5,7 +5,7 @@ class CommunicationThreads::UpdateService
     @communication_thread = communication_thread
     @current_account = communication_thread.account
     @params = params.to_h.with_indifferent_access
-    @accessible_links = accessible_links.includes(:conversation)
+    @accessible_links = accessible_links.respond_to?(:includes) ? accessible_links.includes(:conversation) : accessible_links
     @actor = actor
     @source = source.to_s.presence || 'communication_thread'
   end
@@ -68,11 +68,10 @@ class CommunicationThreads::UpdateService
     return unless params.key?(:assignee_id)
 
     if agent_bot_assignment?
-      agent_bot = AgentBot.accessible_to(current_account).find_by(id: params[:assignee_id])
-      return if agent_bot.blank?
+      return if target_agent_bot.blank?
 
       conversation.assignee = nil
-      conversation.assignee_agent_bot = agent_bot
+      conversation.assignee_agent_bot = target_agent_bot
       return
     end
 
@@ -83,7 +82,7 @@ class CommunicationThreads::UpdateService
   def assign_team!(conversation)
     return unless params.key?(:team_id)
 
-    conversation.team = current_account.teams.find_by(id: params[:team_id])
+    conversation.team = target_team
   end
 
   def assign_custom_attributes!(conversation)
@@ -106,10 +105,26 @@ class CommunicationThreads::UpdateService
     conversation.custom_attributes = custom_attributes
   end
 
-  def human_assignee
-    return if params[:assignee_id].blank?
+  def target_agent_bot
+    return @target_agent_bot if defined?(@target_agent_bot)
 
-    current_account.account_users.find_by(user_id: params[:assignee_id])&.user
+    @target_agent_bot = AgentBot.accessible_to(current_account).find_by(id: params[:assignee_id])
+  end
+
+  def target_team
+    return @target_team if defined?(@target_team)
+
+    @target_team = params[:team_id].present? ? current_account.teams.find_by(id: params[:team_id]) : nil
+  end
+
+  def human_assignee
+    return @human_assignee if defined?(@human_assignee)
+
+    @human_assignee = if params[:assignee_id].blank?
+                        nil
+                      else
+                        current_account.account_users.find_by(user_id: params[:assignee_id])&.user
+                      end
   end
 
   def agent_bot_assignment?

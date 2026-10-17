@@ -63,8 +63,39 @@ class BulkActionsJob < ApplicationJob
 
   def process_batch(record_ids)
     records_by_id = records.where(id: record_ids).index_by(&:id)
+    prepare_batch_context(record_ids)
     outcomes = record_ids.map { |id| process_selected_record(records_by_id[id], id) }
     [outcomes.count(:failed), outcomes.count(:skipped)]
+  ensure
+    clear_batch_context
+  end
+
+  def prepare_batch_context(record_ids)
+    return unless @account && @user
+    return unless (@batch_account_member = account_member?) && record_ids.present?
+
+    if @params&.dig(:type).to_s.camelcase == 'CommunicationThread'
+      prepare_thread_batch_context(record_ids)
+    else
+      @batch_accessible_conversation_ids = Conversations::PermissionFilterService.new(
+        Conversation.where(id: record_ids, account_id: @account.id), @user, @account
+      ).perform.pluck(:id).to_set
+    end
+  end
+
+  def prepare_thread_batch_context(record_ids)
+    scope = CommunicationThreadConversation.where(account_id: @account.id, communication_thread_id: record_ids)
+    @batch_accessible_links_by_thread_id = scope.where(conversation_id: accessible_conversations.select(:id))
+                                                .includes(:conversation)
+                                                .group_by(&:communication_thread_id)
+    @batch_total_link_counts_by_thread_id = scope.group(:communication_thread_id).count
+  end
+
+  def clear_batch_context
+    @batch_account_member = nil
+    @batch_accessible_links_by_thread_id = nil
+    @batch_total_link_counts_by_thread_id = nil
+    @batch_accessible_conversation_ids = nil
   end
 
   def process_selected_record(record, record_id)
@@ -125,16 +156,28 @@ class BulkActionsJob < ApplicationJob
   end
 
   def accessible_links_for(communication_thread)
+    return @batch_accessible_links_by_thread_id.fetch(communication_thread.id, []) if @batch_accessible_links_by_thread_id
+
     CommunicationThreadConversation
       .where(account_id: @account.id, communication_thread_id: communication_thread.id)
       .where(conversation_id: accessible_conversations.select(:id))
       .includes(:conversation)
   end
 
+  def total_link_count_for(communication_thread)
+    return @batch_total_link_counts_by_thread_id.fetch(communication_thread.id, 0) if @batch_total_link_counts_by_thread_id
+
+    communication_thread.communication_thread_conversations.count
+  end
+
   class SkippedRecord < StandardError; end
 
   def account_member?
     @account.account_users.exists?(user_id: @user.id)
+  end
+
+  def batch_account_member?
+    @batch_account_member.nil? ? account_member? : @batch_account_member
   end
 
   def flush_progress(processed_count, failed_count, skipped_count)

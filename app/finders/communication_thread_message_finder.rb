@@ -28,7 +28,13 @@ class CommunicationThreadMessageFinder
   def messages
     @messages ||= Messages::TimelineVisibility
                   .apply(scoped_messages)
-                  .includes(:attachments, :sender, sender: { avatar_attachment: [:blob] })
+                  .includes(
+                    :conversation,
+                    { inbox: :channel },
+                    { attachments: { file_attachment: :blob } },
+                    :sender,
+                    sender: { avatar_attachment: [:blob] }
+                  )
   end
 
   def scoped_messages

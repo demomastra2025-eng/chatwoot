@@ -159,20 +159,12 @@ class Conversations::CommunicationThreadResolver
   end
 
   def aggregate_status(thread)
-    conversations = linked_conversations(thread)
-    active_conversation = conversations
-                          .reject(&:resolved?)
-                          .max_by { |linked_conversation| status_sort_key(linked_conversation) }
-    return active_conversation.status if active_conversation.present?
-
-    'resolved'
+    active_conversation = linked_conversations(thread).reject(&:resolved?).max_by { |c| status_sort_key(c) }
+    active_conversation ? active_conversation.status : 'resolved'
   end
 
   def status_sort_key(linked_conversation)
-    [
-      linked_conversation.updated_at || linked_conversation.last_activity_at,
-      linked_conversation.id
-    ]
+    [linked_conversation.updated_at || linked_conversation.last_activity_at, linked_conversation.id]
   end
 
   def aggregate_priority(thread)
@@ -184,7 +176,12 @@ class Conversations::CommunicationThreadResolver
   end
 
   def aggregate_unread_count(thread)
-    linked_conversations(thread).sum(&:unread_incoming_messages_count)
+    conversations = linked_conversations(thread)
+    return conversations.sum(&:unread_incoming_messages_count) if conversations.size <= 1
+
+    Message.without_imported_history.reorder(nil).incoming
+           .where(account_id: thread.account_id, conversation_id: conversations.map(&:id), private: false)
+           .joins(:conversation).where("messages.created_at > COALESCE(conversations.agent_last_seen_at, '-infinity'::timestamp)").count
   end
 
   def aggregate_assignee_id(thread)
@@ -196,10 +193,7 @@ class Conversations::CommunicationThreadResolver
   end
 
   def latest_routing_conversation(thread)
-    linked_conversations(thread)
-      .sort_by { |linked_conversation| routing_sort_key(linked_conversation) }
-      .reverse
-      .find { |linked_conversation| routed?(linked_conversation) }
+    linked_conversations(thread).sort_by { |c| routing_sort_key(c) }.reverse.find { |c| routed?(c) }
   end
 
   def routing_sort_key(linked_conversation)
@@ -212,10 +206,9 @@ class Conversations::CommunicationThreadResolver
 
   def linked_conversations(thread)
     @linked_conversations ||= {}
-    @linked_conversations[thread.id] ||= Conversation.where(account_id: thread.account_id).where(
-      id: CommunicationThreadConversation
-        .where(communication_thread_id: thread.id)
-        .select(:conversation_id)
+    @linked_conversations[thread.id] ||= Conversation.where(
+      account_id: thread.account_id,
+      id: CommunicationThreadConversation.where(communication_thread_id: thread.id).select(:conversation_id)
     ).to_a
   end
 end

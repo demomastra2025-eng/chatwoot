@@ -9,7 +9,7 @@ class CommunicationThreads::MarkReadService
   end
 
   def perform
-    return communication_thread.reload unless change_or_repair_required?
+    return communication_thread unless change_or_repair_required?
 
     mark_read_state! if read_state_changed
 
@@ -22,13 +22,12 @@ class CommunicationThreads::MarkReadService
   end
 
   def channel_read_states
+    unread_counts = current_channel_unread_counts
     conversations.map do |conversation|
       {
         conversation_id: conversation.display_id,
         agent_last_seen_at: conversation.last_seen_at_for(current_user)&.to_i,
-        unread_count: conversation.unread_messages_for(current_user)
-                                  .where(account_id: current_account.id, private: false)
-                                  .incoming.count
+        unread_count: unread_counts.fetch(conversation.id, 0)
       }
     end
   end
@@ -67,17 +66,31 @@ class CommunicationThreads::MarkReadService
   end
 
   def conversations
-    @conversations ||= accessible_links.includes(:conversation).filter_map(&:conversation)
+    @conversations ||= begin
+      links = accessible_links.respond_to?(:includes) ? accessible_links.includes(:conversation) : accessible_links
+      links.filter_map(&:conversation)
+    end
   end
 
   def unread_messages_exist?
+    @initial_unread_counts = load_channel_unread_counts
+    @initial_unread_counts.present?
+  end
+
+  def current_channel_unread_counts
+    return @initial_unread_counts if !read_state_changed && defined?(@initial_unread_counts)
+
+    load_channel_unread_counts
+  end
+
+  def load_channel_unread_counts
     conversation_ids = conversations.map(&:id)
-    return false if conversation_ids.blank?
+    return {} if conversation_ids.blank?
 
     Conversations::SharedUnreadStatePreloader.new(
       account: current_account,
       conversation_ids: conversation_ids
-    ).perform.unread_counts.present?
+    ).perform.unread_counts
   end
 
   def unread_notifications_exist?

@@ -15,7 +15,12 @@ class MessageFinder
   private
 
   def conversation_messages
-    visible_conversation_messages.includes(:attachments, :sender, sender: { avatar_attachment: [:blob] })
+    visible_conversation_messages.includes(
+      :conversation,
+      { attachments: { file_attachment: :blob } },
+      :sender,
+      sender: { avatar_attachment: [:blob] }
+    )
   end
 
   def visible_conversation_messages

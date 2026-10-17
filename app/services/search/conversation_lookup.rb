@@ -138,16 +138,17 @@ class Search::ConversationLookup
     social_fields = <<~SQL.squish
       contacts.additional_attributes ->> 'social_telegram_user_name' ILIKE :pattern
       OR contacts.additional_attributes ->> 'screen_name' ILIKE :pattern
-      OR EXISTS (
-        SELECT 1 FROM jsonb_each_text(
-          CASE WHEN jsonb_typeof(contacts.additional_attributes -> 'social_profiles') = 'object'
-               THEN contacts.additional_attributes -> 'social_profiles' ELSE '{}'::jsonb END
-        ) AS profile(key, value)
-        WHERE profile.value ILIKE :pattern
+      OR (
+        jsonb_typeof(contacts.additional_attributes -> 'social_profiles') = 'object'
+        AND (contacts.additional_attributes -> 'social_profiles')::text ILIKE :pattern
+        AND EXISTS (
+          SELECT 1 FROM jsonb_each_text(contacts.additional_attributes -> 'social_profiles') AS profile(key, value)
+          WHERE profile.value ILIKE :pattern
+        )
       )
     SQL
-    ids = @scope.joins('INNER JOIN contacts ON contacts.id = conversations.contact_id')
-                .where(contacts: { account_id: @account.id }).where("(#{social_fields})", pattern: pattern)
+    matching_contact_ids = @account.contacts.where("(#{social_fields})", pattern: pattern).select(:id)
+    ids = @scope.where(contact_id: matching_contact_ids)
     bounded_ids(ids)
   end
 

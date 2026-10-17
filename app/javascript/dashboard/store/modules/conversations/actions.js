@@ -1074,10 +1074,10 @@ const actions = {
         messageId: null,
       });
       if (currentChat.is_communication_thread) {
-        await Promise.all(
-          (currentChat.conversation_ids || []).map(id =>
-            dispatch('markMessagesRead', { id }, { root: true })
-          )
+        await dispatch(
+          'markCommunicationThreadRead',
+          { id: currentChat.id },
+          { root: true }
         );
       } else {
         dispatch('markMessagesRead', { id: conversationId }, { root: true });

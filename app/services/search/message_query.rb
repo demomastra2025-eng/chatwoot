@@ -81,8 +81,12 @@ class Search::MessageQuery
     partial = false
     begin
       within_statement_timeout do
-        rows = recent_rows(base, match, needed)
-        rows = indexed_rows(base, match, needed, candidates: indexed_candidates) if rows.size < needed
+        if indexed_candidates
+          rows = indexed_rows(base, match, needed, candidates: indexed_candidates)
+        else
+          rows = recent_rows(base, match, needed)
+          rows = indexed_rows(base, match, needed) if rows.size < needed
+        end
       end
     rescue ActiveRecord::QueryCanceled
       Rails.logger.warn('Message text search was cancelled by its time limit')
@@ -95,8 +99,10 @@ class Search::MessageQuery
 
   def recent_rows(base, match, needed)
     table = Message.arel_table
+    columns = [:id, :account_id, :conversation_id, :content, :created_at]
+    columns.push(:processed_message_content, :content_attributes) unless match == condition
     recent = base.reorder(table[:created_at].desc, table[:id].desc).limit(RECENT_ROWS)
-                 .select(:id, :account_id, :conversation_id, :content, :processed_message_content, :content_attributes, :created_at)
+                 .select(*columns)
     ordered(Message.unscoped.from(recent, :messages).where(match), needed)
   end
 

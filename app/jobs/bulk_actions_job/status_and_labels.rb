@@ -56,7 +56,8 @@ module BulkActionsJob::StatusAndLabels
   end
 
   def ensure_full_thread_accessible!(communication_thread, accessible_links)
-    return if accessible_links.count == communication_thread.communication_thread_conversations.count
+    accessible_count = accessible_links.is_a?(Array) ? accessible_links.size : accessible_links.count
+    return if accessible_count == total_link_count_for(communication_thread)
 
     raise ArgumentError, 'Cannot update communication thread without access to all linked channels'
   end
