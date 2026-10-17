@@ -79,6 +79,7 @@ class Integrations::Medelement::ContactResolverService
       email: patient['PATIENT_EMAIL'].to_s.downcase.presence,
       patient: patient
     )
+    candidate ||= candidate_contact if unlinked_phone_owner_candidate?(candidate_contact, patient_code, iin, patient)
     return unless candidate&.id == candidate_contact.id
 
     upsert_contact(patient, preferred_contact: candidate_contact)
@@ -149,6 +150,35 @@ class Integrations::Medelement::ContactResolverService
       contact_iin_compatible?(candidate, iin) &&
       contact_name_matches?(candidate, patient) &&
       contact_birth_date_matches?(candidate, patient)
+  end
+
+  def unlinked_phone_owner_candidate?(candidate, patient_code, iin, patient)
+    return false unless unlinked_phone_owner_identity_eligible?(candidate, patient_code, iin, patient)
+    return false unless unlinked_phone_owner_demographics_compatible?(candidate, patient)
+
+    unlinked_phone_owner_name_compatible?(candidate, patient)
+  end
+
+  def unlinked_phone_owner_identity_eligible?(candidate, patient_code, iin, patient)
+    return false if candidate.blank? || iin.blank?
+    return false unless patient_code_available_for?(candidate, patient_code) && contact_iin_compatible?(candidate, iin)
+    return false if Contacts::SharedPhone.card_identity_recorded?(candidate) || Contacts::SharedPhone.self_declared_identity?(candidate, iin)
+
+    provider_phones(patient).include?(Integrations::Medelement::PhoneNumber.normalize(candidate.phone_number))
+  end
+
+  def unlinked_phone_owner_demographics_compatible?(candidate, patient)
+    return false if normalized_contact_birth_date(candidate).present? && !contact_birth_date_matches?(candidate, patient)
+
+    candidate.last_name.blank? || contact_name_matches?(candidate, patient)
+  end
+
+  def unlinked_phone_owner_name_compatible?(candidate, patient)
+    candidate_name = candidate.name.to_s.strip
+    candidate_name.blank? ||
+      Integrations::Medelement::PhoneNumber.normalize(candidate_name).present? ||
+      normalized_name_tokens(candidate_name) == normalized_name_tokens(patient_first_name(patient)) ||
+      contact_name_matches?(candidate, patient)
   end
 
   def demographic_candidates(email:, phones:)
@@ -294,7 +324,8 @@ class Integrations::Medelement::ContactResolverService
         patient_code: patient_code,
         provider_phones: provider_phones(patient),
         linked_contact: linked_contact,
-        identity_contact: identity_contact
+        identity_contact: identity_contact,
+        iin: iin
       ).perform
       next preserve_foreign_owner_contact(deduplication.contact, patient_code) if foreign_owner?(deduplication.contact)
 
@@ -340,6 +371,7 @@ class Integrations::Medelement::ContactResolverService
     ).compact
     update_shared_phone_owner!(contact, patient)
     contact.save!
+    contact.dispatch_shared_phone_update_event if Current.executed_by.nil?
     record_phone_conflict(identity[:patient_code], contact, phone_conflict_comment) if phone_conflict_comment.present?
     enqueue_shared_phone_promotion(contact)
     contact

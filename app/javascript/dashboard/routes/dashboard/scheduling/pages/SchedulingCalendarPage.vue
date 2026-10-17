@@ -99,6 +99,7 @@ import {
 } from 'dashboard/stores/crm/fieldContexts';
 import {
   appointmentFormMutationContext,
+  isKazakhstanE164Phone,
   refreshCurrentCalendarProviderAction,
   runCurrentCalendarProviderAction,
   useSchedulingAppointmentFormStore,
@@ -323,7 +324,7 @@ const isSelectedAppointmentLocallyCancelled = computed(
 
 const filterableResources = computed(() =>
   referencesStore.resources.filter(
-    resource => !isDeletedFromScheduling(resource)
+    resource => resource.active && !isDeletedFromScheduling(resource)
   )
 );
 
@@ -892,12 +893,29 @@ const inlineContactLastNameMessage = computed(() => {
 
   return validationErrorMessage(formStore.validationErrors.clientLastName);
 });
+const inlineContactPhoneMessage = computed(() => {
+  if (
+    isInlineContactMedelementContext.value &&
+    !isKazakhstanE164Phone(formStore.form.clientPhone)
+  ) {
+    return t('SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_PHONE_REQUIRED');
+  }
+
+  return validationErrorMessage(formStore.validationErrors.clientPhone);
+});
+const needsProviderPatientPhoneInput = computed(
+  () =>
+    formStore.isProviderPatientIdentity &&
+    !isSelectedAppointmentProviderOwned.value &&
+    !isKazakhstanE164Phone(formStore.selectedContact?.phone)
+);
 const isInlineContactSaveDisabled = computed(
   () =>
     formStore.ui.isSaving ||
     formStore.isProviderPatientIdentity ||
     !String(formStore.form.clientFirstName || '').trim() ||
     Boolean(inlineContactLastNameMessage.value) ||
+    Boolean(inlineContactPhoneMessage.value) ||
     Boolean(inlineContactIinMessage.value)
 );
 
@@ -2396,6 +2414,33 @@ onMounted(async () => {
                           )
                         }}
                       </p>
+                      <div v-if="needsProviderPatientPhoneInput" class="pt-1">
+                        <PhoneNumberInput
+                          :model-value="formStore.form.clientPhone"
+                          :disabled="formStore.ui.isSaving"
+                          class="appointment-drawer-phone-control"
+                          default-country="KZ"
+                          :show-country-flag="false"
+                          :max-digits="11"
+                          :label="
+                            isSelectedFormResourceMedelement
+                              ? requiredContactLabel(
+                                  $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
+                                )
+                              : $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
+                          "
+                          size="md"
+                          @update:model-value="
+                            formStore.updateField('clientPhone', $event)
+                          "
+                        />
+                        <p
+                          v-if="inlineContactPhoneMessage"
+                          class="mt-1 mb-0 text-xs text-n-ruby-9"
+                        >
+                          {{ inlineContactPhoneMessage }}
+                        </p>
+                      </div>
                     </div>
                     <div
                       v-if="isContactEditorOpen"
@@ -2479,7 +2524,13 @@ onMounted(async () => {
                             :show-country-flag="false"
                             :max-digits="11"
                             :label="
-                              $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
+                              isInlineContactMedelementContext
+                                ? requiredContactLabel(
+                                    $t(
+                                      'SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE'
+                                    )
+                                  )
+                                : $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
                             "
                             size="md"
                             @update:model-value="
@@ -2487,14 +2538,10 @@ onMounted(async () => {
                             "
                           />
                           <p
-                            v-if="formStore.validationErrors.clientPhone"
+                            v-if="inlineContactPhoneMessage"
                             class="mt-1 mb-0 text-xs text-n-ruby-9"
                           >
-                            {{
-                              validationErrorMessage(
-                                formStore.validationErrors.clientPhone
-                              )
-                            }}
+                            {{ inlineContactPhoneMessage }}
                           </p>
                         </div>
                         <Input

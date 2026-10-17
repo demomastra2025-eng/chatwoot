@@ -93,7 +93,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   end
 
   def ensure_destroyable_resource!
-    if @scheduling_resource.custom_attributes['medelement_specialist_code'].present?
+    if @scheduling_resource.custom_attributes['medelement_specialist_code'].present? && @scheduling_resource.active?
       raise Scheduling::Error.new(
         code: 'RESOURCE_READ_ONLY',
         message: 'Imported Medelement specialists cannot be deleted',

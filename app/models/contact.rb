@@ -180,6 +180,18 @@ class Contact < ApplicationRecord
     contact_inboxes.find_by!(inbox_id: inbox_id).source_id
   end
 
+  def display_full_name
+    med_parts = medelement_full_name_parts
+    return med_parts.join(' ') if med_parts.present?
+
+    structured_contact_full_name
+  end
+
+  def structured_full_name_present?
+    attrs = custom_attributes.to_h
+    last_name.present? || middle_name.present? || attrs['medelement_last_name'].present? || attrs['medelement_middle_name'].present?
+  end
+
   def push_event_data(contact_inbox: nil)
     data = {
       additional_attributes: additional_attributes,
@@ -187,7 +199,7 @@ class Contact < ApplicationRecord
       email: email,
       id: id,
       identifier: identifier,
-      name: name,
+      name: display_full_name,
       owner_id: owner_id,
       owner: owner&.push_event_data,
       phone_number: phone_number,
@@ -214,7 +226,7 @@ class Contact < ApplicationRecord
       email: email,
       id: id,
       identifier: identifier,
-      name: name,
+      name: display_full_name,
       owner_id: owner_id,
       owner: owner&.webhook_data,
       phone_number: phone_number,
@@ -322,14 +334,46 @@ class Contact < ApplicationRecord
 
   private
 
+  def medelement_full_name_parts
+    attrs = custom_attributes.to_h
+    med_names = attrs.values_at('medelement_first_name', 'medelement_last_name', 'medelement_middle_name').map { |v| v.to_s.strip.presence }
+    return [] if med_names.compact.empty?
+
+    [
+      med_names[0] || name.to_s.strip.presence,
+      med_names[1] || last_name.to_s.strip.presence,
+      med_names[2] || middle_name.to_s.strip.presence
+    ].compact
+  end
+
+  def structured_contact_full_name
+    parts = [name, last_name, middle_name].filter_map { |v| v.to_s.strip.presence }
+    return name if parts.size <= 1
+
+    first_tokens = parts.first.downcase.split
+    [parts.first, *parts.drop(1).reject { |part| first_tokens.include?(part.downcase) }].join(' ')
+  end
+
   def apply_channel_profile_data(data, contact_inbox)
     profile = channel_profile_for(contact_inbox)
     return data if profile.blank?
 
     data[:channel_profile] = profile.push_event_data
-    data[:name] = profile.display_name if profile.display_name.present?
+    data[:name] = profile.display_name if channel_profile_display_name_applicable?(profile, data[:name])
     data[:thumbnail] = profile.avatar_url if profile.avatar_url.present?
     data
+  end
+
+  def channel_profile_display_name_applicable?(profile, current_name)
+    candidate = profile.display_name.to_s.strip
+    return false if candidate.blank? || structured_full_name_present?
+    return true if current_name.to_s.strip.blank?
+
+    !phone_like_display_name?(candidate)
+  end
+
+  def phone_like_display_name?(value)
+    ::Contacts::PhoneNumberNormalizer.normalize(value).present? || value.to_s.strip.match?(/\A?\d[\d\s()-]{6,}\z/)
   end
 
   def channel_profile_for(contact_inbox)

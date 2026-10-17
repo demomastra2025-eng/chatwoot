@@ -127,10 +127,11 @@ RSpec.describe 'Scheduling Resources API', type: :request do
     end
   end
 
-  it 'rejects deleting imported Medelement specialists' do
+  it 'rejects deleting active imported Medelement specialists but allows archiving inactive ones' do
     imported_resource = create(
       :scheduling_resource,
       account: account,
+      active: true,
       custom_attributes: { 'medelement_specialist_code' => '27492901726817790' }
     )
 
@@ -140,6 +141,15 @@ RSpec.describe 'Scheduling Resources API', type: :request do
 
     expect(response).to have_http_status(:unprocessable_content)
     expect(response_body['code']).to eq('RESOURCE_READ_ONLY')
+
+    imported_resource.update!(active: false)
+
+    delete "/api/v1/accounts/#{account.id}/scheduling/resources/#{imported_resource.id}",
+           headers: headers,
+           as: :json
+
+    expect(response).to have_http_status(:no_content)
+    expect(imported_resource.reload).to be_deleted_from_scheduling
   end
 
   it 'rejects deleting a specialist with a future active appointment and returns blocking details' do

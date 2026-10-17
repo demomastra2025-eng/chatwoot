@@ -113,7 +113,10 @@ RSpec.describe Inbox do
         Channel::VkCommunity.new(account: account),
         Channel::Whatsapp.new(account: account),
         Channel::WhatsappWeb.new(account: account),
-        build_twilio_channel(medium: :whatsapp)
+        Channel::Sms.new(account: account),
+        Channel::Voice.new(account: account),
+        build_twilio_channel(medium: :whatsapp),
+        build_twilio_channel(medium: :sms)
       ]
 
       messenger_channels.each do |channel|
@@ -125,13 +128,11 @@ RSpec.describe Inbox do
       end
     end
 
-    it 'keeps false by default for non-messenger channels' do
+    it 'keeps false by default for excluded non-single-conversation channels' do
       non_messenger_channels = [
         Channel::Api.new(account: account),
         Channel::Email.new(account: account),
-        Channel::Sms.new(account: account),
-        Channel::WebWidget.new(account: account),
-        build_twilio_channel(medium: :sms)
+        Channel::WebWidget.new(account: account)
       ]
 
       non_messenger_channels.each do |channel|

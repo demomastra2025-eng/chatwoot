@@ -3746,12 +3746,11 @@ RSpec.describe Telephony::EventsIngestionService do
 
       expect(result).to eq(existing_call_session)
       recovered_conversation = result.reload.conversation
-      expect(recovered_conversation).not_to eq(conversation)
-      expect(recovered_conversation.identifier).to eq("voice-recovery:#{result.id}")
+      expect(recovered_conversation).to eq(conversation)
       message = recovered_conversation.messages.voice_calls.find_by!(source_id: existing_call_session.voice_call_source_id)
       expect(message.content_attributes.dig('data', 'status')).to eq('completed')
       expect(Message.exists?(branch_message.id)).to be(false)
-      expect(conversation.messages.voice_calls.where(source_id: existing_call_session.voice_call_source_id)).to be_empty
+      expect(conversation.messages.voice_calls.where(source_id: existing_call_session.voice_call_source_id)).to exist
       expect(conversation.reload.additional_attributes).to include(
         'telephony_call_ref' => new_call_session.external_call_ref,
         'call_status' => 'ringing'
@@ -4175,8 +4174,7 @@ RSpec.describe Telephony::EventsIngestionService do
         expect(recovery_attempts).to eq(2)
         expect(lock_transaction_states).to be_present.and all(be(true))
         expect(recovered_message.id).to eq(old_message.id)
-        expect(recovered_conversation).not_to eq(conversation)
-        expect(recovered_conversation.identifier).to eq("voice-recovery:#{result.id}")
+        expect(recovered_conversation).to eq(conversation)
         expect(result.reload).to have_attributes(
           status: 'no_answer',
           ended_at: old_ended_at,
@@ -4192,7 +4190,7 @@ RSpec.describe Telephony::EventsIngestionService do
         )
         expect(attrs['recording_ref']).to be_blank
         expect(attrs['recording']).to be_blank
-        expect(conversation.messages.voice_calls.where(id: old_message.id)).to be_empty
+        expect(conversation.messages.voice_calls.where(id: old_message.id)).to exist
         expect(recovered_message_data).to include(
           'status' => 'no_answer',
           'duration' => 8,

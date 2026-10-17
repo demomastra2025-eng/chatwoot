@@ -616,14 +616,10 @@ class Telephony::EventsIngestionService
       next unless stale_terminal_voice_message?(call_session)
 
       recovery_messages = native_sip_recovery_messages(call_session)
-      superseded_conversation_id = call_session.conversation_id if superseded_native_sip_conversation_call?(call_session)
-      call_session.update!(conversation: nil) if superseded_conversation_id.present?
       ensure_conversation!(
         call_session,
         account,
-        reuse_existing_conversation: false,
-        excluded_conversation_id: superseded_conversation_id,
-        conversation_identifier: "voice-recovery:#{call_session.id}",
+        reuse_existing_conversation: true,
         build_voice_message: false
       )
       call_session.reload
@@ -1342,6 +1338,7 @@ class Telephony::EventsIngestionService
 
   def stale_event?(call_session)
     return false if wazo_cdr_event?
+
     occurred_at = resolved_occurred_at
     return false if webphone_terminal_completion_event?(call_session)
     return false if fresh_terminal_event?(call_session, occurred_at)

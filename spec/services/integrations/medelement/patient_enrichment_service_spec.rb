@@ -52,9 +52,27 @@ RSpec.describe Integrations::Medelement::PatientEnrichmentService do
     expect(resolved_contact.id).to eq(contact.id)
     expect(resolved_contact.name).to eq('Анна')
     expect(resolved_contact.last_name).to eq('Иванова')
+    expect(resolved_contact.display_full_name).to eq('Анна Иванова Сергеевна')
     expect(resolved_contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
     expect(resolved_contact.custom_attributes['medelement_patient_match_status']).to eq('matched')
     expect(resolved_contact.custom_attributes['medelement_patient_phone_fingerprint']).not_to include('77011234567')
+  end
+
+  it 'enriches a new unlinked phone call contact and populates full FIO' do
+    call_contact = create(:contact, account: account, name: '+77019998877', phone_number: '+77019998877')
+    call_search_patient = { 'PROFILE_CODE' => patient_code, 'PATIENT_PHONE_2' => '+7-X-701-X-9998877' }
+    call_patient = patient.merge('PATIENT_PHONE_2_STR' => '+7 701 9998877')
+    allow(client).to receive(:search_patients_by_phone).with(phone_number: call_contact.phone_number).and_return([call_search_patient])
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(call_patient)
+    allow(client).to receive(:search_patients_by_codes).with(patient_codes: [patient_code]).and_return([call_patient])
+
+    resolved_contact = service.perform(call_contact)
+
+    expect(resolved_contact.id).to eq(call_contact.id)
+    expect(resolved_contact.display_full_name).to eq('Анна Иванова Сергеевна')
+    expect(resolved_contact.push_event_data[:name]).to eq('Анна Иванова Сергеевна')
+    expect(resolved_contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
+    expect(resolved_contact.custom_attributes['medelement_patient_match_status']).to eq('matched')
   end
 
   it 'does not link a unique phone result without matching demographic evidence' do

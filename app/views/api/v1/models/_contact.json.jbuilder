@@ -8,7 +8,9 @@ json.additional_attributes(
 json.availability_status resource.availability_status
 json.email resource.email
 json.id resource.id
-json.name resource.name
+json.name resource.display_full_name
+json.last_name resource.last_name
+json.middle_name resource.middle_name
 json.owner_id resource.owner_id
 if resource.owner.present?
   json.owner do

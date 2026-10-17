@@ -57,7 +57,7 @@ class Scheduling::CalendarViewService
   def resources
     @resources ||= begin
       scope = account.scheduling_resources.not_deleted_from_scheduling.includes(:work_rules, :break_rules).ordered
-      scope = scope.where(id: @requested_resource_ids) if @requested_resource_ids.present?
+      scope = @requested_resource_ids.present? ? scope.where(id: @requested_resource_ids) : scope.active
       resolved = scope.to_a
       missing_ids = @requested_resource_ids - resolved.map(&:id)
       raise ActiveRecord::RecordNotFound, "Resources not found: #{missing_ids.join(', ')}" if missing_ids.present?

@@ -349,7 +349,7 @@ describe('SchedulingCalendarPage pending local booking', () => {
     wrapper = null;
   });
 
-  it('selects all nonarchived resources from the raw API, including inactive specialists', async () => {
+  it('selects only active nonarchived resources from the raw API, excluding inactive specialists', async () => {
     SchedulingResourcesAPI.get.mockResolvedValue({
       data: {
         payload: [
@@ -399,16 +399,14 @@ describe('SchedulingCalendarPage pending local booking', () => {
       include_inactive: true,
     });
     const filter = wrapper.findComponent({ name: 'SchedulingResourceFilter' });
-    expect(filter.props('resources').map(item => item.id)).toEqual([3, 5]);
+    expect(filter.props('resources').map(item => item.id)).toEqual([3]);
     await filter.get('button').trigger('click');
     await filter
       .get('button[data-label="SCHEDULING.GENERAL.SELECT_ALL"]')
       .trigger('click');
     await flushPromises();
 
-    expect(mocks.calendar.setSelectedResources).toHaveBeenLastCalledWith([
-      3, 5,
-    ]);
+    expect(mocks.calendar.setSelectedResources).toHaveBeenLastCalledWith([3]);
     expect(mocks.calendar.fetchCalendar).toHaveBeenCalled();
     expect(mocks.references.resources[1].customAttributes).toEqual({
       deleted_from_scheduling: true,

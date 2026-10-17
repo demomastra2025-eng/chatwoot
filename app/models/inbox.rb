@@ -448,11 +448,17 @@ class Inbox < ApplicationRecord
     self.lock_to_single_conversation = default_single_conversation_for_channel?
   end
 
-  def default_single_conversation_for_channel?
-    return true if DEFAULT_SINGLE_CONVERSATION_CHANNEL_TYPES.include?(resolved_channel_type)
-    return true if channel.is_a?(Channel::TwilioSms) && channel.whatsapp?
+  SINGLE_CONVERSATION_EXCLUDED_CHANNEL_TYPES = %w[
+    Channel::Email
+    Channel::WebWidget
+    Channel::Api
+  ].freeze
 
-    false
+  def default_single_conversation_for_channel?
+    type = resolved_channel_type
+    return false if type.blank? || SINGLE_CONVERSATION_EXCLUDED_CHANNEL_TYPES.include?(type)
+
+    true
   end
 
   def resolved_channel_type

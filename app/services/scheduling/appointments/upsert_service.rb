@@ -105,6 +105,7 @@ class Scheduling::Appointments::UpsertService
       stage_provider_move!
       new_record = appointment.new_record?
       Crm::Appointments::LinkService.new(appointment: appointment, params: params, actor: actor).perform if new_record
+      backfill_target_contact_phone!
       confirm_attendance!
       appointment.save!
       capture_provider_receipt_service!(new_record)
@@ -112,6 +113,21 @@ class Scheduling::Appointments::UpsertService
       sync_or_cancel_related_touches!
       sync_restored_local_medelement_expense!(was_local_cancellation: was_local_medelement_cancellation)
     end
+  end
+
+  def backfill_target_contact_phone!
+    target_contact = appointment.patient_contact || appointment.contact
+    return if target_contact.blank? || target_contact.phone_number.present?
+
+    normalized_phone = Integrations::Medelement::PhoneNumber.normalize(appointment.client_phone)
+    return if normalized_phone.blank?
+    return unless Contacts::SharedPhone.assignable_primary?(
+      account_id: account.id,
+      phone: normalized_phone,
+      contact_id: target_contact.id
+    )
+
+    target_contact.update!(phone_number: normalized_phone)
   end
 
   def confirm_attendance!

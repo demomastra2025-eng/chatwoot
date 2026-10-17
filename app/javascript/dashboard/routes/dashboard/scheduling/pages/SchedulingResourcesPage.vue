@@ -758,7 +758,7 @@ onMounted(async () => {
                 @click="toggleResourceActive(resource)"
               />
               <Button
-                v-if="!importedResource(resource)"
+                v-if="!importedResource(resource) || !resource.active"
                 size="sm"
                 variant="ghost"
                 color="ruby"

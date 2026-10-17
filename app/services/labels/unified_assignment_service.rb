@@ -17,9 +17,13 @@ class Labels::UnifiedAssignmentService
   end
 
   def perform
+    event_id = SecureRandom.uuid
     ActiveRecord::Base.transaction do
       contact.update_labels(labels) if contact.present?
-      conversations.each { |conversation| conversation.update_labels(labels) }
+      conversations.each do |conversation|
+        conversation.communication_thread_event_id ||= event_id
+        conversation.update_labels(labels)
+      end
     end
 
     labels

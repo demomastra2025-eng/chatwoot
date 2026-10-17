@@ -136,16 +136,37 @@ const channelLabelForMessage = message => {
   return getCommunicationChannelLabel(channelForMessage(message));
 };
 
+const channelDividerIdentity = message => {
+  const channel = channelForMessage(message);
+  return String(
+    channel?.inbox_id ??
+      channelLabelForMessage(message) ??
+      message?.conversationId ??
+      ''
+  );
+};
+
+const previousNonActivityMessage = (index, messages) => {
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    const candidate = messages[cursor];
+    if (candidate?.messageType !== MESSAGE_TYPES.ACTIVITY) {
+      return candidate;
+    }
+  }
+  return null;
+};
+
 const shouldShowChannelDivider = (message, index, messages) => {
   if (!isCommunicationThreadContext.value) return false;
+  if (message?.messageType === MESSAGE_TYPES.ACTIVITY) return false;
 
   const channelLabel = channelLabelForMessage(message);
   if (!channelLabel) return false;
 
-  const previousMessage = messages[index - 1];
+  const previousMessage = previousNonActivityMessage(index, messages);
   return (
     !previousMessage ||
-    String(previousMessage.conversationId) !== String(message.conversationId)
+    channelDividerIdentity(previousMessage) !== channelDividerIdentity(message)
   );
 };
 

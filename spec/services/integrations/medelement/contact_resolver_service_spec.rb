@@ -132,23 +132,48 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
     expect(scoped_service.sync_patient!(patient_code)).to be_persisted
   end
 
-  it 'preserves the first phone owner and creates a separate patient card when identity is unverified' do
+  it 'links the patient to the local Contact that already owns the provider phone and sets full FIO' do
     local_contact = create(:contact, account: account, phone_number: primary_phone, name: 'Local contact')
     allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
 
     contact = service.sync_patient!(patient_code)
 
-    expect(contact.id).not_to eq(local_contact.id)
-    expect(contact.reload.phone_number).to be_nil
+    expect(contact.id).to eq(local_contact.id)
+    expect(contact.reload.phone_number).to eq(primary_phone)
     expect(contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
-    expect(contact.custom_attributes['secondary_phones']).to include(primary_phone)
-    expect(local_contact.reload).to have_attributes(name: 'Local contact', phone_number: primary_phone)
-    expect(local_contact.custom_attributes['medelement_patient_code']).to be_nil
-    expect(account.contacts.count).to eq(2)
+    expect(contact.display_full_name).to eq('Светлана Сулейменова Темирбаевна')
+    expect(contact.push_event_data[:name]).to eq('Светлана Сулейменова Темирбаевна')
+    expect(account.contacts.count).to eq(1)
   end
 
-  it 'does not open a mergeable phone conflict for a relative sharing the phone of a chat contact' do
-    chat = create(:contact, account: account, phone_number: primary_phone, name: 'Chat')
+  it 'merges an existing phone-less duplicate patient card into the unlinked local phone owner' do
+    local_contact = create(:contact, account: account, phone_number: primary_phone, name: 'Камшат')
+    duplicate_card = create(
+      :contact,
+      account: account,
+      phone_number: nil,
+      name: 'Светлана',
+      custom_attributes: {
+        'medelement_patient_code' => patient_code,
+        Integrations::Medelement::PatientContactBinding::SHARED_OWNER_KEY => local_contact.id,
+        Integrations::Medelement::PatientContactBinding::CARD_KEY => true
+      }
+    )
+    appointment = create(:scheduling_appointment, account: account, contact: duplicate_card)
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
+
+    resolved_contact = service.sync_patient!(patient_code)
+
+    expect(resolved_contact.id).to eq(local_contact.id)
+    expect(appointment.reload.contact_id).to eq(local_contact.id)
+    expect(local_contact.reload.custom_attributes['medelement_patient_code']).to eq(patient_code)
+    expect(local_contact.display_full_name).to eq('Светлана Сулейменова Темирбаевна')
+    expect(Contact.exists?(duplicate_card.id)).to be(false)
+  end
+
+  it 'does not open a mergeable phone conflict for a relative sharing the phone of a chat contact with conflicting identity' do
+    chat = create(:contact, account: account, phone_number: primary_phone, name: 'Chat', identifier: '940720300129',
+                            custom_attributes: { 'iin' => '940720300129' })
     run = Integrations::Medelement::SyncRun.create!(account: account, trigger: 'manual', status: 'running')
     resolver = described_class.new(account: account, client: client, organization_id: 'company-1',
                                    conflict_tracker: Integrations::Medelement::ConflictTracker.new(sync_run: run))
@@ -303,7 +328,7 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
     expect(account.contacts.count).to eq(2)
   end
 
-  it 'creates a separate card when matching demographics do not uniquely identify the phone owner' do
+  it 'assigns the primary provider phone to the first local Contact even when another provider phone has a Contact' do
     matching_attributes = {
       account: account,
       name: 'Светлана',
@@ -319,11 +344,11 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
 
     resolved_contact = service.sync_patient!(patient_code)
 
-    expect(resolved_contact.id).not_to be_in(matching_contacts.map(&:id))
-    expect(resolved_contact.phone_number).to be_nil
+    expect(resolved_contact.id).to eq(matching_contacts.first.id)
+    expect(resolved_contact.phone_number).to eq(primary_phone)
     expect(resolved_contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
     expect(matching_contacts.last.reload.custom_attributes['medelement_patient_code']).to be_blank
-    expect(account.contacts.count).to eq(3)
+    expect(account.contacts.count).to eq(2)
   end
 
   it 'preserves a conflicting local IIN and creates a separate patient card' do
