@@ -102,14 +102,16 @@ const sourceForms = computed(() =>
 const pipelineForms = computed(() =>
   sourceForms.value.filter(
     form =>
-      props.pipeline?.id && Number(form.pipeline_id) === Number(props.pipeline.id)
+      props.pipeline?.id &&
+      Number(form.pipeline_id) === Number(props.pipeline.id)
   )
 );
 
 const unassignedForms = computed(() =>
   sourceForms.value.filter(
     form =>
-      !props.pipeline?.id || Number(form.pipeline_id) !== Number(props.pipeline.id)
+      !props.pipeline?.id ||
+      Number(form.pipeline_id) !== Number(props.pipeline.id)
   )
 );
 
@@ -236,7 +238,9 @@ const syncDefaults = () => {
   }
   if (
     !apiForm.stageId ||
-    !openStages.value.some(stage => String(stage.id) === String(apiForm.stageId))
+    !openStages.value.some(
+      stage => String(stage.id) === String(apiForm.stageId)
+    )
   ) {
     apiForm.stageId = defaultStageId.value;
   }
@@ -582,7 +586,9 @@ const sampleJsonFor = form => {
                   {{ form.inbox_name || `Inbox #${form.inbox_id}` }}
                   <template v-if="sourceKind === 'meta' && form.external_ref">
                     {{ $t('LEAD_FORMS.SEPARATOR') }}
-                    Meta Form ID: {{ form.external_ref }}
+                    {{
+                      `${$t('LEAD_FORMS.META_FORMS.FORM_ID_LABEL')}: ${form.external_ref}`
+                    }}
                   </template>
                 </p>
               </div>
@@ -633,15 +639,19 @@ const sampleJsonFor = form => {
               class="grid gap-2 rounded-xl bg-n-surface-1 p-3 outline outline-1 outline-n-weak"
             >
               <p class="mb-0 text-xs font-medium uppercase text-n-slate-10">
-                POST Endpoint
+                {{ $t('LEAD_FORMS.API_FORMS.ENDPOINT_TITLE') }}
               </p>
-              <code class="block break-all rounded bg-n-alpha-2 px-2 py-1 text-xs">
+              <code
+                class="block break-all rounded bg-n-alpha-2 px-2 py-1 text-xs"
+              >
                 {{ postEndpointFor(form) }}
               </code>
               <p class="mb-0 text-xs font-medium uppercase text-n-slate-10">
                 {{ $t('LEAD_FORMS.API_FORMS.TOKEN_LABEL') }}
               </p>
-              <code class="block break-all rounded bg-n-alpha-2 px-2 py-1 text-xs">
+              <code
+                class="block break-all rounded bg-n-alpha-2 px-2 py-1 text-xs"
+              >
                 {{ form.public_token }}
               </code>
               <p class="mb-0 text-xs font-medium uppercase text-n-slate-10">
@@ -657,7 +667,9 @@ const sampleJsonFor = form => {
 
       <!-- Existing unassigned forms that can be bound in 1 click -->
       <section v-if="unassignedForms.length" class="grid gap-2">
-        <h4 class="mb-0 text-xs font-semibold uppercase tracking-wide text-n-slate-10">
+        <h4
+          class="mb-0 text-xs font-semibold uppercase tracking-wide text-n-slate-10"
+        >
           {{ $t('CRM.SETTINGS.PIPELINES.OTHER_ACCOUNT_FORMS_TITLE') }}
         </h4>
         <div

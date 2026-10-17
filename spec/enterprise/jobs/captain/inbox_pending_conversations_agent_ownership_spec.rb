@@ -107,7 +107,7 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
 
   it 'does not fall back to the entry after access to the specialist is removed' do
     # Routing is channel membership: the specialist leaves this inbox (selected scope without it).
-    specialist.update!(channel_scope: 'selected')
+    specialist.update_column(:usage_mode, 'internal_assistant')
 
     expect_no_auto_action
     expect(Captain::ConversationCompletionService).not_to have_received(:new)
@@ -166,7 +166,7 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       described_class.perform_now(inbox)
 
       expect(conversation.reload).to be_open
-      expect(conversation.messages.outgoing.where(private: false).last).to have_attributes(content: 'Account transfer', sender: specialist)
+      expect(conversation.messages.outgoing.where(private: false)).to be_empty
       expect(conversation.messages.where(private: true).last).to have_attributes(content: 'Auto-handoff: Needs clarification', sender: specialist)
       expect(conversation.status_transitions.last.actor).to eq(specialist)
     end

@@ -4,7 +4,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Inboxes', type: :request do
   let(:account) { create(:account) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:inbox) { create(:inbox, account: account) }
-  let(:inbox2) { create(:inbox, account: account) }
+  let(:inbox2) { create(:inbox, account: account).tap { |record| record.captain_inbox&.destroy! } }
   let!(:captain_inbox) { create(:captain_inbox, captain_assistant: assistant, inbox: inbox) }
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:agent) { create(:user, account: account, role: :agent) }
@@ -66,6 +66,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Inboxes', type: :request do
       end
 
       it 'creates a captain inbox with the requested auto-reply mode' do
+        inbox2.update_column(:channel_type, 'Channel::Voice')
         post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/inboxes",
              params: { inbox: { inbox_id: inbox2.id, auto_reply_mode: 'outside_working_hours' } },
              headers: admin.create_new_auth_token
@@ -76,6 +77,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Inboxes', type: :request do
       end
 
       it 'updates the auto-reply mode when the same assistant is already connected to the inbox' do
+        inbox.update_column(:channel_type, 'Channel::Voice')
         post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/inboxes",
              params: { inbox: { inbox_id: inbox.id, auto_reply_mode: 'working_hours' } },
              headers: admin.create_new_auth_token
@@ -95,6 +97,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Inboxes', type: :request do
       end
 
       it 'disables legacy open replies on the next save even when the client requests true' do
+        inbox.update_column(:channel_type, 'Channel::Voice')
         captain_inbox.update!(reply_to_open_conversations: true)
         post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/inboxes",
              params: { inbox: { inbox_id: inbox.id, reply_to_open_conversations: true } },
@@ -106,6 +109,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Inboxes', type: :request do
       end
 
       it 'rejects removed never auto-reply mode' do
+        inbox2.update_column(:channel_type, 'Channel::Voice')
         expect do
           post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/inboxes",
                params: { inbox: { inbox_id: inbox2.id, auto_reply_mode: 'never' } },
@@ -116,6 +120,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Inboxes', type: :request do
       end
 
       it 'rejects an invalid auto-reply mode' do
+        inbox2.update_column(:channel_type, 'Channel::Voice')
         expect do
           post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/inboxes",
                params: { inbox: { inbox_id: inbox2.id, auto_reply_mode: 'weekends_only' } },
@@ -255,7 +260,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Inboxes', type: :request do
         expect do
           delete "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/inboxes/#{inbox.id}",
                  headers: admin.create_new_auth_token
-        end.to change(CaptainInbox, :count).by(-1)
+        end.to change { captain_inbox.reload.ai_enabled }.from(true).to(false)
 
         expect(response).to have_http_status(:no_content)
       end

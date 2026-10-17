@@ -25,7 +25,7 @@ RSpec.describe 'Assignable Agents API', type: :request do
 
     context 'when the user is not part of an inbox' do
       before do
-        [inbox1, inbox2].each { |inbox| inbox.remove_members([agent2.id, admin.id]) }
+        [inbox1, inbox2].each { |inbox| inbox.inbox_members.where(user_id: [agent2.id, admin.id]).delete_all }
       end
 
       context 'when the user is an admininstrator' do

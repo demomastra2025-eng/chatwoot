@@ -87,8 +87,8 @@ RSpec.describe Captain::Scenario, type: :model do
     it 'does not expose classifier reason IDs in the primary agent prompt context' do
       account = create(:account)
       assistant = create(:captain_assistant, account: account, config: {
-        'outcome_reason_settings' => { 'handoff_reasons' => [{ 'id' => 'technical', 'label' => 'Technical support', 'active' => true }] }
-      })
+                           'outcome_reason_settings' => { 'handoff_reasons' => [{ 'id' => 'technical', 'label' => 'Technical support', 'active' => true }] }
+                         })
       scenario = build(:captain_scenario, assistant: assistant, account: account)
       expect(scenario.prompt_context).not_to have_key(:outcome_reasons)
       expect(scenario.agent_instructions).not_to include('Technical support')
@@ -193,7 +193,8 @@ RSpec.describe Captain::Scenario, type: :model do
 
     it 'uses fields referenced in its own prompt without copying parent prompt dependencies' do
       scenario.update!(instruction: 'Ask for [Name](field://contact.name) before proceeding.')
-      assistant.update!(description: 'Use [Email](field://contact.email)', guardrails: ['Do not expose [Conversation ID](field://conversation.display_id).'])
+      assistant.update!(description: 'Use [Email](field://contact.email)',
+                        guardrails: ['Do not expose [Conversation ID](field://conversation.display_id).'])
       rendered = scenario.agent_instructions
       expect(rendered).to include('# Reference Glossary', 'Name (contact.name)')
       expect(rendered).not_to include('Email (contact.email)', 'Conversation ID (conversation.display_id)')
@@ -295,9 +296,9 @@ RSpec.describe Captain::Scenario, type: :model do
     end
 
     it 'does not activate an unchecked capability through its own prompt mention' do
-      scenario.update!(instruction: 'Use [Add Private Note](tool://add_private_note) if needed.')
-      expect(scenario.prompt_runtime_tool_ids).not_to include('add_private_note')
-      expect(scenario.agent_instructions).not_to include('Add Private Note (add_private_note)')
+      scenario.update!(instruction: 'Use [Cancel Response](tool://cancel_response) if needed.')
+      expect(scenario.prompt_runtime_tool_ids).not_to include('cancel_response')
+      expect(scenario.agent_instructions).not_to include('Cancel Response (cancel_response)')
     end
   end
 
@@ -431,7 +432,7 @@ RSpec.describe Captain::Scenario, type: :model do
         scenario = build(:captain_scenario,
                          assistant: assistant,
                          account: account,
-                         instruction: 'Use [@Add Note](tool://add_contact_note) and [@Fetch Order](tool://custom_fetch-order)')
+                         instruction: 'Use [@Cancel Response](tool://cancel_response) and [@Fetch Order](tool://custom_fetch-order)')
 
         expect(scenario).to be_valid
       end
@@ -520,7 +521,7 @@ RSpec.describe Captain::Scenario, type: :model do
         scenario = create(:captain_scenario,
                           assistant: assistant,
                           account: account,
-                          instruction: 'Use [@Add Note](tool://add_contact_note) and [@Fetch Order](tool://custom_fetch-order)')
+                          instruction: 'Use [@Cancel Response](tool://cancel_response) and [@Fetch Order](tool://custom_fetch-order)')
 
         resolved = scenario.send(:resolved_tools)
         expect(resolved.length).to eq(2)
@@ -544,7 +545,7 @@ RSpec.describe Captain::Scenario, type: :model do
           :captain_scenario,
           assistant: assistant,
           account: account,
-          instruction: 'Use [@Add Contact Note](tool://add_contact_note)'
+          instruction: 'Use [@Cancel Response](tool://cancel_response)'
         )
 
         resolved = scenario.send(:resolved_tools)
@@ -583,12 +584,12 @@ RSpec.describe Captain::Scenario, type: :model do
           :captain_scenario,
           assistant: assistant,
           account: account,
-          instruction: 'Use [@Add Contact Note](tool://add_contact_note)'
+          instruction: 'Use [@Cancel Response](tool://cancel_response)'
         )
 
         # An external agent's tool scope cannot be switched off; only the always-on handoff remains.
         expect(scenario.send(:resolved_tools).map { |tool| tool[:id] }).to eq(['handoff'])
-        expect(scenario.runtime_tool_ids).not_to include('add_contact_note')
+        expect(scenario.runtime_tool_ids).not_to include('cancel_response')
       end
     end
 
@@ -636,8 +637,8 @@ RSpec.describe Captain::Scenario, type: :model do
 
         tools = scenario.send(:agent_tools)
         expect(tools.length).to eq(2)
-        expect(tools.any? { |tool| tool.is_a?(Captain::Tools::HttpTool) }).to be(true)
-        expect(tools.any? { |tool| tool.is_a?(Captain::Tools::HandoffTool) }).to be(true)
+        expect(tools.any?(Captain::Tools::HttpTool)).to be(true)
+        expect(tools.any?(Captain::Tools::HandoffTool)).to be(true)
       end
 
       it 'excludes disabled custom tools from execution' do
@@ -659,7 +660,7 @@ RSpec.describe Captain::Scenario, type: :model do
         scenario = create(:captain_scenario,
                           assistant: assistant,
                           account: account,
-                          instruction: 'Use [@Add Note](tool://add_contact_note) and [@Fetch Order](tool://custom_fetch-order)')
+                          instruction: 'Use [@Cancel Response](tool://cancel_response) and [@Fetch Order](tool://custom_fetch-order)')
 
         allow(described_class).to receive(:resolve_tool_class).with('add_contact_note').and_return(
           Class.new do
@@ -669,8 +670,8 @@ RSpec.describe Captain::Scenario, type: :model do
 
         tools = scenario.send(:agent_tools)
         expect(tools.length).to eq(2)
-        expect(tools.any? { |tool| tool.is_a?(Captain::Tools::HttpTool) }).to be(true)
-        expect(tools.any? { |tool| tool.is_a?(Captain::Tools::HandoffTool) }).to be(true)
+        expect(tools.any?(Captain::Tools::HttpTool)).to be(true)
+        expect(tools.any?(Captain::Tools::HandoffTool)).to be(true)
       end
     end
   end

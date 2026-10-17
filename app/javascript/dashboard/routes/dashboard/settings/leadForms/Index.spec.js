@@ -37,8 +37,20 @@ const mockReferencesStore = reactive({
       active: true,
       default: true,
       stages: [
-        { id: 314, name: 'Неразобранное', active: true, outcome: 'open', default: true },
-        { id: 315, name: 'Пациент записан', active: true, outcome: 'open', default: false },
+        {
+          id: 314,
+          name: 'Неразобранное',
+          active: true,
+          outcome: 'open',
+          default: true,
+        },
+        {
+          id: 315,
+          name: 'Пациент записан',
+          active: true,
+          outcome: 'open',
+          default: false,
+        },
       ],
     },
   ],
@@ -62,7 +74,12 @@ const mockLeadFormsGet = vi.fn(() =>
           stage_name: 'Неразобранное',
           public_token: 'tok-901',
           field_schema: [
-            { name: 'phoneNumber', label: 'Телефон', type: 'tel', required: true },
+            {
+              name: 'phoneNumber',
+              label: 'Телефон',
+              type: 'tel',
+              required: true,
+            },
           ],
         },
       ],
@@ -226,8 +243,12 @@ describe('settings/leadForms/Index.vue', () => {
     await wrapper.get('[data-testid="tab-api"]').trigger('click');
     await flushPromises();
 
-    const pipelineSelect = wrapper.get('[data-testid="api-form-pipeline-select"] select');
-    const stageSelect = wrapper.get('[data-testid="api-form-stage-select"] select');
+    const pipelineSelect = wrapper.get(
+      '[data-testid="api-form-pipeline-select"] select'
+    );
+    const stageSelect = wrapper.get(
+      '[data-testid="api-form-stage-select"] select'
+    );
 
     expect(pipelineSelect.element.value).toBe('47');
     expect(stageSelect.element.value).toBe('314');

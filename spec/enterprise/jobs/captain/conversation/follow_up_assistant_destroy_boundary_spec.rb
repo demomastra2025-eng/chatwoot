@@ -15,9 +15,9 @@ RSpec.describe 'Captain follow-up assistant deletion boundary', type: :job do
 
   after { CommittedRowsCleanup.truncate! }
 
-  def in_thread(&block)
+  def in_thread(&)
     Thread.new do
-      ActiveRecord::Base.connection_pool.with_connection(&block)
+      ActiveRecord::Base.connection_pool.with_connection(&)
     rescue StandardError => e
       e
     end
@@ -143,6 +143,7 @@ RSpec.describe 'Captain follow-up assistant deletion boundary', type: :job do
       Thread.current[:assistant_destroying] = true
       Captain::Assistant.transaction do
         CaptainInbox.find_by!(captain_assistant_id: assistant.id).update!(ai_enabled: false)
+        assistant.account.update_columns(settings: assistant.account.settings.to_h.except('captain_default_assistant_id'))
         Captain::Assistant.find(assistant.id).destroy!
       end
       destroy_finished << true

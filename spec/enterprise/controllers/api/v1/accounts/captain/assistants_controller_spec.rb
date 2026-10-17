@@ -16,7 +16,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     allow(Llm::Config).to receive(:model_for).with(hash_including(feature: :assistant, account: account)).and_return(model_name)
     allow(Llm::Models).to receive(:model_config).and_call_original
     allow(Llm::Models).to receive(:model_config).with(model_name, account: account)
-      .and_return(metadata.merge('supported_parameters' => ['temperature']))
+                                                .and_return(metadata.merge('supported_parameters' => ['temperature']))
   end
 
   describe 'GET /api/v1/accounts/{account.id}/captain/assistants' do
@@ -209,7 +209,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     end
     let(:scenario) do
       target = create(:captain_assistant, account: account, name: 'Billing disputes', routing_description: 'Handles disputed charge flows.',
-                      description: 'Collect the dispute reason, then use [@Handoff](tool://handoff) if finance approval is needed.')
+                                          description: 'Collect the dispute reason, then use [@Handoff](tool://handoff) if finance approval is needed.',
+                                          config: { 'handoff_team_id' => create(:team, account: account).id })
       target
     end
 
@@ -1005,7 +1006,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         )
         expect(assistant.description).to include('Reply briefly.')
         expect(assistant.config).not_to have_key('rules')
-
       end
 
       it 'preserves tool and rules config when patching system settings only' do
@@ -1061,7 +1061,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(assistant.config).not_to include('handoff_requires_explicit_consent', 'handoff_consent_reason')
         expect(assistant.description).to include('Stay focused.')
         expect(assistant.config).not_to have_key('rules')
-
       end
 
       it 'ignores per-agent safety selections: safety is a workspace setting, stored legacy data stays as it is' do
@@ -1131,6 +1130,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(assistant.reload.usage_mode).to eq('external_agent')
 
         link.update!(ai_enabled: false)
+        account.update_columns(settings: account.settings.to_h.except('captain_default_assistant_id'))
+        account.update_columns(settings: account.settings.to_h.except('captain_default_assistant_id'))
 
         patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
               params: { assistant: { usage_mode: 'internal_assistant' } },
@@ -1356,7 +1357,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           inbox = create(:inbox, account: account)
 
           post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-               params: { playground_action: 'session', param => inbox.id },
+               params: { :playground_action => 'session', param => inbox.id },
                headers: agent.create_new_auth_token,
                as: :json
 
@@ -1401,17 +1402,17 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           thinking_effort: 'high'
         }
         allow(Llm::Config).to receive(:model_for).with(feature: :assistant, account: account)
-          .and_return('openai/gpt-6-luna')
+                                                 .and_return('openai/gpt-6-luna')
         allow(Llm::Models).to receive(:curated_model_names_for).with(:assistant, account: account)
-          .and_return(%w[openai/gpt-6-luna openai/gpt-5.4])
+                                                               .and_return(%w[openai/gpt-6-luna openai/gpt-5.4])
         allow(Llm::Models).to receive(:valid_model_for?).with(:assistant, 'openai/gpt-5.4', account: account)
-          .and_return(true)
+                                                        .and_return(true)
         allow(Llm::Models).to receive(:supports_temperature?).with('openai/gpt-5.4', account: account)
-          .and_return(true)
+                                                             .and_return(true)
         allow(Llm::Models).to receive(:supports_thinking?).with('openai/gpt-5.4', account: account)
-          .and_return(true)
+                                                          .and_return(true)
         allow(Llm::Models).to receive(:reasoning_efforts_for).with('openai/gpt-5.4', account: account)
-          .and_return(['high'])
+                                                             .and_return(['high'])
         allow(Captain::Assistant::AgentRunnerService).to receive(:new).with(
           assistant: assistant,
           source: 'playground',
@@ -1441,9 +1442,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
       it 'rejects temperature controls the selected model does not advertise' do
         allow(Llm::Config).to receive(:model_for).with(feature: :assistant, account: account)
-          .and_return('openai/gpt-6-luna')
+                                                 .and_return('openai/gpt-6-luna')
         allow(Llm::Models).to receive(:supports_temperature?).with('openai/gpt-6-luna', account: account)
-          .and_return(false)
+                                                             .and_return(false)
         expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
 
         post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
@@ -1492,9 +1493,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
       it 'rejects reasoning effort when the selected model does not support reasoning' do
         allow(Llm::Config).to receive(:model_for).with(feature: :assistant, account: account)
-          .and_return('openai/gpt-6-luna')
+                                                 .and_return('openai/gpt-6-luna')
         allow(Llm::Models).to receive(:supports_thinking?).with('openai/gpt-6-luna', account: account)
-          .and_return(false)
+                                                          .and_return(false)
         expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
 
         post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",

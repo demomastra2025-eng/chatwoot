@@ -353,6 +353,15 @@ const syncSelectedPipelineState = () => {
   stageDraftBaseline.value = JSON.stringify(buildStageDraftState());
 };
 
+const fetchPipelineLeadForms = async () => {
+  try {
+    const response = await leadFormsAPI.get();
+    leadForms.value = response?.data?.payload || [];
+  } catch {
+    // Non-blocking for pipeline settings
+  }
+};
+
 const loadSettings = async () => {
   const requestAccountId = String(accountId.value);
   await Promise.all([
@@ -530,15 +539,6 @@ const apiFormsForSelectedPipeline = computed(() =>
       Number(form.pipeline_id) === Number(selectedPipeline.value.id)
   )
 );
-
-const fetchPipelineLeadForms = async () => {
-  try {
-    const response = await leadFormsAPI.get();
-    leadForms.value = response?.data?.payload || [];
-  } catch {
-    // Non-blocking for pipeline settings
-  }
-};
 
 const openLeadSourceModal = sourceKind => {
   activeLeadSourceKind.value = sourceKind;
@@ -1283,10 +1283,7 @@ onMounted(async () => {
                 </div>
               </aside>
 
-              <section
-                class="w-max"
-                data-testid="crm-stage-entry-settings"
-              >
+              <section class="w-max" data-testid="crm-stage-entry-settings">
                 <div class="py-1">
                   <div class="flex min-w-max items-stretch">
                     <article

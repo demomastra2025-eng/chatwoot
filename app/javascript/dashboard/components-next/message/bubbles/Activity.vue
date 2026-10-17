@@ -26,10 +26,7 @@ const displayContent = computed(() =>
     class="px-3 py-1 !rounded-xl flex min-w-0 items-center gap-2"
     data-bubble-name="activity"
   >
-    <span
-      class="whitespace-pre-line"
-      :title="displayContent"
-    >
+    <span class="whitespace-pre-line" :title="displayContent">
       {{ displayContent }}
     </span>
   </BaseBubble>

@@ -141,7 +141,7 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
       expect { scheduled_step(anchor: employee_anchor) }.not_to change(Reminder, :count)
 
       other_inbox = create(:inbox, account: account)
-      create(:captain_inbox, captain_assistant: assistant, inbox: other_inbox)
+      CaptainInbox.find_or_create_by!(inbox: other_inbox) { |ci| ci.captain_assistant = assistant }
       mismatched_inbox_anchor = create(
         :message,
         account: account,
@@ -160,6 +160,7 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
       other_assistant = create(:captain_assistant, account: other_account)
       internal_assistant = create(:captain_assistant, account: account)
       internal_inbox = create(:inbox, account: account)
+      internal_inbox.captain_inbox&.destroy!
       internal_conversation = create(:conversation, account: account, inbox: internal_inbox, status: :pending)
       create(:captain_inbox, captain_assistant: internal_assistant, inbox: internal_inbox)
       internal_assistant.update_column(:usage_mode, 'internal_assistant') # rubocop:disable Rails/SkipsModelValidations
@@ -462,12 +463,12 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
       expect(result).to eq(:skipped)
       expect(conversation.messages.outgoing.where("additional_attributes ->> 'touch_id' = ?", reminder.id.to_s)).to be_empty
       expect(Captain::FollowUpAttempt.where(
-               account: account,
-               assistant: assistant,
-               conversation: conversation,
-               anchor_message: anchor_message,
-               step_index: 0
-             ).sole).to be_completed
+        account: account,
+        assistant: assistant,
+        conversation: conversation,
+        anchor_message: anchor_message,
+        step_index: 0
+      ).sole).to be_completed
     end
 
     it 'does not accept a materialized message from a different conversation' do

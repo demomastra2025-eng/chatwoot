@@ -8,8 +8,7 @@ export function extractNormalizedReactions({
     attrs.whatsappReactions || attrs.whatsapp_reactions || {};
   const telegramReactions =
     attrs.telegramReactions || attrs.telegram_reactions || {};
-  const agentReactions =
-    attrs.agentReactions || attrs.agent_reactions || {};
+  const agentReactions = attrs.agentReactions || attrs.agent_reactions || {};
 
   const grouped = new Map();
 
@@ -49,7 +48,10 @@ export function extractNormalizedReactions({
         }
       } else if (reaction.type === 'custom_emoji') {
         const label = t('CONVERSATION.TELEGRAM.CUSTOM_EMOJI');
-        const group = ensureGroup(`custom:${reaction.custom_emoji_id || label}`, '✨');
+        const group = ensureGroup(
+          `custom:${reaction.custom_emoji_id || label}`,
+          '✨'
+        );
         group.label = label;
         group.count += count;
         group.interactive = false;
@@ -111,7 +113,10 @@ export function extractNormalizedReactions({
   return Array.from(grouped.values());
 }
 
-export function getCurrentUserReactionEmoji(contentAttributes = {}, currentUserId = null) {
+export function getCurrentUserReactionEmoji(
+  contentAttributes = {},
+  currentUserId = null
+) {
   const attrs = contentAttributes || {};
   const agentReactions = attrs.agentReactions || attrs.agent_reactions || {};
   if (currentUserId && agentReactions[`user:${currentUserId}`]?.emoji) {

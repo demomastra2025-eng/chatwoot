@@ -28,7 +28,7 @@ RSpec.describe 'Captain agent channel settings', type: :request do
   end
 
   it 'rejects deactivation of an enabled main agent with the channel ids' do
-    create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+    CaptainInbox.find_or_initialize_by(inbox: inbox).update!(captain_assistant: assistant, ai_enabled: true)
 
     patch path, headers: admin.create_new_auth_token, as: :json, params: { assistant: { active: false } }
 
@@ -38,7 +38,7 @@ RSpec.describe 'Captain agent channel settings', type: :request do
   end
 
   it 'rejects deletion of an enabled main agent' do
-    create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+    CaptainInbox.find_or_initialize_by(inbox: inbox).update!(captain_assistant: assistant, ai_enabled: true)
 
     delete path, headers: admin.create_new_auth_token
 

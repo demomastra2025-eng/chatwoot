@@ -389,7 +389,7 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def wazo_target_matches?(config)
     configured_host = ENV.fetch('TELEPHONY_WAZO_SIP_HOST', '').strip.downcase
-    channel_host = config.dig(:resources, :provider_connection, :host).to_s.strip.downcase
+    channel_host = config.dig(:resources, :provider_connection).to_h.with_indifferent_access[:host].to_s.strip.downcase
     configured_host.present? && ActiveSupport::SecurityUtils.secure_compare(configured_host, channel_host)
   end
 
@@ -1457,7 +1457,8 @@ class Telephony::VirtualPbx::ProvisioningService
       provider_connection_id: provider_connection.id,
       managed_by: MANAGED_BY_ONELINK,
       ownership_status: LOCAL_OWNERSHIP_STATUS,
-      carrier_kind: first_present(payload.dig(:connection, :carrier_kind), payload.dig(:metadata, 'carrier_kind'), provider_connection.metadata.to_h['carrier_kind']),
+      carrier_kind: first_present(payload.dig(:connection, :carrier_kind), payload.dig(:metadata, 'carrier_kind'),
+                                  provider_connection.metadata.to_h['carrier_kind']),
       source: payload.dig(:metadata, 'source') || payload[:provider_kind]
     )
 
@@ -1538,7 +1539,7 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def active_calls_present?(inbox_id)
-    Telephony::CallSession.active.where(account: account, inbox_id: inbox_id).exists?
+    Telephony::CallSession.active.exists?(account: account, inbox_id: inbox_id)
   end
 
   def destroy_provider_connection_if_orphaned!(provider_connection)

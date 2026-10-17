@@ -290,15 +290,27 @@ const EXTRA_MODERN_EMOJIS_BY_CATEGORY = {
     { emoji: '🩶', name: 'grey heart', slug: 'grey_heart' },
     { emoji: '🫨', name: 'shaking face', slug: 'shaking_face' },
     { emoji: '🫡', name: 'saluting face', slug: 'saluting_face' },
-    { emoji: '🥹', name: 'face holding back tears', slug: 'face_holding_back_tears' },
+    {
+      emoji: '🥹',
+      name: 'face holding back tears',
+      slug: 'face_holding_back_tears',
+    },
     { emoji: '🫠', name: 'melting face', slug: 'melting_face' },
   ],
   people_body: [
     { emoji: '🫶', name: 'heart hands', slug: 'heart_hands' },
     { emoji: '🫱', name: 'rightwards hand', slug: 'rightwards_hand' },
     { emoji: '🫲', name: 'leftwards hand', slug: 'leftwards_hand' },
-    { emoji: '🫸', name: 'rightwards pushing hand', slug: 'rightwards_pushing_hand' },
-    { emoji: '🫷', name: 'leftwards pushing hand', slug: 'leftwards_pushing_hand' },
+    {
+      emoji: '🫸',
+      name: 'rightwards pushing hand',
+      slug: 'rightwards_pushing_hand',
+    },
+    {
+      emoji: '🫷',
+      name: 'leftwards pushing hand',
+      slug: 'leftwards_pushing_hand',
+    },
   ],
   objects: [
     { emoji: '🩺', name: 'stethoscope', slug: 'stethoscope_doctor_clinic' },
@@ -322,14 +334,15 @@ function lookupKeywordsForEmoji(emojiChar = '') {
 export function enrichEmojiCategories(rawCategories = []) {
   return rawCategories.map(category => {
     const existingSet = new Set(category.emojis.map(item => item.emoji));
-    const extras = (EXTRA_MODERN_EMOJIS_BY_CATEGORY[category.slug] || []).filter(
-      item => !existingSet.has(item.emoji)
-    );
+    const extras = (
+      EXTRA_MODERN_EMOJIS_BY_CATEGORY[category.slug] || []
+    ).filter(item => !existingSet.has(item.emoji));
     const merged = [...category.emojis, ...extras].map(item => {
       const ruKeywords = lookupKeywordsForEmoji(item.emoji);
-      const searchText = `${item.name || ''} ${(item.slug || '').replaceAll('_', ' ')} ${ruKeywords}`
-        .toLowerCase()
-        .trim();
+      const searchText =
+        `${item.name || ''} ${(item.slug || '').replaceAll('_', ' ')} ${ruKeywords}`
+          .toLowerCase()
+          .trim();
       return {
         ...item,
         searchText,
@@ -355,7 +368,5 @@ export function matchesEmojiSearch(item, query) {
       item.emoji
     )}`.toLowerCase();
 
-  return normalizedQuery
-    .split(/\s+/)
-    .every(token => haystack.includes(token));
+  return normalizedQuery.split(/\s+/).every(token => haystack.includes(token));
 }

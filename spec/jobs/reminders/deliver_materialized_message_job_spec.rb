@@ -164,6 +164,7 @@ RSpec.describe Reminders::DeliverMaterializedMessageJob do
     )
     # A main agent of a channel with AI enabled cannot be deleted (channel rules), so AI is switched off on its channel first.
     CaptainInbox.find_by!(captain_assistant_id: assistant.id).update!(ai_enabled: false)
+    account.update_columns(settings: account.settings.to_h.except('captain_default_assistant_id'))
     assistant.destroy!
     allow(SendReplyJob).to receive(:perform_now_with_follow_up_finalizer)
 

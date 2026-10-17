@@ -62,7 +62,7 @@ class Integrations::Medelement::SpecialistsSyncService
     return log_skipped_specialist('missing_name', specialist_code, payload: payload) if specialist_name.blank?
 
     Scheduling::Resource.transaction(requires_new: true) do
-      resource = find_resource(specialist_code) || account.scheduling_resources.new
+      resource = find_resource(specialist_code) || account.scheduling_resources.new(inherit_working_hours_from_account: false)
       resource.assign_attributes(specialist_attributes(resource, payload, specialist_code, specialist_name))
       resource.save!
       work_rules_sync_service.perform(resource)

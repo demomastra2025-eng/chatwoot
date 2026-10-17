@@ -417,7 +417,11 @@
       "CLOSE": "Close",
       "UNKNOWN_CALLER": "Unknown caller",
       "DEFAULT_INBOX_NAME": "Customer support",
-      "OPERATOR_BUSY": "End the current call before answering another one"
+      "OPERATOR_BUSY": "End the current call before answering another one",
+      "TRANSFER_CALL": "Transfer call",
+      "RING_GROUP_DEFAULT": "General ring group (2001)",
+      "TRANSFER_EXTENSION_PLACEHOLDER": "Ext. number (e.g. 1002 / 2001)",
+      "TRANSFER_SUBMIT": "Transfer"
     },
     "STATUS_REASONS": {
       "STATUS": {

@@ -38,7 +38,10 @@ describe ReportingEventListener do
     context 'when business hours enabled for inbox' do
       let(:created_at) { Time.zone.parse('March 20, 2022 00:00') }
       let(:updated_at) { Time.zone.parse('March 26, 2022 23:59') }
-      let!(:new_inbox) { create(:inbox, working_hours_enabled: true, account: account) }
+      let!(:new_inbox) do
+        account.update!(workspace_timezone: 'UTC', workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup)
+        create(:inbox, working_hours_enabled: true, account: account)
+      end
       let!(:new_conversation) do
         create(:conversation, created_at: created_at, updated_at: updated_at, account: account, inbox: new_inbox, assignee: user)
       end
@@ -226,7 +229,10 @@ describe ReportingEventListener do
     context 'when business hours enabled for inbox' do
       let(:conversation_created_at) { Time.zone.parse('March 20, 2022 00:00') }
       let(:message_created_at) { Time.zone.parse('March 26, 2022 23:59') }
-      let!(:new_inbox) { create(:inbox, working_hours_enabled: true, account: account) }
+      let!(:new_inbox) do
+        account.update!(workspace_timezone: 'UTC', workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup)
+        create(:inbox, working_hours_enabled: true, account: account)
+      end
       let!(:new_conversation) do
         create(:conversation, created_at: conversation_created_at, account: account, inbox: new_inbox, assignee: user)
       end
@@ -284,7 +290,10 @@ describe ReportingEventListener do
     context 'when business hours enabled for inbox' do
       let(:created_at) { Time.zone.parse('March 20, 2022 00:00') }
       let(:updated_at) { Time.zone.parse('March 26, 2022 23:59') }
-      let!(:new_inbox) { create(:inbox, working_hours_enabled: true, account: account) }
+      let!(:new_inbox) do
+        account.update!(workspace_timezone: 'UTC', workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup)
+        create(:inbox, working_hours_enabled: true, account: account)
+      end
       let!(:new_conversation) do
         create(:conversation, created_at: created_at, updated_at: updated_at, account: account, inbox: new_inbox, assignee: user)
       end
@@ -422,7 +431,10 @@ describe ReportingEventListener do
       context 'when business hours enabled for inbox' do
         let(:resolved_time) { Time.zone.parse('March 20, 2022 12:00') }
         let(:reopened_time) { Time.zone.parse('March 21, 2022 14:00') }
-        let!(:business_hours_inbox) { create(:inbox, working_hours_enabled: true, timezone: 'UTC', account: account) }
+        let!(:business_hours_inbox) do
+          account.update!(workspace_timezone: 'UTC', workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup)
+          create(:inbox, working_hours_enabled: true, timezone: 'UTC', account: account)
+        end
         let!(:business_hours_conversation) do
           create(:conversation, account: account, inbox: business_hours_inbox, assignee: user, updated_at: reopened_time)
         end

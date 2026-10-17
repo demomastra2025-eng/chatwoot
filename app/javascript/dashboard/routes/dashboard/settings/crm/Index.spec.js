@@ -1052,7 +1052,9 @@ describe('CRM pipeline settings', () => {
       'crm-stage-entry-settings',
     ]);
     expect(
-      wrapper.find('[data-testid="crm-appointment-automation-settings"]').exists()
+      wrapper
+        .find('[data-testid="crm-appointment-automation-settings"]')
+        .exists()
     ).toBe(false);
     expect(wrapper.find('[icon="i-lucide-star"]').exists()).toBe(false);
     expect(wrapper.find('[icon="i-lucide-star-off"]').exists()).toBe(false);

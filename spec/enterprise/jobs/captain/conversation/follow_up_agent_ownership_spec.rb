@@ -132,7 +132,7 @@ RSpec.describe 'Captain follow-up agent ownership', type: :job do
       case change
       when 'transfer' then route_to(entry)
       when 'deactivate' then actor.update!(active: false)
-      when 'remove_membership' then actor.update!(channel_scope: 'selected')
+      when 'remove_membership' then actor.update_column(:usage_mode, 'internal_assistant')
       end
       provider = spy('provider')
 
@@ -153,9 +153,9 @@ RSpec.describe 'Captain follow-up agent ownership', type: :job do
                          'state' => 'answered', 'delivered' => [] }]
     end
     anchor = create(:message, conversation: conversation, sender: actor, message_type: :outgoing,
-                             private: false, content: 'Answer',
-                             additional_attributes: { captain_ai_reply: { assistant_id: actor.id },
-                                                      captain_part_refs: [{ id: part_id, version: 1 }] })
+                              private: false, content: 'Answer',
+                              additional_attributes: { captain_ai_reply: { assistant_id: actor.id },
+                                                       captain_part_refs: [{ id: part_id, version: 1 }] })
     reminder = schedule_for(actor, anchor: anchor)
 
     route_to(entry)
@@ -166,7 +166,7 @@ RSpec.describe 'Captain follow-up agent ownership', type: :job do
 
   it 'keeps sibling physical reminders when one conversation changes while shared human control revokes their delivery' do
     sibling_inbox = create(:inbox, account: account)
-    create(:captain_inbox, inbox: sibling_inbox, captain_assistant: entry)
+    CaptainInbox.find_or_create_by!(inbox: sibling_inbox) { |ci| ci.captain_assistant = entry }
     sibling = create(:conversation, account: account, inbox: sibling_inbox, contact: conversation.contact, status: :pending)
     thread = create(:communication_thread, account: account, contact: conversation.contact)
     [conversation, sibling].each do |candidate|

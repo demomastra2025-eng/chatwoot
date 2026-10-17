@@ -15,6 +15,7 @@ RSpec.describe Enterprise::AutoAssignment::AssignmentService, type: :service do
 
     # Link inbox to assignment policy
     create(:inbox_assignment_policy, inbox: inbox, assignment_policy: assignment_policy)
+    account.update!(conversation_assignment_policy_id: assignment_policy.id)
 
     # Enable assignment_v2 (base) and advanced_assignment (premium) features
     account.enable_features('assignment_v2')

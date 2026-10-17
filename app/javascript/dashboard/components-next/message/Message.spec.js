@@ -213,8 +213,9 @@ describe('Message', () => {
     });
 
     expect(
-      recentOutgoing.findComponent({ name: 'ContextMenu' }).props('enabledOptions')
-        .delete
+      recentOutgoing
+        .findComponent({ name: 'ContextMenu' })
+        .props('enabledOptions').delete
     ).toBe(true);
     expect(
       expiredOutgoing

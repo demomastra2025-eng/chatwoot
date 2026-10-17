@@ -414,7 +414,11 @@
       "OPERATOR_BUSY": "Завершите текущий звонок, прежде чем отвечать на другой",
       "BUSY_ON_CALL": "Вы на звонке: принять другой пока нельзя",
       "CALL_ALREADY_TAKEN": "Звонок уже принял другой оператор",
-      "CALL_ALREADY_ENDED": "Звонок уже завершён"
+      "CALL_ALREADY_ENDED": "Звонок уже завершён",
+      "TRANSFER_CALL": "Перевести звонок",
+      "RING_GROUP_DEFAULT": "Общая группа (2001)",
+      "TRANSFER_EXTENSION_PLACEHOLDER": "Внутр. номер (напр. 1002 / 2001)",
+      "TRANSFER_SUBMIT": "Перевести"
     },
     "OPERATOR_CALL_ACTIVITY": {
       "CALLING": "Оператор {name} звонит клиенту",

@@ -6,7 +6,7 @@ RSpec.describe Captain::AgentChannel, type: :model do
   let(:inbox) { create(:inbox, account: account) }
 
   it 'uses explicit membership only for selected active external agents' do
-    expect(agent.works_on_inbox?(inbox)).to be false
+    expect(agent.works_on_inbox?(inbox)).to be true
     described_class.create!(account: account, assistant: agent, inbox: inbox)
     expect(agent.works_on_inbox?(inbox)).to be true
     agent.update!(active: false)

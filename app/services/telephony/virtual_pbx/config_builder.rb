@@ -473,7 +473,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       app_ref: provider_owned_sip ? nil : binding&.configured_app_ref,
       runtime_app_ref: provider_owned_sip ? nil : binding&.runtime_app_ref,
       trunk_ref: provider_owned_sip ? nil : binding&.trunk_ref,
-      provider_connection: sanitize(binding&.provider_connection&.to_virtual_pbx_h),
+      provider_connection: sanitize(binding&.provider_connection&.to_virtual_pbx_h)&.with_indifferent_access,
       last_synced_at: binding&.last_synced_at,
       provisioning_status: telephony_attribute(binding, :provisioning_status),
       last_reconciled_at: telephony_attribute(binding, :last_reconciled_at),
@@ -737,7 +737,7 @@ class Telephony::VirtualPbx::ConfigBuilder
   end
 
   def first_present(*values)
-    values.find { |value| value.present? }
+    values.find(&:present?)
   end
 
   def secret_key?(key)

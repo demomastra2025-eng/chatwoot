@@ -93,7 +93,7 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
   end
 
   it 'tells the agent to call create_appointment and update_appointment directly for an exact time: the tool checks it' do
-    sentence = 'If the patient named an exact time, call this tool directly: it checks the time and says if it is taken.'
+    sentence = 'If the patient named an exact time, call this tool directly: it checks the time and says if it is taken'
 
     expect(described_class.for_tool('create_appointment').description).to include(sentence)
     expect(described_class.for_tool('update_appointment').description).to include(sentence)

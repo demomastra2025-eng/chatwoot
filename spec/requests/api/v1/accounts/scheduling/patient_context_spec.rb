@@ -4,7 +4,7 @@ RSpec.describe 'Scheduling patient context', type: :request do
   let(:account) { create(:account).tap { |record| record.enable_features!('scheduling', 'scheduling_finance') } }
   let(:employee) { create(:user, account: account, role: :agent) }
   let(:headers) { employee.create_new_auth_token }
-  let(:owner) { create(:contact, account: account, name: 'Mother', last_name: 'Owner', phone_number: '+77001234567') }
+  let(:owner) { create(:contact, account: account, owner: employee, name: 'Mother', last_name: 'Owner', phone_number: '+77001234567') }
   let(:conversation) { create(:conversation, account: account, contact: owner) }
   let(:patients_path) { "/api/v1/accounts/#{account.id}/scheduling/contacts/#{owner.id}/patients" }
   let(:appointments_path) { "/api/v1/accounts/#{account.id}/scheduling/appointments" }
@@ -21,7 +21,8 @@ RSpec.describe 'Scheduling patient context', type: :request do
   before do
     result = Scheduling::AvailabilityService::Result.new(available: true)
     allow(Scheduling::AvailabilityService).to receive(:new).and_return(instance_double(Scheduling::AvailabilityService, availability_result: result))
-    allow(Integrations::Medelement::CronScheduleService).to receive(:new).and_return(instance_double(Integrations::Medelement::CronScheduleService, sync!: true))
+    allow(Integrations::Medelement::CronScheduleService).to receive(:new).and_return(instance_double(Integrations::Medelement::CronScheduleService,
+                                                                                                     sync!: true))
   end
 
   def new_appointment_params
@@ -76,7 +77,8 @@ RSpec.describe 'Scheduling patient context', type: :request do
 
   it 'never adopts an unrecorded widget-style identity merely because its self-declared IIN matches' do
     unrecorded = create(:contact, account: account, name: 'Unverified', identifier: '940720300129', custom_attributes: { 'iin' => '940720300129' })
-    post patients_path, params: { first_name: 'Child', last_name: 'Patient', iin: '940720300129', idempotency_key: 'public-iin-card' }, headers: headers, as: :json
+    post patients_path, params: { first_name: 'Child', last_name: 'Patient', iin: '940720300129', idempotency_key: 'public-iin-card' },
+                        headers: headers, as: :json
     expect(response).to have_http_status(:created)
     expect(response.parsed_body.dig('payload', 'id')).not_to eq(unrecorded.id)
     expect(unrecorded.reload.name).to eq('Unverified')
@@ -142,10 +144,10 @@ RSpec.describe 'Scheduling patient context', type: :request do
     expect(response).to have_http_status(:created), response.parsed_body.inspect
     appointment = account.scheduling_appointments.find(response.parsed_body.dig('payload', 'id'))
     expect(appointment).to have_attributes(contact_id: owner.id, conversation_id: conversation.id, patient_contact_id: patient.id,
-                                          client_first_name: 'Child', client_last_name: 'Patient', client_identifier: '940720300129', client_gender: 'M')
+                                           client_first_name: 'Child', client_last_name: 'Patient', client_identifier: '940720300129', client_gender: 'M')
     expect(appointment.client_birth_date).to eq(Date.new(1994, 7, 20))
     expect(response.parsed_body.fetch('payload')).to include('patient_context_contact_id' => patient.id,
-                                                            'conversation_display_id' => conversation.display_id)
+                                                             'conversation_display_id' => conversation.display_id)
     expect(owner.reload.attributes).to eq(owner_before)
   end
 
@@ -177,7 +179,8 @@ RSpec.describe 'Scheduling patient context', type: :request do
   end
 
   it 'preserves the linked name fence even when the same selected card has no known IIN or command history' do
-    card = create(:contact, account: account, name: 'Child', last_name: 'Patient', custom_attributes: { 'medelement_patient_code' => 'known-patient' })
+    card = create(:contact, account: account, name: 'Child', last_name: 'Patient',
+                            custom_attributes: { 'medelement_patient_code' => 'known-patient' })
     appointment = create(:scheduling_appointment, account: account, resource: resource, contact: owner, patient_contact: card,
                                                   client_first_name: 'Child', client_last_name: 'Patient', client_identifier: nil,
                                                   external_ref: 'medelement:reception:existing', custom_attributes: {
@@ -191,7 +194,8 @@ RSpec.describe 'Scheduling patient context', type: :request do
   end
 
   it 'preserves conflicting recorded provider references even on the same selected card' do
-    card = create(:contact, account: account, name: 'Child', last_name: 'Patient', custom_attributes: { 'medelement_patient_code' => 'card-reference' })
+    card = create(:contact, account: account, name: 'Child', last_name: 'Patient',
+                            custom_attributes: { 'medelement_patient_code' => 'card-reference' })
     appointment = create(:scheduling_appointment, account: account, resource: resource, contact: owner, patient_contact: card,
                                                   client_first_name: 'Child', client_last_name: 'Patient', client_identifier: nil,
                                                   custom_attributes: { 'medelement_patient_code' => 'captured-reference',
@@ -203,11 +207,11 @@ RSpec.describe 'Scheduling patient context', type: :request do
 
   it 'keeps a real previous patient card unchanged when another draft appointment switches patients' do
     previous = create(:contact, account: account, name: 'Previous', last_name: 'Patient', phone_number: nil,
-                               custom_attributes: { Contacts::SharedPhone::CARD_KEY => true, Contacts::SharedPhone::SHARED_OWNER_KEY => owner.id,
-                                                    Contacts::SharedPhone::SHARED_PHONE_KEY => owner.phone_number, 'secondary_phones' => [owner.phone_number] })
+                                custom_attributes: { Contacts::SharedPhone::CARD_KEY => true, Contacts::SharedPhone::SHARED_OWNER_KEY => owner.id,
+                                                     Contacts::SharedPhone::SHARED_PHONE_KEY => owner.phone_number, 'secondary_phones' => [owner.phone_number] })
     target = create(:scheduling_appointment, account: account, resource: resource, contact: owner, patient_contact: previous,
-                                           client_first_name: 'Previous', client_last_name: 'Patient', client_identifier: nil,
-                                           custom_attributes: { Integrations::Medelement::AppointmentPatientIdentity::OWNED_IDENTITY_KEY => true })
+                                             client_first_name: 'Previous', client_last_name: 'Patient', client_identifier: nil,
+                                             custom_attributes: { Integrations::Medelement::AppointmentPatientIdentity::OWNED_IDENTITY_KEY => true })
     create(:scheduling_appointment, account: account, resource: resource, contact: owner, patient_contact: previous)
     previous_before = previous.reload.attributes
     patch "#{appointments_path}/#{target.id}", params: { patient_contact_id: patient.id }, headers: headers, as: :json
@@ -217,7 +221,8 @@ RSpec.describe 'Scheduling patient context', type: :request do
   end
 
   it 'uses the verified communication owner as an explicitly selected existing patient without changing its profile' do
-    owner.update!(identifier: '940720300129', custom_attributes: { 'medelement_patient_code' => 'verified-owner', 'medelement_iin' => '940720300129' })
+    owner.update!(identifier: '940720300129',
+                  custom_attributes: { 'medelement_patient_code' => 'verified-owner', 'medelement_iin' => '940720300129' })
     owner_before = owner.reload.attributes
     post appointments_path, params: new_appointment_params.merge(patient_contact_id: owner.id), headers: headers, as: :json
     expect(response).to have_http_status(:created), response.parsed_body.inspect
@@ -250,8 +255,8 @@ RSpec.describe 'Scheduling patient context', type: :request do
     expect(response).to have_http_status(:created), response.parsed_body.inspect
     appointment = account.scheduling_appointments.find(response.parsed_body.dig('payload', 'id'))
     expect(appointment).to have_attributes(contact_id: owner.id, patient_contact_id: owner.id, client_first_name: 'Clinical',
-                                          client_last_name: 'Patient', client_middle_name: 'Relative', client_identifier: '940720300129',
-                                          client_birth_date: Date.new(1994, 7, 20), client_gender: '2')
+                                           client_last_name: 'Patient', client_middle_name: 'Relative', client_identifier: '940720300129',
+                                           client_birth_date: Date.new(1994, 7, 20), client_gender: '2')
     expect(owner.reload.attributes).to eq(owner_before)
   end
 
@@ -273,7 +278,7 @@ RSpec.describe 'Scheduling patient context', type: :request do
                                                   custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1',
                                                                        Integrations::Medelement::AppointmentPatientIdentity::OWNED_IDENTITY_KEY => true })
     hook = create(:integrations_hook, :medelement, account: account,
-                                                settings: attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true))
+                                                   settings: attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true))
     command = Integrations::Medelement::ProviderCommands::CreateService.new(
       account: account, hook: hook, appointment: appointment, actor: employee, operation: 'create_reception',
       company_cabinet_code: 'cabinet-1', idempotency_key: 'recoverable-prewrite',
@@ -288,8 +293,10 @@ RSpec.describe 'Scheduling patient context', type: :request do
     end.not_to have_enqueued_job(Integrations::Medelement::ProviderCommandJob)
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.fetch('payload')).to contain_exactly(hash_including(
-      'id' => command.id, 'status' => 'failed', 'patient_action' => hash_including('type' => 'patient_selection', 'can_confirm' => true)
-    ))
+                                                                       'id' => command.id, 'status' => 'failed', 'patient_action' => hash_including(
+                                                                         'type' => 'patient_selection', 'can_confirm' => true
+                                                                       )
+                                                                     ))
 
     command.update!(execution_state: command.execution_state.merge('write_provider_patient_code' => 'attempted'))
     get path, params: { active_only: true, appointment_id: appointment.id }, headers: headers, as: :json

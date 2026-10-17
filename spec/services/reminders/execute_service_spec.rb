@@ -1024,6 +1024,7 @@ RSpec.describe Reminders::ExecuteService do
     it 'reschedules a due touch into the first 30 minutes of the next inbox working window' do
       travel_to(Time.zone.parse('2026-05-02 23:00:00 UTC')) do
         account = create(:account)
+        account.update!(workspace_timezone: 'UTC', workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup)
         inbox = create(:inbox, account: account, timezone: 'UTC', working_hours_enabled: true)
         contact = create(:contact, account: account)
         contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)

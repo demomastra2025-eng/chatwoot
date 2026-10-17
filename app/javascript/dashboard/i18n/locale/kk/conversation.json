@@ -376,7 +376,11 @@
       "CLOSE": "Жабу",
       "UNKNOWN_CALLER": "Белгісіз қоңырау шалушы",
       "DEFAULT_INBOX_NAME": "Клиенттерді қолдау",
-      "OPERATOR_BUSY": "Басқа қоңырауға жауап бермес бұрын ағымдағы қоңырауды аяқтаңыз"
+      "OPERATOR_BUSY": "Басқа қоңырауға жауап бермес бұрын ағымдағы қоңырауды аяқтаңыз",
+      "TRANSFER_CALL": "Қоңырауды аудару",
+      "RING_GROUP_DEFAULT": "Жалпы топ (2001)",
+      "TRANSFER_EXTENSION_PLACEHOLDER": "Ішкі нөмір (мыс. 1002 / 2001)",
+      "TRANSFER_SUBMIT": "Аудару"
     },
     "STATUS_REASONS": {
       "STATUS": {

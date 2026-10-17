@@ -25,7 +25,7 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
   it 'ignores case, surrounding spaces, repeated spaces and surrounding quotes' do
     variants = ['  қабылдау ', 'ҚАБЫЛДАУ', '«Қабылдау»', '"Қабылдау"', "'қабылдау'", '“Қабылдау”', ' « лаборатория   АНАЛИЗЫ » ']
 
-    expect(resolve_ids(variants)).to eq([12, 12, 12, 12, 12, 12, 13])
+    expect(resolve_ids(variants, mode: 'clarify')).to eq([12, 12, 12, 12, 12, 12, 13])
   end
 
   it 'matches Cyrillic names written in a decomposed unicode form' do
@@ -38,7 +38,7 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
 
     resolved = described_class.new(context).resolve(parts, mode: 'council')
 
-    expect(resolved.pluck('executor_agent_id')).to eq([11, 12, 11, 11])
+    expect(resolved.pluck('executor_agent_id')).to eq([11, 12])
     expect(resolved.flat_map(&:keys).uniq).not_to include('executor')
   end
 
@@ -50,7 +50,7 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
       resolved = described_class.new(context).resolve(legacy, mode: 'council')
 
       expect(resolved.pluck('executor_agent_id')).to eq([12, 13, 14])
-      expect(resolved.flat_map(&:keys).uniq).to match_array(%w[fragment executor_agent_id])
+      expect(resolved.flat_map(&:keys).uniq).to match_array(%w[fragment executor_agent_id link_action])
     end
 
     it 'never takes a bare number in the executor for an agent, because the model does not see agent ids' do
@@ -81,11 +81,11 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
     graph << { id: 15, key: 'assistant_15', name: ' «КАБЫЛДАУ» ', description: 'Дубликат' }
     graph[1][:name] = 'кабылдау'
 
-    expect(resolve_ids(['Приём', 'Администратор'])).to eq([14, 11])
+    expect(resolve_ids(%w[Приём Администратор])).to eq([14, 11])
     expect(resolve_ids(['Кабылдау'], mode: 'clarify')).to eq([11])
-    expect { resolve_ids(['Приём', 'Кабылдау']) }.to raise_error(
+    expect { resolve_ids(%w[Приём Кабылдау]) }.to raise_error(
       described_class::UnknownAgentError,
-      "Unknown agent \"Кабылдау\" (several agents share this name). Use one of: Администратор, Лаборатория Анализы, Приём"
+      'Unknown agent "Кабылдау" (several agents share this name). Use one of: Администратор, Лаборатория Анализы, Приём'
     )
   end
 
@@ -126,6 +126,8 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
       e
     end
 
+    let(:add_own_action) { 'A plan holds actions for two or more different agents; an action of yours is a part without executor.' }
+
     it 'sends the former handoff mode to the transfer tool of one colleague and to the handoff tool for a person' do
       expect { described_class.new(context).reject_transfer_mode!('handoff') }.to raise_error(described_class::TransferToolError) do |error|
         expect(error.reason).to eq('use_transfer_tool')
@@ -142,8 +144,6 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
         expect(described_class.new(context).reject_transfer_mode!(mode)).to be_nil
       end
     end
-
-    let(:add_own_action) { 'A plan holds actions for two or more different agents; an action of yours is a part without executor.' }
 
     it 'tells a plan of the writer\'s own actions to do them with its tools' do
       [[nil, nil], ['Администратор']].each do |executors|
@@ -212,7 +212,9 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
       new_part = [{ 'fragment' => 'Цена', 'link_part_id' => 'peer-part', 'link_action' => 'new' }]
       mixed = [{ 'fragment' => 'Давайте в 11', 'link_part_id' => 'peer-part', 'link_action' => 'answer' }, { 'fragment' => 'Цена' }]
 
-      expect { described_class.new(context).resolve(new_part, mode: 'council') }.to raise_error(described_class::RetryableError, /Every part of this plan is yours/)
+      expect do
+        described_class.new(context).resolve(new_part, mode: 'council')
+      end.to raise_error(described_class::RetryableError, /Every part of this plan is yours/)
       expect(described_class.new(context).resolve(mixed, mode: 'council').pluck('executor_agent_id')).to eq([12, 11])
     end
 

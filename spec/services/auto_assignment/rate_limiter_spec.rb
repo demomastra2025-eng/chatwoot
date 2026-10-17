@@ -22,7 +22,7 @@ RSpec.describe AutoAssignment::RateLimiter do
   describe '#within_limit?' do
     context 'when rate limiting is not enabled' do
       before do
-        allow(inbox).to receive(:assignment_policy).and_return(nil)
+        allow(inbox).to receive(:effective_assignment_policy).and_return(nil)
       end
 
       it 'returns true' do
@@ -38,7 +38,7 @@ RSpec.describe AutoAssignment::RateLimiter do
       end
 
       before do
-        allow(inbox).to receive(:assignment_policy).and_return(assignment_policy)
+        allow(inbox).to receive(:effective_assignment_policy).and_return(assignment_policy)
       end
 
       it 'returns true when under the limit' do
@@ -56,7 +56,7 @@ RSpec.describe AutoAssignment::RateLimiter do
   describe '#track_assignment' do
     context 'when rate limiting is not enabled' do
       before do
-        allow(inbox).to receive(:assignment_policy).and_return(nil)
+        allow(inbox).to receive(:effective_assignment_policy).and_return(nil)
       end
 
       it 'still tracks the assignment with default window' do
@@ -74,7 +74,7 @@ RSpec.describe AutoAssignment::RateLimiter do
       end
 
       before do
-        allow(inbox).to receive(:assignment_policy).and_return(assignment_policy)
+        allow(inbox).to receive(:effective_assignment_policy).and_return(assignment_policy)
       end
 
       it 'creates a Redis key with correct expiry' do
@@ -92,7 +92,7 @@ RSpec.describe AutoAssignment::RateLimiter do
   describe '#current_count' do
     context 'when rate limiting is not enabled' do
       before do
-        allow(inbox).to receive(:assignment_policy).and_return(nil)
+        allow(inbox).to receive(:effective_assignment_policy).and_return(nil)
       end
 
       it 'returns 0' do
@@ -108,7 +108,7 @@ RSpec.describe AutoAssignment::RateLimiter do
       end
 
       before do
-        allow(inbox).to receive(:assignment_policy).and_return(assignment_policy)
+        allow(inbox).to receive(:effective_assignment_policy).and_return(assignment_policy)
       end
 
       it 'counts matching Redis keys' do
@@ -129,7 +129,7 @@ RSpec.describe AutoAssignment::RateLimiter do
       end
 
       before do
-        allow(inbox).to receive(:assignment_policy).and_return(assignment_policy)
+        allow(inbox).to receive(:effective_assignment_policy).and_return(assignment_policy)
       end
 
       it 'uses the custom window value' do
@@ -151,7 +151,7 @@ RSpec.describe AutoAssignment::RateLimiter do
       end
 
       before do
-        allow(inbox).to receive(:assignment_policy).and_return(assignment_policy)
+        allow(inbox).to receive(:effective_assignment_policy).and_return(assignment_policy)
       end
 
       it 'uses the default window value of 5 minutes' do

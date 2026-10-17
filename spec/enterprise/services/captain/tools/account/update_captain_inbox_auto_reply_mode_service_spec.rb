@@ -9,7 +9,9 @@ RSpec.describe Captain::Tools::Account::UpdateCaptainInboxAutoReplyModeService d
   before do
     confirmation_gate = instance_double(Captain::Tools::ToolConfirmationGate, call: nil)
     allow(Captain::Tools::ToolConfirmationGate).to receive(:new).and_return(confirmation_gate)
-    account.update!(workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup)
+    account.update!(workspace_timezone: 'UTC', workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
+      d.merge('closed_all_day' => false, 'open_all_day' => true)
+    end)
   end
 
   it 'updates the workspace text auto-reply mode while keeping the legacy channel value' do

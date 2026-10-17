@@ -1109,8 +1109,8 @@ onUnmounted(stopElapsedTimer);
                     ? 'bg-n-brand text-white shadow-sm'
                     : 'bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-1'
                 "
-                title="Перевести звонок"
-                aria-label="Перевести звонок"
+                :title="$t('CONVERSATION.VOICE_WIDGET.TRANSFER_CALL')"
+                :aria-label="$t('CONVERSATION.VOICE_WIDGET.TRANSFER_CALL')"
                 data-testid="floating-call-transfer"
                 @click="toggleTransferPanel(call)"
               >
@@ -1128,9 +1128,7 @@ onUnmounted(stopElapsedTimer);
             </div>
             <div
               v-if="
-                transferPanelOpen &&
-                callIsActive(call) &&
-                !isWhatsappCall(call)
+                transferPanelOpen && callIsActive(call) && !isWhatsappCall(call)
               "
               class="mt-2 flex items-center gap-1.5 rounded-md bg-n-alpha-1 p-1.5"
               data-testid="floating-call-transfer-panel"
@@ -1148,13 +1146,17 @@ onUnmounted(stopElapsedTimer);
                 >
                   {{ target.name }} ({{ target.internal_extension }})
                 </option>
-                <option value="2001">Общая группа (2001)</option>
+                <option value="2001">
+                  {{ $t('CONVERSATION.VOICE_WIDGET.RING_GROUP_DEFAULT') }}
+                </option>
               </select>
               <input
                 v-else
                 v-model="transferExtension"
                 type="text"
-                placeholder="Внутр. номер (напр. 1002 / 2001)"
+                :placeholder="
+                  $t('CONVERSATION.VOICE_WIDGET.TRANSFER_EXTENSION_PLACEHOLDER')
+                "
                 class="min-w-0 flex-1 rounded border border-n-weak bg-n-solid-1 px-2 py-1 text-xs text-n-slate-12"
                 data-testid="floating-call-transfer-input"
               />
@@ -1165,7 +1167,7 @@ onUnmounted(stopElapsedTimer);
                 data-testid="floating-call-transfer-submit"
                 @click="submitCallTransfer(call)"
               >
-                Перевести
+                {{ $t('CONVERSATION.VOICE_WIDGET.TRANSFER_SUBMIT') }}
               </button>
             </div>
           </div>

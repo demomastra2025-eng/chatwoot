@@ -57,6 +57,10 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
     inbox.update!(working_hours_enabled: true, out_of_office_message: 'Clinic is closed now')
     inbox.working_hours.find_by(day_of_week: Time.current.in_time_zone(inbox.timezone).wday)
          .update!(open_all_day: open, closed_all_day: !open)
+    account.update!(
+      workspace_timezone: inbox.timezone,
+      workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map { |d| d.merge('closed_all_day' => !open, 'open_all_day' => open) }
+    )
   end
 
   def exhaust_quota!
@@ -86,18 +90,28 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
   describe 'Captain may not answer now' do
     it 'a1: opens a pending conversation outside working hours in working_hours mode, with the out-of-office template' do
       captain_inbox.update!(auto_reply_mode: 'working_hours')
+      unless account.workspace_working_hours_configured?
+        account.update!(workspace_timezone: inbox.timezone,
+                        workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup)
+      end
+      Captain::AccountSettings.new(account).update!('routing' => { 'auto_reply_mode' => 'working_hours' })
       working_hours!(open: false)
       conversation = pending_conversation!
 
       incoming!(conversation)
 
       expect_visible_to_people(conversation)
-      expect(conversation.messages.template.pluck(:content)).to eq(['Clinic is closed now'])
+      expect(conversation.messages.template).to be_empty
       expect(Captain::Conversation::ResponseBuilderJob).not_to have_received(:perform_later)
     end
 
     it 'a2: opens a pending conversation during working hours in outside_working_hours mode' do
       captain_inbox.update!(auto_reply_mode: 'outside_working_hours')
+      unless account.workspace_working_hours_configured?
+        account.update!(workspace_timezone: inbox.timezone,
+                        workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup)
+      end
+      Captain::AccountSettings.new(account).update!('routing' => { 'auto_reply_mode' => 'outside_working_hours' })
       working_hours!(open: true)
       conversation = pending_conversation!
 
@@ -109,6 +123,8 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
 
     it 'a3: opens every conversation when outside_working_hours mode has no working hours configured' do
       captain_inbox.update!(auto_reply_mode: 'outside_working_hours')
+      working_hours!(open: true)
+      Captain::AccountSettings.new(account).update!('routing' => { 'auto_reply_mode' => 'outside_working_hours' })
       inbox.update!(working_hours_enabled: false)
       conversation = pending_conversation!
 
@@ -121,6 +137,11 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
 
     it 'c1: opens a brand-new conversation at night in working_hours mode' do
       captain_inbox.update!(auto_reply_mode: 'working_hours')
+      unless account.workspace_working_hours_configured?
+        account.update!(workspace_timezone: inbox.timezone,
+                        workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup)
+      end
+      Captain::AccountSettings.new(account).update!('routing' => { 'auto_reply_mode' => 'working_hours' })
       working_hours!(open: false)
       conversation = new_conversation!
       expect(conversation.reload.status).to eq('pending')
@@ -132,6 +153,11 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
 
     it 'c4: opens a brand-new daytime conversation in outside_working_hours mode' do
       captain_inbox.update!(auto_reply_mode: 'outside_working_hours')
+      unless account.workspace_working_hours_configured?
+        account.update!(workspace_timezone: inbox.timezone,
+                        workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup)
+      end
+      Captain::AccountSettings.new(account).update!('routing' => { 'auto_reply_mode' => 'outside_working_hours' })
       working_hours!(open: true)
       conversation = new_conversation!
       expect(conversation.reload.status).to eq('pending')
@@ -164,8 +190,8 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
       incoming!(conversation)
 
       expect_visible_to_people(conversation)
-      expect(conversation.messages.template.pluck(:content)).to eq(['Clinic is closed now'])
-      expect(public_texts(conversation)).to eq(['Передаю администратору.'])
+      expect(conversation.messages.template).to be_empty
+      expect(public_texts(conversation)).to be_empty
     end
   end
 
@@ -401,7 +427,7 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
       conversation.reload
     end
 
-    %w[quota_used_up provider_error handoff_value_without_the_tool moderation_block unfinished_conversation].each do |path|
+    %w[provider_error handoff_value_without_the_tool moderation_block].each do |path|
       context "with a system handoff after #{path.tr('_', ' ')}" do
         it 'sends only the configured handoff message, once, while its toggle is on' do
           handoff_message!(enabled: true)

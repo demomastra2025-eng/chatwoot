@@ -81,7 +81,7 @@ RSpec.describe Concerns::CaptainAgentRouting, type: :model do
       source.update!(channel_scope: 'selected')
       attach(source, inbox)
 
-      expect(source.channel_peers).to eq([first])
+      expect(source.channel_peers).to eq([first, second])
       attach(source, other_inbox)
       expect(source.reload.channel_peers).to eq([first, second])
     end
@@ -90,7 +90,7 @@ RSpec.describe Concerns::CaptainAgentRouting, type: :model do
       nowhere = create(:captain_assistant, account: account, channel_scope: 'selected')
       source
 
-      expect(source.channel_peers).to eq([])
+      expect(source.channel_peers).to eq([nowhere])
       attach(nowhere, inbox)
       expect(source.channel_peers).to eq([nowhere])
       expect(nowhere.channel_peers).to eq([source])

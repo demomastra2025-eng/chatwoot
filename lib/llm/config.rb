@@ -40,15 +40,18 @@ module Llm::Config
     end
 
     def with_runtime_cache
-      previous_cache = Thread.current[RUNTIME_CACHE_KEY]
-      Thread.current[RUNTIME_CACHE_KEY] = {
-        installation_configs: {},
-        account_provider_hooks: {}
-      }
+      return yield if Thread.current[RUNTIME_CACHE_KEY].present?
 
-      yield
-    ensure
-      Thread.current[RUNTIME_CACHE_KEY] = previous_cache
+      begin
+        Thread.current[RUNTIME_CACHE_KEY] = {
+          installation_configs: {},
+          account_provider_hooks: {}
+        }
+
+        yield
+      ensure
+        Thread.current[RUNTIME_CACHE_KEY] = nil
+      end
     end
 
     def context(api_key: nil, api_base: nil, provider: nil, model: nil, overrides: nil, account: nil)

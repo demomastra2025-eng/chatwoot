@@ -654,10 +654,7 @@ onMounted(loadPage);
             </div>
 
             <div class="grid gap-3 md:grid-cols-2">
-              <label
-                class="space-y-1"
-                data-testid="meta-form-pipeline-select"
-              >
+              <label class="space-y-1" data-testid="meta-form-pipeline-select">
                 <span class="text-sm font-medium text-n-slate-12">
                   {{ $t('LEAD_FORMS.PIPELINE_LABEL') }}
                 </span>
@@ -863,10 +860,7 @@ onMounted(loadPage);
             </div>
 
             <div class="grid gap-3 md:grid-cols-2">
-              <label
-                class="space-y-1"
-                data-testid="api-form-pipeline-select"
-              >
+              <label class="space-y-1" data-testid="api-form-pipeline-select">
                 <span class="text-sm font-medium text-n-slate-12">
                   {{ $t('LEAD_FORMS.PIPELINE_LABEL') }}
                 </span>

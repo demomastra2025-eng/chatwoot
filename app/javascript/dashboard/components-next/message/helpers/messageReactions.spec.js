@@ -8,14 +8,14 @@ describe('messageReactions helpers', () => {
   it('groups WhatsApp reactions and identifies current user reaction', () => {
     const contentAttributes = {
       whatsappReactions: {
-        '77010000000': { emoji: '❤️', timestamp: 1700000000 },
+        77010000000: { emoji: '❤️', timestamp: 1700000000 },
         business: {
           emoji: '❤️',
           userId: 15,
           userName: 'Айгерим',
           timestamp: 1700000005,
         },
-        '77020000000': { emoji: '👍', timestamp: 1700000010 },
+        77020000000: { emoji: '👍', timestamp: 1700000010 },
       },
     };
 

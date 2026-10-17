@@ -106,8 +106,20 @@ describe('Scheduling settings page', () => {
           rules: [],
         },
         stages: [
-          { id: 11, name: 'Booked', active: true, outcome: 'open', position: 1 },
-          { id: 12, name: 'Visited', active: true, outcome: 'won', position: 2 },
+          {
+            id: 11,
+            name: 'Booked',
+            active: true,
+            outcome: 'open',
+            position: 1,
+          },
+          {
+            id: 12,
+            name: 'Visited',
+            active: true,
+            outcome: 'won',
+            position: 2,
+          },
         ],
       },
       {

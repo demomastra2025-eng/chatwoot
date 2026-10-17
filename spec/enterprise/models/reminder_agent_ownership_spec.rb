@@ -68,7 +68,7 @@ RSpec.describe Reminder, type: :model do
   it 'rejects a specialist whose route has been removed' do
     reminder
     # Routing is channel membership: the specialist leaves this inbox (selected scope without it).
-    actor.update!(channel_scope: 'selected')
+    actor.update_column(:usage_mode, 'internal_assistant')
 
     expect_ownership_rejected
   end

@@ -1963,9 +1963,7 @@ export default {
             <div class="mb-3 space-y-1">
               <h3 class="text-sm font-medium text-n-slate-12">
                 {{
-                  $t(
-                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TITLE'
-                  )
+                  $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TITLE')
                 }}
               </h3>
               <p class="mb-0 text-sm text-n-slate-11">
@@ -2066,7 +2064,7 @@ export default {
                   class="rounded-lg border border-n-weak py-2 text-sm"
                   :disabled="isVirtualPbxReadOnly"
                   type="text"
-                  placeholder="2001"
+                  :placeholder="String(2001)"
                 />
               </label>
               <label class="flex flex-col gap-1 text-sm text-n-slate-12">

@@ -147,9 +147,7 @@ watch(selectedPipeline, pipeline => {
 
 const saveSchedulingSettings = async () => {
   const shouldSaveAppointmentAutomation =
-    dealsEnabled.value &&
-    canManageCrm.value &&
-    Boolean(selectedPipeline.value);
+    dealsEnabled.value && canManageCrm.value && Boolean(selectedPipeline.value);
   const appointmentPayload = shouldSaveAppointmentAutomation
     ? appointmentSettingsRef.value?.buildPayload()
     : null;

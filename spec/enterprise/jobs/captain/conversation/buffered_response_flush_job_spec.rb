@@ -129,6 +129,14 @@ RSpec.describe Captain::Conversation::BufferedResponseFlushJob, type: :job do
       open_all_day: false
     )
     inbox.captain_inbox.update!(auto_reply_mode: 'working_hours')
+    account.update!(workspace_timezone: inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
+      d.merge('closed_all_day' => true, 'open_all_day' => false)
+    end)
+    Captain::AccountSettings.new(account).update!('routing' => { 'auto_reply_mode' => 'working_hours' })
+    account.update!(workspace_timezone: inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
+      d.merge('closed_all_day' => true, 'open_all_day' => false)
+    end)
+    Captain::AccountSettings.new(account).update!('routing' => { 'auto_reply_mode' => 'working_hours' })
     Redis::Alfred.set(
       state_key,
       {

@@ -82,7 +82,7 @@ RSpec.describe Conversation, locale: :en, type: :model do
 
   describe 'assignment capacity limits' do
     describe 'team assignment with inbox auto-assignment disabled' do
-      let(:account) { create(:account) }
+      let(:account) { create(:account, conversation_auto_assignment_enabled: false) }
       let(:inbox) { create(:inbox, account: account, enable_auto_assignment: false, auto_assignment_config: { max_assignment_limit: 1 }) }
       let(:team) { create(:team, account: account, allow_auto_assign: true) }
       let!(:agent1) { create(:user, account: account, role: :agent, auto_offline: false) }

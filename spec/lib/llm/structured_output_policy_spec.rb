@@ -194,7 +194,7 @@ RSpec.describe Llm::StructuredOutputPolicy do
 
       expect(schema_json[:properties].keys.map(&:to_s)).to eq(%w[patient_language response response_mode reasoning artifact_ids])
       expect(schema_json[:required].map(&:to_s)).to match_array(%w[patient_language response response_mode reasoning artifact_ids])
-      expect(schema_json[:properties].dig(:response, :description)).to eq('Text for the patient.')
+      expect(schema_json[:properties].dig(:response, :description)).to eq(Captain::ResponseSchema::RESPONSE_DESCRIPTION)
       expect(schema_json[:properties].dig(:response_mode, :description))
         .to eq("reply - send the reply; suppress - send nothing (the patient wrote only an 'ok', or staff already replied).")
       expect(schema_json[:properties].dig(:reasoning, :description))

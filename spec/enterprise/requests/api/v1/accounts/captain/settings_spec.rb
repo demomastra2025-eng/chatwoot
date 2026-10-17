@@ -12,7 +12,7 @@ RSpec.describe 'Captain account settings', type: :request do
 
     expect(response).to have_http_status(:ok)
     body = JSON.parse(response.body)
-    expect(body.keys).to contain_exactly('understanding', 'handoff', 'faq', 'conversation', 'safety', 'availability')
+    expect(body.keys).to contain_exactly('understanding', 'handoff', 'faq', 'conversation', 'safety', 'availability', 'routing')
     expect(body.dig('handoff', 'handoff_reasons')).to all(include('id', 'label', 'enabled', 'builtin'))
     expect(body.dig('availability', 'web_access_configured')).to be(true)
   end

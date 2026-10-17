@@ -37,7 +37,6 @@ tools:
       client_name: "Another patient's full name in the order first, last, middle name (middle if they have one)."
       client_identifier: "Exact IIN, 12 digits; alone it finds upcoming appointments (90 days)."
       status: "completed, cancelled or no_show; omit for scheduled ones."
-      payment_status: "awaiting_payment, prepaid, paid or cancelled."
       contact_id: "Omit: the current patient is used."
       resource_id: "Specialist ID from search_scheduling_resources; needed with a name."
       from: "Appointment day, YYYY-MM-DD; needed with a name, narrows an IIN search."

@@ -15,6 +15,7 @@ RSpec.describe AutoAssignment::AssignmentService do
     account.save!
     # Link inbox to assignment policy
     create(:inbox_assignment_policy, inbox: inbox, assignment_policy: assignment_policy)
+    account.update!(conversation_assignment_policy_id: assignment_policy.id)
     create(:inbox_member, inbox: inbox, user: agent)
   end
 
@@ -59,6 +60,7 @@ RSpec.describe AutoAssignment::AssignmentService do
 
       it 'assigns conversations when no assignment policy is linked' do
         InboxAssignmentPolicy.where(inbox: inbox).destroy_all
+        account.update!(conversation_assignment_policy_id: nil)
         conv = create(:conversation, inbox: inbox, status: 'open')
         conv.update!(assignee_id: nil)
 
@@ -119,6 +121,7 @@ RSpec.describe AutoAssignment::AssignmentService do
 
       it 'does not override a conversation assigned by another worker before the claim without a policy' do
         InboxAssignmentPolicy.where(inbox: inbox).destroy_all
+        account.update!(conversation_assignment_policy_id: nil)
         competing_agent = create(:user, account: account, role: :agent, availability: :online)
         conv = create(:conversation, inbox: inbox, status: 'open', assignee: nil)
 

@@ -134,6 +134,9 @@ describe MessageTemplates::HookExecutionService do
 
       conversation.inbox.update(working_hours_enabled: true, out_of_office_message: 'We are out of office')
       conversation.inbox.working_hours.today.update!(closed_all_day: true)
+      conversation.account.update!(workspace_timezone: conversation.inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
+        d.merge('closed_all_day' => true, 'open_all_day' => false)
+      end)
 
       out_of_office_service = double
       allow(MessageTemplates::Template::OutOfOffice).to receive(:new).and_return(out_of_office_service)
@@ -181,6 +184,9 @@ describe MessageTemplates::HookExecutionService do
 
       conversation.inbox.update(working_hours_enabled: true, out_of_office_message: 'We are out of office')
       conversation.inbox.working_hours.today.update!(closed_all_day: true)
+      conversation.account.update!(workspace_timezone: conversation.inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
+        d.merge('closed_all_day' => true, 'open_all_day' => false)
+      end)
 
       out_of_office_service = double
 
@@ -201,6 +207,12 @@ describe MessageTemplates::HookExecutionService do
 
         conversation.inbox.update(working_hours_enabled: true, out_of_office_message: 'We are out of office')
         conversation.inbox.working_hours.today.update!(closed_all_day: true)
+        conversation.account.update!(workspace_timezone: conversation.inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
+          d.merge('closed_all_day' => true, 'open_all_day' => false)
+        end)
+        conversation.account.update!(workspace_timezone: conversation.inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
+          d.merge('closed_all_day' => true, 'open_all_day' => false)
+        end)
 
         create(:message, conversation: conversation, account: conversation.account, message_type: :outgoing, created_at: 2.minutes.ago)
 
@@ -220,6 +232,12 @@ describe MessageTemplates::HookExecutionService do
 
         conversation.inbox.update(working_hours_enabled: true, out_of_office_message: 'We are out of office')
         conversation.inbox.working_hours.today.update!(closed_all_day: true)
+        conversation.account.update!(workspace_timezone: conversation.inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
+          d.merge('closed_all_day' => true, 'open_all_day' => false)
+        end)
+        conversation.account.update!(workspace_timezone: conversation.inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
+          d.merge('closed_all_day' => true, 'open_all_day' => false)
+        end)
 
         create(:message, conversation: conversation, account: conversation.account, private: true, message_type: :outgoing, created_at: 2.minutes.ago)
 
@@ -240,6 +258,9 @@ describe MessageTemplates::HookExecutionService do
 
       conversation.inbox.update(working_hours_enabled: true, out_of_office_message: 'We are out of office')
       conversation.inbox.working_hours.today.update!(closed_all_day: true)
+      conversation.account.update!(workspace_timezone: conversation.inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
+        d.merge('closed_all_day' => true, 'open_all_day' => false)
+      end)
 
       out_of_office_service = double
 

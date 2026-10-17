@@ -86,7 +86,7 @@ RSpec.describe Message do
     it 'cancels each conversation run on thread takeover without opening the sibling or cancelling another account' do
       thread = create(:communication_thread, account: conversation.account, contact: conversation.contact)
       sibling = create(:conversation, account: conversation.account, contact: conversation.contact, status: :pending)
-      create(:captain_inbox, inbox: sibling.inbox, captain_assistant: captain_assistant)
+      CaptainInbox.find_or_create_by!(inbox: sibling.inbox) { |ci| ci.captain_assistant = captain_assistant }
       [conversation, sibling].each do |candidate|
         create(:communication_thread_conversation, communication_thread: thread, conversation: candidate)
         candidate.association(:communication_thread_conversation).reset
@@ -262,7 +262,7 @@ RSpec.describe Message do
 
     it 'takes over a pending Captain sibling from a non-Captain channel without swapping cached associations' do
       sibling = create(:conversation, account: conversation.account, contact: conversation.contact, status: :pending)
-      create(:captain_inbox, inbox: sibling.inbox, captain_assistant: captain_assistant)
+      CaptainInbox.find_or_create_by!(inbox: sibling.inbox) { |ci| ci.captain_assistant = captain_assistant }
       thread = link_thread(conversation, sibling)
       cached_thread = conversation.communication_thread
       inbox = conversation.inbox
@@ -479,6 +479,14 @@ RSpec.describe Message do
       )
       current_hours.update!(open_all_day: true, closed_all_day: false)
       captain_inbox.update!(auto_reply_mode: 'outside_working_hours')
+      conversation.account.update!(workspace_timezone: conversation.inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
+        d.merge('closed_all_day' => false, 'open_all_day' => true)
+      end)
+      Captain::AccountSettings.new(conversation.account).update!('routing' => { 'auto_reply_mode' => 'outside_working_hours' })
+      conversation.account.update!(workspace_timezone: conversation.inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
+        d.merge('closed_all_day' => false, 'open_all_day' => true)
+      end)
+      Captain::AccountSettings.new(conversation.account).update!('routing' => { 'auto_reply_mode' => 'outside_working_hours' })
       conversation.inbox.reload
 
       expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
@@ -760,7 +768,7 @@ RSpec.describe Message do
       message.skip_send_reply = true
       captured_services = []
 
-      Message.transaction do
+      described_class.transaction do
         message.save!
         captured_services = message.instance_variable_get(:@captain_takeover_cancellations).map(&:first)
         expect(captured_services).not_to be_empty
@@ -782,8 +790,9 @@ RSpec.describe Message do
       conversation.account.enable_features!('communication_threads')
       sibling = create(:conversation, account: conversation.account, contact: conversation.contact, status: :pending)
       assistant = create(:captain_assistant, account: conversation.account)
-      create(:captain_inbox, inbox: sibling.inbox, captain_assistant: assistant)
+      CaptainInbox.find_or_create_by!(inbox: sibling.inbox) { |ci| ci.captain_assistant = assistant }
       api_inbox = create(:channel_api, account: conversation.account).inbox
+      api_inbox.captain_inbox&.destroy!
       api_conversation = create(
         :conversation,
         account: conversation.account,

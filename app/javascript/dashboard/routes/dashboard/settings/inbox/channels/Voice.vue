@@ -199,11 +199,15 @@ const showProviderSelection = computed(() => !selectedProvider.value);
 const wazoCarrierOptions = computed(() => [
   {
     value: 'altel',
-    label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.ALTEL'),
+    label: t(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.ALTEL'
+    ),
   },
   {
     value: 'tele2',
-    label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.TELE2'),
+    label: t(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.TELE2'
+    ),
   },
   {
     value: 'kazakhtelecom',
@@ -213,7 +217,9 @@ const wazoCarrierOptions = computed(() => [
   },
   {
     value: 'kcell',
-    label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.KCELL'),
+    label: t(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.KCELL'
+    ),
   },
   {
     value: 'beeline_trunk',
@@ -223,7 +229,9 @@ const wazoCarrierOptions = computed(() => [
   },
   {
     value: 'custom',
-    label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.CUSTOM'),
+    label: t(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.CUSTOM'
+    ),
   },
 ]);
 

@@ -4,7 +4,8 @@ WebMock.disable_net_connect!(allow_localhost: true)
 
 RSpec.configure do |config|
   config.files_to_run.map! do |file|
-    file.sub('/spec/enterprise/services/captain/tools/copilot/', '/spec/enterprise/services/captain/tools/account/')
+    candidate = file.sub('/spec/enterprise/services/captain/tools/copilot/', '/spec/enterprise/services/captain/tools/account/')
+    File.exist?(candidate) ? candidate : file
   end
 
   config.expect_with :rspec do |expectations|

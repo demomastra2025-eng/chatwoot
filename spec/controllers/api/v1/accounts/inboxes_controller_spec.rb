@@ -72,7 +72,7 @@ RSpec.describe 'Inboxes API', type: :request do
       end
 
       it 'omits an inbox after an administrator explicitly removes the agent membership' do
-        other_inbox.remove_members([agent.id])
+        other_inbox.inbox_members.where(user: agent).delete_all
 
         get "/api/v1/accounts/#{account.id}/inboxes",
             headers: agent.create_new_auth_token,
@@ -120,7 +120,7 @@ RSpec.describe 'Inboxes API', type: :request do
       let(:inbox) { create(:inbox, account: account) }
 
       it 'returns unauthorized for an agent who is not assigned' do
-        inbox.remove_members([agent.id])
+        inbox.inbox_members.where(user: agent).delete_all
 
         get "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}",
             headers: agent.create_new_auth_token,
@@ -1157,7 +1157,7 @@ RSpec.describe 'Inboxes API', type: :request do
              as: :json
 
         expect(response).to have_http_status(:accepted)
-        expect(response.parsed_body['deleting']).to eq(true)
+        expect(response.parsed_body['deleting']).to be(true)
         expect(response.parsed_body['lifecycle_state']).to eq('deleting')
       end
     end
@@ -2181,7 +2181,7 @@ RSpec.describe 'Inboxes API', type: :request do
         end
 
         it 'returns unauthorized for agent without inbox access' do
-          whatsapp_inbox.remove_members([agent.id])
+          whatsapp_inbox.inbox_members.where(user: agent).delete_all
 
           get "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/health",
               headers: agent.create_new_auth_token,

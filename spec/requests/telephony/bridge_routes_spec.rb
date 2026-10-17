@@ -2430,6 +2430,12 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       close_hour: nil,
       close_minutes: nil
     )
+    account.update!(workspace_timezone: voice_inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
+      d.merge('closed_all_day' => true, 'open_all_day' => false)
+    end)
+    account.update!(workspace_timezone: voice_inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
+      d.merge('closed_all_day' => true, 'open_all_day' => false)
+    end)
 
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
       post path,

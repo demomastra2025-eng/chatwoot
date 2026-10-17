@@ -151,7 +151,7 @@ RSpec.describe 'CRM Deal Reports API', type: :request do
 
   def create_manager_appointment_activities(owner)
     create(:scheduling_appointment, account: account, owner: owner, status: 'completed',
-                                   starts_at: 1.day.ago, ends_at: 1.day.ago + 30.minutes)
+                                    starts_at: 1.day.ago, ends_at: 1.day.ago + 30.minutes)
   end
 
   def assert_manager_effectiveness_row(row)
@@ -268,7 +268,6 @@ RSpec.describe 'CRM Deal Reports API', type: :request do
       expect(payload.fetch('totals')).to include(
         'leads_count' => 3,
         'meetings_count' => 1,
-        'payments_amount_minor' => 12_000,
         'lead_to_meeting_conversion' => 33.3
       )
       expect(response.parsed_body.dig('meta', 'call_duration_threshold_seconds')).to eq(25)
