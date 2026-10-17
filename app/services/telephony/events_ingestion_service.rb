@@ -250,6 +250,7 @@ class Telephony::EventsIngestionService
 
         call_session = upsert_call_session!(call_session, account)
         linked_runtime_call_sessions = reconcile_linked_runtime_call_sessions!(account, call_session)
+        close_unanswered_beeline_sibling_legs!(call_session)
         event.update!(call_session: call_session, status: 'processed', processed_at: Time.current, error_message: nil)
       end
     end
@@ -337,6 +338,7 @@ class Telephony::EventsIngestionService
 
   def terminal_late_terminal_event?(call_session)
     return false if wazo_cdr_event?
+    return false if beeline_cdr_event?
     return false if post_finalize_recording_event?
     return false if terminal_recording_update_event?
     return false if webphone_release_event?
@@ -417,6 +419,7 @@ class Telephony::EventsIngestionService
           step.call { apply_call_status!(call_session) unless suppress_native_sip_conversation_update?(call_session) }
           step.call { sync_voice_message!(call_session) }
         end
+        step.call { Telephony::MissedCallCallbackTracker.sync_for_call_session!(call_session) }
         step.call { linked_runtime_call_sessions.each { |linked_call_session| sync_voice_message!(linked_call_session) } }
         step.call { collapse_terminal_native_sip_handoff!(call_session) if call_session.terminal? }
       end
@@ -425,6 +428,7 @@ class Telephony::EventsIngestionService
 
       enqueue_external_recording_cache(call_session)
       enqueue_call_recording_transcription(call_session) if resolved_event_type == 'recording_ready'
+      enqueue_missed_call_whatsapp_followup(call_session)
     rescue *RETRYABLE_DATABASE_ERRORS => e
       retries += 1
       raise if retries > SIDE_EFFECT_CONFLICT_RETRIES
@@ -711,13 +715,16 @@ class Telephony::EventsIngestionService
 
     if provider_call_sid.present?
       existing_by_provider_sid = account.telephony_call_sessions.find_by(provider_call_sid: provider_call_sid)
-      return existing_by_provider_sid if existing_by_provider_sid.present?
+      if existing_by_provider_sid.present?
+        existing_by_provider_sid = resolve_beeline_sibling_winner(existing_by_provider_sid)
+        return existing_by_provider_sid
+      end
     end
 
     existing_call_session = account.telephony_call_sessions.find_by(external_call_ref: call_ref)
     return existing_call_session if existing_call_session.present?
 
-    correlated_session = correlated_wazo_cdr_session(account)
+    correlated_session = correlated_wazo_cdr_session(account) || correlated_beeline_cdr_session(account)
     return correlated_session if correlated_session.present?
 
     provider = resolved_provider(account)
@@ -755,6 +762,83 @@ class Telephony::EventsIngestionService
       direction: direction, started_at: started_at
     )
     candidate if candidate&.metadata.to_h.dig('metadata', 'wazo_cdr_ref').present?
+  end
+
+  def resolve_beeline_sibling_winner(session)
+    return session unless session.provider == 'beeline' && answered_by_other_operator_leg?(session)
+
+    winner = session.logical_group_sessions.find do |sibling|
+      sibling.id != session.id &&
+        (sibling.answered_at.present? || %w[connecting in_progress completed].include?(sibling.canonical_status))
+    end
+    return session if winner.blank?
+
+    session.update_column(:provider_call_sid, nil) if session.provider_call_sid.present?
+    winner
+  end
+
+  def close_unanswered_beeline_sibling_legs!(call_session)
+    return unless call_session.provider == 'beeline' && call_session.direction == 'inbound'
+    return unless call_session.unanswered_terminal? && beeline_cdr_event?
+
+    group_sessions = Array(call_session.logical_group_sessions)
+    return if group_sessions.size <= 1
+    return if group_sessions.any? { |s| s.answered_at.present? || %w[connecting in_progress completed].include?(s.canonical_status) }
+
+    ended_time = call_session.ended_at || Time.current
+    group_sessions.each do |sibling|
+      next if sibling.id == call_session.id || sibling.terminal?
+
+      sibling.update!(
+        status: call_session.status,
+        ended_at: sibling.ended_at || ended_time,
+        ended_by: sibling.ended_by || call_session.ended_by || 'caller',
+        end_reason: sibling.end_reason || call_session.end_reason || call_session.status,
+        last_event_at: [sibling.last_event_at, ended_time].compact.max
+      )
+    end
+  end
+
+  def correlated_beeline_cdr_session(account)
+    return unless payload_value('provider') == 'beeline'
+
+    inbox = resolve_inbox(account)
+    direction = resolved_direction
+    return if inbox.blank? || !direction.in?(%w[inbound outbound])
+
+    started_at = resolved_started_at || resolved_occurred_at || Time.current
+    contact_phone = direction == 'inbound' ? resolved_from_number : resolved_to_number
+    return if contact_phone.blank?
+
+    window_start = started_at - 3.minutes
+    window_end = started_at + 3.minutes
+    candidates = account.telephony_call_sessions
+                        .where(provider: 'beeline', inbox_id: inbox.id, direction: direction)
+                        .where("external_call_ref LIKE 'beeline:cdr:%' OR external_call_ref LIKE 'beeline:%'")
+                        .where("external_call_ref NOT LIKE 'beeline:janus:%' AND external_call_ref NOT LIKE 'beeline:local:%'")
+                        .where('COALESCE(started_at, created_at) BETWEEN ? AND ?', window_start, window_end)
+                        .order(id: :desc)
+                        .to_a
+    target_digits = normalized_phone(contact_phone)
+    return if target_digits.blank?
+
+    incoming_cdr_ref = metadata_value('beeline_cdr_ref').to_s.strip.presence
+    matching = candidates.select do |session|
+      session_phone = direction == 'inbound' ? session.from_number : session.to_number
+      next false unless normalized_phone(session_phone) == target_digits
+
+      if incoming_cdr_ref.present?
+        meta = session.metadata.is_a?(Hash) ? session.metadata : {}
+        nested = meta['metadata'].is_a?(Hash) ? meta['metadata'] : {}
+        existing_cdr_ref = (meta['beeline_cdr_ref'] || nested['beeline_cdr_ref']).to_s.strip.presence ||
+                           (session.external_call_ref if session.external_call_ref.to_s.start_with?('beeline:cdr:'))
+        next false if existing_cdr_ref.present? && existing_cdr_ref != incoming_cdr_ref
+      end
+
+      true
+    end
+
+    matching.min_by { |session| ((session.started_at || session.created_at) - started_at).abs }
   end
 
   def uniquely_resolved_call_session
@@ -953,6 +1037,7 @@ class Telephony::EventsIngestionService
     return call_session.status if status.blank?
     return call_session.status if stale_event?(call_session)
     return call_session.status if call_session.terminal? && !terminal_status?(status)
+    return call_session.status if call_session.status == 'completed' && call_session.answered_at.present? && unanswered_terminal_status?(status)
     return call_session.status if regressive_non_terminal_status?(call_session, status)
 
     outbound_unanswered_terminal_status(call_session, status) || status
@@ -1338,6 +1423,7 @@ class Telephony::EventsIngestionService
 
   def stale_event?(call_session)
     return false if wazo_cdr_event?
+    return false if beeline_cdr_event?
 
     occurred_at = resolved_occurred_at
     return false if webphone_terminal_completion_event?(call_session)
@@ -1351,6 +1437,11 @@ class Telephony::EventsIngestionService
   def wazo_cdr_event?
     ActiveModel::Type::Boolean.new.cast(ENV.fetch('TELEPHONY_WAZO_CALL_LOG_SYNC_ENABLED', nil)) &&
       payload_value('provider') == 'wazo' && metadata_value('wazo_cdr_ref').present?
+  end
+
+  def beeline_cdr_event?
+    payload_value('provider') == 'beeline' &&
+      (metadata_value('beeline_cdr_ref').present? || metadata_value('source').to_s.start_with?('beeline_'))
   end
 
   def repairable_stale_ai_answer_event?(call_session)
@@ -1907,11 +1998,35 @@ class Telephony::EventsIngestionService
     data['data']['transcript'] = transcript if transcript.present?
     data['data']['summary'] = call_session.summary if call_session.summary.present?
     data['data']['duration'] = call_session.duration_seconds if call_session.duration_seconds.present?
+    if Telephony::MissedCallCallbackTracker.unanswered_inbound_terminal?(call_session)
+      data['data']['waiting_for_callback'] = true
+    elsif data['data'].key?('waiting_for_callback') && Telephony::MissedCallCallbackTracker.answered_call?(call_session)
+      data['data']['waiting_for_callback'] = false
+    end
     message.source_id ||= call_session.voice_call_source_id
     message.update!(content_attributes: data)
     remove_native_sip_group_duplicate_messages!(call_session, message)
     mark_linked_runtime_duplicate_message!(call_session, message)
     message
+  end
+
+  def enqueue_missed_call_whatsapp_followup(call_session)
+    return unless Telephony::MissedCallCallbackTracker.unanswered_inbound_terminal?(call_session)
+
+    inbox = call_session.inbox
+    return if inbox.blank?
+
+    policy_routing = inbox.telephony_number_binding&.routing_policy&.settings&.to_h&.deep_stringify_keys&.dig('call_routing')
+    channel_routing = inbox.channel.try(:provider_config)&.to_h&.deep_stringify_keys&.dig('call_routing')
+    followup = (policy_routing.presence || channel_routing.presence || {}).dig('inbound', 'whatsapp_followup')
+    return unless ActiveModel::Type::Boolean.new.cast(followup.to_h['enabled'] || followup.to_h[:enabled])
+
+    Telephony::MissedCallWhatsappFollowupJob.perform_later(call_session.id)
+  rescue StandardError => e
+    Rails.logger.warn(
+      "TELEPHONY_MISSED_CALL_WA_FOLLOWUP_ENQUEUE_ERROR call_ref=#{call_session&.external_call_ref} " \
+      "error=#{e.class.name}: #{e.message}"
+    )
   end
 
   def suppress_missing_voice_message?(call_session)

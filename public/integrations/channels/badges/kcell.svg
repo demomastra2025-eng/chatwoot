@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <rect width="64" height="64" rx="14" fill="#662D91"/>
+  <polygon points="32,12 37,19 32,26 27,19" fill="#FFCC00"/>
+  <text x="32" y="44" text-anchor="middle" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="16" letter-spacing="0.4">Kcell</text>
+</svg>

@@ -100,6 +100,30 @@ RSpec.describe Telephony::OperatorBusyService do
 
       expect(availability.busy?).to be(false)
     end
+
+    it 'never treats a voice_agent SIP profile as busy even when an active call claims it' do
+      voice_agent_profile = create(
+        :telephony_sip_profile,
+        account: account,
+        user: nil,
+        profile_kind: 'voice_agent',
+        internal_extension: '1999',
+        sip_username: 'voice-agent-1999',
+        credentials_ref: 'cred-voice-agent-1999',
+        password_secret_ref: 'cred-voice-agent-1999'
+      )
+      create(
+        :telephony_call_session,
+        account: account,
+        direction: 'inbound',
+        status: 'in_progress',
+        metadata: { 'operator_claim' => { 'sip_profile_id' => voice_agent_profile.id } }
+      )
+
+      availability = described_class.new(account: account, sip_profile: voice_agent_profile)
+      expect(availability.busy?).to be(false)
+      expect(availability.busy_details).to be_nil
+    end
   end
 
   describe '#with_lock' do

@@ -97,6 +97,7 @@ const mountComponent = ({
   dispatch,
   props = {},
   selectedChat = null,
+  stubs = {},
 } = {}) => {
   const dispatchMock =
     dispatch ||
@@ -127,6 +128,7 @@ const mountComponent = ({
           template: `<button type="button" :disabled="disabled" @click="$emit('click')">{{ label }}</button>`,
         },
         Dialog: true,
+        ...stubs,
       },
       directives: {
         tooltip: {},
@@ -139,6 +141,7 @@ const mountComponent = ({
 
 describe('VoiceCallButton', () => {
   beforeEach(() => {
+    window.localStorage?.clear?.();
     setActivePinia(createPinia());
     vi.clearAllMocks();
     contactSearchMock.mockResolvedValue({ data: { payload: [] } });
@@ -917,5 +920,83 @@ describe('VoiceCallButton', () => {
     await flushPromises();
 
     expect(phoneWidgetStore.preparingOutboundCalls).toBe(0);
+  });
+
+  it('sorts the selected phone widget line first in the multi-inbox picker and shows live status and provider badges', async () => {
+    const phoneWidgetStore = usePhoneWidgetStore();
+    phoneWidgetStore.setSelectedInboxId(4674);
+    phoneWidgetStore.publishSipState({
+      available: true,
+      status: 'ready',
+      linesStatusById: {
+        4593: 'error',
+        4674: 'ready',
+      },
+    });
+    const openDialogMock = vi.fn();
+    const closeDialogMock = vi.fn();
+    const { dispatchMock, wrapper } = mountComponent({
+      inboxes: [
+        voiceInbox({
+          id: 4593,
+          name: 'Sipuni Основной',
+          provider: 'sipuni',
+          phone_number: '+77172705175',
+        }),
+        voiceInbox({
+          id: 4674,
+          name: 'Wazo Астана',
+          provider: 'wazo',
+          phone_number: '+77172999888',
+        }),
+      ],
+      stubs: {
+        Dialog: {
+          template: '<div data-testid="voice-inbox-dialog"><slot /></div>',
+          methods: { open: openDialogMock, close: closeDialogMock },
+        },
+      },
+    });
+
+    const options = wrapper.findAll('[data-testid="voice-inbox-picker-option"]');
+    expect(options).toHaveLength(2);
+    expect(options[0].attributes('data-inbox-id')).toBe('4674');
+    expect(options[0].attributes('data-selected')).toBe('true');
+    expect(options[0].attributes('data-line-status')).toBe('ready');
+    expect(
+      options[0]
+        .get('[data-testid="voice-inbox-picker-status-dot"]')
+        .classes()
+    ).toContain('bg-n-teal-9');
+    expect(
+      options[0].get('[data-testid="voice-inbox-picker-provider"]').text()
+    ).toBe('Wazo / Asterisk');
+    expect(
+      options[0]
+        .find('[data-testid="voice-inbox-picker-selected-badge"]')
+        .exists()
+    ).toBe(true);
+
+    expect(options[1].attributes('data-inbox-id')).toBe('4593');
+    expect(options[1].attributes('data-selected')).toBe('false');
+    expect(options[1].attributes('data-line-status')).toBe('error');
+    expect(
+      options[1]
+        .get('[data-testid="voice-inbox-picker-status-dot"]')
+        .classes()
+    ).toContain('bg-n-ruby-9');
+    expect(
+      options[1].get('[data-testid="voice-inbox-picker-provider"]').text()
+    ).toBe('Sipuni');
+
+    await options[1].trigger('click');
+    await flushPromises();
+
+    expect(closeDialogMock).toHaveBeenCalledOnce();
+    expect(phoneWidgetStore.selectedInboxId).toBe('4593');
+    expect(dispatchMock).toHaveBeenCalledWith('contacts/initiateCall', {
+      contactId: 2179,
+      inboxId: 4593,
+    });
   });
 });

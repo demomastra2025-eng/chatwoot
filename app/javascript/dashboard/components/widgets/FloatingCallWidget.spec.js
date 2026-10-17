@@ -1530,5 +1530,92 @@ describe('FloatingCallWidget', () => {
       expect(wrapper.findAll('[data-testid="call-busy-note"]')).toHaveLength(1);
       wrapper.unmount();
     });
+
+    it('renders universal business context only when present, toggles between compact and detailed mode, and saves a quick note', async () => {
+      window.localStorage?.removeItem('chatwoot_call_card_expanded');
+      const postSpy = vi.fn().mockResolvedValue({ data: { id: 901 } });
+      window.axios = { post: postSpy, get: vi.fn() };
+
+      mockSession.hasActiveCall = true;
+      mockSession.activeCall = activeCall;
+      storeGetters.getConversationById.mockReturnValue({
+        id: 724,
+        inbox_id: 4769,
+        meta: {
+          sender: {
+            id: 55,
+            name: 'Айгерим',
+            additional_attributes: { company_name: 'ТОО Альфа Логистик' },
+          },
+          assignee: { name: 'Марат' },
+        },
+        custom_attributes: {
+          deal_title: 'Поставка оборудования',
+          next_event: 'Встреча 20.10 в 15:00',
+        },
+        labels: ['vip', 'b2b'],
+        messages: [{ id: 1, private: true, content: 'Просит счёт на оплату' }],
+      });
+
+      const wrapper = mountComponent({ embedded: true });
+
+      expect(
+        wrapper.find('[data-testid="floating-call-client-context"]').exists()
+      ).toBe(true);
+      const contextText = wrapper
+        .get('[data-testid="floating-call-client-context"]')
+        .text();
+      expect(contextText).toContain('ТОО Альфа Логистик');
+      expect(contextText).toContain('Марат');
+      expect(contextText).toContain('Поставка оборудования');
+      expect(contextText).toContain('Встреча 20.10 в 15:00');
+      expect(contextText).toContain('Просит счёт на оплату');
+
+      // Toggle into compact mode
+      const toggleBtn = wrapper.get(
+        '[data-testid="floating-call-context-toggle"]'
+      );
+      expect(toggleBtn.text()).toContain('Компактный вид');
+      await toggleBtn.trigger('click');
+
+      expect(
+        wrapper.find('[data-testid="floating-call-client-context"]').exists()
+      ).toBe(false);
+      expect(window.localStorage.getItem('chatwoot_call_card_expanded')).toBe(
+        'false'
+      );
+      expect(
+        wrapper.get('[data-testid="floating-call-context-toggle"]').text()
+      ).toContain('Подробный вид');
+
+      // Toggle back to detailed mode and save a quick note
+      await wrapper
+        .get('[data-testid="floating-call-context-toggle"]')
+        .trigger('click');
+      expect(
+        wrapper.find('[data-testid="floating-call-client-context"]').exists()
+      ).toBe(true);
+
+      await wrapper
+        .get('[data-testid="floating-call-quick-note-toggle"]')
+        .trigger('click');
+      const noteInput = wrapper.get(
+        '[data-testid="floating-call-quick-note-input"]'
+      );
+      await noteInput.setValue('Перезвонить после 16:00 с КП');
+      await wrapper
+        .get('[data-testid="floating-call-quick-note-submit"]')
+        .trigger('click');
+      await flushPromises();
+
+      expect(postSpy).toHaveBeenCalledWith(
+        '/api/v1/accounts/1/conversations/724/messages',
+        {
+          content: 'Перезвонить после 16:00 с КП',
+          private: true,
+        }
+      );
+      wrapper.unmount();
+    });
   });
 });

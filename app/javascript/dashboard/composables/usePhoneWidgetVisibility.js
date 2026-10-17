@@ -3,6 +3,7 @@ import { useMapGetter } from 'dashboard/composables/store';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { isEmployeeOwnCall, useCallsStore } from 'dashboard/stores/calls';
 import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
+import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 
 // { [accountId]: true } for the accounts where the employee hid the phone.
 export const PHONE_WIDGET_HIDDEN_UI_SETTINGS_KEY =
@@ -30,6 +31,7 @@ export function usePhoneWidgetVisibility() {
   const currentUser = useMapGetter('getCurrentUser');
   const callsStore = useCallsStore();
   const phoneWidgetStore = usePhoneWidgetStore();
+  const whatsappCallsStore = useWhatsappCallsStore();
 
   const accountKey = computed(() => String(accountId.value ?? ''));
   const isHiddenByUser = computed(
@@ -40,11 +42,20 @@ export function usePhoneWidgetVisibility() {
       isEmployeeOwnCall(call, currentUser.value?.id)
     )
   );
+  const hasWhatsappCallActivity = computed(() =>
+    Boolean(
+      whatsappCallsStore?.hasActiveCall ||
+        whatsappCallsStore?.activeCall ||
+        whatsappCallsStore?.hasIncomingCall ||
+        (whatsappCallsStore?.incomingCalls || []).length > 0
+    )
+  );
   const hasCallActivity = computed(() =>
     Boolean(
       callsStore.hasActiveCall ||
         ownIncomingCalls.value.length > 0 ||
-        phoneWidgetStore.preparingOutboundCalls > 0
+        phoneWidgetStore.preparingOutboundCalls > 0 ||
+        hasWhatsappCallActivity.value
     )
   );
   const isShownForCall = computed(

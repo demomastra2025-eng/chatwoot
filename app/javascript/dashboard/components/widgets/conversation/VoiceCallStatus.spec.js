@@ -39,4 +39,16 @@ describe('VoiceCallStatus', () => {
 
     expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.MISSED_CALL');
   });
+
+  it('renders missed-call waiting-for-callback preview when waitingForCallback is true on inbound failed calls', () => {
+    const wrapper = mountComponent({
+      status: 'missed',
+      direction: 'inbound',
+      waitingForCallback: true,
+    });
+
+    expect(wrapper.text()).toContain(
+      'CONVERSATION.VOICE_CALL.MISSED_CALL_WAITING_CALLBACK'
+    );
+  });
 });

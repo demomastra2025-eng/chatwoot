@@ -13,6 +13,7 @@ class Telephony::Wazo::TrunkProvisioningService
       default_domain: 'astpbx.tele2.kz',
       default_host: '91.185.24.71',
       default_port: 5060,
+      default_max_channels: 2,
       send_pai: false,
       registration_required: true
     },
@@ -21,6 +22,7 @@ class Telephony::Wazo::TrunkProvisioningService
       default_domain: 'astpbx.tele2.kz',
       default_host: '91.185.24.71',
       default_port: 5060,
+      default_max_channels: 2,
       send_pai: false,
       registration_required: true
     },
@@ -29,6 +31,7 @@ class Telephony::Wazo::TrunkProvisioningService
       default_domain: 'sip.telecom.kz',
       default_host: 'sip.telecom.kz',
       default_port: 5060,
+      default_max_channels: 5,
       send_pai: true,
       registration_required: true
     },
@@ -37,14 +40,16 @@ class Telephony::Wazo::TrunkProvisioningService
       default_domain: 'sip.kcell.kz',
       default_host: 'sip.kcell.kz',
       default_port: 5060,
+      default_max_channels: 5,
       send_pai: true,
       registration_required: true
     },
     'beeline_trunk' => {
       label: 'Билайн SIP-транк (АТС OneLink)',
-      default_domain: 'sip.beeline.kz',
-      default_host: 'sip.beeline.kz',
+      default_domain: 'cloudpbx.beeline.kz',
+      default_host: '46.227.186.231',
       default_port: 5060,
+      default_max_channels: 5,
       send_pai: true,
       registration_required: true
     },
@@ -53,6 +58,7 @@ class Telephony::Wazo::TrunkProvisioningService
       default_domain: nil,
       default_host: nil,
       default_port: 5060,
+      default_max_channels: 2,
       send_pai: false,
       registration_required: true
     }
@@ -80,6 +86,7 @@ class Telephony::Wazo::TrunkProvisioningService
     trunk_host: nil,
     trunk_port: nil,
     carrier_kind: 'custom',
+    max_channels: nil,
     target_wazo_user_id: nil,
     target_wazo_group_id: nil
   )
@@ -116,6 +123,7 @@ class Telephony::Wazo::TrunkProvisioningService
                     target_wazo_group_id: target_wazo_group_id
                   )
                 end
+    parsed_max_channels = max_channels.to_i if max_channels.present? && max_channels.to_i.positive?
 
     {
       did: clean_did,
@@ -123,7 +131,9 @@ class Telephony::Wazo::TrunkProvisioningService
       trunk_endpoint_uuid: endpoint_uuid,
       trunk_id: trunk_id,
       outcall_id: outcall_id,
-      incall_id: incall_id
+      incall_id: incall_id,
+      max_channels: parsed_max_channels,
+      ai_max_concurrent_calls: parsed_max_channels
     }.compact
   end
 

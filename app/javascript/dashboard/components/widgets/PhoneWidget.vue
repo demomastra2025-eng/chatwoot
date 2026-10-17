@@ -13,11 +13,14 @@ import { normalizeDialNumber } from 'dashboard/helper/phoneDialNumber';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
 import { useCallsStore } from 'dashboard/stores/calls';
 import {
+  phoneLineProviderLabel,
   phoneWidgetStatusColor,
   usePhoneWidgetStore,
 } from 'dashboard/stores/phoneWidget';
+import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import VoiceCallButton from 'dashboard/components-next/Contacts/VoiceCallButton.vue';
 import FloatingCallWidget from 'dashboard/components/widgets/FloatingCallWidget.vue';
+import WhatsappCallWidget from 'dashboard/components/widgets/WhatsappCallWidget.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
@@ -44,6 +47,7 @@ const accountId = useMapGetter('getCurrentAccountId');
 const currentUser = useMapGetter('getCurrentUser');
 const callsStore = useCallsStore();
 const phoneWidgetStore = usePhoneWidgetStore();
+const whatsappCallsStore = useWhatsappCallsStore();
 // Hiding only takes the widget off screen (v-show): this component and its
 // call list stay mounted, so the SIP sessions keep running, browser SIP
 // INVITEs are still reported and put in the calls store, and a new incoming
@@ -51,7 +55,7 @@ const phoneWidgetStore = usePhoneWidgetStore();
 const { hasCallActivity, isVisible, ownIncomingCalls, hide } =
   usePhoneWidgetVisibility();
 const phone = ref('');
-const selectedInboxId = ref(null);
+const selectedInboxId = ref(phoneWidgetStore.selectedInboxId || null);
 const isExpanded = ref(false);
 const isBootstrapping = ref(false);
 const hasBootstrapped = ref(false);
@@ -98,15 +102,71 @@ watch(
     if (count === 0) hasBrowserLine.value = false;
   }
 );
-const selectedInbox = computed(() =>
-  availableVoiceInboxes.value.find(
-    inbox => String(inbox.id) === String(selectedInboxId.value)
+
+const whatsappVoiceInboxes = computed(() =>
+  (inboxes.value || []).filter(
+    inbox =>
+      inbox.channel_type === INBOX_TYPES.WHATSAPP &&
+      (inbox.calling_enabled === true ||
+        inbox.provider_config?.calling_enabled === true ||
+        (hasBrowserLine.value && inbox.can_call === true))
   )
 );
-const selectedSessions = computed(() =>
-  sipSessions.value.filter(
-    session => String(session.inboxId) === String(selectedInboxId.value)
+const hasWhatsappCallingInbox = computed(() =>
+  (inboxes.value || []).some(
+    inbox =>
+      inbox.channel_type === INBOX_TYPES.WHATSAPP &&
+      (inbox.calling_enabled === true ||
+        inbox.provider_config?.calling_enabled === true)
   )
+);
+
+const whatsappIncomingCalls = computed(() =>
+  Array.isArray(whatsappCallsStore?.incomingCalls)
+    ? whatsappCallsStore.incomingCalls
+    : []
+);
+const hasWhatsappActiveCall = computed(() =>
+  Boolean(whatsappCallsStore?.hasActiveCall || whatsappCallsStore?.activeCall)
+);
+const hasWhatsappIncomingCall = computed(() =>
+  Boolean(
+    whatsappCallsStore?.hasIncomingCall ||
+      whatsappIncomingCalls.value.length > 0
+  )
+);
+const hasWhatsappCall = computed(
+  () => hasWhatsappActiveCall.value || hasWhatsappIncomingCall.value
+);
+
+const allCallableInboxes = computed(() => [
+  ...availableVoiceInboxes.value,
+  ...whatsappVoiceInboxes.value,
+]);
+
+const selectedInbox = computed(
+  () =>
+    availableVoiceInboxes.value.find(
+      inbox => String(inbox.id) === String(selectedInboxId.value)
+    ) ||
+    allCallableInboxes.value.find(
+      inbox => String(inbox.id) === String(selectedInboxId.value)
+    ) ||
+    availableVoiceInboxes.value[0] ||
+    null
+);
+const sessionsForInbox = inboxId =>
+  sipSessions.value.filter(
+    session => String(session.inboxId) === String(inboxId)
+  );
+const bestSessionForInbox = inboxId => {
+  const sessions = sessionsForInbox(inboxId);
+  return (
+    sessions.find(session => session.registered === true) || sessions[0] || null
+  );
+};
+const selectedSessions = computed(() =>
+  sessionsForInbox(selectedInboxId.value)
 );
 const selectedSession = computed(
   () =>
@@ -116,21 +176,39 @@ const selectedSession = computed(
 const dialNumber = computed(() => normalizeDialNumber(phone.value));
 const canDial = computed(() => Boolean(dialNumber.value));
 const hasCall = computed(
-  () => callsStore.hasActiveCall || callsStore.hasIncomingCall
+  () =>
+    callsStore.hasActiveCall ||
+    callsStore.hasIncomingCall ||
+    hasWhatsappCall.value
 );
 // The employee's own call (ringing, being dialled or connected) is shown in
 // the phone itself instead of the dialer; there is no second call window.
 const hasOwnCall = computed(() =>
-  Boolean(callsStore.hasActiveCall || ownIncomingCalls.value.length)
+  Boolean(
+    callsStore.hasActiveCall ||
+      ownIncomingCalls.value.length ||
+      hasWhatsappCall.value
+  )
 );
 const callState = computed(() => {
-  if (callsStore.hasActiveCall) return 'active';
-  if (ownIncomingCalls.value.some(call => call?.callDirection !== 'outbound')) {
+  if (
+    callsStore.hasActiveCall ||
+    (hasWhatsappActiveCall.value &&
+      whatsappCallsStore?.activeCall?.status !== 'ringing')
+  ) {
+    return 'active';
+  }
+  if (
+    ownIncomingCalls.value.some(call => call?.callDirection !== 'outbound') ||
+    hasWhatsappIncomingCall.value
+  ) {
     return 'incoming';
   }
   if (
     ownIncomingCalls.value.length ||
-    phoneWidgetStore.preparingOutboundCalls > 0
+    phoneWidgetStore.preparingOutboundCalls > 0 ||
+    (hasWhatsappActiveCall.value &&
+      whatsappCallsStore?.activeCall?.status === 'ringing')
   ) {
     return 'dialing';
   }
@@ -216,7 +294,104 @@ const sessionStatus = session => {
   }
   return 'disconnected';
 };
-const status = computed(() => sessionStatus(selectedSession.value));
+const lineStatusLabel = value => {
+  switch (value) {
+    case 'ready':
+      return 'Активен';
+    case 'ownerTab':
+    case 'standby':
+      return 'В другой вкладке';
+    case 'connecting':
+      return 'Подключение...';
+    case 'error':
+      return 'Ошибка';
+    default:
+      return 'Отключён';
+  }
+};
+const allPhoneLines = computed(() => {
+  const sipLines = availableVoiceInboxes.value.map(inbox => {
+    const session = bestSessionForInbox(inbox.id);
+    const lineStatus = sessionStatus(session);
+    const phoneNumber = inbox.phone_number || inbox.phoneNumber || '';
+    return {
+      id: inbox.id,
+      inbox,
+      name: inbox.name || `Line ${inbox.id}`,
+      phoneNumber,
+      provider: inbox.provider,
+      providerLabel: phoneLineProviderLabel(inbox),
+      isWhatsapp: false,
+      session,
+      status: lineStatus,
+      statusColor: phoneWidgetStatusColor(lineStatus),
+      statusLabel: lineStatusLabel(lineStatus),
+      canReconnect: ACTIONABLE_STATUSES.includes(lineStatus),
+      movesHere:
+        ACTIONABLE_STATUSES.includes(lineStatus) && session?.mirrored === true,
+    };
+  });
+
+  const whatsappLines = whatsappVoiceInboxes.value.map(inbox => {
+    const phoneNumber =
+      inbox.phone_number ||
+      inbox.phoneNumber ||
+      inbox.provider_config?.phone_number ||
+      '';
+    return {
+      id: inbox.id,
+      inbox,
+      name: inbox.name || 'WhatsApp',
+      phoneNumber,
+      provider: 'whatsapp_cloud',
+      providerLabel: 'WhatsApp',
+      isWhatsapp: true,
+      session: null,
+      status: 'ready',
+      statusColor: phoneWidgetStatusColor('ready'),
+      statusLabel: lineStatusLabel('ready'),
+      canReconnect: false,
+      movesHere: false,
+    };
+  });
+
+  return [...sipLines, ...whatsappLines];
+});
+const linesStatusById = computed(() =>
+  Object.fromEntries(
+    allPhoneLines.value.map(line => [String(line.id), line.status])
+  )
+);
+const readyLinesCount = computed(
+  () =>
+    allPhoneLines.value.filter(
+      line => line.status === 'ready' || line.status === 'ownerTab'
+    ).length
+);
+const allLinesReady = computed(
+  () =>
+    allPhoneLines.value.length > 0 &&
+    allPhoneLines.value.every(
+      line => line.status === 'ready' || line.status === 'ownerTab'
+    )
+);
+const linesSummaryLabel = computed(
+  () => `${readyLinesCount.value}/${allPhoneLines.value.length} активны`
+);
+const linesSummaryTitle = computed(
+  () =>
+    `Активно линий: ${readyLinesCount.value} из ${allPhoneLines.value.length}`
+);
+
+const status = computed(() => {
+  if (
+    !availableVoiceInboxes.value.length &&
+    (hasWhatsappCallingInbox.value || hasWhatsappCall.value)
+  ) {
+    return 'ready';
+  }
+  return sessionStatus(selectedSession.value);
+});
 // Literal keys keep every status label visible to the i18n tooling.
 const statusText = value => {
   switch (value) {
@@ -253,13 +428,24 @@ const connectionLabel = computed(() => {
   if (status.value === 'standby') return t('PHONE_WIDGET.OTHER_TAB');
   return statusLabel.value;
 });
-const canUseConnectionAction = computed(() =>
-  ACTIONABLE_STATUSES.includes(status.value)
+const actionableSessions = computed(() =>
+  sipSessions.value.filter(session =>
+    ACTIONABLE_STATUSES.includes(sessionStatus(session))
+  )
+);
+const canUseConnectionAction = computed(
+  () =>
+    ACTIONABLE_STATUSES.includes(status.value) ||
+    actionableSessions.value.length > 0
 );
 // A mirrored line is registered by another tab: the action moves the phone
 // here instead of refreshing a connection this tab does not hold.
 const movesPhoneHere = computed(
-  () => canUseConnectionAction.value && selectedSession.value?.mirrored === true
+  () =>
+    canUseConnectionAction.value &&
+    (selectedSession.value?.mirrored === true ||
+      (actionableSessions.value.length > 0 &&
+        actionableSessions.value.every(session => session?.mirrored === true)))
 );
 const connectionActionIcon = computed(() =>
   movesPhoneHere.value ? 'i-lucide-monitor-down' : 'i-lucide-refresh-cw'
@@ -273,11 +459,14 @@ const statusColor = computed(() => phoneWidgetStatusColor(status.value));
 // Incoming calls the employee has not seen yet: each new one shows the phone
 // again even if it was hidden during an earlier call. Calls a colleague took
 // do not count.
-const incomingCallKeys = computed(() =>
-  ownIncomingCalls.value
+const incomingCallKeys = computed(() => [
+  ...ownIncomingCalls.value
     .filter(call => call?.callDirection !== 'outbound' && call?.callSid)
-    .map(call => String(call.callSid))
-);
+    .map(call => String(call.callSid)),
+  ...whatsappIncomingCalls.value
+    .map(call => String(call?.callId || call?.id || ''))
+    .filter(Boolean),
+]);
 
 const bootstrap = async () => {
   if (!voiceInboxes.value.length || hasBootstrapped.value) return;
@@ -317,6 +506,17 @@ const reconnect = async session => {
     syncSessions();
   }
 };
+const reconnectAllLines = async () => {
+  const targets = actionableSessions.value.length
+    ? actionableSessions.value
+    : [selectedSession.value].filter(Boolean);
+  await Promise.all(targets.map(session => reconnect(session)));
+};
+const selectLine = inboxId => {
+  if (inboxId === null || inboxId === undefined) return;
+  selectedInboxId.value = inboxId;
+  phoneWidgetStore.setSelectedInboxId(inboxId);
+};
 const appendKey = key => {
   phone.value += key;
 };
@@ -343,19 +543,6 @@ const dialOnEnter = () => {
 };
 
 watch(
-  availableVoiceInboxes,
-  () => {
-    if (
-      !availableVoiceInboxes.value.some(
-        inbox => String(inbox.id) === String(selectedInboxId.value)
-      )
-    ) {
-      selectedInboxId.value = availableVoiceInboxes.value[0]?.id || null;
-    }
-  },
-  { immediate: true }
-);
-watch(
   voiceInboxes,
   () => {
     syncSessions();
@@ -363,16 +550,51 @@ watch(
   },
   { immediate: true }
 );
+watch(
+  [availableVoiceInboxes, whatsappVoiceInboxes],
+  () => {
+    const candidates = availableVoiceInboxes.value.length
+      ? availableVoiceInboxes.value
+      : whatsappVoiceInboxes.value;
+    if (
+      !allCallableInboxes.value.some(
+        inbox => String(inbox.id) === String(selectedInboxId.value)
+      )
+    ) {
+      const storedId = phoneWidgetStore.selectedInboxId;
+      const storedMatch = candidates.find(
+        inbox => String(inbox.id) === String(storedId)
+      );
+      selectedInboxId.value = storedMatch?.id || candidates[0]?.id || null;
+    }
+  },
+  { immediate: true }
+);
+watch(selectedInboxId, nextId => {
+  if (nextId !== null && nextId !== undefined) {
+    phoneWidgetStore.setSelectedInboxId(nextId);
+  }
+});
 watch(accountId, () => {
   hasBrowserLine.value = availableVoiceInboxes.value.length > 0;
   hasBootstrapped.value = false;
   bootstrap();
 });
+const hasAnyPhoneLine = computed(
+  () =>
+    hasBrowserLine.value ||
+    hasWhatsappCallingInbox.value ||
+    hasWhatsappCall.value
+);
 // The sidebar phone button shows the same line state as this header.
 watch(
-  [hasBrowserLine, status],
-  ([available, value]) => {
-    phoneWidgetStore.publishSipState({ available, status: value });
+  [hasAnyPhoneLine, status, linesStatusById],
+  ([available, value, linesMap]) => {
+    phoneWidgetStore.publishSipState({
+      available,
+      status: value,
+      linesStatusById: linesMap,
+    });
   },
   { immediate: true }
 );
@@ -391,13 +613,13 @@ watch(
     hasOwnCall,
     isExpanded,
     () => (callsStore.incomingCalls || []).length,
-    () => availableVoiceInboxes.value.length,
+    () => allPhoneLines.value.length,
   ],
   scheduleClamp
 );
 const channelCapacity = ref(null);
 const fetchChannelCapacity = async () => {
-  if (!accountId.value || !selectedInboxId.value) {
+  if (!accountId.value || !selectedInboxId.value || !window.axios?.get) {
     channelCapacity.value = null;
     return;
   }
@@ -445,9 +667,13 @@ onUnmounted(() => {
 
 <template>
   <div
-    v-if="hasBrowserLine"
+    v-if="hasAnyPhoneLine"
     v-show="
-      isVisible && (availableVoiceInboxes.length > 0 || hasCall || hasOwnCall)
+      isVisible &&
+      (availableVoiceInboxes.length > 0 ||
+        hasWhatsappCallingInbox ||
+        hasCall ||
+        hasOwnCall)
     "
     ref="widgetRef"
     class="fixed z-40 w-[336px] max-w-[calc(100vw-2rem)]"
@@ -490,6 +716,21 @@ onUnmounted(() => {
             {{ employeeName }}
           </span>
         </div>
+        <span
+          v-if="allPhoneLines.length >= 1"
+          class="shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
+          :class="
+            allLinesReady
+              ? 'bg-n-teal-3 text-n-teal-11'
+              : readyLinesCount === 0
+                ? 'bg-n-ruby-3 text-n-ruby-11'
+                : 'bg-n-amber-3 text-n-amber-11'
+          "
+          :title="linesSummaryTitle"
+          data-testid="phone-widget-lines-summary"
+        >
+          {{ linesSummaryLabel }}
+        </span>
         <!-- On/off buttons: the "off" state (muted microphone, silent
              ringtone) is a filled red pressed button with its own label,
              never only another icon. -->
@@ -531,7 +772,7 @@ onUnmounted(() => {
           :aria-label="connectionActionLabel"
           :title="connectionActionLabel"
           data-testid="phone-widget-reconnect"
-          @click="reconnect(selectedSession)"
+          @click="reconnectAllLines"
         />
         <!-- Shows/hides the keypad (a disclosure, hence aria-expanded); an
              open keypad is a filled button. -->
@@ -572,6 +813,11 @@ onUnmounted(() => {
              and open the conversation right here. -->
         <!-- Always mounted: its call session listens for SIP INVITEs even
              while the phone is hidden; a hidden phone stays silent. -->
+        <WhatsappCallWidget
+          v-if="hasWhatsappCall"
+          embedded
+          :silent="!isVisible"
+        />
         <FloatingCallWidget embedded :silent="!isVisible" />
         <div
           v-show="!hasOwnCall"
@@ -590,7 +836,7 @@ onUnmounted(() => {
             data-testid="phone-widget-enable-notifications"
             @click="requestCallNotifications"
           />
-          <div v-if="availableVoiceInboxes.length > 1" class="mb-2">
+          <div v-if="availableVoiceInboxes.length > 1" class="sr-only">
             <Select
               id="phone-widget-inbox"
               v-model="selectedInboxId"
@@ -606,6 +852,127 @@ onUnmounted(() => {
                 {{ inbox.name }}
               </option>
             </Select>
+          </div>
+          <div
+            v-if="allPhoneLines.length >= 1"
+            class="mb-2.5 flex flex-col gap-1.5"
+            data-testid="phone-widget-lines-list"
+          >
+            <div
+              v-for="line in allPhoneLines"
+              :key="line.id"
+              role="button"
+              tabindex="0"
+              class="flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors"
+              :class="
+                String(selectedInboxId) === String(line.id)
+                  ? 'border-n-teal-9 bg-n-teal-2'
+                  : 'border-n-weak bg-n-alpha-1 hover:bg-n-alpha-2'
+              "
+              :aria-pressed="String(selectedInboxId) === String(line.id)"
+              :data-line-id="String(line.id)"
+              :data-line-status="line.status"
+              :data-selected="
+                String(String(selectedInboxId) === String(line.id))
+              "
+              data-testid="phone-widget-line-item"
+              @click="selectLine(line.id)"
+              @keydown.enter.prevent="selectLine(line.id)"
+              @keydown.space.prevent="selectLine(line.id)"
+            >
+              <div class="flex min-w-0 flex-1 items-center gap-2">
+                <span
+                  class="size-2 shrink-0 rounded-full"
+                  :class="[
+                    line.statusColor,
+                    { 'animate-pulse': line.status === 'connecting' },
+                  ]"
+                  data-testid="phone-widget-line-status-dot"
+                />
+                <i
+                  class="shrink-0 text-sm"
+                  :class="
+                    line.isWhatsapp
+                      ? 'i-ri-whatsapp-fill text-n-teal-9'
+                      : 'i-ri-phone-fill text-n-slate-11'
+                  "
+                  aria-hidden="true"
+                />
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-1.5">
+                    <span
+                      class="truncate text-xs font-medium text-n-slate-12"
+                      data-testid="phone-widget-line-name"
+                    >
+                      {{ line.name }}
+                    </span>
+                    <span
+                      v-if="line.providerLabel"
+                      class="shrink-0 rounded bg-n-alpha-2 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
+                      data-testid="phone-widget-line-provider"
+                    >
+                      {{ line.providerLabel }}
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-1.5 text-[11px]">
+                    <span
+                      v-if="
+                        line.phoneNumber &&
+                        !String(line.name || '').includes(line.phoneNumber)
+                      "
+                      class="truncate text-n-slate-11"
+                    >
+                      {{ line.phoneNumber }} ·
+                    </span>
+                    <span
+                      :class="
+                        line.status === 'ready' || line.status === 'ownerTab'
+                          ? 'text-n-teal-11'
+                          : line.status === 'error'
+                            ? 'text-n-ruby-11'
+                            : 'text-n-slate-11'
+                      "
+                      data-testid="phone-widget-line-status"
+                    >
+                      {{ line.statusLabel }}
+                    </span>
+                    <span
+                      v-if="String(selectedInboxId) === String(line.id)"
+                      class="font-medium text-n-teal-11"
+                      data-testid="phone-widget-line-selected-badge"
+                    >
+                      · Выбрана для звонка
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button
+                v-if="line.canReconnect"
+                type="button"
+                class="shrink-0 inline-flex size-6 items-center justify-center rounded-md bg-n-alpha-2 text-n-teal-11 hover:bg-n-teal-3 transition-colors"
+                :title="
+                  line.movesHere
+                    ? t('PHONE_WIDGET.MOVE_HERE')
+                    : t('PHONE_WIDGET.REFRESH_CONNECTION')
+                "
+                :aria-label="
+                  line.movesHere
+                    ? t('PHONE_WIDGET.MOVE_HERE')
+                    : t('PHONE_WIDGET.REFRESH_CONNECTION')
+                "
+                data-testid="phone-widget-line-reconnect"
+                @click.stop="reconnect(line.session)"
+              >
+                <i
+                  class="text-xs"
+                  :class="
+                    line.movesHere
+                      ? 'i-lucide-monitor-down'
+                      : 'i-lucide-refresh-cw'
+                  "
+                />
+              </button>
+            </div>
           </div>
           <div
             v-if="channelCapacityLabel"

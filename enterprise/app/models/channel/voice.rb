@@ -138,6 +138,9 @@ class Channel::Voice < ApplicationRecord
     operator_distribution_mode = Telephony::RoutingPolicy.normalized_operator_distribution_mode(config[:operator_distribution_mode])
     config[:provider_kind] = provider
     config[:operator_distribution_mode] = operator_distribution_mode
+    if provider == 'beeline' && config[:beeline_events_webhook_token].blank? && config[:beeline_webhook_token].blank?
+      config[:beeline_events_webhook_token] = SecureRandom.hex(24)
+    end
     self.provider_config = config
     provider_label = provider.to_s.titleize
 

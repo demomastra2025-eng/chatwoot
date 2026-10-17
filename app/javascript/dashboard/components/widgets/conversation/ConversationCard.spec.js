@@ -868,4 +868,31 @@ describe('ConversationCard', () => {
       expect.objectContaining({ id: 707, channel_type: 'Channel::Instagram' })
     );
   });
+
+  it('renders the waiting-for-callback badge and forwards waitingForCallback to VoiceCallStatus when waiting_for_callback is set', () => {
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        custom_attributes: {
+          waiting_for_callback: true,
+        },
+        additional_attributes: {
+          call_status: 'missed',
+          call_direction: 'inbound',
+        },
+      },
+    });
+
+    const badge = wrapper.find(
+      '[data-test-id="conversation-waiting-for-callback-badge"]'
+    );
+    expect(badge.exists()).toBe(true);
+    expect(badge.text()).toContain(
+      'CONVERSATION.VOICE_CALL.WAITING_FOR_CALLBACK_BADGE'
+    );
+
+    const voiceCallStatus = wrapper.findComponent({ name: 'VoiceCallStatus' });
+    expect(voiceCallStatus.exists()).toBe(true);
+    expect(voiceCallStatus.props('waitingForCallback')).toBe(true);
+  });
 });

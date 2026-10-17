@@ -10,7 +10,8 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     include_labels: true,
     include_crm_deal_context: true,
     include_scheduling_appointment_context: true,
-    include_unread: true
+    include_unread: true,
+    include_waiting_for_callback: true
   }.freeze
   SORT_OPTIONS = {
     'last_activity_at_asc' => %w[sort_on_last_message_at asc],
@@ -90,6 +91,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     filter_by_crm_deal_context
     filter_by_scheduling_appointment_context
     filter_by_unread
+    filter_by_waiting_for_callback
     filter_by_query
     filter_by_source_id
   end
@@ -205,6 +207,10 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     @conversations = apply_unread_filter(@conversations)
   end
 
+  def filter_by_waiting_for_callback
+    @conversations = apply_waiting_for_callback_filter(@conversations)
+  end
+
   def filter_by_source_id
     return unless params[:source_id]
 
@@ -276,6 +282,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
       [:include_scheduling_appointment_context, method(:apply_scheduling_appointment_context_filter)],
       [:include_source_id, method(:apply_source_id_filter)],
       [:include_unread, method(:apply_unread_filter)],
+      [:include_waiting_for_callback, method(:apply_waiting_for_callback_filter)],
       [:include_assignee, method(:apply_assignee_filter)]
     ].reduce(base_count_scope) do |scope, (filter_key, filter_method)|
       filters.fetch(filter_key, true) ? filter_method.call(scope) : scope
@@ -352,6 +359,12 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     scope.where(id: unread_conversation_scope(scope).reselect('conversations.id'))
   end
 
+  def apply_waiting_for_callback_filter(scope)
+    return scope unless waiting_for_callback_only?
+
+    scope.where("COALESCE(conversations.additional_attributes ->> 'waiting_for_callback', conversations.custom_attributes ->> 'waiting_for_callback') = 'true'")
+  end
+
   def apply_source_id_filter(scope)
     return scope unless params[:source_id]
 
@@ -394,6 +407,12 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
   def unread_only?
     ActiveModel::Type::Boolean.new.cast(
       params[:unread].presence || params[:unread_only].presence || params[:unreadOnly].presence
+    )
+  end
+
+  def waiting_for_callback_only?
+    ActiveModel::Type::Boolean.new.cast(
+      params[:waiting_for_callback].presence || params[:waitingForCallback].presence
     )
   end
 

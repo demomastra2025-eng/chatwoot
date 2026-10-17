@@ -5,6 +5,7 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
     environment source notes pbx_platform outbound_dial_format outboundDialFormat dial_format dialFormat
     carrier_kind trunk_username trunk_password trunk_domain trunk_host trunk_port
     max_channels reserved_inbound_channels ring_strategy group_extension
+    detected_channel_limit wazo_detected_channel_limit last_channel_probe_at detection_source
     inbound_route_verified outbound_route_verified event_ingress_verified recording_verified
     wazo_verified_configuration_fingerprint
   ].freeze
@@ -88,6 +89,15 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
     render_payload(provisioning_service.reconcile(inbox_id: params.require(:id), include_diagnostics: include_diagnostics?))
   end
 
+  def probe_channel_capacity
+    render_payload(
+      provisioning_service.probe_channel_capacity(
+        inbox_id: params.require(:id),
+        max_probe_channels: params[:max_probe_channels]
+      )
+    )
+  end
+
   def provisioning_runs
     render_payload(provisioning_service.provisioning_runs(inbox_id: params.require(:id)))
   end
@@ -120,7 +130,50 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
       :tel_url,
       :expected_configuration_version,
       connection: %i[host port transport sip_domain outbound_proxy codec username password send_register carrier_kind trunk_username trunk_password trunk_domain trunk_host trunk_port max_channels reserved_inbound_channels ring_strategy group_extension],
-      routing: %i[mode fallback_mode ai_enabled operator_agent_aor operator_distribution_mode],
+      routing: [
+        :mode,
+        :fallback_mode,
+        :ai_enabled,
+        :operator_agent_aor,
+        :operator_distribution_mode,
+        :max_call_duration_seconds,
+        :routing_authority,
+        {
+          call_routing: [
+            :show_extended_call_card,
+            {
+              inbound: [
+                :routing_authority,
+                :schedule_mode,
+                :off_hours_action,
+                :off_hours_forward_number,
+                :ring_timeout_seconds,
+                :skip_busy_operators,
+                :ringtone,
+                :fallback_action,
+                :fallback_forward_number,
+                { groups: [:id, :name, :strategy, :ring_seconds, { user_ids: [] }] },
+                {
+                  whatsapp_followup: [
+                    :enabled,
+                    :inbox_id,
+                    :template_name,
+                    :template_language,
+                    :custom_message,
+                    :cooldown_minutes
+                  ]
+                }
+              ],
+              outbound: [
+                :default_country,
+                :access_mode,
+                :caller_id_number,
+                { allowed_user_ids: [] }
+              ]
+            }
+          ]
+        }
+      ],
       metadata: VIRTUAL_PBX_METADATA_KEYS,
       profiles: %i[id user_id profile_kind internal_extension sip_username sip_password enabled availability_mode]
     ).to_h

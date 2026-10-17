@@ -321,6 +321,16 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     return unless channel.provider.in?(Channel::Voice::PROVIDER_OWNED_SIP_PROVIDERS)
 
     Telephony::NumberBinding.sync_from_voice_channel!(channel.reload)
+    enqueue_beeline_sync_if_configured!(channel)
+  end
+
+  def enqueue_beeline_sync_if_configured!(channel)
+    return unless channel.provider == 'beeline'
+    return if channel.provider_config_hash['beeline_api_token'].to_s.strip.blank?
+
+    Telephony::BeelineCallHistorySyncJob.perform_later(channel_id: channel.id, subscribe_webhook: true)
+  rescue StandardError => e
+    Rails.logger.warn("[BEELINE] Failed to enqueue BeelineCallHistorySyncJob for channel=#{channel.id}: #{e.class}: #{e.message}")
   end
 
   def sync_voice_captain_inbox!(channel)
@@ -529,6 +539,19 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     if incoming_provider_config['binotel_events_webhook_token'].present?
       incoming_provider_config.delete('binotel_webhook_token')
       provider_config.delete('binotel_webhook_token')
+    end
+    incoming_provider_config.delete('beeline_api_token_configured')
+    provider_config.delete('beeline_api_token_configured')
+    if incoming_provider_config.key?('beeline_api_token') && incoming_provider_config['beeline_api_token'].to_s.strip.blank?
+      incoming_provider_config.delete('beeline_api_token')
+    end
+    if incoming_provider_config['beeline_events_webhook_token'].present?
+      incoming_provider_config.delete('beeline_webhook_token')
+      provider_config.delete('beeline_webhook_token')
+    elsif @inbox.channel.provider == 'beeline' &&
+          provider_config['beeline_events_webhook_token'].to_s.strip.blank? &&
+          provider_config['beeline_webhook_token'].to_s.strip.blank?
+      incoming_provider_config['beeline_events_webhook_token'] = SecureRandom.hex(24)
     end
     attrs[:provider_config] = provider_config.deep_merge(incoming_provider_config)
     attrs

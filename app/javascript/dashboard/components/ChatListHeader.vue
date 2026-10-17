@@ -16,6 +16,7 @@ const props = defineProps({
   hasActiveFolders: { type: Boolean, required: true },
   isOnExpandedLayout: { type: Boolean, required: true },
   activeUnreadOnly: { type: Boolean, default: false },
+  activeWaitingForCallbackOnly: { type: Boolean, default: false },
   activeStatus: { type: String, default: wootConstants.STATUS_TYPE.OPEN },
   showStatusFilter: { type: Boolean, default: false },
   showAiStatus: { type: Boolean, default: false },
@@ -28,6 +29,7 @@ const emit = defineEmits([
   'basicFilterChange',
   'filtersModal',
   'unreadFilterToggle',
+  'waitingForCallbackFilterToggle',
   'statusFilterChange',
 ]);
 
@@ -51,6 +53,12 @@ const unreadFilterTooltip = computed(() =>
   props.activeUnreadOnly
     ? t('CONVERSATION.UNREAD_FILTER.SHOW_ALL')
     : t('CONVERSATION.UNREAD_FILTER.SHOW_UNREAD')
+);
+
+const waitingForCallbackFilterTooltip = computed(() =>
+  props.activeWaitingForCallbackOnly
+    ? t('CONVERSATION.VOICE_CALL.WAITING_FOR_CALLBACK_FILTER.SHOW_ALL')
+    : t('CONVERSATION.VOICE_CALL.WAITING_FOR_CALLBACK_FILTER.SHOW_WAITING')
 );
 
 const toggleConversationLayout = () => {
@@ -94,6 +102,17 @@ const toggleConversationLayout = () => {
       <slot />
     </div>
     <div class="flex shrink-0 items-center gap-1">
+      <NextButton
+        data-testid="waiting-for-callback-filter-button"
+        v-tooltip.top-end="waitingForCallbackFilterTooltip"
+        :aria-label="waitingForCallbackFilterTooltip"
+        :aria-pressed="activeWaitingForCallbackOnly"
+        icon="i-lucide-phone-missed"
+        variant="faded"
+        :color="activeWaitingForCallbackOnly ? 'ruby' : 'slate'"
+        xs
+        @click="emit('waitingForCallbackFilterToggle')"
+      />
       <NextButton
         v-tooltip.top-end="unreadFilterTooltip"
         :aria-label="unreadFilterTooltip"

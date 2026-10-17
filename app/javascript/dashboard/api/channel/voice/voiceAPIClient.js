@@ -266,6 +266,15 @@ class VoiceAPI extends ApiClient {
       .then(r => r.data);
   }
 
+  probeVirtualPbxChannelCapacity(inboxId, { maxProbeChannels } = {}) {
+    return axios
+      .post(
+        `${this.baseUrl()}/telephony/virtual_pbx_channels/${inboxId}/probe_channel_capacity`,
+        maxProbeChannels ? { max_probe_channels: maxProbeChannels } : {}
+      )
+      .then(r => r.data);
+  }
+
   getVirtualPbxProvisioningRuns(inboxId) {
     return axios
       .get(

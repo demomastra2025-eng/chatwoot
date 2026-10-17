@@ -55,6 +55,74 @@ RSpec.describe Telephony::Wazo::ChannelCapacityService do
 
     expect(detected).to eq(5)
     expect(connection.reload.metadata['wazo_detected_channel_limit']).to eq(5)
+    expect(connection.metadata['detected_channel_limit']).to eq(5)
+    expect(connection.metadata['detection_source']).to eq('runtime_congestion')
     expect(connection.metadata['wazo_last_channel_limit_reason']).to eq('SIP 486 Busy Here')
   end
+
+  it 'runs a stepped non-answered loopback ring probe (0 KZT billed) and persists detected_channel_limit and ai_max_concurrent_calls' do
+    cancelled_legs = []
+    probe_runner = lambda do |step:, leg_id:, cancel_before_answer:|
+      expect(cancel_before_answer).to be(true)
+      if step <= 3
+        {
+          accepted: true,
+          ringing: true,
+          answered: false,
+          cancel: -> { cancelled_legs << leg_id }
+        }
+      else
+        {
+          accepted: false,
+          answered: false,
+          reason_code: 'SIP 486 Busy Here'
+        }
+      end
+    end
+
+    result = described_class.probe_capacity!(
+      connection: connection,
+      max_probe_channels: 6,
+      probe_runner: probe_runner
+    )
+
+    expect(result).to include(
+      detected_channel_limit: 3,
+      ai_max_concurrent_calls: 3,
+      answered: false,
+      billed_amount_kzt: 0,
+      detection_source: 'active_probe',
+      rejection_reason: 'SIP 486 Busy Here'
+    )
+    expect(cancelled_legs.size).to eq(3)
+    expect(connection.reload.metadata).to include(
+      'detected_channel_limit' => 3,
+      'wazo_detected_channel_limit' => 3,
+      'max_channels' => 3,
+      'detection_source' => 'active_probe'
+    )
+    expect(connection.metadata['last_channel_probe_at']).to be_present
+  end
+
+  it 'falls back to the carrier preset default channel ceiling during loopback simulation when max_channels is not yet configured' do
+    unconfigured_conn = create(
+      :telephony_provider_connection,
+      account: account,
+      provider_kind: 'wazo',
+      status: 'active',
+      metadata: { 'carrier_kind' => 'kazakhtelecom' }
+    )
+
+    result = described_class.probe_capacity!(
+      connection: unconfigured_conn,
+      max_probe_channels: 10
+    )
+
+    expect(result[:detected_channel_limit]).to eq(5)
+    expect(result[:accepted_channels]).to eq(5)
+    expect(result[:cancelled_legs]).to eq(5)
+    expect(result[:answered]).to be(false)
+    expect(result[:billed_amount_kzt]).to eq(0)
+  end
 end
+

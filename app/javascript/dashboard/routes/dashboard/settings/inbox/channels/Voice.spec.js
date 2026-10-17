@@ -673,4 +673,85 @@ describe('Voice channel setup', () => {
       },
     });
   });
+
+  it('passes brand SVG badges to Kazakhstan carrier cards and Other SIP Provider card', () => {
+    routeMock.query = {};
+    const wrapper = buildWrapper();
+    const cards = wrapper.findAllComponents({ name: 'ChannelSelector' });
+    const imageUrlByTitle = new Map(
+      cards.map(card => [card.props('title'), card.props('imageUrl')])
+    );
+
+    expect(imageUrlByTitle.get('INBOX_MGMT.ADD.VOICE.PROVIDERS.ALTEL')).toBe(
+      '/integrations/channels/badges/altel.svg'
+    );
+    expect(imageUrlByTitle.get('INBOX_MGMT.ADD.VOICE.PROVIDERS.TELE2')).toBe(
+      '/integrations/channels/badges/tele2.svg'
+    );
+    expect(
+      imageUrlByTitle.get('INBOX_MGMT.ADD.VOICE.PROVIDERS.KAZAKHTELECOM')
+    ).toBe('/integrations/channels/badges/kazakhtelecom.svg');
+    expect(imageUrlByTitle.get('INBOX_MGMT.ADD.VOICE.PROVIDERS.KCELL')).toBe(
+      '/integrations/channels/badges/kcell.svg'
+    );
+    expect(imageUrlByTitle.get('INBOX_MGMT.ADD.VOICE.PROVIDERS.WAZO')).toBe(
+      '/integrations/channels/badges/custom-sip.svg'
+    );
+  });
+
+  it('pre-fills and locks PBX SIP server, carrier kind, trunk domain, and trunk host for preset operator cards', async () => {
+    routeMock.query = { provider: 'altel' };
+    const wrapper = buildWrapper();
+
+    expect(wrapper.vm.kazakhstanState.connectionHost).toBe('188.241.217.162');
+    expect(wrapper.vm.kazakhstanState.carrierKind).toBe('altel');
+    expect(wrapper.vm.kazakhstanState.trunkDomain).toBe('astpbx.tele2.kz');
+    expect(wrapper.vm.kazakhstanState.trunkHost).toBe('91.185.24.71');
+
+    expect(wrapper.vm.isWazoProvider).toBe(true);
+    expect(wrapper.vm.isCarrierLocked).toBe(true);
+    expect(wrapper.vm.isKnownCarrierPreset).toBe(true);
+    expect(
+      wrapper
+        .find('[data-testid="voice-carrier-kind-select"]')
+        .attributes('disabled')
+    ).toBe('true');
+    expect(
+      wrapper.find('[data-testid="voice-connection-host-input"]').exists()
+    ).toBe(true);
+    expect(
+      wrapper.find('[data-testid="voice-trunk-domain-input"]').exists()
+    ).toBe(true);
+    expect(
+      wrapper.find('[data-testid="voice-trunk-host-input"]').exists()
+    ).toBe(true);
+  });
+
+  it('allows manual trunk domain and host editing only when Custom SIP Carrier is selected on Other SIP Provider', async () => {
+    routeMock.query = { provider: 'wazo' };
+    const wrapper = buildWrapper();
+
+    expect(wrapper.vm.kazakhstanState.connectionHost).toBe('188.241.217.162');
+    expect(wrapper.vm.isWazoProvider).toBe(true);
+    expect(wrapper.vm.isCarrierLocked).toBe(false);
+    expect(
+      wrapper
+        .find('[data-testid="voice-carrier-kind-select"]')
+        .attributes('disabled')
+    ).toBe('false');
+
+    wrapper.vm.kazakhstanState.carrierKind = 'altel';
+    wrapper.vm.onCarrierKindChange();
+    await flushPromises();
+
+    expect(wrapper.vm.isKnownCarrierPreset).toBe(true);
+    expect(wrapper.vm.kazakhstanState.trunkDomain).toBe('astpbx.tele2.kz');
+    expect(wrapper.vm.kazakhstanState.trunkHost).toBe('91.185.24.71');
+
+    wrapper.vm.kazakhstanState.carrierKind = 'custom';
+    wrapper.vm.onCarrierKindChange();
+    await flushPromises();
+
+    expect(wrapper.vm.isKnownCarrierPreset).toBe(false);
+  });
 });

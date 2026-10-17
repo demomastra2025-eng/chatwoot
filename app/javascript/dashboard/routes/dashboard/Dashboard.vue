@@ -57,6 +57,11 @@ export default {
     const phoneWidgetStore = usePhoneWidgetStore();
     const whatsappCallsStore = useWhatsappCallsStore();
 
+    const hasWhatsappCall = computed(
+      () =>
+        whatsappCallsStore.hasActiveCall || whatsappCallsStore.hasIncomingCall
+    );
+
     return {
       uiSettings,
       updateUISettings,
@@ -70,13 +75,13 @@ export default {
       windowWidth,
       hasActiveCall: computed(() => callsStore.hasActiveCall),
       hasIncomingCall: computed(() => callsStore.hasIncomingCall),
-      // Employees with a browser SIP line see their calls inside the phone
-      // widget; standalone call cards are only for everyone else.
-      showStandaloneCallCards: computed(() => !phoneWidgetStore.available),
-      hasWhatsappCall: computed(
-        () =>
-          whatsappCallsStore.hasActiveCall || whatsappCallsStore.hasIncomingCall
+      // Employees with a browser SIP line or an active/incoming WhatsApp call
+      // see their calls inside the unified phone widget; standalone call cards
+      // are only for everyone else.
+      showStandaloneCallCards: computed(
+        () => !phoneWidgetStore.available && !hasWhatsappCall.value
       ),
+      hasWhatsappCall,
     };
   },
   data() {
@@ -274,7 +279,6 @@ export default {
         />
         <FloatingCallWidget v-if="showStandaloneCallCards" />
         <PhoneWidget />
-        <WhatsappCallWidget v-if="hasWhatsappCall" />
       </template>
       <AddAccountModal
         :show="showCreateAccountModal"

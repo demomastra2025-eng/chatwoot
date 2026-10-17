@@ -156,6 +156,8 @@ if resource.whatsapp_web?
   json.additional_attributes do
     json.evolution resource.channel.try(:evolution_state_payload, include_qr_code: include_whatsapp_web_qr_code)
   end
+  wa_web_call_routing = resource.channel.try(:provider_config)&.to_h&.[]('call_routing')
+  json.call_routing wa_web_call_routing if wa_web_call_routing.present?
   json.provider_config resource.channel.try(:provider_config) if Current.account_user&.administrator?
 end
 
@@ -206,6 +208,8 @@ if resource.whatsapp? && !channel_missing
     end
     json.provider_config provider_config
   end
+  wa_call_routing = resource.channel.try(:provider_config)&.to_h&.[]('call_routing')
+  json.call_routing wa_call_routing if wa_call_routing.present?
   json.reauthorization_required resource.channel.try(:reauthorization_required?)
   json.calling_enabled resource.channel.try(:calling_enabled?) || false
   json.media_server_enabled defined?(Call) ? Call.media_server_enabled?(inbox: resource) : false
@@ -220,5 +224,14 @@ if resource.channel_type == 'Channel::Voice' && !channel_missing
 
   if resource.respond_to?(:telephony_number_binding) && resource.telephony_number_binding.present?
     json.telephony resource.telephony_number_binding.to_telephony_h
+  end
+  voice_call_routing = (resource.respond_to?(:telephony_number_binding) && resource.telephony_number_binding&.routing_policy&.settings&.to_h&.[]('call_routing')) ||
+                       resource.channel.try(:provider_config)&.to_h&.[]('call_routing')
+  json.call_routing voice_call_routing if voice_call_routing.present?
+  if Current.account_user&.administrator? && resource.channel.provider.in?(Channel::Voice::PROVIDER_OWNED_SIP_PROVIDERS)
+    raw_voice_config = resource.channel.try(:provider_config)&.to_h&.deep_stringify_keys || {}
+    sanitized_voice_config = raw_voice_config.except('beeline_api_token')
+    sanitized_voice_config['beeline_api_token_configured'] = true if raw_voice_config['beeline_api_token'].present?
+    json.provider_config sanitized_voice_config
   end
 end

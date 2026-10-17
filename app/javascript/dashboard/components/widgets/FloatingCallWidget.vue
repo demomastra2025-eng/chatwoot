@@ -916,6 +916,178 @@ const submitCallTransfer = async call => {
   }
 };
 
+const CALL_CARD_EXPANDED_STORAGE_KEY = 'chatwoot_call_card_expanded';
+const readInitialCallCardExpanded = () => {
+  try {
+    const raw = window.localStorage?.getItem(CALL_CARD_EXPANDED_STORAGE_KEY);
+    if (raw === 'false') return false;
+    if (raw === 'true') return true;
+  } catch {
+    // Ignore storage read errors
+  }
+  return null;
+};
+
+const callCardExpandedOverride = ref(readInitialCallCardExpanded());
+
+const isCallCardExpandedFor = call => {
+  if (callCardExpandedOverride.value !== null) {
+    return callCardExpandedOverride.value;
+  }
+  const { inbox } = getCallInfo(call);
+  const channelDefault =
+    inbox?.call_routing?.show_extended_call_card ??
+    inbox?.provider_config?.call_routing?.show_extended_call_card ??
+    inbox?.telephony?.routing_policy?.settings?.call_routing
+      ?.show_extended_call_card ??
+    inbox?.additional_attributes?.call_routing?.show_extended_call_card ??
+    inbox?.additional_attributes?.show_extended_call_card;
+  if (typeof channelDefault === 'boolean') {
+    return channelDefault;
+  }
+  return true;
+};
+
+const toggleCallCardExpanded = call => {
+  const nextValue = !isCallCardExpandedFor(call);
+  callCardExpandedOverride.value = nextValue;
+  try {
+    window.localStorage?.setItem(
+      CALL_CARD_EXPANDED_STORAGE_KEY,
+      String(nextValue)
+    );
+  } catch {
+    // Ignore storage write errors
+  }
+};
+
+const getCallClientContext = call => {
+  if (!isCallCardExpandedFor(call)) {
+    return null;
+  }
+
+  const { conversation } = getCallInfo(call);
+  const contactId = getCallContactId(call, conversation);
+  const storeContact =
+    (contactId && store.getters['contacts/getContact']?.(contactId)) || {};
+  const sender = conversation?.meta?.sender || {};
+  const caller = call?.caller || {};
+
+  const company = firstPresent([
+    storeContact?.additional_attributes?.company_name,
+    storeContact?.additionalAttributes?.companyName,
+    storeContact?.custom_attributes?.company,
+    storeContact?.custom_attributes?.company_name,
+    sender?.additional_attributes?.company_name,
+    sender?.custom_attributes?.company,
+    caller?.company_name,
+    conversation?.additional_attributes?.company_name,
+    conversation?.custom_attributes?.company,
+  ]);
+
+  const assigneeName = firstPresent([
+    conversation?.meta?.assignee?.name,
+    conversation?.assignee?.name,
+  ]);
+
+  const dealStages = Array.isArray(conversation?.crm_deal_stages)
+    ? conversation.crm_deal_stages
+        .map(stage => stage?.name || stage?.title)
+        .filter(Boolean)
+    : [];
+  const customDealTitle = firstPresent([
+    conversation?.custom_attributes?.deal_name,
+    conversation?.custom_attributes?.deal_title,
+    conversation?.custom_attributes?.deal_stage,
+    conversation?.custom_attributes?.subject,
+    conversation?.additional_attributes?.deal_title,
+  ]);
+  const dealSummary = [customDealTitle, ...dealStages]
+    .filter(Boolean)
+    .join(' · ');
+
+  const scheduledEvent = firstPresent([
+    conversation?.custom_attributes?.next_event,
+    conversation?.custom_attributes?.scheduled_event,
+    conversation?.additional_attributes?.next_event,
+    storeContact?.custom_attributes?.next_event,
+  ]);
+
+  const labels = Array.isArray(conversation?.labels)
+    ? conversation.labels.filter(Boolean).slice(0, 4)
+    : [];
+
+  const privateMessages = Array.isArray(conversation?.messages)
+    ? conversation.messages.filter(msg => msg?.private && msg?.content)
+    : [];
+  const latestPrivateMessage = privateMessages[privateMessages.length - 1];
+  const latestNote = firstPresent([
+    latestPrivateMessage?.content,
+    conversation?.custom_attributes?.call_note,
+    storeContact?.custom_attributes?.notes,
+  ]);
+
+  const hasAnyDetail = Boolean(
+    company ||
+      assigneeName ||
+      dealSummary ||
+      scheduledEvent ||
+      labels.length ||
+      latestNote
+  );
+
+  return {
+    company,
+    assigneeName,
+    dealSummary,
+    scheduledEvent,
+    labels,
+    latestNote,
+    hasAnyDetail,
+  };
+};
+
+const quickNoteOpenCallSid = ref('');
+const quickNoteDraft = ref('');
+const isSavingQuickNote = ref(false);
+
+const toggleQuickNote = call => {
+  const sid = callSidFor(call);
+  if (quickNoteOpenCallSid.value === sid) {
+    quickNoteOpenCallSid.value = '';
+    return;
+  }
+  quickNoteOpenCallSid.value = sid;
+  quickNoteDraft.value = '';
+};
+
+const submitQuickNote = async call => {
+  const content = quickNoteDraft.value.trim();
+  const accountId = router.currentRoute.value.params?.accountId;
+  const conversationId = call?.conversationId;
+  if (!content || !accountId || !conversationId || isSavingQuickNote.value) {
+    return;
+  }
+
+  isSavingQuickNote.value = true;
+  try {
+    await window.axios.post(
+      `/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
+      {
+        content,
+        private: true,
+      }
+    );
+    quickNoteDraft.value = '';
+    quickNoteOpenCallSid.value = '';
+    useAlert('Заметка сохранена в карточке обращения');
+  } catch {
+    useAlert('Не удалось сохранить заметку');
+  } finally {
+    isSavingQuickNote.value = false;
+  }
+};
+
 onUnmounted(stopElapsedTimer);
 </script>
 
@@ -1015,9 +1187,116 @@ onUnmounted(stopElapsedTimer);
               </p>
             </div>
 
-            <p class="mt-0.5 text-xs text-n-slate-11 truncate mb-0">
-              {{ getCallSecondaryText(call) }}
-            </p>
+            <div class="flex items-center justify-between gap-1 mt-0.5">
+              <p class="text-xs text-n-slate-11 truncate mb-0">
+                {{ getCallSecondaryText(call) }}
+              </p>
+              <button
+                type="button"
+                class="shrink-0 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-medium text-n-slate-11 hover:bg-n-alpha-2 hover:text-n-slate-12 transition-colors"
+                :title="
+                  isCallCardExpandedFor(call)
+                    ? 'Переключить в компактный вид'
+                    : 'Переключить в подробный вид'
+                "
+                data-testid="floating-call-context-toggle"
+                @click="toggleCallCardExpanded(call)"
+              >
+                <span>
+                  {{
+                    isCallCardExpandedFor(call)
+                      ? 'Компактный вид'
+                      : 'Подробный вид'
+                  }}
+                </span>
+                <i
+                  class="text-xs"
+                  :class="
+                    isCallCardExpandedFor(call)
+                      ? 'i-lucide-chevron-up'
+                      : 'i-lucide-chevron-down'
+                  "
+                />
+              </button>
+            </div>
+
+            <div
+              v-if="
+                isCallCardExpandedFor(call) &&
+                getCallClientContext(call)?.hasAnyDetail
+              "
+              class="mt-1.5 rounded-md bg-n-alpha-1 px-2 py-1.5 text-xs flex flex-col gap-1 border border-n-weak"
+              data-testid="floating-call-client-context"
+            >
+              <div
+                v-if="getCallClientContext(call).company"
+                class="flex items-center gap-1.5 min-w-0"
+                data-testid="floating-call-context-company"
+              >
+                <span class="text-n-slate-11 shrink-0">Компания:</span>
+                <span class="font-medium text-n-slate-12 truncate">
+                  {{ getCallClientContext(call).company }}
+                </span>
+              </div>
+              <div
+                v-if="getCallClientContext(call).assigneeName"
+                class="flex items-center gap-1.5 min-w-0"
+                data-testid="floating-call-context-manager"
+              >
+                <span class="text-n-slate-11 shrink-0">
+                  Ответственный менеджер:
+                </span>
+                <span class="font-medium text-n-slate-12 truncate">
+                  {{ getCallClientContext(call).assigneeName }}
+                </span>
+              </div>
+              <div
+                v-if="getCallClientContext(call).dealSummary"
+                class="flex items-center gap-1.5 min-w-0"
+                data-testid="floating-call-context-deal"
+              >
+                <span class="text-n-slate-11 shrink-0">
+                  Текущее обращение / Сделка:
+                </span>
+                <span class="font-medium text-n-slate-12 truncate">
+                  {{ getCallClientContext(call).dealSummary }}
+                </span>
+              </div>
+              <div
+                v-if="getCallClientContext(call).scheduledEvent"
+                class="flex items-center gap-1.5 min-w-0"
+                data-testid="floating-call-context-event"
+              >
+                <span class="text-n-slate-11 shrink-0">
+                  Запланированное событие:
+                </span>
+                <span class="font-medium text-n-slate-12 truncate">
+                  {{ getCallClientContext(call).scheduledEvent }}
+                </span>
+              </div>
+              <div
+                v-if="getCallClientContext(call).labels.length"
+                class="flex flex-wrap items-center gap-1"
+                data-testid="floating-call-context-labels"
+              >
+                <span
+                  v-for="label in getCallClientContext(call).labels"
+                  :key="label"
+                  class="inline-flex items-center rounded bg-n-alpha-2 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-12"
+                >
+                  #{{ label }}
+                </span>
+              </div>
+              <div
+                v-if="getCallClientContext(call).latestNote"
+                class="text-[11px] text-n-slate-11 truncate"
+                data-testid="floating-call-context-note"
+              >
+                <span class="font-medium text-n-slate-12">Заметка:</span>
+                {{ getCallClientContext(call).latestNote }}
+              </div>
+            </div>
+
             <p
               v-if="callMicrophoneOff(call)"
               class="mt-1 mb-0 inline-flex items-center gap-1 rounded-md bg-n-ruby-9 px-1.5 py-0.5 text-xs font-medium text-white"
@@ -1109,12 +1388,28 @@ onUnmounted(stopElapsedTimer);
                     ? 'bg-n-brand text-white shadow-sm'
                     : 'bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-1'
                 "
-                :title="$t('CONVERSATION.VOICE_WIDGET.TRANSFER_CALL')"
-                :aria-label="$t('CONVERSATION.VOICE_WIDGET.TRANSFER_CALL')"
+                title="Перевести звонок"
+                aria-label="Перевести звонок"
                 data-testid="floating-call-transfer"
                 @click="toggleTransferPanel(call)"
               >
                 <i class="text-base i-lucide-phone-forwarded" />
+              </button>
+              <button
+                v-if="call.conversationId"
+                type="button"
+                class="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors"
+                :class="
+                  quickNoteOpenCallSid === callSidFor(call)
+                    ? 'bg-n-brand text-white shadow-sm'
+                    : 'bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-1'
+                "
+                title="Быстрая заметка по звонку"
+                aria-label="Быстрая заметка по звонку"
+                data-testid="floating-call-quick-note-toggle"
+                @click="toggleQuickNote(call)"
+              >
+                <i class="text-base i-lucide-sticky-note" />
               </button>
               <button
                 type="button"
@@ -1128,7 +1423,34 @@ onUnmounted(stopElapsedTimer);
             </div>
             <div
               v-if="
-                transferPanelOpen && callIsActive(call) && !isWhatsappCall(call)
+                quickNoteOpenCallSid === callSidFor(call) && call.conversationId
+              "
+              class="mt-2 flex items-center gap-1.5 rounded-md bg-n-alpha-1 p-1.5"
+              data-testid="floating-call-quick-note-panel"
+            >
+              <input
+                v-model="quickNoteDraft"
+                type="text"
+                placeholder="Быстрая заметка по звонку..."
+                class="min-w-0 flex-1 rounded border border-n-weak bg-n-solid-1 px-2 py-1 text-xs text-n-slate-12"
+                data-testid="floating-call-quick-note-input"
+                @keyup.enter="submitQuickNote(call)"
+              />
+              <button
+                type="button"
+                class="shrink-0 rounded bg-n-brand px-2.5 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+                :disabled="!quickNoteDraft.trim() || isSavingQuickNote"
+                data-testid="floating-call-quick-note-submit"
+                @click="submitQuickNote(call)"
+              >
+                Сохранить
+              </button>
+            </div>
+            <div
+              v-if="
+                transferPanelOpen &&
+                callIsActive(call) &&
+                !isWhatsappCall(call)
               "
               class="mt-2 flex items-center gap-1.5 rounded-md bg-n-alpha-1 p-1.5"
               data-testid="floating-call-transfer-panel"
@@ -1146,17 +1468,13 @@ onUnmounted(stopElapsedTimer);
                 >
                   {{ target.name }} ({{ target.internal_extension }})
                 </option>
-                <option value="2001">
-                  {{ $t('CONVERSATION.VOICE_WIDGET.RING_GROUP_DEFAULT') }}
-                </option>
+                <option value="2001">Общая группа (2001)</option>
               </select>
               <input
                 v-else
                 v-model="transferExtension"
                 type="text"
-                :placeholder="
-                  $t('CONVERSATION.VOICE_WIDGET.TRANSFER_EXTENSION_PLACEHOLDER')
-                "
+                placeholder="Внутр. номер (напр. 1002 / 2001)"
                 class="min-w-0 flex-1 rounded border border-n-weak bg-n-solid-1 px-2 py-1 text-xs text-n-slate-12"
                 data-testid="floating-call-transfer-input"
               />
@@ -1167,7 +1485,7 @@ onUnmounted(stopElapsedTimer);
                 data-testid="floating-call-transfer-submit"
                 @click="submitCallTransfer(call)"
               >
-                {{ $t('CONVERSATION.VOICE_WIDGET.TRANSFER_SUBMIT') }}
+                Перевести
               </button>
             </div>
           </div>

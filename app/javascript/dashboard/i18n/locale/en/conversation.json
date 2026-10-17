@@ -99,6 +99,12 @@
       "CALL_IN_PROGRESS": "Call in progress",
       "NO_ANSWER": "No answer",
       "MISSED_CALL": "Missed call",
+      "MISSED_CALL_WAITING_CALLBACK": "Missed call — waiting for callback",
+      "WAITING_FOR_CALLBACK_BADGE": "Waiting for callback",
+      "WAITING_FOR_CALLBACK_FILTER": {
+        "SHOW_WAITING": "Show missed calls waiting for callback",
+        "SHOW_ALL": "Show all chats"
+      },
       "VOICEMAIL": "Voicemail",
       "CALL_ENDED": "Call ended",
       "NOT_ANSWERED_YET": "Not answered yet",

@@ -10,6 +10,7 @@ import Icon from 'dashboard/components-next/icon/Icon.vue';
 const props = defineProps({
   status: { type: String, default: '' },
   direction: { type: String, default: '' },
+  waitingForCallback: { type: Boolean, default: false },
   messagePreviewClass: { type: [String, Array, Object], default: '' },
 });
 
@@ -92,8 +93,11 @@ const labelText = computed(() => {
       : t('CONVERSATION.VOICE_CALL.INCOMING_CALL');
   }
   if (isFailed.value) {
-    return isOutbound.value
-      ? t('CONVERSATION.VOICE_CALL.OUTGOING_CALL')
+    if (isOutbound.value) {
+      return t('CONVERSATION.VOICE_CALL.OUTGOING_CALL');
+    }
+    return props.waitingForCallback
+      ? t('CONVERSATION.VOICE_CALL.MISSED_CALL_WAITING_CALLBACK')
       : t('CONVERSATION.VOICE_CALL.MISSED_CALL');
   }
   return isOutbound.value

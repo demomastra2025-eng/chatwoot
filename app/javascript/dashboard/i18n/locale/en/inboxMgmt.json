@@ -427,10 +427,10 @@
           "CHANGE_ACTION": "Change provider"
         },
         "PROVIDERS": {
-          "KAZAKHSTAN": "Wazo Virtual PBX",
-          "KAZAKHSTAN_DESC": "Connect Kazakhstan SIP lines through Wazo and the existing OneLink webphone.",
-          "WAZO": "Wazo Virtual PBX",
-          "WAZO_DESC": "Connect Wazo to the existing OneLink webphone. Operator SIP access is provisioned automatically.",
+          "KAZAKHSTAN": "Other SIP Provider",
+          "KAZAKHSTAN_DESC": "Connect any SIP line through OneLink PBX and the browser webphone.",
+          "WAZO": "Other SIP Provider",
+          "WAZO_DESC": "Connect any SIP line through OneLink PBX and the browser webphone. Internal SIP access is provisioned automatically.",
           "SIPUNI": "Sipuni",
           "SIPUNI_DESC": "Connect Sipuni as a separate SIP provider through the browser webphone.",
           "ASTERISK_ANALOG": "Asterisk analog",
@@ -441,14 +441,14 @@
           "BEELINE_DESC": "Connect Beeline Cloud PBX through Janus SIP and the browser webphone.",
           "TWILIO": "Twilio",
           "TWILIO_DESC": "Connect Twilio phone numbers and browser calling.",
-          "ALTEL": "Altel Business (OneLink PBX)",
-          "ALTEL_DESC": "Connect an Altel Business multi-channel SIP line via OneLink Wazo PBX and browser webphone.",
-          "TELE2": "Tele2 Business (OneLink PBX)",
-          "TELE2_DESC": "Connect a Tele2 Business SIP line via OneLink Wazo PBX and browser webphone.",
-          "KAZAKHTELECOM": "Kazakhtelecom iD Phone (OneLink PBX)",
-          "KAZAKHTELECOM_DESC": "Connect a Kazakhtelecom iD Phone multi-channel SIP trunk via OneLink Wazo PBX.",
-          "KCELL": "Kcell / Activ (OneLink PBX)",
-          "KCELL_DESC": "Connect a Kcell / Activ corporate SIP trunk via OneLink Wazo PBX."
+          "ALTEL": "Altel Business",
+          "ALTEL_DESC": "Connect an Altel Business multi-channel SIP line via OneLink PBX and browser webphone.",
+          "TELE2": "Tele2 Business",
+          "TELE2_DESC": "Connect a Tele2 Business SIP line via OneLink PBX and browser webphone.",
+          "KAZAKHTELECOM": "Kazakhtelecom (iD Phone)",
+          "KAZAKHTELECOM_DESC": "Connect a Kazakhtelecom iD Phone multi-channel SIP trunk via OneLink PBX.",
+          "KCELL": "Kcell / Activ",
+          "KCELL_DESC": "Connect a Kcell / Activ corporate SIP trunk via OneLink PBX."
         },
         "PHONE_NUMBER": {
           "LABEL": "Phone Number",
@@ -468,7 +468,7 @@
             "BINOTEL": "Binotel",
             "ASTERISK_ANALOG": "Asterisk analog",
             "BEELINE": "Beeline Cloud PBX",
-            "WAZO": "Wazo"
+            "WAZO": "OneLink PBX"
           },
           "PROVIDER_ACCOUNT_NUMBER": {
             "LABEL": "Provider account number",
@@ -595,7 +595,7 @@
           "PLAN_BUTTON": "Preview sync plan",
           "RECONCILE_BUTTON": "Check remote state",
           "PROVISION_BUTTON": "Sync with telephony",
-          "WAZO_APPLY_CONFIRM": "Apply this plan to Wazo now? This creates, updates, or removes managed Wazo resources.",
+          "WAZO_APPLY_CONFIRM": "Apply this plan to the telephony server now? This creates, updates, or removes managed telephony resources.",
           "PROVISIONING_PLAN_READY": "Provisioning plan is ready",
           "PROVISION_BLOCKED": "Remote provisioning could not be completed",
           "PROVISION_SUCCESS": "Remote provisioning has completed",
@@ -636,8 +636,8 @@
             "MANAGED_OWNERSHIP_REQUIRED": "This channel was created outside OneLink and is read-only.",
             "ACTIVE_CALLS_PRESENT": "The channel has an active call. Finish the call and try again.",
             "CONFIRMATION_REQUIRED": "Confirm the deletion.",
-            "WAZO_API_NOT_CONFIGURED": "Wazo API access is not configured on the server.",
-            "WAZO_SIP_HOST_MISMATCH": "The channel SIP server does not match the configured Wazo server.",
+            "WAZO_API_NOT_CONFIGURED": "Telephony server API access is not configured on the server.",
+            "WAZO_SIP_HOST_MISMATCH": "The channel SIP server does not match the configured telephony server.",
             "VIRTUAL_PBX_CONFIGURATION_STALE": "The channel settings were changed elsewhere. Reload the page and save again.",
             "NOT_VOICE_CHANNEL": "This inbox is not a call channel.",
             "UNSUPPORTED_PROVIDER": "This call provider cannot be managed here.",
@@ -645,7 +645,7 @@
           },
           "CARRIER_SETTINGS": {
             "TITLE": "Telecom Carrier & Lines (OneLink PBX SIP Trunk)",
-            "SUBTITLE": "Select your telecom operator, channel capacity, and carrier SIP credentials for automatic inbound/outbound trunk setup on Wazo PBX.",
+            "SUBTITLE": "Select your telecom operator, channel capacity, and carrier SIP credentials for automatic inbound/outbound trunk setup on OneLink PBX.",
             "CARRIER_KIND_LABEL": "Telecom Carrier",
             "CARRIER_KIND_PLACEHOLDER": "None selected (internal PBX operators only)",
             "CARRIERS": {
@@ -657,6 +657,12 @@
               "CUSTOM": "Custom SIP Carrier"
             },
             "MAX_CHANNELS_LABEL": "Total Concurrent Channels",
+            "PROBE_CHANNELS_BUTTON": "Check available lines",
+            "PROBE_CHANNELS_SUCCESS": "Detected {count} available lines",
+            "AI_CONCURRENCY_BADGE": "AI Voice Agent can conduct up to {count} одновременных разговоров (simultaneous calls) in parallel through a single SIP profile.",
+            "DETECTED_LIMIT_BADGE": "Auto-detected from carrier SIP responses: {count}",
+            "APPLY_DETECTED_LIMIT": "Apply",
+            "DETECTED_LIMIT_HINT": "Telecom carriers do not advertise line capacity during SIP registration, so OneLink automatically detects the actual channel limit when all lines are busy (SIP 486/503).",
             "RESERVED_INBOUND_LABEL": "Reserved Inbound-Only Channels",
             "RING_STRATEGY_LABEL": "Inbound Ring Group Strategy",
             "RING_STRATEGIES": {
@@ -673,6 +679,90 @@
             "TRUNK_DOMAIN_PLACEHOLDER": "e.g. sip.altel.kz or sip.telecom.kz",
             "TRUNK_HOST_LABEL": "Carrier SIP Host / IP",
             "TRUNK_HOST_PLACEHOLDER": "e.g. sip.altel.kz"
+          },
+          "CALL_ROUTING": {
+            "TITLE": "Visual Call Routing",
+            "SUBTITLE": "Configure inbound call distribution across operator groups, ringtones, and outbound calling rules.",
+            "INBOUND_TAB": "Inbound Line",
+            "OUTBOUND_TAB": "Outbound Line",
+            "SAVE_BUTTON": "Save call routing",
+            "ROUTING_AUTHORITY": {
+              "TITLE": "Routing Mode",
+              "EXTERNAL_PBX": "Маршрутизация на стороне внешней АТС",
+              "EXTERNAL_PBX_HINT": "External PBX decides which employees ring; OneLink accepts the call on whichever SIP profiles ring while keeping the call card, missed-call tracking, and WhatsApp auto-followup.",
+              "EXTERNAL_PBX_DESC": "External PBX decides which employees ring; OneLink accepts the call on whichever SIP profiles ring while keeping the call card, missed-call tracking, and WhatsApp auto-followup.",
+              "ONELINK": "Управлять маршрутизацией и ИИ в OneLink",
+              "ONELINK_HINT": "OneLink's constructor (schedule, operator waves/groups, busy filtering, AI voice agent, fallback) controls routing.",
+              "ONELINK_DESC": "OneLink's constructor (schedule, operator waves/groups, busy filtering, AI voice agent, fallback) controls routing.",
+              "WAZO_ONELINK_BADGE": "Direct SIP trunk on OneLink PBX: routing is 100% managed by OneLink (AI Voice Agent supports up to {count} одновременных разговоров in parallel).",
+              "WAZO_ALWAYS_ONELINK_HINT": "Direct SIP trunk on OneLink PBX: routing is 100% managed by OneLink."
+            },
+            "SCHEDULE": {
+              "TITLE": "Working Hours & Schedule",
+              "MODE_LABEL": "When to accept calls",
+              "ALWAYS": "Always (24/7)",
+              "BUSINESS_HOURS": "During inbox business hours",
+              "OFF_HOURS_ACTION_LABEL": "Outside business hours",
+              "FORWARD_NUMBER_LABEL": "Forwarding number"
+            },
+            "WAITING": {
+              "TITLE": "Waiting & Ringtone",
+              "RING_TIMEOUT_LABEL": "Total ring timeout, sec",
+              "RINGTONE_LABEL": "Ringback tone",
+              "SKIP_BUSY_LABEL": "Skip operators busy on another call"
+            },
+            "RINGTONES": {
+              "DEFAULT": "Standard ringback tone",
+              "CLASSIC": "Classic phone tone",
+              "SOFT": "Soft tone",
+              "URGENT": "Fast ring tone"
+            },
+            "GROUPS": {
+              "TITLE": "Operator Group Distribution",
+              "ADD_GROUP": "+ Add step / department",
+              "REMOVE_GROUP": "Remove step",
+              "STEP_LABEL": "Step {index}",
+              "NAME_LABEL": "Department / group name",
+              "NAME_PLACEHOLDER": "e.g. First line / Sales",
+              "STRATEGY_LABEL": "Group ring strategy",
+              "RING_SECONDS_LABEL": "Step ring duration, sec",
+              "OPERATORS_LABEL": "Operators in this group (click to toggle)"
+            },
+            "GROUP_STRATEGIES": {
+              "BROADCAST": "All available simultaneously",
+              "LEAST_RECENT": "Least recently called",
+              "ROUND_ROBIN": "Round robin"
+            },
+            "FALLBACK": {
+              "TITLE": "If No One Answers",
+              "ACTION_LABEL": "No-answer action",
+              "FORWARD_NUMBER_LABEL": "Fallback forwarding number"
+            },
+            "ACTIONS": {
+              "REJECT": "End call (log missed call)",
+              "AI": "Route to Voice AI agent",
+              "FORWARD": "Forward to external number"
+            },
+            "OUTBOUND": {
+              "ACCESS_MODE_LABEL": "Who can make outbound calls",
+              "ALL_MEMBERS": "All channel members",
+              "SELECTED_OPERATORS": "Selected operators only",
+              "CALLER_ID_LABEL": "Outbound Caller ID number",
+              "ALLOWED_OPERATORS_LABEL": "Operators allowed to place outbound calls"
+            },
+            "WHATSAPP_FOLLOWUP": {
+              "ENABLED_LABEL": "Auto-send WhatsApp message on missed call",
+              "INBOX_LABEL": "WhatsApp channel for follow-up",
+              "INBOX_PLACEHOLDER": "Select WhatsApp channel",
+              "COOLDOWN_LABEL": "Anti-spam cooldown (minutes)",
+              "TEMPLATE_LABEL": "Approved WhatsApp template (Cloud API)",
+              "TEMPLATE_PLACEHOLDER": "Select message template",
+              "CUSTOM_MESSAGE_LABEL": "Missed call message text",
+              "CUSTOM_MESSAGE_PLACEHOLDER": "Hello! We missed your call because all lines were busy. How can we help you?"
+            },
+            "CALL_CARD": {
+              "SHOW_EXTENDED_LABEL": "Expand detailed client context card on call by default (can be collapsed on the card)"
+            }
           }
         },
         "TWILIO": {
@@ -788,7 +878,21 @@
           "NUMBER_REF": "Number ref",
           "TRUNK_REF": "Trunk ref",
           "PROVIDER_CONNECTION": "Provider connection",
-          "SIP_PROFILES": "SIP profiles"
+          "SIP_PROFILES": "SIP profiles",
+          "BEELINE_WEBHOOK_TITLE": "Beeline Cloud PBX API & webhook",
+          "BEELINE_WEBHOOK_SUBTITLE": "Connect the Beeline Cloud PBX REST API token (X-MPBX-API-AUTH-TOKEN) and Xsi-Events webhook to capture missed calls even when all operators are offline.",
+          "BEELINE_WEBHOOK_EMPTY": "Enter or generate a token to build the webhook URL.",
+          "BEELINE_WEBHOOK_TOKEN": "Webhook token",
+          "BEELINE_WEBHOOK_TOKEN_PLACEHOLDER": "For example beeline-random-token",
+          "BEELINE_API_TOKEN": "Beeline Cloud PBX API token (X-MPBX-API-AUTH-TOKEN)",
+          "BEELINE_API_TOKEN_PLACEHOLDER": "Token from cloudpbx.beeline.kz portal",
+          "BEELINE_API_TOKEN_CONFIGURED_HINT": "API token is configured. Leave blank to keep the existing token.",
+          "BEELINE_WEBHOOK_GENERATE": "Generate token",
+          "BEELINE_WEBHOOK_COPY": "Copy URL",
+          "BEELINE_WEBHOOK_COPY_SUCCESS": "Beeline webhook URL copied",
+          "BEELINE_WEBHOOK_SAVE": "Save Beeline settings",
+          "BEELINE_WEBHOOK_SUCCESS": "Beeline settings have been saved",
+          "BEELINE_WEBHOOK_REQUIRED": "Webhook token or Beeline API token is required"
         },
         "SUBMIT_BUTTON": "Create Calls Channel",
         "API": {

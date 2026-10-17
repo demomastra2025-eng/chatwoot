@@ -4,21 +4,25 @@ module Telephony::CallSession::LogicalGrouping
   LOGICAL_GROUP_WINDOW = 2.minutes
 
   def logical_call_key
+    top_metadata = metadata.to_h.deep_stringify_keys
     route_metadata = logical_metadata_hash('metadata')
     last_payload = logical_metadata_hash('last_payload')
 
     logical_metadata_value(route_metadata, 'logical_call_key', 'logicalCallKey', 'call_group_key', 'callGroupKey') ||
-      logical_metadata_value(last_payload, 'logical_call_key', 'logicalCallKey', 'call_group_key', 'callGroupKey')
+      logical_metadata_value(last_payload, 'logical_call_key', 'logicalCallKey', 'call_group_key', 'callGroupKey') ||
+      logical_metadata_value(top_metadata, 'logical_call_key', 'logicalCallKey', 'call_group_key', 'callGroupKey')
   end
 
   def logical_call_group_ref
+    top_metadata = metadata.to_h.deep_stringify_keys
     route_metadata = logical_metadata_hash('metadata')
     last_payload = logical_metadata_hash('last_payload')
     nested_payload = last_payload['payload'].is_a?(Hash) ? last_payload['payload'].deep_stringify_keys : {}
 
-    logical_metadata_value(route_metadata, 'logical_call_group_ref', 'bridge_call_ref', 'bridgeCallRef') ||
-      logical_metadata_value(last_payload, 'logical_call_group_ref', 'bridge_call_ref', 'bridgeCallRef') ||
-      logical_metadata_value(nested_payload, 'logical_call_group_ref', 'bridge_call_ref', 'bridgeCallRef')
+    logical_metadata_value(route_metadata, 'logical_call_group_ref', 'logical_call_root_ref', 'bridge_call_ref', 'bridgeCallRef') ||
+      logical_metadata_value(last_payload, 'logical_call_group_ref', 'logical_call_root_ref', 'bridge_call_ref', 'bridgeCallRef') ||
+      logical_metadata_value(nested_payload, 'logical_call_group_ref', 'logical_call_root_ref', 'bridge_call_ref', 'bridgeCallRef') ||
+      logical_metadata_value(top_metadata, 'logical_call_group_ref', 'logical_call_root_ref', 'bridge_call_ref', 'bridgeCallRef')
   end
 
   def logical_history_group_ref

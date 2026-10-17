@@ -2222,4 +2222,169 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(payload).to include('operation' => 'delete', 'dry_run' => true, 'valid' => false)
     expect(payload.fetch('errors').map { |error| error['code'] }).to include('managed_ownership_required')
   end
+
+  it 'locks carrier_kind on update, defaults preset trunk domain/host, exposes detected_channel_limit, and persists call_routing' do
+    payload = valid_create_payload.deep_dup.merge(
+      provider_kind: 'wazo',
+      channel_name: 'Altel Line',
+      connection: {
+        host: '188.241.217.162',
+        port: 5060,
+        transport: 'udp',
+        carrier_kind: 'altel',
+        max_channels: 2,
+        trunk_username: 'f9bOCzgF',
+        trunk_password: 'secret123'
+      },
+      metadata: {
+        source: 'virtual_pbx_ui',
+        pbx_platform: 'wazo',
+        carrier_kind: 'altel'
+      }
+    )
+
+    post base_path, params: payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+
+    ui_config = response.parsed_body.dig('payload', 'ui_config')
+    inbox_id = ui_config.fetch('inbox_id')
+    expect(ui_config.dig('connection', 'carrier_kind')).to eq('altel')
+    expect(ui_config.dig('connection', 'trunk_domain')).to eq('astpbx.tele2.kz')
+    expect(ui_config.dig('connection', 'trunk_host')).to eq('91.185.24.71')
+
+    connection = Telephony::NumberBinding.find_by!(inbox_id: inbox_id).provider_connection
+    connection.update!(
+      metadata: connection.metadata.merge(
+        'wazo_detected_channel_limit' => 2,
+        'wazo_last_channel_limit_hit_at' => '2026-04-17T10:00:00Z'
+      )
+    )
+
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     connection: {
+                                       host: '188.241.217.162',
+                                       carrier_kind: 'tele2',
+                                       max_channels: 2
+                                     },
+                                     routing: {
+                                       mode: 'operator',
+                                       fallback_mode: 'reject',
+                                       operator_distribution_mode: 'broadcast',
+                                       max_call_duration_seconds: 1800,
+                                       call_routing: {
+                                         show_extended_call_card: false,
+                                         inbound: {
+                                           schedule_mode: 'business_hours',
+                                           off_hours_action: 'ai',
+                                           ring_timeout_seconds: 25,
+                                           skip_busy_operators: true,
+                                           ringtone: 'classic',
+                                           groups: [
+                                             {
+                                               id: 'group-1',
+                                               name: 'Sales',
+                                               strategy: 'round_robin',
+                                               ring_seconds: 20,
+                                               user_ids: [agent.id]
+                                             }
+                                           ],
+                                           fallback_action: 'reject',
+                                           whatsapp_followup: {
+                                             enabled: true,
+                                             inbox_id: 201,
+                                             template_name: 'missed_call_followup',
+                                             template_language: 'ru',
+                                             custom_message: 'Перезвоним вам',
+                                             cooldown_minutes: 45
+                                           }
+                                         },
+                                         outbound: {
+                                           access_mode: 'selected_operators',
+                                           allowed_user_ids: [agent.id],
+                                           caller_id_number: '+77085012233',
+                                           default_country: 'KZ'
+                                         }
+                                       }
+                                     }
+                                   },
+                                   headers: headers,
+                                   as: :json
+
+    expect(response).to have_http_status(:ok)
+    updated_ui_config = response.parsed_body.dig('payload', 'ui_config')
+    expect(updated_ui_config.dig('connection', 'carrier_kind')).to eq('altel')
+    expect(updated_ui_config.dig('connection', 'detected_channel_limit')).to eq(2)
+    expect(updated_ui_config.dig('connection', 'last_channel_limit_hit_at')).to eq('2026-04-17T10:00:00Z')
+    expect(updated_ui_config.dig('routing', 'call_routing', 'show_extended_call_card')).to be(false)
+    expect(updated_ui_config.dig('routing', 'call_routing', 'inbound', 'schedule_mode')).to eq('business_hours')
+    expect(updated_ui_config.dig('routing', 'call_routing', 'inbound', 'ringtone')).to eq('classic')
+    expect(updated_ui_config.dig('routing', 'call_routing', 'inbound', 'groups', 0, 'name')).to eq('Sales')
+    expect(updated_ui_config.dig('routing', 'call_routing', 'inbound', 'whatsapp_followup', 'enabled')).to be(true)
+    expect(updated_ui_config.dig('routing', 'call_routing', 'inbound', 'whatsapp_followup', 'inbox_id')).to eq(201)
+    expect(updated_ui_config.dig('routing', 'call_routing', 'inbound', 'whatsapp_followup', 'template_name')).to eq('missed_call_followup')
+    expect(updated_ui_config.dig('routing', 'call_routing', 'inbound', 'whatsapp_followup', 'cooldown_minutes')).to eq(45)
+    expect(updated_ui_config.dig('routing', 'call_routing', 'outbound', 'access_mode')).to eq('selected_operators')
+    expect(updated_ui_config.dig('routing', 'call_routing', 'outbound', 'default_country')).to eq('KZ')
+    expect(updated_ui_config.dig('routing', 'call_routing', 'inbound', 'routing_authority')).to eq('onelink')
+
+    post "#{base_path}/#{inbox_id}/probe_channel_capacity",
+         params: { max_probe_channels: 5 },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    probe_payload = response.parsed_body.fetch('payload')
+    expect(probe_payload.fetch('operation')).to eq('probe_channel_capacity')
+    expect(probe_payload.dig('channel_capacity_probe', 'answered')).to be(false)
+    expect(probe_payload.dig('channel_capacity_probe', 'billed_amount_kzt')).to eq(0)
+    expect(probe_payload.dig('channel_capacity_probe', 'detected_channel_limit')).to eq(2)
+    expect(probe_payload.dig('channel_capacity_probe', 'ai_max_concurrent_calls')).to eq(2)
+    expect(probe_payload.dig('ui_config', 'connection', 'ai_max_concurrent_calls')).to eq(2)
+    expect(probe_payload.dig('ui_config', 'connection', 'detection_source')).to eq('active_probe')
+
+    put "#{base_path}/#{inbox_id}",
+        params: {
+          dry_run: false,
+          remote_commit: false,
+          expected_configuration_version: probe_payload.dig('ui_config', 'configuration_version'),
+          connection: {
+            host: '188.241.217.162',
+            max_channels: probe_payload.dig('channel_capacity_probe', 'detected_channel_limit')
+          }
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'errors')).to eq([])
+  end
+
+  it 'persists routing_authority=external_pbx for external Cloud PBX channels and forces onelink for Wazo' do
+    post base_path,
+         params: valid_create_payload.merge(
+           dry_run: false,
+           remote_commit: false,
+           routing: {
+             mode: 'operator',
+             fallback_mode: 'reject',
+             operator_distribution_mode: 'broadcast',
+             call_routing: {
+               inbound: {
+                 routing_authority: 'external_pbx',
+                 schedule_mode: 'always'
+               }
+             }
+           }
+         ),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    sipuni_ui = response.parsed_body.dig('payload', 'ui_config')
+    expect(sipuni_ui.dig('routing', 'call_routing', 'inbound', 'routing_authority')).to eq('external_pbx')
+  end
 end
+

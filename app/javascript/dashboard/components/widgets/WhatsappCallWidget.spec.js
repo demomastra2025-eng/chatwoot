@@ -81,8 +81,9 @@ vi.mock('dashboard/stores/calls', () => ({
 
 import WhatsappCallWidget from './WhatsappCallWidget.vue';
 
-const mountComponent = () =>
+const mountComponent = (props = {}) =>
   mount(WhatsappCallWidget, {
+    props,
     global: {
       stubs: { Avatar: { template: '<div class="avatar" />' } },
     },
@@ -276,6 +277,46 @@ describe('WhatsappCallWidget microphone', () => {
     expect(wrapper.get('[data-testid="call-microphone-off"]').text()).toBe(
       'PHONE_WIDGET.MICROPHONE_OFF'
     );
+    wrapper.unmount();
+  });
+});
+
+describe('WhatsappCallWidget embedded in PhoneWidget', () => {
+  beforeEach(() => {
+    mockSession.activeCall = null;
+    mockSession.incomingCalls = [];
+    mockSession.hasActiveCall = false;
+    mockSession.isAccepting = false;
+    voiceCallsState.hasActiveCall = false;
+  });
+
+  it('renders inside the unified phone widget with WhatsApp badge and compact/detailed toggle', async () => {
+    mockSession.incomingCalls = [
+      {
+        callId: 'wa-embedded-1',
+        inboxName: 'WhatsApp Алматы',
+        caller: { name: 'Алия', phone: '+77015554433' },
+      },
+    ];
+
+    const wrapper = mountComponent({ embedded: true });
+    const container = wrapper.get('[data-testid="phone-widget-whatsapp-calls"]');
+    expect(container.classes()).not.toContain('fixed');
+
+    const card = wrapper.get('[data-testid="phone-widget-call-card"]');
+    expect(card.text()).toContain('WhatsApp');
+    expect(card.text()).toContain('Алия');
+    expect(card.text()).toContain('+77015554433');
+
+    const toggle = wrapper.get('[data-testid="floating-call-context-toggle"]');
+    expect(toggle.text()).toContain('Компактный вид');
+    await toggle.trigger('click');
+    expect(toggle.text()).toContain('Подробный вид');
+    expect(card.text()).not.toContain('+77015554433');
+
+    await toggle.trigger('click');
+    expect(toggle.text()).toContain('Компактный вид');
+    expect(card.text()).toContain('+77015554433');
     wrapper.unmount();
   });
 });

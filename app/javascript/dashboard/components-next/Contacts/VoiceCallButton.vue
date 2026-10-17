@@ -6,7 +6,11 @@ import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { useAlert } from 'dashboard/composables';
 import { useCallsStore } from 'dashboard/stores/calls';
-import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
+import {
+  phoneLineProviderLabel,
+  phoneWidgetStatusColor,
+  usePhoneWidgetStore,
+} from 'dashboard/stores/phoneWidget';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
 import ContactAPI from 'dashboard/api/contacts';
@@ -107,7 +111,17 @@ const voiceInboxes = computed(() =>
   )
 );
 const candidateVoiceInboxes = computed(() => {
-  if (!props.inboxId) return voiceInboxes.value;
+  if (!props.inboxId) {
+    const preferredId = phoneWidgetStore.selectedInboxId;
+    if (preferredId === null || preferredId === undefined) {
+      return voiceInboxes.value;
+    }
+    return [...voiceInboxes.value].sort((a, b) => {
+      const aPreferred = String(a.id) === String(preferredId) ? 0 : 1;
+      const bPreferred = String(b.id) === String(preferredId) ? 0 : 1;
+      return aPreferred - bPreferred;
+    });
+  }
 
   const selectedInbox = voiceInboxes.value.find(
     inbox => String(inbox.id) === String(props.inboxId)
@@ -391,6 +405,42 @@ const startCall = async inbox => {
   }
 };
 
+const inboxLineStatus = inbox => {
+  const fromStore = phoneWidgetStore.linesStatusById?.[String(inbox?.id)];
+  if (fromStore) return fromStore;
+  const sessions =
+    typeof WebphoneClient.getSessions === 'function'
+      ? WebphoneClient.getSessions() || []
+      : [];
+  const inboxSessions = sessions.filter(
+    session => String(session?.inboxId) === String(inbox?.id)
+  );
+  if (inboxSessions.some(s => s?.registered && !s?.mirrored)) return 'ready';
+  if (inboxSessions.some(s => s?.registered && s?.mirrored)) return 'ownerTab';
+  if (inboxSessions.some(s => s?.callingSupported === false)) return 'error';
+  if (isBrowserSipInbox(inbox)) return 'disconnected';
+  return 'ready';
+};
+
+const inboxLineStatusDotClass = inbox =>
+  phoneWidgetStatusColor(inboxLineStatus(inbox));
+
+const inboxLineStatusLabel = inbox => {
+  const status = inboxLineStatus(inbox);
+  if (status === 'ready') return t('SIDEBAR.SIP_TELEPHONY.STATUS.READY');
+  if (status === 'ownerTab')
+    return t('SIDEBAR.SIP_TELEPHONY.STATUS.READY_IN_OWNER_TAB');
+  if (status === 'connecting')
+    return t('SIDEBAR.SIP_TELEPHONY.STATUS.CONNECTING');
+  if (status === 'error') return t('SIDEBAR.SIP_TELEPHONY.STATUS.ERROR');
+  return t('SIDEBAR.SIP_TELEPHONY.STATUS.DISCONNECTED');
+};
+
+const isPreferredInbox = inbox =>
+  phoneWidgetStore.selectedInboxId !== null &&
+  phoneWidgetStore.selectedInboxId !== undefined &&
+  String(inbox?.id) === String(phoneWidgetStore.selectedInboxId);
+
 const onClick = async () => {
   if (isCallButtonBusy.value) return;
 
@@ -403,6 +453,9 @@ const onClick = async () => {
 };
 
 const onPickInbox = async inbox => {
+  if (inbox?.id !== null && inbox?.id !== undefined) {
+    phoneWidgetStore.setSelectedInboxId(inbox.id);
+  }
   dialogRef.value?.close();
   await startCall(inbox);
 };
@@ -432,25 +485,65 @@ defineExpose({ onClick });
       :show-confirm-button="false"
       width="md"
     >
-      <div class="flex flex-col gap-2">
+      <div class="flex flex-col gap-2" data-testid="voice-inbox-picker-list">
         <button
           v-for="inbox in candidateVoiceInboxes"
           :key="inbox.id"
           type="button"
-          class="flex items-center justify-between w-full px-4 py-2 text-left rounded-lg hover:bg-n-alpha-2"
+          class="flex items-center justify-between w-full px-4 py-2.5 text-left rounded-lg border transition-colors"
+          :class="
+            isPreferredInbox(inbox)
+              ? 'border-n-teal-9 bg-n-teal-2 hover:bg-n-teal-3'
+              : 'border-n-weak hover:bg-n-alpha-2'
+          "
+          :data-inbox-id="String(inbox.id)"
+          :data-selected="String(isPreferredInbox(inbox))"
+          :data-line-status="inboxLineStatus(inbox)"
+          data-testid="voice-inbox-picker-option"
           @click="onPickInbox(inbox)"
         >
-          <div class="flex items-center gap-2">
-            <span class="i-ri-phone-fill text-n-slate-10" />
-            <div class="flex flex-col">
-              <span class="text-sm text-n-slate-12">{{ inbox.name }}</span>
+          <div class="flex min-w-0 items-center gap-2.5">
+            <span
+              class="size-2 shrink-0 rounded-full"
+              :class="inboxLineStatusDotClass(inbox)"
+              data-testid="voice-inbox-picker-status-dot"
+            />
+            <span class="i-ri-phone-fill shrink-0 text-n-slate-10" />
+            <div class="flex min-w-0 flex-col">
+              <div class="flex items-center gap-1.5">
+                <span class="truncate text-sm font-medium text-n-slate-12">
+                  {{ inbox.name }}
+                </span>
+                <span
+                  v-if="isPreferredInbox(inbox)"
+                  class="shrink-0 rounded bg-n-teal-3 px-1.5 py-0.5 text-[10px] font-medium text-n-teal-11"
+                  data-testid="voice-inbox-picker-selected-badge"
+                >
+                  Выбрана для звонка
+                </span>
+              </div>
+              <span
+                class="text-xs"
+                :class="
+                  inboxLineStatus(inbox) === 'ready' ||
+                  inboxLineStatus(inbox) === 'ownerTab'
+                    ? 'text-n-teal-11'
+                    : inboxLineStatus(inbox) === 'error'
+                      ? 'text-n-ruby-11'
+                      : 'text-n-slate-10'
+                "
+                data-testid="voice-inbox-picker-status"
+              >
+                {{ inboxLineStatusLabel(inbox) }}
+              </span>
             </div>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex shrink-0 items-center gap-2">
             <span
-              class="rounded-md bg-n-alpha-2 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-n-slate-11"
+              class="rounded-md bg-n-alpha-2 px-2 py-1 text-[11px] font-medium tracking-wide text-n-slate-11"
+              data-testid="voice-inbox-picker-provider"
             >
-              {{ inbox.provider }}
+              {{ phoneLineProviderLabel(inbox) || inbox.provider }}
             </span>
             <span v-if="inbox.phone_number" class="text-xs text-n-slate-10">
               {{ inbox.phone_number }}

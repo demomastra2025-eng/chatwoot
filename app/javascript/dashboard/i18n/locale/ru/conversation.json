@@ -98,6 +98,12 @@
       "CALL_IN_PROGRESS": "Идёт звонок",
       "NO_ANSWER": "Нет ответа",
       "MISSED_CALL": "Пропущенный звонок",
+      "MISSED_CALL_WAITING_CALLBACK": "Пропущенный звонок — ждёт перезвона",
+      "WAITING_FOR_CALLBACK_BADGE": "Ждёт перезвона",
+      "WAITING_FOR_CALLBACK_FILTER": {
+        "SHOW_WAITING": "Показать пропущенные звонки (ждут перезвона)",
+        "SHOW_ALL": "Показать все чаты"
+      },
       "VOICEMAIL": "Голосовая почта",
       "CALL_ENDED": "Звонок завершен",
       "NOT_ANSWERED_YET": "Пока нет ответа",

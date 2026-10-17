@@ -187,4 +187,23 @@ describe('#VoiceAPI virtual PBX remote commit defaults', () => {
       inbox_id: 42,
     });
   });
+
+  it('probes Virtual PBX trunk channel capacity with optional maxProbeChannels', async () => {
+    await voiceAPIClient.probeVirtualPbxChannelCapacity(42);
+    await voiceAPIClient.probeVirtualPbxChannelCapacity(42, {
+      maxProbeChannels: 6,
+    });
+
+    expect(axiosMock.post).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/accounts/530/telephony/virtual_pbx_channels/42/probe_channel_capacity',
+      {}
+    );
+    expect(axiosMock.post).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/accounts/530/telephony/virtual_pbx_channels/42/probe_channel_capacity',
+      { max_probe_channels: 6 }
+    );
+  });
 });
+

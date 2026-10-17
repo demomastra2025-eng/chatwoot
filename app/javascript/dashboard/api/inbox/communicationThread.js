@@ -49,6 +49,7 @@ class CommunicationThreadApi extends ApiClient {
     labelsScope,
     teamScope,
     unread,
+    waitingForCallback,
     includeMeta = true,
   } = {}) {
     const url = this.url;
@@ -67,6 +68,7 @@ class CommunicationThreadApi extends ApiClient {
         labels_scope: labelsScope,
         team_scope: teamScope,
         unread,
+        waiting_for_callback: waitingForCallback,
         include_meta: includeMeta,
       },
     };
@@ -93,6 +95,7 @@ class CommunicationThreadApi extends ApiClient {
     labelsScope,
     teamScope,
     unread,
+    waitingForCallback,
   } = {}) {
     const url = `${this.url}/meta`;
     const params = {
@@ -108,6 +111,7 @@ class CommunicationThreadApi extends ApiClient {
       labels_scope: labelsScope,
       team_scope: teamScope,
       unread,
+      waiting_for_callback: waitingForCallback,
     };
     const requestKey = JSON.stringify([url, params]);
     const currentRequest = inFlightMetaRequests.get(requestKey);

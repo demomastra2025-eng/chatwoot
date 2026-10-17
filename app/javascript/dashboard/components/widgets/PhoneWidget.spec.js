@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { ref } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
+import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import PhoneWidget from './PhoneWidget.vue';
 
 const {
@@ -130,6 +131,11 @@ const mountComponent = () =>
           template:
             '<div data-testid="phone-widget-calls-list" :data-embedded="String(embedded)" />',
         },
+        WhatsappCallWidget: {
+          props: { embedded: Boolean, silent: Boolean },
+          template:
+            '<div data-testid="phone-widget-whatsapp-calls" :data-embedded="String(embedded)" />',
+        },
       },
     },
   });
@@ -155,6 +161,7 @@ const setIncomingCalls = calls => {
 
 describe('PhoneWidget', () => {
   beforeEach(() => {
+    window.localStorage?.clear?.();
     setActivePinia(createPinia());
     settingsState.settings = ref({});
     settingsState.update.mockReset().mockImplementation(next => {
@@ -1654,6 +1661,184 @@ describe('PhoneWidget', () => {
       await flushPromises();
 
       expect(buttonOf(wrapper).exists()).toBe(true);
+    });
+  });
+
+  describe('multi-line status overview, 1-click line picker, and WhatsApp call integration', () => {
+    it('shows live statuses for all employee lines at a glance and switches outbound line in 1 click', async () => {
+      values['inboxes/getInboxes'] = [
+        {
+          id: 43,
+          name: 'Wazo Астана',
+          channel_type: 'Channel::Voice',
+          provider: 'wazo',
+          phone_number: '+77172000111',
+        },
+        {
+          id: 44,
+          name: 'Sipuni Алматы',
+          channel_type: 'Channel::Voice',
+          provider: 'sipuni',
+          phone_number: '+77272000222',
+        },
+        {
+          id: 45,
+          name: 'WhatsApp Поддержка',
+          channel_type: 'Channel::Whatsapp',
+          phone_number: '+77015556677',
+          provider_config: { calling_enabled: true },
+        },
+      ];
+      webphoneClient.sessions = {
+        'sip_profile:83': sipSession({
+          inboxId: 43,
+          sipProfileId: 83,
+          sessionKey: 'sip_profile:83',
+          provider: 'wazo',
+          registered: true,
+        }),
+        'sip_profile:84': sipSession({
+          inboxId: 44,
+          sipProfileId: 84,
+          sessionKey: 'sip_profile:84',
+          provider: 'sipuni',
+          registered: false,
+          callingSupported: false,
+          reason: 'sip_credentials_failed',
+        }),
+      };
+
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      const summary = wrapper.get('[data-testid="phone-widget-lines-summary"]');
+      expect(summary.text()).toBe('2/3 активны');
+      expect(summary.attributes('title')).toBe('Активно линий: 2 из 3');
+
+      const items = wrapper.findAll('[data-testid="phone-widget-line-item"]');
+      expect(items).toHaveLength(3);
+      expect(items[0].attributes('data-line-id')).toBe('43');
+      expect(items[0].attributes('data-line-status')).toBe('ready');
+      expect(items[0].attributes('data-selected')).toBe('true');
+      expect(
+        items[0].get('[data-testid="phone-widget-line-provider"]').text()
+      ).toBe('Wazo / Asterisk');
+      expect(
+        items[0]
+          .find('[data-testid="phone-widget-line-selected-badge"]')
+          .exists()
+      ).toBe(true);
+
+      expect(items[1].attributes('data-line-id')).toBe('44');
+      expect(items[1].attributes('data-line-status')).toBe('error');
+      expect(items[1].attributes('data-selected')).toBe('false');
+      expect(
+        items[1].get('[data-testid="phone-widget-line-provider"]').text()
+      ).toBe('Sipuni');
+      expect(
+        items[1].find('[data-testid="phone-widget-line-reconnect"]').exists()
+      ).toBe(true);
+
+      expect(items[2].attributes('data-line-id')).toBe('45');
+      expect(items[2].attributes('data-line-status')).toBe('ready');
+      expect(
+        items[2].get('[data-testid="phone-widget-line-provider"]').text()
+      ).toBe('WhatsApp');
+
+      // 1-click line selection updates selectedInboxId and persists in phoneWidgetStore
+      await items[1].trigger('click');
+      await flushPromises();
+
+      expect(items[1].attributes('data-selected')).toBe('true');
+      expect(usePhoneWidgetStore().selectedInboxId).toBe('44');
+
+      await wrapper.get('input#phone-widget-number').setValue('77712345678');
+      expect(wrapper.get('[data-testid="phone-widget-call"]').text()).toContain(
+        '44'
+      );
+    });
+
+    it('reconnects all actionable lines from the header button even when the selected line is ready', async () => {
+      values['inboxes/getInboxes'] = [voiceInbox(43), voiceInbox(44)];
+      webphoneClient.sessions = {
+        'sip_profile:83': sipSession({
+          inboxId: 43,
+          sipProfileId: 83,
+          sessionKey: 'sip_profile:83',
+          registered: true,
+        }),
+        'sip_profile:84': sipSession({
+          inboxId: 44,
+          sipProfileId: 84,
+          sessionKey: 'sip_profile:84',
+          registered: false,
+          callingSupported: false,
+          reason: 'sip_credentials_failed',
+        }),
+      };
+
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      const headerReconnect = wrapper.get(
+        '[data-testid="phone-widget-reconnect"]'
+      );
+      expect(headerReconnect.attributes('disabled')).toBeUndefined();
+      await headerReconnect.trigger('click');
+      await flushPromises();
+
+      expect(webphoneClient.initializeDevice).toHaveBeenCalledWith(44, {
+        native: true,
+        provider: 'sipuni',
+        sipProfileId: 84,
+        sessionKey: 'sip_profile:84',
+        claimOwnership: true,
+      });
+    });
+
+    it('treats incoming and active WhatsApp calls as part of unified phone call state', async () => {
+      const whatsappCallsStore = useWhatsappCallsStore();
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      const phone = wrapper.get('[data-testid="phone-widget"]');
+      expect(phone.attributes('data-state')).toBe('idle');
+      expect(
+        wrapper.find('[data-testid="phone-widget-whatsapp-calls"]').exists()
+      ).toBe(false);
+
+      whatsappCallsStore.addIncomingCall({
+        callId: 'wa-call-1',
+        caller: { name: 'Алия', phone: '+77015554433' },
+      });
+      await flushPromises();
+
+      expect(phone.attributes('data-state')).toBe('incoming');
+      expect(
+        wrapper.find('[data-testid="phone-widget-whatsapp-calls"]').exists()
+      ).toBe(true);
+      expect(
+        wrapper.get('[data-testid="phone-widget-dialer"]').element.style.display
+      ).toBe('none');
+
+      whatsappCallsStore.setActiveCall({
+        callId: 'wa-call-1',
+        caller: { name: 'Алия', phone: '+77015554433' },
+      });
+      whatsappCallsStore.removeIncomingCall('wa-call-1');
+      await flushPromises();
+
+      expect(phone.attributes('data-state')).toBe('active');
+      expect(
+        wrapper.find('[data-testid="phone-widget-whatsapp-calls"]').exists()
+      ).toBe(true);
+
+      whatsappCallsStore.clearActiveCall();
+      await flushPromises();
+      expect(phone.attributes('data-state')).toBe('idle');
+      expect(
+        wrapper.find('[data-testid="phone-widget-whatsapp-calls"]').exists()
+      ).toBe(false);
     });
   });
 });

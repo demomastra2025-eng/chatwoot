@@ -132,4 +132,18 @@ describe('ChatListHeader', () => {
     expect(wrapper.get('h1').text()).toBe('Мои VIP');
     expect(wrapper.find('[data-test-id="status-filter"]').exists()).toBe(false);
   });
+
+  it('renders the waiting-for-callback quick filter button and emits waitingForCallbackFilterToggle', async () => {
+    const wrapper = mountComponent({
+      activeWaitingForCallbackOnly: true,
+    });
+
+    const btn = wrapper.get(
+      '[data-testid="waiting-for-callback-filter-button"]'
+    );
+    expect(btn.attributes('aria-pressed')).toBe('true');
+
+    await btn.trigger('click');
+    expect(wrapper.emitted('waitingForCallbackFilterToggle')).toHaveLength(1);
+  });
 });

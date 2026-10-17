@@ -10,6 +10,7 @@ class Telephony::CallsService
 
     Telephony::OperatorBusyService.new(account: account, user: user).with_lock do
       number_binding = ensure_number_binding!(inbox)
+      enforce_outbound_call_routing_access!(number_binding, inbox, user)
       operator_identity = operator_identity_for(inbox, user)
       if provider_owned_sip_inbox?(inbox)
         create_provider_owned_sip_outbound!(
@@ -53,7 +54,7 @@ class Telephony::CallsService
   def create_provider_owned_sip_outbound!(number_binding, inbox, contact, user, conversation, operator_identity)
     provider = inbox.channel.provider
     call_ref = "#{provider}:local:#{SecureRandom.uuid}"
-    from_number = number_binding.phone_number || inbox.channel&.phone_number
+    from_number = resolve_outbound_from_number(number_binding, inbox)
     metadata = provider_owned_sip_outbound_metadata(number_binding, inbox, contact, user, conversation, operator_identity, call_ref)
 
     call_session = account.telephony_call_sessions.find_or_initialize_by(external_call_ref: call_ref)
@@ -156,5 +157,33 @@ class Telephony::CallsService
 
   def browser_join_supported?(operator_identity)
     operator_identity.present? && operator_identity.browser_join_supported?
+  end
+
+  def call_routing_outbound_config(number_binding, inbox)
+    raw = number_binding&.routing_policy&.settings&.dig('call_routing')
+    raw = inbox&.channel&.provider_config&.dig('call_routing') if raw.blank? && inbox&.channel.respond_to?(:provider_config)
+    raw = inbox&.channel&.additional_attributes&.dig('call_routing') if raw.blank? && inbox&.channel.respond_to?(:additional_attributes)
+    outbound = raw.is_a?(Hash) ? raw.deep_stringify_keys['outbound'] : nil
+    outbound.is_a?(Hash) ? outbound : {}
+  end
+
+  def enforce_outbound_call_routing_access!(number_binding, inbox, user)
+    outbound = call_routing_outbound_config(number_binding, inbox)
+    return unless outbound['access_mode'].to_s == 'selected_operators'
+
+    allowed_ids = Array(outbound['allowed_user_ids']).map(&:to_i).select(&:positive?).uniq
+    return if allowed_ids.empty? || allowed_ids.include?(user&.id.to_i)
+
+    raise Telephony::Error.new(
+      code: 'OUTBOUND_CALL_FORBIDDEN',
+      message: 'Operator is not allowed to place outbound calls on this channel',
+      status: :forbidden
+    )
+  end
+
+  def resolve_outbound_from_number(number_binding, inbox)
+    outbound = call_routing_outbound_config(number_binding, inbox)
+    configured_caller_id = outbound['caller_id_number'].to_s.strip.presence
+    configured_caller_id || number_binding.phone_number || inbox.channel&.phone_number
   end
 end

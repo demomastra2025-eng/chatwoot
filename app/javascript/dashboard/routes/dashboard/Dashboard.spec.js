@@ -17,12 +17,18 @@ vi.mock('dashboard/composables/useAccount', async () => {
   const { ref } = await vi.importActual('vue');
   return { useAccount: () => ({ accountId: ref(1) }) };
 });
-vi.mock('dashboard/stores/whatsappCalls', () => ({
-  useWhatsappCallsStore: () => ({
-    hasActiveCall: false,
-    hasIncomingCall: false,
-  }),
+const whatsappCallsState = vi.hoisted(() => ({
+  hasActiveCall: false,
+  hasIncomingCall: false,
 }));
+
+vi.mock('dashboard/stores/whatsappCalls', async () => {
+  const { reactive } = await vi.importActual('vue');
+  const reactiveState = reactive(whatsappCallsState);
+  return {
+    useWhatsappCallsStore: () => reactiveState,
+  };
+});
 vi.mock('next/sidebar/Sidebar.vue', () => ({
   default: { name: 'NextSidebar', template: '<aside />' },
 }));
@@ -58,7 +64,10 @@ vi.mock('dashboard/components/widgets/PhoneWidget.vue', () => ({
 }));
 vi.mock('dashboard/components/widgets/WhatsappCallWidget.vue', () => ({
   __esModule: true,
-  default: { name: 'WhatsappCallWidget', template: '<div />' },
+  default: {
+    name: 'WhatsappCallWidget',
+    template: '<div data-testid="standalone-whatsapp-widget" />',
+  },
 }));
 
 import Dashboard from './Dashboard.vue';
@@ -75,6 +84,8 @@ const mountDashboard = () =>
 describe('Dashboard call windows', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+    whatsappCallsState.hasActiveCall = false;
+    whatsappCallsState.hasIncomingCall = false;
   });
 
   it('shows the standalone call cards only to employees without the phone widget', async () => {
@@ -87,6 +98,9 @@ describe('Dashboard call windows', () => {
       true
     );
     expect(wrapper.find('[data-testid="phone-widget"]').exists()).toBe(true);
+    expect(
+      wrapper.find('[data-testid="standalone-whatsapp-widget"]').exists()
+    ).toBe(false);
 
     // The phone widget reports a browser SIP line: calls move into it.
     usePhoneWidgetStore().publishSipState({ available: true, status: 'ready' });

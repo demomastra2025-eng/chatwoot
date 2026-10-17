@@ -80,6 +80,19 @@ class Telephony::NumberBinding < ApplicationRecord
     provider_connection_id
     managed_by
     ownership_status
+    beeline_api_token
+    beeline_api_url
+    beeline_events_webhook_token
+    beeline_webhook_token
+    beeline_sync_enabled
+    beeline_subscription_id
+    beeline_subscription_url
+    beeline_subscription_expires_at
+    beeline_last_synced_at
+    sipuni_events_webhook_token
+    sipuni_webhook_token
+    binotel_events_webhook_token
+    binotel_webhook_token
   ].freeze
 
   belongs_to :account, class_name: '::Account'
@@ -139,6 +152,8 @@ class Telephony::NumberBinding < ApplicationRecord
         operator_agent_aor: config[:operator_agent_aor],
         settings: policy.settings.to_h.merge(
           'operator_distribution_mode' => synced_operator_distribution_mode(config, policy)
+        ).merge(
+          config[:call_routing].respond_to?(:to_h) && config[:call_routing].present? ? { 'call_routing' => config[:call_routing].to_h.deep_stringify_keys } : {}
         ),
         fallback_mode: config[:fallback_mode].presence || policy.fallback_mode || 'reject',
         fallback_message: config[:fallback_message]

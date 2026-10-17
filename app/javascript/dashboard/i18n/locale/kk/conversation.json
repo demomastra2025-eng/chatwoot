@@ -99,6 +99,8 @@
       "CALL_IN_PROGRESS": "Call in progress",
       "NO_ANSWER": "No answer",
       "MISSED_CALL": "Missed call",
+      "MISSED_CALL_WAITING_CALLBACK": "Пропущенный звонок — ждёт перезвона",
+      "WAITING_FOR_CALLBACK_BADGE": "Ждёт перезвона",
       "VOICEMAIL": "Voicemail",
       "CALL_ENDED": "Call ended",
       "NOT_ANSWERED_YET": "Not answered yet",

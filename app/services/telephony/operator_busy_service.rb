@@ -21,7 +21,7 @@ class Telephony::OperatorBusyService
 
     def profile_user_ids(account, rows, user_ids)
       profile_ids = rows.filter_map { |_, _, metadata| hash_from(metadata, 'operator_claim')['sip_profile_id'] }
-      account.telephony_sip_profiles.where(id: profile_ids, user_id: user_ids).pluck(:user_id)
+      account.telephony_sip_profiles.human_operator.where(id: profile_ids, user_id: user_ids).pluck(:user_id)
     end
 
     def claimed_user_ids(rows)
@@ -46,14 +46,17 @@ class Telephony::OperatorBusyService
     end
   end
 
-  def initialize(account:, user:, excluding_telephony_call: nil, excluding_whatsapp_call: nil)
+  def initialize(account:, user: nil, sip_profile: nil, excluding_telephony_call: nil, excluding_whatsapp_call: nil)
     @account = account
     @user = user
+    @sip_profile = sip_profile
     @excluding_telephony_call = excluding_telephony_call
     @excluding_whatsapp_call = excluding_whatsapp_call
   end
 
   def with_lock
+    return yield if voice_agent_profile?
+
     account_user.with_lock do
       raise_busy! if busy?
 
@@ -62,10 +65,16 @@ class Telephony::OperatorBusyService
   end
 
   def busy?
+    return false if voice_agent_profile?
+    return false if user.blank?
+
     busy_telephony_call.present? || busy_whatsapp_call.present?
   end
 
   def busy_details
+    return nil if voice_agent_profile?
+    return {} if user.blank?
+
     call = busy_telephony_call
     return telephony_call_details(call) if call.present?
 
@@ -77,13 +86,18 @@ class Telephony::OperatorBusyService
 
   private
 
-  attr_reader :account, :user, :excluding_telephony_call, :excluding_whatsapp_call
+  attr_reader :account, :user, :sip_profile, :excluding_telephony_call, :excluding_whatsapp_call
+
+  def voice_agent_profile?
+    sip_profile.present? && sip_profile.respond_to?(:voice_agent?) && sip_profile.voice_agent?
+  end
 
   def account_user
     @account_user ||= account.account_users.find_by!(user_id: user.id)
   end
 
   def busy_telephony_call
+    return nil if voice_agent_profile? || user.blank?
     return @busy_telephony_call if defined?(@busy_telephony_call)
 
     scope = account.telephony_call_sessions.active
@@ -108,7 +122,7 @@ class Telephony::OperatorBusyService
   end
 
   def claimed_profile_call(scope)
-    profile_ids = account.telephony_sip_profiles.where(user_id: user.id).pluck(:id)
+    profile_ids = account.telephony_sip_profiles.human_operator.where(user_id: user.id).pluck(:id)
     return if profile_ids.blank?
 
     scope.where("telephony_call_sessions.metadata -> 'operator_claim' ->> 'sip_profile_id' IN (?)", profile_ids.map(&:to_s)).first

@@ -24,6 +24,12 @@ class Telephony::VirtualPbx::ConfigBuilder
     wazo_trunk_endpoint_uuid
     wazo_outcall_id
     wazo_incall_id
+    detected_channel_limit
+    wazo_detected_channel_limit
+    wazo_last_channel_limit_hit_at
+    wazo_last_channel_limit_reason
+    last_channel_probe_at
+    detection_source
   ].freeze
   UNKNOWN_PROVIDER_TEMPLATE = {
     label: 'SIP provider',
@@ -73,6 +79,7 @@ class Telephony::VirtualPbx::ConfigBuilder
     },
     'wazo' => {
       label: 'Wazo',
+      default_host: '188.241.217.162',
       default_transport: 'udp',
       default_port: 5060,
       default_codec: 'pcma',
@@ -148,6 +155,15 @@ class Telephony::VirtualPbx::ConfigBuilder
                              ActiveModel::Type::Boolean.new.cast(provider_connection_metadata[:trunk_password_configured]) ||
                                provider_connection_metadata[:trunk_password].present?
                            end
+    detected_limit = first_present(
+      provider_connection_metadata[:detected_channel_limit],
+      provider_connection_metadata[:wazo_detected_channel_limit]
+    )
+    max_channels = provider_connection_metadata[:max_channels]
+    ai_max_concurrent_calls = if config[:provider_kind].to_s == 'wazo'
+                                first_present(max_channels, detected_limit)
+                              end
+    resolved_routing_authority = resolve_routing_authority(config[:provider_kind], routing)
 
     {
       id: config[:id],
@@ -183,7 +199,12 @@ class Telephony::VirtualPbx::ConfigBuilder
         trunk_domain: provider_connection_metadata[:trunk_domain],
         trunk_host: provider_connection_metadata[:trunk_host],
         trunk_port: provider_connection_metadata[:trunk_port],
-        max_channels: provider_connection_metadata[:max_channels],
+        max_channels: max_channels,
+        ai_max_concurrent_calls: ai_max_concurrent_calls,
+        detected_channel_limit: detected_limit,
+        last_channel_limit_hit_at: provider_connection_metadata[:wazo_last_channel_limit_hit_at],
+        last_channel_probe_at: provider_connection_metadata[:last_channel_probe_at],
+        detection_source: provider_connection_metadata[:detection_source],
         reserved_inbound_channels: provider_connection_metadata[:reserved_inbound_channels],
         ring_strategy: provider_connection_metadata[:ring_strategy],
         group_extension: provider_connection_metadata[:group_extension],
@@ -199,7 +220,10 @@ class Telephony::VirtualPbx::ConfigBuilder
         ai_enabled: routing[:ai_enabled],
         operator_distribution_mode: routing[:operator_distribution_mode],
         max_call_duration_seconds: routing[:max_call_duration_seconds],
-        operator_target_configured: routing[:operator_agent_aor].present? || routing[:operator_agent_ref].present?
+        operator_target_configured: routing[:operator_agent_aor].present? || routing[:operator_agent_ref].present?,
+        routing_authority: resolved_routing_authority,
+        ai_max_concurrent_calls: ai_max_concurrent_calls,
+        call_routing: normalize_ui_call_routing(routing[:call_routing], resolved_routing_authority)
       }.compact,
       employees: ui_employees_payload(config[:profiles]),
       permissions: {
@@ -351,9 +375,42 @@ class Telephony::VirtualPbx::ConfigBuilder
     Digest::SHA256.hexdigest(JSON.generate(canonical_configuration_value(payload)))
   end
 
+  PROVIDER_CONNECTION_RUNTIME_METADATA_KEYS = %w[
+    detected_channel_limit
+    wazo_detected_channel_limit
+    wazo_last_channel_limit_hit_at
+    wazo_last_channel_limit_reason
+    last_channel_probe_at
+    detection_source
+  ].freeze
+
+  VOICE_CHANNEL_RUNTIME_CONFIG_KEYS = %w[
+    beeline_api_token
+    beeline_api_url
+    beeline_events_webhook_token
+    beeline_webhook_token
+    beeline_sync_enabled
+    beeline_subscription_id
+    beeline_subscription_url
+    beeline_subscription_expires_at
+    beeline_last_synced_at
+    sipuni_events_webhook_token
+    sipuni_webhook_token
+    binotel_events_webhook_token
+    binotel_webhook_token
+  ].freeze
+
   def configuration_fingerprint_for(record)
     attributes = record.attributes.except('created_at', 'updated_at', 'last_synced_at')
-    attributes['metadata'] = record.metadata.to_h.except(*SIP_PROFILE_RUNTIME_METADATA_KEYS) if record.is_a?(Telephony::SipProfile)
+    if record.is_a?(Telephony::SipProfile)
+      attributes['metadata'] = record.metadata.to_h.except(*SIP_PROFILE_RUNTIME_METADATA_KEYS)
+    elsif record.is_a?(Telephony::ProviderConnection)
+      attributes['metadata'] = record.metadata.to_h.except(*PROVIDER_CONNECTION_RUNTIME_METADATA_KEYS)
+    elsif record.is_a?(Channel::Voice)
+      attributes['provider_config'] = record.provider_config.to_h.stringify_keys.except(*VOICE_CHANNEL_RUNTIME_CONFIG_KEYS)
+    elsif record.is_a?(Telephony::NumberBinding)
+      attributes['metadata'] = record.metadata.to_h.stringify_keys.except(*VOICE_CHANNEL_RUNTIME_CONFIG_KEYS)
+    end
     [record.class.base_class.name, attributes]
   end
 
@@ -486,6 +543,17 @@ class Telephony::VirtualPbx::ConfigBuilder
     return {} if binding.blank? && policy.blank?
 
     provider_owned_sip = provider_owned_sip_provider?(binding&.provider)
+    raw_call_routing = (policy&.settings || {})['call_routing']
+    resolved_authority = resolve_routing_authority(binding&.provider, { call_routing: raw_call_routing })
+    connection_meta = binding&.provider_connection&.metadata.to_h
+    ai_max_concurrent_calls = if binding&.provider.to_s == 'wazo'
+                                first_present(
+                                  connection_meta['max_channels'],
+                                  connection_meta['detected_channel_limit'],
+                                  connection_meta['wazo_detected_channel_limit']
+                                )
+                              end
+
     {
       mode: policy&.mode,
       bridge_mode: policy&.bridge_mode,
@@ -496,8 +564,32 @@ class Telephony::VirtualPbx::ConfigBuilder
       max_call_duration_seconds: policy&.max_call_duration_seconds || Telephony::RoutingPolicy::DEFAULT_MAX_CALL_DURATION_SECONDS,
       fallback_mode: policy&.fallback_mode,
       ai_enabled: policy&.ai_enabled,
-      ai_app_ref: policy&.effective_ai_app_ref
+      ai_app_ref: policy&.effective_ai_app_ref,
+      routing_authority: resolved_authority,
+      ai_max_concurrent_calls: ai_max_concurrent_calls,
+      call_routing: normalize_ui_call_routing(raw_call_routing, resolved_authority)
     }.compact
+  end
+
+  def resolve_routing_authority(provider_kind, routing_hash)
+    return 'onelink' if provider_kind.to_s == 'wazo'
+
+    routing = (routing_hash || {}).with_indifferent_access
+    candidate = first_present(
+      routing[:routing_authority],
+      routing.dig(:call_routing, :inbound, :routing_authority)
+    ).to_s
+    candidate == 'external_pbx' ? 'external_pbx' : 'onelink'
+  end
+
+  def normalize_ui_call_routing(call_routing, resolved_routing_authority)
+    return call_routing unless call_routing.is_a?(Hash)
+
+    normalized = call_routing.deep_dup.deep_stringify_keys
+    normalized['inbound'] = (normalized['inbound'].is_a?(Hash) ? normalized['inbound'] : {}).merge(
+      'routing_authority' => resolved_routing_authority
+    )
+    normalized
   end
 
   def profiles_payload(inbox:)

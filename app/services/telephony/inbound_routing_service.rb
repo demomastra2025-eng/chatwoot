@@ -5,6 +5,7 @@ class Telephony::InboundRoutingService
   OPERATOR_CANDIDATE_LIMIT = 20
   DUPLICATE_BROADCAST_BRANCH_WINDOW = 5.seconds
   PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
+  EXTERNAL_CLOUD_PBX_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
   PBX_SELECTED_SIP_PROVIDERS = %w[beeline wazo].freeze
   FAST_INCOMING_SESSION_RETRIES = 1
 
@@ -69,7 +70,7 @@ class Telephony::InboundRoutingService
                elsif routing_policy.blank?
                  reject_decision(reason: 'routing_policy_missing')
                else
-                 routed_decision
+                 routed_decision_with_trunk_capacity_reservation
                end
 
     unless sibling_group_owned?(decision)
@@ -83,6 +84,28 @@ class Telephony::InboundRoutingService
 
   attr_reader :payload, :runtime_capabilities, :trusted_target_sip_profile_id
 
+  def routed_decision_with_trunk_capacity_reservation
+    lock_target = trunk_capacity_lock_target
+    if lock_target.present?
+      lock_target.with_lock do
+        decision = routed_decision
+        reserve_ai_trunk_call_session!(decision)
+        decision
+      end
+    else
+      decision = routed_decision
+      reserve_ai_trunk_call_session!(decision)
+      decision
+    end
+  end
+
+  def trunk_capacity_lock_target
+    return if diagnostic_route_probe?
+    return if ai_max_concurrent_calls.blank?
+
+    wazo_provider_connection || number_binding
+  end
+
   def routed_decision
     recursive_runtime_decision = recursive_runtime_call_active_decision
     return recursive_runtime_decision if recursive_runtime_decision.present?
@@ -90,10 +113,12 @@ class Telephony::InboundRoutingService
     server_voice_agent_decision = server_voice_agent_runtime_decision
     return server_voice_agent_decision if server_voice_agent_decision.present?
 
+    return external_pbx_authority_decision if external_pbx_routing_authority?
+
     status_decision = status_aware_conversation_decision
     return status_decision if status_decision.present?
 
-    return out_of_office_decision if inbox&.out_of_office?
+    return out_of_office_decision if inbound_out_of_office?
 
     duplicate_broadcast_decision = duplicate_broadcast_branch_decision
     return duplicate_broadcast_decision if duplicate_broadcast_decision.present?
@@ -101,9 +126,43 @@ class Telephony::InboundRoutingService
     primary_decision
   end
 
+  def routing_authority
+    return 'onelink' if number_binding&.provider.to_s == 'wazo'
+
+    authority = call_routing_inbound_config['routing_authority'].to_s
+    authority == 'external_pbx' ? 'external_pbx' : 'onelink'
+  end
+
+  def external_pbx_routing_authority?
+    number_binding&.provider.to_s.in?(EXTERNAL_CLOUD_PBX_PROVIDERS) && routing_authority == 'external_pbx'
+  end
+
+  def external_pbx_authority_decision
+    if external_pbx_target_voice_agent_profile.present?
+      unless external_pbx_target_voice_agent_profile_active?
+        return reject_decision(reason: 'voice_agent_sip_profile_missing')
+      end
+      return ai_decision(reason: 'external_pbx_route') if resolved_ai_app_ref.present?
+
+      return reject_decision(reason: ai_app_failure_reason)
+    end
+
+    return operator_decision(reason: 'external_pbx_route') if operator_routable?
+
+    if !external_pbx_explicit_target_requested? &&
+       routing_policy.ai_mode? &&
+       voice_agent_sip_route_available? &&
+       resolved_ai_app_ref.present?
+      return ai_decision(reason: 'external_pbx_route')
+    end
+
+    reject_decision(reason: 'operator_unavailable')
+  end
+
   def server_voice_agent_runtime_decision
     return unless server_voice_agent_runtime_request?
     return reject_decision(reason: 'voice_agent_sip_profile_missing') unless voice_agent_sip_route_available?
+    return reject_decision(reason: 'max_channels_reached') unless ai_channel_capacity_available?
     return ai_decision(reason: 'voice_agent_sip_profile_route') if server_voice_agent_app_ref.present?
 
     fallback_decision(reason: ai_app_failure_reason, prefer_ai: true)
@@ -116,10 +175,43 @@ class Telephony::InboundRoutingService
       call_ref.to_s.include?(':janus-server:')
   end
 
+  def inbound_out_of_office?
+    return false if external_pbx_routing_authority?
+    return false if call_routing_inbound_config['schedule_mode'].to_s == 'always'
+
+    ActiveModel::Type::Boolean.new.cast(inbox&.out_of_office?)
+  end
+
   def out_of_office_decision
+    case call_routing_inbound_config['off_hours_action'].to_s
+    when 'ai'
+      return reject_decision(reason: 'max_channels_reached', prefer_out_of_office_message: true) unless ai_channel_capacity_available?
+      return ai_decision(reason: 'out_of_office') if voice_agent_sip_route_available? && resolved_ai_app_ref.present?
+
+      return fallback_decision(reason: 'out_of_office', prefer_out_of_office_message: true, prefer_ai: true)
+    when 'forward'
+      forward_number = call_routing_inbound_config['off_hours_forward_number'].to_s.strip
+      return forward_decision(reason: 'out_of_office', forward_number: forward_number) if forward_number.present?
+    when 'hangup', 'reject'
+      return reject_decision(reason: 'out_of_office', prefer_out_of_office_message: true)
+    end
+
     return reject_decision(reason: 'out_of_office', prefer_out_of_office_message: true) if routing_policy.operator_mode?
 
     fallback_decision(reason: 'out_of_office', prefer_out_of_office_message: true)
+  end
+
+  def operator_unavailable_decision
+    case call_routing_inbound_config['fallback_action'].to_s
+    when 'ai'
+      return reject_decision(reason: 'max_channels_reached') unless ai_channel_capacity_available?
+      return ai_decision(reason: 'operator_unavailable') if voice_agent_sip_route_available? && resolved_ai_app_ref.present?
+    when 'forward'
+      forward_number = call_routing_inbound_config['fallback_forward_number'].to_s.strip
+      return forward_decision(reason: 'operator_unavailable', forward_number: forward_number) if forward_number.present?
+    end
+
+    reject_decision(reason: 'operator_unavailable')
   end
 
   def primary_decision
@@ -128,13 +220,14 @@ class Telephony::InboundRoutingService
       return target_operator_decision(reason: 'operator_route') if target_operator_requested?
       return operator_decision(reason: 'operator_route') if operator_routable?
 
-      reject_decision(reason: 'operator_unavailable')
+      operator_unavailable_decision
     when 'app'
       return app_decision(reason: 'app_route') if resolved_primary_app_ref.present?
 
       fallback_decision(reason: primary_app_failure_reason)
     when 'ai'
       return reject_decision(reason: 'voice_agent_sip_profile_missing') unless voice_agent_sip_route_available?
+      return reject_decision(reason: 'max_channels_reached') unless ai_channel_capacity_available?
       return ai_decision(reason: 'ai_route') if resolved_ai_app_ref.present?
 
       fallback_decision(reason: ai_app_failure_reason)
@@ -160,6 +253,7 @@ class Telephony::InboundRoutingService
 
   def pending_conversation_ai_decision
     return reject_decision(reason: 'voice_agent_sip_profile_missing') unless voice_agent_sip_route_available?
+    return reject_decision(reason: 'max_channels_reached') unless ai_channel_capacity_available?
     return ai_decision(reason: 'pending_conversation_ai_route') if resolved_ai_app_ref.present?
 
     fallback_decision(reason: ai_app_failure_reason)
@@ -270,7 +364,51 @@ class Telephony::InboundRoutingService
     number_binding.account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
   end
 
-  def fast_incoming_call_session_attributes(decision, call_session)
+  def reserve_ai_trunk_call_session!(decision)
+    return unless ai_decision?(decision)
+    return if ai_max_concurrent_calls.blank?
+    return if number_binding.blank?
+    return if call_ref.blank? || caller_number.blank?
+    return if diagnostic_route_probe?
+
+    ensure_ai_incoming_call_session_with_retry!(decision)
+  rescue StandardError => e
+    Rails.logger.warn(
+      'TELEPHONY_AI_INCOMING_CALL_SESSION_RESERVE_FAILED ' \
+      "call_ref=#{call_ref} account_id=#{number_binding&.account_id} error=#{e.class.name}: #{e.message}"
+    )
+  end
+
+  def ensure_ai_incoming_call_session_with_retry!(decision)
+    attempts = 0
+
+    begin
+      Telephony::CallSession.transaction(requires_new: true) { ensure_ai_incoming_call_session!(decision) }
+    rescue *Telephony::EventsIngestionService::RETRYABLE_DATABASE_ERRORS
+      attempts += 1
+      retry if attempts <= FAST_INCOMING_SESSION_RETRIES
+
+      raise
+    end
+  end
+
+  def ensure_ai_incoming_call_session!(decision)
+    call_session = find_or_create_fast_incoming_call_session!
+
+    call_session.with_lock do
+      call_session.reload
+      unless call_session.terminal?
+        call_session.assign_attributes(
+          fast_incoming_call_session_attributes(decision, call_session, include_broadcast_marker: false)
+        )
+        call_session.save! if call_session.changed?
+      end
+    end
+
+    call_session
+  end
+
+  def fast_incoming_call_session_attributes(decision, call_session, include_broadcast_marker: true)
     {
       account: number_binding.account,
       conversation: existing_voice_conversation || call_session.conversation,
@@ -284,21 +422,30 @@ class Telephony::InboundRoutingService
       to_number: inbound_number || number_binding.phone_number,
       started_at: call_session.started_at || Time.current,
       last_event_at: [call_session.last_event_at, Time.current].compact.max,
-      metadata: fast_incoming_call_session_metadata(decision, call_session)
+      metadata: fast_incoming_call_session_metadata(
+        decision,
+        call_session,
+        include_broadcast_marker: include_broadcast_marker
+      )
     }.compact
   end
 
-  def fast_incoming_call_session_metadata(decision, call_session)
+  def fast_incoming_call_session_metadata(decision, call_session, include_broadcast_marker: true)
     metadata = (call_session.metadata || {}).deep_dup.deep_stringify_keys
     existing_route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'].deep_dup : {}
     metadata['metadata'] = existing_route_metadata.deep_merge(
       route_lifecycle_metadata(decision).deep_stringify_keys
     )
-    metadata['fast_incoming_broadcast'] = {
-      'event' => 'voice_call.incoming',
-      'event_key' => route_lifecycle_event_key,
-      'created_at' => Time.current.iso8601
-    }
+    if ai_decision?(decision) && voice_agent_sip_profile.present?
+      metadata['voice_agent_sip_profile_id'] ||= voice_agent_sip_profile.id
+    end
+    if include_broadcast_marker
+      metadata['fast_incoming_broadcast'] = {
+        'event' => 'voice_call.incoming',
+        'event_key' => route_lifecycle_event_key,
+        'created_at' => Time.current.iso8601
+      }
+    end
     metadata.compact
   end
 
@@ -486,8 +633,12 @@ class Telephony::InboundRoutingService
     (decision[:action] || decision['action']).to_s == 'operator'
   end
 
+  def ai_decision?(decision)
+    (decision[:action] || decision['action']).to_s == 'ai'
+  end
+
   def diagnostic_route_probe?
-    truthy_payload?('diagnostic', 'diagnostic_call', 'test', 'test_call')
+    truthy_payload?('diagnostic', 'diagnostic_call', 'diagnostic_route_probe', 'test', 'test_call')
   end
 
   def truthy_payload?(*keys)
@@ -613,7 +764,7 @@ class Telephony::InboundRoutingService
         return target_operator_decision(reason: reason) if target_operator_requested?
         return operator_decision(reason: reason) if operator_routable?
       when 'ai'
-        next unless voice_agent_sip_route_available?
+        next unless voice_agent_sip_route_available? && ai_channel_capacity_available?
 
         return ai_decision(reason: reason) if resolved_ai_app_ref.present?
       when 'app'
@@ -713,6 +864,7 @@ class Telephony::InboundRoutingService
 
     candidate_payload = candidates.map { |candidate| operator_candidate_payload(candidate) }
     {
+      operator_user_id: primary.user_id,
       agent_aor: primary.agent_aor,
       agent_ref: primary.agent_ref,
       agent_aors: candidate_payload.filter_map { |candidate| candidate[:agent_aor] },
@@ -759,15 +911,147 @@ class Telephony::InboundRoutingService
   end
 
   def operator_candidates
-    @operator_candidates ||= if target_operator_requested?
+    @operator_candidates ||= if external_pbx_routing_authority?
+                               external_pbx_operator_candidates
+                             elsif target_operator_requested?
                                target_operator_block_reason.present? ? [] : [target_operator_candidate]
                              else
                                scoped_candidates = operator_candidate_scope.select do |candidate|
                                  candidate.enabled? && sip_operator_aor?(candidate.agent_aor)
                                end
-                               candidates = available_operator_candidates(scoped_candidates)
-                               candidates.sort_by { |candidate| operator_candidate_sort_key(candidate) }.first(OPERATOR_CANDIDATE_LIMIT)
+                               resolve_group_aware_operator_candidates(scoped_candidates)
                              end
+  end
+
+  def external_pbx_explicit_profile_id
+    @external_pbx_explicit_profile_id ||= begin
+      value = trusted_target_sip_profile_id.presence ||
+              payload_value('target_sip_profile_id', 'targetSipProfileId', 'sip_profile_id', 'sipProfileId') ||
+              metadata_value('target_sip_profile_id', 'targetSipProfileId', 'telephony_sip_profile_id', 'telephonySipProfileId')
+      value.to_s.strip.presence
+    end
+  end
+
+  def external_pbx_explicit_user_id
+    @external_pbx_explicit_user_id ||= begin
+      value = payload_value('target_user_id', 'targetUserId') ||
+              metadata_value('target_user_id', 'targetUserId')
+      value.to_s.strip.presence
+    end
+  end
+
+  def external_pbx_explicit_target_requested?
+    external_pbx_explicit_profile_id.present? ||
+      external_pbx_explicit_user_id.present? ||
+      target_operator_extension.present? ||
+      target_operator_aor.present?
+  end
+
+  def external_pbx_target_voice_agent_profile
+    return @external_pbx_target_voice_agent_profile if defined?(@external_pbx_target_voice_agent_profile)
+
+    @external_pbx_target_voice_agent_profile = begin
+      scope = inbox&.telephony_sip_profiles&.voice_agent
+      if scope.blank?
+        nil
+      elsif external_pbx_explicit_profile_id.present?
+        scope.find_by(id: external_pbx_explicit_profile_id)
+      elsif target_operator_extension.present?
+        scope.find_by(internal_extension: target_operator_extension)
+      elsif target_operator_aor.present?
+        scope.detect { |profile| normalized_sip_aor(profile.agent_aor) == normalized_sip_aor(target_operator_aor) }
+      end
+    end
+  end
+
+  def external_pbx_target_voice_agent_profile_active?
+    profile = external_pbx_target_voice_agent_profile
+    profile.present? && profile.enabled? && !profile.status.to_s.in?(%w[disabled deleting failed])
+  end
+
+  def external_pbx_operator_candidates
+    scoped_candidates = inbox_sip_profile_candidates.select do |candidate|
+      candidate.enabled? && sip_operator_aor?(candidate.agent_aor)
+    end
+    if external_pbx_explicit_profile_id.present?
+      return scoped_candidates.select { |c| c.sip_profile_id.to_s == external_pbx_explicit_profile_id.to_s }
+    end
+
+    if external_pbx_explicit_user_id.present?
+      return scoped_candidates.select { |c| c.user_id.to_s == external_pbx_explicit_user_id.to_s }
+    end
+
+    if target_operator_extension.present?
+      return scoped_candidates.select { |c| c.sip_profile&.internal_extension.to_s == target_operator_extension }
+    end
+
+    if target_operator_aor.present?
+      return scoped_candidates.select { |c| normalized_sip_aor(c.agent_aor) == normalized_sip_aor(target_operator_aor) }
+    end
+
+    scoped_candidates.sort_by { |candidate| operator_candidate_sort_key(candidate) }.first(OPERATOR_CANDIDATE_LIMIT)
+  end
+
+  def resolve_group_aware_operator_candidates(scoped_candidates)
+    configured_groups = configured_routing_groups
+    if configured_groups.any?
+      configured_groups.each do |group|
+        group_user_ids = Array(group['user_ids'] || group[:user_ids]).map(&:to_i).select(&:positive?).uniq
+        group_scope = if group_user_ids.any?
+                        scoped_candidates.select { |candidate| group_user_ids.include?(candidate.user_id.to_i) }
+                      else
+                        scoped_candidates
+                      end
+        available = available_operator_candidates(group_scope)
+        next if available.empty?
+
+        return order_candidates_for_group_strategy(available, group['strategy'] || group[:strategy])
+      end
+      return []
+    end
+
+    candidates = available_operator_candidates(scoped_candidates)
+    candidates.sort_by { |candidate| operator_candidate_sort_key(candidate) }.first(OPERATOR_CANDIDATE_LIMIT)
+  end
+
+  def configured_routing_groups
+    return [] if external_pbx_routing_authority?
+
+    groups = call_routing_inbound_config['groups']
+    return [] unless groups.is_a?(Array)
+
+    groups.select { |group| group.is_a?(Hash) }
+  end
+
+  def order_candidates_for_group_strategy(candidates, strategy)
+    sorted = candidates.sort_by { |candidate| operator_candidate_sort_key(candidate) }
+    case strategy.to_s
+    when 'round_robin', 'least_recent'
+      last_called_map = recent_operator_call_timestamps(sorted.filter_map(&:user_id))
+      ordered = sorted.sort_by do |candidate|
+        [last_called_map[candidate.user_id] || Time.zone.at(0), operator_candidate_sort_key(candidate)]
+      end
+      ordered.first(1)
+    else
+      sorted.first(OPERATOR_CANDIDATE_LIMIT)
+    end
+  end
+
+  def recent_operator_call_timestamps(user_ids)
+    return {} if user_ids.blank? || number_binding.blank?
+
+    Telephony::CallSession
+      .where(account_id: number_binding.account_id, inbox_id: number_binding.inbox_id)
+      .where('created_at >= ?', 24.hours.ago)
+      .order(created_at: :desc)
+      .limit(50)
+      .each_with_object({}) do |session, acc|
+        uid = session.metadata&.dig('metadata', 'chatwoot_user_id') ||
+              session.metadata&.dig('operator_identity', 'user_id') ||
+              session.agent_binding&.user_id
+        uid = uid.to_i
+        acc[uid] ||= session.created_at if uid.positive? && user_ids.include?(uid)
+      end
   end
 
   def available_operator_candidates(candidates)
@@ -775,6 +1059,13 @@ class Telephony::InboundRoutingService
   end
 
   def without_busy_operator_candidates(candidates)
+    return candidates if external_pbx_routing_authority?
+
+    if call_routing_inbound_config.key?('skip_busy_operators') &&
+       !ActiveModel::Type::Boolean.new.cast(call_routing_inbound_config['skip_busy_operators'])
+      return candidates
+    end
+
     busy_user_ids = Telephony::OperatorBusyService.busy_user_ids(
       account: number_binding.account,
       user_ids: candidates.filter_map(&:user_id),
@@ -864,12 +1155,37 @@ class Telephony::InboundRoutingService
     attach_ai_context(decision)
   end
 
+  def forward_decision(reason:, forward_number:)
+    {
+      action: 'forward',
+      forward_number: forward_number,
+      target_number: forward_number,
+      reason: reason
+    }.merge(shared_context(include_bridge_context: true))
+  end
+
   def reject_decision(reason:, prefer_out_of_office_message: false, include_bridge_context: false)
     {
       action: 'reject',
       message: reject_message(prefer_out_of_office_message: prefer_out_of_office_message),
       reason: reason
     }.merge(shared_context(include_bridge_context: include_bridge_context))
+  end
+
+  def call_routing_config
+    @call_routing_config ||= begin
+      raw = routing_policy&.settings&.dig('call_routing')
+      raw = inbox&.channel&.provider_config&.dig('call_routing') if raw.blank? && inbox&.channel.respond_to?(:provider_config)
+      raw = inbox&.channel&.additional_attributes&.dig('call_routing') if raw.blank? && inbox&.channel.respond_to?(:additional_attributes)
+      raw.is_a?(Hash) ? raw.deep_stringify_keys : {}
+    end
+  end
+
+  def call_routing_inbound_config
+    @call_routing_inbound_config ||= begin
+      inbound = call_routing_config['inbound']
+      inbound.is_a?(Hash) ? inbound : {}
+    end
   end
 
   def attach_ai_context(decision)
@@ -888,6 +1204,66 @@ class Telephony::InboundRoutingService
     return true unless janus_sip_route?
 
     voice_agent_sip_profile.present?
+  end
+
+  def wazo_provider_connection
+    return unless number_binding&.provider.to_s == 'wazo'
+
+    @wazo_provider_connection ||= begin
+      conn = number_binding.provider_connection
+      if conn.blank?
+        conn_id = inbox&.channel&.provider_config&.dig('provider_connection_id') ||
+                  number_binding.metadata&.dig('provider_connection_id')
+        conn = number_binding.account.telephony_provider_connections.find_by(id: conn_id) if conn_id.present?
+      end
+      conn || voice_agent_sip_profile&.provider_connection
+    end
+  end
+
+  def wazo_channel_capacity_service
+    return if wazo_provider_connection.blank?
+
+    @wazo_channel_capacity_service ||= Telephony::Wazo::ChannelCapacityService.new(connection: wazo_provider_connection)
+  end
+
+  def ai_max_concurrent_calls
+    return unless number_binding&.provider.to_s == 'wazo'
+
+    limit = wazo_channel_capacity_service&.effective_max_channels
+    return limit if limit.present?
+
+    raw = inbox&.channel&.provider_config&.dig('max_channels') ||
+          number_binding&.metadata&.dig('max_channels')
+    parsed = raw.to_i if raw.present?
+    parsed if parsed.present? && parsed.positive?
+  end
+
+  def active_trunk_calls_count
+    return 0 if number_binding.blank?
+
+    binding_ids = if wazo_provider_connection.present?
+                    ids = Telephony::NumberBinding.where(
+                      account_id: number_binding.account_id,
+                      provider_connection_id: wazo_provider_connection.id
+                    ).pluck(:id)
+                    (ids + [number_binding.id]).compact.uniq
+                  else
+                    [number_binding.id]
+                  end
+
+    scope = Telephony::CallSession.active.where(
+      account_id: number_binding.account_id,
+      number_binding_id: binding_ids
+    )
+    scope = scope.where.not(external_call_ref: call_ref) if call_ref.present?
+    scope.count
+  end
+
+  def ai_channel_capacity_available?
+    limit = ai_max_concurrent_calls
+    return true if limit.blank?
+
+    active_trunk_calls_count < limit
   end
 
   def ai_context_payload(decision)
@@ -931,6 +1307,7 @@ class Telephony::InboundRoutingService
   def shared_context(include_bridge_context: false)
     return {} if number_binding.blank?
 
+    max_ai = ai_max_concurrent_calls
     context = {
       account_id: number_binding.account_id,
       inbox_id: number_binding.inbox_id,
@@ -939,6 +1316,9 @@ class Telephony::InboundRoutingService
       call_group_key: logical_call_key,
       logical_call_group_ref: logical_call_group_ref,
       voice_agent_sip_profile_id: voice_agent_sip_profile&.id,
+      routing_authority: routing_authority,
+      ai_max_concurrent_calls: max_ai,
+      active_trunk_calls: (active_trunk_calls_count if max_ai.present?),
       operator_distribution_mode: operator_distribution_mode,
       max_call_duration_seconds: routing_policy.max_call_duration_seconds,
       recording: recording_payload
@@ -984,7 +1364,11 @@ class Telephony::InboundRoutingService
   end
 
   def trusted_sip_profile_target?
-    trusted_target_sip_profile_id.present? && number_binding&.provider.in?(PBX_SELECTED_SIP_PROVIDERS) && routing_policy&.operator_mode?
+    return false if trusted_target_sip_profile_id.blank?
+    return true if external_pbx_routing_authority?
+    return false if number_binding&.provider.to_s.in?(EXTERNAL_CLOUD_PBX_PROVIDERS) && configured_routing_groups.any?
+
+    number_binding&.provider.in?(PBX_SELECTED_SIP_PROVIDERS) && routing_policy&.operator_mode?
   end
 
   def targeted_operator_distribution?

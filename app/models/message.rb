@@ -500,6 +500,7 @@ class Message < ApplicationRecord
     reopen_conversation
     mark_pending_conversation_as_open_for_human_response
     set_conversation_activity
+    Telephony::MissedCallCallbackTracker.clear_on_outgoing_message!(self)
     ensure_communication_thread_for_create_event
     dispatch_create_events
     sync_related_touches

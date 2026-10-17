@@ -1,10 +1,15 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
 import enInboxMgmt from 'dashboard/i18n/locale/en/inboxMgmt.json';
+import ruInboxMgmt from 'dashboard/i18n/locale/ru/inboxMgmt.json';
 
 import ConfigurationPage from './ConfigurationPage.vue';
 
 const enTe = key =>
   typeof key.split('.').reduce((node, part) => node?.[part], enInboxMgmt) ===
+  'string';
+
+const ruTe = key =>
+  typeof key.split('.').reduce((node, part) => node?.[part], ruInboxMgmt) ===
   'string';
 
 const alertMock = vi.hoisted(() => vi.fn());
@@ -14,6 +19,7 @@ const provisionVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
 const reconcileVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
 const getVirtualPbxProvisioningRunsMock = vi.hoisted(() => vi.fn());
 const updateVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
+const probeVirtualPbxChannelCapacityMock = vi.hoisted(() => vi.fn());
 const storeDispatchMock = vi.hoisted(() => vi.fn());
 const copyTextToClipboardMock = vi.hoisted(() => vi.fn());
 
@@ -29,6 +35,7 @@ vi.mock('dashboard/api/channel/voice/voiceAPIClient', () => ({
     reconcileVirtualPbxChannel: reconcileVirtualPbxChannelMock,
     getVirtualPbxProvisioningRuns: getVirtualPbxProvisioningRunsMock,
     updateVirtualPbxChannel: updateVirtualPbxChannelMock,
+    probeVirtualPbxChannelCapacity: probeVirtualPbxChannelCapacityMock,
   },
 }));
 
@@ -109,7 +116,7 @@ const statusPayload = {
   },
 };
 
-const buildWrapper = ({ inbox = baseInbox, te } = {}) =>
+const buildWrapper = ({ inbox = baseInbox, te, storeGetters = {} } = {}) =>
   shallowMount(ConfigurationPage, {
     props: {
       inbox,
@@ -120,6 +127,10 @@ const buildWrapper = ({ inbox = baseInbox, te } = {}) =>
         ...(te ? { $te: te } : {}),
         $store: {
           dispatch: storeDispatchMock,
+          getters: {
+            'inboxes/getInboxes': [],
+            ...storeGetters,
+          },
         },
         $route: {
           params: { accountId: 530 },
@@ -537,6 +548,118 @@ describe('ConfigurationPage Virtual PBX management', () => {
     expect(alertMock).toHaveBeenCalledWith(
       'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_COPY_SUCCESS'
     );
+  });
+
+  it('saves a Beeline webhook token and Cloud PBX API token on the inbox provider config', async () => {
+    const wrapper = buildWrapper({
+      inbox: {
+        ...baseInbox,
+        provider: 'beeline',
+        provider_config: {
+          provider_kind: 'beeline',
+          existing_setting: 'keep-me',
+          beeline_events_webhook_token: 'old-beeline-token',
+          beeline_webhook_token: 'legacy-beeline-token',
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(wrapper.vm.beelineWebhookUrl).toBe(
+      'https://dev.one-link.kz/beeline/events/old-beeline-token'
+    );
+    expect(enTe('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TITLE')).toBe(
+      true
+    );
+    expect(ruTe('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TITLE')).toBe(
+      true
+    );
+    expect(enTe('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_API_TOKEN')).toBe(
+      true
+    );
+    expect(ruTe('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_API_TOKEN')).toBe(
+      true
+    );
+
+    wrapper.vm.beelineWebhookToken = 'new-beeline-token';
+    wrapper.vm.beelineApiToken = 'mpbx-secret-token';
+    await wrapper.vm.updateBeelineWebhookToken();
+    await flushPromises();
+
+    expect(storeDispatchMock).toHaveBeenCalledWith('inboxes/updateInbox', {
+      id: 42,
+      formData: false,
+      channel: {
+        provider_config: {
+          provider_kind: 'beeline',
+          existing_setting: 'keep-me',
+          beeline_events_webhook_token: 'new-beeline-token',
+          beeline_api_token: 'mpbx-secret-token',
+        },
+      },
+    });
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_SUCCESS'
+    );
+  });
+
+  it('copies the Beeline webhook URL for provider setup', async () => {
+    const wrapper = buildWrapper({
+      inbox: {
+        ...baseInbox,
+        provider: 'beeline',
+        provider_config: {
+          beeline_events_webhook_token: 'saved-beeline-token',
+        },
+      },
+    });
+    await flushPromises();
+
+    await wrapper.vm.copyBeelineWebhookUrl();
+
+    expect(copyTextToClipboardMock).toHaveBeenCalledWith(
+      'https://dev.one-link.kz/beeline/events/saved-beeline-token'
+    );
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_COPY_SUCCESS'
+    );
+  });
+
+  it('preserves an already configured Beeline API token when regenerating the webhook token with a blank password input', async () => {
+    const wrapper = buildWrapper({
+      inbox: {
+        ...baseInbox,
+        provider: 'beeline',
+        provider_config: {
+          provider_kind: 'beeline',
+          beeline_events_webhook_token: 'old-beeline-token',
+          beeline_api_token: 'already-saved-secret',
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(wrapper.vm.beelineApiTokenConfigured).toBe(true);
+    expect(wrapper.vm.beelineApiToken).toBe('');
+
+    wrapper.vm.generateBeelineWebhookToken();
+    const generatedToken = wrapper.vm.beelineWebhookToken;
+    expect(generatedToken).not.toBe('old-beeline-token');
+
+    await wrapper.vm.updateBeelineWebhookToken();
+    await flushPromises();
+
+    expect(storeDispatchMock).toHaveBeenCalledWith('inboxes/updateInbox', {
+      id: 42,
+      formData: false,
+      channel: {
+        provider_config: {
+          provider_kind: 'beeline',
+          beeline_events_webhook_token: generatedToken,
+          beeline_api_token: 'already-saved-secret',
+        },
+      },
+    });
   });
 
   it('renders Sipuni settings as employee SIP assignments without technical provider fields', async () => {
@@ -1201,4 +1324,439 @@ describe('ConfigurationPage Virtual PBX save feedback and Beeline dialing', () =
     );
     expect(wrapper.text()).not.toContain('raw-proxy-message');
   });
+
+  it('locks providerKind, Wazo SIP host, carrierKind, trunkDomain, and trunkHost for an Altel channel and surfaces auto-detected channel limit', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue({
+      payload: {
+        ...statusPayload.payload,
+        ui_config: {
+          ...statusPayload.payload.ui_config,
+          channel: {
+            ...statusPayload.payload.ui_config.channel,
+            provider_kind: 'wazo',
+            carrier_kind: 'altel',
+          },
+          connection: {
+            provider_kind: 'wazo',
+            carrier_kind: 'altel',
+            host: '',
+            port: 5060,
+            transport: 'udp',
+            max_channels: 5,
+            detected_channel_limit: 2,
+            last_channel_limit_hit_at: '2026-04-17T10:00:00Z',
+            trunk_username: 'f9bOCzgF',
+            trunk_password_configured: true,
+          },
+        },
+      },
+    });
+
+    const wrapper = buildWrapper({
+      inbox: { ...baseInbox, provider: 'wazo' },
+    });
+    await flushPromises();
+
+    expect(wrapper.vm.virtualPbxForm.connectionHost).toBe('188.241.217.162');
+    expect(wrapper.vm.virtualPbxForm.carrierKind).toBe('altel');
+    expect(wrapper.vm.virtualPbxForm.trunkDomain).toBe('astpbx.tele2.kz');
+    expect(wrapper.vm.virtualPbxForm.trunkHost).toBe('91.185.24.71');
+    expect(wrapper.vm.virtualPbxForm.detectedChannelLimit).toBe(2);
+
+    expect(
+      wrapper
+        .find('[data-testid="virtual-pbx-provider-kind"]')
+        .attributes('disabled')
+    ).toBeDefined();
+    expect(
+      wrapper
+        .find('[data-testid="virtual-pbx-connection-host"]')
+        .attributes('disabled')
+    ).toBeDefined();
+    expect(
+      wrapper
+        .find('[data-testid="virtual-pbx-carrier-kind"]')
+        .attributes('disabled')
+    ).toBeDefined();
+    expect(
+      wrapper
+        .find('[data-testid="virtual-pbx-trunk-domain"]')
+        .attributes('disabled')
+    ).toBeDefined();
+    expect(
+      wrapper
+        .find('[data-testid="virtual-pbx-trunk-host"]')
+        .attributes('disabled')
+    ).toBeDefined();
+    expect(
+      wrapper.find('[data-testid="virtual-pbx-carrier-badge"]').attributes('src')
+    ).toBe('/integrations/channels/badges/altel.svg');
+
+    expect(
+      wrapper.find('[data-testid="virtual-pbx-detected-channel-limit"]').exists()
+    ).toBe(true);
+    await wrapper
+      .find('[data-testid="virtual-pbx-apply-detected-limit"]')
+      .trigger('click');
+    expect(wrapper.vm.virtualPbxForm.maxChannels).toBe(2);
+  });
+
+  it('renders and saves the Visual Inbound & Outbound Call Routing Builder across Virtual PBX channels', async () => {
+    const wrapper = buildWrapper();
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="call-routing-builder"]').exists()).toBe(
+      true
+    );
+
+    await wrapper
+      .find('[data-testid="call-routing-schedule-mode"]')
+      .setValue('business_hours');
+    await wrapper
+      .find('[data-testid="call-routing-ringtone"]')
+      .setValue('classic');
+    wrapper.vm.toggleCallRoutingGroupUser(
+      wrapper.vm.callRoutingForm.inbound.groups[0],
+      7
+    );
+    wrapper.vm.addCallRoutingGroup();
+    wrapper.vm.callRoutingForm.inbound.groups[1].name = 'Sales';
+    wrapper.vm.callRoutingForm.inbound.groups[1].strategy = 'round_robin';
+    wrapper.vm.toggleCallRoutingGroupUser(
+      wrapper.vm.callRoutingForm.inbound.groups[1],
+      8
+    );
+
+    await wrapper
+      .find('[data-testid="call-routing-tab-outbound"]')
+      .trigger('click');
+    await wrapper
+      .find('[data-testid="call-routing-outbound-access-mode"]')
+      .setValue('selected_operators');
+    wrapper.vm.toggleCallRoutingOutboundUser(7);
+
+    updateVirtualPbxChannelMock.mockClear();
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    const savedRouting = updateVirtualPbxChannelMock.mock.calls[0][1].routing;
+    expect(savedRouting.call_routing).toMatchObject({
+      inbound: {
+        schedule_mode: 'business_hours',
+        ringtone: 'classic',
+        groups: [
+          expect.objectContaining({
+            strategy: 'broadcast',
+            user_ids: [7],
+          }),
+          expect.objectContaining({
+            name: 'Sales',
+            strategy: 'round_robin',
+            user_ids: [8],
+          }),
+        ],
+      },
+      outbound: {
+        access_mode: 'selected_operators',
+        allowed_user_ids: [7],
+      },
+    });
+  });
+
+  it('renders and saves the Visual Call Routing Builder for WhatsApp Calling', async () => {
+    const whatsappCallingInbox = {
+      id: 95,
+      name: 'WhatsApp Calling',
+      channel_type: 'Channel::Whatsapp',
+      provider: 'whatsapp_cloud',
+      provider_config: {
+        calling_enabled: true,
+      },
+      members: [{ id: 7, name: 'Ada Agent' }],
+    };
+
+    const wrapper = buildWrapper({ inbox: whatsappCallingInbox });
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-testid="whatsapp-call-routing-builder"]').exists()
+    ).toBe(true);
+
+    wrapper.vm.callRoutingForm.inbound.schedule_mode = 'business_hours';
+    wrapper.vm.callRoutingForm.inbound.fallback_action = 'ai';
+    await wrapper.vm.saveWhatsAppCallRouting();
+    await flushPromises();
+
+    expect(storeDispatchMock).toHaveBeenCalledWith(
+      'inboxes/updateInbox',
+      expect.objectContaining({
+        id: 95,
+        formData: false,
+        channel: {
+          provider_config: expect.objectContaining({
+            calling_enabled: true,
+            call_routing: expect.objectContaining({
+              inbound: expect.objectContaining({
+                schedule_mode: 'business_hours',
+                fallback_action: 'ai',
+              }),
+            }),
+          }),
+        },
+      })
+    );
+  });
+
+  it('configures missed-call WhatsApp follow-up with approved templates for official WABA channels and custom text for personal WhatsApp channels', async () => {
+    const whatsappCloudInbox = {
+      id: 201,
+      name: 'WhatsApp Cloud Official',
+      channel_type: 'Channel::Whatsapp',
+      provider: 'whatsapp_cloud',
+      message_templates: [
+        { name: 'missed_call_followup', status: 'APPROVED', language: 'ru' },
+        { name: 'draft_template', status: 'PENDING', language: 'ru' },
+      ],
+    };
+    const whatsappPersonalInbox = {
+      id: 202,
+      name: 'WhatsApp Web Personal',
+      channel_type: 'Channel::WhatsappWeb',
+      provider: 'baileys',
+    };
+
+    const wrapper = buildWrapper({
+      storeGetters: {
+        'inboxes/getInboxes': [whatsappCloudInbox, whatsappPersonalInbox],
+      },
+    });
+    await flushPromises();
+
+    await wrapper
+      .find('[data-testid="call-routing-whatsapp-followup-enabled"]')
+      .setValue(true);
+    expect(
+      wrapper.find('[data-testid="call-routing-whatsapp-followup-panel"]').exists()
+    ).toBe(true);
+
+    // Select official WABA channel -> template selector appears, custom message hidden
+    await wrapper
+      .find('[data-testid="call-routing-whatsapp-inbox"]')
+      .setValue('201');
+    expect(
+      wrapper.find('[data-testid="call-routing-whatsapp-template"]').exists()
+    ).toBe(true);
+    expect(
+      wrapper
+        .find('[data-testid="call-routing-whatsapp-custom-message"]')
+        .exists()
+    ).toBe(false);
+    expect(wrapper.vm.selectedWhatsappFollowupTemplates).toEqual([
+      { name: 'missed_call_followup', status: 'APPROVED', language: 'ru' },
+    ]);
+    await wrapper
+      .find('[data-testid="call-routing-whatsapp-template"]')
+      .setValue('missed_call_followup');
+
+    // Switch to personal WhatsApp channel -> custom message input appears
+    await wrapper
+      .find('[data-testid="call-routing-whatsapp-inbox"]')
+      .setValue('202');
+    expect(
+      wrapper.find('[data-testid="call-routing-whatsapp-template"]').exists()
+    ).toBe(false);
+    expect(
+      wrapper
+        .find('[data-testid="call-routing-whatsapp-custom-message"]')
+        .exists()
+    ).toBe(true);
+    await wrapper
+      .find('[data-testid="call-routing-whatsapp-custom-message"]')
+      .setValue('Здравствуйте! Пропустили ваш звонок, напишите нам здесь.');
+    await wrapper
+      .find('[data-testid="call-routing-whatsapp-cooldown"]')
+      .setValue('45');
+    await wrapper
+      .find('[data-testid="call-routing-show-extended-call-card"]')
+      .setValue(false);
+
+    updateVirtualPbxChannelMock.mockClear();
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    const savedRouting = updateVirtualPbxChannelMock.mock.calls[0][1].routing;
+    expect(savedRouting.call_routing.show_extended_call_card).toBe(false);
+    expect(savedRouting.call_routing.inbound.whatsapp_followup).toEqual({
+      enabled: true,
+      inbox_id: 202,
+      template_name: 'missed_call_followup',
+      template_language: 'ru',
+      custom_message:
+        'Здравствуйте! Пропустили ваш звонок, напишите нам здесь.',
+      cooldown_minutes: 45,
+    });
+  });
+
+  it('probes Wazo trunk channel capacity, updates maxChannels and AI concurrency badge, and forces OneLink routing authority for Wazo', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue({
+      payload: {
+        ...statusPayload.payload,
+        ui_config: {
+          ...statusPayload.payload.ui_config,
+          channel: {
+            ...statusPayload.payload.ui_config.channel,
+            provider_kind: 'wazo',
+            carrier_kind: 'altel',
+          },
+          connection: {
+            provider_kind: 'wazo',
+            carrier_kind: 'altel',
+            host: '188.241.217.162',
+            port: 5060,
+            transport: 'udp',
+            max_channels: 2,
+            ai_max_concurrent_calls: 2,
+            trunk_username: 'f9bOCzgF',
+            trunk_password_configured: true,
+          },
+        },
+      },
+    });
+    probeVirtualPbxChannelCapacityMock.mockResolvedValue({
+      payload: {
+        ui_config: {
+          ...statusPayload.payload.ui_config,
+          configuration_version: 'v-after-probe-42',
+          channel: {
+            ...statusPayload.payload.ui_config.channel,
+            provider_kind: 'wazo',
+            carrier_kind: 'altel',
+          },
+          connection: {
+            provider_kind: 'wazo',
+            carrier_kind: 'altel',
+            host: '188.241.217.162',
+            port: 5060,
+            transport: 'udp',
+            max_channels: 2,
+            detected_channel_limit: 4,
+            ai_max_concurrent_calls: 4,
+            trunk_username: 'f9bOCzgF',
+            trunk_password_configured: true,
+          },
+        },
+        channel_capacity_probe: {
+          detected_channel_limit: 4,
+          ai_max_concurrent_calls: 4,
+          answered: false,
+          billed_amount_kzt: 0,
+          probed_at: '2026-04-17T12:00:00Z',
+          detection_source: 'active_probe',
+        },
+      },
+    });
+    updateVirtualPbxChannelMock.mockResolvedValue({ payload: { errors: [] } });
+
+    const wrapper = buildWrapper({
+      inbox: { ...baseInbox, provider: 'wazo' },
+    });
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-testid="virtual-pbx-ai-concurrency-badge"]').exists()
+    ).toBe(true);
+    expect(wrapper.vm.effectiveAiMaxConcurrentCalls).toBe(2);
+    expect(
+      wrapper.find('[data-testid="call-routing-wazo-onelink-badge"]').exists()
+    ).toBe(true);
+    expect(
+      wrapper.find('[data-testid="call-routing-authority-selector"]').exists()
+    ).toBe(false);
+
+    await wrapper.vm.probeVirtualPbxChannelCapacity();
+    await flushPromises();
+
+    expect(probeVirtualPbxChannelCapacityMock).toHaveBeenCalledWith(42);
+    expect(wrapper.vm.virtualPbxForm.detectedChannelLimit).toBe(4);
+    expect(wrapper.vm.virtualPbxForm.maxChannels).toBe(4);
+    expect(wrapper.vm.effectiveAiMaxConcurrentCalls).toBe(4);
+    expect(wrapper.vm.virtualPbxForm.channelDetectionSource).toBe(
+      'active_probe'
+    );
+
+    updateVirtualPbxChannelMock.mockClear();
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    expect(
+      updateVirtualPbxChannelMock.mock.calls[0][1]
+        .expected_configuration_version
+    ).toBe('v-after-probe-42');
+    expect(
+      updateVirtualPbxChannelMock.mock.calls[0][1].connection.max_channels
+    ).toBe(4);
+  });
+
+  it('allows switching between external_pbx and onelink routing authority for external Cloud PBX providers and defines all routing/carrier i18n keys in EN and RU', async () => {
+    const requiredKeys = [
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.TITLE',
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.EXTERNAL_PBX',
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.EXTERNAL_PBX_DESC',
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.EXTERNAL_PBX_HINT',
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.ONELINK',
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.ONELINK_DESC',
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.ONELINK_HINT',
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.WAZO_ONELINK_BADGE',
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.WAZO_ALWAYS_ONELINK_HINT',
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.PROBE_CHANNELS_BUTTON',
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.PROBE_CHANNELS_SUCCESS',
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.AI_CONCURRENCY_BADGE',
+    ];
+    requiredKeys.forEach(key => {
+      expect(enTe(key)).toBe(true);
+      expect(ruTe(key)).toBe(true);
+    });
+
+    const wrapper = buildWrapper({
+      inbox: { ...baseInbox, provider: 'sipuni' },
+    });
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-testid="call-routing-authority-selector"]').exists()
+    ).toBe(true);
+    expect(
+      wrapper.find('[data-testid="call-routing-wazo-onelink-badge"]').exists()
+    ).toBe(false);
+    expect(wrapper.vm.callRoutingForm.inbound.routing_authority).toBe(
+      'onelink'
+    );
+
+    await wrapper
+      .find('[data-testid="call-routing-authority-external-pbx"]')
+      .trigger('click');
+
+    expect(wrapper.vm.callRoutingForm.inbound.routing_authority).toBe(
+      'external_pbx'
+    );
+    expect(wrapper.vm.isExternalPbxRoutingAuthority).toBe(true);
+    expect(
+      wrapper.find('[data-testid="call-routing-schedule-mode"]').exists()
+    ).toBe(false);
+    expect(
+      wrapper
+        .find('[data-testid="call-routing-whatsapp-followup-enabled"]')
+        .exists()
+    ).toBe(true);
+
+    updateVirtualPbxChannelMock.mockClear();
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    const savedRouting = updateVirtualPbxChannelMock.mock.calls[0][1].routing;
+    expect(savedRouting.call_routing.inbound.routing_authority).toBe(
+      'external_pbx'
+    );
+  });
 });
+

@@ -411,10 +411,10 @@
           "CHANGE_ACTION": "Провайдерді өзгерту"
         },
         "PROVIDERS": {
-          "KAZAKHSTAN": "Wazo виртуалды АТС",
-          "KAZAKHSTAN_DESC": "Қазақстандық SIP желілерін Wazo және OneLink вебфоны арқылы қосыңыз.",
-          "WAZO": "Wazo виртуалды АТС",
-          "WAZO_DESC": "Wazo жүйесін OneLink вебфонына қосыңыз. Операторлардың SIP қолжетімділігі автоматты түрде жасалады.",
+          "KAZAKHSTAN": "Басқа SIP-провайдер",
+          "KAZAKHSTAN_DESC": "Кез келген оператордың SIP желісін OneLink АТС және браузерлік вебфон арқылы қосыңыз.",
+          "WAZO": "Басқа SIP-провайдер",
+          "WAZO_DESC": "Кез келген оператордың SIP желісін OneLink АТС және браузерлік вебфон арқылы қосыңыз. Ішкі SIP қолжетімділігі автоматты түрде жасалады.",
           "SIPUNI": "Sipuni",
           "SIPUNI_DESC": "Sipuni провайдерін браузердегі вебфон арқылы жеке SIP-провайдер ретінде қосыңыз.",
           "ASTERISK_ANALOG": "Asterisk аналогтық",
@@ -425,13 +425,13 @@
           "BEELINE_DESC": "Beeline Cloud PBX қызметін Janus SIP және браузер вебфоны арқылы қосыңыз.",
           "TWILIO": "Twilio",
           "TWILIO_DESC": "Twilio нөмірлерін және браузер арқылы қоңырауларды қосыңыз.",
-          "ALTEL": "Altel Business (АТС OneLink)",
-          "ALTEL_DESC": "Подключите многоканальный SIP-номер Altel через собственную АТС OneLink (Wazo) и вебфон.",
-          "TELE2": "Tele2 Business (АТС OneLink)",
-          "TELE2_DESC": "Подключите SIP-линию Tele2 через собственную АТС OneLink (Wazo) и вебфон.",
-          "KAZAKHTELECOM": "Казахтелеком iD Phone (АТС OneLink)",
+          "ALTEL": "Altel Business",
+          "ALTEL_DESC": "Подключите многоканальный SIP-номер Altel через собственную АТС OneLink и браузерный вебфон.",
+          "TELE2": "Tele2 Business",
+          "TELE2_DESC": "Подключите SIP-линию Tele2 через собственную АТС OneLink и браузерный вебфон.",
+          "KAZAKHTELECOM": "Казахтелеком (iD Phone)",
           "KAZAKHTELECOM_DESC": "Подключите многоканальный SIP-транк Казахтелеком (iD Phone) через АТС OneLink.",
-          "KCELL": "Kcell / Activ (АТС OneLink)",
+          "KCELL": "Kcell / Activ",
           "KCELL_DESC": "Подключите корпоративный SIP-номер Kcell / Activ через собственную АТС OneLink."
         },
         "PHONE_NUMBER": {
@@ -451,7 +451,7 @@
             "BINOTEL": "Binotel",
             "ASTERISK_ANALOG": "Asterisk analog",
             "BEELINE": "Beeline Cloud PBX",
-            "WAZO": "Wazo"
+            "WAZO": "АТС OneLink"
           },
           "PROVIDER_ACCOUNT_NUMBER": {
             "LABEL": "Провайдердегі нөмір/аккаунт",
@@ -578,7 +578,7 @@
           "PLAN_BUTTON": "Синхрондау жоспарын көру",
           "RECONCILE_BUTTON": "Remote күйін тексеру",
           "PROVISION_BUTTON": "Телефониямен синхрондау",
-          "WAZO_APPLY_CONFIRM": "Бұл жоспарды Wazo жүйесінде қазір қолдану керек пе? Басқарылатын Wazo ресурстары жасалады, жаңартылады немесе жойылады.",
+          "WAZO_APPLY_CONFIRM": "Бұл жоспарды телефония серверінде қазір қолдану керек пе? Басқарылатын телефония ресурстары жасалады, жаңартылады немесе жойылады.",
           "PROVISIONING_PLAN_READY": "Provisioning жоспары дайын",
           "PROVISION_BLOCKED": "Remote provisioning орындалмады",
           "PROVISION_SUCCESS": "Remote provisioning аяқталды",
@@ -619,8 +619,8 @@
             "MANAGED_OWNERSHIP_REQUIRED": "Бұл арна OneLink-тен тыс жасалған және тек оқуға арналған.",
             "ACTIVE_CALLS_PRESENT": "Арнада белсенді қоңырау бар. Қоңырауды аяқтап, қайталап көріңіз.",
             "CONFIRMATION_REQUIRED": "Жоюды растаңыз.",
-            "WAZO_API_NOT_CONFIGURED": "Серверде Wazo API қолжетімділігі бапталмаған.",
-            "WAZO_SIP_HOST_MISMATCH": "Арнаның SIP сервері бапталған Wazo серверіне сәйкес келмейді.",
+            "WAZO_API_NOT_CONFIGURED": "Серверде телефония API қолжетімділігі бапталмаған.",
+            "WAZO_SIP_HOST_MISMATCH": "Арнаның SIP сервері бапталған телефония серверіне сәйкес келмейді.",
             "VIRTUAL_PBX_CONFIGURATION_STALE": "Арна баптаулары басқа жерде өзгертілді. Бетті жаңартып, қайта сақтаңыз.",
             "NOT_VOICE_CHANNEL": "Бұл арна қоңырау арнасы емес.",
             "UNSUPPORTED_PROVIDER": "Бұл қоңырау провайдерін мұнда баптауға болмайды.",
@@ -640,6 +640,9 @@
               "CUSTOM": "Другой SIP-оператор"
             },
             "MAX_CHANNELS_LABEL": "Всего линий (каналов) у номера",
+            "DETECTED_LIMIT_BADGE": "Автоопределено по ответам оператора: {count}",
+            "APPLY_DETECTED_LIMIT": "Применить",
+            "DETECTED_LIMIT_HINT": "Операторы связи не передают лимит линий при SIP-регистрации, но OneLink автоматически определяет фактический порог при занятости всех линий (SIP 486/503).",
             "RESERVED_INBOUND_LABEL": "Резерв линий только под входящие",
             "RING_STRATEGY_LABEL": "Распределение входящих в группе (Ring Group)",
             "RING_STRATEGIES": {
@@ -656,6 +659,79 @@
             "TRUNK_DOMAIN_PLACEHOLDER": "Напр. sip.altel.kz или sip.telecom.kz",
             "TRUNK_HOST_LABEL": "SIP-сервер (Host / IP) оператора",
             "TRUNK_HOST_PLACEHOLDER": "Напр. sip.altel.kz"
+          },
+          "CALL_ROUTING": {
+            "TITLE": "Визуальная маршрутизация звонков",
+            "SUBTITLE": "Настройте цепочку распределения входящих вызовов по группам сотрудников, гудки и правила исходящей линии.",
+            "INBOUND_TAB": "Входящая линия",
+            "OUTBOUND_TAB": "Исходящая линия",
+            "SAVE_BUTTON": "Сохранить маршрутизацию звонков",
+            "SCHEDULE": {
+              "TITLE": "Рабочее время и расписание",
+              "MODE_LABEL": "Когда принимать звонки",
+              "ALWAYS": "Круглосуточно (24/7)",
+              "BUSINESS_HOURS": "По рабочему расписанию канала",
+              "OFF_HOURS_ACTION_LABEL": "В нерабочее время",
+              "FORWARD_NUMBER_LABEL": "Номер переадресации"
+            },
+            "WAITING": {
+              "TITLE": "Ожидание и гудок",
+              "RING_TIMEOUT_LABEL": "Общее время дозвона, сек",
+              "RINGTONE_LABEL": "Гудок при дозвоне",
+              "SKIP_BUSY_LABEL": "Пропускать операторов, занятых другим разговором"
+            },
+            "RINGTONES": {
+              "DEFAULT": "Стандартный гудок КПВ",
+              "CLASSIC": "Классический телефонный",
+              "SOFT": "Мягкий тональный сигнал",
+              "URGENT": "Ускоренный сигнал"
+            },
+            "GROUPS": {
+              "TITLE": "Распределение по группам операторов",
+              "ADD_GROUP": "+ Добавить шаг / отдел",
+              "REMOVE_GROUP": "Удалить шаг",
+              "STEP_LABEL": "Шаг {index}",
+              "NAME_LABEL": "Название отдела / группы",
+              "NAME_PLACEHOLDER": "Напр. Первая линия / Отдел продаж",
+              "STRATEGY_LABEL": "Как распределять внутри группы",
+              "RING_SECONDS_LABEL": "Время дозвона шага, сек",
+              "OPERATORS_LABEL": "Сотрудники в этой группе (нажмите, чтобы выбрать)"
+            },
+            "GROUP_STRATEGIES": {
+              "BROADCAST": "Всем свободным одновременно",
+              "LEAST_RECENT": "Тому, кто дольше свободен",
+              "ROUND_ROBIN": "По очереди по кругу"
+            },
+            "FALLBACK": {
+              "TITLE": "Если никто не ответил",
+              "ACTION_LABEL": "Действие при неответе",
+              "FORWARD_NUMBER_LABEL": "Запасной номер переадресации"
+            },
+            "ACTIONS": {
+              "REJECT": "Завершить вызов (фиксировать пропущенный)",
+              "AI": "Перевести на голосового ИИ-агента",
+              "FORWARD": "Переадресовать на внешний номер"
+            },
+            "OUTBOUND": {
+              "ACCESS_MODE_LABEL": "Кто может звонить с этой линии",
+              "ALL_MEMBERS": "Все сотрудники канала",
+              "SELECTED_OPERATORS": "Только выбранные сотрудники",
+              "CALLER_ID_LABEL": "Отображаемый номер при исходящем (Caller ID)",
+              "ALLOWED_OPERATORS_LABEL": "Разрешённые сотрудники для исходящих вызовов"
+            },
+            "WHATSAPP_FOLLOWUP": {
+              "ENABLED_LABEL": "Авто-сообщение в WhatsApp при пропущенном звонке",
+              "INBOX_LABEL": "Канал WhatsApp для отправки",
+              "INBOX_PLACEHOLDER": "Выберите канал WhatsApp",
+              "COOLDOWN_LABEL": "Защита от повторов (антиспам, минут)",
+              "TEMPLATE_LABEL": "Одобренный шаблон WhatsApp (Cloud API)",
+              "TEMPLATE_PLACEHOLDER": "Выберите шаблон сообщения",
+              "CUSTOM_MESSAGE_LABEL": "Текст сообщения при пропущенном звонке",
+              "CUSTOM_MESSAGE_PLACEHOLDER": "Здравствуйте! Вы звонили нам, но все линии были заняты. Чем мы можем помочь?"
+            },
+            "CALL_CARD": {
+              "SHOW_EXTENDED_LABEL": "Раскрывать подробную карточку клиента при звонке по умолчанию (можно свернуть на самой карточке)"
+            }
           }
         },
         "TWILIO": {
@@ -758,7 +834,21 @@
           "NUMBER_REF": "Нөмір идентификаторы",
           "TRUNK_REF": "Транк идентификаторы",
           "PROVIDER_CONNECTION": "Провайдер қосылымы",
-          "SIP_PROFILES": "SIP профильдері"
+          "SIP_PROFILES": "SIP профильдері",
+          "BEELINE_WEBHOOK_TITLE": "Beeline Cloud PBX API және webhook",
+          "BEELINE_WEBHOOK_SUBTITLE": "Барлық операторлар офлайн болғанда да қабылданбаған қоңырауларды тіркеу үшін Beeline Cloud PBX REST API токенін (X-MPBX-API-AUTH-TOKEN) және Xsi-Events webhook-ты қосыңыз.",
+          "BEELINE_WEBHOOK_EMPTY": "Webhook URL алу үшін token енгізіңіз немесе генерациялаңыз.",
+          "BEELINE_WEBHOOK_TOKEN": "Webhook token",
+          "BEELINE_WEBHOOK_TOKEN_PLACEHOLDER": "Мысалы beeline-кездейсоқ-token",
+          "BEELINE_API_TOKEN": "Beeline Cloud PBX API токені (X-MPBX-API-AUTH-TOKEN)",
+          "BEELINE_API_TOKEN_PLACEHOLDER": "cloudpbx.beeline.kz жеке кабинетіндегі токен",
+          "BEELINE_API_TOKEN_CONFIGURED_HINT": "API токені сақталған. Өзгертпеу үшін бос қалдырыңыз.",
+          "BEELINE_WEBHOOK_GENERATE": "Token генерациялау",
+          "BEELINE_WEBHOOK_COPY": "URL көшіру",
+          "BEELINE_WEBHOOK_COPY_SUCCESS": "Beeline webhook URL көшірілді",
+          "BEELINE_WEBHOOK_SAVE": "Beeline баптауларын сақтау",
+          "BEELINE_WEBHOOK_SUCCESS": "Beeline баптаулары сақталды",
+          "BEELINE_WEBHOOK_REQUIRED": "Webhook token немесе Beeline API токені міндетті"
         },
         "SUBMIT_BUTTON": "Қоңыраулар арнасын құру",
         "API": {

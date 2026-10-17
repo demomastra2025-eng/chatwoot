@@ -114,9 +114,13 @@ class CommunicationThreads::FilterService < FilterService
   end
 
   def apply_conversation_scopes(scope)
-    return conversations_with_any_label(scope) if labels_scope_any?
-
+    scope = conversations_with_any_label(scope) if labels_scope_any?
+    scope = conversations_waiting_for_callback(scope) if waiting_for_callback_only?
     scope
+  end
+
+  def conversations_waiting_for_callback(scope)
+    scope.where("COALESCE(conversations.additional_attributes ->> 'waiting_for_callback', conversations.custom_attributes ->> 'waiting_for_callback') = 'true'")
   end
 
   def apply_thread_scopes(scope, include_unread: true)
@@ -144,6 +148,12 @@ class CommunicationThreads::FilterService < FilterService
   def unread_only?
     ActiveModel::Type::Boolean.new.cast(
       @params[:unread].presence || @params[:unread_only].presence || @params[:unreadOnly].presence
+    )
+  end
+
+  def waiting_for_callback_only?
+    ActiveModel::Type::Boolean.new.cast(
+      @params[:waiting_for_callback].presence || @params[:waitingForCallback].presence
     )
   end
 

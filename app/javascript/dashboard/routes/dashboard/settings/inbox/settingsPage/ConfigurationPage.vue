@@ -22,6 +22,77 @@ import { copyTextToClipboard } from 'shared/helpers/clipboard';
 
 // Beeline Cloud PBX connects outbound calls dialed as +7XXXXXXXXXX.
 const BEELINE_OUTBOUND_DIAL_FORMAT = 'e164_plus';
+const DEFAULT_WAZO_SIP_HOST = '188.241.217.162';
+
+const defaultWazoSipHost = () =>
+  window.chatwootConfig?.wazoSipHost || DEFAULT_WAZO_SIP_HOST;
+
+const WAZO_CARRIER_PRESETS = {
+  altel: { domain: 'astpbx.tele2.kz', host: '91.185.24.71', max: 2 },
+  tele2: { domain: 'astpbx.tele2.kz', host: '91.185.24.71', max: 2 },
+  kazakhtelecom: {
+    domain: 'sip.telecom.kz',
+    host: 'sip.telecom.kz',
+    max: 5,
+  },
+  kcell: { domain: 'sip.kcell.kz', host: 'sip.kcell.kz', max: 5 },
+  beeline_trunk: {
+    domain: 'cloudpbx.beeline.kz',
+    host: '46.227.186.231',
+    max: 5,
+  },
+};
+
+const KNOWN_CARRIER_PRESETS = Object.keys(WAZO_CARRIER_PRESETS);
+
+const CARRIER_BADGES = {
+  altel: '/integrations/channels/badges/altel.svg',
+  tele2: '/integrations/channels/badges/tele2.svg',
+  kazakhtelecom: '/integrations/channels/badges/kazakhtelecom.svg',
+  kcell: '/integrations/channels/badges/kcell.svg',
+  beeline_trunk: '/integrations/channels/badges/beeline.svg',
+  beeline: '/integrations/channels/badges/beeline.svg',
+  sipuni: '/integrations/channels/badges/sipuni.svg',
+  binotel: '/integrations/channels/badges/binotel.svg',
+  wazo: '/integrations/channels/badges/custom-sip.svg',
+};
+
+const defaultCallRoutingConfig = () => ({
+  show_extended_call_card: true,
+  inbound: {
+    routing_authority: 'onelink',
+    schedule_mode: 'always',
+    off_hours_action: 'reject',
+    off_hours_forward_number: '',
+    ring_timeout_seconds: 30,
+    skip_busy_operators: true,
+    ringtone: 'default',
+    groups: [
+      {
+        id: 'group-1',
+        name: '',
+        strategy: 'broadcast',
+        ring_seconds: 25,
+        user_ids: [],
+      },
+    ],
+    fallback_action: 'reject',
+    fallback_forward_number: '',
+    whatsapp_followup: {
+      enabled: false,
+      inbox_id: '',
+      template_name: '',
+      template_language: 'ru',
+      custom_message: '',
+      cooldown_minutes: 60,
+    },
+  },
+  outbound: {
+    access_mode: 'all_members',
+    allowed_user_ids: [],
+    caller_id_number: '',
+  },
+});
 
 export default {
   components: {
@@ -65,6 +136,7 @@ export default {
       isLoadingVirtualPbxPlan: false,
       isProvisioningVirtualPbx: false,
       isReconcilingVirtualPbx: false,
+      isProbingVirtualPbxChannels: false,
       virtualPbxProvisioningPlan: null,
       virtualPbxProvisioningRuns: [],
       virtualPbxReconcileResult: null,
@@ -72,6 +144,15 @@ export default {
       isUpdatingSipuniWebhook: false,
       binotelWebhookToken: '',
       isUpdatingBinotelWebhook: false,
+      beelineWebhookToken: '',
+      beelineApiToken: '',
+      beelineApiTokenConfigured: false,
+      isUpdatingBeelineWebhook: false,
+      virtualPbxLockedCarrierKind: '',
+      callRoutingTab: 'inbound',
+      callRoutingDirty: false,
+      isSavingWhatsAppCallRouting: false,
+      callRoutingForm: defaultCallRoutingConfig(),
       virtualPbxForm: {
         channelName: '',
         providerKind: '',
@@ -89,6 +170,10 @@ export default {
         connectionPassword: '',
         carrierKind: '',
         maxChannels: 2,
+        detectedChannelLimit: null,
+        lastChannelLimitHitAt: '',
+        lastChannelProbeAt: '',
+        channelDetectionSource: '',
         reservedInboundChannels: 0,
         ringStrategy: 'all',
         groupExtension: '',
@@ -214,6 +299,12 @@ export default {
         this.inbox.provider === 'binotel'
       );
     },
+    isBeelineVoiceInbox() {
+      return (
+        this.inbox.channel_type === 'Channel::Voice' &&
+        this.inbox.provider === 'beeline'
+      );
+    },
     sipuniWebhookUrl() {
       const token = this.sipuniWebhookToken.trim();
       if (!token) return '';
@@ -229,6 +320,14 @@ export default {
       const baseUrl =
         window.chatwootConfig?.hostURL || window.location.origin || '';
       return `${baseUrl.replace(/\/$/, '')}/binotel/events/${encodeURIComponent(token)}`;
+    },
+    beelineWebhookUrl() {
+      const token = this.beelineWebhookToken.trim();
+      if (!token) return '';
+
+      const baseUrl =
+        window.chatwootConfig?.hostURL || window.location.origin || '';
+      return `${baseUrl.replace(/\/$/, '')}/beeline/events/${encodeURIComponent(token)}`;
     },
     virtualPbxLoadKey() {
       return [
@@ -325,6 +424,91 @@ export default {
     },
     isVirtualPbxWazo() {
       return this.virtualPbxProviderKind === 'wazo';
+    },
+    isVirtualPbxCarrierLocked() {
+      return Boolean(this.virtualPbxLockedCarrierKind);
+    },
+    isVirtualPbxKnownCarrierPreset() {
+      return KNOWN_CARRIER_PRESETS.includes(this.virtualPbxForm.carrierKind);
+    },
+    virtualPbxCarrierBadgeUrl() {
+      return (
+        CARRIER_BADGES[this.virtualPbxForm.carrierKind] ||
+        CARRIER_BADGES[this.virtualPbxProviderKind] ||
+        ''
+      );
+    },
+    callRoutingRingtoneOptions() {
+      return [
+        {
+          value: 'default',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.RINGTONES.DEFAULT'
+          ),
+        },
+        {
+          value: 'classic',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.RINGTONES.CLASSIC'
+          ),
+        },
+        {
+          value: 'soft',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.RINGTONES.SOFT'
+          ),
+        },
+        {
+          value: 'urgent',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.RINGTONES.URGENT'
+          ),
+        },
+      ];
+    },
+    callRoutingGroupStrategyOptions() {
+      return [
+        {
+          value: 'broadcast',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUP_STRATEGIES.BROADCAST'
+          ),
+        },
+        {
+          value: 'least_recent',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUP_STRATEGIES.LEAST_RECENT'
+          ),
+        },
+        {
+          value: 'round_robin',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUP_STRATEGIES.ROUND_ROBIN'
+          ),
+        },
+      ];
+    },
+    callRoutingActionOptions() {
+      return [
+        {
+          value: 'reject',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ACTIONS.REJECT'
+          ),
+        },
+        {
+          value: 'ai',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ACTIONS.AI'
+          ),
+        },
+        {
+          value: 'forward',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ACTIONS.FORWARD'
+          ),
+        },
+      ];
     },
     virtualPbxTransportOptions() {
       return ['udp', 'tcp', 'tls'];
@@ -533,6 +717,89 @@ export default {
 
       return Array.from(byId.values());
     },
+    whatsappInboxOptions() {
+      const allInboxes =
+        this.$store?.getters?.['inboxes/getInboxes'] || this.inboxes || [];
+      return allInboxes.filter(item => {
+        const channelType = String(
+          item?.channel_type || item?.channelType || ''
+        );
+        const provider = String(item?.provider || '').toLowerCase();
+        return (
+          channelType === 'Channel::Whatsapp' ||
+          channelType === 'Channel::WhatsappWeb' ||
+          (channelType === 'Channel::TwilioSms' &&
+            item?.medium === 'whatsapp') ||
+          channelType.toLowerCase().includes('whatsapp') ||
+          provider.includes('whatsapp')
+        );
+      });
+    },
+    selectedWhatsappFollowupInbox() {
+      const inboxId = Number(
+        this.callRoutingForm?.inbound?.whatsapp_followup?.inbox_id || 0
+      );
+      if (!inboxId) return null;
+      return (
+        this.whatsappInboxOptions.find(item => Number(item.id) === inboxId) ||
+        null
+      );
+    },
+    isSelectedWhatsappFollowupOfficial() {
+      const inbox = this.selectedWhatsappFollowupInbox;
+      if (!inbox) return false;
+      const channelType = String(
+        inbox.channel_type || inbox.channelType || ''
+      );
+      const provider = String(inbox.provider || '').toLowerCase();
+      if (
+        channelType === 'Channel::WhatsappWeb' ||
+        provider === 'whatsapp_web' ||
+        provider === 'baileys' ||
+        provider === 'personal' ||
+        provider === 'unofficial'
+      ) {
+        return false;
+      }
+      return (
+        channelType === 'Channel::Whatsapp' ||
+        provider === 'whatsapp_cloud' ||
+        provider === '360dialog' ||
+        Array.isArray(inbox.message_templates)
+      );
+    },
+    selectedWhatsappFollowupTemplates() {
+      const inbox = this.selectedWhatsappFollowupInbox;
+      if (!inbox) return [];
+      const templates =
+        this.$store?.getters?.['inboxes/getWhatsAppTemplates']?.(inbox.id) ||
+        inbox.message_templates ||
+        inbox.messageTemplates ||
+        [];
+      return Array.isArray(templates)
+        ? templates.filter(
+            tpl =>
+              tpl &&
+              tpl.name &&
+              (!tpl.status || String(tpl.status).toLowerCase() === 'approved')
+          )
+        : [];
+    },
+    effectiveAiMaxConcurrentCalls() {
+      const limit = Number(
+        this.virtualPbxForm.maxChannels ||
+          this.virtualPbxConfig?.connection?.ai_max_concurrent_calls ||
+          2
+      );
+      return Number.isFinite(limit) && limit > 0 ? limit : 1;
+    },
+    isExternalPbxRoutingAuthority() {
+      return (
+        this.isVirtualPbxVoiceInbox &&
+        !this.isVirtualPbxWazo &&
+        this.callRoutingForm?.inbound?.routing_authority === 'external_pbx'
+      );
+    },
   },
   watch: {
     inbox() {
@@ -570,6 +837,12 @@ export default {
         ? !!this.inbox.provider_config.calling_enabled
         : !!this.inbox.provider_config?.calling_capable;
       this.aiVoiceEnabled = !!this.inbox.provider_config?.ai_voice_enabled;
+      if (this.isAWhatsAppChannel && !this.isATwilioChannel) {
+        this.callRoutingForm = this.normalizeCallRoutingConfig(
+          this.inbox.provider_config?.call_routing
+        );
+        this.callRoutingDirty = false;
+      }
       this.sipuniWebhookToken =
         this.inbox.provider_config?.sipuni_events_webhook_token ||
         this.inbox.provider_config?.sipuni_webhook_token ||
@@ -578,6 +851,15 @@ export default {
         this.inbox.provider_config?.binotel_events_webhook_token ||
         this.inbox.provider_config?.binotel_webhook_token ||
         '';
+      this.beelineWebhookToken =
+        this.inbox.provider_config?.beeline_events_webhook_token ||
+        this.inbox.provider_config?.beeline_webhook_token ||
+        '';
+      this.beelineApiToken = '';
+      this.beelineApiTokenConfigured = Boolean(
+        this.inbox.provider_config?.beeline_api_token_configured ||
+          this.inbox.provider_config?.beeline_api_token
+      );
       this.$nextTick(() => {
         this.isSettingDefaults = false;
       });
@@ -732,7 +1014,10 @@ export default {
       }
     },
     async loadVirtualPbxMembers() {
-      if (!this.isVirtualPbxVoiceInbox || !this.inbox.id) {
+      if (
+        (!this.isVirtualPbxVoiceInbox && !this.isAWhatsAppChannel) ||
+        !this.inbox.id
+      ) {
         this.virtualPbxInboxMembers = [];
         return;
       }
@@ -938,6 +1223,13 @@ export default {
         connection.provider_kind ||
         config.provider_kind ||
         'sipuni';
+      const carrierKind =
+        channel.carrier_kind ||
+        providerConnection.carrier_kind ||
+        providerConnectionMetadata.carrier_kind ||
+        '';
+      const carrierPreset = WAZO_CARRIER_PRESETS[carrierKind] || null;
+      this.virtualPbxLockedCarrierKind = carrierKind;
 
       this.virtualPbxForm = {
         ...this.virtualPbxForm,
@@ -953,7 +1245,9 @@ export default {
           phoneNumbers.provider_account_number ||
           '',
         ingressNumber: phoneNumbers.ingress_number || '',
-        connectionHost: providerConnection.host || '',
+        connectionHost:
+          providerConnection.host ||
+          (providerKind === 'wazo' ? defaultWazoSipHost() : ''),
         connectionPort: String(providerConnection.port || 5060),
         connectionTransport: providerConnection.transport || 'udp',
         connectionSipDomain:
@@ -972,16 +1266,31 @@ export default {
           (providerKind === 'beeline'
             ? BEELINE_OUTBOUND_DIAL_FORMAT
             : 'kz_trunk'),
-        carrierKind:
-          channel.carrier_kind ||
-          providerConnection.carrier_kind ||
-          providerConnectionMetadata.carrier_kind ||
-          '',
+        carrierKind,
         maxChannels: Number(
           providerConnection.max_channels ||
             providerConnectionMetadata.max_channels ||
+            carrierPreset?.max ||
             2
         ),
+        detectedChannelLimit:
+          Number(
+            providerConnection.detected_channel_limit ||
+              providerConnectionMetadata.detected_channel_limit ||
+              providerConnectionMetadata.wazo_detected_channel_limit
+          ) || null,
+        lastChannelLimitHitAt:
+          providerConnection.last_channel_limit_hit_at ||
+          providerConnectionMetadata.wazo_last_channel_limit_hit_at ||
+          '',
+        lastChannelProbeAt:
+          providerConnection.last_channel_probe_at ||
+          providerConnectionMetadata.last_channel_probe_at ||
+          '',
+        channelDetectionSource:
+          providerConnection.detection_source ||
+          providerConnectionMetadata.detection_source ||
+          '',
         reservedInboundChannels: Number(
           providerConnection.reserved_inbound_channels ??
             providerConnectionMetadata.reserved_inbound_channels ??
@@ -1007,10 +1316,12 @@ export default {
         trunkDomain:
           providerConnection.trunk_domain ||
           providerConnectionMetadata.trunk_domain ||
+          carrierPreset?.domain ||
           '',
         trunkHost:
           providerConnection.trunk_host ||
           providerConnectionMetadata.trunk_host ||
+          carrierPreset?.host ||
           '',
         connectionUsername: providerConnection.username || '',
         connectionPassword: '',
@@ -1024,6 +1335,267 @@ export default {
           config.employees || config.profiles || []
         ),
       };
+      this.callRoutingForm = this.normalizeCallRoutingConfig(
+        routing.call_routing
+      );
+      this.callRoutingDirty = false;
+    },
+    applyDetectedChannelLimit() {
+      const limit = Number(this.virtualPbxForm.detectedChannelLimit);
+      if (limit > 0) {
+        this.virtualPbxForm.maxChannels = limit;
+      }
+    },
+    async probeVirtualPbxChannelCapacity() {
+      if (!this.isVirtualPbxVoiceInbox || !this.inbox.id) return;
+
+      this.isProbingVirtualPbxChannels = true;
+      try {
+        const response = await VoiceAPI.probeVirtualPbxChannelCapacity(
+          this.inbox.id
+        );
+        const payload = response?.payload || {};
+        if (payload.ui_config) {
+          this.virtualPbxStatusPayload = {
+            ...(this.virtualPbxStatusPayload || {}),
+            ...payload,
+            ui_config: payload.ui_config,
+          };
+        }
+        const probe = payload.channel_capacity_probe || {};
+        const detected = Number(
+          probe.detected_channel_limit ||
+            payload.channel_capacity?.detected_channel_limit ||
+            payload.ui_config?.connection?.detected_channel_limit ||
+            payload.config?.connection?.detected_channel_limit ||
+            0
+        );
+        if (detected > 0) {
+          this.virtualPbxForm.detectedChannelLimit = detected;
+          this.virtualPbxForm.maxChannels = detected;
+        }
+        if (probe.probed_at) {
+          this.virtualPbxForm.lastChannelProbeAt = probe.probed_at;
+        }
+        if (probe.detection_source) {
+          this.virtualPbxForm.channelDetectionSource = probe.detection_source;
+        }
+        useAlert(
+          this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.PROBE_CHANNELS_SUCCESS',
+            { count: detected || this.virtualPbxForm.maxChannels }
+          )
+        );
+      } catch (error) {
+        this.handleVirtualPbxError(error);
+      } finally {
+        this.isProbingVirtualPbxChannels = false;
+      }
+    },
+    setCallRoutingAuthority(authority) {
+      if (this.isVirtualPbxWazo) {
+        this.callRoutingForm.inbound.routing_authority = 'onelink';
+        return;
+      }
+      this.callRoutingForm.inbound.routing_authority =
+        authority === 'external_pbx' ? 'external_pbx' : 'onelink';
+      this.markCallRoutingDirty();
+    },
+    normalizeCallRoutingConfig(raw) {
+      const defaults = defaultCallRoutingConfig();
+      if (!raw || typeof raw !== 'object') return defaults;
+
+      const inbound = raw.inbound || {};
+      const outbound = raw.outbound || {};
+      const rawFollowup = inbound.whatsapp_followup || {};
+      const rawGroups = Array.isArray(inbound.groups) ? inbound.groups : [];
+      const groups = rawGroups.length
+        ? rawGroups.map((group, idx) => ({
+            id: group.id || `group-${idx + 1}`,
+            name: group.name || '',
+            strategy: group.strategy || 'broadcast',
+            ring_seconds: Number(group.ring_seconds || 25),
+            user_ids: Array.isArray(group.user_ids)
+              ? group.user_ids
+                  .map(id => Number(id))
+                  .filter(id => Number.isFinite(id) && id > 0)
+              : [],
+          }))
+        : defaults.inbound.groups;
+      const isWazo =
+        this.isVirtualPbxWazo || this.virtualPbxForm?.providerKind === 'wazo';
+      const routingAuthority = isWazo
+        ? 'onelink'
+        : inbound.routing_authority === 'external_pbx'
+          ? 'external_pbx'
+          : 'onelink';
+
+      return {
+        show_extended_call_card:
+          raw.show_extended_call_card !== undefined
+            ? Boolean(raw.show_extended_call_card)
+            : defaults.show_extended_call_card,
+        inbound: {
+          routing_authority: routingAuthority,
+          schedule_mode:
+            inbound.schedule_mode || defaults.inbound.schedule_mode,
+          off_hours_action:
+            inbound.off_hours_action || defaults.inbound.off_hours_action,
+          off_hours_forward_number: inbound.off_hours_forward_number || '',
+          ring_timeout_seconds: Number(
+            inbound.ring_timeout_seconds ||
+              defaults.inbound.ring_timeout_seconds
+          ),
+          skip_busy_operators:
+            inbound.skip_busy_operators !== undefined
+              ? Boolean(inbound.skip_busy_operators)
+              : defaults.inbound.skip_busy_operators,
+          ringtone: inbound.ringtone || defaults.inbound.ringtone,
+          groups,
+          fallback_action:
+            inbound.fallback_action || defaults.inbound.fallback_action,
+          fallback_forward_number: inbound.fallback_forward_number || '',
+          whatsapp_followup: {
+            enabled: Boolean(rawFollowup.enabled),
+            inbox_id: rawFollowup.inbox_id ? Number(rawFollowup.inbox_id) : '',
+            template_name: rawFollowup.template_name || '',
+            template_language: rawFollowup.template_language || 'ru',
+            custom_message: rawFollowup.custom_message || '',
+            cooldown_minutes: Number(rawFollowup.cooldown_minutes || 60),
+          },
+        },
+        outbound: {
+          access_mode: outbound.access_mode || defaults.outbound.access_mode,
+          allowed_user_ids: Array.isArray(outbound.allowed_user_ids)
+            ? outbound.allowed_user_ids
+                .map(id => Number(id))
+                .filter(id => Number.isFinite(id) && id > 0)
+            : [],
+          caller_id_number: outbound.caller_id_number || '',
+        },
+      };
+    },
+    serializeCallRoutingConfig() {
+      const inbound = this.callRoutingForm.inbound || {};
+      const outbound = this.callRoutingForm.outbound || {};
+      const followup = inbound.whatsapp_followup || {};
+      const isWazo =
+        this.isVirtualPbxWazo || this.virtualPbxForm?.providerKind === 'wazo';
+      const routingAuthority = isWazo
+        ? 'onelink'
+        : inbound.routing_authority === 'external_pbx'
+          ? 'external_pbx'
+          : 'onelink';
+
+      return {
+        show_extended_call_card:
+          this.callRoutingForm.show_extended_call_card !== false,
+        inbound: {
+          routing_authority: routingAuthority,
+          schedule_mode: inbound.schedule_mode || 'always',
+          off_hours_action: inbound.off_hours_action || 'reject',
+          off_hours_forward_number: (
+            inbound.off_hours_forward_number || ''
+          ).trim(),
+          ring_timeout_seconds: Number(inbound.ring_timeout_seconds || 30),
+          skip_busy_operators: Boolean(inbound.skip_busy_operators),
+          ringtone: inbound.ringtone || 'default',
+          groups: (inbound.groups || []).map((group, idx) => ({
+            id: group.id || `group-${idx + 1}`,
+            name: (group.name || '').trim(),
+            strategy: group.strategy || 'broadcast',
+            ring_seconds: Number(group.ring_seconds || 25),
+            user_ids: (group.user_ids || [])
+              .map(id => Number(id))
+              .filter(id => Number.isFinite(id) && id > 0),
+          })),
+          fallback_action: inbound.fallback_action || 'reject',
+          fallback_forward_number: (
+            inbound.fallback_forward_number || ''
+          ).trim(),
+          whatsapp_followup: {
+            enabled: Boolean(followup.enabled),
+            inbox_id: followup.inbox_id ? Number(followup.inbox_id) : null,
+            template_name: (followup.template_name || '').trim(),
+            template_language: (followup.template_language || 'ru').trim(),
+            custom_message: (followup.custom_message || '').trim(),
+            cooldown_minutes: Math.min(
+              Math.max(Number(followup.cooldown_minutes || 60), 5),
+              1440
+            ),
+          },
+        },
+        outbound: {
+          access_mode: outbound.access_mode || 'all_members',
+          allowed_user_ids: (outbound.allowed_user_ids || [])
+            .map(id => Number(id))
+            .filter(id => Number.isFinite(id) && id > 0),
+          caller_id_number: (outbound.caller_id_number || '').trim(),
+        },
+      };
+    },
+    markCallRoutingDirty() {
+      this.callRoutingDirty = true;
+    },
+    addCallRoutingGroup() {
+      const nextIndex = (this.callRoutingForm.inbound.groups?.length || 0) + 1;
+      this.callRoutingForm.inbound.groups.push({
+        id: `group-${Date.now()}-${nextIndex}`,
+        name: '',
+        strategy: 'broadcast',
+        ring_seconds: 25,
+        user_ids: [],
+      });
+      this.markCallRoutingDirty();
+    },
+    removeCallRoutingGroup(index) {
+      if (this.callRoutingForm.inbound.groups.length <= 1) return;
+      this.callRoutingForm.inbound.groups.splice(index, 1);
+      this.markCallRoutingDirty();
+    },
+    toggleCallRoutingGroupUser(group, userId) {
+      const numericId = Number(userId);
+      if (!numericId) return;
+      const existingIndex = (group.user_ids || []).indexOf(numericId);
+      if (existingIndex >= 0) {
+        group.user_ids.splice(existingIndex, 1);
+      } else {
+        group.user_ids.push(numericId);
+      }
+      this.markCallRoutingDirty();
+    },
+    toggleCallRoutingOutboundUser(userId) {
+      const numericId = Number(userId);
+      if (!numericId) return;
+      const list = this.callRoutingForm.outbound.allowed_user_ids;
+      const existingIndex = list.indexOf(numericId);
+      if (existingIndex >= 0) {
+        list.splice(existingIndex, 1);
+      } else {
+        list.push(numericId);
+      }
+      this.markCallRoutingDirty();
+    },
+    async saveWhatsAppCallRouting() {
+      this.isSavingWhatsAppCallRouting = true;
+      try {
+        await this.$store.dispatch('inboxes/updateInbox', {
+          id: this.inbox.id,
+          formData: false,
+          channel: {
+            provider_config: {
+              ...this.inbox.provider_config,
+              call_routing: this.serializeCallRoutingConfig(),
+            },
+          },
+        });
+        this.callRoutingDirty = false;
+        useAlert(this.$t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
+      } catch {
+        useAlert(this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
+      } finally {
+        this.isSavingWhatsAppCallRouting = false;
+      }
     },
     validateVirtualPbxForm() {
       const form = this.virtualPbxForm;
@@ -1183,6 +1755,13 @@ export default {
         },
       };
 
+      if (
+        this.callRoutingDirty ||
+        Boolean(this.virtualPbxConfig?.routing?.call_routing)
+      ) {
+        payload.routing.call_routing = this.serializeCallRoutingConfig();
+      }
+
       if (this.isVirtualPbxDialFormatEditable) {
         payload.metadata.outbound_dial_format = form.outboundDialFormat;
       }
@@ -1203,13 +1782,13 @@ export default {
         payload.connection.codec = 'pcma';
       }
       if (this.isVirtualPbxWazo) {
+        payload.connection.max_channels = Number(form.maxChannels || 2);
+        payload.connection.reserved_inbound_channels = Number(
+          form.reservedInboundChannels || 0
+        );
         if (form.carrierKind) {
           payload.connection.carrier_kind = form.carrierKind;
           payload.metadata.carrier_kind = form.carrierKind;
-          payload.connection.max_channels = Number(form.maxChannels || 2);
-          payload.connection.reserved_inbound_channels = Number(
-            form.reservedInboundChannels || 0
-          );
         }
         if (form.ringStrategy && form.ringStrategy !== 'all') {
           payload.connection.ring_strategy = form.ringStrategy;
@@ -1238,29 +1817,10 @@ export default {
       return payload;
     },
     onVirtualPbxCarrierChange() {
-      const presets = {
-        altel: { domain: 'astpbx.tele2.kz', host: '91.185.24.71', max: 2 },
-        tele2: { domain: 'astpbx.tele2.kz', host: '91.185.24.71', max: 2 },
-        kazakhtelecom: {
-          domain: 'sip.telecom.kz',
-          host: 'sip.telecom.kz',
-          max: 5,
-        },
-        kcell: { domain: 'sip.kcell.kz', host: 'sip.kcell.kz', max: 5 },
-        beeline_trunk: {
-          domain: 'cloudpbx.beeline.kz',
-          host: '46.227.186.231',
-          max: 5,
-        },
-      };
-      const preset = presets[this.virtualPbxForm.carrierKind];
+      const preset = WAZO_CARRIER_PRESETS[this.virtualPbxForm.carrierKind];
       if (!preset) return;
-      if (!this.virtualPbxForm.trunkDomain) {
-        this.virtualPbxForm.trunkDomain = preset.domain;
-      }
-      if (!this.virtualPbxForm.trunkHost) {
-        this.virtualPbxForm.trunkHost = preset.host;
-      }
+      this.virtualPbxForm.trunkDomain = preset.domain;
+      this.virtualPbxForm.trunkHost = preset.host;
       if (!this.virtualPbxForm.maxChannels) {
         this.virtualPbxForm.maxChannels = preset.max;
       }
@@ -1449,6 +2009,79 @@ export default {
         useAlert(this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
       } finally {
         this.isUpdatingBinotelWebhook = false;
+      }
+    },
+    generateBeelineWebhookToken() {
+      if (window.crypto?.getRandomValues) {
+        const bytes = new Uint8Array(24);
+        window.crypto.getRandomValues(bytes);
+        this.beelineWebhookToken = Array.from(bytes, byte =>
+          byte.toString(16).padStart(2, '0')
+        ).join('');
+        return;
+      }
+
+      this.beelineWebhookToken = `${Date.now()}${Math.random()
+        .toString(36)
+        .slice(2)}`;
+    },
+    async copyBeelineWebhookUrl() {
+      if (!this.beelineWebhookUrl) return;
+
+      try {
+        await copyTextToClipboard(this.beelineWebhookUrl);
+        useAlert(
+          this.$t(
+            'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_COPY_SUCCESS'
+          )
+        );
+      } catch {
+        useAlert(this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
+      }
+    },
+    async updateBeelineWebhookToken() {
+      let token = this.beelineWebhookToken.trim();
+      const apiToken = this.beelineApiToken.trim();
+      if (!token && !apiToken && !this.beelineApiTokenConfigured) {
+        useAlert(
+          this.$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_REQUIRED')
+        );
+        return;
+      }
+      if (!token && (apiToken || this.beelineApiTokenConfigured)) {
+        this.generateBeelineWebhookToken();
+        token = this.beelineWebhookToken.trim();
+      }
+
+      this.isUpdatingBeelineWebhook = true;
+      try {
+        const providerConfig = { ...this.inbox.provider_config };
+        delete providerConfig.beeline_webhook_token;
+        delete providerConfig.beeline_api_token_configured;
+        if (token) {
+          providerConfig.beeline_events_webhook_token = token;
+        }
+        if (apiToken) {
+          providerConfig.beeline_api_token = apiToken;
+        }
+        await this.$store.dispatch('inboxes/updateInbox', {
+          id: this.inbox.id,
+          formData: false,
+          channel: {
+            provider_config: providerConfig,
+          },
+        });
+        if (apiToken) {
+          this.beelineApiTokenConfigured = true;
+          this.beelineApiToken = '';
+        }
+        useAlert(
+          this.$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_SUCCESS')
+        );
+      } catch (error) {
+        useAlert(this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
+      } finally {
+        this.isUpdatingBeelineWebhook = false;
       }
     },
     async syncTemplates() {
@@ -1669,6 +2302,110 @@ export default {
         </div>
       </SettingsFieldSection>
       <SettingsFieldSection
+        v-if="isBeelineVoiceInbox"
+        :label="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TITLE')"
+        :help-text="
+          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_SUBTITLE')
+        "
+      >
+        <div class="flex flex-col gap-4">
+          <woot-code
+            v-if="beelineWebhookUrl"
+            :script="beelineWebhookUrl"
+            lang="html"
+          />
+          <div
+            v-else
+            class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
+          >
+            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_EMPTY') }}
+          </div>
+
+          <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TOKEN') }}
+            <input
+              v-model="beelineWebhookToken"
+              data-testid="beeline-webhook-token-input"
+              class="rounded-lg border border-n-weak py-2 font-mono text-sm"
+              type="text"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              :placeholder="
+                $t(
+                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TOKEN_PLACEHOLDER'
+                )
+              "
+            />
+          </label>
+
+          <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_API_TOKEN') }}
+            <input
+              v-model="beelineApiToken"
+              data-testid="beeline-api-token-input"
+              class="rounded-lg border border-n-weak py-2 font-mono text-sm"
+              type="password"
+              autocomplete="new-password"
+              autocapitalize="off"
+              spellcheck="false"
+              :placeholder="
+                beelineApiTokenConfigured
+                  ? '********'
+                  : $t(
+                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_API_TOKEN_PLACEHOLDER'
+                    )
+              "
+            />
+            <span
+              v-if="beelineApiTokenConfigured"
+              data-testid="beeline-api-token-configured-hint"
+              class="text-xs text-n-teal-11"
+            >
+              {{
+                $t(
+                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_API_TOKEN_CONFIGURED_HINT'
+                )
+              }}
+            </span>
+          </label>
+
+          <div class="flex flex-wrap gap-3">
+            <NextButton
+              type="button"
+              data-testid="beeline-webhook-generate"
+              @click="generateBeelineWebhookToken"
+            >
+              {{
+                $t(
+                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_GENERATE'
+                )
+              }}
+            </NextButton>
+            <NextButton
+              type="button"
+              data-testid="beeline-webhook-copy"
+              :disabled="!beelineWebhookUrl"
+              @click="copyBeelineWebhookUrl"
+            >
+              {{
+                $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_COPY')
+              }}
+            </NextButton>
+            <NextButton
+              type="button"
+              data-testid="beeline-webhook-save"
+              :is-loading="isUpdatingBeelineWebhook"
+              @click="updateBeelineWebhookToken"
+            >
+              {{
+                $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_SAVE')
+              }}
+            </NextButton>
+          </div>
+        </div>
+      </SettingsFieldSection>
+      <SettingsFieldSection
         :label="virtualPbxManagementLabel"
         :help-text="virtualPbxManagementHelpText"
       >
@@ -1734,11 +2471,21 @@ export default {
             class="grid grid-cols-1 gap-4 md:grid-cols-2"
           >
             <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.LABEL') }}
+              <span class="flex items-center gap-2">
+                <img
+                  v-if="virtualPbxCarrierBadgeUrl"
+                  :src="virtualPbxCarrierBadgeUrl"
+                  alt=""
+                  class="h-5 w-5 rounded object-contain"
+                  data-testid="virtual-pbx-carrier-badge"
+                />
+                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.LABEL') }}
+              </span>
               <select
                 v-model="virtualPbxForm.providerKind"
-                class="rounded-lg border border-n-weak py-2 text-sm"
-                :disabled="isVirtualPbxReadOnly"
+                data-testid="virtual-pbx-provider-kind"
+                class="rounded-lg border border-n-weak py-2 text-sm disabled:bg-n-alpha-1 disabled:text-n-slate-11"
+                :disabled="true"
               >
                 <option value="" disabled>
                   {{
@@ -1837,8 +2584,9 @@ export default {
                 }}
                 <input
                   v-model="virtualPbxForm.connectionHost"
-                  class="rounded-lg border border-n-weak py-2 text-sm"
-                  :disabled="isVirtualPbxReadOnly"
+                  data-testid="virtual-pbx-connection-host"
+                  class="rounded-lg border border-n-weak py-2 text-sm disabled:bg-n-alpha-1 disabled:text-n-slate-11"
+                  :disabled="isVirtualPbxReadOnly || isVirtualPbxWazo"
                   type="text"
                   :placeholder="
                     $t(
@@ -1983,8 +2731,9 @@ export default {
                 }}
                 <select
                   v-model="virtualPbxForm.carrierKind"
-                  class="rounded-lg border border-n-weak py-2 text-sm"
-                  :disabled="isVirtualPbxReadOnly"
+                  data-testid="virtual-pbx-carrier-kind"
+                  class="rounded-lg border border-n-weak py-2 text-sm disabled:bg-n-alpha-1 disabled:text-n-slate-11"
+                  :disabled="isVirtualPbxReadOnly || isVirtualPbxCarrierLocked"
                   @change="onVirtualPbxCarrierChange"
                 >
                   <option value="">
@@ -2009,14 +2758,83 @@ export default {
                     'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.MAX_CHANNELS_LABEL'
                   )
                 }}
-                <input
-                  v-model.number="virtualPbxForm.maxChannels"
-                  class="rounded-lg border border-n-weak py-2 text-sm"
-                  :disabled="isVirtualPbxReadOnly"
-                  type="number"
-                  min="1"
-                  max="100"
-                />
+                <div class="flex items-center gap-2">
+                  <input
+                    v-model.number="virtualPbxForm.maxChannels"
+                    class="flex-1 rounded-lg border border-n-weak py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                    type="number"
+                    min="1"
+                    max="100"
+                  />
+                  <NextButton
+                    type="button"
+                    data-testid="virtual-pbx-probe-channels-btn"
+                    outline
+                    slate
+                    xs
+                    :is-loading="isProbingVirtualPbxChannels"
+                    :disabled="
+                      isVirtualPbxReadOnly || isProbingVirtualPbxChannels
+                    "
+                    @click="probeVirtualPbxChannelCapacity"
+                  >
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.PROBE_CHANNELS_BUTTON'
+                      )
+                    }}
+                  </NextButton>
+                </div>
+                <div
+                  v-if="virtualPbxForm.detectedChannelLimit"
+                  data-testid="virtual-pbx-detected-channel-limit"
+                  class="mt-1 flex items-center justify-between gap-2 rounded-lg bg-n-amber-2/50 px-2.5 py-1.5 text-xs text-n-amber-11"
+                >
+                  <span>
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.DETECTED_LIMIT_BADGE',
+                        { count: virtualPbxForm.detectedChannelLimit }
+                      )
+                    }}
+                  </span>
+                  <button
+                    v-if="
+                      virtualPbxForm.maxChannels !==
+                      virtualPbxForm.detectedChannelLimit
+                    "
+                    type="button"
+                    data-testid="virtual-pbx-apply-detected-limit"
+                    class="font-medium underline"
+                    :disabled="isVirtualPbxReadOnly"
+                    @click="applyDetectedChannelLimit"
+                  >
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.APPLY_DETECTED_LIMIT'
+                      )
+                    }}
+                  </button>
+                </div>
+                <div
+                  data-testid="virtual-pbx-ai-concurrency-badge"
+                  class="mt-1 rounded-lg bg-n-brand/10 px-2.5 py-1.5 text-xs text-n-brand"
+                >
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.AI_CONCURRENCY_BADGE',
+                      { count: effectiveAiMaxConcurrentCalls }
+                    )
+                  }}
+                </div>
+                <span class="text-label-small text-n-slate-11">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.DETECTED_LIMIT_HINT'
+                    )
+                  }}
+                </span>
               </label>
               <label class="flex flex-col gap-1 text-sm text-n-slate-12">
                 {{
@@ -2114,8 +2932,11 @@ export default {
                 }}
                 <input
                   v-model="virtualPbxForm.trunkDomain"
-                  class="rounded-lg border border-n-weak py-2 text-sm"
-                  :disabled="isVirtualPbxReadOnly"
+                  data-testid="virtual-pbx-trunk-domain"
+                  class="rounded-lg border border-n-weak py-2 text-sm disabled:bg-n-alpha-1 disabled:text-n-slate-11"
+                  :disabled="
+                    isVirtualPbxReadOnly || isVirtualPbxKnownCarrierPreset
+                  "
                   type="text"
                   :placeholder="
                     $t(
@@ -2132,8 +2953,11 @@ export default {
                 }}
                 <input
                   v-model="virtualPbxForm.trunkHost"
-                  class="rounded-lg border border-n-weak py-2 text-sm"
-                  :disabled="isVirtualPbxReadOnly"
+                  data-testid="virtual-pbx-trunk-host"
+                  class="rounded-lg border border-n-weak py-2 text-sm disabled:bg-n-alpha-1 disabled:text-n-slate-11"
+                  :disabled="
+                    isVirtualPbxReadOnly || isVirtualPbxKnownCarrierPreset
+                  "
                   type="text"
                   :placeholder="
                     $t(
@@ -2309,6 +3133,776 @@ export default {
             >
               {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.ADD') }}
             </NextButton>
+          </div>
+
+          <div
+            data-testid="call-routing-builder"
+            class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+          >
+            <div
+              class="mb-4 flex flex-col gap-3 border-b border-n-weak pb-3 md:flex-row md:items-center md:justify-between"
+            >
+              <div class="space-y-1">
+                <h3 class="text-sm font-medium text-n-slate-12">
+                  {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.TITLE') }}
+                </h3>
+                <p class="mb-0 text-sm text-n-slate-11">
+                  {{
+                    $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SUBTITLE')
+                  }}
+                </p>
+              </div>
+              <div
+                class="inline-flex rounded-lg bg-n-alpha-1 p-1"
+                role="tablist"
+              >
+                <button
+                  type="button"
+                  data-testid="call-routing-tab-inbound"
+                  class="rounded-md px-3 py-1.5 text-xs font-medium transition"
+                  :class="
+                    callRoutingTab === 'inbound'
+                      ? 'bg-n-solid-2 text-n-slate-12 shadow-sm'
+                      : 'text-n-slate-11'
+                  "
+                  @click="callRoutingTab = 'inbound'"
+                >
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.INBOUND_TAB'
+                    )
+                  }}
+                </button>
+                <button
+                  type="button"
+                  data-testid="call-routing-tab-outbound"
+                  class="rounded-md px-3 py-1.5 text-xs font-medium transition"
+                  :class="
+                    callRoutingTab === 'outbound'
+                      ? 'bg-n-solid-2 text-n-slate-12 shadow-sm'
+                      : 'text-n-slate-11'
+                  "
+                  @click="callRoutingTab = 'outbound'"
+                >
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND_TAB'
+                    )
+                  }}
+                </button>
+              </div>
+            </div>
+
+            <div
+              v-if="callRoutingTab === 'inbound'"
+              data-testid="call-routing-inbound-panel"
+              class="flex flex-col gap-4"
+            >
+              <div
+                v-if="isVirtualPbxVoiceInbox && !isVirtualPbxWazo"
+                data-testid="call-routing-authority-selector"
+                class="rounded-lg bg-n-alpha-1 p-3"
+              >
+                <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-n-slate-11">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.TITLE'
+                    )
+                  }}
+                </div>
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <button
+                    type="button"
+                    data-testid="call-routing-authority-external-pbx"
+                    class="flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition"
+                    :class="
+                      callRoutingForm.inbound.routing_authority ===
+                      'external_pbx'
+                        ? 'border-n-brand bg-n-brand/10 text-n-slate-12'
+                        : 'border-n-weak bg-n-solid-2 text-n-slate-11'
+                    "
+                    :disabled="isVirtualPbxReadOnly"
+                    @click="setCallRoutingAuthority('external_pbx')"
+                  >
+                    <span class="text-sm font-medium text-n-slate-12">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.EXTERNAL_PBX'
+                        )
+                      }}
+                    </span>
+                    <span class="text-xs text-n-slate-11">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.EXTERNAL_PBX_DESC'
+                        )
+                      }}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="call-routing-authority-onelink"
+                    class="flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition"
+                    :class="
+                      callRoutingForm.inbound.routing_authority !==
+                      'external_pbx'
+                        ? 'border-n-brand bg-n-brand/10 text-n-slate-12'
+                        : 'border-n-weak bg-n-solid-2 text-n-slate-11'
+                    "
+                    :disabled="isVirtualPbxReadOnly"
+                    @click="setCallRoutingAuthority('onelink')"
+                  >
+                    <span class="text-sm font-medium text-n-slate-12">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.ONELINK'
+                        )
+                      }}
+                    </span>
+                    <span class="text-xs text-n-slate-11">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.ONELINK_DESC'
+                        )
+                      }}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <div
+                v-if="isVirtualPbxWazo"
+                data-testid="call-routing-wazo-onelink-badge"
+                class="flex flex-col gap-1 rounded-lg border border-n-brand/30 bg-n-brand/10 p-3 text-xs text-n-slate-12"
+              >
+                <span class="font-medium text-n-brand">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.WAZO_ALWAYS_ONELINK_HINT'
+                    )
+                  }}
+                </span>
+                <span class="text-n-slate-11">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.AI_CONCURRENCY_BADGE',
+                      { count: effectiveAiMaxConcurrentCalls }
+                    )
+                  }}
+                </span>
+              </div>
+
+              <div
+                v-if="!isExternalPbxRoutingAuthority"
+                class="rounded-lg bg-n-alpha-1 p-3"
+              >
+                <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-n-slate-11">
+                  1.
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.TITLE'
+                    )
+                  }}
+                </div>
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.MODE_LABEL'
+                      )
+                    }}
+                    <select
+                      v-model="callRoutingForm.inbound.schedule_mode"
+                      data-testid="call-routing-schedule-mode"
+                      class="rounded-lg border border-n-weak py-2 text-sm"
+                      :disabled="isVirtualPbxReadOnly"
+                      @change="markCallRoutingDirty"
+                    >
+                      <option value="always">
+                        {{
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.ALWAYS'
+                          )
+                        }}
+                      </option>
+                      <option value="business_hours">
+                        {{
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.BUSINESS_HOURS'
+                          )
+                        }}
+                      </option>
+                    </select>
+                  </label>
+                  <label
+                    v-if="
+                      callRoutingForm.inbound.schedule_mode === 'business_hours'
+                    "
+                    class="flex flex-col gap-1 text-sm text-n-slate-12"
+                  >
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.OFF_HOURS_ACTION_LABEL'
+                      )
+                    }}
+                    <select
+                      v-model="callRoutingForm.inbound.off_hours_action"
+                      data-testid="call-routing-off-hours-action"
+                      class="rounded-lg border border-n-weak py-2 text-sm"
+                      :disabled="isVirtualPbxReadOnly"
+                      @change="markCallRoutingDirty"
+                    >
+                      <option
+                        v-for="option in callRoutingActionOptions"
+                        :key="option.value"
+                        :value="option.value"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </label>
+                  <label
+                    v-if="
+                      callRoutingForm.inbound.schedule_mode ===
+                        'business_hours' &&
+                      callRoutingForm.inbound.off_hours_action === 'forward'
+                    "
+                    class="flex flex-col gap-1 text-sm text-n-slate-12"
+                  >
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.FORWARD_NUMBER_LABEL'
+                      )
+                    }}
+                    <input
+                      v-model="callRoutingForm.inbound.off_hours_forward_number"
+                      class="rounded-lg border border-n-weak py-2 text-sm"
+                      :disabled="isVirtualPbxReadOnly"
+                      type="text"
+                      placeholder="+77000000000"
+                      @input="markCallRoutingDirty"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div
+                v-if="!isExternalPbxRoutingAuthority"
+                class="rounded-lg bg-n-alpha-1 p-3"
+              >
+                <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-n-slate-11">
+                  2.
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WAITING.TITLE'
+                    )
+                  }}
+                </div>
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WAITING.RING_TIMEOUT_LABEL'
+                      )
+                    }}
+                    <input
+                      v-model.number="callRoutingForm.inbound.ring_timeout_seconds"
+                      data-testid="call-routing-ring-timeout"
+                      class="rounded-lg border border-n-weak py-2 text-sm"
+                      :disabled="isVirtualPbxReadOnly"
+                      type="number"
+                      min="5"
+                      max="180"
+                      @input="markCallRoutingDirty"
+                    />
+                  </label>
+                  <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WAITING.RINGTONE_LABEL'
+                      )
+                    }}
+                    <select
+                      v-model="callRoutingForm.inbound.ringtone"
+                      data-testid="call-routing-ringtone"
+                      class="rounded-lg border border-n-weak py-2 text-sm"
+                      :disabled="isVirtualPbxReadOnly"
+                      @change="markCallRoutingDirty"
+                    >
+                      <option
+                        v-for="option in callRoutingRingtoneOptions"
+                        :key="option.value"
+                        :value="option.value"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </label>
+                  <label class="flex items-center gap-2 pt-6 text-sm text-n-slate-12">
+                    <input
+                      v-model="callRoutingForm.inbound.skip_busy_operators"
+                      type="checkbox"
+                      :disabled="isVirtualPbxReadOnly"
+                      @change="markCallRoutingDirty"
+                    />
+                    <span>
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WAITING.SKIP_BUSY_LABEL'
+                        )
+                      }}
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              <div
+                v-if="!isExternalPbxRoutingAuthority"
+                class="rounded-lg bg-n-alpha-1 p-3"
+              >
+                <div class="mb-2 flex items-center justify-between">
+                  <div class="text-xs font-semibold uppercase tracking-wide text-n-slate-11">
+                    3.
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.TITLE'
+                      )
+                    }}
+                  </div>
+                  <NextButton
+                    type="button"
+                    data-testid="call-routing-add-group"
+                    outline
+                    slate
+                    xs
+                    :disabled="isVirtualPbxReadOnly"
+                    @click="addCallRoutingGroup"
+                  >
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.ADD_GROUP'
+                      )
+                    }}
+                  </NextButton>
+                </div>
+                <div class="flex flex-col gap-3">
+                  <div
+                    v-for="(group, groupIndex) in callRoutingForm.inbound.groups"
+                    :key="group.id"
+                    data-testid="call-routing-group-card"
+                    class="rounded-lg border border-n-weak bg-n-solid-2 p-3"
+                  >
+                    <div class="mb-2 flex items-center justify-between">
+                      <span class="text-xs font-medium text-n-slate-11">
+                        {{
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.STEP_LABEL',
+                            { index: groupIndex + 1 }
+                          )
+                        }}
+                      </span>
+                      <button
+                        v-if="callRoutingForm.inbound.groups.length > 1"
+                        type="button"
+                        class="text-xs text-n-ruby-10"
+                        :disabled="isVirtualPbxReadOnly"
+                        @click="removeCallRoutingGroup(groupIndex)"
+                      >
+                        {{
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.REMOVE_GROUP'
+                          )
+                        }}
+                      </button>
+                    </div>
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+                      <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                        {{
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.NAME_LABEL'
+                          )
+                        }}
+                        <input
+                          v-model="group.name"
+                          class="rounded-lg border border-n-weak py-1.5 text-sm"
+                          :disabled="isVirtualPbxReadOnly"
+                          type="text"
+                          :placeholder="
+                            $t(
+                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.NAME_PLACEHOLDER'
+                            )
+                          "
+                          @input="markCallRoutingDirty"
+                        />
+                      </label>
+                      <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                        {{
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.STRATEGY_LABEL'
+                          )
+                        }}
+                        <select
+                          v-model="group.strategy"
+                          class="rounded-lg border border-n-weak py-1.5 text-sm"
+                          :disabled="isVirtualPbxReadOnly"
+                          @change="markCallRoutingDirty"
+                        >
+                          <option
+                            v-for="option in callRoutingGroupStrategyOptions"
+                            :key="option.value"
+                            :value="option.value"
+                          >
+                            {{ option.label }}
+                          </option>
+                        </select>
+                      </label>
+                      <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                        {{
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.RING_SECONDS_LABEL'
+                          )
+                        }}
+                        <input
+                          v-model.number="group.ring_seconds"
+                          class="rounded-lg border border-n-weak py-1.5 text-sm"
+                          :disabled="isVirtualPbxReadOnly"
+                          type="number"
+                          min="5"
+                          max="120"
+                          @input="markCallRoutingDirty"
+                        />
+                      </label>
+                    </div>
+                    <div class="mt-3">
+                      <div class="mb-1.5 text-xs text-n-slate-11">
+                        {{
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.OPERATORS_LABEL'
+                          )
+                        }}
+                      </div>
+                      <div class="flex flex-wrap gap-2">
+                        <button
+                          v-for="member in virtualPbxMemberOptions"
+                          :key="member.value"
+                          type="button"
+                          class="rounded-full border px-2.5 py-1 text-xs transition"
+                          :class="
+                            (group.user_ids || []).includes(member.value)
+                              ? 'border-n-brand bg-n-brand/10 font-medium text-n-brand'
+                              : 'border-n-weak text-n-slate-11'
+                          "
+                          :disabled="isVirtualPbxReadOnly"
+                          @click="toggleCallRoutingGroupUser(group, member.value)"
+                        >
+                          {{ member.label }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rounded-lg bg-n-alpha-1 p-3">
+                <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-n-slate-11">
+                  4.
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.FALLBACK.TITLE'
+                    )
+                  }}
+                </div>
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.FALLBACK.ACTION_LABEL'
+                      )
+                    }}
+                    <select
+                      v-model="callRoutingForm.inbound.fallback_action"
+                      data-testid="call-routing-fallback-action"
+                      class="rounded-lg border border-n-weak py-2 text-sm"
+                      :disabled="isVirtualPbxReadOnly"
+                      @change="markCallRoutingDirty"
+                    >
+                      <option
+                        v-for="option in callRoutingActionOptions"
+                        :key="option.value"
+                        :value="option.value"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </label>
+                  <label
+                    v-if="callRoutingForm.inbound.fallback_action === 'forward'"
+                    class="flex flex-col gap-1 text-sm text-n-slate-12"
+                  >
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.FALLBACK.FORWARD_NUMBER_LABEL'
+                      )
+                    }}
+                    <input
+                      v-model="callRoutingForm.inbound.fallback_forward_number"
+                      class="rounded-lg border border-n-weak py-2 text-sm"
+                      :disabled="isVirtualPbxReadOnly"
+                      type="text"
+                      placeholder="+77000000000"
+                      @input="markCallRoutingDirty"
+                    />
+                  </label>
+                </div>
+
+                <div class="mt-3 border-t border-n-weak pt-3 flex flex-col gap-3">
+                  <label class="flex items-center gap-2 text-sm text-n-slate-12">
+                    <input
+                      v-model="callRoutingForm.inbound.whatsapp_followup.enabled"
+                      data-testid="call-routing-whatsapp-followup-enabled"
+                      type="checkbox"
+                      :disabled="isVirtualPbxReadOnly"
+                      @change="markCallRoutingDirty"
+                    />
+                    <span>
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.ENABLED_LABEL'
+                        )
+                      }}
+                    </span>
+                  </label>
+
+                  <div
+                    v-if="callRoutingForm.inbound.whatsapp_followup.enabled"
+                    data-testid="call-routing-whatsapp-followup-panel"
+                    class="grid grid-cols-1 gap-3 md:grid-cols-2"
+                  >
+                    <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.INBOX_LABEL'
+                        )
+                      }}
+                      <select
+                        v-model="callRoutingForm.inbound.whatsapp_followup.inbox_id"
+                        data-testid="call-routing-whatsapp-inbox"
+                        class="rounded-lg border border-n-weak py-2 text-sm"
+                        :disabled="isVirtualPbxReadOnly"
+                        @change="markCallRoutingDirty"
+                      >
+                        <option value="">
+                          {{
+                            $t(
+                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.INBOX_PLACEHOLDER'
+                            )
+                          }}
+                        </option>
+                        <option
+                          v-for="waInbox in whatsappInboxOptions"
+                          :key="waInbox.id"
+                          :value="waInbox.id"
+                        >
+                          {{ waInbox.name }}
+                        </option>
+                      </select>
+                    </label>
+
+                    <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.COOLDOWN_LABEL'
+                        )
+                      }}
+                      <input
+                        v-model.number="
+                          callRoutingForm.inbound.whatsapp_followup.cooldown_minutes
+                        "
+                        data-testid="call-routing-whatsapp-cooldown"
+                        class="rounded-lg border border-n-weak py-2 text-sm"
+                        :disabled="isVirtualPbxReadOnly"
+                        type="number"
+                        min="5"
+                        max="1440"
+                        @input="markCallRoutingDirty"
+                      />
+                    </label>
+
+                    <label
+                      v-if="
+                        selectedWhatsappFollowupInbox &&
+                        isSelectedWhatsappFollowupOfficial
+                      "
+                      class="flex flex-col gap-1 text-sm text-n-slate-12 md:col-span-2"
+                    >
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.TEMPLATE_LABEL'
+                        )
+                      }}
+                      <select
+                        v-model="
+                          callRoutingForm.inbound.whatsapp_followup.template_name
+                        "
+                        data-testid="call-routing-whatsapp-template"
+                        class="rounded-lg border border-n-weak py-2 text-sm"
+                        :disabled="isVirtualPbxReadOnly"
+                        @change="markCallRoutingDirty"
+                      >
+                        <option value="">
+                          {{
+                            $t(
+                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.TEMPLATE_PLACEHOLDER'
+                            )
+                          }}
+                        </option>
+                        <option
+                          v-for="tpl in selectedWhatsappFollowupTemplates"
+                          :key="`${tpl.name}:${tpl.language || 'ru'}`"
+                          :value="tpl.name"
+                        >
+                          {{ tpl.name }} ({{ tpl.language || 'ru' }})
+                        </option>
+                      </select>
+                    </label>
+
+                    <label
+                      v-else-if="selectedWhatsappFollowupInbox"
+                      class="flex flex-col gap-1 text-sm text-n-slate-12 md:col-span-2"
+                    >
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.CUSTOM_MESSAGE_LABEL'
+                        )
+                      }}
+                      <input
+                        v-model="
+                          callRoutingForm.inbound.whatsapp_followup.custom_message
+                        "
+                        data-testid="call-routing-whatsapp-custom-message"
+                        class="rounded-lg border border-n-weak py-2 text-sm"
+                        :disabled="isVirtualPbxReadOnly"
+                        type="text"
+                        :placeholder="
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.CUSTOM_MESSAGE_PLACEHOLDER'
+                          )
+                        "
+                        @input="markCallRoutingDirty"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rounded-lg bg-n-alpha-1 p-3">
+                <label class="flex items-center gap-2 text-sm text-n-slate-12">
+                  <input
+                    v-model="callRoutingForm.show_extended_call_card"
+                    data-testid="call-routing-show-extended-call-card"
+                    type="checkbox"
+                    :disabled="isVirtualPbxReadOnly"
+                    @change="markCallRoutingDirty"
+                  />
+                  <span>
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.CALL_CARD.SHOW_EXTENDED_LABEL'
+                      )
+                    }}
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div
+              v-else
+              data-testid="call-routing-outbound-panel"
+              class="flex flex-col gap-4"
+            >
+              <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.ACCESS_MODE_LABEL'
+                    )
+                  }}
+                  <select
+                    v-model="callRoutingForm.outbound.access_mode"
+                    data-testid="call-routing-outbound-access-mode"
+                    class="rounded-lg border border-n-weak py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                    @change="markCallRoutingDirty"
+                  >
+                    <option value="all_members">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.ALL_MEMBERS'
+                        )
+                      }}
+                    </option>
+                    <option value="selected_operators">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.SELECTED_OPERATORS'
+                        )
+                      }}
+                    </option>
+                  </select>
+                </label>
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.CALLER_ID_LABEL'
+                    )
+                  }}
+                  <input
+                    v-model="callRoutingForm.outbound.caller_id_number"
+                    data-testid="call-routing-outbound-caller-id"
+                    class="rounded-lg border border-n-weak py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                    type="text"
+                    :placeholder="
+                      virtualPbxForm.displayPhoneNumber || '+77000000000'
+                    "
+                    @input="markCallRoutingDirty"
+                  />
+                </label>
+              </div>
+              <div
+                v-if="
+                  callRoutingForm.outbound.access_mode === 'selected_operators'
+                "
+                class="rounded-lg bg-n-alpha-1 p-3"
+              >
+                <div class="mb-1.5 text-xs text-n-slate-11">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.ALLOWED_OPERATORS_LABEL'
+                    )
+                  }}
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    v-for="member in virtualPbxMemberOptions"
+                    :key="member.value"
+                    type="button"
+                    class="rounded-full border px-2.5 py-1 text-xs transition"
+                    :class="
+                      callRoutingForm.outbound.allowed_user_ids.includes(
+                        member.value
+                      )
+                        ? 'border-n-brand bg-n-brand/10 font-medium text-n-brand'
+                        : 'border-n-weak text-n-slate-11'
+                    "
+                    :disabled="isVirtualPbxReadOnly"
+                    @click="toggleCallRoutingOutboundUser(member.value)"
+                  >
+                    {{ member.label }}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div
@@ -2680,6 +4274,326 @@ export default {
           <label for="callingEnabled" class="text-body-main text-n-slate-12">
             {{ $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_CALLING_LABEL') }}
           </label>
+        </div>
+      </SettingsFieldSection>
+      <SettingsFieldSection
+        v-if="callingEnabled"
+        :label="$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.TITLE')"
+        :help-text="
+          $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SUBTITLE')
+        "
+      >
+        <div
+          data-testid="whatsapp-call-routing-builder"
+          class="flex flex-col gap-4 rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+        >
+          <div class="inline-flex self-start rounded-lg bg-n-alpha-1 p-1">
+            <button
+              type="button"
+              data-testid="whatsapp-call-routing-tab-inbound"
+              class="rounded-md px-3 py-1.5 text-xs font-medium transition"
+              :class="
+                callRoutingTab === 'inbound'
+                  ? 'bg-n-solid-2 text-n-slate-12 shadow-sm'
+                  : 'text-n-slate-11'
+              "
+              @click="callRoutingTab = 'inbound'"
+            >
+              {{
+                $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.INBOUND_TAB')
+              }}
+            </button>
+            <button
+              type="button"
+              data-testid="whatsapp-call-routing-tab-outbound"
+              class="rounded-md px-3 py-1.5 text-xs font-medium transition"
+              :class="
+                callRoutingTab === 'outbound'
+                  ? 'bg-n-solid-2 text-n-slate-12 shadow-sm'
+                  : 'text-n-slate-11'
+              "
+              @click="callRoutingTab = 'outbound'"
+            >
+              {{
+                $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND_TAB')
+              }}
+            </button>
+          </div>
+
+          <div
+            v-if="callRoutingTab === 'inbound'"
+            class="flex flex-col gap-4"
+          >
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.MODE_LABEL'
+                  )
+                }}
+                <select
+                  v-model="callRoutingForm.inbound.schedule_mode"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  @change="markCallRoutingDirty"
+                >
+                  <option value="always">
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.ALWAYS'
+                      )
+                    }}
+                  </option>
+                  <option value="business_hours">
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.BUSINESS_HOURS'
+                      )
+                    }}
+                  </option>
+                </select>
+              </label>
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WAITING.RING_TIMEOUT_LABEL'
+                  )
+                }}
+                <input
+                  v-model.number="callRoutingForm.inbound.ring_timeout_seconds"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  type="number"
+                  min="5"
+                  max="180"
+                  @input="markCallRoutingDirty"
+                />
+              </label>
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.FALLBACK.ACTION_LABEL'
+                  )
+                }}
+                <select
+                  v-model="callRoutingForm.inbound.fallback_action"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  @change="markCallRoutingDirty"
+                >
+                  <option
+                    v-for="option in callRoutingActionOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+              </label>
+            </div>
+
+            <div class="rounded-lg bg-n-alpha-1 p-3">
+              <div class="mb-2 flex items-center justify-between">
+                <div class="text-xs font-semibold uppercase tracking-wide text-n-slate-11">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.TITLE'
+                    )
+                  }}
+                </div>
+                <NextButton
+                  type="button"
+                  outline
+                  slate
+                  xs
+                  @click="addCallRoutingGroup"
+                >
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.ADD_GROUP'
+                    )
+                  }}
+                </NextButton>
+              </div>
+              <div class="flex flex-col gap-3">
+                <div
+                  v-for="group in callRoutingForm.inbound.groups"
+                  :key="group.id"
+                  class="rounded-lg border border-n-weak bg-n-solid-2 p-3"
+                >
+                  <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.STRATEGY_LABEL'
+                        )
+                      }}
+                      <select
+                        v-model="group.strategy"
+                        class="rounded-lg border border-n-weak py-1.5 text-sm"
+                        @change="markCallRoutingDirty"
+                      >
+                        <option
+                          v-for="option in callRoutingGroupStrategyOptions"
+                          :key="option.value"
+                          :value="option.value"
+                        >
+                          {{ option.label }}
+                        </option>
+                      </select>
+                    </label>
+                    <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.RING_SECONDS_LABEL'
+                        )
+                      }}
+                      <input
+                        v-model.number="group.ring_seconds"
+                        class="rounded-lg border border-n-weak py-1.5 text-sm"
+                        type="number"
+                        min="5"
+                        max="120"
+                        @input="markCallRoutingDirty"
+                      />
+                    </label>
+                  </div>
+                  <div class="mt-3">
+                    <div class="mb-1.5 text-xs text-n-slate-11">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.OPERATORS_LABEL'
+                        )
+                      }}
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                      <button
+                        v-for="member in virtualPbxMemberOptions"
+                        :key="member.value"
+                        type="button"
+                        class="rounded-full border px-2.5 py-1 text-xs transition"
+                        :class="
+                          (group.user_ids || []).includes(member.value)
+                            ? 'border-n-brand bg-n-brand/10 font-medium text-n-brand'
+                            : 'border-n-weak text-n-slate-11'
+                        "
+                        @click="toggleCallRoutingGroupUser(group, member.value)"
+                      >
+                        {{ member.label }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="rounded-lg bg-n-alpha-1 p-3 flex flex-col gap-3">
+              <label class="flex items-center gap-2 text-sm text-n-slate-12">
+                <input
+                  v-model="callRoutingForm.inbound.whatsapp_followup.enabled"
+                  type="checkbox"
+                  @change="markCallRoutingDirty"
+                />
+                <span>
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.ENABLED_LABEL'
+                    )
+                  }}
+                </span>
+              </label>
+              <label class="flex items-center gap-2 text-sm text-n-slate-12">
+                <input
+                  v-model="callRoutingForm.show_extended_call_card"
+                  type="checkbox"
+                  @change="markCallRoutingDirty"
+                />
+                <span>
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.CALL_CARD.SHOW_EXTENDED_LABEL'
+                    )
+                  }}
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div v-else class="flex flex-col gap-3">
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.ACCESS_MODE_LABEL'
+                  )
+                }}
+                <select
+                  v-model="callRoutingForm.outbound.access_mode"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  @change="markCallRoutingDirty"
+                >
+                  <option value="all_members">
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.ALL_MEMBERS'
+                      )
+                    }}
+                  </option>
+                  <option value="selected_operators">
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.SELECTED_OPERATORS'
+                      )
+                    }}
+                  </option>
+                </select>
+              </label>
+            </div>
+            <div
+              v-if="
+                callRoutingForm.outbound.access_mode === 'selected_operators'
+              "
+              class="rounded-lg bg-n-alpha-1 p-3"
+            >
+              <div class="mb-1.5 text-xs text-n-slate-11">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.ALLOWED_OPERATORS_LABEL'
+                  )
+                }}
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="member in virtualPbxMemberOptions"
+                  :key="member.value"
+                  type="button"
+                  class="rounded-full border px-2.5 py-1 text-xs transition"
+                  :class="
+                    callRoutingForm.outbound.allowed_user_ids.includes(
+                      member.value
+                    )
+                      ? 'border-n-brand bg-n-brand/10 font-medium text-n-brand'
+                      : 'border-n-weak text-n-slate-11'
+                  "
+                  @click="toggleCallRoutingOutboundUser(member.value)"
+                >
+                  {{ member.label }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-start">
+            <NextButton
+              type="button"
+              data-testid="whatsapp-call-routing-save"
+              :is-loading="isSavingWhatsAppCallRouting"
+              @click="saveWhatsAppCallRouting"
+            >
+              {{
+                $t(
+                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SAVE_BUTTON'
+                )
+              }}
+            </NextButton>
+          </div>
         </div>
       </SettingsFieldSection>
       <SettingsFieldSection

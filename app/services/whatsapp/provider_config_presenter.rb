@@ -1,8 +1,8 @@
 class Whatsapp::ProviderConfigPresenter
   PUBLIC_PROVIDER_CONFIG_KEYS = %w[
-    ai_voice_enabled authorization_expires_at authorization_status business_account_id business_id calling_capable
-    calling_enabled connection_state coexistence_sync embedded_signup_flow meta_webhook_lifecycle phone_number_id
-    phone_registration source status webhook_callback_recovery
+    ai_voice_enabled authorization_expires_at authorization_status business_account_id business_id call_routing
+    calling_capable calling_enabled connection_state coexistence_sync embedded_signup_flow meta_webhook_lifecycle
+    phone_number_id phone_registration source status webhook_callback_recovery
   ].freeze
   PUBLIC_COEXISTENCE_SYNC_KEYS = %w[
     state deadline_at request_started_at requested_at failed_at last_error recovery_required_at completed_at

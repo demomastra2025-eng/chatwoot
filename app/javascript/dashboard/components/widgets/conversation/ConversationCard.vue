@@ -428,6 +428,12 @@ const messageStatusClass = computed(() =>
 );
 
 const isPinned = computed(() => Boolean(props.chat?.custom_attributes?.pinned));
+const isWaitingForCallback = computed(() =>
+  Boolean(
+    props.chat?.custom_attributes?.waiting_for_callback ||
+      props.chat?.additional_attributes?.waiting_for_callback
+  )
+);
 
 const conversationPath = computed(() => {
   return frontendURL(
@@ -795,6 +801,14 @@ const togglePinnedConversation = async nextPinnedState => {
           class="ml-0.5 flex-shrink-0 !size-3"
         />
         <span
+          v-if="isWaitingForCallback"
+          data-test-id="conversation-waiting-for-callback-badge"
+          class="inline-flex items-center gap-1 rounded-md border border-n-ruby-6 bg-n-ruby-3 px-1.5 py-0.5 text-[11px] font-medium leading-4 text-n-ruby-11 dark:border-n-ruby-7 dark:bg-n-ruby-3"
+        >
+          <i class="i-lucide-phone-missed size-3 text-n-ruby-9" />
+          {{ t('CONVERSATION.VOICE_CALL.WAITING_FOR_CALLBACK_BADGE') }}
+        </span>
+        <span
           v-if="isPinned"
           class="inline-flex items-center gap-1 rounded-md border border-n-slate-4 bg-n-slate-3 px-2 py-0.5 text-[11px] font-medium leading-4 text-n-slate-12 dark:border-n-slate-6 dark:bg-n-slate-2"
         >
@@ -817,6 +831,7 @@ const togglePinnedConversation = async nextPinnedState => {
         <VoiceCallStatus
           :status="voiceCallData.status"
           :direction="voiceCallData.direction"
+          :waiting-for-callback="isWaitingForCallback"
           :message-preview-class="messagePreviewClass"
         />
         <span

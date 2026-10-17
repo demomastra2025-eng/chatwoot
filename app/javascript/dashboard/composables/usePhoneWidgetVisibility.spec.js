@@ -8,6 +8,7 @@ import {
   useCallsStore,
 } from 'dashboard/stores/calls';
 import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
+import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import {
   PHONE_WIDGET_HIDDEN_UI_SETTINGS_KEY,
   usePhoneWidgetVisibility,
@@ -113,6 +114,34 @@ describe('usePhoneWidgetVisibility', () => {
     callsStore.dismissCall('sipuni:incoming-1', 'sipuni');
     expect(isVisible.value).toBe(false);
     expect(settingsState.update).not.toHaveBeenCalled();
+  });
+
+  it('shows a hidden phone during incoming and active WhatsApp calls', () => {
+    settingsState.settings.value = {
+      [PHONE_WIDGET_HIDDEN_UI_SETTINGS_KEY]: { 7: true },
+    };
+    const whatsappCallsStore = useWhatsappCallsStore();
+    const { isVisible, hasCallActivity } = usePhoneWidgetVisibility();
+    expect(isVisible.value).toBe(false);
+
+    whatsappCallsStore.addIncomingCall({
+      callId: 'wa-incoming-1',
+      caller: { name: 'Customer' },
+    });
+    expect(hasCallActivity.value).toBe(true);
+    expect(isVisible.value).toBe(true);
+
+    whatsappCallsStore.setActiveCall({
+      callId: 'wa-incoming-1',
+      caller: { name: 'Customer' },
+    });
+    whatsappCallsStore.removeIncomingCall('wa-incoming-1');
+    expect(hasCallActivity.value).toBe(true);
+    expect(isVisible.value).toBe(true);
+
+    whatsappCallsStore.clearActiveCall();
+    expect(hasCallActivity.value).toBe(false);
+    expect(isVisible.value).toBe(false);
   });
 
   it('hides the phone for the current call and keeps that choice afterwards', () => {

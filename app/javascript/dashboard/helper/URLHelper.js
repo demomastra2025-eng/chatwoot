@@ -93,6 +93,19 @@ const currentConversationUnreadFromLocation = () => {
     : undefined;
 };
 
+const currentConversationWaitingForCallbackFromLocation = () => {
+  if (typeof window === 'undefined' || !window.location?.search) {
+    return undefined;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return truthyQueryValue(
+    params.get('waiting_for_callback') || params.get('waitingForCallback')
+  )
+    ? 'true'
+    : undefined;
+};
+
 const conversationQuery = (options = {}) => {
   const {
     status,
@@ -104,6 +117,7 @@ const conversationQuery = (options = {}) => {
     labelsScope,
     teamScope,
     unread,
+    waitingForCallback,
   } = options;
   const normalizedAssigneeType =
     normalizeConversationAssigneeType(assigneeType) ??
@@ -116,6 +130,14 @@ const conversationQuery = (options = {}) => {
   let unreadQueryValue = currentConversationUnreadFromLocation();
   if (hasUnreadOption) {
     unreadQueryValue = truthyQueryValue(unread) ? 'true' : undefined;
+  }
+  const hasWaitingForCallbackOption = waitingForCallback !== undefined;
+  let waitingForCallbackQueryValue =
+    currentConversationWaitingForCallbackFromLocation();
+  if (hasWaitingForCallbackOption) {
+    waitingForCallbackQueryValue = truthyQueryValue(waitingForCallback)
+      ? 'true'
+      : undefined;
   }
 
   return {
@@ -130,6 +152,7 @@ const conversationQuery = (options = {}) => {
     labels_scope: labelsScope || currentConversationScopes.labelsScope,
     team_scope: teamScope || currentConversationScopes.teamScope,
     unread: unreadQueryValue,
+    waiting_for_callback: waitingForCallbackQueryValue,
   };
 };
 

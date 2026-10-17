@@ -156,6 +156,8 @@ class Telephony::VirtualPbx::ProvisioningService
     config = config_builder.for_inbox(inbox_id)
     reconciliation = if config[:provider_kind] == 'wazo' && Telephony::Wazo::ApiClient.configured?
                        wazo_provisioning_service(inbox_id).reconcile
+                     elsif config[:provider_kind] == 'beeline'
+                       reconcile_beeline_channel(inbox_id, config)
                      else
                        { status: config[:ready] ? 'ready' : 'action_required', drift: [], checked_at: Time.current.iso8601 }
                      end
@@ -165,6 +167,73 @@ class Telephony::VirtualPbx::ProvisioningService
       config: config_builder.for_inbox(inbox_id),
       include_diagnostics: include_diagnostics,
       extra: reconciliation.merge(remote_commit: false, mutation_allowed: false, warnings: config[:warnings])
+    )
+  end
+
+  def reconcile_beeline_channel(inbox_id, config)
+    inbox = account.inboxes.find_by(id: inbox_id)
+    channel = inbox&.channel
+    if channel.is_a?(Channel::Voice) && Telephony::Beeline::ApiClient.for_channel(channel).configured?
+      sync_result = Telephony::Beeline::CallHistorySyncService.new(
+        channel: channel,
+        subscribe_webhook: true
+      ).perform
+      {
+        status: sync_result[:ok] ? 'ready' : 'action_required',
+        drift: [],
+        beeline_sync: sync_result,
+        checked_at: Time.current.iso8601
+      }
+    else
+      { status: config[:ready] ? 'ready' : 'action_required', drift: [], checked_at: Time.current.iso8601 }
+    end
+  end
+
+  def probe_channel_capacity(inbox_id:, max_probe_channels: nil, probe_runner: nil)
+    config = config_builder.for_inbox(inbox_id)
+    unless config[:provider_kind].to_s == 'wazo'
+      raise Telephony::Error.new(
+        code: 'CHANNEL_CAPACITY_PROBE_UNSUPPORTED_PROVIDER',
+        message: 'Active trunk line capacity probe is only supported for Wazo direct SIP trunks',
+        status: :unprocessable_content
+      )
+    end
+
+    inbox = account.inboxes.find(inbox_id)
+    binding = inbox.telephony_number_binding
+    connection = binding&.provider_connection ||
+                 account.telephony_provider_connections.find_by(
+                   id: inbox.channel&.provider_config_hash.to_h['provider_connection_id']
+                 )
+    if connection.blank?
+      raise Telephony::Error.new(
+        code: 'WAZO_CONNECTION_MISSING',
+        message: 'Wazo provider connection is not configured for this channel',
+        status: :unprocessable_content
+      )
+    end
+
+    probe_result = Telephony::Wazo::ChannelCapacityService.probe_capacity!(
+      connection: connection,
+      max_probe_channels: max_probe_channels.presence || Telephony::Wazo::ChannelCapacityService::DEFAULT_MAX_PROBE_CHANNELS,
+      probe_runner: probe_runner
+    )
+
+    updated_config = config_builder.for_inbox(inbox_id)
+    product_payload(
+      operation: 'probe_channel_capacity',
+      config: updated_config,
+      include_diagnostics: false,
+      extra: {
+        remote_commit: false,
+        mutation_allowed: true,
+        channel_capacity_probe: probe_result,
+        probe: probe_result,
+        detected_channel_limit: probe_result[:detected_channel_limit],
+        ai_max_concurrent_calls: probe_result[:ai_max_concurrent_calls],
+        last_channel_probe_at: probe_result[:last_channel_probe_at],
+        detection_source: probe_result[:detection_source]
+      }
     )
   end
 
@@ -367,6 +436,7 @@ class Telephony::VirtualPbx::ProvisioningService
     Telephony::Wazo::TrunkProvisioningService.new.provision_trunk!(
       did: did,
       carrier_kind: meta['carrier_kind'].presence || 'custom',
+      max_channels: meta['max_channels'],
       trunk_username: trunk_username,
       trunk_password: trunk_password,
       trunk_domain: meta['trunk_domain'],
@@ -618,7 +688,7 @@ class Telephony::VirtualPbx::ProvisioningService
       ),
       profiles: profiles_supplied ? normalize_profiles(source['profiles']) : normalize_existing_profiles(fallback&.dig(:profiles)),
       profiles_supplied: profiles_supplied,
-      routing: normalize_routing(source['routing'] || {}, fallback_routing, profiles_supplied: profiles_supplied),
+      routing: normalize_routing(source['routing'] || {}, fallback_routing, profiles_supplied: profiles_supplied, provider_kind: provider_kind),
       metadata: normalize_metadata(fallback_metadata.to_h.deep_stringify_keys.merge(source['metadata'].to_h.deep_stringify_keys))
     }.compact
 
@@ -647,6 +717,9 @@ class Telephony::VirtualPbx::ProvisioningService
                       default_send_register_for(provider_kind, username: username, password: password)
                     end
 
+    carrier_kind = first_present(fallback[:carrier_kind], fallback_metadata[:carrier_kind], source['carrier_kind'])
+    carrier_preset = Telephony::Wazo::TrunkProvisioningService::CARRIER_PRESETS[carrier_kind.to_s]
+
     {
       host: first_present(source['host'], fallback[:host], template[:default_host]),
       port: normalize_port(port_source),
@@ -659,11 +732,21 @@ class Telephony::VirtualPbx::ProvisioningService
         template[:default_outbound_proxy]
       ),
       codec: first_present(source['codec'], fallback[:codec], fallback_metadata[:codec], template[:default_codec])&.downcase,
-      carrier_kind: first_present(source['carrier_kind'], fallback[:carrier_kind], fallback_metadata[:carrier_kind]),
+      carrier_kind: carrier_kind,
       trunk_username: first_present(source['trunk_username'], fallback[:trunk_username], fallback_metadata[:trunk_username]),
       trunk_password: source['trunk_password'].presence,
-      trunk_domain: first_present(source['trunk_domain'], fallback[:trunk_domain], fallback_metadata[:trunk_domain]),
-      trunk_host: first_present(source['trunk_host'], fallback[:trunk_host], fallback_metadata[:trunk_host]),
+      trunk_domain: first_present(
+        source['trunk_domain'],
+        fallback[:trunk_domain],
+        fallback_metadata[:trunk_domain],
+        carrier_preset&.dig(:default_domain)
+      ),
+      trunk_host: first_present(
+        source['trunk_host'],
+        fallback[:trunk_host],
+        fallback_metadata[:trunk_host],
+        carrier_preset&.dig(:default_host)
+      ),
       trunk_port: normalize_port(first_present(source['trunk_port'], fallback[:trunk_port], fallback_metadata[:trunk_port])),
       max_channels: normalize_positive_int(first_present(source['max_channels'], fallback[:max_channels], fallback_metadata[:max_channels])),
       reserved_inbound_channels: normalize_non_negative_int(
@@ -765,8 +848,10 @@ class Telephony::VirtualPbx::ProvisioningService
     'external_extension'
   end
 
-  def normalize_routing(source, fallback, profiles_supplied: false)
+  def normalize_routing(source, fallback, profiles_supplied: false, provider_kind: nil)
     source = source.to_h.deep_stringify_keys
+    call_routing = normalized_call_routing(source, fallback, provider_kind: provider_kind)
+    routing_authority = normalized_routing_authority(source, fallback, call_routing, provider_kind: provider_kind)
 
     {
       mode: source['mode'].presence || fallback[:mode] || DEFAULT_ROUTE_MODE,
@@ -774,8 +859,42 @@ class Telephony::VirtualPbx::ProvisioningService
       ai_enabled: normalized_routing_ai_enabled(source, fallback),
       operator_distribution_mode: normalized_operator_distribution_mode(source, fallback),
       max_call_duration_seconds: normalized_max_call_duration_seconds(source, fallback),
-      operator_agent_aor: normalized_operator_agent_aor(source, fallback, profiles_supplied: profiles_supplied)
+      operator_agent_aor: normalized_operator_agent_aor(source, fallback, profiles_supplied: profiles_supplied),
+      routing_authority: routing_authority,
+      call_routing: call_routing
     }.compact
+  end
+
+  def normalized_call_routing(source, fallback, provider_kind: nil)
+    raw = source.key?('call_routing') ? source['call_routing'] : fallback[:call_routing]
+    explicit_authority = source['routing_authority'].presence ||
+                         (raw.is_a?(Hash) ? raw.with_indifferent_access.dig(:inbound, :routing_authority).presence : nil)
+    return if raw.blank? && explicit_authority.blank?
+
+    hash = raw.respond_to?(:to_h) ? raw.to_h.deep_stringify_keys : {}
+    resolved_authority = if provider_kind.to_s == 'wazo'
+                           'onelink'
+                         elsif explicit_authority.present?
+                           explicit_authority.to_s == 'external_pbx' ? 'external_pbx' : 'onelink'
+                         else
+                           fallback_authority = fallback.is_a?(Hash) ? (fallback[:routing_authority] || fallback.dig(:call_routing, 'inbound', 'routing_authority') || fallback.dig(:call_routing, :inbound, :routing_authority)) : nil
+                           fallback_authority.to_s == 'external_pbx' ? 'external_pbx' : 'onelink'
+                         end
+    hash['inbound'] = (hash['inbound'].is_a?(Hash) ? hash['inbound'] : {}).merge(
+      'routing_authority' => resolved_authority
+    )
+    hash
+  end
+
+  def normalized_routing_authority(source, fallback, call_routing, provider_kind: nil)
+    return 'onelink' if provider_kind.to_s == 'wazo'
+
+    candidate = first_present(
+      call_routing&.dig('inbound', 'routing_authority'),
+      source['routing_authority'],
+      fallback.is_a?(Hash) ? (fallback[:routing_authority] || fallback.dig(:call_routing, 'inbound', 'routing_authority') || fallback.dig(:call_routing, :inbound, :routing_authority)) : nil
+    ).to_s
+    candidate == 'external_pbx' ? 'external_pbx' : 'onelink'
   end
 
   def normalized_routing_ai_enabled(source, fallback)
@@ -1201,6 +1320,7 @@ class Telephony::VirtualPbx::ProvisioningService
     metadata = existing_metadata
                .merge((payload[:metadata] || {}).to_h.with_indifferent_access)
                .merge(connection_metadata)
+    metadata[:carrier_kind] = existing_metadata[:carrier_kind] if existing_metadata[:carrier_kind].present?
     new_trunk_password = first_present(payload.dig(:connection, :trunk_password), payload.dig(:metadata, 'trunk_password'))
     if new_trunk_password.present?
       metadata[:trunk_password] = new_trunk_password
@@ -1266,17 +1386,19 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def upsert_routing_policy!(binding, payload)
     policy = binding.routing_policy || binding.build_routing_policy(account: account)
+    settings = (policy.settings || {}).merge(
+      'virtual_pbx_local' => true,
+      'operator_distribution_mode' => payload.dig(:routing, :operator_distribution_mode),
+      'max_call_duration_seconds' => payload.dig(:routing, :max_call_duration_seconds)
+    )
+    settings['call_routing'] = payload.dig(:routing, :call_routing) if payload.dig(:routing, :call_routing).present?
     policy.assign_attributes(
       account: account,
       mode: payload.dig(:routing, :mode),
       fallback_mode: payload.dig(:routing, :fallback_mode),
       ai_enabled: ActiveModel::Type::Boolean.new.cast(payload.dig(:routing, :ai_enabled)),
       operator_agent_aor: operator_agent_aor_for(payload),
-      settings: (policy.settings || {}).merge(
-        'virtual_pbx_local' => true,
-        'operator_distribution_mode' => payload.dig(:routing, :operator_distribution_mode),
-        'max_call_duration_seconds' => payload.dig(:routing, :max_call_duration_seconds)
-      )
+      settings: settings
     )
     policy.save!
     policy
@@ -1457,10 +1579,17 @@ class Telephony::VirtualPbx::ProvisioningService
       provider_connection_id: provider_connection.id,
       managed_by: MANAGED_BY_ONELINK,
       ownership_status: LOCAL_OWNERSHIP_STATUS,
-      carrier_kind: first_present(payload.dig(:connection, :carrier_kind), payload.dig(:metadata, 'carrier_kind'),
-                                  provider_connection.metadata.to_h['carrier_kind']),
+carrier_kind: first_present(payload.dig(:connection, :carrier_kind), payload.dig(:metadata, 'carrier_kind'),
+                            provider_connection.metadata.to_h['carrier_kind']),
+call_routing: payload.dig(:routing, :call_routing),
       source: payload.dig(:metadata, 'source') || payload[:provider_kind]
     )
+
+    if payload[:provider_kind].to_s == 'beeline' &&
+       config[:beeline_events_webhook_token].blank? &&
+       config[:beeline_webhook_token].blank?
+      config[:beeline_events_webhook_token] = SecureRandom.hex(24)
+    end
 
     config.except!(*LEGACY_PROVIDER_CONFIG_KEYS)
 
@@ -1525,7 +1654,11 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def ensure_inbox_members_for_profiles!(inbox, payload)
-    Array.wrap(payload[:profiles]).filter_map { |profile| profile[:user_id].presence if human_operator_profile?(profile) }.uniq.each do |user_id|
+    profile_user_ids = Array.wrap(payload[:profiles]).filter_map do |profile|
+      profile[:user_id].presence if human_operator_profile?(profile)
+    end.uniq
+    inbox.inbox_members.where.not(user_id: profile_user_ids).destroy_all
+    profile_user_ids.each do |user_id|
       inbox.inbox_members.find_or_create_by!(user_id: user_id)
     end
   end

@@ -528,6 +528,7 @@ Rails.application.routes.draw do
               post :provisioning_plan, on: :member
               post :provision, on: :member
               post :reconcile, on: :member
+              post :probe_channel_capacity, on: :member
               get :provisioning_runs, on: :member
             end
 
@@ -963,6 +964,8 @@ Rails.application.routes.draw do
 
   match 'sipuni/events/:token', to: 'telephony/sipuni_events#create', via: %i[get post]
   post 'binotel/events/:token', to: 'telephony/binotel_events#create'
+  match 'beeline/events/:token', to: 'telephony/beeline_events#create', via: %i[get post]
+  match 'telephony/beeline/events/:token', to: 'telephony/beeline_events#create', via: %i[get post]
   post 'internal/voice/inbound/route', to: 'telephony/bridge_routes#create'
   post 'internal/voice/inbound/event', to: 'telephony/bridge_events#create'
   get 'internal/voice/janus-ws/authorize', to: 'internal/voice/janus_websocket_authorizations#show'

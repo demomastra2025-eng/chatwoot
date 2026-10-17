@@ -57,12 +57,13 @@ const formatProvider = provider => {
   if (normalizedProvider === 'telegram_personal') return 'Telegram Personal';
   if (normalizedProvider === 'sipuni') return 'Sipuni';
   if (normalizedProvider === 'binotel') return 'Binotel';
-  if (normalizedProvider.startsWith('wazo (')) return normalizeValue(provider);
+  if (normalizedProvider === 'wazo')
+    return t('INBOX_MGMT.ADD.VOICE.PROVIDERS.WAZO');
   if (normalizedProvider === 'twilio') return 'Twilio';
   if (normalizedProvider === 'google') return 'Google';
   if (normalizedProvider === 'microsoft') return 'Microsoft';
 
-  return capitalizeWords(provider);
+  return normalizeValue(provider);
 };
 
 const formatUrl = value => {
@@ -146,18 +147,21 @@ const getProvider = inbox => {
     inbox.provider_config?.carrier_kind,
     inbox.telephony?.carrier_kind,
   ]).toLowerCase();
-  if (baseProvider.toLowerCase() === 'wazo' && carrierKind) {
-    const carrierLabels = {
-      altel: 'Altel',
-      tele2: 'Tele2',
-      kazakhtelecom: 'Kazakhtelecom',
-      kcell: 'Kcell / Activ',
-      beeline_trunk: 'Beeline',
-    };
-    const label = carrierLabels[carrierKind] || capitalizeWords(carrierKind);
-    return `Wazo (${label})`;
+  if (baseProvider.toLowerCase() === 'wazo') {
+    if (carrierKind) {
+      const carrierLabels = {
+        altel: 'Altel Business',
+        tele2: 'Tele2 Business',
+        kazakhtelecom: 'Kazakhtelecom',
+        kcell: 'Kcell / Activ',
+        beeline_trunk: 'Beeline',
+        custom: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.WAZO'),
+      };
+      return carrierLabels[carrierKind] || capitalizeWords(carrierKind);
+    }
+    return t('INBOX_MGMT.ADD.VOICE.PROVIDERS.WAZO');
   }
-  return baseProvider;
+  return capitalizeWords(baseProvider);
 };
 
 const addDetail = (details, { icon, label, value, title }) => {
