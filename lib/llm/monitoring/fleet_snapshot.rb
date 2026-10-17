@@ -38,7 +38,7 @@ class Llm::Monitoring::FleetSnapshot
              Arel.sql('SUM(COALESCE(estimated_cost, 0))'),
              Arel.sql('MAX(created_at)')
            )
-           .sort_by { |(_, _events, _requests, errors, cost, last_event_at)| [-cost.to_f, -errors.to_i, -(last_event_at&.to_i || 0)] }
+           .sort_by { |(_, _events, _requests, errors, cost, last_event_at)| [-cost.to_f, -errors.to_i, -last_event_at.to_i] }
            .first(TOP_ACCOUNT_LIMIT)
 
     accounts = Account.where(id: rows.map(&:first).compact).pluck(:id, :name).to_h

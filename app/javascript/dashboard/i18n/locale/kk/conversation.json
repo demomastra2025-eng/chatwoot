@@ -125,7 +125,8 @@
         "RT": "RT {status}",
         "MISSED": "missed",
         "DUE": "due"
-      }
+      },
+      "DEAL": "Мәміле"
     },
     "RESOLVE_DROPDOWN": {
       "MARK_PENDING": "Hand over to AI agent",

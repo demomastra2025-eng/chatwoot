@@ -82,6 +82,11 @@ const mountPlayground = ({ realMessages = false } = {}) =>
   mount(AssistantPlayground, {
     props: { assistantId: 4, accountId: 74 },
     global: {
+      directives: {
+        'dompurify-html': (el, binding) => {
+          el.innerHTML = binding.value ?? '';
+        },
+      },
       stubs: {
         Button: button,
         NextButton: button,

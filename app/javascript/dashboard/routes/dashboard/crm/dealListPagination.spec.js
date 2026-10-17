@@ -1382,7 +1382,7 @@ it('invalidates the old workspace request before loading the new workspace', asy
   expect(CrmDealsAPI.get).toHaveBeenLastCalledWith(
     expect.objectContaining({
       page: 1,
-      per_page: 25,
+      per_page: 8,
     })
   );
 });

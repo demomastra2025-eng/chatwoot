@@ -81,7 +81,5 @@ class WhatsappWeb::Providers::BaseService
     raise 'Overwrite this method in child class'
   end
 
-  private
-
-  delegate :inbox, to: :channel
+  delegate :inbox, to: :channel, private: true
 end

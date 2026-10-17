@@ -86,7 +86,7 @@ RSpec.describe Message do
     it 'cancels each conversation run on thread takeover without opening the sibling or cancelling another account' do
       thread = create(:communication_thread, account: conversation.account, contact: conversation.contact)
       sibling = create(:conversation, account: conversation.account, contact: conversation.contact, status: :pending)
-      CaptainInbox.find_or_create_by!(inbox: sibling.inbox) { |ci| ci.captain_assistant = captain_assistant }
+      create(:captain_inbox, inbox: sibling.inbox, captain_assistant: captain_assistant)
       [conversation, sibling].each do |candidate|
         create(:communication_thread_conversation, communication_thread: thread, conversation: candidate)
         candidate.association(:communication_thread_conversation).reset
@@ -262,7 +262,9 @@ RSpec.describe Message do
 
     it 'takes over a pending Captain sibling from a non-Captain channel without swapping cached associations' do
       sibling = create(:conversation, account: conversation.account, contact: conversation.contact, status: :pending)
-      CaptainInbox.find_or_create_by!(inbox: sibling.inbox) { |ci| ci.captain_assistant = captain_assistant }
+      conversation.inbox.captain_inbox&.destroy!
+      sibling.inbox.captain_inbox&.destroy!
+      create(:captain_inbox, inbox: sibling.inbox, captain_assistant: captain_assistant)
       thread = link_thread(conversation, sibling)
       cached_thread = conversation.communication_thread
       inbox = conversation.inbox

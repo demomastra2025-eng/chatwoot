@@ -188,7 +188,8 @@ class Telephony::Wazo::TrunkProvisioningService
     end
   end
 
-  def upsert_trunk_resource!(clean_did:, endpoint_uuid:)
+  def upsert_trunk_resource!(endpoint_uuid:, clean_did: nil)
+    _ = clean_did
     existing = client.trunks.find { |t| t.dig('endpoint_sip', 'uuid') == endpoint_uuid }
     trunk_id = if existing
                  existing.fetch('id')
