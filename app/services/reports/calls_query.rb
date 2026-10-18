@@ -2,8 +2,10 @@
 
 module Reports
   class CallsQuery
-    MAX_LOGICAL_CALLS = 1_000
+    MAX_LOGICAL_CALLS = 50_000
     MAX_CALL_ROWS = 100
+    BOUNDARY_HANDOFF_PADDING = Telephony::CallSession::LogicalGrouping::LOGICAL_GROUP_WINDOW
+    CREATED_AT_INDEX_PADDING = 1.day
 
     attr_reader :account, :params, :date_range
 
@@ -14,28 +16,19 @@ module Reports
     end
 
     def perform
-      queried_groups = logical_call_groups
-      in_range_groups = queried_groups.filter_map do |group|
-        started_at = logical_started_at(group.fetch(:sessions))
-        in_range = started_at && started_at >= date_range.from_at && started_at < date_range.until_at
-        next unless in_range
-
-        { group: group, started_at: started_at }
-      end
-      coverage_complete = queried_groups.size <= MAX_LOGICAL_CALLS
-      selected_groups = in_range_groups.first(MAX_LOGICAL_CALLS)
-      sessions = selected_groups.map { |item| item.fetch(:group).fetch(:representative) }
-      preload_inboxes(sessions)
+      loaded_groups = load_logical_call_groups
+      groups = loaded_groups.first(MAX_LOGICAL_CALLS)
+      row_groups = groups.first(MAX_CALL_ROWS)
+      preload_row_associations(row_groups.map { |group| group.fetch(:representative) })
 
       {
-        summary: summary_for(selected_groups),
-        daily_breakdown: daily_breakdown(selected_groups),
-        rows: call_rows(selected_groups),
+        summary: summary_for(groups),
+        daily: daily_breakdown(groups),
+        rows: call_rows(row_groups),
         coverage: {
-          complete: coverage_complete,
-          limit: MAX_LOGICAL_CALLS,
-          sampled_calls: selected_groups.size,
-          count_scope: 'logical_calls_by_first_leg_start'
+          complete: loaded_groups.length <= MAX_LOGICAL_CALLS,
+          sampled_calls: groups.length,
+          max_logical_calls: MAX_LOGICAL_CALLS
         }
       }
     end
@@ -46,85 +39,120 @@ module Reports
 
     private
 
-    def logical_call_groups
-      sessions = account.telephony_call_sessions
-      range = date_range.from_at...date_range.until_at
-      in_range_sessions = sessions.where(started_at: range)
-                                 .or(sessions.where(started_at: nil, created_at: range))
-
-      Telephony::LogicalCallHistoryQuery.new(
-        relation: sessions,
-        candidate_relation: in_range_sessions,
+    def load_logical_call_groups
+      scope = account.telephony_call_sessions
+      window_from = date_range.from_at - BOUNDARY_HANDOFF_PADDING
+      window_until = date_range.until_at + BOUNDARY_HANDOFF_PADDING
+      candidates = scope.where(
+        created_at: (window_from - CREATED_AT_INDEX_PADDING)..(window_until + CREATED_AT_INDEX_PADDING)
+      ).where(
+        'COALESCE(started_at, created_at) >= ? AND COALESCE(started_at, created_at) < ?',
+        window_from,
+        window_until
+      )
+      groups = Telephony::LogicalCallHistoryQuery.new(
+        relation: scope,
+        candidate_relation: candidates,
         include_group_siblings: true,
         include_canonical_group_siblings: true,
         limit: MAX_LOGICAL_CALLS + 1
       ).call_with_groups
+
+      groups.select { |group| in_selected_period?(group) }
     end
 
-    def logical_started_at(sessions)
-      sessions.filter_map { |session| session.started_at || session.created_at }.min
+    def preload_row_associations(sessions)
+      return if sessions.empty?
+
+      ActiveRecord::Associations::Preloader.new(
+        records: sessions,
+        associations: %i[inbox contact]
+      ).call
     end
 
-    def preload_inboxes(sessions)
-      ActiveRecord::Associations::Preloader.new(records: sessions, associations: [:inbox]).call
+    def summary_for(groups)
+      answered = groups.select { |group| answered?(group.fetch(:representative)) }
+      inbound_count = groups.count { |group| group.fetch(:representative).direction == 'inbound' }
+      outbound_count = groups.count { |group| group.fetch(:representative).direction == 'outbound' }
+      answer_rate_percent = groups.empty? ? 0.0 : ((answered.length.to_f / groups.length) * 100).round(1)
+
+      {
+        logical_call_count: groups.length,
+        answered_count: answered.length,
+        unanswered_count: groups.length - answered.length,
+        inbound_count: inbound_count,
+        outbound_count: outbound_count,
+        answer_rate_percent: answer_rate_percent,
+        average_answered_duration_seconds: average_duration(answered)
+      }
+    end
+
+    def daily_breakdown(groups)
+      grouped = groups.group_by { |group| local_date_for(group) }
+
+      (date_range.from_date..date_range.to_date).map do |date|
+        day_calls = grouped.fetch(date, [])
+        answered = day_calls.count { |group| answered?(group.fetch(:representative)) }
+        {
+          date: date.iso8601,
+          logical_call_count: day_calls.length,
+          answered_count: answered,
+          unanswered_count: day_calls.length - answered
+        }
+      end
+    end
+
+    def call_rows(groups)
+      groups.first(MAX_CALL_ROWS).map do |group|
+        session = group.fetch(:representative)
+        {
+          id: session.id,
+          started_at: group_started_at(group).iso8601,
+          direction: session.direction,
+          status: session.canonical_status,
+          answered_at: session.answered_at&.iso8601,
+          duration_seconds: duration_for(session),
+          inbox_id: session.inbox_id,
+          inbox_name: session.inbox&.name,
+          provider: session.provider,
+          contact_id: session.contact_id,
+          contact_name: session.contact&.name,
+          conversation_id: session.conversation_id,
+          from_number: session.from_number,
+          to_number: session.to_number
+        }
+      end
     end
 
     def answered?(session)
       session.answered_at.present?
     end
 
-    def summary_for(groups)
-      representatives = groups.map { |item| item.fetch(:group).fetch(:representative) }
-      answered_groups = groups.select do |item|
-        answered?(item.fetch(:group).fetch(:representative))
-      end
-      durations = answered_groups.filter_map do |item|
-        duration = item.fetch(:group).fetch(:representative).duration_seconds
-        duration.to_i if duration.present?
-      end
+    def duration_for(session)
+      return session.duration_seconds if session.duration_seconds.present?
+      return unless session.answered_at.present? && session.ended_at.present?
 
-      {
-        logical_call_count: groups.size,
-        answered_count: answered_groups.size,
-        unanswered_count: groups.size - answered_groups.size,
-        inbound_count: representatives.count { |session| session.direction == 'inbound' },
-        outbound_count: representatives.count { |session| session.direction == 'outbound' },
-        average_answered_duration_seconds: if durations.any?
-                                             (durations.sum.to_f / durations.size).round(1)
-                                           end
-      }
+      [(session.ended_at - session.answered_at).round, 0].max
     end
 
-    def daily_breakdown(groups)
-      groups.group_by do |item|
-        item.fetch(:started_at).in_time_zone(date_range.timezone).to_date
-      end.sort.map do |date, items|
-        answered_count = items.count do |item|
-          answered?(item.fetch(:group).fetch(:representative))
-        end
-        {
-          date: date.iso8601,
-          logical_call_count: items.size,
-          answered_count: answered_count,
-          unanswered_count: items.size - answered_count
-        }
-      end
+    def average_duration(groups)
+      durations = groups.filter_map { |group| duration_for(group.fetch(:representative)) }
+      return if durations.empty?
+
+      (durations.sum.to_f / durations.length).round(1)
     end
 
-    def call_rows(groups)
-      groups.sort_by { |item| item.fetch(:started_at) }.reverse.first(MAX_CALL_ROWS).map do |item|
-        session = item.fetch(:group).fetch(:representative)
-        {
-          id: session.id,
-          started_at: item.fetch(:started_at).iso8601,
-          direction: session.direction,
-          status: session.canonical_status,
-          answered: answered?(session),
-          duration_seconds: answered?(session) ? session.duration_seconds : nil,
-          provider: session.provider,
-          inbox_name: session.inbox&.name
-        }
-      end
+    def in_selected_period?(group)
+      started_at = group_started_at(group)
+      started_at >= date_range.from_at && started_at < date_range.until_at
+    end
+
+    def local_date_for(group)
+      group_started_at(group).in_time_zone(date_range.timezone).to_date
+    end
+
+    def group_started_at(group)
+      group.fetch(:sessions).filter_map { |session| session.started_at || session.created_at }.min
     end
   end
 end

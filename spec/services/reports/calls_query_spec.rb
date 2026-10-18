@@ -157,8 +157,13 @@ RSpec.describe Reports::CallsQuery do
 
     expect(previous_day.dig(:summary, :logical_call_count)).to eq(1)
     expect(previous_day.dig(:summary, :answered_count)).to eq(1)
+    expect(previous_day.dig(:summary, :inbound_count)).to eq(1)
+    expect(previous_day.dig(:summary, :outbound_count)).to eq(0)
+    expect(previous_day.dig(:summary, :answer_rate_percent)).to eq(100.0)
     expect(previous_day.dig(:summary, :average_answered_duration_seconds)).to eq(45.0)
     expect(previous_day.dig(:rows, 0, :started_at)).to eq(parent_started_at.iso8601)
+    expect(previous_day.dig(:rows, 0, :conversation_id)).to eq(conversation.id)
+    expect(previous_day.dig(:rows, 0, :contact_id)).to eq(conversation.contact_id)
     expect(next_day.dig(:summary, :logical_call_count)).to eq(0)
   end
 

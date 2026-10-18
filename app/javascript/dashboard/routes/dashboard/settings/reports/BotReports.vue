@@ -155,31 +155,33 @@ onBeforeUnmount(() => {
     :header-description="t('AI_REPORTS.DESCRIPTION')"
   />
   <div class="flex min-w-0 flex-col gap-4 pb-8">
-    <ReportDateRange
-      v-model:from-date="fromDate"
-      v-model:to-date="toDate"
-      :timezone="timezone"
-      :max-range-days="maxRangeDays"
-      :is-loading="loading"
-      @apply="loadReport"
-    />
-    <div class="flex flex-wrap items-center gap-3">
-      <span class="text-sm font-medium text-n-slate-11">{{
-        t('AI_REPORTS.AGENT')
-      }}</span>
-      <SelectMenu
-        :model-value="assistantId"
-        :options="agentOptions"
-        :label="
-          agentOptions.find(option => option.value === assistantId)?.label ||
-          t('AI_REPORTS.ALL_AGENTS')
-        "
-        :trigger-aria-label="t('AI_REPORTS.AGENT')"
-        :inert="loading"
-        sub-menu-position="bottom"
-        sub-menu-align="start"
-        @update:model-value="selectAgent"
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <ReportDateRange
+        v-model:from-date="fromDate"
+        v-model:to-date="toDate"
+        :timezone="timezone"
+        :max-range-days="maxRangeDays"
+        :is-loading="loading"
+        @apply="loadReport"
       />
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-sm font-medium text-n-slate-11">{{
+          t('AI_REPORTS.AGENT')
+        }}</span>
+        <SelectMenu
+          :model-value="assistantId"
+          :options="agentOptions"
+          :label="
+            agentOptions.find(option => option.value === assistantId)?.label ||
+            t('AI_REPORTS.ALL_AGENTS')
+          "
+          :trigger-aria-label="t('AI_REPORTS.AGENT')"
+          :inert="loading"
+          sub-menu-position="bottom"
+          sub-menu-align="start"
+          @update:model-value="selectAgent"
+        />
+      </div>
     </div>
     <div
       v-if="loading"

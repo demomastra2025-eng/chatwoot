@@ -78,7 +78,9 @@ const customDateRange = ref([subDays(new Date(), 6), new Date()]);
 const selectedDateRange = ref(DATE_RANGE_TYPES.LAST_7_DAYS);
 const businessHoursSelected = ref(false);
 const groupBy = ref(GROUP_BY_FILTER[1]);
-const groupByfilterItemsList = ref([{ id: 1, name: 'Day' }]);
+const groupByfilterItemsList = ref([
+  { id: 1, name: t('REPORT.GROUPING_OPTIONS.DAY') },
+]);
 
 const appliedFilters = ref(
   props.showEntityFilter

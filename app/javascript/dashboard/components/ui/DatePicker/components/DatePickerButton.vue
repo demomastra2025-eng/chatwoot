@@ -1,6 +1,9 @@
 <script setup>
-import { computed } from 'vue';
-import { dateRanges } from '../helpers/DatePickerHelper';
+import { computed, getCurrentInstance } from 'vue';
+import {
+  dateRanges,
+  resolveDatePickerLocale,
+} from '../helpers/DatePickerHelper';
 import { format, isSameYear, isValid } from 'date-fns';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
@@ -43,24 +46,37 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['open', 'navigateMonth']);
+const instance = getCurrentInstance();
+
+const activeLocale = computed(() =>
+  resolveDatePickerLocale(instance?.proxy?.$i18n?.locale)
+);
 
 const formatDateRange = computed(() => {
   const startDate = props.selectedStartDate;
   const endDate = props.selectedEndDate;
 
   if (!isValid(startDate) || !isValid(endDate)) {
-    return 'Select a date range';
+    return '';
   }
 
+  const locale = activeLocale.value;
   const crossesYears = !isSameYear(startDate, endDate);
+  const fullFormatter = new Intl.DateTimeFormat(locale, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 
-  // Always show years when crossing year boundaries
   if (crossesYears) {
-    return `${format(startDate, 'MMM d, yyyy')} - ${format(endDate, 'MMM d, yyyy')}`;
+    return `${fullFormatter.format(startDate)} - ${fullFormatter.format(endDate)}`;
   }
 
-  // For same year, always show the year for clarity
-  return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d, yyyy')}`;
+  const shortFormatter = new Intl.DateTimeFormat(locale, {
+    month: 'short',
+    day: 'numeric',
+  });
+  return `${shortFormatter.format(startDate)} - ${fullFormatter.format(endDate)}`;
 });
 
 const compactDateRange = computed(() => {

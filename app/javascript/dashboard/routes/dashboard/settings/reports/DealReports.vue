@@ -1,7 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import format from 'date-fns/format';
 
 import CrmReportsAPI from 'dashboard/api/crm/reports';
 import { useAlert } from 'dashboard/composables';
@@ -153,10 +152,21 @@ const widthPercent = (value, total) => {
   return Math.max(6, percentage(value, total));
 };
 
+const periodDateFormatter = computed(
+  () =>
+    new Intl.DateTimeFormat(localeCode.value, {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })
+);
+
 const formatPeriod = value => {
   if (!value) return t('CRM_DEAL_REPORTS.EMPTY_VALUE');
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return t('CRM_DEAL_REPORTS.EMPTY_VALUE');
 
-  return format(new Date(value), 'dd MMM yyyy');
+  return periodDateFormatter.value.format(parsed);
 };
 
 const sourceLabel = source => {

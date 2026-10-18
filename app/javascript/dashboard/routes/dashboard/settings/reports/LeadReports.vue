@@ -42,16 +42,37 @@ const numberFormatter = computed(() => new Intl.NumberFormat(locale.value));
 const number = value => numberFormatter.value.format(Number(value || 0));
 const seconds = value => {
   if (value === null || value === undefined) return '—';
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '—';
+  if (num >= 60) {
+    const mins = Math.floor(num / 60);
+    const rem = Math.round(num % 60);
+    const minText = new Intl.NumberFormat(locale.value, {
+      style: 'unit',
+      unit: 'minute',
+      unitDisplay: 'short',
+    }).format(mins);
+    if (rem === 0) return minText;
+    const secText = new Intl.NumberFormat(locale.value, {
+      style: 'unit',
+      unit: 'second',
+      unitDisplay: 'short',
+    }).format(rem);
+    return `${minText} ${secText}`;
+  }
   return new Intl.NumberFormat(locale.value, {
     maximumFractionDigits: 1,
     style: 'unit',
     unit: 'second',
     unitDisplay: 'short',
-  }).format(Number(value));
+  }).format(num);
 };
 const localizedValue = (namespace, value) => {
-  const key = `${namespace}.${value || 'unknown'}`;
-  return te(key) ? t(key) : value || t('REPORTS.LEADS.UNKNOWN');
+  const normalized = String(value || 'unknown').trim();
+  const key = `${namespace}.${normalized}`;
+  if (te(key)) return t(key);
+  if (normalized.toLowerCase() === 'unknown') return t('REPORTS.LEADS.UNKNOWN');
+  return normalized || t('REPORTS.LEADS.UNKNOWN');
 };
 const referralMetrics = computed(() => [
   {
@@ -236,7 +257,9 @@ onBeforeUnmount(() => {
               :key="`${row.provider}-${row.attribution_type}-${row.source_type}-${index}`"
               class="text-n-slate-11"
             >
-              <td class="px-5 py-2.5">{{ row.provider }}</td>
+              <td class="px-5 py-2.5">
+                {{ localizedValue('REPORTS.LEADS.PROVIDERS', row.provider) }}
+              </td>
               <td class="px-5 py-2.5">
                 {{
                   localizedValue(
@@ -245,8 +268,19 @@ onBeforeUnmount(() => {
                   )
                 }}
               </td>
-              <td class="px-5 py-2.5">{{ row.source_type }}</td>
-              <td class="px-5 py-2.5">{{ row.referral_type }}</td>
+              <td class="px-5 py-2.5">
+                {{
+                  localizedValue('REPORTS.LEADS.SOURCE_TYPES', row.source_type)
+                }}
+              </td>
+              <td class="px-5 py-2.5">
+                {{
+                  localizedValue(
+                    'REPORTS.LEADS.REFERRAL_TYPES',
+                    row.referral_type
+                  )
+                }}
+              </td>
               <td class="px-5 py-2.5 text-right">
                 {{ number(row.event_count) }}
               </td>

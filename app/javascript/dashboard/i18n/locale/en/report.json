@@ -917,6 +917,7 @@
       "ROWS_TITLE": "Recent logical calls",
       "ROWS_LIMIT_NOTE": "This table shows the latest 100 logical calls.",
       "DATE": "Started",
+      "CONTACT": "Contact / Number",
       "DIRECTION": "Direction",
       "STATUS": "Status",
       "INBOX": "Inbox",
@@ -929,6 +930,7 @@
         "ringing": "Ringing",
         "connecting": "Connecting",
         "in_progress": "In progress",
+        "answered": "Answered",
         "completed": "Completed",
         "missed": "Missed",
         "no_answer": "No answer",
@@ -973,6 +975,36 @@
       "FORM": "Form",
       "EVENT_COUNT": "Events",
       "UNKNOWN": "Unknown",
+      "PROVIDERS": {
+        "unknown": "Unknown",
+        "meta": "Meta",
+        "whatsapp": "WhatsApp",
+        "whatsapp_cloud": "WhatsApp Cloud",
+        "waba": "WhatsApp Business",
+        "instagram": "Instagram",
+        "facebook": "Facebook Messenger",
+        "telegram": "Telegram",
+        "tiktok": "TikTok",
+        "api": "API",
+        "web": "Web widget"
+      },
+      "SOURCE_TYPES": {
+        "unknown": "Unknown",
+        "ad": "Ad",
+        "post": "Post",
+        "story": "Story",
+        "reel": "Reel",
+        "referral": "Referral",
+        "organic": "Organic"
+      },
+      "REFERRAL_TYPES": {
+        "unknown": "Unknown",
+        "ad": "Ad",
+        "organic": "Organic",
+        "post": "Post",
+        "ctwa": "Click-to-WhatsApp",
+        "referral": "Referral"
+      },
       "SOURCE_KINDS": {
         "api": "API form",
         "meta": "Meta form",
@@ -984,6 +1016,8 @@
         "failed": "Failed"
       },
       "ATTRIBUTIONS": {
+        "unknown": "Unknown",
+        "other": "Other source",
         "click_to_whatsapp_ad": "WhatsApp ad",
         "click_to_messenger_ad": "Facebook Messenger ad",
         "click_to_direct_ad": "Instagram ad",
