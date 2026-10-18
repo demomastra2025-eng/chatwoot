@@ -2,6 +2,21 @@ class Integrations::Medelement::PatientEnrichmentService
   FRESHNESS_WINDOW = 24.hours
   MATCH_STATUSES = %w[matched not_found ambiguous conflict].freeze
 
+  def self.fresh_or_ineligible?(contact)
+    return true if contact.blank?
+
+    normalized_phone = Integrations::Medelement::PhoneNumber.normalize(contact.phone_number)
+    return true if normalized_phone.blank?
+
+    attributes = contact.custom_attributes.to_h
+    expected_fp = Digest::SHA256.hexdigest(normalized_phone)
+    return false unless attributes['medelement_patient_phone_fingerprint'] == expected_fp
+
+    Time.zone.parse(attributes['medelement_patient_lookup_at'].to_s) >= FRESHNESS_WINDOW.ago
+  rescue ArgumentError, TypeError
+    false
+  end
+
   def initialize(hook:, client: nil)
     @hook = hook
     @client = client || Integrations::Medelement::Client.new(

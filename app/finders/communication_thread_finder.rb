@@ -387,7 +387,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
 
   def unread_thread_scope(scope)
     base_scope = CommunicationThread.where(id: scope.except(:order).select(:id))
-    base_scope.where(id: unread_thread_ids_relation(base_scope))
+    base_scope.where(id: unread_thread_ids_relation)
   end
 
   def unread_thread_ids_relation(thread_scope = nil)
@@ -516,7 +516,10 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     return scope unless waiting_for_callback_only?
 
     matching_conversation_ids = accessible_conversations
-                                .where("COALESCE(conversations.additional_attributes ->> 'waiting_for_callback', conversations.custom_attributes ->> 'waiting_for_callback') = 'true'")
+                                .where(
+                                  "COALESCE(conversations.additional_attributes ->> 'waiting_for_callback', " \
+                                  "conversations.custom_attributes ->> 'waiting_for_callback') = 'true'"
+                                )
                                 .select(:id)
     scope.where(id: linked_thread_ids(conversation_ids: matching_conversation_ids))
   end

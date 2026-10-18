@@ -13,15 +13,13 @@ class CommunicationThreads::RealtimeUpdateService
   end
 
   def perform
-    communication_thread = CommunicationThread.find(communication_thread_id)
+    communication_thread = CommunicationThread.includes(:account, :contact, :assignee, :team).find(communication_thread_id)
     return unless communication_thread.account.feature_enabled?(FEATURE_NAME)
 
     source_conversation = communication_thread.conversations.find(source_conversation_id)
-
     message = source_message(source_conversation)
-
     links = communication_thread.communication_thread_conversations.includes(
-      :conversation,
+      { conversation: [:labels, { inbox: :channel }] },
       { contact_inbox: :channel_profile },
       inbox: [:members, :channel]
     ).to_a
@@ -39,9 +37,7 @@ class CommunicationThreads::RealtimeUpdateService
   attr_reader :communication_thread_id, :source_conversation_id, :source_event, :message_id, :performer_id
 
   def source_message(source_conversation)
-    return if message_id.blank?
-
-    source_conversation.messages.find(message_id)
+    source_conversation.messages.find(message_id) if message_id.present?
   end
 
   def broadcast_dashboard_updates(communication_thread, links, source_conversation, message)
@@ -51,12 +47,11 @@ class CommunicationThreads::RealtimeUpdateService
     return if groups.empty?
 
     read_states = batch_read_states(account, links)
+    preload_conversation_directional_timestamps(account, links)
     groups.each_value do |group|
       shared_payload = shared_realtime_payload(communication_thread, group[:links], source_conversation, message)
-      group[:users].each do |user|
-        payload = realtime_payload(communication_thread, group[:links], shared_payload, read_states)
-        members_by_payload[payload] << user.pubsub_token
-      end
+      payload = realtime_payload(communication_thread, group[:links], shared_payload, read_states)
+      group[:users].each { |user| members_by_payload[payload] << user.pubsub_token }
     end
 
     members_by_payload.each { |payload, members| broadcast(account, members, payload) }
@@ -64,16 +59,13 @@ class CommunicationThreads::RealtimeUpdateService
 
   def recipient_groups(account, links, source_conversation)
     CommunicationThreads::RealtimeRecipientGroups.new(
-      account: account,
-      links: links,
-      source_conversation: source_conversation
+      account: account, links: links, source_conversation: source_conversation
     ).perform
   end
 
   def batch_read_states(account, links)
     Conversations::SharedUnreadStateBatchPreloader.new(
-      account: account,
-      conversation_ids: links.map(&:conversation_id)
+      account: account, conversation_ids: links.map(&:conversation_id)
     ).perform
   end
 
@@ -93,28 +85,20 @@ class CommunicationThreads::RealtimeUpdateService
 
   def thread_identity_payload(communication_thread, links, source_conversation)
     {
-      id: communication_thread.display_id,
-      communication_thread_id: communication_thread.display_id,
-      is_communication_thread: true,
-      meta: thread_meta(communication_thread, source_conversation),
-      source_event: source_event,
-      conversation_id: source_conversation.display_id,
+      id: communication_thread.display_id, communication_thread_id: communication_thread.display_id,
+      is_communication_thread: true, meta: thread_meta(communication_thread, source_conversation),
+      source_event: source_event, conversation_id: source_conversation.display_id,
       conversation_ids: links.map { |link| link.conversation.display_id },
-      contact_id: communication_thread.contact_id,
-      inbox_id: source_conversation.inbox_id,
-      inbox_name: source_conversation.inbox&.name,
-      contact_inbox_id: source_conversation.contact_inbox_id,
-      channel: source_conversation.inbox&.channel_type,
-      medium: thread_medium(source_conversation.inbox)
+      contact_id: communication_thread.contact_id, inbox_id: source_conversation.inbox_id,
+      inbox_name: source_conversation.inbox&.name, contact_inbox_id: source_conversation.contact_inbox_id,
+      channel: source_conversation.inbox&.channel_type, medium: thread_medium(source_conversation.inbox)
     }
   end
 
   def thread_invariant_state_payload(communication_thread, links)
     {
-      status: communication_thread.status,
-      priority: communication_thread.priority,
-      assignee_id: communication_thread.assignee_id,
-      team_id: communication_thread.team_id,
+      status: communication_thread.status, priority: communication_thread.priority,
+      assignee_id: communication_thread.assignee_id, team_id: communication_thread.team_id,
       labels: label_list(links),
       scheduling_appointment_statuses: scheduling_appointment_statuses(communication_thread)
     }
@@ -159,26 +143,42 @@ class CommunicationThreads::RealtimeUpdateService
 
   def channel_payloads(communication_thread, links, read_states)
     CommunicationThreads::ChannelCapabilitiesBuilder.new(
-      links: links,
-      contact: communication_thread.contact,
-      deduplicate_linked: false,
+      links: links, contact: communication_thread.contact, deduplicate_linked: false,
       unread_counts: read_states.unread_counts,
+      last_incoming_message_timestamps: @last_incoming_message_timestamps,
       last_seen_timestamps: read_states.last_seen_timestamps
     ).perform
   end
 
+  def preload_conversation_directional_timestamps(account, links)
+    @conversation_directional_timestamps = Conversations::DirectionalMessageTimestampPreloader
+                                           .new(account: account)
+                                           .for_conversations(links.filter_map(&:conversation))
+    @last_incoming_message_timestamps = @conversation_directional_timestamps.transform_values { |ts| ts[:incoming] }.compact
+  end
+
   def directional_message_timestamps(communication_thread, links)
+    return aggregate_directional_timestamps(links) if defined?(@conversation_directional_timestamps)
+
     Conversations::DirectionalMessageTimestampPreloader
       .new(account: communication_thread.account)
       .for_communication_threads(communication_thread.id => links)
       .fetch(communication_thread.id, {})
   end
 
+  def aggregate_directional_timestamps(links)
+    links.each_with_object({}) do |link, result|
+      @conversation_directional_timestamps.fetch(link.conversation_id, {}).each do |side, created_at|
+        result[side] = created_at if result[side].blank? || created_at > result[side]
+      end
+    end
+  end
+
   def scheduling_appointment_statuses(communication_thread)
-    Scheduling::AppointmentDialogStatusContextBuilder
-      .new(account: communication_thread.account)
-      .for_communication_threads([communication_thread])
-      .fetch(communication_thread.id, [])
+    @scheduling_appointment_statuses ||= Scheduling::AppointmentDialogStatusContextBuilder
+                                         .new(account: communication_thread.account)
+                                         .for_communication_threads([communication_thread])
+                                         .fetch(communication_thread.id, [])
   end
 
   def channel_replyable?(channel)
@@ -187,7 +187,10 @@ class CommunicationThreads::RealtimeUpdateService
   end
 
   def label_list(links)
-    links.flat_map { |link| link.conversation&.label_list }.compact.uniq
+    links.flat_map do |link|
+      conv = link.conversation
+      conv&.association(:labels)&.loaded? ? conv.labels.map(&:name) : conv&.label_list
+    end.compact.uniq
   end
 
   def broadcast(account, members, data)

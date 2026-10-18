@@ -96,7 +96,7 @@ class HookJob < MutexApplicationJob
     return unless hook.feature_allowed?
 
     contact = event_data[:contact]
-    return if contact.blank?
+    return if Integrations::Medelement::PatientEnrichmentService.fresh_or_ineligible?(contact)
 
     Integrations::Medelement::PatientEnrichmentJob.enqueue(hook.id, contact.id)
   end

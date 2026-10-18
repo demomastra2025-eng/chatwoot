@@ -61,6 +61,6 @@ class CommunicationThreads::RealtimeRecipientGroups
   end
 
   def account_users_by_user_id
-    @account_users_by_user_id ||= account.account_users.index_by(&:user_id)
+    @account_users_by_user_id ||= account.account_users.includes(:custom_role).index_by(&:user_id)
   end
 end

@@ -26,13 +26,25 @@ class ConversationPolicy < ApplicationPolicy
   end
 
   def inbox_access?
+    return preloaded_member_access?(record.inbox) if preloaded_members?(record, :inbox)
+
     user.inboxes.where(account_id: account&.id).exists?(id: record.inbox_id)
   end
 
   def team_access?
     return false if record.team_id.blank?
+    return preloaded_member_access?(record.team) if preloaded_members?(record, :team)
 
     user.teams.where(account_id: account&.id).exists?(id: record.team_id)
+  end
+
+  def preloaded_members?(owner, association_name)
+    owner.association(association_name).loaded? &&
+      owner.public_send(association_name)&.association(:members)&.loaded?
+  end
+
+  def preloaded_member_access?(group_record)
+    group_record.account_id == account&.id && group_record.members.any? { |member| member.id == user.id }
   end
 
   def assigned_to_user?
