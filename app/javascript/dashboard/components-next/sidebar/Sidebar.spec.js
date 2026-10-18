@@ -634,6 +634,22 @@ describe('Sidebar', () => {
       expect(secondaryColumn(wrapper).exists()).toBe(false);
     });
 
+    it('opens the Вебхуки page on its own route from the settings hub', async () => {
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'settings_webhooks',
+      });
+      const webhooks = sidebarGroup(wrapper, 'Settings')
+        .props('children')
+        .find(child => child.name === 'Settings Webhooks');
+
+      expect(webhooks.label).toBe(enSettings.SIDEBAR.WEBHOOKS);
+      expect(webhooks.to).toMatchObject({ name: 'settings_webhooks' });
+      expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
+        { name: 'Settings Webhooks', active: true },
+      ]);
+    });
+
     it('opens the reminders list (former touches) from the settings hub', async () => {
       const wrapper = await mountSidebar({
         permissions: ADMINISTRATOR,
