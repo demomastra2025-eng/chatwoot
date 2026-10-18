@@ -229,8 +229,6 @@ pt:
         open: 'A conversa foi marcada como aberta por %{user_name}'
         open_with_reason: 'Conversation was marked open by %{user_name} (%{reason})'
         auto_opened_after_agent_reply: 'Conversation was marked open automatically after an agent reply'
-      agent_bot:
-        error_moved_to_open: 'Conversation was marked open by system due to an error with the agent bot.'
       status:
         resolved: 'Conversa foi marcada como resolvida por %{user_name}'
         contact_resolved: 'Conversa foi resolvida por %{contact_name}'

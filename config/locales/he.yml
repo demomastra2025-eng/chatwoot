@@ -229,8 +229,6 @@ he:
         open: 'השיחה סומנה כפתוחה על ידי %{user_name}'
         open_with_reason: 'Conversation was marked open by %{user_name} (%{reason})'
         auto_opened_after_agent_reply: 'Conversation was marked open automatically after an agent reply'
-      agent_bot:
-        error_moved_to_open: 'השיחה סומנה כפתוחה על ידי המערכת עקב שגיאה בבוט הסוכן.'
       status:
         resolved: 'השיחה סומנה כפתורה על ידי %{user_name}'
         contact_resolved: 'השיחה נפתרה על ידי %{contact_name}'

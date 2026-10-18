@@ -214,8 +214,6 @@ nl:
         resolved_by_tool: 'Conversation was marked resolved by %{user_name}: %{reason}'
         open_with_reason: Conversation was marked open by %{user_name} (%{reason})
         auto_opened_after_agent_reply: Conversation was marked open automatically after an agent reply
-      agent_bot:
-        error_moved_to_open: Conversation was marked open by system due to an error with the agent bot.
       status:
         resolved: Gesprek werd gemarkeerd door %{user_name}
         contact_resolved: Gesprek werd opgelost door %{contact_name}

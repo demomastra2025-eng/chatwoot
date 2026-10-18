@@ -214,8 +214,6 @@ bn:
         resolved_by_tool: 'আলোচনাটি %{user_name} দ্বারা সমাধান হয়েছে: %{reason}'
         open_with_reason: আলোচনা %{user_name} দ্বারা খোলা হয়েছে (%{reason})
         auto_opened_after_agent_reply: এজেন্টের উত্তর দেওয়ার পর স্বয়ংক্রিয়ভাবে কথোপকথনটি খোলা হয়েছে
-      agent_bot:
-        error_moved_to_open: Conversation was marked open by system due to an error with the agent bot.
       status:
         resolved: Conversation was marked resolved by %{user_name}
         contact_resolved: Conversation was resolved by %{contact_name}

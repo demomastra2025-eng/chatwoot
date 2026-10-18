@@ -229,8 +229,6 @@ zh_CN:
         open: '对话被 %{user_name} 打开'
         open_with_reason: 'Conversation was marked open by %{user_name} (%{reason})'
         auto_opened_after_agent_reply: 'Conversation was marked open automatically after an agent reply'
-      agent_bot:
-        error_moved_to_open: 'Conversation was marked open by system due to an error with the agent bot.'
       status:
         resolved: '对话被标记由 %{user_name} 解决'
         contact_resolved: '对话被 %{contact_name} 重新打开'

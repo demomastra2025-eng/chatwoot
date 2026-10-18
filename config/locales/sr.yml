@@ -229,8 +229,6 @@ sr-Latn:
         open: 'Conversation was marked open by %{user_name}'
         open_with_reason: 'Conversation was marked open by %{user_name} (%{reason})'
         auto_opened_after_agent_reply: 'Conversation was marked open automatically after an agent reply'
-      agent_bot:
-        error_moved_to_open: 'Conversation was marked open by system due to an error with the agent bot.'
       status:
         resolved: 'Razgovor je označen kao rešen od strane %{user_name}'
         contact_resolved: 'Razgovor je rešen od strane %{contact_name}'

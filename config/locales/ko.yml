@@ -214,8 +214,6 @@ ko:
         resolved_by_tool: '대화가 %{user_name}에 의해 해결됨으로 표시되었습니다: %{reason}'
         open_with_reason: 대화가 %{user_name}에 의해 열림으로 표시되었습니다 (%{reason})
         auto_opened_after_agent_reply: 상담원 답장 후 대화가 자동으로 열림으로 표시되었습니다
-      agent_bot:
-        error_moved_to_open: Conversation was marked open by system due to an error with the agent bot.
       status:
         resolved: Conversation was marked resolved by %{user_name}
         contact_resolved: Conversation was resolved by %{contact_name}

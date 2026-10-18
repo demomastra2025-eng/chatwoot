@@ -244,8 +244,6 @@ ru:
         resolved_by_tool: 'Диалог был завершен %{user_name} с причиной: %{reason}'
         open_with_reason: Диалог был открыт %{user_name} (%{reason})
         auto_opened_after_agent_reply: Разговор был открыт автоматически после ответа сотрудника
-      agent_bot:
-        error_moved_to_open: Диалог был открыт системой из-за ошибки робота сотрудника.
       status:
         resolved: "%{user_name} завершил диалог"
         contact_resolved: Разговор был закрыт с %{contact_name}
