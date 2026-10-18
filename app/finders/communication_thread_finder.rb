@@ -313,7 +313,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def aggregate_assignment_counts(scope, include_unread: false)
-    relation = CommunicationThread.where(id: scope.except(:order).select(:id))
+    relation = unnested_thread_relation(scope)
     return basic_assignment_counts(relation) unless include_unread
 
     # With the unread filter on, every thread of the scope is already unread: recounting would only nest the
@@ -331,11 +331,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def combined_assignment_and_unread_counts(relation)
-    unread_ids_sql = unread_thread_ids_relation.distinct.to_sql
-    joined_relation = relation.joins(
-      "LEFT JOIN (#{unread_ids_sql}) unread_thread_links " \
-      'ON unread_thread_links.communication_thread_id = communication_threads.id'
-    )
+    joined_relation = relation.joins(unread_thread_lateral_join_sql)
     all_count, mine_count, unassigned_count, all_unread_count, mine_unread_count, unassigned_unread_count =
       Array(joined_relation.pick(*assignment_count_columns, *unread_assignment_count_columns)).map(&:to_i)
 
@@ -347,6 +343,40 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
       mine_unread_count: mine_unread_count,
       unassigned_unread_count: unassigned_unread_count
     }
+  end
+
+  def unread_thread_lateral_join_sql
+    <<~SQL.squish
+      LEFT JOIN LATERAL (
+        SELECT 1 AS is_unread
+        WHERE #{unread_thread_exists_sql}
+      ) unread_thread_links ON TRUE
+    SQL
+  end
+
+  def unread_thread_exists_sql
+    unread_convs_sql = Conversations::UnreadScopeBuilder.new(
+      scope: accessible_conversations,
+      account: current_account
+    ).perform.reselect('1').where('conversations.id = unread_ctc.conversation_id').to_sql
+
+    <<~SQL.squish
+      EXISTS (
+        SELECT 1
+        FROM communication_thread_conversations unread_ctc
+        WHERE unread_ctc.account_id = #{current_account.id.to_i}
+          AND unread_ctc.communication_thread_id = communication_threads.id
+          AND EXISTS (#{unread_convs_sql})
+      )
+    SQL
+  end
+
+  def unnested_thread_relation(scope)
+    if scope.joins_values.empty? && !scope.distinct_value
+      scope.except(:order)
+    else
+      CommunicationThread.where(id: scope.except(:order).select(:id))
+    end
   end
 
   def basic_assignment_counts(relation)
@@ -363,7 +393,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def unread_assignment_count_columns
-    unread_filter = 'unread_thread_links.communication_thread_id IS NOT NULL'
+    unread_filter = 'unread_thread_links.is_unread IS NOT NULL'
     [
       Arel.sql("COUNT(*) FILTER (WHERE #{unread_filter})"),
       Arel.sql("COUNT(*) FILTER (WHERE #{unread_filter} AND communication_threads.assignee_id = #{current_user.id.to_i})"),
@@ -386,8 +416,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def unread_thread_scope(scope)
-    base_scope = CommunicationThread.where(id: scope.except(:order).select(:id))
-    base_scope.where(id: unread_thread_ids_relation)
+    unnested_thread_relation(scope).where(unread_thread_exists_sql)
   end
 
   def unread_thread_ids_relation(thread_scope = nil)

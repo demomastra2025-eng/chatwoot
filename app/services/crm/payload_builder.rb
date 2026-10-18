@@ -177,7 +177,7 @@ module Crm::PayloadBuilder
   end
 
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
-  def deal(deal)
+  def deal(deal, catalog_snapshot: nil)
     primary_contact =
       deal.deal_contacts.detect(&:primary?)&.contact || deal.deal_contacts.first&.contact
     dialog_context = compact_dialog_context(deal)
@@ -210,7 +210,7 @@ module Crm::PayloadBuilder
       waiting_reason: deal.waiting_reason,
       waiting_started_at: deal.waiting_started_at&.iso8601,
       waiting_set_by_id: deal.waiting_set_by_id,
-      next_action: Crm::Deals::NextActionService.new(deal: deal).perform,
+      next_action: Crm::Deals::NextActionService.new(deal: deal, catalog_snapshot: catalog_snapshot).perform,
       closing_reasons: deal.stage&.outcome_lost? ? deal.closing_reasons : [],
       position: deal.position,
       win_probability: deal.win_probability,
@@ -334,26 +334,24 @@ module Crm::PayloadBuilder
 
   def dialog_deals_for_pipeline(pipeline)
     deals = pipeline.deals.kept
-    direct_conversation_deals = deals.where.not(originating_conversation_id: nil)
-    direct_thread_deals = deals.where.not(originating_communication_thread_id: nil)
-    contact_dialog_deals = deals.where(
+    direct_conversation_ids = deals.where.not(originating_conversation_id: nil).select(:id)
+    direct_thread_ids = deals.where.not(originating_communication_thread_id: nil).select(:id)
+    contact_dialog_ids = deals.where(
       id: ::Crm::DealContact
         .where(account_id: pipeline.account_id, contact_id: dialog_contact_ids(pipeline.account_id))
         .select(:deal_id)
-    )
+    ).select(:id)
 
-    direct_conversation_deals.or(direct_thread_deals).or(contact_dialog_deals)
+    union_sql = [direct_conversation_ids, direct_thread_ids, contact_dialog_ids].map { |rel| "(#{rel.to_sql})" }.join(' UNION ')
+    deals.where("crm_deals.id IN (#{union_sql})")
   end
 
   def dialog_contact_ids(account_id)
-    contacts_with_conversations = ::Contact.where(account_id: account_id).where(
-      id: ::Conversation.where(account_id: account_id).select(:contact_id)
-    )
-    contacts_with_threads = ::Contact.where(account_id: account_id).where(
-      id: ::CommunicationThread.where(account_id: account_id).select(:contact_id)
-    )
+    conv_contacts = ::Conversation.where(account_id: account_id).where.not(contact_id: nil).select(:contact_id)
+    thread_contacts = ::CommunicationThread.where(account_id: account_id).where.not(contact_id: nil).select(:contact_id)
+    union_sql = "(#{conv_contacts.to_sql}) UNION (#{thread_contacts.to_sql})"
 
-    contacts_with_conversations.or(contacts_with_threads).select(:id)
+    ::Contact.where(account_id: account_id).where("contacts.id IN (#{union_sql})").select(:id)
   end
 
   def stages_for_pipeline(pipeline, include_inactive_stages: true)

@@ -246,7 +246,7 @@ class Whatsapp::MonthlyUsageService
   end
 
   def cloud_channels
-    Channel::Whatsapp.where(account_id: @account.id, provider: 'whatsapp_cloud').order(:id).to_a
+    Channel::Whatsapp.where(account_id: @account.id, provider: 'whatsapp_cloud').includes(:inbox).order(:id).to_a
   end
 
   def connected_phone_map(channels)
@@ -318,10 +318,10 @@ class Whatsapp::MonthlyUsageService
     delivery_counts, cost_groups = Whatsapp::UsageDeliveryCounts.for_account(snapshot.delivery_groups)
     costs = estimate_costs(cost_groups, snapshot)
     Whatsapp::UsageResponseMetadata.for_snapshot(snapshot).merge(delivery_counts)
-                            .merge(costs.except(:service_cost_complete, :cost_complete))
-                            .merge(Whatsapp::UsageCoverageSummary.for_account(
-                                     snapshot: snapshot, delivery_counts: delivery_counts, costs: costs
-                                   ))
+                                   .merge(costs.except(:service_cost_complete, :cost_complete))
+                                   .merge(Whatsapp::UsageCoverageSummary.for_account(
+                                            snapshot: snapshot, delivery_counts: delivery_counts, costs: costs
+                                          ))
   end
 
   def estimate_costs(groups, snapshot)

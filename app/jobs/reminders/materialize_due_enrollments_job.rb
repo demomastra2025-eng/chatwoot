@@ -97,6 +97,7 @@ class Reminders::MaterializeDueEnrollmentsJob < ApplicationJob
                     .where('accounts.feature_flags_overflow @> ?', [feature_name].to_json)
                     .select(:id)
 
-    TouchPlanEnrollment.where(id: due_ids).or(TouchPlanEnrollment.where(id: resumable_ids))
+    union_sql = "(#{due_ids.to_sql}) UNION (#{resumable_ids.to_sql})"
+    TouchPlanEnrollment.where("touch_plan_enrollments.id IN (#{union_sql})")
   end
 end

@@ -35,15 +35,17 @@ class Scheduling::CalendarViewService
   private
 
   def appointments
-    @appointments ||= begin
-      scope = appointment_custom_field_filter_set.apply(base_appointments_scope)
-      scope = scope.where(status: @statuses) if @statuses.present?
-      scope.to_a
-    end
+    @appointments ||= if @custom_attribute_filters.blank? && @statuses.blank?
+                        blocking_appointments
+                      else
+                        scope = appointment_custom_field_filter_set.apply(base_appointments_scope)
+                        scope = scope.where(status: @statuses) if @statuses.present?
+                        scope.to_a
+                      end
   end
 
   def break_rules
-    @break_rules ||= account.scheduling_break_rules.where(resource_id: resource_ids).ordered.to_a
+    @break_rules ||= resources.flat_map(&:break_rules).sort_by { |rule| [rule.weekday, rule.start_minute, rule.id] }
   end
 
   def holidays
@@ -95,7 +97,7 @@ class Scheduling::CalendarViewService
   end
 
   def work_rules
-    @work_rules ||= account.scheduling_work_rules.where(resource_id: resource_ids).ordered.to_a
+    @work_rules ||= resources.flat_map(&:work_rules).sort_by { |rule| [rule.weekday, rule.start_minute, rule.id] }
   end
 
   def workday_overrides

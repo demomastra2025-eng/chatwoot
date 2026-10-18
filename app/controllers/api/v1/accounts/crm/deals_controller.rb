@@ -5,11 +5,8 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   include ::Api::V1::Accounts::Crm::Concerns::DealsLifecycleCommands
   include ::Api::V1::Accounts::Crm::Concerns::DealsWriteHelpers
   DEAL_PRELOADS = [
-    :company,
-    :originating_conversation,
-    :originating_communication_thread,
-    { deal_contacts: :contact },
-    { tasks: :status }
+    :account, :stage, :company, :originating_conversation, :originating_communication_thread,
+    { deal_contacts: :contact }, { tasks: [:status, :task_type, :task_outcome] }
   ].freeze
   before_action :ensure_crm_deals_enabled!
   before_action :bootstrap_defaults_if_needed!, only: :index
@@ -33,9 +30,10 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
       sort_direction: params[:sort_direction]
     )
     paginated_deals = board_mode? ? board_page(deals) : list_page.perform
+    catalog_snapshot = ::Crm::Tasks::CatalogSnapshot.new(account: Current.account)
 
     render_payload(
-      paginated_deals.map { |deal| ::Crm::PayloadBuilder.deal(deal) },
+      paginated_deals.map { |deal| ::Crm::PayloadBuilder.deal(deal, catalog_snapshot: catalog_snapshot) },
       meta: pagination_meta(deals, paginated_deals)
     )
   end
@@ -69,7 +67,8 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
 
   def appointments
     authorize @deal, :show?
-    payload = Scheduling::PayloadBuilder.appointments(@deal.appointments.where(account_id: Current.account.id).includes(:resource, :contact, :patient_contact).ordered)
+    payload = Scheduling::PayloadBuilder.appointments(@deal.appointments.where(account_id: Current.account.id).includes(:resource, :contact,
+                                                                                                                        :patient_contact).ordered)
     render_payload(payload, meta: { timezone: ::Crm::Appointments::Facts.timezone_for(Current.account).tzinfo.name })
   end
 
@@ -92,9 +91,9 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
       ::Crm::Appointments::DeliveryPolicy.stamp_in_memory!(@deal)
       @deal.save!
       ::Crm::Events::Writer.record!(account: Current.account, eventable: @deal, actor: Current.user, event_type: 'deal_updated',
-                                   before_data: { appointment_automation_state: previous_state.to_h.except(::Crm::Appointments::DeliveryPolicy::KEY) },
-                                   after_data: { appointment_automation_state: @deal.appointment_automation_state.to_h.except(::Crm::Appointments::DeliveryPolicy::KEY) },
-                                   meta: { appointment_automation_resumed: true })
+                                    before_data: { appointment_automation_state: previous_state.to_h.except(::Crm::Appointments::DeliveryPolicy::KEY) },
+                                    after_data: { appointment_automation_state: @deal.appointment_automation_state.to_h.except(::Crm::Appointments::DeliveryPolicy::KEY) },
+                                    meta: { appointment_automation_resumed: true })
     end
     ::Crm::Appointments::EvaluateDealJob.perform_later(Current.account.id, @deal.id)
     render_payload(::Crm::PayloadBuilder.deal(@deal))
@@ -215,11 +214,6 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   private
 
   def set_deal
-    @deal = policy_scope(::Crm::Deal).preload(
-      :company,
-      :originating_conversation,
-      :originating_communication_thread,
-      deal_contacts: :contact
-    ).find(params[:id])
+    @deal = policy_scope(::Crm::Deal).preload(*DEAL_PRELOADS).find(params[:id])
   end
 end

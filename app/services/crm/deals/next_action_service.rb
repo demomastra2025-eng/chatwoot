@@ -1,9 +1,10 @@
 class Crm::Deals::NextActionService
   OPEN_TASK_CATEGORIES = %w[open in_progress].freeze
 
-  def initialize(deal:, now: Time.zone.now)
+  def initialize(deal:, now: Time.zone.now, catalog_snapshot: nil)
     @deal = deal
     @now = now
+    @catalog_snapshot = catalog_snapshot
     @timezone = Time.find_zone(::Crm::WorkspaceTimezone.resolve(deal.account)) || Time.zone
   end
 
@@ -19,7 +20,7 @@ class Crm::Deals::NextActionService
 
   private
 
-  attr_reader :deal, :now, :timezone
+  attr_reader :catalog_snapshot, :deal, :now, :timezone
 
   def waiting_action
     {
@@ -41,7 +42,7 @@ class Crm::Deals::NextActionService
       state: task_time_state(task),
       due_at: task.due_at&.iso8601,
       due_on: task.due_on&.iso8601,
-      task: Crm::PayloadBuilder.task(task)
+      task: Crm::PayloadBuilder.task(task, catalog_snapshot: catalog_snapshot)
     }
   end
 

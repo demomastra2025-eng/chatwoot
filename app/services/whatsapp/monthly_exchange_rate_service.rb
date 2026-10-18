@@ -48,6 +48,8 @@ class Whatsapp::MonthlyExchangeRateService
   end
 
   def claim_fetch(record)
+    return record if record.fetched?
+
     result = record.with_lock { reserve_fetch(record) }
     return record if result == :fetched
     return true if result == :claimed

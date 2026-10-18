@@ -114,9 +114,9 @@ module Api::V1::Accounts::Crm::Concerns::DealsBoarding
   def deal_total_rows(scope)
     # The filtered scope can join contacts and use DISTINCT. Aggregate the deal
     # IDs once so joins cannot duplicate amounts, regardless of the page size.
-    filtered_ids = scope.reselect(:id).reorder(nil)
-    ::Crm::Deal.where(id: filtered_ids)
-               .group(:stage_id, :currency)
-               .pluck(:stage_id, :currency, Arel.sql('COUNT(*)'), Arel.sql('COALESCE(SUM(amount_minor), 0)'))
+    unjoined = scope.joins_values.empty? && !scope.distinct_value
+    relation = unjoined ? scope.except(:preload, :select).reorder(nil) : ::Crm::Deal.where(id: scope.reselect(:id).reorder(nil))
+    relation.group(:stage_id, :currency)
+            .pluck(:stage_id, :currency, Arel.sql('COUNT(*)'), Arel.sql('COALESCE(SUM(amount_minor), 0)'))
   end
 end

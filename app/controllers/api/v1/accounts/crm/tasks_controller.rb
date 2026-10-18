@@ -165,7 +165,7 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
   def filtered_tasks
     ::Crm::Tasks::FilterService.new(
       account: Current.account,
-      scope: policy_scope(::Crm::Task).includes(:task_type, :task_outcome).ordered,
+      scope: policy_scope(::Crm::Task).ordered,
       params: params,
       custom_attribute_filters: custom_attribute_filters_param
     ).perform
@@ -181,7 +181,7 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
   end
 
   def set_task
-    @task = policy_scope(::Crm::Task).find(params[:id])
+    @task = policy_scope(::Crm::Task).preload(:task_type, :task_outcome).find(params[:id])
   end
 
   def update_task_params

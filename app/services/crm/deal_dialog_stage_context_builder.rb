@@ -98,7 +98,9 @@ class Crm::DealDialogStageContextBuilder
     return if record_ids_by_contact_id.blank?
 
     Crm::DealContact
-      .where(account_id: account.id, contact_id: record_ids_by_contact_id.keys, deal_id: deal_id_scope)
+      .where(account_id: account.id, contact_id: record_ids_by_contact_id.keys)
+      .joins(:deal)
+      .merge(account.crm_deals.kept)
       .includes(deal: [:stage, :pipeline])
       .find_each do |deal_contact|
         record_ids_by_contact_id[deal_contact.contact_id].each do |record_id|

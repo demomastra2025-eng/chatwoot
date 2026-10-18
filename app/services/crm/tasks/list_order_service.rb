@@ -17,7 +17,7 @@ class Crm::Tasks::ListOrderService
   def perform
     column = SORT_COLUMNS[params[:sort_by]]
     ordered_scope = column.present? ? sorted_scope(column) : scope.ordered
-    ordered_scope.offset((page - 1) * per_page).limit(per_page)
+    ordered_scope.preload(:task_type, :task_outcome).offset((page - 1) * per_page).limit(per_page)
   end
 
   def page
