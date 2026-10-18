@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_17_140000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2097,7 +2097,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_17_140000) do
 
   create_table "llm_event_annotations", force: :cascade do |t|
     t.bigint "account_id", null: false
-    t.bigint "llm_event_id", null: false
+    t.bigint "llm_event_id"
     t.bigint "user_id", null: false
     t.text "body", null: false
     t.datetime "created_at", null: false
@@ -2227,7 +2227,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_17_140000) do
 
   create_table "llm_usage_events", force: :cascade do |t|
     t.integer "account_id"
-    t.bigint "llm_event_id", null: false
+    t.bigint "llm_event_id"
     t.datetime "occurred_at", null: false
     t.string "event_name", null: false
     t.string "feature"
@@ -3860,7 +3860,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_17_140000) do
   add_foreign_key "llm_event_annotations", "accounts"
   add_foreign_key "llm_event_annotations", "llm_events"
   add_foreign_key "llm_event_annotations", "users"
-  add_foreign_key "llm_usage_events", "llm_events", on_delete: :cascade
+  add_foreign_key "llm_usage_events", "llm_events", on_delete: :nullify
   add_foreign_key "medelement_delta_miss_candidates", "integrations_hooks", column: "hook_id", on_delete: :cascade
   add_foreign_key "medelement_delta_miss_candidates", "medelement_sync_runs", column: "full_sweep_run_id", on_delete: :nullify
   add_foreign_key "medelement_delta_misses", "integrations_hooks", column: "hook_id", on_delete: :cascade

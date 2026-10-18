@@ -13,6 +13,7 @@ class Notification::RemoveOldNotificationJob < ApplicationJob
 
   def remove_old_notifications
     Notification.where('created_at < ?', OLD_NOTIFICATION_THRESHOLD.ago)
+                .in_batches(of: 1000)
                 .delete_all
   end
 

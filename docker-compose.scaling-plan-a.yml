@@ -1,0 +1,35 @@
+# Docker Compose Override for "Plan A + Turbo" (200+ Clinics)
+# Usage (rolling apply): docker compose -f docker-compose.yml -f docker-compose.scaling-plan-a.yml ...
+x-ruby-performance-env: &ruby-perf-env
+  RUBY_YJIT_ENABLE: "1"
+  RUBY_OPT: "--yjit"
+  MALLOC_ARENA_MAX: "2"
+  PGBOUNCER_ENABLED: "true"
+
+services:
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.22.1-p1
+    restart: always
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 40
+      MAX_DB_CONNECTIONS: 80
+      MAX_PREPARED_STATEMENTS: 200
+    ports:
+      - "127.0.0.1:6432:5432"
+
+  chatwoot_rails:
+    environment:
+      <<: *ruby-perf-env
+
+  chatwoot_rails_2:
+    environment:
+      <<: *ruby-perf-env
+
+  chatwoot_sidekiq_capsules:
+    environment:
+      <<: *ruby-perf-env
+    command: bundle exec sidekiq -C config/sidekiq_capsules.yml

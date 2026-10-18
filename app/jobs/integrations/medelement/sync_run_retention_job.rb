@@ -1,7 +1,9 @@
 class Integrations::Medelement::SyncRunRetentionJob < ApplicationJob
   queue_as :scheduled_jobs
 
-  RETENTION_PERIOD = 90.days
+  SUCCEEDED_RETENTION_PERIOD = 7.days
+  FAILED_RETENTION_PERIOD = 30.days
+  RETENTION_PERIOD = FAILED_RETENTION_PERIOD
   BATCH_SIZE = 1000
 
   def perform
@@ -12,12 +14,14 @@ class Integrations::Medelement::SyncRunRetentionJob < ApplicationJob
   private
 
   def deletable_runs
-    Integrations::Medelement::SyncRun
+    base_scope = Integrations::Medelement::SyncRun
       .where(status: Integrations::Medelement::SyncRun::TERMINAL_STATUSES)
-      .where(completed_at: ...RETENTION_PERIOD.ago)
       .where.not(id: latest_run_per_hook)
       .where.not(id: actionable_conflict_first_runs)
       .where.not(id: actionable_conflict_last_runs)
+
+    base_scope.where(status: 'succeeded', completed_at: ...SUCCEEDED_RETENTION_PERIOD.ago)
+              .or(base_scope.where.not(status: 'succeeded').where(completed_at: ...FAILED_RETENTION_PERIOD.ago))
   end
 
   def latest_run_per_hook

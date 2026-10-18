@@ -597,18 +597,20 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def perform_end_call
-    transport_result = nil
+    call_session.reload
+    raise_call_session_terminal! if call_session.terminal?
+
+    transport_result = terminate_transport_call
     call_session.with_lock do
       call_session.reload
-      raise_call_session_terminal! if call_session.terminal?
-
-      transport_result = terminate_transport_call
-      call_session.update!(
-        status: 'completed',
-        ended_at: Time.current,
-        ended_by: arguments['ended_by'].presence || 'ai_agent',
-        end_reason: arguments['reason'].presence || 'ai_voice_end_call'
-      )
+      unless call_session.terminal?
+        call_session.update!(
+          status: 'completed',
+          ended_at: Time.current,
+          ended_by: arguments['ended_by'].presence || 'ai_agent',
+          end_reason: arguments['reason'].presence || 'ai_voice_end_call'
+        )
+      end
     end
 
     { action: 'end_call', status: call_session.status }.merge(transport_result)

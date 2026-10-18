@@ -61,7 +61,17 @@ RSpec.describe Llm::OpenRouterEndpointCatalog do
     InstallationConfig.where(name: described_class::INSTALLATION_CONFIG_KEY).delete_all
   end
 
-  describe '.refresh!' do
+describe '.endpoint_configs' do
+  it 'reuses persisted endpoint configs across repeated lookups via Rails.cache' do
+    allow(described_class).to receive(:load_db_endpoint_configs).and_return('example/model' => { 'model_id' => 'example/model' })
+
+    2.times { described_class.send(:db_endpoint_configs) }
+
+    expect(described_class).to have_received(:load_db_endpoint_configs).once
+  end
+end
+
+describe '.refresh!' do
     it 'fetches and persists endpoint metadata for selected OpenRouter models' do
       stub_request(:get, endpoint_url)
         .with(headers: { 'Authorization' => 'Bearer [REDACTED]' })

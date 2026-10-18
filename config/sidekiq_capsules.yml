@@ -1,0 +1,61 @@
+# Sidekiq 7 Multi-Capsule Architecture ("Plan A + Turbo" for 200+ Clinics)
+# Consolidates ~30 separate Sidekiq containers into 6 workload-isolated capsules,
+# saving ~8.5 GB of Ruby VM memory overhead while guaranteeing strict queue isolation.
+:concurrency: 5
+:timeout: 25
+
+:capsules:
+  # 1. Realtime UI & Messaging (<100ms latency SLA)
+  realtime:
+    :concurrency: 10
+    :queues:
+      - [critical, 4]
+      - [high, 3]
+      - [communication_thread_realtime, 3]
+      - [whatsapp_web_send, 3]
+      - [whatsapp_web_inbound, 3]
+      - [default, 2]
+
+  # 2. AI Agents & OpenRouter LLM (I/O bound, isolated from UI/Realtime)
+  ai_llm:
+    :concurrency: 8
+    :queues:
+      - [captain_llm, 4]
+      - [captain, 3]
+      - [medium, 2]
+
+  # 3. Telephony & AI Voice (strictly isolated for live call webhooks & transcripts)
+  voice_telephony:
+    :concurrency: 6
+    :queues:
+      - [telephony_events, 4]
+      - [telephony_recordings, 2]
+
+  # 4. MedElement CRM Sync (Delta fast lane weighted 5x above Full/Contacts sweeps)
+  medelement_sync:
+    :concurrency: 6
+    :queues:
+      - [medelement_delta, 5]
+      - [medelement_sync, 2]
+      - [medelement_contacts, 1]
+
+  # 5. Media, Avatars & History Import
+  media_sync:
+    :concurrency: 4
+    :queues:
+      - [whatsapp_web_media, 3]
+      - [whatsapp_web_avatars, 2]
+      - [whatsapp_web_history, 1]
+      - [low, 1]
+
+  # 6. Bulk, Campaigns, Housekeeping & Audio Compression
+  bulk_housekeeping:
+    :concurrency: 4
+    :queues:
+      - [scheduled_jobs, 3]
+      - [mailers, 2]
+      - [campaigns, 2]
+      - [bulk, 1]
+      - [housekeeping, 1]
+      - [deferred, 1]
+      - [purgable, 1]

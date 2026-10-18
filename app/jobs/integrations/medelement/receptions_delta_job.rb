@@ -80,9 +80,11 @@ class Integrations::Medelement::ReceptionsDeltaJob < ApplicationJob
     )
   end
 
+  FULL_SYNC_BUSY_RETRY_SECONDS = 15
+
   def pause_for_full_sync!(hook)
     cursor = Integrations::Medelement::SyncCursor.find_or_create_by!(hook: hook, name: 'receptions_delta')
-    cursor.update!(current_interval_seconds: MAX_BACKOFF_SECONDS, last_poll_at: Time.current)
+    cursor.update!(current_interval_seconds: FULL_SYNC_BUSY_RETRY_SECONDS, last_poll_at: Time.current)
   end
 
   def retryable?(error)

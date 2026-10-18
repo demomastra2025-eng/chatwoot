@@ -13,18 +13,22 @@ class Integrations::Medelement::ContactResolverService
     @organization_id = organization_id
   end
 
-  def sync_patient!(patient_code, preferred_contact: nil)
+  def sync_patient!(patient_code, preferred_contact: nil, prefetched_patient: :not_prefetched)
     validate_preferred_contact!(preferred_contact)
     existing_contact = preferred_contact || find_by_patient_code(patient_code)
     return existing_contact if fresh?(existing_contact)
 
-    patient = client.get_patient(patient_code: patient_code)
+    patient = prefetched_patient == :not_prefetched ? client.get_patient(patient_code: patient_code) : prefetched_patient
     return existing_contact if patient.blank?
 
     validate_patient!(patient, expected_patient_code: patient_code)
     return existing_contact if provider_read_models_conflict?(patient_code, patient, existing_contact)
 
     upsert_contact(patient, preferred_contact: preferred_contact)
+  end
+
+  def fresh_contact?(contact)
+    fresh?(contact)
   end
 
   def sync_patient_payload!(patient, preferred_contact:)

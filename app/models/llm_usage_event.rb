@@ -46,7 +46,7 @@
 #
 class LlmUsageEvent < ApplicationRecord
   belongs_to :account, optional: true
-  belongs_to :llm_event
+  belongs_to :llm_event, optional: true
 
   validates :event_name, :occurred_at, presence: true
 

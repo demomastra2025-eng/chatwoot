@@ -56,13 +56,13 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaJob do
     expect(cursor.reload.current_interval_seconds).to eq(60)
   end
 
-  it 'pauses for five minutes while the full sync lock is held' do
+  it 'pauses briefly (15 seconds) while the full sync lock is held so delta resumes quickly' do
     allow(full_lock).to receive(:lock).and_return(false)
 
     described_class.perform_now(hook.id)
 
     expect(poller).not_to have_received(:perform)
-    expect(Integrations::Medelement::SyncCursor.find_by!(hook: hook).current_interval_seconds).to eq(300)
+    expect(Integrations::Medelement::SyncCursor.find_by!(hook: hook).current_interval_seconds).to eq(15)
   end
 
   it 'preserves an existing cursor while the full sync lock is held' do
@@ -73,7 +73,7 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaJob do
     described_class.perform_now(hook.id)
 
     expect(cursor.reload.value).to be_within(1.second).of(value)
-    expect(cursor.current_interval_seconds).to eq(300)
+    expect(cursor.current_interval_seconds).to eq(15)
   end
 
   it 'caps repeated retryable failures at five minutes' do

@@ -3,6 +3,11 @@
 class Llm::Monitoring::RetentionEnforcer
   ACCOUNT_BATCH_SIZE = 100
   EVENT_BATCH_SIZE = 1_000
+  REPORT_CRITICAL_EVENT_NAMES = %w[
+    captain.agent.transfer
+    captain.agent.staff_handoff
+    captain.agent.transfer_guard
+  ].freeze
 
   def initialize(account_scope: Account.all, event_scope: LlmEvent.all, now: Time.current)
     @account_scope = account_scope
@@ -50,11 +55,13 @@ class Llm::Monitoring::RetentionEnforcer
   def purge_scope(scope)
     deleted_events = 0
     deleted_annotations = 0
+    purgeable_scope = scope.where.not(event_name: REPORT_CRITICAL_EVENT_NAMES)
 
-    scope.in_batches(of: EVENT_BATCH_SIZE) do |relation|
+    purgeable_scope.in_batches(of: EVENT_BATCH_SIZE) do |relation|
       ids = relation.pluck(:id)
       next if ids.blank?
 
+      LlmUsageEvent.where(llm_event_id: ids).update_all(llm_event_id: nil) if defined?(LlmUsageEvent)
       deleted_annotations += LlmEventAnnotation.where(llm_event_id: ids).delete_all
       deleted_events += LlmEvent.where(id: ids).delete_all
     end

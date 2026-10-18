@@ -69,15 +69,16 @@ class Integrations::Medelement::ContactFieldResolutionService
 
   # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
   def perform_local_resolution!(directions)
+    patient_code, patient = fetch_patient_outside_lock!
+
     conflict.with_lock do
       raise ResolutionError, 'Only open conflicts can be resolved' unless conflict.open?
 
       contact = conflict.account.contacts.find(conflict.details.fetch('contact_id'))
-      patient_code = contact.custom_attributes['medelement_patient_code'].to_s
-      raise ResolutionError, 'MedElement patient reference is missing' if patient_code.blank?
+      current_code = contact.custom_attributes['medelement_patient_code'].to_s
+      raise ResolutionError, 'MedElement patient reference is missing' if current_code.blank?
 
-      patient = medelement_client.get_patient(patient_code: patient_code)
-      provider = provider_values(patient)
+      provider = provider_values(current_code == patient_code ? patient : medelement_client.get_patient(patient_code: current_code))
       local = onelink_values(contact)
       inbound_fields = fields_for(directions, 'medelement_to_onelink')
       outbound_fields = fields_for(directions, 'onelink_to_medelement')
@@ -87,7 +88,7 @@ class Integrations::Medelement::ContactFieldResolutionService
 
       desired_provider = provider.merge(local.slice(*outbound_fields))
       apply_provider_fields!(contact, provider, inbound_fields, desired_provider) if inbound_fields.present?
-      apply_onelink_fields!(contact, patient_code, outbound_fields, provider, local)
+      apply_onelink_fields!(contact, current_code, outbound_fields, provider, local)
 
       conflict.update!(
         status: 'resolved',
@@ -144,14 +145,16 @@ class Integrations::Medelement::ContactFieldResolutionService
 
   # rubocop:disable Metrics/AbcSize
   def prepare_provider_resolution(directions)
+    patient_code, patient = fetch_patient_outside_lock!
+
     conflict.with_lock do
       raise ResolutionError, 'Only open conflicts can be resolved' unless conflict.open?
 
       contact = conflict.account.contacts.find(conflict.details.fetch('contact_id'))
-      patient_code = contact.custom_attributes['medelement_patient_code'].to_s
-      raise ResolutionError, 'MedElement patient reference is missing' if patient_code.blank?
+      current_code = contact.custom_attributes['medelement_patient_code'].to_s
+      raise ResolutionError, 'MedElement patient reference is missing' if current_code.blank?
 
-      provider = provider_values(medelement_client.get_patient(patient_code: patient_code))
+      provider = provider_values(current_code == patient_code ? patient : medelement_client.get_patient(patient_code: current_code))
       local = onelink_values(contact)
       inbound_fields = fields_for(directions, 'medelement_to_onelink')
       outbound_fields = fields_for(directions, 'onelink_to_medelement')
@@ -166,6 +169,16 @@ class Integrations::Medelement::ContactFieldResolutionService
     end
   end
   # rubocop:enable Metrics/AbcSize
+
+  def fetch_patient_outside_lock!
+    raise ResolutionError, 'Only open conflicts can be resolved' unless conflict.open?
+
+    contact = conflict.account.contacts.find(conflict.details.fetch('contact_id'))
+    patient_code = contact.custom_attributes['medelement_patient_code'].to_s
+    raise ResolutionError, 'MedElement patient reference is missing' if patient_code.blank?
+
+    [patient_code, medelement_client.get_patient(patient_code: patient_code)]
+  end
 
   def provider_command_attributes(contact, desired)
     {

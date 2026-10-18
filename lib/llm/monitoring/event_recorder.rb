@@ -26,7 +26,6 @@ class Llm::Monitoring::EventRecorder
       llm.chat.runtime_complete
       llm.context_transform.applied
       llm.context_transform.failed
-      llm.context_transform.skipped
       llm.embedding.complete
       llm.decision.complete
       llm.moderation.complete

@@ -271,6 +271,16 @@ class ActionCableListener < BaseListener # rubocop:disable Metrics/ClassLength
     communication_thread = conversation.communication_thread || conversation.refresh_communication_thread!
     return if communication_thread.blank?
 
+    if message.nil?
+      seq_key = CommunicationThreads::RealtimeUpdateJob.coalesce_seq_key(
+        communication_thread.id,
+        conversation.id,
+        source_event
+      )
+      Redis::Alfred.incr(seq_key)
+      Redis::Alfred.expire(seq_key, 10)
+    end
+
     CommunicationThreads::RealtimeUpdateJob.perform_later(
       **{
         communication_thread_id: communication_thread.id,

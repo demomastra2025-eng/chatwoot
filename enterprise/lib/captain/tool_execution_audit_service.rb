@@ -1,5 +1,5 @@
 class Captain::ToolExecutionAuditService
-  MAX_RESULT_PREVIEW_LENGTH = 1000
+  MAX_RESULT_PREVIEW_LENGTH = 300
   TEST_RESULT_PREVIEW_LENGTH = 6000
   SENSITIVE_KEY_PATTERN = /
     (otp|token|secret|password|credential|authorization|process_?id|session|
@@ -77,12 +77,12 @@ class Captain::ToolExecutionAuditService
       risk_level: @tool_definition[:risk_level],
       requires_confirmation: ActiveModel::Type::Boolean.new.cast(@tool_definition[:requires_confirmation]),
       arguments: serializable_value(@arguments),
-      result_preview: serialized_preview(@result),
+      result_preview: (preview = serialized_preview(@result)),
       result_success: normalized_result[:success],
       result_message: serializable_value(normalized_result[:message]),
       result_error: serializable_value(normalized_result[:error]),
       result_retryable: normalized_result[:retryable],
-      result_data_preview: serialized_preview(normalized_result[:data]),
+      result_data_preview: (data_preview = serialized_preview(normalized_result[:data]); data_preview unless data_preview == preview),
       result_audit: serializable_value(normalized_result[:audit]),
       error_class: error&.class&.name,
       error_message: serializable_value(error&.message),

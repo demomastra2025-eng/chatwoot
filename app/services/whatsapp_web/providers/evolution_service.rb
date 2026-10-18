@@ -94,6 +94,15 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   def refresh_qr!(artifact_type: 'qr')
     normalized_artifact_type = Channel::WhatsappWeb.normalize_auth_artifact_type(artifact_type)
 
+    channel.reload
+    return channel if channel.auth_artifact_valid?(artifact_type: normalized_artifact_type)
+
+    if channel.auth_artifact_valid? && channel.auth_artifact_type != normalized_artifact_type
+      raise ArgumentError, 'Another WhatsApp Web authorization artifact is still active. Wait until it expires before switching methods.'
+    end
+
+    response = request(:get, connect_instance_path(normalized_artifact_type))
+
     channel.with_lock do
       channel.reload
       return channel if channel.auth_artifact_valid?(artifact_type: normalized_artifact_type)
@@ -102,7 +111,6 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
         raise ArgumentError, 'Another WhatsApp Web authorization artifact is still active. Wait until it expires before switching methods.'
       end
 
-      response = request(:get, connect_instance_path(normalized_artifact_type))
       sync_from_runtime_response!(response, artifact_type: normalized_artifact_type)
       channel
     end

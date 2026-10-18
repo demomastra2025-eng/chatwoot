@@ -10,6 +10,8 @@ class Llm::OpenRouterEndpointCatalog
   PROVIDER = Llm::OpenRouterModelCatalog::PROVIDER
   DEFAULT_API_BASE = Llm::OpenRouterModelCatalog::DEFAULT_API_BASE
   CACHE_KEY = 'llm/openrouter/endpoint_catalog'
+  DB_CONFIG_CACHE_KEY = 'llm/openrouter/db_endpoint_configs'
+  REFRESH_LOCK_REDIS_KEY = 'llm:openrouter:endpoint_catalog:refresh_lock'
   LAST_REFRESH_AT_CACHE_KEY = 'llm/openrouter/endpoint_catalog/last_refresh_at'
   LAST_REFRESH_ERROR_CACHE_KEY = 'llm/openrouter/endpoint_catalog/last_refresh_error'
   INSTALLATION_CONFIG_KEY = 'CAPTAIN_OPENROUTER_ENDPOINT_CATALOG'
@@ -83,6 +85,7 @@ class Llm::OpenRouterEndpointCatalog
         pending_model_ids: pending_model_ids
       )
       Rails.cache.write(CACHE_KEY, endpoint_configs)
+      Rails.cache.delete(DB_CONFIG_CACHE_KEY)
       Rails.cache.write(LAST_REFRESH_AT_CACHE_KEY, timestamp)
       endpoint_errors.present? ? Rails.cache.write(LAST_REFRESH_ERROR_CACHE_KEY, endpoint_errors) : Rails.cache.delete(LAST_REFRESH_ERROR_CACHE_KEY)
 
@@ -152,21 +155,26 @@ class Llm::OpenRouterEndpointCatalog
     private
 
     def acquire_refresh_lock
-      return true unless postgresql_connection?
-
-      ActiveModel::Type::Boolean.new.cast(
-        ActiveRecord::Base.connection.select_value("SELECT pg_try_advisory_lock(#{REFRESH_LOCK_ID})")
-      )
-    rescue ActiveRecord::StatementInvalid, ActiveRecord::NoDatabaseError
+      token = SecureRandom.uuid
+      acquired = Redis::Alfred.set(REFRESH_LOCK_REDIS_KEY, token, nx: true, ex: RUNNING_REFRESH_STALE_AFTER.to_i).present?
+      Thread.current[refresh_lock_token_key] = token if acquired
+      acquired
+    rescue StandardError
       true
     end
 
     def release_refresh_lock
-      return unless postgresql_connection?
+      token = Thread.current[refresh_lock_token_key]
+      Thread.current[refresh_lock_token_key] = nil
+      return if token.blank?
 
-      ActiveRecord::Base.connection.select_value("SELECT pg_advisory_unlock(#{REFRESH_LOCK_ID})")
-    rescue ActiveRecord::StatementInvalid, ActiveRecord::NoDatabaseError
+      Redis::Alfred.delete_if_value(REFRESH_LOCK_REDIS_KEY, token)
+    rescue StandardError
       nil
+    end
+
+    def refresh_lock_token_key
+      :llm_openrouter_endpoint_catalog_refresh_lock_token
     end
 
     def postgresql_connection?
@@ -400,6 +408,10 @@ class Llm::OpenRouterEndpointCatalog
     end
 
     def db_endpoint_configs
+      Rails.cache.fetch(DB_CONFIG_CACHE_KEY, expires_in: 5.minutes) { load_db_endpoint_configs }
+    end
+
+    def load_db_endpoint_configs
       return {} unless endpoint_table_available?
 
       Llm::ModelEndpointEntry.openrouter.servable.fresh_first.group_by(&:model_id).transform_values do |entries|

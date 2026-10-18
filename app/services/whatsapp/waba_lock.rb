@@ -1,9 +1,11 @@
 require 'digest'
+require 'securerandom'
 
 class Whatsapp::WabaLock
   class LockAcquisitionError < StandardError; end
 
   THREAD_LOCKS_KEY = :whatsapp_waba_advisory_locks
+  LOCK_TTL_SECONDS = 300
   RETRY_WAIT = ->(executions) { [executions * 2, 30].min.seconds }
 
   class << self
@@ -36,7 +38,7 @@ class Whatsapp::WabaLock
 
     process_lock_acquired = acquire_process_lock!
 
-    with_database_lock(held_locks, &)
+    with_distributed_lock(held_locks, &)
   ensure
     release_process_lock if process_lock_acquired
     Thread.current[THREAD_LOCKS_KEY] = nil if held_locks&.empty?
@@ -44,9 +46,9 @@ class Whatsapp::WabaLock
 
   private
 
-  def acquire_lock(connection)
-    value = connection.select_value("SELECT pg_try_advisory_lock(#{quoted_lock_id(connection)})")
-    ActiveModel::Type::Boolean.new.cast(value)
+  def acquire_lock(_connection = nil)
+    @lock_token = "#{Process.pid}:#{Thread.current.object_id}:#{SecureRandom.hex(8)}"
+    ActiveModel::Type::Boolean.new.cast(Redis::Alfred.set(redis_lock_key, @lock_token, nx: true, ex: LOCK_TTL_SECONDS))
   end
 
   def acquire_process_lock
@@ -71,25 +73,27 @@ class Whatsapp::WabaLock
     end
   end
 
-  def with_database_lock(held_locks)
-    ActiveRecord::Base.connection_pool.with_connection do |connection|
-      acquired = acquire_lock(connection)
-      raise LockAcquisitionError, "Failed to acquire WABA routing lock for #{@waba_id}" unless acquired
+  def with_distributed_lock(held_locks)
+    acquired = acquire_lock
+    raise LockAcquisitionError, "Failed to acquire WABA routing lock for #{@waba_id}" unless acquired
 
-      held_locks[lock_id] = true
-      yield
-    ensure
-      held_locks.delete(lock_id)
-      release_lock(connection) if acquired
-    end
+    held_locks[lock_id] = true
+    yield
+  ensure
+    held_locks.delete(lock_id)
+    release_lock if acquired
   end
 
-  def release_lock(connection)
-    connection.select_value("SELECT pg_advisory_unlock(#{quoted_lock_id(connection)})")
+  def release_lock(_connection = nil)
+    return false if @lock_token.blank?
+
+    Redis::Alfred.delete_if_value(redis_lock_key, @lock_token)
+  ensure
+    @lock_token = nil
   end
 
-  def quoted_lock_id(connection)
-    connection.quote(lock_id)
+  def redis_lock_key
+    @redis_lock_key ||= "whatsapp:waba_routing_lock:#{lock_id}"
   end
 
   def lock_id

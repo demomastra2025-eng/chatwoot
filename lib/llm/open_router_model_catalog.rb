@@ -12,6 +12,7 @@ class Llm::OpenRouterModelCatalog
   DEFAULT_API_BASE = 'https://openrouter.ai/api/v1'
   CACHE_KEY = 'llm/openrouter/model_catalog'
   DB_CONFIG_CACHE_KEY = 'llm/openrouter/db_model_configs'
+  REFRESH_LOCK_REDIS_KEY = 'llm:openrouter:model_catalog:refresh_lock'
   LAST_REFRESH_AT_CACHE_KEY = 'llm/openrouter/model_catalog/last_refresh_at'
   LAST_REFRESH_ERROR_CACHE_KEY = 'llm/openrouter/model_catalog/last_refresh_error'
   INSTALLATION_CONFIG_KEY = 'CAPTAIN_OPENROUTER_MODEL_CATALOG'
@@ -163,21 +164,26 @@ class Llm::OpenRouterModelCatalog
     private
 
     def acquire_refresh_lock
-      return true unless postgresql_connection?
-
-      ActiveModel::Type::Boolean.new.cast(
-        ActiveRecord::Base.connection.select_value("SELECT pg_try_advisory_lock(#{REFRESH_LOCK_ID})")
-      )
-    rescue ActiveRecord::StatementInvalid, ActiveRecord::NoDatabaseError
+      token = SecureRandom.uuid
+      acquired = Redis::Alfred.set(REFRESH_LOCK_REDIS_KEY, token, nx: true, ex: RUNNING_REFRESH_STALE_AFTER.to_i).present?
+      Thread.current[refresh_lock_token_key] = token if acquired
+      acquired
+    rescue StandardError
       true
     end
 
     def release_refresh_lock
-      return unless postgresql_connection?
+      token = Thread.current[refresh_lock_token_key]
+      Thread.current[refresh_lock_token_key] = nil
+      return if token.blank?
 
-      ActiveRecord::Base.connection.select_value("SELECT pg_advisory_unlock(#{REFRESH_LOCK_ID})")
-    rescue ActiveRecord::StatementInvalid, ActiveRecord::NoDatabaseError
+      Redis::Alfred.delete_if_value(REFRESH_LOCK_REDIS_KEY, token)
+    rescue StandardError
       nil
+    end
+
+    def refresh_lock_token_key
+      :llm_openrouter_model_catalog_refresh_lock_token
     end
 
     def postgresql_connection?

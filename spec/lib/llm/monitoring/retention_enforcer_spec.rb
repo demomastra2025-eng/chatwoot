@@ -7,6 +7,9 @@ RSpec.describe Llm::Monitoring::RetentionEnforcer do
     let(:account) { create(:account, captain_observability: { 'retention_days' => 30 }) }
     let(:user) { create(:user, account: account, role: :administrator) }
     let!(:old_event) { create(:llm_event, account: account, created_at: 45.days.ago) }
+    let!(:old_transfer_event) do
+      create(:llm_event, account: account, event_name: 'captain.agent.transfer', created_at: 60.days.ago)
+    end
     let!(:recent_event) { create(:llm_event, account: account, created_at: 10.days.ago) }
     let!(:global_old_event) { create(:llm_event, account: nil, created_at: 120.days.ago) }
     let!(:old_annotation) { create(:llm_event_annotation, account: account, user: user, llm_event: old_event) }
@@ -14,10 +17,10 @@ RSpec.describe Llm::Monitoring::RetentionEnforcer do
     let!(:old_usage_event) { create(:llm_usage_event, account: account, llm_event: old_event, occurred_at: old_event.created_at) }
     let!(:recent_usage_event) { create(:llm_usage_event, account: account, llm_event: recent_event, occurred_at: recent_event.created_at) }
 
-    it 'removes stale llm events and dependent annotations according to retention windows' do
+    it 'removes stale llm events and dependent annotations while preserving usage ledger and transfer report events' do
       summary = described_class.new(
         account_scope: Account.where(id: account.id),
-        event_scope: LlmEvent.where(id: [old_event.id, recent_event.id, global_old_event.id]),
+        event_scope: LlmEvent.where(id: [old_event.id, old_transfer_event.id, recent_event.id, global_old_event.id]),
         now: Time.current
       ).call
 
@@ -28,10 +31,12 @@ RSpec.describe Llm::Monitoring::RetentionEnforcer do
       )
       expect(LlmEvent.exists?(old_event.id)).to be(false)
       expect(LlmEvent.exists?(global_old_event.id)).to be(false)
+      expect(LlmEvent.exists?(old_transfer_event.id)).to be(true)
       expect(LlmEvent.exists?(recent_event.id)).to be(true)
       expect(LlmEventAnnotation.exists?(old_annotation.id)).to be(false)
       expect(LlmEventAnnotation.exists?(recent_annotation.id)).to be(true)
-      expect(LlmUsageEvent.exists?(old_usage_event.id)).to be(false)
+      expect(LlmUsageEvent.exists?(old_usage_event.id)).to be(true)
+      expect(old_usage_event.reload.llm_event_id).to be_nil
       expect(LlmUsageEvent.exists?(recent_usage_event.id)).to be(true)
     end
   end

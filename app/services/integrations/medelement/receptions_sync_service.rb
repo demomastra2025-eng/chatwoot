@@ -115,9 +115,13 @@ class Integrations::Medelement::ReceptionsSyncService
     @appointments_by_external_ref = appointments_by_external_ref(listed_receptions)
     @detail_budget_remaining = configuration.reception_detail_budget
 
-    listed_receptions
-      .sort_by { |reception| detail_priority(reception) }
-      .map { |reception| enrich_reception_if_needed(reception) }
+    sorted_receptions = listed_receptions.sort_by { |reception| detail_priority(reception) }
+    prefetch_thread = start_patient_prefetch_pipeline(sorted_receptions)
+    begin
+      sorted_receptions.map { |reception| enrich_reception_if_needed(reception) }
+    ensure
+      prefetch_thread&.join
+    end
   end
 
   def snapshot_for_resource(resource)
@@ -668,16 +672,49 @@ class Integrations::Medelement::ReceptionsSyncService
     raise InvalidReceptionError, "invalid time range #{reception['STARTTIME']}..#{reception['ENDTIME']}"
   end
 
-  def synced_contacts(snapshot)
-    return {} unless configuration.sync_patients?
+  def start_patient_prefetch_pipeline(sorted_receptions)
+    @prefetched_patients = Concurrent::Map.new
+    @preloaded_contacts = nil
+    return nil unless configuration.sync_patients?
 
+    candidate_codes = sorted_receptions.filter_map do |item|
+      item['PATIENT_CODE'].to_s.presence if item['REMOVED'].to_i != 1
+    end.uniq
+    return nil if candidate_codes.empty?
+
+    patients_service = build_patients_sync_service
+    @preloaded_contacts = patients_service.preload_contacts_by_patient_code(candidate_codes)
+    stale_codes = patients_service.stale_patient_codes(candidate_codes, @preloaded_contacts)
+    return nil if stale_codes.empty?
+
+    Thread.new(stale_codes, @prefetched_patients) do |codes, map|
+      codes.each do |patient_code|
+        map[patient_code] = client.get_patient(patient_code: patient_code)
+      rescue StandardError
+        # Fallback to synchronous fetch on main thread so error handling & conflict tracking stay deterministic.
+        next
+      end
+    end
+  end
+
+  def build_patients_sync_service
     Integrations::Medelement::PatientsSyncService.new(
       account: account,
       client: client,
       conflict_tracker: conflict_tracker,
       organization_id: configuration.organization_id
     )
-                                                 .sync_patient_codes(reception_patient_codes(snapshot))
+  end
+
+  def synced_contacts(snapshot)
+    return {} unless configuration.sync_patients?
+
+    prefetched = (@prefetched_patients || {}).each_with_object({}) { |(k, v), h| h[k] = v }
+    build_patients_sync_service.sync_patient_codes(
+      reception_patient_codes(snapshot),
+      prefetched_patients: prefetched,
+      preloaded_contacts: @preloaded_contacts
+    )
   end
 end
 # rubocop:enable Metrics/ClassLength

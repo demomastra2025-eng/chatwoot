@@ -2,7 +2,7 @@
 
 class Llm::Monitoring::AccountPreferences
   DEFAULT_LOOKBACK_DAYS = 30
-  DEFAULT_RETENTION_DAYS = 90
+  DEFAULT_RETENTION_DAYS = 30
   MAX_SAVED_VIEWS = 20
   VALID_TABS = %w[overview events traces evaluations].freeze
   VALID_ALERT_SEVERITIES = %w[warning critical].freeze

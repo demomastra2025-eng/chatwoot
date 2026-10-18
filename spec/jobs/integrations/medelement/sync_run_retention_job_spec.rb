@@ -10,7 +10,8 @@ RSpec.describe Integrations::Medelement::SyncRunRetentionJob do
   end
 
   it 'prunes old terminal history while preserving active, latest and actionable-conflict runs' do
-    deletable = create_run(status: 'succeeded', completed_at: 105.days.ago)
+    deletable = create_run(status: 'succeeded', completed_at: 10.days.ago)
+    recent_failed = create_run(status: 'failed', completed_at: 10.days.ago)
     resolved_reference = create_run(status: 'failed', completed_at: 104.days.ago)
     actionable_reference = create_run(status: 'partial', completed_at: 103.days.ago)
     active = create_run(status: 'queued', completed_at: nil, created_at: 100.days.ago)
@@ -21,7 +22,7 @@ RSpec.describe Integrations::Medelement::SyncRunRetentionJob do
     described_class.perform_now
 
     expect(Integrations::Medelement::SyncRun.where(id: [deletable.id, resolved_reference.id])).to be_empty
-    expect(Integrations::Medelement::SyncRun.where(id: [actionable_reference.id, active.id, latest.id]).count).to eq(3)
+    expect(Integrations::Medelement::SyncRun.where(id: [recent_failed.id, actionable_reference.id, active.id, latest.id]).count).to eq(4)
     expect(resolved_conflict.reload).to have_attributes(first_sync_run_id: nil, last_sync_run_id: nil)
     expect(actionable_conflict.reload).to have_attributes(
       first_sync_run_id: actionable_reference.id,
