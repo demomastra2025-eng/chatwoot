@@ -13,7 +13,9 @@ class ClearRemovedAgentBotReferences < ActiveRecord::Migration[7.2]
   NULLED_REFERENCES = {
     'messages' => %w[sender_type sender_id],
     'conversation_status_transitions' => %w[actor_type actor_id],
-    'audits' => %w[user_type user_id]
+    'audits' => %w[user_type user_id],
+    # the "secondary actor" of a notification defaults to the user of the request, which was the bot for a bot token
+    'notifications' => %w[secondary_actor_type secondary_actor_id]
   }.freeze
 
   # table => type column of rows that belong to an agent bot and are deleted

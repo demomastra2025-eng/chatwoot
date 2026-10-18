@@ -63,6 +63,19 @@ RSpec.describe ClearRemovedAgentBotReferences do
     expect(audits.map(&:first)).not_to include('AgentBot')
   end
 
+  it 'clears the secondary actor of notifications that point at an agent bot and keeps the others' do
+    from_bot = create(:notification, account: account, user: agent, primary_actor: conversation)
+    from_user = create(:notification, account: account, user: agent, primary_actor: conversation, secondary_actor: agent)
+    Notification.where(id: from_bot.id).update_all(secondary_actor_type: 'AgentBot', secondary_actor_id: 41)
+
+    run_migration
+
+    notification_actor = ->(notification) { db.select_rows("SELECT secondary_actor_type, secondary_actor_id FROM notifications WHERE id = #{notification.id}").first }
+    expect(notification_actor.call(from_bot)).to eq([nil, nil])
+    expect(notification_actor.call(from_user)).to eq(['User', agent.id])
+    expect { Notification.find(from_bot.id).push_event_data }.not_to raise_error
+  end
+
   it 'deletes tokens, partner links and avatars of agent bots and keeps the others' do
     platform_app = create(:platform_app)
     now = Time.current
