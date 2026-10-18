@@ -468,8 +468,8 @@ RSpec.describe 'Super Admin Users API', type: :request do
       expect(Audited::Audit.where(auditable_type: 'User', auditable_id: user.id, action: 'change_password')).to be_empty
     end
 
-    it 'does not write the tokens and the second-factor secrets of a user, and not the availability' do
-      user.update!(availability: :busy, otp_required_for_login: true, otp_secret: User.generate_otp_secret)
+    it 'does not write the tokens and the second-factor settings of a user, and not the availability' do
+      user.update!(availability: :busy, otp_required_for_login: true, pubsub_token: 'rotated-pubsub-token')
 
       rows = Audited::Audit.where(auditable_type: 'User', auditable_id: user.id)
       expect(rows.flat_map { |row| row.audited_changes.keys }.uniq - %w[name email display_name type]).to be_empty
