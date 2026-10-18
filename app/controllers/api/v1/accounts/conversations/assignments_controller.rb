@@ -1,7 +1,12 @@
 class Api::V1::Accounts::Conversations::AssignmentsController < Api::V1::Accounts::Conversations::BaseController
+  # Staff members are the only assignees; any other assignee_type is refused instead of being read as a user id.
+  ASSIGNEE_TYPES = %w[User].freeze
+
+  before_action :validate_assignee_type!, only: :create
+
   # assigns agent/team to a conversation
   def create
-    if params.key?(:assignee_id) || agent_bot_assignment?
+    if params.key?(:assignee_id)
       set_agent
     elsif params.key?(:team_id)
       set_team
@@ -11,6 +16,12 @@ class Api::V1::Accounts::Conversations::AssignmentsController < Api::V1::Account
   end
 
   private
+
+  def validate_assignee_type!
+    return if params[:assignee_type].blank? || ASSIGNEE_TYPES.include?(params[:assignee_type].to_s)
+
+    render json: { error: "assignee_type must be one of: #{ASSIGNEE_TYPES.join(', ')}" }, status: :unprocessable_content
+  end
 
   def set_agent
     resource = Conversations::AssignmentService.new(
@@ -23,11 +34,8 @@ class Api::V1::Accounts::Conversations::AssignmentsController < Api::V1::Account
   end
 
   def render_agent(resource)
-    case resource
-    when User
+    if resource.is_a?(User)
       render partial: 'api/v1/models/agent', formats: [:json], locals: { resource: resource }
-    when AgentBot
-      render partial: 'api/v1/models/agent_bot_slim', formats: [:json], locals: { resource: resource }
     else
       render json: nil
     end
@@ -37,9 +45,5 @@ class Api::V1::Accounts::Conversations::AssignmentsController < Api::V1::Account
     @team = Current.account.teams.find_by(id: params[:team_id])
     @conversation.update!(team: @team)
     render json: @team
-  end
-
-  def agent_bot_assignment?
-    params[:assignee_type].to_s == 'AgentBot'
   end
 end

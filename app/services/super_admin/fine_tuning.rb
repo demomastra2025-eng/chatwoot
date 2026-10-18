@@ -24,7 +24,7 @@ class SuperAdmin::FineTuning
   BASE_GROUPS = {
     'channels' => %w[channel_website channel_email inbound_emails channel_facebook channel_instagram channel_tiktok],
     'telephony' => %w[channel_voice whatsapp_call voice_recorder],
-    'chats' => %w[auto_resolve_conversations macros canned_responses agent_bots automations integrations reports help_center],
+    'chats' => %w[auto_resolve_conversations macros canned_responses automations integrations reports help_center],
     'crm' => %w[crm companies crm_deals crm_tasks scheduling]
   }.freeze
   OTHER_GROUP = 'other'

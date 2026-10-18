@@ -234,15 +234,9 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     raise ArgumentError, 'assignee_id is required when assignee_type is provided' if assignee_id.blank?
 
     resolved_type = assignee_type.to_s.presence || 'User'
-    case resolved_type
-    when 'User'
-      account.users.find(assignee_id)
-    when 'AgentBot'
-      account.agent_bots.find(assignee_id)
-    else
-      raise ArgumentError, 'assignee_type must be User or AgentBot'
-    end
+    raise ArgumentError, 'assignee_type must be User' unless resolved_type == 'User'
 
+    account.users.find(assignee_id)
     resolved_type
   end
 

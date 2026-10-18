@@ -68,16 +68,7 @@ class CommunicationThreads::UpdateService
   def assign_agent!(conversation)
     return unless params.key?(:assignee_id)
 
-    if agent_bot_assignment?
-      return if target_agent_bot.blank?
-
-      conversation.assignee = nil
-      conversation.assignee_agent_bot = target_agent_bot
-      return
-    end
-
     conversation.assignee = human_assignee
-    conversation.assignee_agent_bot = nil
   end
 
   def assign_team!(conversation)
@@ -106,12 +97,6 @@ class CommunicationThreads::UpdateService
     conversation.custom_attributes = custom_attributes
   end
 
-  def target_agent_bot
-    return @target_agent_bot if defined?(@target_agent_bot)
-
-    @target_agent_bot = AgentBot.accessible_to(current_account).find_by(id: params[:assignee_id])
-  end
-
   def target_team
     return @target_team if defined?(@target_team)
 
@@ -126,10 +111,6 @@ class CommunicationThreads::UpdateService
                       else
                         current_account.account_users.find_by(user_id: params[:assignee_id])&.user
                       end
-  end
-
-  def agent_bot_assignment?
-    params[:assignee_type].to_s == 'AgentBot'
   end
 
   def status_transition_params

@@ -75,7 +75,7 @@ class Conversations::ListPreloader
     preload(@conversations, [
               { contact: CONTACT_ASSOCIATIONS }, { assignee: USER_ASSOCIATIONS },
               { contact_inbox: { channel_profile: PROFILE_ASSOCIATIONS } },
-              { inbox: :channel }, :campaign, :team, :assignee_agent_bot,
+              { inbox: :channel }, :campaign, :team,
               :conversation_participants, :communication_thread
             ])
   end

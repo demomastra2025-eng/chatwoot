@@ -27,7 +27,6 @@ base:
     - auto_resolve_conversations
     - macros
     - canned_responses
-    - agent_bots
     - automations
     - integrations
     - reports
@@ -107,6 +106,8 @@ never_enabled:
   - report_v4
   - whatsapp_embedded_signup
   - twilio_content_templates
+  # Agent Bots were removed from the product (the flag keeps its bit in Featurable::LEGACY_BITMASK_FEATURE_NAMES)
+  - agent_bots
 
 # Plans never touch these: infrastructure switches, owner decisions that are still open, flags without a product meaning.
 internal:

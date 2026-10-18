@@ -67,16 +67,13 @@ module Captain::Playground::RecordSnapshots
 
   def snapshot_staff
     @data.fetch('staff').map do |record|
-      klass = record['type'] == 'AgentBot' ? AgentBot : User
-      klass.new(record.slice('id', 'name', 'email'))
+      User.new(record.slice('id', 'name', 'email'))
     end
   end
 
   def snapshot_assignment_account
-    records = snapshot_staff
-    Struct.new(:users, :agent_bots, :teams).new(
-      SnapshotScope.new(records.select { |record| record.is_a?(User) }),
-      SnapshotScope.new(records.select { |record| record.is_a?(AgentBot) }),
+    Struct.new(:users, :teams).new(
+      SnapshotScope.new(snapshot_staff),
       SnapshotScope.new(@data.fetch('teams').map { |record| Team.new(record.slice('id', 'name')) })
     )
   end

@@ -1347,7 +1347,7 @@ class Captain::ToolRegistry
         definition(
           id: 'assign_conversation',
           title: 'Assign Conversation',
-          description: 'Assign a conversation to an agent, agent bot, or team',
+          description: 'Assign a conversation to an agent or a team',
           group_name: 'Conversations',
           icon: 'user-switch',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,

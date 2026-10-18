@@ -239,7 +239,7 @@ class Integrations::Macrocrm::ManagerChangedProcessorService
   end
 
   def clear_manager(conversation)
-    return if conversation.assignee_id.blank? && conversation.assignee_agent_bot_id.blank?
+    return if conversation.assignee_id.blank?
 
     assign_conversation_to(conversation, nil)
   end

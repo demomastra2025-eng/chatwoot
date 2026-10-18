@@ -66,6 +66,9 @@ class Conversation < ApplicationRecord
   # reminders, touches). Reminders::ConversationResolver creates it already resolved; see #automated_outbound_conversation?.
   AUTOMATED_OUTBOUND_ATTRIBUTE = 'outbound_automated'.freeze
 
+  # The columns of the removed Agent Bots feature stay in the database for one more release (dropped later).
+  self.ignored_columns += ['assignee_agent_bot_id']
+
   attr_accessor :skip_runtime_events, :skip_communication_thread_refresh, :skip_communication_thread_realtime,
                 :communication_thread_event_id, :skip_activity_messages
 
@@ -74,7 +77,6 @@ class Conversation < ApplicationRecord
   validates :contact_id, presence: true
   before_validation :validate_additional_attributes
   before_validation :inherit_contact_owner, on: :create
-  before_validation :reset_agent_bot_when_assignee_present
   validates :additional_attributes, jsonb_attributes_length: true
   validates :custom_attributes, jsonb_attributes_length: true
   validates :uuid, uniqueness: true
@@ -108,7 +110,6 @@ class Conversation < ApplicationRecord
   belongs_to :account
   belongs_to :inbox
   belongs_to :assignee, class_name: 'User', optional: true, inverse_of: :assigned_conversations
-  belongs_to :assignee_agent_bot, class_name: 'AgentBot', optional: true
   belongs_to :contact
   belongs_to :contact_inbox
   belongs_to :team, optional: true
@@ -229,14 +230,13 @@ class Conversation < ApplicationRecord
 
   # Virtual attribute till we switch completely to polymorphic assignee
   def assignee_type
-    return 'AgentBot' if assignee_agent_bot_id.present?
     return 'User' if assignee_id.present?
 
     nil
   end
 
   def assigned_entity
-    assignee_agent_bot || assignee
+    assignee
   end
 
   def tweet?
@@ -282,10 +282,10 @@ class Conversation < ApplicationRecord
   end
 
   def ai_pending_handler_present?(fresh_inbox: false)
-    return assignee_agent_bot_id.present? || inbox_active_bot? || inbox_captain_assistant_present? unless fresh_inbox
+    return inbox_active_bot? || inbox_captain_assistant_present? unless fresh_inbox
 
     fresh_inbox_record = ::Inbox.find_by(id: inbox_id)
-    assignee_agent_bot_id.present? || fresh_inbox_record&.active_bot? || inbox_captain_assistant_present?
+    fresh_inbox_record&.active_bot? || inbox_captain_assistant_present?
   end
 
   private
@@ -337,7 +337,7 @@ class Conversation < ApplicationRecord
   end
 
   def inherit_contact_owner
-    return if assignee_id.present? || assignee_agent_bot_id.present?
+    return if assignee_id.present?
     return unless contact_owner_assignable_to_conversation?
 
     self.assignee = contact.owner
@@ -364,7 +364,6 @@ class Conversation < ApplicationRecord
   end
 
   def contact_owner_sync_allowed?
-    return false if assignee_id.blank? && assignee_agent_bot_id.present?
     return false if auto_assignment_fallback_for_existing_owner?
     return true if assignee_id.blank?
 
@@ -373,12 +372,6 @@ class Conversation < ApplicationRecord
 
   def auto_assignment_fallback_for_existing_owner?
     contact&.owner_id.present? && (Current.executed_by.is_a?(AssignmentPolicy) || Current.executed_by.is_a?(Inbox))
-  end
-
-  def reset_agent_bot_when_assignee_present
-    return if assignee_id.blank?
-
-    self.assignee_agent_bot_id = nil
   end
 
   def determine_conversation_status
@@ -423,7 +416,7 @@ class Conversation < ApplicationRecord
   end
 
   def list_of_keys
-    %w[team_id assignee_id assignee_agent_bot_id status snoozed_until custom_attributes label_list waiting_since
+    %w[team_id assignee_id status snoozed_until custom_attributes label_list waiting_since
        first_reply_created_at priority]
   end
 
@@ -461,31 +454,13 @@ class Conversation < ApplicationRecord
   end
 
   def notify_ai_transfer
-    return unless ai_transfer_state_entered?
+    return unless ai_pending_state_entered?
 
-    dispatcher_dispatch(CONVERSATION_TRANSFERRED_TO_AI, ai_transfer_changed_attributes)
-  end
-
-  def ai_transfer_state_entered?
-    ai_pending_state_entered? || ai_assignee_state_entered?
+    dispatcher_dispatch(CONVERSATION_TRANSFERRED_TO_AI, status_change)
   end
 
   def ai_pending_state_entered?
-    saved_change_to_status? && pending? && ai_pending_handler_present? && !assigned_to_agent_bot_before_update?
-  end
-
-  def ai_assignee_state_entered?
-    return false unless saved_change_to_assignee_agent_bot_id? && assignee_agent_bot_id.present?
-
-    previous_changes['assignee_agent_bot_id']&.first.blank? && !already_ai_pending_without_agent_bot?
-  end
-
-  def assigned_to_agent_bot_before_update?
-    assignee_agent_bot_id.present? && !saved_change_to_assignee_agent_bot_id?
-  end
-
-  def already_ai_pending_without_agent_bot?
-    pending? && (inbox_active_bot? || inbox_captain_assistant_present?)
+    saved_change_to_status? && pending? && ai_pending_handler_present?
   end
 
   def inbox_active_bot?
@@ -500,10 +475,6 @@ class Conversation < ApplicationRecord
                 .where('(captain_inboxes.ai_enabled = TRUE OR EXISTS (SELECT 1 FROM inboxes WHERE inboxes.id = captain_inboxes.inbox_id ' \
                        'AND inboxes.channel_type = \'Channel::Voice\'))')
                 .exists?
-  end
-
-  def ai_transfer_changed_attributes
-    ai_pending_state_entered? ? status_change : previous_changes
   end
 
   def dispatcher_dispatch(event_name, changed_attributes = nil, performer: Current.executed_by)

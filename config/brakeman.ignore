@@ -184,29 +184,6 @@
       "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
     },
     {
-      "warning_type": "Mass Assignment",
-      "warning_code": 105,
-      "fingerprint": "122a2e7746e1ec0bf13747119139653e92a7565377442badb7e00d2b2dd43ffb",
-      "check_name": "PermitAttributes",
-      "message": "Potentially dangerous key allowed for mass assignment",
-      "file": "app/controllers/platform/api/v1/agent_bots_controller.rb",
-      "line": 43,
-      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
-      "code": "params.permit(:name, :description, :account_id, :outgoing_url, :avatar, :avatar_url)",
-      "render_path": null,
-      "location": {
-        "type": "method",
-        "class": "Platform::Api::V1::AgentBotsController",
-        "method": "agent_bot_params"
-      },
-      "user_input": ":account_id",
-      "confidence": "High",
-      "cwe_id": [
-        915
-      ],
-      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
-    },
-    {
       "warning_type": "SQL Injection",
       "warning_code": 0,
       "fingerprint": "1251ee63b8215d5bd934908ba5cde866ccface1d32e21e06d45d28be80b5e593",

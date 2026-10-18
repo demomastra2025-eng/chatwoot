@@ -23,8 +23,7 @@ Typical path family:
 Authentication:
 
 - header: `api_access_token`
-- usually a user-scoped token
-- some operations may also support an agent bot token
+- a user-scoped token
 
 ## Client API
 
@@ -67,7 +66,6 @@ Observed platform path shapes in the current API reference include:
 
 - `/platform/api/v1/accounts`
 - `/platform/api/v1/accounts/{account_id}/account_users`
-- `/platform/api/v1/agent_bots`
 - `/platform/api/v1/users`
 
 Authentication:

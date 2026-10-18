@@ -55,11 +55,6 @@ ru:
         few: "Пользователя аккаунта"
         many: "Пользователей аккаунта"
         other: "Пользователи аккаунтов"
-      agent_bot:
-        one: "AI-бот"
-        few: "AI-бота"
-        many: "AI-ботов"
-        other: "AI-боты"
       platform_app:
         one: "Платформенное приложение"
         few: "Платформенных приложения"
@@ -129,17 +124,6 @@ ru:
         accounts: "Аккаунты"
         account_users: "Аккаунты и роли"
         access_token: "Персональный токен API"
-      agent_bot:
-        id: "ID"
-        name: "Название бота"
-        description: "Описание"
-        outgoing_url: "Исходящий Webhook URL"
-        account: "Аккаунт"
-        avatar: "Аватар"
-        avatar_url: "Аватар"
-        access_token: "Токен API"
-        created_at: "Дата создания"
-        updated_at: "Дата обновления"
       platform_app:
         id: "ID"
         name: "Название приложения"
@@ -219,18 +203,6 @@ ru:
         accounts: "Аккаунты"
         account_users: "Аккаунты и роли"
         access_token: "Токен API"
-      agent_bot:
-        id: "ID"
-        name: "Название"
-        description: "Описание"
-        outgoing_url: "Webhook URL"
-        account: "Аккаунт"
-        account_id: "Аккаунт"
-        avatar: "Аватар"
-        avatar_url: "Аватар"
-        access_token: "Токен доступа"
-        created_at: "Создан"
-        updated_at: "Обновлен"
       platform_app:
         id: "ID"
         name: "Название"
@@ -388,8 +360,6 @@ ru:
       platform_app: "Платформенное приложение"
       platform_banners: "Баннеры платформы"
       platform_banner: "Баннер платформы"
-      agent_bots: "AI-боты"
-      agent_bot: "AI-бот"
     navigation:
       agent_app: "Кабинет оператора"
       logout: "Выйти"
@@ -416,7 +386,6 @@ ru:
         push_diagnostics: "Push-диагностика"
         settings: "Настройки"
         platform_apps: "Платформенные приложения"
-        agent_bots: "AI-боты"
         platform_banners: "Баннеры"
         channels: "Каналы"
     shell:

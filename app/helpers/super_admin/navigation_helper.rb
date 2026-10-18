@@ -26,7 +26,7 @@ module SuperAdmin::NavigationHelper
     'organizations' => 'Организации', 'organization' => 'Организация', 'accounts' => 'Аккаунты', 'account' => 'Аккаунт',
     'users' => 'Пользователи', 'user' => 'Пользователь', 'platform_apps' => 'Платформенные приложения',
     'platform_app' => 'Платформенное приложение', 'platform_banners' => 'Баннеры платформы',
-    'platform_banner' => 'Баннер платформы', 'agent_bots' => 'AI-боты', 'agent_bot' => 'AI-бот'
+    'platform_banner' => 'Баннер платформы'
   }.freeze
 
   def super_admin_resource_label(resource)

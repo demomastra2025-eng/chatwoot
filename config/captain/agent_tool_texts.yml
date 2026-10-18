@@ -557,11 +557,11 @@ tools:
       - attachment_ids
 
   assign_conversation:
-    description: "Set the assignee (staff member or AI agent) or the team of this conversation; your turn continues. Call it when the clinic instructions name the assignee or team for the case. Staff take over through handoff, colleagues through their transfer tools."
+    description: "Set the assignee (a staff member) or the team of this conversation; your turn continues. Call it when the clinic instructions name the assignee or team for the case. Staff take over through handoff, colleagues through their transfer tools."
     params:
       conversation_id: "Conversation ID from the Patient block."
-      assignee_id: "Staff member or AI agent ID from the clinic instructions."
-      assignee_type: "User (staff member) or AgentBot (AI agent); User if omitted."
+      assignee_id: "Staff member ID from the clinic instructions."
+      assignee_type: "User (staff member); User if omitted."
       team_id: "Team ID from the clinic instructions; alone it changes only the team."
     hidden_params: []
 

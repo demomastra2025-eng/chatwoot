@@ -2,8 +2,6 @@ attachment_data = attachment.push_event_data
 sender = attachment.message.sender
 sender_payload = if sender.is_a?(Contact)
                    sender.push_event_data(contact_inbox: attachment.message.conversation.contact_inbox)
-                 elsif sender.is_a?(AgentBot)
-                   sender.push_event_data(attachment.message.inbox)
                  elsif sender.present?
                    sender.push_event_data
                  end

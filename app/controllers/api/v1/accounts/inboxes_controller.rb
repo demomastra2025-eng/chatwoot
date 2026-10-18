@@ -8,7 +8,6 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   VOICE_TOP_LEVEL_CHANNEL_ATTRIBUTES = %i[phone_number provider provider_config].freeze
 
   before_action :fetch_inbox, except: [:index, :create]
-  before_action :fetch_agent_bot, only: [:set_agent_bot]
   before_action :validate_limit, only: [:create]
   # we are already handling the authorization in fetch inbox
   before_action :check_authorization, except: [:show]
@@ -16,7 +15,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   # Updating or reconnecting an existing inbox never asks.
   before_action :ensure_requested_channel_available!, only: [:create]
   before_action :render_pending_deletion_response,
-                only: [:update, :avatar, :set_agent_bot, :refresh_whatsapp_web_qr, :reconnect_whatsapp_web,
+                only: [:update, :avatar, :refresh_whatsapp_web_qr, :reconnect_whatsapp_web,
                        :reauthorize_whatsapp_web, :disconnect_whatsapp_web, :repair_whatsapp_web]
   before_action :render_pending_deletion_diagnostics,
                 only: [:whatsapp_web_diagnostics]
@@ -85,21 +84,6 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     sync_telegram_personal_channel_after_update!
   rescue TelegramPersonal::GatewayClient::GatewayError => e
     render json: { error: e.message }, status: :unprocessable_content
-  end
-
-  def agent_bot
-    @agent_bot = @inbox.agent_bot
-  end
-
-  def set_agent_bot
-    if @agent_bot
-      agent_bot_inbox = @inbox.agent_bot_inbox || AgentBotInbox.new(inbox: @inbox)
-      agent_bot_inbox.agent_bot = @agent_bot
-      agent_bot_inbox.save!
-    elsif @inbox.agent_bot_inbox.present?
-      @inbox.agent_bot_inbox.destroy!
-    end
-    head :ok
   end
 
   def reset_secret
@@ -198,10 +182,6 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def fetch_inbox
     @inbox = Current.account.inboxes.find(params[:id])
     authorize @inbox, :show?
-  end
-
-  def fetch_agent_bot
-    @agent_bot = AgentBot.accessible_to(Current.account).find(params[:agent_bot]) if params[:agent_bot]
   end
 
   def ensure_requested_channel_available!

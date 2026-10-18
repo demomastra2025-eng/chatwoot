@@ -39,6 +39,7 @@
   display_name: Agent Bots
   enabled: true
   help_url:
+  deprecated: true
 - name: macros
   display_name: Macros
   enabled: true

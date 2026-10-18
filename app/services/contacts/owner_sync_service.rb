@@ -47,12 +47,9 @@ class Contacts::OwnerSyncService
     conversations_requiring_owner_sync.find_each do |conversation|
       next unless owner_assignable_to_conversation?(conversation)
 
-      attributes = { assignee_id: owner_id }
-      attributes[:assignee_agent_bot_id] = nil if owner_id.present?
-
       conversation.skip_activity_messages = already_assigned || emitted_activity
       conversation.communication_thread_event_id ||= event_id
-      conversation.assign_attributes(attributes)
+      conversation.assignee_id = owner_id
       if conversation.changed?
         conversation.save!
         emitted_activity = true
@@ -62,10 +59,7 @@ class Contacts::OwnerSyncService
 
   def conversations_requiring_owner_sync
     scope = contact.conversations.where(account_id: contact.account_id)
-    assignee_scope = records_with_owner_mismatch(scope, :assignee_id)
-    return assignee_scope if owner_id.blank?
-
-    assignee_scope.or(scope.where.not(assignee_agent_bot_id: nil))
+    records_with_owner_mismatch(scope, :assignee_id)
   end
 
   def owner_assignable_to_conversation?(conversation)

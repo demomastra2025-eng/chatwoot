@@ -145,11 +145,6 @@ Rails.application.routes.draw do
             end
           end
           resource :saml_settings, only: [:show, :create, :update, :destroy]
-          resources :agent_bots, only: [:index, :create, :show, :update, :destroy] do
-            delete :avatar, on: :member
-            post :reset_access_token, on: :member
-            post :reset_secret, on: :member
-          end
           resources :contact_inboxes, only: [] do
             collection do
               post :filter
@@ -464,8 +459,6 @@ Rails.application.routes.draw do
           resources :inboxes, only: [:index, :show, :create, :update, :destroy] do
             get :assignable_agents, on: :member
             get :campaigns, on: :member
-            get :agent_bot, on: :member
-            post :set_agent_bot, on: :member
             delete :avatar, on: :member
             post :sync_templates, on: :member
             get :health, on: :member
@@ -864,9 +857,6 @@ Rails.application.routes.draw do
             post :token
           end
         end
-        resources :agent_bots, only: [:index, :create, :show, :update, :destroy] do
-          delete :avatar, on: :member
-        end
         resources :accounts, only: [:index, :create, :show, :update, :destroy] do
           resources :account_users, only: [:index, :create] do
             collection do
@@ -1069,9 +1059,6 @@ Rails.application.routes.draw do
 
       resources :access_tokens, only: [:index, :show]
       resources :installation_configs, only: [:index, :new, :create, :show, :edit, :update]
-      resources :agent_bots, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
-        delete :avatar, on: :member, action: :destroy_avatar
-      end
       resources :platform_apps, only: [:index, :new, :create, :show, :edit, :update, :destroy]
       resources :platform_banners, only: [:index, :new, :create, :show, :edit, :update, :destroy]
       resource :instance_status, only: [:show]

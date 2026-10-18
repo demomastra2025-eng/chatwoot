@@ -43,7 +43,7 @@ Resources that nobody placed in a group land in "Дополнительно".
   end
 
   resource_urls = primary_nav_items.to_h { |item| [item[:resource].resource, item[:url]] }
-  placed_resources = %w[organizations accounts users platform_apps agent_bots platform_banners]
+  placed_resources = %w[organizations accounts users platform_apps platform_banners]
   extra_items = primary_nav_items.reject { |item| placed_resources.include?(item[:resource].resource) }
   environment_label = super_admin_environment_label
 %>
@@ -100,9 +100,6 @@ Resources that nobody placed in a group land in "Дополнительно".
     <%= render layout: 'nav_group', locals: { id: 'nav-group-extra', title: t('super_admin.navigation.groups.extra') } do %>
       <% if resource_urls['platform_apps'] %>
         <%= render 'nav_item', icon: 'i-lucide-box', url: resource_urls['platform_apps'], label: t('super_admin.navigation.items.platform_apps'), active: super_admin_nav_active?(:platform_apps) %>
-      <% end %>
-      <% if resource_urls['agent_bots'] %>
-        <%= render 'nav_item', icon: 'i-lucide-bot', url: resource_urls['agent_bots'], label: t('super_admin.navigation.items.agent_bots'), active: super_admin_nav_active?(:agent_bots) %>
       <% end %>
       <% if resource_urls['platform_banners'] %>
         <%= render 'nav_item', icon: 'i-lucide-megaphone', url: resource_urls['platform_banners'], label: t('super_admin.navigation.items.platform_banners'), active: super_admin_nav_active?(:platform_banners) %>

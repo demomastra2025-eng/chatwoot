@@ -16,7 +16,6 @@ class AccountLimits::StorageUsageService
     'AutomationRule' => %w[files],
     'Portal' => %w[logo],
     'DataImport' => %w[failed_records import_file],
-    'AgentBot' => %w[avatar],
     'Inbox' => %w[avatar],
     'Contact' => %w[avatar],
     'Company' => %w[avatar],

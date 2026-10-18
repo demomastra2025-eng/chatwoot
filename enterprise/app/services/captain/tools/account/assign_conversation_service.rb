@@ -3,10 +3,10 @@ class Captain::Tools::Account::AssignConversationService < Captain::Tools::Accou
     'assign_conversation'
   end
 
-  description 'Assign a conversation to an agent, agent bot, team, or clear its team assignment'
+  description 'Assign a conversation to an agent, a team, or clear its team assignment'
   param :conversation_id, type: :integer, desc: 'Conversation display ID', required: true
-  param :assignee_id, type: :integer, desc: 'Optional user or agent bot ID', required: false
-  param :assignee_type, type: :string, desc: 'Optional assignee type: User or AgentBot', required: false
+  param :assignee_id, type: :integer, desc: 'Optional user ID', required: false
+  param :assignee_type, type: :string, desc: 'Optional assignee type: User (the default)', required: false
   param :team_id, type: :integer, desc: 'Optional team ID. Pass null/omit assignee fields to only update team.', required: false
 
   def execute(conversation_id:, assignee_id: nil, assignee_type: nil, team_id: nil)

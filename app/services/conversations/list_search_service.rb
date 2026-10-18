@@ -9,7 +9,7 @@ class Conversations::ListSearchService
   PER_PAGE = ENV.fetch('CONVERSATION_RESULTS_PER_PAGE', '25').to_i
   LIST_INCLUDES = [
     :taggings, :inbox, { assignee: { avatar_attachment: [:blob] } }, { contact: { avatar_attachment: [:blob] } },
-    :team, :conversation_participants, { contact_inbox: :channel_profile }, :assignee_agent_bot
+    :team, :conversation_participants, { contact_inbox: :channel_profile }
   ].freeze
 
   def initialize(user:, account:, params:)

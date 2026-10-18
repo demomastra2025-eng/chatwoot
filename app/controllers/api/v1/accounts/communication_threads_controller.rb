@@ -389,7 +389,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   def validate_assignee_type!
     return if params[:assignee_type].blank?
-    return if %w[User AgentBot].include?(params[:assignee_type].to_s)
+    return if params[:assignee_type].to_s == 'User'
 
     raise ArgumentError, "Invalid communication thread assignee_type: #{params[:assignee_type]}"
   end
@@ -397,11 +397,6 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   def validate_assignee!
     return unless params.key?(:assignee_id) && params[:assignee_id].present?
 
-    if params[:assignee_type].to_s == 'AgentBot'
-      return if AgentBot.accessible_to(Current.account).exists?(id: params[:assignee_id])
-
-      raise ArgumentError, "Invalid communication thread assignee_id: #{params[:assignee_id]}"
-    end
     return if Current.account.account_users.exists?(user_id: params[:assignee_id])
 
     raise ArgumentError, "Invalid communication thread assignee_id: #{params[:assignee_id]}"
