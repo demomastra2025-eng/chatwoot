@@ -2,6 +2,18 @@
 # installation parameters, the second step of the sign-in, user protections and the scheduled deletion of an account.
 # The super admin is Russian only (ru-only freeze): nothing here is translated into other languages.
 ru:
+  helpers:
+    label:
+      platform_app:
+        token_hint: "Токен API"
+        accounts_count: "Аккаунты"
+        users_count: "Пользователи"
+  activerecord:
+    attributes:
+      platform_app:
+        token_hint: "Токен API"
+        accounts_count: "Аккаунты"
+        users_count: "Пользователи"
   super_admin:
     security:
       secret:
