@@ -10,8 +10,6 @@ describe('#InboxesAPI', () => {
     expect(inboxesAPI).toHaveProperty('update');
     expect(inboxesAPI).toHaveProperty('delete');
     expect(inboxesAPI).toHaveProperty('getCampaigns');
-    expect(inboxesAPI).toHaveProperty('getAgentBot');
-    expect(inboxesAPI).toHaveProperty('setAgentBot');
     expect(inboxesAPI).toHaveProperty('syncTemplates');
     expect(inboxesAPI).toHaveProperty('createWhatsAppTemplate');
     expect(inboxesAPI).toHaveProperty('deleteWhatsAppTemplate');

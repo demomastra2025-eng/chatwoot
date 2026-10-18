@@ -19,16 +19,6 @@ class Inboxes extends CacheEnabledApiClient {
     return axios.delete(`${this.url}/${inboxId}/avatar`);
   }
 
-  getAgentBot(inboxId) {
-    return axios.get(`${this.url}/${inboxId}/agent_bot`);
-  }
-
-  setAgentBot(inboxId, botId) {
-    return axios.post(`${this.url}/${inboxId}/set_agent_bot`, {
-      agent_bot: botId,
-    });
-  }
-
   syncTemplates(inboxId) {
     return axios.post(`${this.url}/${inboxId}/sync_templates`);
   }
