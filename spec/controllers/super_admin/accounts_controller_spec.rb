@@ -575,19 +575,113 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
       it 'returns unauthorized' do
         delete "/super_admin/accounts/#{account.id}"
         expect(response).to have_http_status(:redirect)
+        expect(account.reload.custom_attributes['marked_for_deletion_at']).to be_nil
       end
     end
 
     context 'when it is an authenticated user' do
-      it 'Deletes the account' do
-        total_accounts = Account.count
-        sign_in(super_admin, scope: :super_admin)
+      before { sign_in(super_admin, scope: :super_admin) }
 
-        perform_enqueued_jobs(only: DeleteObjectJob) do
-          delete "/super_admin/accounts/#{account.id}"
-        end
+      it 'marks the account for deletion in 7 days and deletes nothing now' do
+        expect(DeleteObjectJob).not_to receive(:perform_later)
 
-        expect(Account.count).to eq(total_accounts - 1)
+        expect do
+          delete "/super_admin/accounts/#{account.id}", params: { confirm_name: account.name }
+        end.not_to change(Account, :count)
+
+        account.reload
+        expect(Time.zone.parse(account.custom_attributes['marked_for_deletion_at'])).to be_within(1.minute).of(7.days.from_now)
+        expect(account.custom_attributes['marked_for_deletion_reason']).to eq('manual_deletion')
+        expect(response).to redirect_to("/super_admin/accounts/#{account.id}")
+        expect(flash[:notice]).to match(/\AУдаление назначено на \d{2}\.\d{2}\.\d{4} \d{2}:\d{2} \(Астана\)\./)
+      end
+
+      it 'needs the name of the account typed in' do
+        delete "/super_admin/accounts/#{account.id}"
+        expect(flash[:alert]).to eq('Название введено неверно. Аккаунт не помечен на удаление.')
+
+        delete "/super_admin/accounts/#{account.id}", params: { confirm_name: 'Другой аккаунт' }
+        expect(flash[:alert]).to eq('Название введено неверно. Аккаунт не помечен на удаление.')
+
+        expect(account.reload.custom_attributes['marked_for_deletion_at']).to be_nil
+        expect(Audited::Audit.where(action: 'schedule_deletion')).to be_empty
+      end
+
+      it 'ignores spaces around the typed name' do
+        delete "/super_admin/accounts/#{account.id}", params: { confirm_name: "  #{account.name} " }
+
+        expect(account.reload.custom_attributes['marked_for_deletion_at']).to be_present
+      end
+
+      it 'writes the audit log with the actor, the date and the grace period' do
+        delete "/super_admin/accounts/#{account.id}", params: { confirm_name: account.name }
+
+        audit = Audited::Audit.where(auditable: account, action: 'schedule_deletion').last
+        expect(audit).to have_attributes(user_id: super_admin.id, comment: 'super_admin', associated_id: account.id)
+        expect(audit.audited_changes).to include('name' => account.name, 'grace_days' => 7,
+                                                 'deletion_at' => account.reload.custom_attributes['marked_for_deletion_at'])
+      end
+
+      it 'does not move the date when the deletion is already scheduled, and says when it is' do
+        delete "/super_admin/accounts/#{account.id}", params: { confirm_name: account.name }
+        first_date = account.reload.custom_attributes['marked_for_deletion_at']
+
+        delete "/super_admin/accounts/#{account.id}", params: { confirm_name: account.name }
+
+        expect(account.reload.custom_attributes['marked_for_deletion_at']).to eq(first_date)
+        expect(flash[:alert]).to start_with('Удаление этого аккаунта уже назначено на')
+        expect(Audited::Audit.where(auditable: account, action: 'schedule_deletion').count).to eq(1)
+      end
+
+      it 'deletes the account only when the daily job finds the grace period over' do
+        delete "/super_admin/accounts/#{account.id}", params: { confirm_name: account.name }
+        account.update!(custom_attributes: account.custom_attributes.merge('marked_for_deletion_at' => 1.minute.ago.iso8601))
+        total = Account.count
+
+        perform_enqueued_jobs(only: DeleteObjectJob) { Internal::DeleteAccountsJob.perform_now }
+
+        expect(Account.count).to eq(total - 1)
+      end
+    end
+  end
+
+  describe 'POST /super_admin/accounts/{account_id}/cancel_deletion' do
+    it 'redirects an unauthenticated user' do
+      post "/super_admin/accounts/#{account.id}/cancel_deletion"
+
+      expect(response).to have_http_status(:redirect)
+    end
+
+    context 'when it is an authenticated user' do
+      before { sign_in(super_admin, scope: :super_admin) }
+
+      it 'takes the deletion back and writes the audit log' do
+        delete "/super_admin/accounts/#{account.id}", params: { confirm_name: account.name }
+        planned = account.reload.custom_attributes['marked_for_deletion_at']
+
+        post "/super_admin/accounts/#{account.id}/cancel_deletion"
+
+        expect(response).to redirect_to("/super_admin/accounts/#{account.id}")
+        expect(flash[:notice]).to eq('Удаление отменено. Аккаунт остаётся на платформе.')
+        expect(account.reload.custom_attributes).not_to include('marked_for_deletion_at', 'marked_for_deletion_reason')
+        audit = Audited::Audit.where(auditable: account, action: 'cancel_deletion').last
+        expect(audit).to have_attributes(user_id: super_admin.id)
+        expect(audit.audited_changes).to include('was_scheduled_for' => planned)
+      end
+
+      it 'says so when no deletion is scheduled and writes nothing' do
+        post "/super_admin/accounts/#{account.id}/cancel_deletion"
+
+        expect(flash[:alert]).to eq('Для этого аккаунта удаление не назначено.')
+        expect(Audited::Audit.where(action: 'cancel_deletion')).to be_empty
+      end
+
+      it 'keeps the other things in the custom attributes of the account' do
+        account.update!(custom_attributes: { 'plan' => 'base', 'marked_for_deletion_at' => 3.days.from_now.iso8601, 'marked_for_deletion_reason' => 'manual_deletion' })
+
+        post "/super_admin/accounts/#{account.id}/cancel_deletion"
+
+        expect(account.reload.custom_attributes).to eq('plan' => 'base')
       end
     end
   end

@@ -1045,6 +1045,7 @@ Rails.application.routes.draw do
         get :plan_preview, on: :member
         post :channel_overrides, on: :member
         post :link_organization, on: :member
+        post :cancel_deletion, on: :member
         post :impersonate, on: :member
         get :export, on: :collection
         if ChatwootApp.enterprise?

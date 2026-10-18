@@ -766,9 +766,41 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       forms = maintenance.css('form').index_by { |form| form['action'] }
       expect(forms.keys).to contain_exactly("#{card_path}/reset_cache", "#{card_path}/seed", card_path)
       expect(maintenance.css('button').map { |button| button['data-confirm'] }).to all(be_present)
-      destroy = forms[card_path]
+    end
+
+    it 'deletes an account only after its name is typed in, and says that nothing is deleted at once' do
+      open_card
+
+      destroy = block('maintenance-block').css('form').find { |form| form['action'] == card_path }
       expect(destroy.at_css('input[name="_method"]')['value']).to eq('delete')
-      expect(destroy.at_css('button')['data-confirm']).to include('Аккаунт Алатау')
+      name_input = destroy.at_css('input[name="confirm_name"]')
+      expect(name_input['placeholder']).to eq('Аккаунт Алатау')
+      expect(name_input['required']).to be_present
+      expect(text(destroy)).to include('Аккаунт не удалится сразу', 'через 7 дн.', 'Аккаунт Алатау')
+      expect(page.at_css('[data-testid="deletion-banner"]')).to be_nil
+    end
+
+    context 'when the deletion of the account is scheduled' do
+      before { account.update!(custom_attributes: { 'marked_for_deletion_at' => '2026-10-26T14:30:00+05:00', 'marked_for_deletion_reason' => 'manual_deletion' }) }
+
+      it 'shows the date at the top with «Отменить удаление», and no deletion form' do
+        open_card
+
+        banner = block('deletion-banner')
+        expect(text(banner)).to include('Аккаунт будет удалён 26.10.2026 14:30 (Астана)')
+        form = banner.at_css('form')
+        expect(form['action']).to eq("#{card_path}/cancel_deletion")
+        expect(text(form)).to eq('Отменить удаление')
+        expect(form.at_css('button')['data-confirm']).to include('Аккаунт Алатау')
+        expect(block('maintenance-block').at_css('[data-testid="deletion-form"]')).to be_nil
+        expect(text(block('deletion-note'))).to include('Удаление назначено на 26.10.2026 14:30 (Астана)')
+      end
+
+      it 'puts the banner before the blocks of the card' do
+        open_card
+
+        expect(page.at_css('main .main-content__body').element_children.first['data-testid']).to eq('deletion-banner')
+      end
     end
   end
 end

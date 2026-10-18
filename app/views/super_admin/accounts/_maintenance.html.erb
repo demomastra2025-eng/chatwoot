@@ -2,13 +2,19 @@
 # Maintenance of a clinic
 
 Rare actions: reset the interface cache of the clinic, generate demo data (only
-where seeding is enabled) and delete the clinic. Every button asks first.
+where seeding is enabled) and delete the clinic. The first two ask first. Deleting
+is never immediate: the account is marked for deletion and removed after a grace
+period (SuperAdmin::AccountDeletion); the name of the account must be typed in, and
+until the date the deletion can be cancelled (the banner at the top of the card).
 
 ## Local variables:
 
 - `account`: the clinic (Account).
 %>
-<% seeding_enabled = ActiveModel::Type::Boolean.new.cast(ENV.fetch('ENABLE_ACCOUNT_SEEDING', !Rails.env.production?)) %>
+<%
+  seeding_enabled = ActiveModel::Type::Boolean.new.cast(ENV.fetch('ENABLE_ACCOUNT_SEEDING', !Rails.env.production?))
+  deletion = SuperAdmin::AccountDeletion.new(account: account)
+%>
 
 <section class="admin-block" aria-labelledby="maintenance-title" data-testid="maintenance-block">
   <div class="admin-block__head">
@@ -25,10 +31,24 @@ where seeding is enabled) and delete the clinic. Every button asks first.
                     class: 'button button--small button--alt', form_class: 'inline-block',
                     data: { confirm: t('super_admin.clinic_card.maintenance.seed_confirm') } %>
     <% end %>
-    <%= button_to t('super_admin.clinic_card.maintenance.destroy'), [:super_admin, account], method: :delete,
-                  class: 'button button--small button--danger', form_class: 'inline-block',
-                  data: { confirm: t('super_admin.clinic_card.maintenance.destroy_confirm', name: account.name) } %>
   </div>
+
+  <% if deletion.scheduled? %>
+    <p class="admin-block__note" data-testid="deletion-note"><%= t('super_admin.clinic_card.maintenance.deletion_scheduled', date: super_admin_time(deletion.deletion_at)) %></p>
+  <% else %>
+    <details class="rounded-lg outline outline-1 -outline-offset-1 outline-n-ruby-4" data-testid="deletion-form">
+      <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-medium text-n-ruby-11">
+        <span><%= t('super_admin.clinic_card.maintenance.destroy') %></span>
+        <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
+      </summary>
+      <%= form_with url: super_admin_account_path(account), method: :delete, local: true, class: 'flex flex-col gap-2 px-3 pb-3' do %>
+        <p class="admin-block__note"><%= t('super_admin.clinic_card.maintenance.destroy_hint', days: SuperAdmin::AccountDeletion::GRACE_PERIOD.in_days.to_i) %></p>
+        <%= label_tag :confirm_name, t('super_admin.clinic_card.maintenance.destroy_confirm_label', name: account.name), class: 'text-xs text-n-slate-11' %>
+        <%= text_field_tag :confirm_name, nil, autocomplete: 'off', required: true, placeholder: account.name %>
+        <%= submit_tag t('super_admin.clinic_card.maintenance.destroy'), name: nil, class: 'button button--small button--danger w-fit' %>
+      <% end %>
+    </details>
+  <% end %>
   <% if seeding_enabled %>
     <p class="admin-block__note"><%= t('super_admin.clinic_card.maintenance.seed_hint') %></p>
   <% end %>

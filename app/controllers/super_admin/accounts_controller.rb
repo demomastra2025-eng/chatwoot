@@ -269,11 +269,35 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   end
   # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
+  # «Удалить аккаунт» marks the account for deletion: the daily job removes it when the grace period is over, and until
+  # then the deletion can be cancelled (SuperAdmin::AccountDeletion). It needs the name of the account typed in.
   def destroy
-    account = Account.find(params[:id])
+    account = requested_resource
+    unless params[:confirm_name].to_s.strip == account.name.to_s.strip
+      return redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.deletion_name_mismatch'))
+    end
 
-    DeleteObjectJob.perform_later(account) if account.present?
-    redirect_back(fallback_location: [namespace, requested_resource], notice: I18n.t('super_admin.accounts.flashes.account_deletion_started'))
+    deletion = account_deletion(account)
+    if deletion.schedule == :scheduled
+      redirect_to_account(notice: I18n.t('super_admin.accounts.flashes.deletion_scheduled', date: SuperAdmin::DisplayHelper.format_time(deletion.deletion_at)))
+    else
+      redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.deletion_already_scheduled', date: SuperAdmin::DisplayHelper.format_time(deletion.deletion_at)))
+    end
+  rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotSaved => e
+    Rails.logger.warn("[SuperAdmin] Deletion of account #{params[:id]} could not be scheduled: #{e.class.name}: #{e.message}")
+    redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.deletion_failed'))
+  end
+
+  def cancel_deletion
+    outcome = account_deletion(requested_resource).cancel
+    if outcome == :cancelled
+      redirect_to_account(notice: I18n.t('super_admin.accounts.flashes.deletion_cancelled'))
+    else
+      redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.deletion_not_scheduled'))
+    end
+  rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotSaved => e
+    Rails.logger.warn("[SuperAdmin] Deletion of account #{params[:id]} could not be cancelled: #{e.class.name}: #{e.message}")
+    redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.deletion_failed'))
   end
 
   private
@@ -576,6 +600,10 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     return requested_resource.users.find_by(id: params[:user_id]) if params[:user_id].present?
 
     requested_resource.administrators.first || requested_resource.users.first
+  end
+
+  def account_deletion(account)
+    SuperAdmin::AccountDeletion.new(account: account, actor: current_super_admin, request: request)
   end
 
   # Operator actions that change an account or reach into it leave an explicit entry in the audit log.
