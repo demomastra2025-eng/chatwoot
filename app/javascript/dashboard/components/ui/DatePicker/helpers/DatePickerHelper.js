@@ -20,6 +20,16 @@ import {
   isWithinInterval,
 } from 'date-fns';
 
+export const resolveDatePickerLocale = localeValue => {
+  const raw =
+    localeValue ||
+    (typeof window !== 'undefined' && window?.chatwootConfig?.selectedLocale) ||
+    (typeof document !== 'undefined' && document?.documentElement?.lang) ||
+    (typeof navigator !== 'undefined' && navigator?.language) ||
+    'en-US';
+  return String(raw).replace('_', '-');
+};
+
 // Constants for calendar and date ranges
 export const calendarWeeks = [
   { id: 1, label: 'M' },
@@ -30,6 +40,19 @@ export const calendarWeeks = [
   { id: 6, label: 'S' },
   { id: 7, label: 'S' },
 ];
+
+export const getLocalizedCalendarWeeks = localeValue => {
+  const locale = resolveDatePickerLocale(localeValue);
+  const formatter = new Intl.DateTimeFormat(locale, { weekday: 'short' });
+  const monday = startOfWeek(new Date(2026, 0, 5), { weekStartsOn: 1 });
+  return Array.from({ length: 7 }, (_, index) => {
+    const label = formatter.format(addDays(monday, index)).replace(/\.$/, '');
+    return {
+      id: index + 1,
+      label: label.charAt(0).toUpperCase() + label.slice(1),
+    };
+  });
+};
 
 export const dateRanges = [
   { label: 'DATE_PICKER.DATE_RANGE_OPTIONS.LAST_7_DAYS', value: 'last7days' },
@@ -121,7 +144,16 @@ export const CALENDAR_PERIODS = {
 };
 
 // Utility functions for date operations
-export const monthName = currentDate => format(currentDate, 'MMMM');
+export const monthName = (currentDate, localeValue) => {
+  if (!localeValue) {
+    return format(currentDate, 'MMMM');
+  }
+  const locale = resolveDatePickerLocale(localeValue);
+  const formatted = new Intl.DateTimeFormat(locale, { month: 'long' }).format(
+    currentDate
+  );
+  return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+};
 export const yearName = currentDate => format(currentDate, 'yyyy');
 
 export const getIntlDateFormatForLocale = () => {

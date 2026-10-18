@@ -74,7 +74,7 @@ export default {
           :span="2"
           :label="$t('SLA_REPORTS.TABLE.HEADER.AGENT')"
         />
-        <TableHeaderCell :span="1" label="" />
+        <TableHeaderCell :span="2" label="" />
       </div>
 
       <div v-if="isLoading" class="flex items-center justify-center h-32">

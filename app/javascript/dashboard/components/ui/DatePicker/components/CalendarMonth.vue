@@ -1,8 +1,9 @@
 <script setup>
-import { computed } from 'vue';
-import { format, getMonth, setMonth, startOfMonth } from 'date-fns';
+import { computed, getCurrentInstance } from 'vue';
+import { getMonth, setMonth, startOfMonth } from 'date-fns';
 import {
   yearName,
+  resolveDatePickerLocale,
   CALENDAR_TYPES,
   CALENDAR_PERIODS,
 } from '../helpers/DatePickerHelper';
@@ -21,10 +22,18 @@ const props = defineProps({
 const emit = defineEmits(['selectMonth', 'prev', 'next', 'setView']);
 const { START_CALENDAR } = CALENDAR_TYPES;
 const { MONTH, YEAR } = CALENDAR_PERIODS;
+const instance = getCurrentInstance();
 
-const months = Array.from({ length: 12 }, (_, index) =>
-  format(setMonth(startOfMonth(new Date()), index), 'MMM')
-);
+const months = computed(() => {
+  const locale = resolveDatePickerLocale(instance?.proxy?.$i18n?.locale);
+  const formatter = new Intl.DateTimeFormat(locale, { month: 'short' });
+  return Array.from({ length: 12 }, (_, index) => {
+    const label = formatter
+      .format(setMonth(startOfMonth(new Date(2026, 0, 1)), index))
+      .replace(/\.$/, '');
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  });
+});
 
 const activeMonthIndex = computed(() => {
   const date =

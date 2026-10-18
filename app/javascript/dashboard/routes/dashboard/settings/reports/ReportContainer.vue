@@ -65,6 +65,26 @@ export default {
     },
   },
   methods: {
+    resolveLocale() {
+      const raw = String(this.$i18n?.locale || 'ru').replace('_', '-');
+      try {
+        return Intl.getCanonicalLocales(raw)[0] || 'ru-RU';
+      } catch {
+        return 'ru-RU';
+      }
+    },
+    formatShortDayMonth(date) {
+      return new Intl.DateTimeFormat(this.resolveLocale(), {
+        day: '2-digit',
+        month: 'short',
+      }).format(date);
+    },
+    formatMonthYear(date) {
+      return new Intl.DateTimeFormat(this.resolveLocale(), {
+        month: 'short',
+        year: 'numeric',
+      }).format(date);
+    },
     getCollection(metric) {
       if (!this.accountReport.data[metric.KEY]) {
         return {};
@@ -77,18 +97,17 @@ export default {
           const last_day = first_day + 6;
           const week_first_date = new Date(week_date.setDate(first_day));
           const week_last_date = new Date(week_date.setDate(last_day));
-          return `${format(week_first_date, 'dd-MMM')} - ${format(
-            week_last_date,
-            'dd-MMM'
-          )}`;
+          return `${this.formatShortDayMonth(
+            week_first_date
+          )} - ${this.formatShortDayMonth(week_last_date)}`;
         }
         if (this.groupBy?.period === GROUP_BY_FILTER[3].period) {
-          return format(fromUnixTime(element.timestamp), 'MMM-yyyy');
+          return this.formatMonthYear(fromUnixTime(element.timestamp));
         }
         if (this.groupBy?.period === GROUP_BY_FILTER[4].period) {
           return format(fromUnixTime(element.timestamp), 'yyyy');
         }
-        return format(fromUnixTime(element.timestamp), 'dd-MMM');
+        return this.formatShortDayMonth(fromUnixTime(element.timestamp));
       });
       const datasets = METRIC_CHART[metric.KEY].datasets.map(dataset => {
         switch (dataset.type) {

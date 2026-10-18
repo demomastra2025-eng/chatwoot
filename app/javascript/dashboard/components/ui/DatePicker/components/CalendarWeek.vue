@@ -1,7 +1,9 @@
 <script setup>
+import { computed, getCurrentInstance } from 'vue';
 import {
   monthName,
   yearName,
+  resolveDatePickerLocale,
   getWeeksForMonth,
   isToday,
   dayIsInRange,
@@ -40,6 +42,10 @@ const emit = defineEmits([
 
 const { START_CALENDAR } = CALENDAR_TYPES;
 const { MONTH } = CALENDAR_PERIODS;
+const instance = getCurrentInstance();
+const activeLocale = computed(() =>
+  resolveDatePickerLocale(instance?.proxy?.$i18n?.locale)
+);
 
 const emitHoveredEndDate = day => {
   emit('updateHoveredEndDate', day);
@@ -127,7 +133,8 @@ const dayClasses = day => ({
       :calendar-type="calendarType"
       :first-button-label="
         monthName(
-          calendarType === START_CALENDAR ? startCurrentDate : endCurrentDate
+          calendarType === START_CALENDAR ? startCurrentDate : endCurrentDate,
+          activeLocale
         )
       "
       :button-label="

@@ -1,6 +1,8 @@
 class Telephony::LogicalCallHistoryQuery
   BATCH_SIZE = 200
-  MAX_BATCH_SIZE = 500
+  MAX_BATCH_SIZE = 10_000
+  MAX_SQL_WINDOW_CLAUSES = 20
+  CANONICAL_SIBLING_TIME_PADDING = 2.days
   CANONICAL_GROUP_KEY_PATHS = {
     history_group_ref: ['{history_handoff,group_ref}'],
     logical_call_key: [
@@ -124,10 +126,8 @@ class Telephony::LogicalCallHistoryQuery
     return if inbound.empty?
 
     windows = sibling_windows(inbound)
-    siblings = relation.where(direction: 'inbound', provider: inbound.map(&:provider).uniq, inbox_id: inbound.map(&:inbox_id).uniq)
-                       .where(windows.map { 'created_at BETWEEN ? AND ?' }.join(' OR '), *windows.flatten)
-                       .to_a
-    siblings.concat(load_canonical_group_siblings(batch)) if include_canonical_group_siblings
+    siblings = query_window_siblings(inbound, windows, sessions_by_id)
+    siblings.concat(load_canonical_group_siblings(batch, sessions_by_id)) if include_canonical_group_siblings
     siblings = siblings.uniq(&:id).reject { |session| sessions_by_id.key?(session.id) }
     return if siblings.empty?
 
@@ -135,11 +135,43 @@ class Telephony::LogicalCallHistoryQuery
     load_missing_group_parents(sessions_by_id, siblings)
   end
 
-  def load_canonical_group_siblings(batch)
+  def query_window_siblings(inbound, windows, sessions_by_id)
+    return [] if windows.empty?
+
+    base_scope = relation.where(
+      direction: 'inbound',
+      provider: inbound.map(&:provider).uniq,
+      inbox_id: inbound.map(&:inbox_id).uniq
+    ).where.not(id: sessions_by_id.keys)
+
+    if windows.size <= MAX_SQL_WINDOW_CLAUSES
+      base_scope.where(windows.map { 'created_at BETWEEN ? AND ?' }.join(' OR '), *windows.flatten).to_a
+    else
+      min_from = windows.first[0]
+      max_to = windows.last[1]
+      base_scope.where(created_at: min_from..max_to).to_a.select do |session|
+        in_any_window?(session.created_at, windows)
+      end
+    end
+  end
+
+  def in_any_window?(timestamp, windows)
+    return false if timestamp.nil?
+
+    idx = windows.bsearch_index { |(_from, to)| to >= timestamp }
+    idx.present? && timestamp >= windows[idx][0]
+  end
+
+  def load_canonical_group_siblings(batch, sessions_by_id)
     # Reports assign grouped calls to their first leg, so a keyed handoff may
     # need context from outside the nearby-leg window or date range.
     signatures = batch.filter_map { |session| canonical_group_signature(session) }.to_set
     return [] if signatures.empty?
+
+    timestamps = batch.filter_map(&:created_at)
+    time_range = if timestamps.any?
+                   (timestamps.min - CANONICAL_SIBLING_TIME_PADDING)..(timestamps.max + CANONICAL_SIBLING_TIME_PADDING)
+                 end
 
     scopes = signatures.group_by { |provider, inbox_id, key_type, _logical_key| [provider, inbox_id, key_type] }
     scoped_relations = scopes.map do |(provider, inbox_id, key_type), scoped_signatures|
@@ -152,8 +184,9 @@ class Telephony::LogicalCallHistoryQuery
         Arel::Nodes::NamedFunction.new('BTRIM', [json_key]).in(keys)
       end
 
-      relation.where(direction: 'inbound', provider: provider, inbox_id: inbox_id)
-              .where(key_conditions.reduce(&:or))
+      scope = relation.where(direction: 'inbound', provider: provider, inbox_id: inbox_id)
+      scope = scope.where(created_at: time_range) if time_range
+      scope.where.not(id: sessions_by_id.keys).where(key_conditions.reduce(&:or))
     end
 
     scoped_relations.reduce(&:or)
@@ -179,7 +212,7 @@ class Telephony::LogicalCallHistoryQuery
 
   def sibling_windows(sessions)
     window = Telephony::CallSession::LogicalGrouping::LOGICAL_GROUP_WINDOW
-    sessions.map(&:created_at).sort.each_with_object([]) do |created_at, windows|
+    sessions.filter_map(&:created_at).sort.each_with_object([]) do |created_at, windows|
       from = created_at - window
       to = created_at + window
       if windows.any? && from <= windows.last[1]
@@ -298,7 +331,9 @@ class Telephony::LogicalCallHistoryQuery
   end
 
   def duplicate_branch?(session)
-    session.metadata.to_h.dig('metadata', 'route_reason') == 'duplicate_broadcast_branch'
+    top_meta = session.metadata.is_a?(Hash) ? session.metadata : session.metadata.to_h
+    inner = top_meta['metadata'] || top_meta[:metadata]
+    inner.is_a?(Hash) && (inner['route_reason'] || inner[:route_reason]) == 'duplicate_broadcast_branch'
   end
 
   def canonical_group_branch?(session)

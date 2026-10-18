@@ -4,9 +4,9 @@ module Telephony::CallSession::LogicalGrouping
   LOGICAL_GROUP_WINDOW = 2.minutes
 
   def logical_call_key
-    top_metadata = metadata.to_h.deep_stringify_keys
-    route_metadata = logical_metadata_hash('metadata')
-    last_payload = logical_metadata_hash('last_payload')
+    top_metadata = logical_top_metadata
+    route_metadata = logical_metadata_hash('metadata', top_metadata)
+    last_payload = logical_metadata_hash('last_payload', top_metadata)
 
     logical_metadata_value(route_metadata, 'logical_call_key', 'logicalCallKey', 'call_group_key', 'callGroupKey') ||
       logical_metadata_value(last_payload, 'logical_call_key', 'logicalCallKey', 'call_group_key', 'callGroupKey') ||
@@ -14,10 +14,10 @@ module Telephony::CallSession::LogicalGrouping
   end
 
   def logical_call_group_ref
-    top_metadata = metadata.to_h.deep_stringify_keys
-    route_metadata = logical_metadata_hash('metadata')
-    last_payload = logical_metadata_hash('last_payload')
-    nested_payload = last_payload['payload'].is_a?(Hash) ? last_payload['payload'].deep_stringify_keys : {}
+    top_metadata = logical_top_metadata
+    route_metadata = logical_metadata_hash('metadata', top_metadata)
+    last_payload = logical_metadata_hash('last_payload', top_metadata)
+    nested_payload = logical_metadata_hash('payload', last_payload)
 
     logical_metadata_value(route_metadata, 'logical_call_group_ref', 'logical_call_root_ref', 'bridge_call_ref', 'bridgeCallRef') ||
       logical_metadata_value(last_payload, 'logical_call_group_ref', 'logical_call_root_ref', 'bridge_call_ref', 'bridgeCallRef') ||
@@ -26,7 +26,8 @@ module Telephony::CallSession::LogicalGrouping
   end
 
   def logical_history_group_ref
-    metadata.to_h.deep_stringify_keys.dig('history_handoff', 'group_ref').to_s.strip.presence
+    history_handoff = logical_metadata_hash('history_handoff', logical_top_metadata)
+    logical_metadata_value(history_handoff, 'group_ref')
   end
 
   def logical_history_key
@@ -118,14 +119,25 @@ module Telephony::CallSession::LogicalGrouping
     end.to_set
   end
 
-  def logical_metadata_hash(key)
-    value = metadata.to_h.deep_stringify_keys[key]
-    value.is_a?(Hash) ? value.deep_stringify_keys : {}
+  def logical_top_metadata
+    metadata.is_a?(Hash) ? metadata : metadata.to_h
+  end
+
+  def logical_metadata_hash(key, source = logical_top_metadata)
+    return {} unless source.is_a?(Hash)
+
+    value = source[key]
+    value = source[key.to_sym] if value.nil? && key.respond_to?(:to_sym)
+    value.is_a?(Hash) ? value : {}
   end
 
   def logical_metadata_value(source, *keys)
+    return nil unless source.is_a?(Hash)
+
     keys.each do |key|
-      value = source[key].to_s.strip.presence
+      raw = source[key]
+      raw = source[key.to_sym] if raw.nil? && key.respond_to?(:to_sym)
+      value = raw.to_s.strip.presence
       return value if value.present?
     end
 
