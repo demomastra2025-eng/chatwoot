@@ -484,9 +484,15 @@ export default {
         : false;
     },
     conversationId() {
-      return this.isCommunicationThreadConversation
-        ? this.activeReplyChannel?.conversation_id
-        : this.currentChat.id;
+      if (!this.isCommunicationThreadConversation) {
+        return this.currentChat.id;
+      }
+      return (
+        this.activeReplyChannel?.conversation_id ||
+        this.currentChat?.active_reply_channel_conversation_id ||
+        this.currentChat?.conversation_ids?.[0] ||
+        this.currentChat.id
+      );
     },
     conversationIdByRoute() {
       return this.currentChat.id;
@@ -1550,7 +1556,7 @@ export default {
         showAudioRecorderEditor
       "
       :is-editor-disabled="isEditorDisabled"
-      :show-copilot-actions="!isCommunicationThreadConversation"
+      show-copilot-actions
       :is-message-length-reaching-threshold="isMessageLengthReachingThreshold"
       :characters-remaining="charactersRemaining"
       :editor-content="message"
@@ -1642,7 +1648,7 @@ export default {
           :update-selection-with="updateEditorSelectionWith"
           :min-height="4"
           :disabled="isEditorDisabled"
-          :enable-copilot-menu="!isCommunicationThreadConversation"
+          enable-copilot-menu
           enable-variables
           :variables="messageVariables"
           :signature="messageSignature"

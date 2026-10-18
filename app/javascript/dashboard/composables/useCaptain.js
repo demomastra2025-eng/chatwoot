@@ -22,9 +22,20 @@ export function useCaptain() {
   const uiFlags = useMapGetter('accounts/getUIFlags');
   const currentChat = useMapGetter('getSelectedChat');
   const replyMode = useMapGetter('draftMessages/getReplyEditorMode');
-  const conversationId = computed(() => currentChat.value?.id);
+  const draftConversationId = computed(() => currentChat.value?.id);
+  const conversationId = computed(() => {
+    if (currentChat.value?.is_communication_thread) {
+      return (
+        currentChat.value?.active_reply_channel_conversation_id ||
+        currentChat.value?.active_reply_channel?.conversation_id ||
+        currentChat.value?.conversation_ids?.[0] ||
+        currentChat.value?.id
+      );
+    }
+    return currentChat.value?.id;
+  });
   const draftKey = computed(
-    () => `draft-${conversationId.value}-${replyMode.value}`
+    () => `draft-${draftConversationId.value}-${replyMode.value}`
   );
   const draftMessage = useFunctionGetter('draftMessages/get', draftKey);
 
