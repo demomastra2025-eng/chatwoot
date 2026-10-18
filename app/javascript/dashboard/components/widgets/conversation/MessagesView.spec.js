@@ -1060,6 +1060,212 @@ describe('MessagesView', () => {
     });
   });
 
+  describe('lazy upward history loading and initial bottom anchoring', () => {
+    it('does not load older history from the top observer before the user scrolls up', () => {
+      const fetchPreviousMessages = vi.fn();
+      const context = {
+        conversationPanel: { scrollTop: 0, scrollHeight: 1800, clientHeight: 500 },
+        hasUserScrolled: false,
+        hasUserScrolledUp: false,
+        fetchPreviousMessages,
+      };
+
+      MessagesView.methods.onPreviousMessagesObserved.call(context);
+      expect(fetchPreviousMessages).not.toHaveBeenCalled();
+
+      context.hasUserScrolled = true;
+      context.hasUserScrolledUp = false;
+      MessagesView.methods.onPreviousMessagesObserved.call(context);
+      expect(fetchPreviousMessages).not.toHaveBeenCalled();
+
+      context.hasUserScrolledUp = true;
+      context.conversationPanel.scrollTop = 32;
+      MessagesView.methods.onPreviousMessagesObserved.call(context);
+      expect(fetchPreviousMessages).toHaveBeenCalledWith(32);
+    });
+
+    it('keeps hasUserScrolled false during chat switch clamp scroll before dataFetched is true', () => {
+      const conversationPanel = {
+        scrollTop: 0,
+        scrollHeight: 500,
+        clientHeight: 500,
+        querySelector: vi.fn(() => null),
+      };
+      const context = {
+        conversationPanel,
+        currentChat: {
+          id: 988,
+          is_communication_thread: true,
+          dataFetched: undefined,
+          messages: [{ id: 300 }],
+        },
+        fetchSuggestions: vi.fn(),
+        resetOpenedUnreadMessages: vi.fn(),
+        resetReplyEditorHeight: vi.fn(),
+        fetchPreviousMessages: vi.fn(),
+        hideUnreadJumpWhenVisible: vi.fn(),
+        preserveOpenedUnreadMessages: vi.fn(),
+        makeMessagesRead: vi.fn(),
+        isNearConversationBottom(offset = 80) {
+          return MessagesView.methods.isNearConversationBottom.call(this, offset);
+        },
+        scrollToBottom() {
+          return MessagesView.methods.scrollToBottom.call(this);
+        },
+        $nextTick: callback => callback(),
+        conversationHistoryGeneration: 0,
+        hasUserScrolled: false,
+        hasUserScrolledUp: false,
+        isProgrammaticScroll: false,
+        programmaticScrollTop: null,
+        lastScrollTop: 1400,
+      };
+
+      // 1. Switch from a scrolled chat to a new chat with only 1 preview message
+      MessagesView.watch.currentChat.call(
+        context,
+        context.currentChat,
+        { id: 987, is_communication_thread: true }
+      );
+
+      // 2. Browser clamps scrollTop to 0 and fires native scroll event while dataFetched is undefined
+      MessagesView.methods.handleScroll.call(context, {
+        target: conversationPanel,
+      });
+
+      expect(context.hasUserScrolled).toBe(false);
+      expect(context.hasUserScrolledUp).toBe(false);
+      expect(context.fetchPreviousMessages).not.toHaveBeenCalled();
+
+      // 3. Initial history page arrives and increases scrollHeight to 2000 while scrollTop is still 0
+      context.currentChat.dataFetched = true;
+      conversationPanel.scrollHeight = 2000;
+      MessagesView.watch['currentChat.dataFetched'].handler.call(context, true);
+
+      expect(conversationPanel.scrollTop).toBe(1500);
+
+      // 4. Subsequent SCROLL_TO_MESSAGE bus event also keeps the chat at the bottom and marks read
+      MessagesView.methods.onScrollToMessage.call(context);
+      expect(conversationPanel.scrollTop).toBe(1500);
+      expect(context.makeMessagesRead).toHaveBeenCalledOnce();
+    });
+
+    it('only triggers fetchPreviousMessages on upward user scroll near the top', () => {
+      const conversationPanel = {
+        scrollTop: 500,
+        scrollHeight: 2000,
+        clientHeight: 500,
+      };
+      const fetchPreviousMessages = vi.fn();
+      const context = {
+        conversationPanel,
+        currentChat: { id: 988, dataFetched: true },
+        isProgrammaticScroll: false,
+        programmaticScrollTop: null,
+        hasUserScrolled: false,
+        hasUserScrolledUp: false,
+         isLoadingPrevious: false,
+        lastScrollTop: 500,
+        hideUnreadJumpWhenVisible: vi.fn(),
+        isNearConversationBottom(offset = 80) {
+          return MessagesView.methods.isNearConversationBottom.call(this, offset);
+        },
+        fetchPreviousMessages,
+      };
+
+      // User scrolls up to 60px (< 100px) -> should fetch previous messages
+      conversationPanel.scrollTop = 60;
+      MessagesView.methods.handleScroll.call(context, {
+        target: conversationPanel,
+      });
+      expect(context.hasUserScrolled).toBe(true);
+      expect(context.hasUserScrolledUp).toBe(true);
+      expect(fetchPreviousMessages).toHaveBeenCalledWith(60);
+
+      fetchPreviousMessages.mockClear();
+
+      // User scrolls down from 60px to 80px (still < 100px, but downward) -> should NOT fetch
+      conversationPanel.scrollTop = 80;
+      MessagesView.methods.handleScroll.call(context, {
+        target: conversationPanel,
+      });
+      expect(fetchPreviousMessages).not.toHaveBeenCalled();
+    });
+
+    it('tracks live upward scroll while a history batch is in flight so prepending does not jump back', async () => {
+      const conversationPanel = {
+        scrollHeight: 2000,
+        clientHeight: 500,
+        scrollTop: 90,
+      };
+      let resolveFetch;
+      const dispatch = vi.fn(
+        () =>
+          new Promise(resolve => {
+            resolveFetch = () => {
+              // Prepending 20 older messages adds 1200px height
+              conversationPanel.scrollHeight = 3200;
+              resolve();
+            };
+          })
+      );
+      const context = {
+        conversationPanel,
+        currentChat: {
+          id: 988,
+          dataFetched: true,
+          messages: [{ id: 101 }],
+        },
+        listLoadingStatus: false,
+        isLoadingPrevious: false,
+        heightBeforeLoad: null,
+        scrollTopBeforeLoad: null,
+        isProgrammaticScroll: false,
+        programmaticScrollTop: null,
+        hasUserScrolled: true,
+        hasUserScrolledUp: true,
+        lastScrollTop: 120,
+        hideUnreadJumpWhenVisible: vi.fn(),
+        isNearConversationBottom(offset = 80) {
+          return MessagesView.methods.isNearConversationBottom.call(this, offset);
+        },
+        setScrollParams() {
+          MessagesView.methods.setScrollParams.call(this);
+        },
+        fetchPreviousMessages(scrollTop) {
+          return MessagesView.methods.fetchPreviousMessages.call(
+            this,
+            scrollTop
+          );
+        },
+        $store: { dispatch },
+        $nextTick: vi.fn(callback => callback()),
+      };
+
+      // Start loading at scrollTop = 90
+      const pending = MessagesView.methods.fetchPreviousMessages.call(
+        context,
+        90
+      );
+      expect(context.scrollTopBeforeLoad).toBe(90);
+
+      // Momentum scroll continues up to scrollTop = 15 while network request is in flight (scrollHeight is still 2000)
+      conversationPanel.scrollTop = 15;
+      MessagesView.methods.handleScroll.call(context, {
+        target: conversationPanel,
+      });
+      expect(context.scrollTopBeforeLoad).toBe(15);
+
+      // Network request resolves and adds 1200px height
+      resolveFetch();
+      await pending;
+
+      // Viewport anchors smoothly at 15 + 1200 = 1215 instead of jumping back to 90 + 1200 = 1290
+      expect(conversationPanel.scrollTop).toBe(1215);
+      expect(context.isProgrammaticScroll).toBe(true);
+    });
+  });
+
   describe('#canObservePreviousMessages', () => {
     it('observes the top sentinel while older messages can be loaded', () => {
       expect(

@@ -98,9 +98,13 @@ export default {
     return {
       isLoadingPrevious: true,
       heightBeforeLoad: null,
+      scrollTopBeforeLoad: null,
       conversationPanel: null,
       hasUserScrolled: false,
+      hasUserScrolledUp: false,
       isProgrammaticScroll: false,
+      programmaticScrollTop: null,
+      lastScrollTop: 0,
       messageSentSinceOpened: false,
       labelSuggestions: [],
       isCancellingCaptainResponse: false,
@@ -384,12 +388,49 @@ export default {
       }
       this.conversationHistoryGeneration += 1;
       this.hasUserScrolled = false;
+      this.hasUserScrolledUp = false;
+      this.isLoadingPrevious = false;
+      this.isProgrammaticScroll = true;
+      this.programmaticScrollTop = null;
       // Attachments are loaded by the «Файлы» side panel when it is open
       // and by the gallery when it opens, not on every chat switch.
       this.fetchSuggestions();
       this.messageSentSinceOpened = false;
       this.resetOpenedUnreadMessages();
       this.resetReplyEditorHeight();
+    },
+    getMessages: {
+      flush: 'post',
+      handler(newMessages, oldMessages) {
+        if (!this.conversationPanel) return;
+        if (
+          this.hasUserScrolled ||
+          this.isLoadingPrevious ||
+          this.isLoadingOpenedUnread ||
+          this.$route?.query?.messageId
+        ) {
+          return;
+        }
+        if ((newMessages?.length || 0) === (oldMessages?.length || 0)) return;
+
+        this.scrollToBottom();
+      },
+    },
+    'currentChat.dataFetched': {
+      flush: 'post',
+      handler(isFetched) {
+        if (!isFetched || !this.conversationPanel) return;
+        if (
+          this.hasUserScrolled ||
+          this.isLoadingPrevious ||
+          this.isLoadingOpenedUnread ||
+          this.$route?.query?.messageId
+        ) {
+          return;
+        }
+
+        this.scrollToBottom();
+      },
     },
   },
 
@@ -473,8 +514,9 @@ export default {
         if (messageElement) {
           this.preserveOpenedUnreadMessages();
           this.isProgrammaticScroll = true;
+          this.programmaticScrollTop = null;
           messageElement.scrollIntoView({ behavior: 'smooth' });
-          this.fetchPreviousMessages();
+          this.fetchPreviousMessages(this.conversationPanel?.scrollTop ?? 0);
           if (isNewestPageLoaded) this.makeMessagesRead();
         } else if (
           force ||
@@ -607,17 +649,45 @@ export default {
         firstUnreadMessage,
         { block: 'start' }
       );
+      this.programmaticScrollTop = Number(
+        this.conversationPanel.scrollTop || 0
+      );
+      this.lastScrollTop = this.programmaticScrollTop;
       this.showUnreadJumpButton = false;
     },
     addScrollListener() {
       this.conversationPanel = this.$el.querySelector('.conversation-panel');
       this.setScrollParams();
+      this.lastScrollTop = Number(this.conversationPanel?.scrollTop || 0);
       this.conversationPanel.addEventListener('scroll', this.handleScroll);
+      this.conversationPanel.addEventListener(
+        'load',
+        this.handlePanelMediaLoad,
+        true
+      );
       this.$nextTick(() => this.scrollToBottom());
       this.isLoadingPrevious = false;
     },
     removeScrollListener() {
-      this.conversationPanel.removeEventListener('scroll', this.handleScroll);
+      this.conversationPanel?.removeEventListener('scroll', this.handleScroll);
+      this.conversationPanel?.removeEventListener(
+        'load',
+        this.handlePanelMediaLoad,
+        true
+      );
+    },
+    handlePanelMediaLoad() {
+      if (!this.conversationPanel) return;
+      if (
+        this.hasUserScrolled ||
+        this.isLoadingPrevious ||
+        this.isLoadingOpenedUnread ||
+        this.$route?.query?.messageId
+      ) {
+        return;
+      }
+
+      this.scrollToBottom();
     },
     scrollToBottom() {
       if (!this.conversationPanel) return false;
@@ -629,14 +699,24 @@ export default {
       const labelSuggestions =
         this.conversationPanel.querySelector('.label-suggestion');
       if (labelSuggestions) {
-        return scrollElementIntoConversationPanel(
+        const didScroll = scrollElementIntoConversationPanel(
           this.conversationPanel,
           labelSuggestions,
           { block: 'end' }
         );
+        this.programmaticScrollTop = Number(
+          this.conversationPanel.scrollTop || 0
+        );
+        this.lastScrollTop = this.programmaticScrollTop;
+        return didScroll;
       }
 
-      return scrollConversationPanelToBottom(this.conversationPanel);
+      const didScroll = scrollConversationPanelToBottom(this.conversationPanel);
+      this.programmaticScrollTop = Number(
+        this.conversationPanel.scrollTop || 0
+      );
+      this.lastScrollTop = this.programmaticScrollTop;
+      return didScroll;
     },
     communicationThreadMessageLastSeenAt(message) {
       const conversationId = String(message?.conversation_id);
@@ -673,7 +753,18 @@ export default {
       this.scrollTopBeforeLoad = this.conversationPanel.scrollTop;
     },
 
+    onPreviousMessagesObserved() {
+      if (!this.hasUserScrolled || !this.hasUserScrolledUp) return;
+      if (!this.conversationPanel) return;
+
+      this.fetchPreviousMessages(this.conversationPanel.scrollTop);
+    },
+
     async fetchPreviousMessages(scrollTop = 0) {
+      const resolvedScrollTop =
+        typeof scrollTop === 'number'
+          ? scrollTop
+          : Number(this.conversationPanel?.scrollTop ?? 0);
       const oldestMessage = this.currentChat.messages?.[0];
       const shouldLoadMoreMessages =
         this.currentChat.dataFetched === true &&
@@ -681,7 +772,7 @@ export default {
         !this.listLoadingStatus &&
         !this.isLoadingPrevious;
 
-      if (scrollTop >= 100 || !shouldLoadMoreMessages) return;
+      if (resolvedScrollTop >= 100 || !shouldLoadMoreMessages) return;
 
       this.setScrollParams();
       const conversationPanel = this.conversationPanel;
@@ -697,7 +788,7 @@ export default {
         isCommunicationThread(this.currentChat) === loadedConversationIsThread;
       let shouldLoadPreviousMessagesAgain = false;
 
-      if (scrollTop < 100) {
+      if (resolvedScrollTop < 100) {
         this.isLoadingPrevious = true;
         try {
           await this.$store.dispatch('fetchPreviousMessages', {
@@ -715,8 +806,13 @@ export default {
 
               const heightDifference =
                 conversationPanel.scrollHeight - this.heightBeforeLoad;
+              this.isProgrammaticScroll = true;
               conversationPanel.scrollTop =
                 this.scrollTopBeforeLoad + heightDifference;
+              this.programmaticScrollTop = Number(
+                conversationPanel.scrollTop || 0
+              );
+              this.lastScrollTop = this.programmaticScrollTop;
               this.setScrollParams();
               shouldLoadPreviousMessagesAgain =
                 this.currentChat.messages?.[0]?.id !== oldestMessage.id &&
@@ -739,16 +835,59 @@ export default {
     },
 
     handleScroll(e) {
-      if (this.isProgrammaticScroll) {
+      const currentScrollTop = Number(
+        e?.target?.scrollTop ?? this.conversationPanel?.scrollTop ?? 0
+      );
+      const isMatchingProgrammaticScroll =
+        this.isProgrammaticScroll &&
+        (this.programmaticScrollTop === null ||
+          Math.abs(currentScrollTop - this.programmaticScrollTop) <= 2);
+
+      if (
+        isMatchingProgrammaticScroll ||
+        this.currentChat?.dataFetched !== true
+      ) {
         // Reset the flag
         this.isProgrammaticScroll = false;
+        this.programmaticScrollTop = null;
         this.hasUserScrolled = false;
+        this.hasUserScrolledUp = false;
+        this.lastScrollTop = currentScrollTop;
+        emitter.emit(BUS_EVENTS.ON_MESSAGE_LIST_SCROLL);
+        return;
+      }
+
+      this.isProgrammaticScroll = false;
+      this.programmaticScrollTop = null;
+
+      const previousScrollTop = Number(this.lastScrollTop ?? currentScrollTop);
+      const scrolledUp = currentScrollTop < previousScrollTop;
+      this.lastScrollTop = currentScrollTop;
+
+      if (this.isNearConversationBottom(10) && !scrolledUp) {
+        this.hasUserScrolled = false;
+        this.hasUserScrolledUp = false;
       } else {
         this.hasUserScrolled = true;
-        this.hideUnreadJumpWhenVisible();
+        if (scrolledUp) {
+          this.hasUserScrolledUp = true;
+        }
       }
+
+      if (
+        this.isLoadingPrevious &&
+        this.conversationPanel &&
+        this.conversationPanel.scrollHeight === this.heightBeforeLoad
+      ) {
+        this.scrollTopBeforeLoad = currentScrollTop;
+      }
+
+      this.hideUnreadJumpWhenVisible();
       emitter.emit(BUS_EVENTS.ON_MESSAGE_LIST_SCROLL);
-      this.fetchPreviousMessages(e.target.scrollTop);
+
+      if (scrolledUp && currentScrollTop < 100) {
+        this.fetchPreviousMessages(currentScrollTop);
+      }
     },
 
     makeMessagesRead() {
@@ -825,12 +964,12 @@ export default {
         <transition name="slide-up">
           <!-- eslint-disable-next-line vue/require-toggle-inside-transition -->
           <li
-            class="min-h-[4rem] flex flex-shrink-0 flex-grow-0 items-center flex-auto justify-center max-w-full mt-0 mr-0 mb-1 ml-0 relative first:mt-auto last:mb-0"
+            class="min-h-[4rem] flex flex-shrink-0 flex-grow-0 items-center flex-auto justify-center max-w-full mt-0 mr-0 mb-1 ml-0 relative first:mt-auto last:mb-0 [overflow-anchor:none]"
           >
             <IntersectionObserver
               v-if="canObservePreviousMessages"
               :options="previousMessagesObserverOptions"
-              @observed="fetchPreviousMessages"
+              @observed="onPreviousMessagesObserved"
             />
             <Spinner v-if="shouldShowSpinner" class="text-n-brand" />
           </li>
