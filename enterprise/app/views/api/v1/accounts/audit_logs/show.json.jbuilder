@@ -30,6 +30,9 @@ def audit_log_auditable_data(audit_log)
       }
     }
   else
+    # History of objects whose class no longer exists (the removed Agent Bots) stays readable: no object, no payload.
+    return nil unless audit_log.auditable_type.to_s.safe_constantize
+
     audit_log.auditable.try(:push_event_data)
   end
 end

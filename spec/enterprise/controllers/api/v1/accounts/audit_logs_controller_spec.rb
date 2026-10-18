@@ -63,6 +63,25 @@ RSpec.describe 'Enterprise Audit API', type: :request do
           'total_entries' => 4
         )
       end
+
+      # The Agent Bots were removed, their audit history stays: the entry is listed, without an object payload.
+      it 'lists the history of an object whose class no longer exists' do
+        account.enable_features(:audit_logs)
+        account.save!
+        Audited::Audit.insert_all!(
+          [{ auditable_type: 'AgentBot', auditable_id: 41, associated_type: 'Account', associated_id: account.id,
+             action: 'destroy', audited_changes: { 'name' => 'Old bot' }, created_at: Time.current }]
+        )
+
+        get "/api/v1/accounts/#{account.id}/audit_logs",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        bot_log = response.parsed_body['audit_logs'].find { |audit_log| audit_log['auditable_type'] == 'AgentBot' }
+        expect(bot_log).to include('auditable_id' => 41, 'action' => 'destroy', 'auditable' => nil)
+        expect(bot_log['audited_changes']).to eq('name' => 'Old bot')
+      end
     end
   end
 end
