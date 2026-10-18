@@ -108,6 +108,16 @@ RSpec.describe 'Super Admin clinic list', type: :request do
       expect(text(cell(account, 2))).to include('изменён')
     end
 
+    it 'does not mark a clinic for a deprecated flag that an older plan left on' do
+      account = create(:account)
+      Accounts::ApplyPlan.new(account: account, modules: []).call
+      account.enable_features!('agent_bots')
+
+      get '/super_admin/accounts'
+
+      expect(text(cell(account, 2))).not_to include('изменён')
+    end
+
     it 'shows the remaining days of a running trial' do
       account = create(:account)
       account.activate_trial!(3)
