@@ -4,9 +4,10 @@ class SuperAdmin::UsersController < SuperAdmin::ApplicationController
 
   # What a super admin does to users is audited: the changes of the name, e-mail and role are written by the model (see
   # Enterprise::Audit::User) as made by THIS super admin; a new password is written below as «changed», never as a value.
-  around_action :audit_as_current_super_admin, only: %i[create update destroy]
+  # (`destroy` is Administrate's own action, so the filters name an action this class does not define itself)
+  around_action :audit_as_current_super_admin, only: %i[create update destroy] # rubocop:disable Rails/LexicallyScopedActionFilter
   before_action :guard_role, only: %i[create update]
-  before_action :guard_removal, only: :destroy
+  before_action :guard_removal, only: :destroy # rubocop:disable Rails/LexicallyScopedActionFilter
 
   # Overwrite any of the RESTful controller actions to implement custom behavior
   # For example, you may want to send an email after a foo is updated.
@@ -99,14 +100,19 @@ class SuperAdmin::UsersController < SuperAdmin::ApplicationController
     submitted = params[:user]
     return unless submitted.respond_to?(:key?) && submitted.key?(:type)
 
-    wanted = submitted[:type].to_s
-    return refuse_role(:unknown_role) unless ROLES.include?(wanted)
+    reason = role_refusal(submitted[:type].to_s, submitted)
+    refuse_role(reason) if reason
+  end
+
+  # Why the role in the request is refused (a key of super_admin.users.refused), nil when it may be set
+  def role_refusal(wanted, submitted)
+    return :unknown_role unless ROLES.include?(wanted)
 
     current = action_name == 'create' ? '' : requested_resource.type.to_s
     return if wanted == current
-    return refuse_role(:confirmation_missing) if wanted == 'SuperAdmin' && !super_admin_confirmed?(submitted)
+    return :confirmation_missing if wanted == 'SuperAdmin' && !super_admin_confirmed?(submitted)
 
-    refuse_role(demotion_refusal) if wanted != 'SuperAdmin' && demotion_refusal
+    demotion_refusal if wanted != 'SuperAdmin'
   end
 
   # The e-mail the new super admin will have, typed into the confirmation field

@@ -278,11 +278,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     end
 
     deletion = account_deletion(account)
-    if deletion.schedule == :scheduled
-      redirect_to_account(notice: I18n.t('super_admin.accounts.flashes.deletion_scheduled', date: SuperAdmin::DisplayHelper.format_time(deletion.deletion_at)))
-    else
-      redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.deletion_already_scheduled', date: SuperAdmin::DisplayHelper.format_time(deletion.deletion_at)))
-    end
+    redirect_to_account(**deletion_flash(deletion, deletion.schedule == :scheduled))
   rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotSaved => e
     Rails.logger.warn("[SuperAdmin] Deletion of account #{params[:id]} could not be scheduled: #{e.class.name}: #{e.message}")
     redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.deletion_failed'))
@@ -600,6 +596,14 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     return requested_resource.users.find_by(id: params[:user_id]) if params[:user_id].present?
 
     requested_resource.administrators.first || requested_resource.users.first
+  end
+
+  # { notice: } when the deletion was just scheduled, { alert: } when it was scheduled before; both say the date
+  def deletion_flash(deletion, scheduled)
+    date = SuperAdmin::DisplayHelper.format_time(deletion.deletion_at)
+    return { notice: I18n.t('super_admin.accounts.flashes.deletion_scheduled', date: date) } if scheduled
+
+    { alert: I18n.t('super_admin.accounts.flashes.deletion_already_scheduled', date: date) }
   end
 
   def account_deletion(account)

@@ -246,7 +246,7 @@ RSpec.describe 'Platform Users API', type: :request do
         post '/platform/api/v1/users/', params: { name: 'test', email: 'tries@one-link.kz', password: 'Password1!', type: 'SuperAdmin' },
                                         headers: { api_access_token: platform_app.access_token.token }, as: :json
 
-        expect(User.find_by(email: 'tries@one-link.kz')).not_to be_a(SuperAdmin)
+        expect(User.from_email('tries@one-link.kz')).not_to be_a(SuperAdmin)
       end
 
       it 'writes an entry of the audit log with the partner as the actor and no password in it' do
@@ -279,7 +279,7 @@ RSpec.describe 'Platform Users API', type: :request do
 
     before { create(:platform_app_permissible, platform_app: platform_app, permissible: super_admin) }
 
-    it 'can be neither read, logged in as, given a token for, changed nor deleted, even with an old attachment' do
+    it 'can be neither read nor signed in as nor given a token for, even with an old attachment' do
       get "/platform/api/v1/users/#{super_admin.id}", headers: headers, as: :json
       expect(response).to have_http_status(:unauthorized)
 
@@ -290,7 +290,9 @@ RSpec.describe 'Platform Users API', type: :request do
       post "/platform/api/v1/users/#{super_admin.id}/token", headers: headers, as: :json
       expect(response).to have_http_status(:unauthorized)
       expect(response.body).not_to include(super_admin.access_token.token)
+    end
 
+    it 'can be neither changed nor deleted, even with an old attachment' do
       patch "/platform/api/v1/users/#{super_admin.id}", params: { email: 'taken@over.kz', password: 'Hacked123!' }, headers: headers, as: :json
       expect(response).to have_http_status(:unauthorized)
       expect(super_admin.reload.email).to eq('root@one-link.kz')

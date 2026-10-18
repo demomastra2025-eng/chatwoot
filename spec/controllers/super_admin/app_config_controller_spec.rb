@@ -540,10 +540,8 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
       upsert_installation_config('FB_APP_SECRET', 'stored-facebook-secret')
       upsert_installation_config('IG_VERIFY_TOKEN', 'stored-instagram-token')
 
-      expect do
-        post '/super_admin/app_config?config=facebook',
-             params: { app_config: { FB_APP_ID: 'new-id', FB_APP_SECRET: '', IG_VERIFY_TOKEN: '' } }
-      end.not_to change { InstallationConfig.where(name: %w[FB_APP_SECRET IG_VERIFY_TOKEN]).map(&:serialized_value) }
+      post '/super_admin/app_config?config=facebook',
+           params: { app_config: { FB_APP_ID: 'new-id', FB_APP_SECRET: '', IG_VERIFY_TOKEN: '' } }
 
       expect(InstallationConfig.find_by!(name: 'FB_APP_SECRET').value).to eq('stored-facebook-secret')
       expect(InstallationConfig.find_by!(name: 'IG_VERIFY_TOKEN').value).to eq('stored-instagram-token')
@@ -599,7 +597,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
     it 'cuts a long value in the audit log' do
       post '/super_admin/app_config?config=facebook', params: { app_config: { FB_APP_ID: 'x' * 1000 } }
 
-      expect(setting_audits.last.audited_changes['value'].last.length).to eq(SuperAdmin::AppConfigsController::AUDITED_VALUE_LIMIT)
+      expect(setting_audits.last.audited_changes['value'].last.length).to eq(SuperAdmin::AppConfigSaver::VALUE_LIMIT)
     end
 
     it 'treats every secret of the OpenRouter key like any other: empty keeps it, typed replaces it, the log holds no key' do

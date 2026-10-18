@@ -29,7 +29,7 @@ RSpec.describe 'Super Admin Installation Config API', type: :request do
 
       it 'shows the value of an ordinary parameter, cut when it is long' do
         upsert_installation_config('FB_APP_ID', 'visible-app-id', locked: false)
-        upsert_installation_config('FACEBOOK_API_VERSION', 'v' + ('x' * 400), locked: false)
+        upsert_installation_config('FACEBOOK_API_VERSION', "v#{'x' * 400}", locked: false)
 
         get '/super_admin/installation_configs'
 
@@ -78,8 +78,8 @@ RSpec.describe 'Super Admin Installation Config API', type: :request do
 
         expect(row_of('FB_APP_ID').at_css('a[href="/super_admin/app_config?config=facebook"]').text.squish).to eq('Facebook & Messenger')
         expect(row_of('ENABLE_ACCOUNT_SIGNUP').at_css('a[href="/super_admin/app_config?config=general"]')).to be_present
-        expect(row_of('SOMETHING_ELSE').css('a').map { |link| link['href'] }).to eq(['/super_admin/installation_configs/' \
-                                                                                    "#{InstallationConfig.find_by!(name: 'SOMETHING_ELSE').id}"])
+        other_id = InstallationConfig.find_by!(name: 'SOMETHING_ELSE').id
+        expect(row_of('SOMETHING_ELSE').css('a').map { |link| link['href'] }).to eq(["/super_admin/installation_configs/#{other_id}"])
       end
 
       it 'does not find a secret by searching for its value' do
@@ -125,13 +125,13 @@ RSpec.describe 'Super Admin Installation Config API', type: :request do
 
     it 'has no route to create, change, rename or delete one' do
       config = create(:installation_config, name: 'TESTCONFIG', value: 'TESTVALUE', locked: false)
-      router = Rails.application.routes
+      routes = Rails.application.routes
+      member = "/super_admin/installation_configs/#{config.id}"
 
-      expect { router.recognize_path('/super_admin/installation_configs', method: 'POST') }.to raise_error(ActionController::RoutingError)
-      expect { router.recognize_path("/super_admin/installation_configs/#{config.id}", method: 'PATCH') }.to raise_error(ActionController::RoutingError)
-      expect { router.recognize_path("/super_admin/installation_configs/#{config.id}", method: 'PUT') }.to raise_error(ActionController::RoutingError)
-      expect { router.recognize_path("/super_admin/installation_configs/#{config.id}", method: 'DELETE') }.to raise_error(ActionController::RoutingError)
-      expect { router.recognize_path("/super_admin/installation_configs/#{config.id}/edit", method: 'GET') }.to raise_error(ActionController::RoutingError)
+      [['/super_admin/installation_configs', 'POST'], [member, 'PATCH'], [member, 'PUT'], [member, 'DELETE'],
+       ["#{member}/edit", 'GET']].each do |path, verb|
+        expect { routes.recognize_path(path, method: verb) }.to raise_error(ActionController::RoutingError), "#{verb} #{path} is routed"
+      end
     end
 
     it 'does not open a form for a new parameter' do

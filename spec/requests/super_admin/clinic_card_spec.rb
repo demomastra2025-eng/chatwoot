@@ -781,7 +781,10 @@ RSpec.describe 'Super Admin clinic card', type: :request do
     end
 
     context 'when the deletion of the account is scheduled' do
-      before { account.update!(custom_attributes: { 'marked_for_deletion_at' => '2026-10-26T14:30:00+05:00', 'marked_for_deletion_reason' => 'manual_deletion' }) }
+      before do
+        account.update!(custom_attributes: { 'marked_for_deletion_at' => '2026-10-26T14:30:00+05:00',
+                                             'marked_for_deletion_reason' => 'manual_deletion' })
+      end
 
       it 'shows the date at the top with «Отменить удаление», and no deletion form' do
         open_card

@@ -67,13 +67,15 @@ module SuperAdmin::InstallationConfigs
   def display(config)
     return Display.new(kind: :empty, text: nil) if config.nil?
 
-    value = config.value
-    set = !(value.nil? || value == '')
-    return Display.new(kind: set ? :secret_set : :secret_unset, text: nil) if secret?(config.name)
-    return Display.new(kind: set ? :hidden : :empty, text: nil) unless known?(config.name)
-    return Display.new(kind: :empty, text: nil) unless set
+    kind = display_kind(config.name, !(config.value.nil? || config.value == ''))
+    Display.new(kind: kind, text: (printable(config.value).truncate(VALUE_LIMIT) if kind == :value))
+  end
 
-    Display.new(kind: :value, text: printable(value).truncate(VALUE_LIMIT))
+  def display_kind(name, set)
+    return set ? :secret_set : :secret_unset if secret?(name)
+    return :empty unless set
+
+    known?(name) ? :value : :hidden
   end
 
   def printable(value)

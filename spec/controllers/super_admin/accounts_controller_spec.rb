@@ -677,7 +677,8 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
       end
 
       it 'keeps the other things in the custom attributes of the account' do
-        account.update!(custom_attributes: { 'plan' => 'base', 'marked_for_deletion_at' => 3.days.from_now.iso8601, 'marked_for_deletion_reason' => 'manual_deletion' })
+        account.update!(custom_attributes: { 'plan' => 'base', 'marked_for_deletion_at' => 3.days.from_now.iso8601,
+                                             'marked_for_deletion_reason' => 'manual_deletion' })
 
         post "/super_admin/accounts/#{account.id}/cancel_deletion"
 

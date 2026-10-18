@@ -20,7 +20,7 @@ class SuperAdmin::Devise::SessionsController < Devise::SessionsController
   end
 
   def create
-    super_admin = SuperAdmin.find_by(email: submitted_email)
+    super_admin = SuperAdmin.from_email(submitted_email)
     unless super_admin&.valid_password?(submitted_password)
       audit_failed_sign_in(super_admin)
       return redirect_to(super_admin_session_path, flash: { error: I18n.t('devise.failure.invalid', authentication_keys: 'email') })
@@ -99,8 +99,8 @@ class SuperAdmin::Devise::SessionsController < Devise::SessionsController
     backup_code = params[:backup_code].to_s.gsub(/\s+/, '').upcase
     return if otp_code.blank? && backup_code.blank?
 
-    accepted = Mfa::AuthenticationService.new(user: super_admin, otp_code: otp_code.presence, backup_code: otp_code.present? ? nil : backup_code).authenticate
-    return unless accepted
+    service = Mfa::AuthenticationService.new(user: super_admin, otp_code: otp_code.presence, backup_code: otp_code.present? ? nil : backup_code)
+    return unless service.authenticate
 
     otp_code.present? ? 'authenticator' : 'backup_code'
   rescue StandardError => e
@@ -127,7 +127,7 @@ class SuperAdmin::Devise::SessionsController < Devise::SessionsController
       audit('super_admin_login_failed', super_admin, changes: { 'reason' => 'wrong_password' })
     else
       SuperAdmin::PlatformAudit.record(auditable: nil, action: 'super_admin_login_failed', changes: { 'reason' => 'unknown_email' },
-                                       request: request, username: submitted_email)
+                                       request: request, actor: submitted_email)
     end
   end
 

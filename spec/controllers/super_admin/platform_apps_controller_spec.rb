@@ -74,6 +74,12 @@ RSpec.describe 'Super Admin platform app API', type: :request do
       expect(page.at_css('[data-testid="one-time-token"] input')['value']).to eq(app.access_token.token)
       expect(response.headers['Cache-Control']).to include('no-store')
 
+    end
+
+    it 'writes the creation to the audit log without the token' do
+      post '/super_admin/platform_apps', params: { platform_app: { name: 'Портал клиник' } }
+
+      app = PlatformApp.find_by!(name: 'Портал клиник')
       audit = Audited::Audit.where(auditable: app, action: 'create').last
       expect(audit).to have_attributes(user_id: super_admin.id, comment: 'super_admin')
       expect(audit.audited_changes).to eq('name' => 'Портал клиник')
@@ -97,7 +103,8 @@ RSpec.describe 'Super Admin platform app API', type: :request do
       app = PlatformApp.find_by!(name: 'Портал клиник')
       follow_redirect!
 
-      expect(page.css('.flashes .flash').map { |flash| flash.text.squish }).to eq(['Партнёрский доступ создан. Токен показан один раз: сохраните его сейчас.'])
+      expect(page.css('.flashes .flash').map { |flash| flash.text.squish })
+        .to eq(['Партнёрский доступ создан. Токен показан один раз: сохраните его сейчас.'])
       expect(page.css('.flashes').to_s).not_to include(app.access_token.token)
     end
 

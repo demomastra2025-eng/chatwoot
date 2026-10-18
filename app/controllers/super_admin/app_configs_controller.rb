@@ -42,9 +42,6 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     WIDGET_TOKEN_EXPIRY ACCOUNT_CONVERSATIONS_LIMIT ACCOUNT_NON_WEB_INBOXES_LIMIT ACCOUNT_STORAGE_BYTES_LIMIT
   ].freeze
 
-  # The longest old or new value of a setting that an entry of the audit log keeps
-  AUDITED_VALUE_LIMIT = 300
-
   helper SuperAdmin::AppConfigHelper
   before_action :set_config
   before_action :allowed_configs
@@ -130,6 +127,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
 
   def persist_app_config
     errors = []
+    saver = SuperAdmin::AppConfigSaver.new(actor: current_super_admin, request: request)
     params.fetch('app_config', {}).each do |key, value|
       next unless @allowed_configs.include?(key)
       # A secret that is left empty keeps the stored value (the field never shows it, so empty means «do not change»)
@@ -138,36 +136,10 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
       normalized_value = normalize_app_config_value(key, value, errors)
       next if normalized_value == :invalid
 
-      save_app_config(key, normalized_value, errors)
+      # Saved and, when the value changed, written to the audit log (never the value of a secret)
+      errors.concat(saver.save(key, normalized_value, secret: masked_secret_config?(key)))
     end
     errors
-  end
-
-  # Saves one setting and, when its value changed, writes one entry of the audit log: the NAME of the setting and the
-  # old and new value, or only that the value «changed» when the setting is a secret.
-  def save_app_config(key, normalized_value, errors)
-    config = InstallationConfig.where(name: key).first_or_initialize(locked: false)
-    previous = config.new_record? ? nil : config.value
-    config.value = normalized_value
-    return errors.concat(config.errors.full_messages) unless config.save
-
-    record_setting_audit(config, previous) if config.saved_change_to_serialized_value?
-  end
-
-  def record_setting_audit(config, previous)
-    value_change = if masked_secret_config?(config.name)
-                     'changed'
-                   else
-                     [audited_setting_text(previous), audited_setting_text(config.value)]
-                   end
-    SuperAdmin::PlatformAudit.record(
-      auditable: config, action: 'update_setting', actor: current_super_admin, request: request,
-      changes: { 'name' => config.name, 'value' => value_change }
-    )
-  end
-
-  def audited_setting_text(value)
-    SuperAdmin::InstallationConfigs.printable(value).truncate(AUDITED_VALUE_LIMIT)
   end
 
   # The Russian reason the catalog cannot be refreshed with the key in its present state, or nil
