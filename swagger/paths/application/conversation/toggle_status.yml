@@ -11,7 +11,6 @@ description: |-
   reply from the contact.
 security:
   - userApiKey: []
-  - agentBotApiKey: []
 requestBody:
   required: true
   content:

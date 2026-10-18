@@ -5,7 +5,6 @@ summary: Toggle Priority
 description: Toggles the priority of conversation
 security:
   - userApiKey: []
-  - agentBotApiKey: []
 requestBody:
   required: true
   content:

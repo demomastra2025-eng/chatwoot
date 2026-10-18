@@ -72,7 +72,6 @@ post:
   description: "Creating a conversation in Onelink requires a source id. \n\n Learn more about source_id: https://one-link.kz/hc/user-guide/articles/1677839703-how-to-create-an-api-channel-inbox#send-messages-to-the-api-channel"
   security:
     - userApiKey: []
-    - agentBotApiKey: []
   requestBody:
     required: true
     content:
