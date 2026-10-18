@@ -27,6 +27,12 @@ class StandaloneReportsAPI extends ApiClient {
       },
     });
   }
+
+  getDailyResponse({ fromDate, toDate } = {}) {
+    return axios.get(`${this.url}/daily_response`, {
+      params: { from_date: fromDate, to_date: toDate },
+    });
+  }
 }
 
 export default new StandaloneReportsAPI();

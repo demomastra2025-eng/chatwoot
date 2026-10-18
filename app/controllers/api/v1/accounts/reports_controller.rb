@@ -3,7 +3,7 @@
 class Api::V1::Accounts::ReportsController < Api::V1::Accounts::BaseController
   rescue_from ArgumentError, with: :render_unprocessable_entity
   rescue_from ::Reports::AiAgentsQuery::InvalidAssistantFilter, with: :render_invalid_assistant_filter
-  before_action :authorize_report_access!, only: %i[calls leads ai_agents]
+  before_action :authorize_report_access!, only: %i[calls leads ai_agents daily_response]
 
   def calls
     report = ::Reports::CallsQuery.new(account: Current.account, params: report_params)
@@ -18,6 +18,11 @@ class Api::V1::Accounts::ReportsController < Api::V1::Accounts::BaseController
   def ai_agents
     values = report_params.to_h.merge(assistant_id: params[:assistant_id])
     report = ::Reports::AiAgentsQuery.new(account: Current.account, params: values)
+    render_payload(report.perform, meta: report.meta)
+  end
+
+  def daily_response
+    report = ::Reports::DailyResponseQuery.new(account: Current.account, params: report_params)
     render_payload(report.perform, meta: report.meta)
   end
 

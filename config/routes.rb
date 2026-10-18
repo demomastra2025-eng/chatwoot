@@ -559,6 +559,7 @@ Rails.application.routes.draw do
               get :calls
               get :leads
               get :ai_agents
+              get :daily_response
             end
           end
 

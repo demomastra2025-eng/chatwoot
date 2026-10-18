@@ -270,6 +270,44 @@
     "CUSTOM_DATE_RANGE": {
       "CONFIRM": "Apply",
       "PLACEHOLDER": "Select date range"
+    },
+    "DAILY_RESPONSE": {
+      "TITLE": "Daily response & wait time summary",
+      "DESCRIPTION": "Answered conversations are those created on that day that received their first agent response on the same day. Breakdown is shown for each day in the selected period.",
+      "EXPORT_CSV": "Export CSV",
+      "EXPORT_EXCEL": "Export Excel (.xls)",
+      "UNIT_HOUR": "h",
+      "UNIT_MIN": "min",
+      "UNIT_SEC": "s",
+      "WEEKDAYS": {
+        "1": "Mon",
+        "2": "Tue",
+        "3": "Wed",
+        "4": "Thu",
+        "5": "Fri",
+        "6": "Sat",
+        "7": "Sun"
+      },
+      "SUMMARY": {
+        "TOTAL": "Total conversations",
+        "TOTAL_INFO": "Total new conversations created in the selected period.",
+        "ANSWERED": "Answered",
+        "ANSWERED_INFO": "Conversations created on that day that received a first response on the same day.",
+        "UNANSWERED": "Unanswered",
+        "UNANSWERED_INFO": "Conversations that did not receive a first response on the day they were created.",
+        "ANSWERED_SHARE": "Answered share",
+        "ANSWERED_SHARE_INFO": "Percentage of conversations answered on the same day out of total created conversations."
+      },
+      "COLUMNS": {
+        "DATE": "Date",
+        "DAY": "Day",
+        "TOTAL": "Total",
+        "ANSWERED": "Answered",
+        "UNANSWERED": "Unanswered",
+        "ANSWERED_SHARE": "Answered share",
+        "AVG_FIRST_RESPONSE": "Avg first response time",
+        "AVG_REPLY_WAIT": "Reply wait time"
+      }
     }
   },
   "INBOX_REPORTS": {
@@ -1022,6 +1060,58 @@
         "click_to_messenger_ad": "Facebook Messenger ad",
         "click_to_direct_ad": "Instagram ad",
         "messaging_referral": "Messaging referral"
+      },
+      "META_ADS": {
+        "UNIQUE_CHATS": "Unique conversations",
+        "UNIQUE_AD_IDS": "Meta Ad ID creatives",
+        "ANSWERED_CHATS": "Answered conversations",
+        "EXPORT_CSV": "Export CSV",
+        "EXPORT_EXCEL": "Export Excel (.xls)",
+        "CREATIVES_TITLE": "Creative breakdown (Meta Ads)",
+        "CREATIVES_DESC": "Breakdown by ad headline, Meta Ad ID, and direct links to ad sources.",
+        "CREATIVE": "Creative / Headline",
+        "FORMAT": "Format",
+        "CHATS": "Chats",
+        "SOURCES": "Source links",
+        "SOURCE_LINK": "Source",
+        "CONVERSATIONS_TITLE": "Referred contacts & conversation links",
+        "CONVERSATIONS_DESC": "Detailed referral conversations with contact info, first response time, and direct conversation links.",
+        "FIRST_CONTACT": "First referral",
+        "CONTACT": "Contact / Phone",
+        "IN_OUT_MESSAGES": "In / out messages",
+        "ANSWERED": "Answered",
+        "CONVERSATION": "Conversation link",
+        "YES": "Yes",
+        "NO": "No",
+        "MEDIA_TYPES": {
+          "image": "Image",
+          "video": "Video",
+          "unknown": "—"
+        },
+        "CHAT_STATUSES": {
+          "open": "Open",
+          "resolved": "Resolved",
+          "pending": "Pending",
+          "snoozed": "Snoozed"
+        },
+        "EXPORT_COLUMNS": {
+          "FIRST_REFERRAL_AT": "First referral at",
+          "LAST_REFERRAL_AT": "Last referral at",
+          "CONVERSATION_URL": "Conversation URL",
+          "DISPLAY_ID": "Conversation ID",
+          "CONTACT_NAME": "Contact name",
+          "PHONE": "Phone",
+          "HEADLINE": "Creative / headline",
+          "AD_ID": "Meta Ad ID",
+          "MEDIA_TYPE": "Media type",
+          "SOURCE_URL": "Ad source URL",
+          "EVENT_COUNT": "Referral events",
+          "INCOMING_COUNT": "Incoming messages",
+          "OUTGOING_COUNT": "Outgoing messages",
+          "ANSWERED": "Answered",
+          "RESPONSE_MINUTES": "Minutes to first response",
+          "STATUS": "Conversation status"
+        }
       },
       "EMPTY": "No referral or lead form activity in this date range.",
       "ERROR": "Could not load the leads and sources report. Try again."
