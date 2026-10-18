@@ -36,7 +36,7 @@ class UserDashboard < Administrate::BaseDashboard
     updated_at: Field::DateTime,
     pubsub_token: Field::String,
     # [["Пользователь", ""], ["Супер-администратор", "SuperAdmin"]]: the names are looked up when the page is drawn
-    type: Field::Select.with_options(
+    type: UserTypeField.with_options(
       collection: -> { [[I18n.t('super_admin.users.types.user'), ''], [I18n.t('super_admin.users.types.super_admin'), 'SuperAdmin']] }
     ),
     accounts: CountField,

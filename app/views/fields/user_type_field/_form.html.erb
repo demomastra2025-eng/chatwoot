@@ -1,0 +1,27 @@
+<%#
+# The role of a user (form)
+
+The select of the role and, under it, the confirmation of the role of a super admin: the e-mail of the user typed in.
+Without it the controller refuses to make someone a super admin (SuperAdmin::UsersController#guard_role). The input is
+not an attribute of the user, so it is read from the request directly.
+
+## Local variables:
+
+- `f`: the form builder.
+- `field`: a `UserTypeField`.
+%>
+<div class="field-unit__label">
+  <%= f.label field.attribute %>
+</div>
+<div class="field-unit__field">
+  <%= f.select field.attribute, options_for_select(field.selectable_options, field.data), include_blank: field.include_blank_option %>
+</div>
+
+<div class="field-unit__label mt-3">
+  <%= label_tag 'user_super_admin_confirmation', t('super_admin.users.confirmation.label') %>
+</div>
+<div class="field-unit__field">
+  <%= text_field_tag 'user[super_admin_confirmation]', nil, id: 'user_super_admin_confirmation', autocomplete: 'off',
+                     placeholder: t('super_admin.users.confirmation.placeholder') %>
+  <p class="mt-1 text-xs text-n-slate-11"><%= t('super_admin.users.confirmation.hint') %></p>
+</div>

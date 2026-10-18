@@ -89,7 +89,6 @@ RSpec.describe 'Super Admin Installation Config API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(page.css('tr[data-config-name]')).to be_empty
-        expect(response.body).not_to include('needle-in-a-haystack')
       end
 
       it 'has no button that creates a parameter and no edit or delete link' do

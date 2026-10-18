@@ -20,7 +20,8 @@ RSpec.describe 'Super Admin Users API', type: :request do
           email: 'admin@example.com',
           password: 'Password1!',
           confirmed_at: '2023-03-20 22:32:41',
-          type: 'SuperAdmin'
+          type: 'SuperAdmin',
+          super_admin_confirmation: 'admin@example.com'
         } }
       end
       let!(:params_without_confirmed_at) do
@@ -29,7 +30,8 @@ RSpec.describe 'Super Admin Users API', type: :request do
           display_name: 'agent@example.com',
           email: 'agent@example.com',
           password: 'Password1!',
-          type: 'SuperAdmin'
+          type: 'SuperAdmin',
+          super_admin_confirmation: 'agent@example.com'
         } }
       end
       let!(:params_with_blank_confirmed_at) do
@@ -39,7 +41,8 @@ RSpec.describe 'Super Admin Users API', type: :request do
           email: 'agent-2@example.com',
           password: 'Password1!',
           confirmed_at: '',
-          type: 'SuperAdmin'
+          type: 'SuperAdmin',
+          super_admin_confirmation: 'agent-2@example.com'
         } }
       end
 
@@ -290,6 +293,194 @@ RSpec.describe 'Super Admin Users API', type: :request do
 
       expect(response).to have_http_status(:success)
       expect(Nokogiri::HTML(response.body).css('form').map { |form| form['action'].to_s }).not_to include(a_string_ending_with('/impersonate'))
+    end
+  end
+
+  describe 'the role of a super admin' do
+    let!(:plain_user) { create(:user, name: 'Обычный', email: 'plain@example.com') }
+
+    before { sign_in(super_admin, scope: :super_admin) }
+
+    def audits_of(user, action) = Audited::Audit.where(auditable_type: 'User', auditable_id: user.id, action: action).order(:id)
+
+    it 'offers the e-mail confirmation next to the role, in Russian' do
+      get "/super_admin/users/#{plain_user.id}/edit"
+
+      doc = Nokogiri::HTML(response.body)
+      expect(doc.at_css('input#user_super_admin_confirmation')).to be_present
+      expect(doc.at_css('label[for="user_super_admin_confirmation"]').text.squish).to eq('Подтверждение для супер-администратора')
+      expect(doc.text).to include('введите его e-mail')
+      expect(doc.css('select#user_type option').map(&:text)).to eq(%w[Пользователь Супер-администратор])
+    end
+
+    it 'does not make a user a super admin without the typed e-mail' do
+      patch "/super_admin/users/#{plain_user.id}", params: { user: { type: 'SuperAdmin' } }
+
+      expect(response).to redirect_to("/super_admin/users/#{plain_user.id}/edit")
+      expect(flash[:alert]).to eq('Чтобы сделать пользователя супер-администратором, введите его e-mail в поле подтверждения. Права не изменены.')
+      expect(User.find(plain_user.id)).not_to be_a(SuperAdmin)
+    end
+
+    it 'does not make a user a super admin when the typed text is another e-mail' do
+      patch "/super_admin/users/#{plain_user.id}", params: { user: { type: 'SuperAdmin', super_admin_confirmation: 'someone@else.com' } }
+
+      expect(response).to redirect_to("/super_admin/users/#{plain_user.id}/edit")
+      expect(User.find(plain_user.id)).not_to be_a(SuperAdmin)
+    end
+
+    it 'makes the user a super admin when their e-mail is typed, whatever its case, and writes who did it' do
+      patch "/super_admin/users/#{plain_user.id}", params: { user: { type: 'SuperAdmin', super_admin_confirmation: '  PLAIN@example.com ' } }
+
+      expect(response).to redirect_to("/super_admin/users/#{plain_user.id}")
+      expect(User.find(plain_user.id)).to be_a(SuperAdmin)
+      audit = audits_of(plain_user, 'update').last
+      expect(audit.audited_changes['type']).to eq([nil, 'SuperAdmin'])
+      expect(audit.user_id).to eq(super_admin.id)
+    end
+
+    it 'takes the e-mail typed for the new e-mail when the e-mail changes together with the role' do
+      patch "/super_admin/users/#{plain_user.id}",
+            params: { user: { email: 'new-mail@example.com', type: 'SuperAdmin', super_admin_confirmation: 'new-mail@example.com' } }
+
+      expect(User.find(plain_user.id)).to be_a(SuperAdmin)
+    end
+
+    it 'does not create a super admin without the typed e-mail' do
+      expect do
+        post '/super_admin/users', params: { user: { name: 'Новый', email: 'fresh@example.com', password: 'Password1!', type: 'SuperAdmin' } }
+      end.not_to change(User, :count)
+
+      expect(response).to redirect_to('/super_admin/users/new')
+      expect(flash[:alert]).to include('введите его e-mail')
+    end
+
+    it 'does not accept a role that does not exist' do
+      patch "/super_admin/users/#{plain_user.id}", params: { user: { type: 'Administrator' } }
+
+      expect(flash[:alert]).to eq('Такой роли нет. Права пользователя не изменены.')
+      expect(User.find(plain_user.id).type).to be_nil
+    end
+
+    it 'lets the role stay as it is without a confirmation' do
+      patch "/super_admin/users/#{plain_user.id}", params: { user: { type: '', display_name: 'Ещё имя' } }
+
+      expect(response).to redirect_to("/super_admin/users/#{plain_user.id}")
+      expect(plain_user.reload.display_name).to eq('Ещё имя')
+    end
+
+    it 'does not take the role of a super admin away from himself' do
+      patch "/super_admin/users/#{super_admin.id}", params: { user: { type: '' } }
+
+      expect(response).to redirect_to("/super_admin/users/#{super_admin.id}/edit")
+      expect(flash[:alert]).to eq('Нельзя снять права супер-администратора с самого себя. Это сделает другой супер-администратор.')
+      expect(User.find(super_admin.id)).to be_a(SuperAdmin)
+    end
+
+    it 'takes the role away from another super admin while another one is left' do
+      other = create(:super_admin, email: 'other-admin@example.com')
+
+      patch "/super_admin/users/#{other.id}", params: { user: { type: '' } }
+
+      expect(response).to redirect_to("/super_admin/users/#{other.id}")
+      expect(User.find(other.id)).not_to be_a(SuperAdmin)
+    end
+
+    it 'does not take the role away from the last super admin' do
+      other = create(:super_admin, email: 'other-admin@example.com')
+      allow(SuperAdmin).to receive(:count).and_return(1)
+
+      patch "/super_admin/users/#{other.id}", params: { user: { type: '' } }
+
+      expect(flash[:alert]).to eq('Нельзя убрать права у последнего супер-администратора: на платформе должен остаться хотя бы один.')
+      expect(User.find(other.id)).to be_a(SuperAdmin)
+    end
+  end
+
+  describe 'deleting a user' do
+    before { sign_in(super_admin, scope: :super_admin) }
+
+    it 'does not delete the super admin who is signed in' do
+      expect do
+        delete "/super_admin/users/#{super_admin.id}"
+      end.not_to change(User, :count)
+
+      expect(response).to redirect_to("/super_admin/users/#{super_admin.id}")
+      expect(flash[:alert]).to eq('Нельзя удалить самого себя. Это сделает другой супер-администратор.')
+    end
+
+    it 'does not delete the last super admin' do
+      other = create(:super_admin, email: 'other-admin@example.com')
+      allow(SuperAdmin).to receive(:count).and_return(1)
+
+      expect do
+        delete "/super_admin/users/#{other.id}"
+      end.not_to change(User, :count)
+
+      expect(flash[:alert]).to eq('Нельзя удалить последнего супер-администратора: на платформе должен остаться хотя бы один.')
+    end
+
+    it 'deletes another super admin while one is left, and a plain user, and writes who did it' do
+      other = create(:super_admin, email: 'other-admin@example.com')
+      plain = create(:user, email: 'to-delete@example.com')
+
+      expect do
+        delete "/super_admin/users/#{other.id}"
+        delete "/super_admin/users/#{plain.id}"
+      end.to change(User, :count).by(-2)
+
+      audit = Audited::Audit.where(auditable_type: 'User', auditable_id: plain.id, action: 'destroy').last
+      expect(audit.user_id).to eq(super_admin.id)
+      expect(audit.audited_changes).to include('email' => 'to-delete@example.com')
+    end
+  end
+
+  describe 'the audit log of the changes of a user' do
+    let!(:user) { create(:user, name: 'Было', email: 'before@example.com') }
+
+    before { sign_in(super_admin, scope: :super_admin) }
+
+    def update_audits = Audited::Audit.where(auditable_type: 'User', auditable_id: user.id, action: 'update').order(:id)
+
+    it 'records the old and the new name and e-mail, signed by the super admin' do
+      patch "/super_admin/users/#{user.id}", params: { user: { name: 'Стало', email: 'after@example.com', confirmed_at: Time.current } }
+
+      audit = update_audits.last
+      expect(audit.audited_changes).to include('name' => %w[Было Стало], 'email' => ['before@example.com', 'after@example.com'])
+      expect(audit).to have_attributes(user_id: super_admin.id)
+    end
+
+    it 'records a new password as changed and never writes it or its hash' do
+      old_hash = user.encrypted_password
+
+      patch "/super_admin/users/#{user.id}", params: { user: { password: 'NewSecret123!' } }
+
+      expect(user.reload.encrypted_password).not_to eq(old_hash)
+      audit = Audited::Audit.where(auditable_type: 'User', auditable_id: user.id, action: 'change_password').last
+      expect(audit).to have_attributes(user_id: super_admin.id, comment: 'super_admin')
+      expect(audit.audited_changes).to eq('password' => 'changed')
+      all_changes = Audited::Audit.where(auditable_type: 'User', auditable_id: user.id).map { |row| row.audited_changes.to_s }.join
+      expect(all_changes).not_to include('NewSecret123!', user.encrypted_password, old_hash)
+    end
+
+    it 'writes nothing about the password when it is left empty' do
+      patch "/super_admin/users/#{user.id}", params: { user: { name: 'Тот же', password: '' } }
+
+      expect(Audited::Audit.where(auditable_type: 'User', auditable_id: user.id, action: 'change_password')).to be_empty
+    end
+
+    it 'does not write the tokens and the second-factor secrets of a user, and not the availability' do
+      user.update!(availability: :busy, otp_required_for_login: true, otp_secret: User.generate_otp_secret)
+
+      rows = Audited::Audit.where(auditable_type: 'User', auditable_id: user.id)
+      expect(rows.flat_map { |row| row.audited_changes.keys }.uniq - %w[name email display_name type]).to be_empty
+    end
+
+    it 'lists the change in the audit log of the super admin by its Russian names' do
+      patch "/super_admin/users/#{user.id}", params: { user: { name: 'Стало' } }
+
+      get '/super_admin/audits', params: { auditable_type: 'User', audit_action: 'update' }
+
+      expect(response.body).to include('Пользователь', 'Изменение')
     end
   end
 end

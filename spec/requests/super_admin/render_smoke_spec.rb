@@ -116,6 +116,11 @@ RSpec.describe 'Super Admin render smoke', type: :request do
             # The organization card is made of blocks as well.
             expect_shell("/super_admin/#{resource}/#{record.id}")
             expect(page.at_css('main [data-testid="accounts-block"]')).to be_present
+          elsif resource == :platform_apps
+            # The card of a partner: the token (its last 4 characters) and what the partner owns.
+            expect_shell("/super_admin/#{resource}/#{record.id}")
+            expect(page.at_css('main [data-testid="token-block"]')).to be_present
+            expect(page.at_css('main [data-testid="partner-accounts"]')).to be_present
           else
             expect_shell("/super_admin/#{resource}/#{record.id}")
             expect(page.at_css('main dl.attribute-list')).to be_present

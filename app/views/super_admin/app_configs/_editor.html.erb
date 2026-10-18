@@ -78,7 +78,7 @@ The password field with the reveal button only shows what is typed into it.
 <% elsif kind == :secret %>
   <% if local_assigns.fetch(:show_state, true) %>
     <p class="m-0 mb-1.5">
-      <span class="admin-badge <%= masked ? 'admin-badge--teal' : 'admin-badge--quiet' %>" data-testid="secret-state"><%= t(masked ? 'super_admin.security.secret.set' : 'super_admin.security.secret.not_set') %></span>
+      <span class="admin-badge <%= masked ? 'admin-badge--teal' : 'admin-badge--quiet' %>" data-testid="secret-state"><%= t(masked ? 'super_admin.app_config.secret_state_set' : 'super_admin.app_config.secret_state_unset') %></span>
     </p>
   <% end %>
   <div class="admin-secret">

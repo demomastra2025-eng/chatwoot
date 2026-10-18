@@ -3,7 +3,7 @@
 class SuperAdmin::AuditsController < SuperAdmin::ApplicationController
   # The actions of the security side that the filter offers next to the general ones (names in super_admin.audits.actions)
   SECURITY_ACTIONS = %w[
-    reissue_token update_setting schedule_deletion cancel_deletion
+    reissue_token update_setting change_password schedule_deletion cancel_deletion
     super_admin_login super_admin_login_failed super_admin_two_factor_failed super_admin_logout
     partner_create_account partner_update_account partner_destroy_account partner_create_user partner_update_user
     partner_destroy_user partner_login_link partner_user_token partner_set_account_user partner_remove_account_user
