@@ -315,10 +315,11 @@ RSpec.describe Account, type: :model do
         expect(account.expire_trial!).to be(true)
         account.reload
 
-        %w[channel_voice voice_recorder crm help_center macros canned_responses agent_bots automations].each do |flag|
+        %w[channel_voice voice_recorder crm help_center macros canned_responses automations].each do |flag|
           expect(account.feature_enabled?(flag)).to be(true), "#{flag} should stay"
         end
         expect(account.feature_enabled?('captain_integration')).to be(false)
+        expect(account.feature_enabled?('agent_bots')).to be(false) # removed from the product: every plan switches it off
         expect(account.limits).to include('agents' => 0, 'inboxes' => 0) # a trial nobody chose for the clinic still locks
       end
 
