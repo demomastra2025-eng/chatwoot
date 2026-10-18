@@ -107,5 +107,81 @@ RSpec.describe Captain::ReplySuggestionService do
         end
       end
     end
+
+    context 'when an entry-eligible Captain::Assistant is configured on the account' do
+      before { allow(account).to receive(:feature_enabled?).with('crm_scheduling').and_return(true) }
+
+      let!(:assistant) do
+        create(
+          :captain_assistant,
+          account: account,
+          active: true,
+          config: {
+            'tool_access' => {
+              'agent' => {
+                'enabled' => true,
+                'tool_ids' => %w[search_available_slots search_scheduling_services create_appointment handoff faq_lookup]
+              }
+            }
+          }
+        )
+      end
+
+      it 'delegates reply suggestion to Captain::Assistant::AgentRunnerService in read-only mode with follow_up_context' do
+        runner_double = instance_double(Captain::Assistant::AgentRunnerService)
+        expect(Captain::Assistant::AgentRunnerService).to receive(:new).with(
+          assistant: assistant,
+          conversation: conversation,
+          source: 'reply_suggestion'
+        ).and_return(runner_double)
+
+        expect(runner_double).to receive(:generate_response).with(
+          message_history: [{ role: 'user', content: 'I need help' }]
+        ).and_return(
+          {
+            'response' => 'Available slots for Dr. Smith tomorrow are 10:00 and 14:30.',
+            'usage' => { 'prompt_tokens' => 120, 'completion_tokens' => 30, 'total_tokens' => 150 }
+          }
+        )
+
+        result = service.perform
+
+        expect(result[:message]).to eq('Available slots for Dr. Smith tomorrow are 10:00 and 14:30.')
+        expect(result[:usage]).to eq({ 'prompt_tokens' => 120, 'completion_tokens' => 30, 'total_tokens' => 150 })
+        expect(result.dig(:follow_up_context, :event_name)).to eq('reply_suggestion')
+        expect(result.dig(:follow_up_context, :last_response)).to eq('Available slots for Dr. Smith tomorrow are 10:00 and 14:30.')
+        expect(result.dig(:follow_up_context, :original_context)).to include('User: I need help')
+      end
+
+      it 'builds read-only agent tools and ephemeral session without mutating conversation additional_attributes' do
+        runtime_agent = assistant.agent(read_only_tools: true)
+        tool_names = runtime_agent.tools.map(&:name)
+
+        expect(tool_names).to include('search_available_slots', 'search_scheduling_services', 'faq_lookup')
+        expect(tool_names).not_to include('create_appointment', 'handoff', 'resolve_conversation')
+
+        prompt = runtime_agent.get_system_prompt(
+          OpenStruct.new(context: { state: { source: 'reply_suggestion' } })
+        )
+        expect(prompt).to include('You are drafting a suggested reply for the human clinic operator')
+        expect(prompt).not_to include('Call handoff once')
+
+        run_context = Captain::AgentRunContext.new(entry: assistant, conversation: conversation, ephemeral_session: true)
+        session = run_context.prepare(state: {})[:agent_session]
+        session.update_routing(actor_id: assistant.id, tasks: [{ 'id' => 't1', 'status' => 'active' }])
+
+        expect(conversation.reload.additional_attributes.to_h).not_to have_key(Captain::Conversation::AgentSession::ATTRIBUTE)
+      end
+
+      it 'falls back to standard prompt suggestion if AgentRunnerService returns conversation_handoff' do
+        runner_double = instance_double(Captain::Assistant::AgentRunnerService)
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner_double)
+        allow(runner_double).to receive(:generate_response).and_return({ 'response' => 'conversation_handoff' })
+
+        result = service.perform
+
+        expect(result[:message]).to eq('Sure, I can help!')
+      end
+    end
   end
 end

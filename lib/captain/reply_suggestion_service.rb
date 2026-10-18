@@ -2,6 +2,12 @@ class Captain::ReplySuggestionService < Captain::BaseTaskService
   pattr_initialize [:account!, :conversation_display_id!, :user!]
 
   def perform
+    perform_reply_suggestion
+  end
+
+  private
+
+  def perform_reply_suggestion
     make_api_call(
       model: task_model,
       messages: [
@@ -10,8 +16,6 @@ class Captain::ReplySuggestionService < Captain::BaseTaskService
       ]
     )
   end
-
-  private
 
   def system_prompt
     render_task_prompt('reply', prompt_variables)

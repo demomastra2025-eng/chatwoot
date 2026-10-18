@@ -9,15 +9,18 @@ class Captain::Conversation::AgentSession
   MAX_OPERATIONS = 100
   BLOCKED = { 'status' => 'blocked', 'reason' => 'mutation_retry_blocked' }.freeze
 
-  def initialize(entry:, conversation: nil, playground: nil, fence: {})
+  def initialize(entry:, conversation: nil, playground: nil, fence: {}, ephemeral: false)
     @entry, @playground = entry, playground
     @conversation = ::Conversation.where(account_id: entry.account_id).find(conversation.id) if conversation && !playground
     @fence = fence.to_h.symbolize_keys
+    @ephemeral_mode = ephemeral
   end
 
   def read
     raw = if @playground
             @playground.data[ATTRIBUTE]
+          elsif @ephemeral_mode
+            @ephemeral ||= (@conversation ? @conversation.reload.additional_attributes.to_h[ATTRIBUTE] : nil)
           elsif @conversation
             @conversation.reload.additional_attributes.to_h[ATTRIBUTE]
           else
@@ -30,7 +33,7 @@ class Captain::Conversation::AgentSession
   end
 
   def change
-    if @conversation
+    if @conversation && !@ephemeral_mode
       @conversation.with_lock do
         ensure_current!
         attributes = @conversation.additional_attributes.to_h.deep_dup
@@ -60,7 +63,7 @@ class Captain::Conversation::AgentSession
   # the run to be current: staff may have taken over or a newer message arrived meanwhile, and
   # the outcome must still be stored. It does not refresh the epoch, so nothing else is paused.
   def record
-    return change { |data| yield(data) } unless @conversation
+    return change { |data| yield(data) } if !@conversation || @ephemeral_mode
 
     @conversation.with_lock do
       attributes = @conversation.additional_attributes.to_h.deep_dup

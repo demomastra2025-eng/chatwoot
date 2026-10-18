@@ -1,11 +1,15 @@
 module Concerns::Agentable
   extend ActiveSupport::Concern
 
-  def agent(model_override: nil, temperature_override: nil)
+  def agent(model_override: nil, temperature_override: nil, read_only_tools: false)
+    built_tools = time_agent_phase('agent_tools') do
+      tools = agent_tools
+      read_only_tools ? Captain::Runtime::PartTools.filter_read_only(tools) : tools
+    end
     Captain::Runtime::Agent.new(
       name: agent_name,
       instructions: ->(context) { agent_instructions(context) },
-      tools: time_agent_phase('agent_tools') { agent_tools },
+      tools: built_tools,
       model: time_agent_phase('agent_model') { model_override.presence || agent_model },
       temperature: time_agent_phase('agent_temperature') { temperature_override.nil? ? agent_temperature : temperature_override.to_f },
       response_schema: time_agent_phase('agent_response_schema') { agent_response_schema }
@@ -23,8 +27,11 @@ module Concerns::Agentable
     enhanced_context[:scenarios] = [] if state[:mesh_routing]
     if compact_prompt_template?
       part = context&.context&.[](:part_run).present?
+      suggestion = (state[:source] || state['source']).to_s == 'reply_suggestion'
       enhanced_context[:patient_language] = context&.context&.[](:patient_language)
-      return compact_agent_instructions(enhanced_context, state, prompt_state, part: part, done: Captain::DoneActions.for_run(context&.context))
+      return compact_agent_instructions(
+        enhanced_context, state, prompt_state, part: part, suggestion: suggestion, done: Captain::DoneActions.for_run(context&.context)
+      )
     end
 
     if state.present?
@@ -94,13 +101,15 @@ module Concerns::Agentable
 
   # The run of a council part (part: true) has no handoff tool: the rules do not tell it to hand over, and the texts name only the tools
   # it gets (Captain::AssistantPrompt). Staff take a part over structurally, after the council.
-  def compact_agent_instructions(enhanced_context, state, prompt_state, part: false, done: nil)
+  def compact_agent_instructions(enhanced_context, state, prompt_state, part: false, suggestion: false, done: nil)
     variables = time_agent_phase('prompt_variables') do
       Captain::AssistantPrompt.new(
-        assistant: self, context: enhanced_context, state: state, prompt_state: prompt_state, part: part, done: done
+        assistant: self, context: enhanced_context, state: state, prompt_state: prompt_state,
+        part: part, suggestion: suggestion, done: done
       ).variables
     end
-    variables = variables.merge(human_handoff_enabled: false) if part
+    variables = variables.merge(human_handoff_enabled: false) if part || suggestion
+    variables = variables.merge(reply_suggestion_mode: true) if suggestion
 
     time_agent_phase('prompt_render') do
       Captain::PromptRenderer.render(template_name, enhanced_context.merge(variables).with_indifferent_access)

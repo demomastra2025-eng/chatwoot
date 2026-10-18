@@ -20,10 +20,25 @@ class Captain::Runtime::PartTools
       Array(tools).select { |tool| allowed?(tool) }
     end
 
+    def read_only_allowed?(tool)
+      allowed?(tool) && !Llm::ToolRiskPolicy.mutating?(tool)
+    end
+
+    def filter_read_only(tools)
+      Array(tools).select { |tool| read_only_allowed?(tool) }
+    end
+
     # The registry ids of the withheld tools. The prompt of a part is written before its tools are built: it must not tell the owner to
     # hand the conversation over, nor name a tool that the part does not get.
     def withheld_tool_ids
       Captain::ToolRegistry.definitions.select { |definition| WITHHELD.include?(definition.agent_tool_class) }.map(&:id)
+    end
+
+    def read_only_withheld_tool_ids
+      Captain::ToolRegistry.definitions.select do |definition|
+        WITHHELD.include?(definition.agent_tool_class) ||
+          Llm::ToolRiskPolicy::MUTATING_RISK_LEVELS.include?(definition.risk_level.to_s)
+      end.map(&:id)
     end
   end
 end

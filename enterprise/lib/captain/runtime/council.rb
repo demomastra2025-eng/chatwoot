@@ -150,9 +150,11 @@ class Captain::Runtime::Council
   # The owner's own agent, without the tools that change who controls the conversation and without any handoff target: a part
   # never transfers the conversation. It answers with the structured result of a part.
   def part_agent(actor)
-    runtime = actor.agent
+    read_only = (@context.dig(:state, :source) || @context.dig(:state, 'source')).to_s == 'reply_suggestion'
+    runtime = read_only ? actor.agent(read_only_tools: true) : actor.agent
+    tools = read_only ? Captain::Runtime::PartTools.filter_read_only(runtime.tools) : Captain::Runtime::PartTools.filter(runtime.tools)
     Captain::Runtime::Agent.new(
-      name: runtime.name, instructions: runtime.instructions, tools: Captain::Runtime::PartTools.filter(runtime.tools),
+      name: runtime.name, instructions: runtime.instructions, tools: tools,
       model: runtime.model, temperature: runtime.temperature, headers: runtime.headers, params: runtime.params,
       response_schema: Captain::Runtime::PartSchema
     ).tap { |agent| agent.assistant_id = actor.id }

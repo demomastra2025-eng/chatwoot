@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-# The variable parts of the agent prompt (prompts/assistant.liquid), built from the agent and the run state:
-#   instruction / global_system_instruction  the texts with every $ field written as its value and every @ tool as its function name
+# Builds the compact variables of assistant.liquid:
+#   instruction, global_system_instruction   the clinic instruction and the shared rules with $ field values and @ tool names resolved
 #   now_text                                 the one-line clock (after midnight with the night line) and, on the official WhatsApp channel,
 #                                            the reply window
 #   patient_lines                            the patient name and phone, an ID only when a bound tool takes it, the appointment
@@ -16,12 +16,13 @@ class Captain::AssistantPrompt
   SUMMARY_LABELS = { appointment: 'Appointments', deal: 'Deals' }.freeze
 
   # done: the actions the agents already did in this conversation and the request being answered (Captain::DoneActions.for_run).
-  def initialize(assistant:, context:, state:, prompt_state:, part: false, done: nil)
+  def initialize(assistant:, context:, state:, prompt_state:, part: false, suggestion: false, done: nil)
     @assistant = assistant
     @context = context
     @state = state.to_h
     @prompt_state = prompt_state.to_h
     @part = part
+    @suggestion = suggestion
     @done = done
   end
 
@@ -40,6 +41,8 @@ class Captain::AssistantPrompt
     return unless @context.key?(:runtime_tool_ids)
 
     ids = Array(@context[:runtime_tool_ids]).map(&:to_s)
+    return ids - Captain::Runtime::PartTools.read_only_withheld_tool_ids if @suggestion
+
     @part ? ids - Captain::Runtime::PartTools.withheld_tool_ids : ids
   end
 

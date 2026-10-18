@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
 class Captain::AgentRunContext
-  def initialize(entry:, conversation: nil, playground: nil, fence: {})
+  def initialize(entry:, conversation: nil, playground: nil, fence: {}, ephemeral_session: false)
     @entry, @conversation, @playground = entry, conversation, playground
     @graph = Captain::AgentGraph.new(entry, inbox: conversation&.inbox || playground&.routing_inbox)
-    @session = Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation, playground: playground, fence: fence)
+    session_options = { entry: entry, conversation: conversation, playground: playground, fence: fence }
+    session_options[:ephemeral] = true if ephemeral_session
+    @session = Captain::Conversation::AgentSession.new(**session_options)
   end
 
   attr_reader :graph
@@ -84,9 +86,10 @@ class Captain::AgentRunContext
   end
 
   def runtime_agents(overrides: {})
+    shared_options = overrides.to_h.symbolize_keys.slice(:read_only_tools)
     registry = graph.agents.index_with do |actor|
       # Playground model controls affect the selected agent only.
-      options = actor.id == @entry.id ? overrides : {}
+      options = actor.id == @entry.id ? overrides : shared_options
       Captain::Runtime::LazyAgent.new(actor, options: options).tap do |runtime_agent|
         runtime_agent.context_preparer = ->(wrapper) { activate(actor, wrapper.context) }
       end

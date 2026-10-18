@@ -992,7 +992,8 @@ class Captain::Assistant::AgentRunnerService
   def build_and_wire_agents
     agent_options = {
       model_override: @test_overrides[:model],
-      temperature_override: @test_overrides[:temperature]
+      temperature_override: @test_overrides[:temperature],
+      read_only_tools: (true if suggestion_run?)
     }.compact
     return [@assistant.agent(**agent_options)] unless @assistant.persisted?
 
@@ -1000,9 +1001,15 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def agent_run_context
-    @agent_run_context ||= Captain::AgentRunContext.new(
-      entry: @assistant, conversation: @conversation, playground: @playground_session, fence: @response_fence
-    )
+    @agent_run_context ||= begin
+      options = { entry: @assistant, conversation: @conversation, playground: @playground_session, fence: @response_fence }
+      options[:ephemeral_session] = true if suggestion_run?
+      Captain::AgentRunContext.new(**options)
+    end
+  end
+
+  def suggestion_run?
+    @source.to_s == 'reply_suggestion'
   end
 
   def runtime_preferences_for_run
@@ -1032,11 +1039,24 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def add_playground_usage(response, result)
+    return add_suggestion_usage(response, result) if suggestion_run?
     return unless @source == 'playground' && result.respond_to?(:usage)
 
     tokens = result.usage.thinking_tokens.to_i if result.usage.respond_to?(:thinking_tokens)
     tokens ||= 0
     response['reported_reasoning_tokens'] = tokens if tokens.positive?
+  end
+
+  def add_suggestion_usage(response, result)
+    usage = result.usage if result.respond_to?(:usage)
+    total = usage.respond_to?(:total_tokens) ? usage.total_tokens.to_i : 0
+    return unless total.positive?
+
+    response['usage'] ||= {
+      'prompt_tokens' => usage.input_tokens.to_i,
+      'completion_tokens' => usage.output_tokens.to_i,
+      'total_tokens' => total
+    }
   end
 
   def enabled_scenarios
