@@ -348,7 +348,7 @@ class Integrations::Medelement::ContactResolverService
   end
 
   def persist_patient_contact!(contact:, patient:, identity:, phone_conflict_comment:)
-    assigned_phone = assignable_provider_phone(contact, patient)
+    assigned_phone = assignable_provider_phone(contact, patient, phone_conflict_comment)
     primary_phone = Integrations::Medelement::PhoneNumber.normalize(assigned_phone.presence || contact.phone_number)
 
     contact.skip_runtime_events = true
@@ -393,8 +393,11 @@ class Integrations::Medelement::ContactResolverService
   # secondary. A card without channel identity follows the provider phone only when it is free (M1): nobody holds it,
   # nobody chats from it, and it is not reserved for an unresolved hidden share. The card's own recorded доп. номер is
   # never taken here; it becomes primary only through Contacts::SharedPhonePromotionService.
-  def assignable_provider_phone(contact, patient)
+  def assignable_provider_phone(contact, patient, phone_conflict_comment = nil)
+    return if phone_conflict_comment.present?
+
     current_phone = Integrations::Medelement::PhoneNumber.normalize(contact.phone_number)
+    return current_phone if current_phone.present? && provider_phones(patient).include?(current_phone)
     return current_phone if current_phone.present? && channel_identity_owner?(contact)
 
     share_phone = Contacts::SharedPhone.share_of(contact)&.phone

@@ -1,5 +1,5 @@
 class Integrations::Medelement::PatientContactTransferService
-  MERGEABLE_ATTRIBUTE_KEYS = %w[identifier name email additional_attributes custom_attributes].freeze
+  MERGEABLE_ATTRIBUTE_KEYS = %w[identifier name last_name middle_name email additional_attributes custom_attributes].freeze
 
   def initialize(account:, source_contact:, destination_contact:)
     @account = account
@@ -76,12 +76,38 @@ class Integrations::Medelement::PatientContactTransferService
   def captured_transfer_state
     source_attributes = source_contact.attributes.slice(*MERGEABLE_ATTRIBUTE_KEYS).compact_blank
     destination_attributes = destination_contact.attributes.slice(*MERGEABLE_ATTRIBUTE_KEYS).compact_blank
+    merged = source_attributes.deep_merge(destination_attributes)
+    apply_source_patient_name!(merged, source_attributes) if medelement_source?
+    sanitize_transferred_custom_attributes!(merged['custom_attributes']) if merged['custom_attributes'].is_a?(Hash)
     {
-      attributes: source_attributes.deep_merge(destination_attributes),
+      attributes: merged,
       owner: source_contact.owner,
       company: source_contact.company,
       contact_type: source_contact.contact_type
     }
+  end
+
+  def medelement_source?
+    source_contact.custom_attributes.to_h['medelement_patient_code'].present?
+  end
+
+  def apply_source_patient_name!(merged, source_attributes)
+    custom = source_contact.custom_attributes.to_h
+    first_name = custom['medelement_first_name'].presence || source_attributes['name'].presence
+    last_name = custom['medelement_last_name'].presence || source_attributes['last_name'].presence
+    middle_name = custom['medelement_middle_name'].presence || source_attributes['middle_name'].presence
+    merged['name'] = first_name if first_name.present?
+    merged['last_name'] = last_name if last_name.present?
+    merged['middle_name'] = middle_name if middle_name.present?
+  end
+
+  def sanitize_transferred_custom_attributes!(custom)
+    return if destination_contact.phone_number.blank?
+
+    Contacts::SharedPhone.clear_share!(custom)
+    custom.delete('phone_conflict_comment')
+    primary = Integrations::Medelement::PhoneNumber.normalize(destination_contact.phone_number)
+    custom['secondary_phones'] = Array(custom['secondary_phones']).reject { |phone| phone == primary } if custom.key?('secondary_phones')
   end
 
   def transfer_contact_type?(source_contact_type)

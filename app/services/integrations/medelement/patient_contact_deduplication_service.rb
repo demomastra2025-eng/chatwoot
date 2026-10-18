@@ -11,32 +11,48 @@ class Integrations::Medelement::PatientContactDeduplicationService
   end
 
   def perform
-    owner = phone_owner
-    return claim_local_phone_contact(owner) if claimable_local_phone_owner?(owner)
+    return result(linked_contact || identity_contact || account.contacts.new) if provider_phone.blank?
 
-    contact = linked_contact || identity_contact
-    contact ||= owner if patient_code_for(owner) == patient_code
-    contact ||= account.contacts.new
-    Result.new(contact: contact, phone_conflict_comment: phone_conflict(owner, contact))
+    phone_owner ? resolve_owned_phone : resolve_free_phone
   end
 
   private
 
   attr_reader :account, :patient_code, :provider_phones, :linked_contact, :identity_contact, :iin
 
-  def patient_code_for(contact)
-    contact&.custom_attributes.to_h['medelement_patient_code'].to_s.presence
+  def provider_phone
+    provider_phones.first
+  end
+
+  def linked_contact_phone
+    @linked_contact_phone ||= Integrations::Medelement::PhoneNumber.normalize(linked_contact&.phone_number)
   end
 
   def phone_owner
-    @phone_owner ||= account.contacts.lock.find_by(phone_number: provider_phones.first) if provider_phones.first.present?
+    @phone_owner ||= account.contacts.lock.find_by(phone_number: provider_phone)
+  end
+
+  def linked_contact_owns_provider_phone?
+    linked_contact.present? && (phone_owner&.id == linked_contact.id || provider_phones.include?(linked_contact_phone))
+  end
+
+  def resolve_owned_phone
+    return result(linked_contact) if linked_contact_owns_provider_phone?
+    return claim_local_phone_contact(phone_owner) if claimable_local_phone_owner?(phone_owner)
+    return result(phone_owner) if patient_code_for(phone_owner) == patient_code
+
+    conflicting_patient_contact(phone_owner)
+  end
+
+  def resolve_free_phone
+    return result(linked_contact) if linked_contact && (linked_contact.phone_number.blank? || provider_phones.include?(linked_contact_phone))
+    return result(identity_contact || account.contacts.new) if linked_contact.blank?
+
+    move_linked_patient_to(account.contacts.new(phone_number: provider_phone))
   end
 
   def claimable_local_phone_owner?(owner)
-    return false if owner.blank? || iin.blank? || patient_code_for(owner).present?
-    return false if unclaimable_owner_identity?(owner)
-
-    replaceable_linked_contact?(owner)
+    owner.present? && patient_code_for(owner).blank? && !unclaimable_owner_identity?(owner)
   end
 
   def unclaimable_owner_identity?(owner)
@@ -45,36 +61,65 @@ class Integrations::Medelement::PatientContactDeduplicationService
       !owner_iin_compatible?(owner)
   end
 
-  def replaceable_linked_contact?(owner)
-    linked_contact.blank? || linked_contact.id == owner.id || linked_contact.phone_number.blank?
-  end
-
   def owner_iin_compatible?(owner)
     owner_iins = [
       owner.identifier,
       owner.custom_attributes.to_h['iin'],
       owner.custom_attributes.to_h['medelement_iin']
     ].filter_map { |value| Scheduling::IinValidator.normalize(value) if Scheduling::IinValidator.valid?(value) }.uniq
-    owner_iins.empty? || owner_iins == [iin]
+    owner_iins.empty? || (iin.present? && owner_iins == [iin])
   end
 
   def claim_local_phone_contact(owner)
     merge_linked_contact_into_owner!(owner) if linked_contact.present? && linked_contact.id != owner.id
-    Result.new(contact: owner.reload, phone_conflict_comment: nil)
+    result(owner.reload)
   end
 
   def merge_linked_contact_into_owner!(owner)
+    transfer_patient_contact!(linked_contact, owner)
+    linked_contact.destroy! if linked_contact.reload.phone_number.blank? && Contacts::ReferenceMergeService.safe_to_delete?(linked_contact)
+  end
+
+  def conflicting_patient_contact(owner)
+    destination = if linked_contact && linked_contact.phone_number.blank?
+                    linked_contact
+                  elsif linked_contact && linked_contact.phone_number.present?
+                    account.contacts.create!.tap { |new_contact| transfer_patient_contact!(linked_contact, new_contact) }
+                  else
+                    reusable_identity_contact(owner) || account.contacts.new
+                  end
+    result(destination, phone_conflict(owner, destination))
+  end
+
+  def reusable_identity_contact(owner)
+    identity_contact if identity_contact.present? && identity_contact.id != owner&.id && identity_contact.phone_number.blank?
+  end
+
+  def move_linked_patient_to(destination)
+    transfer_patient_contact!(linked_contact, destination) if linked_contact
+    result(destination)
+  end
+
+  def transfer_patient_contact!(source_contact, destination_contact)
+    destination_contact.save! if destination_contact.new_record?
     Integrations::Medelement::PatientContactTransferService.new(
       account: account,
-      source_contact: linked_contact,
-      destination_contact: owner
+      source_contact: source_contact,
+      destination_contact: destination_contact
     ).perform
-    linked_contact.destroy! if linked_contact.reload.phone_number.blank? && Contacts::ReferenceMergeService.safe_to_delete?(linked_contact)
+  end
+
+  def patient_code_for(contact)
+    contact&.custom_attributes.to_h['medelement_patient_code'].to_s.presence
   end
 
   def phone_conflict(owner, contact)
     return if owner.nil? || owner.id == contact.id || patient_code_for(owner).blank?
 
-    "Phone #{provider_phones.first} already belongs to MedElement patient contact ##{owner.id}"
+    "Phone #{provider_phone} already belongs to MedElement patient contact ##{owner.id}"
+  end
+
+  def result(contact, comment = nil)
+    Result.new(contact: contact, phone_conflict_comment: comment)
   end
 end
