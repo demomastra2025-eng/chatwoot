@@ -63,8 +63,6 @@ const compactUniqueValues = values => {
     });
 };
 
-const labelWithColon = value => `${String(value || '').trim()}:`;
-
 const backButtonUrl = computed(() => {
   const {
     params: { inbox_id: inboxId, label, teamId, id: customViewId },
@@ -389,7 +387,7 @@ const statusMeta = computed(() => {
       >
         <div
           data-test-id="conversation-header-title-row"
-          class="flex flex-row items-center max-w-full gap-1 p-0 m-0"
+          class="flex flex-row items-center max-w-full gap-1.5 p-0 m-0"
         >
           <span
             class="min-w-0 truncate text-sm font-medium leading-tight text-n-slate-12"
@@ -402,6 +400,67 @@ const statusMeta = computed(() => {
           >
             {{ statusMeta.label }}
           </span>
+          <div
+            v-if="hasHeaderContext"
+            data-test-id="conversation-header-context-row"
+            class="inline-flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap"
+          >
+            <button
+              v-if="primaryDealStage"
+              type="button"
+              data-test-id="conversation-header-crm-stages"
+              :title="dealsSummaryTooltip"
+              class="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-n-alpha-1 px-2 py-0.5 text-[11px] font-medium leading-4 text-n-slate-12 ring-1 ring-inset ring-n-slate-6/20 transition-colors hover:bg-n-alpha-2 whitespace-nowrap cursor-pointer"
+              @click="openDealsSidebar"
+            >
+              <span
+                class="i-lucide-briefcase-business size-3 shrink-0 text-n-slate-10"
+              />
+              <span
+                data-test-id="conversation-header-crm-stage-dot"
+                class="size-2 shrink-0 rounded-full"
+                :style="{ backgroundColor: primaryDealStage.color }"
+              />
+              <span class="max-w-36 truncate text-n-slate-12">
+                {{ primaryDealStage.name }}
+              </span>
+              <span
+                v-if="extraDealsCount > 0"
+                data-test-id="conversation-header-crm-stages-more"
+                class="shrink-0 text-[10px] font-semibold text-n-slate-10 tabular-nums"
+              >
+                {{ `+${extraDealsCount}` }}
+              </span>
+            </button>
+            <button
+              v-if="primaryAppointmentStatus"
+              type="button"
+              data-test-id="conversation-header-appointment-statuses"
+              :title="appointmentsSummaryTooltip"
+              class="inline-flex min-w-0 items-center gap-1 rounded-full bg-n-alpha-1 px-2 py-0.5 text-[11px] font-medium leading-4 text-n-slate-12 ring-1 ring-inset ring-n-slate-6/20 transition-colors hover:bg-n-alpha-2 whitespace-nowrap cursor-pointer"
+              @click="openAppointmentsSidebar"
+            >
+              <span
+                class="inline-flex min-w-0 items-center gap-1"
+                :class="appointmentStatusClass(primaryAppointmentStatus.status)"
+              >
+                <span
+                  class="size-3 shrink-0"
+                  :class="appointmentStatusIcon(primaryAppointmentStatus.status)"
+                />
+                <span class="max-w-36 truncate">
+                  {{ appointmentStatusLabel(primaryAppointmentStatus.status) }}
+                </span>
+              </span>
+              <span
+                v-if="extraAppointmentsCount > 0"
+                data-test-id="conversation-header-appointment-statuses-more"
+                class="shrink-0 text-[10px] font-semibold text-n-slate-10 tabular-nums"
+              >
+                {{ `+${extraAppointmentsCount}` }}
+              </span>
+            </button>
+          </div>
           <fluent-icon
             v-if="!isHMACVerified"
             v-tooltip="$t('CONVERSATION.UNVERIFIED_SESSION')"
@@ -415,99 +474,23 @@ const statusMeta = computed(() => {
         </div>
 
         <div
-          v-if="hasHeaderContext"
-          data-test-id="conversation-header-context-row"
-          class="mt-0.5 flex max-w-full items-center gap-2 overflow-hidden text-xs leading-4 conversation--header--actions text-ellipsis whitespace-nowrap"
-        >
-          <button
-            v-if="primaryDealStage"
-            type="button"
-            data-test-id="conversation-header-crm-stages"
-            :title="dealsSummaryTooltip"
-            class="inline-flex min-w-0 items-center gap-1.5 py-0.5 text-n-slate-11 transition-colors hover:text-n-slate-12 whitespace-nowrap cursor-pointer"
-            @click="openDealsSidebar"
-          >
-            <span
-              class="i-lucide-briefcase-business size-3.5 shrink-0 text-n-slate-10"
-            />
-            <span class="shrink-0 text-n-slate-11">
-              {{ labelWithColon($t('CONVERSATION.HEADER.DEAL')) }}
-            </span>
-            <span
-              class="h-3 w-0.5 shrink-0 rounded-full"
-              :style="{ backgroundColor: primaryDealStage.color }"
-            />
-            <span class="truncate text-n-slate-12">
-              {{ primaryDealStage.name }}
-            </span>
-            <span
-              v-if="extraDealsCount > 0"
-              data-test-id="conversation-header-crm-stages-more"
-              class="shrink-0 text-[11px] font-medium text-n-slate-10 tabular-nums"
-            >
-              {{ `+${extraDealsCount}` }}
-            </span>
-          </button>
-          <span
-            v-if="primaryDealStage && primaryAppointmentStatus"
-            class="shrink-0 text-n-slate-8 select-none"
-            aria-hidden="true"
-          >
-            ·
-          </span>
-          <button
-            v-if="primaryAppointmentStatus"
-            type="button"
-            data-test-id="conversation-header-appointment-statuses"
-            :title="appointmentsSummaryTooltip"
-            class="inline-flex min-w-0 items-center gap-1.5 py-0.5 text-n-slate-11 transition-colors hover:text-n-slate-12 whitespace-nowrap cursor-pointer"
-            @click="openAppointmentsSidebar"
-          >
-            <span class="shrink-0 text-n-slate-11">
-              {{ labelWithColon($t('CONVERSATION.HEADER.APPOINTMENT')) }}
-            </span>
-            <span
-              class="inline-flex min-w-0 items-center gap-1"
-              :class="appointmentStatusClass(primaryAppointmentStatus.status)"
-            >
-              <span
-                class="mt-px size-3.5 shrink-0"
-                :class="appointmentStatusIcon(primaryAppointmentStatus.status)"
-              />
-              <span class="truncate">
-                {{ appointmentStatusLabel(primaryAppointmentStatus.status) }}
-              </span>
-            </span>
-            <span
-              v-if="extraAppointmentsCount > 0"
-              data-test-id="conversation-header-appointment-statuses-more"
-              class="shrink-0 text-[11px] font-medium text-n-slate-10 tabular-nums"
-            >
-              {{ `+${extraAppointmentsCount}` }}
-            </span>
-          </button>
-        </div>
-
-        <div
-          v-else
+          v-if="visibleContactIdentities.length"
           data-test-id="conversation-header-identity-row"
           class="flex items-center gap-2 overflow-hidden text-xs conversation--header--actions text-ellipsis whitespace-nowrap"
         >
-          <template v-if="visibleContactIdentities.length">
-            <span
-              v-for="identity in visibleContactIdentities"
-              :key="identity"
-              class="inline-flex items-center py-0.5 text-n-slate-11 whitespace-nowrap"
-            >
-              {{ identity }}
-            </span>
-            <span
-              v-if="hiddenCommunicationContactIdentityCount"
-              class="inline-flex items-center px-2 py-0.5 rounded-full bg-n-alpha-1 text-n-slate-10 whitespace-nowrap"
-            >
-              {{ `+${hiddenCommunicationContactIdentityCount}` }}
-            </span>
-          </template>
+          <span
+            v-for="identity in visibleContactIdentities"
+            :key="identity"
+            class="inline-flex items-center py-0.5 text-n-slate-11 whitespace-nowrap"
+          >
+            {{ identity }}
+          </span>
+          <span
+            v-if="hiddenCommunicationContactIdentityCount"
+            class="inline-flex items-center px-2 py-0.5 rounded-full bg-n-alpha-1 text-n-slate-10 whitespace-nowrap"
+          >
+            {{ `+${hiddenCommunicationContactIdentityCount}` }}
+          </span>
         </div>
       </div>
     </div>

@@ -258,16 +258,32 @@ describe('ConversationHeader', () => {
       '[data-test-id="conversation-header-appointment-statuses"]'
     );
 
+    const titleRow = wrapper.find(
+      '[data-test-id="conversation-header-title-row"]'
+    );
+    const identityRow = wrapper.find(
+      '[data-test-id="conversation-header-identity-row"]'
+    );
+    const stageDot = wrapper.find(
+      '[data-test-id="conversation-header-crm-stage-dot"]'
+    );
+
     expect(contextRow.exists()).toBe(true);
+    expect(titleRow.find('[data-test-id="conversation-header-context-row"]').exists()).toBe(true);
     expect(contextRow.text()).not.toContain('CONVERSATION.HEADER');
-    expect(stages.text()).toContain('Сделка:');
+    expect(stages.text()).not.toContain('Сделка:');
     expect(stages.text()).toContain('Консультация');
     expect(stages.text()).toContain('+1');
-    expect(stages.html()).toContain('background-color: rgb(34, 197, 94)');
-    expect(statuses.text()).toContain('Запись:');
+    expect(stageDot.exists()).toBe(true);
+    expect(stageDot.classes()).toContain('rounded-full');
+    expect(stageDot.classes()).not.toContain('w-0.5');
+    expect( stages.html()).toContain('background-color: rgb(34, 197, 94)');
+    expect(statuses.text()).not.toContain('Запись:');
     expect(statuses.text()).toContain('Назначен');
     expect(statuses.text()).toContain('+3');
     expect(statuses.html()).toContain('i-lucide-clock-3');
     expect(statuses.html()).toContain('text-n-amber-11');
+    expect(identityRow.exists()).toBe(true);
+    expect(identityRow.text()).toContain('+770****1122');
   });
 });
