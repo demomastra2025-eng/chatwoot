@@ -143,6 +143,9 @@ export default {
       sipuniWebhookToken: '',
       isUpdatingSipuniWebhook: false,
       binotelWebhookToken: '',
+      binotelApiKey: '',
+      binotelApiSecret: '',
+      binotelApiSecretConfigured: false,
       isUpdatingBinotelWebhook: false,
       beelineWebhookToken: '',
       beelineApiToken: '',
@@ -851,6 +854,13 @@ export default {
         this.inbox.provider_config?.binotel_events_webhook_token ||
         this.inbox.provider_config?.binotel_webhook_token ||
         '';
+      this.binotelApiKey =
+        this.inbox.provider_config?.binotel_api_key || '';
+      this.binotelApiSecret = '';
+      this.binotelApiSecretConfigured = Boolean(
+        this.inbox.provider_config?.binotel_api_secret_configured ||
+          this.inbox.provider_config?.binotel_api_secret
+      );
       this.beelineWebhookToken =
         this.inbox.provider_config?.beeline_events_webhook_token ||
         this.inbox.provider_config?.beeline_webhook_token ||
@@ -1980,28 +1990,49 @@ export default {
       }
     },
     async updateBinotelWebhookToken() {
-      const token = this.binotelWebhookToken.trim();
-      if (!token) {
+      let token = this.binotelWebhookToken.trim();
+      const apiKey = this.binotelApiKey.trim();
+      const apiSecret = this.binotelApiSecret.trim();
+      const hasApiAuth =
+        Boolean(apiKey) &&
+        Boolean(apiSecret || this.binotelApiSecretConfigured);
+
+      if (!token && !hasApiAuth) {
         useAlert(
           this.$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_REQUIRED')
         );
         return;
+      }
+      if (!token && hasApiAuth) {
+        this.generateBinotelWebhookToken();
+        token = this.binotelWebhookToken.trim();
       }
 
       this.isUpdatingBinotelWebhook = true;
       try {
         const providerConfig = { ...this.inbox.provider_config };
         delete providerConfig.binotel_webhook_token;
+        delete providerConfig.binotel_api_secret_configured;
+        if (token) {
+          providerConfig.binotel_events_webhook_token = token;
+        }
+        if (apiKey) {
+          providerConfig.binotel_api_key = apiKey;
+        }
+        if (apiSecret) {
+          providerConfig.binotel_api_secret = apiSecret;
+        }
         await this.$store.dispatch('inboxes/updateInbox', {
           id: this.inbox.id,
           formData: false,
           channel: {
-            provider_config: {
-              ...providerConfig,
-              binotel_events_webhook_token: token,
-            },
+            provider_config: providerConfig,
           },
         });
+        if (apiSecret) {
+          this.binotelApiSecretConfigured = true;
+          this.binotelApiSecret = '';
+        }
         useAlert(
           this.$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_SUCCESS')
         );
@@ -2270,6 +2301,55 @@ export default {
                 )
               "
             />
+          </label>
+
+          <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_KEY') }}
+            <input
+              v-model="binotelApiKey"
+              data-testid="binotel-api-key-input"
+              class="rounded-lg border border-n-weak py-2 font-mono text-sm"
+              type="text"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              :placeholder="
+                $t(
+                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_KEY_PLACEHOLDER'
+                )
+              "
+            />
+          </label>
+
+          <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_SECRET') }}
+            <input
+              v-model="binotelApiSecret"
+              data-testid="binotel-api-secret-input"
+              class="rounded-lg border border-n-weak py-2 font-mono text-sm"
+              type="password"
+              autocomplete="new-password"
+              autocapitalize="off"
+              spellcheck="false"
+              :placeholder="
+                binotelApiSecretConfigured
+                  ? '********'
+                  : $t(
+                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_SECRET_PLACEHOLDER'
+                    )
+              "
+            />
+            <span
+              v-if="binotelApiSecretConfigured"
+              data-testid="binotel-api-secret-configured-hint"
+              class="text-xs text-n-teal-11"
+            >
+              {{
+                $t(
+                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_SECRET_CONFIGURED_HINT'
+                )
+              }}
+            </span>
           </label>
 
           <div class="flex flex-wrap gap-3">

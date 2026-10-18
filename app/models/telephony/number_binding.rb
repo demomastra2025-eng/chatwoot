@@ -91,8 +91,13 @@ class Telephony::NumberBinding < ApplicationRecord
     beeline_last_synced_at
     sipuni_events_webhook_token
     sipuni_webhook_token
+    binotel_api_key
+    binotel_api_secret
+    binotel_api_url
     binotel_events_webhook_token
     binotel_webhook_token
+    binotel_sync_enabled
+    binotel_last_synced_at
   ].freeze
 
   belongs_to :account, class_name: '::Account'

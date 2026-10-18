@@ -78,6 +78,11 @@ telephony_beeline_call_history_sync_job:
   class: 'Telephony::BeelineCallHistorySyncJob'
   queue: low
 
+telephony_binotel_call_history_sync_job:
+  cron: '*/2 * * * *'
+  class: 'Telephony::BinotelCallHistorySyncJob'
+  queue: low
+
 # executed daily at 2230 UTC
 # which is our lowest traffic time
 remove_stale_contact_inboxes_job.rb:

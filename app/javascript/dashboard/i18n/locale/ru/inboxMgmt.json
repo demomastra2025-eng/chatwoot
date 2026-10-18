@@ -852,8 +852,8 @@
           "SIPUNI_WEBHOOK_SAVE": "Сохранить webhook",
           "SIPUNI_WEBHOOK_SUCCESS": "Sipuni webhook сохранён",
           "SIPUNI_WEBHOOK_REQUIRED": "Webhook token обязателен",
-          "BINOTEL_WEBHOOK_TITLE": "Binotel webhook",
-          "BINOTEL_WEBHOOK_SUBTITLE": "Укажите этот URL в Binotel как webhook API CALL COMPLETED для завершённых звонков.",
+          "BINOTEL_WEBHOOK_TITLE": "Binotel API и webhook",
+          "BINOTEL_WEBHOOK_SUBTITLE": "Укажите этот URL в Binotel как webhook API CALL COMPLETED и/или подключите API Key + Secret (либо Email и пароль от my.binotel.kz) для автоматической синхронизации пропущенных и завершённых звонков.",
           "BINOTEL_WEBHOOK_EMPTY": "Введите или сгенерируйте token, чтобы получить URL webhook.",
           "BINOTEL_WEBHOOK_TOKEN": "Webhook token",
           "BINOTEL_WEBHOOK_TOKEN_PLACEHOLDER": "Например binotel-случайный-token",
@@ -892,7 +892,12 @@
           "BEELINE_WEBHOOK_COPY_SUCCESS": "Beeline webhook URL скопирован",
           "BEELINE_WEBHOOK_SAVE": "Сохранить настройки Билайн",
           "BEELINE_WEBHOOK_SUCCESS": "Настройки Билайн сохранены",
-          "BEELINE_WEBHOOK_REQUIRED": "Укажите webhook token или токен API Билайн"
+          "BEELINE_WEBHOOK_REQUIRED": "Укажите webhook token или токен API Билайн",
+          "BINOTEL_API_KEY": "API Key или Email кабинета Binotel (my.binotel.kz)",
+          "BINOTEL_API_KEY_PLACEHOLDER": "API Key Binotel или email от my.binotel.kz",
+          "BINOTEL_API_SECRET": "API Secret или Пароль кабинета Binotel",
+          "BINOTEL_API_SECRET_PLACEHOLDER": "API Secret или пароль от my.binotel.kz",
+          "BINOTEL_API_SECRET_CONFIGURED_HINT": "Секрет/пароль сохранён. Оставьте поле пустым, чтобы не менять его."
         },
         "SUBMIT_BUTTON": "Создать канал звонков",
         "API": {

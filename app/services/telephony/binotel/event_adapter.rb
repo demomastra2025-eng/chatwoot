@@ -9,16 +9,32 @@ class Telephony::Binotel::EventAdapter
   STATUS_MAP = {
     'ANSWER' => %w[session_completed completed],
     'TRANSFER' => %w[session_completed completed],
+    'ONLINE' => %w[session_completed completed],
+    'CALLING' => %w[session_completed completed],
     'BUSY' => %w[busy busy],
     'NOANSWER' => %w[operator_no_answer no_answer],
     'CANCEL' => %w[caller_hangup cancelled],
     'CONGESTION' => %w[provider_error failed],
     'CHANUNAVAIL' => %w[provider_error failed],
+    'FAILED' => %w[provider_error failed],
     'VM' => %w[operator_no_answer no_answer],
-    'VM-SUCCESS' => %w[session_completed completed]
+    'VM-SUCCESS' => %w[session_completed completed],
+    'SMS-SENDING' => %w[operator_no_answer no_answer],
+    'SUCCESS-SMS' => %w[operator_no_answer no_answer]
   }.freeze
-  SUCCESSFUL_STATUSES = %w[ANSWER TRANSFER VM-SUCCESS].freeze
-  MISSED_INBOUND_STATUSES = %w[NOANSWER CHANUNAVAIL VM].freeze
+  SUCCESSFUL_STATUSES = %w[ANSWER TRANSFER ONLINE CALLING].freeze
+  MISSED_INBOUND_STATUSES = %w[
+    NOANSWER
+    CANCEL
+    BUSY
+    CHANUNAVAIL
+    CONGESTION
+    FAILED
+    VM
+    VM-SUCCESS
+    SMS-SENDING
+    SUCCESS-SMS
+  ].freeze
   CALL_TYPE_DIRECTION = { '0' => 'inbound', '1' => 'outbound' }.freeze
 
   def initialize(params)
@@ -132,11 +148,11 @@ class Telephony::Binotel::EventAdapter
   end
 
   def normalized_external_number
-    normalize_phone(detail_value('externalNumber', 'external_number'))
+    normalize_phone(detail_value('externalNumber', 'external_number', 'srcNumber', 'src_number'))
   end
 
   def normalized_company_number
-    number = raw_value('ingress_number') || detail_value('pbxNumber', 'pbx_number') || pbx_number_data['number']
+    number = raw_value('ingress_number') || detail_value('pbxNumber', 'pbx_number', 'did') || pbx_number_data['number']
     normalize_phone(number) || number
   end
 
@@ -154,7 +170,7 @@ class Telephony::Binotel::EventAdapter
   end
 
   def answered_at
-    return unless SUCCESSFUL_STATUSES.include?(disposition)
+    return unless SUCCESSFUL_STATUSES.include?(disposition) || (disposition == 'VM-SUCCESS' && direction == 'outbound')
 
     parsed_start_time && (parsed_start_time + wait_seconds)
   end
@@ -184,8 +200,20 @@ class Telephony::Binotel::EventAdapter
   end
 
   def normalize_phone(value)
-    Contacts::PhoneNumberNormalizer.normalize(value) ||
-      Contacts::PhoneNumberNormalizer.normalize(value, default_country: 'KZ')
+    raw_phone = value.to_s.strip
+    return if raw_phone.blank?
+
+    digits = raw_phone.gsub(/\D/, '')
+    candidate = if digits.length == 11 && digits.start_with?('07')
+                  "+7#{digits[1..]}"
+                elsif digits.length == 10 && digits.start_with?('7')
+                  "+7#{digits}"
+                else
+                  raw_phone
+                end
+
+    Contacts::PhoneNumberNormalizer.normalize(candidate) ||
+      Contacts::PhoneNumberNormalizer.normalize(candidate, default_country: 'KZ')
   end
 
   def correlated_native_webphone_session
@@ -213,6 +241,7 @@ class Telephony::Binotel::EventAdapter
       logical_call_root_ref: "binotel:#{general_call_id}",
       binotel_general_call_id: general_call_id,
       binotel_disposition: disposition,
+      binotel_internal_number: detail_value('internalNumber', 'internal_number')&.to_s.presence,
       binotel_history_data: detail_value('historyData', 'history_data'),
       binotel_native_webphone_correlation: correlated_native_webphone_session.present?,
       chatwoot_account_id: raw_value('chatwoot_account_id', 'account_id'),

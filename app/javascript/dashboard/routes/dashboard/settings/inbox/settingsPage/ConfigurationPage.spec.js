@@ -528,6 +528,40 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
   });
 
+  it('saves Binotel API credentials and preserves existing secret when left blank', async () => {
+    const wrapper = buildWrapper({
+      inbox: {
+        ...baseInbox,
+        provider: 'binotel',
+        provider_config: {
+          provider_kind: 'binotel',
+          binotel_events_webhook_token: 'saved-token',
+          binotel_api_key: 'clinic@example.com',
+          binotel_api_secret_configured: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="binotel-api-secret-configured-hint"]').exists()).toBe(true);
+
+    wrapper.vm.binotelApiKey = 'updated@example.com';
+    await wrapper.vm.updateBinotelWebhookToken();
+    await flushPromises();
+
+    expect(storeDispatchMock).toHaveBeenCalledWith('inboxes/updateInbox', {
+      id: 42,
+      formData: false,
+      channel: {
+        provider_config: {
+          provider_kind: 'binotel',
+          binotel_events_webhook_token: 'saved-token',
+          binotel_api_key: 'updated@example.com',
+        },
+      },
+    });
+  });
+
   it('copies the Binotel webhook URL for provider setup', async () => {
     const wrapper = buildWrapper({
       inbox: {

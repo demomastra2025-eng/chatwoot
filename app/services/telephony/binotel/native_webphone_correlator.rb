@@ -59,7 +59,7 @@ class Telephony::Binotel::NativeWebphoneCorrelator
   def correlation_window_end
     return started_at + CREATED_SKEW unless direction == 'inbound'
 
-    [ended_at, received_at].compact.min || started_at
+    ([ended_at, received_at].compact.min || started_at) + CREATED_SKEW
   end
 
   def external_call_ref_pattern
@@ -76,7 +76,19 @@ class Telephony::Binotel::NativeWebphoneCorrelator
   end
 
   def normalize_phone(value)
-    Contacts::PhoneNumberNormalizer.normalize(value) ||
-      Contacts::PhoneNumberNormalizer.normalize(value, default_country: 'KZ')
+    raw_phone = value.to_s.strip
+    return if raw_phone.blank?
+
+    digits = raw_phone.gsub(/\D/, '')
+    candidate = if digits.length == 11 && digits.start_with?('07')
+                  "+7#{digits[1..]}"
+                elsif digits.length == 10 && digits.start_with?('7')
+                  "+7#{digits}"
+                else
+                  raw_phone
+                end
+
+    Contacts::PhoneNumberNormalizer.normalize(candidate) ||
+      Contacts::PhoneNumberNormalizer.normalize(candidate, default_country: 'KZ')
   end
 end

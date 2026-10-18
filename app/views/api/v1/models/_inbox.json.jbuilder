@@ -230,8 +230,9 @@ if resource.channel_type == 'Channel::Voice' && !channel_missing
   json.call_routing voice_call_routing if voice_call_routing.present?
   if Current.account_user&.administrator? && resource.channel.provider.in?(Channel::Voice::PROVIDER_OWNED_SIP_PROVIDERS)
     raw_voice_config = resource.channel.try(:provider_config)&.to_h&.deep_stringify_keys || {}
-    sanitized_voice_config = raw_voice_config.except('beeline_api_token')
+    sanitized_voice_config = raw_voice_config.except('beeline_api_token', 'binotel_api_secret')
     sanitized_voice_config['beeline_api_token_configured'] = true if raw_voice_config['beeline_api_token'].present?
+    sanitized_voice_config['binotel_api_secret_configured'] = true if raw_voice_config['binotel_api_secret'].present?
     json.provider_config sanitized_voice_config
   end
 end

@@ -158,6 +158,8 @@ class Telephony::VirtualPbx::ProvisioningService
                        wazo_provisioning_service(inbox_id).reconcile
                      elsif config[:provider_kind] == 'beeline'
                        reconcile_beeline_channel(inbox_id, config)
+                     elsif config[:provider_kind] == 'binotel'
+                       reconcile_binotel_channel(inbox_id, config)
                      else
                        { status: config[:ready] ? 'ready' : 'action_required', drift: [], checked_at: Time.current.iso8601 }
                      end
@@ -182,6 +184,22 @@ class Telephony::VirtualPbx::ProvisioningService
         status: sync_result[:ok] ? 'ready' : 'action_required',
         drift: [],
         beeline_sync: sync_result,
+        checked_at: Time.current.iso8601
+      }
+    else
+      { status: config[:ready] ? 'ready' : 'action_required', drift: [], checked_at: Time.current.iso8601 }
+    end
+  end
+
+  def reconcile_binotel_channel(inbox_id, config)
+    inbox = account.inboxes.find_by(id: inbox_id)
+    channel = inbox&.channel
+    if channel.is_a?(Channel::Voice) && Telephony::Binotel::ApiClient.for_channel(channel).configured?
+      sync_result = Telephony::Binotel::CallHistorySyncService.new(channel: channel).perform
+      {
+        status: sync_result[:ok] ? 'ready' : 'action_required',
+        drift: [],
+        binotel_sync: sync_result,
         checked_at: Time.current.iso8601
       }
     else
@@ -1589,6 +1607,12 @@ call_routing: payload.dig(:routing, :call_routing),
        config[:beeline_events_webhook_token].blank? &&
        config[:beeline_webhook_token].blank?
       config[:beeline_events_webhook_token] = SecureRandom.hex(24)
+    end
+
+    if payload[:provider_kind].to_s == 'binotel' &&
+       config[:binotel_events_webhook_token].blank? &&
+       config[:binotel_webhook_token].blank?
+      config[:binotel_events_webhook_token] = SecureRandom.hex(24)
     end
 
     config.except!(*LEGACY_PROVIDER_CONFIG_KEYS)
