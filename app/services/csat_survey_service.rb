@@ -28,7 +28,7 @@ class CsatSurveyService
   end
 
   def conversation_allows_csat?
-    conversation.resolved? && !conversation.tweet?
+    conversation.resolved? && !conversation.tweet? && inbox.channel_type != 'Channel::Voice'
   end
 
   def csat_enabled?
