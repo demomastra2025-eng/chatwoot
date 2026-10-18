@@ -524,4 +524,103 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
       end
     end
   end
+
+  # A secret that is left empty is not changed (the page never shows it, so empty means «do not change»), and every
+  # save leaves an entry in the audit log that names the setting and never holds the value of a secret.
+  describe 'saving secrets and the audit log of the settings' do
+    before { sign_in(super_admin, scope: :super_admin) }
+
+    def setting_audits(name = nil)
+      scope = Audited::Audit.where(auditable_type: 'InstallationConfig', action: 'update_setting')
+      scope = scope.where(auditable_id: InstallationConfig.find_by!(name: name).id) if name
+      scope.order(:id)
+    end
+
+    it 'keeps the stored secret when the field is sent empty, for any secret and not only the platform keys' do
+      upsert_installation_config('FB_APP_SECRET', 'stored-facebook-secret')
+      upsert_installation_config('IG_VERIFY_TOKEN', 'stored-instagram-token')
+
+      expect do
+        post '/super_admin/app_config?config=facebook',
+             params: { app_config: { FB_APP_ID: 'new-id', FB_APP_SECRET: '', IG_VERIFY_TOKEN: '' } }
+      end.not_to change { InstallationConfig.where(name: %w[FB_APP_SECRET IG_VERIFY_TOKEN]).map(&:serialized_value) }
+
+      expect(InstallationConfig.find_by!(name: 'FB_APP_SECRET').value).to eq('stored-facebook-secret')
+      expect(InstallationConfig.find_by!(name: 'IG_VERIFY_TOKEN').value).to eq('stored-instagram-token')
+      expect(InstallationConfig.find_by!(name: 'FB_APP_ID').value).to eq('new-id')
+    end
+
+    it 'does not create a row for an empty secret that was never set' do
+      InstallationConfig.where(name: 'FB_APP_SECRET').delete_all
+
+      post '/super_admin/app_config?config=facebook', params: { app_config: { FB_APP_SECRET: '' } }
+
+      expect(InstallationConfig.where(name: 'FB_APP_SECRET')).to be_empty
+      expect(setting_audits).to be_empty
+    end
+
+    it 'replaces a secret when a new value is typed, and the audit log says «changed» without any value' do
+      upsert_installation_config('FB_APP_SECRET', 'old-facebook-secret')
+
+      post '/super_admin/app_config?config=facebook', params: { app_config: { FB_APP_SECRET: 'new-facebook-secret' } }
+
+      expect(InstallationConfig.find_by!(name: 'FB_APP_SECRET').value).to eq('new-facebook-secret')
+      audit = setting_audits('FB_APP_SECRET').last
+      expect(audit).to have_attributes(user_id: super_admin.id, comment: 'super_admin')
+      expect(audit.audited_changes).to eq('name' => 'FB_APP_SECRET', 'value' => 'changed')
+      expect(audit.audited_changes.to_s).not_to include('old-facebook-secret', 'new-facebook-secret')
+    end
+
+    it 'writes the old and the new value of an ordinary setting' do
+      upsert_installation_config('FB_APP_ID', 'old-id', locked: false)
+
+      post '/super_admin/app_config?config=facebook', params: { app_config: { FB_APP_ID: 'new-id' } }
+
+      expect(setting_audits('FB_APP_ID').last.audited_changes).to eq('name' => 'FB_APP_ID', 'value' => %w[old-id new-id])
+    end
+
+    it 'writes one entry for each setting that changed and none for a setting that did not' do
+      upsert_installation_config('FB_APP_ID', 'same-id', locked: false)
+      upsert_installation_config('FACEBOOK_API_VERSION', 'v1', locked: false)
+
+      post '/super_admin/app_config?config=facebook', params: { app_config: { FB_APP_ID: 'same-id', FACEBOOK_API_VERSION: 'v2' } }
+
+      expect(setting_audits.map { |audit| audit.audited_changes['name'] }).to eq(['FACEBOOK_API_VERSION'])
+    end
+
+    it 'writes an entry for a setting that is saved for the first time' do
+      InstallationConfig.where(name: 'FB_APP_ID').delete_all
+
+      post '/super_admin/app_config?config=facebook', params: { app_config: { FB_APP_ID: 'first-id' } }
+
+      expect(setting_audits.last.audited_changes).to eq('name' => 'FB_APP_ID', 'value' => ['', 'first-id'])
+    end
+
+    it 'cuts a long value in the audit log' do
+      post '/super_admin/app_config?config=facebook', params: { app_config: { FB_APP_ID: 'x' * 1000 } }
+
+      expect(setting_audits.last.audited_changes['value'].last.length).to eq(SuperAdmin::AppConfigsController::AUDITED_VALUE_LIMIT)
+    end
+
+    it 'treats every secret of the OpenRouter key like any other: empty keeps it, typed replaces it, the log holds no key' do
+      allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'sk-old-key')
+
+      post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_OPENROUTER_API_KEY: '' } }
+      expect(InstallationConfig.find_by!(name: 'CAPTAIN_OPENROUTER_API_KEY').value).to eq('sk-old-key')
+
+      post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_OPENROUTER_API_KEY: 'sk-new-key' } }
+      expect(InstallationConfig.find_by!(name: 'CAPTAIN_OPENROUTER_API_KEY').value).to eq('sk-new-key')
+      expect(setting_audits('CAPTAIN_OPENROUTER_API_KEY').last.audited_changes.to_s).not_to include('sk-old-key', 'sk-new-key')
+    end
+
+    it 'shows the audit entry of a setting by its Russian names in the audit log' do
+      post '/super_admin/app_config?config=facebook', params: { app_config: { FB_APP_ID: 'logged-id' } }
+
+      get '/super_admin/audits'
+
+      expect(response.body).to include('Изменение настройки', 'Параметр системы')
+      expect(response.body).not_to include('translation missing')
+    end
+  end
 end

@@ -42,6 +42,9 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     WIDGET_TOKEN_EXPIRY ACCOUNT_CONVERSATIONS_LIMIT ACCOUNT_NON_WEB_INBOXES_LIMIT ACCOUNT_STORAGE_BYTES_LIMIT
   ].freeze
 
+  # The longest old or new value of a setting that an entry of the audit log keeps
+  AUDITED_VALUE_LIMIT = 300
+
   helper SuperAdmin::AppConfigHelper
   before_action :set_config
   before_action :allowed_configs
@@ -57,12 +60,11 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     # rubocop:enable Style/HashTransformValues
     @app_config[Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG] ||= Captain::Assistant.installation_system_prompt_entries
     @installation_configs = config_definitions
-    return unless @config == 'captain'
-
-    @openrouter_diagnostics = Llm::OpenRouterDiagnostics.call
-    @ai_models_page = SuperAdmin::AiModelsPage.new(
-      keys: @allowed_configs, values: @app_config, definitions: @installation_configs, masked_keys: MASKED_SECRET_CONFIG_KEYS
-    )
+    secret_keys = @allowed_configs.select { |key| masked_secret_config?(key) }
+    @configured_secrets = secret_keys.select { |key| @app_config[key].present? }
+    build_ai_models_page(secret_keys) if @config == 'captain'
+    # A secret never leaves the controller: the views get only whether it is set
+    @app_config = @app_config.except(*secret_keys)
   end
 
   def create
@@ -119,20 +121,53 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     SuperAdmin::AppConfigLabels.title(key, config_definitions[key])
   end
 
+  def build_ai_models_page(secret_keys)
+    @openrouter_diagnostics = Llm::OpenRouterDiagnostics.call
+    @ai_models_page = SuperAdmin::AiModelsPage.new(
+      keys: @allowed_configs, values: @app_config, definitions: @installation_configs, masked_keys: secret_keys
+    )
+  end
+
   def persist_app_config
     errors = []
     params.fetch('app_config', {}).each do |key, value|
       next unless @allowed_configs.include?(key)
-      next if preserve_masked_secret_config?(key, value)
+      # A secret that is left empty keeps the stored value (the field never shows it, so empty means «do not change»)
+      next if masked_secret_config?(key) && value.blank?
 
       normalized_value = normalize_app_config_value(key, value, errors)
       next if normalized_value == :invalid
 
-      i = InstallationConfig.where(name: key).first_or_create(value: normalized_value, locked: false)
-      i.value = normalized_value
-      errors.concat(i.errors.full_messages) unless i.save
+      save_app_config(key, normalized_value, errors)
     end
     errors
+  end
+
+  # Saves one setting and, when its value changed, writes one entry of the audit log: the NAME of the setting and the
+  # old and new value, or only that the value «changed» when the setting is a secret.
+  def save_app_config(key, normalized_value, errors)
+    config = InstallationConfig.where(name: key).first_or_initialize(locked: false)
+    previous = config.new_record? ? nil : config.value
+    config.value = normalized_value
+    return errors.concat(config.errors.full_messages) unless config.save
+
+    record_setting_audit(config, previous) if config.saved_change_to_serialized_value?
+  end
+
+  def record_setting_audit(config, previous)
+    value_change = if masked_secret_config?(config.name)
+                     'changed'
+                   else
+                     [audited_setting_text(previous), audited_setting_text(config.value)]
+                   end
+    SuperAdmin::PlatformAudit.record(
+      auditable: config, action: 'update_setting', actor: current_super_admin, request: request,
+      changes: { 'name' => config.name, 'value' => value_change }
+    )
+  end
+
+  def audited_setting_text(value)
+    SuperAdmin::InstallationConfigs.printable(value).truncate(AUDITED_VALUE_LIMIT)
   end
 
   # The Russian reason the catalog cannot be refreshed with the key in its present state, or nil
@@ -200,12 +235,10 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     Rails.cache.delete(Llm::OpenRouterKeyHealth::CACHE_KEY)
   end
 
+  # A secret: a setting whose value no page prints. The platform keys listed above, and every setting of the type
+  # `secret` in config/installation_config.yml (or named like one).
   def masked_secret_config?(key)
-    MASKED_SECRET_CONFIG_KEYS.include?(key.to_s)
-  end
-
-  def preserve_masked_secret_config?(key, value)
-    masked_secret_config?(key) && value.blank? && InstallationConfig.exists?(name: key)
+    MASKED_SECRET_CONFIG_KEYS.include?(key.to_s) || SuperAdmin::InstallationConfigs.secret?(key.to_s, config_definitions[key.to_s])
   end
 
   def set_config

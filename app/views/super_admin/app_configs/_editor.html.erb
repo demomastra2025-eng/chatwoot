@@ -5,17 +5,18 @@ The input that edits a single setting, in the form of the config pages and of th
 AI models page. The control posts `app_config[<NAME>]`; the label of the field
 points at `app_config_<NAME>`.
 
-A secret that the platform masks (SuperAdmin::AppConfigsController::
-MASKED_SECRET_CONFIG_KEYS) is NEVER rendered: the field is empty and says that
-a value is kept, and a blank submit keeps it. Other secrets are shown in a
-password field with a reveal button.
+A secret (SuperAdmin::AppConfigsController#masked_secret_config?: every setting of
+the type `secret`) is NEVER rendered: the field is empty, a badge says whether a
+value is stored («задан» / «не задан»), and a blank submit keeps the stored value.
+The password field with the reveal button only shows what is typed into it.
 
 ## Local variables:
 
 - `key`: the name of the setting (CAPTAIN_DEFAULT_MODEL).
 - `kind`: :text, :textarea, :allowlist, :boolean, :secret, :select, :number or :prompts.
-- `value`: the stored value (nil for a masked secret).
-- `masked` (optional): true for a masked secret that is set.
+- `value`: the stored value (not used for a secret: it is never printed).
+- `masked` (optional): true for a secret that is set.
+- `show_state` (optional, default true): draw the «задан» / «не задан» badge of a secret (the AI models card has its own).
 - `options` (optional): `{ "value" => "Label" }` of a select.
 - `placeholder` (optional): the hint inside an empty text field (the built-in value).
 %>
@@ -75,8 +76,13 @@ password field with a reveal button.
 <% elsif kind == :allowlist %>
   <%= text_area_tag field_name, app_config_field_value(value), id: field_id, rows: 4, wrap: 'off', class: 'font-mono text-xs', placeholder: placeholder %>
 <% elsif kind == :secret %>
+  <% if local_assigns.fetch(:show_state, true) %>
+    <p class="m-0 mb-1.5">
+      <span class="admin-badge <%= masked ? 'admin-badge--teal' : 'admin-badge--quiet' %>" data-testid="secret-state"><%= t(masked ? 'super_admin.security.secret.set' : 'super_admin.security.secret.not_set') %></span>
+    </p>
+  <% end %>
   <div class="admin-secret">
-    <%= password_field_tag field_name, (masked ? nil : value), id: field_id, autocomplete: 'new-password',
+    <%= password_field_tag field_name, nil, id: field_id, autocomplete: 'new-password',
                            placeholder: (t('super_admin.app_config.secret_kept') if masked) %>
     <button type="button" class="admin-secret__toggle toggle-password" data-target="<%= field_id %>" aria-label="<%= t('super_admin.app_config.secret_toggle') %>">
       <svg class="eye-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

@@ -72,7 +72,7 @@ in force, and the control. A masked secret shows only that it is set.
 
   <div>
     <%= render 'editor', key: slot.key, kind: slot.editor, value: slot.value, masked: slot.secret? && configured,
-                         placeholder: placeholder %>
+                         placeholder: placeholder, show_state: false %>
   </div>
 
   <p class="admin-field__key"><%= slot.key %></p>

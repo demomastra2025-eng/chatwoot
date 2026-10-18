@@ -239,14 +239,45 @@ RSpec.describe 'Super admin settings pages', type: :request do
       expect(response.body).not_to match(/>True<|>False</)
     end
 
-    it 'shows a secret in a password field with a reveal button' do
-      upsert_installation_config('FB_APP_SECRET', 'visible-in-a-password-field')
+    it 'shows a secret without its value: «задан», an empty field to replace it, and a reveal button for what is typed' do
+      upsert_installation_config('FB_APP_SECRET', 'never-in-the-page-123')
 
       get '/super_admin/app_config?config=facebook'
 
       card = field('FB_APP_SECRET')
-      expect(card.at_css('input[type="password"]')['value']).to eq('visible-in-a-password-field')
+      expect(text(card.at_css('[data-testid="secret-state"]'))).to eq('Задан')
+      expect(card.at_css('input[type="password"]')['value']).to be_nil
+      expect(card.at_css('input[type="password"]')['placeholder']).to eq('Задан — оставьте пустым, чтобы не менять')
       expect(card.at_css('button.toggle-password')['data-target']).to eq('app_config_FB_APP_SECRET')
+      expect(response.body).not_to include('never-in-the-page-123')
+    end
+
+    it 'says «Не задан» for a secret that has no value' do
+      InstallationConfig.where(name: 'FB_APP_SECRET').delete_all
+
+      get '/super_admin/app_config?config=facebook'
+
+      expect(text(field('FB_APP_SECRET').at_css('[data-testid="secret-state"]'))).to eq('Не задан')
+    end
+
+    it 'never prints any secret of any config page, whatever page it is on' do
+      secrets = {}
+      SuperAdmin::AppConfigsController::APP_CONFIG_MAPPING.each_value do |names|
+        names.select { |name| SuperAdmin::InstallationConfigs.secret?(name) }.each_with_index do |name, index|
+          secrets[name] = "stored-#{index}-#{SecureRandom.hex(6)}"
+          upsert_installation_config(name, secrets[name])
+        end
+      end
+      upsert_installation_config('FIREBASE_CREDENTIALS', 'stored-firebase-credentials-json')
+      expect(secrets.size).to be > 10
+
+      (SuperAdmin::AppConfigsController::APP_CONFIG_MAPPING.keys + %w[general]).each do |config|
+        get '/super_admin/app_config', params: { config: config }
+
+        expect(response).to have_http_status(:ok), config
+        expect(response.body).not_to include(*secrets.values, 'stored-firebase-credentials-json'), "#{config} prints a secret"
+        expect(page.css('input[type="password"]').filter_map { |input| input['value'] }).to be_empty
+      end
     end
 
     it 'does not print the WhatsApp secrets that are masked' do

@@ -21,10 +21,11 @@ module SuperAdmin::AppConfigHelper
     return :prompts if key == Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG
 
     definition = definition.to_h
+    return :secret if SuperAdmin::InstallationConfigs.secret?(key, definition)
+
     case definition['type']
     when 'boolean' then :boolean
     when 'code' then :textarea
-    when 'secret' then :secret
     when 'select' then definition['options'].present? ? :select : :text
     else :text
     end
