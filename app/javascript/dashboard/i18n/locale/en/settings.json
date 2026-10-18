@@ -560,7 +560,8 @@
     },
     "VISIBILITY": "Navigation",
     "STORAGE": "Storage",
-    "SCHEDULING_REMINDERS": "Reminders"
+    "SCHEDULING_REMINDERS": "Reminders",
+    "WORKING_HOURS": "Working hours"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",

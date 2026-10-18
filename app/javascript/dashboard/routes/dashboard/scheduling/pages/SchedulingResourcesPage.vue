@@ -24,10 +24,12 @@ import SchedulingPageHeader from 'dashboard/components-next/Scheduling/Schedulin
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import ProviderScheduleCard from './ProviderScheduleCard.vue';
 import {
+  DEFAULT_WORKSPACE_TIMEZONE,
   MAX_DURATION_MINUTES,
   RESOURCE_COLORS,
   WEEKDAY_VALUES,
 } from '../constants';
+import { fromDateTimeInputValue, toDateTimeInputValue } from '../helpers';
 import {
   formatSchedulingErrorMessage,
   toIntegerNumeric,
@@ -69,15 +71,107 @@ const resourceForm = reactive({
   userId: '',
 });
 
+const SCHEDULING_TIMEZONE = DEFAULT_WORKSPACE_TIMEZONE;
+
 const scheduleForm = reactive({
   breakRules: [],
   workRules: [],
 });
 
-const tabs = computed(() => [
-  { label: t('SCHEDULING.RESOURCES.WORK_RULES'), value: 'work' },
-  { label: t('SCHEDULING.RESOURCES.BREAK_RULES'), value: 'break' },
+const overrideForm = reactive({
+  breakEndMinute: '',
+  breakStartMinute: '',
+  breakTitle: '',
+  date: '',
+  endMinute: '18:00',
+  id: null,
+  startMinute: '09:00',
+});
+
+const timeOffForm = reactive({
+  endsAt: '',
+  id: null,
+  kind: 'vacation',
+  notes: '',
+  startsAt: '',
+  title: '',
+});
+
+const resetOverrideForm = () => {
+  Object.assign(overrideForm, {
+    breakEndMinute: '',
+    breakStartMinute: '',
+    breakTitle: '',
+    date: '',
+    endMinute: '18:00',
+    id: null,
+    startMinute: '09:00',
+  });
+};
+
+const resetTimeOffForm = () => {
+  Object.assign(timeOffForm, {
+    endsAt: '',
+    id: null,
+    kind: 'vacation',
+    notes: '',
+    startsAt: '',
+    title: '',
+  });
+};
+
+const tabs = computed(() => {
+  const personalTabs = activeResource.value?.inheritWorkingHoursFromAccount
+    ? []
+    : [
+        { label: t('SCHEDULING.RESOURCES.WORK_RULES'), value: 'work' },
+        { label: t('SCHEDULING.RESOURCES.BREAK_RULES'), value: 'break' },
+      ];
+  return [
+    ...personalTabs,
+    {
+      label: t('SCHEDULING.EXCEPTIONS.OVERRIDES_TAB'),
+      value: 'workday_overrides',
+    },
+    { label: t('SCHEDULING.EXCEPTIONS.TIME_OFF_TAB'), value: 'time_offs' },
+  ];
+});
+
+const activeScheduleTabIndex = computed(() =>
+  Math.max(
+    tabs.value.findIndex(tab => tab.value === scheduleTab.value),
+    0
+  )
+);
+
+const timeOffKindOptions = computed(() => [
+  { label: t('SCHEDULING.TIME_OFF.KINDS.VACATION'), value: 'vacation' },
+  { label: t('SCHEDULING.TIME_OFF.KINDS.DAY_OFF'), value: 'day_off' },
+  { label: t('SCHEDULING.TIME_OFF.KINDS.SICK_LEAVE'), value: 'sick_leave' },
+  { label: t('SCHEDULING.TIME_OFF.KINDS.OTHER'), value: 'other' },
 ]);
+
+const timeOffKindLabel = kind => {
+  const labels = {
+    day_off: t('SCHEDULING.TIME_OFF.KINDS.DAY_OFF'),
+    other: t('SCHEDULING.TIME_OFF.KINDS.OTHER'),
+    sick_leave: t('SCHEDULING.TIME_OFF.KINDS.SICK_LEAVE'),
+    vacation: t('SCHEDULING.TIME_OFF.KINDS.VACATION'),
+  };
+  return labels[kind] || labels.other;
+};
+
+const resourceWorkdayOverrides = computed(() =>
+  (referencesStore.workdayOverrides || []).filter(
+    item => Number(item.resourceId) === Number(activeResource.value?.id)
+  )
+);
+
+const resourceTimeOffs = computed(() =>
+  (referencesStore.timeOffs || []).filter(
+    item => Number(item.resourceId) === Number(activeResource.value?.id)
+  )
+);
 
 const accountUsersById = computed(() => {
   return accountUsers.value.reduce((result, user) => {
@@ -498,25 +592,131 @@ const deleteResource = async () => {
   }
 };
 
+const formatMinuteRange = (startMinute, endMinute) => {
+  if (startMinute === null || startMinute === undefined) return '—';
+  if (endMinute === null || endMinute === undefined) return '—';
+  return `${minuteToTime(startMinute)} – ${minuteToTime(endMinute)}`;
+};
+
+const editResourceOverride = item => {
+  Object.assign(overrideForm, {
+    breakEndMinute:
+      item.breakEndMinute !== null ? minuteToTime(item.breakEndMinute) : '',
+    breakStartMinute:
+      item.breakStartMinute !== null ? minuteToTime(item.breakStartMinute) : '',
+    breakTitle: item.breakTitle || '',
+    date: item.date,
+    endMinute: minuteToTime(item.endMinute),
+    id: item.id,
+    startMinute: minuteToTime(item.startMinute),
+  });
+};
+
+const saveResourceOverride = async () => {
+  if (!activeResource.value || !referencesStore.saveWorkdayOverride) return;
+  try {
+    await referencesStore.saveWorkdayOverride({
+      break_end_minute: timeToMinute(overrideForm.breakEndMinute),
+      break_start_minute: timeToMinute(overrideForm.breakStartMinute),
+      break_title: overrideForm.breakTitle,
+      date: overrideForm.date,
+      end_minute: timeToMinute(overrideForm.endMinute),
+      id: overrideForm.id,
+      resource_id: toNumeric(activeResource.value.id),
+      start_minute: timeToMinute(overrideForm.startMinute),
+    });
+    resetOverrideForm();
+    useAlert(t('SCHEDULING.EXCEPTIONS.SUCCESS_SAVE'));
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  }
+};
+
+const deleteResourceOverride = async id => {
+  if (!referencesStore.deleteWorkdayOverride) return;
+  try {
+    await referencesStore.deleteWorkdayOverride(id);
+    if (overrideForm.id === id) resetOverrideForm();
+    useAlert(t('SCHEDULING.EXCEPTIONS.SUCCESS_DELETE'));
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  }
+};
+
+const editResourceTimeOff = item => {
+  Object.assign(timeOffForm, {
+    endsAt: toDateTimeInputValue(item.endsAt, SCHEDULING_TIMEZONE),
+    id: item.id,
+    kind: item.kind || 'vacation',
+    notes: item.notes || '',
+    startsAt: toDateTimeInputValue(item.startsAt, SCHEDULING_TIMEZONE),
+    title: item.title || '',
+  });
+};
+
+const saveResourceTimeOff = async () => {
+  if (!activeResource.value || !referencesStore.saveTimeOff) return;
+  try {
+    await referencesStore.saveTimeOff({
+      ends_at: timeOffForm.endsAt
+        ? fromDateTimeInputValue(timeOffForm.endsAt, SCHEDULING_TIMEZONE)
+        : '',
+      id: timeOffForm.id,
+      kind: timeOffForm.kind,
+      notes: timeOffForm.notes,
+      resource_id: toNumeric(activeResource.value.id),
+      starts_at: timeOffForm.startsAt
+        ? fromDateTimeInputValue(timeOffForm.startsAt, SCHEDULING_TIMEZONE)
+        : '',
+      title: timeOffForm.title,
+    });
+    resetTimeOffForm();
+    useAlert(t('SCHEDULING.EXCEPTIONS.SUCCESS_SAVE'));
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  }
+};
+
+const deleteResourceTimeOff = async id => {
+  if (!referencesStore.deleteTimeOff) return;
+  try {
+    await referencesStore.deleteTimeOff(id);
+    if (timeOffForm.id === id) resetTimeOffForm();
+    useAlert(t('SCHEDULING.EXCEPTIONS.SUCCESS_DELETE'));
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  }
+};
+
 const openScheduleEditor = async resource => {
-  if (resource.inheritWorkingHoursFromAccount) return;
   activeResource.value = resource;
   scheduleDrawerOpen.value = true;
-  scheduleTab.value = 'work';
+  resetOverrideForm();
+  resetTimeOffForm();
+  scheduleTab.value = resource.inheritWorkingHoursFromAccount
+    ? 'workday_overrides'
+    : 'work';
 
-  const [workRules, breakRules] = await Promise.all([
-    referencesStore.loadWorkRules(resource.id),
-    referencesStore.loadBreakRules(resource.id),
-  ]);
+  const tasks = [referencesStore.loadExceptions?.()];
+  if (!resource.inheritWorkingHoursFromAccount) {
+    tasks.push(
+      referencesStore.loadWorkRules?.(resource.id),
+      referencesStore.loadBreakRules?.(resource.id)
+    );
+  }
 
-  scheduleForm.workRules = buildScheduleRows(
-    'work',
-    workRules.length ? workRules : buildDefaultWorkRules()
-  );
-  scheduleForm.breakRules = buildScheduleRows(
-    'break',
-    breakRules.length ? breakRules : buildDefaultBreakRules()
-  );
+  const [, workRules = [], breakRules = []] = await Promise.all(tasks);
+
+  if (!resource.inheritWorkingHoursFromAccount) {
+    scheduleForm.workRules = buildScheduleRows(
+      'work',
+      workRules.length ? workRules : buildDefaultWorkRules()
+    );
+    scheduleForm.breakRules = buildScheduleRows(
+      'break',
+      breakRules.length ? breakRules : buildDefaultBreakRules()
+    );
+  }
 };
 
 const closeScheduleDrawer = () => {
@@ -524,10 +724,30 @@ const closeScheduleDrawer = () => {
   activeResource.value = null;
   scheduleForm.workRules = [];
   scheduleForm.breakRules = [];
+  resetOverrideForm();
+  resetTimeOffForm();
 };
 
 const saveSchedule = async () => {
   if (!activeResource.value) return;
+
+  if (scheduleTab.value === 'workday_overrides') {
+    if (overrideForm.date || overrideForm.id) {
+      await saveResourceOverride();
+    } else {
+      closeScheduleDrawer();
+    }
+    return;
+  }
+
+  if (scheduleTab.value === 'time_offs') {
+    if (timeOffForm.startsAt || timeOffForm.endsAt || timeOffForm.id) {
+      await saveResourceTimeOff();
+    } else {
+      closeScheduleDrawer();
+    }
+    return;
+  }
 
   try {
     await Promise.all([
@@ -727,10 +947,7 @@ onMounted(async () => {
                 @click="openEditResource(resource)"
               />
               <Button
-                v-if="
-                  !importedResource(resource) &&
-                  !resource.inheritWorkingHoursFromAccount
-                "
+                v-if="!importedResource(resource)"
                 size="sm"
                 variant="ghost"
                 color="slate"
@@ -923,10 +1140,16 @@ onMounted(async () => {
         <p v-if="isTemplateSchedule" class="mb-0 text-sm text-n-slate-11">
           {{ $t('SCHEDULING.RESOURCES.MEDELEMENT_TEMPLATE_HINT') }}
         </p>
+        <p
+          v-if="activeResource?.inheritWorkingHoursFromAccount"
+          class="mb-0 text-xs text-n-slate-11"
+        >
+          {{ $t('SCHEDULING.RESOURCES.INHERIT_HOURS') }}
+        </p>
         <TabBar
           active-text-class="text-n-slate-12 scale-100"
           :tabs="tabs"
-          :initial-active-tab="scheduleTab === 'work' ? 0 : 1"
+          :initial-active-tab="activeScheduleTabIndex"
           @tab-changed="scheduleTab = $event.value"
         />
 
@@ -979,7 +1202,10 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div v-else class="flex flex-col divide-y divide-n-weak">
+        <div
+          v-else-if="scheduleTab === 'break'"
+          class="flex flex-col divide-y divide-n-weak"
+        >
           <div
             v-for="rule in scheduleForm.breakRules"
             :key="rule.rowKey"
@@ -1025,6 +1251,221 @@ onMounted(async () => {
                 :title="$t('SCHEDULING.GENERAL.DELETE')"
                 @click="removeScheduleRule('break', rule.rowKey)"
               />
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-else-if="scheduleTab === 'workday_overrides'"
+          data-testid="resource-workday-overrides-tab"
+          class="flex flex-col gap-4"
+        >
+          <SchedulingFormFieldGroup
+            :framed="true"
+            :title="
+              overrideForm.id
+                ? $t('SCHEDULING.EXCEPTIONS.EDIT_OVERRIDE')
+                : $t('SCHEDULING.EXCEPTIONS.ADD_OVERRIDE')
+            "
+            :description="$t('SCHEDULING.EXCEPTIONS.OVERRIDE_FORM_DESCRIPTION')"
+          >
+            <div class="grid gap-4 md:grid-cols-3">
+              <SchedulingDateTimeField
+                v-model="overrideForm.date"
+                type="date"
+                :label="$t('SCHEDULING.GENERAL.DATE')"
+              />
+              <SchedulingDateTimeField
+                v-model="overrideForm.startMinute"
+                type="time"
+                :label="$t('SCHEDULING.GENERAL.START')"
+              />
+              <SchedulingDateTimeField
+                v-model="overrideForm.endMinute"
+                type="time"
+                :label="$t('SCHEDULING.GENERAL.END')"
+              />
+              <SchedulingDateTimeField
+                v-model="overrideForm.breakStartMinute"
+                type="time"
+                :label="$t('SCHEDULING.EXCEPTIONS.BREAK_START')"
+              />
+              <SchedulingDateTimeField
+                v-model="overrideForm.breakEndMinute"
+                type="time"
+                :label="$t('SCHEDULING.EXCEPTIONS.BREAK_END')"
+              />
+              <Input
+                v-model="overrideForm.breakTitle"
+                :label="$t('SCHEDULING.EXCEPTIONS.BREAK_TITLE')"
+              />
+            </div>
+            <div class="flex justify-end gap-2">
+              <Button
+                v-if="overrideForm.id"
+                size="sm"
+                variant="ghost"
+                color="slate"
+                :label="$t('SCHEDULING.GENERAL.CANCEL')"
+                @click="resetOverrideForm"
+              />
+              <Button
+                size="sm"
+                icon="i-lucide-plus"
+                :label="
+                  overrideForm.id
+                    ? $t('SCHEDULING.GENERAL.SAVE')
+                    : $t('SCHEDULING.EXCEPTIONS.ADD_OVERRIDE')
+                "
+                @click="saveResourceOverride"
+              />
+            </div>
+          </SchedulingFormFieldGroup>
+
+          <div
+            v-if="resourceWorkdayOverrides.length"
+            class="divide-y divide-n-weak rounded-xl border border-n-weak"
+          >
+            <div
+              v-for="item in resourceWorkdayOverrides"
+              :key="item.id"
+              data-testid="resource-workday-override-row"
+              class="flex items-center justify-between gap-3 px-4 py-3 text-sm"
+            >
+              <div class="min-w-0">
+                <p class="mb-0 font-medium text-n-slate-12">
+                  {{ item.date }} ·
+                  {{ formatMinuteRange(item.startMinute, item.endMinute) }}
+                </p>
+                <p
+                  v-if="item.breakStartMinute !== null && item.breakEndMinute !== null"
+                  class="mb-0 text-xs text-n-slate-11"
+                >
+                  {{ $t('SCHEDULING.EXCEPTIONS.BREAK') }}:
+                  {{ formatMinuteRange(item.breakStartMinute, item.breakEndMinute) }}
+                  <span v-if="item.breakTitle">({{ item.breakTitle }})</span>
+                </p>
+              </div>
+              <div class="flex items-center gap-1">
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  color="slate"
+                  icon="i-lucide-pencil"
+                  @click="editResourceOverride(item)"
+                />
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  color="ruby"
+                  icon="i-lucide-trash-2"
+                  @click="deleteResourceOverride(item.id)"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-else-if="scheduleTab === 'time_offs'"
+          data-testid="resource-time-offs-tab"
+          class="flex flex-col gap-4"
+        >
+          <SchedulingFormFieldGroup
+            :framed="true"
+            :title="
+              timeOffForm.id
+                ? $t('SCHEDULING.EXCEPTIONS.EDIT_TIME_OFF')
+                : $t('SCHEDULING.EXCEPTIONS.ADD_TIME_OFF')
+            "
+            :description="$t('SCHEDULING.EXCEPTIONS.TIME_OFF_FORM_DESCRIPTION')"
+          >
+            <div class="grid gap-4 md:grid-cols-2">
+              <SchedulingSelectField
+                :model-value="timeOffForm.kind"
+                :options="timeOffKindOptions"
+                :placeholder="$t('SCHEDULING.GENERAL.TYPE')"
+                @update:model-value="timeOffForm.kind = $event"
+              />
+              <Input
+                v-model="timeOffForm.title"
+                :label="$t('SCHEDULING.GENERAL.TITLE')"
+              />
+              <SchedulingDateTimeField
+                v-model="timeOffForm.startsAt"
+                type="datetime"
+                :label="$t('SCHEDULING.GENERAL.START')"
+              />
+              <SchedulingDateTimeField
+                v-model="timeOffForm.endsAt"
+                type="datetime"
+                :label="$t('SCHEDULING.GENERAL.END')"
+              />
+            </div>
+            <TextArea
+              v-model="timeOffForm.notes"
+              auto-height
+              :label="$t('SCHEDULING.GENERAL.COMMENTS')"
+            />
+            <div class="flex justify-end gap-2">
+              <Button
+                v-if="timeOffForm.id"
+                size="sm"
+                variant="ghost"
+                color="slate"
+                :label="$t('SCHEDULING.GENERAL.CANCEL')"
+                @click="resetTimeOffForm"
+              />
+              <Button
+                size="sm"
+                icon="i-lucide-plus"
+                :label="
+                  timeOffForm.id
+                    ? $t('SCHEDULING.GENERAL.SAVE')
+                    : $t('SCHEDULING.EXCEPTIONS.ADD_TIME_OFF')
+                "
+                @click="saveResourceTimeOff"
+              />
+            </div>
+          </SchedulingFormFieldGroup>
+
+          <div
+            v-if="resourceTimeOffs.length"
+            class="divide-y divide-n-weak rounded-xl border border-n-weak"
+          >
+            <div
+              v-for="item in resourceTimeOffs"
+              :key="item.id"
+              data-testid="resource-time-off-row"
+              class="flex items-center justify-between gap-3 px-4 py-3 text-sm"
+            >
+              <div class="min-w-0">
+                <p class="mb-0 font-medium text-n-slate-12">
+                  {{ timeOffKindLabel(item.kind) }}
+                  <span v-if="item.title">· {{ item.title }}</span>
+                </p>
+                <p class="mb-0 text-xs text-n-slate-11">
+                  {{ toDateTimeInputValue(item.startsAt, SCHEDULING_TIMEZONE) }}
+                  –
+                  {{ toDateTimeInputValue(item.endsAt, SCHEDULING_TIMEZONE) }}
+                </p>
+              </div>
+              <div class="flex items-center gap-1">
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  color="slate"
+                  icon="i-lucide-pencil"
+                  @click="editResourceTimeOff(item)"
+                />
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  color="ruby"
+                  icon="i-lucide-trash-2"
+                  @click="deleteResourceTimeOff(item.id)"
+                />
+              </div>
             </div>
           </div>
         </div>

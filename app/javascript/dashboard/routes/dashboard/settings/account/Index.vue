@@ -21,7 +21,6 @@ import BuildInfo from './components/BuildInfo.vue';
 import AccountDelete from './components/AccountDelete.vue';
 import SectionLayout from './components/SectionLayout.vue';
 import WorkspaceLogo from './components/WorkspaceLogo.vue';
-import WorkspaceWorkingHours from './components/WorkspaceWorkingHours.vue';
 import SamlSettings from '../security/components/SamlSettings.vue';
 import SamlPaywall from '../security/components/SamlPaywall.vue';
 import { setDashboardLocale } from 'dashboard/i18n';
@@ -35,7 +34,6 @@ export default {
     AccountDelete,
     SectionLayout,
     WorkspaceLogo,
-    WorkspaceWorkingHours,
     WithLabel,
     NextInput,
     NextSelect,
@@ -433,12 +431,6 @@ export default {
             </WithLabel>
           </form>
         </SectionLayout>
-
-        <WorkspaceWorkingHours
-          v-if="accountRecord?.id"
-          :account="accountRecord"
-          :read-only="isWorkspaceReadOnly"
-        />
 
         <woot-loading-state v-if="uiFlags.isFetchingItem" />
         <SamlPaywall v-if="accountRecord?.id && showSamlPaywall" />

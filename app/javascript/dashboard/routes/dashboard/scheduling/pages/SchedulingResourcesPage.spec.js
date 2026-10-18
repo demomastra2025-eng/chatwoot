@@ -32,6 +32,7 @@ const stubs = {
   },
   ProviderScheduleCard: true,
   SchedulingColorPicker: true,
+  SchedulingDateTimeField: true,
   SchedulingDrawer: {
     props: ['modelValue'],
     emits: ['confirm', 'close'],
@@ -91,5 +92,50 @@ describe('SchedulingResourcesPage', () => {
       id: 7,
       specialty: 'Кардиолог',
     });
+  });
+
+  it('opens schedule drawer with workday overrides and time-offs for a local specialist', async () => {
+    mocks.store.resources = [
+      {
+        active: true,
+        customAttributes: {},
+        id: 12,
+        inheritWorkingHoursFromAccount: true,
+        name: 'Алия',
+        specialty: 'Терапевт',
+      },
+    ];
+    mocks.store.loadExceptions = vi.fn().mockResolvedValue();
+    mocks.store.workdayOverrides = [
+      {
+        breakEndMinute: null,
+        breakStartMinute: null,
+        date: '2026-10-20',
+        endMinute: 960,
+        id: 55,
+        resourceId: 12,
+        startMinute: 540,
+      },
+    ];
+    mocks.store.timeOffs = [];
+
+    const wrapper = mount(SchedulingResourcesPage, {
+      global: { mocks: { $t: key => key }, stubs },
+    });
+    await flushPromises();
+
+    const scheduleButton = wrapper.find('[data-icon="i-lucide-calendar-days"]');
+    expect(scheduleButton.exists()).toBe(true);
+
+    await scheduleButton.trigger('click');
+    await flushPromises();
+
+    expect(mocks.store.loadExceptions).toHaveBeenCalled();
+    expect(
+      wrapper.find('[data-testid="resource-workday-overrides-tab"]').exists()
+    ).toBe(true);
+    expect(
+      wrapper.find('[data-testid="resource-workday-override-row"]').text()
+    ).toContain('2026-10-20');
   });
 });

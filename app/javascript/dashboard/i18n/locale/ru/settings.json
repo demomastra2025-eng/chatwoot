@@ -558,7 +558,8 @@
     },
     "VISIBILITY": "Навигация",
     "STORAGE": "Хранилище",
-    "SCHEDULING_REMINDERS": "Напоминания"
+    "SCHEDULING_REMINDERS": "Напоминания",
+    "WORKING_HOURS": "График работы"
   },
   "LEAD_FORMS": {
     "KICKER": "Прием заявок",

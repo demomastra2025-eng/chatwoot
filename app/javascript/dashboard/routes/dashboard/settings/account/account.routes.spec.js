@@ -23,6 +23,7 @@ describe('account settings routes', () => {
       generalSettingsRoute().children.map(route => [route.path, route.name])
     ).toEqual([
       ['', 'general_settings_index'],
+      ['working-hours', 'workspace_working_hours_settings_index'],
       ['navigation', 'workspace_sidebar_visibility_settings_index'],
       ['conversations', 'workspace_conversation_settings_index'],
       [
@@ -42,6 +43,7 @@ describe('account settings routes', () => {
   it('limits company and conversation settings to administrators', () => {
     [
       'general_settings_index',
+      'workspace_working_hours_settings_index',
       'workspace_sidebar_visibility_settings_index',
       'workspace_conversation_settings_index',
       'workspace_conversation_visibility_settings_index',
