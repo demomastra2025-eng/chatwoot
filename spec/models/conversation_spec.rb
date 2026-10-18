@@ -90,14 +90,6 @@ RSpec.describe Conversation do
       expect(contact.reload.owner).to eq(new_owner)
     end
 
-    it 'does not clear contact owner when a conversation is handed to an agent bot' do
-      agent_bot = create(:agent_bot, account: account)
-      conversation = create(:conversation, account: account, contact: contact, assignee: owner)
-
-      conversation.update!(assignee: nil, assignee_agent_bot: agent_bot)
-
-      expect(contact.reload.owner).to eq(owner)
-    end
   end
 
   describe '.after_create' do
@@ -255,18 +247,6 @@ RSpec.describe Conversation do
         .with(described_class::CONVERSATION_TRANSFERRED_TO_AI, kind_of(Time), any_args)
     end
 
-    it 'runs conversation transferred to AI event when assigned to an agent bot' do
-      agent_bot = create(:agent_bot, account: account)
-      conversation.update!(assignee: nil)
-
-      conversation.update!(assignee_agent_bot: agent_bot)
-      changed_attributes = conversation.previous_changes
-
-      expect(Rails.configuration.dispatcher).to have_received(:dispatch)
-        .with(described_class::CONVERSATION_TRANSFERRED_TO_AI, kind_of(Time), conversation: conversation, notifiable_assignee_change: false,
-                                                                              changed_attributes: changed_attributes, performed_by: nil)
-    end
-
     it 'does not run conversation transferred to AI event for ordinary resolved status changes' do
       conversation.update!(status: :resolved)
 
@@ -279,40 +259,6 @@ RSpec.describe Conversation do
       conversation.update!(status: :pending)
 
       create(:message, :bot_message, conversation: conversation, account: account, inbox: conversation.inbox)
-
-      expect(Rails.configuration.dispatcher).to have_received(:dispatch)
-        .with(described_class::CONVERSATION_TRANSFERRED_TO_AI, kind_of(Time), any_args).once
-    end
-
-    it 'does not repeat conversation transferred to AI event when switching between agent bots' do
-      agent_bot = create(:agent_bot, account: account)
-      next_agent_bot = create(:agent_bot, account: account)
-      conversation.update!(assignee: nil)
-
-      conversation.update!(assignee_agent_bot: agent_bot)
-      conversation.update!(assignee_agent_bot: next_agent_bot)
-
-      expect(Rails.configuration.dispatcher).to have_received(:dispatch)
-        .with(described_class::CONVERSATION_TRANSFERRED_TO_AI, kind_of(Time), any_args).once
-    end
-
-    it 'does not repeat conversation transferred to AI event when a Captain pending conversation gets an agent bot' do
-      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: create(:captain_assistant, account: account))
-      agent_bot = create(:agent_bot, account: account)
-
-      conversation.update!(status: :pending)
-      conversation.update!(assignee_agent_bot: agent_bot)
-
-      expect(Rails.configuration.dispatcher).to have_received(:dispatch)
-        .with(described_class::CONVERSATION_TRANSFERRED_TO_AI, kind_of(Time), any_args).once
-    end
-
-    it 'does not repeat conversation transferred to AI event when an agent bot conversation becomes pending' do
-      agent_bot = create(:agent_bot, account: account)
-      conversation.update!(assignee: nil)
-
-      conversation.update!(assignee_agent_bot: agent_bot)
-      conversation.update!(status: :pending)
 
       expect(Rails.configuration.dispatcher).to have_received(:dispatch)
         .with(described_class::CONVERSATION_TRANSFERRED_TO_AI, kind_of(Time), any_args).once
@@ -1046,26 +992,30 @@ RSpec.describe Conversation do
     end
   end
 
-  describe '#botinbox: when conversation created inside inbox with agent bot' do
-    let!(:bot_inbox) { create(:agent_bot_inbox) }
-    let(:conversation) { create(:conversation, inbox: bot_inbox.inbox) }
+  describe '#botinbox: when conversation created inside inbox with an active bot' do
+    let!(:bot_inbox) { create(:inbox) }
+    let(:conversation) { create(:conversation, inbox: bot_inbox) }
+
+    before do
+      create(:integrations_hook, :dialogflow, account: bot_inbox.account, inbox: bot_inbox)
+    end
 
     it 'returns conversation status as pending' do
       expect(conversation.status).to eq('pending')
     end
 
     context 'with campaigns' do
-      let(:user) { create(:user, account: bot_inbox.inbox.account) }
+      let(:user) { create(:user, account: bot_inbox.account) }
 
       it 'returns conversation as open if campaign has a sender' do
-        campaign = create(:campaign, inbox: bot_inbox.inbox, account: bot_inbox.inbox.account, sender: user)
-        conversation = create(:conversation, inbox: bot_inbox.inbox, campaign: campaign)
+        campaign = create(:campaign, inbox: bot_inbox, account: bot_inbox.account, sender: user)
+        conversation = create(:conversation, inbox: bot_inbox, campaign: campaign)
         expect(conversation.status).to eq('open')
       end
 
       it 'returns conversation as pending if campaign has no sender (bot-initiated) and bot is active' do
-        campaign = create(:campaign, inbox: bot_inbox.inbox, account: bot_inbox.inbox.account, sender: nil)
-        conversation = create(:conversation, inbox: bot_inbox.inbox, campaign: campaign)
+        campaign = create(:campaign, inbox: bot_inbox, account: bot_inbox.account, sender: nil)
+        conversation = create(:conversation, inbox: bot_inbox, campaign: campaign)
         expect(conversation.status).to eq('pending')
       end
     end
@@ -1113,13 +1063,17 @@ RSpec.describe Conversation do
   end
 
   describe 'conversation created as a closed automated notification' do
-    context 'when the inbox has an active agent bot' do
-      let!(:bot_inbox) { create(:agent_bot_inbox) }
+    context 'when the inbox has an active bot' do
+      let!(:bot_inbox) { create(:inbox) }
+
+      before do
+        create(:integrations_hook, :dialogflow, account: bot_inbox.account, inbox: bot_inbox)
+      end
 
       it 'keeps a resolved conversation with the notification marker resolved' do
         conversation = create(
           :conversation,
-          inbox: bot_inbox.inbox,
+          inbox: bot_inbox,
           status: :resolved,
           additional_attributes: { 'outbound_automated' => true }
         )
@@ -1128,7 +1082,7 @@ RSpec.describe Conversation do
       end
 
       it 'still starts a resolved conversation without the marker as pending' do
-        conversation = create(:conversation, inbox: bot_inbox.inbox, status: :resolved)
+        conversation = create(:conversation, inbox: bot_inbox, status: :resolved)
 
         expect(conversation.status).to eq('pending')
       end
@@ -1559,8 +1513,8 @@ RSpec.describe Conversation do
       expect(reply_events.count).to eq(0)
     end
 
-    context 'when AgentBot responds between customer messages' do
-      let(:agent_bot) { create(:agent_bot, account: account) }
+    context 'when an AI assistant responds between customer messages' do
+      let(:assistant) { create(:captain_assistant, account: account) }
 
       def create_bot_message(conversation, created_at: Time.current)
         message = nil
@@ -1570,7 +1524,7 @@ RSpec.describe Conversation do
                            account: conversation.account,
                            inbox: conversation.inbox,
                            conversation: conversation,
-                           sender: agent_bot,
+                           sender: assistant,
                            created_at: created_at)
         end
         message

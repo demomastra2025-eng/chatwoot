@@ -14,7 +14,7 @@ RSpec.describe Message do
 
     create(:message, message_type: :outgoing, conversation: conversation, sender: captain_assistant)
 
-    # Captain::Assistant responses clear waiting_since (like AgentBot)
+    # Captain::Assistant responses clear waiting_since
     expect(conversation.first_reply_created_at).to be_nil
     expect(conversation.waiting_since).to be_nil
 
@@ -187,8 +187,8 @@ RSpec.describe Message do
     end
 
     it 'does not mark the conversation open for bot outgoing messages' do
-      agent_bot = create(:agent_bot, account: conversation.account)
-      create(:message, message_type: :outgoing, conversation: conversation, sender: agent_bot)
+      assistant = create(:captain_assistant, account: conversation.account)
+      create(:message, message_type: :outgoing, conversation: conversation, sender: assistant)
 
       expect(conversation.reload.pending?).to be true
     end
@@ -501,9 +501,8 @@ RSpec.describe Message do
       expect(conversation.status_transitions.last).to have_attributes(source: 'system', actor_id: nil)
     end
 
-    it 'keeps pending conversations owned by an active inbox AgentBot' do
-      agent_bot = create(:agent_bot, account: conversation.account)
-      create(:agent_bot_inbox, inbox: conversation.inbox, agent_bot: agent_bot, status: 'active')
+    it 'keeps pending conversations of an inbox with an active bot' do
+      create(:integrations_hook, :dialogflow, account: conversation.account, inbox: conversation.inbox)
 
       persist_without_delivery(customer_message(conversation))
 
@@ -512,18 +511,8 @@ RSpec.describe Message do
       expect(conversation.status_transitions).to be_empty
     end
 
-    it 'keeps pending conversations assigned to an AgentBot' do
-      conversation.update!(assignee_agent_bot: create(:agent_bot, account: conversation.account))
-
-      persist_without_delivery(customer_message(conversation))
-
-      expect(conversation.reload).to be_pending
-      expect(conversation.captain_control_generation).to eq(0)
-    end
-
-    it 'opens when an AgentBot inbox link exists but is inactive and no bot is assigned' do
-      agent_bot = create(:agent_bot, account: conversation.account)
-      create(:agent_bot_inbox, inbox: conversation.inbox, agent_bot: agent_bot, status: 'inactive')
+    it 'opens when a bot hook exists but is disabled' do
+      create(:integrations_hook, :dialogflow, account: conversation.account, inbox: conversation.inbox, status: :disabled)
 
       persist_without_delivery(customer_message(conversation))
 
@@ -532,11 +521,10 @@ RSpec.describe Message do
     end
 
     it 'rechecks an inbox bot that was deactivated after its association was cached' do
-      agent_bot = create(:agent_bot, account: conversation.account)
-      link = create(:agent_bot_inbox, inbox: conversation.inbox, agent_bot: agent_bot, status: 'active')
-      expect(conversation.inbox.agent_bot_inbox).to eq(link)
+      hook = create(:integrations_hook, :dialogflow, account: conversation.account, inbox: conversation.inbox)
+      expect(conversation.inbox.hooks.to_a).to eq([hook])
 
-      AgentBotInbox.find(link.id).update!(status: 'inactive')
+      Integrations::Hook.find(hook.id).update!(status: :disabled)
       persist_without_delivery(customer_message(conversation))
 
       expect(conversation.reload).to be_open
@@ -559,15 +547,14 @@ RSpec.describe Message do
     end
 
     it 'keeps pending when an inbox bot activates between candidate detection and the control lock' do
-      agent_bot = create(:agent_bot, account: conversation.account)
-      link = create(:agent_bot_inbox, inbox: conversation.inbox, agent_bot: agent_bot, status: 'inactive')
-      conversation.inbox.agent_bot_inbox
+      hook = create(:integrations_hook, :dialogflow, account: conversation.account, inbox: conversation.inbox, status: :disabled)
+      conversation.inbox.hooks.to_a
       activated = false
 
       allow(conversation).to receive(:ai_pending_handler_present?).and_wrap_original do |original, fresh_inbox: false|
         handler_present = original.call(fresh_inbox: fresh_inbox)
         if fresh_inbox && !handler_present && !activated
-          AgentBotInbox.find(link.id).update!(status: 'active')
+          Integrations::Hook.find(hook.id).update!(status: :enabled)
           activated = true
         end
         handler_present
@@ -581,14 +568,14 @@ RSpec.describe Message do
       expect(conversation.status_transitions).to be_empty
     end
 
-    it 'does not open for private, automated, campaign, touch, bot, system, or non-message replies' do
-      agent_bot = create(:agent_bot, account: conversation.account)
+    it 'does not open for private, automated, campaign, touch, AI, system, or non-message replies' do
+      assistant = create(:captain_assistant, account: conversation.account)
       messages = [
         [:private, employee_message(conversation, private: true)],
         [:automation, employee_message(conversation, content_attributes: { automation_rule_id: 1 })],
         [:campaign, employee_message(conversation, additional_attributes: { campaign_id: 1 })],
         [:scheduled_touch, employee_message(conversation, content_attributes: { touch_id: 1 })],
-        [:agent_bot, employee_message(conversation, sender: agent_bot)],
+        [:ai_assistant, employee_message(conversation, sender: assistant)],
         [:system_sender, employee_message(conversation, sender: nil)],
         [:activity, employee_message(conversation, message_type: :activity)]
       ]
@@ -642,7 +629,7 @@ RSpec.describe Message do
         status: :pending
       )
       persist_without_delivery(customer_message(api_conversation))
-      non_contact = customer_message(conversation, sender: create(:agent_bot, account: conversation.account))
+      non_contact = customer_message(conversation, sender: create(:user, account: conversation.account))
       persist_without_delivery(non_contact)
 
       expect(api_conversation.reload).to be_pending

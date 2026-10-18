@@ -9,7 +9,7 @@ require 'rails_helper'
 RSpec.describe 'Super Admin render smoke', type: :request do
   # Administrate resources that have dashboards, and a record of each to open
   # its show and edit pages.
-  resources = %i[organizations accounts users account_users agent_bots installation_configs access_tokens platform_apps platform_banners]
+  resources = %i[organizations accounts users account_users installation_configs access_tokens platform_apps platform_banners]
 
   def build_record(resource)
     {
@@ -17,7 +17,6 @@ RSpec.describe 'Super Admin render smoke', type: :request do
       accounts: -> { create(:account) },
       users: -> { create(:user) },
       account_users: -> { create(:account_user) },
-      agent_bots: -> { create(:agent_bot) },
       installation_configs: -> { create(:installation_config, name: 'SMOKE_CONFIG', value: 'smoke', locked: false) },
       access_tokens: -> { create(:platform_app).access_token },
       platform_apps: -> { create(:platform_app) },

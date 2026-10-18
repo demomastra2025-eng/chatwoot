@@ -407,7 +407,7 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
       end
 
       it 'excludes bot messages when grouped by agent' do
-        bot = create(:agent_bot)
+        bot = create(:captain_assistant, account: account)
         bot_conversation = create(:conversation, account: account, inbox: inbox)
         create(:message, account: account, conversation: bot_conversation, inbox: inbox,
                          message_type: :outgoing, sender: bot)

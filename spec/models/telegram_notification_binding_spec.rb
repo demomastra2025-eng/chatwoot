@@ -22,9 +22,9 @@ RSpec.describe TelegramNotificationBinding do
     end
 
     it 'does not return non-user access token owners' do
-      agent_bot = create(:agent_bot)
+      platform_app = create(:platform_app)
 
-      expect(described_class.find_user_by_profile_token(agent_bot.access_token.token)).to be_nil
+      expect(described_class.find_user_by_profile_token(platform_app.access_token.token)).to be_nil
     end
 
     it 'returns nil for unknown tokens' do

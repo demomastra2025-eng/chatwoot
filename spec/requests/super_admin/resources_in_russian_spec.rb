@@ -76,31 +76,6 @@ RSpec.describe 'Super Admin lists and forms in Russian', type: :request do
     end
   end
 
-  describe 'AI bots' do
-    it 'titles the new page «Новый AI-бот» and labels the clinic field' do
-      get '/super_admin/agent_bots/new'
-
-      expect(title).to eq('Новый AI-бот')
-      expect(page.css('label').map { |label| label.text.squish }).to include('Аккаунт')
-      expect(page.css('label').map { |label| label.text.squish }).not_to include('Account')
-    end
-
-    it 'names the bot in the title of its card' do
-      bot = create(:agent_bot, name: 'Робот-регистратор')
-
-      get "/super_admin/agent_bots/#{bot.id}"
-
-      expect(title).to eq("AI-бот №#{bot.id} «Робот-регистратор»")
-    end
-
-    it 'has a line under the title and a button named after the bot' do
-      get '/super_admin/agent_bots'
-
-      expect(page.at_css('main .main-content__description').text).to include('Боты, которые отвечают клиентам')
-      expect(page.at_css('main .main-content__actions a.button').text.squish).to eq('Новый AI-бот')
-    end
-  end
-
   describe 'platform apps' do
     it 'titles the new page and the card in Russian' do
       app = create(:platform_app, name: 'Мой портал')
@@ -138,7 +113,7 @@ RSpec.describe 'Super Admin lists and forms in Russian', type: :request do
 
       get '/super_admin/access_tokens'
 
-      expect(page.css('.segmented__item').map { |item| item.text.squish }).to eq(['Все', 'Пользователи', 'AI-боты', 'Платформенные приложения'])
+      expect(page.css('.segmented__item').map { |item| item.text.squish }).to eq(['Все', 'Пользователи', 'Платформенные приложения'])
       expect(main_text).to include('Оператор Айгерим')
       expect(main_text).not_to match(/User #\d+/)
     end

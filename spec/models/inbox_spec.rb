@@ -31,7 +31,6 @@ RSpec.describe Inbox do
 
     it { is_expected.to have_many(:meta_ad_referrals).dependent(:delete_all) }
 
-    it { is_expected.to have_one(:agent_bot_inbox) }
 
     it { is_expected.to have_many(:webhooks).dependent(:destroy_async) }
 

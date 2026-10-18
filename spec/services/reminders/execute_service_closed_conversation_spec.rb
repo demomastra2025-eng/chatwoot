@@ -133,10 +133,10 @@ RSpec.describe Reminders::ExecuteService do
     end
   end
 
-  context 'when the inbox has an active agent bot' do
-    let(:bot_inbox) { create(:agent_bot_inbox) }
-    let(:account) { bot_inbox.inbox.account }
-    let(:inbox) { bot_inbox.inbox }
+  context 'when the inbox has an active bot' do
+    # A Dialogflow hook makes the inbox bot-active; it exists before the first conversation is created.
+    let(:inbox) { create(:inbox).tap { |bot_inbox| create(:integrations_hook, :dialogflow, account: bot_inbox.account, inbox: bot_inbox) } }
+    let(:account) { inbox.account }
 
     before do
       inbox.update!(lock_to_single_conversation: false)

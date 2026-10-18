@@ -66,31 +66,29 @@ RSpec.describe 'API Base', type: :request do
     end
   end
 
-  describe 'request with api_access_token for bot' do
-    let!(:agent_bot) { create(:agent_bot) }
+  describe 'request with api_access_token of a token owner that is not a user' do
+    let!(:platform_app) { create(:platform_app) }
     let!(:inbox) { create(:inbox, account: account) }
     let!(:conversation) { create(:conversation, account: account, inbox: inbox, assignee: user, status: 'pending') }
 
-    context 'when it is an unauthorized url' do
+    context 'when it is a profile url' do
       it 'returns unauthorized' do
         get '/api/v1/profile',
-            headers: { api_access_token: agent_bot.access_token.token },
+            headers: { api_access_token: platform_app.access_token.token },
             as: :json
 
         expect(response).to have_http_status(:unauthorized)
       end
     end
 
-    context 'when it is a accessible url' do
-      it 'returns success' do
-        create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
-
+    context 'when it is an account url' do
+      it 'returns unauthorized and changes nothing' do
         post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/toggle_status",
-             headers: { api_access_token: agent_bot.access_token.token },
+             headers: { api_access_token: platform_app.access_token.token },
              as: :json
 
-        expect(response).to have_http_status(:success)
-        expect(conversation.reload.status).to eq('open')
+        expect(response).to have_http_status(:unauthorized)
+        expect(conversation.reload.status).to eq('pending')
       end
     end
 

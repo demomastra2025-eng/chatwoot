@@ -50,7 +50,7 @@ RSpec.describe Accounts::Plans do
 
     it 'keeps the dangerous and deprecated flags switched off by every plan' do
       expect(plans.never_enabled).to include(
-        'custom_roles', 'saml', 'captain_scheduling_grounding_guard', 'contact_chatwoot_support_team'
+        'custom_roles', 'saml', 'captain_scheduling_grounding_guard', 'contact_chatwoot_support_team', 'agent_bots'
       )
       expect(plans.never_enabled).to include(*deprecated_features)
     end
@@ -58,7 +58,7 @@ RSpec.describe Accounts::Plans do
     it 'puts chats, CRM and telephony in the base and the four modules where the owner approved them' do
       expect(plans.base_features).to include(
         'channel_website', 'channel_email', 'inbound_emails', 'channel_facebook', 'channel_instagram', 'channel_tiktok', 'help_center',
-        'automations', 'integrations', 'reports', 'crm', 'crm_deals', 'crm_tasks', 'scheduling', 'macros', 'canned_responses', 'agent_bots',
+        'automations', 'integrations', 'reports', 'crm', 'crm_deals', 'crm_tasks', 'scheduling', 'macros', 'canned_responses',
         'channel_voice', 'whatsapp_call', 'voice_recorder'
       )
       expect(plans.module_keys).to eq(%w[ai_agents broadcasts quality extensions])

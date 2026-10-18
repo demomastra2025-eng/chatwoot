@@ -1,4 +1,5 @@
 require 'rails_helper'
+require Rails.root.join('db/migrate/20261018120000_clear_removed_agent_bot_references')
 
 RSpec.describe 'Conversation Messages API', type: :request do
   let!(:account) { create(:account) }
@@ -93,10 +94,9 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(whatsapp_conversation.messages.outgoing).to be_empty
       end
 
-      it 'creates an outgoing text message with a specific bot sender' do
-        agent_bot = create(:agent_bot)
+      it 'ignores a sender_type param and keeps the sending user as the sender' do
         time_stamp = Time.now.utc.to_s
-        params = { content: 'test-message', external_created_at: time_stamp, sender_type: 'AgentBot', sender_id: agent_bot.id }
+        params = { content: 'test-message', external_created_at: time_stamp, sender_type: 'AgentBot', sender_id: agent.id + 1000 }
 
         post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
              params: params,
@@ -107,7 +107,7 @@ RSpec.describe 'Conversation Messages API', type: :request do
         response_data = response.parsed_body
         expect(response_data['content_attributes']['external_created_at']).to eq time_stamp
         expect(conversation.messages.count).to eq(1)
-        expect(conversation.messages.last.sender_id).to eq(agent_bot.id)
+        expect(conversation.messages.last.sender).to eq(agent)
         expect(conversation.messages.last.content_type).to eq('text')
       end
 
@@ -190,56 +190,6 @@ RSpec.describe 'Conversation Messages API', type: :request do
         end
       end
     end
-
-    context 'when it is an authenticated agent bot' do
-      let!(:agent_bot) { create(:agent_bot) }
-
-      it 'creates a new outgoing message' do
-        create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
-        params = { content: 'test-message' }
-
-        post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
-             params: params,
-             headers: { api_access_token: agent_bot.access_token.token },
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(conversation.messages.count).to eq(1)
-        expect(conversation.messages.first.content).to eq(params[:content])
-      end
-
-      it 'creates a new outgoing input select message' do
-        create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
-        select_item1 = build(:bot_message_select)
-        select_item2 = build(:bot_message_select)
-        params = { content_type: 'input_select', content_attributes: { items: [select_item1, select_item2] } }
-
-        post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
-             params: params,
-             headers: { api_access_token: agent_bot.access_token.token },
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(conversation.messages.count).to eq(1)
-        expect(conversation.messages.first.content_type).to eq(params[:content_type])
-        expect(conversation.messages.first.content).to be_nil
-      end
-
-      it 'creates a new outgoing cards message' do
-        create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
-        card = build(:bot_message_card)
-        params = { content_type: 'cards', content_attributes: { items: [card] } }
-
-        post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
-             params: params,
-             headers: { api_access_token: agent_bot.access_token.token },
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(conversation.messages.count).to eq(1)
-        expect(conversation.messages.first.content_type).to eq(params[:content_type])
-      end
-    end
   end
 
   describe 'GET /api/v1/accounts/{account.id}/conversations/:id/messages' do
@@ -268,6 +218,22 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(response).to have_http_status(:success)
         expect(response).to conform_schema(200)
         expect(JSON.parse(response.body, symbolize_names: true)[:meta][:contact][:id]).to eq(conversation.contact_id)
+      end
+
+      it 'renders a message that an agent bot used to send once the leftover sender is cleared' do
+        former_bot_message = create(:message, account: account, conversation: conversation, message_type: :outgoing, content: 'From the old bot')
+        # The class of the removed feature is gone: this row could not be loaded as a message sender before the cleanup.
+        former_bot_message.update_columns(sender_type: 'AgentBot', sender_id: 7) # rubocop:disable Rails/SkipsModelValidations
+        ActiveRecord::Migration.suppress_messages { ClearRemovedAgentBotReferences.new.up }
+
+        get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/messages",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        entry = response.parsed_body['payload'].find { |message| message['id'] == former_bot_message.id }
+        expect(entry['content']).to eq('From the old bot')
+        expect(entry['sender']).to be_nil
       end
 
       it 'hides Captain tool lines but keeps the handoff activity for agents and admins' do

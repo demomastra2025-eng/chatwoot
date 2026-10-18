@@ -1962,7 +1962,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(thread.reload).to be_open
     end
 
-    it 'rejects invalid agent bot assignments' do
+    it 'rejects an unknown assignee type' do
       conversation = create(:conversation, account: account)
       create(:inbox_member, user: agent, inbox: conversation.inbox)
       thread = conversation.reload.communication_thread
@@ -1973,7 +1973,7 @@ RSpec.describe 'Communication Threads API', type: :request do
             as: :json
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.parsed_body['error']).to include('Invalid communication thread assignee_id')
+      expect(response.parsed_body['error']).to include('Invalid communication thread assignee_type')
     end
   end
 end

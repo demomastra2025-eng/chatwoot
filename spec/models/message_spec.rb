@@ -580,11 +580,8 @@ RSpec.describe Message do
       expect(message.conversation.open?).to be false
     end
 
-    it 'will mark the conversation as pending if the agent bot is active' do
-      agent_bot = create(:agent_bot)
-      inbox = conversation.inbox
-      inbox.agent_bot = agent_bot
-      inbox.save!
+    it 'will mark the conversation as pending if the bot is active' do
+      create(:integrations_hook, :dialogflow, account: conversation.account, inbox: conversation.inbox)
       conversation.resolved!
       message.save!
       expect(conversation.open?).to be false
@@ -595,8 +592,8 @@ RSpec.describe Message do
   describe '#mark_pending_conversation_as_open_for_human_response' do
     let(:conversation) { create(:conversation, status: :pending) }
 
-    it 'keeps the conversation pending when an active agent bot handles the inbox' do
-      create(:agent_bot_inbox, inbox: conversation.inbox, status: 'active')
+    it 'keeps the conversation pending when an active bot handles the inbox' do
+      create(:integrations_hook, :dialogflow, account: conversation.account, inbox: conversation.inbox)
       conversation.inbox.reload
 
       create(:message, message_type: :outgoing, conversation: conversation)
@@ -684,9 +681,10 @@ RSpec.describe Message do
       expect(conversation.reload).to be_open
     end
 
-    it 'moves the conversation to pending when the inbox has an active agent bot' do
-      bot_inbox = create(:agent_bot_inbox)
-      conversation = create(:conversation, inbox: bot_inbox.inbox, status: :resolved, additional_attributes: notification_attributes)
+    it 'moves the conversation to pending when the inbox has an active bot' do
+      bot_inbox = create(:inbox)
+      create(:integrations_hook, :dialogflow, account: bot_inbox.account, inbox: bot_inbox)
+      conversation = create(:conversation, inbox: bot_inbox, status: :resolved, additional_attributes: notification_attributes)
       expect(conversation).to be_resolved
 
       create(:message, conversation: conversation, message_type: :incoming)
@@ -792,8 +790,8 @@ RSpec.describe Message do
       expect(conversation.waiting_since).to eq old_waiting_since
     end
 
-    context 'when bot has responded to the conversation' do
-      let(:agent_bot) { create(:agent_bot, account: conversation.account) }
+    context 'when an AI assistant has responded to the conversation' do
+      let(:assistant) { create(:captain_assistant, account: conversation.account) }
 
       before do
         # Create initial customer message
@@ -803,7 +801,7 @@ RSpec.describe Message do
 
         # Bot responds
         create(:message, conversation: conversation, message_type: :outgoing,
-                         sender: agent_bot, created_at: 1.hour.ago)
+                         sender: assistant, created_at: 1.hour.ago)
       end
 
       it 'resets waiting_since when customer sends a new message after bot response' do
@@ -842,15 +840,15 @@ RSpec.describe Message do
 
         # Another bot response should clear it again
         create(:message, conversation: conversation, message_type: :outgoing,
-                         sender: agent_bot, created_at: 15.minutes.ago)
+                         sender: assistant, created_at: 15.minutes.ago)
 
         conversation.reload
         expect(conversation.waiting_since).to be_nil
       end
     end
 
-    context 'when bot response should preserve waiting_since' do
-      let(:agent_bot) { create(:agent_bot, account: conversation.account) }
+    context 'when an AI assistant response should preserve waiting_since' do
+      let(:assistant) { create(:captain_assistant, account: conversation.account) }
 
       it 'does not clear waiting_since when preserve_waiting_since is set' do
         original_waiting_since = 45.minutes.ago
@@ -860,7 +858,7 @@ RSpec.describe Message do
           :message,
           conversation: conversation,
           message_type: :outgoing,
-          sender: agent_bot,
+          sender: assistant,
           preserve_waiting_since: true
         )
 

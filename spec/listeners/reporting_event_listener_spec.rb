@@ -66,13 +66,12 @@ describe ReportingEventListener do
     end
 
     describe 'conversation_bot_resolved' do
-      # create an agent bot
-      let!(:agent_bot_inbox) { create(:inbox, account: account) }
-      let!(:agent_bot) { create(:agent_bot, account: account) }
-      let!(:bot_resolved_conversation) { create(:conversation, account: account, inbox: agent_bot_inbox, assignee: user) }
+      # an inbox with an active bot (a Dialogflow hook)
+      let!(:bot_inbox) { create(:inbox, account: account) }
+      let!(:bot_resolved_conversation) { create(:conversation, account: account, inbox: bot_inbox, assignee: user) }
 
       before do
-        create(:agent_bot_inbox, agent_bot: agent_bot, inbox: agent_bot_inbox)
+        create(:integrations_hook, :dialogflow, account: account, inbox: bot_inbox)
       end
 
       it 'creates a conversation_bot_resolved event if resolved conversation does not have human interaction' do
@@ -89,7 +88,7 @@ describe ReportingEventListener do
       end
 
       it 'does not create a conversation_bot_resolved event if resolved conversation has human interaction' do
-        create(:message, message_type: 'outgoing', account: account, inbox: agent_bot_inbox, conversation: bot_resolved_conversation)
+        create(:message, message_type: 'outgoing', account: account, inbox: bot_inbox, conversation: bot_resolved_conversation)
         event = Events::Base.new('conversation.resolved', Time.zone.now, conversation: bot_resolved_conversation)
         listener.conversation_resolved(event)
         expect(account.reporting_events.where(name: 'conversation_bot_resolved').count).to be 0
@@ -542,30 +541,29 @@ describe ReportingEventListener do
       end
     end
 
-    context 'when agent bot resolves and conversation is reopened' do
+    context 'when a bot resolves and conversation is reopened' do
       # This implicitly tests that the first_response time is correctly calculated
       # By checking that a conversation reopened event is created with the correct values
-      let(:agent_bot) { create(:agent_bot, account: account) }
-      let(:agent_bot_inbox) { create(:inbox, account: account) }
+      let(:bot_inbox) { create(:inbox, account: account) }
       let(:bot_resolved_time) { 2.hours.ago }
       let(:reopened_time) { 1.hour.ago }
       let(:bot_conversation) do
-        create(:conversation, account: account, inbox: agent_bot_inbox, assignee: user, updated_at: reopened_time)
+        create(:conversation, account: account, inbox: bot_inbox, assignee: user, updated_at: reopened_time)
       end
 
       before do
-        create(:agent_bot_inbox, agent_bot: agent_bot, inbox: agent_bot_inbox)
+        create(:integrations_hook, :dialogflow, account: account, inbox: bot_inbox)
 
         create(:reporting_event,
                name: 'conversation_resolved',
                account_id: account.id,
-               inbox_id: agent_bot_inbox.id,
+               inbox_id: bot_inbox.id,
                conversation_id: bot_conversation.id,
                user_id: user.id,
                event_end_time: bot_resolved_time)
       end
 
-      it 'creates conversation_opened event for agent bot reopening' do
+      it 'creates conversation_opened event for bot reopening' do
         event = Events::Base.new('conversation.opened', reopened_time, conversation: bot_conversation)
         listener.conversation_opened(event)
 
