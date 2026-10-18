@@ -7,6 +7,7 @@ RSpec.describe Agents::DestroyJob do
   let(:user) { create(:user, account: account) }
   let(:team1) { create(:team, account: account) }
   let!(:inbox) { create(:inbox, account: account) }
+  let!(:owned_contact) { create(:contact, account: account, owner: user) }
 
   before do
     create(:team_member, team: team1, user: user)
@@ -21,7 +22,7 @@ RSpec.describe Agents::DestroyJob do
   end
 
   describe '#perform' do
-    it 'remove inboxes, teams, and conversations when removed from account' do
+    it 'removes inboxes, teams, conversations, and contact ownership when removed from account' do
       AccountUser.find_by!(account: account, user: user).delete
       described_class.perform_now(account, user)
 
@@ -30,6 +31,7 @@ RSpec.describe Agents::DestroyJob do
       expect(user.inboxes.length).to eq 0
       expect(user.notification_settings.length).to eq 0
       expect(user.assigned_conversations.where(account: account).length).to eq 0
+      expect(owned_contact.reload.owner_id).to be_nil
     end
 
     it 'does not remove restored memberships when the account user is active again' do
@@ -40,6 +42,7 @@ RSpec.describe Agents::DestroyJob do
       expect(user.inboxes).to include(inbox)
       expect(user.notification_settings.exists?(account_id: account.id)).to be(true)
       expect(user.assigned_conversations.where(account: account).count).to eq(1)
+      expect(owned_contact.reload.owner_id).to eq(user.id)
     end
   end
 end
