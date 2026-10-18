@@ -47,13 +47,18 @@ class SuperAdmin::Devise::SessionsController < Devise::SessionsController
   end
 
   def destroy
-    audit_sign_out(current_super_admin)
+    audit_sign_out(warden.user(:super_admin))
     sign_out
     flash.discard
     redirect_to '/'
   end
 
   private
+
+  # The audit log asks the controller who is signed in as a user of the operator app (Audited::Sweeper). The helper that
+  # DeviseTokenAuth puts on this controller fails inside a Devise controller, and nobody is signed in as a user here, so
+  # the answer is «nobody»; the super admin is passed to the audit explicitly.
+  def current_user = nil
 
   def submitted_email
     params.dig(:super_admin, :email).to_s.strip.downcase

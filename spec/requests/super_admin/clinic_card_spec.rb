@@ -50,7 +50,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       )
       # `account-organization` is the line inside the block «Организация»
       expect(side.css('[data-testid]').map { |node| node['data-testid'] })
-        .to eq(%w[trial-block info-block organization-block account-organization maintenance-block])
+        .to eq(%w[trial-block info-block organization-block account-organization maintenance-block deletion-form])
     end
   end
 
