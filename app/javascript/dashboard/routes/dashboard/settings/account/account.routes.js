@@ -3,6 +3,7 @@ import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { workspaceSettingsTabs } from '../workspaceSettingsTabs';
 import { SLA_SETTINGS_ROUTE_META } from '../sla/slaSettingsPolicy';
 const Index = () => import('./Index.vue');
+const WorkingHours = () => import('./WorkingHours.vue');
 const SidebarVisibilitySettings = () =>
   import('./SidebarVisibilitySettings.vue');
 const ConversationSettings = () => import('./ConversationSettings.vue');
@@ -67,6 +68,12 @@ export default {
           path: '',
           name: 'general_settings_index',
           component: Index,
+          meta: administratorMeta,
+        },
+        {
+          path: 'working-hours',
+          name: 'workspace_working_hours_settings_index',
+          component: WorkingHours,
           meta: administratorMeta,
         },
         {

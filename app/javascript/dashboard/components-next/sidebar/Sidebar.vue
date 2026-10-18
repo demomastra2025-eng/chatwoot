@@ -861,6 +861,14 @@ const buildSettingsMenuItems = () =>
       to: accountScopedRoute('general_settings_index'),
     },
     {
+      name: 'Working Hours',
+      visibilityKey: 'MyCompany:WorkingHours',
+      label: t('SIDEBAR.WORKING_HOURS'),
+      icon: 'i-lucide-clock',
+      activeOn: ['workspace_working_hours_settings_index'],
+      to: accountScopedRoute('workspace_working_hours_settings_index'),
+    },
+    {
       name: 'Navigation',
       label: t('SIDEBAR.VISIBILITY'),
       icon: 'i-lucide-eye',
@@ -1411,12 +1419,6 @@ const menuItems = computed(() => {
                   visibilityKey: 'Scheduling:Services',
                   label: t('SIDEBAR.SCHEDULING_SERVICES'),
                   to: accountScopedRoute('scheduling_services'),
-                },
-                {
-                  name: 'Scheduling Exceptions',
-                  visibilityKey: 'Scheduling:Exceptions',
-                  label: t('SIDEBAR.SCHEDULING_EXCEPTIONS'),
-                  to: accountScopedRoute('scheduling_exceptions'),
                 },
                 {
                   name: 'Scheduling Reminders',

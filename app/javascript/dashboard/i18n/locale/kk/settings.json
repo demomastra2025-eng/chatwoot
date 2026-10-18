@@ -543,7 +543,8 @@
     },
     "VISIBILITY": "Навигация",
     "STORAGE": "Қойма",
-    "SCHEDULING_REMINDERS": "Еске салғыштар"
+    "SCHEDULING_REMINDERS": "Еске салғыштар",
+    "WORKING_HOURS": "Жұмыс кестесі"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",

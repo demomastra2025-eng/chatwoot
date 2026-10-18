@@ -527,6 +527,7 @@ describe('Sidebar', () => {
       // SLA needs a Cloud or Enterprise installation, which this suite is not.
       expect(navigationChildNames(settings)).toEqual([
         'Workspace',
+        'Working Hours',
         'Navigation',
         'Settings Billing',
         'Conversation Settings',
