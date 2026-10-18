@@ -1,0 +1,13 @@
+---
+:verbose: false
+:concurrency: <%= ENV.fetch("CAPSULE_REALTIME_CONCURRENCY", 8) %>
+:timeout: 25
+:max_retries: 3
+:queues:
+  - [action_cable_realtime, 5]
+  - [communication_thread_realtime, 5]
+  - [critical, 4]
+  - [outbound_messages, 4]
+  - [high, 3]
+  - [auto_assignment, 3]
+  - [reminders, 2]

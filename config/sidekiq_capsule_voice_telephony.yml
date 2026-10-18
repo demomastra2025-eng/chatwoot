@@ -1,0 +1,8 @@
+---
+:verbose: false
+:concurrency: <%= ENV.fetch("CAPSULE_VOICE_TELEPHONY_CONCURRENCY", 4) %>
+:timeout: 25
+:max_retries: 3
+:queues:
+  - [telephony_realtime, 4]
+  - [whatsapp_calls, 1]

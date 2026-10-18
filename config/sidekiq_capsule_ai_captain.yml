@@ -1,0 +1,9 @@
+---
+:verbose: false
+:concurrency: <%= ENV.fetch("CAPSULE_AI_CAPTAIN_CONCURRENCY", 6) %>
+:timeout: 25
+:max_retries: 3
+:queues:
+  - [captain_runtime, 4]
+  - [audio_transcription, 2]
+  - [voice_recording_transcription, 2]

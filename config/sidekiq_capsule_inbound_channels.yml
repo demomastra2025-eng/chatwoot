@@ -1,0 +1,12 @@
+---
+:verbose: false
+:concurrency: <%= ENV.fetch("CAPSULE_INBOUND_CHANNELS_CONCURRENCY", 8) %>
+:timeout: 25
+:max_retries: 3
+:queues:
+  - [whatsapp_inbound, 4]
+  - [telegram_inbound, 2]
+  - [telegram_personal_inbound, 2]
+  - [whatsapp_webhook_forward, 2]
+  - [whatsappweb_inbound, 1]
+  - [whatsappweb_echo, 1]

@@ -1,0 +1,21 @@
+---
+:verbose: false
+:concurrency: <%= ENV.fetch("CAPSULE_HISTORY_MAINTENANCE_CONCURRENCY", 4) %>
+:timeout: 25
+:max_retries: 3
+:queues:
+  - [whatsapp_coexistence_history_recovery, 3]
+  - [whatsapp_coexistence_history, 2]
+  - [whatsappweb_history_recovery, 2]
+  - [whatsappweb_history, 1]
+  - [telegram_personal_history, 1]
+  - [linkedin_personal_history, 1]
+  - [low, 2]
+  - [deferred, 1]
+  - [purgable, 1]
+  - [housekeeping, 1]
+  - [async_database_migration, 1]
+  - [bulk_reindex_low, 1]
+  - [active_storage_analysis, 1]
+  - [active_storage_purge, 1]
+  - [action_mailbox_incineration, 1]

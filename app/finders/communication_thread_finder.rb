@@ -331,7 +331,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def combined_assignment_and_unread_counts(relation)
-    unread_ids_sql = unread_thread_ids_relation(relation).distinct.to_sql
+    unread_ids_sql = unread_thread_ids_relation.distinct.to_sql
     joined_relation = relation.joins(
       "LEFT JOIN (#{unread_ids_sql}) unread_thread_links " \
       'ON unread_thread_links.communication_thread_id = communication_threads.id'

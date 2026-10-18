@@ -1,10 +1,16 @@
 # Docker Compose Override for "Plan A + Turbo" (200+ Clinics)
-# Usage (rolling apply): docker compose -f docker-compose.yml -f docker-compose.scaling-plan-a.yml ...
+# Consolidates 28 Sidekiq worker containers down to 7 profile-isolated workers
+# (saving ~10.5 GB of Ruby VM memory overhead) + PgBouncer transaction pooling + YJIT + jemalloc arena cap.
 x-ruby-performance-env: &ruby-perf-env
   RUBY_YJIT_ENABLE: "1"
   RUBY_OPT: "--yjit"
   MALLOC_ARENA_MAX: "2"
   PGBOUNCER_ENABLED: "true"
+
+x-consolidated-worker-env: &consolidated-worker-env
+  <<: *ruby-perf-env
+  ENABLE_SIDEKIQ_CRON: "false"
+  DISABLE_SIDEKIQ_ALIVE: "true"
 
 services:
   pgbouncer:
@@ -29,7 +35,95 @@ services:
     environment:
       <<: *ruby-perf-env
 
-  chatwoot_sidekiq_capsules:
+  # 1. Realtime UI, ActionCable, Outbound Replies & Auto-Assignment
+  chatwoot_capsule_realtime_worker:
+    image: ${CHATWOOT_IMAGE:-crafty-chatwoot:production}
+    restart: always
+    stop_grace_period: 35s
+    environment:
+      <<: *consolidated-worker-env
+      CAPSULE_REALTIME_CONCURRENCY: ${CAPSULE_REALTIME_CONCURRENCY:-8}
+      SIDEKIQ_DB_POOL: ${CAPSULE_REALTIME_DB_POOL:-10}
+    working_dir: /app
+    entrypoint: /app/docker/entrypoints/rails.sh
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq_capsule_realtime.yml"]
+
+  # 2. Inbound Messenger Webhooks (WhatsApp, WhatsApp Web, Telegram, Personal)
+  chatwoot_capsule_inbound_channels_worker:
+    image: ${CHATWOOT_IMAGE:-crafty-chatwoot:production}
+    restart: always
+    stop_grace_period: 35s
+    environment:
+      <<: *consolidated-worker-env
+      CAPSULE_INBOUND_CHANNELS_CONCURRENCY: ${CAPSULE_INBOUND_CHANNELS_CONCURRENCY:-8}
+      SIDEKIQ_DB_POOL: ${CAPSULE_INBOUND_CHANNELS_DB_POOL:-10}
+    working_dir: /app
+    entrypoint: /app/docker/entrypoints/rails.sh
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq_capsule_inbound_channels.yml"]
+
+  # 3. AI Captain (OpenRouter LLM) & Audio/Voice Transcription
+  chatwoot_capsule_ai_captain_worker:
+    image: ${CHATWOOT_IMAGE:-crafty-chatwoot:production}
+    restart: always
+    stop_grace_period: 35s
+    environment:
+      <<: *consolidated-worker-env
+      CAPSULE_AI_CAPTAIN_CONCURRENCY: ${CAPSULE_AI_CAPTAIN_CONCURRENCY:-6}
+      SIDEKIQ_DB_POOL: ${CAPSULE_AI_CAPTAIN_DB_POOL:-8}
+    working_dir: /app
+    entrypoint: /app/docker/entrypoints/rails.sh
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq_capsule_ai_captain.yml"]
+
+  # 4. Live Telephony & Calls
+  chatwoot_capsule_voice_telephony_worker:
+    image: ${CHATWOOT_IMAGE:-crafty-chatwoot:production}
+    restart: always
+    stop_grace_period: 35s
+    environment:
+      <<: *consolidated-worker-env
+      CAPSULE_VOICE_TELEPHONY_CONCURRENCY: ${CAPSULE_VOICE_TELEPHONY_CONCURRENCY:-4}
+      SIDEKIQ_DB_POOL: ${CAPSULE_VOICE_TELEPHONY_DB_POOL:-6}
+    working_dir: /app
+    entrypoint: /app/docker/entrypoints/rails.sh
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq_capsule_voice_telephony.yml"]
+
+  # 5. MedElement CRM Sync (Commands fast-lane + Background Sync)
+  chatwoot_capsule_medelement_worker:
+    image: ${CHATWOOT_IMAGE:-crafty-chatwoot:production}
+    restart: always
+    stop_grace_period: 35s
+    environment:
+      <<: *consolidated-worker-env
+      CAPSULE_MEDELEMENT_CONCURRENCY: ${CAPSULE_MEDELEMENT_CONCURRENCY:-10}
+      SIDEKIQ_DB_POOL: ${CAPSULE_MEDELEMENT_DB_POOL:-12}
+    working_dir: /app
+    entrypoint: /app/docker/entrypoints/rails.sh
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq_capsule_medelement.yml"]
+
+  # 6. Core Default (incl. ReceptionsDeltaJob), Cron Scheduled Jobs & Mailers
+  chatwoot_capsule_core_scheduled_worker:
+    image: ${CHATWOOT_IMAGE:-crafty-chatwoot:production}
+    restart: always
+    stop_grace_period: 35s
     environment:
       <<: *ruby-perf-env
-    command: bundle exec sidekiq -C config/sidekiq_capsules.yml
+      ENABLE_SIDEKIQ_CRON: "true"
+      DISABLE_SIDEKIQ_ALIVE: "false"
+      CAPSULE_CORE_SCHEDULED_CONCURRENCY: ${CAPSULE_CORE_SCHEDULED_CONCURRENCY:-6}
+      SIDEKIQ_DB_POOL: ${CAPSULE_CORE_SCHEDULED_DB_POOL:-8}
+    working_dir: /app
+    entrypoint: /app/docker/entrypoints/rails.sh
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq_capsule_core_scheduled.yml"]
+
+  # 7. History Imports, Bulk Operations, Audio Compression & Housekeeping
+  chatwoot_capsule_history_maintenance_worker:
+    image: ${CHATWOOT_IMAGE:-crafty-chatwoot:production}
+    restart: always
+    stop_grace_period: 35s
+    environment:
+      <<: *consolidated-worker-env
+      CAPSULE_HISTORY_MAINTENANCE_CONCURRENCY: ${CAPSULE_HISTORY_MAINTENANCE_CONCURRENCY:-4}
+      SIDEKIQ_DB_POOL: ${CAPSULE_HISTORY_MAINTENANCE_DB_POOL:-6}
+    working_dir: /app
+    entrypoint: /app/docker/entrypoints/rails.sh
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq_capsule_history_maintenance.yml"]

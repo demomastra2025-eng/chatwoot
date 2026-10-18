@@ -1,0 +1,8 @@
+---
+:verbose: false
+:concurrency: <%= ENV.fetch("CAPSULE_MEDELEMENT_CONCURRENCY", 10) %>
+:timeout: 25
+:max_retries: 3
+:queues:
+  - [medelement_provider_commands, 5]
+  - [medelement_sync, 1]
