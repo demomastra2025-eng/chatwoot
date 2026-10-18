@@ -7,7 +7,7 @@ import Settings from './Settings.vue';
 
 const BOT_TAB = 'bot-configuration';
 const AI_AGENT_REFERENCE =
-  /captain|assistant|bot-configuration|botconfiguration|ai-agent|ai_agent|agentbot|agent_bot/i;
+  /captain|assistant|bot-configuration|botconfiguration|ai-agent|ai_agent/i;
 
 const wizardSources = import.meta.glob(
   [

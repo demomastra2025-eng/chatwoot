@@ -10,7 +10,7 @@ const props = defineProps({
   },
   // Pending conversations are the AI (Captain) queue, the option is only
   // offered when Captain is enabled for the account. A pending list opened
-  // from elsewhere (e.g. agent bot handoff) still shows its own label.
+  // from elsewhere (e.g. a Dialogflow bot handoff) still shows its own label.
   showAi: {
     type: Boolean,
     default: false,

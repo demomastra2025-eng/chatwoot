@@ -242,11 +242,9 @@ const variant = computed(() => {
     return MESSAGE_VARIANTS.BOT;
   }
 
-  const senderType = props.sender?.type ?? props.senderType;
   const hasExternalSenderName = !!props.additionalAttributes?.senderName;
   const isBot =
     (!props.sender && !hasExternalSenderName) ||
-    senderType === SENDER_TYPES.AGENT_BOT ||
     isCaptainAssistantSender(props.sender, props.senderType);
   if (isBot && props.messageType === MESSAGE_TYPES.OUTGOING) {
     return MESSAGE_VARIANTS.BOT;
@@ -281,10 +279,7 @@ const isBotOrAgentMessage = computed(() => {
     return true;
   }
 
-  if (
-    senderType === SENDER_TYPES.AGENT_BOT ||
-    isCaptainAssistantSender(props.sender, props.senderType)
-  ) {
+  if (isCaptainAssistantSender(props.sender, props.senderType)) {
     return true;
   }
 
@@ -644,7 +639,6 @@ const avatarInfo = computed(() => {
   if (
     props.messageType === MESSAGE_TYPES.OUTGOING &&
     isAutomationTouchMessage(props.additionalAttributes) &&
-    (props.sender?.type ?? props.senderType) !== SENDER_TYPES.AGENT_BOT &&
     !isCaptainAssistantSender(props.sender, props.senderType)
   ) {
     return {
@@ -676,7 +670,7 @@ const avatarInfo = computed(() => {
   }
 
   const { sender } = props;
-  const { name, type, avatarUrl, thumbnail } = sender || {};
+  const { name, avatarUrl, thumbnail } = sender || {};
 
   // AI agent: its photo, or the Captain icon colored by its name.
   if (isCaptainAssistantSender(sender, props.senderType)) {
@@ -687,17 +681,6 @@ const avatarInfo = computed(() => {
       name: agentName,
       src,
       iconName: src ? null : 'i-woot-captain',
-    };
-  }
-
-  // If sender type is agent bot, use avatarUrl
-  if (type === SENDER_TYPES.AGENT_BOT) {
-    const shouldUseCaptainIcon = !avatarUrl;
-
-    return {
-      name: shouldUseCaptainIcon ? '' : (name ?? ''),
-      src: avatarUrl ?? '',
-      iconName: shouldUseCaptainIcon ? 'i-woot-captain' : null,
     };
   }
 

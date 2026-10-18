@@ -449,35 +449,6 @@ describe('Message', () => {
     });
   });
 
-  it('keeps the agent bot avatar behaviour', () => {
-    const noPhoto = createWrapper({
-      sender: { id: 3, type: 'agent_bot', name: 'Webhook bot' },
-      senderId: 3,
-      senderType: 'agent_bot',
-    });
-    const photo = createWrapper({
-      sender: {
-        id: 3,
-        type: 'agent_bot',
-        name: 'Webhook bot',
-        avatarUrl: 'https://cdn.test/bot.png',
-      },
-      senderId: 3,
-      senderType: 'agent_bot',
-    });
-
-    expect(noPhoto.findComponent({ name: 'Avatar' }).props()).toMatchObject({
-      name: '',
-      src: '',
-      iconName: 'i-woot-captain',
-    });
-    expect(photo.findComponent({ name: 'Avatar' }).props()).toMatchObject({
-      name: 'Webhook bot',
-      src: 'https://cdn.test/bot.png',
-      iconName: null,
-    });
-  });
-
   it('shows three stacked avatars, +1 and the council caption for a council reply', () => {
     const wrapper = createWrapper(
       captainProps(

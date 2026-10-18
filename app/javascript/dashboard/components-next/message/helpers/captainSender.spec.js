@@ -23,8 +23,7 @@ describe('isCaptainAssistantSender', () => {
     ).toBe(false);
   });
 
-  it('ignores agent bots, users, contacts and missing senders', () => {
-    expect(isCaptainAssistantSender({ type: 'agent_bot' }, null)).toBe(false);
+  it('ignores users, contacts and missing senders', () => {
     expect(isCaptainAssistantSender({ type: 'user' }, 'User')).toBe(false);
     expect(isCaptainAssistantSender(null, 'Contact')).toBe(false);
     expect(isCaptainAssistantSender(null, null)).toBe(false);

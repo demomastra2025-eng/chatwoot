@@ -104,7 +104,7 @@ export default {
 
       return (
         !this.message.sender ||
-        (['agent_bot', 'captain_assistant'].includes(senderType) &&
+        (senderType === 'captain_assistant' &&
           !this.message.sender?.avatar_url)
       );
     },

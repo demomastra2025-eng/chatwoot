@@ -350,8 +350,9 @@ const showStatusFilter = computed(() => !hasActiveFolders.value);
 
 // Route status wins; without one the list reopens the last remembered status
 // ("all" is never remembered, see conversationListContext).
-// Pending stays reachable without Captain: agent bots also hand over through
-// it, only the dropdown hides the option (see ConversationStatusFilter).
+// Pending stays reachable without Captain: a Dialogflow bot also hands over
+// through it, only the dropdown hides the option (see
+// ConversationStatusFilter).
 const routeConversationStatus = computed(() => {
   const { status } = route.query;
   return sidebarStatuses.includes(status)

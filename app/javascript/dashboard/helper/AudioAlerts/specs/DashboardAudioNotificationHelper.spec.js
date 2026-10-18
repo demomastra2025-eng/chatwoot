@@ -194,7 +194,7 @@ describe('DashboardAudioNotificationHelper', () => {
 
     it.each([
       ['an automation without a sender', undefined],
-      ['an AI agent', { id: 5, type: 'agent_bot' }],
+      ['an AI agent', { id: 5, type: 'captain_assistant' }],
     ])('stays silent for a private note of %s', (_title, sender) => {
       const helper = buildHelper();
 
