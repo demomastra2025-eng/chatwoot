@@ -1,0 +1,23 @@
+<%#
+# Notice: two-factor authentication is off
+
+Shown on «Сводка» to a super admin whose user has no two-factor authentication: the sign-in to this console is protected
+by the password alone, and the notice says where to turn the second step on (the profile of the user in the operator app).
+Nothing is forced: a super admin without it still signs in with the password. When the server has no encryption keys the
+second step cannot be enabled at all, and the notice says that instead.
+
+## Local variables:
+
+- `super_admin`: the signed-in super admin.
+%>
+<% unless super_admin.mfa_enabled? %>
+  <section class="flex flex-col gap-1.5 rounded-xl bg-n-amber-2 px-4 py-3 text-sm text-n-amber-11 outline outline-1 -outline-offset-1 outline-n-amber-4" role="status" data-testid="two-factor-notice">
+    <h2 class="m-0 text-heading-3 text-n-amber-11"><%= t('super_admin.two_factor.notice.title') %></h2>
+    <p class="m-0"><%= t(Chatwoot.mfa_enabled? ? 'super_admin.two_factor.notice.how_to' : 'super_admin.two_factor.notice.unavailable') %></p>
+    <% if Chatwoot.mfa_enabled? %>
+      <p class="m-0">
+        <%= link_to t('super_admin.two_factor.notice.open_app'), app_path, class: 'font-medium text-n-amber-11 underline' %>
+      </p>
+    <% end %>
+  </section>
+<% end %>

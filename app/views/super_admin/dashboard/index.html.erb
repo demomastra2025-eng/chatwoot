@@ -29,6 +29,7 @@ the chart of conversations) is the Vue component DashboardIndex.
 <% end %>
 
 <section class="main-content__body">
+  <%= render 'super_admin/shared/two_factor_notice', super_admin: current_super_admin %>
   <%= render_vue_component('DashboardIndex', {
     chartData: @data,
     healthAccounts: @health_accounts,

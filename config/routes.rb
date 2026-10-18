@@ -1016,6 +1016,9 @@ Rails.application.routes.draw do
   devise_for :super_admins, path: 'super_admin', controllers: { sessions: 'super_admin/devise/sessions' }
   devise_scope :super_admin do
     get 'super_admin/logout', to: 'super_admin/devise/sessions#destroy'
+    # The second step of the sign-in of a super admin who has two-factor authentication on
+    get 'super_admin/sign_in/two_factor', to: 'super_admin/devise/sessions#two_factor', as: :super_admin_two_factor
+    post 'super_admin/sign_in/two_factor', to: 'super_admin/devise/sessions#verify_two_factor'
     namespace :super_admin do
       resources :audits, only: [:index]
       root to: 'dashboard#index'

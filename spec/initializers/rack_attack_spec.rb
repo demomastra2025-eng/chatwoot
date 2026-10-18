@@ -125,6 +125,21 @@ describe 'Rack::Attack auth throttles' do
     end
   end
 
+  describe 'super_admin_two_factor/ip' do
+    it 'counts the codes sent to the second step of the super admin sign-in by ip' do
+      env = form_env({ 'otp_code' => '123456' }, '/super_admin/sign_in/two_factor')
+
+      expect(throttle_key('super_admin_two_factor/ip', env)).to eq(ip)
+    end
+
+    it 'does not count the page of the second step or the password step' do
+      get_env = form_env({}, '/super_admin/sign_in/two_factor').merge('REQUEST_METHOD' => 'GET')
+
+      expect(throttle_key('super_admin_two_factor/ip', get_env)).to be_nil
+      expect(throttle_key('super_admin_two_factor/ip', form_env({}, '/super_admin/sign_in'))).to be_nil
+    end
+  end
+
   describe 'api/v1/widget/conversations/transcript' do
     it 'throttles widget transcript POST requests by ip' do
       expect(throttle_key('api/v1/widget/conversations/transcript', json_env({}, '/api/v1/widget/conversations/transcript'))).to eq(ip)

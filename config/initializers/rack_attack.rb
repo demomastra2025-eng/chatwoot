@@ -109,6 +109,11 @@ class Rack::Attack
     req.normalized_auth_email if req.path_without_extentions == '/super_admin/sign_in' && req.post?
   end
 
+  # The second step of the sign-in (a code from the authenticator app): a code has only 6 digits
+  throttle('super_admin_two_factor/ip', limit: 10, period: 5.minutes) do |req|
+    req.ip if req.path_without_extentions == '/super_admin/sign_in/two_factor' && req.post?
+  end
+
   # ### Prevent Brute-Force Login Attacks ###
   # Exclude MFA verification attempts from regular login throttling
   throttle('login/ip', limit: 5, period: 5.minutes) do |req|

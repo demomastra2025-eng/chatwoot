@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru" class="h-full bg-n-background">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <%# Must run before any CSS so the theme is correct on first paint. %>
+    <%= render "super_admin/application/theme_script" %>
+    <title>Второй шаг входа - OneLink Admin</title>
+    <link rel="icon" href="/favicon.ico?v=onelink-brand">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=onelink-brand">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=onelink-brand">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=onelink-brand">
+    <%= vite_client_tag %>
+    <%= vite_javascript_tag 'superadmin' %>
+    <%= csrf_meta_tags %>
+  </head>
+  <body class="h-full bg-n-background text-n-slate-12 antialiased">
+    <%
+      field_classes = 'block h-10 w-full rounded-lg border-0 bg-n-alpha-black2 px-3 py-2.5 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] outline-n-weak transition-all placeholder:text-n-slate-10 hover:outline-n-slate-6 focus:outline-n-brand'
+    %>
+    <main class="flex min-h-full w-full items-center justify-center px-4 py-12">
+      <div class="flex w-full max-w-[400px] flex-col items-center gap-6">
+        <header class="flex flex-col items-center gap-3 text-center">
+          <img src="/brand-assets/logo.svg" alt="OneLink" width="49" height="40" class="block h-10 w-auto">
+          <h1 class="m-0 text-heading-1 text-n-slate-12"><%= t('super_admin.two_factor.title') %></h1>
+          <p class="m-0 text-body-main text-n-slate-11"><%= t('super_admin.two_factor.subtitle', email: @super_admin.email) %></p>
+        </header>
+
+        <%= form_with url: super_admin_two_factor_path, method: :post, local: true,
+                      class: 'flex w-full flex-col gap-4 rounded-xl bg-n-solid-2 p-6 outline outline-1 -outline-offset-1 outline-n-container',
+                      data: { testid: 'two-factor-form' } do %>
+          <% if flash[:error].present? %>
+            <div role="alert" data-alert class="rounded-lg bg-n-ruby-2 px-3 py-2 text-sm text-n-ruby-11 outline outline-1 -outline-offset-1 outline-n-ruby-4"><%= flash[:error] %></div>
+          <% end %>
+
+          <div class="flex flex-col gap-1.5">
+            <%= label_tag :otp_code, t('super_admin.two_factor.code_label'), class: 'text-heading-3 text-n-slate-12' %>
+            <%= text_field_tag :otp_code, nil, autofocus: true, autocomplete: 'one-time-code', inputmode: 'numeric', maxlength: 10,
+                               placeholder: '123 456', class: field_classes %>
+            <p class="m-0 text-label-small text-n-slate-10"><%= t('super_admin.two_factor.code_hint') %></p>
+          </div>
+
+          <details class="rounded-lg outline outline-1 -outline-offset-1 outline-n-weak">
+            <summary class="cursor-pointer list-none px-3 py-2 text-sm text-n-slate-11"><%= t('super_admin.two_factor.backup_summary') %></summary>
+            <div class="flex flex-col gap-1.5 px-3 pb-3">
+              <%= label_tag :backup_code, t('super_admin.two_factor.backup_label'), class: 'text-heading-3 text-n-slate-12' %>
+              <%= text_field_tag :backup_code, nil, autocomplete: 'off', maxlength: 16, placeholder: 'A1B2C3D4', class: field_classes %>
+              <p class="m-0 text-label-small text-n-slate-10"><%= t('super_admin.two_factor.backup_hint') %></p>
+            </div>
+          </details>
+
+          <button type="submit" class="reset-base flex h-10 w-full cursor-pointer items-center justify-center rounded-lg border-0 bg-n-brand-solid px-4 text-sm font-medium text-n-brand-contrast transition-all hover:brightness-110 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"><%= t('super_admin.two_factor.submit') %></button>
+        <% end %>
+
+        <p class="m-0 text-center text-label-small text-n-slate-10">
+          <%= link_to t('super_admin.two_factor.start_over'), super_admin_session_path, class: 'text-n-brand hover:underline' %>
+        </p>
+      </div>
+    </main>
+  </body>
+</html>

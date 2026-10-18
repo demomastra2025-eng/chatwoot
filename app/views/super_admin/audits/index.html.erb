@@ -91,8 +91,13 @@ are Astana time.
               <% end %>
             </td>
             <td class="whitespace-nowrap">
-              <span class="font-medium"><%= t("super_admin.audits.types.#{audit.auditable_type.to_s.underscore}", default: audit.auditable_type.to_s) %></span>
-              <span class="text-n-slate-11 tabular-nums">#<%= audit.auditable_id %></span>
+              <% if audit.auditable_type.present? %>
+                <span class="font-medium"><%= t("super_admin.audits.types.#{audit.auditable_type.to_s.underscore}", default: audit.auditable_type.to_s) %></span>
+                <span class="text-n-slate-11 tabular-nums">#<%= audit.auditable_id %></span>
+              <% else %>
+                <%# An attempt to sign in as an e-mail nobody has: there is no object %>
+                <span class="text-n-slate-11">—</span>
+              <% end %>
             </td>
             <td>
               <span class="admin-badge <%= action_badges[audit.action] %>">
