@@ -855,7 +855,7 @@ onUnmounted(() => {
           </div>
           <div
             v-if="allPhoneLines.length >= 1"
-            class="mb-2.5 flex flex-col gap-1.5"
+            class="mb-2 flex max-h-28 flex-col gap-1 overflow-y-auto"
             data-testid="phone-widget-lines-list"
           >
             <div
@@ -863,7 +863,7 @@ onUnmounted(() => {
               :key="line.id"
               role="button"
               tabindex="0"
-              class="flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors"
+              class="flex cursor-pointer items-center justify-between gap-1.5 rounded-md border px-2 py-1 text-left transition-colors"
               :class="
                 String(selectedInboxId) === String(line.id)
                   ? 'border-n-teal-9 bg-n-teal-2'
@@ -880,17 +880,20 @@ onUnmounted(() => {
               @keydown.enter.prevent="selectLine(line.id)"
               @keydown.space.prevent="selectLine(line.id)"
             >
-              <div class="flex min-w-0 flex-1 items-center gap-2">
+              <div
+                class="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
+              >
                 <span
                   class="size-2 shrink-0 rounded-full"
                   :class="[
                     line.statusColor,
                     { 'animate-pulse': line.status === 'connecting' },
                   ]"
+                  :title="line.statusLabel"
                   data-testid="phone-widget-line-status-dot"
                 />
                 <i
-                  class="shrink-0 text-sm"
+                  class="shrink-0 text-xs"
                   :class="
                     line.isWhatsapp
                       ? 'i-ri-whatsapp-fill text-n-teal-9'
@@ -898,80 +901,67 @@ onUnmounted(() => {
                   "
                   aria-hidden="true"
                 />
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-1.5">
-                    <span
-                      class="truncate text-xs font-medium text-n-slate-12"
-                      data-testid="phone-widget-line-name"
-                    >
-                      {{ line.name }}
-                    </span>
-                    <span
-                      v-if="line.providerLabel"
-                      class="shrink-0 rounded bg-n-alpha-2 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
-                      data-testid="phone-widget-line-provider"
-                    >
-                      {{ line.providerLabel }}
-                    </span>
-                  </div>
-                  <div class="flex items-center gap-1.5 text-[11px]">
-                    <span
-                      v-if="
-                        line.phoneNumber &&
-                        !String(line.name || '').includes(line.phoneNumber)
-                      "
-                      class="truncate text-n-slate-11"
-                    >
-                      {{ line.phoneNumber }} ·
-                    </span>
-                    <span
-                      :class="
-                        line.status === 'ready' || line.status === 'ownerTab'
-                          ? 'text-n-teal-11'
-                          : line.status === 'error'
-                            ? 'text-n-ruby-11'
-                            : 'text-n-slate-11'
-                      "
-                      data-testid="phone-widget-line-status"
-                    >
-                      {{ line.statusLabel }}
-                    </span>
-                    <span
-                      v-if="String(selectedInboxId) === String(line.id)"
-                      class="font-medium text-n-teal-11"
-                      data-testid="phone-widget-line-selected-badge"
-                    >
-                      · Выбрана для звонка
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <button
-                v-if="line.canReconnect"
-                type="button"
-                class="shrink-0 inline-flex size-6 items-center justify-center rounded-md bg-n-alpha-2 text-n-teal-11 hover:bg-n-teal-3 transition-colors"
-                :title="
-                  line.movesHere
-                    ? t('PHONE_WIDGET.MOVE_HERE')
-                    : t('PHONE_WIDGET.REFRESH_CONNECTION')
-                "
-                :aria-label="
-                  line.movesHere
-                    ? t('PHONE_WIDGET.MOVE_HERE')
-                    : t('PHONE_WIDGET.REFRESH_CONNECTION')
-                "
-                data-testid="phone-widget-line-reconnect"
-                @click.stop="reconnect(line.session)"
-              >
-                <i
-                  class="text-xs"
-                  :class="
-                    line.movesHere
-                      ? 'i-lucide-monitor-down'
-                      : 'i-lucide-refresh-cw'
+                <span
+                  class="min-w-0 flex-1 truncate text-xs font-medium text-n-slate-12"
+                  :title="
+                    line.phoneNumber &&
+                    !String(line.name || '').includes(line.phoneNumber)
+                      ? `${line.name} (${line.phoneNumber})`
+                      : line.name
                   "
-                />
-              </button>
+                  data-testid="phone-widget-line-name"
+                >
+                  {{ line.name }}
+                </span>
+                <span class="sr-only" data-testid="phone-widget-line-status">
+                  {{ line.statusLabel }}
+                </span>
+              </div>
+              <div class="flex shrink-0 items-center gap-1">
+                <span
+                  v-if="line.providerLabel"
+                  class="max-w-[5.5rem] truncate rounded bg-n-alpha-2 px-1.5 py-0.5 text-[10px] leading-none font-medium text-n-slate-11"
+                  :title="line.providerLabel"
+                  data-testid="phone-widget-line-provider"
+                >
+                  {{ line.providerLabel }}
+                </span>
+                <span
+                  v-if="String(selectedInboxId) === String(line.id)"
+                  class="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-n-teal-9/15 text-n-teal-11"
+                  title="Выбрана для звонка"
+                  data-testid="phone-widget-line-selected-badge"
+                >
+                  <i class="i-lucide-check text-[10px]" aria-hidden="true" />
+                  <span class="sr-only">Выбрана для звонка</span>
+                </span>
+                <button
+                  v-if="line.canReconnect"
+                  type="button"
+                  class="inline-flex size-5 shrink-0 items-center justify-center rounded bg-n-alpha-2 text-n-teal-11 hover:bg-n-teal-3 transition-colors"
+                  :title="
+                    line.movesHere
+                      ? t('PHONE_WIDGET.MOVE_HERE')
+                      : t('PHONE_WIDGET.REFRESH_CONNECTION')
+                  "
+                  :aria-label="
+                    line.movesHere
+                      ? t('PHONE_WIDGET.MOVE_HERE')
+                      : t('PHONE_WIDGET.REFRESH_CONNECTION')
+                  "
+                  data-testid="phone-widget-line-reconnect"
+                  @click.stop="reconnect(line.session)"
+                >
+                  <i
+                    class="text-[11px]"
+                    :class="
+                      line.movesHere
+                        ? 'i-lucide-monitor-down'
+                        : 'i-lucide-refresh-cw'
+                    "
+                  />
+                </button>
+              </div>
             </div>
           </div>
           <div

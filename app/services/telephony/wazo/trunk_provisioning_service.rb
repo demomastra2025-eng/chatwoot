@@ -13,7 +13,7 @@ class Telephony::Wazo::TrunkProvisioningService
       default_domain: 'astpbx.tele2.kz',
       default_host: '91.185.24.71',
       default_port: 5060,
-      default_max_channels: 2,
+      default_max_channels: 10,
       send_pai: false,
       registration_required: true
     },
@@ -22,7 +22,7 @@ class Telephony::Wazo::TrunkProvisioningService
       default_domain: 'astpbx.tele2.kz',
       default_host: '91.185.24.71',
       default_port: 5060,
-      default_max_channels: 2,
+      default_max_channels: 10,
       send_pai: false,
       registration_required: true
     },
@@ -31,7 +31,7 @@ class Telephony::Wazo::TrunkProvisioningService
       default_domain: 'sip.telecom.kz',
       default_host: 'sip.telecom.kz',
       default_port: 5060,
-      default_max_channels: 5,
+      default_max_channels: 10,
       send_pai: true,
       registration_required: true
     },
@@ -40,7 +40,7 @@ class Telephony::Wazo::TrunkProvisioningService
       default_domain: 'sip.kcell.kz',
       default_host: 'sip.kcell.kz',
       default_port: 5060,
-      default_max_channels: 5,
+      default_max_channels: 10,
       send_pai: true,
       registration_required: true
     },
@@ -49,7 +49,7 @@ class Telephony::Wazo::TrunkProvisioningService
       default_domain: 'cloudpbx.beeline.kz',
       default_host: '46.227.186.231',
       default_port: 5060,
-      default_max_channels: 5,
+      default_max_channels: 10,
       send_pai: true,
       registration_required: true
     },
@@ -58,7 +58,7 @@ class Telephony::Wazo::TrunkProvisioningService
       default_domain: nil,
       default_host: nil,
       default_port: 5060,
-      default_max_channels: 2,
+      default_max_channels: 10,
       send_pai: false,
       registration_required: true
     }
@@ -144,7 +144,10 @@ class Telephony::Wazo::TrunkProvisioningService
   def sanitize_did(did)
     digits = did.to_s.gsub(/\D/, '')
     digits = "7#{digits[1..]}" if digits.length == 11 && digits.start_with?('8')
-    raise Telephony::Error.new(code: 'WAZO_TRUNK_DID_INVALID', message: 'Valid DID phone number is required', status: :unprocessable_content) if digits.blank?
+    if digits.blank?
+      raise Telephony::Error.new(code: 'WAZO_TRUNK_DID_INVALID', message: 'Valid DID phone number is required',
+                                 status: :unprocessable_content)
+    end
 
     digits
   end
@@ -173,14 +176,14 @@ class Telephony::Wazo::TrunkProvisioningService
       ['force_rport', 'yes'],
       ['rewrite_contact', 'yes']
     ]
-    endpoint_options << ['send_pai', 'yes'] if send_pai
+    endpoint_options << %w[send_pai yes] if send_pai
 
     payload = {
       name: name,
       label: "OneLink Trunk #{clean_did}",
       aor_section_options: [
         ['contact', "sip:#{trunk_username}@#{trunk_host}:#{trunk_port}"],
-        ['qualify_frequency', '30']
+        %w[qualify_frequency 30]
       ],
       outbound_auth_section_options: [
         ['username', trunk_username.to_s],

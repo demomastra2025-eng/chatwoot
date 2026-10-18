@@ -225,11 +225,9 @@ class Telephony::Wazo::ChannelCapacityService
       simulate_bounded_loopback_probe_leg(step)
     end
   rescue StandardError => e
-    if congestion_rejection?(e.message)
-      { rejected: true, reason: e.message }
-    else
-      raise
-    end
+    raise unless congestion_rejection?(e.message)
+
+    { rejected: true, reason: e.message }
   end
 
   def normalize_probe_leg_result(raw, step:)
@@ -291,7 +289,7 @@ class Telephony::Wazo::ChannelCapacityService
     carrier_kind = connection.metadata.to_h['carrier_kind'].to_s.strip.downcase
     preset = Telephony::Wazo::TrunkProvisioningService::CARRIER_PRESETS[carrier_kind] ||
              Telephony::Wazo::TrunkProvisioningService::CARRIER_PRESETS['custom']
-    preset&.dig(:default_max_channels) || 2
+    preset&.dig(:default_max_channels) || 10
   end
 
   def cancel_loopback_ring_probe_leg(leg_id, probe_runner: nil, cancel_cb: nil)

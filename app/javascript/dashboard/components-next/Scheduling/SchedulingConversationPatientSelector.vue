@@ -159,7 +159,7 @@ const startEdit = () => {
   editSnapshot = { ...form };
   isEditing.value = true;
 };
-watch(() => props.contextKey, resetForm, { flush: 'sync' });
+watch(() => props.contextKey, resetForm);
 const selectPatient = value => {
   if (props.entry?.saving) return;
   resetForm();

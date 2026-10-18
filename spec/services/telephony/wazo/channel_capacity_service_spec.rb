@@ -25,10 +25,13 @@ RSpec.describe Telephony::Wazo::ChannelCapacityService do
 
   it 'calculates active inbound/outbound channels, peak today, and outbound availability' do
     allow(client).to receive(:active_calls).and_return([
-      { 'call_id' => 'c1', 'caller_id_number' => '+77019998877', 'peer_caller_id_number' => '77085012233', 'is_caller' => false },
-      { 'call_id' => 'c2', 'caller_id_number' => '1001', 'peer_caller_id_number' => '+77021112233', 'is_caller' => true },
-      { 'call_id' => 'c3', 'caller_id_number' => '9999', 'peer_caller_id_number' => '+77050000000', 'is_caller' => true }
-    ])
+                                                         { 'call_id' => 'c1', 'caller_id_number' => '+77019998877',
+                                                           'peer_caller_id_number' => '77085012233', 'is_caller' => false },
+                                                         { 'call_id' => 'c2', 'caller_id_number' => '1001',
+                                                           'peer_caller_id_number' => '+77021112233', 'is_caller' => true },
+                                                         { 'call_id' => 'c3', 'caller_id_number' => '9999',
+                                                           'peer_caller_id_number' => '+77050000000', 'is_caller' => true }
+                                                       ])
 
     snap = service.snapshot
 
@@ -118,11 +121,10 @@ RSpec.describe Telephony::Wazo::ChannelCapacityService do
       max_probe_channels: 10
     )
 
-    expect(result[:detected_channel_limit]).to eq(5)
-    expect(result[:accepted_channels]).to eq(5)
-    expect(result[:cancelled_legs]).to eq(5)
+    expect(result[:detected_channel_limit]).to eq(10)
+    expect(result[:accepted_channels]).to eq(10)
+    expect(result[:cancelled_legs]).to eq(10)
     expect(result[:answered]).to be(false)
     expect(result[:billed_amount_kzt]).to eq(0)
   end
 end
-

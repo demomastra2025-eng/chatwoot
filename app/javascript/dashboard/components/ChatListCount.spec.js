@@ -61,4 +61,16 @@ describe('ChatListCount', () => {
       false
     );
   });
+
+  it('hides the counter badge when the list is neither filtered nor searched', () => {
+    const wrapper = mountComponent({
+      conversationCount: 42,
+      isFiltered: false,
+      isSearchResult: false,
+    });
+
+    expect(wrapper.find('[data-test-id="conversation-count"]').exists()).toBe(
+      false
+    );
+  });
 });

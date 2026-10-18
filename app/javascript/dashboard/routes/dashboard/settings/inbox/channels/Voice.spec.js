@@ -170,7 +170,6 @@ describe('Voice channel setup', () => {
 
     await inputs[0].setValue('Virtual PBX');
     await inputs[1].setValue('+1 555 123 4567');
-    await inputs[2].setValue('sip.provider.local');
     await wrapper.find('form').trigger('submit');
     await flushPromises();
 
@@ -184,7 +183,7 @@ describe('Voice channel setup', () => {
       provider_kind: 'sipuni',
       channel_name: 'Virtual PBX',
       connection: {
-        host: 'sip.provider.local',
+        host: 'sipuni.com',
       },
       routing: {
         mode: 'operator',
@@ -220,7 +219,6 @@ describe('Voice channel setup', () => {
 
     await inputs[0].setValue('Binotel');
     await inputs[1].setValue('+7 700 078 1755');
-    await inputs[2].setValue('sip53.binotel.com');
     await wrapper.find('form').trigger('submit');
     await flushPromises();
 
@@ -230,7 +228,7 @@ describe('Voice channel setup', () => {
       provider_kind: 'binotel',
       channel_name: 'Binotel',
       connection: {
-        host: 'sip53.binotel.com',
+        host: 'sip.binotel.com',
       },
       routing: {
         mode: 'operator',
@@ -289,14 +287,14 @@ describe('Voice channel setup', () => {
     });
   });
 
-  it('dials Beeline numbers as +7XXXXXXXXXX by default and lets the owner change it', async () => {
+  it('dials Beeline numbers as +7XXXXXXXXXX by default and hides technical dial format selector on create', async () => {
     routeMock.query = { provider: 'beeline' };
     createVirtualPbxChannelMock.mockResolvedValue({
       payload: { ui_config: { inbox_id: 7002 }, errors: [] },
     });
     const wrapper = buildWrapper();
 
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.LABEL'
     );
     expect(wrapper.vm.kazakhstanState.outboundDialFormat).toBe('e164_plus');
@@ -307,9 +305,6 @@ describe('Voice channel setup', () => {
     Object.assign(wrapper.vm.kazakhstanState, {
       channelName: 'Beeline Cloud PBX',
       phoneNumber: '+7 700 000 1002',
-      connectionHost: 'cloudpbx.beeline.kz',
-      connectionSipDomain: 'vpbx-company-1399.cloudpbx.beeline.kz',
-      connectionOutboundProxy: '46.227.186.231:6050',
     });
     await wrapper.find('form').trigger('submit');
     await flushPromises();
@@ -380,40 +375,49 @@ describe('Voice channel setup', () => {
 
     await inputs[0].setValue('Virtual PBX');
     await inputs[1].setValue('+1 555 123 4567');
-    await inputs[2].setValue('sip.provider.local');
     await wrapper.find('form').trigger('submit');
     await flushPromises();
 
     const [payload] = createVirtualPbxChannelMock.mock.calls[0];
-    expect(payload.connection).toMatchObject({ host: 'sip.provider.local' });
+    expect(payload.connection).toMatchObject({ host: 'sipuni.com' });
     expect(payload.connection).not.toHaveProperty('password');
   });
 
-  it('keeps Wazo create form free of provider numbers while exposing optional SIP transport settings', async () => {
+  it('shows only Channel Name, Phone Number, SIP Login, and SIP Password on create and hides technical provider fields and Change Provider button', async () => {
     routeMock.query = { provider: 'wazo' };
     const wrapper = buildWrapper();
 
-    wrapper.vm.isVirtualPbxAdvancedVisible = true;
-    await wrapper.vm.$nextTick();
-
     expect(wrapper.text()).not.toContain(
-      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_ACCOUNT_NUMBER.LABEL'
+      'INBOX_MGMT.ADD.VOICE.SELECT_PROVIDER.CHANGE_ACTION'
     );
     expect(wrapper.text()).not.toContain(
-      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INGRESS_NUMBER.LABEL'
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ADVANCED_FIELDS.SHOW'
     );
     expect(wrapper.text()).not.toContain(
-      'INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_AGENT_AOR.LABEL'
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ADVANCED_FIELDS.HIDE'
     );
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.LABEL'
     );
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.TRANSPORT.LABEL'
     );
     expect(wrapper.text()).not.toContain(
-      'INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.LABEL'
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIER_KIND_LABEL'
     );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.MAX_CHANNELS_LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_DOMAIN_LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_HOST_LABEL'
+    );
+    expect(wrapper.findAll('input')).toHaveLength(4);
   });
 
   it('creates a direct Asterisk analog channel from the provider card route', async () => {
@@ -426,7 +430,6 @@ describe('Voice channel setup', () => {
 
     await inputs[0].setValue('Asterisk analog 9098');
     await inputs[1].setValue('+7 717 270 5175');
-    await inputs[2].setValue('10.77.0.5');
     await wrapper.find('form').trigger('submit');
     await flushPromises();
 
@@ -442,7 +445,7 @@ describe('Voice channel setup', () => {
       provider_account_number: '+77172705175',
       ingress_number: '+77172705175',
       connection: {
-        host: '10.77.0.5',
+        host: '188.241.217.162',
         port: '5060',
         transport: 'udp',
       },
@@ -461,7 +464,7 @@ describe('Voice channel setup', () => {
     });
   });
 
-  it('creates an Asterisk analog channel with configurable provider connection', async () => {
+  it('creates an Asterisk analog channel with standardized provider connection defaults', async () => {
     routeMock.query = { provider: 'asterisk_analog' };
     createVirtualPbxChannelMock.mockResolvedValue({
       payload: { ui_config: { inbox_id: 202 }, errors: [] },
@@ -476,32 +479,9 @@ describe('Voice channel setup', () => {
       connectionPort: '5070',
       connectionTransport: 'udp',
     });
-    wrapper.vm.isVirtualPbxAdvancedVisible = true;
-    await wrapper.vm.$nextTick();
     await wrapper.find('form').trigger('submit');
     await flushPromises();
 
-    expect(wrapper.text()).toContain(
-      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL'
-    );
-    expect(wrapper.text()).toContain(
-      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.LABEL'
-    );
-    expect(wrapper.text()).toContain(
-      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.TRANSPORT.LABEL'
-    );
-    expect(wrapper.text()).toContain(
-      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.LABEL'
-    );
-    expect(wrapper.text()).not.toContain(
-      'INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.LABEL'
-    );
-    expect(wrapper.text()).not.toContain(
-      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_USERNAME.LABEL'
-    );
-    expect(wrapper.text()).not.toContain(
-      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PASSWORD.LABEL'
-    );
     const [payload, options] = createVirtualPbxChannelMock.mock.calls[0];
     expect(options).toEqual({ dryRun: false, remoteCommit: false });
     expect(payload).toMatchObject({
@@ -555,7 +535,6 @@ describe('Voice channel setup', () => {
 
     await inputs[0].setValue('Sip');
     await inputs[1].setValue('+7 700 000 1001');
-    await inputs[2].setValue('ats01.kz.sipuni.com');
     await wrapper.find('form').trigger('submit');
     await flushPromises();
 
@@ -585,7 +564,6 @@ describe('Voice channel setup', () => {
 
     await inputs[0].setValue('Sip');
     await inputs[1].setValue('+7 700 000 1001');
-    await inputs[2].setValue('ats01.kz.sipuni.com');
     await wrapper.find('form').trigger('submit');
     await flushPromises();
 
@@ -602,7 +580,6 @@ describe('Voice channel setup', () => {
 
     await inputs[0].setValue('Sip');
     await inputs[1].setValue('+7 700 000 1001');
-    await inputs[2].setValue('ats01.kz.sipuni.com');
     await wrapper.find('form').trigger('submit');
     await flushPromises();
 
@@ -626,7 +603,7 @@ describe('Voice channel setup', () => {
     );
   });
 
-  it('creates an Altel carrier channel backed by Wazo PBX with trunk settings', async () => {
+  it('creates an Altel carrier channel backed by Wazo PBX with trunk settings and default 10 channels', async () => {
     routeMock.query = { provider: 'altel' };
     createVirtualPbxChannelMock.mockResolvedValue({
       payload: { ui_config: { inbox_id: 8801 }, errors: [] },
@@ -636,17 +613,13 @@ describe('Voice channel setup', () => {
     expect(wrapper.vm.kazakhstanState.providerKind).toBe('wazo');
     expect(wrapper.vm.kazakhstanState.carrierKind).toBe('altel');
     expect(wrapper.vm.kazakhstanState.trunkDomain).toBe('astpbx.tele2.kz');
+    expect(wrapper.vm.kazakhstanState.maxChannels).toBe(10);
 
-    Object.assign(wrapper.vm.kazakhstanState, {
-      channelName: 'Altel 77085012233',
-      phoneNumber: '+7 708 501 22 33',
-      connectionHost: '188.241.217.162',
-      maxChannels: 2,
-      trunkUsername: 'f9bOCzgF',
-      trunkPassword: 'secret123',
-      trunkDomain: 'astpbx.tele2.kz',
-      trunkHost: '91.185.24.71',
-    });
+    const inputs = wrapper.findAll('input');
+    await inputs[0].setValue('Altel 77085012233');
+    await inputs[1].setValue('+7 708 501 22 33');
+    await inputs[2].setValue('f9bOCzgF');
+    await inputs[3].setValue('secret123');
     await wrapper.find('form').trigger('submit');
     await flushPromises();
 
@@ -659,7 +632,7 @@ describe('Voice channel setup', () => {
         port: '5060',
         transport: 'udp',
         carrier_kind: 'altel',
-        max_channels: 2,
+        max_channels: 10,
         trunk_username: 'f9bOCzgF',
         trunk_password: 'secret123',
         trunk_domain: 'astpbx.tele2.kz',
@@ -699,7 +672,7 @@ describe('Voice channel setup', () => {
     );
   });
 
-  it('pre-fills and locks PBX SIP server, carrier kind, trunk domain, and trunk host for preset operator cards', async () => {
+  it('pre-fills standardized PBX SIP server, carrier kind, trunk domain, trunk host, and maxChannels=10 for preset operator cards while hiding technical inputs', async () => {
     routeMock.query = { provider: 'altel' };
     const wrapper = buildWrapper();
 
@@ -707,51 +680,23 @@ describe('Voice channel setup', () => {
     expect(wrapper.vm.kazakhstanState.carrierKind).toBe('altel');
     expect(wrapper.vm.kazakhstanState.trunkDomain).toBe('astpbx.tele2.kz');
     expect(wrapper.vm.kazakhstanState.trunkHost).toBe('91.185.24.71');
+    expect(wrapper.vm.kazakhstanState.maxChannels).toBe(10);
 
     expect(wrapper.vm.isWazoProvider).toBe(true);
     expect(wrapper.vm.isCarrierLocked).toBe(true);
     expect(wrapper.vm.isKnownCarrierPreset).toBe(true);
     expect(
-      wrapper
-        .find('[data-testid="voice-carrier-kind-select"]')
-        .attributes('disabled')
-    ).toBe('true');
+      wrapper.find('[data-testid="voice-carrier-kind-select"]').exists()
+    ).toBe(false);
     expect(
       wrapper.find('[data-testid="voice-connection-host-input"]').exists()
-    ).toBe(true);
+    ).toBe(false);
     expect(
       wrapper.find('[data-testid="voice-trunk-domain-input"]').exists()
-    ).toBe(true);
+    ).toBe(false);
     expect(
       wrapper.find('[data-testid="voice-trunk-host-input"]').exists()
-    ).toBe(true);
-  });
-
-  it('allows manual trunk domain and host editing only when Custom SIP Carrier is selected on Other SIP Provider', async () => {
-    routeMock.query = { provider: 'wazo' };
-    const wrapper = buildWrapper();
-
-    expect(wrapper.vm.kazakhstanState.connectionHost).toBe('188.241.217.162');
-    expect(wrapper.vm.isWazoProvider).toBe(true);
-    expect(wrapper.vm.isCarrierLocked).toBe(false);
-    expect(
-      wrapper
-        .find('[data-testid="voice-carrier-kind-select"]')
-        .attributes('disabled')
-    ).toBe('false');
-
-    wrapper.vm.kazakhstanState.carrierKind = 'altel';
-    wrapper.vm.onCarrierKindChange();
-    await flushPromises();
-
-    expect(wrapper.vm.isKnownCarrierPreset).toBe(true);
-    expect(wrapper.vm.kazakhstanState.trunkDomain).toBe('astpbx.tele2.kz');
-    expect(wrapper.vm.kazakhstanState.trunkHost).toBe('91.185.24.71');
-
-    wrapper.vm.kazakhstanState.carrierKind = 'custom';
-    wrapper.vm.onCarrierKindChange();
-    await flushPromises();
-
-    expect(wrapper.vm.isKnownCarrierPreset).toBe(false);
+    ).toBe(false);
+    expect(wrapper.findAll('input')).toHaveLength(4);
   });
 });

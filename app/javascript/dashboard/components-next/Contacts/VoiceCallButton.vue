@@ -483,14 +483,14 @@ defineExpose({ onClick });
       :title="$t('CONTACT_PANEL.VOICE_INBOX_PICKER.TITLE')"
       show-cancel-button
       :show-confirm-button="false"
-      width="md"
+      width="sm"
     >
-      <div class="flex flex-col gap-2" data-testid="voice-inbox-picker-list">
+      <div class="flex flex-col gap-1.5" data-testid="voice-inbox-picker-list">
         <button
           v-for="inbox in candidateVoiceInboxes"
           :key="inbox.id"
           type="button"
-          class="flex items-center justify-between w-full px-4 py-2.5 text-left rounded-lg border transition-colors"
+          class="flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-left transition-colors"
           :class="
             isPreferredInbox(inbox)
               ? 'border-n-teal-9 bg-n-teal-2 hover:bg-n-teal-3'
@@ -502,51 +502,47 @@ defineExpose({ onClick });
           data-testid="voice-inbox-picker-option"
           @click="onPickInbox(inbox)"
         >
-          <div class="flex min-w-0 items-center gap-2.5">
+          <div class="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
             <span
               class="size-2 shrink-0 rounded-full"
               :class="inboxLineStatusDotClass(inbox)"
+              :title="inboxLineStatusLabel(inbox)"
               data-testid="voice-inbox-picker-status-dot"
             />
-            <span class="i-ri-phone-fill shrink-0 text-n-slate-10" />
-            <div class="flex min-w-0 flex-col">
-              <div class="flex items-center gap-1.5">
-                <span class="truncate text-sm font-medium text-n-slate-12">
-                  {{ inbox.name }}
-                </span>
-                <span
-                  v-if="isPreferredInbox(inbox)"
-                  class="shrink-0 rounded bg-n-teal-3 px-1.5 py-0.5 text-[10px] font-medium text-n-teal-11"
-                  data-testid="voice-inbox-picker-selected-badge"
-                >
-                  Выбрана для звонка
-                </span>
-              </div>
-              <span
-                class="text-xs"
-                :class="
-                  inboxLineStatus(inbox) === 'ready' ||
-                  inboxLineStatus(inbox) === 'ownerTab'
-                    ? 'text-n-teal-11'
-                    : inboxLineStatus(inbox) === 'error'
-                      ? 'text-n-ruby-11'
-                      : 'text-n-slate-10'
-                "
-                data-testid="voice-inbox-picker-status"
-              >
-                {{ inboxLineStatusLabel(inbox) }}
-              </span>
-            </div>
-          </div>
-          <div class="flex shrink-0 items-center gap-2">
+            <span class="i-ri-phone-fill shrink-0 text-xs text-n-slate-10" />
             <span
-              class="rounded-md bg-n-alpha-2 px-2 py-1 text-[11px] font-medium tracking-wide text-n-slate-11"
+              class="min-w-0 flex-1 truncate text-xs font-medium text-n-slate-12"
+            >
+              {{ inbox.name }}
+            </span>
+            <span class="sr-only" data-testid="voice-inbox-picker-status">
+              {{ inboxLineStatusLabel(inbox) }}
+            </span>
+          </div>
+          <div class="flex shrink-0 items-center gap-1.5">
+            <span
+              v-if="
+                inbox.phone_number &&
+                !String(inbox.name || '').includes(inbox.phone_number)
+              "
+              class="text-[11px] tabular-nums text-n-slate-10"
+            >
+              {{ inbox.phone_number }}
+            </span>
+            <span
+              class="rounded bg-n-alpha-2 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
               data-testid="voice-inbox-picker-provider"
             >
               {{ phoneLineProviderLabel(inbox) || inbox.provider }}
             </span>
-            <span v-if="inbox.phone_number" class="text-xs text-n-slate-10">
-              {{ inbox.phone_number }}
+            <span
+              v-if="isPreferredInbox(inbox)"
+              class="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-n-teal-3 text-n-teal-11"
+              title="Выбрана для звонка"
+              data-testid="voice-inbox-picker-selected-badge"
+            >
+              <i class="i-lucide-check text-[10px]" aria-hidden="true" />
+              <span class="sr-only">Выбрана для звонка</span>
             </span>
           </div>
         </button>

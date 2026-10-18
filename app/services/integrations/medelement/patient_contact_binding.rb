@@ -77,8 +77,10 @@ class Integrations::Medelement::PatientContactBinding
       "identifier = :iin OR custom_attributes ->> 'iin' = :iin OR custom_attributes ->> 'medelement_iin' = :iin", iin: identifier
     ).order(:id).to_a.select { |contact| Contacts::SharedPhone.recorded_patient_identity?(contact, identifier) }
     if candidates.many?
-      raise Scheduling::Error.new(code: 'MEDELEMENT_PATIENT_IDENTITY_CONFLICT', message: 'Patient identity has several local cards', status: :conflict)
+      raise Scheduling::Error.new(code: 'MEDELEMENT_PATIENT_IDENTITY_CONFLICT', message: 'Patient identity has several local cards',
+                                  status: :conflict)
     end
+
     candidates.first
   end
 
@@ -154,6 +156,7 @@ class Integrations::Medelement::PatientContactBinding
   def validate_contact!(contact, code, allow_communication_contact: false)
     validate_authored_name!(contact)
     return unless contact.account_id
+
     forbidden_owner = unbound_communication_owner?(contact) && !allow_communication_contact
     return unless contact.account_id != appointment.account_id || forbidden_owner ||
                   different_known_value?(code_for(contact), code) || different_known_value?(policy.contact_iin(contact), identifier)
@@ -240,7 +243,9 @@ class Integrations::Medelement::PatientContactBinding
     share = patient_phone_share(contact, phone, excluding: [contact.id, placeholder&.id])
     return Contacts::SharedPhone.record_share!(attributes, phone: phone, **share) if share
     return if own_shared_phone?(contact, phone)
-    return unless Contacts::SharedPhone.assignable_primary?(account_id: appointment.account_id, phone: phone, contact_id: contact.id)
+    if placeholder.present? && !Contacts::SharedPhone.assignable_primary?(account_id: appointment.account_id, phone: phone, contact_id: contact.id)
+      return
+    end
 
     contact.phone_number = phone
     remove_shared_phone!(contact, attributes, phone)

@@ -7,7 +7,7 @@ class BulkActionsJob < ApplicationJob
   attr_accessor :records
 
   MODEL_TYPE = %w[Conversation CommunicationThread].freeze
-  PROGRESS_FLUSH_EVERY = 100
+  PROGRESS_FLUSH_EVERY = 25
 
   def perform(account:, params:, user:, bulk_action_run_id: nil, selection_count: nil)
     prepare_run(account, params, user, bulk_action_run_id, selection_count)

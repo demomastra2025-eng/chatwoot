@@ -100,8 +100,7 @@ watch(
     isEditing.value = false;
     editSnapshot = null;
     error.value = '';
-  },
-  { flush: 'sync' }
+  }
 );
 const attributes = computed(
   () => props.patient.custom_attributes || props.patient.customAttributes || {}

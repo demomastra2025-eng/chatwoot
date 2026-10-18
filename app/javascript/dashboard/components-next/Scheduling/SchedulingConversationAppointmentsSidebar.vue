@@ -974,21 +974,27 @@ async function findNearestFormWindows(form, params, request) {
     );
     if (!isCurrent()) return;
     const payload = response.data.payload;
-    const windows = ['ok', 'schedule_not_confirmed'].includes(payload.state)
-      ? usableFormWindows(form, payload.windows).filter(window => {
-          const windowDate = toClinicDateTime(window.starts_at).slice(0, 10);
-          return windowDate >= firstDate && windowDate <= lastDate;
-        })
+    const windowsWithDate = ['ok', 'schedule_not_confirmed'].includes(
+      payload.state
+    )
+      ? usableFormWindows(form, payload.windows)
+          .map(window => ({
+            window,
+            windowDate: toClinicDateTime(window.starts_at).slice(0, 10),
+          }))
+          .filter(
+            ({ windowDate }) =>
+              windowDate >= firstDate && windowDate <= lastDate
+          )
       : [];
-    if (windows.length) {
-      const nearestDate = toClinicDateTime(windows[0].starts_at).slice(0, 10);
+    if (windowsWithDate.length) {
+      const nearestDate = windowsWithDate[0].windowDate;
       availabilityByForm[key] = {
         ...empty,
         nearestDate,
-        nearestWindows: windows.filter(
-          window =>
-            toClinicDateTime(window.starts_at).slice(0, 10) === nearestDate
-        ),
+        nearestWindows: windowsWithDate
+          .filter(({ windowDate }) => windowDate === nearestDate)
+          .map(({ window }) => window),
         emptyDate: date,
         searchThrough: lastDate,
         nearestState: 'found',
@@ -2390,6 +2396,29 @@ const handleHeaderAction = key => {
   }
 };
 
+const sidebarRangeFormatters = new Map();
+const getSidebarRangeFormatters = currentLocale => {
+  const key = currentLocale || 'default';
+  let entry = sidebarRangeFormatters.get(key);
+  if (!entry) {
+    entry = {
+      date: new Intl.DateTimeFormat(currentLocale, {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        timeZone: SCHEDULING_TIMEZONE,
+      }),
+      time: new Intl.DateTimeFormat(currentLocale, {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: SCHEDULING_TIMEZONE,
+      }),
+    };
+    sidebarRangeFormatters.set(key, entry);
+  }
+  return entry;
+};
+
 const formatDateTimeRange = appointment => {
   const start = appointment.startsAt ? new Date(appointment.startsAt) : null;
   const end = appointment.endsAt ? new Date(appointment.endsAt) : null;
@@ -2398,25 +2427,11 @@ const formatDateTimeRange = appointment => {
     return '—';
   }
 
-  const dateLabel = new Intl.DateTimeFormat(locale.value, {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    timeZone: SCHEDULING_TIMEZONE,
-  }).format(start);
-  const startTime = new Intl.DateTimeFormat(locale.value, {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: SCHEDULING_TIMEZONE,
-  }).format(start);
+  const formatters = getSidebarRangeFormatters(locale.value);
+  const dateLabel = formatters.date.format(start);
+  const startTime = formatters.time.format(start);
   const endTime =
-    end && !Number.isNaN(end.getTime())
-      ? new Intl.DateTimeFormat(locale.value, {
-          hour: '2-digit',
-          minute: '2-digit',
-          timeZone: SCHEDULING_TIMEZONE,
-        }).format(end)
-      : '';
+    end && !Number.isNaN(end.getTime()) ? formatters.time.format(end) : '';
 
   return endTime
     ? `${dateLabel}, ${startTime}–${endTime}`

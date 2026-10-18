@@ -15,12 +15,12 @@ const props = defineProps({
 });
 const emit = defineEmits(['update:date', 'select', 'showNearest']);
 const { t } = useI18n();
-const formatTime = value =>
-  new Intl.DateTimeFormat('ru', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: DEFAULT_WORKSPACE_TIMEZONE,
-  }).format(new Date(value));
+const timeFormatter = new Intl.DateTimeFormat('ru', {
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: DEFAULT_WORKSPACE_TIMEZONE,
+});
+const formatTime = value => timeFormatter.format(new Date(value));
 
 const sortedWindows = computed(() =>
   [...props.windows].sort(

@@ -727,6 +727,26 @@ const conversationFilters = computed(() => {
   };
 });
 
+const isConversationListFiltered = computed(() =>
+  Boolean(
+    hasLocalSearch.value ||
+      isServerSearch.value ||
+      hasAppliedFilters.value ||
+      hasActiveFolders.value ||
+      activeUnreadOnly.value ||
+      activeWaitingForCallbackOnly.value ||
+      activeCrmPipelineId.value ||
+      activeCrmStageId.value ||
+      activeAppointmentStatusFilter.value ||
+      activeLabelsScope.value ||
+      activeTeamScope.value ||
+      props.conversationInbox ||
+      props.label ||
+      props.teamId ||
+      props.conversationType
+  )
+);
+
 const activeLabelDisplayTitle = computed(() => {
   if (!props.label) return '';
   const label = labels.value.find(record => record.title === props.label);
@@ -2467,6 +2487,7 @@ watch(bulkSelectionContextKey, contextKey => setSelectionContext(contextKey), {
         :conversation-count="totalConversationCount"
         :is-list-loading="isInitialListLoading"
         :is-search-result="hasLocalSearch"
+        :is-filtered="isConversationListFiltered"
         :is-count-approximate="isServerSearch && isServerSearchCapped"
       />
     </ChatListHeader>

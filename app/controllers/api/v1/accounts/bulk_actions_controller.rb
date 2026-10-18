@@ -123,12 +123,14 @@ class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseControll
   end
 
   def create_conversation_bulk_action_run!(selection: nil)
+    selected_count = selection&.count || Array(params[:ids]).uniq.size
     @current_account.bulk_action_runs.create!(
       user: current_user,
       resource_type: normalized_type,
       action_name: conversation_action_name,
+      total_count: selected_count,
       metadata: {
-        selected_count: selection&.count || Array(params[:ids]).size,
+        selected_count: selected_count,
         selection_mode: ('filtered_snapshot' if selection)
       }
     )

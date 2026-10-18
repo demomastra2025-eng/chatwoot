@@ -71,7 +71,7 @@ RSpec.describe BulkActionsJob do
 
     bulk_job.bulk_update
 
-    expect(bulk_job).to have_received(:flush_progress).with(100, 0, 0).exactly(100).times
+    expect(bulk_job).to have_received(:flush_progress).with(25, 0, 0).exactly(400).times
   end
 
   context 'when job is triggered' do

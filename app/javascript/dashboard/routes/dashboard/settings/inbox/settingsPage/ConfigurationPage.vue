@@ -28,18 +28,18 @@ const defaultWazoSipHost = () =>
   window.chatwootConfig?.wazoSipHost || DEFAULT_WAZO_SIP_HOST;
 
 const WAZO_CARRIER_PRESETS = {
-  altel: { domain: 'astpbx.tele2.kz', host: '91.185.24.71', max: 2 },
-  tele2: { domain: 'astpbx.tele2.kz', host: '91.185.24.71', max: 2 },
+  altel: { domain: 'astpbx.tele2.kz', host: '91.185.24.71', max: 10 },
+  tele2: { domain: 'astpbx.tele2.kz', host: '91.185.24.71', max: 10 },
   kazakhtelecom: {
     domain: 'sip.telecom.kz',
     host: 'sip.telecom.kz',
-    max: 5,
+    max: 10,
   },
-  kcell: { domain: 'sip.kcell.kz', host: 'sip.kcell.kz', max: 5 },
+  kcell: { domain: 'sip.kcell.kz', host: 'sip.kcell.kz', max: 10 },
   beeline_trunk: {
     domain: 'cloudpbx.beeline.kz',
     host: '46.227.186.231',
-    max: 5,
+    max: 10,
   },
 };
 
@@ -169,7 +169,7 @@ export default {
         connectionUsername: '',
         connectionPassword: '',
         carrierKind: '',
-        maxChannels: 2,
+        maxChannels: 10,
         detectedChannelLimit: null,
         lastChannelLimitHitAt: '',
         lastChannelProbeAt: '',
@@ -789,7 +789,7 @@ export default {
       const limit = Number(
         this.virtualPbxForm.maxChannels ||
           this.virtualPbxConfig?.connection?.ai_max_concurrent_calls ||
-          2
+          10
       );
       return Number.isFinite(limit) && limit > 0 ? limit : 1;
     },
@@ -1271,7 +1271,7 @@ export default {
           providerConnection.max_channels ||
             providerConnectionMetadata.max_channels ||
             carrierPreset?.max ||
-            2
+            10
         ),
         detectedChannelLimit:
           Number(

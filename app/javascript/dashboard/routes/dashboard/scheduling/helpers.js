@@ -23,8 +23,17 @@ import {
 const WEEK_STARTS_ON = 1;
 const normalizeLocale = locale => locale?.replace(/_/g, '-') || undefined;
 
-const formatLocalizedDate = (value, locale, options) =>
-  new Intl.DateTimeFormat(normalizeLocale(locale), options).format(value);
+const localizedDateFormatters = new Map();
+const formatLocalizedDate = (value, locale, options) => {
+  const normalized = normalizeLocale(locale);
+  const key = `${normalized || 'default'}:${JSON.stringify(options || {})}`;
+  let formatter = localizedDateFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(normalized, options);
+    localizedDateFormatters.set(key, formatter);
+  }
+  return formatter.format(value);
+};
 
 const firstPresentValue = (source, keys) =>
   keys.reduce((value, key) => value || source?.[key], '');
@@ -586,19 +595,30 @@ export const formatTimeLabel = minute => {
   return `${hours}:${minutes}`;
 };
 
+const wallClockFormatters = new Map();
+const getWallClockFormatter = timezone => {
+  const key = timezone || 'default';
+  let formatter = wallClockFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    });
+    wallClockFormatters.set(key, formatter);
+  }
+  return formatter;
+};
+
 // Wall-clock parts of an instant in a timezone. Read through Intl instead of
 // a zoned local Date, so a time inside the browser's own DST gap (e.g. 02:30
 // in Berlin on the last Sunday of March) is not shifted by an hour.
 const zonedWallClockParts = (value, timezone) => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  })
+  const parts = getWallClockFormatter(timezone)
     .formatToParts(toDate(value))
     .reduce((result, part) => {
       result[part.type] = part.value;

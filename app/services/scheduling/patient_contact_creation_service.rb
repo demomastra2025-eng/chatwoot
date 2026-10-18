@@ -20,6 +20,7 @@ class Scheduling::PatientContactCreationService
     if params[:iin].present? && !Scheduling::IinValidator.valid?(params[:iin])
       raise Scheduling::Error.new(code: 'INVALID_IIN', message: 'Invalid IIN', status: :unprocessable_content)
     end
+
     identifier = Scheduling::IinValidator.normalize(params[:iin].presence || params[:identifier])
     Scheduling::IinValidator.validate!(identifier)
     appointment = account.scheduling_appointments.new(
@@ -71,8 +72,8 @@ class Scheduling::PatientContactCreationService
     key = Scheduling::PatientContextQuery::CONTACT_IDS_KEY
     attributes[key] = (Array(attributes[key]) + [contact.id]).uniq
     attributes[REQUESTS_KEY] = attributes[REQUESTS_KEY].to_h.merge(request_key => fingerprint)
-    card.skip_runtime_events = true
-    card.update!(custom_attributes: attributes)
+    card.custom_attributes = attributes
+    card.update_columns(custom_attributes: attributes, updated_at: Time.current)
   end
 
   def conversation

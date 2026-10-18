@@ -105,9 +105,24 @@ const allSelected = computed({
   },
 });
 
-const progressPercentage = computed(
-  () => bulkActionRun.value?.progress_percentage || 0
+const totalBulkCount = computed(
+  () =>
+    Number(
+      bulkActionRun.value?.total_count ||
+        bulkActionRun.value?.metadata?.selected_count ||
+        0
+    ) || 0
 );
+
+const progressPercentage = computed(() => {
+  const reported = Number(bulkActionRun.value?.progress_percentage || 0);
+  if (reported > 0) return reported;
+  const processed = Number(bulkActionRun.value?.processed_count || 0);
+  if (processed > 0 && totalBulkCount.value > 0) {
+    return Math.min(100, Math.round((processed * 100) / totalBulkCount.value));
+  }
+  return 0;
+});
 
 const progressLabel = computed(() => {
   if (!bulkActionRun.value) return '';
@@ -127,7 +142,7 @@ const progressLabel = computed(() => {
   return t('BULK_ACTION.PROGRESS.TITLE', {
     action: actionLabel,
     processedCount: bulkActionRun.value.processed_count || 0,
-    totalCount: bulkActionRun.value.total_count || 0,
+    totalCount: totalBulkCount.value,
   });
 });
 
