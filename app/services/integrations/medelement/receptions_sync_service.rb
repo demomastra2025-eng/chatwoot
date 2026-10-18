@@ -709,7 +709,8 @@ class Integrations::Medelement::ReceptionsSyncService
   def synced_contacts(snapshot)
     return {} unless configuration.sync_patients?
 
-    prefetched = (@prefetched_patients || {}).each_with_object({}) { |(k, v), h| h[k] = v }
+    prefetched = {}
+    @prefetched_patients&.each_pair { |k, v| prefetched[k] = v }
     build_patients_sync_service.sync_patient_codes(
       reception_patient_codes(snapshot),
       prefetched_patients: prefetched,

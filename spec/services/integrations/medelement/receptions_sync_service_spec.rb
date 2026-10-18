@@ -487,9 +487,9 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
       patient_code = reception_payload.first['PATIENT_CODE']
       outbound.contact.update!(custom_attributes: outbound.contact.custom_attributes.merge('medelement_patient_code' => patient_code))
       command.update!(provider_patient_code: patient_code, execution_state: {
-        'write_provider_reception_code' => 'outbound-removed',
-        verification::STATE_KEY => { 'status' => 'pending', 'attempts' => 0 }
-      })
+                        'write_provider_reception_code' => 'outbound-removed',
+                        verification::STATE_KEY => { 'status' => 'pending', 'attempts' => 0 }
+                      })
       outbound.mark_medelement_provider_reconciled!
       outbound.update!(custom_attributes: outbound.custom_attributes.merge(provider.command_attributes(command)))
       allow(client).to receive(:get_receptions).and_return([])
@@ -505,9 +505,9 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
       )
       allow(client).to receive(:get_receptions).and_return([appeared])
       allow(client).to receive(:get_reception).and_return(appeared.merge(
-        'PROFILE_CODE' => patient_code, 'COMPANY_CODE' => 'company-1', 'SERVICES' => [],
-        'SPECIALIST_CODE' => resource.custom_attributes['medelement_specialist_code']
-      ))
+                                                            'PROFILE_CODE' => patient_code, 'COMPANY_CODE' => 'company-1', 'SERVICES' => [],
+                                                            'SPECIALIST_CODE' => resource.custom_attributes['medelement_specialist_code']
+                                                          ))
       service.perform
 
       expect(outbound.reload.custom_attributes[verification::MATERIALIZED_COMMAND_KEY]).to eq(command.id)
@@ -801,6 +801,21 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
       expect(account.scheduling_appointments.find_by!(external_ref: 'medelement:reception:broken').id).to eq(existing_invalid_import.id)
       expect(account.scheduling_appointments.find_by!(external_ref: 'medelement:reception:975592971773905133')).to be_present
       expect(account.scheduling_appointments.where(source: 'medelement').count).to eq(2)
+    end
+  end
+
+  it 'prefetches stale patients into Concurrent::Map and passes Hash to sync_patient_codes when sync_patients? is enabled' do
+    allow(configuration).to receive(:sync_patients?).and_return(true)
+    allow(client).to receive(:get_patient).with(patient_code: '550990851604984873').and_return(
+      'PATIENT_CODE' => '550990851604984873',
+      'FIRSTNAME' => 'Test',
+      'LASTNAME' => 'Patient',
+      'PHONE_MOBILE' => '+77010000000'
+    )
+
+    travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
+      expect { service.perform }.not_to raise_error
+      expect(client).to have_received(:get_patient).with(patient_code: '550990851604984873').at_least(:once)
     end
   end
 
