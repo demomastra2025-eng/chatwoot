@@ -32,6 +32,7 @@ import {
 import { fromDateTimeInputValue, toDateTimeInputValue } from '../helpers';
 import {
   formatSchedulingErrorMessage,
+  isDeletedFromScheduling,
   toIntegerNumeric,
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
@@ -205,7 +206,7 @@ const pageErrorDescription = computed(() =>
 
 const resourceCards = computed(() =>
   referencesStore.resources.filter(
-    resource => !resource.customAttributes?.deletedFromScheduling
+    resource => !isDeletedFromScheduling(resource)
   )
 );
 

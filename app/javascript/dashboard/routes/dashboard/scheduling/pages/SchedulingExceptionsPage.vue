@@ -19,6 +19,7 @@ import SchedulingRecordTable from 'dashboard/components-next/Scheduling/Scheduli
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import {
   formatSchedulingErrorMessage,
+  isDeletedFromScheduling,
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
 import { DEFAULT_WORKSPACE_TIMEZONE } from '../constants';
@@ -86,7 +87,7 @@ const activeTabIndex = computed(() =>
 
 const selectableResources = computed(() => {
   const activeResources = referencesStore.resources.filter(
-    resource => !resource.customAttributes?.deletedFromScheduling
+    resource => !isDeletedFromScheduling(resource)
   );
   const selectedResourceIds = [overrideForm.resourceId, timeOffForm.resourceId]
     .map(Number)

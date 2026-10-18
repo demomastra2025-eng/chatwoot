@@ -56,7 +56,7 @@ const serviceCards = computed(() => referencesStore.services);
 const resources = computed(() => referencesStore.resources);
 const pricingResources = computed(() =>
   referencesStore.resources.filter(
-    resource => !resource.customAttributes?.deletedFromScheduling
+    resource => !isDeletedFromScheduling(resource)
   )
 );
 
