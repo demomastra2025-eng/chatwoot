@@ -164,8 +164,8 @@ RSpec.describe Captain::Conversation::ControlService do
       end
     end
 
-    it 'ignores an automated non-Captain source response for the pending sibling' do
-      create(:message, conversation: first_conversation, message_type: :outgoing, sender: nil)
+    it 'ignores an automated source response of an AI assistant for the pending sibling' do
+      create(:message, conversation: first_conversation, message_type: :outgoing, sender: create(:captain_assistant, account: account))
 
       expect(described_class.human_response_after?(second_conversation, incoming.id)).to be false
       expect(thread.reload.captain_control_generation).to eq(0)
