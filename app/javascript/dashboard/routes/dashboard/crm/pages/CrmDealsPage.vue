@@ -1547,9 +1547,6 @@ const customFilterLabel = (definition, values) => {
 const activeFilterChips = computed(() => {
   const chips = [];
   const add = (key, label) => chips.push({ key, label });
-  if (hasListSearchQuery.value) {
-    add('q', `${t('CRM.FILTERS.SEARCH')}: ${listQuickFilters.q.trim()}`);
-  }
   if (filters.aiOnly) add('aiOnly', t('CRM.DEALS.AI_ONLY'));
   if (filters.archived) add('archived', t('CRM.FILTERS.INCLUDE_ARCHIVED'));
   if (filters.showInactive) {
@@ -3314,6 +3311,10 @@ const removeActiveFilter = async key => {
   }
   listCurrentPage.value = 1;
   syncFilterDraft();
+  if (filterPopoverOpen.value) {
+    await nextTick();
+    updateFilterPopoverPosition();
+  }
   await loadDeals();
 };
 
@@ -4189,7 +4190,7 @@ watch(
       class="flex min-w-0 flex-1 flex-col overflow-hidden md:order-last"
     >
       <SchedulingPageHeader
-        class="!bg-n-slate-2"
+        class="!bg-n-slate-2 !pb-1.5 !pt-3"
         center-class="flex-1 md:min-w-80"
         content-class="md:!items-center"
         title-class="!flex-none"
@@ -4239,47 +4240,31 @@ watch(
         <template #center>
           <div
             ref="filterSearchTriggerRef"
-            class="flex min-w-64 flex-1 items-center gap-2"
+            class="flex min-h-8 min-w-64 flex-1 flex-wrap items-center gap-1.5 rounded-lg bg-n-alpha-black2 px-2.5 py-1 outline outline-1 -outline-offset-1 outline-n-weak transition-colors hover:outline-n-slate-6 focus-within:outline-n-brand"
+            @click="openFilterDialog"
           >
+            <CrmDealFilterChips
+              v-if="activeFilterChips.length"
+              :chips="activeFilterChips"
+              @remove="removeActiveFilter"
+              @reset="resetFilters"
+            />
             <Input
               size="sm"
               type="search"
               :model-value="listQuickFilters.q"
               :placeholder="$t('CRM.DEALS.LIST.SEARCH_PLACEHOLDER')"
-              class="w-full"
-              custom-input-class="ltr:!pr-8 rtl:!pl-8"
+              class="min-w-32 flex-1"
+              custom-input-class="!h-6 !bg-transparent !px-0.5 !py-0 !outline-none focus:!outline-none hover:!outline-none"
               @focus="openFilterDialog"
               @click="updateFilterPopoverPosition"
               @keydown.esc="closeFilterPopover"
               @update:model-value="listQuickFilters.q = $event"
-            >
-              <template #suffix>
-                <Icon
-                  icon="i-lucide-search"
-                  class="absolute top-1/2 size-4 -translate-y-1/2 text-n-slate-11 ltr:right-2 rtl:left-2"
-                />
-              </template>
-            </Input>
-            <button
-              type="button"
-              class="inline-flex shrink-0 items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium"
-              :class="
-                activeFilterChips.length
-                  ? 'border-n-brand bg-n-brand/10 text-n-brand'
-                  : 'border-n-weak text-n-slate-11'
-              "
-              data-test="deal-filter-button"
-              @click="openFilterDialog"
-            >
-              {{ $t('CRM.FILTERS.TITLE') }}
-              <span
-                v-if="activeFilterChips.length"
-                class="rounded-full bg-n-brand px-1.5 text-[10px] text-white"
-                data-test="active-filter-count"
-              >
-                {{ activeFilterChips.length }}
-              </span>
-            </button>
+            />
+            <Icon
+              icon="i-lucide-search"
+              class="size-4 shrink-0 text-n-slate-11"
+            />
           </div>
         </template>
         <template #actions>
@@ -4313,13 +4298,6 @@ watch(
         </template>
       </SchedulingPageHeader>
 
-      <CrmDealFilterChips
-        v-if="activeFilterChips.length"
-        :chips="activeFilterChips"
-        @remove="removeActiveFilter"
-        @reset="resetFilters"
-      />
-
       <div
         ref="dealsListScrollRef"
         class="flex-1"
@@ -4332,8 +4310,8 @@ watch(
         <div
           :class="
             shouldRenderBoard && !ui.isLoading && !ui.error
-              ? 'flex h-full min-h-0 flex-col px-6 pb-5 pt-3'
-              : 'flex flex-col gap-4 px-6 pb-5 pt-3'
+              ? 'flex h-full min-h-0 flex-col px-6 pb-5 pt-1'
+              : 'flex flex-col gap-4 px-6 pb-5 pt-2'
           "
         >
           <CrmPageSkeleton

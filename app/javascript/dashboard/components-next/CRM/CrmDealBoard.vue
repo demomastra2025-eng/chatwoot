@@ -367,38 +367,44 @@ const handleColumnChange = (event, stageId) => {
     class="flex h-full min-h-0 flex-col overflow-auto px-1 pb-2"
     @scroll.passive="handleBoardScroll"
   >
-    <div class="mx-auto flex w-max min-h-full items-stretch gap-0 py-1">
+    <div class="mx-auto flex w-max min-h-full items-stretch gap-0 pb-1 pt-0">
       <section
         v-for="column in kanbanColumns"
         :key="column.stageId"
         class="crm-deal-board-column flex min-h-full w-[18rem] shrink-0 self-stretch flex-col overflow-visible"
       >
         <header
-          class="sticky top-0 z-10 bg-n-slate-2/95 px-3 pt-3 pb-1.5 backdrop-blur supports-[backdrop-filter]:bg-n-slate-2/80"
+          class="sticky top-0 z-10 bg-n-slate-2/95 px-3 pt-1.5 pb-1.5 backdrop-blur supports-[backdrop-filter]:bg-n-slate-2/80"
         >
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex min-w-0 items-center gap-1.5">
               <h3 class="mb-0 truncate text-sm font-semibold text-n-slate-12">
                 {{ column.label }}
               </h3>
-            </div>
-            <div class="flex items-center gap-2">
               <span
-                class="rounded-full bg-n-alpha-black2 px-2 py-0.5 text-xs font-semibold tabular-nums text-n-slate-12"
+                class="shrink-0 rounded-full bg-n-alpha-black2 px-2 py-0.5 text-xs font-semibold tabular-nums text-n-slate-12"
                 data-test="stage-deal-count"
               >
                 {{ columnDealCount(column) }}
               </span>
+            </div>
+            <div class="flex shrink-0 items-center gap-1.5">
+              <span
+                class="max-w-[9rem] truncate text-right text-[11px] font-medium tabular-nums text-n-slate-11"
+                data-test="stage-amounts"
+              >
+                {{ columnAmountLabels(column).join(' · ') }}
+              </span>
               <button
                 v-if="showSortToggle"
                 type="button"
-                class="flex size-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent p-0 text-n-slate-11 transition-colors hover:bg-n-alpha-black2 hover:text-n-slate-12"
+                class="flex size-6 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent p-0 text-n-slate-11 transition-colors hover:bg-n-alpha-black2 hover:text-n-slate-12"
                 :aria-label="sortDirectionLabel(column.stageId)"
                 :title="sortDirectionLabel(column.stageId)"
                 @click.stop="emit('toggleSortDirection', column.stageId)"
               >
                 <i
-                  class="text-base"
+                  class="text-sm"
                   :class="sortDirectionIcon(column.stageId)"
                   aria-hidden="true"
                 />
@@ -406,13 +412,7 @@ const handleColumnChange = (event, stageId) => {
             </div>
           </div>
           <div
-            class="mt-1 min-h-4 text-[11px] font-medium text-n-slate-11"
-            data-test="stage-amounts"
-          >
-            {{ columnAmountLabels(column).join(' · ') }}
-          </div>
-          <div
-            class="crm-deal-board-stage-color mt-3 h-1 overflow-hidden rounded-full"
+            class="crm-deal-board-stage-color mt-2 h-1 overflow-hidden rounded-full"
             :style="{
               backgroundColor: column.color || DEFAULT_STAGE_COLOR,
             }"
