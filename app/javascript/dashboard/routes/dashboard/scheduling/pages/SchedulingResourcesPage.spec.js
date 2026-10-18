@@ -138,4 +138,31 @@ describe('SchedulingResourcesPage', () => {
       wrapper.find('[data-testid="resource-workday-override-row"]').text()
     ).toContain('2026-10-20');
   });
+
+  it('hides resources archived with snake_case deleted_from_scheduling after page reload', async () => {
+    mocks.store.resources = [
+      {
+        active: false,
+        customAttributes: { deleted_from_scheduling: true },
+        id: 43,
+        name: 'Асет',
+        specialty: 'Хирург',
+      },
+      {
+        active: true,
+        customAttributes: {},
+        id: 44,
+        name: 'Дина',
+        specialty: 'Терапевт',
+      },
+    ];
+
+    const wrapper = mount(SchedulingResourcesPage, {
+      global: { mocks: { $t: key => key }, stubs },
+    });
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain('Асет');
+    expect(wrapper.text()).toContain('Дина');
+  });
 });

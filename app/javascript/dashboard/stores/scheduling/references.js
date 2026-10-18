@@ -101,6 +101,7 @@ export const useSchedulingReferencesStore = defineStore(
               active: false,
               customAttributes: {
                 ...(resource.customAttributes || {}),
+                deleted_from_scheduling: true,
                 deletedFromScheduling: true,
               },
             };
