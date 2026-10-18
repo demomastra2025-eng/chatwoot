@@ -199,22 +199,50 @@ describe('Sidebar notifications and phone placement', () => {
     expect(rail.find('[data-name="Inbox"]').exists()).toBe(false);
   });
 
-  it('puts the phone button directly above the profile in the mobile menu', async () => {
+  it('puts the phone button above the profile and notifications in the mobile footer', async () => {
     setWindowWidth(600);
     const wrapper = mountSidebar();
     await flushPromises();
 
     expect(
       wrapper.find('[data-testid="sidebar-rail-footer-actions"]').exists()
-    ).toBe(false);
-    expect(footerItems(wrapper)).toEqual(['phone-toggle', 'profile-menu']);
+    ).toBe(true);
+    expect(footerItems(wrapper)).toEqual([
+      'phone-toggle',
+      'profile-menu',
+      'notification-bell',
+    ]);
     expect(
       wrapper.get('[data-testid="phone-toggle"]').attributes('data-collapsed')
     ).toBe('false');
-    // The bell stays in the menu; the phone button left it.
+    expect(
+      wrapper
+        .get('[data-testid="notification-bell"]')
+        .attributes('data-collapsed')
+    ).toBe('false');
+    // Neither the phone button nor notifications stay in the top nav on mobile.
     const menuIds = testIdsIn(wrapper.get('nav').element);
-    expect(menuIds).toContain('notification-bell');
+    expect(menuIds).not.toContain('notification-bell');
     expect(menuIds).not.toContain('phone-toggle');
+    setWindowWidth(1280);
+  });
+
+  it('navigates to inbox_view and closes mobile sidebar when notifications are clicked on mobile', async () => {
+    setWindowWidth(600);
+    mocks.router.push.mockClear();
+    const wrapper = mountSidebar();
+    await flushPromises();
+
+    wrapper
+      .findComponent({ name: 'SidebarNotificationBell' })
+      .vm.$emit('openNotificationPanel');
+
+    expect(mocks.router.push).toHaveBeenCalledWith({
+      name: 'inbox_view',
+      params: { accountId: 1 },
+      query: {},
+    });
+    expect(wrapper.emitted('closeMobileSidebar')).toHaveLength(1);
     setWindowWidth(1280);
   });
 
@@ -224,7 +252,7 @@ describe('Sidebar notifications and phone placement', () => {
       1280,
       '[data-testid="sidebar-rail-footer-actions"]',
     ],
-    ['mobile menu', 600, 'nav'],
+    ['mobile footer', 600, '[data-testid="sidebar-rail-footer-actions"]'],
   ])(
     'labels the bell with the notifications panel title in the %s',
     async (_, width, container) => {

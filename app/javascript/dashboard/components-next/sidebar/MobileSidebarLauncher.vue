@@ -21,13 +21,22 @@ const isConversationRoute = computed(() => {
     'conversation_through_inbox',
     'conversations_through_label',
     'team_conversations_through_label',
+    'conversations_through_team',
     'conversations_through_folders',
     'conversation_through_mentions',
     'conversation_through_unattended',
     'conversation_through_participating',
     'inbox_view_conversation',
+    'communication_thread_conversation',
   ];
-  return CONVERSATION_ROUTES.includes(route.name);
+  return (
+    CONVERSATION_ROUTES.includes(route.name) ||
+    Boolean(
+      route.params?.conversation_id ||
+        route.params?.conversationId ||
+        route.params?.communication_thread_id
+    )
+  );
 });
 
 const toggleSidebar = () => {

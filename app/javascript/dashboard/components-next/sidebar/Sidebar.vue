@@ -93,7 +93,6 @@ const composeConversationRef = ref(null);
 const notificationPanelRef = ref(null);
 const phoneWidgetStore = usePhoneWidgetStore();
 
-const openNotificationPanel = () => notificationPanelRef.value?.toggle();
 // Same rule as the phone widget: only employees with a browser SIP line.
 const showPhoneToggle = computed(() => phoneWidgetStore.available);
 
@@ -1586,10 +1585,20 @@ const notificationMenuItem = computed(() =>
   menuItems.value.find(item => item.name === 'Inbox')
 );
 
+const openNotificationPanel = () => {
+  if (isMobile.value) {
+    notificationPanelRef.value?.close?.();
+    if (notificationMenuItem.value?.to) {
+      router.push(notificationMenuItem.value.to);
+    }
+    emit('closeMobileSidebar');
+    return;
+  }
+  notificationPanelRef.value?.toggle();
+};
+
 const primaryMenuItems = computed(() =>
-  isEffectivelyCollapsed.value
-    ? menuItems.value.filter(item => item.name !== 'Inbox')
-    : menuItems.value
+  menuItems.value.filter(item => item.name !== 'Inbox')
 );
 
 const resolvePath = to => {
@@ -1861,20 +1870,12 @@ const desktopSidebarWidth = computed(() => {
           class="flex flex-col gap-1 m-0 list-none min-w-0"
           :class="{ 'items-center': isEffectivelyCollapsed }"
         >
-          <template v-for="item in primaryMenuItems" :key="item.name">
-            <template v-if="item.name === 'Inbox'">
-              <SidebarNotificationBell
-                :is-collapsed="false"
-                :label="item.label"
-                @open-notification-panel="openNotificationPanel"
-              />
-            </template>
-            <SidebarGroup
-              v-else
-              v-bind="item"
-              :show-collapsed-popover="false"
-            />
-          </template>
+          <SidebarGroup
+            v-for="item in primaryMenuItems"
+            :key="item.name"
+            v-bind="item"
+            :show-collapsed-popover="false"
+          />
         </ul>
       </nav>
       <section
@@ -1917,12 +1918,14 @@ const desktopSidebarWidth = computed(() => {
             @open-key-shortcut-modal="emit('openKeyShortcutModal')"
           />
           <ul
-            v-if="isEffectivelyCollapsed && notificationMenuItem"
-            class="flex flex-col items-center gap-1 m-0 list-none"
+            v-if="notificationMenuItem"
+            class="flex flex-col gap-1 m-0 list-none"
+            :class="isEffectivelyCollapsed ? 'items-center' : 'w-full'"
             data-testid="sidebar-rail-footer-actions"
           >
             <SidebarNotificationBell
               v-if="notificationMenuItem"
+              :is-collapsed="isEffectivelyCollapsed"
               :label="notificationMenuItem.label"
               @open-notification-panel="openNotificationPanel"
             />
