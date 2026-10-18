@@ -18,6 +18,10 @@ RSpec.describe ClearRemovedAgentBotReferences do
     db.select_rows("SELECT sender_type, sender_id FROM messages WHERE id = #{message.id.to_i}").first
   end
 
+  def notification_actor(notification)
+    db.select_rows("SELECT secondary_actor_type, secondary_actor_id FROM notifications WHERE id = #{notification.id.to_i}").first
+  end
+
   def bot_message
     create(:message, account: account, conversation: conversation, message_type: :outgoing).tap do |message|
       Message.where(id: message.id).update_all(sender_type: 'AgentBot', sender_id: 41)
@@ -70,9 +74,8 @@ RSpec.describe ClearRemovedAgentBotReferences do
 
     run_migration
 
-    notification_actor = ->(notification) { db.select_rows("SELECT secondary_actor_type, secondary_actor_id FROM notifications WHERE id = #{notification.id}").first }
-    expect(notification_actor.call(from_bot)).to eq([nil, nil])
-    expect(notification_actor.call(from_user)).to eq(['User', agent.id])
+    expect(notification_actor(from_bot)).to eq([nil, nil])
+    expect(notification_actor(from_user)).to eq(['User', agent.id])
     expect { Notification.find(from_bot.id).push_event_data }.not_to raise_error
   end
 

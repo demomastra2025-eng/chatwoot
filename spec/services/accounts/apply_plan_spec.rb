@@ -21,7 +21,9 @@ RSpec.describe Accounts::ApplyPlan do
 
       preview = service(%w[ai_agents]).preview
 
-      expect(preview).to have_attributes(plan: 'base', modules: %w[ai_agents], plan_version: Accounts::Plans.version, previous_plan: nil, previous_modules: [])
+      expect(preview).to have_attributes(
+        plan: 'base', modules: %w[ai_agents], plan_version: Accounts::Plans.version, previous_plan: nil, previous_modules: []
+      )
       expect(preview.enable).to include('channel_email', 'channel_voice', 'captain_integration', 'labels')
       expect(preview.enable).not_to include('crm')
       expect(preview.disable).to contain_exactly('captain_scheduling_grounding_guard', 'campaigns')

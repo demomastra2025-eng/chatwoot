@@ -68,10 +68,12 @@ RSpec.describe 'Enterprise Audit API', type: :request do
       it 'lists the history of an object whose class no longer exists' do
         account.enable_features(:audit_logs)
         account.save!
+        # rubocop:disable Rails/SkipsModelValidations
         Audited::Audit.insert_all!(
           [{ auditable_type: 'AgentBot', auditable_id: 41, associated_type: 'Account', associated_id: account.id,
              action: 'destroy', audited_changes: { 'name' => 'Old bot' }, created_at: Time.current }]
         )
+        # rubocop:enable Rails/SkipsModelValidations
 
         get "/api/v1/accounts/#{account.id}/audit_logs",
             headers: admin.create_new_auth_token,
