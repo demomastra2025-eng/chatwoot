@@ -2,7 +2,9 @@ tags:
   - Accounts
 operationId: update-an-account
 summary: Update an account
-description: Update an account's attributes
+description: |-
+  Update an account's attributes. Features go through the same checks as the platform admin screens: a feature that no plan enables, one that must stay on
+  and a platform-internal one are refused with 422 and nothing is saved. Every call is recorded in the audit log.
 security:
   - platformAppApiKey: []
 requestBody:
@@ -20,6 +22,12 @@ responses:
           $ref: '#/components/schemas/platform_account'
   401:
     description: Unauthorized
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/bad_request_error'
+  422:
+    description: The request changes a feature that cannot be changed through the API, or the data is not valid
     content:
       application/json:
         schema:

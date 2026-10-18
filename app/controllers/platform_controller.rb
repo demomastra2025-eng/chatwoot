@@ -1,3 +1,7 @@
+# The base of the Platform API: a partner (a PlatformApp, identified by the token in the `api_access_token` header)
+# creates accounts and users for its own customers. A partner reads and changes only what it created itself (the
+# `platform_app_permissibles` of its access), and every call that changes something leaves an entry in the audit log
+# with the partner as the actor.
 class PlatformController < ActionController::API
   include RequestExceptionHandler
 
@@ -30,8 +34,23 @@ class PlatformController < ActionController::API
   end
 
   def validate_platform_app_permissible
-    return if @platform_app.platform_app_permissibles.find_by(permissible: @resource)
+    return if @platform_app.owns?(@resource)
 
+    render_non_permissible
+  end
+
+  def render_non_permissible
     render json: { error: 'Non permissible resource' }, status: :unauthorized
+  end
+
+  # An entry of the audit log for something done to one account (the changes carry names and values of settings, never
+  # a secret)
+  def audit_account(account, action, changes = {})
+    SuperAdmin::AccountAudit.record(account: account, actor: @platform_app, action: action, changes: changes, request: request)
+  end
+
+  # An entry of the audit log for something done to another record (a user)
+  def audit_record(record, action, changes = {})
+    SuperAdmin::PlatformAudit.record(auditable: record, action: action, actor: @platform_app, changes: changes, request: request)
   end
 end

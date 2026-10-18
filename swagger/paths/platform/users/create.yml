@@ -2,7 +2,10 @@ tags:
   - Users
 operationId: create-a-user
 summary: Create a User
-description: Create a User
+description: |-
+  Create a User. The user is owned by the platform app that created it; the app can read, change, sign in as and delete only its own users.
+  An email that already belongs to another user is never attached to the app: the request is refused with 409.
+  Repeating the request for a user the app created itself returns that user unchanged.
 security:
   - platformAppApiKey: []
 requestBody:
@@ -20,6 +23,12 @@ responses:
           $ref: '#/components/schemas/user'
   '401':
     description: Unauthorized
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/bad_request_error'
+  '409':
+    description: A user with this email already exists
     content:
       application/json:
         schema:

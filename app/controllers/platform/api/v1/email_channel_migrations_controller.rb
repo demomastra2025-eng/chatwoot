@@ -6,6 +6,8 @@ class Platform::Api::V1::EmailChannelMigrationsController < PlatformController
 
   def create
     results = migrate_email_channels
+    # Which mailboxes were moved and how it went; the provider settings (keys, tokens) never go to the log
+    audit_account(@account, 'partner_migrate_email_channels', 'channels' => results.map { |result| result.slice(:email, :status) })
     render json: { results: results }, status: :ok
   end
 
@@ -16,9 +18,9 @@ class Platform::Api::V1::EmailChannelMigrationsController < PlatformController
   end
 
   def validate_account_permissible
-    return if @platform_app.platform_app_permissibles.find_by(permissible: @account)
+    return if @platform_app.owns?(@account)
 
-    render json: { error: 'Non permissible resource' }, status: :unauthorized
+    render_non_permissible
   end
 
   def validate_feature_flag

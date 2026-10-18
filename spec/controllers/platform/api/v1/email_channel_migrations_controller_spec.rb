@@ -86,6 +86,15 @@ RSpec.describe 'Platform Email Channel Migrations API', locale: :en, type: :requ
         expect(result['channel_id']).to be_present
       end
 
+      it 'records the migration in the audit log with the mailbox and the result, and without the provider keys' do
+        post base_url, params: valid_migration_params, headers: headers, as: :json
+
+        audit = Audited::Audit.where(auditable: account, action: 'partner_migrate_email_channels').last
+        expect(audit).to have_attributes(user_id: platform_app.id, user_type: 'PlatformApp')
+        expect(audit.audited_changes).to eq('channels' => [{ 'email' => 'support@example.com', 'status' => 'success' }])
+        expect(audit.audited_changes.to_s).not_to include('ya29.test-access-token', '1//test-refresh-token')
+      end
+
       it 'sets correct google channel attributes' do
         post base_url, params: valid_migration_params, headers: headers, as: :json
 
