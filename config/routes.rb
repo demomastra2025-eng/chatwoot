@@ -410,6 +410,8 @@ Rails.application.routes.draw do
           resources :contacts, only: [:index, :show, :update, :create, :destroy] do
             collection do
               get :active
+              get :duplicates, to: 'contacts/duplicates#index'
+              post :dismiss_duplicate, to: 'contacts/duplicates#dismiss'
               get :search
               post :filter
               post :import

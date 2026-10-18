@@ -7,6 +7,14 @@ class ContactPolicy < ApplicationPolicy
     contact_access?
   end
 
+  def duplicates?
+    contact_access?
+  end
+
+  def dismiss_duplicate?
+    contact_access?
+  end
+
   def import?
     administrator_access?
   end

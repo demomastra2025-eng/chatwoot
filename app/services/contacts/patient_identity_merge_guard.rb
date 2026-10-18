@@ -12,16 +12,31 @@ class Contacts::PatientIdentityMergeGuard
   end
 
   # Operator merges (dashboard, MedElement conflicts, Copilot, identify) never absorb a separate patient card
-  # into another contact or a contact into it, unless both sides carry the same confirmed provider identity.
+  # into another contact or a contact into it, unless both sides carry the same confirmed provider identity
+  # or represent duplicate cards of the same person without conflicting identities.
   def self.explicit_merge_allowed?(base_contact:, mergee_contact:)
     return false if base_contact.account_id != mergee_contact.account_id
 
     base = identity(base_contact)
     mergee = identity(mergee_contact)
-    return false if conflicting_identities?(mergee, base)
+    return false if conflicting_iin?(mergee, base)
     return true if matching_identity?(mergee, base)
+    return true if same_person_demographics?(base_contact, mergee_contact)
+    return false if conflicting_code?(mergee, base)
 
     !patient_card?(base_contact, base) && !patient_card?(mergee_contact, mergee)
+  end
+
+  def self.same_person_cards?(first_contact, second_contact)
+    return false if first_contact.blank? || second_contact.blank?
+    return false if first_contact.account_id != second_contact.account_id || first_contact.id == second_contact.id
+
+    first = identity(first_contact)
+    second = identity(second_contact)
+    return false if conflicting_iin?(first, second)
+    return true if matching_identity?(first, second)
+
+    same_person_demographics?(first_contact, second_contact)
   end
 
   # A merge re-points appointment.patient_contact_id outside the upsert write fence (ensure_write_target_unchanged!).
@@ -50,11 +65,84 @@ class Contacts::PatientIdentityMergeGuard
   end
 
   def self.conflicting_identities?(source, target)
-    %i[code iin].any? { |key| source[key].present? && target[key].present? && source[key] != target[key] }
+    conflicting_code?(source, target) || conflicting_iin?(source, target)
+  end
+
+  def self.conflicting_code?(source, target)
+    conflicting_value?(source[:code], target[:code])
+  end
+
+  def self.conflicting_iin?(source, target)
+    conflicting_value?(source[:iin], target[:iin])
+  end
+
+  def self.conflicting_value?(first, second)
+    first.present? && second.present? && first != second
   end
 
   def self.matching_identity?(source, target)
     %i[code iin].any? { |key| source[key].present? && source[key] == target[key] }
+  end
+
+  def self.same_person_demographics?(first_contact, second_contact)
+    first = demographic_identity(first_contact)
+    second = demographic_identity(second_contact)
+    return false if conflicting_value?(first[:birth_date], second[:birth_date])
+
+    matching_full_name?(first, second) || matching_first_name_and_birth_date?(first, second)
+  end
+
+  def self.matching_full_name?(first, second)
+    first_parts = [first[:first_name], first[:last_name]].compact_blank
+    second_parts = [second[:first_name], second[:last_name]].compact_blank
+    first_parts.size == 2 && second_parts.size == 2 && first_parts.sort == second_parts.sort
+  end
+
+  def self.matching_first_name_and_birth_date?(first, second)
+    return false if first[:first_name].blank? || second[:first_name].blank?
+    return false if first[:birth_date].blank? || first[:birth_date] != second[:birth_date]
+    return false if conflicting_value?(first[:last_name], second[:last_name])
+
+    first[:first_name] == second[:first_name]
+  end
+
+  def self.demographic_identity(contact)
+    attrs = contact.custom_attributes.to_h
+    first_name, last_name = extract_first_and_last_name(contact, attrs)
+    {
+      first_name: normalize_name_part(first_name),
+      last_name: normalize_name_part(last_name),
+      birth_date: normalize_birth_date(attrs['birth_date'].presence || attrs['medelement_birth_date'].presence)
+    }
+  end
+
+  def self.extract_first_and_last_name(contact, attrs)
+    first = attrs['medelement_first_name'].presence || contact.name.to_s.strip.presence
+    last = attrs['medelement_last_name'].presence || contact.last_name.to_s.strip.presence
+    if last.blank? && first.present?
+      tokens = first.split(/\s+/).compact_blank
+      return [tokens.first, tokens.second] if tokens.size == 2 && !default_placeholder_name?(first)
+    end
+    [first, last]
+  end
+
+  def self.default_placeholder_name?(value)
+    value.to_s.strip.casecmp('John Doe').zero? || value.to_s.strip.casecmp('MyString').zero?
+  end
+
+  def self.normalize_name_part(value)
+    cleaned = value.to_s.unicode_normalize(:nfkc).downcase.tr('ё', 'е').squish
+    return if cleaned.length < 2 || cleaned.match?(/\d/)
+
+    cleaned
+  end
+
+  def self.normalize_birth_date(value)
+    return if value.blank?
+
+    Date.parse(value.to_s).iso8601
+  rescue ArgumentError
+    nil
   end
 
   def self.identity(contact)
@@ -66,5 +154,9 @@ class Contacts::PatientIdentityMergeGuard
       card: attributes[Integrations::Medelement::PatientContactBinding::CARD_KEY] == true
     }
   end
-  private_class_method :identity, :conflicting_identities?, :matching_identity?, :patient_card?
+  private_class_method :identity, :conflicting_identities?, :conflicting_code?, :conflicting_iin?,
+                       :conflicting_value?, :matching_identity?, :same_person_demographics?,
+                       :matching_full_name?, :matching_first_name_and_birth_date?, :demographic_identity,
+                       :extract_first_and_last_name, :default_placeholder_name?, :normalize_name_part,
+                       :normalize_birth_date, :patient_card?
 end

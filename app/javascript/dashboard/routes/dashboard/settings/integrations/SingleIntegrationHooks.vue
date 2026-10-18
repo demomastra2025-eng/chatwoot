@@ -1295,6 +1295,26 @@ onBeforeUnmount(() => {
                     </dt>
                     <dd>{{ contact.identifier_masked || '—' }}</dd>
                   </div>
+                  <div v-if="contact.birth_date">
+                    <dt>
+                      {{
+                        $t(
+                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.BIRTH_DATE'
+                        )
+                      }}
+                    </dt>
+                    <dd>{{ contact.birth_date }}</dd>
+                  </div>
+                  <div v-if="contact.patient_code">
+                    <dt>
+                      {{
+                        $t(
+                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PATIENT_CODE'
+                        )
+                      }}
+                    </dt>
+                    <dd>{{ contact.patient_code }}</dd>
+                  </div>
                   <div>
                     <dt>
                       {{

@@ -109,6 +109,17 @@ class ContactAPI extends ApiClient {
   exportContacts(queryPayload) {
     return axios.post(`${this.url}/export`, queryPayload);
   }
+
+  getDuplicates() {
+    return axios.get(`${this.url}/duplicates`);
+  }
+
+  dismissDuplicate(contactId, duplicateContactId) {
+    return axios.post(`${this.url}/dismiss_duplicate`, {
+      contact_id: contactId,
+      duplicate_contact_id: duplicateContactId,
+    });
+  }
 }
 
 export default new ContactAPI();

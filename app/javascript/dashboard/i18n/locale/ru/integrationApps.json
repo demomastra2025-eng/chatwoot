@@ -186,6 +186,8 @@
         "CONFLICTING": "Контакт — владелец данных",
         "PHONE": "Телефон",
         "IIN": "ИИН",
+        "BIRTH_DATE": "Дата рождения",
+        "PATIENT_CODE": "Код карты",
         "CONVERSATIONS": "Диалоги",
         "APPOINTMENTS": "Записи",
         "DEALS": "Сделки",

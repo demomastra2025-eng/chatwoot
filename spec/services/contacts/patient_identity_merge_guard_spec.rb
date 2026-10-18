@@ -91,6 +91,15 @@ RSpec.describe Contacts::PatientIdentityMergeGuard do
       duplicate = create(:contact, account: account, custom_attributes: { 'iin' => '940720300129' })
       expect(described_class.explicit_merge_allowed?(base_contact: duplicate, mergee_contact: card)).to be(true)
     end
+
+    it 'allows merging two duplicate patient cards of the same person with different provider codes' do
+      card_a = create(:contact, account: account, name: 'Айгуль', last_name: 'Ахметова',
+                                custom_attributes: { 'medelement_patient_code' => 'code-1', 'birth_date' => '1990-05-14' })
+      card_b = create(:contact, account: account, name: 'Айгуль', last_name: 'Ахметова',
+                                custom_attributes: { 'medelement_patient_code' => 'code-2', 'medelement_patient_card' => true })
+
+      expect(described_class.explicit_merge_allowed?(base_contact: card_a, mergee_contact: card_b)).to be(true)
+    end
   end
 
   describe '.patient_binding_write_in_flight?' do

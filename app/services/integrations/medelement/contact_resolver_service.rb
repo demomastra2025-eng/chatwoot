@@ -18,7 +18,7 @@ class Integrations::Medelement::ContactResolverService
     existing_contact = preferred_contact || find_by_patient_code(patient_code)
     return existing_contact if fresh?(existing_contact)
 
-    patient = prefetched_patient == :not_prefetched ? client.get_patient(patient_code: patient_code) : prefetched_patient
+    patient, patient_code, existing_contact = fetch_or_resolve_patient(patient_code, existing_contact, prefetched_patient)
     return existing_contact if patient.blank?
 
     validate_patient!(patient, expected_patient_code: patient_code)
@@ -195,7 +195,8 @@ class Integrations::Medelement::ContactResolverService
 
   def patient_code_available_for?(contact, patient_code)
     linked_code = contact.custom_attributes.to_h['medelement_patient_code'].to_s.presence
-    linked_code.blank? || linked_code == patient_code.to_s
+    merged_codes = Array(contact.custom_attributes.to_h['medelement_merged_patient_codes']).map(&:to_s)
+    linked_code.blank? || linked_code == patient_code.to_s || merged_codes.include?(patient_code.to_s)
   end
 
   def contact_iin_compatible?(contact, iin)
@@ -242,7 +243,103 @@ class Integrations::Medelement::ContactResolverService
   end
 
   def find_by_patient_code(patient_code)
-    account.contacts.find_by("custom_attributes ->> 'medelement_patient_code' = ?", patient_code.to_s)
+    code = patient_code.to_s
+    return if code.blank?
+
+    account.contacts.find_by("custom_attributes ->> 'medelement_patient_code' = ?", code) ||
+      account.contacts.find_by("(custom_attributes -> 'medelement_merged_patient_codes') ? :code", code: code)
+  end
+
+  def fetch_or_resolve_patient(patient_code, existing_contact, prefetched_patient)
+    return [prefetched_patient, patient_code, existing_contact] unless prefetched_patient == :not_prefetched
+
+    patient = client.get_patient(patient_code: patient_code)
+    return [patient, patient_code, existing_contact] if patient.present? || existing_contact.blank?
+
+    resolve_deleted_provider_patient(existing_contact, patient_code)
+  end
+
+  def resolve_deleted_provider_patient(contact, dead_code)
+    fallback_patient, alive_code = fetch_fallback_merged_patient(contact, dead_code)
+    return [fallback_patient, alive_code, contact] if fallback_patient.present?
+
+    survivor = auto_merge_deleted_provider_duplicate(contact, dead_code)
+    [nil, dead_code, survivor || contact]
+  end
+
+  def fetch_fallback_merged_patient(contact, dead_code)
+    merged_codes = Array(contact.custom_attributes.to_h['medelement_merged_patient_codes']).map(&:to_s) - [dead_code.to_s]
+    merged_codes.each do |candidate_code|
+      patient = client.get_patient(patient_code: candidate_code)
+      next if patient.blank?
+
+      promote_merged_patient_code!(contact, alive_code: candidate_code, dead_code: dead_code)
+      return [patient, candidate_code]
+    end
+    [nil, dead_code]
+  end
+
+  def promote_merged_patient_code!(contact, alive_code:, dead_code:)
+    attrs = contact.custom_attributes.to_h.deep_stringify_keys
+    current_primary = attrs['medelement_patient_code'].to_s.presence
+    all_merged = (Array(attrs['medelement_merged_patient_codes']) + [current_primary, dead_code]).compact_blank.map(&:to_s).uniq
+    attrs['medelement_patient_code'] = alive_code.to_s
+    attrs['medelement_merged_patient_codes'] = all_merged - [alive_code.to_s]
+    contact.skip_runtime_events = true
+    contact.update!(custom_attributes: attrs)
+  end
+
+  def auto_merge_deleted_provider_duplicate(contact, dead_code)
+    return unless contact.custom_attributes.to_h['medelement_patient_code'].to_s == dead_code.to_s
+
+    survivor = find_live_duplicate_survivor(contact)
+    return if survivor.blank?
+
+    ContactMergeAction.new(account: account, base_contact: survivor, mergee_contact: contact).perform
+    resolve_open_duplicate_conflicts!(survivor.id, contact.id)
+    survivor.reload
+  rescue Contacts::ReferenceMergeService::UnsafeMergeError
+    nil
+  end
+
+  def find_live_duplicate_survivor(contact)
+    candidate_ids = duplicate_candidate_ids_for(contact)
+    return if candidate_ids.empty?
+
+    account.contacts.where(id: candidate_ids).find do |candidate|
+      code = candidate.custom_attributes.to_h['medelement_patient_code'].to_s.presence
+      next false if code.blank? || code == contact.custom_attributes.to_h['medelement_patient_code'].to_s
+      next false unless Contacts::PatientIdentityMergeGuard.same_person_cards?(candidate, contact)
+
+      client.get_patient(patient_code: code).present?
+    end
+  end
+
+  def duplicate_candidate_ids_for(contact)
+    attrs = contact.custom_attributes.to_h
+    comment_id = attrs['phone_conflict_comment'].to_s[/contact #(\d+)/, 1]&.to_i
+    shared_owner_id = attrs[Integrations::Medelement::PatientContactBinding::SHARED_OWNER_KEY]&.to_i
+    ([comment_id, shared_owner_id] + open_conflict_contact_ids_for(contact)).compact.uniq - [0, contact.id]
+  end
+
+  def open_conflict_contact_ids_for(contact)
+    Integrations::Medelement::SyncConflict
+      .where(account_id: account.id, status: 'open', conflict_type: 'phone_owned_by_another_contact')
+      .where("details ->> 'contact_id' = :id OR details ->> 'conflicting_contact_id' = :id", id: contact.id.to_s)
+      .flat_map { |c| [c.details['contact_id']&.to_i, c.details['conflicting_contact_id']&.to_i] }
+  end
+
+  def resolve_open_duplicate_conflicts!(survivor_id, merged_id)
+    ids = [survivor_id.to_s, merged_id.to_s]
+    Integrations::Medelement::SyncConflict
+      .where(account_id: account.id, status: 'open')
+      .where("details ->> 'contact_id' IN (:ids) OR details ->> 'conflicting_contact_id' IN (:ids)", ids: ids)
+      .find_each do |conflict|
+        c_ids = [conflict.details['contact_id'].to_s, conflict.details['conflicting_contact_id'].to_s].compact_blank
+        next unless (c_ids - ids).empty?
+
+        conflict.update!(status: 'resolved', resolved_at: Time.current, resolution_note: "Auto-merged into contact ##{survivor_id}")
+      end
   end
 
   def provider_read_models_conflict?(patient_code, direct_patient, contact)
@@ -343,8 +440,19 @@ class Integrations::Medelement::ContactResolverService
   end
 
   def linked_preferred_contact(preferred_contact, patient_code)
-    linked_code = preferred_contact&.custom_attributes.to_h['medelement_patient_code'].to_s
-    preferred_contact if linked_code == patient_code.to_s
+    return if preferred_contact.blank?
+
+    linked_code = preferred_contact.custom_attributes.to_h['medelement_patient_code'].to_s
+    merged_codes = Array(preferred_contact.custom_attributes.to_h['medelement_merged_patient_codes']).map(&:to_s)
+    preferred_contact if linked_code == patient_code.to_s || merged_codes.include?(patient_code.to_s)
+  end
+
+  def primary_patient_code_for(contact, incoming_patient_code)
+    existing_code = contact.custom_attributes.to_h['medelement_patient_code'].to_s.presence
+    merged_codes = Array(contact.custom_attributes.to_h['medelement_merged_patient_codes']).map(&:to_s)
+    return existing_code if existing_code.present? && merged_codes.include?(incoming_patient_code.to_s)
+
+    incoming_patient_code.to_s
   end
 
   def persist_patient_contact!(contact:, patient:, identity:, phone_conflict_comment:)
@@ -369,7 +477,7 @@ class Integrations::Medelement::ContactResolverService
       provider_profile_attributes(patient, first_name, middle_name, identity[:iin])
     ).merge(
       'medelement_last_synced_at' => Time.current.iso8601,
-      'medelement_patient_code' => identity[:patient_code].to_s,
+      'medelement_patient_code' => primary_patient_code_for(contact, identity[:patient_code]),
       'phone_conflict_comment' => phone_conflict_comment,
       'secondary_phones' => secondary_phones(contact, patient, primary_phone)
     ).compact

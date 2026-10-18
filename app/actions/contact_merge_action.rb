@@ -110,17 +110,65 @@ class ContactMergeAction
   end
 
   def merge_and_remove_mergee_contact
-    mergable_attribute_keys = %w[identifier name email phone_number additional_attributes custom_attributes]
+    mergable_attribute_keys = %w[identifier name last_name middle_name email phone_number additional_attributes custom_attributes]
     base_contact_attributes = base_contact.attributes.slice(*mergable_attribute_keys).compact_blank
     mergee_contact_attributes = mergee_contact.attributes.slice(*mergable_attribute_keys).compact_blank
 
     # attributes in base contact are given preference
     merged_attributes = mergee_contact_attributes.deep_merge(base_contact_attributes)
+    if merged_attributes['custom_attributes'].present?
+      merged_attributes['custom_attributes'] = reconcile_merged_custom_attributes(
+        merged_attributes['custom_attributes'],
+        primary_phone: merged_attributes['phone_number']
+      )
+    end
 
     @mergee_contact.reload.destroy!
     Rails.configuration.dispatcher.dispatch(CONTACT_MERGED, Time.zone.now, contact: @base_contact,
                                                                            tokens: [@base_contact.contact_inboxes.filter_map(&:pubsub_token)])
     @base_contact.update!(merged_attributes)
+  end
+
+  def reconcile_merged_custom_attributes(raw_attributes, primary_phone:)
+    custom = raw_attributes.deep_stringify_keys
+    merge_patient_codes!(custom)
+    merge_secondary_phones!(custom, primary_phone)
+    clear_resolved_phone_conflict!(custom, primary_phone)
+    custom
+  end
+
+  def merge_patient_codes!(custom)
+    primary_code = custom['medelement_patient_code'].to_s.presence
+    merged_codes = all_patient_codes - [primary_code].compact
+    custom['medelement_merged_patient_codes'] = merged_codes if merged_codes.any?
+  end
+
+  def all_patient_codes
+    [base_contact, mergee_contact].flat_map do |contact|
+      attrs = contact.custom_attributes.to_h
+      [attrs['medelement_patient_code'], *Array(attrs['medelement_merged_patient_codes'])]
+    end.compact_blank.map(&:to_s).uniq
+  end
+
+  def merge_secondary_phones!(custom, primary_phone)
+    combined = (
+      Array(base_contact.custom_attributes.to_h['secondary_phones']) +
+      Array(mergee_contact.custom_attributes.to_h['secondary_phones'])
+    ).compact_blank.uniq
+    return if combined.empty?
+
+    normalized_primary = Integrations::Medelement::PhoneNumber.normalize(primary_phone)
+    custom['secondary_phones'] = combined.reject do |phone|
+      normalized_primary.present? && Integrations::Medelement::PhoneNumber.normalize(phone) == normalized_primary
+    end
+  end
+
+  def clear_resolved_phone_conflict!(custom, primary_phone)
+    comment = custom['phone_conflict_comment'].to_s
+    if comment.present? && (primary_phone.present? || comment.include?("##{@mergee_contact.id}") || comment.include?("##{@base_contact.id}"))
+      custom.delete('phone_conflict_comment')
+    end
+    Contacts::SharedPhone.clear_share!(custom) if primary_phone.present?
   end
 
   def bulk_reassign(relation, attributes)

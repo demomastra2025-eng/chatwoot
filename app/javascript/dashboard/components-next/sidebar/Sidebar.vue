@@ -1302,6 +1302,13 @@ const menuItems = computed(() => {
             activeOn: ['contacts_dashboard_active'],
           },
           {
+            name: 'Duplicates',
+            visibilityKey: 'Contacts:Duplicates',
+            label: t('SIDEBAR.CONTACT_DUPLICATES'),
+            to: accountScopedRoute('contacts_dashboard_duplicates'),
+            activeOn: ['contacts_dashboard_duplicates'],
+          },
+          {
             name: 'Segments',
             visibilityKey: 'Contacts:Segments',
             icon: 'i-lucide-group',

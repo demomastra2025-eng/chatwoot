@@ -429,6 +429,7 @@
     "CRM_TASKS": "Tasks",
     "CRM_TASK_SETTINGS": "Task settings",
     "ACTIVE": "Active",
+    "CONTACT_DUPLICATES": "Duplicates",
     "COMPANIES": "Organizations",
     "ALL_COMPANIES": "All organizations",
     "SCHEDULING": "Scheduling",

@@ -61,17 +61,31 @@ class Integrations::Medelement::ConflictPresenter
   end
 
   def contact_identity_payload(contact)
+    attrs = contact.custom_attributes.to_h
     {
       id: contact.id,
-      name: contact.name,
+      name: contact_display_name(contact),
       email: contact.email,
       phone_number: contact.phone_number,
-      identifier_masked: mask_identifier(contact.identifier),
+      identifier_masked: mask_identifier(contact_iin(contact, attrs)),
+      birth_date: contact_birth_date(attrs),
       contact_type: contact.contact_type,
-      patient_code: contact.custom_attributes['medelement_patient_code'],
-      secondary_phones: Array(contact.custom_attributes['secondary_phones']).compact_blank.first(10),
+      patient_code: attrs['medelement_patient_code'],
+      secondary_phones: Array(attrs['secondary_phones']).compact_blank.first(10),
       last_activity_at: contact.last_activity_at&.iso8601
     }
+  end
+
+  def contact_display_name(contact)
+    [contact.name, contact.last_name].compact_blank.join(' ').presence || contact.name
+  end
+
+  def contact_iin(contact, attrs)
+    contact.identifier.presence || attrs['iin'].presence || attrs['medelement_iin'].presence
+  end
+
+  def contact_birth_date(attrs)
+    attrs['birth_date'].presence || attrs['medelement_birth_date'].presence
   end
 
   def contact_relation_payload(contact)

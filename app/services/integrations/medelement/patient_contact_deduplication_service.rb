@@ -39,7 +39,7 @@ class Integrations::Medelement::PatientContactDeduplicationService
   def resolve_owned_phone
     return result(linked_contact) if linked_contact_owns_provider_phone?
     return claim_local_phone_contact(phone_owner) if claimable_local_phone_owner?(phone_owner)
-    return result(phone_owner) if patient_code_for(phone_owner) == patient_code
+    return result(phone_owner) if patient_code_matches?(phone_owner, patient_code)
 
     conflicting_patient_contact(phone_owner)
   end
@@ -111,6 +111,11 @@ class Integrations::Medelement::PatientContactDeduplicationService
 
   def patient_code_for(contact)
     contact&.custom_attributes.to_h['medelement_patient_code'].to_s.presence
+  end
+
+  def patient_code_matches?(contact, code)
+    patient_code_for(contact) == code ||
+      Array(contact&.custom_attributes.to_h['medelement_merged_patient_codes']).map(&:to_s).include?(code.to_s)
   end
 
   def phone_conflict(owner, contact)

@@ -711,5 +711,43 @@
         "SEND": "Send ({keyCode})"
       }
     }
+  },
+  "CONTACTS_DUPLICATES": {
+    "TITLE": "Duplicate contacts",
+    "DESCRIPTION": "Detected contact pairs that belong to the same person. Merge duplicates into a single card or mark them as separate people.",
+    "SEARCH_PLACEHOLDER": "Search by name, phone, ID, or card code...",
+    "REFRESH": "Refresh",
+    "EMPTY_TITLE": "No duplicate contacts found",
+    "EMPTY_DESCRIPTION": "All contact cards look clean — there are no duplicate pairs to review right now.",
+    "PRIMARY_ROLE": "Primary contact",
+    "DUPLICATE_ROLE": "Potential duplicate",
+    "REASONS": {
+      "same_iin": "Matching ID / IIN",
+      "shared_phone": "Shared phone",
+      "same_full_name": "Matching full name",
+      "same_birth_date": "Matching birth date"
+    },
+    "FIELDS": {
+      "PHONE": "Phone",
+      "SECONDARY_PHONES": "Secondary phone",
+      "EMAIL": "Email",
+      "IIN": "ID / IIN",
+      "BIRTH_DATE": "Birth date",
+      "PATIENT_CODE": "Card code",
+      "CONVERSATIONS": "Conversations",
+      "APPOINTMENTS": "Appointments",
+      "DEALS": "Deals",
+      "CALLS": "Calls"
+    },
+    "ACTIONS": {
+      "KEEP_LEFT": "Keep “{name}” (merge)",
+      "KEEP_RIGHT": "Keep “{name}” (merge)",
+      "DISMISS": "Not duplicates (separate people)",
+      "OPEN_CONTACT": "Open contact",
+      "MERGE_SUCCESS": "Contacts merged successfully",
+      "MERGE_ERROR": "Failed to merge contacts",
+      "DISMISS_SUCCESS": "Marked as separate contacts",
+      "DISMISS_ERROR": "Failed to dismiss duplicate pair"
+    }
   }
 }

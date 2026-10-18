@@ -782,4 +782,43 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
       hash_including(conflict_type: 'patient_read_model_unavailable', severity: 'error')
     )
   end
+
+  it 'resolves a secondary merged patient code to the unified contact without overwriting the primary code' do
+    unified = create(
+      :contact,
+      account: account,
+      phone_number: primary_phone,
+      custom_attributes: {
+        'medelement_patient_code' => 'primary-code',
+        'medelement_merged_patient_codes' => [patient_code]
+      }
+    )
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
+
+    resolved = service.sync_patient!(patient_code)
+
+    expect(resolved.id).to eq(unified.id)
+    expect(unified.reload.custom_attributes['medelement_patient_code']).to eq('primary-code')
+    expect(unified.custom_attributes['medelement_merged_patient_codes']).to include(patient_code)
+  end
+
+  it 'promotes a surviving merged patient code when the primary code was deleted in MedElement' do
+    unified = create(
+      :contact,
+      account: account,
+      phone_number: primary_phone,
+      custom_attributes: {
+        'medelement_patient_code' => 'deleted-code',
+        'medelement_merged_patient_codes' => [patient_code]
+      }
+    )
+    allow(client).to receive(:get_patient).with(patient_code: 'deleted-code').and_return(nil)
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
+
+    resolved = service.sync_patient!('deleted-code')
+
+    expect(resolved.id).to eq(unified.id)
+    expect(unified.reload.custom_attributes['medelement_patient_code']).to eq(patient_code)
+    expect(unified.custom_attributes['medelement_merged_patient_codes']).to include('deleted-code')
+  end
 end

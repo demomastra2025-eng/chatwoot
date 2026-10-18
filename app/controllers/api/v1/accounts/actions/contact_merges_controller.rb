@@ -9,6 +9,12 @@ class Api::V1::Accounts::Actions::ContactMergesController < Api::V1::Accounts::B
       mergee_contact: @mergee_contact
     )
     contact_merge_action.perform
+    Contacts::DuplicateCandidatesService.resolve_open_conflicts!(
+      account: Current.account,
+      base_contact_id: @base_contact.id,
+      mergee_contact_id: @mergee_contact.id,
+      user: Current.user
+    )
   rescue Contacts::ReferenceMergeService::UnsafeMergeError => e
     render json: { error: e.message }, status: :unprocessable_entity
   end

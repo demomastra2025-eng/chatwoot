@@ -280,6 +280,38 @@ describe ContactMergeAction do
       end
     end
 
+    context 'when two duplicate MedElement patient cards of the same person are merged' do
+      it 'keeps the primary patient code and records the secondary code in medelement_merged_patient_codes' do
+        primary_card = create(
+          :contact,
+          account: account,
+          name: 'Айгуль',
+          last_name: 'Ахметова',
+          phone_number: '+77010001122',
+          custom_attributes: { 'medelement_patient_code' => 'code-primary' }
+        )
+        duplicate_card = create(
+          :contact,
+          account: account,
+          name: 'Айгуль',
+          last_name: 'Ахметова',
+          phone_number: nil,
+          custom_attributes: {
+            'medelement_patient_code' => 'code-duplicate',
+            'medelement_patient_card' => true,
+            'phone_conflict_comment' => "Phone +77010001122 already belongs to MedElement patient contact ##{primary_card.id}"
+          }
+        )
+
+        described_class.new(account: account, base_contact: primary_card, mergee_contact: duplicate_card).perform
+
+        primary_card.reload
+        expect(primary_card.custom_attributes['medelement_patient_code']).to eq('code-primary')
+        expect(primary_card.custom_attributes['medelement_merged_patient_codes']).to eq(['code-duplicate'])
+        expect(primary_card.custom_attributes).not_to have_key('phone_conflict_comment')
+      end
+    end
+
     context 'when contacts belong to a different account' do
       it 'throws an exception' do
         new_account = create(:account)

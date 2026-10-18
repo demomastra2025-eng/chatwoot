@@ -1,5 +1,6 @@
 import { frontendURL } from '../../../helper/URLHelper';
 const ContactsIndex = () => import('./pages/ContactsIndex.vue');
+const ContactsDuplicates = () => import('./pages/ContactsDuplicates.vue');
 const ContactManageView = () => import('./pages/ContactManageView.vue');
 import { FEATURE_FLAGS } from '../../../featureFlags';
 import { CONTACT_ACCESS_PERMISSIONS } from '../../../constants/permissions';
@@ -10,6 +11,12 @@ const commonMeta = {
 };
 
 export const routes = [
+  {
+    path: frontendURL('accounts/:accountId/contacts/duplicates'),
+    name: 'contacts_dashboard_duplicates',
+    component: ContactsDuplicates,
+    meta: commonMeta,
+  },
   {
     path: frontendURL('accounts/:accountId/contacts'),
     component: ContactsIndex,

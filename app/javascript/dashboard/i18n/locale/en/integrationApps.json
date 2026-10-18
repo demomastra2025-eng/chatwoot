@@ -183,6 +183,8 @@
         "CONFLICTING": "Contact owning the data",
         "PHONE": "Phone",
         "IIN": "IIN",
+        "BIRTH_DATE": "Birth date",
+        "PATIENT_CODE": "Card code",
         "CONVERSATIONS": "Conversations",
         "APPOINTMENTS": "Appointments",
         "DEALS": "Deals",

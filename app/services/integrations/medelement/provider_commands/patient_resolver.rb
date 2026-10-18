@@ -91,20 +91,44 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
   attr_reader :command, :client, :before_create, :organization_id
 
   def resolve_linked_patient!
-    patient = patient_by_code(snapshot_patient_code)
+    code = snapshot_patient_code
+    patient = patient_by_code(code)
+    code, patient = resolve_merged_patient_code(code) if patient.blank?
     raise deterministic_error('patient_not_found') if patient.blank?
 
     Integrations::Medelement::ProviderScope.validate_patient!(
       patient,
       organization_id: organization_id,
-      expected_patient_code: snapshot_patient_code,
+      expected_patient_code: code,
       expected_iin: desired_iin,
       expected_phone_numbers: snapshot_phone_numbers
     )
-    validate_patient_ref!(snapshot_patient_code)
-    command.update!(provider_patient_code: snapshot_patient_code.to_s)
+    validate_patient_ref!(code)
+    promote_merged_patient_code!(code, snapshot_patient_code) if code.to_s != snapshot_patient_code.to_s
+    command.update!(provider_patient_code: code.to_s)
     record_phone_warning!(patient)
-    snapshot_patient_code.to_s
+    code.to_s
+  end
+
+  def resolve_merged_patient_code(dead_code)
+    merged_codes = Array(patient_contact&.custom_attributes.to_h['medelement_merged_patient_codes']).map(&:to_s) - [dead_code.to_s]
+    merged_codes.each do |candidate_code|
+      patient = patient_by_code(candidate_code)
+      return [candidate_code, patient] if patient.present?
+    end
+    [dead_code, nil]
+  end
+
+  def promote_merged_patient_code!(alive_code, dead_code)
+    target = patient_contact
+    return if target.blank?
+
+    attrs = target.custom_attributes.to_h.deep_stringify_keys
+    all_merged = (Array(attrs['medelement_merged_patient_codes']) + [attrs['medelement_patient_code'], dead_code]).compact_blank.map(&:to_s).uniq
+    attrs['medelement_patient_code'] = alive_code.to_s
+    attrs['medelement_merged_patient_codes'] = all_merged - [alive_code.to_s]
+    target.skip_runtime_events = true
+    target.update!(custom_attributes: attrs)
   end
 
   def lookup_candidates
