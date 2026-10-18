@@ -71,7 +71,16 @@ Observed platform path shapes in the current API reference include:
 Authentication:
 
 - header: `api_access_token`
-- platform-scoped token
+- platform-scoped token (a «Доступ по API для партнёров» of the super admin; the token is shown once when it is issued)
+
+Rules a partner token works under:
+
+- it reads and changes only the accounts and users that IT created; an e-mail that already belongs to another user answers `409`
+  and is never attached, and a super admin is not reachable at all
+- account features go through the same checks as the platform admin screens: a feature that no plan enables, one that must stay on
+  and a platform-internal one are refused with `422` and nothing is saved
+- every change (accounts, users, members, mailbox migrations, sign-in links, user tokens) is written to the audit log with the partner
+  as the actor
 
 ## Selection Heuristics
 

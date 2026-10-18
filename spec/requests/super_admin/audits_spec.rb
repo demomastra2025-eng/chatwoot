@@ -63,6 +63,47 @@ RSpec.describe 'Super Admin Audits', type: :request do
         expect(page.at_css('input#account_id')['value']).to eq(account.id.to_s)
       end
 
+      it 'names a partner access as the actor, never as a person' do
+        partner = create(:platform_app, name: 'Портал клиник')
+        Audited::Audit.create!(auditable: account, associated: account, action: 'partner_create_account', audited_changes: {},
+                               user: partner, comment: 'platform_app')
+
+        get '/super_admin/audits'
+
+        row = Nokogiri::HTML(response.body).css('tbody tr').find { |tr| tr.text.include?("##{account.id}") }
+        expect(row.text).to include('Партнёр: Портал клиник', 'Партнёр: создание аккаунта')
+        expect(response.body).not_to include('translation missing')
+      end
+
+      it 'names an actor whose partner access was deleted by its number' do
+        Audited::Audit.create!(auditable: account, associated: account, action: 'partner_update_account', audited_changes: {},
+                               user_id: 987_654, user_type: 'PlatformApp', comment: 'platform_app')
+
+        get '/super_admin/audits'
+
+        expect(response.body).to include('Партнёр: №987654')
+      end
+
+      it 'shows an entry that has no object (an unknown e-mail at the sign-in) with the typed e-mail and a dash' do
+        Audited::Audit.create!(auditable: nil, action: 'super_admin_login_failed', audited_changes: { 'reason' => 'unknown_email' },
+                               user: 'nobody@example.com', comment: 'system')
+
+        get '/super_admin/audits'
+
+        row = Nokogiri::HTML(response.body).css('tbody tr').find { |tr| tr.text.include?('nobody@example.com') }
+        expect(row.text).to include('Неудачная попытка входа в супер-админку')
+        expect(row.text).not_to include('{', 'account')
+      end
+
+      it 'offers the actions of the security side in the filter, with Russian names' do
+        get '/super_admin/audits'
+
+        options = Nokogiri::HTML(response.body).css('select#audit_action option').to_h { |option| [option['value'], option.text.squish] }
+        expect(options).to include('super_admin_login' => 'Вход в супер-админку', 'reissue_token' => 'Перевыпуск токена партнёра',
+                                   'schedule_deletion' => 'Удаление аккаунта назначено', 'partner_user_token' => 'Партнёр: токен пользователя')
+        expect(SuperAdmin::AuditsController::SECURITY_ACTIONS - options.keys).to be_empty
+      end
+
       it 'has no page for a single entry: the route had no template and nothing linked to it' do
         expect { Rails.application.routes.recognize_path('/super_admin/audits/1', method: 'GET') }.to raise_error(ActionController::RoutingError)
       end
