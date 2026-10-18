@@ -21,7 +21,7 @@ RSpec.describe Accounts::ApplyPlan do
 
       preview = service(%w[ai_agents]).preview
 
-      expect(preview).to have_attributes(plan: 'base', modules: %w[ai_agents], plan_version: 1, previous_plan: nil, previous_modules: [])
+      expect(preview).to have_attributes(plan: 'base', modules: %w[ai_agents], plan_version: Accounts::Plans.version, previous_plan: nil, previous_modules: [])
       expect(preview.enable).to include('channel_email', 'channel_voice', 'captain_integration', 'labels')
       expect(preview.enable).not_to include('crm')
       expect(preview.disable).to contain_exactly('captain_scheduling_grounding_guard', 'campaigns')
@@ -44,7 +44,7 @@ RSpec.describe Accounts::ApplyPlan do
     it 'renders as JSON for the clinic card' do
       json = service(%w[broadcasts]).preview.as_json
 
-      expect(json).to include('plan' => 'base', 'modules' => %w[broadcasts], 'plan_version' => 1, 'changed' => true)
+      expect(json).to include('plan' => 'base', 'modules' => %w[broadcasts], 'plan_version' => Accounts::Plans.version, 'changed' => true)
       expect(json['previous']).to eq('plan' => nil, 'modules' => [], 'plan_version' => nil)
       expect(json['enable']).to include('campaigns', 'whatsapp_campaign')
       expect(json.keys).to include('disable', 'limits', 'notes')
@@ -120,7 +120,7 @@ RSpec.describe Accounts::ApplyPlan do
       service(%w[broadcasts ai_agents]).call
 
       expect(account.reload.custom_attributes).to include(
-        'industry' => 'clinic', 'plan' => 'base', 'plan_modules' => %w[ai_agents broadcasts], 'plan_version' => 1
+        'industry' => 'clinic', 'plan' => 'base', 'plan_modules' => %w[ai_agents broadcasts], 'plan_version' => Accounts::Plans.version
       )
       expect(account.custom_attributes['plan_applied_at']).to match(/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+05:00\z/)
     end
@@ -197,7 +197,7 @@ RSpec.describe Accounts::ApplyPlan do
       expect(audit).to have_attributes(auditable_id: account.id, associated_id: account.id, user_id: actor.id, comment: 'super_admin')
       expect(audit.audited_changes).to include(
         'before' => { 'plan' => nil, 'plan_modules' => [], 'plan_version' => nil },
-        'after' => { 'plan' => 'base', 'plan_modules' => %w[ai_agents], 'plan_version' => 1 }
+        'after' => { 'plan' => 'base', 'plan_modules' => %w[ai_agents], 'plan_version' => Accounts::Plans.version }
       )
       expect(audit.audited_changes['features']['enabled']).to include('crm', 'captain_integration')
       expect(audit.audited_changes['features']['disabled']).to eq(%w[captain_scheduling_grounding_guard])

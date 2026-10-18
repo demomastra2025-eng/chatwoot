@@ -36,6 +36,21 @@ RSpec.describe Accounts::PlanDrift do
     expect(described_class.call(account)).to eq(extra: [], missing: %w[crm sla])
   end
 
+  it 'does not count a deprecated flag as changed by hand' do
+    # A plan applied while the Agent Bots were still part of the base left the flag on.
+    apply
+    account.enable_features!('agent_bots', 'channel_twitter')
+
+    expect(described_class.call(account)).to eq(extra: [], missing: [])
+  end
+
+  it 'still lists a flag of never_enabled that is not deprecated' do
+    apply
+    account.enable_features!('agent_bots', 'custom_roles')
+
+    expect(described_class.call(account)[:extra]).to eq(%w[custom_roles])
+  end
+
   it 'does not look at the internal flags' do
     apply
     account.enable_features!('ip_lookup', 'communication_threads')

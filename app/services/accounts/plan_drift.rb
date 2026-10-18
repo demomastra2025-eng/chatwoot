@@ -8,6 +8,10 @@
 # Only the classified, non-internal flags are compared (base, modules, locked_on, never_enabled); internal flags are
 # not part of any plan. A running snapshot-backed trial adds what the trial granted to the expected set, so a new
 # account on its trial does not show up as changed.
+#
+# A deprecated flag (features.yml `deprecated: true`) is never counted as `extra`: nobody can see or switch it, so it
+# is not "changed by hand". An account whose plan was applied while such a flag was still part of the base (Agent Bots)
+# therefore stays "as the plan" until the plan is applied again.
 class Accounts::PlanDrift
   def self.call(account)
     new(account).call
@@ -23,7 +27,7 @@ class Accounts::PlanDrift
     expected = expected_features
     enabled = @account.enabled_features.keys
     {
-      extra: Accounts::Plans.managed_features.select { |name| enabled.include?(name) && expected.exclude?(name) },
+      extra: visible_managed_features.select { |name| enabled.include?(name) && expected.exclude?(name) },
       missing: expected.select { |name| enabled.exclude?(name) }
     }
   end
@@ -37,6 +41,10 @@ class Accounts::PlanDrift
   # Modules that were chosen and still exist in the registry
   def applied_modules
     Accounts::Plans.known_modules(@account.custom_attributes.to_h[Accounts::ApplyPlan::MODULES_KEY])
+  end
+
+  def visible_managed_features
+    Accounts::Plans.managed_features - Featurable::DEPRECATED_FEATURE_NAMES
   end
 
   def expected_features

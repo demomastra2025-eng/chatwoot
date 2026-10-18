@@ -13,7 +13,9 @@
 #
 # Limits: a number sets the limit, `unlimited` stores ChatwootApp.max_limit (the code treats it as "no limit"),
 # null leaves the clinic's own value untouched. A key that is not listed is invalid; base lists every key.
-version: 1
+# Version history: 1 = first base + modules, 2 = agent_bots left the base (the Agent Bots were removed from the product).
+# An account keeps the version it was applied with; applying the plan again moves it to the current one.
+version: 2
 
 base:
   features:

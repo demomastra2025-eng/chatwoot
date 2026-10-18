@@ -119,7 +119,7 @@ RSpec.describe 'Super admin account plans', type: :request do
       expect(response).to have_http_status(:success)
       expect(response.media_type).to eq('application/json')
       body = response.parsed_body
-      expect(body).to include('plan' => 'base', 'modules' => %w[ai_agents], 'plan_version' => 1, 'changed' => true)
+      expect(body).to include('plan' => 'base', 'modules' => %w[ai_agents], 'plan_version' => Accounts::Plans.version, 'changed' => true)
       expect(body['enable']).to include('crm', 'captain_integration')
       expect(body['disable']).to eq(%w[captain_scheduling_grounding_guard])
       expect(body['limits']).to include('conversations' => { 'from' => nil, 'to' => ChatwootApp.max_limit })

@@ -77,6 +77,8 @@ module Featurable
 
   FEATURE_LIST = YAML.safe_load(Rails.root.join('config/features.yml').read).freeze
   FEATURE_NAMES = FEATURE_LIST.pluck('name').freeze
+  # Flags whose purpose is done (features.yml `deprecated: true`): inert, hidden from every screen
+  DEPRECATED_FEATURE_NAMES = FEATURE_LIST.select { |feature| feature['deprecated'] }.pluck('name').freeze
   FEATURE_POSITIONS = LEGACY_BITMASK_FEATURE_NAMES.each_with_index.each_with_object({}) do |(feature_name, index), result|
     result[feature_name] = index + 1 if FEATURE_NAMES.include?(feature_name)
   end.freeze
