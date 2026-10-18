@@ -104,8 +104,7 @@ export default {
 
       return (
         !this.message.sender ||
-        (senderType === 'captain_assistant' &&
-          !this.message.sender?.avatar_url)
+        (senderType === 'captain_assistant' && !this.message.sender?.avatar_url)
       );
     },
     displayAvatarUrl() {
