@@ -322,6 +322,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
     Telephony::NumberBinding.sync_from_voice_channel!(channel.reload)
     enqueue_beeline_sync_if_configured!(channel)
+    enqueue_binotel_sync_if_configured!(channel)
   end
 
   def enqueue_beeline_sync_if_configured!(channel)
@@ -331,6 +332,15 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     Telephony::BeelineCallHistorySyncJob.perform_later(channel_id: channel.id, subscribe_webhook: true)
   rescue StandardError => e
     Rails.logger.warn("[BEELINE] Failed to enqueue BeelineCallHistorySyncJob for channel=#{channel.id}: #{e.class}: #{e.message}")
+  end
+
+  def enqueue_binotel_sync_if_configured!(channel)
+    return unless channel.provider == 'binotel'
+    return unless Telephony::Binotel::ApiClient.for_channel(channel).configured?
+
+    Telephony::BinotelCallHistorySyncJob.perform_later(channel_id: channel.id)
+  rescue StandardError => e
+    Rails.logger.warn("[BINOTEL] Failed to enqueue BinotelCallHistorySyncJob for channel=#{channel.id}: #{e.class}: #{e.message}")
   end
 
   def sync_voice_captain_inbox!(channel)
@@ -536,9 +546,22 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
     incoming_provider_config = attrs[:provider_config].to_h.deep_stringify_keys
     provider_config = @inbox.channel.provider_config.to_h.deep_stringify_keys
+    incoming_provider_config.delete('binotel_api_secret_configured')
+    provider_config.delete('binotel_api_secret_configured')
+    if incoming_provider_config.key?('binotel_api_key') && incoming_provider_config['binotel_api_key'].to_s.strip.blank?
+      incoming_provider_config.delete('binotel_api_key')
+    end
+    if incoming_provider_config.key?('binotel_api_secret') && incoming_provider_config['binotel_api_secret'].to_s.strip.blank?
+      incoming_provider_config.delete('binotel_api_secret')
+    end
     if incoming_provider_config['binotel_events_webhook_token'].present?
       incoming_provider_config.delete('binotel_webhook_token')
       provider_config.delete('binotel_webhook_token')
+    elsif @inbox.channel.provider == 'binotel' &&
+          provider_config['binotel_events_webhook_token'].to_s.strip.blank? &&
+          provider_config['binotel_webhook_token'].to_s.strip.blank? &&
+          incoming_provider_config['binotel_webhook_token'].to_s.strip.blank?
+      incoming_provider_config['binotel_events_webhook_token'] = SecureRandom.hex(24)
     end
     incoming_provider_config.delete('beeline_api_token_configured')
     provider_config.delete('beeline_api_token_configured')

@@ -243,6 +243,30 @@ RSpec.describe 'Binotel events webhook', type: :request do
     expect(event.call_session.exact_voice_message).to be_present
   end
 
+  it 'records inbound CANCEL, BUSY, and VM-SUCCESS dispositions as missed calls' do
+    %w[CANCEL BUSY VM-SUCCESS].each_with_index do |disp, idx|
+      call_id = "900200#{idx}"
+      post_binotel_event(
+        binotel_call_details.merge(
+          generalCallID: call_id,
+          externalNumber: "0707123450#{idx}",
+          disposition: disp,
+          waitsec: 25,
+          billsec: 0
+        )
+      )
+
+      session = account.telephony_call_sessions.find_by!(provider_call_sid: call_id)
+      expect(session).to have_attributes(
+        status: 'missed',
+        direction: 'inbound',
+        from_number: "+7707123450#{idx}",
+        answered_at: nil,
+        end_reason: disp
+      )
+    end
+  end
+
   def post_binotel_event(details)
     perform_enqueued_jobs(only: Telephony::InboundRouteLifecycleJob) do
       post "/binotel/events/#{token}",

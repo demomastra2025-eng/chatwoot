@@ -459,6 +459,11 @@ export class JanusSipVoiceClient extends EventTarget {
       return target;
     }
 
+    if (['strip_plus', 'e164_no_plus', 'digits'].includes(outboundDialFormat)) {
+      if (/^8(?=\d{10}$)/.test(target)) return target.replace(/^8/, '7');
+      return target.replace(/^\+/, '');
+    }
+
     if (provider === 'asterisk_analog') {
       return target.replace(/^\+/, '');
     }

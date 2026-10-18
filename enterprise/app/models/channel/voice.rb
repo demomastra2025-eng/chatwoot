@@ -141,6 +141,9 @@ class Channel::Voice < ApplicationRecord
     if provider == 'beeline' && config[:beeline_events_webhook_token].blank? && config[:beeline_webhook_token].blank?
       config[:beeline_events_webhook_token] = SecureRandom.hex(24)
     end
+    if provider == 'binotel' && config[:binotel_events_webhook_token].blank? && config[:binotel_webhook_token].blank?
+      config[:binotel_events_webhook_token] = SecureRandom.hex(24)
+    end
     self.provider_config = config
     provider_label = provider.to_s.titleize
 

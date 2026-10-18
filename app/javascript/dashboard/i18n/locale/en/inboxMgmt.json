@@ -852,8 +852,8 @@
           "SIPUNI_WEBHOOK_SAVE": "Save webhook",
           "SIPUNI_WEBHOOK_SUCCESS": "Sipuni webhook has been saved",
           "SIPUNI_WEBHOOK_REQUIRED": "Webhook token is required",
-          "BINOTEL_WEBHOOK_TITLE": "Binotel webhook",
-          "BINOTEL_WEBHOOK_SUBTITLE": "Use this URL in Binotel as the API CALL COMPLETED webhook for completed calls.",
+          "BINOTEL_WEBHOOK_TITLE": "Binotel API & webhook",
+          "BINOTEL_WEBHOOK_SUBTITLE": "Use this URL in Binotel as the API CALL COMPLETED webhook and/or connect your API Key + Secret (or my.binotel.kz Email & Password) to automatically sync missed and completed calls.",
           "BINOTEL_WEBHOOK_EMPTY": "Enter or generate a token to build the webhook URL.",
           "BINOTEL_WEBHOOK_TOKEN": "Webhook token",
           "BINOTEL_WEBHOOK_TOKEN_PLACEHOLDER": "For example binotel-random-token",
@@ -892,7 +892,12 @@
           "BEELINE_WEBHOOK_COPY_SUCCESS": "Beeline webhook URL copied",
           "BEELINE_WEBHOOK_SAVE": "Save Beeline settings",
           "BEELINE_WEBHOOK_SUCCESS": "Beeline settings have been saved",
-          "BEELINE_WEBHOOK_REQUIRED": "Webhook token or Beeline API token is required"
+          "BEELINE_WEBHOOK_REQUIRED": "Webhook token or Beeline API token is required",
+          "BINOTEL_API_KEY": "Binotel API Key or cabinet Email (my.binotel.kz)",
+          "BINOTEL_API_KEY_PLACEHOLDER": "Binotel API Key or my.binotel.kz login email",
+          "BINOTEL_API_SECRET": "Binotel API Secret or cabinet Password",
+          "BINOTEL_API_SECRET_PLACEHOLDER": "Binotel API Secret or my.binotel.kz password",
+          "BINOTEL_API_SECRET_CONFIGURED_HINT": "Secret/password is configured. Leave blank to keep existing."
         },
         "SUBMIT_BUTTON": "Create Calls Channel",
         "API": {
