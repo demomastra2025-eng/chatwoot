@@ -437,7 +437,7 @@
     "CAPTAIN_CHANNELS": "Channels",
     "HOME": "Home",
     "AGENTS": "Employees",
-    "AGENT_BOTS": "Вебхуктар",
+    "WEBHOOKS": "Вебхуктар",
     "AUDIT_LOGS": "Әрекеттер журналы",
     "INBOXES": "Channels",
     "NOTIFICATIONS": "Notifications",

@@ -580,7 +580,7 @@ describe('Sidebar', () => {
         'Channels',
         'Settings WhatsApp Templates',
         'Settings Integrations',
-        'Settings Agent Bots',
+        'Settings Webhooks',
         'Settings Automation',
         'Settings Reminders',
         'Employees',

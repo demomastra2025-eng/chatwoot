@@ -4,7 +4,6 @@ import { CONVERSATION_ACCESS_PERMISSIONS } from 'dashboard/constants/permissions
 import account from './account/account.routes';
 import agent from './agents/agent.routes';
 import assignmentPolicy from './assignmentPolicy/assignmentPolicy.routes';
-import agentBot from './agentBots/agentBot.routes';
 import attributes from './attributes/attributes.routes';
 import automation from './automation/automation.routes';
 import auditlogs from './auditlogs/audit.routes';
@@ -25,6 +24,7 @@ import conversationWorkflow from './conversationWorkflow/conversationWorkflow.ro
 import captain from './captain/captain.routes';
 import crm from './crm/crm.routes';
 import storage from './storage/storage.routes';
+import webhooks from './webhooks/webhooks.routes';
 
 export default {
   routes: [
@@ -49,7 +49,6 @@ export default {
     ...account.routes,
     ...agent.routes,
     ...assignmentPolicy.routes,
-    ...agentBot.routes,
     ...attributes.routes,
     ...automation.routes,
     ...auditlogs.routes,
@@ -69,5 +68,6 @@ export default {
     ...captain.routes,
     ...crm.routes,
     ...storage.routes,
+    ...webhooks.routes,
   ],
 };

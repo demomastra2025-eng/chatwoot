@@ -38,7 +38,7 @@ export default {
           path: 'webhook',
           name: 'settings_integrations_webhook',
           redirect: to => ({
-            name: 'agent_bots',
+            name: 'settings_webhooks',
             params: to.params,
             query: to.query,
             hash: to.hash,

@@ -455,7 +455,7 @@
     "CAPTAIN_CHANNELS": "Channels",
     "HOME": "Home",
     "AGENTS": "Agents",
-    "AGENT_BOTS": "Webhooks",
+    "WEBHOOKS": "Webhooks",
     "AUDIT_LOGS": "Activity log",
     "INBOXES": "Inboxes",
     "NOTIFICATIONS": "Notifications",

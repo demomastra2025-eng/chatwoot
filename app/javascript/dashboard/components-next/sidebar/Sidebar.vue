@@ -958,11 +958,11 @@ const buildSettingsMenuItems = () =>
       to: accountScopedRoute('settings_applications'),
     },
     {
-      name: 'Settings Agent Bots',
-      visibilityKey: 'Settings:AgentBots',
-      label: t('SIDEBAR.AGENT_BOTS'),
+      name: 'Settings Webhooks',
+      visibilityKey: 'Settings:Webhooks',
+      label: t('SIDEBAR.WEBHOOKS'),
       icon: 'i-lucide-webhook',
-      to: accountScopedRoute('agent_bots'),
+      to: accountScopedRoute('settings_webhooks'),
     },
     settingsSection('Automation', t('SIDEBAR.SETTINGS_SECTIONS.AUTOMATION')),
     onlyIf(hasAutomationRules.value, {

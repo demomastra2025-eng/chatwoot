@@ -454,7 +454,7 @@
     "CAPTAIN_CHANNELS": "Каналы",
     "HOME": "Главная",
     "AGENTS": "Сотрудники",
-    "AGENT_BOTS": "Вебхуки",
+    "WEBHOOKS": "Вебхуки",
     "AUDIT_LOGS": "Журнал действий",
     "INBOXES": "Каналы",
     "NOTIFICATIONS": "Уведомления",
