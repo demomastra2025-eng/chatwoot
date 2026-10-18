@@ -65,8 +65,9 @@ module Captain::Playground::RecordSnapshots
     end
   end
 
+  # Staff members are Users. A stored scenario may still carry rows of the removed Agent Bots: they are not staff.
   def snapshot_staff
-    @data.fetch('staff').map do |record|
+    @data.fetch('staff').select { |record| record['type'].blank? || record['type'] == 'User' }.map do |record|
       User.new(record.slice('id', 'name', 'email'))
     end
   end

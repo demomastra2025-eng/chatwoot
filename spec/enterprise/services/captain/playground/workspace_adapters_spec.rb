@@ -93,6 +93,21 @@ RSpec.describe Captain::Playground::ToolExecutor, 'native rules through the prod
     expect(business_counts).to eq(baseline)
   end
 
+  it 'does not offer a stored staff row of the removed Agent Bots for assignment' do
+    assistant
+    session.with_lock do |workspace|
+      data = workspace.scenario.data
+      data['staff'] = [{ 'id' => 1802, 'name' => 'Former bot', 'email' => 'bot@example.test', 'type' => 'AgentBot' }]
+      conversation_id = handle(workspace, :conversation_id, data['conversation']['id'])
+      staff_id = handle(workspace, :assignee_id, 1802)
+
+      outcome = call(workspace, 'assign_conversation', conversation_id: conversation_id, assignee_id: staff_id, assignee_type: 'User')
+
+      expect(outcome).to start_with('ERROR:')
+      expect(data['conversation']['assignee_id']).to be_nil
+    end
+  end
+
   it 'uses the real channel template catalog and reply-window policy without delivering or creating messages' do
     assistant
     baseline = business_counts

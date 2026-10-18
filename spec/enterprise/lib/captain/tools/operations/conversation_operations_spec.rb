@@ -189,6 +189,34 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
         )
       )
     end
+
+    it 'assigns an account user when the assignee type is User or left out' do
+      first = create(:user, account: account)
+      second = create(:user, account: account)
+
+      operations.assign_conversation(conversation_id: conversation.display_id, assignee_id: first.id, assignee_type: 'User')
+      expect(conversation.reload.assignee).to eq(first)
+
+      operations.assign_conversation(conversation_id: conversation.display_id, assignee_id: second.id)
+      expect(conversation.reload.assignee).to eq(second)
+    end
+
+    it 'refuses an assignee type other than User and leaves the assignee unchanged' do
+      assignee = create(:user, account: account)
+      conversation.update!(assignee: assignee)
+
+      expect do
+        operations.assign_conversation(conversation_id: conversation.display_id, assignee_id: assignee.id + 1, assignee_type: 'AgentBot')
+      end.to raise_error(ArgumentError, 'assignee_type must be User')
+      expect(conversation.reload.assignee).to eq(assignee)
+    end
+
+    it 'refuses an assignee type without an assignee id' do
+      expect do
+        operations.assign_conversation(conversation_id: conversation.display_id, assignee_type: 'User')
+      end.to raise_error(ArgumentError, 'assignee_id is required when assignee_type is provided')
+      expect(conversation.reload.assignee).to be_nil
+    end
   end
 
   describe '#resolve_conversation' do
