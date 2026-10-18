@@ -90,6 +90,31 @@ RSpec.describe 'Agents API', type: :request do
         expect(account.reload.users).not_to include(other_agent)
         expect(other_agent.account_users.count).to eq(1) # Should only be associated with other_account now
       end
+
+      it 'transfers owned contacts and deals to transfer_to_user_id when provided' do
+        contact = create(:contact, account: account, owner: other_agent)
+        deal = create(:crm_deal, account: account, owner: other_agent)
+
+        delete "/api/v1/accounts/#{account.id}/agents/#{other_agent.id}",
+               params: { transfer_to_user_id: agent.id },
+               headers: admin.create_new_auth_token
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.users).not_to include(other_agent)
+        expect(contact.reload.owner_id).to eq(agent.id)
+        expect(deal.reload.owner_id).to eq(agent.id)
+      end
+
+      it 'returns unprocessable entity when transfer_to_user_id does not belong to the account' do
+        foreign_user = create(:user, account: create(:account), role: :agent)
+
+        delete "/api/v1/accounts/#{account.id}/agents/#{other_agent.id}",
+               params: { transfer_to_user_id: foreign_user.id },
+               headers: admin.create_new_auth_token
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(account.reload.users).to include(other_agent)
+      end
     end
   end
 

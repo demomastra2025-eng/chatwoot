@@ -34,6 +34,21 @@ RSpec.describe Agents::DestroyJob do
       expect(owned_contact.reload.owner_id).to be_nil
     end
 
+    it 'transfers contacts, deals, tasks, and conversations to the selected replacement employee' do
+      replacement = create(:user, account: account)
+      deal = create(:crm_deal, account: account, owner: user)
+      task = create(:crm_task, account: account, assignee: user)
+      conversation = user.assigned_conversations.where(account: account).first
+
+      AccountUser.find_by!(account: account, user: user).delete
+      described_class.perform_now(account, user, replacement.id)
+
+      expect(owned_contact.reload.owner_id).to eq(replacement.id)
+      expect(deal.reload.owner_id).to eq(replacement.id)
+      expect(task.reload.assignee_id).to eq(replacement.id)
+      expect(conversation.reload.assignee_id).to eq(replacement.id)
+    end
+
     it 'does not remove restored memberships when the account user is active again' do
       described_class.perform_now(account, user)
 

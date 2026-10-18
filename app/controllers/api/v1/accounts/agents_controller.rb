@@ -28,7 +28,13 @@ class Api::V1::Accounts::AgentsController < Api::V1::Accounts::BaseController
   end
 
   def destroy
-    @agent.current_account_user.destroy!
+    transfer_to_user = resolve_transfer_to_user
+    return if performed?
+
+    account_user = @agent.current_account_user
+    account_user.transfer_to_user_id = transfer_to_user&.id
+    account_user.destroy!
+    ::Agents::DestroyJob.perform_now(Current.account, @agent, transfer_to_user&.id)
     delete_user_record(@agent)
     head :ok
   end
@@ -65,6 +71,23 @@ class Api::V1::Accounts::AgentsController < Api::V1::Accounts::BaseController
 
   def fetch_agent
     @agent = agents.find(params[:id])
+  end
+
+  def resolve_transfer_to_user
+    raw_id = params[:transfer_to_user_id].presence
+    return nil if raw_id.blank?
+
+    target_id = raw_id.to_i
+    if target_id == @agent.id
+      render_could_not_create_error('Cannot transfer records to the agent being deleted')
+      return nil
+    end
+
+    target_user = Current.account.users.find_by(id: target_id)
+    return target_user if target_user.present?
+
+    render_could_not_create_error('Selected transfer agent does not belong to this account')
+    nil
   end
 
   def account_user_attributes

@@ -12,6 +12,13 @@ class Agents extends ApiClient {
       emails,
     });
   }
+
+  delete(id, params) {
+    if (params && Object.keys(params).length > 0) {
+      return axios.delete(`${this.url}/${id}`, { params });
+    }
+    return super.delete(id);
+  }
 }
 
 export default new Agents();

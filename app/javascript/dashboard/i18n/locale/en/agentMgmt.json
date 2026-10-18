@@ -58,7 +58,10 @@
         "TITLE": "Confirm Deletion",
         "MESSAGE": "Are you sure to delete ",
         "YES": "Yes, Delete ",
-        "NO": "No, Keep "
+        "NO": "No, Keep ",
+        "TRANSFER_LABEL": "Transfer all contacts, deals, tasks, and conversations to",
+        "TRANSFER_HELP": "Select an employee to inherit this employee's contacts, deals, tasks, appointments, and conversations, or leave them unassigned.",
+        "NO_TRANSFER": "Leave unassigned"
       }
     },
     "EDIT": {

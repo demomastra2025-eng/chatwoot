@@ -83,6 +83,22 @@ describe('#actions', () => {
         [types.default.SET_AGENT_DELETING_STATUS, false],
       ]);
     });
+    it('passes transfer_to_user_id when provided in payload', async () => {
+      axios.delete.mockResolvedValue({ data: agentList[0] });
+      await actions.delete(
+        { commit },
+        { id: agentList[0].id, transferToUserId: 99 }
+      );
+      expect(axios.delete).toHaveBeenCalledWith(
+        `/api/v1/agents/${agentList[0].id}`,
+        { params: { transfer_to_user_id: 99 } }
+      );
+      expect(commit.mock.calls).toEqual([
+        [types.default.SET_AGENT_DELETING_STATUS, true],
+        [types.default.DELETE_AGENT, agentList[0].id],
+        [types.default.SET_AGENT_DELETING_STATUS, false],
+      ]);
+    });
     it('sends correct actions if API is error', async () => {
       axios.delete.mockRejectedValue({ message: 'Incorrect header' });
       await expect(actions.delete({ commit }, agentList[0].id)).rejects.toThrow(

@@ -82,10 +82,19 @@ export const actions = {
   updatePresence: async ({ commit }, data) => {
     commit(types.default.UPDATE_AGENTS_PRESENCE, data);
   },
-  delete: async ({ commit }, agentId) => {
+  delete: async ({ commit }, payload) => {
+    const isObjectPayload = typeof payload === 'object' && payload !== null;
+    const agentId = isObjectPayload ? payload.id : payload;
+    const transferToUserId = isObjectPayload ? payload.transferToUserId : null;
     commit(types.default.SET_AGENT_DELETING_STATUS, true);
     try {
-      await AgentAPI.delete(agentId);
+      if (transferToUserId) {
+        await AgentAPI.delete(agentId, {
+          transfer_to_user_id: transferToUserId,
+        });
+      } else {
+        await AgentAPI.delete(agentId);
+      }
       commit(types.default.DELETE_AGENT, agentId);
       commit(types.default.SET_AGENT_DELETING_STATUS, false);
     } catch (error) {

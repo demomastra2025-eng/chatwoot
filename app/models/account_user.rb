@@ -43,6 +43,8 @@ class AccountUser < ApplicationRecord
 
   validates :user_id, uniqueness: { scope: :account_id }
 
+  attr_accessor :transfer_to_user_id
+
   def create_notification_setting
     setting = user.notification_settings.find_or_initialize_by(account_id: account.id)
     return if setting.persisted?
@@ -55,7 +57,11 @@ class AccountUser < ApplicationRecord
   end
 
   def remove_user_from_account
-    ::Agents::DestroyJob.perform_later(account, user)
+    if transfer_to_user_id.present?
+      ::Agents::DestroyJob.perform_later(account, user, transfer_to_user_id)
+    else
+      ::Agents::DestroyJob.perform_later(account, user)
+    end
   end
 
   def permissions

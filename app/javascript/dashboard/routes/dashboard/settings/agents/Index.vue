@@ -121,26 +121,41 @@ const hideEditPopup = () => {
   showEditPopup.value = false;
 };
 
+const transferToUserId = ref('');
+const transferTargetAgents = computed(() =>
+  agentList.value.filter(agent => agent.id !== currentAgent.value.id)
+);
+
 const openDeletePopup = agent => {
   showDeletePopup.value = true;
   currentAgent.value = agent;
+  transferToUserId.value = '';
 };
 const closeDeletePopup = () => {
   showDeletePopup.value = false;
+  transferToUserId.value = '';
 };
 
-const deleteAgent = async id => {
+const deleteAgent = async (id, targetUserId) => {
   try {
-    await store.dispatch('agents/delete', id);
+    if (targetUserId) {
+      await store.dispatch('agents/delete', {
+        id,
+        transferToUserId: Number(targetUserId),
+      });
+    } else {
+      await store.dispatch('agents/delete', id);
+    }
     showAlertMessage(t('AGENT_MGMT.DELETE.API.SUCCESS_MESSAGE'));
   } catch (error) {
     showAlertMessage(t('AGENT_MGMT.DELETE.API.ERROR_MESSAGE'));
   }
 };
 const confirmDeletion = () => {
+  const targetUserId = transferToUserId.value;
   loading.value[currentAgent.value.id] = true;
   closeDeletePopup();
-  deleteAgent(currentAgent.value.id);
+  deleteAgent(currentAgent.value.id, targetUserId);
 };
 </script>
 
@@ -304,6 +319,30 @@ const confirmDeletion = () => {
       :message-value="deleteMessage"
       :confirm-text="deleteConfirmText"
       :reject-text="deleteRejectText"
-    />
+    >
+      <div
+        v-if="transferTargetAgents.length"
+        class="px-8 pt-2 pb-0 flex flex-col gap-1.5"
+      >
+        <label class="text-body-main text-n-slate-12 font-medium">
+          {{ $t('AGENT_MGMT.DELETE.CONFIRM.TRANSFER_LABEL') }}
+          <select v-model="transferToUserId" class="mt-1.5 mb-0 w-full">
+            <option value="">
+              {{ $t('AGENT_MGMT.DELETE.CONFIRM.NO_TRANSFER') }}
+            </option>
+            <option
+              v-for="targetAgent in transferTargetAgents"
+              :key="targetAgent.id"
+              :value="targetAgent.id"
+            >
+              {{ `${targetAgent.name} (${targetAgent.email})` }}
+            </option>
+          </select>
+        </label>
+        <p class="text-xs text-n-slate-11 mb-0">
+          {{ $t('AGENT_MGMT.DELETE.CONFIRM.TRANSFER_HELP') }}
+        </p>
+      </div>
+    </woot-delete-modal>
   </SettingsLayout>
 </template>
