@@ -1860,3 +1860,21 @@ it('drops a pending debounced reload when the page unmounts', async () => {
 
   expect(CrmDealsAPI.get).not.toHaveBeenCalled();
 });
+
+it('renders active filter chips inside the search trigger without a separate Filters button', async () => {
+  const { state, wrapper } = await mountPage({ SchedulingPageHeader: false });
+
+  expect(wrapper.find('[data-test="deal-filter-button"]').exists()).toBe(false);
+  expect(
+    wrapper.findComponent({ name: 'CrmDealFilterChips' }).exists()
+  ).toBe(false);
+
+  state.filters.archived = true;
+  await nextTick();
+
+  const trigger = state.filterSearchTriggerRef;
+  expect(trigger).toBeTruthy();
+  const chipsStub = wrapper.findComponent({ name: 'CrmDealFilterChips' });
+  expect(chipsStub.exists()).toBe(true);
+  expect(trigger.contains(chipsStub.element)).toBe(true);
+});
