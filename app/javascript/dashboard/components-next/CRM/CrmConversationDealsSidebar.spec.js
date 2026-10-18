@@ -394,12 +394,62 @@ it('does not treat a non-stale HTTP 409 as an editable conflict', async () => {
   expect(useAlert).toHaveBeenCalledWith('Duplicate external reference');
 });
 
+it('shows an empty state by default when no deals exist and opens/cancels creation on button click with Create label', async () => {
+  const wrapper = await mountWithDeals([]);
+  const state = wrapper.vm.$.setupState;
+
+  expect(state.isCreating).toBe(false);
+  expect(state.accordionItems).toEqual([]);
+  expect(Object.keys(state.forms)).toEqual([]);
+  expect(wrapper.find('[data-testid="crm-empty-deals-state"]').exists()).toBe(
+    true
+  );
+
+  const emptyCreateButton = wrapper.get(
+    '[data-testid="crm-empty-create-deal"]'
+  );
+  expect(emptyCreateButton.attributes('label')).toBe('CRM.DEALS.NEW_DEAL');
+
+  await emptyCreateButton.trigger('click');
+  await flushPromises();
+
+  expect(state.isCreating).toBe(true);
+  expect(state.accordionItems).toHaveLength(1);
+  expect(state.accordionItems[0]).toMatchObject({
+    isNew: true,
+    key: 'new-deal',
+  });
+  expect(
+    wrapper.get('[data-testid="crm-submit-deal"]').attributes('label')
+  ).toBe('CRM.GENERAL.CREATE');
+  expect(
+    wrapper
+      .get('[data-testid="crm-header-cancel-create-deal"]')
+      .attributes('label')
+  ).toBe('CRM.GENERAL.CANCEL');
+  expect(
+    wrapper.get('[data-testid="crm-cancel-create-deal"]').attributes('label')
+  ).toBe('CRM.GENERAL.CANCEL');
+
+  state.cancelCreateDeal();
+  await flushPromises();
+
+  expect(state.isCreating).toBe(false);
+  expect(state.accordionItems).toEqual([]);
+  expect(Object.keys(state.forms)).toEqual([]);
+  expect(wrapper.find('[data-testid="crm-empty-deals-state"]').exists()).toBe(
+    true
+  );
+});
+
 it('ignores a stale create completion and cannot clear the newer save state', async () => {
   const oldCreate = deferred();
   const newUpdate = deferred();
   CrmDealsAPI.create.mockReturnValue(oldCreate.promise);
   const wrapper = await mountWithDeals([]);
   const state = wrapper.vm.$.setupState;
+  state.startCreateDeal();
+  await flushPromises();
   state.forms['new-deal'].title = 'Old conversation draft';
   const oldSave = state.saveDeal(state.accordionItems[0]);
   expect(state.savingDealKey).toBe('new-deal');

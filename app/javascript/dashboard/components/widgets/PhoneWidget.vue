@@ -362,26 +362,7 @@ const linesStatusById = computed(() =>
     allPhoneLines.value.map(line => [String(line.id), line.status])
   )
 );
-const readyLinesCount = computed(
-  () =>
-    allPhoneLines.value.filter(
-      line => line.status === 'ready' || line.status === 'ownerTab'
-    ).length
-);
-const allLinesReady = computed(
-  () =>
-    allPhoneLines.value.length > 0 &&
-    allPhoneLines.value.every(
-      line => line.status === 'ready' || line.status === 'ownerTab'
-    )
-);
-const linesSummaryLabel = computed(
-  () => `${readyLinesCount.value}/${allPhoneLines.value.length} активны`
-);
-const linesSummaryTitle = computed(
-  () =>
-    `Активно линий: ${readyLinesCount.value} из ${allPhoneLines.value.length}`
-);
+const selectedLineLabel = 'Выбрана для звонка';
 
 const status = computed(() => {
   if (
@@ -716,21 +697,6 @@ onUnmounted(() => {
             {{ employeeName }}
           </span>
         </div>
-        <span
-          v-if="allPhoneLines.length >= 1"
-          class="shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
-          :class="
-            allLinesReady
-              ? 'bg-n-teal-3 text-n-teal-11'
-              : readyLinesCount === 0
-                ? 'bg-n-ruby-3 text-n-ruby-11'
-                : 'bg-n-amber-3 text-n-amber-11'
-          "
-          :title="linesSummaryTitle"
-          data-testid="phone-widget-lines-summary"
-        >
-          {{ linesSummaryLabel }}
-        </span>
         <!-- On/off buttons: the "off" state (muted microphone, silent
              ringtone) is a filled red pressed button with its own label,
              never only another icon. -->
@@ -929,11 +895,11 @@ onUnmounted(() => {
                 <span
                   v-if="String(selectedInboxId) === String(line.id)"
                   class="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-n-teal-9/15 text-n-teal-11"
-                  title="Выбрана для звонка"
+                  :title="selectedLineLabel"
                   data-testid="phone-widget-line-selected-badge"
                 >
                   <i class="i-lucide-check text-[10px]" aria-hidden="true" />
-                  <span class="sr-only">Выбрана для звонка</span>
+                  <span class="sr-only">{{ selectedLineLabel }}</span>
                 </span>
                 <button
                   v-if="line.canReconnect"

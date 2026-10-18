@@ -1,7 +1,10 @@
 <script setup>
 import { computed, onMounted, onUnmounted, watch, nextTick, ref } from 'vue';
 import { usePopoverState, useSidebarContext } from './provider';
-import { resolveRouteConversationAssigneeType } from './sidebarActiveSelection';
+import {
+  hasExclusiveConversationScope,
+  resolveRouteConversationAssigneeType,
+} from './sidebarActiveSelection';
 import { useRoute, useRouter } from 'vue-router';
 import Policy from 'dashboard/components/policy.vue';
 import Icon from 'next/icon/Icon.vue';
@@ -187,6 +190,18 @@ const queryMatches = child => {
     ? child.name.split(':')[1]
     : null;
   const routeAssigneeType = resolveRouteConversationAssigneeType(route.query);
+
+  if (
+    assigneeItemType &&
+    hasExclusiveConversationScope({
+      label: route.params?.label,
+      teamId: route.params?.teamId,
+      foldersId: route.params?.id,
+      query: route.query,
+    })
+  ) {
+    return false;
+  }
 
   if (
     assigneeItemType &&

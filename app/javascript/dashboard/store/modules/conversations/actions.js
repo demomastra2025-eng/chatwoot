@@ -594,6 +594,7 @@ const actions = {
     try {
       const params = state.conversationFilters;
       const isFirstPage = Number(params.page || 1) === 1;
+      if (isFirstPage) dispatch('fetchSidebarUnreadCounts', params);
       const {
         data: { data },
       } = await CommunicationThreadApi.get({
@@ -622,7 +623,6 @@ const actions = {
         { commit, state, dispatch },
         actions.updateCommunicationThreadRealtime
       );
-      if (isFirstPage) dispatch('fetchSidebarUnreadCounts', params);
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
         commit(types.CLEAR_LIST_LOADING_STATUS, { error: true });
@@ -690,8 +690,9 @@ const actions = {
   // Overlapping refreshes with the same filters share one request instead of each asking the server.
   fetchSidebarUnreadCounts: (context, params = null) => {
     const requestParams = params || context.state?.conversationFilters || {};
-    return sidebarUnreadCountsFlight(JSON.stringify(requestParams), () =>
-      refreshSidebarUnreadCounts(context, params)
+    return sidebarUnreadCountsFlight(
+      JSON.stringify([conversationListRequestGeneration, requestParams]),
+      () => refreshSidebarUnreadCounts(context, params)
     );
   },
 
@@ -767,6 +768,9 @@ const actions = {
       const filterApi = requestParams?.communicationThreadMode
         ? CommunicationThreadApi
         : ConversationApi;
+      if (requestParams?.communicationThreadMode && isFirstPage) {
+        dispatch('fetchSidebarUnreadCounts', requestParams);
+      }
       // Thread filters never carry counts (fetched apart); native ones only on the first page.
       const { data } = requestParams?.communicationThreadMode
         ? await filterApi.filter(requestParams)
@@ -796,9 +800,6 @@ const actions = {
         { commit, state, dispatch },
         actions.updateCommunicationThreadRealtime
       );
-      if (requestParams?.communicationThreadMode && isFirstPage) {
-        dispatch('fetchSidebarUnreadCounts', requestParams);
-      }
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
         commit(types.CLEAR_LIST_LOADING_STATUS, { error: true });
@@ -1165,7 +1166,7 @@ const actions = {
   },
 
   assignAgent: async (
-    { commit, dispatch, state },
+    { commit, dispatch, state, rootState },
     { conversationId, agentId, conversationType = null, throwOnError = false }
   ) => {
     try {
@@ -1178,7 +1179,16 @@ const actions = {
         const response = await CommunicationThreadApi.update(conversationId, {
           assignee_id: agentId,
         });
+        CommunicationThreadApi.invalidateListRequests();
         commitCommunicationThreadUpdate(commit, response.data);
+        dispatch(
+          'conversationStats/get',
+          {
+            ...(rootState?.conversations?.conversationFilters || {}),
+            refreshPriority: 'realtime',
+          },
+          { root: true }
+        );
         return;
       }
 

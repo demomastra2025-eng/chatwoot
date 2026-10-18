@@ -436,6 +436,9 @@ const isWaitingForCallback = computed(() =>
 );
 
 const conversationPath = computed(() => {
+  // Touch current route fullPath so query-based scopes (CRM stage, appointment status, unread, etc.)
+  // read via window.location.search inside conversationUrl stay reactive on route changes.
+  const routeFullPath = router.currentRoute?.value?.fullPath;
   return frontendURL(
     conversationUrl({
       accountId: accountId.value,
@@ -448,7 +451,8 @@ const conversationPath = computed(() => {
       status: props.activeStatus,
       assigneeType: props.activeAssigneeType,
       communicationThread: isCommunicationThreadChat.value,
-    })
+    }),
+    routeFullPath ? undefined : undefined
   );
 });
 

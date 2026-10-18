@@ -331,7 +331,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def combined_assignment_and_unread_counts(relation)
-    unread_ids_sql = unread_thread_ids_relation.distinct.to_sql
+    unread_ids_sql = unread_thread_ids_relation(relation).distinct.to_sql
     joined_relation = relation.joins(
       "LEFT JOIN (#{unread_ids_sql}) unread_thread_links " \
       'ON unread_thread_links.communication_thread_id = communication_threads.id'
@@ -377,19 +377,31 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def team_unread_counts
-    scope = unread_scoped_thread_relation(include_team: false, include_assignee: true)
+    scope = scoped_thread_relation(
+      { include_team: false, include_assignee: true, include_unread: false },
+      base_scope: base_thread_scope.where.not(team_id: nil)
+    )
 
-    normalize_counts(scope.where.not(team_id: nil).group(:team_id).count)
+    normalize_counts(unread_thread_scope(scope).group(:team_id).count)
   end
 
   def unread_thread_scope(scope)
     base_scope = CommunicationThread.where(id: scope.except(:order).select(:id))
-    base_scope.where(id: unread_thread_ids_relation)
+    base_scope.where(id: unread_thread_ids_relation(base_scope))
   end
 
-  def unread_thread_ids_relation
+  def unread_thread_ids_relation(thread_scope = nil)
+    conversation_scope = accessible_conversations
+    unless thread_scope.nil?
+      scoped_thread_ids = thread_scope.except(:order, :select).select(:id)
+      conversation_scope = conversation_scope.where(
+        id: CommunicationThreadConversation
+          .where(account_id: current_account.id, communication_thread_id: scoped_thread_ids)
+          .select(:conversation_id)
+      )
+    end
     unread_conversations = Conversations::UnreadScopeBuilder.new(
-      scope: accessible_conversations,
+      scope: conversation_scope,
       account: current_account
     ).perform.select(:id)
     thread_ids_for_conversations(unread_conversations)

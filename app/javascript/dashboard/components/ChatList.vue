@@ -552,11 +552,39 @@ function conversationNavigationQuery(overrides = {}) {
   return nextQuery;
 }
 
+const normalizeListRouteName = routeName => {
+  const detailToListMap = {
+    communication_thread_conversation: 'communication_threads_dashboard',
+    inbox_conversation: 'home',
+    conversation_through_inbox: 'inbox_dashboard',
+    conversations_through_label: 'label_conversations',
+    conversations_through_team: 'team_conversations',
+    conversations_through_folders: 'folder_conversations',
+    conversation_through_mentions: 'conversation_mentions',
+    conversation_through_unattended: 'conversation_unattended',
+    conversation_through_participating: 'conversation_participating',
+  };
+  return detailToListMap[routeName] || routeName;
+};
+
 const routeTargetKey = ({
   name = route.name,
   params = route.params,
   query = route.query,
-} = {}) => JSON.stringify({ name, params, query });
+} = {}) => {
+  const {
+    conversation_id: _conversationId,
+    conversationId: _camelConversationId,
+    communication_thread_id: _threadId,
+    ...listParams
+  } = params || {};
+  const { messageId: _messageId, ...listQuery } = query || {};
+  return JSON.stringify({
+    name: normalizeListRouteName(name),
+    params: listParams,
+    query: listQuery,
+  });
+};
 
 let expectedRouteTargetKey = routeTargetKey();
 
@@ -1245,6 +1273,10 @@ function fetchConversations() {
 }
 
 function resetAndFetchData({ preserveAppliedFilters = false, status } = {}) {
+  activeAssigneeTab.value = routeConversationAssigneeType.value;
+  if (!status) {
+    activeStatus.value = routeConversationStatus.value;
+  }
   if (!preserveAppliedFilters) {
     appliedFilter.value = [];
     store.dispatch('clearConversationFilters');
@@ -1936,7 +1968,10 @@ function selectAllMatchingConversations() {
 
 useEmitter('fetch_conversation_stats', () => {
   if (hasAppliedFiltersOrActiveFolders.value) return;
-  store.dispatch('conversationStats/get', conversationFilters.value);
+  store.dispatch('conversationStats/get', {
+    ...conversationFilters.value,
+    refreshPriority: 'realtime',
+  });
 });
 
 onMounted(() => {

@@ -212,7 +212,7 @@ const accordionItems = computed(() => {
   }));
 
   if (!canManageDeals.value) return items;
-  if (isCreating.value || !items.length) {
+  if (isCreating.value) {
     return [{ deal: null, isNew: true, key: NEW_DEAL_KEY }, ...items];
   }
 
@@ -439,7 +439,7 @@ const setDealForms = () => {
     forms[dealKey(deal)] = formFromDeal(deal);
   });
 
-  if (isCreating.value || !deals.value.length) {
+  if (isCreating.value) {
     setNewDealForm();
   }
 };
@@ -528,11 +528,9 @@ const initializeSidebar = async () => {
 
     companyOptions.value = nextCompanyOptions;
     deals.value = nextDeals;
-    isCreating.value = deals.value.length === 0;
+    isCreating.value = false;
     setDealForms();
-    openDealKeys.value = [
-      isCreating.value ? NEW_DEAL_KEY : dealKey(deals.value[0]),
-    ];
+    openDealKeys.value = deals.value.length ? [dealKey(deals.value[0])] : [];
   } catch (error) {
     if (isCurrent()) ui.error = error;
   } finally {
@@ -556,7 +554,7 @@ const scrollDealsToTop = async () => {
       ? window.requestAnimationFrame
       : callback => callback();
   scheduleFrame(() => {
-    scrollContainer.value?.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollContainer.value?.scrollTo?.({ top: 0, behavior: 'smooth' });
   });
 };
 
@@ -572,7 +570,7 @@ const startCreateDeal = () => {
 };
 
 const cancelCreateDeal = () => {
-  if (!deals.value.length || savingDealKey.value) return;
+  if (savingDealKey.value) return;
 
   isCreating.value = false;
   delete forms[NEW_DEAL_KEY];
@@ -985,12 +983,71 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
+        <div
+          v-if="!deals.length && !isCreating"
+          class="flex flex-col items-start gap-3 px-4 py-6 text-sm text-n-slate-11"
+          data-testid="crm-empty-deals-state"
+        >
+          <p class="m-0">{{ $t('CRM.DEALS.EMPTY_TITLE') }}</p>
+          <Button
+            v-if="canManageDeals"
+            size="sm"
+            color="blue"
+            icon="i-lucide-plus"
+            data-testid="crm-empty-create-deal"
+            :label="$t('CRM.DEALS.NEW_DEAL')"
+            @click="startCreateDeal"
+          />
+        </div>
+
         <section
           v-for="item in accordionItems"
           :key="item.key"
           class="border-b border-n-weak bg-n-solid-1"
         >
+          <div
+            v-if="item.isNew"
+            class="flex min-w-0 items-center justify-between gap-2 pe-3"
+          >
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 p-0 text-left hover:bg-n-alpha-1 rtl:text-right"
+              @click="toggleDeal(item.key)"
+            >
+              <span
+                class="my-0.5 w-1 shrink-0 self-stretch rounded-full"
+                :style="{ backgroundColor: stageColorForItem(item) }"
+              />
+              <span
+                class="flex min-w-0 flex-1 items-start justify-between gap-3 py-2.5 pe-2 ps-3"
+              >
+                <span class="min-w-0">
+                  <span
+                    class="block truncate text-sm font-medium text-n-slate-12"
+                  >
+                    {{ accordionTitle(item) }}
+                  </span>
+                  <span
+                    class="block truncate text-xs leading-5 text-n-slate-11"
+                  >
+                    {{ accordionMeta(item) }}
+                  </span>
+                </span>
+              </span>
+            </button>
+            <Button
+              size="xs"
+              color="slate"
+              variant="faded"
+              icon="i-lucide-x"
+              data-testid="crm-header-cancel-create-deal"
+              :disabled="!!savingDealKey"
+              :label="$t('CRM.GENERAL.CANCEL')"
+              @click="cancelCreateDeal"
+            />
+          </div>
           <button
+            v-else
             type="button"
             class="flex w-full p-0 text-left hover:bg-n-alpha-1 rtl:text-right"
             @click="toggleDeal(item.key)"
@@ -1245,10 +1302,11 @@ onBeforeUnmount(() => {
 
               <div class="flex items-center justify-end gap-2">
                 <Button
-                  v-if="item.isNew && deals.length"
+                  v-if="item.isNew"
                   size="sm"
-                  slate
-                  faded
+                  color="slate"
+                  variant="faded"
+                  data-testid="crm-cancel-create-deal"
                   :disabled="!!savingDealKey"
                   :label="$t('CRM.GENERAL.CANCEL')"
                   @click="cancelCreateDeal"
@@ -1257,6 +1315,7 @@ onBeforeUnmount(() => {
                   v-if="canManageDeals"
                   size="sm"
                   color="blue"
+                  data-testid="crm-submit-deal"
                   :is-loading="savingDealKey === item.key"
                   :disabled="
                     !!savingDealKey ||
@@ -1265,7 +1324,11 @@ onBeforeUnmount(() => {
                     !forms[item.key].pipelineId ||
                     !forms[item.key].stageId
                   "
-                  :label="$t('CRM.GENERAL.SAVE')"
+                  :label="
+                    item.isNew
+                      ? $t('CRM.GENERAL.CREATE')
+                      : $t('CRM.GENERAL.SAVE')
+                  "
                   @click="saveDeal(item)"
                 />
               </div>

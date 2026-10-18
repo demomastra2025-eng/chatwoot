@@ -1711,9 +1711,9 @@ describe('PhoneWidget', () => {
       const wrapper = mountComponent();
       await flushPromises();
 
-      const summary = wrapper.get('[data-testid="phone-widget-lines-summary"]');
-      expect(summary.text()).toBe('2/3 активны');
-      expect(summary.attributes('title')).toBe('Активно линий: 2 из 3');
+      expect(
+        wrapper.find('[data-testid="phone-widget-lines-summary"]').exists()
+      ).toBe(false);
 
       const items = wrapper.findAll('[data-testid="phone-widget-line-item"]');
       expect(items).toHaveLength(3);

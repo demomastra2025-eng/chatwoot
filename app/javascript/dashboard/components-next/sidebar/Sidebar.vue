@@ -54,6 +54,7 @@ import { resolveVisibleConversationPipelines } from './conversationPipelineVisib
 import { conversationListContextState } from 'dashboard/helper/conversationListContext';
 import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
 import {
+  hasExclusiveConversationScope,
   resolveRouteConversationAssigneeType,
   selectExclusiveSidebarChildNames,
 } from './sidebarActiveSelection';
@@ -1608,6 +1609,18 @@ const queryMatches = child => {
 
   if (
     assigneeItemType &&
+    hasExclusiveConversationScope({
+      label: route.params?.label,
+      teamId: route.params?.teamId,
+      foldersId: route.params?.id,
+      query: route.query,
+    })
+  ) {
+    return false;
+  }
+
+  if (
+    assigneeItemType &&
     !Object.prototype.hasOwnProperty.call(childQuery, 'assignee_type') &&
     String(routeAssigneeType) !== String(assigneeItemType)
   ) {
@@ -1622,11 +1635,35 @@ const queryMatches = child => {
     let routeValue = route.query[key] ?? '';
 
     if (key === 'status') {
-      routeValue = route.query[key] ?? 'open';
+      routeValue =
+        normalizeConversationStatus(route.query[key]) ||
+        currentConversationStatus.value ||
+        'open';
     }
 
     if (key === 'assignee_type') {
       routeValue = routeAssigneeType;
+    }
+
+    if (key === 'crm_pipeline_id') {
+      routeValue = route.query.crm_pipeline_id ?? route.query.crmPipelineId;
+    }
+
+    if (key === 'crm_stage_id') {
+      routeValue = route.query.crm_stage_id ?? route.query.crmStageId;
+    }
+
+    if (key === 'appointment_status') {
+      routeValue =
+        route.query.appointment_status ?? route.query.appointmentStatus;
+    }
+
+    if (key === 'labels_scope') {
+      routeValue = route.query.labels_scope ?? route.query.labelsScope;
+    }
+
+    if (key === 'team_scope') {
+      routeValue = route.query.team_scope ?? route.query.teamScope;
     }
 
     return String(routeValue) === String(value);

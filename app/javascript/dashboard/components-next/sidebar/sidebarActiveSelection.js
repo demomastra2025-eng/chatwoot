@@ -13,6 +13,8 @@ export const hasExclusiveConversationScope = ({
     label ||
       teamId ||
       foldersId ||
+      query.crm_pipeline_id ||
+      query.crmPipelineId ||
       query.crm_stage_id ||
       query.crmStageId ||
       query.appointment_status ||
