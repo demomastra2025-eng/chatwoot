@@ -9,15 +9,14 @@
 :capsules:
   # 1. Realtime UI, ActionCable, Outbound Replies & Auto-Assignment (<100ms SLA)
   realtime:
-    :concurrency: <%= ENV.fetch("CAPSULE_REALTIME_CONCURRENCY", 8) %>
+    :concurrency: <%= ENV.fetch("CAPSULE_REALTIME_CONCURRENCY", 12) %>
     :queues:
-      - [action_cable_realtime, 5]
-      - [communication_thread_realtime, 5]
+      - [action_cable_realtime, 8]
+      - [communication_thread_realtime, 6]
       - [critical, 4]
       - [outbound_messages, 4]
       - [high, 3]
       - [auto_assignment, 3]
-      - [reminders, 2]
 
   # 2. Inbound Messenger Webhooks (WhatsApp Cloud/Coexistence, WhatsApp Web, Telegram, Personal)
   inbound_channels:
@@ -54,9 +53,10 @@
 
   # 6. Core Default (incl. ReceptionsDeltaJob), Webhooks, Cron & Mailers
   core_scheduled:
-    :concurrency: <%= ENV.fetch("CAPSULE_CORE_SCHEDULED_CONCURRENCY", 6) %>
+    :concurrency: <%= ENV.fetch("CAPSULE_CORE_SCHEDULED_CONCURRENCY", 8) %>
     :queues:
       - [default, 4]
+      - [reminders, 3]
       - [medium, 3]
       - [scheduled_jobs, 2]
       - [mailers, 2]

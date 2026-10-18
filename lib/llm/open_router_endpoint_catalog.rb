@@ -86,6 +86,8 @@ class Llm::OpenRouterEndpointCatalog
       )
       Rails.cache.write(CACHE_KEY, endpoint_configs)
       Rails.cache.delete(DB_CONFIG_CACHE_KEY)
+      Rails.cache.delete("#{DB_CONFIG_CACHE_KEY}/last_refreshed_at")
+      Rails.cache.delete("#{DB_CONFIG_CACHE_KEY}/stale_count")
       Rails.cache.write(LAST_REFRESH_AT_CACHE_KEY, timestamp)
       endpoint_errors.present? ? Rails.cache.write(LAST_REFRESH_ERROR_CACHE_KEY, endpoint_errors) : Rails.cache.delete(LAST_REFRESH_ERROR_CACHE_KEY)
 
@@ -435,7 +437,9 @@ class Llm::OpenRouterEndpointCatalog
     def db_last_refreshed_at
       return unless endpoint_table_available?
 
-      Llm::ModelEndpointEntry.openrouter.maximum(:fetched_at)&.iso8601(6)
+      Rails.cache.fetch("#{DB_CONFIG_CACHE_KEY}/last_refreshed_at", expires_in: 5.minutes) do
+        Llm::ModelEndpointEntry.openrouter.maximum(:fetched_at)&.iso8601(6)
+      end
     rescue ActiveRecord::StatementInvalid, ActiveRecord::NoDatabaseError
       nil
     end
@@ -443,7 +447,9 @@ class Llm::OpenRouterEndpointCatalog
     def db_stale_endpoint_count
       return 0 unless endpoint_table_available?
 
-      Llm::ModelEndpointEntry.openrouter.where.not(stale_at: nil).count
+      Rails.cache.fetch("#{DB_CONFIG_CACHE_KEY}/stale_count", expires_in: 5.minutes) do
+        Llm::ModelEndpointEntry.openrouter.where.not(stale_at: nil).count
+      end
     rescue ActiveRecord::StatementInvalid, ActiveRecord::NoDatabaseError
       0
     end

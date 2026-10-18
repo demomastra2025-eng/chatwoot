@@ -16,18 +16,18 @@ class MutexApplicationJob < ApplicationJob
 
   def with_lock(lock_key, timeout = Redis::LockManager::LOCK_TIMEOUT)
     lock_manager = Redis::LockManager.new
+    acquired = false
 
     begin
       if lock_manager.lock(lock_key, timeout)
+        acquired = true
         log_attempt(lock_key, executions)
         yield -> { lock_manager.renew(lock_key, timeout) }
-        # release the lock after the block has been executed
-        lock_manager.unlock(lock_key)
       else
         handle_failed_lock_acquisition(lock_key)
       end
-    rescue StandardError => e
-      handle_error(e, lock_manager, lock_key)
+    ensure
+      lock_manager.unlock(lock_key) if acquired
     end
   end
 

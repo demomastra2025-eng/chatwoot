@@ -1,10 +1,11 @@
 ---
 :verbose: false
-:concurrency: <%= ENV.fetch("CAPSULE_CORE_SCHEDULED_CONCURRENCY", 6) %>
+:concurrency: <%= ENV.fetch("CAPSULE_CORE_SCHEDULED_CONCURRENCY", 8) %>
 :timeout: 25
 :max_retries: 3
 :queues:
   - [default, 4]
+  - [reminders, 3]
   - [medium, 3]
   - [scheduled_jobs, 2]
   - [mailers, 2]

@@ -383,6 +383,7 @@ class Contact < ApplicationRecord
       profile = contact_inbox.channel_profile
       return profile if profile.present?
     end
+    return contact_channel_profiles.find { |cp| cp.contact_inbox_id == contact_inbox.id } if association(:contact_channel_profiles).loaded?
 
     contact_channel_profiles.find_by(contact_inbox_id: contact_inbox.id)
   end
@@ -527,10 +528,10 @@ class Contact < ApplicationRecord
     source = source.to_h.deep_stringify_keys
     return unless source['kind'] == DISPLAY_SOURCE_KIND_CHANNEL_PROFILE
 
-    return contact_channel_profiles.find_by(contact_inbox_id: source['contact_inbox_id']) if source['contact_inbox_id'].present?
+    return find_channel_profile_by_contact_inbox(source['contact_inbox_id']) if source['contact_inbox_id'].present?
 
     if source['identifier'].present?
-      profile = contact_channel_profiles.find_by(identifier: source['identifier'])
+      profile = find_channel_profile_by_identifier(source['identifier'])
       return profile if profile.present?
     end
 
@@ -539,6 +540,18 @@ class Contact < ApplicationRecord
     scope = contact_channel_profiles.where(source_id: source['source_id'])
     scope = scope.where(provider: source['provider']) if source['provider'].present?
     scope.order(last_synced_at: :desc, updated_at: :desc, id: :desc).first
+  end
+
+  def find_channel_profile_by_contact_inbox(contact_inbox_id)
+    return contact_channel_profiles.find { |cp| cp.contact_inbox_id == contact_inbox_id.to_i } if association(:contact_channel_profiles).loaded?
+
+    contact_channel_profiles.find_by(contact_inbox_id: contact_inbox_id)
+  end
+
+  def find_channel_profile_by_identifier(identifier)
+    return contact_channel_profiles.find { |cp| cp.identifier == identifier.to_s } if association(:contact_channel_profiles).loaded?
+
+    contact_channel_profiles.find_by(identifier: identifier)
   end
 
   def display_source_matches_contact_inbox?(source, contact_inbox)

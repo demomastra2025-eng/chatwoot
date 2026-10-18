@@ -10,7 +10,7 @@ class Integrations::Medelement::SyncJob < MutexApplicationJob
   ScheduledSyncBusyError = Class.new(StandardError)
 
   retry_on ScheduledSyncBusyError, wait: 5.minutes, attempts: 24
-  retry_on LockAcquisitionError, wait: 30.seconds, attempts: 6
+  retry_on LockAcquisitionError, wait: 1.minute, attempts: 15
   retry_on Integrations::Medelement::SyncRunHeartbeat::LockLeaseLostError, wait: 30.seconds, attempts: 6
   retry_on ActiveJob::EnqueueError, wait: 30.seconds, attempts: 3
   retry_on Integrations::Medelement::Client::ApiError, wait: API_RETRY_WAIT, attempts: 6
@@ -185,7 +185,7 @@ class Integrations::Medelement::SyncJob < MutexApplicationJob
 
   def retry_attempts_for(error)
     return 24 if error.is_a?(ScheduledSyncBusyError)
-    return 6 if error.is_a?(LockAcquisitionError)
+    return 15 if error.is_a?(LockAcquisitionError)
     return 6 if error.is_a?(Integrations::Medelement::SyncRunHeartbeat::LockLeaseLostError)
     return 3 if error.is_a?(ActiveJob::EnqueueError)
     return 6 if error.is_a?(Integrations::Medelement::Client::ApiError)

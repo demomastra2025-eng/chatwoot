@@ -66,6 +66,8 @@ class Llm::OpenRouterModelCatalog
       persist_embedding_model_profiles(embedding_models_payload, timestamp)
       Rails.cache.write(CACHE_KEY, model_configs)
       Rails.cache.delete(DB_CONFIG_CACHE_KEY)
+      Rails.cache.delete("#{DB_CONFIG_CACHE_KEY}/last_refreshed_at")
+      Rails.cache.delete("#{DB_CONFIG_CACHE_KEY}/state_counts")
       Rails.cache.write(LAST_REFRESH_AT_CACHE_KEY, timestamp)
       Rails.cache.delete(LAST_REFRESH_ERROR_CACHE_KEY)
 
@@ -341,7 +343,9 @@ class Llm::OpenRouterModelCatalog
     def db_last_refreshed_at
       return unless model_catalog_table_available?
 
-      Llm::ModelCatalogEntry.openrouter.maximum(:fetched_at)&.iso8601(6)
+      Rails.cache.fetch("#{DB_CONFIG_CACHE_KEY}/last_refreshed_at", expires_in: 5.minutes) do
+        Llm::ModelCatalogEntry.openrouter.maximum(:fetched_at)&.iso8601(6)
+      end
     rescue ActiveRecord::StatementInvalid, ActiveRecord::NoDatabaseError
       nil
     end
@@ -349,11 +353,13 @@ class Llm::OpenRouterModelCatalog
     def db_catalog_state_counts
       return { stale: 0, disabled: 0 } unless model_catalog_table_available?
 
-      scope = Llm::ModelCatalogEntry.openrouter
-      {
-        stale: scope.where.not(stale_at: nil).count,
-        disabled: scope.where.not(disabled_at: nil).count
-      }
+      Rails.cache.fetch("#{DB_CONFIG_CACHE_KEY}/state_counts", expires_in: 5.minutes) do
+        scope = Llm::ModelCatalogEntry.openrouter
+        {
+          stale: scope.where.not(stale_at: nil).count,
+          disabled: scope.where.not(disabled_at: nil).count
+        }
+      end
     rescue ActiveRecord::StatementInvalid, ActiveRecord::NoDatabaseError
       { stale: 0, disabled: 0 }
     end

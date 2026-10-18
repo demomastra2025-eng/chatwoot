@@ -1,4 +1,13 @@
 class CommunicationThreads::RealtimeRecipientGroups
+  def self.hydrate_links(links)
+    links.each do |link|
+      next unless (conv = link.conversation)
+
+      conv.association(:inbox).target = link.inbox if link.association(:inbox).loaded?
+      conv.association(:contact_inbox).target = link.contact_inbox if link.association(:contact_inbox).loaded?
+    end
+  end
+
   def initialize(account:, links:, source_conversation:)
     @account = account
     @links = links
