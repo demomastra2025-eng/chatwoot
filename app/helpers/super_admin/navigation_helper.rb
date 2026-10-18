@@ -24,8 +24,8 @@ module SuperAdmin::NavigationHelper
   # The names of the resources in the sidebar and in the titles; the Russian text of each is in `super_admin.resources`
   RESOURCE_LABELS = {
     'organizations' => 'Организации', 'organization' => 'Организация', 'accounts' => 'Аккаунты', 'account' => 'Аккаунт',
-    'users' => 'Пользователи', 'user' => 'Пользователь', 'platform_apps' => 'Платформенные приложения',
-    'platform_app' => 'Платформенное приложение', 'platform_banners' => 'Баннеры платформы',
+    'users' => 'Пользователи', 'user' => 'Пользователь', 'platform_apps' => 'Доступ по API для партнёров',
+    'platform_app' => 'Партнёрский доступ', 'platform_banners' => 'Баннеры платформы',
     'platform_banner' => 'Баннер платформы'
   }.freeze
 

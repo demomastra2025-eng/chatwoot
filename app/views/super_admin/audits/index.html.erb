@@ -17,7 +17,7 @@ are Astana time.
   total = @audits.respond_to?(:total_count) ? @audits.total_count : @audits.size
   actions = %w[create update destroy impersonate start_trial extend_trial expire_trial apply_plan update_channel_override
                update_channel_visibility update_service_flags remove_user cleanup_storage empty_trash link_account unlink_account
-               link_organization unlink_organization]
+               link_organization unlink_organization] + SuperAdmin::AuditsController::SECURITY_ACTIONS
   action_badges = { 'create' => 'admin-badge--teal', 'update' => 'admin-badge--blue', 'destroy' => 'admin-badge--ruby' }
 %>
 
@@ -77,8 +77,13 @@ are Astana time.
               <%= super_admin_time(audit.created_at, '%d.%m.%Y %H:%M:%S') %>
             </td>
             <td>
-              <% if audit.user.present? %>
-                <span class="font-medium"><%= audit.user.try(:name) || t('super_admin.audits.user_id', id: audit.user_id) %></span>
+              <% if audit.user_type == 'PlatformApp' %>
+                <%# A partner access of the Platform API: named as a partner, so nobody takes it for a person %>
+                <span class="font-medium"><%= t('super_admin.audits.partner', name: audit.user.try(:name) || "№#{audit.user_id}") %></span>
+              <% elsif audit.user.respond_to?(:name) %>
+                <span class="font-medium"><%= audit.user.name %></span>
+              <% elsif audit.user_id.present? %>
+                <span class="font-medium"><%= t('super_admin.audits.user_id', id: audit.user_id) %></span>
               <% elsif audit.username.present? %>
                 <span class="font-medium"><%= audit.username %></span>
               <% else %>

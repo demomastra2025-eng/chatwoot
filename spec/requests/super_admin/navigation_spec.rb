@@ -43,7 +43,7 @@ RSpec.describe 'Super Admin sidebar', type: :request do
       expect(link_texts(group('ai'))).to eq(['Модели ИИ', 'AI-аналитика'])
       expect(link_texts(group('system')).first(6)).to eq(['Мониторинг', 'Логи', 'Очереди', 'Статус сервера', 'Журнал аудита', 'Push-диагностика'])
       expect(link_texts(group('system'))).to include('Настройки')
-      expect(link_texts(group('extra'))).to eq(['Платформенные приложения', 'Баннеры', 'Каналы'])
+      expect(link_texts(group('extra'))).to eq(['Доступ по API для партнёров', 'Баннеры', 'Каналы'])
     end
 
     it 'links every entry to its page' do
@@ -60,7 +60,7 @@ RSpec.describe 'Super Admin sidebar', type: :request do
         'Журнал аудита' => '/super_admin/audits',
         'Push-диагностика' => '/super_admin/push_diagnostics',
         'Настройки' => '/super_admin/settings',
-        'Платформенные приложения' => '/super_admin/platform_apps',
+        'Доступ по API для партнёров' => '/super_admin/platform_apps',
         'Баннеры' => '/super_admin/platform_banners',
         'Каналы' => '/super_admin/channels'
       }.each do |label, href|
@@ -144,7 +144,7 @@ RSpec.describe 'Super Admin sidebar', type: :request do
       get '/super_admin'
 
       expect(link('Баннеры')).to be_nil
-      expect(link_texts(group('extra'))).to eq(['Платформенные приложения', 'Каналы'])
+      expect(link_texts(group('extra'))).to eq(['Доступ по API для партнёров', 'Каналы'])
     end
   end
 
@@ -212,7 +212,7 @@ RSpec.describe 'Super Admin sidebar', type: :request do
 
     it 'marks the extra resources' do
       get '/super_admin/platform_apps'
-      expect(current_labels).to eq(['Платформенные приложения'])
+      expect(current_labels).to eq(['Доступ по API для партнёров'])
 
       get '/super_admin/channels'
       expect(current_labels).to eq(['Каналы'])

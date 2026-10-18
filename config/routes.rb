@@ -1059,7 +1059,9 @@ Rails.application.routes.draw do
 
       resources :access_tokens, only: [:index, :show]
       resources :installation_configs, only: [:index, :new, :create, :show, :edit, :update]
-      resources :platform_apps, only: [:index, :new, :create, :show, :edit, :update, :destroy]
+      resources :platform_apps, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
+        post :reissue_token, on: :member
+      end
       resources :platform_banners, only: [:index, :new, :create, :show, :edit, :update, :destroy]
       resource :instance_status, only: [:show]
       resource :monitoring, only: [:show]

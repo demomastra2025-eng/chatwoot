@@ -9,6 +9,9 @@ class PlatformAppDashboard < Administrate::BaseDashboard
   # on pages throughout the dashboard.
   ATTRIBUTE_TYPES = {
     access_token: Field::HasOne,
+    token_hint: Field::String,
+    accounts_count: Field::Number,
+    users_count: Field::Number,
     id: Field::Number,
     name: Field::String,
     created_at: Field::DateTime,
@@ -23,16 +26,20 @@ class PlatformAppDashboard < Administrate::BaseDashboard
   COLLECTION_ATTRIBUTES = %i[
     id
     name
+    token_hint
+    accounts_count
+    users_count
+    created_at
   ].freeze
 
   # SHOW_PAGE_ATTRIBUTES
-  # an array of attributes that will be displayed on the model's show page.
+  # an array of attributes that will be displayed on the model's show page. The card of a partner is its own page
+  # (app/views/super_admin/platform_apps/show.html.erb); the token is never part of a list of attributes.
   SHOW_PAGE_ATTRIBUTES = %i[
     id
     name
     created_at
     updated_at
-    access_token
   ].freeze
 
   # FORM_ATTRIBUTES

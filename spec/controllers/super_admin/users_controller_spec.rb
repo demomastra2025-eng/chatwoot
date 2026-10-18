@@ -271,6 +271,18 @@ RSpec.describe 'Super Admin Users API', type: :request do
       end
     end
 
+    it 'shows the personal API token as its last 4 characters, never the whole token' do
+      sign_in(super_admin, scope: :super_admin)
+      token = user.access_token.token
+
+      get "/super_admin/users/#{user.id}"
+
+      doc = Nokogiri::HTML(response.body)
+      expect(doc.at_css('#access_token + dd').text.squish).to include("••••#{token.last(4)}")
+      expect(response.body).not_to include(token)
+      expect(doc.css('[data-secret-text]')).to be_empty
+    end
+
     it 'explains that a user without accounts cannot be impersonated' do
       sign_in(super_admin, scope: :super_admin)
 

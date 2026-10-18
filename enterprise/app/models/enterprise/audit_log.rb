@@ -34,10 +34,16 @@ class Enterprise::AuditLog < Audited::Audit
   def log_additional_information
     # rubocop:disable Rails/SkipsModelValidations
     if auditable_type == 'Account' && auditable_id.present?
-      update_columns(associated_type: auditable_type, associated_id: auditable_id, username: user&.email)
+      update_columns(associated_type: auditable_type, associated_id: auditable_id, username: actor_username)
     else
-      update_columns(username: user&.email)
+      update_columns(username: actor_username)
     end
     # rubocop:enable Rails/SkipsModelValidations
+  end
+
+  # The e-mail of the person who did it. The actor is not always a person with an e-mail: a partner access of the
+  # Platform API (PlatformApp) has none, and an entry without an actor keeps the name written into `username`.
+  def actor_username
+    user.try(:email).presence || username
   end
 end

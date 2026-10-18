@@ -18,4 +18,10 @@
 class AccessToken < ApplicationRecord
   has_secure_token :token
   belongs_to :owner, polymorphic: true
+
+  # What a screen may show of the token: the last 4 characters (SuperAdmin::SecretMask). The full value is shown once,
+  # right after a partner access is created or its token is reissued, and nowhere else.
+  def hint
+    SuperAdmin::SecretMask.hint(token)
+  end
 end

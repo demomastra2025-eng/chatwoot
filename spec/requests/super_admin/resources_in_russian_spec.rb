@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-# The lists, cards and forms of the users, AI bots, platform apps, banners, access tokens and system parameters are
+# The lists, cards and forms of the users, partner access, banners, access tokens and system parameters are
 # drawn by Administrate; this spec pins what the app turned into Russian there (names of roles and types, yes/no,
 # titles of the «new» pages, the avatar and file fields).
 RSpec.describe 'Super Admin lists and forms in Russian', type: :request do
@@ -81,10 +81,11 @@ RSpec.describe 'Super Admin lists and forms in Russian', type: :request do
       app = create(:platform_app, name: 'Мой портал')
 
       get '/super_admin/platform_apps/new'
-      expect(title).to eq('Новое платформенное приложение')
+      expect(title).to eq('Новый партнёрский доступ')
 
       get "/super_admin/platform_apps/#{app.id}"
-      expect(title).to eq("Приложение №#{app.id} «Мой портал»")
+      expect(title).to eq('Мой портал')
+      expect(page.at_css('title').text).to include("Партнёр №#{app.id} «Мой портал»")
     end
   end
 
@@ -113,7 +114,7 @@ RSpec.describe 'Super Admin lists and forms in Russian', type: :request do
 
       get '/super_admin/access_tokens'
 
-      expect(page.css('.segmented__item').map { |item| item.text.squish }).to eq(['Все', 'Пользователи', 'Платформенные приложения'])
+      expect(page.css('.segmented__item').map { |item| item.text.squish }).to eq(%w[Все Пользователи Партнёры])
       expect(main_text).to include('Оператор Айгерим')
       expect(main_text).not_to match(/User #\d+/)
     end

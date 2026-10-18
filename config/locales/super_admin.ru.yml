@@ -56,10 +56,10 @@ ru:
         many: "Пользователей аккаунта"
         other: "Пользователи аккаунтов"
       platform_app:
-        one: "Платформенное приложение"
-        few: "Платформенных приложения"
-        many: "Платформенных приложений"
-        other: "Платформенные приложения"
+        one: "Партнёрский доступ"
+        few: "Партнёрских доступа"
+        many: "Партнёрских доступов"
+        other: "Партнёрские доступы"
       platform_banner:
         one: "Баннер платформы"
         few: "Баннера платформы"
@@ -126,8 +126,8 @@ ru:
         access_token: "Персональный токен API"
       platform_app:
         id: "ID"
-        name: "Название приложения"
-        access_token: "Токен доступа API"
+        name: "Название партнёра"
+        access_token: "Токен API"
         created_at: "Дата создания"
         updated_at: "Дата обновления"
       platform_banner:
@@ -205,8 +205,8 @@ ru:
         access_token: "Токен API"
       platform_app:
         id: "ID"
-        name: "Название"
-        access_token: "Токен доступа"
+        name: "Название партнёра"
+        access_token: "Токен API"
         created_at: "Создан"
         updated_at: "Обновлен"
       platform_banner:
@@ -356,8 +356,8 @@ ru:
       account: "Аккаунт"
       users: "Пользователи"
       user: "Пользователь"
-      platform_apps: "Платформенные приложения"
-      platform_app: "Платформенное приложение"
+      platform_apps: "Доступ по API для партнёров"
+      platform_app: "Партнёрский доступ"
       platform_banners: "Баннеры платформы"
       platform_banner: "Баннер платформы"
     navigation:
@@ -385,7 +385,7 @@ ru:
         audits: "Журнал аудита"
         push_diagnostics: "Push-диагностика"
         settings: "Настройки"
-        platform_apps: "Платформенные приложения"
+        platform_apps: "Доступ по API для партнёров"
         platform_banners: "Баннеры"
         channels: "Каналы"
     shell:

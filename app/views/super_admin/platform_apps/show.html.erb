@@ -1,0 +1,186 @@
+<%#
+# Card of a partner access
+
+The page of one partner («Доступ по API для партнёров»). Header: name, #id, creation date (Astana time), «Перевыпустить
+токен», «Редактировать» and «Удалить». Side column: the token (shown in full ONCE, right after the access is created or
+the token is reissued; afterwards only its last 4 characters) and the facts. Main column: the accounts and the users the
+partner created through the Platform API (the only ones its token can read or change).
+
+## Local variables:
+
+- `page`: an `Administrate::Page::Show`; `page.resource` is the PlatformApp.
+%>
+<%
+  platform_app = page.resource
+  token = platform_app.access_token
+  one_time_token = flash[SuperAdmin::PlatformAppsController::ONE_TIME_TOKEN_KEY]
+  limit = 50
+  accounts = platform_app.accounts.order(:id)
+  users = platform_app.users.order(:id)
+  accounts_total = accounts.count
+  users_total = users.count
+  status_tones = { active: 'teal', suspended: 'amber', deleting: 'ruby' }
+%>
+<%# The full token is in this response only: the browser must not keep it in its cache or history. %>
+<% response.headers['Cache-Control'] = 'no-store' if one_time_token.present? %>
+
+<% content_for(:title) { t('super_admin.display.platform_app', id: platform_app.id, name: platform_app.name) } %>
+
+<header class="main-content__header" role="banner">
+  <div class="main-content__heading">
+    <nav aria-label="<%= t('super_admin.platform_apps.card.breadcrumb') %>" class="text-[13px] text-n-slate-11">
+      <%= link_to t('super_admin.navigation.items.platform_apps'), super_admin_platform_apps_path, class: 'text-n-brand hover:underline' %>
+      <span class="mx-1.5 text-n-slate-10" aria-hidden="true">/</span>
+      <span><%= platform_app.name %></span>
+    </nav>
+    <h1 class="main-content__page-title"><%= platform_app.name %></h1>
+    <p class="main-content__description" data-testid="platform-app-meta">
+      <span class="tabular-nums">#<%= platform_app.id %></span>
+      · <%= t('super_admin.platform_apps.card.created', date: super_admin_date(platform_app.created_at)) %>
+    </p>
+  </div>
+
+  <div class="main-content__actions">
+    <%= button_to t('super_admin.platform_apps.card.reissue'), reissue_token_super_admin_platform_app_path(platform_app), method: :post,
+                  class: 'button button--secondary', form_class: 'inline-block',
+                  data: { confirm: t('super_admin.platform_apps.card.reissue_confirm', name: platform_app.name) } %>
+    <%= link_to(t('administrate.actions.edit'), [:edit, namespace, platform_app], class: 'button') if accessible_action?(platform_app, :edit) %>
+    <% if accessible_action?(platform_app, :destroy) %>
+      <%= button_to t('administrate.actions.destroy'), [namespace, platform_app], method: :delete,
+                    class: 'button button--danger', form_class: 'inline-block',
+                    data: { confirm: t('super_admin.platform_apps.card.destroy_confirm', name: platform_app.name) } %>
+    <% end %>
+  </div>
+</header>
+
+<section class="main-content__body">
+  <div class="admin-card-layout">
+    <div class="flex min-w-0 flex-col gap-5">
+      <section class="admin-card" aria-labelledby="partner-accounts-title" data-testid="partner-accounts">
+        <div class="flex flex-wrap items-baseline justify-between gap-2 border-b border-n-weak px-5 py-4">
+          <h2 class="m-0 text-heading-2 text-n-slate-12" id="partner-accounts-title"><%= t('super_admin.platform_apps.card.accounts.title') %></h2>
+          <span class="text-xs tabular-nums text-n-slate-11"><%= t('super_admin.platform_apps.card.accounts.total', count: accounts_total) %></span>
+        </div>
+        <div class="admin-card--table">
+          <table aria-labelledby="partner-accounts-title">
+            <thead>
+              <tr>
+                <th scope="col"><%= t('super_admin.platform_apps.card.accounts.name') %></th>
+                <th scope="col"><%= t('super_admin.platform_apps.card.accounts.status') %></th>
+                <th scope="col"><%= t('super_admin.platform_apps.card.accounts.created') %></th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if accounts_total.zero? %>
+                <tr><td colspan="3" class="py-8 text-center text-n-slate-11"><%= t('super_admin.platform_apps.card.accounts.empty') %></td></tr>
+              <% end %>
+              <% accounts.limit(limit).each do |account| %>
+                <% state = SuperAdmin::AccountPlanState.new(account) %>
+                <tr data-account-id="<%= account.id %>">
+                  <td>
+                    <%= link_to account.name, super_admin_account_path(account), class: 'font-medium text-n-slate-12 hover:text-n-brand' %>
+                    <div class="text-xs tabular-nums text-n-slate-10">#<%= account.id %></div>
+                  </td>
+                  <td>
+                    <span class="admin-badge admin-badge--<%= status_tones.fetch(state.status) %>"><%= state.status_label %></span>
+                  </td>
+                  <td class="whitespace-nowrap tabular-nums text-n-slate-11"><%= super_admin_time(account.created_at) %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+        <% if accounts_total > limit %>
+          <p class="admin-block__note border-t border-n-weak px-5 py-3"><%= t('super_admin.platform_apps.card.more', shown: limit, total: accounts_total) %></p>
+        <% end %>
+      </section>
+
+      <section class="admin-card" aria-labelledby="partner-users-title" data-testid="partner-users">
+        <div class="flex flex-wrap items-baseline justify-between gap-2 border-b border-n-weak px-5 py-4">
+          <h2 class="m-0 text-heading-2 text-n-slate-12" id="partner-users-title"><%= t('super_admin.platform_apps.card.users.title') %></h2>
+          <span class="text-xs tabular-nums text-n-slate-11"><%= t('super_admin.platform_apps.card.users.total', count: users_total) %></span>
+        </div>
+        <div class="admin-card--table">
+          <table aria-labelledby="partner-users-title">
+            <thead>
+              <tr>
+                <th scope="col"><%= t('super_admin.platform_apps.card.users.name') %></th>
+                <th scope="col"><%= t('super_admin.platform_apps.card.users.email') %></th>
+                <th scope="col"><%= t('super_admin.platform_apps.card.users.created') %></th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if users_total.zero? %>
+                <tr><td colspan="3" class="py-8 text-center text-n-slate-11"><%= t('super_admin.platform_apps.card.users.empty') %></td></tr>
+              <% end %>
+              <% users.limit(limit).each do |user| %>
+                <tr data-user-id="<%= user.id %>">
+                  <td><%= link_to user.name, super_admin_user_path(user), class: 'font-medium text-n-slate-12 hover:text-n-brand' %></td>
+                  <td class="text-n-slate-11"><%= user.email %></td>
+                  <td class="whitespace-nowrap tabular-nums text-n-slate-11"><%= super_admin_time(user.created_at) %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+        <% if users_total > limit %>
+          <p class="admin-block__note border-t border-n-weak px-5 py-3"><%= t('super_admin.platform_apps.card.more', shown: limit, total: users_total) %></p>
+        <% end %>
+      </section>
+    </div>
+
+    <div class="flex min-w-0 flex-col gap-5">
+      <section class="admin-block" aria-labelledby="partner-token-title" data-testid="token-block">
+        <div class="admin-block__head">
+          <h2 class="admin-block__title" id="partner-token-title"><%= t('super_admin.platform_apps.card.token.title') %></h2>
+          <p class="admin-block__hint"><%= t('super_admin.platform_apps.card.token.hint') %></p>
+        </div>
+
+        <% if one_time_token.present? %>
+          <div class="flex flex-col gap-2" data-testid="one-time-token">
+            <p class="m-0 rounded-lg bg-n-amber-2 px-3 py-2 text-sm text-n-amber-11 outline outline-1 -outline-offset-1 outline-n-amber-4" role="status">
+              <%= t('super_admin.platform_apps.card.token.once') %>
+            </p>
+            <div class="flex items-center gap-2">
+              <input type="text" readonly value="<%= one_time_token %>" id="partner-one-time-token" class="font-mono text-xs"
+                     aria-label="<%= t('super_admin.platform_apps.card.token.title') %>" onclick="this.select()">
+              <button type="button" class="button button--small button--secondary shrink-0" data-copy-target="partner-one-time-token">
+                <%= t('super_admin.platform_apps.card.token.copy') %>
+              </button>
+            </div>
+          </div>
+          <script>
+            document.querySelectorAll('[data-copy-target]').forEach(function (button) {
+              button.addEventListener('click', function () {
+                var input = document.getElementById(button.dataset.copyTarget);
+                if (!input) return;
+                input.select();
+                if (navigator.clipboard) navigator.clipboard.writeText(input.value);
+              });
+            });
+          </script>
+        <% else %>
+          <div class="flex flex-col gap-1" data-testid="token-hint">
+            <span class="font-mono text-sm text-n-slate-12"><%= token&.hint.presence || t('super_admin.security.secret.not_set') %></span>
+            <span class="text-xs text-n-slate-11"><%= t('super_admin.platform_apps.card.token.last4') %></span>
+          </div>
+        <% end %>
+      </section>
+
+      <section class="admin-block" aria-labelledby="partner-facts-title" data-testid="facts-block">
+        <h2 class="admin-block__title" id="partner-facts-title"><%= t('super_admin.platform_apps.card.facts.title') %></h2>
+        <dl class="admin-kv">
+          <div class="admin-kv__row">
+            <dt class="admin-kv__key"><%= t('super_admin.platform_apps.card.facts.created') %></dt>
+            <dd class="admin-kv__value"><%= super_admin_time(platform_app.created_at) %></dd>
+          </div>
+          <div class="admin-kv__row">
+            <dt class="admin-kv__key"><%= t('super_admin.platform_apps.card.facts.updated') %></dt>
+            <dd class="admin-kv__value"><%= super_admin_time(platform_app.updated_at) %></dd>
+          </div>
+        </dl>
+        <p class="admin-block__note"><%= t('super_admin.platform_apps.card.facts.note') %></p>
+      </section>
+    </div>
+  </div>
+</section>

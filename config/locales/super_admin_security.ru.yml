@@ -1,0 +1,78 @@
+# Russian texts of the security side of the super admin: partner access by API, tokens and secrets, the read-only list of
+# installation parameters, the second step of the sign-in, user protections and the scheduled deletion of an account.
+# The super admin is Russian only (ru-only freeze): nothing here is translated into other languages.
+ru:
+  super_admin:
+    security:
+      secret:
+        not_set: "не задан"
+        set: "задан"
+
+    platform_apps:
+      controller:
+        create:
+          success: "Партнёрский доступ создан. Токен показан один раз: сохраните его сейчас."
+        update:
+          success: "Партнёрский доступ сохранён."
+        destroy:
+          success: "Партнёрский доступ удалён. Его токен больше не работает."
+      flashes:
+        token_reissued: "Токен перевыпущен. Старый токен больше не работает; новый показан один раз."
+      card:
+        breadcrumb: "Путь к странице"
+        created: "создан %{date}"
+        reissue: "Перевыпустить токен"
+        reissue_confirm: "Перевыпустить токен партнёра «%{name}»? Старый токен перестанет работать сразу, новый будет показан один раз."
+        destroy_confirm: "Удалить партнёрский доступ «%{name}»? Его токен перестанет работать. Аккаунты и пользователи партнёра останутся."
+        more: "Показаны первые %{shown} из %{total}."
+        accounts:
+          title: "Аккаунты партнёра"
+          total: "Всего: %{count}"
+          name: "Аккаунт"
+          status: "Статус"
+          created: "Создан"
+          empty: "Партнёр ещё не создал ни одного аккаунта."
+        users:
+          title: "Пользователи партнёра"
+          total: "Всего: %{count}"
+          name: "Имя"
+          email: "Электронная почта"
+          created: "Создан"
+          empty: "Партнёр ещё не создал ни одного пользователя."
+        token:
+          title: "Токен API"
+          hint: "Передайте токен партнёру по защищённому каналу. Он создаёт аккаунты и пользователей от имени платформы."
+          once: "Токен показан один раз. Сохраните его сейчас: позже здесь будут видны только последние 4 символа."
+          copy: "Копировать"
+          last4: "Показаны только последние 4 символа. Если токен потерян, перевыпустите его."
+        facts:
+          title: "О доступе"
+          created: "Создан"
+          updated: "Изменён"
+          note: "Партнёр видит и меняет только те аккаунты и пользователей, которых создал сам. Все его действия записываются в журнал аудита."
+
+    audits:
+      partner: "Партнёр: %{name}"
+      types:
+        platform_app: "Партнёрский доступ"
+        installation_config: "Параметр системы"
+      actions:
+        reissue_token: "Перевыпуск токена партнёра"
+        update_setting: "Изменение настройки"
+        schedule_deletion: "Удаление аккаунта назначено"
+        cancel_deletion: "Удаление аккаунта отменено"
+        super_admin_login: "Вход в супер-админку"
+        super_admin_login_failed: "Неудачная попытка входа в супер-админку"
+        super_admin_two_factor_failed: "Неверный код второго шага входа"
+        super_admin_logout: "Выход из супер-админки"
+        partner_create_account: "Партнёр: создание аккаунта"
+        partner_update_account: "Партнёр: изменение аккаунта"
+        partner_destroy_account: "Партнёр: удаление аккаунта"
+        partner_create_user: "Партнёр: создание пользователя"
+        partner_update_user: "Партнёр: изменение пользователя"
+        partner_destroy_user: "Партнёр: удаление пользователя"
+        partner_login_link: "Партнёр: ссылка для входа пользователя"
+        partner_user_token: "Партнёр: токен пользователя"
+        partner_set_account_user: "Партнёр: пользователь в аккаунте"
+        partner_remove_account_user: "Партнёр: пользователь убран из аккаунта"
+        partner_migrate_email_channels: "Партнёр: перенос почтовых ящиков"

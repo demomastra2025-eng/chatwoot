@@ -14,6 +14,9 @@ the operator app (tinted surface, matching outline, no emoji).
 Flash values are plain text and are always escaped; they cannot carry markup.
 Error messages built from user input are safe to put in a flash. A message that
 needs a link belongs on the page itself, not in a flash.
+
+A flash that carries a secret for ONE page (the token of a partner access, shown once on its card) is not a message:
+it is skipped here, the page that expects it reads it.
 %>
 <%
   flash_tones = {
@@ -23,11 +26,12 @@ needs a link belongs on the page itself, not in a flash.
     'error' => 'bg-n-ruby-2 text-n-ruby-11 outline-n-ruby-4'
   }
   fallback_tone = 'bg-n-slate-2 text-n-slate-12 outline-n-weak'
+  messages = flash.to_h.except(SuperAdmin::PlatformAppsController::ONE_TIME_TOKEN_KEY.to_s)
 %>
 
-<% if flash.any? %>
+<% if messages.any? %>
   <div class="flashes flex flex-col gap-2 px-4 pt-5 sm:px-7">
-    <% flash.each do |key, value| -%>
+    <% messages.each do |key, value| -%>
       <div class="flash flash-<%= key %> rounded-xl px-4 py-2.5 text-left text-sm outline outline-1 -outline-offset-1 <%= flash_tones.fetch(key.to_s, fallback_tone) %>" role="<%= %w[alert error].include?(key.to_s) ? 'alert' : 'status' %>"><%= value %></div>
     <% end -%>
   </div>
