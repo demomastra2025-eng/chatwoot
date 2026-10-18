@@ -10,12 +10,14 @@ class Integrations::Medelement::PatientContactTransferService
   def perform
     return destination_contact if source_contact.id == destination_contact.id
 
+    sanitize_destination_owner!
+    transfer_deal_contacts!
+    transfer_reminders_with_channel_routes!
     Contacts::ReferenceMergeService.new(
       account: account,
       base_contact: destination_contact,
       mergee_contact: source_contact
     ).perform
-    transfer_deal_contacts!
     transfer_notes!
     transfer_labels!
     transfer_contact_attributes!
@@ -25,6 +27,31 @@ class Integrations::Medelement::PatientContactTransferService
   private
 
   attr_reader :account, :source_contact, :destination_contact
+
+  def sanitize_destination_owner!
+    return if destination_contact.owner_id.blank? || account.users.exists?(id: destination_contact.owner_id)
+
+    destination_contact.owner = nil
+  end
+
+  def transfer_reminders_with_channel_routes!
+    return unless defined?(Reminder)
+
+    Contacts::ReferenceMergeService.merge_appointment_references!(
+      base_contact: destination_contact,
+      mergee_contact: source_contact
+    )
+    # rubocop:disable Rails/SkipsModelValidations
+    Reminder.where(account_id: account.id, target_contact_id: source_contact.id)
+            .where('target_contact_inbox_id IS NOT NULL OR target_conversation_id IS NOT NULL')
+            .update_all(
+              target_contact_id: destination_contact.id,
+              target_contact_inbox_id: nil,
+              target_conversation_id: nil,
+              updated_at: Time.current
+            )
+    # rubocop:enable Rails/SkipsModelValidations
+  end
 
   def transfer_deal_contacts!
     Crm::DealContact.where(account_id: account.id, contact_id: source_contact.id).find_each do |deal_contact|
@@ -81,10 +108,14 @@ class Integrations::Medelement::PatientContactTransferService
     sanitize_transferred_custom_attributes!(merged['custom_attributes']) if merged['custom_attributes'].is_a?(Hash)
     {
       attributes: merged,
-      owner: source_contact.owner,
+      owner: valid_account_owner(source_contact.owner),
       company: source_contact.company,
       contact_type: source_contact.contact_type
     }
+  end
+
+  def valid_account_owner(user)
+    user if user.present? && account.users.exists?(id: user.id)
   end
 
   def medelement_source?
