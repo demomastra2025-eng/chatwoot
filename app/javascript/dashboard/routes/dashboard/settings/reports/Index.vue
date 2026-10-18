@@ -7,6 +7,7 @@ import { REPORTS_EVENTS } from '../../../../helper/AnalyticsHelper/events';
 import { generateFileName } from 'dashboard/helper/downloadHelper';
 import ReportContainer from './ReportContainer.vue';
 import ReportHeader from './components/ReportHeader.vue';
+import DailyResponseTable from './components/DailyResponseTable.vue';
 
 const REPORTS_KEYS = {
   CONVERSATIONS: 'conversations_count',
@@ -24,6 +25,7 @@ export default {
     ReportHeader,
     ReportFilters,
     ReportContainer,
+    DailyResponseTable,
     V4Button,
   },
   data() {
@@ -122,5 +124,6 @@ export default {
       @filter-change="onFilterChange"
     />
     <ReportContainer :group-by="groupBy" />
+    <DailyResponseTable :from="from" :to="to" />
   </div>
 </template>
