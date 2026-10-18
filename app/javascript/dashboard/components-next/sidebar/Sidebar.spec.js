@@ -256,6 +256,48 @@ describe('Sidebar', () => {
     });
   });
 
+  describe('Catalog (Products & Services) and Scheduling groups', () => {
+    it('moves Services out of Scheduling into the new Catalog («Товары и Услуги») group alongside Products', async () => {
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'catalog_products',
+      });
+      const scheduling = sidebarGroup(wrapper, 'Scheduling');
+      const catalog = sidebarGroup(wrapper, 'Catalog');
+
+      expect(navigationChildNames(scheduling)).not.toContain(
+        'Scheduling Services'
+      );
+      expect(catalog.props('label')).toBe(enSettings.SIDEBAR.CATALOG);
+      expect(catalog.props('icon')).toBe('i-lucide-package');
+      expect(catalog.props('defaultChildName')).toBe('Catalog Products');
+      expect(navigationChildNames(catalog)).toEqual([
+        'Catalog Products',
+        'Catalog Services',
+      ]);
+      expect(
+        catalog.props('children').map(child => child.to.name)
+      ).toEqual(['catalog_products', 'catalog_services']);
+      expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
+        { name: 'Catalog Products', active: true },
+      ]);
+    });
+
+    it('highlights «Услуги» inside «Товары и Услуги» on both catalog_services and legacy scheduling_services routes', async () => {
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'scheduling_services',
+      });
+
+      expect(secondaryColumn(wrapper).props('label')).toBe(
+        enSettings.SIDEBAR.CATALOG
+      );
+      expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
+        { name: 'Catalog Services', active: true },
+      ]);
+    });
+  });
+
   describe('CRM group', () => {
     it('keeps the deals item highlighted on a deal page', async () => {
       const wrapper = await mountSidebar({

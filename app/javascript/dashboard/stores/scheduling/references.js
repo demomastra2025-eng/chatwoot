@@ -2,11 +2,13 @@ import { defineStore } from 'pinia';
 import SchedulingCabinetsAPI from 'dashboard/api/scheduling/cabinets';
 import SchedulingExceptionsAPI from 'dashboard/api/scheduling/exceptions';
 import SchedulingResourcesAPI from 'dashboard/api/scheduling/resources';
+import SchedulingProductsAPI from 'dashboard/api/scheduling/products';
 import SchedulingServicesAPI from 'dashboard/api/scheduling/services';
 import {
   compactPayload,
   extractSchedulingError,
   isDeletedFromScheduling,
+  normalizeMeta,
   normalizePayload,
   removeRecord,
   upsertRecord,
@@ -20,6 +22,17 @@ export const useSchedulingReferencesStore = defineStore(
       cabinets: [],
       holidays: [],
       resources: [],
+      products: [],
+      moyskladStatus: {
+        connected: false,
+        status: 'disabled',
+        hookId: null,
+        priceTypeName: 'Цена продажи',
+        maskedToken: null,
+        lastSyncedAt: null,
+        lastSyncSummary: null,
+        syncedProductsCount: 0,
+      },
       services: [],
       timeOffs: [],
       ui: {
@@ -27,7 +40,9 @@ export const useSchedulingReferencesStore = defineStore(
         isLoadingCabinets: false,
         isLoadingExceptions: false,
         isLoadingResources: false,
+        isLoadingProducts: false,
         isLoadingServices: false,
+        isSyncingMoysklad: false,
         isSaving: false,
       },
       workRulesByResource: {},
@@ -174,6 +189,134 @@ export const useSchedulingReferencesStore = defineStore(
           throw error;
         } finally {
           this.ui.isSaving = false;
+        }
+      },
+
+      async loadProducts(params = { include_inactive: true }) {
+        this.ui.isLoadingProducts = true;
+        this.ui.error = null;
+
+        try {
+          const { data } = await SchedulingProductsAPI.get(params);
+          this.products = normalizePayload(data);
+          const meta = normalizeMeta(data);
+          if (meta?.moysklad) {
+            this.moyskladStatus = {
+              ...this.moyskladStatus,
+              ...meta.moysklad,
+            };
+          }
+          return this.products;
+        } catch (error) {
+          this.ui.error = extractSchedulingError(error);
+          throw error;
+        } finally {
+          this.ui.isLoadingProducts = false;
+        }
+      },
+
+      async saveProduct(product) {
+        this.ui.isSaving = true;
+        this.ui.error = null;
+
+        try {
+          const payload = compactPayload(product);
+          const response = payload.id
+            ? await SchedulingProductsAPI.update(payload.id, payload)
+            : await SchedulingProductsAPI.create(payload);
+          const savedProduct = normalizePayload(response.data);
+          this.products = upsertRecord(this.products, savedProduct);
+          return savedProduct;
+        } catch (error) {
+          this.ui.error = extractSchedulingError(error);
+          throw error;
+        } finally {
+          this.ui.isSaving = false;
+        }
+      },
+
+      async deleteProduct(productId) {
+        this.ui.isSaving = true;
+        this.ui.error = null;
+
+        try {
+          await SchedulingProductsAPI.delete(productId);
+          this.products = removeRecord(this.products, productId);
+        } catch (error) {
+          this.ui.error = extractSchedulingError(error);
+          throw error;
+        } finally {
+          this.ui.isSaving = false;
+        }
+      },
+
+      async loadMoyskladStatus() {
+        try {
+          const { data } = await SchedulingProductsAPI.getMoyskladStatus();
+          const payload = normalizePayload(data);
+          if (payload && typeof payload === 'object') {
+            this.moyskladStatus = {
+              ...this.moyskladStatus,
+              ...payload,
+            };
+          }
+          return this.moyskladStatus;
+        } catch (error) {
+          this.ui.error = extractSchedulingError(error);
+          throw error;
+        }
+      },
+
+      async saveMoyskladConfig(config) {
+        this.ui.isSaving = true;
+        this.ui.error = null;
+
+        try {
+          const { data } = await SchedulingProductsAPI.saveMoyskladConfig(
+            compactPayload(config)
+          );
+          const payload = normalizePayload(data);
+          if (payload && typeof payload === 'object') {
+            this.moyskladStatus = {
+              ...this.moyskladStatus,
+              ...payload,
+            };
+          }
+          return this.moyskladStatus;
+        } catch (error) {
+          this.ui.error = extractSchedulingError(error);
+          throw error;
+        } finally {
+          this.ui.isSaving = false;
+        }
+      },
+
+      async syncMoysklad(syncParams = {}) {
+        this.ui.isSyncingMoysklad = true;
+        this.ui.error = null;
+
+        try {
+          const { data } = await SchedulingProductsAPI.syncMoysklad(
+            compactPayload(syncParams)
+          );
+          this.products = normalizePayload(data);
+          const meta = normalizeMeta(data);
+          if (meta?.moysklad) {
+            this.moyskladStatus = {
+              ...this.moyskladStatus,
+              ...meta.moysklad,
+            };
+          }
+          return {
+            products: this.products,
+            syncSummary: meta?.syncSummary || null,
+            moysklad: this.moyskladStatus,
+          };
+        } catch (error) {
+          this.ui.error = extractSchedulingError(error);
+          throw error;
+        } finally {
+          this.ui.isSyncingMoysklad = false;
         }
       },
 

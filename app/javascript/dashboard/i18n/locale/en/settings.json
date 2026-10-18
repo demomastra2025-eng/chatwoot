@@ -562,7 +562,10 @@
     "VISIBILITY": "Navigation",
     "STORAGE": "Storage",
     "SCHEDULING_REMINDERS": "Reminders",
-    "WORKING_HOURS": "Working hours"
+    "WORKING_HOURS": "Working hours",
+    "CATALOG": "Products & Services",
+    "CATALOG_PRODUCTS": "Products",
+    "CATALOG_SERVICES": "Services"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",

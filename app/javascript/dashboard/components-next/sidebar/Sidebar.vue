@@ -1415,12 +1415,6 @@ const menuItems = computed(() => {
                   to: accountScopedRoute('scheduling_resources'),
                 },
                 {
-                  name: 'Scheduling Services',
-                  visibilityKey: 'Scheduling:Services',
-                  label: t('SIDEBAR.SCHEDULING_SERVICES'),
-                  to: accountScopedRoute('scheduling_services'),
-                },
-                {
                   name: 'Scheduling Reminders',
                   visibilityKey: 'Scheduling:Reminders',
                   label: t('SIDEBAR.SCHEDULING_REMINDERS'),
@@ -1441,6 +1435,32 @@ const menuItems = computed(() => {
             : []),
         ],
       },
+      ...(hasSettingsAccess.value
+        ? [
+            {
+              name: 'Catalog',
+              label: t('SIDEBAR.CATALOG'),
+              icon: 'i-lucide-package',
+              defaultChildName: 'Catalog Products',
+              children: [
+                {
+                  name: 'Catalog Products',
+                  visibilityKey: 'Catalog:Products',
+                  label: t('SIDEBAR.CATALOG_PRODUCTS'),
+                  to: accountScopedRoute('catalog_products'),
+                  activeOn: ['catalog_products'],
+                },
+                {
+                  name: 'Catalog Services',
+                  visibilityKey: 'Catalog:Services',
+                  label: t('SIDEBAR.CATALOG_SERVICES'),
+                  to: accountScopedRoute('catalog_services'),
+                  activeOn: ['catalog_services', 'scheduling_services'],
+                },
+              ],
+            },
+          ]
+        : []),
       {
         name: 'Reports',
         label: t('SIDEBAR.REPORTS'),

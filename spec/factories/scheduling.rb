@@ -59,6 +59,33 @@ FactoryBot.define do
     title { 'Vacation' }
   end
 
+  factory :scheduling_product, class: 'Scheduling::Product' do
+    account
+    sequence(:name) { |n| "Product #{n}" }
+    item_type { 'product' }
+    sequence(:code) { |n| "SKU-#{n}" }
+    article { 'ART-100' }
+    category { 'Электроника' }
+    uom { 'шт' }
+    description { 'Описание товара' }
+    price { 649_990 }
+    wholesale_price { 595_000 }
+    kaspi_price { 679_990 }
+    buy_price { 480_000 }
+    min_price { 560_000 }
+    currency { 'KZT' }
+    stock { 14 }
+    reserve { 2 }
+    in_transit { 6 }
+    quantity { 18 }
+    active { true }
+    barcodes { [{ 'ean13' => '1959498218990' }] }
+    characteristics { [] }
+    sale_prices { [] }
+    store_stocks { [] }
+    custom_attributes { {} }
+  end
+
   factory :scheduling_service, class: 'Scheduling::Service' do
     account
     sequence(:name) { |n| "Service #{n}" }

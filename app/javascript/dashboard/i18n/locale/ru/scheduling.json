@@ -112,7 +112,8 @@
       "TYPE": "Тип",
       "UPDATE": "Обновить",
       "VALUE": "Значение",
-      "YES": "Да"
+      "YES": "Да",
+      "ACTIONS": "Действия"
     },
     "CUSTOM_FIELD_FILTERS": {
       "OPERATORS": {
@@ -638,6 +639,75 @@
       },
       "SAVE_SUCCESS": "Сценарий напоминания сохранён",
       "SAVE_ERROR": "Не удалось сохранить сценарий напоминания"
+    },
+    "PRODUCTS": {
+      "TITLE": "Товары",
+      "ADD": "Добавить товар",
+      "EDIT": "Редактировать товар",
+      "EMPTY_TITLE": "Товары пока не добавлены",
+      "EMPTY_DESCRIPTION": "Добавьте товары вручную или синхронизируйте каталог и остатки из МойСклад в один клик.",
+      "SEARCH_PLACEHOLDER": "Поиск по названию, коду, артикулу, категории...",
+      "NAME_COLUMN": "Наименование",
+      "CATEGORY_COLUMN": "Категория",
+      "PRICE_COLUMN": "Цена",
+      "STOCK_COLUMN": "Остатки и резерв",
+      "MAIN_GROUP": "Основная информация",
+      "PRICES_GROUP": "Цены (₸)",
+      "STOCK_GROUP": "Остатки на складе",
+      "NAME": "Наименование товара",
+      "CODE": "Код (SKU)",
+      "ARTICLE": "Артикул",
+      "CATEGORY": "Категория / Группа",
+      "UOM": "Ед. изм.",
+      "DESCRIPTION": "Описание",
+      "PRICE": "Цена продажи",
+      "WHOLESALE_PRICE": "Оптовая цена",
+      "KASPI_PRICE": "Цена Kaspi Магазин",
+      "STOCK": "Остаток на складе",
+      "RESERVE": "В резерве",
+      "IN_TRANSIT": "В пути (ожидание)",
+      "AVAILABLE_NOW": "Доступно",
+      "STOCK_SHORT": "Склад",
+      "RESERVE_SHORT": "Резерв",
+      "IN_TRANSIT_SHORT": "В пути",
+      "SUCCESS_SAVE": "Товар сохранён",
+      "SUCCESS_DELETE": "Товар удалён",
+      "TYPES": {
+        "PRODUCT": "Товар",
+        "VARIANT": "Модификация",
+        "BUNDLE": "Комплект"
+      },
+      "FILTERS": {
+        "ALL_TYPES": "Все типы",
+        "ALL_SOURCES": "Все источники",
+        "MOYSKLAD_ONLY": "Только МойСклад",
+        "LOCAL_ONLY": "Только локальные"
+      },
+      "SUMMARY": {
+        "TOTAL": "Всего позиций",
+        "IN_STOCK": "В наличии",
+        "MOYSKLAD": "Из МойСклад"
+      },
+      "MOYSKLAD": {
+        "CONNECT_BUTTON": "Подключить МойСклад",
+        "SETTINGS_CONNECTED": "МойСклад подключён",
+        "SYNC_NOW": "Синхронизировать с МойСклад",
+        "DRAWER_TITLE": "Интеграция с МойСклад",
+        "DRAWER_SUBTITLE": "Синхронизация товаров, модификаций, комплектов, цен и остатков по складам через JSON API 1.2.",
+        "CONNECTED_BADGE": "Интеграция с МойСклад активна",
+        "SYNCED_COUNT_LABEL": "Синхронизировано товарных позиций",
+        "AUTH_GROUP": "Параметры подключения",
+        "BY_TOKEN": "По API-токену",
+        "BY_CREDENTIALS": "По логину и паролю",
+        "TOKEN_LABEL": "API-токен МойСклад (Bearer)",
+        "TOKEN_PLACEHOLDER": "Вставьте токен из Настройки → Токен",
+        "LOGIN_LABEL": "Логин МойСклад",
+        "PASSWORD_LABEL": "Пароль МойСклад",
+        "PRICE_TYPE_LABEL": "Основной тип цены продажи",
+        "SAVE_AND_SYNC": "Сохранить и синхронизировать",
+        "CONFIG_SAVED": "Настройки МойСклад сохранены",
+        "SYNC_SUCCESS": "Синхронизация с МойСклад завершена: обновлено {count} поз."
+      }
     }
   }
 }

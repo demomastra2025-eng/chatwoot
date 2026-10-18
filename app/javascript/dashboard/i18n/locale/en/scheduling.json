@@ -112,7 +112,8 @@
       "TYPE": "Type",
       "UPDATE": "Update",
       "VALUE": "Value",
-      "YES": "Yes"
+      "YES": "Yes",
+      "ACTIONS": "Actions"
     },
     "CUSTOM_FIELD_FILTERS": {
       "OPERATORS": {
@@ -620,6 +621,75 @@
       },
       "SAVE_SUCCESS": "Reminder scenario saved",
       "SAVE_ERROR": "Failed to save reminder scenario"
+    },
+    "PRODUCTS": {
+      "TITLE": "Products",
+      "ADD": "Add product",
+      "EDIT": "Edit product",
+      "EMPTY_TITLE": "No products added yet",
+      "EMPTY_DESCRIPTION": "Add products manually or synchronize your catalog and stock balances from MoySklad in one click.",
+      "SEARCH_PLACEHOLDER": "Search by name, SKU, article, category...",
+      "NAME_COLUMN": "Product",
+      "CATEGORY_COLUMN": "Category",
+      "PRICE_COLUMN": "Price",
+      "STOCK_COLUMN": "Stock & Reserve",
+      "MAIN_GROUP": "General information",
+      "PRICES_GROUP": "Prices (₸)",
+      "STOCK_GROUP": "Inventory balances",
+      "NAME": "Product name",
+      "CODE": "Code (SKU)",
+      "ARTICLE": "Article",
+      "CATEGORY": "Category / Folder",
+      "UOM": "Unit",
+      "DESCRIPTION": "Description",
+      "PRICE": "Sale price",
+      "WHOLESALE_PRICE": "Wholesale price",
+      "KASPI_PRICE": "Kaspi Store price",
+      "STOCK": "On-hand stock",
+      "RESERVE": "Reserved",
+      "IN_TRANSIT": "In transit",
+      "AVAILABLE_NOW": "Available",
+      "STOCK_SHORT": "Stock",
+      "RESERVE_SHORT": "Reserve",
+      "IN_TRANSIT_SHORT": "In transit",
+      "SUCCESS_SAVE": "Product saved",
+      "SUCCESS_DELETE": "Product deleted",
+      "TYPES": {
+        "PRODUCT": "Product",
+        "VARIANT": "Variant",
+        "BUNDLE": "Bundle"
+      },
+      "FILTERS": {
+        "ALL_TYPES": "All types",
+        "ALL_SOURCES": "All sources",
+        "MOYSKLAD_ONLY": "MoySklad only",
+        "LOCAL_ONLY": "Local only"
+      },
+      "SUMMARY": {
+        "TOTAL": "Total items",
+        "IN_STOCK": "In stock",
+        "MOYSKLAD": "From MoySklad"
+      },
+      "MOYSKLAD": {
+        "CONNECT_BUTTON": "Connect MoySklad",
+        "SETTINGS_CONNECTED": "MoySklad connected",
+        "SYNC_NOW": "Sync with MoySklad",
+        "DRAWER_TITLE": "MoySklad Integration",
+        "DRAWER_SUBTITLE": "Synchronize products, variants, bundles, prices, and warehouse stock balances via JSON API 1.2.",
+        "CONNECTED_BADGE": "MoySklad integration active",
+        "SYNCED_COUNT_LABEL": "Synchronized products",
+        "AUTH_GROUP": "Connection settings",
+        "BY_TOKEN": "By API token",
+        "BY_CREDENTIALS": "By login & password",
+        "TOKEN_LABEL": "MoySklad API token (Bearer)",
+        "TOKEN_PLACEHOLDER": "Paste token from Settings -> Token",
+        "LOGIN_LABEL": "MoySklad login",
+        "PASSWORD_LABEL": "MoySklad password",
+        "PRICE_TYPE_LABEL": "Primary sale price type",
+        "SAVE_AND_SYNC": "Save & Sync Now",
+        "CONFIG_SAVED": "MoySklad settings saved",
+        "SYNC_SUCCESS": "MoySklad sync completed: {count} items updated"
+      }
     }
   }
 }

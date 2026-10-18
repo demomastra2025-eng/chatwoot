@@ -544,7 +544,10 @@
     "VISIBILITY": "Навигация",
     "STORAGE": "Қойма",
     "SCHEDULING_REMINDERS": "Еске салғыштар",
-    "WORKING_HOURS": "Жұмыс кестесі"
+    "WORKING_HOURS": "Жұмыс кестесі",
+    "CATALOG": "Тауарлар мен қызметтер",
+    "CATALOG_PRODUCTS": "Тауарлар",
+    "CATALOG_SERVICES": "Қызметтер"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",

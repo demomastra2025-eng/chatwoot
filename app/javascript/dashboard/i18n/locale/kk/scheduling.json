@@ -251,6 +251,78 @@
       },
       "SAVE_SUCCESS": "Еске салғыш сценарийі сақталды",
       "SAVE_ERROR": "Еске салғыш сценарийін сақтау мүмкін болмады"
+    },
+    "PRODUCTS": {
+      "TITLE": "Тауарлар",
+      "ADD": "Тауар қосу",
+      "EDIT": "Тауарды өңдеу",
+      "EMPTY_TITLE": "Тауарлар әлі қосылмаған",
+      "EMPTY_DESCRIPTION": "Тауарларды қолмен қосыңыз немесе МойСклад-тан каталог пен қалдықтарды синхрондаңыз.",
+      "SEARCH_PLACEHOLDER": "Атауы, коды, артикулы, санаты бойынша іздеу...",
+      "NAME_COLUMN": "Атауы",
+      "CATEGORY_COLUMN": "Санат",
+      "PRICE_COLUMN": "Бағасы",
+      "STOCK_COLUMN": "Қалдық пен резерв",
+      "MAIN_GROUP": "Негізгі ақпарат",
+      "PRICES_GROUP": "Бағалар (₸)",
+      "STOCK_GROUP": "Қоймадағы қалдық",
+      "NAME": "Тауар атауы",
+      "CODE": "Код (SKU)",
+      "ARTICLE": "Артикул",
+      "CATEGORY": "Санат / Топ",
+      "UOM": "Өлш. бірл.",
+      "DESCRIPTION": "Сипаттамасы",
+      "PRICE": "Сату бағасы",
+      "WHOLESALE_PRICE": "Көтерме баға",
+      "KASPI_PRICE": "Kaspi Магазин бағасы",
+      "STOCK": "Қойма қалдығы",
+      "RESERVE": "Резервте",
+      "IN_TRANSIT": "Жолда (күтілуде)",
+      "AVAILABLE_NOW": "Қолжетімді",
+      "STOCK_SHORT": "Қойма",
+      "RESERVE_SHORT": "Резерв",
+      "IN_TRANSIT_SHORT": "Жолда",
+      "SUCCESS_SAVE": "Тауар сақталды",
+      "SUCCESS_DELETE": "Тауар өшірілді",
+      "TYPES": {
+        "PRODUCT": "Тауар",
+        "VARIANT": "Модификация",
+        "BUNDLE": "Жиынтық"
+      },
+      "FILTERS": {
+        "ALL_TYPES": "Барлық түрлер",
+        "ALL_SOURCES": "Барлық көздер",
+        "MOYSKLAD_ONLY": "Тек МойСклад",
+        "LOCAL_ONLY": "Тек жергілікті"
+      },
+      "SUMMARY": {
+        "TOTAL": "Барлық позиция",
+        "IN_STOCK": "Қоймада бар",
+        "MOYSKLAD": "МойСклад-тан"
+      },
+      "MOYSKLAD": {
+        "CONNECT_BUTTON": "МойСклад қосу",
+        "SETTINGS_CONNECTED": "МойСклад қосылған",
+        "SYNC_NOW": "МойСклад-пен синхрондау",
+        "DRAWER_TITLE": "МойСклад интеграциясы",
+        "DRAWER_SUBTITLE": "JSON API 1.2 арқылы тауарларды, модификацияларды, жиынтықтарды, бағалар мен қалдықтарды синхрондау.",
+        "CONNECTED_BADGE": "МойСклад интеграциясы белсенді",
+        "SYNCED_COUNT_LABEL": "Синхрондалған тауарлар саны",
+        "AUTH_GROUP": "Қосылу параметрлері",
+        "BY_TOKEN": "API-токен арқылы",
+        "BY_CREDENTIALS": "Логин мен құпиясөз арқылы",
+        "TOKEN_LABEL": "МойСклад API-токені (Bearer)",
+        "TOKEN_PLACEHOLDER": "Токенді енгізіңіз",
+        "LOGIN_LABEL": "МойСклад логині",
+        "PASSWORD_LABEL": "МойСклад құпиясөзі",
+        "PRICE_TYPE_LABEL": "Негізгі сату бағасының түрі",
+        "SAVE_AND_SYNC": "Сақтау және синхрондау",
+        "CONFIG_SAVED": "МойСклад баптаулары сақталды",
+        "SYNC_SUCCESS": "МойСклад синхрондауы аяқталды: {count} поз."
+      }
+    },
+    "GENERAL": {
+      "ACTIONS": "Әрекеттер"
     }
   }
 }

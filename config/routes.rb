@@ -217,6 +217,13 @@ Rails.application.routes.draw do
               get :patients, on: :member
               post :patients, action: :create_patient, on: :member
             end
+            resources :products, only: [:index, :show, :create, :update, :destroy] do
+              collection do
+                get :moysklad_status
+                put :moysklad_config
+                post :sync_moysklad
+              end
+            end
             resources :services, only: [:index, :show, :create, :update, :destroy]
             resources :cabinets, only: [:index]
             resources :appointments, only: [:index, :show, :create, :update, :destroy] do

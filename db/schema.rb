@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_19_000000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -100,7 +100,9 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.jsonb "internal_attributes", default: {}, null: false
     t.jsonb "settings", default: {}
     t.jsonb "feature_flags_overflow", default: [], null: false
+    t.bigint "billing_organization_id"
     t.bigint "organization_id"
+    t.index ["billing_organization_id"], name: "index_accounts_on_billing_organization_id"
     t.index ["organization_id"], name: "index_accounts_on_organization_id"
     t.index ["status"], name: "index_accounts_on_status"
   end
@@ -355,7 +357,148 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.boolean "active", default: true, null: false
+    t.jsonb "execution_schedule", default: {}, null: false
+    t.bigint "lifecycle_generation", default: 1, null: false
     t.index ["account_id"], name: "index_automation_rules_on_account_id"
+  end
+
+  create_table "billing_account_memberships", force: :cascade do |t|
+    t.bigint "billing_account_id", null: false
+    t.bigint "user_id", null: false
+    t.string "role", null: false
+    t.string "status", default: "active", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["billing_account_id", "user_id"], name: "idx_billing_memberships_account_user", unique: true
+    t.index ["billing_account_id"], name: "idx_billing_memberships_one_active_owner", unique: true, where: "(((role)::text = 'owner'::text) AND ((status)::text = 'active'::text))"
+    t.index ["billing_account_id"], name: "index_billing_account_memberships_on_billing_account_id"
+    t.index ["user_id"], name: "index_billing_account_memberships_on_user_id"
+    t.check_constraint "role::text = ANY (ARRAY['owner'::character varying, 'billing_admin'::character varying, 'viewer'::character varying]::text[])", name: "chk_billing_memberships_role"
+    t.check_constraint "status::text = ANY (ARRAY['active'::character varying, 'inactive'::character varying]::text[])", name: "chk_billing_memberships_status"
+  end
+
+  create_table "billing_account_workspaces", force: :cascade do |t|
+    t.bigint "billing_account_id", null: false
+    t.integer "account_id", null: false
+    t.string "status", default: "active", null: false
+    t.datetime "detached_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "idx_billing_workspaces_one_active_account", unique: true, where: "((status)::text = 'active'::text)"
+    t.index ["account_id"], name: "index_billing_account_workspaces_on_account_id"
+    t.index ["billing_account_id"], name: "index_billing_account_workspaces_on_billing_account_id"
+    t.check_constraint "status::text = 'active'::text AND detached_at IS NULL OR status::text = 'detached'::text AND detached_at IS NOT NULL", name: "chk_billing_workspaces_detached_at"
+    t.check_constraint "status::text = ANY (ARRAY['active'::character varying, 'detached'::character varying]::text[])", name: "chk_billing_workspaces_status"
+  end
+
+  create_table "billing_accounts", force: :cascade do |t|
+    t.string "name", null: false
+    t.string "status", default: "active", null: false
+    t.string "default_currency", limit: 3, default: "KZT", null: false
+    t.string "default_locale", default: "ru", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["status"], name: "index_billing_accounts_on_status"
+    t.check_constraint "default_currency::text ~ '^[A-Z]{3}$'::text", name: "chk_billing_accounts_currency"
+    t.check_constraint "status::text = ANY (ARRAY['active'::character varying, 'past_due'::character varying, 'suspended'::character varying, 'closed'::character varying]::text[])", name: "chk_billing_accounts_status"
+  end
+
+  create_table "billing_audit_events", force: :cascade do |t|
+    t.bigint "billing_account_id", null: false
+    t.integer "super_admin_id"
+    t.string "action", null: false
+    t.jsonb "details", default: {}, null: false
+    t.datetime "occurred_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["billing_account_id", "occurred_at"], name: "idx_billing_audit_events_account_time"
+    t.index ["billing_account_id"], name: "index_billing_audit_events_on_billing_account_id"
+    t.index ["super_admin_id"], name: "index_billing_audit_events_on_super_admin_id"
+    t.check_constraint "jsonb_typeof(details) = 'object'::text", name: "chk_billing_audit_events_details_object"
+  end
+
+  create_table "billing_entitlement_allocations", force: :cascade do |t|
+    t.bigint "billing_subscription_id", null: false
+    t.integer "account_id", null: false
+    t.jsonb "limits", default: {}, null: false
+    t.datetime "starts_at"
+    t.datetime "ends_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_billing_entitlement_allocations_on_account_id"
+    t.index ["billing_subscription_id", "account_id"], name: "idx_billing_allocations_subscription_account", unique: true
+    t.index ["billing_subscription_id"], name: "idx_billing_allocations_subscription"
+    t.check_constraint "\nCASE\n    WHEN limits ? 'agents'::text THEN jsonb_typeof(limits -> 'agents'::text) = 'number'::text AND ((limits ->> 'agents'::text)::numeric) >= 0::numeric\n    ELSE true\nEND", name: "chk_billing_allocations_agents_non_negative"
+    t.check_constraint "\nCASE\n    WHEN limits ? 'storage_bytes'::text THEN jsonb_typeof(limits -> 'storage_bytes'::text) = 'number'::text AND ((limits ->> 'storage_bytes'::text)::numeric) >= 0::numeric\n    ELSE true\nEND", name: "chk_billing_allocations_storage_non_negative"
+    t.check_constraint "jsonb_typeof(limits) = 'object'::text", name: "chk_billing_allocations_limits_object"
+    t.check_constraint "starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at", name: "chk_billing_allocations_period"
+  end
+
+  create_table "billing_organizations", force: :cascade do |t|
+    t.string "name", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+  end
+
+  create_table "billing_plan_prices", force: :cascade do |t|
+    t.bigint "billing_plan_id", null: false
+    t.string "currency", limit: 3, null: false
+    t.bigint "amount_cents", null: false
+    t.string "interval", null: false
+    t.integer "interval_count", default: 1, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["billing_plan_id", "currency", "interval", "interval_count"], name: "idx_billing_prices_unique_period", unique: true
+    t.index ["billing_plan_id"], name: "index_billing_plan_prices_on_billing_plan_id"
+    t.check_constraint "\"interval\"::text = ANY (ARRAY['month'::character varying, 'year'::character varying]::text[])", name: "chk_billing_prices_interval"
+    t.check_constraint "amount_cents >= 0", name: "chk_billing_prices_amount"
+    t.check_constraint "currency::text ~ '^[A-Z]{3}$'::text", name: "chk_billing_prices_currency"
+    t.check_constraint "interval_count > 0", name: "chk_billing_prices_interval_count"
+  end
+
+  create_table "billing_plans", force: :cascade do |t|
+    t.string "code", null: false
+    t.string "name", null: false
+    t.integer "version", default: 1, null: false
+    t.string "status", default: "draft", null: false
+    t.boolean "public", default: false, null: false
+    t.jsonb "entitlements", default: {}, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["code", "version"], name: "index_billing_plans_on_code_and_version", unique: true
+    t.index ["status", "public"], name: "index_billing_plans_on_status_and_public"
+    t.check_constraint "status::text = ANY (ARRAY['draft'::character varying, 'active'::character varying, 'retired'::character varying]::text[])", name: "chk_billing_plans_status"
+    t.check_constraint "version > 0", name: "chk_billing_plans_version"
+  end
+
+  create_table "billing_subscriptions", force: :cascade do |t|
+    t.bigint "billing_account_id", null: false
+    t.bigint "billing_plan_id", null: false
+    t.bigint "billing_plan_price_id"
+    t.string "status", default: "incomplete", null: false
+    t.datetime "current_period_starts_at"
+    t.datetime "current_period_ends_at"
+    t.boolean "cancel_at_period_end", default: false, null: false
+    t.string "provider"
+    t.string "external_id"
+    t.jsonb "plan_snapshot", default: {}, null: false
+    t.jsonb "price_snapshot", default: {}, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["billing_account_id"], name: "idx_billing_subscriptions_one_entitling", unique: true, where: "((status)::text = ANY ((ARRAY['trialing'::character varying, 'active'::character varying, 'past_due'::character varying, 'grace_period'::character varying])::text[]))"
+    t.index ["billing_account_id"], name: "index_billing_subscriptions_on_billing_account_id"
+    t.index ["billing_plan_id"], name: "index_billing_subscriptions_on_billing_plan_id"
+    t.index ["billing_plan_price_id"], name: "index_billing_subscriptions_on_billing_plan_price_id"
+    t.index ["provider", "external_id"], name: "idx_billing_subscriptions_provider_external", unique: true, where: "(external_id IS NOT NULL)"
+    t.check_constraint "current_period_starts_at IS NULL OR current_period_ends_at IS NULL OR current_period_ends_at > current_period_starts_at", name: "chk_billing_subscriptions_period"
+    t.check_constraint "status::text = ANY (ARRAY['incomplete'::character varying, 'trialing'::character varying, 'active'::character varying, 'past_due'::character varying, 'grace_period'::character varying, 'suspended'::character varying, 'canceled'::character varying]::text[])", name: "chk_billing_subscriptions_status"
   end
 
   create_table "bulk_action_runs", force: :cascade do |t|
@@ -543,6 +686,17 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.datetime "updated_at", precision: nil, null: false
   end
 
+  create_table "captain_agent_channels", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "assistant_id", null: false
+    t.bigint "inbox_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_captain_agent_channels_on_account_id"
+    t.index ["assistant_id", "inbox_id"], name: "index_captain_agent_channels_on_assistant_id_and_inbox_id", unique: true
+    t.index ["inbox_id"], name: "index_captain_agent_channels_on_inbox_id"
+  end
+
   create_table "captain_agent_handoffs", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "source_assistant_id", null: false
@@ -553,17 +707,6 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.index ["source_assistant_id", "target_assistant_id"], name: "index_captain_agent_handoffs_on_source_and_target", unique: true
     t.index ["target_assistant_id"], name: "index_captain_agent_handoffs_on_target_assistant_id"
     t.check_constraint "source_assistant_id <> target_assistant_id", name: "captain_agent_handoffs_no_self"
-  end
-
-  create_table "captain_agent_channels", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.bigint "assistant_id", null: false
-    t.bigint "inbox_id", null: false
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["account_id"], name: "index_captain_agent_channels_on_account_id"
-    t.index ["assistant_id", "inbox_id"], name: "index_captain_agent_channels_on_assistant_id_and_inbox_id", unique: true
-    t.index ["inbox_id"], name: "index_captain_agent_channels_on_inbox_id"
   end
 
   create_table "captain_assistant_responses", force: :cascade do |t|
@@ -923,8 +1066,9 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.index ["account_id", "profile_urn"], name: "index_channel_linkedin_personal_on_account_id_and_profile_urn", unique: true
     t.index ["account_id"], name: "index_channel_linkedin_personal_on_account_id"
     t.index ["webhook_identifier"], name: "index_channel_linkedin_personal_on_webhook_identifier", unique: true
-    t.check_constraint "false", name: "channel_linkedin_personal_retired"
   end
+
+  add_check_constraint "channel_linkedin_personal", "false", name: "channel_linkedin_personal_retired", validate: false
 
   create_table "channel_sms", force: :cascade do |t|
     t.integer "account_id", null: false
@@ -1151,6 +1295,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.bigint "captain_control_generation", default: 0, null: false
     t.datetime "captain_handoff_applied_at"
     t.index ["account_id", "contact_id", "status"], name: "idx_communication_threads_account_contact_status"
+    t.index ["account_id", "contact_id"], name: "idx_communication_threads_one_per_contact", unique: true
     t.index ["account_id", "display_id"], name: "idx_communication_threads_account_display", unique: true
     t.index ["account_id", "last_activity_at"], name: "idx_communication_threads_account_activity"
     t.index ["account_id", "status", "assignee_id"], name: "idx_communication_threads_account_status_assignee"
@@ -1510,11 +1655,11 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.string "event_type", null: false
     t.jsonb "meta", default: {}, null: false
     t.datetime "created_at", null: false
-    t.uuid "correlation_id", default: -> { "gen_random_uuid()" }, null: false
     t.string "source", default: "system", null: false
     t.string "actor_kind"
     t.jsonb "before_data", default: {}, null: false
     t.jsonb "after_data", default: {}, null: false
+    t.uuid "correlation_id", default: -> { "gen_random_uuid()" }, null: false
     t.uuid "causation_id"
     t.integer "schema_version", default: 1, null: false
     t.string "command_key"
@@ -1605,11 +1750,11 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.string "stage_name", null: false
     t.string "stage_outcome", null: false
     t.uuid "correlation_id", default: -> { "gen_random_uuid()" }, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
     t.bigint "owner_id_at_terminal"
     t.bigint "team_id_at_terminal"
     t.integer "terminal_attribution_version"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
     t.index ["account_id", "entered_at"], name: "index_crm_stage_visits_on_account_id_and_entered_at"
     t.index ["account_id", "exited_at"], name: "index_crm_stage_visits_on_account_id_and_exited_at", where: "(exited_at IS NOT NULL)"
     t.index ["account_id"], name: "index_crm_stage_visits_on_account_id"
@@ -1619,7 +1764,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.index ["pipeline_id"], name: "index_crm_stage_visits_on_pipeline_id"
     t.index ["stage_id"], name: "index_crm_stage_visits_on_stage_id"
     t.check_constraint "exited_at IS NULL OR exited_at >= entered_at", name: "crm_stage_visits_valid_interval"
-    t.check_constraint "terminal_attribution_version IS NULL AND owner_id_at_terminal IS NULL AND team_id_at_terminal IS NULL OR terminal_attribution_version IS NOT NULL AND terminal_attribution_version = 1 AND stage_outcome IS NOT NULL AND (stage_outcome::text = ANY (ARRAY['won'::character varying::text, 'lost'::character varying::text]))", name: "crm_stage_visits_terminal_attribution_valid"
+    t.check_constraint "terminal_attribution_version IS NULL AND owner_id_at_terminal IS NULL AND team_id_at_terminal IS NULL OR terminal_attribution_version IS NOT NULL AND terminal_attribution_version = 1 AND stage_outcome IS NOT NULL AND (stage_outcome::text = ANY (ARRAY['won'::character varying, 'lost'::character varying]::text[]))", name: "crm_stage_visits_terminal_attribution_valid"
   end
 
   create_table "crm_stages", force: :cascade do |t|
@@ -1641,6 +1786,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.index ["account_id", "pipeline_id", "position"], name: "index_crm_stages_on_account_pipeline_position"
     t.index ["account_id"], name: "index_crm_stages_on_account_id"
     t.index ["pipeline_id", "code"], name: "index_crm_stages_on_pipeline_id_and_code", unique: true
+    t.index ["pipeline_id", "outcome"], name: "index_crm_stages_on_pipeline_unique_active_terminal", unique: true, where: "((active = true) AND ((outcome)::text = ANY ((ARRAY['won'::character varying, 'lost'::character varying])::text[])))"
     t.index ["pipeline_id"], name: "index_crm_stages_on_pipeline_default_active", unique: true, where: "((\"default\" = true) AND (active = true))"
     t.index ["pipeline_id"], name: "index_crm_stages_on_pipeline_id"
   end
@@ -1722,14 +1868,14 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.boolean "all_day", default: false, null: false
     t.date "due_on"
     t.string "schedule_timezone", default: "Asia/Almaty", null: false
+    t.bigint "task_type_id", null: false
+    t.bigint "task_outcome_id"
     t.bigint "completed_by_id"
     t.datetime "cancelled_at"
     t.bigint "cancelled_by_id"
     t.text "cancellation_reason"
     t.integer "reschedule_count", default: 0, null: false
     t.string "context_kind"
-    t.bigint "task_type_id"
-    t.bigint "task_outcome_id"
     t.index ["account_id", "activity_type", "due_at"], name: "index_crm_tasks_on_account_activity_type_due_at"
     t.index ["account_id", "deal_id", "activity_type"], name: "index_crm_tasks_on_account_deal_activity_type"
     t.index ["account_id", "deal_id"], name: "index_crm_tasks_on_account_deal"
@@ -1902,7 +2048,6 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.string "greeting_message"
     t.string "email_address"
     t.boolean "working_hours_enabled", default: false
-    t.boolean "inherit_working_hours_from_account", default: true, null: false
     t.string "out_of_office_message"
     t.string "timezone", default: "Asia/Almaty"
     t.boolean "enable_email_collect", default: true
@@ -1915,13 +2060,15 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.string "business_name"
     t.jsonb "csat_config", default: {}, null: false
     t.datetime "deleting_at"
+    t.boolean "inherit_working_hours_from_account", default: false, null: false
     t.string "deletion_attempt_id"
     t.index ["account_id", "deleting_at"], name: "index_inboxes_on_account_id_and_deleting_at"
     t.index ["account_id"], name: "index_inboxes_on_account_id"
     t.index ["channel_id", "channel_type"], name: "index_inboxes_on_channel_id_and_channel_type"
     t.index ["portal_id"], name: "index_inboxes_on_portal_id"
-    t.check_constraint "channel_type::text IS DISTINCT FROM 'Channel::LinkedinPersonal'::text", name: "inboxes_linkedin_personal_retired"
   end
+
+  add_check_constraint "inboxes", "channel_type::text IS DISTINCT FROM 'Channel::LinkedinPersonal'::text", name: "inboxes_linkedin_personal_retired", validate: false
 
   create_table "installation_configs", force: :cascade do |t|
     t.string "name", null: false
@@ -1961,6 +2108,25 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.string "emoji"
     t.index ["account_id"], name: "index_labels_on_account_id"
     t.index ["title", "account_id"], name: "index_labels_on_title_and_account_id", unique: true
+  end
+
+  create_table "lead_form_meta_webhook_events", force: :cascade do |t|
+    t.string "fingerprint", null: false
+    t.string "status", default: "pending", null: false
+    t.jsonb "payload", default: {}, null: false
+    t.integer "attempts", default: 0, null: false
+    t.text "last_error"
+    t.datetime "locked_at"
+    t.string "lease_token"
+    t.datetime "next_retry_at"
+    t.datetime "processed_at"
+    t.datetime "retry_deadline_at", null: false
+    t.datetime "retain_until", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["fingerprint"], name: "index_lead_form_meta_webhook_events_on_fingerprint", unique: true
+    t.index ["retain_until"], name: "index_lead_form_meta_webhook_events_on_retain_until"
+    t.index ["status", "next_retry_at"], name: "idx_lead_meta_webhook_events_retry"
   end
 
   create_table "lead_forms", force: :cascade do |t|
@@ -2097,7 +2263,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
 
   create_table "llm_event_annotations", force: :cascade do |t|
     t.bigint "account_id", null: false
-    t.bigint "llm_event_id"
+    t.bigint "llm_event_id", null: false
     t.bigint "user_id", null: false
     t.text "body", null: false
     t.datetime "created_at", null: false
@@ -2227,7 +2393,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
 
   create_table "llm_usage_events", force: :cascade do |t|
     t.integer "account_id"
-    t.bigint "llm_event_id"
+    t.bigint "llm_event_id", null: false
     t.datetime "occurred_at", null: false
     t.string "event_name", null: false
     t.string "feature"
@@ -2340,8 +2506,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.datetime "executed_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["account_id", "appointment_id"], name: "idx_medelement_commands_unfinished_appointment", unique: true, where: "((appointment_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('awaiting_confirmation'::character varying)::text, ('awaiting_patient_selection'::character varying)::text, ('awaiting_patient_creation'::character varying)::text, ('awaiting_phone_refresh'::character varying)::text, ('queued'::character varying)::text, ('processing'::character varying)::text, ('reconciliation_required'::character varying)::text, ('provider_status_unknown'::character varying)::text, ('v2_awaiting_confirmation'::character varying)::text, ('v2_awaiting_patient_selection'::character varying)::text, ('v2_awaiting_patient_creation'::character varying)::text, ('v2_awaiting_phone_refresh'::character varying)::text, ('v2_queued'::character varying)::text, ('v2_processing'::character varying)::text, ('v2_reconciliation_required'::character varying)::text, ('v2_provider_status_unknown'::character varying)::text])))"
-    t.index ["account_id", "contact_id"], name: "idx_medelement_commands_unfinished_patient_identity", unique: true, where: "((contact_id IS NOT NULL) AND (((operation)::text = ANY (ARRAY[('create_patient'::character varying)::text, ('update_patient'::character varying)::text])) OR (((operation)::text = 'create_reception'::text) AND ((provider_patient_code IS NULL) OR ((provider_patient_code)::text = ''::text)))) AND ((status)::text = ANY (ARRAY[('awaiting_confirmation'::character varying)::text, ('awaiting_patient_selection'::character varying)::text, ('awaiting_patient_creation'::character varying)::text, ('awaiting_phone_refresh'::character varying)::text, ('queued'::character varying)::text, ('processing'::character varying)::text, ('reconciliation_required'::character varying)::text, ('provider_status_unknown'::character varying)::text, ('v2_awaiting_confirmation'::character varying)::text, ('v2_awaiting_patient_selection'::character varying)::text, ('v2_awaiting_patient_creation'::character varying)::text, ('v2_awaiting_phone_refresh'::character varying)::text, ('v2_queued'::character varying)::text, ('v2_processing'::character varying)::text, ('v2_reconciliation_required'::character varying)::text, ('v2_provider_status_unknown'::character varying)::text])))"
+    t.index ["account_id", "appointment_id"], name: "idx_medelement_commands_unfinished_appointment", unique: true, where: "((appointment_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['awaiting_confirmation'::character varying, 'awaiting_patient_selection'::character varying, 'awaiting_patient_creation'::character varying, 'awaiting_phone_refresh'::character varying, 'queued'::character varying, 'processing'::character varying, 'reconciliation_required'::character varying, 'provider_status_unknown'::character varying, 'v2_awaiting_confirmation'::character varying, 'v2_awaiting_patient_selection'::character varying, 'v2_awaiting_patient_creation'::character varying, 'v2_awaiting_phone_refresh'::character varying, 'v2_queued'::character varying, 'v2_processing'::character varying, 'v2_reconciliation_required'::character varying, 'v2_provider_status_unknown'::character varying])::text[])))"
+    t.index ["account_id", "contact_id"], name: "idx_medelement_commands_unfinished_patient_identity", unique: true, where: "((contact_id IS NOT NULL) AND (((operation)::text = ANY ((ARRAY['create_patient'::character varying, 'update_patient'::character varying])::text[])) OR (((operation)::text = 'create_reception'::text) AND ((provider_patient_code IS NULL) OR ((provider_patient_code)::text = ''::text)))) AND ((status)::text = ANY ((ARRAY['awaiting_confirmation'::character varying, 'awaiting_patient_selection'::character varying, 'awaiting_patient_creation'::character varying, 'awaiting_phone_refresh'::character varying, 'queued'::character varying, 'processing'::character varying, 'reconciliation_required'::character varying, 'provider_status_unknown'::character varying, 'v2_awaiting_confirmation'::character varying, 'v2_awaiting_patient_selection'::character varying, 'v2_awaiting_patient_creation'::character varying, 'v2_awaiting_phone_refresh'::character varying, 'v2_queued'::character varying, 'v2_processing'::character varying, 'v2_reconciliation_required'::character varying, 'v2_provider_status_unknown'::character varying])::text[])))"
     t.index ["account_id", "idempotency_key"], name: "idx_medelement_commands_account_idempotency", unique: true
     t.index ["account_id"], name: "index_medelement_provider_commands_on_account_id"
     t.index ["appointment_id", "status"], name: "idx_medelement_commands_appointment_status"
@@ -2565,6 +2731,43 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.index ["channel_type", "channel_id"], name: "index_meta_channel_credential_healths_on_channel", unique: true
   end
 
+  create_table "meta_messaging_webhook_event_routes", force: :cascade do |t|
+    t.bigint "meta_messaging_webhook_event_id", null: false
+    t.bigint "account_id", null: false
+    t.string "channel_type", null: false
+    t.bigint "channel_id", null: false
+    t.string "provider_target_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "idx_meta_messaging_event_routes_account"
+    t.index ["account_id"], name: "index_meta_messaging_webhook_event_routes_on_account_id"
+    t.index ["channel_type", "channel_id"], name: "idx_meta_messaging_event_routes_channel"
+    t.index ["meta_messaging_webhook_event_id", "channel_type", "channel_id"], name: "idx_meta_messaging_event_routes_unique", unique: true
+  end
+
+  create_table "meta_messaging_webhook_events", force: :cascade do |t|
+    t.string "provider", null: false
+    t.string "fingerprint", null: false
+    t.string "status", default: "pending", null: false
+    t.jsonb "payload", default: {}, null: false
+    t.integer "delay_seconds", default: 0, null: false
+    t.integer "attempts", default: 0, null: false
+    t.text "last_error"
+    t.datetime "locked_at"
+    t.string "lease_token"
+    t.datetime "next_retry_at"
+    t.datetime "processed_at"
+    t.datetime "retry_deadline_at", null: false
+    t.datetime "retain_until", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["fingerprint"], name: "index_meta_messaging_webhook_events_on_fingerprint", unique: true
+    t.index ["retain_until"], name: "index_meta_messaging_webhook_events_on_retain_until"
+    t.index ["status", "locked_at"], name: "idx_meta_messaging_events_stale"
+    t.index ["status", "next_retry_at"], name: "idx_meta_messaging_events_retry"
+    t.index ["status", "retry_deadline_at"], name: "idx_meta_messaging_events_deadline"
+  end
+
   create_table "notes", force: :cascade do |t|
     t.text "content", null: false
     t.bigint "account_id", null: false
@@ -2781,7 +2984,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.index ["target_conversation_id"], name: "index_reminders_on_target_conversation_id"
     t.index ["target_inbox_id"], name: "index_reminders_on_target_inbox_id"
     t.check_constraint "post_delivery_action IS NULL OR post_delivery_action::text = 'resolve_conversation'::text AND action_type = 0 AND repeat_mode = 0 AND remindable_type::text = 'Conversation'::text AND remindable_id IS NOT NULL AND conversation_id = remindable_id AND target_conversation_id = remindable_id", name: "reminders_post_delivery_action_supported"
-    t.check_constraint "response_action IS NULL AND response_button_index IS NULL OR response_action::text = 'confirm_appointment'::text AND response_button_index = 0 AND action_type = 0 AND content_kind = 1 AND repeat_mode = 0 AND remindable_type::text = 'Scheduling::Appointment'::text AND remindable_id IS NOT NULL", name: "reminders_response_action_supported"
+    t.check_constraint "response_action IS NULL AND response_button_index IS NULL OR response_action::text = 'confirm_appointment'::text AND response_button_index >= 0 AND response_button_index <= 2 AND action_type = 0 AND content_kind = 1 AND repeat_mode = 0 AND remindable_type::text = 'Scheduling::Appointment'::text AND remindable_id IS NOT NULL", name: "reminders_response_action_supported"
   end
 
   create_table "reporting_events", force: :cascade do |t|
@@ -2839,9 +3042,6 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.string "status", default: "scheduled", null: false
     t.string "appointment_type", default: "primary", null: false
     t.string "client_name", null: false
-    t.string "client_first_name"
-    t.string "client_last_name"
-    t.string "client_middle_name"
     t.string "client_phone"
     t.string "client_identifier"
     t.date "client_birth_date"
@@ -2863,6 +3063,10 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.datetime "updated_at", null: false
     t.integer "compensation_percent_snapshot", default: 0, null: false
     t.bigint "owner_id"
+    t.string "client_first_name"
+    t.string "client_last_name"
+    t.string "client_middle_name"
+    t.string "title"
     t.bigint "patient_contact_id"
     t.bigint "crm_deal_id"
     t.datetime "attendance_confirmed_at"
@@ -2946,9 +3150,46 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.index ["recorded_by_id"], name: "index_scheduling_payments_on_recorded_by_id"
   end
 
+  create_table "scheduling_products", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "name", null: false
+    t.string "item_type", default: "product", null: false
+    t.string "code"
+    t.string "article"
+    t.string "category"
+    t.string "uom", default: "шт", null: false
+    t.text "description"
+    t.bigint "price", default: 0, null: false
+    t.bigint "wholesale_price"
+    t.bigint "kaspi_price"
+    t.bigint "buy_price", default: 0, null: false
+    t.bigint "min_price", default: 0, null: false
+    t.string "currency", default: "KZT", null: false
+    t.decimal "stock", precision: 14, scale: 3, default: "0.0", null: false
+    t.decimal "reserve", precision: 14, scale: 3, default: "0.0", null: false
+    t.decimal "in_transit", precision: 14, scale: 3, default: "0.0", null: false
+    t.decimal "quantity", precision: 14, scale: 3, default: "0.0", null: false
+    t.boolean "active", default: true, null: false
+    t.string "external_source"
+    t.string "external_id"
+    t.string "parent_external_id"
+    t.jsonb "barcodes", default: [], null: false
+    t.jsonb "characteristics", default: [], null: false
+    t.jsonb "sale_prices", default: [], null: false
+    t.jsonb "store_stocks", default: [], null: false
+    t.jsonb "custom_attributes", default: {}, null: false
+    t.datetime "synced_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "active"], name: "index_scheduling_products_on_account_id_and_active"
+    t.index ["account_id", "category"], name: "index_scheduling_products_on_account_id_and_category"
+    t.index ["account_id", "external_source", "external_id"], name: "idx_scheduling_products_on_account_and_external", unique: true, where: "((external_source IS NOT NULL) AND (external_id IS NOT NULL))"
+    t.index ["account_id", "item_type"], name: "index_scheduling_products_on_account_id_and_item_type"
+    t.index ["account_id"], name: "index_scheduling_products_on_account_id"
+  end
+
   create_table "scheduling_resources", force: :cascade do |t|
     t.bigint "account_id", null: false
-    t.boolean "inherit_working_hours_from_account", default: false, null: false
     t.bigint "user_id"
     t.string "name", null: false
     t.string "specialty"
@@ -2964,6 +3205,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "compensation_percent", default: 0, null: false
+    t.boolean "inherit_working_hours_from_account", default: false, null: false
     t.index "account_id, ((custom_attributes ->> 'medelement_specialist_code'::text))", name: "idx_scheduling_resources_account_medelement_specialist_code", unique: true, where: "((custom_attributes ->> 'medelement_specialist_code'::text) IS NOT NULL)"
     t.index ["account_id", "active", "name"], name: "idx_scheduling_resources_on_account_active_name"
     t.index ["account_id"], name: "index_scheduling_resources_on_account_id"
@@ -3467,7 +3709,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.datetime "updated_at", null: false
     t.bigint "automation_rule_id"
     t.string "source_action_id"
-    t.index ["account_id", "automation_rule_id", "source_action_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_action", unique: true, where: "(((status)::text = ANY (ARRAY[('active'::character varying)::text, ('paused'::character varying)::text, ('completed'::character varying)::text])) AND (automation_rule_id IS NOT NULL))"
+    t.bigint "source_generation", default: 1
+    t.index ["account_id", "automation_rule_id", "source_generation", "source_action_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_action_generation", unique: true, where: "(((status)::text = ANY (ARRAY[('active'::character varying)::text, ('paused'::character varying)::text, ('completed'::character varying)::text])) AND (automation_rule_id IS NOT NULL))"
     t.index ["account_id", "idempotency_key"], name: "idx_touch_plan_enrollments_on_account_idempotency", unique: true
     t.index ["account_id", "reminder_group_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_plan", unique: true, where: "((status)::text = ANY (ARRAY[('active'::character varying)::text, ('paused'::character varying)::text]))"
     t.index ["account_id"], name: "index_touch_plan_enrollments_on_account_id"
@@ -3551,6 +3794,21 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.index ["account_id"], name: "idx_on_account_id_f7abdfbcb1"
     t.index ["channel_id", "event_key"], name: "idx_wa_coex_contact_pending_channel_event", unique: true
     t.index ["channel_id"], name: "idx_on_channel_id_d91985ff7a"
+  end
+
+  create_table "whatsapp_flow_endpoints", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.bigint "channel_id", null: false
+    t.string "identifier", null: false
+    t.text "private_key"
+    t.text "public_key"
+    t.jsonb "flow_configs", default: {}, null: false
+    t.datetime "key_uploaded_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_whatsapp_flow_endpoints_on_account_id"
+    t.index ["channel_id"], name: "index_whatsapp_flow_endpoints_on_channel_id", unique: true
+    t.index ["identifier"], name: "index_whatsapp_flow_endpoints_on_identifier", unique: true
   end
 
   create_table "whatsapp_flow_sessions", force: :cascade do |t|
@@ -3685,6 +3943,33 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
     t.datetime "updated_at", null: false
   end
 
+  create_table "whatsapp_webhook_events", force: :cascade do |t|
+    t.integer "account_id"
+    t.bigint "channel_id"
+    t.string "fingerprint", null: false
+    t.string "field", default: "unknown", null: false
+    t.string "status", default: "pending", null: false
+    t.jsonb "payload", default: {}, null: false
+    t.jsonb "verification_context", default: {}, null: false
+    t.integer "attempts", default: 0, null: false
+    t.text "last_error"
+    t.datetime "locked_at"
+    t.string "lease_token"
+    t.datetime "next_retry_at"
+    t.datetime "processed_at"
+    t.datetime "retry_deadline_at", null: false
+    t.datetime "retain_until", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.jsonb "diagnostic_context", default: {}, null: false
+    t.index ["account_id", "channel_id", "created_at"], name: "idx_wa_webhook_events_account_channel"
+    t.index ["account_id"], name: "index_whatsapp_webhook_events_on_account_id"
+    t.index ["channel_id"], name: "index_whatsapp_webhook_events_on_channel_id"
+    t.index ["fingerprint"], name: "index_whatsapp_webhook_events_on_fingerprint", unique: true
+    t.index ["retain_until"], name: "index_whatsapp_webhook_events_on_retain_until"
+    t.index ["status", "next_retry_at"], name: "idx_wa_webhook_events_retry"
+  end
+
   create_table "whatsapp_webhook_routes", force: :cascade do |t|
     t.string "waba_id", null: false
     t.string "phone_number_id", null: false
@@ -3718,6 +4003,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
   add_foreign_key "account_user_lifecycle_snapshots", "accounts", on_delete: :cascade
   add_foreign_key "account_user_lifecycle_snapshots", "users", column: "deactivated_by_id", on_delete: :nullify
   add_foreign_key "account_user_lifecycle_snapshots", "users", on_delete: :cascade
+  add_foreign_key "accounts", "billing_organizations"
   add_foreign_key "accounts", "organizations"
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
@@ -3735,6 +4021,18 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
   add_foreign_key "assignment_quota_usages", "contacts", name: "fk_rails_assignment_quota_usages_contact", on_delete: :cascade
   add_foreign_key "assignment_quota_usages", "conversations", name: "fk_rails_assignment_quota_usages_conversation"
   add_foreign_key "assignment_quota_usages", "users", name: "fk_rails_assignment_quota_usages_user"
+  add_foreign_key "billing_account_memberships", "billing_accounts"
+  add_foreign_key "billing_account_memberships", "users", on_delete: :cascade
+  add_foreign_key "billing_account_workspaces", "accounts", on_delete: :cascade
+  add_foreign_key "billing_account_workspaces", "billing_accounts"
+  add_foreign_key "billing_audit_events", "billing_accounts"
+  add_foreign_key "billing_audit_events", "users", column: "super_admin_id", on_delete: :nullify
+  add_foreign_key "billing_entitlement_allocations", "accounts", on_delete: :cascade
+  add_foreign_key "billing_entitlement_allocations", "billing_subscriptions"
+  add_foreign_key "billing_plan_prices", "billing_plans"
+  add_foreign_key "billing_subscriptions", "billing_accounts"
+  add_foreign_key "billing_subscriptions", "billing_plan_prices"
+  add_foreign_key "billing_subscriptions", "billing_plans"
   add_foreign_key "bulk_action_runs", "accounts"
   add_foreign_key "bulk_action_runs", "users"
   add_foreign_key "campaign_audience_imports", "accounts", on_delete: :cascade
@@ -3753,10 +4051,10 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
   add_foreign_key "campaign_runs", "inboxes"
   add_foreign_key "campaigns", "campaign_audience_imports", on_delete: :nullify
   add_foreign_key "campaigns", "captain_assistants"
-  add_foreign_key "captain_agent_handoffs", "accounts"
   add_foreign_key "captain_agent_channels", "accounts"
   add_foreign_key "captain_agent_channels", "captain_assistants", column: ["assistant_id", "account_id"], primary_key: ["id", "account_id"], on_delete: :cascade
   add_foreign_key "captain_agent_channels", "inboxes", on_delete: :cascade
+  add_foreign_key "captain_agent_handoffs", "accounts"
   add_foreign_key "captain_agent_handoffs", "captain_assistants", column: ["source_assistant_id", "account_id"], primary_key: ["id", "account_id"], name: "captain_agent_handoffs_source_assistant_id_account_fk", on_delete: :cascade
   add_foreign_key "captain_agent_handoffs", "captain_assistants", column: ["target_assistant_id", "account_id"], primary_key: ["id", "account_id"], name: "captain_agent_handoffs_target_assistant_id_account_fk", on_delete: :cascade
   add_foreign_key "captain_assistant_responses", "captain_document_chunks", column: "document_chunk_id", on_delete: :nullify
@@ -3860,7 +4158,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
   add_foreign_key "llm_event_annotations", "accounts"
   add_foreign_key "llm_event_annotations", "llm_events"
   add_foreign_key "llm_event_annotations", "users"
-  add_foreign_key "llm_usage_events", "llm_events", on_delete: :nullify
+  add_foreign_key "llm_usage_events", "llm_events", on_delete: :cascade
   add_foreign_key "medelement_delta_miss_candidates", "integrations_hooks", column: "hook_id", on_delete: :cascade
   add_foreign_key "medelement_delta_miss_candidates", "medelement_sync_runs", column: "full_sweep_run_id", on_delete: :nullify
   add_foreign_key "medelement_delta_misses", "integrations_hooks", column: "hook_id", on_delete: :cascade
@@ -3881,13 +4179,15 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
   add_foreign_key "medelement_sync_runs", "accounts", on_delete: :cascade
   add_foreign_key "medelement_sync_runs", "integrations_hooks", column: "hook_id", on_delete: :nullify
   add_foreign_key "medelement_sync_runs", "users", column: "requested_by_id", on_delete: :nullify
-  add_foreign_key "meta_ad_referrals", "accounts", on_delete: :cascade
-  add_foreign_key "meta_ad_referrals", "communication_threads", on_delete: :nullify
-  add_foreign_key "meta_ad_referrals", "contacts", on_delete: :nullify
-  add_foreign_key "meta_ad_referrals", "conversations", on_delete: :nullify
-  add_foreign_key "meta_ad_referrals", "inboxes", on_delete: :cascade
-  add_foreign_key "meta_ad_referrals", "messages", on_delete: :nullify
+  add_foreign_key "meta_ad_referrals", "accounts"
+  add_foreign_key "meta_ad_referrals", "communication_threads"
+  add_foreign_key "meta_ad_referrals", "contacts"
+  add_foreign_key "meta_ad_referrals", "conversations"
+  add_foreign_key "meta_ad_referrals", "inboxes"
+  add_foreign_key "meta_ad_referrals", "messages"
   add_foreign_key "meta_channel_credential_healths", "accounts", on_delete: :cascade
+  add_foreign_key "meta_messaging_webhook_event_routes", "accounts", on_delete: :cascade
+  add_foreign_key "meta_messaging_webhook_event_routes", "meta_messaging_webhook_events", on_delete: :cascade
   add_foreign_key "reminder_groups", "accounts"
   add_foreign_key "reminder_groups", "captain_assistants", column: "assistant_id"
   add_foreign_key "reminder_groups", "users", column: "creator_id"
@@ -3920,6 +4220,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
   add_foreign_key "scheduling_payments", "accounts"
   add_foreign_key "scheduling_payments", "scheduling_appointments", column: "appointment_id"
   add_foreign_key "scheduling_payments", "users", column: "recorded_by_id"
+  add_foreign_key "scheduling_products", "accounts"
   add_foreign_key "scheduling_resources", "accounts"
   add_foreign_key "scheduling_resources", "users"
   add_foreign_key "scheduling_service_prices", "accounts"
@@ -3975,6 +4276,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
   add_foreign_key "touch_plan_enrollments", "reminder_groups"
   add_foreign_key "whatsapp_coexistence_contact_pending_events", "accounts", on_delete: :cascade
   add_foreign_key "whatsapp_coexistence_contact_pending_events", "channel_whatsapp", column: "channel_id", on_delete: :cascade
+  add_foreign_key "whatsapp_flow_endpoints", "accounts", on_delete: :cascade
+  add_foreign_key "whatsapp_flow_endpoints", "channel_whatsapp", column: "channel_id", on_delete: :cascade
   add_foreign_key "whatsapp_flow_sessions", "accounts"
   add_foreign_key "whatsapp_flow_sessions", "conversations"
   add_foreign_key "whatsapp_flow_sessions", "inboxes"
@@ -3987,6 +4290,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_18_010000) do
   add_foreign_key "whatsapp_pending_message_mutations", "inboxes", on_delete: :cascade
   add_foreign_key "whatsapp_template_media_sources", "channel_whatsapp", column: "whatsapp_channel_id", on_delete: :cascade
   add_foreign_key "whatsapp_usage_deliveries", "accounts", on_delete: :cascade
+  add_foreign_key "whatsapp_webhook_events", "accounts", on_delete: :cascade
+  add_foreign_key "whatsapp_webhook_events", "channel_whatsapp", column: "channel_id", on_delete: :nullify
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)
 CREATE OR REPLACE FUNCTION public.accounts_after_insert_row_tr()
@@ -4002,6 +4307,49 @@ $function$
 
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute("CREATE TRIGGER accounts_after_insert_row_tr AFTER INSERT ON \"accounts\" FOR EACH ROW EXECUTE FUNCTION accounts_after_insert_row_tr()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.billing_audit_events_before_delete()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    RAISE EXCEPTION 'billing audit events are immutable';
+    RETURN OLD;
+END;
+$function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER billing_audit_events_before_delete BEFORE DELETE ON \"billing_audit_events\" FOR EACH ROW EXECUTE FUNCTION billing_audit_events_before_delete()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.billing_audit_events_before_update()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    IF OLD.super_admin_id IS NOT NULL AND NEW.super_admin_id IS NULL AND to_jsonb(NEW) - 'super_admin_id' = to_jsonb(OLD) - 'super_admin_id' THEN RETURN NEW; END IF; RAISE EXCEPTION 'billing audit events are immutable';
+    RETURN NEW;
+END;
+$function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER billing_audit_events_before_update BEFORE UPDATE ON \"billing_audit_events\" FOR EACH ROW EXECUTE FUNCTION billing_audit_events_before_update()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.bump_automation_rule_lifecycle_generation()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$ BEGIN IF OLD.active = FALSE AND NEW.active = TRUE AND NEW.lifecycle_generation <= OLD.lifecycle_generation THEN NEW.lifecycle_generation := OLD.lifecycle_generation + 1; END IF; RETURN NEW; END; $function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER bump_automation_rule_lifecycle_generation BEFORE UPDATE ON \"automation_rules\" FOR EACH ROW EXECUTE FUNCTION bump_automation_rule_lifecycle_generation()")
 
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)

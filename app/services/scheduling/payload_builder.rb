@@ -225,6 +225,43 @@ module Scheduling::PayloadBuilder
       .tap { |payload| payload[:provider_schedule] = provider_schedule if provider_schedule }
   end
 
+  def product(product)
+    {
+      id: product.id,
+      account_id: product.account_id,
+      name: product.name,
+      item_type: product.item_type,
+      code: product.code,
+      article: product.article,
+      category: product.category,
+      uom: product.uom,
+      description: product.description,
+      price: product.price,
+      wholesale_price: product.wholesale_price,
+      kaspi_price: product.kaspi_price,
+      buy_price: product.buy_price,
+      min_price: product.min_price,
+      currency: product.currency,
+      stock: product.stock.to_f,
+      reserve: product.reserve.to_f,
+      in_transit: product.in_transit.to_f,
+      quantity: product.quantity.to_f,
+      available_now: product.available_now,
+      active: product.active,
+      external_source: product.external_source,
+      external_id: product.external_id,
+      parent_external_id: product.parent_external_id,
+      barcodes: product.barcodes || [],
+      characteristics: product.characteristics || [],
+      sale_prices: product.sale_prices || [],
+      store_stocks: product.store_stocks || [],
+      custom_attributes: product.custom_attributes || {},
+      synced_at: product.synced_at&.iso8601,
+      created_at: product.created_at&.iso8601,
+      updated_at: product.updated_at&.iso8601
+    }
+  end
+
   def service(service, prices: nil)
     {
       id: service.id,

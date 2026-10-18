@@ -560,7 +560,10 @@
     "VISIBILITY": "Навигация",
     "STORAGE": "Хранилище",
     "SCHEDULING_REMINDERS": "Напоминания",
-    "WORKING_HOURS": "График работы"
+    "WORKING_HOURS": "График работы",
+    "CATALOG": "Товары и Услуги",
+    "CATALOG_PRODUCTS": "Товары",
+    "CATALOG_SERVICES": "Услуги"
   },
   "LEAD_FORMS": {
     "KICKER": "Прием заявок",

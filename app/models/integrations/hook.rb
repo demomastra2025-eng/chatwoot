@@ -78,6 +78,10 @@ class Integrations::Hook < ApplicationRecord
     app_id == 'macrocrm'
   end
 
+  def moysklad?
+    app_id == 'moysklad'
+  end
+
   def macrocrm_manager_changed_webhook_url
     frontend_url = ENV.fetch('FRONTEND_URL', nil)
     return if frontend_url.blank? || reference_id.blank? || !macrocrm?
@@ -100,6 +104,7 @@ class Integrations::Hook < ApplicationRecord
 
   def process_event(event_name)
     return process_medelement_event(event_name) if medelement?
+    return process_moysklad_event(event_name) if moysklad?
 
     # OpenAI integration migrated to Captain::EditorService
     # Other integrations (slack, dialogflow, etc.) handled via HookJob
@@ -179,6 +184,19 @@ class Integrations::Hook < ApplicationRecord
 
   def crm_integration?
     %w[leadsquared].include?(app_id)
+  end
+
+  def process_moysklad_event(event_name)
+    return { error: 'No processor found' } unless event_name == 'sync'
+    return { error: 'MoySklad integration is disabled' } unless enabled?
+
+    summary = Integrations::Moysklad::ProductsSyncService.new(account: account, hook: self).perform
+    {
+      message: 'MoySklad products synchronized successfully',
+      sync_summary: summary
+    }
+  rescue Integrations::Moysklad::ApiClient::ApiError => e
+    { error: e.message }
   end
 
   def process_medelement_event(event_name)

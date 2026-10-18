@@ -275,6 +275,11 @@
     },
     "SIDEBAR_DESCRIPTION": {
       "DIALOGFLOW": "Dialogflow is a natural language processing platform for building conversational interfaces. Integrating it with {installationName} lets bots handle queries first and transfer them to agents when needed. It helps qualify leads and reduce agent workload by answering FAQs. To add Dialogflow, create a Service Account in Google Console and share the credentials. Refer to the docs for details"
+    },
+    "MOYSKLAD": {
+      "NAME": "MoySklad",
+      "SHORT_DESCRIPTION": "Synchronize products, variants, bundles, prices, and warehouse stock balances from MoySklad.",
+      "DESCRIPTION": "MoySklad integration (JSON API 1.2) imports and updates products, variants, bundles, sale prices, and real-time stock balances in Products & Services -> Products."
     }
   }
 }

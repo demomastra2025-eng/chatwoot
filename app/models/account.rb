@@ -156,6 +156,7 @@ class Account < ApplicationRecord
 
   has_many :scheduling_resources, dependent: :destroy_async, class_name: 'Scheduling::Resource'
   has_many :scheduling_service_prices, dependent: :destroy_async, class_name: 'Scheduling::ServicePrice'
+  has_many :scheduling_products, dependent: :destroy_async, class_name: 'Scheduling::Product'
   has_many :scheduling_services, dependent: :destroy_async, class_name: 'Scheduling::Service'
   has_many :scheduling_time_offs, dependent: :destroy_async, class_name: 'Scheduling::TimeOff'
   has_many :scheduling_work_rules, dependent: :destroy_async, class_name: 'Scheduling::WorkRule'

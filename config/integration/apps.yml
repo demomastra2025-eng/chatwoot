@@ -533,3 +533,46 @@ medelement:
         'help_i18n': 'INTEGRATION_APPS.MEDELEMENT.SETTINGS.REMOVE_RECEPTION_ON_CANCEL.HINT',
       },
     ]
+
+moysklad:
+  id: moysklad
+  logo: moysklad.png
+  i18n_key: moysklad
+  action: /moysklad
+  hook_type: account
+  allow_multiple_hooks: false
+  access_token_required: true
+  visible_properties:
+    [
+      'price_type_name',
+    ]
+  settings_json_schema:
+    {
+      'type': 'object',
+      'properties':
+        {
+          'price_type_name': { 'type': 'string' },
+          'last_synced_at': { 'type': 'string' },
+          'last_sync_summary': { 'type': 'object' },
+        },
+      'additionalProperties': true,
+    }
+  settings_form_schema:
+    [
+      {
+        'label': 'API-токен МойСклад',
+        'type': 'password',
+        'name': 'api_token',
+        'validation': 'required',
+        'store': 'secret_settings',
+        'help': 'Токен из раздела Настройки пользователя → Токен в МойСклад.',
+      },
+      {
+        'label': 'Тип цены продажи по умолчанию',
+        'type': 'text',
+        'name': 'price_type_name',
+        'value': 'Цена продажи',
+        'help': 'Название типа цены в МойСклад (например: Цена продажи).',
+      },
+    ]
+
