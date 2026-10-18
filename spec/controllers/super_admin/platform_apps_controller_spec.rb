@@ -73,7 +73,6 @@ RSpec.describe 'Super Admin platform app API', type: :request do
       follow_redirect!
       expect(page.at_css('[data-testid="one-time-token"] input')['value']).to eq(app.access_token.token)
       expect(response.headers['Cache-Control']).to include('no-store')
-
     end
 
     it 'writes the creation to the audit log without the token' do

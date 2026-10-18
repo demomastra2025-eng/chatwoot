@@ -59,7 +59,12 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     @installation_configs = config_definitions
     secret_keys = @allowed_configs.select { |key| masked_secret_config?(key) }
     @configured_secrets = secret_keys.select { |key| @app_config[key].present? }
-    build_ai_models_page(secret_keys) if @config == 'captain'
+    if @config == 'captain'
+      @openrouter_diagnostics = Llm::OpenRouterDiagnostics.call
+      @ai_models_page = SuperAdmin::AiModelsPage.new(
+        keys: @allowed_configs, values: @app_config, definitions: @installation_configs, masked_keys: secret_keys
+      )
+    end
     # A secret never leaves the controller: the views get only whether it is set
     @app_config = @app_config.except(*secret_keys)
   end
@@ -116,13 +121,6 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
 
   def config_title(key)
     SuperAdmin::AppConfigLabels.title(key, config_definitions[key])
-  end
-
-  def build_ai_models_page(secret_keys)
-    @openrouter_diagnostics = Llm::OpenRouterDiagnostics.call
-    @ai_models_page = SuperAdmin::AiModelsPage.new(
-      keys: @allowed_configs, values: @app_config, definitions: @installation_configs, masked_keys: secret_keys
-    )
   end
 
   def persist_app_config
