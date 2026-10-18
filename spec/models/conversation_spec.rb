@@ -89,7 +89,6 @@ RSpec.describe Conversation do
 
       expect(contact.reload.owner).to eq(new_owner)
     end
-
   end
 
   describe '.after_create' do

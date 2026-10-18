@@ -3,6 +3,7 @@ require Rails.root.join('db/migrate/20261018120000_clear_removed_agent_bot_refer
 
 # The AgentBot class is gone, so the leftovers are written and read with plain SQL: a polymorphic type string that
 # names a missing class would raise a NameError the moment the association is loaded.
+# rubocop:disable Rails/SkipsModelValidations
 RSpec.describe ClearRemovedAgentBotReferences do
   let(:db) { ActiveRecord::Base.connection }
   let(:account) { create(:account) }
@@ -19,7 +20,7 @@ RSpec.describe ClearRemovedAgentBotReferences do
 
   def bot_message
     create(:message, account: account, conversation: conversation, message_type: :outgoing).tap do |message|
-      Message.where(id: message.id).update_all(sender_type: 'AgentBot', sender_id: 41) # rubocop:disable Rails/SkipsModelValidations
+      Message.where(id: message.id).update_all(sender_type: 'AgentBot', sender_id: 41)
     end
   end
 
@@ -121,3 +122,4 @@ RSpec.describe ClearRemovedAgentBotReferences do
     expect { run_migration }.not_to(change { message_sender(from_user) })
   end
 end
+# rubocop:enable Rails/SkipsModelValidations
