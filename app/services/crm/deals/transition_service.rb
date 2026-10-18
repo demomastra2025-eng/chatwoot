@@ -125,7 +125,8 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
       account: account,
       actor: actor,
       override_requested: params[:override],
-      override_reason: params[:override_reason]
+      override_reason: params[:override_reason],
+      appointment_automation: params[:appointment_automation]
     ).enforce!
   end
 

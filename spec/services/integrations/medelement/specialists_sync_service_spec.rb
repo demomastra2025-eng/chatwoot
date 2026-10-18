@@ -218,19 +218,29 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
     expect(existing_resource.reload).to be_active
   end
 
-  it 'does not deactivate a stale specialist when a stable live snapshot may be truncated' do
+  it 'immediately deactivates a specialist missing from a validated live snapshot while preserving its appointments' do
     existing_resource = create(
       :scheduling_resource,
       account: account,
       custom_attributes: {
         'medelement_specialist_code' => 'missing-from-stable-partial-response',
-        'medelement_last_seen_at' => 8.days.ago.iso8601
+        'medelement_last_seen_at' => 1.hour.ago.iso8601
       }
+    )
+    contact = create(:contact, account: account)
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: existing_resource,
+      contact: contact,
+      starts_at: 1.day.from_now,
+      ends_at: 1.day.from_now + 30.minutes
     )
 
     described_class.new(account: account, client: client, configuration: configuration).perform
 
-    expect(existing_resource.reload).to be_active
+    expect(existing_resource.reload).not_to be_active
+    expect(appointment.reload).to be_persisted
     expect(client).to have_received(:specialists).twice
   end
 
@@ -398,7 +408,7 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
     expect(resource.reload.specialty).to eq('Provider specialty')
   end
 
-  it 'deactivates only imported specialists missing beyond the grace period' do
+  it 'immediately deactivates imported specialists missing from the snapshot without waiting for the grace period' do
     now = Time.zone.parse('2026-07-28 10:00:00')
     stale_resource = create(
       :scheduling_resource,
@@ -413,7 +423,7 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
       account: account,
       custom_attributes: {
         'medelement_specialist_code' => 'missing-recent',
-        'medelement_last_seen_at' => (now - 6.days).iso8601
+        'medelement_last_seen_at' => (now - 1.hour).iso8601
       }
     )
 
@@ -427,7 +437,7 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
     ).perform
 
     expect(stale_resource.reload).not_to be_active
-    expect(recent_resource.reload).to be_active
+    expect(recent_resource.reload).not_to be_active
   end
 
   it 'records conflicting cabinet names and preserves the last accepted cabinet snapshot' do

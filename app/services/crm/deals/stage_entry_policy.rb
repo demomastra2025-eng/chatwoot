@@ -7,6 +7,7 @@ class Crm::Deals::StageEntryPolicy
     @field_values = override_options.fetch(:field_values, {})
     @override_requested = override_options[:override_requested]
     @override_reason = override_options[:override_reason].to_s.strip
+    @appointment_automation = ActiveModel::Type::Boolean.new.cast(override_options[:appointment_automation])
   end
 
   def enforce!
@@ -36,6 +37,8 @@ class Crm::Deals::StageEntryPolicy
   end
 
   def movement_rule_violations
+    return [] if @appointment_automation
+
     stages = target_stage.pipeline.stages.active.ordered.to_a
     current_index = stages.index { |stage| stage.id == deal.stage_id }
     target_index = stages.index { |stage| stage.id == target_stage.id }

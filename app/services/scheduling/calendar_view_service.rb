@@ -75,9 +75,10 @@ class Scheduling::CalendarViewService
   end
 
   def slots_for(resource)
+    return [] unless resource.active?
+
     policy = Scheduling::ResourceHoursPolicy.new(resource: resource)
     return availability_for(resource).slots(duration_min: @duration_min || resource.slot_duration_min) unless policy.provider_hours?
-    return [] unless resource.active?
 
     range = policy.clipped_range(from: @from, to: @to)
     return [] if range.nil?

@@ -43,8 +43,7 @@ class Integrations::Medelement::SpecialistsSyncService
     imported_codes = normalized_rows.filter_map { |payload| sync_specialist!(payload) }
     @returned_codes = imported_codes
     not_returned_count = record_not_returned_specialists!(provider_codes)
-    # Live provider responses have no total/completeness marker; only validated catalog imports pass client: nil.
-    deactivate_stale_specialists!(provider_codes) if client.nil?
+    deactivate_missing_specialists!(provider_codes)
 
     {
       provider_count: normalized_rows.size,
@@ -99,10 +98,9 @@ class Integrations::Medelement::SpecialistsSyncService
     }
   end
 
-  def deactivate_stale_specialists!(seen_codes)
-    medelement_resources.find_each do |resource|
+  def deactivate_missing_specialists!(seen_codes)
+    medelement_resources.active.find_each do |resource|
       next if seen_codes.include?(resource.custom_attributes[SPECIALIST_CODE_KEY].to_s)
-      next unless stale?(resource.custom_attributes[LAST_SEEN_AT_KEY])
 
       resource.update!(active: false)
     end
@@ -187,14 +185,6 @@ class Integrations::Medelement::SpecialistsSyncService
     return true if value.nil?
 
     ActiveModel::Type::Boolean.new.cast(value)
-  end
-
-  def stale?(last_seen_at)
-    return false if last_seen_at.blank?
-
-    Time.iso8601(last_seen_at) < now - MISSING_GRACE_PERIOD
-  rescue ArgumentError
-    false
   end
 
   def work_rules_sync_service

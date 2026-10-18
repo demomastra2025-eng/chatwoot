@@ -60,7 +60,8 @@ RSpec.describe Crm::Appointments::AutomationService do
   end
 
   it 'only permits a won rule when its configured attendance requirement is met' do
-    visit.update!(status: 'completed', custom_attributes: { medelement_reception_code: 'booked', provider_status_audit: { reason: 'provider_inactive' } }, source: 'medelement')
+    visit.update!(status: 'completed',
+                  custom_attributes: { medelement_reception_code: 'booked', provider_status_audit: { reason: 'provider_inactive' } }, source: 'medelement')
     configure([rule(won_stage, ['past'])], success_mode: 'any_attended')
     visit.update!(starts_at: 2.days.ago, ends_at: 2.days.ago + 30.minutes)
     evaluate
@@ -87,7 +88,7 @@ RSpec.describe Crm::Appointments::AutomationService do
     evaluate
     actor = create(:user, account: account)
     Crm::Deals::StageCommandService.new(account: account, deal: deal.reload, actor: actor,
-                                      params: { stage_id: followup_stage.id, lock_version: deal.lock_version }).perform
+                                        params: { stage_id: followup_stage.id, lock_version: deal.lock_version }).perform
     evaluate
     expect(deal.reload.stage_id).to eq(followup_stage.id)
 
@@ -102,7 +103,7 @@ RSpec.describe Crm::Appointments::AutomationService do
     configure([rule(booked_stage, ['provider_confirmed'])], manual_stage_change: 'pause')
     actor = create(:user, account: account)
     Crm::Deals::StageCommandService.new(account: account, deal: deal, actor: actor,
-                                      params: { stage_id: followup_stage.id, lock_version: deal.lock_version }).perform
+                                        params: { stage_id: followup_stage.id, lock_version: deal.lock_version }).perform
     visit.update!(status: 'confirmed')
     evaluate
 
@@ -129,5 +130,20 @@ RSpec.describe Crm::Appointments::AutomationService do
     expect(deal.reload.stage_id).to eq(start_stage.id)
     expect(deal.appointment_automation_state['last_error']).to eq('DEAL_STAGE_REQUIRES_FIELDS')
     expect(deal.description).to be_nil
+  end
+
+  it 'bypasses restrict_stage_skipping and restrict_backward_move for appointment automation transitions' do
+    pipeline.update!(restrict_stage_skipping: true, restrict_backward_move: true)
+    visit
+    configure([rule(followup_stage, ['provider_confirmed']), rule(booked_stage, ['cancelled'])])
+
+    evaluate
+    expect(deal.reload.stage_id).to eq(followup_stage.id)
+    expect(deal.appointment_automation_state['last_error']).to be_nil
+
+    visit.update!(status: 'cancelled')
+    evaluate
+    expect(deal.reload.stage_id).to eq(booked_stage.id)
+    expect(deal.appointment_automation_state['last_error']).to be_nil
   end
 end
