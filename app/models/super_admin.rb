@@ -51,4 +51,7 @@
 #  index_users_on_uid_and_provider        (uid,provider) UNIQUE
 #
 class SuperAdmin < User
+  # Devise signs a person in right after a password reset. For a super admin that would skip the second step of the
+  # sign-in (SuperAdmin::Devise::SessionsController), so after a reset he is sent to the sign-in page instead.
+  self.sign_in_after_reset_password = false
 end

@@ -1013,7 +1013,8 @@ Rails.application.routes.draw do
   require 'sidekiq/web'
   require 'sidekiq/cron/web'
 
-  devise_for :super_admins, path: 'super_admin', controllers: { sessions: 'super_admin/devise/sessions' }
+  # A super admin is never created by the person himself: no sign-up routes (a super admin is added in «Пользователи»)
+  devise_for :super_admins, path: 'super_admin', controllers: { sessions: 'super_admin/devise/sessions' }, skip: [:registrations]
   devise_scope :super_admin do
     get 'super_admin/logout', to: 'super_admin/devise/sessions#destroy'
     # The second step of the sign-in of a super admin who has two-factor authentication on

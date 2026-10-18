@@ -272,6 +272,39 @@ RSpec.describe 'Super Admin sign-in with two-factor authentication', type: :requ
     end
   end
 
+  # Other ways to a signed-in super admin must not skip the second step or let a stranger become a super admin
+  describe 'the other Devise routes of a super admin' do
+    it 'has no sign-up: a super admin is never created by the person himself' do
+      routes = Rails.application.routes
+
+      expect { routes.recognize_path('/super_admin', method: 'POST') }.to raise_error(ActionController::RoutingError)
+      expect { routes.recognize_path('/super_admin/sign_up', method: 'GET') }.to raise_error(ActionController::RoutingError)
+    end
+
+    it 'does not sign a super admin in after a password reset, so the second step cannot be skipped' do
+      super_admin.update!(otp_required_for_login: true)
+      token = super_admin.send_reset_password_instructions
+
+      patch '/super_admin/password',
+            params: { super_admin: { reset_password_token: token, password: 'NewPassword1!', password_confirmation: 'NewPassword1!' } }
+
+      expect(response).to redirect_to('/super_admin/sign_in')
+      expect(super_admin.reload.valid_password?('NewPassword1!')).to be(true)
+      expect(signed_in?).to be(false)
+    end
+
+    it 'asks for the second step after the reset, with the new password' do
+      super_admin.update!(otp_required_for_login: true)
+      token = super_admin.send_reset_password_instructions
+      patch '/super_admin/password',
+            params: { super_admin: { reset_password_token: token, password: 'NewPassword1!', password_confirmation: 'NewPassword1!' } }
+
+      sign_in_with_password(password: 'NewPassword1!')
+
+      expect(response).to redirect_to('/super_admin/sign_in/two_factor')
+    end
+  end
+
   describe 'the notice on «Сводка»' do
     before { sign_in(super_admin, scope: :super_admin) }
 
