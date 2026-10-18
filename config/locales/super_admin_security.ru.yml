@@ -20,6 +20,15 @@ ru:
         not_set: "не задан"
         set: "задан"
 
+    installation_configs:
+      hidden: "скрыто"
+      hidden_hint: "Такого параметра нет в каталоге платформы: его значение не показывается."
+      columns:
+        name: "Параметр"
+        value: "Значение"
+        page: "Где менять"
+        updated: "Изменён"
+
     platform_apps:
       controller:
         create:

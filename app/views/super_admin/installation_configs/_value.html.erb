@@ -1,0 +1,22 @@
+<%#
+# The value of an installation parameter
+
+What a screen may show of it (SuperAdmin::InstallationConfigs.display): a secret only as «задан» / «не задан», a
+parameter the catalogue does not know as «скрыто», any other value as text cut to 120 characters.
+
+## Local variables:
+
+- `display`: a `SuperAdmin::InstallationConfigs::Display` (kind and text).
+%>
+<% case display.kind %>
+<% when :secret_set %>
+  <span class="admin-badge admin-badge--teal" data-testid="config-secret"><%= t('super_admin.security.secret.set') %></span>
+<% when :secret_unset %>
+  <span class="admin-badge admin-badge--quiet" data-testid="config-secret"><%= t('super_admin.security.secret.not_set') %></span>
+<% when :hidden %>
+  <span class="admin-badge admin-badge--quiet" data-testid="config-hidden" title="<%= t('super_admin.installation_configs.hidden_hint') %>"><%= t('super_admin.installation_configs.hidden') %></span>
+<% when :value %>
+  <code class="break-all font-mono text-xs text-n-slate-12" data-testid="config-value"><%= display.text %></code>
+<% else %>
+  <span class="text-n-slate-10">—</span>
+<% end %>

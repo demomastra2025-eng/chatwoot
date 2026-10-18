@@ -1,0 +1,53 @@
+<%#
+# Installation parameters (read-only)
+
+The parameters that the settings pages saved: the name (a link to the parameter), the value (a secret only as «задан»,
+see SuperAdmin::InstallationConfigs), the settings page that edits it and when it changed (Astana time). There is no
+way to change a parameter here.
+
+## Local variables (same as the generic `_collection`):
+
+- `collection_presenter` / `page`: the `Administrate::Page::Collection`.
+- `resources`: the parameters of this page.
+- `table_title`: id of the heading that names the table.
+%>
+<% rows = resources.to_a %>
+
+<div class="admin-card admin-card--table">
+  <table aria-labelledby="<%= table_title %>" data-testid="installation-configs-table">
+    <thead>
+      <tr>
+        <th scope="col"><%= t('super_admin.installation_configs.columns.name') %></th>
+        <th scope="col"><%= t('super_admin.installation_configs.columns.value') %></th>
+        <th scope="col"><%= t('super_admin.installation_configs.columns.page') %></th>
+        <th scope="col"><%= t('super_admin.installation_configs.columns.updated') %></th>
+      </tr>
+    </thead>
+
+    <tbody>
+      <% if rows.empty? %>
+        <tr>
+          <td colspan="4" class="py-10 text-center text-n-slate-11"><%= t('super_admin.shell.empty') %></td>
+        </tr>
+      <% end %>
+
+      <% rows.each do |config| %>
+        <tr data-config-name="<%= config.name %>">
+          <td>
+            <%= link_to config.name, super_admin_installation_config_path(config), class: 'font-mono text-xs font-medium text-n-slate-12 hover:text-n-brand' %>
+          </td>
+          <td class="max-w-md"><%= render 'super_admin/installation_configs/value', display: SuperAdmin::InstallationConfigs.display(config) %></td>
+          <td>
+            <% if config.settings_page.present? %>
+              <%= link_to SuperAdmin::AppConfigLabels.page_title(config.settings_page), super_admin_app_config_path(config: config.settings_page),
+                          class: 'text-n-brand hover:underline' %>
+            <% else %>
+              <span class="text-n-slate-10">—</span>
+            <% end %>
+          </td>
+          <td class="whitespace-nowrap tabular-nums text-n-slate-11"><%= super_admin_time(config.updated_at) %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>

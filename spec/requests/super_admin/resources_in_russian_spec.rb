@@ -121,14 +121,11 @@ RSpec.describe 'Super Admin lists and forms in Russian', type: :request do
   end
 
   describe 'system parameters' do
-    it 'names the button and the new page after the parameter, not after «Параметры системы»' do
+    it 'is a read-only list: no button to create a parameter, and a line that says where to change them' do
       get '/super_admin/installation_configs'
 
-      expect(page.at_css('main .main-content__actions a.button').text.squish).to eq('Новый параметр системы')
-
-      get '/super_admin/installation_configs/new'
-
-      expect(title).to eq('Новый параметр системы')
+      expect(page.at_css('main .main-content__actions a.button')).to be_nil
+      expect(page.at_css('main .main-content__description').text.squish).to include('только для чтения', 'раздел')
     end
   end
 

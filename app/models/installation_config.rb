@@ -84,6 +84,11 @@ class InstallationConfig < ApplicationRecord
     serialized_value[:value]
   end
 
+  # The settings page of the super admin that edits this parameter (the `config` param of its address), nil when none does
+  def settings_page
+    SuperAdmin::InstallationConfigs.page_for(name)
+  end
+
   def value=(value_to_assigned)
     self.serialized_value = {
       value: value_to_assigned

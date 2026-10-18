@@ -1,0 +1,6 @@
+<%# The settings page that edits the parameter, as a link; «—» when no page does %>
+<% if field.data.present? %>
+  <%= link_to field.title, super_admin_app_config_path(config: field.data), class: 'text-n-brand hover:underline' %>
+<% else %>
+  <span class="text-n-slate-10">—</span>
+<% end %>

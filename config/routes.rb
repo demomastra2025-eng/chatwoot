@@ -1058,7 +1058,8 @@ Rails.application.routes.draw do
       end
 
       resources :access_tokens, only: [:index, :show]
-      resources :installation_configs, only: [:index, :new, :create, :show, :edit, :update]
+      # Read-only: the parameters are edited on the settings pages (app_config)
+      resources :installation_configs, only: [:index, :show]
       resources :platform_apps, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
         post :reissue_token, on: :member
       end

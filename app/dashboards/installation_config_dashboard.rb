@@ -10,7 +10,8 @@ class InstallationConfigDashboard < Administrate::BaseDashboard
   ATTRIBUTE_TYPES = {
     id: Field::Number,
     name: Field::String,
-    value: SerializedField,
+    value: ConfigValueField,
+    settings_page: ConfigPageField,
     created_at: Field::DateTime,
     updated_at: Field::DateTime
   }.freeze
@@ -24,7 +25,8 @@ class InstallationConfigDashboard < Administrate::BaseDashboard
     id
     name
     value
-    created_at
+    settings_page
+    updated_at
   ].freeze
 
   # SHOW_PAGE_ATTRIBUTES
@@ -33,17 +35,14 @@ class InstallationConfigDashboard < Administrate::BaseDashboard
     id
     name
     value
+    settings_page
     created_at
     updated_at
   ].freeze
 
   # FORM_ATTRIBUTES
-  # an array of attributes that will be displayed
-  # on the model's form (`new` and `edit`) pages.
-  FORM_ATTRIBUTES = %i[
-    name
-    value
-  ].freeze
+  # The list is read-only: parameters are edited on the settings pages, so there is no form.
+  FORM_ATTRIBUTES = %i[].freeze
 
   # COLLECTION_FILTERS
   # a hash that defines filters that can be used while searching via the search
