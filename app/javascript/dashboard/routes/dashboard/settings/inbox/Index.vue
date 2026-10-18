@@ -379,7 +379,7 @@ const getCapabilityChips = inbox => {
     );
   }
 
-  if (inbox.greeting_enabled) {
+  if (inbox.greeting_enabled && !['channel::voice', 'channel::email'].includes(getChannelType(inbox))) {
     chips.push(t('INBOX_MGMT.LIST.CHIPS.GREETING'));
   }
 

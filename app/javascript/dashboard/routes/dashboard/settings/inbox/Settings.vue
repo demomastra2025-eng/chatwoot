@@ -576,15 +576,7 @@ export default {
         },
       ];
 
-      if (!this.isAVoiceChannel) {
-        visibleToAllChannelTabs = [
-          ...visibleToAllChannelTabs,
-          {
-            key: 'csat',
-            name: this.$t('INBOX_MGMT.TABS.CSAT'),
-          },
-        ];
-      }
+      // CSAT is configured at workspace level in ConversationSettings.vue
 
       if (this.isAWebWidgetInbox) {
         visibleToAllChannelTabs = [
@@ -738,18 +730,7 @@ export default {
       return this.inbox.name;
     },
     canLocktoSingleConversation() {
-      return (
-        this.isASmsInbox ||
-        this.isAWhatsAppChannel ||
-        this.isAFacebookInbox ||
-        this.isAPIInbox ||
-        this.isAnInstagramChannel ||
-        this.isALineChannel ||
-        this.isATiktokChannel ||
-        this.isATelegramChannel ||
-        this.isATelegramPersonalChannel ||
-        this.isAVkCommunityChannel
-      );
+      return false;
     },
     inboxNameLabel() {
       if (this.isAWebWidgetInbox) {
@@ -4475,39 +4456,10 @@ export default {
             </SettingsAccordion>
 
             <SettingsAccordion
+              v-if="isAWebWidgetInbox"
               :title="$t('INBOX_MGMT.CHANNEL_PREFERENCES')"
               class="mt-6"
             >
-              <SettingsToggleSection
-                v-model="greetingEnabled"
-                :header="
-                  $t(
-                    'INBOX_MGMT.ADD.WEBSITE_CHANNEL.CHANNEL_GREETING_TOGGLE.LABEL'
-                  )
-                "
-                :description="
-                  $t(
-                    'INBOX_MGMT.ADD.WEBSITE_CHANNEL.CHANNEL_GREETING_TOGGLE.HELP_TEXT'
-                  )
-                "
-              >
-                <template v-if="greetingEnabled" #editor>
-                  <GreetingsEditor
-                    v-model="greetingMessage"
-                    :label="
-                      $t(
-                        'INBOX_MGMT.ADD.WEBSITE_CHANNEL.CHANNEL_GREETING_MESSAGE.LABEL'
-                      )
-                    "
-                    :placeholder="
-                      $t(
-                        'INBOX_MGMT.ADD.WEBSITE_CHANNEL.CHANNEL_GREETING_MESSAGE.PLACEHOLDER'
-                      )
-                    "
-                    :richtext="!textAreaChannels"
-                  />
-                </template>
-              </SettingsToggleSection>
 
               <SettingsToggleSection
                 v-if="isAWebWidgetInbox"

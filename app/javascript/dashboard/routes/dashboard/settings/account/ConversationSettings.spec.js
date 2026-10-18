@@ -3,9 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ConversationSettings from './ConversationSettings.vue';
 
-const { storeDispatch, accountState } = vi.hoisted(() => ({
+const { storeDispatch, accountState, inboxesState } = vi.hoisted(() => ({
   storeDispatch: vi.fn(() => Promise.resolve()),
   accountState: { current: { id: 1 } },
+  inboxesState: { list: [{ id: 10, name: 'WhatsApp', channel_type: 'Channel::Whatsapp' }] },
 }));
 let canManageWorkspace = true;
 
@@ -15,6 +16,12 @@ vi.mock('vue-i18n', () => ({
 
 vi.mock('dashboard/composables/store', () => ({
   useStore: () => ({ dispatch: storeDispatch }),
+  useMapGetter: key => {
+    if (key === 'inboxes/getInboxes') {
+      return { value: inboxesState.list };
+    }
+    return { value: null };
+  },
 }));
 
 vi.mock('dashboard/composables/useAccount', () => ({
@@ -38,6 +45,16 @@ const mountComponent = () =>
         WorkspaceAssignmentPolicySettings: {
           template: '<div data-test="workspace-assignment-policy" />',
         },
+        WorkspaceGreetingSettings: {
+          props: ['disabled'],
+          template:
+            '<div data-test="workspace-greeting-settings" :data-disabled="String(disabled)" />',
+        },
+        WorkspaceCsatSettings: {
+          props: ['disabled'],
+          template:
+            '<div data-test="workspace-csat-settings" :data-disabled="String(disabled)" />',
+        },
         CaptainAiEditorSettings: {
           props: ['disabled'],
           template:
@@ -56,6 +73,7 @@ describe('ConversationSettings', () => {
   beforeEach(() => {
     storeDispatch.mockClear();
     accountState.current = { id: 1 };
+    inboxesState.list = [{ id: 10, name: 'WhatsApp', channel_type: 'Channel::Whatsapp' }];
     canManageWorkspace = true;
   });
 
@@ -74,6 +92,16 @@ describe('ConversationSettings', () => {
         .get('[data-test="captain-ai-editor-settings"]')
         .attributes('data-disabled')
     ).toBe('true');
+    expect(
+      wrapper
+        .get('[data-test="workspace-greeting-settings"]')
+        .attributes('data-disabled')
+    ).toBe('true');
+    expect(
+      wrapper
+        .get('[data-test="workspace-csat-settings"]')
+        .attributes('data-disabled')
+    ).toBe('true');
   });
 
   it('enables transcription for workspace managers', () => {
@@ -89,13 +117,29 @@ describe('ConversationSettings', () => {
         .get('[data-test="captain-ai-editor-settings"]')
         .attributes('data-disabled')
     ).toBe('false');
+    expect(
+      wrapper
+        .get('[data-test="workspace-greeting-settings"]')
+        .attributes('data-disabled')
+    ).toBe('false');
+    expect(
+      wrapper
+        .get('[data-test="workspace-csat-settings"]')
+        .attributes('data-disabled')
+    ).toBe('false');
   });
 
-  it('renders the workspace policy and AI settings without blocking on a page-wide fetch', () => {
+  it('renders the workspace policy, greeting, CSAT, and AI settings without blocking on a page-wide fetch', () => {
     const wrapper = mountComponent();
 
     expect(
       wrapper.get('[data-test="workspace-assignment-policy"]')
+    ).toBeTruthy();
+    expect(
+      wrapper.get('[data-test="workspace-greeting-settings"]')
+    ).toBeTruthy();
+    expect(
+      wrapper.get('[data-test="workspace-csat-settings"]')
     ).toBeTruthy();
     expect(
       wrapper.get('[data-test="captain-ai-editor-settings"]')
@@ -107,10 +151,12 @@ describe('ConversationSettings', () => {
     ).toBe(false);
   });
 
-  it('fetches the account only when it is not already in the store', () => {
+  it('fetches the account and inboxes only when they are not already in the store', () => {
     accountState.current = {};
+    inboxesState.list = [];
     mountComponent();
 
     expect(storeDispatch).toHaveBeenCalledWith('accounts/get');
+    expect(storeDispatch).toHaveBeenCalledWith('inboxes/get');
   });
 });
