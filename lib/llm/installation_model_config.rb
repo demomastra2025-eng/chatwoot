@@ -87,7 +87,10 @@ module Llm::InstallationModelConfig
       unsuitable = models.reject { |model_name| trusted.include?(model_name) || Llm::Models.model_allowed_for_feature?('assistant', model_name) }
       return "не найдены в каталоге или не подходят агенту: #{unsuitable.join(', ')}" if unsuitable.any?
 
-      default_model = Llm::Config.model_for(feature: 'assistant', fallback: nil) if default_model.equal?(NOT_GIVEN)
+      default_missing_error(models, default_model.equal?(NOT_GIVEN) ? Llm::Config.model_for(feature: 'assistant', fallback: nil) : default_model)
+    end
+
+    def default_missing_error(models, default_model)
       return unless default_model.present? && models.exclude?(default_model)
 
       "в списке должна быть модель агента по умолчанию (#{default_model})"

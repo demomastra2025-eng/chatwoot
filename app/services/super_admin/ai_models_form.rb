@@ -24,7 +24,6 @@ class SuperAdmin::AiModelsForm
   PROMPTS = Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG
   ENDPOINT = 'CAPTAIN_OPENROUTER_ENDPOINT'
   NUMBER_KEYS = SuperAdmin::AiModelsPage::NUMBER_KEYS
-  PROMPT_FIELDS = %i[id type group content slot].freeze
   SCOPE = 'super_admin.app_config.captain.form'
 
   attr_reader :errors, :changes, :input
@@ -59,6 +58,11 @@ class SuperAdmin::AiModelsForm
       raise ActiveRecord::Rollback if @errors.any?
     end
     @errors
+  end
+
+  # The settings that were sent and not saved: those that changed and those that were refused
+  def refused_keys
+    (@changes.map(&:key) + @errors.keys).uniq
   end
 
   # One line per change, for the message after a save: «Проверка безопасности ответов: GPT-5.4 → встроенная»
@@ -193,44 +197,13 @@ class SuperAdmin::AiModelsForm
   end
 
   def check_prompts(value)
-    entries = parse_prompts(value)
+    entries = SuperAdmin::SystemPromptsCheck.parse(value)
     return add_error(PROMPTS, I18n.t("#{SCOPE}.prompts_invalid")) if entries.nil?
 
-    problem = prompts_problem(entries)
+    problem = SuperAdmin::SystemPromptsCheck.problem(entries, @stored[PROMPTS])
     return add_error(PROMPTS, problem) if problem
 
-    change(PROMPTS, entries) unless entries == prompts_of(@stored[PROMPTS])
-  end
-
-  def parse_prompts(value)
-    parsed = value.present? ? JSON.parse(value) : []
-    return unless parsed.is_a?(Array)
-
-    prompts_of(parsed)
-  rescue JSON::ParserError
-    nil
-  end
-
-  # The rules as they are stored: only the five fields
-  def prompts_of(raw)
-    Captain::Assistant.normalize_installation_system_prompt_entries(raw.is_a?(Array) ? raw : []).map do |entry|
-      PROMPT_FIELDS.to_h { |field| [field.to_s, entry[field]] }
-    end
-  end
-
-  # A group or a place that is not in the lists is allowed only for a rule that already has it (an old value is not lost)
-  def prompts_problem(entries)
-    stored = prompts_of(@stored[PROMPTS]).index_by { |entry| entry['id'] }
-    entries.each_with_index do |entry, index|
-      before = stored[entry['id']].to_h
-      unless SuperAdmin::SystemPromptOptions.group_values.include?(entry['group']) || entry['group'] == before['group']
-        return I18n.t("#{SCOPE}.group_unknown", number: index + 1, group: entry['group'])
-      end
-      next if entry['slot'].blank? || SuperAdmin::SystemPromptOptions.slot_values.include?(entry['slot']) || entry['slot'] == before['slot']
-
-      return I18n.t("#{SCOPE}.slot_unknown", number: index + 1, slot: entry['slot'])
-    end
-    nil
+    change(PROMPTS, entries) unless entries == SuperAdmin::SystemPromptsCheck.entries_of(@stored[PROMPTS])
   end
 
   # --- bookkeeping ---------------------------------------------------------------------------------------------------

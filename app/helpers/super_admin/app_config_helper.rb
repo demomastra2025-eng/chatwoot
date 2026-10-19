@@ -53,7 +53,8 @@ module SuperAdmin::AppConfigHelper
 
   # The option «Встроенная: GPT-6 Luna» (an empty value: the platform decides)
   def ai_builtin_option(choices, selected)
-    label = choices.builtin_id ? t('super_admin.app_config.captain.models.builtin_option', name: choices.builtin_name) : t('super_admin.app_config.captain.models.builtin_unknown')
+    scope = 'super_admin.app_config.captain.models'
+    label = choices.builtin_id ? t("#{scope}.builtin_option", name: choices.builtin_name) : t("#{scope}.builtin_unknown")
     content_tag(:option, label, value: '', selected: selected.blank?, data: { name: label, kind: 'builtin' })
   end
 

@@ -92,6 +92,10 @@ class SuperAdmin::AiModelsPage
   FOLLOWS_DEFAULT_MODEL = %w[CAPTAIN_CUSTOMER_NOTICE_MODEL CAPTAIN_IMAGE_RECOGNITION_MODEL CAPTAIN_LABEL_SUGGESTION_MODEL].freeze
   TEXTAREA_KEYS = %w[CAPTAIN_AI_AGENT_SYSTEM_PROMPT CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT].freeze
   NUMBER_KEYS = %w[ACCOUNT_CAPTAIN_TOKENS_LIMIT].freeze
+  FIXED_EDITORS = {
+    Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG => :prompts,
+    Llm::Models::MODEL_ALLOWLIST_INSTALLATION_CONFIG => :allowlist
+  }.freeze
   # The settings whose value is one model chosen from a list (the short list is a list of models of its own)
   MODEL_KEYS = (Llm::InstallationModelConfig::SLOT_FEATURES.keys + [Llm::InstallationModelConfig::DEFAULT_MODEL_CONFIG]).freeze
 
@@ -209,14 +213,15 @@ class SuperAdmin::AiModelsPage
   end
 
   def editor_for(key, definition)
-    return :prompts if key == Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG
-    return :allowlist if key == Llm::Models::MODEL_ALLOWLIST_INSTALLATION_CONFIG
-    return :secret if definition.to_h['type'] == 'secret'
-    return :model if MODEL_KEYS.include?(key)
-    return :number if NUMBER_KEYS.include?(key)
-    return :textarea if TEXTAREA_KEYS.include?(key) || definition.to_h['type'] == 'code'
+    FIXED_EDITORS.fetch(key) { editor_by_type(key, definition.to_h['type']) }
+  end
 
-    :text
+  def editor_by_type(key, type)
+    return :secret if type == 'secret'
+    return :model if MODEL_KEYS.include?(key)
+    return :textarea if TEXTAREA_KEYS.include?(key) || type == 'code'
+
+    NUMBER_KEYS.include?(key) ? :number : :text
   end
 
   # The model the installation follows for a slot of an AI feature (llm.yml), or the default model for the slots

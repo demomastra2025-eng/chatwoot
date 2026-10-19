@@ -64,20 +64,27 @@ class SuperAdmin::AiModelOptions
   class << self
     # "вход $0,15 / выход $0,60 за 1 млн"
     def price_text(price_in, price_out)
-      return I18n.t('super_admin.app_config.captain.models.price_unknown') if price_in.nil? && price_out.nil?
-      return I18n.t('super_admin.app_config.captain.models.free') if price_in.to_d.zero? && price_out.to_d.zero?
+      scope = 'super_admin.app_config.captain.models'
+      return I18n.t("#{scope}.price_unknown") if price_in.nil? && price_out.nil?
+      return I18n.t("#{scope}.free") if price_in.to_d.zero? && price_out.to_d.zero?
       # an embedding model is paid for what it reads only
-      return I18n.t('super_admin.app_config.captain.models.price_one', price: dollars(price_in || price_out)) if price_in.nil? || price_out.nil? || price_out.zero?
+      return I18n.t("#{scope}.price_one", price: dollars(price_in || price_out)) if reads_only?(price_in, price_out)
 
-      I18n.t('super_admin.app_config.captain.models.price_both', price_in: dollars(price_in), price_out: dollars(price_out))
+      I18n.t("#{scope}.price_both", price_in: dollars(price_in), price_out: dollars(price_out))
     end
 
     # "$0,15", "$10", "$0,075"
     def dollars(amount)
       return if amount.nil?
 
-      precision = amount < 0.1 ? 3 : 2
-      "$#{ActiveSupport::NumberHelper.number_to_rounded(amount, precision: precision, separator: ',', delimiter: ' ', strip_insignificant_zeros: true)}"
+      number = ActiveSupport::NumberHelper.number_to_rounded(
+        amount, precision: amount < 0.1 ? 3 : 2, separator: ',', delimiter: ' ', strip_insignificant_zeros: true
+      )
+      "$#{number}"
+    end
+
+    def reads_only?(price_in, price_out)
+      price_in.nil? || price_out.nil? || price_out.zero?
     end
 
     # The readable name of a model id: the name of the catalog, or the id itself when the platform does not know the model
@@ -174,11 +181,17 @@ class SuperAdmin::AiModelOptions
   # [[«Рекомендуемые», [...]], [«OpenAI», [...]], ...]
   def group_options(options)
     recommended, others = options.partition(&:recommended)
-    recommended = recommended.sort_by { |option| @recommended.index(option.id) }
-    groups = others.group_by(&:provider).sort_by { |provider, _options| [provider == OTHER_PROVIDER ? 1 : 0, provider.downcase] }
-                   .map { |provider, list| [provider, list.sort_by { |option| option.name.downcase }] }
-    groups.unshift([I18n.t('super_admin.app_config.captain.models.recommended'), recommended]) if recommended.any?
-    groups
+    groups = by_provider(others)
+    return groups if recommended.empty?
+
+    [[I18n.t('super_admin.app_config.captain.models.recommended'), recommended.sort_by { |option| @recommended.index(option.id) }]] + groups
+  end
+
+  # The companies in alphabetical order, «Прочие» last, the models of each by name
+  def by_provider(options)
+    options.group_by(&:provider)
+           .sort_by { |provider, _options| [provider == OTHER_PROVIDER ? 1 : 0, provider.downcase] }
+           .map { |provider, list| [provider, list.sort_by { |option| option.name.downcase }] }
   end
 
   def badges_for(config)

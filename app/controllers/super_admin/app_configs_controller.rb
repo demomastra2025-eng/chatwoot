@@ -116,8 +116,10 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
                                .map { |name, serialized_value| [name, serialized_value['value']] }
                                .to_h
     # rubocop:enable Style/HashTransformValues
-    values[Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG] ||= Captain::Assistant.installation_system_prompt_entries if @config == 'captain'
-    values
+    return values unless @config == 'captain'
+
+    prompts = Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG
+    values.merge(prompts => values[prompts].presence || Captain::Assistant.installation_system_prompt_entries)
   end
 
   def prepare_ai_models_page(secret_keys, form)
@@ -127,7 +129,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
       submitted: form&.input.to_h, errors: form&.errors.to_h, options: SuperAdmin::AiModelOptions.new(recommended: recommended_models),
       history: SuperAdmin::AiModelsHistory.new(values: @app_config)
     )
-    @unsaved_keys = form ? (form.changes.map(&:key) + form.errors.keys).uniq : []
+    @unsaved_keys = form ? form.refused_keys : []
   end
 
   # The models the lists show first: the short list the platform has set (or the recommended one) and the built-in model

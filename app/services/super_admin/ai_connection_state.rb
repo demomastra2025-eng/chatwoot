@@ -52,9 +52,9 @@ class SuperAdmin::AiConnectionState
   end
 
   def balance_text
-    return I18n.t("#{SCOPE}.connection.balance_available", amount: SuperAdmin::DisplayHelper.format_usd(@credits[:remaining_credits].to_f)) if balance?
+    return I18n.t("#{SCOPE}.connection.balance_unknown") unless balance?
 
-    I18n.t("#{SCOPE}.connection.balance_unknown")
+    I18n.t("#{SCOPE}.connection.balance_available", amount: SuperAdmin::DisplayHelper.format_usd(@credits[:remaining_credits].to_f))
   end
 
   def balance_note
