@@ -747,7 +747,12 @@
       "MERGE_SUCCESS": "Contacts merged successfully",
       "MERGE_ERROR": "Failed to merge contacts",
       "DISMISS_SUCCESS": "Marked as separate contacts",
-      "DISMISS_ERROR": "Failed to dismiss duplicate pair"
-    }
+      "DISMISS_ERROR": "Failed to dismiss duplicate pair",
+      "MERGE": "Merge",
+      "DISMISS_SHORT": "Not duplicate"
+    },
+    "KEEP_BADGE": "Keep",
+    "MERGE_INTO_BADGE": "Merge",
+    "SWAP_DIRECTION": "Swap primary contact"
   }
 }
