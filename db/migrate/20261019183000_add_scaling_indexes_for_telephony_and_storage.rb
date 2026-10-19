@@ -14,9 +14,13 @@ class AddScalingIndexesForTelephonyAndStorage < ActiveRecord::Migration[7.1]
     add_telephony_aux_indexes
     add_reminder_and_thread_indexes
     add_medelement_and_whatsapp_indexes
+    add_contact_and_thread_statistics
   end
 
   def down
+    execute 'DROP STATISTICS IF EXISTS stats_communication_threads_account_status'
+    execute 'DROP STATISTICS IF EXISTS stats_conversations_account_status'
+    remove_index :contacts, name: 'index_contacts_on_account_id_and_id', if_exists: true
     remove_index :whatsapp_pending_message_mutations, name: 'index_wa_pending_mutations_on_unscrubbed_exhausted', if_exists: true
     remove_index :medelement_sync_runs, name: 'index_medelement_sync_runs_on_phase_results', if_exists: true
     remove_index :medelement_sync_runs, name: 'index_medelement_sync_runs_on_hook_completed_at', if_exists: true
@@ -84,5 +88,19 @@ class AddScalingIndexesForTelephonyAndStorage < ActiveRecord::Migration[7.1]
               where: "status = 'exhausted' AND payload_scrubbed_at IS NULL",
               name: 'index_wa_pending_mutations_on_unscrubbed_exhausted',
               algorithm: :concurrently, if_not_exists: true
+  end
+
+  def add_contact_and_thread_statistics
+    add_index :contacts, %i[account_id id],
+              name: 'index_contacts_on_account_id_and_id',
+              algorithm: :concurrently, if_not_exists: true
+    execute <<~SQL.squish
+      CREATE STATISTICS IF NOT EXISTS stats_conversations_account_status (dependencies, ndistinct, mcv)
+      ON account_id, status FROM conversations
+    SQL
+    execute <<~SQL.squish
+      CREATE STATISTICS IF NOT EXISTS stats_communication_threads_account_status (dependencies, ndistinct, mcv)
+      ON account_id, status FROM communication_threads
+    SQL
   end
 end

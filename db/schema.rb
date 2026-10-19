@@ -1428,6 +1428,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_183000) do
     t.index "lower((email)::text), account_id", name: "index_contacts_on_lower_email_account_id"
     t.index "regexp_replace((phone_number)::text, '[^0-9]'::text, ''::text, 'g'::text) gin_trgm_ops", name: "index_contacts_on_phone_digits_trgm", using: :gin
     t.index ["account_id", "contact_type"], name: "index_contacts_on_account_id_and_contact_type"
+    t.index ["account_id", "id"], name: "index_contacts_on_account_id_and_id"
     t.index ["account_id", "email", "phone_number", "identifier"], name: "index_contacts_on_nonempty_fields", where: "(((email)::text <> ''::text) OR ((phone_number)::text <> ''::text) OR ((identifier)::text <> ''::text))"
     t.index ["account_id", "last_activity_at"], name: "index_contacts_on_account_id_and_last_activity_at", order: { last_activity_at: "DESC NULLS LAST" }
     t.index ["account_id"], name: "index_contacts_on_account_id"

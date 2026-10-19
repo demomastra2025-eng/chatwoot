@@ -11,9 +11,9 @@ class Search::AccessScope
     @conversations ||= Conversations::PermissionFilterService.new(@account.conversations, @user, @account).perform
   end
 
-  # nil means "every inbox of the account" (administrator).
+  # nil means "every inbox of the account" (administrator or default manager with full channel access).
   def inbox_ids
-    return if account_user&.administrator?
+    return if account_user&.administrator? || unrestricted_inbox_access?
 
     @user.inboxes.where(account_id: @account.id).pluck(:id)
   end
@@ -25,6 +25,14 @@ class Search::AccessScope
   end
 
   private
+
+  def unrestricted_inbox_access?
+    return @unrestricted_inbox_access if defined?(@unrestricted_inbox_access)
+
+    @unrestricted_inbox_access = !@account.inboxes.where.not(
+      id: InboxMember.where(user_id: @user.id).select(:inbox_id)
+    ).exists?
+  end
 
   def account_user
     return @account_user if defined?(@account_user)

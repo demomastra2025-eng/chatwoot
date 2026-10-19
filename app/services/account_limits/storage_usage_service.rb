@@ -71,12 +71,10 @@ class AccountLimits::StorageUsageService
   # The bytes freed when `attachment` stops pointing at `blob`: all of them if it was the only counted owner of the
   # blob, none if another counted record still holds it.
   def released_blob_bytes(blob, attachment)
-    return 0 if blob.blank? || !blob.persisted?
+    return 0 unless blob.is_a?(ActiveStorage::Blob) && blob.persisted?
 
-    owners = tenant_attachments(include_recordings: count_recordings?)&.where(blob_id: blob.id)&.pluck(:id)
-    return 0 if owners.blank?
-
-    (owners - [attachment&.id]).empty? ? blob.byte_size.to_i : 0
+    owners = tenant_attachments(include_recordings: count_recordings?).where(blob_id: blob.id).pluck(:id)
+    owners.any? && (owners - [attachment&.id]).empty? ? blob.byte_size.to_i : 0
   end
 
   # Enforced for uploads by staff, imports and Captain documents. Incoming messages and calls never go through
@@ -94,7 +92,6 @@ class AccountLimits::StorageUsageService
 
   def summary
     consumed = usage_bytes
-
     {
       total_count: total_limit_bytes,
       current_available: unlimited? ? ChatwootApp.max_limit.to_i : (total_limit_bytes - consumed).clamp(0, total_limit_bytes),
@@ -207,13 +204,14 @@ class AccountLimits::StorageUsageService
       predicate = predicate.and(attachment_table[:name].in(attachment_names)) if attachment_names.present?
       predicate
     end
-    return if predicates.empty?
+    return ActiveStorage::Attachment.none if predicates.empty?
 
     ActiveStorage::Attachment.where(predicates.reduce(&:or))
   end
 
   def tenant_record_type_scopes(include_recordings)
-    include_recordings ? RECORD_TYPE_SCOPES : RECORD_TYPE_SCOPES.except(*RECORDING_RECORD_TYPES)
+    scopes = include_recordings ? RECORD_TYPE_SCOPES : RECORD_TYPE_SCOPES.except(*RECORDING_RECORD_TYPES)
+    scopes.slice(*ActiveStorage::Attachment.where(record_type: scopes.keys).distinct.pluck(:record_type))
   end
 
   def variants_available?

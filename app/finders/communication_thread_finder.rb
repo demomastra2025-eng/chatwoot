@@ -481,10 +481,13 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
       .where(id: linked_thread_ids)
   end
 
-  def linked_thread_ids(conversation_ids: accessible_conversations.select(:id), inbox_id: nil)
-    relation = CommunicationThreadConversation
-               .where(account_id: current_account.id)
-               .where(conversation_id: conversation_ids)
+  def linked_thread_ids(conversation_ids: nil, inbox_id: nil)
+    relation = CommunicationThreadConversation.where(account_id: current_account.id)
+    if !conversation_ids.nil?
+      relation = relation.where(conversation_id: conversation_ids)
+    elsif !self.class.unrestricted_account_conversation_scope?(accessible_conversations)
+      relation = relation.where(conversation_id: accessible_conversations.select(:id))
+    end
     relation = relation.where(inbox_id: inbox_id) if inbox_id.present?
 
     relation.select(:communication_thread_id)
@@ -495,6 +498,12 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     return scope if selected_status == 'all'
 
     status_value = selected_status.presence || DEFAULT_STATUS
+    status_thread_ids = CommunicationThread
+                        .where(
+                          account_id: current_account.id,
+                          status: CommunicationThread.statuses.fetch(status_value)
+                        )
+                        .select(:id)
     matching_thread_ids = linked_thread_ids(
       conversation_ids: accessible_conversations
         .where(status: Conversation.statuses.fetch(status_value))
@@ -502,9 +511,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     )
 
     scope.where(
-      'communication_threads.status = :thread_status OR communication_threads.id IN (:matching_thread_ids)',
-      thread_status: CommunicationThread.statuses.fetch(status_value),
-      matching_thread_ids: matching_thread_ids
+      "communication_threads.id IN ((#{status_thread_ids.to_sql}) UNION (#{matching_thread_ids.to_sql}))"
     )
   end
 

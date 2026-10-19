@@ -1,6 +1,6 @@
 module Whatsapp::IncomingDedupMessageHelpers
   def find_message_by_source_id(source_id)
-    return unless source_id
+    return if source_id.blank?
 
     @message = inbox.messages.find_by(source_id: source_id.to_s)
   end

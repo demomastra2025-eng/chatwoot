@@ -8,6 +8,8 @@ class Channels::WhatsappWeb::MediaAttachmentBackfillJob < ApplicationJob
   retry_on ActiveRecord::Deadlocked, wait: 2.seconds, attempts: 8
 
   def perform(channel_id, source_id, record_payload = {}, attempt_number = 1)
+    return if source_id.blank?
+
     channel = eligible_channel(channel_id)
     return if channel.blank?
 

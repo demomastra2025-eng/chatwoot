@@ -217,4 +217,11 @@ RSpec.describe Reminders::MaterializeDueEnrollmentsJob do
     expect { described_class.perform_now }
       .to have_enqueued_job(described_class).with(1, enrollments.first(2).map(&:id))
   end
+
+  it 'short-circuits without opening a transaction when no due or resumable enrollments exist' do
+    create(:touch_plan_enrollment, next_due_at: 10.minutes.from_now)
+    expect(TouchPlanEnrollment).not_to receive(:transaction)
+
+    described_class.perform_now
+  end
 end
