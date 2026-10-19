@@ -94,7 +94,7 @@ const mountPage = async () => {
         SchedulingPageHeader: {
           props: ['title'],
           template:
-            '<header><h1>{{ title }}</h1><slot name="actions" /></header>',
+            '<header><h1>{{ title }}</h1><slot name="left" /><slot name="actions" /></header>',
         },
         SchedulingRecordTable: {
           props: ['rows'],
@@ -126,13 +126,34 @@ describe('SchedulingProductsPage', () => {
     expect(SchedulingProductsAPI.get).toHaveBeenCalledWith({
       include_inactive: true,
     });
+    expect(wrapper.find('[data-test="products-summary-pill"]').exists()).toBe(
+      true
+    );
+    expect(wrapper.find('[data-test="products-toolbar"]').exists()).toBe(true);
     expect(wrapper.findAll('[data-test="product-row"]')).toHaveLength(2);
     expect(wrapper.text()).toContain('Смартфон Apple iPhone 16 Pro');
     expect(wrapper.text()).toContain('Бренд: Apple');
     expect(wrapper.text()).not.toContain('MOYSKLAD');
   });
 
-  it('filters products by search query and item type', async () => {
+  it('hides the filter toolbar and zero summary counters when catalog is empty', async () => {
+    SchedulingProductsAPI.get.mockResolvedValueOnce({
+      data: {
+        payload: [],
+        meta: { count: 0 },
+      },
+    });
+
+    const wrapper = await mountPage();
+
+    expect(wrapper.find('[data-test="products-summary-pill"]').exists()).toBe(
+      false
+    );
+    expect(wrapper.find('[data-test="products-toolbar"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="empty-state"]').exists()).toBe(true);
+  });
+
+  it('filters products by search query and item type tabs', async () => {
     const wrapper = await mountPage();
 
     await wrapper.get('[data-test="products-search-input"]').setValue('Чехол');
@@ -140,7 +161,9 @@ describe('SchedulingProductsPage', () => {
     expect(wrapper.text()).toContain('Чехол Apple Silicone Case');
 
     await wrapper.get('[data-test="products-search-input"]').setValue('');
-    await wrapper.get('[data-test="products-type-filter"]').setValue('variant');
+    await wrapper
+      .get('[data-test="products-type-tab-variant"]')
+      .trigger('click');
     expect(wrapper.findAll('[data-test="product-row"]')).toHaveLength(1);
     expect(wrapper.text()).toContain('Чехол Apple Silicone Case');
   });

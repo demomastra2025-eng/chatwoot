@@ -304,6 +304,24 @@ onMounted(async () => {
 <template>
   <section class="flex flex-col flex-1 min-h-0 overflow-y-auto bg-n-surface-1">
     <SchedulingPageHeader :title="$t('SCHEDULING.PRODUCTS.TITLE')">
+      <template v-if="summaryCounts.total > 0" #left>
+        <span
+          data-test="products-summary-pill"
+          class="inline-flex items-center gap-1.5 rounded-full bg-n-alpha-2 px-2.5 py-0.5 text-xs font-medium text-n-slate-11"
+        >
+          <span>
+            {{ $t('SCHEDULING.PRODUCTS.SUMMARY.TOTAL') }}:
+            <strong class="text-n-slate-12">{{ summaryCounts.total }}</strong>
+          </span>
+          <template v-if="summaryCounts.inStock > 0">
+            <span class="text-n-slate-8">·</span>
+            <span class="text-n-teal-11">
+              {{ $t('SCHEDULING.PRODUCTS.SUMMARY.IN_STOCK') }}:
+              <strong>{{ summaryCounts.inStock }}</strong>
+            </span>
+          </template>
+        </span>
+      </template>
       <template #actions>
         <Button
           size="sm"
@@ -315,39 +333,43 @@ onMounted(async () => {
       </template>
     </SchedulingPageHeader>
 
-    <div class="flex flex-col gap-4 px-6 pb-8 pt-3">
-      <!-- Summary & Filters -->
+    <div class="flex flex-col gap-3 px-6 pb-8 pt-2">
+      <!-- Compact single-line filter toolbar (shown only when catalog has items) -->
       <div
-        class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-3"
+        v-if="products.length > 0"
+        data-test="products-toolbar"
+        class="flex flex-wrap items-center justify-between gap-2.5"
       >
-        <div class="flex flex-wrap items-center gap-2 text-xs">
-          <span
-            class="inline-flex items-center gap-1.5 rounded-lg bg-n-alpha-2 px-2.5 py-1 font-medium text-n-slate-12"
+        <div
+          class="inline-flex items-center gap-0.5 rounded-lg border border-n-weak bg-n-solid-1 p-0.5"
+          role="tablist"
+        >
+          <button
+            v-for="tab in [
+              { value: 'all', label: $t('SCHEDULING.PRODUCTS.FILTERS.ALL_TYPES') },
+              { value: 'product', label: $t('SCHEDULING.PRODUCTS.TYPES.PRODUCT') },
+              { value: 'variant', label: $t('SCHEDULING.PRODUCTS.TYPES.VARIANT') },
+              { value: 'bundle', label: $t('SCHEDULING.PRODUCTS.TYPES.BUNDLE') },
+            ]"
+            :key="tab.value"
+            type="button"
+            :data-test="`products-type-tab-${tab.value}`"
+            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+            :class="
+              selectedItemType === tab.value
+                ? 'bg-n-brand text-white shadow-sm'
+                : 'text-n-slate-11 hover:text-n-slate-12'
+            "
+            @click="selectedItemType = tab.value"
           >
-            {{ $t('SCHEDULING.PRODUCTS.SUMMARY.TOTAL') }}:
-            <strong>{{ summaryCounts.total }}</strong>
-          </span>
-          <span
-            class="inline-flex items-center gap-1.5 rounded-lg bg-n-teal-3 px-2.5 py-1 font-medium text-n-teal-11"
-          >
-            {{ $t('SCHEDULING.PRODUCTS.SUMMARY.IN_STOCK') }}:
-            <strong>{{ summaryCounts.inStock }}</strong>
-          </span>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2">
-          <input
-            v-model="searchQuery"
-            type="search"
-            :placeholder="$t('SCHEDULING.PRODUCTS.SEARCH_PLACEHOLDER')"
-            data-test="products-search-input"
-            class="h-8 w-56 rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-xs text-n-slate-12 placeholder:text-n-slate-10 focus:border-n-brand focus:outline-none"
-          />
-
+            {{ tab.label }}
+          </button>
           <select
             v-model="selectedItemType"
             data-test="products-type-filter"
-            class="h-8 rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-xs text-n-slate-12 focus:border-n-brand focus:outline-none"
+            class="sr-only"
+            aria-hidden="true"
+            tabindex="-1"
           >
             <option value="all">
               {{ $t('SCHEDULING.PRODUCTS.FILTERS.ALL_TYPES') }}
@@ -362,12 +384,27 @@ onMounted(async () => {
               {{ $t('SCHEDULING.PRODUCTS.TYPES.BUNDLE') }}
             </option>
           </select>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="relative flex items-center">
+            <span
+              class="i-lucide-search pointer-events-none absolute left-2.5 size-3.5 text-n-slate-10"
+            />
+            <input
+              v-model="searchQuery"
+              type="text"
+              :placeholder="$t('SCHEDULING.PRODUCTS.SEARCH_PLACEHOLDER')"
+              data-test="products-search-input"
+              class="!mb-0 !h-8 !w-64 rounded-lg border border-n-weak bg-n-solid-1 py-0 pl-8 pr-2.5 text-xs text-n-slate-12 placeholder:text-n-slate-10 focus:border-n-brand focus:outline-none"
+            />
+          </div>
 
           <select
             v-if="categories.length"
             v-model="selectedCategory"
             data-test="products-category-filter"
-            class="h-8 rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-xs text-n-slate-12 focus:border-n-brand focus:outline-none"
+            class="!mb-0 !h-8 !w-auto min-w-[140px] rounded-lg border border-n-weak bg-n-solid-1 py-0 pl-2.5 pr-7 text-xs text-n-slate-12 focus:border-n-brand focus:outline-none"
           >
             <option value="all">
               {{ $t('SCHEDULING.PRODUCTS.FILTERS.ALL_CATEGORIES') }}
@@ -378,14 +415,15 @@ onMounted(async () => {
           </select>
 
           <label
-            class="inline-flex items-center gap-1.5 text-xs text-n-slate-11 cursor-pointer select-none"
+            class="!mb-0 inline-flex h-8 cursor-pointer select-none items-center gap-1.5 rounded-lg border border-n-weak bg-n-solid-1 px-2.5 text-xs text-n-slate-11 hover:text-n-slate-12"
           >
             <input
               v-model="showInactive"
               type="checkbox"
-              class="rounded border-n-weak"
+              data-test="products-show-inactive-checkbox"
+              class="!mb-0 rounded border-n-weak"
             />
-            {{ $t('SCHEDULING.PRODUCTS.FILTERS.SHOW_INACTIVE') }}
+            <span>{{ $t('SCHEDULING.PRODUCTS.FILTERS.SHOW_INACTIVE') }}</span>
           </label>
         </div>
       </div>
@@ -594,7 +632,7 @@ onMounted(async () => {
               </label>
               <select
                 v-model="productForm.itemType"
-                class="h-9 rounded-lg border border-n-weak bg-n-surface-1 px-3 text-sm text-n-slate-12"
+                class="!mb-0 !h-9 rounded-lg border border-n-weak bg-n-surface-1 py-0 pl-3 pr-7 text-sm text-n-slate-12"
               >
                 <option value="product">
                   {{ $t('SCHEDULING.PRODUCTS.TYPES.PRODUCT') }}
