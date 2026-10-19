@@ -104,6 +104,30 @@ RSpec.describe 'Super admin search', type: :request do
         expect(group(:users).at_css("[data-testid='search-all-users']")).to be_nil
       end
 
+      it 'sends the number of an account to the list without the sign, which the list could not find, and says the list is wider' do
+        target = create(:account, name: 'Фирма')
+        create_list(:account, 10) { |account, index| account.update!(name: "Филиал ##{target.id} №#{index}") }
+
+        get '/super_admin/search', params: { q: "##{target.id}" }
+
+        expect(group(:accounts).css('tbody tr').first['data-account-id']).to eq(target.id.to_s)
+        all_link = group(:accounts).at_css("[data-testid='search-all-accounts']")
+        expect(all_link['href']).to eq("/super_admin/accounts?search=#{target.id}")
+        expect(all_link.text.squish).to eq('Показать все в списке')
+        expect(group(:accounts).at_css("[data-testid='search-list-note-accounts']").text).to include('Список ищет и по части номера')
+
+        get all_link['href']
+        expect(response.body).to include('Фирма')
+      end
+
+      it 'does not add a note when the list finds the same as the group' do
+        create_list(:account, 11) { |account, index| account.update!(name: "Сезим #{index}") }
+
+        get '/super_admin/search', params: { q: 'сезим' }
+
+        expect(group(:accounts).at_css("[data-testid='search-list-note-accounts']")).to be_nil
+      end
+
       it 'says that nothing was found' do
         get '/super_admin/search', params: { q: 'нет такого' }
 

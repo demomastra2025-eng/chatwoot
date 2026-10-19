@@ -133,6 +133,40 @@ RSpec.describe SuperAdmin::GlobalSearch do
     end
   end
 
+  describe 'the link to the list' do
+    it 'passes the term as typed and says the list finds the same records' do
+      create(:account, name: 'Клиника «Алатау»')
+
+      accounts = group(search('  Алатау '), :accounts)
+
+      expect(accounts.list_term).to eq('Алатау')
+      expect(accounts.list_alike).to be(true)
+      expect(group(search('Алатау'), :users).list_alike).to be(true)
+    end
+
+    it 'passes a number without the sign, and says the list finds more: it takes every number that contains it' do
+      %w[#12 12].each do |term|
+        %i[accounts users].each do |key|
+          list = group(search(term), key)
+
+          expect(list.list_term).to eq('12'), "«#{term}» should pass 12 to the list of #{key}"
+          expect(list.list_alike).to be(false)
+        end
+      end
+    end
+
+    it 'passes the БИН without spaces, as the list searches the БИН as typed' do
+      organization = create(:organization, :with_requisites, name: 'Алатау Медикал')
+      bin = organization.bin
+
+      typed = group(search("#{bin[0, 4]} #{bin[4, 4]} #{bin[8, 4]}"), :organizations)
+
+      expect(typed.list_term).to eq(bin)
+      expect(typed.list_alike).to be(true)
+      expect(group(search('алатау'), :organizations).list_term).to eq('алатау')
+    end
+  end
+
   describe 'the size of a group' do
     it 'holds ten records and the total of all of them' do
       create_list(:account, 13) { |account, index| account.update!(name: "Сезим #{index}") }

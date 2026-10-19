@@ -3,7 +3,9 @@
 
 What the search box of the header found: accounts (name, #number), users (e-mail, name) and organizations (name, БИН),
 at most ten of each. A group with more than ten says how many there are and links to the list of that kind, filtered by
-the same term («Показать все»).
+the same term («Показать все»). The list searches in its own way, so the link passes the term the way the list reads it
+(`group.list_term`: «#12» as 12, a БИН without spaces); when the list then finds more than the group (a number is also
+searched as a part of a number there), the link says so instead of promising the count.
 
 ## Local variables (controller instance variables):
 
@@ -26,8 +28,8 @@ the same term («Показать все»).
   <% else %>
     <div class="flex flex-col gap-5">
       <% result.groups.each do |group| %>
-        <% list_path = { accounts: super_admin_accounts_path(search: result.term), users: super_admin_users_path(search: result.term),
-                         organizations: super_admin_organizations_path(search: result.term) }.fetch(group.key) %>
+        <% list_path = { accounts: super_admin_accounts_path(search: group.list_term), users: super_admin_users_path(search: group.list_term),
+                         organizations: super_admin_organizations_path(search: group.list_term) }.fetch(group.key) %>
         <section class="admin-card" aria-labelledby="search-<%= group.key %>-title" data-testid="search-group-<%= group.key %>" data-total="<%= group.total %>">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-n-weak px-5 py-4">
             <div class="flex items-center gap-2.5">
@@ -35,7 +37,13 @@ the same term («Показать все»).
               <span class="admin-badge admin-badge--quiet tabular-nums"><%= super_admin_number(group.total) %></span>
             </div>
             <% if group.more? %>
-              <%= link_to t('super_admin.search.show_all', count: super_admin_number(group.total)), list_path, class: 'text-sm font-medium text-n-brand hover:underline', data: { testid: "search-all-#{group.key}" } %>
+              <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <% unless group.list_alike %>
+                  <span class="text-xs text-n-slate-10" data-testid="search-list-note-<%= group.key %>"><%= t('super_admin.search.list_wider') %></span>
+                <% end %>
+                <% all_label = group.list_alike ? t('super_admin.search.show_all', count: super_admin_number(group.total)) : t('super_admin.search.show_all_in_list') %>
+                <%= link_to all_label, list_path, class: 'text-sm font-medium text-n-brand hover:underline', data: { testid: "search-all-#{group.key}" } %>
+              </div>
             <% end %>
           </div>
 

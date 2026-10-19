@@ -8,6 +8,12 @@
 # lowered by Ruby first, so «алатау» finds «Алатау» (Cyrillic letters have a case of their own). The characters that mean
 # something to LIKE (`%`, `_`) are searched for as they are.
 #
+# «Показать все» opens the list of that kind with the term in the search of the list, which searches in its own way (Administrate:
+# a part of the value, the number of a record also as a part of the number, spaces as typed). `list_term` is the term the
+# link passes (the sign of a number «#12» dropped, the spaces of a БИН typed with spaces removed) and `list_alike` says
+# whether the list then finds the same records as the group (it does not for a number: the group takes the record with
+# exactly that number, the list every number that contains it).
+#
 # The cost does not depend on how many records match: two queries per group (ten rows and the total) and one for what the
 # rows show next to their names (the organizations of the accounts, the numbers of accounts of users and organizations).
 #
@@ -22,8 +28,9 @@ class SuperAdmin::GlobalSearch
   # A БИН is typed with or without spaces
   DIGITS_FORMAT = /\A[\d\s]+\z/
 
-  # records: the first PER_GROUP of the group; extras: what the page shows next to a record, by record id
-  Group = Struct.new(:key, :records, :total, :extras, keyword_init: true) do
+  # records: the first PER_GROUP of the group; extras: what the page shows next to a record, by record id;
+  # list_term, list_alike: what the link «Показать все» passes to the list and whether the list finds the same records
+  Group = Struct.new(:key, :records, :total, :extras, :list_term, :list_alike, keyword_init: true) do
     def more? = total > records.size
     def empty? = total.zero?
   end
@@ -79,7 +86,12 @@ class SuperAdmin::GlobalSearch
     scope = Account.where('LOWER(accounts.name) LIKE ?', pattern)
     scope = scope.or(Account.where(id: account_id)) if account_id
     records = scope.preload(:organization).order(account_order).limit(PER_GROUP).to_a
-    Group.new(key: :accounts, records: records, total: scope.count, extras: {})
+    Group.new(key: :accounts, records: records, total: scope.count, extras: {}, list_term: number_list_term, list_alike: account_id.nil?)
+  end
+
+  # The term for the list of a kind that is found by number too: the number without «#» (the list takes «#12» literally)
+  def number_list_term
+    account_id ? account_id.to_s : @term
   end
 
   # The account with the number that was typed comes first, then the names A to Z
@@ -96,7 +108,8 @@ class SuperAdmin::GlobalSearch
     scope = User.where('LOWER(users.email) LIKE :pattern OR LOWER(users.name) LIKE :pattern', pattern: pattern)
     scope = scope.or(User.where(id: account_id)) if account_id
     records = scope.order(Arel.sql('LOWER(users.email)'), :id).limit(PER_GROUP).to_a
-    Group.new(key: :users, records: records, total: scope.count, extras: account_counts(AccountUser, :user_id, records))
+    Group.new(key: :users, records: records, total: scope.count, extras: account_counts(AccountUser, :user_id, records),
+              list_term: number_list_term, list_alike: account_id.nil?)
   end
 
   # ----------------------------------------------------------- organizations
@@ -104,7 +117,8 @@ class SuperAdmin::GlobalSearch
   def organizations_group
     scope = Organization.where(organization_condition, pattern: pattern, bin: bin_pattern)
     records = scope.order(Arel.sql('LOWER(organizations.name)'), :id).limit(PER_GROUP).to_a
-    Group.new(key: :organizations, records: records, total: scope.count, extras: account_counts(Account, :organization_id, records))
+    Group.new(key: :organizations, records: records, total: scope.count, extras: account_counts(Account, :organization_id, records),
+              list_term: digits_term || @term, list_alike: true)
   end
 
   def organization_condition
@@ -115,10 +129,15 @@ class SuperAdmin::GlobalSearch
 
   # The БИН holds digits only, so a term of digits (spaces allowed) is also looked for in it
   def bin_pattern
-    return @bin_pattern if defined?(@bin_pattern)
+    "%#{digits_term}%" if digits_term
+  end
+
+  # A term of digits (spaces allowed) without the spaces, nil for any other term
+  def digits_term
+    return @digits_term if defined?(@digits_term)
 
     digits = @term.gsub(/\s+/, '') if @term.match?(DIGITS_FORMAT)
-    @bin_pattern = ("%#{digits}%" if digits.present?)
+    @digits_term = digits.presence
   end
 
   # { record id => number of accounts it has }, for the records of one group, with one query
