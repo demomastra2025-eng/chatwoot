@@ -13,11 +13,26 @@ RSpec.describe SuperAdmin::AiModelsPage do
 
   describe '#groups' do
     it 'arranges the settings by purpose, in the order of the page, with a Russian title' do
-      expect(page.groups.map(&:key)).to eq(%w[agent safety knowledge voice images classifiers connection prompts])
+      expect(page.groups.map(&:key)).to eq(%w[connection agent safety voice images classifiers prompts developer])
       expect(page.groups.map(&:title)).to eq(
-        ['Основная модель агентов', 'Модерация и защита', 'Поиск по базе знаний', 'Голос и расшифровка', 'Картинки',
-         'Классификаторы и служебные модели', 'Подключение и лимиты', 'Системные промпты']
+        ['Подключение к OpenRouter', 'Основная модель агентов', 'Проверка безопасности', 'Расшифровка голоса', 'Распознавание картинок',
+         'Служебные модели: итоги диалога, язык, метки', 'Правила платформы для всех агентов', 'Для разработчика']
       )
+    end
+
+    it 'arranges the groups in the tabs «Подключение», «Модели», «Промпты» and keeps what a developer changes outside them' do
+      expect(page.tabs).to eq(%w[connection models prompts])
+      expect(page.groups_of('models').map(&:key)).to eq(%w[agent safety voice images classifiers])
+      expect(page.groups_of('connection').map(&:key)).to eq(%w[connection])
+      expect(page.groups_of('prompts').map(&:key)).to eq(%w[prompts])
+      expect(page.developer_groups.flat_map(&:slots).map(&:key)).to eq(
+        %w[CAPTAIN_OPENROUTER_ENDPOINT CAPTAIN_EMBEDDING_MODEL CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT]
+      )
+    end
+
+    it 'puts the model of the knowledge base search under «Для разработчика», not in a tab' do
+      expect(page.groups_of('models').flat_map(&:slots).map(&:key)).not_to include('CAPTAIN_EMBEDDING_MODEL')
+      expect(page.slot('CAPTAIN_EMBEDDING_MODEL')).to be_present
     end
 
     it 'puts every setting of the page into exactly one card' do
@@ -39,7 +54,8 @@ RSpec.describe SuperAdmin::AiModelsPage do
     it 'leaves out a group none of whose settings is on the page' do
       page = described_class.new(keys: %w[CAPTAIN_EMBEDDING_MODEL], values: {}, definitions: definitions, masked_keys: masked_keys)
 
-      expect(page.groups.map(&:key)).to eq(['knowledge'])
+      expect(page.groups.map(&:key)).to eq(['developer'])
+      expect(page.tabs).to eq([])
     end
   end
 
@@ -47,8 +63,8 @@ RSpec.describe SuperAdmin::AiModelsPage do
     it 'has the Russian title and description of installation_config.yml for a model slot' do
       card = slot('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')
 
-      expect(card.title).to eq('Модель расшифровки голоса')
-      expect(card.hint).to include('расшифровки голосовых сообщений')
+      expect(card.title).to eq('Расшифровка голоса')
+      expect(card.hint).to include('голосовых сообщений')
     end
 
     it 'has a Russian title from the locale for the settings that have only an English one in installation_config.yml' do
@@ -150,7 +166,9 @@ RSpec.describe SuperAdmin::AiModelsPage do
 
   describe 'editors' do
     it 'picks the editor of each kind of setting' do
-      expect(slot('CAPTAIN_DEFAULT_MODEL').editor).to eq(:text)
+      expect(slot('CAPTAIN_DEFAULT_MODEL').editor).to eq(:model)
+      expect(slot('CAPTAIN_EMBEDDING_MODEL').editor).to eq(:model)
+      expect(slot('CAPTAIN_OPENROUTER_ENDPOINT').editor).to eq(:text)
       expect(slot('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST').editor).to eq(:allowlist)
       expect(slot('CAPTAIN_SYSTEM_PROMPTS').editor).to eq(:prompts)
       expect(slot('CAPTAIN_AI_AGENT_SYSTEM_PROMPT').editor).to eq(:textarea)
@@ -164,6 +182,47 @@ RSpec.describe SuperAdmin::AiModelsPage do
       expect(wide).to match_array(
         %w[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST CAPTAIN_SYSTEM_PROMPTS CAPTAIN_AI_AGENT_SYSTEM_PROMPT CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT]
       )
+    end
+  end
+
+  describe 'the lists of models' do
+    let(:options) { SuperAdmin::AiModelOptions.new(recommended: Llm::Models::DEFAULT_CURATED_MODELS) }
+    let(:page) do
+      described_class.new(keys: keys, values: values, definitions: definitions, masked_keys: masked_keys, options: options)
+    end
+
+    it 'gives every model setting the models to pick from, and the short list the models to add' do
+      %w[CAPTAIN_DEFAULT_MODEL CAPTAIN_MODERATION_MODEL CAPTAIN_AUDIO_TRANSCRIPTION_MODEL CAPTAIN_EMBEDDING_MODEL].each do |key|
+        expect(slot(key).choices).to be_a(SuperAdmin::AiModelOptions::Choices), key
+      end
+      expect(slot('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST').choices).to be_a(SuperAdmin::AiModelOptions::Choices)
+      expect(slot('CAPTAIN_OPENROUTER_API_KEY').choices).to be_nil
+      expect(slot('CAPTAIN_OPENROUTER_ENDPOINT').choices).to be_nil
+    end
+
+    it 'has no lists when the page was built without them' do
+      plain = described_class.new(keys: keys, values: values, definitions: definitions, masked_keys: masked_keys)
+
+      expect(plain.groups.flat_map(&:slots).filter_map(&:choices)).to be_empty
+    end
+
+    it 'shows what was just sent instead of what is stored, with the messages about it' do
+      values['CAPTAIN_DEFAULT_MODEL'] = 'openai/gpt-6-luna'
+      page = described_class.new(keys: keys, values: values, definitions: definitions, masked_keys: masked_keys,
+                                 submitted: { 'CAPTAIN_DEFAULT_MODEL' => 'vendor/bad' }, errors: { 'CAPTAIN_DEFAULT_MODEL' => ['not found'] })
+      card = page.slot('CAPTAIN_DEFAULT_MODEL')
+
+      expect(card).to have_attributes(value: 'openai/gpt-6-luna', input: 'vendor/bad', errors: ['not found'], invalid?: true)
+      expect(page.errors?).to be(true)
+      expect(page.slot('CAPTAIN_MODERATION_MODEL')).to have_attributes(invalid?: false)
+    end
+
+    it 'never carries a secret in what is shown' do
+      values['CAPTAIN_OPENROUTER_API_KEY'] = 'sk-secret-value'
+      page = described_class.new(keys: keys, values: values, definitions: definitions, masked_keys: masked_keys,
+                                 submitted: { 'CAPTAIN_OPENROUTER_API_KEY' => 'sk-typed' })
+
+      expect(page.slot('CAPTAIN_OPENROUTER_API_KEY')).to have_attributes(input: nil, value: nil, configured: true)
     end
   end
 end

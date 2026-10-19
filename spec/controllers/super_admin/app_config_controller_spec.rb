@@ -29,6 +29,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
 
       it 'shows OpenRouter captain config fields and the collapsed diagnostics for enterprise plan' do
         allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
+        upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'sk-test-key')
         sign_in(super_admin, scope: :super_admin)
 
         get '/super_admin/app_config?config=captain'
@@ -39,12 +40,12 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           'CAPTAIN_OPENROUTER_API_KEY',
           'Адрес OpenRouter',
           'CAPTAIN_OPENROUTER_ENDPOINT',
-          'Диагностика OpenRouter',
+          'Подробности для разработчика',
           'Каталог моделей',
           'Провайдеры',
-          'События за 24 часа',
-          'Обновить каталог моделей',
-          'Проверить ключ и кредиты'
+          'Расход за сутки',
+          'Обновить каталог',
+          'Проверить ключ и баланс'
         )
         diagnostics = Nokogiri::HTML(response.body).at_css('details#openrouter-diagnostics')
         expect(diagnostics['open']).to be_nil
@@ -192,8 +193,8 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
 
           expect(response).to have_http_status(:success)
           expect(response.body).to include(*model_config_names, 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')
-          expect(response.body).to include('Короткий список моделей для основного агента', 'Модель расшифровки голоса')
-          expect(response.body).to include('Модель определения языка клиента')
+          expect(response.body).to include('Короткий список моделей', 'Расшифровка голоса')
+          expect(response.body).to include('Язык клиента')
         end
 
         it 'lists the same fields on the community plan config page' do
@@ -281,26 +282,31 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           expect(Llm::Models.configured_model_allowlist).to be_nil
         end
 
+        # The page is saved all or nothing: a refused value shows again in its card (422) and nothing is written.
+        def refused(key)
+          Nokogiri::HTML(response.body).at_css(%([data-error-for="#{key}"]))&.text.to_s.squish
+        end
+
         it 'rejects a short list entry that is not in the model catalog and keeps the old list' do
           upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-6-luna"]')
 
           post '/super_admin/app_config?config=captain',
                params: { app_config: { CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: '["openai/gpt-6-luna", "vendor/not-in-catalog"]' } }
 
-          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
-          expect(flash[:alert]).to include('vendor/not-in-catalog')
+          expect(response).to have_http_status(:unprocessable_entity)
+          expect(refused('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')).to include('vendor/not-in-catalog')
           expect(InstallationConfig.find_by(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')&.value).to eq('["openai/gpt-6-luna"]')
         end
 
-        it 'rejects a short list that is not a JSON array of model ids' do
+        it 'rejects a short list that is not a list of model ids' do
           original_value = '["openai/gpt-6-luna","openai/gpt-5.6-luna"]'
           upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', original_value)
 
           ['{not json', '{"model": "openai/gpt-6-luna"}', '[1, 2]'].each do |value|
             post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: value } }
 
-            expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
-            expect(flash[:alert]).to include('JSON')
+            expect(response).to have_http_status(:unprocessable_entity)
+            expect(refused('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')).to include('Список моделей не распознан')
           end
           expect(InstallationConfig.find_by(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')&.value).to eq(original_value)
         end
@@ -311,8 +317,8 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
 
           post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: models.to_json } }
 
-          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
-          expect(flash[:alert]).to include(limit.to_s)
+          expect(response).to have_http_status(:unprocessable_entity)
+          expect(refused('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')).to include("не больше #{limit} моделей")
         end
 
         it 'rejects a short list without the default AI agent model' do
@@ -324,8 +330,8 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: '["openai/gpt-5.6-luna"]' } }
 
           expect(default_model).to eq('openai/gpt-6-luna')
-          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
-          expect(flash[:alert]).to include(default_model)
+          expect(response).to have_http_status(:unprocessable_entity)
+          expect(refused('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')).to include(default_model)
           expect(Llm::Models.configured_model_allowlist).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
         end
 
@@ -346,24 +352,29 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           ['vendor/not-in-catalog', 'openai/gpt-4o-mini-transcribe', 'openai/gpt-5.6-luna'].each do |value|
             post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_DEFAULT_MODEL: value } }
 
-            expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
-            expect(flash[:alert]).to include('CAPTAIN_DEFAULT_MODEL')
+            expect(response).to have_http_status(:unprocessable_entity)
+            expect(refused('CAPTAIN_DEFAULT_MODEL')).to include(value).or include('должна быть в коротком списке')
           end
           expect(InstallationConfig.find_by(name: 'CAPTAIN_DEFAULT_MODEL')&.value).to eq('openai/gpt-6-luna')
         end
 
-        it 'rejects a model slot whose model is unknown or unfit for the feature' do
+        it 'rejects a model slot whose model is unknown or unfit for the feature, and saves nothing of what was sent with it' do
           upsert_installation_config('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL', 'openai/gpt-4o-mini-transcribe')
           upsert_installation_config('CAPTAIN_IMAGE_RECOGNITION_MODEL', 'openai/gpt-5.4-mini')
+          upsert_installation_config('CAPTAIN_LABEL_SUGGESTION_MODEL', 'openai/gpt-5.6-luna')
 
           post '/super_admin/app_config?config=captain', params: {
-            app_config: { CAPTAIN_AUDIO_TRANSCRIPTION_MODEL: 'openai/gpt-5.4', CAPTAIN_IMAGE_RECOGNITION_MODEL: 'vendor/not-in-catalog' }
+            app_config: { CAPTAIN_AUDIO_TRANSCRIPTION_MODEL: 'openai/gpt-5.4', CAPTAIN_IMAGE_RECOGNITION_MODEL: 'vendor/not-in-catalog',
+                          CAPTAIN_LABEL_SUGGESTION_MODEL: 'openai/gpt-6-luna' }
           }
 
-          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
-          expect(flash[:alert]).to include('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL', 'CAPTAIN_IMAGE_RECOGNITION_MODEL')
+          expect(response).to have_http_status(:unprocessable_entity)
+          expect(refused('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')).to include('openai/gpt-5.4')
+          expect(refused('CAPTAIN_IMAGE_RECOGNITION_MODEL')).to include('vendor/not-in-catalog')
           expect(InstallationConfig.find_by(name: 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')&.value).to eq('openai/gpt-4o-mini-transcribe')
           expect(InstallationConfig.find_by(name: 'CAPTAIN_IMAGE_RECOGNITION_MODEL')&.value).to eq('openai/gpt-5.4-mini')
+          # the valid setting that was sent with the refused ones is not saved either: all or nothing
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_LABEL_SUGGESTION_MODEL')&.value).to eq('openai/gpt-5.6-luna')
         end
       end
 

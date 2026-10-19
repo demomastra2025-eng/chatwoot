@@ -17,25 +17,24 @@ RSpec.describe 'Super admin settings pages', type: :request do
     node.text.squish
   end
 
-  def slot(key)
-    page.at_css(%([data-testid="ai-models-form"] [data-config="#{key}"]))
-  end
-
   def field(key)
     page.at_css(%([data-testid="config-fields"] [data-config="#{key}"]))
+  end
+
+  def card(key)
+    page.at_css(%([data-testid="ai-models-form"] [data-config~="#{key}"]))
   end
 
   describe 'the AI models page' do
     let(:groups) do
       {
+        'connection' => 'Подключение к OpenRouter',
         'agent' => 'Основная модель агентов',
-        'safety' => 'Модерация и защита',
-        'knowledge' => 'Поиск по базе знаний',
-        'voice' => 'Голос и расшифровка',
-        'images' => 'Картинки',
-        'classifiers' => 'Классификаторы и служебные модели',
-        'connection' => 'Подключение и лимиты',
-        'prompts' => 'Системные промпты'
+        'safety' => 'Проверка безопасности',
+        'voice' => 'Расшифровка голоса',
+        'images' => 'Распознавание картинок',
+        'classifiers' => 'Служебные модели: итоги диалога, язык, метки',
+        'prompts' => 'Правила платформы для всех агентов'
       }
     end
 
@@ -45,6 +44,20 @@ RSpec.describe 'Super admin settings pages', type: :request do
       expect(response).to have_http_status(:ok)
       expect(text(page.at_css('h1'))).to eq('Модели ИИ')
       expect(response.body).not_to include('translation missing')
+    end
+
+    it 'has the tabs «Подключение», «Модели», «Промпты», and all three panels are in the one form' do
+      expect(page.css('[data-testid="ai-models-form"] [data-tab-panel]').pluck('data-tab-panel')).to eq(%w[connection models prompts])
+      expect(page.css('[data-tablist] [role="tab"]').map { |tab| text(tab) }).to eq(%w[Подключение Модели Промпты])
+      expect(page.css('form#ai-models-form').size).to eq(1)
+    end
+
+    it 'puts the key of OpenRouter and its state first' do
+      first_panel = page.at_css('[data-testid="ai-models-form"] [data-tab-panel]')
+
+      expect(first_panel['data-tab-panel']).to eq('connection')
+      expect(first_panel.at_css('[data-testid="diagnostics-key"]')).to be_present
+      expect(first_panel.at_css('input#app_config_CAPTAIN_OPENROUTER_API_KEY')).to be_present
     end
 
     it 'groups the cards by purpose, in the order of the page' do
@@ -57,27 +70,43 @@ RSpec.describe 'Super admin settings pages', type: :request do
       keys = SuperAdmin::AppConfigsController::CAPTAIN_CONFIG_KEYS
 
       keys.each do |key|
-        expect(page.css(%([data-testid="ai-models-form"] [data-config="#{key}"])).size).to eq(1), "card of #{key}"
+        expect(page.css(%([data-testid="ai-models-form"] [data-config~="#{key}"])).size).to eq(1), "card of #{key}"
+      end
+      (keys - %w[CAPTAIN_DEFAULT_MODEL CAPTAIN_ASSISTANT_MODEL_ALLOWLIST]).each do |key|
         expect(page.css(%([name="app_config[#{key}]"])).size).to eq(1), "control of #{key}"
       end
     end
 
-    it 'gives every card a Russian title and keeps the technical name as a small caption' do
-      card = slot('CAPTAIN_DEFAULT_MODEL')
-
-      expect(text(card.at_css('.admin-slot__title'))).to eq('Модель ИИ по умолчанию')
-      expect(text(card.at_css('.admin-field__key'))).to eq('CAPTAIN_DEFAULT_MODEL')
-      expect(text(slot('CAPTAIN_OPENROUTER_API_KEY').at_css('.admin-slot__title'))).to eq('Ключ OpenRouter')
+    it 'gives every card a Russian title in plain words' do
+      expect(text(card('CAPTAIN_MODERATION_MODEL').at_css('.admin-slot__title'))).to eq('Проверка безопасности ответов')
+      expect(text(card('CAPTAIN_EMBEDDING_MODEL').at_css('.admin-slot__title'))).to eq('Поиск по базе знаний (индексация)')
+      expect(text(card('CAPTAIN_OPENROUTER_MANAGEMENT_API_KEY').at_css('.admin-slot__title'))).to eq('Ключ OpenRouter для проверки баланса (необязательно)')
+      expect(text(card('CAPTAIN_FIRECRAWL_API_KEY').at_css('.admin-slot__title'))).to eq('Загрузка сайтов в базу знаний (FireCrawl, необязательно)')
+      expect(text(card('CAPTAIN_OPENROUTER_API_KEY').at_css('.admin-slot__title'))).to eq('Ключ OpenRouter')
     end
 
-    it 'keeps English display titles out of the cards' do
-      titles = page.css('.admin-slot__title').map { |node| text(node) }
+    it 'keeps jargon and English display titles out of the cards' do
+      titles = page.css('.admin-slot__title').map { |node| text(node) }.join(' ')
 
-      expect(titles).not_to include('OpenRouter API Key', 'AI Agent Global System Prompt', 'AI Tokens Limit')
+      expect(titles).not_to match(/эмбеддинг|guardrail|слот|Management|OpenRouter API Key|AI Agent Global System Prompt|AI Tokens Limit/i)
+    end
+
+    it 'shows the technical names only under the switch «Показать технические имена»' do
+      toggle = page.at_css('input[data-tech-toggle]')
+      names = page.css('[data-tech-name]')
+
+      expect(toggle).to be_present
+      expect(text(toggle.parent)).to eq('Показать технические имена')
+      expect(names.size).to be > 10
+      expect(names.map { |node| text(node) }).to include('CAPTAIN_MODERATION_MODEL', 'CAPTAIN_DEFAULT_MODEL · CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')
     end
 
     it 'does not offer the legacy direct-provider keys' do
       expect(response.body).not_to include('CAPTAIN_OPEN_AI_API_KEY', 'CAPTAIN_ANTHROPIC_API_KEY', 'CAPTAIN_GEMINI_API_KEY')
+    end
+
+    it 'has the entry of the scripts of the page' do
+      expect(response.body).to match(%r{superadmin_ai_models})
     end
   end
 
@@ -90,35 +119,34 @@ RSpec.describe 'Super admin settings pages', type: :request do
       get '/super_admin/app_config?config=captain'
     end
 
-    it 'says «Задано» and shows the value in force for a setting the platform has set' do
-      card = slot('CAPTAIN_DEFAULT_MODEL')
+    it 'says «Вы выбрали» and offers to put the built-in model back for a setting the platform has set' do
+      agents = card('CAPTAIN_DEFAULT_MODEL')
 
-      expect(card['data-source']).to eq('set')
-      expect(text(card.at_css('[data-testid="slot-source"]'))).to eq('Задано')
-      facts = text(card.at_css('[data-testid="slot-facts"]'))
-      expect(facts).to include('Действует', 'openai/gpt-5.6-luna', 'По умолчанию', Llm::Config::DEFAULT_MODEL)
-      expect(card.at_css('input[name="app_config[CAPTAIN_DEFAULT_MODEL]"]')['value']).to eq('openai/gpt-5.6-luna')
+      expect(agents['data-source']).to eq('set')
+      status = agents.at_css('[data-testid="slot-status"]')
+      expect(text(status)).to include('Вы выбрали: GPT-5.6 Luna', 'Вернуть встроенную')
+      expect(agents.at_css('input[type="radio"][value="openai/gpt-5.6-luna"]')['checked']).to be_present
     end
 
-    it 'says «По умолчанию» and names the built-in model for a blank slot' do
-      card = slot('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')
+    it 'says «Используется встроенная» and names the built-in model for a blank slot' do
+      voice = card('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')
 
-      expect(card['data-source']).to eq('default')
-      expect(text(card.at_css('[data-testid="slot-source"]'))).to eq('По умолчанию')
-      expect(text(card.at_css('[data-testid="slot-facts"]'))).to include('Действует по умолчанию', 'openai/gpt-4o-mini-transcribe')
-      expect(card.at_css('input')['placeholder']).to eq('openai/gpt-4o-mini-transcribe')
+      expect(voice['data-source']).to eq('default')
+      expect(text(voice.at_css('[data-testid="slot-status"]'))).to eq('Используется встроенная: GPT-4o Mini Transcribe')
+      expect(voice.at_css('select option[value=""]')['selected']).to be_present
+      expect(text(voice.at_css('select option[value=""]'))).to eq('Встроенная: GPT-4o Mini Transcribe')
     end
 
-    it 'says a blank slot follows the default model of the installation when that is its built-in value' do
-      facts = text(slot('CAPTAIN_IMAGE_RECOGNITION_MODEL').at_css('[data-testid="slot-facts"]'))
-
-      expect(facts).to include('openai/gpt-5.6-luna', 'как у «Модели ИИ по умолчанию»')
+    it 'follows the default model of the installation for a blank slot when that is its built-in value' do
+      expect(text(card('CAPTAIN_IMAGE_RECOGNITION_MODEL').at_css('[data-testid="slot-status"]'))).to eq('Используется встроенная: GPT-5.6 Luna')
     end
 
-    it 'lists the models of the short list one by one' do
-      chips = slot('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST').css('.admin-chip').map { |chip| text(chip) }
+    it 'ticks the models of the short list and no others' do
+      agents = card('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')
+      ticked = agents.css('input[type="checkbox"][checked]').pluck('value')
 
-      expect(chips).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
+      expect(ticked).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
+      expect(text(agents.at_css('[data-counter]'))).to eq('2 из 12')
     end
   end
 
@@ -129,9 +157,9 @@ RSpec.describe 'Super admin settings pages', type: :request do
 
       get '/super_admin/app_config?config=captain'
 
-      card = slot('CAPTAIN_OPENROUTER_API_KEY')
-      expect(text(card.at_css('[data-testid="slot-source"]'))).to eq('Задан')
-      input = card.at_css('input[type="password"]')
+      secret_card = card('CAPTAIN_OPENROUTER_API_KEY')
+      expect(text(secret_card.at_css('[data-testid="slot-source"]'))).to eq('Задан')
+      input = secret_card.at_css('input[type="password"]')
       expect(input['value']).to be_nil
       expect(input['placeholder']).to eq('Задан — оставьте пустым, чтобы не менять')
       expect(response.body).not_to include('sk-test-openrouter-secret', 'fc-test-firecrawl-secret')
@@ -142,20 +170,20 @@ RSpec.describe 'Super admin settings pages', type: :request do
 
       get '/super_admin/app_config?config=captain'
 
-      expect(text(slot('CAPTAIN_FIRECRAWL_API_KEY').at_css('[data-testid="slot-source"]'))).to eq('Не задан')
+      expect(text(card('CAPTAIN_FIRECRAWL_API_KEY').at_css('[data-testid="slot-source"]'))).to eq('Не задан')
     end
   end
 
-  describe 'the diagnostics of OpenRouter' do
+  describe 'OpenRouter in plain words, and the details for a developer' do
     let(:diagnostics) do
       {
         key_status: { effective_configured: true, global_configured: true, account_configured: false,
-                      health: { status: 'credits_exhausted', checked_at: '2026-10-15T12:05:09Z', key: { key_type: 'inference' },
-                                credits: { status: 'management_key_required' } } },
-        catalog: { refresh_status: 'success', source: 'openrouter_api', last_refreshed_at: '2026-10-15T12:05:09Z', total_models: 1200,
+                      health: { status: 'valid', checked_at: '2026-10-15T12:05:09Z', key: { key_type: 'inference', limit: '50', limit_remaining: '12.5' },
+                                credits: { status: 'available', remaining_credits: 12.5, total_credits: 100, total_usage: 87.5 } } },
+        catalog: { refresh_status: 'success', source: 'openrouter_api', using_fallback: false, last_refreshed_at: '2026-10-15T12:05:09Z', total_models: 1200,
                    counts_by_type: { chat: 1000, embedding: 20 }, stale_models: 2, disabled_models: 0, last_refresh_diff: {} },
         endpoints: { refresh_status: 'running', total_endpoints: 3400, providers: %w[azure openai] },
-        runtime: { total_events: 10, request_count: 8, error_count: 1, provider_failure_count: 0, estimated_cost: 0.5 },
+        runtime: { total_events: 10, request_count: 8, error_count: 1, provider_failure_count: 0, estimated_cost: 0.42 },
         features: { 'assistant' => { available_model_count: 7, selected_model: 'openai/gpt-6-luna', default_model: 'openai/gpt-6-luna' } }
       }
     end
@@ -169,23 +197,26 @@ RSpec.describe 'Super admin settings pages', type: :request do
       page.at_css('details#openrouter-diagnostics')
     end
 
-    it 'is collapsed and titled «Диагностика OpenRouter»' do
+    it 'says whether the key works, the balance, the spend and the catalog, with the currency' do
+      expect(text(page.at_css('[data-testid="diagnostics-key"]'))).to include('Рабочий', 'Ключ рабочий.', 'Проверен 15.10.2026 17:05')
+      expect(text(page.at_css('[data-testid="diagnostics-credits"]'))).to include('$12,50 осталось', 'Лимит ключа: $50,00, осталось $12,50')
+      expect(text(page.at_css('[data-testid="diagnostics-events"]'))).to include('$0,42', '8 запросов, ошибок: 1')
+      expect(text(page.at_css('[data-testid="diagnostics-catalog"]'))).to include('Загружен 15.10.2026 17:05', '1 200 моделей')
+    end
+
+    it 'keeps the two actions next to what they refresh' do
+      expect(page.at_css('[data-testid="diagnostics-key"] button[form="ai-check-key-form"]')).to be_present
+      expect(page.at_css('[data-testid="diagnostics-catalog"] button[form="ai-refresh-catalog-form"]')).to be_present
+      expect(page.at_css('form#ai-check-key-form')['action']).to eq('/super_admin/app_config/refresh_openrouter_key_health?config=captain')
+      expect(page.at_css('form#ai-refresh-catalog-form')['action']).to eq('/super_admin/app_config/refresh_openrouter_models?config=captain')
+    end
+
+    it 'puts the details under «Для разработчика», folded, with the statuses in Russian' do
+      expect(page.at_css('details#ai-developer')['open']).to be_nil
+      expect(page.at_css('details#ai-developer').css('details#openrouter-diagnostics')).to be_present
       expect(block['open']).to be_nil
-      expect(text(block.at_css('summary'))).to include('Диагностика OpenRouter')
-    end
-
-    it 'keeps the two actions' do
-      forms = block.css('form').pluck('action')
-
-      expect(forms).to contain_exactly('/super_admin/app_config/refresh_openrouter_key_health?config=captain',
-                                       '/super_admin/app_config/refresh_openrouter_models?config=captain')
-      expect(text(block)).to include('Проверить ключ и кредиты', 'Обновить каталог моделей')
-    end
-
-    it 'names the statuses in Russian instead of showing their codes' do
-      expect(text(block.at_css('[data-testid="diagnostics-key"]'))).to include('Кредиты закончились', 'тип: inference')
-      expect(text(block.at_css('[data-testid="diagnostics-credits"]'))).to include('Нужен management-ключ', 'нужен management-ключ')
-      expect(text(block.at_css('[data-testid="diagnostics-catalog"]'))).to include('обновлён', 'API OpenRouter', 'чат: 1000', 'эмбеддинги: 20')
+      expect(text(block.at_css('summary'))).to include('Подробности для разработчика')
+      expect(text(block.at_css('[data-testid="diagnostics-catalog-details"]'))).to include('обновлён', 'каталог OpenRouter', 'чат: 1 000')
       expect(text(block.at_css('[data-testid="diagnostics-providers"]'))).to include('обновляется', 'azure, openai')
       expect(text(block)).not_to match(/credits_exhausted|management_key_required|openrouter_api/)
     end
@@ -197,7 +228,24 @@ RSpec.describe 'Super admin settings pages', type: :request do
     end
 
     it 'shows moments in Astana time and numbers with a space between thousands' do
-      expect(text(block)).to include('15.10.2026 17:05', '1 200')
+      expect(text(block)).to include('15.10.2026 17:05', '3 400')
+    end
+
+    context 'when the key is missing and the catalog was never loaded' do
+      let(:diagnostics) do
+        {
+          key_status: { effective_configured: false, health: {} },
+          catalog: { using_fallback: true, total_models: 170, refresh_status: 'not_refreshed' }, endpoints: {}, runtime: {}, features: {}
+        }
+      end
+
+      it 'says so without a number that looks like an emergency, and offers no check of a key that is not there' do
+        expect(text(page.at_css('[data-testid="diagnostics-key"]'))).to include('Не задан', 'Ключ не задан. Без него ИИ-агенты не отвечают.')
+        expect(text(page.at_css('[data-testid="diagnostics-credits"]'))).to include('Баланс неизвестен')
+        expect(text(page.at_css('[data-testid="diagnostics-catalog"]'))).to include('Не загружен', 'встроенный список платформы (170)')
+        expect(page.at_css('button[form="ai-check-key-form"]')).to be_nil
+        expect(text(page.at_css('[data-testid="catalog-source"]'))).to include('Ключ OpenRouter не задан')
+      end
     end
   end
 
@@ -324,17 +372,21 @@ RSpec.describe 'Super admin settings pages', type: :request do
       expect(flash[:notice]).to eq('Настройки «Facebook & Messenger» сохранены.')
     end
 
-    it 'names the setting with its Russian title and technical name when a model is refused' do
+    it 'says in the card of the setting, in Russian, that a model is refused, and counts what was refused' do
       post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_DEFAULT_MODEL: 'vendor/not-in-catalog' } }
 
-      expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
-      expect(alert).to include('Модель ИИ по умолчанию (CAPTAIN_DEFAULT_MODEL): модель «vendor/not-in-catalog» не найдена')
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(Nokogiri::HTML(response.body).at_css('.flash-alert').text.squish).to eq('Ничего не сохранено: исправьте 1 настройку, она отмечена красным.')
+      message = Nokogiri::HTML(response.body).at_css('[data-error-for="CAPTAIN_DEFAULT_MODEL"]')
+      expect(message.text.squish).to include('Модель «vendor/not-in-catalog» не найдена')
     end
 
-    it 'refuses system prompts that are not JSON, in Russian' do
+    it 'refuses system prompts that are not JSON, in Russian, in the card of the rules' do
       post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_SYSTEM_PROMPTS: '{not json' } }
 
-      expect(alert).to eq('Системные промпты платформы должны быть корректным JSON.')
+      expect(response).to have_http_status(:unprocessable_entity)
+      message = Nokogiri::HTML(response.body).at_css('[data-error-for="CAPTAIN_SYSTEM_PROMPTS"]')
+      expect(message.text.squish).to eq('Правила не удалось прочитать. Обновите страницу и повторите.')
     end
 
     it 'refuses a webhook routing value that is not a JSON object, in Russian' do

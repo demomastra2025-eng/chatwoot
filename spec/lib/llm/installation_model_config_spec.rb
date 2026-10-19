@@ -127,7 +127,7 @@ RSpec.describe Llm::InstallationModelConfig do
       result = described_class.normalize(config_name, 'openai/gpt-4o-mini-transcribe')
 
       expect(result).not_to be_valid
-      expect(result.error).to include('openai/gpt-4o-mini-transcribe', 'assistant')
+      expect(result.error).to include('openai/gpt-4o-mini-transcribe', 'основного агента', 'редактора текста', 'помощника оператора')
     end
 
     it 'rejects a model that is not on the short list the platform curated' do
@@ -135,6 +135,14 @@ RSpec.describe Llm::InstallationModelConfig do
 
       expect(described_class.normalize(config_name, 'openai/gpt-5.6-luna')).not_to be_valid
       expect(described_class.normalize(config_name, 'openai/gpt-6-luna')).to be_valid
+    end
+
+    it 'checks the model against the short list that is about to be saved, not the stored one' do
+      upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-6-luna"]')
+
+      expect(described_class.normalize(config_name, 'openai/gpt-5.6-luna', allowlist: %w[openai/gpt-5.6-luna])).to be_valid
+      expect(described_class.normalize(config_name, 'openai/gpt-6-luna', allowlist: %w[openai/gpt-5.6-luna])).not_to be_valid
+      expect(described_class.normalize(config_name, 'openai/gpt-5.6-luna', allowlist: nil)).to be_valid
     end
   end
 
@@ -171,6 +179,23 @@ RSpec.describe Llm::InstallationModelConfig do
       models = Array.new(described_class::ALLOWLIST_LIMIT + 1) { |index| "vendor/model-#{index}" }
 
       expect(described_class.normalize(config_name, models)).not_to be_valid
+    end
+
+    it 'checks the list against the default model that is about to be saved, not the stored one' do
+      expect(described_class.normalize(config_name, JSON.generate(['openai/gpt-5.6-luna']), default_model: 'openai/gpt-5.6-luna')).to be_valid
+      result = described_class.normalize(config_name, JSON.generate(['openai/gpt-5.6-luna']), default_model: 'openai/gpt-6-luna')
+
+      expect(result).not_to be_valid
+      expect(result.error).to include('openai/gpt-6-luna')
+      expect(described_class.normalize(config_name, JSON.generate(['openai/gpt-5.6-luna']), default_model: nil)).to be_valid
+    end
+
+    it 'keeps a model that is already stored valid even when the catalog does not list it any more' do
+      models = ['openai/gpt-6-luna', 'vendor/gone']
+
+      expect(described_class.normalize(config_name, JSON.generate(models), default_model: 'openai/gpt-6-luna')).not_to be_valid
+      expect(described_class.normalize(config_name, JSON.generate(models), default_model: 'openai/gpt-6-luna', trusted: ['vendor/gone']))
+        .to be_valid
     end
 
     it 'requires the default AI agent model to be on the list' do
