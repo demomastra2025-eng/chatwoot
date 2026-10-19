@@ -114,19 +114,23 @@ class SuperAdmin::AiModelOptions
 
   # builtin: the model the platform uses while the setting is blank; current: the value that is saved ('' for none)
   def choices_for(key, current: nil, builtin: nil)
-    features = SLOT_FEATURES[key]
-    ids = features ? candidates(features) : []
-    current = Llm::Models.canonical_model_name(current.to_s.strip).presence
-    missing = missing_option(current, ids)
-    grouped = group_options(ids.map { |model_id| option_for(model_id) })
-    Choices.new(builtin_name: self.class.name_of(builtin), builtin_id: builtin.presence, groups: grouped, missing: missing)
+    with_snapshots do
+      features = SLOT_FEATURES[key]
+      ids = features ? candidates(features) : []
+      current = Llm::Models.canonical_model_name(current.to_s.strip).presence
+      missing = missing_option(current, ids)
+      grouped = group_options(ids.map { |model_id| option_for(model_id) })
+      Choices.new(builtin_name: self.class.name_of(builtin), builtin_id: builtin.presence, groups: grouped, missing: missing)
+    end
   end
 
   # One model as an option of the list of a setting: with the mark «нет в каталоге» or «не подходит» when the list does not offer it
   def describe(model_id, key:)
-    model_id = Llm::Models.canonical_model_name(model_id)
-    offered = candidates(SLOT_FEATURES.fetch(key, []))
-    option_for(model_id, note: (offered.include?(model_id) ? nil : unavailable_note(model_id)))
+    with_snapshots do
+      model_id = Llm::Models.canonical_model_name(model_id)
+      offered = candidates(SLOT_FEATURES.fetch(key, []))
+      option_for(model_id, note: (offered.include?(model_id) ? nil : unavailable_note(model_id)))
+    end
   end
 
   # Every model that fits all the functions of a setting, in the order of the catalog
@@ -145,7 +149,7 @@ class SuperAdmin::AiModelOptions
     []
   end
 
-  # One catalog read for the whole list instead of one per model
+  # One catalog read for the whole list instead of one per model (it nests: inside a snapshot it is the same snapshot)
   def with_snapshots(&)
     Llm::OpenRouterModelCatalog.with_model_configs_snapshot do
       Llm::OpenRouterEndpointCatalog.with_endpoint_configs_snapshot do

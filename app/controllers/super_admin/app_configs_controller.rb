@@ -47,6 +47,8 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   before_action :set_config
   before_action :ensure_known_config
   before_action :allowed_configs
+  # The page of the AI models reads the catalog of models for every card: once for the whole request, not once per model
+  around_action :with_llm_snapshots, only: :show
   helper_method :masked_secret_config?
 
   def show
@@ -141,10 +143,12 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   # nothing is, and the page is shown again with what was sent and what is wrong with it.
   def create_ai_models
     stored = stored_app_config
-    form = SuperAdmin::AiModelsForm.new(
-      submitted: params.fetch('app_config', {}).to_unsafe_h, stored: stored, keys: @allowed_configs,
-      masked_keys: @allowed_configs.select { |key| masked_secret_config?(key) }, confirmed_embedding: params[:confirm_embedding_change] == '1'
-    )
+    form = with_llm_snapshots do
+      SuperAdmin::AiModelsForm.new(
+        submitted: params.fetch('app_config', {}).to_unsafe_h, stored: stored, keys: @allowed_configs,
+        masked_keys: @allowed_configs.select { |key| masked_secret_config?(key) }, confirmed_embedding: params[:confirm_embedding_change] == '1'
+      )
+    end
     errors = form.save(actor: current_super_admin, request: request)
     return render_ai_models_errors(form, errors) if errors.any?
 
@@ -169,9 +173,23 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   end
 
   def render_ai_models_errors(form, errors)
-    prepare_show(form: form)
     flash.now[:alert] = flash_text(:not_saved, count: errors.size)
-    render :show, status: :unprocessable_content
+    with_llm_snapshots do
+      prepare_show(form: form)
+      render :show, status: :unprocessable_content
+    end
+  end
+
+  # One read of the catalog of models, of the endpoints and of the settings of the platform for everything inside. Nothing
+  # that saves a setting goes in: it would read the settings as they were before.
+  def with_llm_snapshots(&)
+    return yield unless @config == 'captain'
+
+    Llm::OpenRouterModelCatalog.with_model_configs_snapshot do
+      Llm::OpenRouterEndpointCatalog.with_endpoint_configs_snapshot do
+        Llm::Config.with_runtime_cache(&)
+      end
+    end
   end
 
   # The entries of config/installation_config.yml by name: display title, description, type, options
