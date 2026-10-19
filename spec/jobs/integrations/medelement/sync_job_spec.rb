@@ -37,6 +37,7 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
     it 'routes provider reads and cleanup to the isolated sync queue' do
       jobs = [
         described_class,
+        Integrations::Medelement::ReceptionsDeltaJob,
         Integrations::Medelement::PatientEnrichmentJob,
         Integrations::Medelement::CleanupJob,
         Integrations::Medelement::DispatchJob
