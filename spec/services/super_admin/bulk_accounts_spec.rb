@@ -117,7 +117,7 @@ RSpec.describe SuperAdmin::BulkAccounts do
     end
 
     it 'stops starting accounts when its time is up, leaves the rest untouched and says so' do
-      done, late, later = Array.new(3) { create(:account, status: 'active') }
+      done, late, later = create_list(:account, 3, status: 'active')
       run_of_the_request = bulk('suspend', [done, late, later])
       allow(run_of_the_request).to receive(:out_of_time?).and_return(false, true, true)
 
@@ -131,7 +131,7 @@ RSpec.describe SuperAdmin::BulkAccounts do
     end
 
     it 'does not take a request timeout for an account that failed' do
-      first, second = Array.new(2) { create(:account, status: 'active') }
+      first, second = create_list(:account, 2, status: 'active')
       run_of_the_request = bulk('suspend', [first, second])
       allow(run_of_the_request.strategy).to receive(:perform).and_raise(Rack::Timeout::RequestTimeoutException.new({}))
 

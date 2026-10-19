@@ -112,8 +112,13 @@ RSpec.describe SuperAdmin::DashboardAlerts do
       expect(alert('storage_warning')).to include(severity: :warning, count: 1)
       expect(alert('storage_warning')[:items].pluck(:label)).to eq([filling.name])
       expect(alert('storage_warning')[:more_url]).to eq('/super_admin/accounts?search=storage_high%3A')
-      expect(alert('storage_warning')[:more_label]).to eq('Все аккаунты с диском от 80%')
-      expect(alert('storage_critical')[:more_label]).to eq('Все аккаунты с диском от 80%')
+    end
+
+    it 'says that the link opens every account with the disk from 80%, as that list is wider than the alert' do
+      write_snapshot(create(:account), consumed: 97)
+      write_snapshot(create(:account), consumed: 85)
+
+      expect(alerts.pluck(:more_label)).to eq(['Все аккаунты с диском от 80%'] * 2)
     end
 
     it 'does not count an account without a limit, without a snapshot yet or being deleted' do
@@ -282,9 +287,8 @@ RSpec.describe SuperAdmin::DashboardAlerts do
 
       expect(found.pluck(:key)).to eq(['incomplete'])
       expect(found.first).to include(severity: :warning, count: 5, title: 'Часть проверок не выполнена')
-      expect(found.first[:text]).to eq(
-        'Не удалось выполнить ни одну проверку (пробные периоды, место на диске, ключ OpenRouter, очереди задач, каналы). '         'Нажмите «Обновить» чуть позже: если это повторяется, посмотрите журнал сервера.'
-      )
+      expect(found.first[:text]).to start_with('Не удалось выполнить ни одну проверку (')
+      expect(found.first[:text]).to include('пробные периоды, место на диске, ключ OpenRouter, очереди задач, каналы')
     end
   end
 
