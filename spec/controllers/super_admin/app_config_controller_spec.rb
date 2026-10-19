@@ -193,7 +193,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
 
           expect(response).to have_http_status(:success)
           expect(response.body).to include(*model_config_names, 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')
-          expect(response.body).to include('Короткий список моделей', 'Расшифровка голоса')
+          expect(response.body).to include('Модель по умолчанию и короткий список', 'Расшифровка голоса')
           expect(response.body).to include('Язык клиента')
         end
 

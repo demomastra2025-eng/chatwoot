@@ -33,17 +33,19 @@ RSpec.describe 'Super Admin small fixes', type: :request do
   describe 'the prompt builder of the AI models page' do
     before { get '/super_admin/app_config?config=captain' }
 
-    it 'starts a new prompt without a group, and says in Russian what the empty group means' do
-      # «Strict rules» stays in the stored prompts (data); the script that adds a prompt does not name it
+    it 'starts a new prompt in the first group of a list, never from a group typed by hand' do
       expect(page.css('script').map(&:text).join).not_to include('Strict rules')
       group = page.at_css('#captain-system-prompts-builder template [data-field="group"]')
-      expect(group['placeholder']).to eq('Пусто — «Строгие правила»')
+      expect(group.name).to eq('select')
+      expect(text(group.at_css('option'))).to eq('Строгие правила')
     end
 
-    it 'explains the slot in Russian instead of a bare key as the placeholder' do
+    it 'explains the place of the prompt in Russian and chooses it from a list instead of a bare key' do
       slot = page.at_css('#captain-system-prompts-builder template [data-field="slot"]')
-      expect(slot['placeholder']).to eq('Необязательно')
-      expect(text(slot.parent)).to include('Код места в промпте агента, например assistant_system_context.')
+      expect(slot.name).to eq('select')
+      expect(text(slot.at_css('option'))).to eq('Обычное правило')
+      expect(text(slot.parent)).to include('Куда в промпте агента вставляется правило.')
+      expect(text(slot.parent)).not_to include('assistant_system_context')
     end
   end
 
@@ -93,10 +95,12 @@ RSpec.describe 'Super Admin small fixes', type: :request do
       expect(response).to redirect_to('/super_admin/app_config?config=general')
     end
 
-    it 'returns to the page where the values were refused' do
+    it 'shows the page again where the values were refused, with the message in the card' do
       post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_DEFAULT_MODEL: 'vendor/not-in-catalog' } }
 
-      expect(response).to redirect_to('/super_admin/app_config?config=captain')
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(text(page.at_css('h1'))).to eq('Модели ИИ')
+      expect(text(page.at_css('[data-error-for="CAPTAIN_DEFAULT_MODEL"]'))).to include('vendor/not-in-catalog')
     end
   end
 

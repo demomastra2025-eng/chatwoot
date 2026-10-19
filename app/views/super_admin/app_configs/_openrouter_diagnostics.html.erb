@@ -55,6 +55,9 @@ What a person needs (is the key working, the balance, the spend, is the catalog 
           <p class="admin-stat__note"><%= t("#{scope}.catalog_types", types: types.join(', ')) %></p>
         <% end %>
         <p class="admin-stat__note"><%= t("#{scope}.catalog_stale", stale: diagnostics_count(catalog[:stale_models]), disabled: diagnostics_count(catalog[:disabled_models])) %></p>
+        <% if catalog[:last_started_at].present? %>
+          <p class="admin-stat__note"><%= t("#{scope}.catalog_started", time: diagnostics_time(catalog[:last_started_at])) %></p>
+        <% end %>
       </div>
 
       <div class="admin-stat" data-testid="diagnostics-providers">

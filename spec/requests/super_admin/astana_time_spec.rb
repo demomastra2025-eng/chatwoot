@@ -69,7 +69,7 @@ RSpec.describe 'Super Admin times in Astana time', type: :request do
       get '/super_admin/app_config?config=captain'
 
       section = Nokogiri::HTML(response.body).at_css('#openrouter-diagnostics').text.squish
-      expect(section).to include('Проверен: никогда', 'неизвестно')
+      expect(section).to include('Никогда', 'нет')
       expect(section).not_to match(/\bnever\b|\bunknown\b|\bnot_checked\b|\bmissing\b/)
     end
   end
