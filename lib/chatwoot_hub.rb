@@ -12,7 +12,9 @@ class ChatwootHub
   # registration at the onboarding. The relay of push notifications (`send_push`) is a function the installation may
   # rely on, not telemetry, and does not depend on this switch.
   def self.sync_enabled?
-    ActiveModel::Type::Boolean.new.cast(ENV.fetch('ENABLE_CHATWOOT_HUB_SYNC', nil)) == true
+    # Only an explicit yes counts: a typo or an unknown word must not switch the telemetry on (ActiveModel would read
+    # «maybe» as true)
+    %w[1 true yes on].include?(ENV.fetch('ENABLE_CHATWOOT_HUB_SYNC', '').to_s.strip.downcase)
   end
 
   def self.ping_url

@@ -22,7 +22,7 @@ describe ChatwootHub do
     end
 
     it 'is off for anything that is not an explicit yes' do
-      ['', 'false', '0', 'no', 'maybe'].each do |value|
+      ['', 'false', '0', 'no', 'off', 'maybe', 'tru'].each do |value|
         with_modified_env ENABLE_CHATWOOT_HUB_SYNC: value do
           expect(described_class.sync_enabled?).to be(false), value.inspect
         end
@@ -30,7 +30,7 @@ describe ChatwootHub do
     end
 
     it 'is on for an explicit yes' do
-      %w[true 1 TRUE].each do |value|
+      %w[true 1 TRUE yes on].each do |value|
         with_modified_env ENABLE_CHATWOOT_HUB_SYNC: value do
           expect(described_class.sync_enabled?).to be(true), value
         end
