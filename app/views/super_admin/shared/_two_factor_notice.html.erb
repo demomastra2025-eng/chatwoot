@@ -11,7 +11,7 @@ second step cannot be enabled at all, and the notice says that instead.
 - `super_admin`: the signed-in super admin.
 %>
 <% unless super_admin.mfa_enabled? %>
-  <section class="flex flex-col gap-1.5 rounded-xl bg-n-amber-2 px-4 py-3 text-sm text-n-amber-11 outline outline-1 -outline-offset-1 outline-n-amber-4" role="status" data-testid="two-factor-notice">
+  <section class="mb-5 flex flex-col gap-1.5 rounded-xl bg-n-amber-2 px-4 py-3 text-sm text-n-amber-11 outline outline-1 -outline-offset-1 outline-n-amber-4" role="status" data-testid="two-factor-notice">
     <h2 class="m-0 text-heading-3 text-n-amber-11"><%= t('super_admin.two_factor.notice.title') %></h2>
     <p class="m-0"><%= t(Chatwoot.mfa_enabled? ? 'super_admin.two_factor.notice.how_to' : 'super_admin.two_factor.notice.unavailable') %></p>
     <% if Chatwoot.mfa_enabled? %>

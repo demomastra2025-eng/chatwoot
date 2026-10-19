@@ -51,7 +51,7 @@ basic facts, organization, maintenance.
   <%# A deletion that is scheduled is the first thing to see, with the way to take it back (SuperAdmin::AccountDeletion). %>
   <% deletion = SuperAdmin::AccountDeletion.new(account: account) %>
   <% if deletion.scheduled? %>
-    <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-n-ruby-2 px-4 py-3 text-sm text-n-ruby-11 outline outline-1 -outline-offset-1 outline-n-ruby-4" role="alert" data-testid="deletion-banner">
+    <div class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-n-ruby-2 px-4 py-3 text-sm text-n-ruby-11 outline outline-1 -outline-offset-1 outline-n-ruby-4" role="alert" data-testid="deletion-banner">
       <span><%= t('super_admin.clinic_card.deletion.banner', date: super_admin_time(deletion.deletion_at)) %></span>
       <%= button_to t('super_admin.clinic_card.deletion.cancel'), cancel_deletion_super_admin_account_path(account), method: :post,
                     class: 'button button--small button--secondary', form_class: 'inline-block',
