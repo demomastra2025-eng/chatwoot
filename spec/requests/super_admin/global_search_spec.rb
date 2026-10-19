@@ -71,12 +71,17 @@ RSpec.describe 'Super admin search', type: :request do
         expect(page.at_css('main h1').text.squish).to eq('Поиск')
         expect(page.at_css('main .main-content__description').text.squish).to eq('Результаты по запросу «АЛАТАУ»')
         expect(page.css('[data-testid^="search-group-"]').map { |node| node.at_css('h2').text.squish }).to eq(%w[Аккаунты Пользователи Организации])
-        expect(group(:accounts).at_css('a')['href']).to eq("/super_admin/accounts/#{alatau.id}")
         expect(group(:accounts).text).to include('Клиника «Алатау»', "##{alatau.id}")
-        expect(group(:users).at_css('a')['href']).to eq("/super_admin/users/#{ivan.id}")
         expect(group(:users).text).to include('ivan@example.test', 'Иван Алатауов', 'в 1 аккаунте')
-        expect(group(:organizations).at_css('a')['href']).to eq("/super_admin/organizations/#{organization.id}")
         expect(group(:organizations).text).to include('Алатау Медикал', "БИН #{organization.bin}")
+      end
+
+      it 'links each result to its card' do
+        get '/super_admin/search', params: { q: 'АЛАТАУ' }
+
+        expect(group(:accounts).at_css('a')['href']).to eq("/super_admin/accounts/#{alatau.id}")
+        expect(group(:users).at_css('a')['href']).to eq("/super_admin/users/#{ivan.id}")
+        expect(group(:organizations).at_css('a')['href']).to eq("/super_admin/organizations/#{organization.id}")
       end
 
       it 'finds an organization by the БИН' do
@@ -138,12 +143,7 @@ RSpec.describe 'Super admin search', type: :request do
         end
         many = sql_queries_during { get '/super_admin/search', params: { q: 'алатау' } }
 
-        expect(many.size).to eq(few.size), "few:
-#{few.join("
-")}
-many:
-#{many.join("
-")}"
+        expect(many.size).to eq(few.size), ['few:', *few, 'many:', *many].join("\n")
       end
     end
   end

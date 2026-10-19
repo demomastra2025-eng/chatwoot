@@ -4,6 +4,7 @@ require 'rails_helper'
 
 RSpec.describe SuperAdmin::BulkAccounts do
   let(:actor) { create(:super_admin) }
+  let(:audit_state) { { floor: 0 } }
 
   def bulk(action, accounts, **options)
     ids = accounts.map { |account| account.respond_to?(:id) ? account.id : account }
@@ -16,12 +17,12 @@ RSpec.describe SuperAdmin::BulkAccounts do
 
   # Runs the action; the entries of the audit log that `audits` shows are the ones it wrote (not the ones of the setup)
   def run(bulk_run)
-    @audit_floor = Audited::Audit.maximum(:id).to_i
+    audit_state[:floor] = Audited::Audit.maximum(:id).to_i
     bulk_run.apply
   end
 
   def audits(account, action = nil)
-    scope = Audited::Audit.where(auditable_type: 'Account', auditable_id: account.id).where('id > ?', @audit_floor.to_i)
+    scope = Audited::Audit.where(auditable_type: 'Account', auditable_id: account.id).where('id > ?', audit_state[:floor])
     action ? scope.where(action: action) : scope
   end
 
@@ -257,6 +258,11 @@ RSpec.describe SuperAdmin::BulkAccounts do
       expect(audits(held).pluck(:action)).to eq(['link_organization'])
       expect(audits(held).first.audited_changes).to include('bulk' => true, 'organization_id' => [other.id, organization.id])
       expect(audits(held).first).to have_attributes(user_id: actor.id, comment: 'super_admin')
+    end
+
+    it 'leaves the entries of the organizations on both sides of a move' do
+      run(bulk('link_organization', [free, held], chosen: '1', organization_id: organization.id.to_s))
+
       expect(Audited::Audit.where(auditable: other, action: 'unlink_account').count).to eq(1)
       expect(Audited::Audit.where(auditable: organization, action: 'link_account').count).to eq(2)
     end

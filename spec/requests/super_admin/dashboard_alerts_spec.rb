@@ -41,7 +41,12 @@ RSpec.describe 'Super admin «Сводка»: Требует внимания', 
     expect(cards.first.at_css('a')['href']).to eq('/super_admin/monitoring?tab=queues')
     expect(cards.last.at_css('a')['href']).to eq("/super_admin/accounts/#{ending.id}")
     expect(cards.last.at_css('h3').text.squish).to eq('Пробный период заканчивается в ближайшие 3 дня')
-    expect(response.body.index('data-testid="dashboard-alerts"')).to be < response.body.index('id="app"')
+  end
+
+  it 'draws the block above the body of the page' do
+    get '/super_admin'
+
+    expect(response.body.index('data-testid="dashboard-alerts-clear"')).to be < response.body.index('id="app"')
   end
 
   it 'offers the whole list when there are more than ten' do

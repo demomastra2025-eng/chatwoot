@@ -46,14 +46,19 @@ class Accounts::ApplyPlan
 
   attr_reader :account, :modules
 
-  # audit_extra: more keys for the entry of the audit log (a bulk action marks its entries with `'bulk' => true`)
-  def initialize(account:, modules: [], actor: nil, request: nil, keep_existing_limits: false, audit_extra: {})
+  def initialize(account:, modules: [], actor: nil, request: nil, keep_existing_limits: false)
     @account = account
     @modules = normalize_modules(modules)
     @actor = actor
     @request = request
     @keep_existing_limits = keep_existing_limits
-    @audit_extra = audit_extra
+    @audit_extra = {}
+  end
+
+  # More keys for the entry of the audit log (a bulk action marks its entries with `'bulk' => true`). Returns the service.
+  def with_audit_extra(extra)
+    @audit_extra = extra
+    self
   end
 
   # No writes at all

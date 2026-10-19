@@ -476,7 +476,7 @@ RSpec.describe 'Super Admin account organizations', type: :request do
           get '/super_admin/accounts'
 
           headers = page.css('[data-testid="clinics-table"] thead th').map { |header| text(header) }
-          expect(headers).to eq(['', *%w[Аккаунт Организация Тариф Операторы Хранилище Каналы Статус Действия]]) # the first holds the tick
+          expect(headers).to eq(['', 'Аккаунт', 'Организация', 'Тариф', 'Операторы', 'Хранилище', 'Каналы', 'Статус', 'Действия'])
           expect(text(page.at_css("tr[data-account-id='#{free.id}']").css('td:not([data-bulk-cell])')[2])).to eq('Не назначен')
         end
 

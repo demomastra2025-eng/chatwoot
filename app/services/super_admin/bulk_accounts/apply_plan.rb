@@ -37,8 +37,8 @@ class SuperAdmin::BulkAccounts::ApplyPlan < SuperAdmin::BulkAccounts::Base
   private
 
   def plan_for(account)
-    ::Accounts::ApplyPlan.new(account: account, modules: modules, actor: actor, request: request,
-                              audit_extra: SuperAdmin::BulkAccounts::AUDIT_EXTRA)
+    ::Accounts::ApplyPlan.new(account: account, modules: modules, actor: actor, request: request)
+                         .with_audit_extra(SuperAdmin::BulkAccounts::AUDIT_EXTRA)
   end
 
   # Nothing to switch, no limit to move, and the account already says it is on this plan and version

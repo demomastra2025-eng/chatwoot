@@ -30,7 +30,7 @@ class SuperAdmin::BulkAccounts
     def skip? = outcome == :skip
   end
 
-  Preview = Struct.new(:entries, keyword_init: true) do
+  Preview = Data.define(:entries) do
     def changing = entries.count(&:change?)
     def skipping = entries.count(&:skip?)
 

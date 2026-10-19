@@ -295,7 +295,7 @@ RSpec.describe SuperAdmin::DashboardAlerts do
       seed(11)
       many = sql_queries_during { described_class.new.alerts }
 
-      expect(many.size).to eq(few.size), "few:\n#{few.join("\n")}\nmany:\n#{many.join("\n")}"
+      expect(many.size).to eq(few.size), ['few:', *few, 'many:', *many].join("\n")
     end
   end
 end

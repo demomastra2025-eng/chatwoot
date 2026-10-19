@@ -47,7 +47,8 @@ RSpec.describe 'Super Admin clinic list', type: :request do
       get '/super_admin/accounts'
 
       headers = page.css('[data-testid="clinics-table"] thead th').map { |header| text(header) }
-      expect(headers).to eq(['', *%w[Аккаунт Организация Тариф Операторы Хранилище Каналы Статус Действия]]) # the first holds the tick of «Выбрать все»
+      # the first header holds the tick of «Выбрать все на странице»
+      expect(headers).to eq(['', 'Аккаунт', 'Организация', 'Тариф', 'Операторы', 'Хранилище', 'Каналы', 'Статус', 'Действия'])
     end
 
     it 'shows an empty state when nothing matches' do

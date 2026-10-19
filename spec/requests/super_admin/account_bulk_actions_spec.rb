@@ -23,7 +23,7 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
   describe 'the list' do
     before { sign_in(super_admin, scope: :super_admin) }
 
-    it 'has a tick for each account and one in the header, and an action bar with the five actions' do
+    it 'has a tick for each account that belongs to the form of the bar, and one in the header that ticks the page' do
       get '/super_admin/accounts'
 
       boxes = page.css('tbody input[type="checkbox"][name="account_ids[]"]')
@@ -33,6 +33,10 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
       header = page.at_css('thead input[type="checkbox"]')
       expect(header['title']).to eq('Выбрать все на странице')
       expect(header['name']).to be_nil
+    end
+
+    it 'has an action bar with the five actions that opens the confirmation page' do
+      get '/super_admin/accounts'
 
       form = page.at_css('form#bulk-accounts-form')
       expect(form['action']).to eq("#{bulk_path}/new")
@@ -42,7 +46,12 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
       expect(buttons.map { |button| button.text.squish }).to eq(
         ['Применить тариф и модули', 'Продлить пробный период', 'Заблокировать', 'Разблокировать', 'Привязать к организации']
       )
-      expect(form.text).to include('Выбрано: 0', 'Выбрать все на странице', 'Снять выбор')
+    end
+
+    it 'counts the ticked accounts, offers «Выбрать все на странице» and says how many can be chosen' do
+      get '/super_admin/accounts'
+
+      expect(page.at_css('form#bulk-accounts-form').text).to include('Выбрано: 0', 'Выбрать все на странице', 'Снять выбор')
       expect(page.at_css("[data-testid='bulk-bar']").text).to include('не больше 200 аккаунтов')
     end
 
@@ -95,7 +104,7 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
       get "#{bulk_path}/new", params: { bulk_action: action, account_ids: ids(*accounts) }.merge(extra)
     end
 
-    it 'says how many accounts, what changes in each, and what is skipped and why' do
+    it 'says how many accounts there are, how many change and what is skipped and why' do
       confirm('suspend', [first, second, blocked])
 
       expect(response).to have_http_status(:success)
@@ -103,14 +112,25 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
       expect(page.at_css('main .main-content__description').text.squish).to start_with('Выбрано аккаунтов: 3')
       stats = page.css("[data-testid='stat']").map { |stat| stat.text.squish }
       expect(stats).to eq(['Изменятся 2 аккаунтов', 'Будут пропущены 1 уже заблокирован — 1'])
+      expect(page.at_css("[data-testid='bulk-warning']").text).to include('Заблокированный аккаунт не обслуживает операторов')
+    end
+
+    it 'shows a line for each account: how it is now and what happens to it' do
+      confirm('suspend', [first, second, blocked])
+
       rows = page.css("[data-testid='bulk-entries'] tbody tr")
       expect(rows.map { |row| [row['data-account-id'].to_i, row['data-outcome']] }).to eq(
         [[first.id, 'change'], [second.id, 'change'], [blocked.id, 'skip']]
       )
       expect(rows.first.css('td').map { |cell| cell.text.squish }).to eq(["Клиника «Алатау» ##{first.id}", 'Активен', 'Изменится Заблокирован'])
       expect(rows.last['data-reason']).to eq('already_suspended')
-      expect(page.at_css("[data-testid='bulk-warning']").text).to include('Заблокированный аккаунт не обслуживает операторов')
-      expect(first.reload).to be_active # nothing is written by looking
+    end
+
+    it 'writes nothing by looking' do
+      confirm('suspend', [first, second])
+
+      expect(first.reload).to be_active
+      expect(audits(first, 'suspend_account')).to be_empty
     end
 
     it 'puts the number of accounts in the right Russian form on the button' do
@@ -191,6 +211,11 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
         rows = page.css("[data-testid='bulk-entries'] tbody tr")
         expect(rows.first.css('td').last.text.squish).to match(/\AИзменится База \+ ИИ-агенты Включится: \d+/)
         expect(page.at_css("[data-testid='bulk-submit']")['value']).to eq('Применить к 3 аккаунтам')
+      end
+
+      it 'carries the chosen modules to the button that runs the plan, and writes nothing by looking' do
+        confirm('apply_plan', [first, second], chosen: '1', modules: %w[ai_agents])
+
         confirm_form = page.at_css("[data-testid='bulk-confirm'] form")
         expect(confirm_form.css('input[name="modules[]"]').pluck('value')).to eq(%w[ai_agents])
         expect(confirm_form.at_css('input[name="chosen"]')['value']).to eq('1')

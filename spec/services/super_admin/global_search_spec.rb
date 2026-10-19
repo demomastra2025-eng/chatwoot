@@ -168,12 +168,7 @@ RSpec.describe SuperAdmin::GlobalSearch do
       seed(11)
       many = sql_queries_during { search('сезим') }
 
-      expect(many.size).to eq(few.size), "few:
-#{few.join("
-")}
-many:
-#{many.join("
-")}"
+      expect(many.size).to eq(few.size), ['few:', *few, 'many:', *many].join("\n")
       expect(many.size).to be <= 10
     end
   end
