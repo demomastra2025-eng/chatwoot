@@ -14,6 +14,23 @@ class PlatformApp < ApplicationRecord
 
   has_many :platform_app_permissibles, dependent: :destroy_async
 
+  # The partners with the number of their accounts and users counted in the same query, so a list of partners does not
+  # ask the database twice for every row (`accounts_count` and `users_count` use these columns when they are there)
+  def self.with_counts
+    select(
+      'platform_apps.*',
+      "(#{count_of_permissibles('Account', 'accounts')}) AS accounts_total",
+      "(#{count_of_permissibles('User', 'users')}) AS users_total"
+    )
+  end
+
+  # The SQL that counts the records of one table the partner owns (only records that still exist, like #accounts)
+  def self.count_of_permissibles(type, table)
+    "SELECT COUNT(*) FROM platform_app_permissibles ppp INNER JOIN #{table} ON #{table}.id = ppp.permissible_id " \
+      "WHERE ppp.platform_app_id = platform_apps.id AND ppp.permissible_type = '#{type}'"
+  end
+  private_class_method :count_of_permissibles
+
   # The accounts this partner created through the Platform API (the card of the partner lists them)
   def accounts
     Account.where(id: permissible_ids('Account'))
@@ -35,11 +52,11 @@ class PlatformApp < ApplicationRecord
   end
 
   def accounts_count
-    accounts.count
+    has_attribute?(:accounts_total) ? self[:accounts_total].to_i : accounts.count
   end
 
   def users_count
-    users.count
+    has_attribute?(:users_total) ? self[:users_total].to_i : users.count
   end
 
   private

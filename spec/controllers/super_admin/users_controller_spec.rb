@@ -58,6 +58,22 @@ RSpec.describe 'Super Admin Users API', type: :request do
         expect(header_texts).not_to include('MFA')
       end
 
+      it 'searches by name, e-mail and id, never over the tokens of a user' do
+        sign_in(super_admin, scope: :super_admin)
+        user.update_columns(confirmation_token: 'confirm-token-QWERTY12345') # rubocop:disable Rails/SkipsModelValidations
+
+        get '/super_admin/users', params: { search: user.email }
+        expect(response.body).to include(CGI.escapeHTML(user.name))
+
+        [user.pubsub_token[4, 12], 'token-QWERTY123'].each do |piece|
+          get '/super_admin/users', params: { search: piece }
+          expect(response).to have_http_status(:success)
+          expect(Nokogiri::HTML(response.body).css('tbody tr')).to be_empty, piece
+        end
+        expect(UserDashboard.new.search_attributes).to include(:id, :name, :email)
+        expect(UserDashboard.new.search_attributes).not_to include(:pubsub_token, :confirmation_token, :tokens)
+      end
+
       it 'prefills confirmed_at on new user form' do
         sign_in(super_admin, scope: :super_admin)
         get '/super_admin/users/new'

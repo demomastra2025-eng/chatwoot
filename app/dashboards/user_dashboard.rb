@@ -24,7 +24,8 @@ class UserDashboard < Administrate::BaseDashboard
     last_sign_in_at: Field::DateTime,
     current_sign_in_ip: Field::String,
     last_sign_in_ip: Field::String,
-    confirmation_token: Field::String,
+    # Tokens are never searched: a search over them would let a super admin rebuild one character by character
+    confirmation_token: Field::String.with_options(searchable: false),
     confirmed_at: ConfirmedAtField,
     confirmation_sent_at: Field::DateTime,
     unconfirmed_email: Field::String,
@@ -34,7 +35,7 @@ class UserDashboard < Administrate::BaseDashboard
     tokens: Field::String.with_options(searchable: false),
     created_at: Field::DateTime,
     updated_at: Field::DateTime,
-    pubsub_token: Field::String,
+    pubsub_token: Field::String.with_options(searchable: false),
     # [["Пользователь", ""], ["Супер-администратор", "SuperAdmin"]]: the names are looked up when the page is drawn
     type: UserTypeField.with_options(
       collection: -> { [[I18n.t('super_admin.users.types.user'), ''], [I18n.t('super_admin.users.types.super_admin'), 'SuperAdmin']] }

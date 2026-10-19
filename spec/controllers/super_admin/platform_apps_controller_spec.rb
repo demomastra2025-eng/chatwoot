@@ -7,6 +7,14 @@ RSpec.describe 'Super Admin platform app API', type: :request do
 
   def main_text = page.at_css('main').text.squish
 
+  # How many queries about the tokens or the accounts and users of partners the block runs
+  def count_queries_about_partners(&)
+    queries = []
+    counter = ->(*, payload) { queries << payload[:sql] if payload[:sql].match?(/platform_app_permissibles|access_tokens/) }
+    ActiveSupport::Notifications.subscribed(counter, 'sql.active_record', &)
+    queries.size
+  end
+
   describe 'GET /super_admin/platform_apps' do
     context 'when it is an unauthenticated super admin' do
       it 'returns unauthorized' do
@@ -47,6 +55,38 @@ RSpec.describe 'Super Admin platform app API', type: :request do
         cells = row.css('td').map { |cell| cell.text.squish }
         expect(cells).to include("••••#{platform_app.access_token.token.last(4)}", '1', '2')
         expect(response.body).not_to include(platform_app.access_token.token)
+      end
+
+      it 'searches the list by name, and a search never reaches the token hint, which is not a column' do
+        create(:platform_app, name: 'Другой партнёр')
+
+        get '/super_admin/platform_apps', params: { search: platform_app.name }
+
+        expect(response).to have_http_status(:success)
+        names = page.css('tbody tr').map { |tr| tr.text.squish }
+        expect(names.size).to eq(1)
+        expect(names.first).to include(platform_app.name)
+        expect(PlatformAppDashboard.new.search_attributes).to eq([:name])
+      end
+
+      it 'does not search over the token' do
+        get '/super_admin/platform_apps', params: { search: platform_app.access_token.token[2, 12] }
+
+        expect(response).to have_http_status(:success)
+        expect(page.css('tbody tr')).to be_empty
+      end
+
+      it 'asks the database the same questions for one partner and for several, with the right counts' do
+        one_partner = count_queries_about_partners { get '/super_admin/platform_apps' }
+        3.times do
+          other = create(:platform_app)
+          create(:platform_app_permissible, platform_app: other, permissible: create(:account))
+        end
+
+        expect(count_queries_about_partners { get '/super_admin/platform_apps' }).to eq(one_partner)
+        counts = page.css('tbody tr').map { |tr| tr.css('td').map { |cell| cell.text.squish } }
+        expect(counts.size).to eq(4)
+        expect(counts.count { |cells| cells.include?('1') }).to eq(3)
       end
 
       it 'names the columns in Russian' do

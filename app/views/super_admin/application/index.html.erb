@@ -58,16 +58,24 @@ It renders the `_collection` partial to display details about the resources.
 </header>
 
 <section class="main-content__body">
-  <% if show_search_bar %>
+  <%
+    # A list whose columns are not searchable (the access tokens: a search over a secret would rebuild it) has no search
+    # box, but keeps the filters of its dashboard.
+    dashboard_class = "#{page.resource_name.classify}Dashboard".constantize
+    filters_present = dashboard_class.const_defined?(:COLLECTION_FILTERS) && !dashboard_class::COLLECTION_FILTERS.empty?
+  %>
+  <% if show_search_bar || filters_present %>
     <div class="collection-toolbar">
       <%= render("filters", page: page) %>
       <%# The account list can also be narrowed to the accounts of one organization. %>
       <%= render('super_admin/accounts/organization_filter') if page.resource_name.to_s == 'account' %>
-      <%= render(
-        "search",
-        search_term: search_term,
-        resource_name: super_admin_resource_label(page.resource_name)
-      ) %>
+      <% if show_search_bar %>
+        <%= render(
+          "search",
+          search_term: search_term,
+          resource_name: super_admin_resource_label(page.resource_name)
+        ) %>
+      <% end %>
     </div>
   <% end %>
 

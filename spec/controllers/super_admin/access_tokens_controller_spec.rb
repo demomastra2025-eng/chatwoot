@@ -33,6 +33,26 @@ RSpec.describe 'Super Admin access tokens API', type: :request do
         expect(Nokogiri::HTML(response.body).css('[data-secret-text], [data-secret-toggler], [data-secret-copier]')).to be_empty
       end
 
+      it 'does not let the search box rebuild a token: a piece of it narrows nothing' do
+        get '/super_admin/access_tokens', params: { search: platform_app.access_token.token[3, 10] }
+        with_a_piece = Nokogiri::HTML(response.body).css('tbody tr').size
+        get '/super_admin/access_tokens', params: { search: 'not-a-token-at-all' }
+        with_garbage = Nokogiri::HTML(response.body).css('tbody tr').size
+
+        expect(response).to have_http_status(:success)
+        expect(with_a_piece).to eq(with_garbage)
+        expect(with_a_piece).to eq(AccessToken.count)
+        expect(AccessTokenDashboard.new.search_attributes).to be_empty
+      end
+
+      it 'has no search box (nothing is searchable) but keeps the filters by owner' do
+        get '/super_admin/access_tokens'
+
+        page = Nokogiri::HTML(response.body)
+        expect(page.at_css('form.search')).to be_nil
+        expect(page.css('.segmented a').map { |link| link.text.squish }.size).to be >= 2
+      end
+
       it 'does not show the token on the card of one token either' do
         token = platform_app.access_token
 

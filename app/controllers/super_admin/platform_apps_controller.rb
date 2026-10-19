@@ -5,6 +5,11 @@ class SuperAdmin::PlatformAppsController < SuperAdmin::ApplicationController
   # The key of the flash that carries the full token from the create / reissue request to the card
   ONE_TIME_TOKEN_KEY = :partner_token
 
+  # The token and the counts of every row come with the list, not with a query per row
+  def scoped_resource
+    resource_class.includes(:access_token).with_counts
+  end
+
   # Saves the partner, records the creation and shows the token (once) on its card
   def create
     super do |platform_app|

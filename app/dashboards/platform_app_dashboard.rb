@@ -9,7 +9,8 @@ class PlatformAppDashboard < Administrate::BaseDashboard
   # on pages throughout the dashboard.
   ATTRIBUTE_TYPES = {
     access_token: Field::HasOne,
-    token_hint: Field::String,
+    # Not a column: a search that reached it would build SQL on a column that does not exist (the list has a search box)
+    token_hint: Field::String.with_options(searchable: false),
     accounts_count: Field::Number,
     users_count: Field::Number,
     id: Field::Number,
