@@ -1,0 +1,155 @@
+<%#
+# Action on the chosen accounts: the confirmation page
+
+Opened from the action bar of the account list. It says how many accounts the action is for, asks for the setting the action
+needs (the modules to apply, the organization to link to) and, once that is chosen, shows what would change: the totals,
+what could not be done and why, and a line per account. Nothing is written until the button at the end is pressed (that is
+a POST to `create`, which looks at every account again and leaves one entry in the audit log for each one it changes).
+
+## Local variables (controller instance variables):
+
+- `@bulk`: the `SuperAdmin::BulkAccounts` of the request (action, account ids, setting).
+- `@preview`: its `Preview` (a line per account), nil while the setting is not chosen yet.
+%>
+<%
+  action = params[:bulk_action].to_s
+  label = t("super_admin.bulk.actions.#{action}")
+  ids = @bulk.ids
+  back = back_path
+  strategy = @bulk.strategy
+  feature_label = SuperAdmin::AccountFeaturesHelper.method(:feature_label)
+%>
+<% content_for(:title) { label } %>
+
+<%= render layout: 'super_admin/shared/page_header', locals: { title: label, description: t('super_admin.bulk.page.description', count: super_admin_number(ids.size)) } do %>
+  <%= link_to t('super_admin.bulk.page.back'), back, class: 'button button--secondary' %>
+<% end %>
+
+<section class="main-content__body" data-testid="bulk-page" data-bulk-action="<%= action %>">
+  <div class="flex flex-col gap-5">
+    <% if @bulk.parameter? %>
+      <%# The setting of the action: the modules, or the organization. The form asks for the summary (GET); it writes nothing. %>
+      <section class="admin-block" aria-labelledby="bulk-setting-title" data-testid="bulk-setting">
+        <div class="admin-block__head">
+          <h2 class="admin-block__title" id="bulk-setting-title"><%= t("super_admin.bulk.parameters.#{action}.title") %></h2>
+          <p class="admin-block__hint"><%= t("super_admin.bulk.parameters.#{action}.hint") %></p>
+        </div>
+
+        <% if params[:chosen].present? && @bulk.error %>
+          <div class="admin-notice admin-notice--amber" role="alert" data-testid="bulk-error"><%= t("super_admin.bulk.errors.#{@bulk.error}") %></div>
+        <% end %>
+
+        <%= form_with url: new_super_admin_account_bulk_action_path, method: :get, local: true, class: 'flex flex-col gap-4' do %>
+          <%= render 'hidden_fields', action: action, ids: ids, back: back %>
+          <%= hidden_field_tag :chosen, '1', id: nil %>
+
+          <% if action == 'apply_plan' %>
+            <%= render 'super_admin/accounts/plan_cards', chosen: strategy.modules || [] %>
+          <% else %>
+            <div class="flex flex-col gap-1.5 sm:max-w-md">
+              <%= label_tag :organization_id, t('super_admin.bulk.parameters.link_organization.label'), class: 'text-xs text-n-slate-11' %>
+              <%= select_tag :organization_id,
+                             options_for_select([[t('super_admin.bulk.parameters.link_organization.prompt'), ''],
+                                                [t('super_admin.bulk.parameters.link_organization.none'), 'none']] + SuperAdmin::OrganizationOptions.for_select,
+                                                params[:organization_id].to_s) %>
+            </div>
+          <% end %>
+
+          <div class="admin-block__footer">
+            <%= submit_tag t("super_admin.bulk.parameters.#{action}.submit"), name: nil, class: 'button' %>
+          </div>
+        <% end %>
+      </section>
+    <% end %>
+
+    <% if @preview %>
+      <% changing = @preview.changing %>
+      <% if @bulk.warning? %>
+        <div class="admin-notice admin-notice--amber" role="status" data-testid="bulk-warning"><%= t("super_admin.bulk.warnings.#{action}") %></div>
+      <% end %>
+
+      <%
+        reasons = @preview.reasons.map do |reason, count|
+          t('super_admin.bulk.result.reason_item', reason: t("super_admin.bulk.reasons.#{reason}").downcase, count: count)
+        end
+      %>
+      <%= render 'super_admin/shared/stat_group', items: [
+        { label: t('super_admin.bulk.summary.changing'), value: super_admin_number(changing), note: t('super_admin.bulk.summary.changing_note') },
+        { label: t('super_admin.bulk.summary.skipping'), value: super_admin_number(@preview.skipping),
+          note: reasons.any? ? reasons.join('; ') : t('super_admin.bulk.summary.skipping_none') }
+      ] %>
+
+      <% if action == 'apply_plan' && changing.positive? %>
+        <%# What the plan switches, over all the accounts: each function with the number of accounts it is switched in. %>
+        <% diffs = @preview.entries.select(&:change?).map { |entry| entry.detail[:diff] } %>
+        <% names = ->(flags) { flags.tally.sort_by { |flag, count| [-count, feature_label.call(flag).to_s] }.map { |flag, count| "#{feature_label.call(flag)} — #{count}" } } %>
+        <% enabled = names.call(diffs.flat_map(&:enable)) %>
+        <% disabled = names.call(diffs.flat_map(&:disable)) %>
+        <% notes = diffs.flat_map(&:notes).tally %>
+        <section class="admin-block" aria-labelledby="bulk-functions-title" data-testid="bulk-functions">
+          <h2 class="admin-block__title" id="bulk-functions-title"><%= t('super_admin.bulk.summary.functions') %></h2>
+          <div class="grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] gap-3 text-[13px]">
+            <div class="flex flex-col gap-0.5" data-bulk-functions="enable">
+              <span class="font-medium text-n-teal-11"><%= t('super_admin.bulk.summary.enable') %></span>
+              <span class="text-n-slate-11"><%= enabled.any? ? enabled.join('; ') : t('super_admin.clinic_card.preview.nothing') %></span>
+            </div>
+            <div class="flex flex-col gap-0.5" data-bulk-functions="disable">
+              <span class="font-medium text-n-ruby-11"><%= t('super_admin.bulk.summary.disable') %></span>
+              <span class="text-n-slate-11"><%= disabled.any? ? disabled.join('; ') : t('super_admin.clinic_card.preview.nothing') %></span>
+            </div>
+          </div>
+          <% notes.each do |note, count| %>
+            <p class="admin-block__note text-n-amber-11" data-bulk-note="<%= note %>"><%= t('super_admin.bulk.summary.note', count: count, text: t("super_admin.plans.notes.#{note}")) %></p>
+          <% end %>
+        </section>
+      <% end %>
+
+      <div class="admin-card">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-n-weak px-5 py-4">
+          <h2 class="m-0 text-heading-2 text-n-slate-12" id="bulk-accounts-title"><%= t('super_admin.bulk.summary.accounts') %></h2>
+          <span class="text-xs text-n-slate-11"><%= t('super_admin.bulk.summary.time_note') %></span>
+        </div>
+        <div class="admin-card--table">
+          <table aria-labelledby="bulk-accounts-title" data-testid="bulk-entries">
+            <thead>
+              <tr>
+                <th scope="col"><%= t('super_admin.bulk.columns.account') %></th>
+                <th scope="col"><%= t('super_admin.bulk.columns.now') %></th>
+                <th scope="col"><%= t('super_admin.bulk.columns.result') %></th>
+              </tr>
+            </thead>
+            <tbody>
+              <% @preview.entries.each do |entry| %>
+                <%= render 'entry', entry: entry, action: action %>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <section class="admin-block" aria-labelledby="bulk-confirm-title" data-testid="bulk-confirm">
+        <div class="admin-block__head">
+          <h2 class="admin-block__title" id="bulk-confirm-title"><%= t('super_admin.bulk.confirm.title') %></h2>
+          <p class="admin-block__hint"><%= t(changing.positive? ? 'super_admin.bulk.confirm.hint' : 'super_admin.bulk.confirm.nothing') %></p>
+        </div>
+
+        <%= form_with url: super_admin_account_bulk_actions_path, method: :post, local: true, class: 'flex flex-wrap items-center gap-3' do %>
+          <%= render 'hidden_fields', action: action, ids: ids, back: back %>
+          <%= hidden_field_tag :chosen, '1', id: nil %>
+          <% if action == 'apply_plan' %>
+            <% (strategy.modules || []).each do |module_key| %>
+              <%= hidden_field_tag 'modules[]', module_key, id: nil %>
+            <% end %>
+          <% elsif action == 'link_organization' %>
+            <%= hidden_field_tag :organization_id, params[:organization_id], id: nil %>
+          <% end %>
+
+          <% if changing.positive? %>
+            <%= submit_tag t('super_admin.bulk.confirm.submit', count: changing), name: nil, class: 'button', data: { testid: 'bulk-submit' } %>
+          <% end %>
+          <%= link_to t('super_admin.bulk.confirm.cancel'), back, class: 'button button--secondary' %>
+        <% end %>
+      </section>
+    <% end %>
+  </div>
+</section>

@@ -1,0 +1,77 @@
+<%#
+One account on the confirmation page of a bulk action: the account, how it is now, and what the action does to it (or why it
+is skipped).
+
+## Local variables:
+
+- `entry`: a `SuperAdmin::BulkAccounts::Entry` (an account may be missing: it was deleted since the list was drawn).
+- `action`: the key of the action.
+%>
+<%
+  account = entry.account
+  detail = entry.detail
+  state = SuperAdmin::AccountPlanState.new(account) if account
+%>
+<tr data-account-id="<%= entry.account_id %>" data-outcome="<%= entry.outcome %>" data-reason="<%= entry.reason %>">
+  <td>
+    <% if account %>
+      <%= link_to account.name, super_admin_account_path(account), class: 'font-medium text-n-slate-12 hover:text-n-brand' %>
+      <div class="text-xs tabular-nums text-n-slate-10">#<%= account.id %></div>
+    <% else %>
+      <span class="tabular-nums text-n-slate-10">#<%= entry.account_id %></span>
+    <% end %>
+  </td>
+
+  <td class="text-n-slate-11">
+    <% if account %>
+      <% if action == 'apply_plan' %>
+        <%= state.label %>
+      <% elsif action == 'extend_trial' %>
+        <% if state.trial_state == :active %>
+          <%= t('super_admin.bulk.detail.trial_active', time: super_admin_time(state.trial_expires_at)) %>
+        <% elsif state.trial_state == :expired %>
+          <%= t('super_admin.bulk.detail.trial_ended', time: super_admin_time(state.trial_expired_at || state.trial_expires_at) || t('super_admin.accounts.trial.unknown_time')) %>
+        <% else %>
+          <%= t('super_admin.bulk.detail.trial_none') %>
+        <% end %>
+      <% elsif %w[suspend activate].include?(action) %>
+        <%= state.status_label %>
+      <% else %>
+        <%= account.organization&.name || t('super_admin.bulk.detail.no_organization') %>
+      <% end %>
+    <% else %>
+      <span class="text-n-slate-10">—</span>
+    <% end %>
+  </td>
+
+  <td>
+    <% if entry.skip? %>
+      <span class="admin-badge admin-badge--quiet"><%= t('super_admin.bulk.outcome.skip') %></span>
+      <span class="ms-1.5 text-xs text-n-slate-11"><%= t("super_admin.bulk.reasons.#{entry.reason}") %></span>
+    <% else %>
+      <span class="admin-badge admin-badge--teal"><%= t('super_admin.bulk.outcome.change') %></span>
+      <span class="ms-1.5 text-[13px] text-n-slate-12">
+        <% if action == 'apply_plan' %>
+          <% diff = detail[:diff] %>
+          <%= Accounts::Plans.plan_label(diff.modules) %>
+          <span class="block text-xs tabular-nums text-n-slate-11">
+            <% parts = [] %>
+            <% parts << t('super_admin.bulk.detail.enable', count: diff.enable.size) if diff.enable.any? %>
+            <% parts << t('super_admin.bulk.detail.disable', count: diff.disable.size) if diff.disable.any? %>
+            <% parts << t('super_admin.bulk.detail.limits', count: diff.limits.size) if diff.limits.any? %>
+            <%= parts.any? ? parts.join(' · ') : t('super_admin.bulk.detail.nothing') %>
+          </span>
+        <% elsif action == 'extend_trial' %>
+          <%= t('super_admin.bulk.detail.trial_active', time: super_admin_time(detail[:to])) %>
+          <% if detail[:ended] %>
+            <span class="block text-xs text-n-slate-11"><%= t('super_admin.bulk.detail.trial_reopen') %></span>
+          <% end %>
+        <% elsif %w[suspend activate].include?(action) %>
+          <%= t("super_admin.accounts.statuses.#{detail[:to]}") %>
+        <% else %>
+          <%= detail[:to]&.name || t('super_admin.bulk.detail.no_organization') %>
+        <% end %>
+      </span>
+    <% end %>
+  </td>
+</tr>

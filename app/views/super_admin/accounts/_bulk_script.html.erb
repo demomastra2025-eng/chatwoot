@@ -1,0 +1,56 @@
+<%#
+# The script of the action bar of the account list
+
+Drawn after the table (it needs the ticks in the page): keeps the count of the bar and the tick of the table header in step
+with the ticks of the rows, shows the bar only while something is ticked, and keeps a click or a key press on a tick from
+opening the account (a row of the list is a link, see `_collection`). Without it the bar stays visible and still works.
+%>
+<script>
+  (function () {
+    var bar = document.querySelector('[data-bulk-bar]');
+    if (!bar) return;
+    var counter = bar.querySelector('[data-bulk-count]');
+    var all = document.querySelector('[data-bulk-all]');
+
+    function rows() {
+      return Array.prototype.slice.call(document.querySelectorAll('[data-bulk-row]'));
+    }
+
+    function setAll(checked) {
+      rows().forEach(function (box) { box.checked = checked; });
+      sync();
+    }
+
+    // The bar is shown while something is ticked; the header tick shows "all", "some" or "none".
+    function sync() {
+      var boxes = rows();
+      var ticked = boxes.filter(function (box) { return box.checked; }).length;
+      counter.textContent = counter.getAttribute('data-template').replace('%{count}', ticked);
+      bar.hidden = ticked === 0;
+      if (all) {
+        all.checked = ticked > 0 && ticked === boxes.length;
+        all.indeterminate = ticked > 0 && ticked < boxes.length;
+      }
+    }
+
+    document.addEventListener('change', function (event) {
+      var target = event.target;
+      if (!target || !target.matches) return;
+      if (target.matches('[data-bulk-all]')) setAll(target.checked);
+      else if (target.matches('[data-bulk-row]')) sync();
+    });
+    bar.querySelector('[data-bulk-select-page]').addEventListener('click', function () { setAll(true); });
+    bar.querySelector('[data-bulk-clear]').addEventListener('click', function () { setAll(false); });
+
+    // A row of the table opens the account on a click or a key press; the cell with the tick keeps both to itself.
+    Array.prototype.forEach.call(document.querySelectorAll('[data-bulk-cell]'), function (cell) {
+      ['click', 'keydown'].forEach(function (name) {
+        cell.addEventListener(name, function (event) { event.stopPropagation(); });
+      });
+    });
+
+    // The browser brings the ticks back with the page (the way back): the bar follows them.
+    window.addEventListener('pageshow', sync);
+    sync();
+  })();
+</script>

@@ -46,12 +46,14 @@ class Accounts::ApplyPlan
 
   attr_reader :account, :modules
 
-  def initialize(account:, modules: [], actor: nil, request: nil, keep_existing_limits: false)
+  # audit_extra: more keys for the entry of the audit log (a bulk action marks its entries with `'bulk' => true`)
+  def initialize(account:, modules: [], actor: nil, request: nil, keep_existing_limits: false, audit_extra: {})
     @account = account
     @modules = normalize_modules(modules)
     @actor = actor
     @request = request
     @keep_existing_limits = keep_existing_limits
+    @audit_extra = audit_extra
   end
 
   # No writes at all
@@ -150,6 +152,6 @@ class Accounts::ApplyPlan
       'after' => { 'plan' => diff.plan, 'plan_modules' => diff.modules, 'plan_version' => diff.plan_version },
       'features' => { 'enabled' => diff.enable, 'disabled' => diff.disable },
       'limits' => diff.limits
-    }
+    }.merge(@audit_extra)
   end
 end

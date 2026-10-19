@@ -1,10 +1,13 @@
 <%#
 # Clinics table
 
-The clinic list: clinic (name and #id), its organization (a link), plan chips,
+The clinic list: a tick, clinic (name and #id), its organization (a link), plan chips,
 operators used / limit, storage fill, number of channels and status. The numbers of the whole page are
 read at once (`SuperAdmin::AccountListStats`), so the page costs the same few
 queries for 2 or for 20 clinics.
+
+The ticks and the action bar above the table are the bulk actions (`_bulk_bar`): the tick of a row belongs to the form of
+the bar (the `form` attribute), the tick in the header ticks the whole page.
 
 ## Local variables (same as the generic `_collection`):
 
@@ -23,10 +26,16 @@ queries for 2 or for 20 clinics.
   meter_tones = { good: '', warn: 'admin-meter__fill--warn', bad: 'admin-meter__fill--bad', idle: 'admin-meter__fill--idle' }
 %>
 
+<%= render 'super_admin/accounts/bulk_bar' %>
+
 <div class="admin-card admin-card--table">
   <table aria-labelledby="<%= table_title %>" data-testid="clinics-table">
     <thead>
       <tr>
+        <th scope="col" class="w-10">
+          <%= check_box_tag nil, '1', false, id: 'bulk-select-all', class: 'align-middle', title: t('super_admin.bulk.bar.select_all'),
+                                             'aria-label': t('super_admin.bulk.bar.select_all'), data: { bulk_all: true } %>
+        </th>
         <th class="cell-label cell-label--string cell-label--<%= name_order %>" scope="col" role="columnheader" aria-sort="<%= sort_order(name_order) %>">
           <%= link_to(sanitized_order_params(page, collection_field_name).merge(list_scope_params).merge(collection_presenter.order_params_for(:name, key: collection_field_name))) do %>
             <%= t('super_admin.accounts.columns.clinic') %>
@@ -50,13 +59,19 @@ queries for 2 or for 20 clinics.
     <tbody>
       <% if rows.empty? %>
         <tr>
-          <td colspan="8" class="py-10 text-center text-n-slate-11"><%= t('super_admin.shell.empty') %></td>
+          <td colspan="9" class="py-10 text-center text-n-slate-11"><%= t('super_admin.shell.empty') %></td>
         </tr>
       <% end %>
 
       <% rows.each do |account| %>
         <% row = stats.for(account) %>
         <tr class="js-table-row" tabindex="0" role="link" data-url="<%= super_admin_account_path(account) %>" data-account-id="<%= account.id %>">
+          <%# The tick must not open the account: the whole row is a link, the script of the bar keeps clicks of this cell to itself. %>
+          <td class="w-10" data-bulk-cell>
+            <%= check_box_tag 'account_ids[]', account.id, false, id: "bulk-account-#{account.id}", form: 'bulk-accounts-form', class: 'align-middle',
+                                                                   'aria-label': t('super_admin.bulk.bar.select_row', name: account.name), data: { bulk_row: true } %>
+          </td>
+
           <td>
             <%= link_to account.name, super_admin_account_path(account), class: 'font-medium text-n-slate-12 hover:text-n-brand' %>
             <div class="text-xs tabular-nums text-n-slate-10">#<%= account.id %></div>
@@ -126,3 +141,5 @@ queries for 2 or for 20 clinics.
     </tbody>
   </table>
 </div>
+
+<%= render 'super_admin/accounts/bulk_script' %>

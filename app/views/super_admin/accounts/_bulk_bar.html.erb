@@ -1,0 +1,37 @@
+<%#
+# The action bar of the account list
+
+Shown above the table while at least one account is ticked: how many are selected, «Выбрать все на странице», and one button
+per action (apply the plan and modules, extend the trial, block, unblock, link to an organization). A button opens the
+confirmation page (`account_bulk_actions#new`, a GET with the numbers of the ticked accounts): it says how many accounts and
+what changes, and only a button there runs the action. Without JavaScript the bar is always shown and works the same.
+
+The ticks of the rows are outside this form and belong to it through the `form` attribute (`bulk-accounts-form`), so
+the table stays a table. The list the operator is on (its filters and page) goes along as `back`, for the way back.
+
+The script that keeps the count and the bar in step with the ticks is `_bulk_script`, drawn after the table.
+%>
+<%
+  back = request.fullpath
+  back = nil unless back.match?(SuperAdmin::AccountBulkActionsController::BACK_FORMAT) && back.length <= SuperAdmin::AccountBulkActionsController::BACK_LENGTH
+%>
+
+<%# The wrapper hides the bar: a `hidden` form with a display utility class would stay visible. %>
+<div class="mb-3" data-bulk-bar data-testid="bulk-bar">
+  <%= form_with url: new_super_admin_account_bulk_action_path, method: :get, local: true, id: 'bulk-accounts-form',
+                class: 'flex flex-wrap items-center gap-2 rounded-xl bg-n-solid-2 px-4 py-2.5 outline outline-1 -outline-offset-1 outline-n-container',
+                html: { 'aria-label': t('super_admin.bulk.bar.label') } do %>
+    <%= hidden_field_tag :back, back, id: nil if back %>
+    <span class="me-1 text-sm font-medium tabular-nums text-n-slate-12" data-bulk-count data-template="<%= t('super_admin.bulk.bar.selected', count: '%{count}') %>" aria-live="polite">
+      <%= t('super_admin.bulk.bar.selected', count: 0) %>
+    </span>
+    <button type="button" class="reset-base cursor-pointer border-0 bg-transparent p-0 text-[13px] text-n-brand hover:underline" data-bulk-select-page><%= t('super_admin.bulk.bar.select_all') %></button>
+    <span class="mx-1 hidden h-5 w-px bg-n-weak sm:inline-block" aria-hidden="true"></span>
+    <% SuperAdmin::BulkAccounts::ACTIONS.each do |action| %>
+      <%= button_tag t("super_admin.bulk.actions.#{action}"), type: 'submit', name: 'bulk_action', value: action,
+                                                              class: 'button button--small button--secondary', data: { testid: "bulk-action-#{action}" } %>
+    <% end %>
+    <button type="button" class="reset-base ms-auto cursor-pointer border-0 bg-transparent p-0 text-[13px] text-n-slate-11 hover:underline" data-bulk-clear><%= t('super_admin.bulk.bar.clear') %></button>
+  <% end %>
+  <p class="m-0 mt-1.5 text-xs text-n-slate-10"><%= t('super_admin.bulk.bar.limit', count: SuperAdmin::BulkAccounts::LIMIT) %></p>
+</div>

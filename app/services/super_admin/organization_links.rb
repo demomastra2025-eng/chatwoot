@@ -42,9 +42,11 @@ class SuperAdmin::OrganizationLinks
     end
   end
 
-  def initialize(actor: nil, request: nil)
+  # audit_extra: more keys for the entry of the account in the audit log (a bulk action marks its entries with `'bulk' => true`)
+  def initialize(actor: nil, request: nil, audit_extra: {})
     @actor = actor
     @request = request
+    @audit_extra = audit_extra
   end
 
   def link(account:, organization:, expected_holder: ANY_HOLDER)
@@ -102,7 +104,9 @@ class SuperAdmin::OrganizationLinks
     SuperAdmin::AccountAudit.record(
       account: account, actor: @actor, request: @request,
       action: organization ? 'link_organization' : 'unlink_organization',
-      changes: { 'organization_id' => [previous&.id, organization&.id], 'organization_name' => [previous&.name, organization&.name] }
+      changes: {
+        'organization_id' => [previous&.id, organization&.id], 'organization_name' => [previous&.name, organization&.name]
+      }.merge(@audit_extra)
     )
   end
 
