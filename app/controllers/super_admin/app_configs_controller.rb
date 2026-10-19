@@ -18,10 +18,8 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   ].freeze
   APP_CONFIG_MAPPING = {
     'facebook' => %w[FB_APP_ID FB_VERIFY_TOKEN FB_APP_SECRET IG_VERIFY_TOKEN FACEBOOK_API_VERSION ENABLE_MESSENGER_CHANNEL_HUMAN_AGENT],
-    'shopify' => %w[SHOPIFY_CLIENT_ID SHOPIFY_CLIENT_SECRET],
     'microsoft' => %w[AZURE_APP_ID AZURE_APP_SECRET],
     'email' => %w[MAILER_INBOUND_EMAIL_DOMAIN ACCOUNT_EMAILS_LIMIT ACCOUNT_EMAILS_PLAN_LIMITS],
-    'linear' => %w[LINEAR_CLIENT_ID LINEAR_CLIENT_SECRET],
     'slack' => %w[SLACK_CLIENT_ID SLACK_CLIENT_SECRET],
     'instagram' => %w[INSTAGRAM_APP_ID INSTAGRAM_APP_SECRET INSTAGRAM_VERIFY_TOKEN INSTAGRAM_API_VERSION ENABLE_INSTAGRAM_CHANNEL_HUMAN_AGENT],
     'tiktok' => %w[TIKTOK_APP_ID TIKTOK_APP_SECRET TIKTOK_API_VERSION],
@@ -32,8 +30,6 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
       WHATSAPP_WEBHOOK_ROUTING_RULES WHATSAPP_WEBHOOK_FORWARD_TARGETS
       WHATSAPP_WEBHOOK_FORWARD_SECRET WHATSAPP_WEBHOOK_RECEIVER_DESTINATION
     ],
-
-    'notion' => %w[NOTION_CLIENT_ID NOTION_CLIENT_SECRET],
     'google' => %w[GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET GOOGLE_OAUTH_REDIRECT_URI ENABLE_GOOGLE_OAUTH_LOGIN],
     'captain' => CAPTAIN_CONFIG_KEYS
   }.freeze
@@ -44,6 +40,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
 
   helper SuperAdmin::AppConfigHelper
   before_action :set_config
+  before_action :ensure_known_config
   before_action :allowed_configs
   helper_method :masked_secret_config?
 
@@ -213,6 +210,16 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
 
   def set_config
     @config = params[:config] || 'general'
+  end
+
+  # The pages of the settings. Any other `config` (a page that was removed, like «Служебные параметры» or Linear, or a
+  # typo) is not found instead of showing the general settings under another name.
+  def ensure_known_config
+    raise ActionController::RoutingError, 'Not Found' unless known_configs.include?(@config)
+  end
+
+  def known_configs
+    APP_CONFIG_MAPPING.keys + %w[general]
   end
 
   def allowed_configs

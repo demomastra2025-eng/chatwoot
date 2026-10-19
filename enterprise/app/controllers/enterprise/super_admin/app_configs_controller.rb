@@ -15,18 +15,19 @@ module Enterprise::SuperAdmin::AppConfigsController
 
   private
 
+  # The branding page exists next to the pages of the community controller
+  def known_configs
+    super + %w[custom_branding]
+  end
+
   def allowed_configs
     return super if ChatwootHub.pricing_plan == 'community'
 
     case @config
     when 'custom_branding'
       @allowed_configs = custom_branding_options
-    when 'internal'
-      @allowed_configs = internal_config_options
     when 'captain'
       @allowed_configs = captain_config_options
-    when 'saml'
-      @allowed_configs = saml_config_options
     else
       super
     end
@@ -36,19 +37,8 @@ module Enterprise::SuperAdmin::AppConfigsController
     CUSTOM_BRANDING_CONFIG_KEYS
   end
 
-  def internal_config_options
-    %w[CHATWOOT_INBOX_TOKEN CHATWOOT_INBOX_HMAC_KEY CLOUD_ANALYTICS_TOKEN CLEARBIT_API_KEY DASHBOARD_SCRIPTS INACTIVE_WHATSAPP_NUMBERS
-       SKIP_INCOMING_BCC_PROCESSING CAPTAIN_CLOUD_PLAN_LIMITS ACCOUNT_SECURITY_NOTIFICATION_WEBHOOK_URL CHATWOOT_INSTANCE_ADMIN_EMAIL
-       OG_IMAGE_CDN_URL OG_IMAGE_CLIENT_REF CLOUDFLARE_API_KEY CLOUDFLARE_ZONE_ID BLOCKED_EMAIL_DOMAINS
-       OTEL_PROVIDER LANGFUSE_PUBLIC_KEY LANGFUSE_SECRET_KEY LANGFUSE_BASE_URL]
-  end
-
   # One list for the community and the enterprise page, so the page never offers fewer settings than the controller saves
   def captain_config_options
     SuperAdmin::AppConfigsController::CAPTAIN_CONFIG_KEYS
-  end
-
-  def saml_config_options
-    %w[ENABLE_SAML_SSO_LOGIN]
   end
 end

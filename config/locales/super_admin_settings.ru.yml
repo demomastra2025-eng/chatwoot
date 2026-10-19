@@ -25,7 +25,6 @@ ru:
       secret_toggle: "Показать или скрыть значение"
       pages:
         captain: "Модели ИИ"
-        internal: "Служебные параметры"
       flashes:
         saved: "Настройки «%{page}» сохранены."
         field_error: "%{title} (%{key}): %{error}"
@@ -339,30 +338,12 @@ ru:
           title: "Microsoft: секрет приложения (Azure)"
           hint: "Секрет приложения Azure."
         # ---- Интеграции
-        LINEAR_CLIENT_ID:
-          title: "Linear: ID клиента"
-          hint: "Идентификатор приложения Linear."
-        LINEAR_CLIENT_SECRET:
-          title: "Linear: секрет клиента"
-          hint: "Секрет приложения Linear."
         SLACK_CLIENT_ID:
           title: "Slack: ID клиента"
           hint: "Идентификатор приложения Slack."
         SLACK_CLIENT_SECRET:
           title: "Slack: секрет клиента"
           hint: "Секрет приложения Slack."
-        NOTION_CLIENT_ID:
-          title: "Notion: ID клиента"
-          hint: "Идентификатор приложения Notion."
-        NOTION_CLIENT_SECRET:
-          title: "Notion: секрет клиента"
-          hint: "Секрет приложения Notion."
-        SHOPIFY_CLIENT_ID:
-          title: "Shopify: ID клиента"
-          hint: "Client ID (API Key) из партнёрского аккаунта Shopify."
-        SHOPIFY_CLIENT_SECRET:
-          title: "Shopify: секрет клиента"
-          hint: "Client Secret (API Secret Key) из партнёрского аккаунта Shopify."
         # ---- Брендирование и вход
         LOGO_THUMBNAIL:
           title: "Значок сайта (favicon)"
@@ -394,67 +375,6 @@ ru:
         DISPLAY_MANIFEST:
           title: "Служебные метаданные OneLink"
           hint: "Показывать значки и служебные метаданные OneLink."
-        ENABLE_SAML_SSO_LOGIN:
-          title: "Вход через SAML SSO"
-          hint: "Показывать SAML SSO как способ входа. Нельзя выключить, пока есть пользователи, которые входят через SAML."
-        # ---- Служебные параметры
-        CHATWOOT_INBOX_TOKEN:
-          title: "Токен ящика поддержки"
-          hint: "Токен ящика поддержки в облаке."
-        CHATWOOT_INBOX_HMAC_KEY:
-          title: "HMAC-ключ ящика поддержки"
-          hint: "HMAC-ключ ящика поддержки в облаке."
-        CLOUD_ANALYTICS_TOKEN:
-          title: "Токен аналитики"
-          hint: "Ключ API системы аналитики облачной версии."
-        CLEARBIT_API_KEY:
-          title: "Ключ Clearbit"
-          hint: "Нужен, чтобы заполнять данные аккаунта при регистрации."
-        DASHBOARD_SCRIPTS:
-          title: "Скрипты кабинета"
-          hint: "Подключаются в конце страницы кабинета."
-        INACTIVE_WHATSAPP_NUMBERS:
-          title: "Отключённые номера WhatsApp"
-          hint: "Номера через запятую. Запросы с них отклоняются ошибкой 422."
-        SKIP_INCOMING_BCC_PROCESSING:
-          title: "Не обрабатывать скрытые копии для аккаунтов"
-          hint: "ID аккаунтов через запятую, для которых скрытые копии (BCC) входящих писем не обрабатываются."
-        CAPTAIN_CLOUD_PLAN_LIMITS:
-          title: "Лимиты ИИ по облачным тарифам"
-          hint: "Лимиты сервиса ИИ-агентов по тарифам в формате JSON."
-        ACCOUNT_SECURITY_NOTIFICATION_WEBHOOK_URL:
-          title: "Вебхук для сообщений о безопасности"
-          hint: "Адрес, на который отправляются сообщения о подозрительной активности аккаунтов."
-        CHATWOOT_INSTANCE_ADMIN_EMAIL:
-          title: "E-mail администратора установки"
-          hint: "Получает уведомления, связанные с соблюдением требований."
-        OG_IMAGE_CDN_URL:
-          title: "CDN для OG-картинок"
-          hint: "Адрес CDN, с которого отдаются OG-картинки."
-        OG_IMAGE_CLIENT_REF:
-          title: "Ключ доступа к OG-картинкам"
-          hint: "Токен, который не пускает посторонних к OG-картинкам."
-        CLOUDFLARE_API_KEY:
-          title: "Cloudflare: ключ API"
-          hint: "Ключ API аккаунта Cloudflare."
-        CLOUDFLARE_ZONE_ID:
-          title: "Cloudflare: ID зоны"
-          hint: "ID зоны домена в Cloudflare."
-        BLOCKED_EMAIL_DOMAINS:
-          title: "Заблокированные почтовые домены"
-          hint: "По одному домену в строке; допускаются регулярные выражения. Такие адреса не могут регистрироваться."
-        OTEL_PROVIDER:
-          title: "OpenTelemetry: провайдер"
-          hint: "Провайдер наблюдаемости ИИ, например langfuse."
-        LANGFUSE_PUBLIC_KEY:
-          title: "Langfuse: публичный ключ"
-          hint: "Публичный ключ для входа в Langfuse."
-        LANGFUSE_SECRET_KEY:
-          title: "Langfuse: секретный ключ"
-          hint: "Секретный ключ для входа в Langfuse."
-        LANGFUSE_BASE_URL:
-          title: "Langfuse: адрес"
-          hint: "Адрес Langfuse: https://us.cloud.langfuse.com (США) или https://cloud.langfuse.com (Европа)."
         # ---- Модели ИИ: подключение, промпты, лимит
         CAPTAIN_OPENROUTER_API_KEY:
           title: "Ключ OpenRouter"

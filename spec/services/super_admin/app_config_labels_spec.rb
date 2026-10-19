@@ -24,7 +24,6 @@ RSpec.describe SuperAdmin::AppConfigLabels do
   describe '.page_title' do
     it 'names the pages in Russian' do
       expect(described_class.page_title('captain')).to eq('Модели ИИ')
-      expect(described_class.page_title('internal')).to eq('Служебные параметры')
       expect(described_class.page_title('general')).to eq('Общие параметры')
       expect(described_class.page_title('facebook')).to eq('Facebook & Messenger')
       expect(described_class.page_title('whatsapp_embedded')).to eq('WhatsApp Embedded')
@@ -41,7 +40,7 @@ RSpec.describe SuperAdmin::AppConfigLabels do
     end
     let(:enterprise_pages) do
       host = Object.new.extend(Enterprise::SuperAdmin::AppConfigsController)
-      %i[custom_branding_options internal_config_options saml_config_options].flat_map { |name| host.send(name) }
+      %i[custom_branding_options].flat_map { |name| host.send(name) }
     end
     let(:keys) do
       SuperAdmin::AppConfigsController::APP_CONFIG_MAPPING.values.flatten +

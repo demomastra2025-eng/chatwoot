@@ -414,4 +414,56 @@ RSpec.describe 'Super admin settings pages', type: :request do
       expect(branding.at_css('a')).to be_nil
     end
   end
+
+  describe 'the pages of integrations the platform does not use' do
+    removed = %w[linear notion shopify saml internal]
+
+    it 'are not found, and do not show the general settings under their name' do
+      removed.each do |config|
+        get "/super_admin/app_config?config=#{config}"
+
+        expect(response).to have_http_status(:not_found), config
+        expect(response.body).not_to include('app_config[ENABLE_ACCOUNT_SIGNUP]'), config
+      end
+    end
+
+    it 'cannot be saved' do
+      removed.each do |config|
+        expect { post "/super_admin/app_config?config=#{config}", params: { app_config: { LINEAR_CLIENT_ID: 'x', DASHBOARD_SCRIPTS: '<script>' } } }
+          .not_to change(InstallationConfig, :count)
+
+        expect(response).to have_http_status(:not_found), config
+      end
+      expect(InstallationConfig.where(name: %w[LINEAR_CLIENT_ID DASHBOARD_SCRIPTS]).pluck(:value)).not_to include('x', '<script>')
+    end
+
+    it 'cannot be reached with a list in place of the name' do
+      get '/super_admin/app_config', params: { config: %w[general internal] }
+
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it 'are not in the menu nor among the functions of the settings page' do
+      get '/super_admin/settings'
+
+      removed.each do |config|
+        expect(page.css('a').pluck('href')).not_to include("/super_admin/app_config?config=#{config}")
+        expect(page.at_css("[data-feature='#{config}']")).to be_nil
+      end
+      expect(response.body).not_to match(/Linear|Notion|Shopify|SAML/)
+    end
+
+    it 'leave every other page as it was' do
+      %w[general facebook instagram tiktok whatsapp_embedded google microsoft email slack captain custom_branding].each do |config|
+        get "/super_admin/app_config?config=#{config}"
+
+        expect(response).to have_http_status(:ok), config
+      end
+    end
+
+    it 'keep the code of the integrations: the keys stay in the catalogue of installation parameters' do
+      expect(SuperAdmin::InstallationConfigs.known?('LINEAR_CLIENT_ID')).to be(true)
+      expect(SuperAdmin::AppConfigsController::APP_CONFIG_MAPPING.keys).not_to include('linear', 'notion', 'shopify')
+    end
+  end
 end

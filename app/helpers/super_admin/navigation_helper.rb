@@ -42,7 +42,6 @@ module SuperAdmin::NavigationHelper
 
   FEATURE_LABELS = {
     'general' => 'Общие параметры',
-    'saml' => 'SAML SSO',
     'custom_branding' => 'Брендирование',
     'agent_capacity' => 'Лимиты операторов',
     'audit_logs' => 'Журнал аудита',
@@ -60,15 +59,11 @@ module SuperAdmin::NavigationHelper
     'line' => 'Line',
     'google' => 'Google OAuth',
     'microsoft' => 'Microsoft Office 365',
-    'linear' => 'Linear',
-    'notion' => 'Notion',
     'slack' => 'Slack',
-    'whatsapp_embedded' => 'WhatsApp Embedded',
-    'shopify' => 'Shopify'
+    'whatsapp_embedded' => 'WhatsApp Embedded'
   }.freeze
 
   FEATURE_DESCRIPTIONS = {
-    'saml' => 'Управление единым входом (SSO) через корпоративный протокол SAML.',
     'custom_branding' => 'Настройка фирменного стиля, логотипов и кастомизации платформы.',
     'agent_capacity' => 'Ограничения автоматического распределения диалогов по операторам.',
     'audit_logs' => 'Отслеживание и детальный журнал действий пользователей и администраторов.',
@@ -86,11 +81,8 @@ module SuperAdmin::NavigationHelper
     'line' => 'Интеграция с азиатским мессенджером Line.',
     'google' => 'Настройка авторизации пользователей через Google OAuth.',
     'microsoft' => 'Настройка интеграции с корпоративной почтой Microsoft Office 365.',
-    'linear' => 'Интеграция с системой управления задачами Linear.',
-    'notion' => 'Интеграция с рабочими пространствами и страницами Notion.',
     'slack' => 'Интеграция со Slack для уведомлений и операторов.',
-    'whatsapp_embedded' => 'Быстрое подключение WhatsApp Cloud API (Embedded Signup).',
-    'shopify' => 'Интеграция с заказами и клиентами интернет-магазина Shopify.'
+    'whatsapp_embedded' => 'Быстрое подключение WhatsApp Cloud API (Embedded Signup).'
   }.freeze
 
   # attrs: an entry of features.yml. A function without a config page is looked up by its own key (live_chat, sms).
