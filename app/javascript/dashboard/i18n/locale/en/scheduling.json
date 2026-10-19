@@ -597,7 +597,7 @@
         "COMPANY_NAME_RU": "Company name (Russian)",
         "COMPANY_NAME_KK": "Company name (Kazakh)",
         "COMPANY_NAME_PLACEHOLDER": "e.g. Prime Studio",
-        "GREET_BY_NAME": "Greet client by name ({{имя клиента}})",
+        "GREET_BY_NAME": "Greet client by name ({'{{'}имя клиента{'}}'})",
         "INCLUDE_DATETIME": "Include booking date and time",
         "INCLUDE_SPECIALIST": "Include specialist",
         "INCLUDE_SERVICE": "Include service",

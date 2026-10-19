@@ -710,7 +710,7 @@
         "SAVE": "Save reminder",
         "EDIT": "Edit",
         "TEXT_AUTHOR_HELP": {
-          "SELF": "Write the final text yourself. Liquid variables {{...}}, {%...%} tags, and field:// references are detected automatically.",
+          "SELF": "Write the final text yourself. Liquid variables {'{{'}...{'}}'}, {'{%'}...{'%}'} tags, and field:// references are detected automatically.",
           "AGENT": "The AI agent will generate the message at execution time from your instructions and the current context."
         },
         "REPEAT_MODE": {
@@ -771,7 +771,7 @@
           "TEMPLATE_LANGUAGE_PLACEHOLDER": "Select template language",
           "TEMPLATE_EMPTY": "No WhatsApp templates are available for this inbox yet.",
           "TEMPLATE_EMPTY_DESCRIPTION": "Sync templates for the current WhatsApp inbox or switch back to free text.",
-          "BODY_NOTE": "If the message contains {{...}}, {%...%}, or field:// references, template mode will be detected automatically.",
+          "BODY_NOTE": "If the message contains {'{{'}...{'}}'}, {'{%'}...{'%}'}, or field:// references, template mode will be detected automatically.",
           "INSTRUCTIONS": "AI agent instructions",
           "INSTRUCTIONS_PLACEHOLDER": "Describe what message the AI agent should generate when this reminder runs",
           "TIMING_MODE": "When to send",
@@ -864,7 +864,7 @@
       "SAVE": "Save reminder",
       "EDIT": "Edit",
       "TEXT_AUTHOR_HELP": {
-        "SELF": "Write the final text yourself. Liquid variables {{...}}, {%...%} tags, and field:// references are detected automatically.",
+        "SELF": "Write the final text yourself. Liquid variables {'{{'}...{'}}'}, {'{%'}...{'%}'} tags, and field:// references are detected automatically.",
         "AGENT": "The AI agent will generate the message at execution time from your instructions and the current context."
       },
       "REPEAT_MODE": {
@@ -919,7 +919,7 @@
         "WHATSAPP_TEMPLATE_TAB": "WhatsApp template",
         "BODY": "Message",
         "BODY_PLACEHOLDER": "Write the message that should be sent later",
-        "BODY_NOTE": "If the message contains {{...}}, {%...%}, or field:// references, template mode will be detected automatically.",
+        "BODY_NOTE": "If the message contains {'{{'}...{'}}'}, {'{%'}...{'%}'}, or field:// references, template mode will be detected automatically.",
         "TEMPLATE": "Template",
         "TEMPLATE_PLACEHOLDER": "Select a WhatsApp template",
         "TEMPLATE_LANGUAGE": "Template language",

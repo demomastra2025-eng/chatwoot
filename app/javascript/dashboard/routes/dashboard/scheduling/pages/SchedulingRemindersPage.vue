@@ -397,12 +397,34 @@ const handlePackGenerated = ({ drafts }) => {
       item => item.key === draft.presetKey
     );
     if (!preset) return;
-    const matched = rawTemplates.value.find(item => item.name === draft.name);
+    const matched =
+      rawTemplates.value.find(
+        item =>
+          item.name === draft.name &&
+          (!draft.language || item.language === draft.language)
+      ) || rawTemplates.value.find(item => item.name === draft.name);
     if (matched) {
       presetStates[preset.key].templateKey = makeTemplateKey(matched);
+      if (draft.semanticKeyMap && Object.keys(draft.semanticKeyMap).length) {
+        presetStates[preset.key].variableBindings = {
+          ...draft.semanticKeyMap,
+        };
+      }
       ensureDefaultBindingsForPreset(preset);
     }
   });
+};
+
+const handleCustomTemplateCreated = createdTemplate => {
+  if (!createdTemplate?.name) return;
+  const activeKey =
+    expandedPresetKey.value || APPOINTMENT_REMINDER_PRESETS[0].key;
+  const preset = APPOINTMENT_REMINDER_PRESETS.find(
+    item => item.key === activeKey
+  );
+  if (!preset) return;
+  presetStates[preset.key].templateKey = makeTemplateKey(createdTemplate);
+  ensureDefaultBindingsForPreset(preset);
 };
 
 const buildAutomationRulePayload = preset => {
@@ -561,7 +583,6 @@ onMounted(() => {
             size="sm"
             icon="i-lucide-sparkles"
             :label="t('SCHEDULING.REMINDERS.ACTIONS.GENERATE_PACK')"
-            :disabled="!selectedInboxId"
             @click="openTemplatePackModal"
           />
         </div>
@@ -867,12 +888,14 @@ onMounted(() => {
                       </div>
                     </div>
 
-                    <div
+                    <button
                       v-else
-                      class="rounded-xl border border-dashed border-n-weak bg-white/60 dark:bg-n-solid-2/60 p-6 text-center text-xs text-n-slate-11"
+                      type="button"
+                      class="w-full cursor-pointer rounded-xl border border-dashed border-n-weak bg-white/60 dark:bg-n-solid-2/60 p-6 text-center text-xs text-n-slate-11 transition-colors hover:border-n-brand/60 hover:text-n-brand"
+                      @click="openTemplatePackModal"
                     >
                       {{ t('SCHEDULING.REMINDERS.PREVIEW.EMPTY') }}
-                    </div>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -894,6 +917,7 @@ onMounted(() => {
       v-if="selectedInboxId"
       ref="createTemplateDialogRef"
       :inbox-id="Number(selectedInboxId)"
+      @created="handleCustomTemplateCreated"
     />
   </div>
 </template>

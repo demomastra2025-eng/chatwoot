@@ -1,18 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 import { createStore } from 'vuex';
+import { createI18n } from 'vue-i18n';
+import ruScheduling from 'dashboard/i18n/locale/ru/scheduling.json';
+import kkScheduling from 'dashboard/i18n/locale/kk/scheduling.json';
+import enScheduling from 'dashboard/i18n/locale/en/scheduling.json';
 import SchedulingRemindersPage from './SchedulingRemindersPage.vue';
-
-vi.mock('vue-i18n', () => ({
-  useI18n: () => ({
-    t: (key, params) => {
-      if (params && typeof params === 'object') {
-        return `${key}:${JSON.stringify(params)}`;
-      }
-      return key;
-    },
-  }),
-}));
+import AppointmentTemplatePackDialog from 'dashboard/components-next/Scheduling/AppointmentTemplatePackDialog.vue';
 
 const mockAlert = vi.fn();
 vi.mock('dashboard/composables', () => ({
@@ -25,55 +19,138 @@ vi.mock('dashboard/composables/useAccount', () => ({
   }),
 }));
 
+const createTestI18n = (locale = 'ru') =>
+  createI18n({
+    legacy: false,
+    locale,
+    messages: {
+      ru: {
+        ...ruScheduling,
+        DIALOG: {
+          BUTTONS: {
+            CANCEL: 'Отмена',
+            CONFIRM: 'Подтвердить',
+            CLOSE: 'Закрыть',
+          },
+        },
+      },
+      kk: {
+        ...kkScheduling,
+        DIALOG: {
+          BUTTONS: {
+            CANCEL: 'Бас тарту',
+            CONFIRM: 'Растау',
+            CLOSE: 'Жабу',
+          },
+        },
+      },
+      en: {
+        ...enScheduling,
+        DIALOG: {
+          BUTTONS: {
+            CANCEL: 'Cancel',
+            CONFIRM: 'Confirm',
+            CLOSE: 'Close',
+          },
+        },
+      },
+    },
+  });
+
 describe('SchedulingRemindersPage', () => {
   let store;
+  let wrapper;
+  let inboxTemplates;
   let createAutomationAction;
   let updateAutomationAction;
   let getAutomationsAction;
-
-  const sampleTemplates = [
-    {
-      name: 'booking_reminder_1d',
-      language: 'ru',
-      category: 'UTILITY',
-      status: 'APPROVED',
-      components: [
-        {
-          type: 'BODY',
-          text: 'Здравствуйте, {{1}}! Напоминаем о записи {{2}} в {{3}} к специалисту {{4}} ({{5}}).',
-        },
-        {
-          type: 'BUTTONS',
-          buttons: [{ type: 'QUICK_REPLY', text: 'Подтверждаю запись' }],
-        },
-      ],
-    },
-  ];
+  let createWhatsAppTemplateAction;
 
   beforeEach(() => {
     mockAlert.mockReset();
+
+    if (typeof HTMLDialogElement !== 'undefined') {
+      HTMLDialogElement.prototype.showModal =
+        HTMLDialogElement.prototype.showModal ||
+        function showModalPolyfill() {
+          this.open = true;
+          this.setAttribute('open', '');
+        };
+      HTMLDialogElement.prototype.close =
+        HTMLDialogElement.prototype.close ||
+        function closePolyfill() {
+          this.open = false;
+          this.removeAttribute('open');
+        };
+    }
+
+    inboxTemplates = [
+      {
+        name: 'booking_reminder_1d',
+        language: 'ru',
+        category: 'UTILITY',
+        status: 'APPROVED',
+        components: [
+          {
+            type: 'BODY',
+            text: 'Здравствуйте, {{1}}! Напоминаем о записи {{2}} в {{3}} к специалисту {{4}} ({{5}}).',
+          },
+          {
+            type: 'BUTTONS',
+            buttons: [{ type: 'QUICK_REPLY', text: 'Подтверждаю запись' }],
+          },
+        ],
+      },
+    ];
+
     createAutomationAction = vi.fn().mockResolvedValue({});
     updateAutomationAction = vi.fn().mockResolvedValue({});
     getAutomationsAction = vi.fn().mockResolvedValue([]);
+    createWhatsAppTemplateAction = vi
+      .fn()
+      .mockImplementation(async (_ctx, { template }) => {
+        const created = {
+          name: template.name,
+          language: template.language || 'ru',
+          category: template.category || 'UTILITY',
+          status: 'PENDING',
+          components: [
+            {
+              type: 'BODY',
+              text: template.body_text,
+            },
+          ],
+        };
+        inboxTemplates.push(created);
+        return created;
+      });
 
     store = createStore({
       modules: {
+        accounts: {
+          namespaced: true,
+          getters: {
+            isRTL: () => false,
+          },
+        },
         inboxes: {
           namespaced: true,
           getters: {
-            getAllInboxes: () => [
+            getInboxes: () => [
               {
                 id: 42,
                 name: 'Main WhatsApp Cloud',
                 channel_type: 'Channel::Whatsapp',
                 provider: 'whatsapp_cloud',
-                message_templates: sampleTemplates,
+                message_templates: inboxTemplates,
               },
             ],
+            getAllInboxes: () => [],
           },
           actions: {
+            get: vi.fn().mockResolvedValue([]),
             syncTemplates: vi.fn().mockResolvedValue({}),
-            createWhatsAppTemplate: vi.fn().mockResolvedValue({}),
+            createWhatsAppTemplate: createWhatsAppTemplateAction,
           },
         },
         automations: {
@@ -96,27 +173,39 @@ describe('SchedulingRemindersPage', () => {
     });
   });
 
-  const mountPage = () =>
-    mount(SchedulingRemindersPage, {
+  afterEach(() => {
+    wrapper?.unmount();
+    wrapper = null;
+    document.body.innerHTML = '';
+  });
+
+  const mountPage = ({ locale = 'ru', stubPackDialog = true } = {}) => {
+    wrapper = mount(SchedulingRemindersPage, {
       global: {
-        plugins: [store],
+        plugins: [store, createTestI18n(locale)],
         stubs: {
           SchedulingPageHeader: {
             props: ['title', 'subtitle'],
             template: '<div><h1>{{ title }}</h1><slot name="actions" /></div>',
           },
-          AppointmentTemplatePackDialog: {
-            template: '<div data-testid="pack-dialog-stub" />',
-          },
+          ...(stubPackDialog
+            ? {
+                AppointmentTemplatePackDialog: {
+                  template: '<div data-testid="pack-dialog-stub" />',
+                },
+              }
+            : {}),
           CreateWhatsAppTemplateDialog: {
             template: '<div data-testid="create-dialog-stub" />',
           },
         },
       },
     });
+    return wrapper;
+  };
 
   it('renders all 6 universal appointment reminder scenario cards', async () => {
-    const wrapper = mountPage();
+    mountPage();
     await flushPromises();
 
     expect(getAutomationsAction).toHaveBeenCalled();
@@ -155,7 +244,7 @@ describe('SchedulingRemindersPage', () => {
   });
 
   it('auto-binds booking_reminder_1d template and creates an AutomationRule with confirm_appointment action when toggled on', async () => {
-    const wrapper = mountPage();
+    mountPage();
     await flushPromises();
 
     const dayBeforeCard = wrapper.find(
@@ -199,4 +288,33 @@ describe('SchedulingRemindersPage', () => {
       5: '[Услуга](field://appointment.service_name_snapshot)',
     });
   });
+
+  it.each(['ru', 'kk', 'en'])(
+    'opens AppointmentTemplatePackDialog without vue-i18n nested placeholder errors in %s locale and submits missing templates',
+    async locale => {
+      mountPage({ locale, stubPackDialog: false });
+      await flushPromises();
+
+      const openBtn = wrapper.find('[data-testid="open-template-pack-btn"]');
+      expect(openBtn.exists()).toBe(true);
+      await openBtn.trigger('click');
+      await flushPromises();
+
+      const dialogComponent = wrapper.findComponent(
+        AppointmentTemplatePackDialog
+      );
+      expect(dialogComponent.exists()).toBe(true);
+      expect(document.body.innerHTML).toContain('{{имя клиента}}');
+
+      const submitBtn = document.body.querySelector(
+        '[data-testid="submit-template-pack-btn"]'
+      );
+      expect(submitBtn).not.toBeNull();
+      submitBtn.click();
+      await flushPromises();
+
+      // 5 new templates created (booking_reminder_1d already existed)
+      expect(createWhatsAppTemplateAction).toHaveBeenCalledTimes(5);
+    }
+  );
 });

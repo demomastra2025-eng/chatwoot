@@ -673,6 +673,12 @@ export const buildAppointmentTemplatePackDrafts = (options = {}) => {
       bodyExamples: serialized.examples,
       headerExamples: {},
       variableBindings: serialized.bindings,
+      semanticKeyMap: Object.fromEntries(
+        Object.entries(serialized.semanticMap || {}).map(([idx, item]) => [
+          idx,
+          item.key,
+        ])
+      ),
       buttons,
     };
   });
