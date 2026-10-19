@@ -64,7 +64,7 @@ RSpec.describe SuperAdmin::AiModelsPage do
       card = slot('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')
 
       expect(card.title).to eq('Расшифровка голоса')
-      expect(card.hint).to include('голосовых сообщений')
+      expect(card.hint).to include('голосовые сообщения')
     end
 
     it 'has a Russian title from the locale for the settings that have only an English one in installation_config.yml' do

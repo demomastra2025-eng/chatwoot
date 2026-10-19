@@ -73,7 +73,8 @@ class SuperAdmin::AiConnectionState
 
   def spend_note
     requests = @runtime[:request_count].to_i
-    I18n.t("#{SCOPE}.connection.spend_note", count: requests, errors: SuperAdmin::DisplayHelper.format_number(@runtime[:error_count].to_i))
+    I18n.t("#{SCOPE}.connection.spend_note", count: requests, number: SuperAdmin::DisplayHelper.format_number(requests),
+                                             errors: SuperAdmin::DisplayHelper.format_number(@runtime[:error_count].to_i))
   end
 
   # The catalog of OpenRouter was loaded (the built-in list is the one in use otherwise)
@@ -96,9 +97,10 @@ class SuperAdmin::AiConnectionState
   end
 
   def catalog_note
-    return I18n.t("#{SCOPE}.connection.catalog_note_fallback", count: catalog_models) unless catalog_loaded?
+    number = SuperAdmin::DisplayHelper.format_number(catalog_models)
+    return I18n.t("#{SCOPE}.connection.catalog_note_fallback", number: number) unless catalog_loaded?
 
-    I18n.t("#{SCOPE}.connection.catalog_note_loaded", count: catalog_models)
+    I18n.t("#{SCOPE}.connection.catalog_note_loaded", count: catalog_models, number: number)
   end
 
   def catalog_error

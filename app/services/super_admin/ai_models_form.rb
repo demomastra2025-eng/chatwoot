@@ -50,7 +50,7 @@ class SuperAdmin::AiModelsForm
     return @errors unless valid?
 
     saver = SuperAdmin::AppConfigSaver.new(actor: actor, request: request)
-    ActiveRecord::Base.transaction do
+    ActiveRecord::Base.transaction(requires_new: true) do
       @changes.each do |change|
         messages = saver.save(change.key, change.new, secret: change.secret)
         add_error(change.key, messages.join('; ')) if messages.any?
@@ -95,7 +95,9 @@ class SuperAdmin::AiModelsForm
     return check_number(key, value) if NUMBER_KEYS.include?(key)
     return check_endpoint(key, value) if key == ENDPOINT
 
-    change(key, value) unless value.to_s == @stored[key].to_s
+    # a browser sends the line breaks of a text area as CRLF: the text is the same text
+    text = value.is_a?(String) ? value.gsub("\r\n", "\n") : value
+    change(key, text) unless text.to_s == @stored[key].to_s
   end
 
   # --- a model of one function ---------------------------------------------------------------------------------------
@@ -164,18 +166,23 @@ class SuperAdmin::AiModelsForm
 
     # what is in force stays valid: the stored models, or the recommended list while none is stored
     trusted = stored_list.presence || Llm::Models::DEFAULT_CURATED_MODELS
+    # the recommended list is not a choice of models but «follow the recommended list» (an empty value):
+    # only its size and the default model are checked
+    trusted = @submitted_list if recommended_list?
     result = Llm::InstallationModelConfig.normalize(ALLOWLIST, @submitted_list, default_model: default, trusted: trusted)
     return add_error(ALLOWLIST, result.error) unless result.valid?
 
-    # the models the platform recommends are the list that is in force while none is stored: put back as «follow the recommended list»
-    value = @submitted_list.sort == Llm::Models::DEFAULT_CURATED_MODELS.sort ? '' : result.value
-    change(ALLOWLIST, value)
+    change(ALLOWLIST, recommended_list? ? '' : result.value)
+  end
+
+  def recommended_list?
+    @submitted_list.sort == Llm::Models::DEFAULT_CURATED_MODELS.sort
   end
 
   # The same models as before (the order of the checkboxes is not a choice), or the recommended list while none is stored
   def unchanged_list?
     stored = stored_list
-    return @submitted_list.sort == Llm::Models::DEFAULT_CURATED_MODELS.sort if stored.empty? && @submitted_list.any?
+    return recommended_list? if stored.empty? && @submitted_list.any?
 
     @submitted_list.sort == stored.sort
   end
