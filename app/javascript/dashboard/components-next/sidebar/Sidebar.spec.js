@@ -582,7 +582,6 @@ describe('Sidebar', () => {
         'Settings Integrations',
         'Settings Webhooks',
         'Settings Automation',
-        'Settings Reminders',
         'Employees',
         'Teams',
         'Roles',
@@ -650,23 +649,15 @@ describe('Sidebar', () => {
       ]);
     });
 
-    it('opens the reminders list (former touches) from the settings hub', async () => {
+    it('does not show reminders inside the settings hub', async () => {
       const wrapper = await mountSidebar({
         permissions: ADMINISTRATOR,
-        routeName: 'outbound_touches_index',
       });
       const reminders = sidebarGroup(wrapper, 'Settings')
         .props('children')
         .find(child => child.name === 'Settings Reminders');
 
-      expect(reminders.label).toBe(enSettings.SIDEBAR.TOUCHES);
-      expect(reminders.to).toMatchObject({ name: 'outbound_touches_index' });
-      expect(secondaryColumn(wrapper).props('label')).toBe(
-        sidebarGroup(wrapper, 'Settings').props('label')
-      );
-      expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
-        { name: 'Settings Reminders', active: true },
-      ]);
+      expect(reminders).toBeUndefined();
     });
 
     it('has no status group in the conversation navigation', async () => {

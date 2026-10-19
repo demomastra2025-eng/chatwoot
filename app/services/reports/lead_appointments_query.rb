@@ -22,8 +22,7 @@ module Reports
     SQL
     PROVIDER_BOOKED_SQL = "NULLIF(custom_attributes ->> 'medelement_reception_code', '') IS NOT NULL AND " \
                           "(source = 'medelement' OR custom_attributes ->> 'medelement_provider_sync_status' = 'succeeded')".freeze
-    ATTENDED_SQL = "status = 'completed' AND (attendance_confirmed_at IS NOT NULL OR " \
-                   "COALESCE(custom_attributes -> 'provider_status_audit' ->> 'reason', '') = 'provider_explicit_completed')".freeze
+    ATTENDED_SQL = "status = 'completed'".freeze
 
     QUERY_SQL = <<~SQL.squish.freeze
       #{COHORT_SQL}

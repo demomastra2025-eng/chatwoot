@@ -20,6 +20,9 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
       release_gate: release_gate
     )
 
+    events = query.paginated_events.to_a
+    parent_durations = parent_request_durations_for(events)
+
     render json: {
       snapshot: snapshot,
       time_series: query.time_series,
@@ -29,7 +32,7 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
       performance_budget: query.performance_budget,
       alert_delivery_state: Llm::Monitoring::AlertNotifier.state_for(Current.account),
       preferences: observability_preferences,
-      payload: query.paginated_events.map { |event| serialize_event(event) },
+      payload: events.map { |event| serialize_event(event, parent_durations) },
       meta: query.meta
     }
   end
@@ -63,8 +66,9 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
   def export
     query = events_query
     total_count = query.export_count
-    events = query.export_events(limit: MAX_EXPORT_ROWS)
-    payload = events.map { |event| serialize_event(event) }
+    events = query.export_events(limit: MAX_EXPORT_ROWS).to_a
+    parent_durations = parent_request_durations_for(events)
+    payload = events.map { |event| serialize_event(event, parent_durations) }
     truncated = total_count > MAX_EXPORT_ROWS
     requested_format = params[:export_format].presence || params[:format].presence
     format = request.format.csv? || requested_format.to_s.downcase == 'csv' ? 'csv' : 'json'
@@ -205,7 +209,50 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
     end
   end
 
-  def serialize_event(event)
+  def parent_request_durations_for(events)
+    missing = events.select { |event| event.duration_ms.nil? }
+    return { by_request_id: {}, by_trace_id: {} } if missing.empty?
+
+    parent_req_ids = missing.filter_map { |event| event.payload.is_a?(Hash) ? event.payload['parent_request_id'].presence : nil }.uniq
+    trace_ids = missing.filter_map(&:trace_id).uniq
+
+    by_request_id = if parent_req_ids.any?
+                      Current.account.llm_events
+                             .where(request_id: parent_req_ids)
+                             .where.not(duration_ms: nil)
+                             .pluck(:request_id, :duration_ms)
+                             .to_h
+                    else
+                      {}
+                    end
+
+    by_trace_id = if trace_ids.any?
+                    Current.account.llm_events
+                           .where(trace_id: trace_ids)
+                           .where.not(duration_ms: nil)
+                           .pluck(:trace_id, :duration_ms)
+                           .to_h
+                  else
+                    {}
+                  end
+
+    { by_request_id: by_request_id, by_trace_id: by_trace_id }
+  end
+
+  def resolve_duration_ms(event, parent_durations)
+    return event.duration_ms unless event.duration_ms.nil?
+
+    payload = event.payload.is_a?(Hash) ? event.payload : {}
+    payload_duration = payload['duration_ms']
+    return payload_duration.to_i if payload_duration.present?
+
+    parent_request_id = payload['parent_request_id'].presence
+    return parent_durations[:by_request_id][parent_request_id] if parent_request_id && parent_durations[:by_request_id].key?(parent_request_id)
+
+    parent_durations[:by_trace_id][event.trace_id]
+  end
+
+  def serialize_event(event, parent_durations = { by_request_id: {}, by_trace_id: {} })
     {
       id: event.id,
       created_at: event.created_at,
@@ -242,7 +289,7 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
       completion_tokens: event.completion_tokens,
       thinking_tokens: event.thinking_tokens,
       total_tokens: event.total_tokens,
-      duration_ms: event.duration_ms,
+      duration_ms: resolve_duration_ms(event, parent_durations),
       estimated_cost: event.estimated_cost,
       blocked: event.blocked,
       moderation_skipped: event.moderation_skipped,

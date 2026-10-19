@@ -186,6 +186,7 @@ const formatTokens = value =>
   new Intl.NumberFormat(locale.value).format(Number(value || 0));
 const formatCost = value => `$${Number(value || 0).toFixed(6)}`;
 const formatDuration = value => {
+  if (value === null || value === undefined || value === '') return '—';
   const milliseconds = Number(value);
   if (!Number.isFinite(milliseconds)) return '—';
   return milliseconds < 1000

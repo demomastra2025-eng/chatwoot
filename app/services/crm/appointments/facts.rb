@@ -9,12 +9,7 @@ class Crm::Appointments::Facts
   end
 
   def self.attended?(appointment)
-    return false unless appointment.status == 'completed'
-
-    audit = appointment.custom_attributes.to_h['provider_status_audit'].to_h
-    return true if audit['reason'] == 'provider_explicit_completed'
-
-    appointment.attendance_confirmed_at.present?
+    appointment.status == 'completed'
   end
 
   def self.timezone_for(account)

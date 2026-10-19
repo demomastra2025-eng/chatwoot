@@ -627,6 +627,7 @@ RSpec.describe AutoAssignment::AssignmentService do
         assignment_policy.update!(
           exclusion_rules: { 'excluded_user_ids' => [agent.id] }
         )
+        candidate_conversation = create(:conversation, inbox: inbox, status: 'open', assignee: nil)
 
         expect(round_robin_selector).to receive(:select_agent) do |eligible_members|
           expect(eligible_members.map(&:user_id)).to eq([agent2.id])
@@ -636,7 +637,7 @@ RSpec.describe AutoAssignment::AssignmentService do
         assigned_count = service.perform_bulk_assignment(limit: 1)
 
         expect(assigned_count).to eq(1)
-        expect(conversation.reload.assignee).to eq(agent2)
+        expect(candidate_conversation.reload.assignee).to eq(agent2)
         log = AssignmentDecisionLog.last
         expect(log.candidate_summaries).to include(
           hash_including(

@@ -363,6 +363,15 @@ const linesStatusById = computed(() =>
   )
 );
 const selectedLineLabel = 'Выбрана для звонка';
+const isLinesListOpen = ref(false);
+const activePhoneLine = computed(
+  () =>
+    allPhoneLines.value.find(
+      line => String(line.id) === String(selectedInboxId.value)
+    ) ||
+    allPhoneLines.value[0] ||
+    null
+);
 
 const status = computed(() => {
   if (
@@ -497,6 +506,7 @@ const selectLine = inboxId => {
   if (inboxId === null || inboxId === undefined) return;
   selectedInboxId.value = inboxId;
   phoneWidgetStore.setSelectedInboxId(inboxId);
+  isLinesListOpen.value = false;
 };
 const appendKey = key => {
   phone.value += key;
@@ -819,11 +829,68 @@ onUnmounted(() => {
               </option>
             </Select>
           </div>
-          <div
-            v-if="allPhoneLines.length >= 1"
-            class="mb-2 flex max-h-28 flex-col gap-1 overflow-y-auto"
-            data-testid="phone-widget-lines-list"
-          >
+          <div v-if="allPhoneLines.length >= 1" class="mb-2">
+            <button
+              type="button"
+              class="flex w-full items-center justify-between gap-1.5 rounded-md border border-n-weak bg-n-alpha-1 px-2.5 py-1.5 text-left transition-colors hover:bg-n-alpha-2"
+              :aria-expanded="String(isLinesListOpen)"
+              data-testid="phone-widget-lines-toggle"
+              @click="isLinesListOpen = !isLinesListOpen"
+            >
+              <span
+                v-if="activePhoneLine"
+                class="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
+              >
+                <span
+                  class="size-2 shrink-0 rounded-full"
+                  :class="[
+                    activePhoneLine.statusColor,
+                    { 'animate-pulse': activePhoneLine.status === 'connecting' },
+                  ]"
+                  :title="activePhoneLine.statusLabel"
+                />
+                <i
+                  class="shrink-0 text-xs"
+                  :class="
+                    activePhoneLine.isWhatsapp
+                      ? 'i-ri-whatsapp-fill text-n-teal-9'
+                      : 'i-ri-phone-fill text-n-slate-11'
+                  "
+                  aria-hidden="true"
+                />
+                <span class="min-w-0 flex-1 truncate text-xs font-medium text-n-slate-12">
+                  {{ activePhoneLine.name }}
+                </span>
+                <span
+                  v-if="activePhoneLine.providerLabel"
+                  class="max-w-[5.5rem] truncate rounded bg-n-alpha-2 px-1.5 py-0.5 text-[10px] leading-none font-medium text-n-slate-11"
+                >
+                  {{ activePhoneLine.providerLabel }}
+                </span>
+              </span>
+              <span class="flex shrink-0 items-center gap-1 text-n-slate-11">
+                <span
+                  v-if="allPhoneLines.length > 1"
+                  class="rounded-full bg-n-alpha-2 px-1.5 py-0.5 text-[10px] leading-none font-medium"
+                >
+                  {{ allPhoneLines.length }}
+                </span>
+                <i
+                  class="text-xs transition-transform"
+                  :class="
+                    isLinesListOpen
+                      ? 'i-lucide-chevron-up'
+                      : 'i-lucide-chevron-down'
+                  "
+                  aria-hidden="true"
+                />
+              </span>
+            </button>
+            <div
+              v-show="isLinesListOpen"
+              class="mt-1 flex max-h-28 flex-col gap-1 overflow-y-auto"
+              data-testid="phone-widget-lines-list"
+            >
             <div
               v-for="line in allPhoneLines"
               :key="line.id"
@@ -928,6 +995,7 @@ onUnmounted(() => {
                   />
                 </button>
               </div>
+            </div>
             </div>
           </div>
           <div

@@ -168,13 +168,6 @@ const hasAutomationRules = computed(() => {
   );
 });
 
-const hasOutboundReminders = computed(() => {
-  return isFeatureEnabledonAccount.value(
-    accountId.value,
-    FEATURE_FLAGS.CAMPAIGNS
-  );
-});
-
 const hasAssignmentPolicies = computed(() => {
   return (
     checkPermissions(['administrator']) &&
@@ -972,19 +965,6 @@ const buildSettingsMenuItems = () =>
       icon: 'i-lucide-repeat',
       activeOn: ['automation_list'],
       to: accountScopedRoute('automation_list'),
-    }),
-    // Reminders (the touch engine) run live appointment reminders; the list
-    // stays reachable here to inspect, approve or cancel them.
-    onlyIf(hasOutboundReminders.value, {
-      name: 'Settings Reminders',
-      visibilityKey: 'Settings:Reminders',
-      label: t('SIDEBAR.TOUCHES'),
-      icon: 'i-lucide-bell-ring',
-      activeOn: [
-        'outbound_touches_index',
-        'outbound_broadcasts_personal_index',
-      ],
-      to: accountScopedRoute('outbound_touches_index'),
     }),
     settingsSection('Team', t('SIDEBAR.SETTINGS_SECTIONS.TEAM')),
     {

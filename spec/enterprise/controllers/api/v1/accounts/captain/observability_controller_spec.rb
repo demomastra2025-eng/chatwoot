@@ -167,6 +167,39 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
         expect(json_response[:payload].map { |event| event[:id] }).not_to include(other_account_event.id)
       end
 
+      it 'populates duration_ms from parent llm.chat.request when child llm.chat.complete duration_ms is nil' do
+        parent_event = create(
+          :llm_event,
+          account: account,
+          feature: 'assistant',
+          event_name: 'llm.chat.request',
+          request_id: 'req-parent-1',
+          trace_id: 'trace-parent-1',
+          duration_ms: 1420,
+          created_at: 30.minutes.ago
+        )
+        child_event = create(
+          :llm_event,
+          account: account,
+          feature: 'assistant',
+          event_name: 'llm.chat.complete',
+          request_id: 'req-child-1',
+          trace_id: 'trace-parent-1',
+          duration_ms: nil,
+          payload: { 'parent_request_id' => parent_event.request_id, 'usage_scope' => 'provider_response' },
+          created_at: 29.minutes.ago
+        )
+
+        get "/api/v1/accounts/#{account.id}/captain/observability",
+            params: { event_name: 'llm.chat.complete' },
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        child_payload = json_response[:payload].find { |event| event[:id] == child_event.id }
+        expect(child_payload[:duration_ms]).to eq(1420)
+      end
+
       it 'supports filtering by feature, event name, assistant_id, and date range' do
         create(
           :llm_event,
