@@ -437,7 +437,7 @@ RSpec.describe 'Super admin settings pages', type: :request do
 
         expect(response).to have_http_status(:not_found), "#{config}: #{response.status} #{response.body.first(300)}"
       end
-      expect(InstallationConfig.where(name: %w[LINEAR_CLIENT_ID DASHBOARD_SCRIPTS]).pluck(:value)).not_to include('x', '<script>')
+      expect(InstallationConfig.where(name: %w[LINEAR_CLIENT_ID DASHBOARD_SCRIPTS]).map(&:value)).not_to include('x', '<script>')
     end
 
     it 'cannot be reached with a list in place of the name' do
