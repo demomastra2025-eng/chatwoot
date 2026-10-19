@@ -320,7 +320,7 @@ RSpec.describe 'Super admin settings pages', type: :request do
     it 'says which page was saved, in Russian' do
       post '/super_admin/app_config?config=facebook', params: { app_config: { FB_APP_ID: '123' } }
 
-      expect(response).to redirect_to(super_admin_settings_path)
+      expect(response).to redirect_to(super_admin_app_config_path(config: 'facebook'))
       expect(flash[:notice]).to eq('Настройки «Facebook & Messenger» сохранены.')
     end
 

@@ -20,6 +20,7 @@ nothing when it is not there.
         const input = document.getElementById(targetId);
         const type = input.type === 'password' ? 'text' : 'password';
         input.type = type;
+        button.setAttribute('aria-pressed', type === 'text' ? 'true' : 'false');
 
         // Toggle icon
         const svg = button.querySelector('.eye-icon');
@@ -83,14 +84,15 @@ nothing when it is not there.
       initialPrompts = [];
     }
 
-    // «Strict rules» is the name of the group in the stored prompts (data), not a label of the screen.
+    // A new prompt has no group: an empty group is saved as the group of strict rules (Captain::Assistant), and the
+    // placeholder of the field says so in Russian.
     if (!initialPrompts.length) {
-      addRow({ group: 'Strict rules', content: '', slot: '' });
+      addRow({ group: '', content: '', slot: '' });
     } else {
       initialPrompts.forEach(addRow);
     }
 
-    addButton.addEventListener('click', () => addRow({ group: 'Strict rules', content: '', slot: '' }));
+    addButton.addEventListener('click', () => addRow({ group: '', content: '', slot: '' }));
     builder.closest('form')?.addEventListener('submit', syncRows);
   });
   </script>

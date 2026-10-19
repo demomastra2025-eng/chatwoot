@@ -26,7 +26,7 @@ RSpec.describe SuperAdmin::AppConfigLabels do
       expect(described_class.page_title('captain')).to eq('Модели ИИ')
       expect(described_class.page_title('general')).to eq('Общие параметры')
       expect(described_class.page_title('facebook')).to eq('Facebook & Messenger')
-      expect(described_class.page_title('whatsapp_embedded')).to eq('WhatsApp Embedded')
+      expect(described_class.page_title('whatsapp_embedded')).to eq('WhatsApp: быстрое подключение')
     end
 
     it 'humanizes a page nobody named' do

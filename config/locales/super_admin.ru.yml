@@ -362,6 +362,7 @@ ru:
       platform_banner: "Баннер платформы"
     navigation:
       agent_app: "Кабинет оператора"
+      agent_app_hint: "Рабочее место оператора: диалоги, контакты и отчёты"
       logout: "Выйти"
       brand: "OneLink"
       console: "Супер-админка"
@@ -451,6 +452,7 @@ ru:
         unlimited: "Без лимита"
       flashes:
         demo_started: "Запущена генерация демо-данных."
+        demo_disabled: "Демо-данные на этом сервере выключены."
         response_usage_reset: "Расход ответов ИИ сброшен."
         response_usage_reset_failed: "Не удалось сбросить расход ответов ИИ."
         token_usage_reset: "Расход токенов ИИ сброшен."

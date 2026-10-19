@@ -110,7 +110,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         post '/super_admin/app_config?config=facebook', params: { app_config: { FB_APP_ID: 'FB_APP_ID' } }
 
         expect(response).to have_http_status(:found)
-        expect(response).to redirect_to(super_admin_settings_path)
+        expect(response).to redirect_to(super_admin_app_config_path(config: 'facebook'))
 
         config = GlobalConfig.get('FB_APP_ID')
         expect(config['FB_APP_ID']).to eq('FB_APP_ID')
@@ -133,7 +133,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         }
 
         expect(response).to have_http_status(:found)
-        expect(response).to redirect_to(super_admin_settings_path)
+        expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
         expect(InstallationConfig.find_by(name: 'CAPTAIN_SYSTEM_PROMPTS')&.value).to eq(
           [
             {
@@ -161,7 +161,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         }
 
         expect(response).to have_http_status(:found)
-        expect(response).to redirect_to(super_admin_settings_path)
+        expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
         expect(InstallationConfig.find_by(name: 'CAPTAIN_OPENROUTER_API_KEY')&.value).to eq('[REDACTED]')
         expect(InstallationConfig.find_by(name: 'CAPTAIN_OPENROUTER_ENDPOINT')&.value).to eq('https://openrouter.example/api/v1')
       end
@@ -208,7 +208,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
 
           post '/super_admin/app_config?config=captain', params: { app_config: model_config_params }
 
-          expect(response).to redirect_to(super_admin_settings_path)
+          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
           expect(InstallationConfig.find_by(name: 'CAPTAIN_DEFAULT_MODEL')&.value).to eq('openai/gpt-6-luna')
           expect(InstallationConfig.find_by(name: 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')&.value).to eq('openai/gpt-4o-mini-transcribe')
           expect(InstallationConfig.find_by(name: 'CAPTAIN_IMAGE_RECOGNITION_MODEL')&.value).to eq('openai/gpt-5.4-mini')
@@ -222,7 +222,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         it 'saves the same on the community plan' do
           post '/super_admin/app_config?config=captain', params: { app_config: model_config_params }
 
-          expect(response).to redirect_to(super_admin_settings_path)
+          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
           expect(InstallationConfig.find_by(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')&.value)
             .to eq('["openai/gpt-6-luna","openai/gpt-5.6-luna"]')
         end
@@ -243,7 +243,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           post '/super_admin/app_config?config=captain',
                params: { app_config: { CAPTAIN_CUSTOM_GUARDRAIL_MODEL: 'openai/gpt-5.6-luna' } }
 
-          expect(response).to redirect_to(super_admin_settings_path)
+          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
           expect(InstallationConfig.find_by(name: 'CAPTAIN_CUSTOM_GUARDRAIL_MODEL')&.value).to eq('openai/gpt-5.6-luna')
           expect(InstallationConfig.find_by(name: 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL')&.value).to eq('microsoft/microsoft-decision-1')
         end
@@ -252,7 +252,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           post '/super_admin/app_config?config=captain',
                params: { app_config: { CAPTAIN_OUTCOME_CLASSIFIER_MODEL: 'microsoft/microsoft-decision-1-20261009' } }
 
-          expect(response).to redirect_to(super_admin_settings_path)
+          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
           expect(InstallationConfig.find_by(name: 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL')&.value)
             .to eq('microsoft/microsoft-decision-1-20261009')
         end
@@ -264,7 +264,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           post '/super_admin/app_config?config=captain',
                params: { app_config: { CAPTAIN_CUSTOM_GUARDRAIL_MODEL: 'microsoft/microsoft-decision-1' } }
 
-          expect(response).to redirect_to(super_admin_settings_path)
+          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
           expect(InstallationConfig.find_by(name: 'CAPTAIN_CUSTOM_GUARDRAIL_MODEL')&.value).to eq('microsoft/microsoft-decision-1')
           expect(InstallationConfig.find_by(name: 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL')&.value).to eq('openai/gpt-5.4-mini')
         end
@@ -276,7 +276,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           post '/super_admin/app_config?config=captain',
                params: { app_config: { CAPTAIN_AUDIO_TRANSCRIPTION_MODEL: '', CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: '  ' } }
 
-          expect(response).to redirect_to(super_admin_settings_path)
+          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
           expect(InstallationConfig.find_by(name: 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')&.value).to be_blank
           expect(Llm::Models.configured_model_allowlist).to be_nil
         end
@@ -334,7 +334,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
 
           post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_DEFAULT_MODEL: 'openai/gpt-5.6-luna' } }
 
-          expect(response).to redirect_to(super_admin_settings_path)
+          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
           expect(InstallationConfig.find_by(name: 'CAPTAIN_DEFAULT_MODEL')&.value).to eq('openai/gpt-5.6-luna')
           expect(Llm::Config.installation_default_model).to eq('openai/gpt-5.6-luna')
         end

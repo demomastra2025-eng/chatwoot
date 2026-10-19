@@ -60,7 +60,7 @@ module SuperAdmin::NavigationHelper
     'google' => 'Google OAuth',
     'microsoft' => 'Microsoft Office 365',
     'slack' => 'Slack',
-    'whatsapp_embedded' => 'WhatsApp Embedded'
+    'whatsapp_embedded' => 'WhatsApp: быстрое подключение'
   }.freeze
 
   FEATURE_DESCRIPTIONS = {

@@ -115,7 +115,7 @@ slack:
   icon: 'icon-slack'
   config_key: 'slack'
 whatsapp_embedded:
-  name: 'WhatsApp Embedded'
+  name: 'WhatsApp: быстрое подключение'
   description: 'Configuration for setting up WhatsApp Embedded Integration'
   enabled: true
   icon: 'icon-whatsapp-line'

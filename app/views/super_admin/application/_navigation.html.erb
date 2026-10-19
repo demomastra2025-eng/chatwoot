@@ -106,7 +106,7 @@ Resources that nobody placed in a group land in "Дополнительно".
     <% end %>
 
     <div class="mt-auto flex flex-col gap-0.5 border-t border-n-weak pt-2.5">
-      <%= render 'nav_item', icon: 'i-lucide-external-link', url: app_path, label: t('super_admin.navigation.agent_app'), title: 'Agent Dashboard' %>
+      <%= render 'nav_item', icon: 'i-lucide-external-link', url: app_path, label: t('super_admin.navigation.agent_app'), title: t('super_admin.navigation.agent_app_hint') %>
       <%= render 'nav_item', icon: 'i-lucide-log-out', url: super_admin_logout_path, label: t('super_admin.navigation.logout') %>
     </div>
   </div>

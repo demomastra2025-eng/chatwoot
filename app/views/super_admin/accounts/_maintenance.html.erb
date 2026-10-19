@@ -12,7 +12,7 @@ until the date the deletion can be cancelled (the banner at the top of the card)
 - `account`: the clinic (Account).
 %>
 <%
-  seeding_enabled = ActiveModel::Type::Boolean.new.cast(ENV.fetch('ENABLE_ACCOUNT_SEEDING', !Rails.env.production?))
+  seeding_enabled = Seeders::Seeding.enabled?
   deletion = SuperAdmin::AccountDeletion.new(account: account)
 %>
 

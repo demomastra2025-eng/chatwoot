@@ -96,7 +96,7 @@ in Russian, times are Astana time, amounts are US dollars.
             <h3 class="m-0 text-xs font-medium text-n-slate-11"><%= t("super_admin.ai_analytics.spread.#{kind}") %></h3>
             <div class="admin-chips">
               <% counts.sort_by { |(_, count)| -count.to_i }.first(6).each do |name, count| %>
-                <span class="admin-chip"><%= "#{name.presence || none} (#{super_admin_number(count)})" %></span>
+                <span class="admin-chip"><%= "#{name.present? ? SuperAdmin::AiAnalyticsLabels.label(kind, name) : none} (#{super_admin_number(count)})" %></span>
               <% end %>
               <% if counts.blank? %>
                 <span class="text-sm text-n-slate-11"><%= no_data %></span>

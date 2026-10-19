@@ -75,7 +75,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     else
       expire_openrouter_key_health_cache if @config == 'captain'
       refresh_llm_config if @config == 'captain'
-      redirect_to super_admin_settings_path, notice: flash_text(:saved, page: SuperAdmin::AppConfigLabels.page_title(@config))
+      redirect_to super_admin_app_config_path(config: @config), notice: flash_text(:saved, page: SuperAdmin::AppConfigLabels.page_title(@config))
     end
   end
 

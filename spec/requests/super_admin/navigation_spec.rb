@@ -78,7 +78,7 @@ RSpec.describe 'Super Admin sidebar', type: :request do
 
       expect(footer.map { |anchor| anchor.text.squish }).to eq(['Кабинет оператора', 'Выйти'])
       expect(footer.map { |anchor| anchor['href'] }).to eq(['/app', '/super_admin/logout'])
-      expect(footer.first['title']).to eq('Agent Dashboard')
+      expect(footer.first['title']).to eq('Рабочее место оператора: диалоги, контакты и отчёты')
     end
 
     it 'keeps the hidden resources out of the sidebar' do

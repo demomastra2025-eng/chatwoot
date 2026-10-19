@@ -102,7 +102,11 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     redirect_to [namespace, requested_resource], alert: organization_stale_flash(e.holder)
   end
 
+  # Generates demo data where the installation allows it (Seeders::Seeding); the button is hidden elsewhere, and the
+  # address refuses too.
   def seed
+    return redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.demo_disabled')) unless Seeders::Seeding.enabled?
+
     Internal::SeedAccountJob.perform_later(requested_resource)
     redirect_back(fallback_location: [namespace, requested_resource], notice: I18n.t('super_admin.accounts.flashes.demo_started'))
   end
