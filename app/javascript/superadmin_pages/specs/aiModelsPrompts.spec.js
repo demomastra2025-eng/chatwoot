@@ -49,9 +49,9 @@ describe('initPromptsBuilder', () => {
     const [row] = rows();
 
     expect(field(row, 'group').value).toBe('Своя группа');
-    expect(field(row, 'group').selectedOptions[0].textContent).toBe('Своя группа (своя группа)');
+    expect(field(row, 'group').options[field(row, 'group').selectedIndex].textContent).toBe('Своя группа (своя группа)');
     expect(field(row, 'slot').value).toBe('old_slot');
-    expect(field(row, 'slot').selectedOptions[0].textContent).toBe('old_slot (своё место)');
+    expect(field(row, 'slot').options[field(row, 'slot').selectedIndex].textContent).toBe('old_slot (своё место)');
     expect(saved(hidden)[0]).toMatchObject({ group: 'Своя группа', slot: 'old_slot' });
   });
 

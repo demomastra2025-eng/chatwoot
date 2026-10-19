@@ -129,8 +129,10 @@ export const enhanceModelSelect = (select, texts = {}) => {
   const optionItems = () => items.filter(item => item.entry.type === 'option');
   const visibleOptions = () => optionItems().filter(item => !item.node.hidden);
 
+  const selectedOption = () => select.options[select.selectedIndex] || null;
+
   const selectedEntry = () => {
-    const option = select.selectedOptions[0];
+    const option = selectedOption();
     return option ? optionItems().find(item => item.entry.value === option.value) : null;
   };
 
@@ -140,7 +142,7 @@ export const enhanceModelSelect = (select, texts = {}) => {
       value.replaceChildren(...describe(doc, current.entry));
     } else {
       // a value the list was not built with (put back by «Вернуть»): its own text
-      const option = select.selectedOptions[0];
+      const option = selectedOption();
       const text = option ? option.dataset.name || option.textContent.trim() : '';
       value.replaceChildren(create(doc, 'span', 'admin-combo__name', text));
     }

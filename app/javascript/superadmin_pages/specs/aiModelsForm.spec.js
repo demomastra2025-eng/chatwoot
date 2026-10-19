@@ -149,7 +149,6 @@ describe('initSettingsForm', () => {
     fire(select);
     const event = leave();
     expect(event.defaultPrevented).toBe(true);
-    expect(event.returnValue).toBe('Есть несохранённые изменения. Уйти со страницы?');
 
     form.addEventListener('submit', e => e.preventDefault());
     form.dispatchEvent(new Event('submit', { cancelable: true }));

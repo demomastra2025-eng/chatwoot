@@ -149,7 +149,7 @@ export const initAllowlist = (card, texts = {}) => {
     addSelect.addEventListener('change', () => {
       const id = addSelect.value;
       if (!id) return;
-      const option = addSelect.selectedOptions[0];
+      const option = addSelect.options[addSelect.selectedIndex];
       if (checkedRows().length >= max && !(rowFor(id) && checkOf(rowFor(id)).checked)) {
         say(texts.too_many);
       } else {
