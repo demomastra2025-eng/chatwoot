@@ -116,12 +116,8 @@ module Reports
         })
         headline = ref.headline.presence || 'Без названия'
         entry[:headlines] << headline unless entry[:headlines].include?(headline)
-        if ref.media_type.present? && !entry[:media_types].include?(ref.media_type)
-          entry[:media_types] << ref.media_type
-        end
-        if ref.source_url.present? && !entry[:source_urls].include?(ref.source_url)
-          entry[:source_urls] << ref.source_url
-        end
+        entry[:media_types] << ref.media_type if ref.media_type.present? && !entry[:media_types].include?(ref.media_type)
+        entry[:source_urls] << ref.source_url if ref.source_url.present? && !entry[:source_urls].include?(ref.source_url)
         entry[:chat_keys] << (ref.conversation_id || "ref:#{ref.id}")
         entry[:event_count] += 1
       end
@@ -215,6 +211,7 @@ module Reports
       return {} if conv_ids.empty?
 
       rows = account.messages
+                    .unscope(:order)
                     .where(
                       conversation_id: conv_ids,
                       private: false,
@@ -309,7 +306,7 @@ module Reports
       submissions = account.lead_submissions.where(created_at: date_range.from_at...date_range.until_at)
       processed_in_period = account.lead_submissions.where(processed_at: date_range.from_at...date_range.until_at)
       processing_seconds = submissions.where.not(processed_at: nil)
-                                       .average(Arel.sql('EXTRACT(EPOCH FROM (processed_at - created_at))'))
+                                      .average(Arel.sql('EXTRACT(EPOCH FROM (processed_at - created_at))'))
 
       {
         submissions_processed_in_selected_period: processed_in_period.count,

@@ -58,7 +58,8 @@ RSpec.describe Reports::LeadsQuery do
       unique_ctwa_click_id_count: 2
     )
     expect(referrals.fetch(:attribution_breakdown)).to include(
-      include(provider: 'facebook', attribution_type: 'messaging_referral', source_type: 'NON_AD_REFERRAL', referral_type: 'OPEN_THREAD', event_count: 1)
+      include(provider: 'facebook', attribution_type: 'messaging_referral', source_type: 'NON_AD_REFERRAL', referral_type: 'OPEN_THREAD',
+              event_count: 1)
     )
   end
 
@@ -123,6 +124,31 @@ RSpec.describe Reports::LeadsQuery do
       submissions_processed_in_selected_period: 1,
       selected_submissions_with_processed_at: 1,
       average_processing_seconds: 60.0
+    )
+  end
+
+  it 'aggregates referral conversations with incoming and outgoing message counts and response time without PG::GroupingError' do
+    inbox = create(:inbox, account: account)
+    conversation = create(:conversation, account: account, inbox: inbox, contact: contact)
+    received_at = Time.iso8601('2026-03-29T08:00:00Z')
+    create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :incoming, created_at: received_at)
+    create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :outgoing, created_at: received_at + 5.minutes)
+    create(
+      :meta_ad_referral,
+      account: account, inbox: inbox, contact: contact, conversation: conversation,
+      provider: 'whatsapp', provider_message_id: 'whatsapp-conv-msg-1',
+      attribution_type: 'click_to_whatsapp_ad', source_type: 'ad', ad_id: 'ad-123',
+      headline: 'МРТ со скидкой', media_type: 'video', source_url: 'https://fb.me/test', received_at: received_at
+    )
+
+    referrals = described_class.new(account: account, params: report_params).perform.fetch(:referrals)
+
+    expect(referrals.fetch(:meta_ads_summary)).to include(
+      chats_count: 1, contacts_count: 1, events_count: 1, ad_ids_count: 1,
+      answered_chats_count: 1, incoming_messages_count: 1, outgoing_messages_count: 1
+    )
+    expect(referrals.fetch(:referral_conversations)).to contain_exactly(
+      include(conversation_id: conversation.id, incoming_count: 1, outgoing_count: 1, answered: true, response_minutes: 5.0)
     )
   end
 end
