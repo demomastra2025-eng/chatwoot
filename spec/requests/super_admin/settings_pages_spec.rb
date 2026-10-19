@@ -422,7 +422,7 @@ RSpec.describe 'Super admin settings pages', type: :request do
       removed.each do |config|
         get "/super_admin/app_config?config=#{config}"
 
-        expect(response).to have_http_status(:not_found), config
+        expect(response).to have_http_status(:not_found), "#{config}: #{response.status} #{response.body.first(300)}"
         expect(response.body).not_to include('app_config[ENABLE_ACCOUNT_SIGNUP]'), config
       end
     end
@@ -432,7 +432,7 @@ RSpec.describe 'Super admin settings pages', type: :request do
         expect { post "/super_admin/app_config?config=#{config}", params: { app_config: { LINEAR_CLIENT_ID: 'x', DASHBOARD_SCRIPTS: '<script>' } } }
           .not_to change(InstallationConfig, :count)
 
-        expect(response).to have_http_status(:not_found), config
+        expect(response).to have_http_status(:not_found), "#{config}: #{response.status} #{response.body.first(300)}"
       end
       expect(InstallationConfig.where(name: %w[LINEAR_CLIENT_ID DASHBOARD_SCRIPTS]).pluck(:value)).not_to include('x', '<script>')
     end
