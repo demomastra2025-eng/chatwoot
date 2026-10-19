@@ -68,7 +68,7 @@ RSpec.describe 'Super Admin Users API', type: :request do
         [user.pubsub_token[4, 12], 'token-QWERTY123'].each do |piece|
           get '/super_admin/users', params: { search: piece }
           expect(response).to have_http_status(:success)
-          expect(Nokogiri::HTML(response.body).css('tbody tr')).to be_empty, piece
+          expect(Nokogiri::HTML(response.body).css('tbody tr').map { |tr| tr.text.squish }).to eq(['Ничего не найдено']), piece
         end
         expect(UserDashboard.new.search_attributes).to include(:id, :name, :email)
         expect(UserDashboard.new.search_attributes).not_to include(:pubsub_token, :confirmation_token, :tokens)

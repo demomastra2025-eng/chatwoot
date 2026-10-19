@@ -73,7 +73,7 @@ RSpec.describe 'Super Admin platform app API', type: :request do
         get '/super_admin/platform_apps', params: { search: platform_app.access_token.token[2, 12] }
 
         expect(response).to have_http_status(:success)
-        expect(page.css('tbody tr')).to be_empty
+        expect(page.css('tbody tr').map { |tr| tr.text.squish }).to eq(['Ничего не найдено'])
       end
 
       it 'asks the database the same questions for one partner and for several, with the right counts' do

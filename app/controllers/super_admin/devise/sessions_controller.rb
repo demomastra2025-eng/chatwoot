@@ -120,7 +120,7 @@ class SuperAdmin::Devise::SessionsController < Devise::SessionsController
   # No more codes for a while: the pending password step is dropped and the sign-in page says so
   def close_second_step
     session.delete(TWO_FACTOR_SESSION_KEY)
-    redirect_to super_admin_session_path, flash: { error: I18n.t('super_admin.two_factor.too_many', count: TWO_FACTOR_LOCKOUT.in_minutes.to_i) }
+    redirect_to super_admin_session_path, flash: { error: I18n.t('super_admin.two_factor.too_many', minutes: TWO_FACTOR_LOCKOUT.in_minutes.to_i) }
   end
 
   # The super admin whose password was checked a moment ago; nil when there is none or the time is over

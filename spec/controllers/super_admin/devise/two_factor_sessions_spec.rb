@@ -8,7 +8,7 @@ RSpec.describe 'Super Admin sign-in with two-factor authentication', type: :requ
   let(:page) { Nokogiri::HTML(response.body) }
   let(:attempts_key) { format(Redis::RedisKeys::SUPER_ADMIN_TWO_FACTOR_ATTEMPTS, super_admin_id: super_admin.id) }
   let(:session_cookie) { Rails.application.config.session_options[:key] }
-  let(:too_many) { 'Слишком много неверных кодов. Второй шаг закрыт: войдите снова через 15 минут.' }
+  let(:too_many) { 'Слишком много неверных кодов. Второй шаг закрыт на 15 мин.: войдите снова позже.' }
 
   # The count of codes lives in Redis, which no example rolls back
   before { Redis::Alfred.delete(attempts_key) }
