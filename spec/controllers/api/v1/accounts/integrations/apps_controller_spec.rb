@@ -53,15 +53,33 @@ RSpec.describe 'Integration Apps API', type: :request do
         expect(apps['action']).to eql(first_app.action)
       end
 
-      it 'returns slack app even when slack is not configured yet' do
+      it 'does not list slack until its credentials are configured' do
+        with_modified_env SLACK_CLIENT_ID: '', SLACK_CLIENT_SECRET: '' do
+          get api_v1_account_integrations_apps_url(account),
+              headers: admin.create_new_auth_token,
+              as: :json
+
+          expect(response).to have_http_status(:success)
+          expect(response.parsed_body['payload'].pluck('id')).not_to include('slack')
+        end
+      end
+
+      it 'does not list google translate for an account that has not connected it' do
         get api_v1_account_integrations_apps_url(account),
             headers: admin.create_new_auth_token,
             as: :json
 
-        expect(response).to have_http_status(:success)
-        apps = response.parsed_body['payload']
-        slack_app = apps.find { |app| app['id'] == 'slack' }
-        expect(slack_app).not_to be_nil
+        expect(response.parsed_body['payload'].pluck('id')).not_to include('google_translate')
+      end
+
+      it 'lists google translate for an account that has connected it' do
+        create(:integrations_hook, :google_translate, account: account)
+
+        get api_v1_account_integrations_apps_url(account),
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response.parsed_body['payload'].pluck('id')).to include('google_translate')
       end
 
       it 'returns slack app with appropriate redirect url when configured' do

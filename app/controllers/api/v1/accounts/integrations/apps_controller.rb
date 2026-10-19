@@ -10,9 +10,7 @@ class Api::V1::Accounts::Integrations::AppsController < Api::V1::Accounts::BaseC
   private
 
   def fetch_apps
-    @apps = Integrations::App.visible_in_ui.select do |app|
-      app.active?(Current.account) || app.id == 'slack'
-    end
+    @apps = Integrations::App.visible_in_ui.select { |app| app.active?(Current.account) }
   end
 
   def fetch_app

@@ -82,10 +82,42 @@ RSpec.describe Integrations::App do
     let(:app_name) { 'slack' }
 
     context 'when the app is slack' do
-      it 'returns true if SLACK_CLIENT_SECRET is present' do
-        with_modified_env SLACK_CLIENT_SECRET: 'random_secret' do
+      it 'returns true if the client id and the secret are present' do
+        with_modified_env SLACK_CLIENT_ID: 'client_id', SLACK_CLIENT_SECRET: 'random_secret' do
           expect(app.active?(account)).to be true
         end
+      end
+
+      it 'returns false if the secret is present but the client id is not' do
+        with_modified_env SLACK_CLIENT_ID: '', SLACK_CLIENT_SECRET: 'random_secret' do
+          expect(app.active?(account)).to be false
+        end
+      end
+
+      it 'returns false if nothing is configured' do
+        with_modified_env SLACK_CLIENT_ID: '', SLACK_CLIENT_SECRET: '' do
+          expect(app.active?(account)).to be false
+        end
+      end
+    end
+
+    context 'when the app is google_translate' do
+      let(:app_name) { 'google_translate' }
+
+      it 'returns false for an account that has not connected it' do
+        expect(app.active?(account)).to be false
+      end
+
+      it 'returns true for an account that has connected it' do
+        create(:integrations_hook, :google_translate, account: account)
+
+        expect(app.active?(account)).to be true
+      end
+
+      it 'does not take the connection of another account for its own' do
+        create(:integrations_hook, :google_translate, account: create(:account))
+
+        expect(app.active?(account)).to be false
       end
     end
 

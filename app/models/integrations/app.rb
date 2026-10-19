@@ -55,7 +55,9 @@ class Integrations::App
   def active?(account)
     case params[:id]
     when 'slack'
-      GlobalConfigService.load('SLACK_CLIENT_SECRET', nil).present?
+      slack_configured?
+    when 'google_translate'
+      google_translate_connected?(account)
     when 'linear'
       account.feature_enabled?('linear_integration') && GlobalConfigService.load('LINEAR_CLIENT_ID', nil).present?
     when 'shopify'
@@ -126,6 +128,18 @@ class Integrations::App
   end
 
   private
+
+  # «Подключить» goes to Slack with the client id of the platform and comes back with the secret: both must be set,
+  # otherwise the button would lead to a Slack page that cannot work
+  def slack_configured?
+    GlobalConfigService.load('SLACK_CLIENT_ID', nil).present? && GlobalConfigService.load('SLACK_CLIENT_SECRET', nil).present?
+  end
+
+  # The translation service has no key of the platform: every account brings its own Google project. It is listed only
+  # for an account that has connected it, so the others are not offered an integration nobody uses.
+  def google_translate_connected?(account)
+    account.hooks.exists?(app_id: 'google_translate')
+  end
 
   def shopify_enabled?(account)
     account.feature_enabled?('shopify_integration') && GlobalConfigService.load('SHOPIFY_CLIENT_ID', nil).present?
