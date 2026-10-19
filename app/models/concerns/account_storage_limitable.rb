@@ -33,22 +33,26 @@ module AccountStorageLimitable
     return if change.blank? || skip_storage_validation?
 
     blobs = changed_blobs(change)
-    return if blobs.sum { |blob| blob.byte_size.to_i }.zero?
-
     account = storage_limit_account
-    return if account.blank?
+    return if account.blank? || blobs.sum { |blob| blob.byte_size.to_i }.zero?
 
     storage_service = AccountLimits::StorageUsageService.new(account: account)
-    # Only blobs the account does not hold yet grow its usage: ActiveStorage carries the files an owner already has
-    # in the change, and a blob that another counted owner holds is not stored a second time.
-    extra_bytes = storage_service.new_blob_bytes(blobs)
-    return if extra_bytes <= 0
-
-    released_bytes = replaced_blob_bytes(change, attachment_name, storage_service, blobs)
-    return if storage_service.within_limit?(extra_bytes: extra_bytes, released_bytes: released_bytes)
+    return if within_storage_limit?(change, attachment_name, storage_service, blobs)
 
     trigger_storage_alert(account)
     errors.add(attachment_name, AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE)
+  end
+
+  def within_storage_limit?(change, attachment_name, storage_service, blobs)
+    return true if storage_service.unlimited?
+
+    # Only blobs the account does not hold yet grow its usage: ActiveStorage carries the files an owner already has
+    # in the change, and a blob that another counted owner holds is not stored a second time.
+    extra_bytes = storage_service.new_blob_bytes(blobs)
+    return true if extra_bytes <= 0
+
+    released_bytes = replaced_blob_bytes(change, attachment_name, storage_service, blobs)
+    storage_service.within_limit?(extra_bytes: extra_bytes, released_bytes: released_bytes)
   end
 
   def skip_storage_validation?

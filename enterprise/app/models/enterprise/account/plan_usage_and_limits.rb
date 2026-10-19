@@ -13,18 +13,21 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
   ].freeze
 
   def usage_limits
-    {
+    limits = {
       agents: agent_limit_metadata[:value].to_i,
       inboxes: usage_limit_metadata(:inboxes)[:value].to_i,
       conversations: usage_limit_metadata(:conversations)[:value].to_i,
       non_web_inboxes: usage_limit_metadata(:non_web_inboxes)[:value].to_i,
-      storage: AccountLimits::StorageUsageService.new(account: self).summary,
       captain: {
         documents: get_captain_limits(:documents),
         responses: get_captain_limits(:responses),
         tokens: get_captain_limits(:tokens)
       }
     }
+    limits.default_proc = proc do |hash, key|
+      hash[key] = AccountLimits::StorageUsageService.new(account: self).summary if key.to_s == 'storage'
+    end
+    limits
   end
 
   def usage_limit_summary(limit_name, consumed:)
@@ -103,8 +106,9 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
   end
 
   def captain_quota_available?
-    response_available = usage_limits.dig(:captain, :responses, :current_available)
-    token_available = usage_limits.dig(:captain, :tokens, :current_available)
+    limits = usage_limits
+    response_available = limits.dig(:captain, :responses, :current_available)
+    token_available = limits.dig(:captain, :tokens, :current_available)
 
     [response_available, token_available].compact.all?(&:positive?)
   end

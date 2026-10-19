@@ -93,6 +93,7 @@ class Telephony::CallSession < ApplicationRecord
   ALLOWED_STATUSES = (CANONICAL_STATUSES + STATUS_ALIASES.keys).uniq.freeze
   TERMINAL_STATUSES = %w[completed missed no_answer busy cancelled rejected failed].freeze
   TERMINAL_STATUS_VALUES = (TERMINAL_STATUSES + STATUS_ALIASES.select { |_key, value| TERMINAL_STATUSES.include?(value) }.keys).uniq.freeze
+  ACTIVE_STATUS_VALUES = (ALLOWED_STATUSES - TERMINAL_STATUS_VALUES).freeze
   UNANSWERED_TERMINAL_STATUSES = %w[missed no_answer busy cancelled rejected failed].freeze
   ALLOWED_DIRECTIONS = %w[inbound outbound].freeze
 
@@ -113,7 +114,7 @@ class Telephony::CallSession < ApplicationRecord
   validates :direction, presence: true, inclusion: { in: ALLOWED_DIRECTIONS }, allow_blank: false
 
   scope :recent, -> { order(created_at: :desc, id: :desc) }
-  scope :active, -> { where.not(status: TERMINAL_STATUS_VALUES) }
+  scope :active, -> { where(status: ACTIVE_STATUS_VALUES) }
 
   def self.normalize_status(value)
     normalized = value.to_s.strip.downcase.tr(' ', '_')

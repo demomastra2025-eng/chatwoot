@@ -99,6 +99,8 @@ class Telephony::CallReconciliationService
 
     retry_failed_reconciliation_events!(result)
     repair_invalid_unanswered_actors!(result)
+    return result unless active_sessions_exist?
+
     reconcile_max_call_duration_sessions!(result)
     reconcile_expired_runtime_leases!(result)
     reconcile_missing_sipuni_local_outbound_sessions!(result)
@@ -112,6 +114,12 @@ class Telephony::CallReconciliationService
   end
 
   private
+
+  def active_sessions_exist?
+    scope = Telephony::CallSession.active
+    scope = scope.where(account_id: account.id) if account.present?
+    scope.exists?
+  end
 
   def repair_invalid_unanswered_actors!(result)
     scope = Telephony::CallSession.where(

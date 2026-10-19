@@ -81,6 +81,10 @@ class AccountLimits::StorageUsageService
 
   # Enforced for uploads by staff, imports and Captain documents. Incoming messages and calls never go through
   # this check: inbound attachments carry skip_storage_limit_validation! and inbound recordings are not validated.
+  def unlimited?
+    account_storage_limit.blank? && global_storage_limit.blank?
+  end
+
   def within_limit?(extra_bytes: 0, released_bytes: 0)
     return true if unlimited?
 
@@ -134,10 +138,6 @@ class AccountLimits::StorageUsageService
 
   def total_limit_bytes
     account_storage_limit.presence || global_storage_limit.presence || ChatwootApp.max_limit.to_i
-  end
-
-  def unlimited?
-    account_storage_limit.blank? && global_storage_limit.blank?
   end
 
   def account_storage_limit

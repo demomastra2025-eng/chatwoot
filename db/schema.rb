@@ -2605,7 +2605,9 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_183000) do
     t.index ["account_id", "status"], name: "idx_medelement_sync_runs_account_status"
     t.index ["account_id"], name: "index_medelement_sync_runs_on_account_id"
     t.index ["completed_at"], name: "idx_medelement_sync_runs_terminal_completed", where: "((status)::text = ANY (ARRAY[('succeeded'::character varying)::text, ('partial'::character varying)::text, ('failed'::character varying)::text]))"
+    t.index ["hook_id", "completed_at", "id"], name: "index_medelement_sync_runs_on_hook_completed_at"
     t.index ["hook_id", "created_at"], name: "idx_medelement_sync_runs_hook_created"
+    t.index ["phase_results"], name: "index_medelement_sync_runs_on_phase_results", using: :gin
     t.index ["hook_id"], name: "idx_medelement_sync_runs_one_active_hook", unique: true, where: "((hook_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('retrying'::character varying)::text])))"
     t.index ["hook_id"], name: "index_medelement_sync_runs_on_hook_id"
     t.index ["requested_by_id"], name: "index_medelement_sync_runs_on_requested_by_id"
@@ -3465,7 +3467,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_183000) do
     t.index ["external_call_ref"], name: "index_telephony_call_sessions_on_external_call_ref"
     t.index ["inbox_id"], name: "index_telephony_call_sessions_on_inbox_id"
     t.index ["number_binding_id"], name: "index_telephony_call_sessions_on_number_binding_id"
-    t.index ["provider", "status", "started_at", "created_at"], name: "index_telephony_call_sessions_on_active_status_started_at", where: "((status)::text <> ALL ((ARRAY['completed'::character varying, 'failed'::character varying, 'no_answer'::character varying, 'busy'::character varying, 'canceled'::character varying, 'rejected'::character varying, 'missed'::character varying])::text[]))"
+    t.index ["account_id", "started_at"], name: "index_telephony_call_sessions_on_active_status_started_at", where: "((status)::text = ANY ((ARRAY['created'::character varying, 'ringing'::character varying, 'connecting'::character varying, 'in_progress'::character varying, 'queued'::character varying, 'initiated'::character varying, 'answered'::character varying, 'in-progress'::character varying, 'inprogress'::character varying, 'session_started'::character varying, 'decision_received'::character varying, 'operator_ringing'::character varying, 'operator_answered'::character varying])::text[]))"
+    t.index ["id"], name: "index_telephony_call_sessions_on_unanswered_with_actor", where: "((answered_at IS NULL) AND (answered_by IS NOT NULL) AND ((answered_by)::text <> ''::text))"
     t.index ["provider_call_sid"], name: "index_telephony_call_sessions_on_provider_call_sid", where: "(provider_call_sid IS NOT NULL)"
   end
 
@@ -3889,6 +3892,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_183000) do
     t.index ["inbox_id", "target_source_id", "provider_timestamp"], name: "idx_wa_pending_mutations_target_time"
     t.index ["inbox_id"], name: "index_whatsapp_pending_message_mutations_on_inbox_id"
     t.index ["status", "next_reconciliation_at"], name: "idx_wa_pending_mutations_reconciliation"
+    t.index ["terminal_at", "id"], name: "index_wa_pending_mutations_on_unscrubbed_exhausted", where: "(((status)::text = 'exhausted'::text) AND (payload_scrubbed_at IS NULL))"
   end
 
   create_table "whatsapp_template_media_sources", force: :cascade do |t|
