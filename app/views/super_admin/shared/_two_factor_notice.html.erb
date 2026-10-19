@@ -4,7 +4,8 @@
 Shown on «Сводка» to a super admin whose user has no two-factor authentication: the sign-in to this console is protected
 by the password alone, and the notice says where to turn the second step on (the profile of the user in the operator app).
 Nothing is forced: a super admin without it still signs in with the password. When the server has no encryption keys the
-second step cannot be enabled at all, and the notice says that instead.
+second step cannot be enabled at all, and the notice says that instead. The profile of the operator app opens inside an
+account, so a super admin who is a member of none is told to add himself to one first (the form on his user card).
 
 ## Local variables:
 
@@ -15,9 +16,16 @@ second step cannot be enabled at all, and the notice says that instead.
     <h2 class="m-0 text-heading-3 text-n-amber-11"><%= t('super_admin.two_factor.notice.title') %></h2>
     <p class="m-0"><%= t(Chatwoot.mfa_enabled? ? 'super_admin.two_factor.notice.how_to' : 'super_admin.two_factor.notice.unavailable') %></p>
     <% if Chatwoot.mfa_enabled? %>
-      <p class="m-0">
-        <%= link_to t('super_admin.two_factor.notice.open_app'), app_path, class: 'font-medium text-n-amber-11 underline' %>
-      </p>
+      <% if super_admin.accounts.exists? %>
+        <p class="m-0">
+          <%= link_to t('super_admin.two_factor.notice.open_app'), app_path, class: 'font-medium text-n-amber-11 underline' %>
+        </p>
+      <% else %>
+        <p class="m-0" data-testid="two-factor-notice-no-account"><%= t('super_admin.two_factor.notice.no_account') %></p>
+        <p class="m-0">
+          <%= link_to t('super_admin.two_factor.notice.open_user_card'), super_admin_user_path(super_admin), class: 'font-medium text-n-amber-11 underline' %>
+        </p>
+      <% end %>
     <% end %>
   </section>
 <% end %>

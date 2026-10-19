@@ -16,6 +16,8 @@ module Redis::RedisKeys
   ## User Keys
   # SSO Auth Tokens
   USER_SSO_AUTH_TOKEN = 'USER_SSO_AUTH_TOKEN::%<user_id>d::%<token>s'.freeze
+  # Codes tried at the second step of a super admin sign-in, per super admin (not per cookie or per address)
+  SUPER_ADMIN_TWO_FACTOR_ATTEMPTS = 'SUPER_ADMIN_TWO_FACTOR_ATTEMPTS::%<super_admin_id>d'.freeze
 
   ## Online Status Keys
   # hash containing user_id key and status as value

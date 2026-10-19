@@ -6,6 +6,14 @@ RSpec.describe 'Super Admin sign-in with two-factor authentication', type: :requ
   let(:password) { 'Password1!' }
   let!(:super_admin) { create(:super_admin, password: password) }
   let(:page) { Nokogiri::HTML(response.body) }
+  let(:attempts_key) { format(Redis::RedisKeys::SUPER_ADMIN_TWO_FACTOR_ATTEMPTS, super_admin_id: super_admin.id) }
+  let(:session_cookie) { Rails.application.config.session_options[:key] }
+  let(:too_many) { 'Слишком много неверных кодов. Второй шаг закрыт: войдите снова через 15 минут.' }
+
+  # The count of codes lives in Redis, which no example rolls back
+  before { Redis::Alfred.delete(attempts_key) }
+
+  after { Redis::Alfred.delete(attempts_key) }
 
   def sign_in_with_password(email: super_admin.email, password: self.password)
     post '/super_admin/sign_in', params: { super_admin: { email: email, password: password } }
@@ -70,6 +78,15 @@ RSpec.describe 'Super Admin sign-in with two-factor authentication', type: :requ
       expect(audit).to have_attributes(auditable_id: nil, auditable_type: nil, username: 'nobody@example.com')
       expect(audit.audited_changes).to eq('reason' => 'unknown_email')
       expect(Audited::Audit.all.map { |row| row.attributes.values.join(' ') }.join).not_to include('secret-typed-by-mistake')
+    end
+
+    it 'keeps what was typed into the e-mail field only when it looks like an e-mail, so a password typed there is not kept' do
+      sign_in_with_password(email: 'My-Secret-Pass1!', password: 'whatever')
+
+      audit = audits('super_admin_login_failed').last
+      expect(audit).to have_attributes(auditable_id: nil, user_id: nil, username: nil, comment: 'system')
+      expect(audit.audited_changes).to eq('reason' => 'unknown_email', 'typed' => 'not_an_email')
+      expect(Audited::Audit.all.map { |row| row.attributes.values.join(' ') }.join).not_to include('My-Secret-Pass1!')
     end
 
     it 'does not sign in an ordinary user of the operator app' do
@@ -197,13 +214,82 @@ RSpec.describe 'Super Admin sign-in with two-factor authentication', type: :requ
       5.times { post '/super_admin/sign_in/two_factor', params: { otp_code: '000000' } }
 
       expect(response).to redirect_to('/super_admin/sign_in')
-      expect(flash[:error]).to eq('Слишком много неверных кодов. Войдите заново.')
+      expect(flash[:error]).to eq(too_many)
       expect(audits('super_admin_two_factor_failed').map { |audit| audit.audited_changes['wrong_codes'] }).to eq([1, 2, 3, 4, 5])
 
       accept_codes(true)
       post '/super_admin/sign_in/two_factor', params: { otp_code: '123456' }
       expect(response).to redirect_to('/super_admin/sign_in')
       expect(signed_in?).to be(false)
+    end
+
+    # The cookie of the password step can be sent again as it was issued: a count kept in it would start from zero
+    it 'counts the wrong codes on the server, so sending the cookie of the password step again does not reopen the step' do
+      sign_in_with_password
+      issued = cookies[session_cookie]
+      service = instance_double(Mfa::AuthenticationService, authenticate: false)
+      allow(Mfa::AuthenticationService).to receive(:new).and_return(service)
+
+      8.times do
+        cookies[session_cookie] = issued
+        post '/super_admin/sign_in/two_factor', params: { otp_code: '000000' }
+      end
+
+      expect(response).to redirect_to('/super_admin/sign_in')
+      expect(flash[:error]).to eq(too_many)
+      expect(Mfa::AuthenticationService).to have_received(:new).exactly(5).times
+      expect(audits('super_admin_two_factor_failed').map { |audit| audit.audited_changes['wrong_codes'] }).to eq([1, 2, 3, 4, 5])
+
+      accept_codes(true)
+      cookies[session_cookie] = issued
+      post '/super_admin/sign_in/two_factor', params: { otp_code: '123456' }
+      expect(response).to redirect_to('/super_admin/sign_in')
+      expect(signed_in?).to be(false)
+    end
+
+    it 'keeps the step closed when the password is entered again, and does not touch another super admin' do
+      other = create(:super_admin, password: password)
+      other.update!(otp_required_for_login: true)
+      sign_in_with_password
+      accept_codes(false)
+      5.times { post '/super_admin/sign_in/two_factor', params: { otp_code: '000000' } }
+
+      sign_in_with_password
+      expect(response).to redirect_to('/super_admin/sign_in')
+      expect(flash[:error]).to eq(too_many)
+      get '/super_admin/sign_in/two_factor'
+      expect(response).to redirect_to('/super_admin/sign_in')
+
+      sign_in_with_password(email: other.email)
+      expect(response).to redirect_to('/super_admin/sign_in/two_factor')
+    end
+
+    it 'opens the step again when the time of the lock is over' do
+      sign_in_with_password
+      accept_codes(false)
+      5.times { post '/super_admin/sign_in/two_factor', params: { otp_code: '000000' } }
+      expect($alfred.with { |redis| redis.ttl(attempts_key) }).to be_between(1, 15.minutes.to_i)
+
+      Redis::Alfred.delete(attempts_key) # what the expiry of the key does
+      sign_in_with_password
+      accept_codes(true)
+      post '/super_admin/sign_in/two_factor', params: { otp_code: '123456' }
+
+      expect(response).to redirect_to('/super_admin')
+      expect(signed_in?).to be(true)
+    end
+
+    it 'forgets the wrong codes of a super admin who then enters a right one' do
+      sign_in_with_password
+      accept_codes(false)
+      3.times { post '/super_admin/sign_in/two_factor', params: { otp_code: '000000' } }
+      expect(Redis::Alfred.get(attempts_key).to_i).to eq(3)
+
+      accept_codes(true)
+      post '/super_admin/sign_in/two_factor', params: { otp_code: '123456' }
+
+      expect(signed_in?).to be(true)
+      expect(Redis::Alfred.get(attempts_key)).to be_nil
     end
 
     it 'closes the second step when the time is over' do
@@ -312,12 +398,22 @@ RSpec.describe 'Super Admin sign-in with two-factor authentication', type: :requ
 
     it 'tells a super admin without two-factor authentication where to turn it on' do
       allow(Chatwoot).to receive(:mfa_enabled?).and_return(true)
+      create(:account_user, user: super_admin, account: create(:account))
 
       get '/super_admin'
 
       expect(notice.at_css('h2').text.squish).to eq('Двухфакторная защита выключена')
       expect(notice.text).to include('«Профиль» → «Безопасность» → «Управление двухфакторной аутентификацией»')
       expect(notice.at_css('a')['href']).to eq('/app')
+    end
+
+    it 'tells a super admin who is in no account that the profile needs one, and links to his user card' do
+      allow(Chatwoot).to receive(:mfa_enabled?).and_return(true)
+
+      get '/super_admin'
+
+      expect(notice.at_css('[data-testid="two-factor-notice-no-account"]').text).to include('не состоит ни в одном', 'Добавить в аккаунт')
+      expect(notice.css('a').map { |link| link['href'] }).to eq(["/super_admin/users/#{super_admin.id}"])
     end
 
     it 'says that it cannot be turned on yet when the server has no encryption keys' do

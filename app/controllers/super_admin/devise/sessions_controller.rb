@@ -5,13 +5,20 @@
 # Mfa::ManagementService). Nobody is forced to turn it on: a super admin without it signs in with the password alone, and
 # «Сводка» tells him where to enable it. Every sign-in, failed attempt, wrong code and sign-out is written to the audit log.
 #
-# Between the two steps the password is already checked but the person is NOT signed in: only his id, the time and the
-# number of wrong codes are kept in the session, for a few minutes.
+# Between the two steps the password is already checked but the person is NOT signed in: only his id and the time are
+# kept in the session, for a few minutes.
+#
+# The codes that were tried are counted on the server, per super admin (a Redis key), never in the cookie: a cookie can
+# be sent again as it was issued after the password, which would reset a counter kept in it. A code has only 6 digits,
+# so after TWO_FACTOR_ATTEMPTS codes the second step of THIS super admin is closed for TWO_FACTOR_LOCKOUT, whatever
+# cookie, address or password comes with the next request. A right code clears the count.
 class SuperAdmin::Devise::SessionsController < Devise::SessionsController
   TWO_FACTOR_SESSION_KEY = 'super_admin_two_factor'
-  # How long the second step stays open after the password, and how many wrong codes it takes
+  # How long the second step stays open after the password
   TWO_FACTOR_WINDOW = 5.minutes
+  # How many codes may be tried, and for how long the second step stays closed after that
   TWO_FACTOR_ATTEMPTS = 5
+  TWO_FACTOR_LOCKOUT = 15.minutes
 
   prepend_before_action :require_no_authentication, only: [:two_factor, :verify_two_factor]
 
@@ -25,25 +32,32 @@ class SuperAdmin::Devise::SessionsController < Devise::SessionsController
       audit_failed_sign_in(super_admin)
       return redirect_to(super_admin_session_path, flash: { error: I18n.t('devise.failure.invalid', authentication_keys: 'email') })
     end
-    return start_two_factor(super_admin) if super_admin.mfa_enabled?
+    return finish_sign_in(super_admin) unless super_admin.mfa_enabled?
+    return close_second_step if two_factor_locked?(super_admin)
 
-    finish_sign_in(super_admin)
+    start_two_factor(super_admin)
   end
 
   # The page of the second step
   def two_factor
     @super_admin = pending_super_admin
     return redirect_to(super_admin_session_path, flash: { error: I18n.t('super_admin.two_factor.expired') }) unless @super_admin
+
+    close_second_step if two_factor_locked?(@super_admin)
   end
 
+  # The attempt is counted BEFORE the code is checked, so requests sent at the same moment cannot all get past the limit
   def verify_two_factor
     super_admin = pending_super_admin
     return redirect_to(super_admin_session_path, flash: { error: I18n.t('super_admin.two_factor.expired') }) unless super_admin
 
+    attempt = count_two_factor_attempt(super_admin)
+    return close_second_step if attempt > TWO_FACTOR_ATTEMPTS
+
     method = second_factor_method(super_admin)
     return finish_sign_in(super_admin, second_factor: method) if method
 
-    reject_second_factor(super_admin)
+    reject_second_factor(super_admin, attempt)
   end
 
   def destroy
@@ -70,6 +84,7 @@ class SuperAdmin::Devise::SessionsController < Devise::SessionsController
 
   def finish_sign_in(super_admin, second_factor: nil)
     session.delete(TWO_FACTOR_SESSION_KEY)
+    clear_two_factor_attempts(super_admin)
     sign_in(:super_admin, super_admin)
     flash.discard
     audit('super_admin_login', super_admin, actor: super_admin, changes: second_factor ? { 'second_factor' => second_factor } : {})
@@ -77,8 +92,35 @@ class SuperAdmin::Devise::SessionsController < Devise::SessionsController
   end
 
   def start_two_factor(super_admin)
-    session[TWO_FACTOR_SESSION_KEY] = { 'id' => super_admin.id, 'at' => Time.current.to_i, 'wrong_codes' => 0 }
+    session[TWO_FACTOR_SESSION_KEY] = { 'id' => super_admin.id, 'at' => Time.current.to_i }
     redirect_to super_admin_two_factor_path
+  end
+
+  def two_factor_attempts_key(super_admin)
+    format(Redis::RedisKeys::SUPER_ADMIN_TWO_FACTOR_ATTEMPTS, super_admin_id: super_admin.id)
+  end
+
+  # Counts one more code tried by this super admin and returns how many there are in the current period. The period
+  # starts with the first code and ends TWO_FACTOR_LOCKOUT later (the key expires); a right code ends it at once.
+  def count_two_factor_attempt(super_admin)
+    key = two_factor_attempts_key(super_admin)
+    # The key is born with its expiry, so a count without an end (a lock that never opens) cannot be left behind
+    Redis::Alfred.set(key, 0, nx: true, ex: TWO_FACTOR_LOCKOUT.to_i)
+    Redis::Alfred.incr(key).tap { |count| Redis::Alfred.expire(key, TWO_FACTOR_LOCKOUT.to_i) if count == 1 }
+  end
+
+  def two_factor_locked?(super_admin)
+    Redis::Alfred.get(two_factor_attempts_key(super_admin)).to_i >= TWO_FACTOR_ATTEMPTS
+  end
+
+  def clear_two_factor_attempts(super_admin)
+    Redis::Alfred.delete(two_factor_attempts_key(super_admin))
+  end
+
+  # No more codes for a while: the pending password step is dropped and the sign-in page says so
+  def close_second_step
+    session.delete(TWO_FACTOR_SESSION_KEY)
+    redirect_to super_admin_session_path, flash: { error: I18n.t('super_admin.two_factor.too_many', count: TWO_FACTOR_LOCKOUT.in_minutes.to_i) }
   end
 
   # The super admin whose password was checked a moment ago; nil when there is none or the time is over
@@ -109,26 +151,23 @@ class SuperAdmin::Devise::SessionsController < Devise::SessionsController
     nil
   end
 
-  def reject_second_factor(super_admin)
-    pending = session[TWO_FACTOR_SESSION_KEY]
-    wrong_codes = pending['wrong_codes'].to_i + 1
-    session[TWO_FACTOR_SESSION_KEY] = pending.merge('wrong_codes' => wrong_codes)
+  def reject_second_factor(super_admin, wrong_codes)
     audit('super_admin_two_factor_failed', super_admin, changes: { 'wrong_codes' => wrong_codes })
-    if wrong_codes >= TWO_FACTOR_ATTEMPTS
-      session.delete(TWO_FACTOR_SESSION_KEY)
-      return redirect_to(super_admin_session_path, flash: { error: I18n.t('super_admin.two_factor.too_many') })
-    end
+    return close_second_step if wrong_codes >= TWO_FACTOR_ATTEMPTS
 
     redirect_to super_admin_two_factor_path, flash: { error: I18n.t('super_admin.two_factor.wrong_code') }
   end
 
   def audit_failed_sign_in(super_admin)
-    if super_admin
-      audit('super_admin_login_failed', super_admin, changes: { 'reason' => 'wrong_password' })
-    else
-      SuperAdmin::PlatformAudit.record(auditable: nil, action: 'super_admin_login_failed', changes: { 'reason' => 'unknown_email' },
-                                       request: request, actor: submitted_email)
-    end
+    return audit('super_admin_login_failed', super_admin, changes: { 'reason' => 'wrong_password' }) if super_admin
+
+    # What was typed is kept only when it looks like an e-mail: a password put into the e-mail field by mistake must
+    # not be readable in the audit log (every super admin reads it)
+    typed = submitted_email
+    email = typed.match?(/\A[^@\s]+@[^@\s]+\.[^@\s]+\z/)
+    changes = email ? { 'reason' => 'unknown_email' } : { 'reason' => 'unknown_email', 'typed' => 'not_an_email' }
+    SuperAdmin::PlatformAudit.record(auditable: nil, action: 'super_admin_login_failed', changes: changes, request: request,
+                                     actor: (typed if email))
   end
 
   def audit_sign_out(super_admin)
