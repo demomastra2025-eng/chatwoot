@@ -400,6 +400,10 @@ en:
       name: 'Medelement'
       short_description: 'Import specialists, cabinets, services, receptions, and patients from Medelement into scheduling.'
       description: 'Connect Medelement to import specialists, cabinets, services, receptions, and patient data into Onelink scheduling while keeping imported data isolated from manual scheduling flows.'
+    moysklad:
+      name: 'MoySklad'
+      short_description: 'Sync product catalog, variants, bundles, sale prices, and warehouse stock levels with MoySklad.'
+      description: 'Connect MoySklad (JSON API 1.2) to automatically import and update products, variants, bundles, retail/wholesale/Kaspi prices, and real-time warehouse stock levels in Products & Services.'
   captain:
     channel_matrix:
       main_agent_in_use: Choose another main agent for enabled channels first.

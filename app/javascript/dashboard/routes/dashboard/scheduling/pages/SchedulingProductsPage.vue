@@ -75,14 +75,23 @@ const filteredProducts = computed(() => {
   const query = searchQuery.value.trim().toLowerCase();
 
   return allProducts.value.filter(product => {
-    if (selectedType.value !== 'all' && product.itemType !== selectedType.value) {
+    if (
+      selectedType.value !== 'all' &&
+      product.itemType !== selectedType.value
+    ) {
       return false;
     }
 
-    if (selectedSource.value === 'moysklad' && product.externalSource !== 'moysklad') {
+    if (
+      selectedSource.value === 'moysklad' &&
+      product.externalSource !== 'moysklad'
+    ) {
       return false;
     }
-    if (selectedSource.value === 'local' && product.externalSource === 'moysklad') {
+    if (
+      selectedSource.value === 'local' &&
+      product.externalSource === 'moysklad'
+    ) {
       return false;
     }
 
@@ -105,8 +114,12 @@ const filteredProducts = computed(() => {
 
 const summaryStats = computed(() => {
   const rows = allProducts.value;
-  const inStockCount = rows.filter(item => Number(item.availableNow ?? item.stock ?? 0) > 0).length;
-  const moyskladCount = rows.filter(item => item.externalSource === 'moysklad').length;
+  const inStockCount = rows.filter(
+    item => Number(item.availableNow ?? item.stock ?? 0) > 0
+  ).length;
+  const moyskladCount = rows.filter(
+    item => item.externalSource === 'moysklad'
+  ).length;
   const totalAvailableUnits = rows.reduce(
     (sum, item) => sum + Math.max(Number(item.availableNow ?? 0), 0),
     0
@@ -167,6 +180,13 @@ const characteristicsSummary = product => {
   return list.map(ch => `${ch.name}: ${ch.value}`).join(' · ');
 };
 
+const formatCustomAttributeText = (key, val) => {
+  if (typeof val === 'boolean') {
+    return val ? key : '';
+  }
+  return `${key}: ${val}`;
+};
+
 const customAttributesBadges = product => {
   const attrs = product.customAttributes || {};
   return Object.entries(attrs)
@@ -174,7 +194,7 @@ const customAttributesBadges = product => {
     .slice(0, 3)
     .map(([key, val]) => ({
       key,
-      text: typeof val === 'boolean' ? (val ? key : '') : `${key}: ${val}`,
+      text: formatCustomAttributeText(key, val),
     }))
     .filter(item => item.text);
 };
@@ -332,7 +352,8 @@ const handleSyncMoysklad = async (inline = false) => {
   try {
     const payload = inline ? {} : buildMoyskladPayload();
     const result = await referencesStore.syncMoysklad(payload);
-    const total = result.syncSummary?.totalSynced ?? result.products?.length ?? 0;
+    const total =
+      result.syncSummary?.totalSynced ?? result.products?.length ?? 0;
     useAlert(t('SCHEDULING.PRODUCTS.MOYSKLAD.SYNC_SUCCESS', { count: total }));
     if (!inline) {
       closeMoyskladDrawer();
@@ -396,15 +417,21 @@ onMounted(async () => {
         <div class="flex flex-wrap items-center gap-4 text-xs text-n-slate-11">
           <div>
             {{ $t('SCHEDULING.PRODUCTS.SUMMARY.TOTAL') }}:
-            <span class="font-semibold text-n-slate-12">{{ summaryStats.total }}</span>
+            <span class="font-semibold text-n-slate-12">{{
+              summaryStats.total
+            }}</span>
           </div>
           <div>
             {{ $t('SCHEDULING.PRODUCTS.SUMMARY.IN_STOCK') }}:
-            <span class="font-semibold text-n-teal-11">{{ summaryStats.inStockCount }}</span>
+            <span class="font-semibold text-n-teal-11">{{
+              summaryStats.inStockCount
+            }}</span>
           </div>
           <div>
             {{ $t('SCHEDULING.PRODUCTS.SUMMARY.MOYSKLAD') }}:
-            <span class="font-semibold text-n-blue-11">{{ summaryStats.moyskladCount }}</span>
+            <span class="font-semibold text-n-blue-11">{{
+              summaryStats.moyskladCount
+            }}</span>
           </div>
         </div>
 
@@ -421,19 +448,33 @@ onMounted(async () => {
             data-test="products-type-filter"
             class="h-8 rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-xs text-n-slate-12 focus:border-n-brand focus:outline-none"
           >
-            <option value="all">{{ $t('SCHEDULING.PRODUCTS.FILTERS.ALL_TYPES') }}</option>
-            <option value="product">{{ $t('SCHEDULING.PRODUCTS.TYPES.PRODUCT') }}</option>
-            <option value="variant">{{ $t('SCHEDULING.PRODUCTS.TYPES.VARIANT') }}</option>
-            <option value="bundle">{{ $t('SCHEDULING.PRODUCTS.TYPES.BUNDLE') }}</option>
+            <option value="all">
+              {{ $t('SCHEDULING.PRODUCTS.FILTERS.ALL_TYPES') }}
+            </option>
+            <option value="product">
+              {{ $t('SCHEDULING.PRODUCTS.TYPES.PRODUCT') }}
+            </option>
+            <option value="variant">
+              {{ $t('SCHEDULING.PRODUCTS.TYPES.VARIANT') }}
+            </option>
+            <option value="bundle">
+              {{ $t('SCHEDULING.PRODUCTS.TYPES.BUNDLE') }}
+            </option>
           </select>
           <select
             v-model="selectedSource"
             data-test="products-source-filter"
             class="h-8 rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-xs text-n-slate-12 focus:border-n-brand focus:outline-none"
           >
-            <option value="all">{{ $t('SCHEDULING.PRODUCTS.FILTERS.ALL_SOURCES') }}</option>
-            <option value="moysklad">{{ $t('SCHEDULING.PRODUCTS.FILTERS.MOYSKLAD_ONLY') }}</option>
-            <option value="local">{{ $t('SCHEDULING.PRODUCTS.FILTERS.LOCAL_ONLY') }}</option>
+            <option value="all">
+              {{ $t('SCHEDULING.PRODUCTS.FILTERS.ALL_SOURCES') }}
+            </option>
+            <option value="moysklad">
+              {{ $t('SCHEDULING.PRODUCTS.FILTERS.MOYSKLAD_ONLY') }}
+            </option>
+            <option value="local">
+              {{ $t('SCHEDULING.PRODUCTS.FILTERS.LOCAL_ONLY') }}
+            </option>
           </select>
         </div>
       </div>
@@ -481,13 +522,19 @@ onMounted(async () => {
                 v-if="row.externalSource === 'moysklad'"
                 class="inline-flex items-center rounded-md bg-n-blue-3 px-1.5 py-0.5 text-[10px] font-medium text-n-blue-11"
               >
-                МойСклад
+                {{ $t('SCHEDULING.PRODUCTS.SOURCE_MOYSKLAD') }}
               </span>
             </div>
 
-            <div class="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-n-slate-11">
-              <span v-if="row.code">Код: {{ row.code }}</span>
-              <span v-if="row.article">Арт: {{ row.article }}</span>
+            <div
+              class="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-n-slate-11"
+            >
+              <span v-if="row.code">
+                {{ $t('SCHEDULING.PRODUCTS.CODE') }}: {{ row.code }}
+              </span>
+              <span v-if="row.article">
+                {{ $t('SCHEDULING.PRODUCTS.ARTICLE') }}: {{ row.article }}
+              </span>
               <span v-if="characteristicsSummary(row)" class="text-n-violet-11">
                 {{ characteristicsSummary(row) }}
               </span>
@@ -519,17 +566,13 @@ onMounted(async () => {
             <span class="font-medium text-n-slate-12">
               {{ formatCurrency(row.price) }}
             </span>
-            <span
-              v-if="row.wholesalePrice"
-              class="text-[11px] text-n-slate-11"
-            >
-              Опт: {{ formatCurrency(row.wholesalePrice) }}
+            <span v-if="row.wholesalePrice" class="text-[11px] text-n-slate-11">
+              {{ $t('SCHEDULING.PRODUCTS.WHOLESALE_PRICE') }}:
+              {{ formatCurrency(row.wholesalePrice) }}
             </span>
-            <span
-              v-if="row.kaspiPrice"
-              class="text-[11px] text-n-slate-11"
-            >
-              Kaspi: {{ formatCurrency(row.kaspiPrice) }}
+            <span v-if="row.kaspiPrice" class="text-[11px] text-n-slate-11">
+              {{ $t('SCHEDULING.PRODUCTS.KASPI_PRICE') }}:
+              {{ formatCurrency(row.kaspiPrice) }}
             </span>
           </div>
         </template>
@@ -549,12 +592,15 @@ onMounted(async () => {
               {{ row.uom || 'шт' }}
             </span>
             <span class="text-[11px] text-n-slate-11">
-              {{ $t('SCHEDULING.PRODUCTS.STOCK_SHORT') }}: {{ formatQuantity(row.stock) }}
+              {{ $t('SCHEDULING.PRODUCTS.STOCK_SHORT') }}:
+              {{ formatQuantity(row.stock) }}
               <template v-if="Number(row.reserve) > 0">
-                · {{ $t('SCHEDULING.PRODUCTS.RESERVE_SHORT') }}: {{ formatQuantity(row.reserve) }}
+                · {{ $t('SCHEDULING.PRODUCTS.RESERVE_SHORT') }}:
+                {{ formatQuantity(row.reserve) }}
               </template>
               <template v-if="Number(row.inTransit) > 0">
-                · {{ $t('SCHEDULING.PRODUCTS.IN_TRANSIT_SHORT') }}: {{ formatQuantity(row.inTransit) }}
+                · {{ $t('SCHEDULING.PRODUCTS.IN_TRANSIT_SHORT') }}:
+                {{ formatQuantity(row.inTransit) }}
               </template>
             </span>
           </div>
@@ -611,12 +657,13 @@ onMounted(async () => {
 
     <!-- Product Create / Edit Drawer -->
     <SchedulingDrawer
-      :open="productDrawerOpen"
+      v-model="productDrawerOpen"
       :title="
         productForm.id
           ? $t('SCHEDULING.PRODUCTS.EDIT')
           : $t('SCHEDULING.PRODUCTS.ADD')
       "
+      :description="$t('SCHEDULING.PRODUCTS.DRAWER_SUBTITLE')"
       @close="closeProductDrawer"
     >
       <div class="flex flex-col gap-5">
@@ -652,7 +699,9 @@ onMounted(async () => {
           />
         </SchedulingFormFieldGroup>
 
-        <SchedulingFormFieldGroup :title="$t('SCHEDULING.PRODUCTS.PRICES_GROUP')">
+        <SchedulingFormFieldGroup
+          :title="$t('SCHEDULING.PRODUCTS.PRICES_GROUP')"
+        >
           <div class="grid gap-3 md:grid-cols-3">
             <SchedulingMoneyInput
               v-model="productForm.price"
@@ -669,7 +718,9 @@ onMounted(async () => {
           </div>
         </SchedulingFormFieldGroup>
 
-        <SchedulingFormFieldGroup :title="$t('SCHEDULING.PRODUCTS.STOCK_GROUP')">
+        <SchedulingFormFieldGroup
+          :title="$t('SCHEDULING.PRODUCTS.STOCK_GROUP')"
+        >
           <div class="grid gap-3 md:grid-cols-3">
             <Input
               v-model="productForm.stock"
@@ -715,9 +766,9 @@ onMounted(async () => {
 
     <!-- MoySklad Integration Drawer -->
     <SchedulingDrawer
-      :open="moyskladDrawerOpen"
+      v-model="moyskladDrawerOpen"
       :title="$t('SCHEDULING.PRODUCTS.MOYSKLAD.DRAWER_TITLE')"
-      :subtitle="$t('SCHEDULING.PRODUCTS.MOYSKLAD.DRAWER_SUBTITLE')"
+      :description="$t('SCHEDULING.PRODUCTS.MOYSKLAD.DRAWER_SUBTITLE')"
       @close="closeMoyskladDrawer"
     >
       <div class="flex flex-col gap-5">
@@ -725,8 +776,12 @@ onMounted(async () => {
           v-if="moyskladStatus.connected"
           class="rounded-xl border border-n-teal-6 bg-n-teal-2 p-3.5 text-xs text-n-slate-12"
         >
-          <div class="flex items-center justify-between font-semibold text-n-teal-11">
-            <span>{{ $t('SCHEDULING.PRODUCTS.MOYSKLAD.CONNECTED_BADGE') }}</span>
+          <div
+            class="flex items-center justify-between font-semibold text-n-teal-11"
+          >
+            <span>{{
+              $t('SCHEDULING.PRODUCTS.MOYSKLAD.CONNECTED_BADGE')
+            }}</span>
             <span v-if="moyskladStatus.maskedToken" class="font-mono">
               {{ moyskladStatus.maskedToken }}
             </span>

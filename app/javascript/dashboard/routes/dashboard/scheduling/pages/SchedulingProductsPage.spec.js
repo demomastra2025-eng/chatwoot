@@ -49,8 +49,7 @@ const mountPage = async () => {
         Button: {
           props: ['label'],
           emits: ['click'],
-          template:
-            '<button @click="$emit(\'click\')">{{ label }}</button>',
+          template: '<button @click="$emit(\'click\')">{{ label }}</button>',
         },
         Input: {
           props: ['modelValue', 'label'],
@@ -62,9 +61,9 @@ const mountPage = async () => {
         Switch: true,
         Spinner: true,
         SchedulingDrawer: {
-          props: ['open', 'title'],
+          props: ['modelValue', 'title', 'description'],
           template:
-            '<div v-if="open" data-test="drawer"><slot /><slot name="footer" /></div>',
+            '<div v-if="modelValue" data-test="drawer"><slot /><slot name="footer" /></div>',
         },
         SchedulingEmptyState: {
           props: ['title'],
@@ -77,7 +76,8 @@ const mountPage = async () => {
         SchedulingMoneyInput: true,
         SchedulingPageHeader: {
           props: ['title'],
-          template: '<header><h1>{{ title }}</h1><slot name="actions" /></header>',
+          template:
+            '<header><h1>{{ title }}</h1><slot name="actions" /></header>',
         },
         SchedulingRecordTable: {
           props: ['rows'],
@@ -153,7 +153,7 @@ describe('SchedulingProductsPage', () => {
     });
     expect(wrapper.findAll('[data-test="product-row"]')).toHaveLength(2);
     expect(wrapper.text()).toContain('Смартфон Apple iPhone 16 Pro');
-    expect(wrapper.text()).toContain('МойСклад');
+    expect(wrapper.text()).toContain('SCHEDULING.PRODUCTS.SOURCE_MOYSKLAD');
     expect(wrapper.text()).toContain('Бренд: Apple');
   });
 
@@ -165,12 +165,8 @@ describe('SchedulingProductsPage', () => {
       .setValue('moysklad');
     expect(wrapper.findAll('[data-test="product-row"]')).toHaveLength(1);
 
-    await wrapper
-      .find('[data-test="products-source-filter"]')
-      .setValue('all');
-    await wrapper
-      .find('[data-test="products-search-input"]')
-      .setValue('Чехол');
+    await wrapper.find('[data-test="products-source-filter"]').setValue('all');
+    await wrapper.find('[data-test="products-search-input"]').setValue('Чехол');
     expect(wrapper.findAll('[data-test="product-row"]')).toHaveLength(1);
     expect(wrapper.text()).toContain('Чехол Apple Silicone Case');
   });
@@ -185,5 +181,22 @@ describe('SchedulingProductsPage', () => {
 
     expect(mocks.store.syncMoysklad).toHaveBeenCalledWith({});
     expect(mocks.alert).toHaveBeenCalled();
+  });
+
+  it('opens MoySklad drawer and Product drawer via v-model when buttons are clicked', async () => {
+    const wrapper = await mountPage();
+
+    expect(wrapper.findAll('[data-test="drawer"]')).toHaveLength(0);
+
+    await wrapper
+      .get('[data-test="moysklad-open-drawer-button"]')
+      .trigger('click');
+    expect(wrapper.findAll('[data-test="drawer"]')).toHaveLength(1);
+    expect(wrapper.get('[data-test="drawer"]').text()).toContain(
+      'SCHEDULING.PRODUCTS.MOYSKLAD.SAVE_AND_SYNC'
+    );
+
+    await wrapper.get('[data-test="add-product-button"]').trigger('click');
+    expect(wrapper.findAll('[data-test="drawer"]')).toHaveLength(2);
   });
 });

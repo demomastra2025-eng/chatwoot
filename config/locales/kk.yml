@@ -342,6 +342,10 @@ kk:
       name: Medelement
       short_description: Import specialists, cabinets, services, receptions, and patients from Medelement into scheduling.
       description: Connect Medelement to import specialists, cabinets, services, receptions, and patient data into Onelink scheduling while keeping imported data isolated from manual scheduling flows.
+    moysklad:
+      name: 'МойСклад'
+      short_description: 'МойСклад жүйесінен тауарлар каталогын, модификацияларды, жиынтықтарды, бағалар мен қойма қалдықтарын синхрондау.'
+      description: 'Тауарларды, модификацияларды, жиынтықтарды, бөлшек/көтерме/Kaspi бағаларын және қоймалар бойынша өзекті қалдықтарды «Тауарлар мен қызметтер» бөліміне автоматты түрде жүктеу үшін МойСклад (JSON API 1.2) интеграциясын қосыңыз.'
   captain:
     channel_matrix:
       main_agent_in_use: Алдымен қосылған арналар үшін басқа негізгі агентті таңдаңыз.
