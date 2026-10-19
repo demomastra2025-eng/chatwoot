@@ -111,8 +111,21 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
       expect(page.at_css('main h1').text.squish).to eq('Заблокировать')
       expect(page.at_css('main .main-content__description').text.squish).to start_with('Выбрано аккаунтов: 3')
       stats = page.css("[data-testid='stat']").map { |stat| stat.text.squish }
-      expect(stats).to eq(['Изменятся 2 аккаунтов', 'Будут пропущены 1 уже заблокирован — 1'])
+      expect(stats).to eq(['Изменятся 2 аккаунта', 'Будут пропущены 1 уже заблокирован — 1'])
       expect(page.at_css("[data-testid='bulk-warning']").text).to include('Заблокированный аккаунт не обслуживает операторов')
+    end
+
+    it 'gives the counts the form of the noun: one account, two accounts, five accounts' do
+      stats = -> { page.css("[data-testid='stat']").map { |stat| stat.text.squish } }
+
+      confirm('suspend', [first, blocked])
+      expect(stats.call).to eq(['Изменится 1 аккаунт', 'Будет пропущен 1 уже заблокирован — 1'])
+
+      confirm('suspend', [first, second])
+      expect(stats.call.first).to eq('Изменятся 2 аккаунта')
+
+      confirm('suspend', [first, second, *create_list(:account, 3)])
+      expect(stats.call.first).to eq('Изменятся 5 аккаунтов')
     end
 
     it 'shows a line for each account: how it is now and what happens to it' do

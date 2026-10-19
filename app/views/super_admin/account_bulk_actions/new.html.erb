@@ -74,8 +74,9 @@ a POST to `create`, which looks at every account again and leaves one entry in t
         end
       %>
       <%= render 'super_admin/shared/stat_group', items: [
-        { label: t('super_admin.bulk.summary.changing'), value: super_admin_number(changing), note: t('super_admin.bulk.summary.changing_note') },
-        { label: t('super_admin.bulk.summary.skipping'), value: super_admin_number(@preview.skipping),
+        { label: t('super_admin.bulk.summary.changing', count: changing), value: super_admin_number(changing),
+          note: t('super_admin.bulk.summary.changing_note', count: changing) },
+        { label: t('super_admin.bulk.summary.skipping', count: @preview.skipping), value: super_admin_number(@preview.skipping),
           note: reasons.any? ? reasons.join('; ') : t('super_admin.bulk.summary.skipping_none') }
       ] %>
 
