@@ -146,7 +146,7 @@ class Integrations::Medelement::CronScheduleService
       cron: schedule.fetch(:cron),
       args: delta ? [hook.id] : [hook.id, schedule.fetch(:phases)],
       active_job: true,
-      queue: delta ? 'default' : 'scheduled_jobs',
+      queue: delta ? 'medelement_sync' : 'scheduled_jobs',
       status: hook.enabled? ? 'enabled' : 'disabled',
       description: "Medelement #{schedule.fetch(:key)} sync for account #{hook.account_id}, hook #{hook.id}"
     }

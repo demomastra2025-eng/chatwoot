@@ -67,7 +67,7 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
     expect(Sidekiq::Cron::Job).to receive(:create).with(
       hash_including(name: "integrations_medelement_hook_#{hook.id}_receptions_delta",
                      klass: 'Integrations::Medelement::ReceptionsDeltaJob', cron: '* * * * * Asia/Almaty',
-                     args: [hook.id], queue: 'default')
+                     args: [hook.id], queue: 'medelement_sync')
     ).and_return(true)
 
     described_class.new(hook: hook).sync!
