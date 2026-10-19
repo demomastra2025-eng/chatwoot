@@ -64,21 +64,31 @@ class Conversations::SingleDialogConsolidator # rubocop:disable Metrics/ClassLen
 
       canonical = select_canonical(conversations)
       duplicates = conversations.reject { |c| c.id == canonical.id }
-      duplicate_ids = duplicates.map(&:id)
-
-      stats[:duplicate_activities_removed] += remove_duplicate_activity_messages!(conversations.map(&:id))
-      reassign_all_associations!(canonical, duplicates, duplicate_ids)
-      merge_canonical_attributes!(canonical, duplicates)
-      Conversation.where(id: duplicate_ids).delete_all
-      refresh_communication_thread!(group[:account_id], group[:contact_id], canonical)
-
+      stats[:duplicate_activities_removed] += merge_group_records!(group, canonical, duplicates, conversations.map(&:id))
       stats[:groups_consolidated] += 1
-      stats[:conversations_removed] += duplicate_ids.size
+      stats[:conversations_removed] += duplicates.size
     end
+  end
+
+  def merge_group_records!(group, canonical, duplicates, all_ids)
+    duplicate_ids = duplicates.map(&:id)
+    had_primary = thread_group_has_primary?(all_ids)
+    removed_activities = remove_duplicate_activity_messages!(all_ids)
+    reassign_all_associations!(canonical, duplicates, duplicate_ids)
+    merge_canonical_attributes!(canonical, duplicates)
+    Conversation.where(id: duplicate_ids).delete_all
+    refresh_communication_thread!(group[:account_id], group[:contact_id], canonical, had_primary)
+    removed_activities
   end
 
   def load_group_conversations(group)
     Conversation.where(group).lock.order(:id).to_a
+  end
+
+  def thread_group_has_primary?(conversation_ids)
+    return false unless defined?(CommunicationThreadConversation)
+
+    CommunicationThreadConversation.exists?(conversation_id: conversation_ids, primary: true)
   end
 
   def select_canonical(conversations)
@@ -247,18 +257,35 @@ class Conversations::SingleDialogConsolidator # rubocop:disable Metrics/ClassLen
     [canonical.last_activity_at, latest_msg_at].compact.max || canonical.updated_at
   end
 
-  def refresh_communication_thread!(account_id, contact_id, canonical)
+  def refresh_communication_thread!(account_id, contact_id, canonical, had_primary)
     return unless defined?(CommunicationThread)
 
     thread = CommunicationThread.find_by(account_id: account_id, contact_id: contact_id)
     return unless thread
 
-    CommunicationThreadConversation.find_or_create_by!(account_id: account_id, conversation_id: canonical.id) do |link|
-      link.communication_thread = thread
-      link.inbox_id = canonical.inbox_id
-      link.contact_inbox_id = canonical.contact_inbox_id
-      link.primary = false
+    ensure_canonical_thread_link!(thread, canonical, had_primary)
+    new_last_activity = [thread.last_activity_at, canonical.last_activity_at].compact.max
+    thread.update_columns(last_activity_at: new_last_activity, updated_at: Time.current) if new_last_activity # rubocop:disable Rails/SkipsModelValidations
+  end
+
+  def ensure_canonical_thread_link!(thread, canonical, had_primary)
+    link = CommunicationThreadConversation.find_by(account_id: thread.account_id, conversation_id: canonical.id)
+    if link
+      attrs = { contact_inbox_id: canonical.contact_inbox_id }
+      attrs[:primary] = true if had_primary && !link.primary?
+      link.update_columns(attrs) # rubocop:disable Rails/SkipsModelValidations
+      return
     end
-    CommunicationThreads::Projector.new(communication_thread: thread).perform if defined?(CommunicationThreads::Projector)
+
+    return unless Inbox.exists?(id: canonical.inbox_id, account_id: thread.account_id)
+
+    CommunicationThreadConversation.create!(
+      account_id: thread.account_id,
+      communication_thread_id: thread.id,
+      conversation_id: canonical.id,
+      inbox_id: canonical.inbox_id,
+      contact_inbox_id: canonical.contact_inbox_id,
+      primary: had_primary
+    )
   end
 end
