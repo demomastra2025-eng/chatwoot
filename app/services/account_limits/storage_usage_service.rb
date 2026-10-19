@@ -100,6 +100,35 @@ class AccountLimits::StorageUsageService
     }
   end
 
+  def self.union_blob_ids_sql(*relations)
+    subqueries = relations.flat_map { |rel| rel.is_a?(Array) ? rel : [rel] }.compact.map { |rel| "(#{rel.is_a?(String) ? rel : rel.to_sql})" }
+    "SELECT blob_id FROM (#{subqueries.join(' UNION ')}) AS tenant_blob_ids"
+  end
+
+  def self.source_with_variants_cte_sql(source_blob_ids_sql)
+    source_sql = source_blob_ids_sql.is_a?(String) ? source_blob_ids_sql : source_blob_ids_sql.to_sql
+    variant_sql = ActiveStorage::Attachment
+                  .joins(
+                    'INNER JOIN active_storage_variant_records ' \
+                    'ON active_storage_variant_records.id = active_storage_attachments.record_id ' \
+                    "AND active_storage_attachments.record_type = 'ActiveStorage::VariantRecord'"
+                  )
+                  .where(name: 'image')
+                  .where('active_storage_variant_records.blob_id IN (SELECT blob_id FROM source_blobs)')
+                  .select(:blob_id)
+                  .to_sql
+    "WITH source_blobs AS (#{source_sql}) SELECT blob_id FROM source_blobs UNION #{variant_sql}"
+  end
+
+  def self.blobs_for_source_and_variants(source_blob_ids, variant_blob_ids = nil)
+    sql = if variant_blob_ids
+            union_blob_ids_sql(source_blob_ids, variant_blob_ids)
+          else
+            source_blob_ids.is_a?(String) ? source_blob_ids : source_blob_ids.to_sql
+          end
+    ActiveStorage::Blob.where("active_storage_blobs.id IN (#{sql})")
+  end
+
   private
 
   attr_reader :account
@@ -139,17 +168,33 @@ class AccountLimits::StorageUsageService
   # Count each physical blob once per tenant, including generated images only when their source blob
   # is owned by this account. Shared User avatars remain excluded from tenant totals.
   def active_storage_blob_scope(include_recordings: true)
-    source_blob_ids = tenant_source_blob_ids(include_recordings: include_recordings)
-    return ActiveStorage::Blob.none unless source_blob_ids
+    source_blob_ids_sql = tenant_source_blob_ids_sql(include_recordings: include_recordings)
+    return ActiveStorage::Blob.none unless source_blob_ids_sql
+    return self.class.blobs_for_source_and_variants(source_blob_ids_sql) unless variants_available?
 
-    owned_blobs = ActiveStorage::Blob.where(id: source_blob_ids)
-    return owned_blobs unless variants_available?
-
-    owned_blobs.or(ActiveStorage::Blob.where(id: derived_variant_blob_ids(source_blob_ids)))
+    self.class.blobs_for_source_and_variants(self.class.source_with_variants_cte_sql(source_blob_ids_sql))
   end
 
   def tenant_source_blob_ids(include_recordings: true)
     tenant_attachments(include_recordings: include_recordings)&.select(:blob_id)&.distinct
+  end
+
+  def tenant_source_blob_ids_sql(include_recordings: true)
+    scopes = tenant_attachment_scopes(include_recordings: include_recordings)
+    return if scopes.empty?
+
+    self.class.union_blob_ids_sql(scopes.map { |scope| scope.select(:blob_id) })
+  end
+
+  def tenant_attachment_scopes(include_recordings: true)
+    tenant_record_type_scopes(include_recordings).filter_map do |record_type, attachment_names|
+      relation = scoped_relation(record_type)
+      next if relation.nil?
+
+      scope = ActiveStorage::Attachment.where(record_type: record_type, record_id: relation)
+      scope = scope.where(name: attachment_names) if attachment_names.present?
+      scope
+    end
   end
 
   def tenant_attachments(include_recordings: true)
@@ -177,10 +222,15 @@ class AccountLimits::StorageUsageService
   end
 
   def derived_variant_blob_ids(source_blob_ids)
+    variant_records = if source_blob_ids.is_a?(String)
+                        ActiveStorage::VariantRecord.where("active_storage_variant_records.blob_id IN (#{source_blob_ids})")
+                      else
+                        ActiveStorage::VariantRecord.where(blob_id: source_blob_ids)
+                      end
     ActiveStorage::Attachment.where(
       record_type: ActiveStorage::VariantRecord.name,
       name: 'image',
-      record_id: ActiveStorage::VariantRecord.where(blob_id: source_blob_ids).select(:id)
+      record_id: variant_records.select(:id)
     ).select(:blob_id).distinct
   end
 end

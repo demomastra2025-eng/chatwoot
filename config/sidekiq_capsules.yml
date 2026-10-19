@@ -51,7 +51,7 @@
       - [medelement_provider_commands, 5]
       - [medelement_sync, 1]
 
-  # 6. Core Default (incl. ReceptionsDeltaJob), Webhooks, Cron & Mailers
+  # 6. Core Default, Webhooks, Cron # 6. Core Default (incl. ReceptionsDeltaJob), Webhooks, Cron & Mailers Mailers
   core_scheduled:
     :concurrency: <%= ENV.fetch("CAPSULE_CORE_SCHEDULED_CONCURRENCY", 8) %>
     :queues:

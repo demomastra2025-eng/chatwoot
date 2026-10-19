@@ -1,5 +1,5 @@
 class Integrations::Medelement::ReceptionsDeltaJob < ApplicationJob
-  queue_as :default
+  queue_as :medelement_sync
 
   LOCK_TIMEOUT = 30.minutes
   MAX_BACKOFF_SECONDS = 5.minutes.to_i

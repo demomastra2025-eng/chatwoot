@@ -439,32 +439,28 @@ class Account < ApplicationRecord
     video_bytes = usage_by_type['video'].to_i
     doc_bytes = usage_by_type['file'].to_i
 
-    active_attachment_blob_ids = active_attachment_scope.where("(attachments.meta->'trash') IS NULL")
-                                                        .select('active_storage_attachments.blob_id').distinct
-    trash_attachment_blob_ids = active_attachment_scope.where("(attachments.meta->'trash') IS NOT NULL")
-                                                       .select('active_storage_attachments.blob_id').distinct
+    active_attachment_blob_ids = tenant_attachment_records_scope.where("(attachments.meta->'trash') IS NULL")
+                                                                .select('active_storage_attachments.blob_id').distinct
+    trash_attachment_blob_ids = tenant_attachment_records_scope.where("(attachments.meta->'trash') IS NOT NULL")
+                                                               .select('active_storage_attachments.blob_id').distinct
     captain_source_blob_ids = if defined?(Captain::Document) && Captain::Document.table_exists?
                                 ActiveStorage::Attachment.where(record_type: 'Captain::Document', name: %w[pdf_file source_file])
                                                          .where(record_id: Captain::Document.where(account_id: id).select(:id))
                                                          .select(:blob_id).distinct
                               else
-                                ActiveStorage::Blob.none.select(:id)
+                                ActiveStorage::Attachment.none.select(:blob_id)
                               end
-    captain_blob_ids = captain_source_blob_ids
-    if defined?(ActiveStorage::VariantRecord) && ActiveStorage::VariantRecord.table_exists?
-      captain_variant_blob_ids = ActiveStorage::Attachment.where(
-        record_type: ActiveStorage::VariantRecord.name,
-        name: 'image',
-        record_id: ActiveStorage::VariantRecord.where(blob_id: captain_source_blob_ids).select(:id)
-      ).select(:blob_id).distinct
-      captain_blob_ids = ActiveStorage::Blob.where(id: captain_source_blob_ids)
-                                            .or(ActiveStorage::Blob.where(id: captain_variant_blob_ids))
-                                            .select(:id)
-    end
-    captain_bytes = ActiveStorage::Blob.where(id: captain_blob_ids).where.not(id: active_attachment_blob_ids).sum(:byte_size).to_i
+    captain_blob_ids_sql = if defined?(ActiveStorage::VariantRecord) && ActiveStorage::VariantRecord.table_exists?
+                             AccountLimits::StorageUsageService.source_with_variants_cte_sql(captain_source_blob_ids)
+                           else
+                             captain_source_blob_ids.to_sql
+                           end
+    captain_bytes = ActiveStorage::Blob.where("active_storage_blobs.id IN (#{captain_blob_ids_sql})")
+                                       .where.not(id: active_attachment_blob_ids)
+                                       .sum(:byte_size).to_i
     trash_att_bytes = ActiveStorage::Blob.where(id: trash_attachment_blob_ids)
                                          .where.not(id: active_attachment_blob_ids)
-                                         .where.not(id: captain_blob_ids)
+                                         .where("active_storage_blobs.id NOT IN (#{captain_blob_ids_sql})")
                                          .sum(:byte_size).to_i
 
     storage_service = AccountLimits::StorageUsageService.new(account: self)
@@ -506,13 +502,15 @@ class Account < ApplicationRecord
     ActiveRecord::Base.connection.select_rows(scope.to_sql)
   end
 
+  def tenant_attachment_records_scope
+    ActiveStorage::Attachment.joins(
+      'INNER JOIN attachments ON attachments.id = active_storage_attachments.record_id ' \
+      "AND active_storage_attachments.record_type = 'Attachment'"
+    ).where(attachments: { account_id: id })
+  end
+
   def active_attachment_scope
-    ActiveStorage::Attachment.joins(:blob)
-                             .joins(
-                               'INNER JOIN attachments ON attachments.id = active_storage_attachments.record_id ' \
-                               "AND active_storage_attachments.record_type = 'Attachment'"
-                             )
-                             .where(attachments: { account_id: id })
+    tenant_attachment_records_scope.joins(:blob)
   end
 
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
