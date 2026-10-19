@@ -1,9 +1,10 @@
 <%#
-# Требует внимания
+# Нужно проверить
 
 The block above the clinics on «Сводка»: what to look at first (SuperAdmin::DashboardAlerts). One row per kind of problem,
 the most serious first: a title, a line of advice, the first accounts or pages affected as links (at most ten) and, when
-there are more, a link to the whole list. Nothing here asks an outside service: the checks read what the platform already
+there are more, a link to the list that holds them (the link says which list it opens: that list can be wider than the
+alert). Nothing here asks an outside service: the checks read what the platform already
 keeps, and the result is kept for a couple of minutes. With nothing to report it says so.
 
 ## Local variables:
@@ -55,7 +56,7 @@ keeps, and the result is kept for a couple of minutes. With nothing to report it
           <p class="m-0 flex flex-wrap items-baseline gap-x-3 text-xs">
             <span class="tabular-nums"><%= t('super_admin.alerts.and_more', count: super_admin_number(alert[:count] - alert[:items].size)) %></span>
             <% if alert[:more_url].present? %>
-              <%= link_to t('super_admin.alerts.show_all'), alert[:more_url], class: 'font-medium text-n-slate-12 underline hover:text-n-brand' %>
+              <%= link_to alert[:more_label].presence || t('super_admin.alerts.show_all'), alert[:more_url], class: 'font-medium text-n-slate-12 underline hover:text-n-brand' %>
             <% end %>
           </p>
         <% end %>

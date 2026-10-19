@@ -37,13 +37,15 @@ class SuperAdmin::DashboardAlerts::Trials < SuperAdmin::DashboardAlerts::Check
       left = SuperAdmin::DisplayHelper.format_wait((ends - now).to_i)
       account_item(id, name, text('trials_ending.note', left: left, time: SuperAdmin::DisplayHelper.format_time(ends)))
     end
-    alert(:trials_ending, severity: :warning, items: items, count: ending.size, more_url: accounts_list_url('trial_active:'))
+    alert(:trials_ending, severity: :warning, items: items, count: ending.size,
+          more_url: accounts_list_url('trial_active:'), more_label: text('trials_ending.more'))
   end
 
   def expired_alert(expired)
     return if expired.empty?
 
     items = expired.map { |id, name, ends| account_item(id, name, text('trials_expired.note', time: SuperAdmin::DisplayHelper.format_time(ends))) }
-    alert(:trials_expired, severity: :warning, items: items, count: expired.size, more_url: accounts_list_url('trial_expired:'))
+    alert(:trials_expired, severity: :warning, items: items, count: expired.size,
+          more_url: accounts_list_url('trial_expired:'), more_label: text('trials_expired.more'))
   end
 end

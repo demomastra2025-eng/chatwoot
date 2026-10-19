@@ -2,7 +2,7 @@
 
 require 'rails_helper'
 
-RSpec.describe 'Super admin «Сводка»: Требует внимания', type: :request do
+RSpec.describe 'Super admin «Сводка»: Нужно проверить', type: :request do
   let(:super_admin) { create(:super_admin) }
 
   # Not memoized: some examples open several pages in a row.
@@ -33,7 +33,7 @@ RSpec.describe 'Super admin «Сводка»: Требует внимания', 
     get '/super_admin'
 
     block = page.at_css("[data-testid='dashboard-alerts']")
-    expect(block.at_css('h2').text.squish).to eq('Требует внимания')
+    expect(block.at_css('h2').text.squish).to eq('Нужно проверить')
     cards = block.css('[data-alert]')
     expect(cards.map { |card| card['data-alert'] }).to eq(%w[queues_slow trials_ending])
     expect(cards.map { |card| card['data-severity'] }).to eq(%w[danger warning])
@@ -41,6 +41,17 @@ RSpec.describe 'Super admin «Сводка»: Требует внимания', 
     expect(cards.first.at_css('a')['href']).to eq('/super_admin/monitoring?tab=queues')
     expect(cards.last.at_css('a')['href']).to eq("/super_admin/accounts/#{ending.id}")
     expect(cards.last.at_css('h3').text.squish).to eq('Пробный период заканчивается в ближайшие 3 дня')
+  end
+
+  it 'does not say that all is well when the checks could not be made' do
+    allow(Rails.cache).to receive(:fetch).and_call_original
+    allow(Rails.cache).to receive(:fetch).with(SuperAdmin::DashboardAlerts::CACHE_KEY, any_args).and_raise(StandardError, 'cache down')
+
+    get '/super_admin'
+
+    expect(response).to have_http_status(:success)
+    expect(page.at_css("[data-testid='dashboard-alerts-clear']")).to be_nil
+    expect(page.at_css("[data-alert='incomplete']").text.squish).to include('Не удалось выполнить ни одну проверку')
   end
 
   it 'draws the block above the body of the page' do
@@ -60,6 +71,7 @@ RSpec.describe 'Super admin «Сводка»: Требует внимания', 
     expect(card.css('[data-alert-item]').size).to eq(10)
     expect(card.text.squish).to include('Найдено: 12', 'Показаны первые, ещё: 2')
     expect(card.css('a').last['href']).to eq('/super_admin/accounts?search=trial_active%3A')
+    expect(card.css('a').last.text.squish).to eq('Все аккаунты на пробном периоде')
   end
 
   it 'writes the name of an account as text' do

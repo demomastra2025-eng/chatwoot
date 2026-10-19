@@ -57,6 +57,7 @@ RSpec.describe SuperAdmin::DashboardAlerts do
       expect(found[:items].pluck(:url)).to eq(["/super_admin/accounts/#{sooner.id}", "/super_admin/accounts/#{later.id}"])
       expect(found[:items].first[:note]).to match(/\Aосталось 4 часа · до \d\d\.\d\d\.\d{4} \d\d:\d\d\z/)
       expect(found[:more_url]).to eq('/super_admin/accounts?search=trial_active%3A')
+      expect(found[:more_label]).to eq('Все аккаунты на пробном периоде')
     end
 
     it 'lists the trials that ended within seven days, the latest first' do
@@ -70,6 +71,7 @@ RSpec.describe SuperAdmin::DashboardAlerts do
       expect(found[:items].pluck(:label)).to eq([latest.name, older.name])
       expect(found[:items].first[:note]).to match(/\Aзакончился \d\d\.\d\d\.\d{4} \d\d:\d\d\z/)
       expect(found[:more_url]).to eq('/super_admin/accounts?search=trial_expired%3A')
+      expect(found[:more_label]).to eq('Все аккаунты с истёкшим пробным периодом')
     end
 
     it 'leaves out accounts without a trial, with an unreadable date and the ones marked for deletion' do
@@ -110,6 +112,8 @@ RSpec.describe SuperAdmin::DashboardAlerts do
       expect(alert('storage_warning')).to include(severity: :warning, count: 1)
       expect(alert('storage_warning')[:items].pluck(:label)).to eq([filling.name])
       expect(alert('storage_warning')[:more_url]).to eq('/super_admin/accounts?search=storage_high%3A')
+      expect(alert('storage_warning')[:more_label]).to eq('Все аккаунты с диском от 80%')
+      expect(alert('storage_critical')[:more_label]).to eq('Все аккаунты с диском от 80%')
     end
 
     it 'does not count an account without a limit, without a snapshot yet or being deleted' do
@@ -271,10 +275,16 @@ RSpec.describe SuperAdmin::DashboardAlerts do
       expect(described_class.build(force_refresh: true).first[:count]).to eq(2)
     end
 
-    it 'returns nothing instead of failing the page' do
+    it 'says that nothing could be checked instead of failing the page or looking like all is well' do
       allow(store).to receive(:fetch).and_raise(StandardError, 'cache down')
 
-      expect(described_class.build).to eq([])
+      found = described_class.build
+
+      expect(found.pluck(:key)).to eq(['incomplete'])
+      expect(found.first).to include(severity: :warning, count: 5, title: 'Часть проверок не выполнена')
+      expect(found.first[:text]).to eq(
+        'Не удалось выполнить ни одну проверку (пробные периоды, место на диске, ключ OpenRouter, очереди задач, каналы). '         'Нажмите «Обновить» чуть позже: если это повторяется, посмотрите журнал сервера.'
+      )
     end
   end
 

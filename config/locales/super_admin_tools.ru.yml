@@ -1,5 +1,5 @@
 # Russian texts of the tools of the super admin: the search box of the header, the actions on many accounts, the block
-# «Требует внимания» of «Сводка» and the history of the entries into an account.
+# «Нужно проверить» of «Сводка» and the history of the entries into an account.
 # The main file of the super admin is super_admin.ru.yml. A count in a sentence takes the form of its noun by the plural
 # rule of Russian (one / few / many / other, see config/locales/pluralization.ru.rb).
 ru:
@@ -153,7 +153,7 @@ ru:
 
     # ------------------------------------------------------------------ alerts
     alerts:
-      title: "Требует внимания"
+      title: "Нужно проверить"
       all_clear: "Всё в порядке: пробные периоды, место, очереди и каналы не требуют внимания."
       found: "Найдено: %{count}"
       and_more: "Показаны первые, ещё: %{count}"
@@ -161,6 +161,7 @@ ru:
       incomplete:
         title: "Часть проверок не выполнена"
         text: "Не удалось проверить: %{sources}. Остальные проверки выполнены."
+        text_all: "Не удалось выполнить ни одну проверку (%{sources}). Нажмите «Обновить» чуть позже: если это повторяется, посмотрите журнал сервера."
       sources:
         trials: "пробные периоды"
         storage: "место на диске"
@@ -171,17 +172,20 @@ ru:
         title: "Пробный период заканчивается в ближайшие 3 дня"
         text: "Продлите пробный период или назначьте тариф, пока функции пробного периода не отключились."
         note: "осталось %{left} · до %{time}"
+        more: "Все аккаунты на пробном периоде"
       trials_expired:
         title: "Пробный период закончился за последние 7 дней"
         text: "Если аккаунт продолжает работать, назначьте ему тариф или продлите пробный период."
         note: "закончился %{time}"
+        more: "Все аккаунты с истёкшим пробным периодом"
       storage:
         note: "%{percent}% · %{used} из %{total}"
+        more: "Все аккаунты с диском от 80%"
       storage_critical:
-        title: "Место заполнено более чем на 95%"
+        title: "Место заполнено на 95% и более"
         text: "Загрузки сотрудников и документы ИИ упрутся в лимит: увеличьте лимит места или очистите корзину аккаунта."
       storage_warning:
-        title: "Место заполнено более чем на 80%"
+        title: "Место заполнено на 80% и более"
         text: "Лимит места скоро закончится: увеличьте его заранее или очистите корзину аккаунта."
       openrouter:
         link: "Модели ИИ: состояние ключа OpenRouter"

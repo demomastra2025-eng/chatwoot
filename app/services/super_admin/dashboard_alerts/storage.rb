@@ -18,7 +18,8 @@ class SuperAdmin::DashboardAlerts::Storage < SuperAdmin::DashboardAlerts::Check
     return if rows.empty?
 
     items = rows.first(SuperAdmin::DashboardAlerts::LIST_LIMIT).map { |row| account_item(row[:id], row[:name], note(row)) }
-    alert(key, severity: severity, items: items, count: rows.size, more_url: accounts_list_url('storage_high:'))
+    alert(key, severity: severity, items: items, count: rows.size,
+          more_url: accounts_list_url('storage_high:'), more_label: text('storage.more'))
   end
 
   def note(row)
