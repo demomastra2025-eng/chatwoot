@@ -1336,7 +1336,8 @@
           "ASSIGN_PENDING": "pending after AI",
           "ONLINE_ONLY": "online only",
           "MONTHLY_QUOTA": "{count} new/month",
-          "STICKY_OWNER": "sticky {days} days"
+          "STICKY_OWNER": "sticky {days} days",
+          "EXCLUDED_AGENTS": "excluded agents: {count}"
         },
         "NO_RECORDS_FOUND": "No assignment policies found"
       },
@@ -1488,6 +1489,15 @@
             "SUCCESS_MESSAGE": "Inbox successfully added to policy",
             "ERROR_MESSAGE": "Failed to add inbox to policy"
           }
+        },
+        "AGENTS": {
+          "LABEL": "Agents in assignment",
+          "DESCRIPTION": "Select which workspace members can receive conversations from this policy. Unchecked members are excluded from auto-assignment.",
+          "SELECT_ALL": "Select all",
+          "CLEAR_ALL": "Clear all",
+          "EMPTY_STATE": "No agents found in this workspace.",
+          "ROLE_ADMIN": "Administrator",
+          "ROLE_AGENT": "Agent"
         }
       },
       "DELETE_POLICY": {

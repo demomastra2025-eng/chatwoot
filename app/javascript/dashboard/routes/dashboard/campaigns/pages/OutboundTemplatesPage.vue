@@ -134,22 +134,27 @@ watch(
       </div>
 
       <template v-else>
-        <div class="max-w-md">
+        <div
+          v-if="whatsAppInboxOptions.length > 1"
+          class="flex flex-wrap items-center gap-2.5"
+        >
           <label
             for="outbound-whatsapp-template-inbox"
-            class="mb-1 block text-sm font-medium text-n-slate-12"
+            class="text-xs font-medium text-n-slate-11"
           >
-            {{ $t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP.INBOX_LABEL') }}
+            {{ $t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP.INBOX_LABEL') }}:
           </label>
-          <ComboBox
-            id="outbound-whatsapp-template-inbox"
-            v-model="selectedWhatsAppInboxId"
-            :options="whatsAppInboxOptions"
-            :placeholder="
-              $t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP.INBOX_PLACEHOLDER')
-            "
-            class="[&>div>button]:bg-n-alpha-black2 [&>div>button:not(.focused)]:dark:outline-n-weak [&>div>button:not(.focused)]:hover:!outline-n-slate-6"
-          />
+          <div class="w-64">
+            <ComboBox
+              id="outbound-whatsapp-template-inbox"
+              v-model="selectedWhatsAppInboxId"
+              :options="whatsAppInboxOptions"
+              :placeholder="
+                $t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP.INBOX_PLACEHOLDER')
+              "
+              class="[&>div>button]:bg-n-alpha-black2 [&>div>button:not(.focused)]:dark:outline-n-weak [&>div>button:not(.focused)]:hover:!outline-n-slate-6"
+            />
+          </div>
         </div>
 
         <WhatsAppTemplatesPage

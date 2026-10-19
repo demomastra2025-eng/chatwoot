@@ -85,11 +85,11 @@ describe('account settings routes', () => {
       ],
     });
     expect(additionalFieldsRoute.props).toBe(additionalFieldsProps);
-    expect(additionalFieldsProps({ query: { tab: 'task' } })).toEqual({
-      initialTab: 'task',
+    expect(additionalFieldsProps({ query: { tab: 'deal' } })).toEqual({
+      initialTab: 'deal',
       tabs: WORKSPACE_ADDITIONAL_FIELD_TABS,
     });
-    expect(additionalFieldsProps({ query: { tab: ['deal', 'task'] } })).toEqual(
+    expect(additionalFieldsProps({ query: { tab: ['deal', 'appointment'] } })).toEqual(
       {
         initialTab: 'deal',
         tabs: WORKSPACE_ADDITIONAL_FIELD_TABS,
@@ -97,13 +97,11 @@ describe('account settings routes', () => {
     );
     expect(
       additionalFieldsProps({ query: { tab: 'unknown' } }).initialTab
-    ).toBe('conversation_attribute');
+    ).toBe('contact_attribute');
     expect(WORKSPACE_ADDITIONAL_FIELD_TABS).toEqual([
-      'conversation_attribute',
       'contact_attribute',
       'company_attribute',
       'deal',
-      'task',
       'appointment',
     ]);
   });

@@ -66,6 +66,10 @@ class CrmDealsAPI extends ApiClient {
     return axios.post(`${this.url}/${id}/unarchive`, data);
   }
 
+  bulkAction(data = {}) {
+    return axios.post(`${this.url}/bulk_action`, data);
+  }
+
   timeline(id, params = {}) {
     return axios.get(`${this.url}/${id}/timeline`, { params });
   }

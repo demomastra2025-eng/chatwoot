@@ -5,6 +5,7 @@ import { useAlert } from 'dashboard/composables';
 import StorageAPI from 'dashboard/api/storage';
 import Button from 'dashboard/components-next/button/Button.vue';
 import { useAccount } from 'dashboard/composables/useAccount';
+import ChannelIcon from 'next/icon/ChannelIcon.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 import { formatStorageBytes, formatStorageDate } from './storageFormatters';
@@ -463,49 +464,54 @@ const typeCards = computed(() => {
     {
       key: 'recordings',
       title: t('STORAGE.TYPES.RECORDINGS'),
-      icon: '📞',
+      color: '#14b8a6',
+      dotClass: 'bg-n-teal-9',
       bytes: bd.recordings || 0,
     },
     {
       key: 'audio',
       title: t('STORAGE.TYPES.AUDIO'),
-      icon: '🎙️',
+      color: '#3b82f6',
+      dotClass: 'bg-n-blue-9',
       bytes: bd.audio || 0,
     },
     {
       key: 'images',
       title: t('STORAGE.TYPES.IMAGES'),
-      icon: '🖼️',
+      color: '#8b5cf6',
+      dotClass: 'bg-n-iris-9',
       bytes: bd.images || 0,
     },
     {
       key: 'videos',
       title: t('STORAGE.TYPES.VIDEOS'),
-      icon: '🎥',
+      color: '#f59e0b',
+      dotClass: 'bg-n-amber-9',
       bytes: bd.videos || 0,
     },
     {
       key: 'documents',
       title: t('STORAGE.TYPES.DOCUMENTS'),
-      icon: '📄',
+      color: '#ec4899',
+      dotClass: 'bg-n-ruby-9',
       bytes: bd.documents || 0,
     },
     {
       key: 'captain',
       title: t('STORAGE.TYPES.CAPTAIN'),
-      icon: '🤖',
+      color: '#06b6d4',
+      dotClass: 'bg-n-teal-11',
       bytes: bd.captain || 0,
     },
     {
       key: 'other',
       title: t('STORAGE.TYPES.OTHER'),
-      icon: '🗂️',
+      color: '#94a3b8',
+      dotClass: 'bg-n-slate-8',
       bytes: bd.other || 0,
     },
   ];
 
-  // Call recordings are shown here even when they do not count towards the quota (total then excludes
-  // them), so the shares are taken of whichever is larger: the quota total or what the cards add up to.
   const total =
     Math.max(
       bd.total || 0,
@@ -516,7 +522,26 @@ const typeCards = computed(() => {
     ...item,
     formatted: formatBytes(item.bytes),
     percent: Math.min(100, Math.round((item.bytes / total) * 100)),
+    share: item.bytes / total,
   }));
+});
+
+const donutCircumference = 2 * Math.PI * 42;
+const donutSegments = computed(() => {
+  let cumulative = 0;
+  return typeCards.value
+    .filter(item => item.bytes > 0)
+    .map(item => {
+      const length = item.share * donutCircumference;
+      const segment = {
+        key: item.key,
+        color: item.color,
+        dasharray: `${length} ${donutCircumference - length}`,
+        dashoffset: -cumulative,
+      };
+      cumulative += length;
+      return segment;
+    });
 });
 
 const getFileTypeIcon = type => {
@@ -757,7 +782,7 @@ const getFileTypeName = type => {
             "
             @click="activeTab = 'overview'"
           >
-            <span>{{ '📊' }}</span>
+            <span class="i-lucide-pie-chart size-4" />
             <span>{{ $t('STORAGE.TABS.OVERVIEW') }}</span>
           </button>
           <button
@@ -769,7 +794,7 @@ const getFileTypeName = type => {
             "
             @click="onCleanerTabClick"
           >
-            <span>{{ '🧹' }}</span>
+            <span class="i-lucide-sliders-horizontal size-4" />
             <span>{{ $t('STORAGE.TABS.CLEANER') }}</span>
             <span
               v-if="trashTotalCount > 0"
@@ -782,40 +807,76 @@ const getFileTypeName = type => {
 
         <!-- TAB 1: OVERVIEW -->
         <div v-if="activeTab === 'overview'" class="space-y-6">
-          <!-- File Types Breakdown Grid -->
-          <div>
-            <h4 class="mb-3 text-heading-2 text-n-slate-12">
+          <!-- Donut Chart + Clean Category Legend -->
+          <div
+            class="rounded-xl bg-n-solid-2 px-5 py-4 outline outline-1 -outline-offset-1 outline-n-container"
+            data-test="storage-types-donut-card"
+          >
+            <h4 class="mb-4 text-heading-2 text-n-slate-12">
               {{ $t('STORAGE.TYPES.TITLE') }}
             </h4>
             <div
-              class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4"
+              class="flex flex-col items-center gap-6 md:flex-row md:items-center"
             >
-              <div
-                v-for="card in typeCards"
-                :key="card.key"
-                class="flex flex-col justify-between rounded-xl bg-n-solid-2 px-4 py-3 outline outline-1 -outline-offset-1 outline-n-container"
-              >
-                <div>
-                  <div
-                    class="flex items-center justify-between text-n-slate-11 text-xs"
-                  >
-                    <span class="text-base">{{ card.icon }}</span>
-                    <span class="font-mono text-[10px]">{{
-                      `${card.percent}%`
-                    }}</span>
-                  </div>
-                  <p
-                    class="mt-2 mb-0 truncate text-xs font-medium text-n-slate-11"
-                  >
-                    {{ card.title }}
-                  </p>
-                </div>
-                <div class="mt-2">
-                  <span
-                    class="text-sm font-bold text-n-slate-12 block truncate"
-                  >
-                    {{ card.formatted }}
+              <div class="relative flex size-36 shrink-0 items-center justify-center">
+                <svg
+                  viewBox="0 0 100 100"
+                  class="size-36 -rotate-90"
+                  data-test="storage-donut-chart"
+                >
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="42"
+                    fill="transparent"
+                    stroke="currentColor"
+                    stroke-width="12"
+                    class="text-n-alpha-2"
+                  />
+                  <circle
+                    v-for="segment in donutSegments"
+                    :key="segment.key"
+                    cx="50"
+                    cy="50"
+                    r="42"
+                    fill="transparent"
+                    :stroke="segment.color"
+                    stroke-width="12"
+                    :stroke-dasharray="segment.dasharray"
+                    :stroke-dashoffset="segment.dashoffset"
+                  />
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                  <span class="text-xs font-semibold text-n-slate-12">
+                    {{ formatBytes(storageData.consumed_bytes) }}
                   </span>
+                </div>
+              </div>
+
+              <div class="grid w-full flex-1 grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <div
+                  v-for="card in typeCards"
+                  :key="card.key"
+                  class="flex items-center justify-between gap-3 rounded-lg bg-n-alpha-1 px-3 py-2"
+                  data-test="storage-type-row"
+                >
+                  <div class="flex min-w-0 items-center gap-2">
+                    <span
+                      class="size-2.5 shrink-0 rounded-full"
+                      :class="card.dotClass"
+                    />
+                    <span class="truncate text-xs font-medium text-n-slate-12">
+                      {{ card.title }}
+                    </span>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-2 text-xs">
+                    <span class="font-semibold text-n-slate-12">
+                      {{ card.formatted }}
+                    </span>
+                    <span class="w-9 text-right font-mono text-[11px] text-n-slate-10">
+                      {{ `${card.percent}%` }}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -830,17 +891,28 @@ const getFileTypeName = type => {
               <div
                 v-for="inbox in inboxesList"
                 :key="inbox.id"
-                class="flex items-center justify-between rounded-xl bg-n-solid-2 px-4 py-3 outline outline-1 -outline-offset-1 outline-n-container"
+                class="flex items-center justify-between gap-3 rounded-xl bg-n-solid-2 px-4 py-3 outline outline-1 -outline-offset-1 outline-n-container"
+                data-test="storage-inbox-card"
               >
-                <div class="min-w-0 pr-3">
-                  <p class="mb-0 truncate text-heading-3 text-n-slate-12">
-                    {{ inbox.name }}
-                  </p>
-                  <p class="mt-0.5 mb-0 text-xs text-n-slate-11">
-                    {{
-                      `${inbox.files_count} ${$t('STORAGE.INBOXES.FILES_COUNT')}`
-                    }}
-                  </p>
+                <div class="flex min-w-0 items-center gap-3">
+                  <div
+                    class="grid size-9 shrink-0 place-items-center rounded-full bg-n-alpha-3"
+                  >
+                    <ChannelIcon
+                      class="size-5 text-n-slate-10"
+                      :inbox="inbox"
+                    />
+                  </div>
+                  <div class="min-w-0">
+                    <p class="mb-0 truncate text-heading-3 text-n-slate-12">
+                      {{ inbox.name }}
+                    </p>
+                    <p class="mt-0.5 mb-0 text-xs text-n-slate-11">
+                      {{
+                        `${inbox.files_count} ${$t('STORAGE.INBOXES.FILES_COUNT')}`
+                      }}
+                    </p>
+                  </div>
                 </div>
                 <div class="text-right flex-shrink-0">
                   <span class="text-sm font-bold text-n-slate-12">

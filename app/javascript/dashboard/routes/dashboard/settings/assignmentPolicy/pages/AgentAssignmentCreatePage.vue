@@ -18,6 +18,7 @@ const { t } = useI18n();
 const formRef = ref(null);
 const uiFlags = useMapGetter('assignmentPolicies/getUIFlags');
 const labelsList = useMapGetter('labels/getLabels');
+const agentsList = useMapGetter('agents/getAgents');
 
 const allLabels = computed(() =>
   (labelsList.value || []).map(label => ({
@@ -67,6 +68,7 @@ const handleSubmit = async formState => {
 
 onMounted(() => {
   if (!labelsList.value?.length) store.dispatch('labels/get');
+  if (!agentsList.value?.length) store.dispatch('agents/get');
 });
 </script>
 
@@ -84,6 +86,7 @@ onMounted(() => {
         mode="CREATE"
         :is-loading="uiFlags.isCreating"
         :label-list="allLabels"
+        :agent-list="agentsList"
         @submit="handleSubmit"
       />
     </template>

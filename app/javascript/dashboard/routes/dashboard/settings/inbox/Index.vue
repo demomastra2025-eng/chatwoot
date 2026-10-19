@@ -357,16 +357,6 @@ const getCardDetails = inbox => {
   return details.slice(0, 4);
 };
 
-const supportsCampaigns = campaignCapabilities => {
-  if (!campaignCapabilities) return false;
-  if (Array.isArray(campaignCapabilities))
-    return campaignCapabilities.length > 0;
-  if (typeof campaignCapabilities === 'object') {
-    return Object.values(campaignCapabilities).some(Boolean);
-  }
-  return Boolean(campaignCapabilities);
-};
-
 const getCapabilityChips = inbox => {
   const chips = [];
 
@@ -396,14 +386,6 @@ const getCapabilityChips = inbox => {
 
   if (inbox.calling_enabled || inbox.telephony) {
     chips.push(t('INBOX_MGMT.LIST.CHIPS.CALLS'));
-  }
-
-  if (inbox.media_server_enabled) {
-    chips.push(t('INBOX_MGMT.LIST.CHIPS.MEDIA_SERVER'));
-  }
-
-  if (supportsCampaigns(inbox.campaign_capabilities)) {
-    chips.push(t('INBOX_MGMT.LIST.CHIPS.CAMPAIGNS'));
   }
 
   return chips.slice(0, 5);

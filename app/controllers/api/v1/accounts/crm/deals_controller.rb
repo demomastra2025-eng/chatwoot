@@ -13,7 +13,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   before_action :bootstrap_defaults!, only: :create
   before_action :set_deal, only: [
     :show, :update, :timeline, :transition_stage, :close_won, :close_lost, :reopen, :reorder, :undo_transition,
-    :set_waiting, :clear_waiting, :archive, :unarchive,
+    :set_waiting, :clear_waiting, :archive, :unarchive, :destroy,
     :appointments, :appointment_plan, :resume_appointment_automation
   ]
 
@@ -210,6 +210,77 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
 
     render_payload(::Crm::PayloadBuilder.deal(deal))
   end
+
+def destroy
+  authorize @deal, :destroy?
+  @deal.destroy!
+  head :no_content
+end
+
+def bulk_action
+  authorize ::Crm::Deal, :bulk_action?
+
+  deal_ids = Array(params[:deal_ids]).map(&:to_i).select(&:positive?).uniq
+  action_type = params[:action_type].to_s
+  raise ArgumentError, "Unsupported bulk action: #{action_type}" unless %w[transition_stage assign_owner archive unarchive delete].include?(action_type)
+  return render_payload({ count: 0, deal_ids: [] }) if deal_ids.empty?
+
+  scoped_deals = policy_scope(::Crm::Deal).where(id: deal_ids).to_a
+  processed_ids = []
+
+  ActiveRecord::Base.transaction do
+    scoped_deals.each do |deal|
+      case action_type
+      when "delete"
+        authorize deal, :destroy?
+        deal.destroy!
+        processed_ids << deal.id
+      when "archive", "unarchive"
+        authorize deal, (action_type == "archive" ? :archive? : :unarchive?)
+        ::Crm::Deals::ArchiveService.new(
+          account: Current.account,
+          deal: deal,
+          params: { lock_version: deal.lock_version },
+          archived: (action_type == "archive"),
+          actor: Current.user
+        ).perform
+        processed_ids << deal.id
+      when "assign_owner"
+        authorize deal, :assign?
+        raw_owner = params[:owner_id]
+        owner_id = raw_owner.present? && raw_owner.to_s != "0" ? raw_owner.to_i : nil
+        ::Crm::Deals::UpsertService.new(
+          account: Current.account,
+          deal: deal,
+          params: { owner_id: owner_id, lock_version: deal.lock_version },
+          actor: Current.user
+        ).perform
+        processed_ids << deal.id
+      when "transition_stage"
+        authorize deal, :transition_stage?
+        target_stage_id = params[:stage_id].to_i
+        raise ArgumentError, "stage_id is required" unless target_stage_id.positive?
+
+        if deal.stage_id != target_stage_id
+          ::Crm::Deals::StageCommandService.new(
+            account: Current.account,
+            deal: deal,
+            params: {
+              stage_id: target_stage_id,
+              lock_version: deal.lock_version,
+              override_stage_rules: true,
+              override_reason: "bulk_action"
+            },
+            actor: Current.user
+          ).perform
+        end
+        processed_ids << deal.id
+      end
+    end
+  end
+
+  render_payload({ action_type: action_type, count: processed_ids.size, deal_ids: processed_ids })
+end
 
   private
 

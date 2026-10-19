@@ -27,7 +27,7 @@ export default {
     // Needs a better data type, todo: refactor this component later
     selectedAttributeModelTab: {
       type: Number,
-      default: 0,
+      default: 1,
     },
     disableAttributeModelSelection: {
       type: Boolean,
@@ -44,7 +44,7 @@ export default {
       // Using the prop as default. There is no side effect here as the component
       // is destroyed completely when the modal is closed. The prop doesn't change
       // dynamically when the modal is active.
-      attributeModel: this.selectedAttributeModelTab || 0,
+      attributeModel: this.selectedAttributeModelTab || 1,
       attributeType: 0,
       attributeKey: '',
       regexPattern: null,

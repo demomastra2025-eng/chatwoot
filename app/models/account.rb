@@ -62,12 +62,10 @@ class Account < ApplicationRecord
   }.freeze
 
   validates :name, presence: true
-  validates :domain, length: { maximum: 100 }
   validates_with JsonSchemaValidator,
                  schema: SETTINGS_PARAMS_SCHEMA,
                  attribute_resolver: ->(record) { record.settings }
   validate :validate_reporting_timezone
-  validate :validate_support_email_format, if: :will_save_change_to_support_email?
 
   store_accessor :settings, :auto_resolve_after, :auto_resolve_message, :auto_resolve_ignore_waiting
 
@@ -223,12 +221,11 @@ class Account < ApplicationRecord
   end
 
   def inbound_email_domain
-    domain.presence || GlobalConfig.get('MAILER_INBOUND_EMAIL_DOMAIN')['MAILER_INBOUND_EMAIL_DOMAIN'] || ENV.fetch('MAILER_INBOUND_EMAIL_DOMAIN',
-                                                                                                                   false)
+    GlobalConfig.get('MAILER_INBOUND_EMAIL_DOMAIN')['MAILER_INBOUND_EMAIL_DOMAIN'] || ENV.fetch('MAILER_INBOUND_EMAIL_DOMAIN', false)
   end
 
   def support_email
-    super.presence || ENV.fetch('MAILER_SENDER_EMAIL') { GlobalConfig.get('MAILER_SUPPORT_EMAIL')['MAILER_SUPPORT_EMAIL'] }
+    ENV.fetch('MAILER_SENDER_EMAIL') { GlobalConfig.get('MAILER_SUPPORT_EMAIL')['MAILER_SUPPORT_EMAIL'] }
   end
 
   def logo_url
@@ -713,15 +710,6 @@ class Account < ApplicationRecord
     errors.add(:reporting_timezone, I18n.t('errors.account.reporting_timezone.invalid'))
   end
 
-  def validate_support_email_format
-    value = attributes['support_email']
-    return if value.blank?
-
-    parsed = Mail::Address.new(value).address
-    errors.add(:support_email, I18n.t('errors.account.support_email.invalid')) if parsed.blank?
-  rescue Mail::Field::ParseError, Mail::Field::IncompleteParseError
-    errors.add(:support_email, I18n.t('errors.account.support_email.invalid'))
-  end
 
   def remove_account_sequences
     ActiveRecord::Base.connection.exec_query("drop sequence IF EXISTS camp_dpid_seq_#{id}")

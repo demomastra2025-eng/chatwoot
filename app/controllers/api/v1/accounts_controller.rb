@@ -110,7 +110,7 @@ class Api::V1::AccountsController < Api::BaseController
   end
 
   def account_params
-    params.permit(:account_name, :email, :name, :password, :locale, :domain, :support_email, :user_full_name, :logo)
+    params.permit(:account_name, :email, :name, :password, :locale, :user_full_name, :logo)
   end
 
   def custom_attributes_params

@@ -622,6 +622,30 @@ RSpec.describe AutoAssignment::AssignmentService do
           reasons: ['no_eligible_agents']
         )
       end
+
+      it 'excludes users listed in exclusion_rules excluded_user_ids and logs the exclusion reason' do
+        assignment_policy.update!(
+          exclusion_rules: { 'excluded_user_ids' => [agent.id] }
+        )
+        candidate_conversation = create(:conversation, inbox: inbox, status: 'open', assignee: nil)
+
+        expect(round_robin_selector).to receive(:select_agent) do |eligible_members|
+          expect(eligible_members.map(&:user_id)).to eq([agent2.id])
+          agent2
+        end
+
+        assigned_count = service.perform_bulk_assignment(limit: 1)
+
+        expect(assigned_count).to eq(1)
+        expect(candidate_conversation.reload.assignee).to eq(agent2)
+        log = AssignmentDecisionLog.last
+        expect(log.candidate_summaries).to include(
+          hash_including(
+            'user_id' => agent.id,
+            'reasons' => ['excluded_from_policy']
+          )
+        )
+      end
     end
   end
 end

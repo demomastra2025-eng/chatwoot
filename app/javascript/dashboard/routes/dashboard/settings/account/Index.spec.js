@@ -1,11 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { shallowMount } from '@vue/test-utils';
 import { createStore } from 'vuex';
 import { nextTick } from 'vue';
-
-import { useVuelidate } from '@vuelidate/core';
-import { required } from '@vuelidate/validators';
-
 import AccountSettings from './Index.vue';
 import { useAlert } from 'dashboard/composables';
 
@@ -14,31 +9,30 @@ vi.mock('dashboard/composables', () => ({
 }));
 
 vi.mock('dashboard/composables/useUISettings', () => ({
-  useUISettings: () => ({ uiSettings: { locale: 'ru' } }),
+  useUISettings: () => ({
+    uiSettings: { locale: 'en' },
+  }),
 }));
 
 vi.mock('dashboard/composables/useConfig', () => ({
   useConfig: () => ({
     enabledLanguages: [
-      { name: 'English (en)', iso_639_1_code: 'en' },
-      { name: 'русский (ru)', iso_639_1_code: 'ru' },
-      { name: 'қазақ тілі (kk)', iso_639_1_code: 'kk' },
+      { iso_639_1_code: 'en', name: 'English' },
+      { iso_639_1_code: 'ru', name: 'Русский' },
     ],
   }),
 }));
 
 vi.mock('dashboard/composables/useAccount', () => ({
-  useAccount: () => ({ accountId: 530 }),
+  useAccount: () => ({
+    accountId: 530,
+  }),
 }));
 
-let shouldShowSamlFeature = false;
-let shouldShowSamlPaywall = false;
 let canManageWorkspace = true;
 
 vi.mock('dashboard/composables/usePolicy', () => ({
   usePolicy: () => ({
-    shouldShow: vi.fn(() => shouldShowSamlFeature),
-    shouldShowPaywall: vi.fn(() => shouldShowSamlPaywall),
     checkPermissions: vi.fn(() => canManageWorkspace),
   }),
 }));
@@ -51,23 +45,8 @@ const account = {
   id: 530,
   name: 'Acme Inc',
   locale: 'en',
-  domain: '',
-  support_email: 'dev@example.com',
   features: {},
   logo_url: '',
-};
-
-const InvalidNestedSettings = {
-  setup() {
-    return { v$: useVuelidate() };
-  },
-  data() {
-    return { samlUrl: '' };
-  },
-  validations: {
-    samlUrl: { required },
-  },
-  template: '<div data-test="saml-settings" />',
 };
 
 const buildWrapper = ({
@@ -111,10 +90,7 @@ const buildWrapper = ({
         },
         WorkspaceLogo: true,
         AccountId: { template: '<div data-test="account-id" />' },
-        BuildInfo: { template: '<div data-test="build-info" />' },
         AccountDelete: { template: '<div data-test="account-delete" />' },
-        SamlSettings: InvalidNestedSettings,
-        SamlPaywall: { template: '<div data-test="saml-paywall" />' },
         NextInput: true,
         NextSelect: true,
         NextButton: true,
@@ -129,10 +105,7 @@ const buildWrapper = ({
 
 describe('Account settings', () => {
   beforeEach(() => {
-    shouldShowSamlFeature = false;
-    shouldShowSamlPaywall = false;
     canManageWorkspace = true;
-    window.chatwootConfig = { allowedLoginMethods: ['saml'] };
     vi.clearAllMocks();
   });
 
@@ -175,26 +148,6 @@ describe('Account settings', () => {
     expect(useAlert).not.toHaveBeenCalledWith('GENERAL_SETTINGS.FORM.ERROR');
   });
 
-  it('does not let nested settings validations block workspace general settings save', async () => {
-    shouldShowSamlFeature = true;
-    const { wrapper, updateAction } = buildWrapper();
-    await wrapper.vm.hydrateAccountForm();
-    await wrapper.setData({ name: 'Renamed workspace', locale: 'ru' });
-    await nextTick();
-
-    await wrapper.vm.updateAccount();
-
-    expect(updateAction).toHaveBeenCalledWith(
-      expect.any(Object),
-      expect.objectContaining({
-        id: 530,
-        name: 'Renamed workspace',
-        locale: 'ru',
-      })
-    );
-    expect(useAlert).not.toHaveBeenCalledWith('GENERAL_SETTINGS.FORM.ERROR');
-  });
-
   it('shows a field-specific validation error instead of a generic form error', async () => {
     const { wrapper, updateAction } = buildWrapper();
     await wrapper.vm.hydrateAccountForm();
@@ -207,35 +160,15 @@ describe('Account settings', () => {
     expect(useAlert).not.toHaveBeenCalledWith('GENERAL_SETTINGS.FORM.ERROR');
   });
 
-  it('shows the general form and technical details on one page without the mini-nav or transcription', async () => {
+  it('shows the general form and account ID directly without collapsible details or build info', async () => {
     const { wrapper } = buildWrapper({ isOnChatwootCloud: true });
     await wrapper.vm.hydrateAccountForm();
 
     expect(wrapper.find('nav').exists()).toBe(false);
     expect(wrapper.find('form').exists()).toBe(true);
     expect(wrapper.find('[data-test="account-id"]').exists()).toBe(true);
-    expect(wrapper.find('[data-test="build-info"]').exists()).toBe(true);
-    expect(wrapper.find('details').attributes('open')).toBeUndefined();
+    expect(wrapper.find('details').exists()).toBe(false);
     expect(wrapper.find('[data-test="account-delete"]').exists()).toBe(true);
-    expect(wrapper.find('media-transcription-stub').exists()).toBe(false);
-    expect(wrapper.find('[data-test="saml-settings"]').exists()).toBe(false);
-    expect(wrapper.find('[data-test="saml-paywall"]').exists()).toBe(false);
-    expect(wrapper.text()).not.toContain('SAML_DISABLED_MESSAGE');
-  });
-
-  it('shows SAML settings or paywall under their existing conditions', () => {
-    shouldShowSamlFeature = true;
-    const { wrapper } = buildWrapper();
-    expect(wrapper.find('[data-test="saml-settings"]').exists()).toBe(true);
-
-    shouldShowSamlPaywall = true;
-    const { wrapper: paywallWrapper } = buildWrapper();
-    expect(paywallWrapper.find('[data-test="saml-paywall"]').exists()).toBe(
-      true
-    );
-    expect(paywallWrapper.find('[data-test="saml-settings"]').exists()).toBe(
-      false
-    );
   });
 
   it('hides the danger zone outside cloud or for a read-only workspace', () => {
@@ -251,14 +184,12 @@ describe('Account settings', () => {
   });
 
   it('waits for account data before mounting dependent sections', () => {
-    shouldShowSamlFeature = true;
     const { wrapper } = buildWrapper({
       accountRecord: null,
       isOnChatwootCloud: true,
     });
 
-    expect(wrapper.find('[data-test="saml-settings"]').exists()).toBe(false);
-    expect(wrapper.find('details').exists()).toBe(false);
+    expect(wrapper.find('[data-test="account-id"]').exists()).toBe(false);
     expect(wrapper.find('[data-test="account-delete"]').exists()).toBe(false);
   });
 

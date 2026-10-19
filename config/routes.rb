@@ -144,7 +144,6 @@ Rails.application.routes.draw do
               post :follow_up
             end
           end
-          resource :saml_settings, only: [:show, :create, :update, :destroy]
           resources :contact_inboxes, only: [] do
             collection do
               post :filter
@@ -273,9 +272,10 @@ Rails.application.routes.draw do
                 get :deals_without_next_action_details
               end
             end
-            resources :deals, only: [:index, :show, :create, :update] do
+            resources :deals, only: [:index, :show, :create, :update, :destroy] do
               collection do
                 get :appointment_options
+                post :bulk_action
               end
               member do
                 get :appointments

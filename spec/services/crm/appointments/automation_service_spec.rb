@@ -60,14 +60,14 @@ RSpec.describe Crm::Appointments::AutomationService do
   end
 
   it 'only permits a won rule when its configured attendance requirement is met' do
-    visit.update!(status: 'completed',
-                  custom_attributes: { medelement_reception_code: 'booked', provider_status_audit: { reason: 'provider_inactive' } }, source: 'medelement')
+    visit.update!(status: 'scheduled',
+                  custom_attributes: { medelement_reception_code: 'booked' }, source: 'medelement')
     configure([rule(won_stage, ['past'])], success_mode: 'any_attended')
     visit.update!(starts_at: 2.days.ago, ends_at: 2.days.ago + 30.minutes)
     evaluate
     expect(deal.reload.closed_at).to be_nil
 
-    visit.update!(attendance_confirmed_at: Time.current)
+    visit.update!(status: 'completed', attendance_confirmed_at: Time.current)
     evaluate
     expect(deal.reload.stage_id).to eq(won_stage.id)
     expect(deal.closed_at).to be_present

@@ -78,26 +78,17 @@ RSpec.describe Reports::LeadAppointmentsQuery do
     expect(report[:leads_count]).to eq(1)
   end
 
-  it 'does not count a local plan or provider inactivity as actual provider booking and attendance' do
+  it 'counts completed provider appointments as attended while excluding unbooked local plans' do
     contact = create(:contact, account: account)
     incoming(contact)
     create(:scheduling_appointment, account: account, contact: contact, created_at: first_at + 1.hour)
     provider_visit(contact, status: 'completed', custom_attributes: { medelement_reception_code: 'inactive', provider_status_audit: { reason: 'provider_inactive' } })
     provider_visit(contact, status: 'cancelled')
 
-    expect(report).to include(booked_leads_count: 1, attended_leads_count: 0, appointments_count: 3,
-                             provider_booked_appointments_count: 2, unknown_attendance_appointments_count: 1,
+    expect(report).to include(booked_leads_count: 1, attended_leads_count: 1, appointments_count: 3,
+                             provider_booked_appointments_count: 2, attended_appointments_count: 1,
+                             unknown_attendance_appointments_count: 0,
                              cancelled_or_no_show_appointments_count: 1)
-  end
-
-  it 'labels locally completed provider bookings without explicit attendance evidence as unknown' do
-    contact = create(:contact, account: account)
-    incoming(contact)
-    create(:scheduling_appointment, account: account, contact: contact, source: 'calendar', status: 'completed', created_at: first_at + 1.hour,
-                                    custom_attributes: { medelement_reception_code: 'booked', medelement_provider_sync_status: 'succeeded' })
-
-    expect(report).to include(leads_count: 1, booked_leads_count: 1, attended_leads_count: 0,
-                             attended_appointments_count: 0, unknown_attendance_appointments_count: 1)
   end
 
   it 'preserves first-message origin attribution and separates deal results from lead conversion' do

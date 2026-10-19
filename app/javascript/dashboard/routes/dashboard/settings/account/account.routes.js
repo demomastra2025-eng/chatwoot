@@ -20,11 +20,9 @@ const SLASettings = () => import('../sla/Index.vue');
 // Tabs of Settings > Data > Additional fields. The page itself hides tabs the
 // current user or account cannot use.
 export const WORKSPACE_ADDITIONAL_FIELD_TABS = [
-  'conversation_attribute',
   'contact_attribute',
   'company_attribute',
   'deal',
-  'task',
   'appointment',
 ];
 

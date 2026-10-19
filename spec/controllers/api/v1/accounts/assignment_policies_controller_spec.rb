@@ -266,6 +266,27 @@ RSpec.describe 'Assignment Policies API', type: :request do
                                                         })
       end
 
+      it 'persists excluded_user_ids in exclusion_rules' do
+        excluded_agent = create(:user, account: account, role: :administrator)
+
+        put "/api/v1/accounts/#{account.id}/assignment_policies/#{assignment_policy.id}",
+            headers: admin.create_new_auth_token,
+            params: {
+              assignment_policy: {
+                exclusion_rules: {
+                  excluded_labels: ['vip'],
+                  exclude_older_than_minutes: 30,
+                  excluded_user_ids: [excluded_agent.id]
+                }
+              }
+            },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assignment_policy.reload.excluded_user_ids).to eq([excluded_agent.id])
+        expect(response.parsed_body.dig('exclusion_rules', 'excluded_user_ids')).to eq([excluded_agent.id])
+      end
+
       it 'allows partial updates' do
         partial_params = { assignment_policy: { enabled: false } }
 

@@ -1715,6 +1715,16 @@ describe('PhoneWidget', () => {
         wrapper.find('[data-testid="phone-widget-lines-summary"]').exists()
       ).toBe(false);
 
+      const linesToggle = wrapper.get('[data-testid="phone-widget-lines-toggle"]');
+      const linesList = wrapper.get('[data-testid="phone-widget-lines-list"]');
+      expect(linesToggle.attributes('aria-expanded')).toBe('false');
+      expect(linesList.element.style.display).toBe('none');
+
+      await linesToggle.trigger('click');
+      await flushPromises();
+      expect(linesToggle.attributes('aria-expanded')).toBe('true');
+      expect(linesList.element.style.display).toBe('');
+
       const items = wrapper.findAll('[data-testid="phone-widget-line-item"]');
       expect(items).toHaveLength(3);
       expect(items[0].attributes('data-line-id')).toBe('43');

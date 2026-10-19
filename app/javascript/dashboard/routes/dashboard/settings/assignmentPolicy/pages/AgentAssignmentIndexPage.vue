@@ -120,6 +120,9 @@ onMounted(() => {
           :monthly-new-client-quota="policy.monthlyNewClientQuota"
           :sticky-owner-enabled="policy.stickyOwnerEnabled"
           :sticky-owner-duration-days="policy.stickyOwnerDurationDays"
+          :excluded-agents-count="
+            policy.exclusionRules?.excludedUserIds?.length || 0
+          "
           @edit="onClickEditPolicy"
           @delete="handleDelete"
         />

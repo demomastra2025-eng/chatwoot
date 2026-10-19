@@ -104,12 +104,13 @@ const mountComponent = (props = {}) =>
   });
 
 describe('Attributes settings index', () => {
-  it('exposes company custom attributes as a first-class legacy CRUD tab', () => {
+  it('exposes contact and company custom attributes without conversation or task tabs', () => {
     const wrapper = mountComponent();
 
-    expect(wrapper.text()).toContain('ATTRIBUTES_MGMT.TABS.CONVERSATION');
+    expect(wrapper.text()).not.toContain('ATTRIBUTES_MGMT.TABS.CONVERSATION');
     expect(wrapper.text()).toContain('ATTRIBUTES_MGMT.TABS.CONTACT');
     expect(wrapper.text()).toContain('ATTRIBUTES_MGMT.TABS.COMPANY');
+    expect(wrapper.text()).not.toContain('CRM.SETTINGS.FIELD_TABS.TASKS');
   });
 
   it('can be scoped to contact additional fields for domain settings', () => {
@@ -133,13 +134,11 @@ describe('Attributes settings index', () => {
     expect(wrapper.vm.disableLegacyAttributeModelSelection).toBe(true);
   });
 
-  it('shows all six workspace entities and follows a route-driven tab change', async () => {
+  it('shows the four active workspace entities and follows a route-driven tab change', async () => {
     const tabs = [
-      'conversation_attribute',
       'contact_attribute',
       'company_attribute',
       'deal',
-      'task',
       'appointment',
     ];
     const wrapper = mountComponent({ initialTab: 'deal', tabs });
@@ -147,11 +146,11 @@ describe('Attributes settings index', () => {
     expect(wrapper.vm.availableTabs.map(tab => tab.key)).toEqual(tabs);
     expect(wrapper.vm.selectedTabKey).toBe('deal');
 
-    await wrapper.setProps({ initialTab: 'task' });
-    expect(wrapper.vm.selectedTabKey).toBe('task');
+    await wrapper.setProps({ initialTab: 'appointment' });
+    expect(wrapper.vm.selectedTabKey).toBe('appointment');
 
     await wrapper.setProps({ initialTab: 'unknown' });
-    expect(wrapper.vm.selectedTabKey).toBe('task');
+    expect(wrapper.vm.selectedTabKey).toBe('appointment');
   });
 
   it('hides the company tab when companies are disabled for the account', () => {
@@ -160,20 +159,20 @@ describe('Attributes settings index', () => {
       const wrapper = mountComponent({ initialTab: 'company_attribute' });
 
       expect(wrapper.text()).not.toContain('ATTRIBUTES_MGMT.TABS.COMPANY');
-      expect(wrapper.vm.selectedTabKey).toBe('conversation_attribute');
+      expect(wrapper.vm.selectedTabKey).toBe('contact_attribute');
     } finally {
       enabledFeatures.add('companies');
     }
   });
 
-  it('can be scoped to task CRM fields without offering entity switching', () => {
+  it('can be scoped to deal CRM fields without offering task entity switching', () => {
     const wrapper = mountComponent({
-      initialTab: 'task',
-      tabs: ['task'],
+      initialTab: 'deal',
+      tabs: ['deal'],
     });
 
     expect(wrapper.vm.crmEntityOptions).toEqual([
-      { label: 'CRM.SETTINGS.FIELD_TABS.TASKS', value: 'task' },
+      { label: 'CRM.SETTINGS.FIELD_TABS.DEALS', value: 'deal' },
     ]);
   });
 });

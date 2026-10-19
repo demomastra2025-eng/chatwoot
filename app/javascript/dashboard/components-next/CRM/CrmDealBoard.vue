@@ -83,12 +83,18 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  selectedDealIds: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const emit = defineEmits([
   'changeStage',
   'loadMore',
   'selectDeal',
+  'toggleDealSelection',
+  'toggleStageSelection',
   'toggleSortDirection',
 ]);
 
@@ -347,6 +353,41 @@ const emitStageChange = (deal, stageId, position) => {
   });
 };
 
+const selectedDealIdSet = computed(
+  () => new Set((props.selectedDealIds || []).map(Number))
+);
+
+const isDealSelected = dealId => selectedDealIdSet.value.has(Number(dealId));
+
+const stageDealIds = stageId =>
+  (boardColumns.value[Number(stageId)] || []).map(deal => Number(deal.id));
+
+const isStageAllSelected = stageId => {
+  const ids = stageDealIds(stageId);
+  return ids.length > 0 && ids.every(id => selectedDealIdSet.value.has(id));
+};
+
+const isStageSomeSelected = stageId => {
+  const ids = stageDealIds(stageId);
+  return (
+    ids.length > 0 &&
+    !isStageAllSelected(stageId) &&
+    ids.some(id => selectedDealIdSet.value.has(id))
+  );
+};
+
+const handleStageCheckboxChange = (stageId, event) => {
+  emit('toggleStageSelection', {
+    stageId: Number(stageId),
+    dealIds: stageDealIds(stageId),
+    checked: Boolean(event.target.checked),
+  });
+};
+
+const handleDealCheckboxChange = dealId => {
+  emit('toggleDealSelection', Number(dealId));
+};
+
 const handleColumnChange = (event, stageId) => {
   if (event.moved) {
     const deal = boardColumns.value[Number(stageId)][event.moved.newIndex];
@@ -378,6 +419,16 @@ const handleColumnChange = (event, stageId) => {
         >
           <div class="flex items-center justify-between gap-2">
             <div class="flex min-w-0 items-center gap-1.5">
+              <input
+                v-if="canManage"
+                type="checkbox"
+                class="size-3.5 shrink-0 cursor-pointer rounded border-n-weak text-n-brand focus:ring-n-brand"
+                data-test="stage-select-all"
+                :checked="isStageAllSelected(column.stageId)"
+                :indeterminate.prop="isStageSomeSelected(column.stageId)"
+                @click.stop
+                @change="handleStageCheckboxChange(column.stageId, $event)"
+              />
               <h3 class="mb-0 truncate text-sm font-semibold text-n-slate-12">
                 {{ column.label }}
               </h3>
@@ -432,10 +483,20 @@ const handleColumnChange = (event, stageId) => {
         >
           <template #item="{ element }">
             <article
-              class="rounded-xl bg-n-solid-2 px-2.5 py-2 outline outline-1 -outline-offset-1 outline-n-weak transition-colors hover:outline-n-strong motion-reduce:transition-none"
+              class="rounded-xl bg-n-solid-2 px-2.5 py-2 outline outline-1 -outline-offset-1 transition-colors hover:outline-n-strong motion-reduce:transition-none"
+              :class="isDealSelected(element.id) ? 'outline-n-brand bg-n-brand/5' : 'outline-n-weak'"
               @click="emit('selectDeal', element)"
             >
               <div class="flex items-start justify-between gap-2">
+                <input
+                  v-if="canManage"
+                  type="checkbox"
+                  class="mt-0.5 size-3.5 shrink-0 cursor-pointer rounded border-n-weak text-n-brand focus:ring-n-brand"
+                  data-test="deal-card-select"
+                  :checked="isDealSelected(element.id)"
+                  @click.stop
+                  @change="handleDealCheckboxChange(element.id)"
+                />
                 <button
                   type="button"
                   data-test="open-deal"

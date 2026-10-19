@@ -2,7 +2,6 @@
 import { computed } from 'vue';
 import { getLanguageName } from 'dashboard/components/widgets/conversation/advancedFilterItems/languages';
 import ContactDetailsItem from './ContactDetailsItem.vue';
-import CustomAttributes from './customAttributes/CustomAttributes.vue';
 
 const props = defineProps({
   conversationAttributes: {
@@ -86,29 +85,21 @@ const staticElements = computed(() =>
 
 <template>
   <div class="conversation--details">
-    <CustomAttributes
-      :static-elements="staticElements"
-      attribute-class="conversation--attribute"
-      attribute-from="conversation_panel"
-      attribute-type="conversation_attribute"
+    <ContactDetailsItem
+      v-for="element in staticElements"
+      :key="element.title"
+      :title="$t(element.title)"
+      :value="element.content.value"
     >
-      <template #staticItem="{ element }">
-        <ContactDetailsItem
-          :key="element.title"
-          :title="$t(element.title)"
-          :value="element.content.value"
-        >
-          <a
-            v-if="element.key === 'static-referer'"
-            :href="element.content.value"
-            rel="noopener noreferrer nofollow"
-            target="_blank"
-            class="text-n-brand"
-          >
-            {{ element.content.value }}
-          </a>
-        </ContactDetailsItem>
-      </template>
-    </CustomAttributes>
+      <a
+        v-if="element.key === 'static-referer'"
+        :href="element.content.value"
+        rel="noopener noreferrer nofollow"
+        target="_blank"
+        class="text-n-brand"
+      >
+        {{ element.content.value }}
+      </a>
+    </ContactDetailsItem>
   </div>
 </template>

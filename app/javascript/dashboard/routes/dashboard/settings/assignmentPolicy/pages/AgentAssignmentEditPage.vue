@@ -25,6 +25,7 @@ const store = useStore();
 
 const uiFlags = useMapGetter('assignmentPolicies/getUIFlags');
 const labelsList = useMapGetter('labels/getLabels');
+const agentsList = useMapGetter('agents/getAgents');
 const selectedPolicyById = useMapGetter(
   'assignmentPolicies/getAssignmentPolicyById'
 );
@@ -72,6 +73,9 @@ const formData = computed(() => ({
     ],
     excludeOlderThanMinutes:
       selectedPolicy.value?.exclusionRules?.excludeOlderThanMinutes ?? null,
+    excludedUserIds: [
+      ...(selectedPolicy.value?.exclusionRules?.excludedUserIds || []),
+    ],
   },
   monthlyNewClientQuota: selectedPolicy.value?.monthlyNewClientQuota ?? null,
   stickyOwnerEnabled: selectedPolicy.value?.stickyOwnerEnabled || false,
@@ -114,6 +118,7 @@ const fetchPolicyData = async () => {
 watch(routeId, fetchPolicyData, { immediate: true });
 onMounted(() => {
   if (!labelsList.value?.length) store.dispatch('labels/get');
+  if (!agentsList.value?.length) store.dispatch('agents/get');
 });
 </script>
 
@@ -134,6 +139,7 @@ onMounted(() => {
         mode="EDIT"
         :initial-data="formData"
         :label-list="allLabels"
+        :agent-list="agentsList"
         :is-loading="uiFlags.isUpdating"
         @submit="handleSubmit"
       />

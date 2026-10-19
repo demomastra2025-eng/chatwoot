@@ -68,11 +68,10 @@ const crmFieldDialogRef = ref(null);
 const searchQuery = ref('');
 const selectedAttribute = ref({});
 const selectedTabKey = ref(
-  props.initialTab || props.tabs[0] || 'conversation_attribute'
+  props.initialTab || props.tabs[0] || 'contact_attribute'
 );
 
 const legacyAttributeTabIndexes = {
-  conversation_attribute: 0,
   contact_attribute: 1,
   company_attribute: 2,
 };
@@ -160,12 +159,6 @@ const availableTabs = computed(() => {
   const tabs = [];
 
   if (canViewLegacy.value) {
-    if (isTabAllowed('conversation_attribute')) {
-      tabs.push({
-        key: 'conversation_attribute',
-        name: t('ATTRIBUTES_MGMT.TABS.CONVERSATION'),
-      });
-    }
     if (isTabAllowed('contact_attribute')) {
       tabs.push({
         key: 'contact_attribute',
@@ -187,12 +180,6 @@ const availableTabs = computed(() => {
     });
   }
 
-  if (tasksEnabled.value && isTabAllowed('task')) {
-    tabs.push({
-      key: 'task',
-      name: t('CRM.SETTINGS.FIELD_TABS.TASKS'),
-    });
-  }
 
   if (appointmentsEnabled.value && isTabAllowed('appointment')) {
     tabs.push({
@@ -258,7 +245,7 @@ const isLegacyTab = computed(() =>
   )
 );
 const isCrmTab = computed(() =>
-  ['deal', 'task', 'appointment'].includes(selectedTabKey.value)
+  ['deal', 'appointment'].includes(selectedTabKey.value)
 );
 
 const canManageCurrentTab = computed(() => {
@@ -321,9 +308,6 @@ const crmEntityOptions = computed(() =>
   [
     dealsEnabled.value && isTabAllowed('deal')
       ? { label: t('CRM.SETTINGS.FIELD_TABS.DEALS'), value: 'deal' }
-      : null,
-    tasksEnabled.value && isTabAllowed('task')
-      ? { label: t('CRM.SETTINGS.FIELD_TABS.TASKS'), value: 'task' }
       : null,
     appointmentsEnabled.value && isTabAllowed('appointment')
       ? {
@@ -496,7 +480,7 @@ const emptyStateMessage = computed(() => {
 });
 
 const selectedLegacyTabIndex = computed(
-  () => legacyAttributeTabIndexes[selectedTabKey.value] ?? 0
+  () => legacyAttributeTabIndexes[selectedTabKey.value] ?? 1
 );
 const disableLegacyAttributeModelSelection = computed(
   () => isLegacyTab.value && allowedTabKeys.value.length === 1

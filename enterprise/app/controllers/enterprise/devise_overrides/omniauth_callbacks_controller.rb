@@ -91,14 +91,7 @@ module Enterprise::DeviseOverrides::OmniauthCallbacksController
     redirect_to "#{mobile_deep_link_base}://auth/saml?error=#{ERB::Util.url_encode(error)}", allow_other_host: true
   end
 
-  def saml_enabled_for_account?(account_id)
-    return false if account_id.blank?
-
-    account = Account.find_by(id: account_id)
-
-    return false if account.nil?
-    return false unless account.feature_enabled?('saml')
-
-    AccountSamlSettings.find_by(account_id: account_id).present?
+  def saml_enabled_for_account?(_account_id)
+    false
   end
 end

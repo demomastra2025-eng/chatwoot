@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_19_183000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_20_030000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -30,18 +30,6 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_183000) do
     t.datetime "updated_at", null: false
     t.index ["owner_type", "owner_id"], name: "index_access_tokens_on_owner_type_and_owner_id"
     t.index ["token"], name: "index_access_tokens_on_token", unique: true
-  end
-
-  create_table "account_saml_settings", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.string "sso_url"
-    t.text "certificate"
-    t.string "sp_entity_id"
-    t.string "idp_entity_id"
-    t.json "role_mappings", default: {}
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["account_id"], name: "index_account_saml_settings_on_account_id"
   end
 
   create_table "account_user_lifecycle_snapshots", force: :cascade do |t|
@@ -90,8 +78,6 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_183000) do
     t.datetime "created_at", precision: nil, null: false
     t.datetime "updated_at", precision: nil, null: false
     t.integer "locale", default: 0
-    t.string "domain", limit: 100
-    t.string "support_email", limit: 100
     t.bigint "feature_flags", default: 0, null: false
     t.integer "auto_resolve_duration"
     t.jsonb "limits", default: {}

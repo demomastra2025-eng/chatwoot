@@ -3,7 +3,7 @@
 require Rails.root.join('enterprise/lib/onelink/mcp/access_policy').to_s
 
 class Captain::Tools::Account::WorkspaceProfileTool < Captain::Tools::Account::BaseAccountTool
-  ACCOUNT_ATTRIBUTE_KEYS = %i[name locale domain support_email].freeze
+  ACCOUNT_ATTRIBUTE_KEYS = %i[name locale].freeze
   CUSTOM_ATTRIBUTE_KEYS = %i[industry company_size timezone].freeze
   SETTING_KEYS = %i[
     reporting_timezone
@@ -32,9 +32,6 @@ class Captain::Tools::Account::WorkspaceProfileTool < Captain::Tools::Account::B
       id: account.id,
       name: account.name,
       locale: account.locale,
-      domain: account.domain,
-      support_email: account.support_email,
-      configured_support_email: account.attributes['support_email'],
       status: account.status,
       logo_url: account.logo_url,
       custom_attributes: workspace_custom_attributes,

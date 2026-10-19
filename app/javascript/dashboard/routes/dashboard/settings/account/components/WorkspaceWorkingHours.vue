@@ -1,6 +1,7 @@
 <script>
 import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
+import BaseSettingsHeader from '../../components/BaseSettingsHeader.vue';
 import SectionLayout from './SectionLayout.vue';
 import SettingsFieldSection from 'dashboard/components-next/Settings/SettingsFieldSection.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
@@ -39,6 +40,7 @@ const defaultWorkspaceSchedule = () =>
 
 export default {
   components: {
+    BaseSettingsHeader,
     SectionLayout,
     SettingsFieldSection,
     ComboBox,
@@ -202,214 +204,214 @@ export default {
 </script>
 
 <template>
-  <SectionLayout
-    :title="workingHoursMessages.TITLE"
-    :description="workingHoursMessages.DESCRIPTION"
-  >
-    <p
-      v-if="!account.settings?.workspace_working_hours?.length"
-      class="text-sm text-n-slate-11"
-    >
-      {{ workingHoursMessages.EMPTY_HINT }}
-    </p>
-    <div class="space-y-6">
-      <SettingsFieldSection :label="workingHoursMessages.TIMEZONE">
-        <ComboBox
-          v-model="timezone"
-          :options="timeZones"
-          :disabled="readOnly"
-          class="[&>div>button]:!bg-n-alpha-black2"
-        />
-      </SettingsFieldSection>
+  <div class="flex flex-col w-full">
+    <BaseSettingsHeader
+      :title="workingHoursMessages.TITLE"
+      :description="workingHoursMessages.DESCRIPTION"
+    />
 
-      <div class="space-y-3">
-        <div>
-          <h5 class="text-sm font-medium text-n-slate-12">
-            {{ $t('INBOX_MGMT.BUSINESS_HOURS.WEEKLY_TITLE') }}
-          </h5>
-        </div>
-        <div class="overflow-x-auto">
-          <table
-            class="min-w-full table-auto rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
-          >
-            <thead>
-              <tr class="border-b border-n-weak">
-                <th
-                  class="py-3 pl-4 pr-3 text-start text-heading-3 text-n-slate-12"
-                >
-                  {{ $t('INBOX_MGMT.BUSINESS_HOURS.DAY.DAY') }}
-                </th>
-                <th class="py-3 pr-3 text-start text-heading-3 text-n-slate-12">
-                  {{ $t('INBOX_MGMT.BUSINESS_HOURS.DAY.AVAILABILITY') }}
-                </th>
-                <th class="py-3 pr-3 text-start text-heading-3 text-n-slate-12">
-                  {{ $t('INBOX_MGMT.BUSINESS_HOURS.DAY.HOURS') }}
-                </th>
-              </tr>
-            </thead>
-            <tbody
-              class="divide-y divide-n-weak"
-              :class="{ 'pointer-events-none opacity-60': readOnly }"
-            >
-              <BusinessDay
-                v-for="slot in timeSlots"
-                :key="slot.day"
-                :day-name="dayNames[slot.day]"
-                :time-slot="slot"
-                @update="value => onSlotUpdate(slot.day, value)"
-              />
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <section
-        class="space-y-3 rounded-xl border border-n-weak bg-n-solid-2 p-4"
+    <div class="flex flex-col w-full mt-4">
+      <SectionLayout
+        :title="$t('INBOX_MGMT.BUSINESS_HOURS.WEEKLY_TITLE')"
+        :description="
+          !account.settings?.workspace_working_hours?.length
+            ? workingHoursMessages.EMPTY_HINT
+            : ''
+        "
+        class="!pt-0"
       >
-        <div class="flex items-start justify-between gap-4">
-          <div>
-            <h5 class="text-sm font-medium text-n-slate-12">
-              {{ workingHoursMessages.BREAKS.TITLE }}
-            </h5>
-            <p class="mt-1 text-xs text-n-slate-11">
-              {{ workingHoursMessages.BREAKS.DESCRIPTION }}
-            </p>
-          </div>
-          <NextButton
-            :label="workingHoursMessages.BREAKS.ADD"
-            variant="faded"
-            size="sm"
-            :disabled="readOnly"
-            @click="addBreak"
-          />
-        </div>
-
-        <p v-if="!breaks.length" class="text-sm text-n-slate-11">
-          {{ workingHoursMessages.BREAKS.EMPTY }}
-        </p>
-        <div
-          v-for="(item, index) in breaks"
-          :key="`break-${index}`"
-          class="space-y-3 rounded-lg border border-n-weak bg-n-solid-1 p-3"
-        >
-          <div class="grid gap-3 md:grid-cols-[1fr_140px_140px_auto]">
-            <input
-              v-model="item.title"
-              type="text"
-              maxlength="80"
+        <div class="space-y-4">
+          <SettingsFieldSection :label="workingHoursMessages.TIMEZONE">
+            <ComboBox
+              v-model="timezone"
+              :options="timeZones"
               :disabled="readOnly"
-              :placeholder="workingHoursMessages.BREAKS.NAME"
-              class="h-10 rounded-lg border border-n-weak bg-n-alpha-black2 px-3 text-sm text-n-slate-12"
+              class="[&>div>button]:!bg-n-alpha-black2"
             />
+          </SettingsFieldSection>
+
+          <div class="overflow-x-auto rounded-xl border border-n-weak bg-n-solid-2 px-4 py-2">
+            <table class="w-full divide-y divide-n-weak">
+              <thead>
+                <tr>
+                  <th />
+                  <th class="py-3 pr-3 text-start text-heading-3 text-n-slate-12">
+                    {{ $t('INBOX_MGMT.BUSINESS_HOURS.DAY.DAY') }}
+                  </th>
+                  <th class="py-3 pr-3 text-start text-heading-3 text-n-slate-12">
+                    {{ $t('INBOX_MGMT.BUSINESS_HOURS.DAY.AVAILABILITY') }}
+                  </th>
+                  <th class="py-3 pr-3 text-start text-heading-3 text-n-slate-12">
+                    {{ $t('INBOX_MGMT.BUSINESS_HOURS.DAY.HOURS') }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody
+                class="divide-y divide-n-weak"
+                :class="{ 'pointer-events-none opacity-60': readOnly }"
+              >
+                <BusinessDay
+                  v-for="slot in timeSlots"
+                  :key="slot.day"
+                  :day-name="dayNames[slot.day]"
+                  :time-slot="slot"
+                  @update="value => onSlotUpdate(slot.day, value)"
+                />
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </SectionLayout>
+
+      <SectionLayout
+        :title="workingHoursMessages.BREAKS.TITLE"
+        :description="workingHoursMessages.BREAKS.DESCRIPTION"
+        with-border
+      >
+        <template #headerActions>
+          <div class="flex justify-end">
+            <NextButton
+              :label="workingHoursMessages.BREAKS.ADD"
+              variant="faded"
+              size="sm"
+              :disabled="readOnly"
+              @click="addBreak"
+            />
+          </div>
+        </template>
+
+        <div class="space-y-3">
+          <p v-if="!breaks.length" class="text-sm text-n-slate-11">
+            {{ workingHoursMessages.BREAKS.EMPTY }}
+          </p>
+          <div
+            v-for="(item, index) in breaks"
+            :key="`break-${index}`"
+            class="space-y-3 rounded-xl border border-n-weak bg-n-solid-2 p-4"
+          >
+            <div class="grid items-end gap-3 md:grid-cols-[1fr_140px_140px_auto]">
+              <label class="space-y-1 text-xs text-n-slate-11">
+                <span>{{ workingHoursMessages.BREAKS.NAME }}</span>
+                <input
+                  v-model="item.title"
+                  type="text"
+                  maxlength="80"
+                  :disabled="readOnly"
+                  :placeholder="workingHoursMessages.BREAKS.NAME"
+                  class="h-10 w-full rounded-lg border border-n-weak bg-n-alpha-black2 px-3 text-sm text-n-slate-12"
+                />
+              </label>
+              <label class="space-y-1 text-xs text-n-slate-11">
+                <span>{{ workingHoursMessages.START }}</span>
+                <input
+                  v-model="item.start_time"
+                  type="time"
+                  :disabled="readOnly"
+                  class="h-10 w-full rounded-lg border border-n-weak bg-n-alpha-black2 px-3 text-sm text-n-slate-12"
+                />
+              </label>
+              <label class="space-y-1 text-xs text-n-slate-11">
+                <span>{{ workingHoursMessages.END }}</span>
+                <input
+                  v-model="item.end_time"
+                  type="time"
+                  :disabled="readOnly"
+                  class="h-10 w-full rounded-lg border border-n-weak bg-n-alpha-black2 px-3 text-sm text-n-slate-12"
+                />
+              </label>
+              <button
+                type="button"
+                class="h-10 px-2 text-sm text-n-ruby-11 disabled:opacity-50"
+                :disabled="readOnly"
+                @click="removeBreak(index)"
+              >
+                {{ workingHoursMessages.REMOVE }}
+              </button>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="day in [1, 2, 3, 4, 5, 6, 0]"
+                :key="day"
+                type="button"
+                class="rounded-full border px-3 py-1 text-xs transition-colors"
+                :class="
+                  item.days.includes(day)
+                    ? 'border-n-blue-8 bg-n-blue-3 text-n-blue-11'
+                    : 'border-n-weak text-n-slate-11'
+                "
+                :disabled="readOnly"
+                @click="toggleBreakDay(item, day)"
+              >
+                {{ dayNames[day] }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </SectionLayout>
+
+      <SectionLayout
+        :title="workingHoursMessages.DAYS_OFF.TITLE"
+        :description="workingHoursMessages.DAYS_OFF.DESCRIPTION"
+        with-border
+      >
+        <template #headerActions>
+          <div class="flex justify-end">
+            <NextButton
+              :label="workingHoursMessages.DAYS_OFF.ADD"
+              variant="faded"
+              size="sm"
+              :disabled="readOnly"
+              @click="addDayOff"
+            />
+          </div>
+        </template>
+
+        <div class="space-y-3">
+          <p v-if="!daysOff.length" class="text-sm text-n-slate-11">
+            {{ workingHoursMessages.DAYS_OFF.EMPTY }}
+          </p>
+          <div
+            v-for="(item, index) in daysOff"
+            :key="`day-off-${index}`"
+            class="grid items-end gap-3 rounded-xl border border-n-weak bg-n-solid-2 p-4 md:grid-cols-[180px_1fr_auto_auto]"
+          >
             <label class="space-y-1 text-xs text-n-slate-11">
-              <span>{{ workingHoursMessages.START }}</span>
+              <span>{{ workingHoursMessages.DATE }}</span>
               <input
-                v-model="item.start_time"
-                type="time"
+                v-model="item.date"
+                type="date"
                 :disabled="readOnly"
                 class="h-10 w-full rounded-lg border border-n-weak bg-n-alpha-black2 px-3 text-sm text-n-slate-12"
               />
             </label>
             <label class="space-y-1 text-xs text-n-slate-11">
-              <span>{{ workingHoursMessages.END }}</span>
+              <span>{{ workingHoursMessages.DAYS_OFF.NAME }}</span>
               <input
-                v-model="item.end_time"
-                type="time"
+                v-model="item.title"
+                type="text"
+                maxlength="80"
                 :disabled="readOnly"
+                :placeholder="workingHoursMessages.DAYS_OFF.NAME"
                 class="h-10 w-full rounded-lg border border-n-weak bg-n-alpha-black2 px-3 text-sm text-n-slate-12"
               />
+            </label>
+            <label class="flex h-10 items-center gap-2 text-sm text-n-slate-11">
+              <Checkbox v-model="item.recurring_yearly" :disabled="readOnly" />
+              {{ workingHoursMessages.DAYS_OFF.YEARLY }}
             </label>
             <button
               type="button"
-              class="px-2 text-sm text-n-ruby-11 disabled:opacity-50"
+              class="h-10 px-2 text-sm text-n-ruby-11 disabled:opacity-50"
               :disabled="readOnly"
-              @click="removeBreak(index)"
+              @click="removeDayOff(index)"
             >
               {{ workingHoursMessages.REMOVE }}
             </button>
           </div>
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="day in [1, 2, 3, 4, 5, 6, 0]"
-              :key="day"
-              type="button"
-              class="rounded-full border px-3 py-1 text-xs transition-colors"
-              :class="
-                item.days.includes(day)
-                  ? 'border-n-blue-8 bg-n-blue-3 text-n-blue-11'
-                  : 'border-n-weak text-n-slate-11'
-              "
-              :disabled="readOnly"
-              @click="toggleBreakDay(item, day)"
-            >
-              {{ dayNames[day] }}
-            </button>
-          </div>
         </div>
-      </section>
+      </SectionLayout>
 
-      <section
-        class="space-y-3 rounded-xl border border-n-weak bg-n-solid-2 p-4"
-      >
-        <div class="flex items-start justify-between gap-4">
-          <div>
-            <h5 class="text-sm font-medium text-n-slate-12">
-              {{ workingHoursMessages.DAYS_OFF.TITLE }}
-            </h5>
-            <p class="mt-1 text-xs text-n-slate-11">
-              {{ workingHoursMessages.DAYS_OFF.DESCRIPTION }}
-            </p>
-          </div>
-          <NextButton
-            :label="workingHoursMessages.DAYS_OFF.ADD"
-            variant="faded"
-            size="sm"
-            :disabled="readOnly"
-            @click="addDayOff"
-          />
-        </div>
-
-        <p v-if="!daysOff.length" class="text-sm text-n-slate-11">
-          {{ workingHoursMessages.DAYS_OFF.EMPTY }}
-        </p>
-        <div
-          v-for="(item, index) in daysOff"
-          :key="`day-off-${index}`"
-          class="grid items-center gap-3 rounded-lg border border-n-weak bg-n-solid-1 p-3 md:grid-cols-[180px_1fr_auto_auto]"
-        >
-          <label class="space-y-1 text-xs text-n-slate-11">
-            <span>{{ workingHoursMessages.DATE }}</span>
-            <input
-              v-model="item.date"
-              type="date"
-              :disabled="readOnly"
-              class="h-10 w-full rounded-lg border border-n-weak bg-n-alpha-black2 px-3 text-sm text-n-slate-12"
-            />
-          </label>
-          <input
-            v-model="item.title"
-            type="text"
-            maxlength="80"
-            :disabled="readOnly"
-            :placeholder="workingHoursMessages.DAYS_OFF.NAME"
-            class="h-10 rounded-lg border border-n-weak bg-n-alpha-black2 px-3 text-sm text-n-slate-12"
-          />
-          <label class="flex items-center gap-2 text-sm text-n-slate-11">
-            <Checkbox v-model="item.recurring_yearly" :disabled="readOnly" />
-            {{ workingHoursMessages.DAYS_OFF.YEARLY }}
-          </label>
-          <button
-            type="button"
-            class="px-2 text-sm text-n-ruby-11 disabled:opacity-50"
-            :disabled="readOnly"
-            @click="removeDayOff(index)"
-          >
-            {{ workingHoursMessages.REMOVE }}
-          </button>
-        </div>
-      </section>
-
-      <div class="flex justify-end">
+      <div class="flex justify-end border-t border-n-weak pt-6">
         <NextButton
           :label="workingHoursMessages.SAVE"
           :disabled="readOnly || hasError"
@@ -418,5 +420,5 @@ export default {
         />
       </div>
     </div>
-  </SectionLayout>
+  </div>
 </template>

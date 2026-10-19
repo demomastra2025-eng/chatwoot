@@ -218,22 +218,27 @@ const getTemplateCarouselCards = template => {
     >
       <div class="space-y-3">
         <div
-          class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between"
+          class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+          data-test="whatsapp-templates-toolbar"
         >
-          <div class="min-w-0 space-y-1">
-            <p class="mb-0 text-sm font-medium text-n-slate-12">
-              {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.SUPPORTED_TITLE') }}
-            </p>
-            <p class="mb-0 line-clamp-2 text-xs text-n-slate-11">
-              {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.SUPPORTED_DESCRIPTION') }}
-            </p>
-            <p class="mb-0 text-xs text-n-slate-10">
+          <div class="flex min-w-0 flex-1 items-center gap-2.5">
+            <div class="w-full max-w-xs">
+              <Input
+                v-model="searchQuery"
+                size="sm"
+                type="search"
+                :placeholder="
+                  t('WHATSAPP_TEMPLATES.MANAGEMENT.SEARCH_PLACEHOLDER')
+                "
+              />
+            </div>
+            <span class="hidden truncate text-xs text-n-slate-10 lg:inline">
               {{
                 t('WHATSAPP_TEMPLATES.MANAGEMENT.LAST_SYNC', {
                   timestamp: lastUpdatedText,
                 })
               }}
-            </p>
+            </span>
           </div>
           <div class="flex shrink-0 flex-wrap items-center gap-2">
             <Button
@@ -255,13 +260,6 @@ const getTemplateCarouselCards = template => {
             />
           </div>
         </div>
-
-        <Input
-          v-model="searchQuery"
-          size="sm"
-          type="search"
-          :placeholder="t('WHATSAPP_TEMPLATES.MANAGEMENT.SEARCH_PLACEHOLDER')"
-        />
 
         <div v-if="!templateGroups.length" class="p-6 text-center">
           <p class="mb-1 text-sm font-medium text-n-slate-12">
