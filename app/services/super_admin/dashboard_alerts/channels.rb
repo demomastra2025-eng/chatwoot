@@ -1,25 +1,55 @@
 # frozen_string_literal: true
 
-# The channels the operator has to authorize again: WhatsApp, Facebook, Instagram, TikTok and Email keep that mark
-# (Reauthorizable). The mark lives in Redis, so the ids of the channels are read first and the marks with one MGET per
-# kind of channel; WhatsApp keeps the mark in its settings as well (Whatsapp::DurableReauthorization), so a Redis that lost
-# it does not make the channel look healthy. Telegram and the rest have no such state.
+# The channels the operator has to authorize again. Two kinds of channels say so:
+#
+# * WhatsApp, Facebook, Instagram, TikTok and the mailbox keep a mark (Reauthorizable). The mark lives in Redis, so the ids
+#   of the channels are read first and the marks with one MGET per kind of channel; WhatsApp keeps the mark in its settings
+#   as well (Whatsapp::DurableReauthorization), so a Redis that lost it does not make the channel look healthy.
+# * Telegram (personal) and WhatsApp Web (Evolution) have no mark: they say it in their own columns. A Telegram session that
+#   asks for a new login (connection `auth_required`, or the login by QR code expired, or the cloud password is asked for)
+#   and a WhatsApp Web number that was logged out (or failed) wait until the operator scans a new QR code. Plain SQL, no Redis.
+#
+# The other channels (website chat, SMS, API, ...) have no such state.
 class SuperAdmin::DashboardAlerts::Channels < SuperAdmin::DashboardAlerts::Check
   BATCH = 1000
-  # The channels that can ask to be authorized again, by class, and the name the alert shows
+  # The channels that carry the mark, by class, and the name the alert shows
   KINDS = {
     'Channel::Whatsapp' => 'WhatsApp', 'Channel::FacebookPage' => 'Facebook', 'Channel::Instagram' => 'Instagram',
-    'Channel::Tiktok' => 'TikTok', 'Channel::Email' => 'Email'
+    'Channel::Tiktok' => 'TikTok', 'Channel::Email' => 'Почта'
+  }.freeze
+  # The channels that say it in their columns, by class: the name the alert shows and the rows that need authorizing again
+  BY_STATE = {
+    'Channel::TelegramPersonal' => [
+      'Telegram (личный)',
+      lambda { |channel|
+        channel.where(connection_state: 'auth_required').or(channel.where(lifecycle_state: %w[qr_expired password_required]))
+      }
+    ],
+    'Channel::WhatsappWeb' => ['WhatsApp Web', ->(channel) { channel.where(lifecycle_state: %w[disconnected failed]) }]
   }.freeze
 
   def alerts
-    flagged = KINDS.flat_map { |class_name, kind| flagged_channels(class_name.constantize).map { |row| row.merge(kind: kind) } }
+    flagged = marked_channels + stated_channels
     return [] if flagged.empty?
 
     [alert(:reauthorization, severity: :danger, items: items(flagged), count: flagged.size)]
   end
 
   private
+
+  # [{ id:, account_id:, class:, kind: }] of the channels that carry the mark and have it set
+  def marked_channels
+    KINDS.flat_map { |class_name, kind| flagged_channels(class_name.constantize).map { |row| row.merge(kind: kind) } }
+  end
+
+  # The same for the channels that say it in their columns (one query for each kind)
+  def stated_channels
+    BY_STATE.flat_map do |class_name, (kind, needing)|
+      needing.call(class_name.constantize).pluck(:id, :account_id).map do |id, account_id|
+        { id: id, account_id: account_id, class: class_name, kind: kind }
+      end
+    end
+  end
 
   # [{ id:, account_id:, class: }] of the channels of one class that need authorizing again
   def flagged_channels(klass)

@@ -9,15 +9,18 @@
 #   SuperAdmin::DashboardAlerts.build(force_refresh: true) # the «Обновить» button of the page
 #
 # An alert is a plain hash (it is cached, and a cached object must survive a new deploy):
-#   { key:, severity: :danger | :warning, title:, text:, count:, items: [{ label:, url:, note: }], more_url:, more_label: }
-# `count` is the number of things found; `items` hold the first LIST_LIMIT of them; `more_url` opens the whole list and
-# `more_label` says which list it is (what the link opens may be wider than what was found: all the trials, not only the
-# ones that end soon). A check that cannot be read does not look like «all is well»: the sources that failed are listed in
-# one more alert (key `incomplete`), and when nothing could be checked at all (the cache is down) that alert is the only one.
+#   { key:, severity: :danger | :warning, title:, text:, count:, items: [{ label:, url:, note: }], more_url:, more_label:, listed: }
+# `count` is the number of things found; `items` hold the first LIST_LIMIT of them; `listed` is false when the items are not
+# the things found but one link to the place where they are (the dead jobs), so the page does not say «ещё N» after it;
+# `more_url` opens the whole list and `more_label` says which list it is (what the link opens may be wider than what was
+# found: all the trials, not only the ones that end soon). A check that cannot be read does not look like «all is well»:
+# the sources that failed are listed in one more alert (key `incomplete`), and when nothing could be checked at all (the
+# cache is down) that alert is the only one.
 #
 # The checks are SuperAdmin::DashboardAlerts::Trials, ::Storage, ::OpenRouter, ::Queues and ::Channels (each answers
 # `alerts`). They are cheap by design: the trial accounts are read with three columns, the storage snapshots with one MGET
-# per 1000 accounts, the channels with their ids and one MGET per kind of channel, the rest with a handful of counters.
+# per 1000 accounts, the channels with their ids and one MGET per kind of channel (two plain queries more for the channels
+# that say it in their columns), the rest with a handful of counters.
 class SuperAdmin::DashboardAlerts
   CACHE_KEY = 'super_admin:dashboard_alerts:v1'
   CACHE_TTL = 2.minutes
@@ -46,7 +49,7 @@ class SuperAdmin::DashboardAlerts
     {
       key: 'incomplete', severity: :warning, title: I18n.t('super_admin.alerts.incomplete.title', locale: :ru),
       text: I18n.t("super_admin.alerts.incomplete.#{everything ? 'text_all' : 'text'}", sources: names.join(', '), locale: :ru),
-      count: names.size, items: [], more_url: nil, more_label: nil
+      count: names.size, items: [], more_url: nil, more_label: nil, listed: false
     }
   end
 
