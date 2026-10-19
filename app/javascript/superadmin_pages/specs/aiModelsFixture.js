@@ -14,6 +14,9 @@ export const TEXTS = {
   counter: '%{count} из %{max}',
   too_many: 'Не больше 3 моделей.',
   keep_default: 'Это модель по умолчанию.',
+  keep_one: 'Отметьте хотя бы одну модель.',
+  default_kept:
+    'Модель по умолчанию %{name} не входит в этот список — она оставлена отмеченной.',
   prompt_title: 'Правило',
   custom_group: '%{value} (своя группа)',
   custom_slot: '%{value} (своё место)',
@@ -42,14 +45,22 @@ export const modelSelect = ({
     <button type="button" data-revert="${key}" data-revert-value="anthropic/claude-haiku-5.5" hidden>Вернуть</button>
   </div>`;
 
+const MODEL_NAMES = {
+  'a/one': 'One',
+  'b/two': 'Two',
+  'c/three': 'Three',
+  'd/four': 'Four',
+};
+
 export const checklist = ({
   ticked = ['a/one', 'b/two'],
   defaultId = '',
+  max = 3,
 } = {}) => {
-  const rows = ['a/one', 'b/two', 'c/three', 'd/four']
+  const rows = Object.keys(MODEL_NAMES)
     .map(
       id => `
-      <li class="admin-checklist__row" data-row data-model-id="${id}">
+      <li class="admin-checklist__row" data-row data-model-id="${id}" data-model-name="${MODEL_NAMES[id]}">
         <label class="admin-checklist__model" for="allow_${id.replace('/', '-')}">
           <input type="checkbox" name="app_config[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST][]" value="${id}" id="allow_${id.replace('/', '-')}" ${ticked.includes(id) ? 'checked' : ''} data-list-check>
           <span class="admin-checklist__text"><span class="admin-checklist__name">${id}</span><span class="admin-checklist__meta"></span></span>
@@ -59,7 +70,7 @@ export const checklist = ({
     )
     .join('');
   return `
-  <div class="admin-slot" data-config="CAPTAIN_DEFAULT_MODEL CAPTAIN_ASSISTANT_MODEL_ALLOWLIST" data-allowlist data-max="3" data-recommended='["a/one","b/two"]'>
+  <div class="admin-slot" data-config="CAPTAIN_DEFAULT_MODEL CAPTAIN_ASSISTANT_MODEL_ALLOWLIST" data-allowlist data-max="${max}" data-recommended='["a/one","b/two"]'>
     <span data-unsaved-badge hidden>Не сохранено</span>
     <div data-checklist>
       <input type="hidden" name="app_config[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST][]" value="">

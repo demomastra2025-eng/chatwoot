@@ -82,7 +82,8 @@ export const initSettingsForm = (
     button.hidden = false;
   });
   let initial = snapshot(form);
-  let submitting = false;
+  // the page is being left on purpose (the form is sent, or «Отменить» asked for the page again): no warning then
+  let leaving = false;
   let dirty = [];
 
   const update = () => {
@@ -106,11 +107,11 @@ export const initSettingsForm = (
   form.addEventListener('input', update);
   form.addEventListener('change', update);
   form.addEventListener('submit', () => {
-    submitting = true;
+    leaving = true;
   });
 
   const warnBeforeLeaving = event => {
-    if (submitting || dirty.length === 0) return undefined;
+    if (leaving || dirty.length === 0) return undefined;
     event.preventDefault();
     // eslint-disable-next-line no-param-reassign
     event.returnValue = texts.leave || '';
@@ -122,6 +123,7 @@ export const initSettingsForm = (
     cancel.addEventListener('click', () => {
       // what the server refused is not in the form as it was saved: ask for the page again
       if (forced.length) {
+        leaving = true;
         navigate(form.dataset.cancelUrl || window.location.pathname);
         return;
       }

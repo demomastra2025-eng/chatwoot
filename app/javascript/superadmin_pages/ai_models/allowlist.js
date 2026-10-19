@@ -4,9 +4,11 @@
 // radios (`app_config[CAPTAIN_DEFAULT_MODEL]`) in the same rows, and both work without a script. With a script:
 //  * the counter «5 из 12» follows the ticks and the 13th tick is refused;
 //  * the radio of a row that is not ticked is off: the default model has to be on the list;
-//  * the default model cannot be unticked while it is the default;
+//  * the default model cannot be unticked while it is the default, and the last ticked model cannot be unticked;
 //  * the select «Добавить другую модель» adds a ticked row;
-//  * «Вернуть рекомендуемый список» ticks the recommended models and nothing else.
+//  * «Вернуть рекомендуемый список» ticks the recommended models and nothing else, and «Вернуть» of an earlier list
+//    ticks that list; neither of them changes the model by default: when the list leaves it out, it stays ticked
+//    and a line says so (a blank earlier list means «the recommended list»).
 
 import { RESET_EVENT, SET_VALUE_EVENT } from './settingsForm';
 
@@ -41,8 +43,6 @@ export const initAllowlist = (card, texts = {}) => {
   const platformRadio = () =>
     rowsBox.querySelector('[data-row-platform] [data-default-radio]');
   const checkedRows = () => rows().filter(row => checkOf(row).checked);
-  const defaultRadio = () =>
-    rowsBox.querySelector('[data-default-radio]:checked') || platformRadio();
 
   const say = message => {
     if (!note) return;
@@ -78,6 +78,7 @@ export const initAllowlist = (card, texts = {}) => {
     li.className = 'admin-checklist__row';
     li.dataset.row = '';
     li.dataset.modelId = id;
+    li.dataset.modelName = name;
     li.dataset.added = 'true';
 
     const label = doc.createElement('label');
@@ -136,6 +137,10 @@ export const initAllowlist = (card, texts = {}) => {
       } else if (!target.checked && radioOf(row).checked) {
         target.checked = true;
         say(texts.keep_default);
+      } else if (!target.checked && checkedRows().length === 0) {
+        // the server refuses an empty list as well: at least one model stays
+        target.checked = true;
+        say(texts.keep_one);
       } else {
         say('');
       }
@@ -184,24 +189,38 @@ export const initAllowlist = (card, texts = {}) => {
     });
   }
 
-  // the default model has to stay on the list: otherwise it is the model of the platform
+  // The model by default has to stay on the list, and a list that is put back does not ask to change it: when the list
+  // leaves it out, its row stays ticked. Returns that row (nil when the default model is on the list or is the platform's).
   const keepDefaultOnList = () => {
-    const row = defaultRadio().closest('[data-row]');
-    if (!row || !checkOf(row).checked) platformRadio().checked = true;
+    const radio = rowsBox.querySelector('[data-default-radio]:checked');
+    const row = radio && radio.closest('[data-row]');
+    if (!row || checkOf(row).checked) return null;
+    checkOf(row).checked = true;
+    return row;
   };
 
   const tickOnly = ids => {
     rows().forEach(row => {
       checkOf(row).checked = ids.includes(row.dataset.modelId);
     });
-    keepDefaultOnList();
+    return keepDefaultOnList();
+  };
+
+  // what to tell after a list was put back: the default model that was left ticked, and a list that is over the limit
+  const explainList = kept => {
+    const lines = [];
+    if (kept) {
+      const name = kept.dataset.modelName || kept.dataset.modelId;
+      lines.push((texts.default_kept || '').replace('%{name}', name));
+    }
+    if (checkedRows().length > max) lines.push(texts.too_many);
+    say(lines.filter(Boolean).join(' '));
   };
 
   if (resetButton) {
     resetButton.hidden = false;
     resetButton.addEventListener('click', () => {
-      tickOnly(recommended.filter(id => rowFor(id)));
-      say('');
+      explainList(tickOnly(recommended.filter(id => rowFor(id))));
       sync();
       fire(resetButton.closest('[data-checklist]'));
     });
@@ -212,9 +231,13 @@ export const initAllowlist = (card, texts = {}) => {
     const { key, value } = event.detail;
     if (key === LIST_KEY) {
       event.preventDefault();
-      const ids = parseList(value);
+      // an earlier value that is blank (or an empty list) is «the recommended list», not a list of nothing
+      const earlier = parseList(value);
+      const ids = earlier.length
+        ? earlier
+        : recommended.filter(id => rowFor(id));
       ids.forEach(id => tick(id));
-      tickOnly(ids);
+      explainList(tickOnly(ids));
       sync();
       fire(rowsBox);
     } else if (key === DEFAULT_KEY) {

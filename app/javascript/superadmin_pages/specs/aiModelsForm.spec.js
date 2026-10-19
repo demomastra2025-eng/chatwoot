@@ -171,6 +171,24 @@ describe('initSettingsForm', () => {
     );
   });
 
+  it('does not ask «Уйти со страницы?» when «Отменить» itself asks for the page again', () => {
+    const navigate = vi.fn();
+    build({ unsaved: 'CAPTAIN_IMAGE_RECOGNITION_MODEL', navigate });
+    const leave = () => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event;
+    };
+    // what the server refused counts as a change, so the page would warn...
+    expect(leave().defaultPrevented).toBe(true);
+
+    document.querySelector('[data-savebar-cancel]').click();
+
+    // ...but not once the admin chose to cancel
+    expect(navigate).toHaveBeenCalled();
+    expect(leave().defaultPrevented).toBe(false);
+  });
+
   it('warns before the page is left while there are changes, never after a save and never without changes', () => {
     const { form } = build();
     const leave = () => {

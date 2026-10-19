@@ -156,7 +156,7 @@ describe('initAllowlist', () => {
   });
 
   it('ticks the recommended models and nothing else with «Вернуть рекомендуемый список»', () => {
-    build({ ticked: ['b/two', 'c/three', 'd/four'], defaultId: 'c/three' });
+    build({ ticked: ['b/two', 'c/three', 'd/four'] });
     const reset = document.querySelector('[data-reset-recommended]');
     expect(reset.hidden).toBe(false);
 
@@ -165,9 +165,51 @@ describe('initAllowlist', () => {
     expect(
       ['a/one', 'b/two', 'c/three', 'd/four'].map(id => check(id).checked)
     ).toEqual([true, true, false, false]);
-    // the default model went off the list: the model of the platform is the default again
     expect(platform().checked).toBe(true);
+    expect(note().hidden).toBe(true);
     expect(counter()).toBe('2 из 3');
+  });
+
+  it('does not take the default model away with «Вернуть рекомендуемый список»: its row stays ticked and a line says so', () => {
+    build({ ticked: ['b/two', 'c/three', 'd/four'], defaultId: 'c/three' });
+
+    document.querySelector('[data-reset-recommended]').click();
+
+    expect(
+      ['a/one', 'b/two', 'c/three', 'd/four'].map(id => check(id).checked)
+    ).toEqual([true, true, true, false]);
+    // the default model is as it was: it is neither the platform's nor another one
+    expect(radio('c/three').checked).toBe(true);
+    expect(platform().checked).toBe(false);
+    expect(counter()).toBe('3 из 3');
+    expect(note().hidden).toBe(false);
+    expect(note().textContent).toBe(
+      'Модель по умолчанию Three не входит в этот список — она оставлена отмеченной.'
+    );
+  });
+
+  it('says that the list is over the limit when the default model that stays makes it so', () => {
+    build({ ticked: ['c/three'], defaultId: 'c/three', max: 2 });
+
+    document.querySelector('[data-reset-recommended]').click();
+
+    expect(check('c/three').checked).toBe(true);
+    expect(counter()).toBe('3 из 2');
+    expect(document.querySelector('[data-counter]').className).toContain(
+      'is-over'
+    );
+    expect(note().textContent).toContain('Модель по умолчанию Three');
+    expect(note().textContent).toContain('Не больше 3 моделей.');
+  });
+
+  it('refuses to untick the last model', () => {
+    build({ ticked: ['a/one'] });
+
+    tick('a/one', false);
+
+    expect(check('a/one').checked).toBe(true);
+    expect(counter()).toBe('1 из 3');
+    expect(note().textContent).toBe('Отметьте хотя бы одну модель.');
   });
 
   it('puts an earlier short list back, adding the rows it needs', () => {
@@ -186,6 +228,63 @@ describe('initAllowlist', () => {
     ]);
     expect(check('x/new').checked).toBe(true);
     expect(counter()).toBe('2 из 3');
+  });
+
+  it('keeps the default model when an earlier short list leaves it out', () => {
+    build({ ticked: ['b/two', 'd/four'], defaultId: 'd/four' });
+    const button = document.querySelector(
+      '[data-revert="CAPTAIN_ASSISTANT_MODEL_ALLOWLIST"]'
+    );
+    button.dataset.revertValue = '["a/one","b/two"]';
+
+    button.click();
+
+    expect(
+      ['a/one', 'b/two', 'c/three', 'd/four'].map(id => check(id).checked)
+    ).toEqual([true, true, false, true]);
+    expect(radio('d/four').checked).toBe(true);
+    expect(platform().checked).toBe(false);
+    expect(note().textContent).toContain('Модель по умолчанию Four');
+  });
+
+  it('reads an earlier blank short list as «the recommended list», not as a list of nothing', () => {
+    const { settings } = build({
+      ticked: ['b/two', 'd/four'],
+      defaultId: 'd/four',
+    });
+    const button = document.querySelector(
+      '[data-revert="CAPTAIN_ASSISTANT_MODEL_ALLOWLIST"]'
+    );
+    button.dataset.revertValue = '';
+
+    button.click();
+
+    expect(
+      ['a/one', 'b/two', 'c/three', 'd/four'].map(id => check(id).checked)
+    ).toEqual([true, true, false, true]);
+    expect(counter()).toBe('3 из 3');
+    // the model by default did not move to «Как у платформы»
+    expect(radio('d/four').checked).toBe(true);
+    expect(platform().checked).toBe(false);
+    // only the list changed: one setting, not two
+    expect(settings.dirty()).toEqual(['CAPTAIN_ASSISTANT_MODEL_ALLOWLIST']);
+    expect(document.querySelector('[data-savebar-text]').textContent).toBe(
+      'Изменена 1 настройка'
+    );
+  });
+
+  it('reads an earlier list of nothing, "[]", as the recommended list too', () => {
+    build({ ticked: ['c/three', 'd/four'] });
+    const button = document.querySelector(
+      '[data-revert="CAPTAIN_ASSISTANT_MODEL_ALLOWLIST"]'
+    );
+    button.dataset.revertValue = '[]';
+
+    button.click();
+
+    expect(
+      ['a/one', 'b/two', 'c/three', 'd/four'].map(id => check(id).checked)
+    ).toEqual([true, true, false, false]);
   });
 
   it('puts an earlier default model back, ticking its row', () => {
