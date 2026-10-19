@@ -6,6 +6,15 @@ class ChatwootHub
     DEFAULT_BASE_URL
   end
 
+  # The Hub is the server of the vendor of the open source base (hub.2.chatwoot.com). OneLink does not talk to it for
+  # statistics unless the operator of the installation opts in with ENABLE_CHATWOOT_HUB_SYNC=true: the daily version
+  # ping (with the host of the installation and the counts of accounts, users and conversations), the events and the
+  # registration at the onboarding. The relay of push notifications (`send_push`) is a function the installation may
+  # rely on, not telemetry, and does not depend on this switch.
+  def self.sync_enabled?
+    ActiveModel::Type::Boolean.new.cast(ENV.fetch('ENABLE_CHATWOOT_HUB_SYNC', nil)) == true
+  end
+
   def self.ping_url
     "#{base_url}/ping"
   end
@@ -83,6 +92,8 @@ class ChatwootHub
   end
 
   def self.sync_with_hub
+    return unless sync_enabled?
+
     begin
       info = instance_config
       info = info.merge(instance_metrics) unless ENV['DISABLE_TELEMETRY']
@@ -97,6 +108,8 @@ class ChatwootHub
   end
 
   def self.register_instance(company_name, owner_name, owner_email)
+    return unless sync_enabled?
+
     info = { company_name: company_name, owner_name: owner_name, owner_email: owner_email, subscribed_to_mailers: true }
     RestClient.post(registration_url, info.merge(instance_config).to_json, { content_type: :json, accept: :json })
   rescue *ExceptionList::REST_CLIENT_EXCEPTIONS => e
@@ -119,6 +132,7 @@ class ChatwootHub
   end
 
   def self.emit_event(event_name, event_data)
+    return unless sync_enabled?
     return if ENV['DISABLE_TELEMETRY']
 
     info = { event_name: event_name, event_data: event_data }

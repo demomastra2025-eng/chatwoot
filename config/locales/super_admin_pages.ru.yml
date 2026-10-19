@@ -87,16 +87,15 @@ ru:
 
     instance_status:
       title: "Статус сервера"
-      description: "Версия платформы, база данных PostgreSQL и Redis."
+      description: "Версия OneLink, база данных PostgreSQL и Redis."
       unlimited: "Без лимита"
       sections:
         platform: "Платформа"
         postgres: "PostgreSQL"
         redis: "Redis"
       rows:
-        version: "Версия Chatwoot"
+        version: "Версия OneLink"
         git_sha: "Сборка (Git SHA)"
-        edition: "Редакция"
         migrations: "Миграции базы данных"
         connection: "Подключение"
         redis_version: "Версия Redis"
@@ -112,10 +111,6 @@ ru:
         unavailable: "Нет связи"
         applied: "Применены"
         pending: "Есть неприменённые"
-      editions:
-        enterprise: "Enterprise"
-        custom: "Своя сборка"
-        community: "Community"
 
     audits:
       account_id_placeholder: "Например, 12"

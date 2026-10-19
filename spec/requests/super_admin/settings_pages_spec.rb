@@ -376,20 +376,37 @@ RSpec.describe 'Super admin settings pages', type: :request do
     it 'saves an instance refresh in Russian' do
       allow(Internal::CheckNewVersionsJob).to receive(:perform_now)
 
-      get '/super_admin/settings/refresh'
+      with_modified_env(ENABLE_CHATWOOT_HUB_SYNC: 'true') { get '/super_admin/settings/refresh' }
 
       expect(flash[:notice]).to eq('Статус установки обновлён.')
+      expect(Internal::CheckNewVersionsJob).to have_received(:perform_now)
+    end
+
+    it 'does nothing, and says so, when the installation did not opt in to the hub of the base' do
+      allow(Internal::CheckNewVersionsJob).to receive(:perform_now)
+
+      with_modified_env(ENABLE_CHATWOOT_HUB_SYNC: nil) { get '/super_admin/settings/refresh' }
+
+      expect(Internal::CheckNewVersionsJob).not_to have_received(:perform_now)
+      expect(flash[:notice]).to eq('Обмен данными с сервером разработчиков основы платформы выключен. Включить его можно только настройкой сервера.')
     end
   end
 
   describe 'the instance settings page' do
     before { get '/super_admin/settings' }
 
-    it 'shows the identifier of the installation and the functions of the platform' do
+    it 'shows the version of OneLink and the functions of the platform' do
       expect(response).to have_http_status(:ok)
-      expect(text(page.at_css('h1'))).to eq('Настройки инстанса')
-      expect(page.at_css('[data-testid="installation-block"] [data-secret-text]')['data-secret-text']).to eq(ChatwootHub.installation_identifier)
+      expect(text(page.at_css('h1'))).to eq('Настройки платформы')
+      expect(text(page.at_css('[data-testid="installation-block"] h2'))).to eq('Версия OneLink')
+      expect(text(page.at_css('[data-testid="onelink-version"]'))).to eq(SuperAdmin::BuildInfo.version)
+      expect(text(page.at_css('[data-testid="onelink-build"]'))).to eq(SuperAdmin::BuildInfo.build)
       expect(page.css('[data-testid="features-block"] [data-feature]').size).to eq(SuperAdmin::FeaturesHelper.available_features.size)
+    end
+
+    it 'does not show the identifier the installation has at the hub of the base, nor a button to copy it' do
+      expect(response.body).not_to include(ChatwootHub.installation_identifier)
+      expect(response.body).not_to match(/Идентификатор установки|data-secret-text|secretField/)
     end
 
     it 'has no upgrade offer and no mention of editions to buy' do

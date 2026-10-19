@@ -8,16 +8,20 @@ module Enterprise::Internal::CheckNewVersionsJob
   private
 
   def update_plan_info
+    sync_pricing_plan
     return if @instance_info.blank?
 
-    sync_pricing_plan
     update_installation_config(key: 'CHATWOOT_SUPPORT_WEBSITE_TOKEN', value: @instance_info['chatwoot_support_website_token'])
     update_installation_config(key: 'CHATWOOT_SUPPORT_IDENTIFIER_HASH', value: @instance_info['chatwoot_support_identifier_hash'])
     update_installation_config(key: 'CHATWOOT_SUPPORT_SCRIPT_URL', value: @instance_info['chatwoot_support_script_url'])
   end
 
+  # A self-hosted installation is on the enterprise plan by itself: it does not need the answer of the Hub for that (the
+  # Hub is off unless ENABLE_CHATWOOT_HUB_SYNC is set). Only the cloud takes its plan from the answer.
   def sync_pricing_plan
     if ChatwootApp.chatwoot_cloud?
+      return if @instance_info.blank?
+
       update_installation_config(key: 'INSTALLATION_PRICING_PLAN', value: @instance_info['plan'])
       update_installation_config(key: 'INSTALLATION_PRICING_PLAN_QUANTITY', value: @instance_info['plan_quantity'])
       return

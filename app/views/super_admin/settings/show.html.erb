@@ -1,7 +1,7 @@
 <%#
 # Instance settings
 
-The identifier of this installation and the functions of the platform: which
+The version of OneLink that is running and the functions of the platform: which
 ones are on in this installation and a link to the settings of the ones that
 have a config page. OneLink has no editions to upgrade to, so a function that is
 not available is only marked as such.
@@ -19,24 +19,15 @@ not available is only marked as such.
   <div class="flex flex-col gap-6">
     <section class="admin-block" aria-labelledby="installation-title" data-testid="installation-block">
       <div class="admin-block__head">
-        <h2 class="admin-block__title" id="installation-title"><%= t('super_admin.settings.installation_identifier') %></h2>
-        <p class="admin-block__hint"><%= t('super_admin.settings.identifier_hint') %></p>
+        <h2 class="admin-block__title" id="installation-title"><%= t('super_admin.settings.version_title') %></h2>
+        <p class="admin-block__hint"><%= t('super_admin.settings.version_hint') %></p>
       </div>
-      <%= javascript_include_tag "secretField" %>
-      <%# The buttons must stay direct children of the element: secretField.js reads `parentElement`. %>
-      <div data-secret-text="<%= ChatwootHub.installation_identifier %>" class="cell-data__secret-field flex items-center gap-1 text-sm text-n-slate-11">
-        <span data-secret-masked="true" class="select-none"></span>
-        <button type="button" onclick="toggleSecretField(event)" data-secret-toggler aria-label="<%= t('super_admin.settings.show_secret') %>" class="reset-base">
-          <svg width="20" height="20" class="size-5 fill-current" aria-hidden="true">
-            <use xlink:href="#eye-show" />
-          </svg>
-        </button>
-        <button type="button" onclick="copySecretField(event)" data-secret-copier aria-label="<%= t('super_admin.settings.copy') %>" class="reset-base">
-          <svg width="20" height="20" class="size-5 fill-current" aria-hidden="true">
-            <use xlink:href="#icon-copy" />
-          </svg>
-        </button>
-      </div>
+      <dl class="attribute-list">
+        <dt class="attribute-label"><%= t('super_admin.settings.version_label') %></dt>
+        <dd class="attribute-data" data-testid="onelink-version"><%= SuperAdmin::BuildInfo.version %></dd>
+        <dt class="attribute-label"><%= t('super_admin.settings.build_label') %></dt>
+        <dd class="attribute-data break-all" data-testid="onelink-build"><%= SuperAdmin::BuildInfo.build %></dd>
+      </dl>
     </section>
 
     <section class="flex flex-col gap-3" aria-labelledby="features-title" data-testid="features-block">

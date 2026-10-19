@@ -14,7 +14,58 @@ describe ChatwootHub do
     expect(described_class.installation_identifier).to eq installation_identifier
   end
 
+  describe '.sync_enabled?' do
+    it 'is off unless the installation opts in' do
+      with_modified_env ENABLE_CHATWOOT_HUB_SYNC: nil do
+        expect(described_class.sync_enabled?).to be(false)
+      end
+    end
+
+    it 'is off for anything that is not an explicit yes' do
+      ['', 'false', '0', 'no', 'maybe'].each do |value|
+        with_modified_env ENABLE_CHATWOOT_HUB_SYNC: value do
+          expect(described_class.sync_enabled?).to be(false), value.inspect
+        end
+      end
+    end
+
+    it 'is on for an explicit yes' do
+      %w[true 1 TRUE].each do |value|
+        with_modified_env ENABLE_CHATWOOT_HUB_SYNC: value do
+          expect(described_class.sync_enabled?).to be(true), value
+        end
+      end
+    end
+  end
+
+  context 'when the installation did not opt in' do
+    before do
+      allow(RestClient).to receive(:post)
+    end
+
+    it 'asks nothing of the hub and sends nothing to it' do
+      with_modified_env ENABLE_CHATWOOT_HUB_SYNC: nil do
+        expect(described_class.sync_with_hub).to be_nil
+        expect(described_class.register_instance('test', 'test', 'test@test.com')).to be_nil
+        expect(described_class.emit_event('sample_event', { 'a' => 1 })).to be_nil
+        expect(RestClient).not_to have_received(:post)
+      end
+    end
+
+    it 'still relays push notifications, which are a function and not telemetry' do
+      with_modified_env ENABLE_CHATWOOT_HUB_SYNC: nil do
+        described_class.send_push_with_response({ token: 'device-token' })
+
+        expect(RestClient).to have_received(:post).with(described_class.push_notification_url, anything, anything)
+      end
+    end
+  end
+
   context 'when fetching sync_with_hub' do
+    around do |example|
+      with_modified_env(ENABLE_CHATWOOT_HUB_SYNC: 'true') { example.run }
+    end
+
     it 'get latest version from chatwoot hub' do
       version = '1.1.1'
       allow(RestClient).to receive(:post).and_return({ version: version }.to_json)
@@ -43,6 +94,10 @@ describe ChatwootHub do
     let(:company_name) { 'test' }
     let(:owner_name) { 'test' }
     let(:owner_email) { 'test@test.com' }
+
+    around do |example|
+      with_modified_env(ENABLE_CHATWOOT_HUB_SYNC: 'true') { example.run }
+    end
 
     it 'sends info of registration' do
       info = { company_name: company_name, owner_name: owner_name, owner_email: owner_email, subscribed_to_mailers: true }
@@ -81,6 +136,10 @@ describe ChatwootHub do
   context 'when sending events' do
     let(:event_name) { 'sample_event' }
     let(:event_data) { { 'sample_data' => 'sample_data' } }
+
+    around do |example|
+      with_modified_env(ENABLE_CHATWOOT_HUB_SYNC: 'true') { example.run }
+    end
 
     it 'will send instance events' do
       info = { event_name: event_name, event_data: event_data }

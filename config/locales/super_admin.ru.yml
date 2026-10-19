@@ -388,6 +388,8 @@ ru:
         platform_apps: "Доступ по API для партнёров"
         platform_banners: "Баннеры"
         channels: "Каналы"
+    build:
+      unknown: "не определена"
     shell:
       filter: "Фильтр"
       filter_all: "Все"
@@ -415,8 +417,8 @@ ru:
         confirmed: "E-mail подтверждён"
         unconfirmed: "E-mail не подтверждён"
     settings:
-      title: "Настройки инстанса"
-      installation_identifier: "Идентификатор установки"
+      title: "Настройки платформы"
+      version_title: "Версия OneLink"
       features: "Функции и модули платформы"
       general: "Общие параметры"
     accounts:

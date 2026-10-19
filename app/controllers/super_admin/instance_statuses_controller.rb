@@ -14,18 +14,10 @@ class SuperAdmin::InstanceStatusesController < SuperAdmin::ApplicationController
 
   def platform_rows
     [
-      row(:version, Chatwoot.config[:version]),
-      row(:git_sha, GIT_HASH),
-      row(:edition, edition_name),
+      row(:version, SuperAdmin::BuildInfo.version),
+      row(:git_sha, SuperAdmin::BuildInfo.build),
       migrations_row
     ]
-  end
-
-  def edition_name
-    return I18n.t('super_admin.instance_status.editions.enterprise') if ChatwootApp.enterprise?
-    return I18n.t('super_admin.instance_status.editions.custom') if ChatwootApp.custom?
-
-    I18n.t('super_admin.instance_status.editions.community')
   end
 
   def migrations_row
