@@ -18,6 +18,7 @@ import SchedulingPageHeader from 'dashboard/components-next/Scheduling/Schedulin
 import SchedulingRecordTable from 'dashboard/components-next/Scheduling/SchedulingRecordTable.vue';
 import {
   formatSchedulingErrorMessage,
+  isDeletedFromScheduling,
   toIntegerNumeric,
 } from 'dashboard/stores/scheduling/shared';
 import { formatCurrency } from '../helpers';

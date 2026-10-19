@@ -11,6 +11,7 @@ import BaseSettingsHeader from 'dashboard/routes/dashboard/settings/components/B
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
+import SchedulingProductsAPI from 'dashboard/api/scheduling/products';
 
 const props = defineProps({
   integrationId: {
@@ -38,6 +39,8 @@ const backButtonUrl = computed(() => ({
 const connectedHook = computed(() => integration.value?.hooks?.[0]);
 const uiFlags = computed(() => store.getters['integrations/getUIFlags']);
 const isMedelement = computed(() => props.integrationId === 'medelement');
+const isMoysklad = computed(() => props.integrationId === 'moysklad');
+const isRunningMoyskladSync = ref(false);
 const isMacrocrm = computed(() => props.integrationId === 'macrocrm');
 const medelementMetadata = computed(() => connectedHook.value?.metadata || {});
 const macrocrmMetadata = computed(() => connectedHook.value?.metadata || {});
@@ -431,6 +434,26 @@ function beginHookSyncStatusMutation() {
   clearHookSyncPoll();
   hookSyncStatusRequestId += 1;
   return hookSyncStatusRequestId;
+}
+
+async function runMoyskladSyncNow() {
+  if (!connectedHook.value?.id || isRunningMoyskladSync.value) return;
+  isRunningMoyskladSync.value = true;
+  try {
+    const { data } = await SchedulingProductsAPI.syncMoysklad();
+    const total =
+      data?.meta?.sync_summary?.total_synced ?? data?.meta?.count ?? 0;
+    await store.dispatch('integrations/get');
+    useAlert(t('SCHEDULING.PRODUCTS.MOYSKLAD.SYNC_SUCCESS', { count: total }));
+  } catch (error) {
+    const errorMessage =
+      error?.response?.data?.error ||
+      error?.response?.data?.message ||
+      t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.ERROR');
+    useAlert(errorMessage);
+  } finally {
+    isRunningMoyskladSync.value = false;
+  }
 }
 
 async function runSyncNow() {
@@ -982,6 +1005,14 @@ onBeforeUnmount(() => {
             :disabled="isSyncActive"
             :is-loading="uiFlags.isRunningHookSync || isSyncActive"
             @click="runSyncNow"
+          />
+          <NextButton
+            v-if="isMoysklad && connectedHook?.status"
+            blue
+            :label="$t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.BUTTON')"
+            :disabled="isRunningMoyskladSync"
+            :is-loading="isRunningMoyskladSync"
+            @click="runMoyskladSyncNow"
           />
           <NextButton
             faded

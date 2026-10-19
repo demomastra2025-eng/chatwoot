@@ -42,7 +42,6 @@ RSpec.describe 'Scheduling Services API', type: :request do
     expect(service.reload.prices.find_by!(resource_id: resource.id).price).to eq(18_000)
   end
 
-
   it 'normalizes decimal zero service and price amounts' do
     put path,
         params: {
@@ -107,14 +106,15 @@ RSpec.describe 'Scheduling Services API', type: :request do
     expect(Scheduling::ServicePrice.where(service_id: service.id)).to be_empty
   end
 
-  it 'rejects updating a provider-owned Medelement service' do
+  it 'allows updating local fields on an imported Medelement service while preserving provider code' do
     service.update!(custom_attributes: { 'medelement_nomenclature_code' => 'service-1' })
 
-    put path, params: { name: 'Changed locally' }, headers: headers, as: :json
+    put path, params: { duration_min: 45, description: 'Updated description' }, headers: headers, as: :json
 
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response_body['code']).to eq('SERVICE_READ_ONLY')
-    expect(service.reload.name).not_to eq('Changed locally')
+    expect(response).to have_http_status(:ok)
+    expect(service.reload.duration_min).to eq(45)
+    expect(service.description).to eq('Updated description')
+    expect(service.custom_attributes['medelement_nomenclature_code']).to eq('service-1')
   end
 
   it 'rejects deleting a provider-owned Medelement service' do

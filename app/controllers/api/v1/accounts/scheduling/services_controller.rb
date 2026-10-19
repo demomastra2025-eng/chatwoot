@@ -1,7 +1,7 @@
 class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Scheduling::BaseController
   before_action :check_admin_authorization?, except: [:index, :show]
   before_action :set_service, only: [:show, :update, :destroy]
-  before_action :ensure_provider_writable_service!, only: [:update, :destroy]
+  before_action :ensure_provider_writable_service!, only: [:destroy]
   before_action :validate_provider_owned_attributes!, only: [:create, :update]
 
   def index
