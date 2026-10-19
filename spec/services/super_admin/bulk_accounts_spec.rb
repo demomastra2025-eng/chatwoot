@@ -270,10 +270,11 @@ RSpec.describe SuperAdmin::BulkAccounts do
 
   describe 'the cost of the preview' do
     it 'does not grow with the number of accounts' do
-      create_list(:account, 2)
-      few = sql_queries_during { bulk('suspend', Account.limit(2).to_a).preview }.size
-      create_list(:account, 10)
-      many = sql_queries_during { bulk('suspend', Account.limit(12).to_a).preview }.size
+      few_accounts = create_list(:account, 2)
+      many_accounts = few_accounts + create_list(:account, 10)
+      bulk('suspend', few_accounts).preview # the first run reads the schema
+      few = sql_queries_during { bulk('suspend', few_accounts).preview }.size
+      many = sql_queries_during { bulk('suspend', many_accounts).preview }.size
 
       expect(many).to eq(few)
     end
