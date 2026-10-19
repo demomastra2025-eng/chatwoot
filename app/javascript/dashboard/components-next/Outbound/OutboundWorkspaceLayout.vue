@@ -13,38 +13,34 @@ defineProps({
 
 <template>
   <section class="flex flex-col w-full h-full overflow-hidden bg-n-surface-1">
-    <header class="sticky top-0 z-10 px-6 bg-n-surface-1/95 backdrop-blur">
-      <div class="w-full max-w-5xl mx-auto py-5">
+    <header
+      class="sticky top-0 z-10 border-b border-n-weak bg-n-surface-1/95 px-6 backdrop-blur"
+    >
+      <div class="w-full max-w-5xl mx-auto py-3.5">
         <div
-          class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"
+          class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
         >
-          <div class="min-w-0">
+          <div class="flex min-w-0 flex-wrap items-center gap-2.5">
+            <h1 class="mb-0 truncate text-heading-2 text-n-slate-12">
+              {{ title }}
+            </h1>
             <div
               v-if="$slots.meta"
-              class="flex flex-wrap items-center gap-2 mb-2 text-sm text-n-slate-11"
+              class="inline-flex items-center gap-1.5 rounded-full bg-n-alpha-2 px-2.5 py-0.5 text-xs font-medium text-n-slate-11"
             >
               <slot name="meta" />
             </div>
-            <h1 class="mb-1 text-heading-1 text-n-slate-12">
-              {{ title }}
-            </h1>
-            <p
-              v-if="description"
-              class="max-w-3xl mb-0 text-sm leading-6 text-n-slate-11"
-            >
-              {{ description }}
-            </p>
           </div>
 
           <div
             v-if="$slots.actions"
-            class="flex flex-wrap items-center gap-2 lg:justify-end"
+            class="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end"
           >
             <slot name="actions" />
           </div>
         </div>
 
-        <div v-if="$slots.tabs" class="mt-4">
+        <div v-if="$slots.tabs" class="mt-3">
           <slot name="tabs" />
         </div>
       </div>

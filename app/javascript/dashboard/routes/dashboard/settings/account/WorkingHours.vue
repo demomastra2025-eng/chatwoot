@@ -34,7 +34,7 @@ export default {
 </script>
 
 <template>
-  <div class="flex flex-col max-w-2xl mx-auto w-full">
+  <div class="flex flex-col w-full">
     <WorkspaceWorkingHours
       v-if="accountRecord?.id"
       :account="accountRecord"
