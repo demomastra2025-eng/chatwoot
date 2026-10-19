@@ -141,10 +141,10 @@ partner created through the Platform API (the only ones its token can read or ch
             <p class="m-0 rounded-lg bg-n-amber-2 px-3 py-2 text-sm text-n-amber-11 outline outline-1 -outline-offset-1 outline-n-amber-4" role="status">
               <%= t('super_admin.platform_apps.card.token.once') %>
             </p>
-            <div class="flex items-center gap-2">
-              <input type="text" readonly value="<%= one_time_token %>" id="partner-one-time-token" class="font-mono text-xs"
+            <div class="flex flex-col items-start gap-2">
+              <input type="text" readonly value="<%= one_time_token %>" id="partner-one-time-token" class="w-full font-mono text-xs"
                      aria-label="<%= t('super_admin.platform_apps.card.token.title') %>" onclick="this.select()">
-              <button type="button" class="button button--small button--secondary shrink-0" data-copy-target="partner-one-time-token">
+              <button type="button" class="button button--small button--secondary" data-copy-target="partner-one-time-token">
                 <%= t('super_admin.platform_apps.card.token.copy') %>
               </button>
             </div>
