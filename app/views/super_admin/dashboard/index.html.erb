@@ -9,6 +9,7 @@ the chart of conversations) is the Vue component DashboardIndex.
 - `@data`: conversations per day for 30 days, `[[day, count], ...]`.
 - `@health_accounts`, `@health_summary`: one row per clinic and the totals (SuperAdmin::HealthMatrixService);
   `@health_summary[:updated_at]` is already Astana time.
+- `@alerts`: what needs attention first (SuperAdmin::DashboardAlerts), drawn above the Vue body by `_alerts`.
 %>
 
 <% content_for(:title) do %><%= t('super_admin.dashboard.title') %><% end %>
@@ -29,6 +30,8 @@ the chart of conversations) is the Vue component DashboardIndex.
 <% end %>
 
 <section class="main-content__body">
+  <%# What needs a look first: trials, disk space, the OpenRouter key, the queues, channels to authorize again. %>
+  <%= render 'alerts', alerts: @alerts %>
   <%= render 'super_admin/shared/two_factor_notice', super_admin: current_super_admin %>
   <%= render_vue_component('DashboardIndex', {
     chartData: @data,

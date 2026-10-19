@@ -1,0 +1,65 @@
+<%#
+# Требует внимания
+
+The block above the clinics on «Сводка»: what to look at first (SuperAdmin::DashboardAlerts). One row per kind of problem,
+the most serious first: a title, a line of advice, the first accounts or pages affected as links (at most ten) and, when
+there are more, a link to the whole list. Nothing here asks an outside service: the checks read what the platform already
+keeps, and the result is kept for a couple of minutes. With nothing to report it says so.
+
+## Local variables:
+
+- `alerts`: the list of alerts (see SuperAdmin::DashboardAlerts for the shape of one).
+%>
+<%
+  tones = {
+    danger: 'bg-n-ruby-2 text-n-ruby-11 outline-n-ruby-4',
+    warning: 'bg-n-amber-2 text-n-amber-11 outline-n-amber-4'
+  }
+%>
+
+<% if alerts.empty? %>
+  <div class="admin-notice admin-notice--teal mb-5" role="status" data-testid="dashboard-alerts-clear"><%= t('super_admin.alerts.all_clear') %></div>
+<% else %>
+  <section class="mb-5 flex flex-col gap-3" aria-labelledby="dashboard-alerts-title" data-testid="dashboard-alerts">
+    <div class="flex items-center gap-2.5">
+      <h2 class="m-0 text-heading-2 text-n-slate-12" id="dashboard-alerts-title"><%= t('super_admin.alerts.title') %></h2>
+      <span class="admin-badge admin-badge--ruby tabular-nums"><%= alerts.size %></span>
+    </div>
+
+    <% alerts.each do |alert| %>
+      <% severity = alert[:severity].to_s.to_sym %>
+      <div class="flex flex-col gap-2 rounded-xl px-4 py-3 text-sm outline outline-1 -outline-offset-1 <%= tones.fetch(severity, tones[:warning]) %>"
+           role="<%= severity == :danger ? 'alert' : 'status' %>" data-alert="<%= alert[:key] %>" data-severity="<%= severity %>">
+        <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <h3 class="m-0 text-heading-3"><%= alert[:title] %></h3>
+          <% if alert[:items].any? && alert[:count] > 1 %>
+            <span class="text-xs tabular-nums"><%= t('super_admin.alerts.found', count: super_admin_number(alert[:count])) %></span>
+          <% end %>
+        </div>
+        <p class="m-0 text-[13px]"><%= alert[:text] %></p>
+
+        <% if alert[:items].any? %>
+          <ul class="m-0 flex list-none flex-col gap-1 p-0">
+            <% alert[:items].each do |item| %>
+              <li class="flex flex-wrap items-baseline gap-x-2" data-alert-item>
+                <%= link_to item[:label], item[:url], class: 'font-medium text-n-slate-12 underline hover:text-n-brand' %>
+                <% if item[:note].present? %>
+                  <span class="text-xs tabular-nums"><%= item[:note] %></span>
+                <% end %>
+              </li>
+            <% end %>
+          </ul>
+        <% end %>
+
+        <% if alert[:count] > alert[:items].size && alert[:items].any? %>
+          <p class="m-0 flex flex-wrap items-baseline gap-x-3 text-xs">
+            <span class="tabular-nums"><%= t('super_admin.alerts.and_more', count: super_admin_number(alert[:count] - alert[:items].size)) %></span>
+            <% if alert[:more_url].present? %>
+              <%= link_to t('super_admin.alerts.show_all'), alert[:more_url], class: 'font-medium text-n-slate-12 underline hover:text-n-brand' %>
+            <% end %>
+          </p>
+        <% end %>
+      </div>
+    <% end %>
+  </section>
+<% end %>

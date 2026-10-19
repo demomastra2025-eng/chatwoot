@@ -16,6 +16,12 @@ module Reauthorizable
 
   AUTHORIZATION_ERROR_THRESHOLD = 2
 
+  # The Redis key that holds the «reauthorization required» mark of the record of a class with this id. A page that needs
+  # the mark of many records (the alerts of the super admin dashboard) builds the keys and reads them with one MGET.
+  def self.required_key(record_class, record_id)
+    format(::Redis::Alfred::REAUTHORIZATION_REQUIRED, obj_type: record_class.table_name.singularize, obj_id: record_id)
+  end
+
   # model attribute
   def reauthorization_required?
     ::Redis::Alfred.get(reauthorization_required_key).present?
@@ -123,6 +129,6 @@ module Reauthorizable
   end
 
   def reauthorization_required_key
-    format(::Redis::Alfred::REAUTHORIZATION_REQUIRED, obj_type: self.class.table_name.singularize, obj_id: id)
+    Reauthorizable.required_key(self.class, id)
   end
 end

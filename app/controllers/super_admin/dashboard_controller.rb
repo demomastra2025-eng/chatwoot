@@ -10,5 +10,7 @@ class SuperAdmin::DashboardController < SuperAdmin::ApplicationController
 
     force_refresh = params[:refresh].present? || params[:force_refresh].present?
     @health_accounts, @health_summary = SuperAdmin::HealthMatrixService.build(force_refresh: force_refresh)
+    # «Требует внимания»: kept for a short while, so the page does not run the checks on every visit
+    @alerts = SuperAdmin::DashboardAlerts.build(force_refresh: force_refresh)
   end
 end
