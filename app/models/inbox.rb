@@ -360,7 +360,11 @@ class Inbox < ApplicationRecord
   end
 
   def member_ids_with_assignment_capacity
-    members.ids
+    members.ids - excluded_policy_user_ids
+  end
+
+  def excluded_policy_user_ids
+    Array(effective_assignment_policy&.excluded_user_ids)
   end
 
   def auto_assignment_v2_enabled?

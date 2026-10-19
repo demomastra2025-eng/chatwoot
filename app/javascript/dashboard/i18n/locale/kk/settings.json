@@ -1308,7 +1308,8 @@
           "ASSIGN_PENDING": "pending after AI",
           "ONLINE_ONLY": "online only",
           "MONTHLY_QUOTA": "{count} new/month",
-          "STICKY_OWNER": "sticky {days} days"
+          "STICKY_OWNER": "sticky {days} days",
+          "EXCLUDED_AGENTS": "ерекшеленген қызметкер: {count}"
         },
         "NO_RECORDS_FOUND": "No assignment policies found"
       },
@@ -1459,6 +1460,15 @@
             "SUCCESS_MESSAGE": "Inbox successfully added to policy",
             "ERROR_MESSAGE": "Failed to add inbox to policy"
           }
+        },
+        "AGENTS": {
+          "LABEL": "Бөлуге қатысатын қызметкерлер",
+          "DESCRIPTION": "Осы саясат бойынша сұхбаттар автоматты түрде тағайындалатын қызметкерлерді белгілеңіз. Белгісі алынған қызметкерлер автотағайындаудан шығарылады.",
+          "SELECT_ALL": "Барлығын таңдау",
+          "CLEAR_ALL": "Барлығын алып тастау",
+          "EMPTY_STATE": "Жұмыс кеңістігінде әзірге қызметкерлер жоқ.",
+          "ROLE_ADMIN": "Әкімші",
+          "ROLE_AGENT": "Оператор"
         }
       },
       "DELETE_POLICY": {

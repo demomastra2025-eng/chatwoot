@@ -86,4 +86,21 @@ RSpec.describe AssignmentPolicy do
       end
     end
   end
+
+  describe 'excluded_user_ids' do
+    it 'normalizes excluded_user_ids in exclusion_rules to unique positive integers' do
+      policy = create(
+        :assignment_policy,
+        exclusion_rules: {
+          'excluded_labels' => ['vip'],
+          'excluded_user_ids' => ['6', 6, 0, -2, nil, 'invalid', 14]
+        }
+      )
+
+      expect(policy.excluded_user_ids).to eq([6, 14])
+      expect(policy.exclusion_rules['excluded_user_ids']).to eq([6, 14])
+      expect(policy.user_excluded?(6)).to be(true)
+      expect(policy.user_excluded?(99)).to be(false)
+    end
+  end
 end

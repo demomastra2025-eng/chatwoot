@@ -18,6 +18,7 @@ const props = defineProps({
   monthlyNewClientQuota: { type: Number, default: null },
   stickyOwnerEnabled: { type: Boolean, default: false },
   stickyOwnerDurationDays: { type: Number, default: 30 },
+  excludedAgentsCount: { type: Number, default: 0 },
 });
 
 const emit = defineEmits(['edit', 'delete']);
@@ -100,6 +101,17 @@ const loadSummary = computed(() => {
       t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.INDEX.CARD.STICKY_OWNER', {
         days: props.stickyOwnerDurationDays,
       })
+    );
+  }
+
+  if (props.excludedAgentsCount > 0) {
+    items.push(
+      t(
+        'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.INDEX.CARD.EXCLUDED_AGENTS',
+        {
+          count: props.excludedAgentsCount,
+        }
+      )
     );
   }
 

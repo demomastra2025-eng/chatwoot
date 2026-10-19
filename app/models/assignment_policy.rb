@@ -47,6 +47,30 @@ class AssignmentPolicy < ApplicationRecord
   enum conversation_priority: { earliest_created: 0, longest_waiting: 1 }
 
   enum assignment_order: { round_robin: 0 } unless ChatwootApp.enterprise?
+
+  before_validation :normalize_excluded_user_ids
+
+  def excluded_user_ids
+    Array(exclusion_rules&.dig('excluded_user_ids')).filter_map do |value|
+      user_id = value.to_i
+      user_id if user_id.positive?
+    end.uniq
+  end
+
+  def user_excluded?(user_or_id)
+    user_id = user_or_id.respond_to?(:id) ? user_or_id.id : user_or_id.to_i
+    return false unless user_id.positive?
+
+    excluded_user_ids.include?(user_id)
+  end
+
+  private
+
+  def normalize_excluded_user_ids
+    return unless exclusion_rules.is_a?(Hash) && exclusion_rules.key?('excluded_user_ids')
+
+    self.exclusion_rules = exclusion_rules.merge('excluded_user_ids' => excluded_user_ids)
+  end
 end
 
 AssignmentPolicy.include_mod_with('Concerns::AssignmentPolicy')

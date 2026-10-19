@@ -33,9 +33,14 @@ class AutoAssignment::CandidateEligibilityService
 
   def rejection_reasons_for(user)
     reasons = []
+    reasons << 'excluded_from_policy' if excluded_by_policy?(user)
     reasons << 'max_open_conversations_reached' unless within_open_conversation_limit?(user)
     reasons << 'monthly_new_client_quota_reached' unless quota_service.within_monthly_quota?(user, conversation)
     reasons
+  end
+
+  def excluded_by_policy?(user)
+    policy&.user_excluded?(user) || false
   end
 
   def within_open_conversation_limit?(user)
