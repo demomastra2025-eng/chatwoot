@@ -421,6 +421,18 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
       expect(response).to redirect_to('/super_admin/accounts')
     end
 
+    it 'keeps the filters and the page of the list on the way back' do
+      run('suspend', [first], back: '/super_admin/accounts?search=active%3A&organization_id=none&_page=2')
+
+      expect(response).to redirect_to('/super_admin/accounts?_page=2&organization_id=none&search=active%3A')
+    end
+
+    it 'goes back to the plain list when the way back cannot be read' do
+      run('activate', [first], back: '/super_admin/accounts?a[=%')
+
+      expect(response).to redirect_to('/super_admin/accounts')
+    end
+
     it 'puts the summary on the list the next page shows' do
       run('suspend', [first])
       follow_redirect!

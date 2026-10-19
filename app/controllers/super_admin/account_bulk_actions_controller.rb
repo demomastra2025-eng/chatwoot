@@ -60,10 +60,16 @@ class SuperAdmin::AccountBulkActionsController < SuperAdmin::ApplicationControll
     I18n.t("super_admin.bulk.flashes.#{key}", **)
   end
 
-  # The list of accounts the request came from; any other address (a foreign one, another page) is not followed
+  # The list of accounts the request came from, with its filters and page. The address is built again from the query of the
+  # one that was sent, so only the list of accounts can come out of it: a foreign address or another page is not followed.
   def back_path
     raw = params[:back]
-    raw.is_a?(String) && raw.length <= BACK_LENGTH && raw.match?(BACK_FORMAT) ? raw : super_admin_accounts_path
+    return super_admin_accounts_path unless raw.is_a?(String) && raw.length <= BACK_LENGTH && raw.match?(BACK_FORMAT)
+
+    query = URI.parse(raw).query
+    query.present? ? super_admin_accounts_path(Rack::Utils.parse_nested_query(query)) : super_admin_accounts_path
+  rescue URI::InvalidURIError, Rack::QueryParser::ParameterTypeError, Rack::QueryParser::InvalidParameterError
+    super_admin_accounts_path
   end
   helper_method :back_path
 
