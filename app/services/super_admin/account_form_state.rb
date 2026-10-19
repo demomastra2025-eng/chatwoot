@@ -35,8 +35,12 @@ class SuperAdmin::AccountFormState
     value = value.to_unsafe_h if value.respond_to?(:to_unsafe_h)
     return unless value.is_a?(Hash)
 
-    tokens = SECTIONS.to_h { |section| [section, value[section] || value[section.to_sym]] }
-    tokens if tokens.values.all? { |token| token.is_a?(String) && token.length <= TOKEN_LENGTH }
+    tokens = SECTIONS.index_with { |section| value[section] || value[section.to_sym] }
+    tokens if tokens.values.all? { |token| well_formed?(token) }
+  end
+
+  def self.well_formed?(token)
+    token.is_a?(String) && token.length <= TOKEN_LENGTH
   end
 
   def initialize(account)
@@ -44,7 +48,7 @@ class SuperAdmin::AccountFormState
   end
 
   def tokens
-    SECTIONS.to_h { |section| [section, digest(state_of(section))] }
+    SECTIONS.index_with { |section| digest(state_of(section)) }
   end
 
   private

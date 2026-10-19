@@ -3,6 +3,7 @@ require 'rails_helper'
 # «Мониторинг»: one page in four tabs (metrics, logs, queues, server status). The pages it replaced redirect to their tab.
 RSpec.describe 'Super Admin Monitoring', type: :request do
   let(:super_admin) { create(:super_admin) }
+
   # Not memoized: some examples open several pages in a row
   def page = Nokogiri::HTML(response.body)
 
@@ -157,8 +158,8 @@ RSpec.describe 'Super Admin Monitoring', type: :request do
     it 'lists the queues with their size and waiting time' do
       stats = SuperAdmin::QueueStats::Result.new(
         busy: 2, enqueued: 1234, scheduled: 0, retries: 3, dead: 1, processed: 10, failed: 1,
-        queues: [SuperAdmin::QueueStats::Queue.new(name: 'default', size: 1200, latency: 125),
-                 SuperAdmin::QueueStats::Queue.new(name: 'low', size: 34, latency: 1)]
+        queues: [SuperAdmin::QueueStats::Queue.new(name: 'default', jobs: 1200, latency: 125),
+                 SuperAdmin::QueueStats::Queue.new(name: 'low', jobs: 34, latency: 1)]
       )
       allow(SuperAdmin::QueueStats).to receive(:read).and_return(stats)
 
@@ -173,7 +174,7 @@ RSpec.describe 'Super Admin Monitoring', type: :request do
     it 'marks dead jobs and a long wait' do
       stats = SuperAdmin::QueueStats::Result.new(
         busy: 0, enqueued: 5, scheduled: 0, retries: 0, dead: 4, processed: 0, failed: 0,
-        queues: [SuperAdmin::QueueStats::Queue.new(name: 'default', size: 5, latency: 90)]
+        queues: [SuperAdmin::QueueStats::Queue.new(name: 'default', jobs: 5, latency: 90)]
       )
       allow(SuperAdmin::QueueStats).to receive(:read).and_return(stats)
 

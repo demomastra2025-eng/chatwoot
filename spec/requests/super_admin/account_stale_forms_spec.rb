@@ -147,13 +147,14 @@ RSpec.describe 'Super Admin forms drawn from an earlier state of an account', ty
     end
 
     it 'refuses a change when the organization the form was drawn with does not exist or is not a number' do
-      ['0', 'abc'].each do |expected|
+      %w[0 abc].each do |expected|
         save(nur.id, expected: expected)
 
         expect(account.reload.organization).to eq(alatau)
         expect(flashes).to include('Организация аккаунта уже изменена')
       end
-      patch "/super_admin/accounts/#{account.id}", params: { account: { name: 'Филиал 1', organization_id: nur.id }, expected_organization_id: [alatau.id] }
+      patch "/super_admin/accounts/#{account.id}",
+            params: { account: { name: 'Филиал 1', organization_id: nur.id }, expected_organization_id: [alatau.id] }
       follow_redirect!
       expect(account.reload.organization).to eq(alatau)
       expect(link_audits).to be_empty

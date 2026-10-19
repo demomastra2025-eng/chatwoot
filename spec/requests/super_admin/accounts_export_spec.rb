@@ -9,7 +9,7 @@ RSpec.describe 'Super Admin accounts export', type: :request do
   let(:organization) { create(:organization, name: 'ТОО Север') }
 
   def rows
-    CSV.parse(response.body.delete_prefix("﻿"), headers: true)
+    CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true)
   end
 
   def page = Nokogiri::HTML(response.body)

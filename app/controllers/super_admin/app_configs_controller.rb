@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ClassLength
 class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   MASKED_SECRET_CONFIG_KEYS = %w[
     CAPTAIN_OPENROUTER_API_KEY CAPTAIN_OPENROUTER_MANAGEMENT_API_KEY CAPTAIN_FIRECRAWL_API_KEY
@@ -229,3 +230,5 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
 end
 
 SuperAdmin::AppConfigsController.prepend_mod_with('SuperAdmin::AppConfigsController')
+
+# rubocop:enable Metrics/ClassLength

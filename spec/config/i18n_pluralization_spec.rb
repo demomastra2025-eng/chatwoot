@@ -4,7 +4,7 @@ require 'rails_helper'
 
 # Russian picks the form of a counted text by the plural category of the number (config/locales/pluralization.ru.rb,
 # config/initializers/i18n_pluralization.rb); the other languages keep the one / other choice.
-RSpec.describe 'I18n plural forms' do
+RSpec.describe I18n, 'plural forms' do
   def accounts_total(count, locale: :ru)
     I18n.t('super_admin.organizations.card.accounts.total', count: count, locale: locale)
   end

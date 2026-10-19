@@ -3,7 +3,7 @@
 # redirect to their tab (config/routes.rb).
 class SuperAdmin::MonitoringsController < SuperAdmin::ApplicationController
   TABS = %w[metrics logs queues status].freeze
-  DEFAULT_TAB = 'metrics'
+  DEFAULT_TAB = 'metrics'.freeze
 
   def show
     @tab = TABS.include?(params[:tab]) ? params[:tab] : DEFAULT_TAB

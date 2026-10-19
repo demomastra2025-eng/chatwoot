@@ -59,7 +59,7 @@ class Integrations::App
     when 'google_translate'
       google_translate_connected?(account)
     when 'linear'
-      account.feature_enabled?('linear_integration') && GlobalConfigService.load('LINEAR_CLIENT_ID', nil).present?
+      linear_enabled?(account)
     when 'shopify'
       shopify_enabled?(account)
     when 'leadsquared'
@@ -139,6 +139,10 @@ class Integrations::App
   # for an account that has connected it, so the others are not offered an integration nobody uses.
   def google_translate_connected?(account)
     account.hooks.exists?(app_id: 'google_translate')
+  end
+
+  def linear_enabled?(account)
+    account.feature_enabled?('linear_integration') && GlobalConfigService.load('LINEAR_CLIENT_ID', nil).present?
   end
 
   def shopify_enabled?(account)

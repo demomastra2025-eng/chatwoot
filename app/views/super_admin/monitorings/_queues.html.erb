@@ -46,7 +46,7 @@ The figures of the background queues in Russian, the queues with their waiting t
             <% stats.queues.each do |queue| %>
               <tr class="border-b border-n-weak last:border-b-0" data-queue="<%= queue.name %>">
                 <th scope="row" class="px-3 py-2.5 font-normal first:ps-5"><%= queue.name %></th>
-                <td class="px-3 py-2.5 text-end tabular-nums"><%= super_admin_number(queue.size) %></td>
+                <td class="px-3 py-2.5 text-end tabular-nums"><%= super_admin_number(queue.jobs) %></td>
                 <td class="px-3 py-2.5 text-end tabular-nums last:pe-5 <%= 'text-n-ruby-11' if queue.slow? %>"><%= t('super_admin.monitoring.queue_stats.seconds', count: queue.latency) %></td>
               </tr>
             <% end %>

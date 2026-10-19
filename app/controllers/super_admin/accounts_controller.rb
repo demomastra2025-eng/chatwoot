@@ -247,7 +247,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
 
     record_export_audit(exported)
     filename = "onelink-accounts-#{SuperAdmin::DisplayHelper.format_time(Time.current, '%Y%m%d_%H%M%S')}.csv"
-    send_data "﻿#{csv_data}", filename: filename, type: 'text/csv; charset=utf-8; header=present', disposition: 'attachment'
+    send_data "\uFEFF#{csv_data}", filename: filename, type: 'text/csv; charset=utf-8; header=present', disposition: 'attachment'
   end
 
   # «Удалить аккаунт» marks the account for deletion: the daily job removes it when the grace period is over, and until
