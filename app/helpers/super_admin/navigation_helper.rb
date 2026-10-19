@@ -34,7 +34,8 @@ module SuperAdmin::NavigationHelper
     return I18n.t("super_admin.resources.#{resource_name}", default: RESOURCE_LABELS[resource_name]) if RESOURCE_LABELS.key?(resource_name)
 
     model_name = resource_name.singularize.classify.safe_constantize&.model_name
-    return model_name.human(count: 2) if model_name.present?
+    # the plural of the name (Administrate asks for it the same way): a fraction takes the `other` form of every language
+    return model_name.human(count: Administrate::ApplicationHelper::PLURAL_MANY_COUNT) if model_name.present?
 
     resource_name.tr('/', ' ').tr('_', ' ').titleize
   end

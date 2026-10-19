@@ -110,14 +110,14 @@ class SuperAdmin::HealthMatrixService
     rescue StandardError
       []
     end
-    return { state: 'none', label: 'Не подключен', count: 0 } if wa_inboxes.empty?
+    return { state: 'none', label: label(:whatsapp_none), count: 0 } if wa_inboxes.empty?
 
     active = wa_inboxes.any? do |i|
       !i.channel.try(:reauthorization_required?)
     end
     {
       state: active ? 'healthy' : 'error',
-      label: active ? "#{wa_inboxes.size} подключено" : 'Требует авторизации',
+      label: active ? label(:whatsapp_connected, count: wa_inboxes.size) : label(:whatsapp_reauthorization),
       count: wa_inboxes.size
     }
   end
@@ -128,7 +128,7 @@ class SuperAdmin::HealthMatrixService
     bindings = context[:bindings][account.id] || []
     connections = context[:connections][account.id] || []
 
-    return { state: 'none', label: 'Нет линий', profiles_count: 0 } if phone_inboxes.empty? && sip_profiles.empty?
+    return { state: 'none', label: label(:telephony_none), profiles_count: 0 } if phone_inboxes.empty? && sip_profiles.empty?
 
     evaluate_telephony_diagnostics(sip_profiles, bindings, connections, phone_inboxes)
   end
@@ -141,27 +141,33 @@ class SuperAdmin::HealthMatrixService
 
   def evaluate_telephony_diagnostics(sip_profiles, bindings, connections, phone_inboxes)
     if connections.any? { |c| c.respond_to?(:remote_janus_url) && c.remote_janus_url.blank? }
-      { state: 'error', label: 'Janus URL не задан', profiles_count: sip_profiles.size }
+      { state: 'error', label: label(:telephony_janus_missing), profiles_count: sip_profiles.size }
     elsif phone_inboxes.any? && bindings.empty?
-      { state: 'warning', label: 'Линии не привязаны', profiles_count: sip_profiles.size }
+      { state: 'warning', label: label(:telephony_unbound), profiles_count: sip_profiles.size }
     else
-      { state: 'healthy', label: "#{sip_profiles.size} профилей OK", profiles_count: sip_profiles.size }
+      { state: 'healthy', label: label(:telephony_profiles_ok, count: sip_profiles.size), profiles_count: sip_profiles.size }
     end
   end
 
   def calculate_medelement_status(account, context)
     conflicts = context[:med_conflicts][account.id] || 0
-    return { state: 'warning', label: "#{conflicts} конфликтов" } if conflicts.positive?
+    return { state: 'warning', label: label(:medelement_conflicts, count: conflicts) } if conflicts.positive?
 
     evaluate_medelement_runs(context[:med_runs][account.id] || [])
   end
 
   def evaluate_medelement_runs(runs)
     recent_runs = runs.sort_by { |r| r.created_at || Time.zone.at(0) }.last(RECENT_RUNS).reverse
-    return { state: 'none', label: 'Не настроен' } if recent_runs.empty?
+    return { state: 'none', label: label(:medelement_none) } if recent_runs.empty?
 
     has_error = recent_runs.any? { |r| r.status.to_s.include?('fail') || r.status.to_s.include?('error') }
-    has_error ? { state: 'error', label: 'Ошибка синхронизации' } : { state: 'healthy', label: 'В норме' }
+    has_error ? { state: 'error', label: label(:medelement_error) } : { state: 'healthy', label: label(:medelement_ok) }
+  end
+
+  # The text of a state. The matrix is cached for every viewer, so the language is fixed: the super admin is Russian only,
+  # and a count takes the Russian form of its noun (config/locales/super_admin_pages.ru.yml).
+  def label(key, **)
+    I18n.t("super_admin.health_matrix.#{key}", locale: :ru, **)
   end
 
   def calculate_summary(accounts)

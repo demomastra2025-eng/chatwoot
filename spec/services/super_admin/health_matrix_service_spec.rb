@@ -99,7 +99,20 @@ RSpec.describe SuperAdmin::HealthMatrixService, type: :service do
         service = described_class.new
         res = service.send(:calculate_telephony_status, account, context)
         expect(res[:state]).to eq('healthy')
-        expect(res[:label]).to eq('1 профилей OK')
+        expect(res[:label]).to eq('1 профиль OK')
+      end
+
+      it 'puts the number of profiles in the Russian form of the noun' do
+        conn = double('Telephony::ProviderConnection', remote_janus_url: 'wss://janus.one-link.kz')
+        service = described_class.new
+        forms = [2, 5, 21].index_with do |count|
+          context[:sip_profiles][account.id] = Array.new(count) { double('Telephony::SipProfile') }
+          context[:bindings][account.id] = [double('Telephony::NumberBinding')]
+          context[:connections][account.id] = [conn]
+          service.send(:calculate_telephony_status, account, context)[:label]
+        end
+
+        expect(forms).to eq(2 => '2 профиля OK', 5 => '5 профилей OK', 21 => '21 профиль OK')
       end
     end
 
@@ -123,7 +136,20 @@ RSpec.describe SuperAdmin::HealthMatrixService, type: :service do
         service = described_class.new
         res = service.send(:calculate_medelement_status, account, context)
         expect(res[:state]).to eq('warning')
-        expect(res[:label]).to eq('3 конфликтов')
+        expect(res[:label]).to eq('3 конфликта')
+      end
+
+      it 'puts the number of conflicts in the Russian form of the noun' do
+        service = described_class.new
+        forms = [1, 2, 5, 21, 22, 25, 111].index_with do |count|
+          context[:med_conflicts][account.id] = count
+          service.send(:calculate_medelement_status, account, context)[:label]
+        end
+
+        expect(forms).to eq(
+          1 => '1 конфликт', 2 => '2 конфликта', 5 => '5 конфликтов', 21 => '21 конфликт',
+          22 => '22 конфликта', 25 => '25 конфликтов', 111 => '111 конфликтов'
+        )
       end
 
       it 'returns error when recent sync run failed' do

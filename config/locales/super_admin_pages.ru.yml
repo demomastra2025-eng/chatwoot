@@ -26,6 +26,28 @@ ru:
       hint: "Режим оперативной диагностики: важные инциденты, трафик API-шлюза, фоновые задачи, работа языковых моделей и потоки системных сервисов."
       frame_title: "Дашборд логов в Grafana"
 
+    # The states in the table of the dashboard (SuperAdmin::HealthMatrixService); a count takes the form of its noun
+    health_matrix:
+      whatsapp_none: "Не подключен"
+      whatsapp_connected: "%{count} подключено"
+      whatsapp_reauthorization: "Требует авторизации"
+      telephony_none: "Нет линий"
+      telephony_janus_missing: "Janus URL не задан"
+      telephony_unbound: "Линии не привязаны"
+      telephony_profiles_ok:
+        one: "%{count} профиль OK"
+        few: "%{count} профиля OK"
+        many: "%{count} профилей OK"
+        other: "%{count} профиля OK"
+      medelement_none: "Не настроен"
+      medelement_conflicts:
+        one: "%{count} конфликт"
+        few: "%{count} конфликта"
+        many: "%{count} конфликтов"
+        other: "%{count} конфликта"
+      medelement_error: "Ошибка синхронизации"
+      medelement_ok: "В норме"
+
     ai_analytics:
       title: "AI-аналитика"
       description: "Что делали ИИ-агенты всех аккаунтов за период: запросы, ошибки и стоимость."

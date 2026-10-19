@@ -500,24 +500,24 @@ ru:
   time_units:
     days:
       one: "%{count} день"
-      few: "%{count} дней"
+      few: "%{count} дня"
       many: "%{count} дней"
-      other: "%{count} дней"
+      other: "%{count} дня"
     hours:
       one: "%{count} час"
-      few: "%{count} часов"
+      few: "%{count} часа"
       many: "%{count} часов"
-      other: "%{count} часов"
+      other: "%{count} часа"
     minutes:
-      one: "%{count} минут"
-      few: "%{count} минут"
+      one: "%{count} минута"
+      few: "%{count} минуты"
       many: "%{count} минут"
-      other: "%{count} минут"
+      other: "%{count} минуты"
     seconds:
-      one: "%{count} секунд"
-      few: "%{count} секунд"
+      one: "%{count} секунда"
+      few: "%{count} секунды"
       many: "%{count} секунд"
-      other: "%{count} секунд"
+      other: "%{count} секунды"
   automation:
     system_name: Система автоматизации
   crm:

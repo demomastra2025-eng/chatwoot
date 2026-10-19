@@ -74,4 +74,14 @@ RSpec.describe Reports::TimeFormatPresenter, locale: :en do
       end
     end
   end
+
+  describe '#format in Russian', locale: :ru do
+    it 'takes the Russian form of every unit' do
+      expect(described_class.new(86_400 + (2 * 3600)).format).to eq '1 день 2 часа'
+      expect(described_class.new((5 * 86_400) + (21 * 3600)).format).to eq '5 дней 21 час'
+      expect(described_class.new((22 * 60) + 1).format).to eq '22 минуты 1 секунда'
+      expect(described_class.new(25 * 60).format).to eq '25 минут'
+      expect(described_class.new(3).format).to eq '3 секунды'
+    end
+  end
 end
