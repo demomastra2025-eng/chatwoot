@@ -4,7 +4,6 @@ import { shouldBeUrl } from 'shared/helpers/Validators';
 import { useAlert } from 'dashboard/composables';
 import { useVuelidate } from '@vuelidate/core';
 import QRCode from 'qrcode';
-import Avatar from 'next/avatar/Avatar.vue';
 import SettingIntroBanner from 'dashboard/components/widgets/SettingIntroBanner.vue';
 import SettingsToggleSection from 'dashboard/components-next/Settings/SettingsToggleSection.vue';
 import SettingsFieldSection from 'dashboard/components-next/Settings/SettingsFieldSection.vue';
@@ -100,7 +99,6 @@ export default {
     WhatsappReauthorize,
     DuplicateInboxBanner,
     Editor,
-    Avatar,
     ColorPicker,
     SelectInput,
     AccountHealth,
@@ -2114,9 +2112,7 @@ export default {
           business_name: this.businessName || null,
           channel: channelPayload,
         };
-        if (this.avatarFile) {
-          payload.avatar = this.avatarFile;
-        }
+
         await this.$store.dispatch('inboxes/updateInbox', payload);
         useAlert(this.$t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
         this.showBusinessNameInput = false;
@@ -2221,7 +2217,6 @@ export default {
     class="grid grid-rows-[auto_1fr] h-full flex-grow flex-shrink pr-0 pl-0 w-full min-w-0 settings"
   >
     <SettingIntroBanner
-      :header-image="inbox.avatarUrl"
       :header-title="inboxName"
     >
       <div
@@ -2323,21 +2318,7 @@ export default {
               'max-w-4xl': !isAWebWidgetInbox,
             }"
           >
-            <div class="flex flex-col gap-1 items-start mb-4">
-              <label class="text-heading-3 text-n-slate-12">
-                {{ $t('INBOX_MGMT.ADD.WEBSITE_CHANNEL.CHANNEL_AVATAR.LABEL') }}
-              </label>
-              <Avatar
-                :src="avatarUrl"
-                :size="64"
-                :icon-name="inboxIcon"
-                name=""
-                allow-upload
-                rounded-full
-                @upload="handleImageUpload"
-                @delete="handleAvatarDelete"
-              />
-            </div>
+
             <SettingsFieldSection :label="inboxNameLabel">
               <woot-input
                 v-model="selectedInboxName"

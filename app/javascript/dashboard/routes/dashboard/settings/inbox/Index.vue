@@ -2,7 +2,6 @@
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { picoSearch } from '@scmmishra/pico-search';
-import Avatar from 'next/avatar/Avatar.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import { useMapGetter, useStoreGetters } from 'dashboard/composables/store';
@@ -562,18 +561,6 @@ const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
           <div class="flex items-start justify-between gap-3">
             <div class="flex min-w-0 items-center gap-3">
               <div
-                v-if="inbox.avatar_url"
-                class="grid size-11 shrink-0 place-items-center rounded-full bg-n-alpha-3"
-              >
-                <Avatar
-                  :src="inbox.avatar_url"
-                  :name="inbox.name"
-                  :size="28"
-                  rounded-full
-                />
-              </div>
-              <div
-                v-else
                 class="grid size-11 shrink-0 place-items-center rounded-full bg-n-alpha-3"
               >
                 <ChannelIcon class="size-6 text-n-slate-10" :inbox="inbox" />
