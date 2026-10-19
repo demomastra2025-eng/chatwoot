@@ -612,12 +612,28 @@
         "APPLY_EXISTING": "Bind existing templates",
         "SUCCESS": "Submitted templates to Meta for review: {count}",
         "ALREADY_EXISTS_NOTICE": "All templates in the pack already exist in this channel and have been bound",
-        "ERROR": "Failed to create templates in Meta"
+        "ERROR": "Failed to create templates in Meta",
+        "CUSTOMIZED_BADGE": "Edited",
+        "EDIT_TEMPLATE_TITLE": "Template text & settings",
+        "RESET_TEMPLATE": "Reset changes",
+        "TEMPLATE_NAME_LABEL": "Meta template name (lowercase letters, digits, _)",
+        "EXISTS_EDIT_HINT": "A template with this name already exists. Rename it to submit edited text to Meta:",
+        "BUMP_TEMPLATE_NAME": "Use new name ({name})",
+        "INSERT_VARIABLE_LABEL": "Insert variable:",
+        "TEMPLATE_BODY_LABEL": "Message text",
+        "TEMPLATE_BODY_HINT": "Variables in double braces are automatically converted to Meta positional parameters and bound to booking fields.",
+        "BUTTON_TEXT_LABEL": "Button text",
+        "LIVE_PREVIEW_LABEL": "WhatsApp client preview"
       },
       "ERRORS": {
         "INBOX_REQUIRED": "Please select a WhatsApp channel",
         "TEMPLATE_REQUIRED": "Please select a WhatsApp template for this scenario",
-        "INVALID_LOCATION_URL": "Please enter a valid map URL starting with https://"
+        "INVALID_LOCATION_URL": "Please enter a valid map URL starting with https://",
+        "TEMPLATE_NAME_REQUIRED": "Template name is required",
+        "TEMPLATE_NAME_FORMAT": "Template name can only contain lowercase letters, numbers, and underscores",
+        "TEMPLATE_BODY_REQUIRED": "Template body text is required",
+        "TEMPLATE_BODY_DANGLING_VAR": "Meta does not allow template text to start or end with a variable",
+        "TEMPLATE_BUTTON_TEXT_REQUIRED": "Button text is required"
       },
       "SAVE_SUCCESS": "Reminder scenario saved",
       "SAVE_ERROR": "Failed to save reminder scenario"

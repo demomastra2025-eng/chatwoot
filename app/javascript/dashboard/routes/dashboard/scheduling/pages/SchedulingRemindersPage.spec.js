@@ -317,4 +317,118 @@ describe('SchedulingRemindersPage', () => {
       expect(createWhatsAppTemplateAction).toHaveBeenCalledTimes(5);
     }
   );
+
+  it('allows editing template body, button text, inserting semantic variables, resetting, and bumping existing template name in AppointmentTemplatePackDialog', async () => {
+    mountPage({ locale: 'ru', stubPackDialog: false });
+    await flushPromises();
+
+    const openBtn = wrapper.find('[data-testid="open-template-pack-btn"]');
+    await openBtn.trigger('click');
+    await flushPromises();
+
+    const bodyArea = document.body.querySelector(
+      '[data-testid="pack-template-body-input"] textarea'
+    );
+    expect(bodyArea).not.toBeNull();
+
+    // Edit active template (appointment_created -> booking_created_notice)
+    bodyArea.value =
+      'Кастомный шаблон для {{имя клиента}} на {{дата записи}} в {{время записи}} к специалисту {{специалист}}.';
+    bodyArea.dispatchEvent(new Event('input', { bubbles: true }));
+    await flushPromises();
+
+    // Insert semantic variable via chip click
+    const chips = document.body.querySelectorAll(
+      '[data-testid="pack-variable-chip"]'
+    );
+    expect(chips.length).toBeGreaterThan(0);
+    // Find the phone chip and click it
+    const phoneChip = Array.from(chips).find(el =>
+      el.textContent.includes('{{телефон клиента}}')
+    );
+    expect(phoneChip).toBeDefined();
+    phoneChip.click();
+    await flushPromises();
+
+    expect(bodyArea.value).toContain('{{телефон клиента}}');
+
+    // Live preview renders substituted sample values
+    const livePreview = document.body.querySelector(
+      '[data-testid="pack-template-live-preview"]'
+    );
+    expect(livePreview).not.toBeNull();
+    expect(livePreview.textContent).toContain('Кастомный шаблон для Анна');
+    expect(livePreview.textContent).toContain('+7 701 000 00 00');
+
+    // Reset button is shown and restores preset text when clicked
+    const resetBtn = document.body.querySelector(
+      '[data-testid="reset-active-template-btn"]'
+    );
+    expect(resetBtn).not.toBeNull();
+    resetBtn.click();
+    await flushPromises();
+    expect(bodyArea.value).not.toContain('Кастомный шаблон');
+
+    // Apply custom edit again to booking_created_notice
+    bodyArea.value =
+      'Здравствуйте, {{имя клиента}}! Ждем вас {{дата записи}} в {{время записи}} у {{специалист}}.';
+    bodyArea.dispatchEvent(new Event('input', { bubbles: true }));
+    await flushPromises();
+
+    // Switch to existing template (appointment_day_before -> booking_reminder_1d)
+    const dayBeforeTab = document.body.querySelector(
+      '[data-testid="pack-tab-appointment_day_before"]'
+    );
+    expect(dayBeforeTab).not.toBeNull();
+    dayBeforeTab.click();
+    await flushPromises();
+
+    // Bump existing template name so it gets created as booking_reminder_1d_v2
+    const bumpBtn = document.body.querySelector(
+      '[data-testid="bump-template-name-btn"]'
+    );
+    expect(bumpBtn).not.toBeNull();
+    bumpBtn.click();
+    await flushPromises();
+
+    const nameInput = document.body.querySelector(
+      '[data-testid="pack-template-name-input"] input'
+    );
+    expect(nameInput.value).toBe('booking_reminder_1d_v2');
+
+    // Edit confirmation button text on booking_reminder_1d_v2
+    const btnTextInput = document.body.querySelector(
+      '[data-testid="pack-template-button-text-input"] input'
+    );
+    expect(btnTextInput).not.toBeNull();
+    btnTextInput.value = 'Да, приду обязательно';
+    btnTextInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await flushPromises();
+
+    // Submit the pack (now all 6 templates should be created because booking_reminder_1d was bumped to v2)
+    const submitBtn = document.body.querySelector(
+      '[data-testid="submit-template-pack-btn"]'
+    );
+    submitBtn.click();
+    await flushPromises();
+
+    expect(createWhatsAppTemplateAction).toHaveBeenCalledTimes(6);
+
+    const createdCalls = createWhatsAppTemplateAction.mock.calls.map(
+      call => call[1].template
+    );
+    const createdNotice = createdCalls.find(
+      t => t.name === 'booking_created_notice'
+    );
+    expect(createdNotice).toBeDefined();
+    expect(createdNotice.body_text).toBe(
+      'Здравствуйте, {{1}}! Ждем вас {{2}} в {{3}} у {{4}}.'
+    );
+
+    const bumpedReminder = createdCalls.find(
+      t => t.name === 'booking_reminder_1d_v2'
+    );
+    expect(bumpedReminder).toBeDefined();
+    expect(bumpedReminder.buttons[0].text).toBe('Да, приду обязательно');
+  });
 });

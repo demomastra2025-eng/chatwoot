@@ -242,12 +242,28 @@
         "APPLY_EXISTING": "Бар үлгілерді байланыстыру",
         "SUCCESS": "Meta модерациясына жіберілген үлгілер саны: {count}",
         "ALREADY_EXISTS_NOTICE": "Жинақтағы барлық үлгілер осы арнада бұрыннан бар",
-        "ERROR": "Meta-да үлгілерді жасау мүмкін болмады"
+        "ERROR": "Meta-да үлгілерді жасау мүмкін болмады",
+        "CUSTOMIZED_BADGE": "Өзгертілді",
+        "EDIT_TEMPLATE_TITLE": "Үлгі мәтіні мен баптаулары",
+        "RESET_TEMPLATE": "Өзгерістерді қайтару",
+        "TEMPLATE_NAME_LABEL": "Meta-дағы жүйелік үлгі атауы (латын әріптері, сандар, _)",
+        "EXISTS_EDIT_HINT": "Бұл атаумен үлгі арнада бұрыннан бар. Өзгертілген мәтінді Meta-ға жіберу үшін атауын өзгертіңіз:",
+        "BUMP_TEMPLATE_NAME": "Жаңа атау ({name})",
+        "INSERT_VARIABLE_LABEL": "Айнымалыны қосу:",
+        "TEMPLATE_BODY_LABEL": "Хабарлама мәтіні",
+        "TEMPLATE_BODY_HINT": "Қос жақшадағы айнымалылар Meta-ға автоматты түрде параметр ретінде жіберіліп, жазылу өрістерімен байланыстырылады.",
+        "BUTTON_TEXT_LABEL": "Батырма мәтіні",
+        "LIVE_PREVIEW_LABEL": "Клиентке WhatsApp-та көрінуі"
       },
       "ERRORS": {
         "INBOX_REQUIRED": "WhatsApp арнасын таңдаңыз",
         "TEMPLATE_REQUIRED": "Сценарий үшін WhatsApp үлгісін таңдаңыз",
-        "INVALID_LOCATION_URL": "Картаға дұрыс сілтеме енгізіңіз (https://)"
+        "INVALID_LOCATION_URL": "Картаға дұрыс сілтеме енгізіңіз (https://)",
+        "TEMPLATE_NAME_REQUIRED": "Үлгінің жүйелік атауын енгізіңіз",
+        "TEMPLATE_NAME_FORMAT": "Үлгі атауы тек кіші латын әріптерінен, сандардан және _ белгісінен тұруы керек",
+        "TEMPLATE_BODY_REQUIRED": "Үлгі мәтіні бос болмауы керек",
+        "TEMPLATE_BODY_DANGLING_VAR": "Meta ережелері бойынша мәтін айнымалыдан басталмауы немесе аяқталмауы керек",
+        "TEMPLATE_BUTTON_TEXT_REQUIRED": "Батырма мәтінін енгізіңіз"
       },
       "SAVE_SUCCESS": "Еске салғыш сценарийі сақталды",
       "SAVE_ERROR": "Еске салғыш сценарийін сақтау мүмкін болмады"
