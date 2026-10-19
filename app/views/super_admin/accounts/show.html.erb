@@ -4,7 +4,7 @@
 The page of one clinic. Header: name, status, #id, creation date (Astana time),
 «Войти в аккаунт» and «Редактировать». Main column: plan (base + modules, with
 the preview of what a change does), limits and spend, channels, «Тонкая
-настройка» and «Служебные» (both collapsed), users, technical data (collapsed). Side column: trial,
+настройка» and «Служебные» (both collapsed), users, «Входы в аккаунт» and technical data (all collapsed). Side column: trial,
 basic facts, organization, maintenance.
 
 ## Local variables:
@@ -91,6 +91,9 @@ basic facts, organization, maintenance.
       <%= render 'service_flags', account: account %>
 
       <%= render 'users', account: account, page: page %>
+
+      <%# Who from the super admins entered this account, and as whom: collapsed, the last 20. %>
+      <%= render 'super_admin/shared/impersonation_history', entries: SuperAdmin::ImpersonationHistory.for_account(account), scope: :account %>
 
       <%= render 'technical', account: account %>
     </div>

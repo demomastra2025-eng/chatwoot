@@ -75,3 +75,8 @@ as well as a link to its edit page.
 <%= render 'super_admin/shared/account_user_form', page: page, namespace: namespace, resource_type: 'user' %>
 
 <%= render partial: "impersonate", locals: {page: page} %>
+
+<%# The times super admins entered an account as this user: collapsed, the last 20. %>
+<section class="main-content__body">
+  <%= render 'super_admin/shared/impersonation_history', entries: SuperAdmin::ImpersonationHistory.for_user(page.resource), scope: :user %>
+</section>

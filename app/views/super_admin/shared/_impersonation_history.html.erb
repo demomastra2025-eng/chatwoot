@@ -1,0 +1,71 @@
+<%#
+# Входы в аккаунт
+
+Collapsed. The last entries of the audit log where a super admin entered an account as one of its users
+(SuperAdmin::ImpersonationHistory): when (Astana time), who entered, and as which user or into which account. On the
+card of an account the users differ from row to row, on the card of a user the accounts do.
+
+## Local variables:
+
+- `entries`: the list of `SuperAdmin::ImpersonationHistory::Entry`, newest first (at most 20).
+- `scope`: `:account` (the card of an account) or `:user` (the card of a user).
+%>
+<details class="admin-collapse" data-testid="impersonation-history" data-scope="<%= scope %>">
+  <summary>
+    <span class="flex min-w-0 flex-col gap-0.5">
+      <span class="text-heading-2 text-n-slate-12"><%= t('super_admin.impersonations.title') %></span>
+      <span class="text-body-main text-n-slate-11"><%= t("super_admin.impersonations.hint.#{scope}") %></span>
+    </span>
+    <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
+  </summary>
+
+  <div class="admin-collapse__body">
+    <% if entries.empty? %>
+      <p class="admin-block__note" data-testid="impersonation-empty"><%= t('super_admin.impersonations.empty') %></p>
+    <% else %>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead>
+            <tr class="text-xs text-n-slate-11">
+              <th scope="col" class="py-2 pe-3 font-medium"><%= t('super_admin.impersonations.columns.when') %></th>
+              <th scope="col" class="py-2 pe-3 font-medium"><%= t('super_admin.impersonations.columns.actor') %></th>
+              <th scope="col" class="py-2 font-medium"><%= t("super_admin.impersonations.columns.#{scope == :account ? 'user' : 'account'}") %></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% entries.each do |entry| %>
+              <tr class="border-t border-solid border-n-weak align-top" data-testid="impersonation-entry">
+                <td class="whitespace-nowrap py-2 pe-3 tabular-nums text-n-slate-11"><%= super_admin_time(entry.at, '%d.%m.%Y %H:%M:%S') %></td>
+                <td class="py-2 pe-3 text-n-slate-12">
+                  <% if entry.actor_name.present? %>
+                    <%= entry.actor_name %>
+                  <% elsif entry.actor_id.present? %>
+                    <%= t('super_admin.audits.user_id', id: entry.actor_id) %>
+                  <% else %>
+                    <span class="text-n-slate-10">—</span>
+                  <% end %>
+                </td>
+                <td class="py-2 text-n-slate-12">
+                  <% if scope == :account %>
+                    <% if entry.user_known %>
+                      <%= link_to entry.user_label, super_admin_user_path(entry.user_id), class: 'text-n-slate-12 hover:text-n-brand' %>
+                    <% else %>
+                      <%= entry.user_label.presence || t('super_admin.impersonations.unknown_user') %>
+                      <span class="text-xs text-n-slate-10">(<%= t('super_admin.impersonations.deleted_user') %>)</span>
+                    <% end %>
+                  <% elsif entry.account_name.present? %>
+                    <%= link_to entry.account_name, super_admin_account_path(entry.account_id), class: 'text-n-slate-12 hover:text-n-brand' %>
+                    <span class="text-xs tabular-nums text-n-slate-10">#<%= entry.account_id %></span>
+                  <% else %>
+                    <span class="text-xs tabular-nums text-n-slate-10">#<%= entry.account_id %></span>
+                    <span class="text-xs text-n-slate-10">(<%= t('super_admin.impersonations.deleted_account') %>)</span>
+                  <% end %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% end %>
+  </div>
+</details>
