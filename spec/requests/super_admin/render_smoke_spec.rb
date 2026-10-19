@@ -148,9 +148,10 @@ RSpec.describe 'Super Admin render smoke', type: :request do
       'channel settings' => '/super_admin/app_config?config=facebook',
       'audits' => '/super_admin/audits',
       'instance settings' => '/super_admin/settings',
-      'instance status' => '/super_admin/instance_status',
       'monitoring' => '/super_admin/monitoring',
-      'logs' => '/super_admin/logs',
+      'monitoring logs' => '/super_admin/monitoring?tab=logs',
+      'monitoring queues' => '/super_admin/monitoring?tab=queues',
+      'monitoring server status' => '/super_admin/monitoring?tab=status',
       'push diagnostics' => '/super_admin/push_diagnostics',
       'channels' => '/super_admin/channels',
       'AI analytics' => '/super_admin/captain_observability'

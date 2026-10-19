@@ -106,6 +106,16 @@
   display_title: 'Webhook request timeout (seconds)'
   description: 'Maximum time Onelink waits for a webhook response before failing the request'
   locked: false
+- name: GRAFANA_OVERVIEW_DASHBOARD
+  value:
+  display_title: 'Grafana: metrics dashboard'
+  description: 'UID of the Grafana dashboard embedded on the Monitoring page (tab Metrics). Empty: the dashboard of the production stack'
+  locked: false
+- name: GRAFANA_LOGS_DASHBOARD
+  value:
+  display_title: 'Grafana: logs dashboard'
+  description: 'UID of the Grafana dashboard embedded on the Monitoring page (tab Logs). Empty: the dashboard of the production stack'
+  locked: false
 - name: DIRECT_UPLOADS_ENABLED
   type: boolean
   value: false

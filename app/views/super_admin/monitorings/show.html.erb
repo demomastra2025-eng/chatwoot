@@ -1,26 +1,26 @@
 <%#
 # Monitoring
 
-The Grafana overview of production health for the last 24 hours, embedded, with
-the ways to the logs, the alerts, the queues and Grafana itself.
+One page, four tabs (links, the current one marked with `aria-current`): the metrics and the logs of the platform
+(Grafana, embedded), the background queues (Sidekiq) and the state of the server. Only the tab in use is drawn.
+
+## Local variables (controller instance variables):
+
+- `@tab`: `metrics`, `logs`, `queues` or `status`.
+- `@queue_stats`: SuperAdmin::QueueStats::Result for the queues tab (nil: Redis cannot be read).
+- `@status_sections`: the sections of the status tab (SuperAdmin::InstanceStatus#sections).
 %>
 <% content_for(:title) do %><%= t('super_admin.monitoring.title') %><% end %>
 
-<%
-  dashboard_url = '/monitoring/grafana/d/crafty-production-overview/crafty-production-overview?orgId=1&from=now-24h&to=now&refresh=30s'
-  external = { target: '_blank', rel: 'noopener noreferrer' }
-%>
+<%= render layout: 'super_admin/shared/page_header', locals: { title: content_for(:title), description: t('super_admin.monitoring.description') } do %><% end %>
 
-<%= render layout: 'super_admin/shared/page_header', locals: { title: content_for(:title), description: t('super_admin.monitoring.description') } do %>
-  <%= link_to t('super_admin.monitoring.logs'), super_admin_logs_path, class: 'button button--secondary' %>
-  <%= link_to t('super_admin.monitoring.explore'), '/monitoring/grafana/explore', class: 'button button--secondary', **external %>
-  <%= link_to t('super_admin.monitoring.alerts'), '/monitoring/grafana/alerting/list', class: 'button button--secondary', **external %>
-  <%= link_to t('super_admin.monitoring.queues'), sidekiq_web_url, class: 'button button--secondary', **external %>
-  <%= link_to t('super_admin.monitoring.grafana'), '/monitoring/grafana/', class: 'button button--secondary', **external %>
-  <%= link_to t('super_admin.monitoring.open_dashboard'), dashboard_url, class: 'button', **external %>
-<% end %>
+<section class="main-content__body flex flex-col gap-5">
+  <nav class="segmented self-start" aria-label="<%= t('super_admin.monitoring.tabs_label') %>" data-testid="monitoring-tabs">
+    <% SuperAdmin::MonitoringsController::TABS.each do |tab| %>
+      <%= link_to t("super_admin.monitoring.tabs.#{tab}"), super_admin_monitoring_path(tab: tab), class: 'segmented__item', data: { tab: tab },
+                                                           aria: { current: (tab == @tab ? 'true' : nil) } %>
+    <% end %>
+  </nav>
 
-<%= render 'super_admin/shared/grafana_embed',
-           hint: t('super_admin.monitoring.hint'),
-           embed_url: "#{dashboard_url}&kiosk=tv",
-           frame_title: t('super_admin.monitoring.frame_title') %>
+  <%= render "super_admin/monitorings/#{@tab}" %>
+</section>

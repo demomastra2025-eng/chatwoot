@@ -9,7 +9,7 @@ On narrow screens the sidebar is a top bar and the groups open with the menu
 button.
 
 Entries that map to an Administrate resource only appear when the resource has
-an index route, so hidden resources stay hidden. Banners exist only on cloud.
+an index route, so hidden resources stay hidden.
 Resources that nobody placed in a group land in "Дополнительно".
 %>
 
@@ -21,7 +21,6 @@ Resources that nobody placed in a group land in "Дополнительно".
     dashboard
     devise/sessions
     app_configs
-    instance_statuses
     monitorings
     settings
     audits
@@ -89,9 +88,6 @@ Resources that nobody placed in a group land in "Дополнительно".
 
     <%= render layout: 'nav_group', locals: { id: 'nav-group-system', title: t('super_admin.navigation.groups.system') } do %>
       <%= render 'nav_item', icon: 'i-lucide-activity', url: super_admin_monitoring_path, label: t('super_admin.navigation.items.monitoring'), active: super_admin_nav_active?(:monitorings) %>
-      <%= render 'nav_item', icon: 'i-lucide-file-text', url: super_admin_logs_path, label: t('super_admin.navigation.items.logs'), active: super_admin_nav_active?(:logs) %>
-      <%= render 'nav_item', icon: 'i-lucide-layers', url: sidekiq_web_url, label: t('super_admin.navigation.items.queues') %>
-      <%= render 'nav_item', icon: 'i-lucide-server', url: super_admin_instance_status_path, label: t('super_admin.navigation.items.instance_status'), active: super_admin_nav_active?(:instance_statuses) %>
       <%= render 'nav_item', icon: 'i-lucide-shield-check', url: super_admin_audits_path, label: t('super_admin.navigation.items.audits'), active: super_admin_nav_active?(:audits) %>
       <%= render 'nav_item', icon: 'i-lucide-bell', url: super_admin_push_diagnostics_path, label: t('super_admin.navigation.items.push_diagnostics'), active: super_admin_nav_active?(:push_diagnostics) %>
       <%= render 'settings_menu', open: settings_open? %>

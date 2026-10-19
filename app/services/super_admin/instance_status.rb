@@ -1,9 +1,12 @@
-# The state of the server: the platform build, PostgreSQL and Redis. Every row is
-# `{ label:, value:, tone: }`; the tone (:good, :bad or nil) paints a badge, a row
-# without a tone is a plain value. All texts come from `super_admin.instance_status`.
-class SuperAdmin::InstanceStatusesController < SuperAdmin::ApplicationController
-  def show
-    @sections = [
+# frozen_string_literal: true
+
+# The state of the server for the «Статус сервера» tab of the monitoring page: the OneLink build, PostgreSQL and Redis.
+# Every row is `{ label:, value:, tone: }`; the tone (:good, :bad or nil) paints a badge, a row without a tone is a plain
+# value. All texts come from `super_admin.instance_status`.
+class SuperAdmin::InstanceStatus
+  # => [{ key: :platform, rows: [...] }, { key: :postgres, rows: [...] }, { key: :redis, rows: [...] }]
+  def sections
+    [
       { key: :platform, rows: platform_rows },
       { key: :postgres, rows: [postgres_row] },
       { key: :redis, rows: redis_rows }

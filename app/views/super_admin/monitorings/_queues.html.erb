@@ -1,0 +1,69 @@
+<%#
+# Monitoring: queues
+
+The figures of the background queues in Russian, the queues with their waiting time, and the Sidekiq console embedded
+(it stays at its own address, /monitoring/sidekiq, and opens in a new tab too; its screens are in English).
+
+## Local variables (controller instance variables):
+
+- `@queue_stats`: SuperAdmin::QueueStats::Result, or nil when Redis cannot be read.
+%>
+<% stats = @queue_stats %>
+
+<div class="flex flex-wrap items-center justify-end gap-2" data-testid="monitoring-actions">
+  <%= link_to t('super_admin.monitoring.open_sidekiq'), sidekiq_web_path, class: 'button', target: '_blank', rel: 'noopener noreferrer' %>
+</div>
+
+<% if stats.nil? %>
+  <div class="admin-notice" role="alert" data-testid="queues-unavailable"><%= t('super_admin.monitoring.queues_unavailable') %></div>
+<% else %>
+  <%= render 'super_admin/shared/stat_group', items: [
+    { label: t('super_admin.monitoring.queue_stats.busy'), value: super_admin_number(stats.busy) },
+    { label: t('super_admin.monitoring.queue_stats.enqueued'), value: super_admin_number(stats.enqueued) },
+    { label: t('super_admin.monitoring.queue_stats.scheduled'), value: super_admin_number(stats.scheduled) },
+    { label: t('super_admin.monitoring.queue_stats.retries'), value: super_admin_number(stats.retries) },
+    { label: t('super_admin.monitoring.queue_stats.dead'), value: super_admin_number(stats.dead), tone: (:bad if stats.dead.positive?) },
+    { label: t('super_admin.monitoring.queue_stats.latency'), value: t('super_admin.monitoring.queue_stats.seconds', count: stats.latency),
+      tone: (:bad if stats.latency >= SuperAdmin::QueueStats::SLOW_LATENCY) }
+  ] %>
+
+  <% if stats.queues.any? %>
+    <section class="admin-block" aria-labelledby="queues-title">
+      <div class="admin-block__head">
+        <h2 class="admin-block__title" id="queues-title"><%= t('super_admin.monitoring.queue_list.title') %></h2>
+        <p class="admin-block__hint"><%= t('super_admin.monitoring.queue_list.hint') %></p>
+      </div>
+      <div class="-mx-5 overflow-x-auto" data-testid="queue-list">
+        <table class="w-full text-left text-sm">
+          <thead>
+            <tr class="border-b border-n-weak text-xs font-medium text-n-slate-11">
+              <th scope="col" class="px-3 py-2.5 first:ps-5"><%= t('super_admin.monitoring.queue_list.name') %></th>
+              <th scope="col" class="px-3 py-2.5 text-end"><%= t('super_admin.monitoring.queue_list.size') %></th>
+              <th scope="col" class="px-3 py-2.5 text-end last:pe-5"><%= t('super_admin.monitoring.queue_list.latency') %></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% stats.queues.each do |queue| %>
+              <tr class="border-b border-n-weak last:border-b-0" data-queue="<%= queue.name %>">
+                <th scope="row" class="px-3 py-2.5 font-normal first:ps-5"><%= queue.name %></th>
+                <td class="px-3 py-2.5 text-end tabular-nums"><%= super_admin_number(queue.size) %></td>
+                <td class="px-3 py-2.5 text-end tabular-nums last:pe-5 <%= 'text-n-ruby-11' if queue.slow? %>"><%= t('super_admin.monitoring.queue_stats.seconds', count: queue.latency) %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  <% end %>
+<% end %>
+
+<div class="admin-card overflow-hidden" data-testid="sidekiq-frame">
+  <iframe
+    src="<%= sidekiq_web_path %>"
+    title="<%= t('super_admin.monitoring.sidekiq_frame_title') %>"
+    class="min-h-[70vh] w-full bg-n-solid-2"
+    loading="lazy"
+    referrerpolicy="same-origin"
+  ></iframe>
+</div>
+<p class="m-0 text-xs text-n-slate-11"><%= t('super_admin.monitoring.sidekiq_note') %></p>

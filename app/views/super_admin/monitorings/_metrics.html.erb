@@ -1,0 +1,18 @@
+<%#
+# Monitoring: metrics
+
+The Grafana overview of the health of the platform for the last 24 hours, embedded, and the ways to Grafana itself. The
+dashboard is a setting of the installation (SuperAdmin::GrafanaDashboards).
+%>
+<% external = { target: '_blank', rel: 'noopener noreferrer' } %>
+<div class="flex flex-wrap items-center justify-end gap-2" data-testid="monitoring-actions">
+  <%= link_to t('super_admin.monitoring.explore'), "#{SuperAdmin::GrafanaDashboards::BASE_PATH}/explore", class: 'button button--secondary', **external %>
+  <%= link_to t('super_admin.monitoring.alerts'), "#{SuperAdmin::GrafanaDashboards::BASE_PATH}/alerting/list", class: 'button button--secondary', **external %>
+  <%= link_to t('super_admin.monitoring.grafana'), "#{SuperAdmin::GrafanaDashboards::BASE_PATH}/", class: 'button button--secondary', **external %>
+  <%= link_to t('super_admin.monitoring.open_dashboard'), SuperAdmin::GrafanaDashboards.path(:overview), class: 'button', **external %>
+</div>
+
+<%= render 'super_admin/shared/grafana_embed',
+           hint: t('super_admin.monitoring.metrics_hint'),
+           embed_url: SuperAdmin::GrafanaDashboards.embed_path(:overview),
+           frame_title: t('super_admin.monitoring.metrics_frame_title') %>

@@ -5,26 +5,44 @@ ru:
   super_admin:
     monitoring:
       title: "Мониторинг"
-      description: "Состояние платформы за последние 24 часа: нагрузка, сбои и важные события. Отсюда можно перейти к логам, оповещениям и очередям."
-      logs: "Логи"
+      description: "Как работает платформа: нагрузка и сбои за последние 24 часа, логи, фоновые очереди и состояние сервера."
+      tabs_label: "Разделы мониторинга"
+      tabs:
+        metrics: "Метрики"
+        logs: "Логи"
+        queues: "Очереди"
+        status: "Статус сервера"
       explore: "Explore в Grafana"
       alerts: "Оповещения"
-      queues: "Очереди Sidekiq"
       grafana: "Открыть Grafana"
       open_dashboard: "Открыть дашборд"
-      hint: "Здесь собрана общая картина работы платформы. Чтобы разобрать отдельный запрос или фоновую задачу, откройте «Логи» или Explore в Grafana."
-      frame_title: "Дашборд мониторинга в Grafana"
-
-    logs:
-      title: "Логи"
-      description: "События шлюза, запросы Rails и API, ошибки Sidekiq, активность ИИ-агентов и журналы сервисов за последние 24 часа."
-      monitoring: "Мониторинг"
-      alerts: "Оповещения"
-      queues: "Очереди Sidekiq"
-      explore: "Explore в Grafana"
-      open_dashboard: "Открыть дашборд логов"
-      hint: "Режим оперативной диагностики: важные инциденты, трафик API-шлюза, фоновые задачи, работа языковых моделей и потоки системных сервисов."
-      frame_title: "Дашборд логов в Grafana"
+      open_logs_dashboard: "Открыть дашборд логов"
+      metrics_hint: "Здесь собрана общая картина работы платформы. Чтобы разобрать отдельный запрос или фоновую задачу, откройте вкладку «Логи» или Explore в Grafana."
+      metrics_frame_title: "Дашборд метрик в Grafana"
+      logs_hint: "Режим оперативной диагностики: важные инциденты, трафик API-шлюза, фоновые задачи, работа языковых моделей и потоки системных сервисов за последние 24 часа."
+      logs_frame_title: "Дашборд логов в Grafana"
+      open_sidekiq: "Открыть Sidekiq"
+      queues_unavailable: "Не удалось прочитать очереди: нет связи с Redis. Откройте вкладку «Статус сервера»."
+      sidekiq_frame_title: "Консоль Sidekiq"
+      sidekiq_note: "Консоль Sidekiq на английском языке. Из неё можно повторить упавшие задачи, удалить мёртвые и остановить очередь."
+      queue_stats:
+        busy: "Выполняется"
+        enqueued: "В очереди"
+        scheduled: "Отложено"
+        retries: "На повторе"
+        dead: "Мёртвые задачи"
+        latency: "Самое долгое ожидание"
+        seconds:
+          one: "%{count} секунда"
+          few: "%{count} секунды"
+          many: "%{count} секунд"
+          other: "%{count} секунды"
+      queue_list:
+        title: "Очереди"
+        hint: "Сначала те, где больше задач. Ожидание — сколько ждёт самая старая задача очереди."
+        name: "Очередь"
+        size: "Задач"
+        latency: "Ожидание"
 
     # The states in the table of the dashboard (SuperAdmin::HealthMatrixService); a count takes the form of its noun
     health_matrix:
@@ -86,8 +104,6 @@ ru:
         last_event: "Последнее событие"
 
     instance_status:
-      title: "Статус сервера"
-      description: "Версия OneLink, база данных PostgreSQL и Redis."
       unlimited: "Без лимита"
       sections:
         platform: "Платформа"

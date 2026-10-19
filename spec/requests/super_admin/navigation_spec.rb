@@ -41,7 +41,7 @@ RSpec.describe 'Super Admin sidebar', type: :request do
     it 'lists the clinics, AI and system entries' do
       expect(link_texts(group('clinics'))).to eq(%w[Сводка Организации Аккаунты Пользователи])
       expect(link_texts(group('ai'))).to eq(['Модели ИИ', 'AI-аналитика'])
-      expect(link_texts(group('system')).first(6)).to eq(['Мониторинг', 'Логи', 'Очереди', 'Статус сервера', 'Журнал аудита', 'Push-диагностика'])
+      expect(link_texts(group('system')).first(3)).to eq(['Мониторинг', 'Журнал аудита', 'Push-диагностика'])
       expect(link_texts(group('system'))).to include('Настройки')
       expect(link_texts(group('extra'))).to eq(['Доступ по API для партнёров', 'Баннеры', 'Каналы'])
     end
@@ -55,8 +55,6 @@ RSpec.describe 'Super Admin sidebar', type: :request do
         'Модели ИИ' => '/super_admin/app_config?config=captain',
         'AI-аналитика' => '/super_admin/captain_observability',
         'Мониторинг' => '/super_admin/monitoring',
-        'Логи' => '/super_admin/logs',
-        'Статус сервера' => '/super_admin/instance_status',
         'Журнал аудита' => '/super_admin/audits',
         'Push-диагностика' => '/super_admin/push_diagnostics',
         'Настройки' => '/super_admin/settings',
@@ -68,8 +66,11 @@ RSpec.describe 'Super Admin sidebar', type: :request do
       end
     end
 
-    it 'sends the queues entry to Sidekiq' do
-      expect(link('Очереди')['href']).to end_with('/monitoring/sidekiq')
+    it 'has one entry for the monitoring: logs, queues and the server status are its tabs' do
+      expect(link('Логи')).to be_nil
+      expect(link('Очереди')).to be_nil
+      expect(link('Статус сервера')).to be_nil
+      expect(nav.css('a').pluck('href')).not_to include(a_string_matching(%r{/monitoring/sidekiq|/super_admin/logs|/super_admin/instance_status}))
     end
 
     it 'ends with the way back to the operator cabinet and the sign-out' do
@@ -91,7 +92,7 @@ RSpec.describe 'Super Admin sidebar', type: :request do
     it 'draws icons with Tailwind icon classes instead of the SVG sprite' do
       expect(nav.css('use')).to be_empty
       icons = nav.css('a span[class*="i-lucide-"]')
-      expect(icons.size).to be >= 14
+      expect(icons.size).to be >= 12
       expect(icons.map { |icon| icon['aria-hidden'] }.uniq).to eq(['true'])
     end
 
@@ -198,8 +199,9 @@ RSpec.describe 'Super Admin sidebar', type: :request do
     it 'marks the system pages' do
       {
         '/super_admin/monitoring' => 'Мониторинг',
-        '/super_admin/logs' => 'Логи',
-        '/super_admin/instance_status' => 'Статус сервера',
+        '/super_admin/monitoring?tab=logs' => 'Мониторинг',
+        '/super_admin/monitoring?tab=queues' => 'Мониторинг',
+        '/super_admin/monitoring?tab=status' => 'Мониторинг',
         '/super_admin/audits' => 'Журнал аудита',
         '/super_admin/push_diagnostics' => 'Push-диагностика',
         '/super_admin/captain_observability' => 'AI-аналитика'

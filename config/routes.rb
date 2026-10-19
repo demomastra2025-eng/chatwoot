@@ -1069,10 +1069,11 @@ Rails.application.routes.draw do
         post :reissue_token, on: :member
       end
       resources :platform_banners, only: [:index, :new, :create, :show, :edit, :update, :destroy]
-      resource :instance_status, only: [:show]
+      # One page in tabs (?tab=metrics|logs|queues|status); the pages it replaced redirect to their tab
       resource :monitoring, only: [:show]
+      get 'logs', to: redirect('/super_admin/monitoring?tab=logs')
+      get 'instance_status', to: redirect('/super_admin/monitoring?tab=status')
       resource :captain_observability, only: [:show], controller: 'captain_observability'
-      get 'logs', to: 'logs#show', as: :logs
 
       resource :settings, only: [:show] do
         get :refresh, on: :collection

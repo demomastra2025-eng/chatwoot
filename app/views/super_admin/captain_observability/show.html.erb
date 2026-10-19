@@ -27,7 +27,7 @@ in Russian, times are Astana time, amounts are US dollars.
 
 <%= render layout: 'super_admin/shared/page_header', locals: { title: content_for(:title), description: t('super_admin.ai_analytics.description') } do %>
   <%= link_to t('super_admin.ai_analytics.monitoring'), super_admin_monitoring_path, class: 'button button--secondary' %>
-  <%= link_to t('super_admin.ai_analytics.logs'), super_admin_logs_path, class: 'button button--secondary' %>
+  <%= link_to t('super_admin.ai_analytics.logs'), super_admin_monitoring_path(tab: 'logs'), class: 'button button--secondary' %>
 <% end %>
 
 <section class="main-content__body flex flex-col gap-5">
