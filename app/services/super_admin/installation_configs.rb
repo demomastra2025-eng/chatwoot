@@ -4,15 +4,16 @@
 #
 # * A secret (a key, a token, a password, a credentials file) is NEVER printed, not even in part: the pages say only
 #   whether it is set. What counts as a secret: the type `secret` in config/installation_config.yml, a name that ends
-#   like one (…_SECRET, …_API_KEY, …_TOKEN, FIREBASE_CREDENTIALS), and any row the catalogue does not know (an unknown
-#   row can hold anything).
+#   like one (…_SECRET, …_API_KEY, …_TOKEN, FIREBASE_CREDENTIALS), a webhook URL (a Discord or Slack webhook is a
+#   credential itself: whoever has the URL can post), and any row the catalogue does not know (an unknown row can
+#   hold anything).
 # * Another value is shown as it is, cut to VALUE_LIMIT characters.
 # * Every parameter that a settings page edits knows that page (`page_for`), so the read-only list links to it.
 module SuperAdmin::InstallationConfigs
   # The one thing a screen shows of a value: a kind and a text
   Display = Struct.new(:kind, :text, keyword_init: true)
 
-  SECRET_NAME_PATTERN = /(SECRET|PASSWORD|PASSPHRASE|API_KEY|PRIVATE_KEY|ACCESS_KEY|SERVER_KEY|CREDENTIALS?|HMAC_KEY|_TOKEN)\z/
+  SECRET_NAME_PATTERN = /(SECRET|PASSWORD|PASSPHRASE|API_KEY|PRIVATE_KEY|ACCESS_KEY|SERVER_KEY|CREDENTIALS?|HMAC_KEY|_TOKEN|WEBHOOK_URL)\z/
   VALUE_LIMIT = 120
   CATALOGUE_FILES = [
     Rails.root.join('config/installation_config.yml'),

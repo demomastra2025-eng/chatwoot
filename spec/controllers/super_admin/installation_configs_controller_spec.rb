@@ -52,6 +52,18 @@ RSpec.describe 'Super Admin Installation Config API', type: :request do
         end
       end
 
+      it 'treats a webhook URL as a secret: whoever has the URL can post to the channel' do
+        upsert_installation_config('ACCOUNT_SECURITY_NOTIFICATION_WEBHOOK_URL', 'https://discord.com/api/webhooks/123/hook-token-ABCDEF', locked: false)
+        upsert_installation_config('INSTALLATION_EVENTS_WEBHOOK_URL', 'https://hooks.example.test/services/T0/B0/hook-token-GHIJKL', locked: false)
+
+        get '/super_admin/installation_configs'
+
+        expect(response.body).not_to include('hook-token-ABCDEF', 'hook-token-GHIJKL', 'discord.com/api/webhooks')
+        %w[ACCOUNT_SECURITY_NOTIFICATION_WEBHOOK_URL INSTALLATION_EVENTS_WEBHOOK_URL].each do |name|
+          expect(row_of(name).at_css('[data-testid="config-secret"]').text.squish).to eq('задан')
+        end
+      end
+
       it 'does not even print the last characters of a secret' do
         upsert_installation_config('FB_APP_SECRET', 'secret-ending-in-QWERTY', locked: false)
 

@@ -15,6 +15,12 @@ RSpec.describe SuperAdmin::InstallationConfigs do
       end
     end
 
+    it 'is true for a webhook URL, which is a credential itself (whoever has the URL can post to the channel)' do
+      %w[ACCOUNT_SECURITY_NOTIFICATION_WEBHOOK_URL INSTALLATION_EVENTS_WEBHOOK_URL SOME_SLACK_WEBHOOK_URL].each do |name|
+        expect(described_class.secret?(name)).to be(true), name
+      end
+    end
+
     it 'is false for an ordinary parameter and for a switch that only has a secret-like name' do
       expect(described_class.secret?('FB_APP_ID')).to be(false)
       expect(described_class.secret?('ENABLE_ACCOUNT_SIGNUP')).to be(false)
