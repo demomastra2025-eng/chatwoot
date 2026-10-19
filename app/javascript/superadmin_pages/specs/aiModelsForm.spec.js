@@ -97,7 +97,11 @@ describe('initSettingsForm', () => {
 
     build();
 
-    expect(Array.from(document.querySelectorAll('[data-revert]')).every(button => !button.hidden)).toBe(true);
+    expect(
+      Array.from(document.querySelectorAll('[data-revert]')).every(
+        button => !button.hidden
+      )
+    ).toBe(true);
   });
 
   it('shows no bar while nothing is changed', () => {
