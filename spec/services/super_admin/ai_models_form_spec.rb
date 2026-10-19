@@ -143,8 +143,8 @@ RSpec.describe SuperAdmin::AiModelsForm do
       ['{not json', '{"a": 1}', '[1]'].each do |value|
         result = form('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => value)
 
-        expect(result.errors['CAPTAIN_ASSISTANT_MODEL_ALLOWLIST']).to eq(['Список моделей не распознан. Обновите страницу и отметьте модели ещё раз.']),
-                                                                      value
+        expect(result.errors['CAPTAIN_ASSISTANT_MODEL_ALLOWLIST'])
+          .to eq(['Список моделей не распознан. Обновите страницу и отметьте модели ещё раз.']), value
       end
     end
 

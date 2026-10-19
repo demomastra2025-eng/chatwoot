@@ -47,11 +47,18 @@ RSpec.describe 'Super admin AI models page', type: :request do
   def checked_types = %w[checkbox radio]
 
   def pair_of(field)
-    return [field['name'], (field.at_css('option[selected]') || field.at_css('option'))&.[]('value').to_s] if field.name == 'select'
-    return [field['name'], field.text.delete_prefix("\n")] if field.name == 'textarea'
+    return select_pair(field) if field.name == 'select'
+    return [field['name'], field.text.delete_prefix("
+")] if field.name == 'textarea'
     return if checked_types.include?(field['type']) && field['checked'].nil?
 
     [field['name'], field['value'] || (field['type'] == 'checkbox' ? 'on' : '')]
+  end
+
+  # the chosen option, or the first one: what a browser sends for a select
+  def select_pair(field)
+    option = field.at_css('option[selected]') || field.at_css('option')
+    [field['name'], option ? option['value'].to_s : '']
   end
 
   # Post the form with some of its controls replaced: { 'app_config[KEY]' => 'value' } or an Array for a list
