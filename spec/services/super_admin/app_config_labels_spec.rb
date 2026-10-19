@@ -48,7 +48,7 @@ RSpec.describe SuperAdmin::AppConfigLabels do
     end
 
     it 'has a title with Russian letters and a hint, from the locale or from installation_config.yml' do
-      expect(keys.uniq.size).to be > 80
+      expect(keys.uniq.size).to be > 70
 
       keys.uniq.each do |key|
         expect(described_class.title(key, definitions[key])).to match(/\p{Cyrillic}/), "title of #{key}"

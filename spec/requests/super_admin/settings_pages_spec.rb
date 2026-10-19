@@ -418,8 +418,10 @@ RSpec.describe 'Super admin settings pages', type: :request do
   describe 'the pages of integrations the platform does not use' do
     removed = %w[linear notion shopify saml internal]
 
+    # A page that raises «not found» does not commit the session, so every request signs in again
     it 'are not found, and do not show the general settings under their name' do
       removed.each do |config|
+        sign_in(super_admin, scope: :super_admin)
         get "/super_admin/app_config?config=#{config}"
 
         expect(response).to have_http_status(:not_found), "#{config}: #{response.status} #{response.body.first(300)}"
@@ -429,6 +431,7 @@ RSpec.describe 'Super admin settings pages', type: :request do
 
     it 'cannot be saved' do
       removed.each do |config|
+        sign_in(super_admin, scope: :super_admin)
         expect { post "/super_admin/app_config?config=#{config}", params: { app_config: { LINEAR_CLIENT_ID: 'x', DASHBOARD_SCRIPTS: '<script>' } } }
           .not_to change(InstallationConfig, :count)
 
