@@ -131,7 +131,7 @@ class SuperAdmin::AiModelOptions
     with_snapshots do
       model_id = Llm::Models.canonical_model_name(model_id)
       offered = candidates(SLOT_FEATURES.fetch(key, []))
-      option_for(model_id, unavailable: !offered.include?(model_id))
+      option_for(model_id, unavailable: offered.exclude?(model_id))
     end
   end
 

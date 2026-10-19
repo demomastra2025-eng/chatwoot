@@ -160,7 +160,8 @@ RSpec.describe SuperAdmin::AiModelOptions do
     end
 
     it 'describes a model the list does not offer with its mark' do
-      expect(options.describe('vendor/gone', key: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')).to have_attributes(id: 'vendor/gone', note: 'нет в каталоге', reason: :not_in_catalog)
+      expect(options.describe('vendor/gone', key: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST'))
+        .to have_attributes(id: 'vendor/gone', note: 'нет в каталоге', reason: :not_in_catalog)
       expect(options.describe('openai/gpt-6-luna', key: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST').reason).to be_nil
     end
   end

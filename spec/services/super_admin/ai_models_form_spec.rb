@@ -240,7 +240,8 @@ RSpec.describe SuperAdmin::AiModelsForm do
 
     it 'takes an address that starts with http or https' do
       expect(form('CAPTAIN_OPENROUTER_ENDPOINT' => 'https://openrouter.example/api/v1')).to be_valid
-      expect(form('CAPTAIN_OPENROUTER_ENDPOINT' => 'openrouter.example').errors['CAPTAIN_OPENROUTER_ENDPOINT']).to eq(['Адрес должен начинаться с http:// или https://'])
+      expect(form('CAPTAIN_OPENROUTER_ENDPOINT' => 'openrouter.example').errors['CAPTAIN_OPENROUTER_ENDPOINT'])
+        .to eq(['Адрес должен начинаться с http:// или https://'])
     end
 
     it 'does not check a number or an address that was not changed, even when it is stored in another shape' do
@@ -258,7 +259,8 @@ RSpec.describe SuperAdmin::AiModelsForm do
 
       result = form({ 'ACCOUNT_CAPTAIN_TOKENS_LIMIT' => '3 млн', 'CAPTAIN_OPENROUTER_ENDPOINT' => 'other.example' }, stored_values: stored_values)
 
-      expect(result.errors.keys).to contain_exactly('ACCOUNT_CAPTAIN_TOKENS_LIMIT', 'CAPTAIN_OPENROUTER_ENDPOINT')
+      expect(result.errors).to include('ACCOUNT_CAPTAIN_TOKENS_LIMIT', 'CAPTAIN_OPENROUTER_ENDPOINT')
+      expect(result.errors.size).to eq(2)
     end
 
     it 'ignores what is not a setting of the page' do

@@ -70,7 +70,7 @@ class SuperAdmin::AiModelsForm
 
   # One line per change, for the message after a save: «Проверка безопасности ответов: GPT-5.4 → встроенная»
   def summary
-    @changes.map { |change| describe(change) }
+    @changes.map { |change| SuperAdmin::AiModelsChangeText.new(change).to_s }
   end
 
   private
@@ -236,43 +236,5 @@ class SuperAdmin::AiModelsForm
 
   def add_error(key, message)
     (@errors[key] ||= []) << message
-  end
-
-  def describe(change)
-    title = SuperAdmin::AppConfigLabels.title(change.key, SuperAdmin::InstallationConfigs.definitions[change.key])
-    return I18n.t("#{SCOPE}.changed.secret", title: title) if change.secret
-
-    detail = case change.key
-             when ALLOWLIST then list_change(change)
-             when PROMPTS then I18n.t("#{SCOPE}.changed.prompts")
-             else single_change(change)
-             end
-    "#{title}: #{detail}"
-  end
-
-  def single_change(change)
-    return "#{value_text(change.old, change.key)} → #{value_text(change.new, change.key)}" if model_key?(change.key)
-
-    change.new.to_s.presence ? I18n.t("#{SCOPE}.changed.value") : I18n.t("#{SCOPE}.changed.cleared")
-  end
-
-  def list_change(change)
-    I18n.t("#{SCOPE}.changed.list", before: list_size_text(change.old), after: list_size_text(change.new))
-  end
-
-  # «3», or «рекомендуемый (5)» for a blank list: the platform shows its recommended models then
-  def list_size_text(raw)
-    models = Llm::InstallationModelConfig.parse_models(raw).to_a
-    return models.size.to_s if models.any?
-
-    I18n.t("#{SCOPE}.changed.list_recommended", count: Llm::Models::DEFAULT_CURATED_MODELS.size)
-  end
-
-  def model_key?(key)
-    SuperAdmin::AiModelsPage::MODEL_KEYS.include?(key)
-  end
-
-  def value_text(model_id, _key)
-    SuperAdmin::AiModelOptions.name_of(model_id) || I18n.t("#{SCOPE}.changed.builtin")
   end
 end
