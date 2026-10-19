@@ -7,8 +7,9 @@ RSpec.describe SuperAdmin::AiModelsForm do
   let(:confirmed) { false }
   let(:super_admin) { create(:super_admin) }
 
-  def form(submitted, stored_values: stored)
-    described_class.new(submitted: submitted, stored: stored_values, keys: keys, masked_keys: masked, confirmed_embedding: confirmed)
+  # form('KEY' => 'value') or form({ 'KEY' => 'value' }, stored_values: { ... })
+  def form(submitted = nil, stored_values: stored, **inline)
+    described_class.new(submitted: submitted || inline, stored: stored_values, keys: keys, masked_keys: masked, confirmed_embedding: confirmed)
   end
 
   def changed(form_object)

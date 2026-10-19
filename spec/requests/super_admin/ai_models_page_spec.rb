@@ -7,12 +7,16 @@ require 'rails_helper'
 # the way a browser without scripts posts it (every control of the form, as drawn), so what is tested is the page itself.
 RSpec.describe 'Super admin AI models page', type: :request do
   let(:super_admin) { create(:super_admin, name: 'Айдар') }
-  let(:page) { Nokogiri::HTML(response.body) }
   let(:url) { '/super_admin/app_config?config=captain' }
 
   before do
     allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
     sign_in(super_admin, scope: :super_admin)
+  end
+
+  # the page of the last response (it changes with every request, so it is not memoized)
+  def page
+    Nokogiri::HTML(response.body)
   end
 
   def text(node)
@@ -38,7 +42,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
 
       case field.name
       when 'select' then [field['name'], (field.at_css('option[selected]') || field.at_css('option'))&.[]('value').to_s]
-      when 'textarea' then [field['name'], field.text]
+      when 'textarea' then [field['name'], field.text.delete_prefix("\n")]
       else
         next if %w[checkbox radio].include?(field['type']) && field['checked'].nil?
 
@@ -87,7 +91,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
     it 'writes the name and the badges of a model in the option, and gives the script what it needs to draw it' do
       option = page.at_css('select[name="app_config[CAPTAIN_IMAGE_RECOGNITION_MODEL]"] option[value="openai/gpt-6-luna"]')
 
-      expect(text(option)).to eq('GPT-6 Luna · цена не указана · картинки, инструменты, рассуждение')
+      expect(text(option)).to eq('GPT-6 Luna · картинки, инструменты, рассуждение')
       expect(option['data-name']).to eq('GPT-6 Luna')
       expect(option['data-badges']).to eq('картинки,инструменты,рассуждение')
       expect(option['data-provider']).to eq('OpenAI')
@@ -239,7 +243,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
       submit_form('app_config[CAPTAIN_MODERATION_MODEL]' => 'openai/gpt-oss-safeguard-20b', 'app_config[CAPTAIN_IMAGE_RECOGNITION_MODEL]' => 'vendor/typo',
                   'app_config[ACCOUNT_CAPTAIN_TOKENS_LIMIT]' => '2 млн')
 
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
       expect(stored('CAPTAIN_MODERATION_MODEL')).not_to eq('openai/gpt-oss-safeguard-20b')
       expect(Audited::Audit.where(action: SuperAdmin::AppConfigSaver::AUDIT_ACTION)).to be_empty
       expect(text(page.at_css('.flash-alert'))).to eq('Ничего не сохранено: исправьте 2 настройки, они отмечены красным.')
@@ -262,7 +266,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
     it 'refuses a default model that the list saved with it does not hold, in the card of the agent' do
       submit_form('app_config[CAPTAIN_DEFAULT_MODEL]' => 'openai/gpt-5.6-luna')
 
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
       expect(refused('CAPTAIN_DEFAULT_MODEL')).to include('должна быть в коротком списке')
       expect(stored('CAPTAIN_DEFAULT_MODEL')).to eq('openai/gpt-6-luna')
     end
@@ -270,7 +274,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
     it 'does not print a secret that was typed into a form that was refused' do
       submit_form('app_config[CAPTAIN_FIRECRAWL_API_KEY]' => 'fc-typed-secret', 'app_config[CAPTAIN_IMAGE_RECOGNITION_MODEL]' => 'vendor/typo')
 
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).not_to include('fc-typed-secret')
       expect(stored('CAPTAIN_FIRECRAWL_API_KEY')).not_to eq('fc-typed-secret')
     end
@@ -358,10 +362,10 @@ RSpec.describe 'Super admin AI models page', type: :request do
     it 'is not changed without the tick, and the block opens to show why' do
       submit_form('app_config[CAPTAIN_EMBEDDING_MODEL]' => '')
 
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
       expect(stored('CAPTAIN_EMBEDDING_MODEL')).to eq('vendor/old-embedding')
       expect(refused('CAPTAIN_EMBEDDING_MODEL')).to include('Я понимаю последствия')
-      expect(page.at_css('details#ai-developer')['open']).to be_present
+      expect(page.at_css('details#ai-developer').has_attribute?('open')).to be(true)
     end
 
     it 'is changed with the tick' do
@@ -397,7 +401,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
       template = page.at_css('[data-prompts-builder] template')
 
       expect(text(template.at_css('[data-role="confirm"]'))).to include('Удалить это правило?', 'Да, удалить', 'Отмена')
-      expect(template.at_css('[data-role="confirm"]')['hidden']).to be_present
+      expect(template.at_css('[data-role="confirm"]').has_attribute?('hidden')).to be(true)
     end
 
     it 'are saved from the field of the builder, and a group or a place typed by hand is refused' do
@@ -409,7 +413,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
 
       open_page
       submit_form('app_config[CAPTAIN_SYSTEM_PROMPTS]' => [rule.merge(group: 'Строгие правила (моя)')].to_json)
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
       expect(refused('CAPTAIN_SYSTEM_PROMPTS')).to eq('Правило 1: группа «Строгие правила (моя)» не из списка. Выберите группу из списка.')
     end
   end
@@ -420,7 +424,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
     it 'has the sticky bar of changes, hidden until something changes, and a plain save button for a page without a script' do
       bar = page.at_css('form#ai-models-form [data-savebar]')
 
-      expect(bar['hidden']).to be_present
+      expect(bar.has_attribute?('hidden')).to be(true)
       expect(text(bar)).to include('Отменить', 'Сохранить')
       expect(page.at_css('form#ai-models-form [data-static-save] input[type="submit"]')['value']).to eq('Сохранить настройки')
     end

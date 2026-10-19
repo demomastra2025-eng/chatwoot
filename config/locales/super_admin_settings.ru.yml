@@ -136,7 +136,6 @@ ru:
           price_both: "вход %{price_in} / выход %{price_out} за 1 млн"
           price_one: "%{price} за 1 млн"
           free: "бесплатно"
-          price_unknown: "цена не указана"
           missing_hint: "Эта модель сохранена, но её %{reason}. Она останется выбранной, пока вы не выберете другую."
           missing_reason_not_in_catalog: "нет в каталоге"
           missing_reason_not_fit: "сейчас нельзя использовать для этой функции"

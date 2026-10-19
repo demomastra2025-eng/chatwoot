@@ -19,9 +19,9 @@ RSpec.describe SuperAdmin::AiModelOptions do
       expect(described_class.price_text(BigDecimal('0.02'), BigDecimal(0))).to eq('$0,02 за 1 млн')
     end
 
-    it 'says «бесплатно» and «цена не указана» in words' do
+    it 'says «бесплатно» in words, and writes nothing for a model without a price' do
       expect(described_class.price_text(BigDecimal(0), BigDecimal(0))).to eq('бесплатно')
-      expect(described_class.price_text(nil, nil)).to eq('цена не указана')
+      expect(described_class.price_text(nil, nil)).to be_nil
     end
   end
 
@@ -78,7 +78,7 @@ RSpec.describe SuperAdmin::AiModelOptions do
     it 'writes the whole option as plain text for a list without a script' do
       luna = options.choices_for('CAPTAIN_DEFAULT_MODEL').groups.flat_map(&:last).find { |option| option.id == 'openai/gpt-6-luna' }
 
-      expect(luna.label).to eq('GPT-6 Luna · цена не указана · картинки, инструменты, рассуждение')
+      expect(luna.label).to eq('GPT-6 Luna · картинки, инструменты, рассуждение')
     end
 
     it 'offers for the default model only what fits the agent, the editor and the copilot' do
@@ -119,7 +119,7 @@ RSpec.describe SuperAdmin::AiModelOptions do
                                                                                  price_text: 'вход $3 / выход $15 за 1 млн')
       expect(option(choices, 'alpha-ai/alpha-2').price_text).to eq('вход $0,15 / выход $0,6 за 1 млн')
       expect(option(choices, 'zeta-ai/zeta-1').price_text).to eq('бесплатно')
-      expect(option(choices, 'vendor/no-price').price_text).to eq('цена не указана')
+      expect(option(choices, 'vendor/no-price').price_text).to be_nil
     end
 
     it 'shows the recommended models first and the rest under the company, companies in alphabetical order, models by name' do

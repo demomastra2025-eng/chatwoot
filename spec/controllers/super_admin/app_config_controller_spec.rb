@@ -293,7 +293,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           post '/super_admin/app_config?config=captain',
                params: { app_config: { CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: '["openai/gpt-6-luna", "vendor/not-in-catalog"]' } }
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(refused('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')).to include('vendor/not-in-catalog')
           expect(InstallationConfig.find_by(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')&.value).to eq('["openai/gpt-6-luna"]')
         end
@@ -305,7 +305,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           ['{not json', '{"model": "openai/gpt-6-luna"}', '[1, 2]'].each do |value|
             post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: value } }
 
-            expect(response).to have_http_status(:unprocessable_entity)
+            expect(response).to have_http_status(:unprocessable_content)
             expect(refused('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')).to include('Список моделей не распознан')
           end
           expect(InstallationConfig.find_by(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')&.value).to eq(original_value)
@@ -317,7 +317,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
 
           post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: models.to_json } }
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(refused('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')).to include("не больше #{limit} моделей")
         end
 
@@ -330,7 +330,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: '["openai/gpt-5.6-luna"]' } }
 
           expect(default_model).to eq('openai/gpt-6-luna')
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(refused('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')).to include(default_model)
           expect(Llm::Models.configured_model_allowlist).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
         end
@@ -352,7 +352,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           ['vendor/not-in-catalog', 'openai/gpt-4o-mini-transcribe', 'openai/gpt-5.6-luna'].each do |value|
             post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_DEFAULT_MODEL: value } }
 
-            expect(response).to have_http_status(:unprocessable_entity)
+            expect(response).to have_http_status(:unprocessable_content)
             expect(refused('CAPTAIN_DEFAULT_MODEL')).to include(value).or include('должна быть в коротком списке')
           end
           expect(InstallationConfig.find_by(name: 'CAPTAIN_DEFAULT_MODEL')&.value).to eq('openai/gpt-6-luna')
@@ -368,7 +368,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
                           CAPTAIN_LABEL_SUGGESTION_MODEL: 'openai/gpt-6-luna' }
           }
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(refused('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')).to include('openai/gpt-5.4')
           expect(refused('CAPTAIN_IMAGE_RECOGNITION_MODEL')).to include('vendor/not-in-catalog')
           expect(InstallationConfig.find_by(name: 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')&.value).to eq('openai/gpt-4o-mini-transcribe')

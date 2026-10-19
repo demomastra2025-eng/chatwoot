@@ -20,7 +20,7 @@ class SuperAdmin::AiModelOptions
       note.present?
     end
 
-    # «вход $0,15 / выход $0,60 за 1 млн», «бесплатно» or «цена не указана»
+    # «вход $0,15 / выход $0,60 за 1 млн» or «бесплатно»; nil when the catalog has no price (nothing is written then)
     def price_text
       SuperAdmin::AiModelOptions.price_text(price_in, price_out)
     end
@@ -62,10 +62,10 @@ class SuperAdmin::AiModelOptions
   PRICE_UNIT_TOKENS = 1_000_000
 
   class << self
-    # "вход $0,15 / выход $0,60 за 1 млн"
+    # "вход $0,15 / выход $0,60 за 1 млн"; nil for a model without a price
     def price_text(price_in, price_out)
       scope = 'super_admin.app_config.captain.models'
-      return I18n.t("#{scope}.price_unknown") if price_in.nil? && price_out.nil?
+      return if price_in.nil? && price_out.nil?
       return I18n.t("#{scope}.free") if price_in.to_d.zero? && price_out.to_d.zero?
       # an embedding model is paid for what it reads only
       return I18n.t("#{scope}.price_one", price: dollars(price_in || price_out)) if reads_only?(price_in, price_out)

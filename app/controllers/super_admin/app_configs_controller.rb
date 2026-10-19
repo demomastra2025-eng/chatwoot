@@ -171,7 +171,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   def render_ai_models_errors(form, errors)
     prepare_show(form: form)
     flash.now[:alert] = flash_text(:not_saved, count: errors.size)
-    render :show, status: :unprocessable_entity
+    render :show, status: :unprocessable_content
   end
 
   # The entries of config/installation_config.yml by name: display title, description, type, options

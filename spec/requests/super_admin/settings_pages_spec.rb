@@ -375,7 +375,7 @@ RSpec.describe 'Super admin settings pages', type: :request do
     it 'says in the card of the setting, in Russian, that a model is refused, and counts what was refused' do
       post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_DEFAULT_MODEL: 'vendor/not-in-catalog' } }
 
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
       expect(Nokogiri::HTML(response.body).at_css('.flash-alert').text.squish).to eq('Ничего не сохранено: исправьте 1 настройку, она отмечена красным.')
       message = Nokogiri::HTML(response.body).at_css('[data-error-for="CAPTAIN_DEFAULT_MODEL"]')
       expect(message.text.squish).to include('Модель «vendor/not-in-catalog» не найдена')
@@ -384,7 +384,7 @@ RSpec.describe 'Super admin settings pages', type: :request do
     it 'refuses system prompts that are not JSON, in Russian, in the card of the rules' do
       post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_SYSTEM_PROMPTS: '{not json' } }
 
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
       message = Nokogiri::HTML(response.body).at_css('[data-error-for="CAPTAIN_SYSTEM_PROMPTS"]')
       expect(message.text.squish).to eq('Правила не удалось прочитать. Обновите страницу и повторите.')
     end
