@@ -34,7 +34,8 @@ RSpec.describe 'Super Admin small fixes', type: :request do
     before { get '/super_admin/app_config?config=captain' }
 
     it 'starts a new prompt without a group, and says in Russian what the empty group means' do
-      expect(response.body).not_to include('Strict rules')
+      # «Strict rules» stays in the stored prompts (data); the script that adds a prompt does not name it
+      expect(page.css('script').map(&:text).join).not_to include('Strict rules')
       group = page.at_css('#captain-system-prompts-builder template [data-field="group"]')
       expect(group['placeholder']).to eq('Пусто — «Строгие правила»')
     end
