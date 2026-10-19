@@ -20,10 +20,11 @@ platform recommends. A model that was saved but has left the catalog is still in
   max = Llm::InstallationModelConfig::ALLOWLIST_LIMIT
   recommended = Llm::Models::DEFAULT_CURATED_MODELS
   stored_list = SuperAdmin::AiModelsPage.model_list(list_slot.value).map { |id| Llm::Models.canonical_model_name(id) }
-  configured_list = stored_list.any?
+  # the recommended models, saved as a list, are still «the recommended list»
+  configured_list = stored_list.any? && stored_list.sort != recommended.sort
   shown_list = SuperAdmin::AiModelsPage.model_list(list_slot.input).map { |id| Llm::Models.canonical_model_name(id) }.uniq
   shown_list = recommended.dup if shown_list.empty? && !list_slot.configured && !list_slot.invalid?
-  shown_default = default_slot.input.to_s.strip
+  shown_default = Llm::Models.canonical_model_name(default_slot.input.to_s.strip)
   # the models of the rows: the ticked ones in their order, the recommended ones that are not ticked, and the default one
   row_ids = (shown_list + recommended + stored_list + [shown_default].compact_blank).uniq
   rows = row_ids.map { |id| [id, options.describe(id, key: list_key)] }
@@ -60,7 +61,7 @@ platform recommends. A model that was saved but has left the catalog is still in
       </li>
       <% rows.each do |id, option| %>
         <% checked = shown_list.include?(id) %>
-        <li class="admin-checklist__row" data-row data-model-id="<%= id %>">
+        <li class="admin-checklist__row" data-row data-model-id="<%= id %>" data-model-name="<%= option.name %>">
           <label class="admin-checklist__model" for="allow_<%= id.parameterize %>">
             <input type="checkbox" name="app_config[<%= list_key %>][]" value="<%= id %>" id="allow_<%= id.parameterize %>" <%= 'checked' if checked %> data-list-check>
             <span class="admin-checklist__text">
@@ -109,7 +110,8 @@ platform recommends. A model that was saved but has left the catalog is still in
     <% next unless previous %>
     <p class="admin-slot__history" data-testid="slot-history" data-history-for="<%= history_slot.key %>">
       <% name = if history_slot.key == list_key
-                  previous.value.blank? ? t("#{scope}.agent.list_was_recommended") : t("#{scope}.agent.list_count", count: SuperAdmin::AiModelsPage.model_list(previous.value).size)
+                  earlier_list = SuperAdmin::AiModelsPage.model_list(previous.value)
+                  earlier_list.empty? || earlier_list.sort == recommended.sort ? t("#{scope}.agent.list_was_recommended") : t("#{scope}.agent.list_count", count: earlier_list.size)
                 else
                   previous.value.blank? ? t("#{scope}.status.was_builtin") : ai_model_name(previous.value)
                 end %>

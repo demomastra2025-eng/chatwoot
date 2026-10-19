@@ -13,8 +13,10 @@ by the first option.
 %>
 <%
   choices = slot.choices
-  shown = slot.input.to_s.strip
-  stored = slot.value.to_s.strip
+  # the options carry the names the lists use (`claude-sonnet-4-6`): a model saved under its old spelling (`claude-sonnet-4.6`)
+  # is matched by the same name, so that it stays selected and is not replaced by the first option when the form is sent
+  shown = Llm::Models.canonical_model_name(slot.input.to_s.strip)
+  stored = Llm::Models.canonical_model_name(slot.value.to_s.strip)
   known = choices.include?(shown) || shown.blank?
 %>
 <select name="app_config[<%= slot.key %>]" id="app_config_<%= slot.key %>" data-model-select data-stored="<%= stored %>" data-builtin-id="<%= choices.builtin_id %>"

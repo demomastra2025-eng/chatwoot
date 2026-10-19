@@ -15,7 +15,9 @@
 class SuperAdmin::AiModelOptions
   # price_in / price_out: US dollars for one million tokens (BigDecimal), nil when the catalog has no price.
   # badges: what the model can do, in Russian («картинки», «инструменты», «рассуждение»).
-  Option = Struct.new(:id, :name, :provider, :price_in, :price_out, :badges, :recommended, :note, keyword_init: true) do
+  # note: the mark of a saved model the list does not offer («нет в каталоге», «сейчас не подходит для этой функции»);
+  # reason: why it is not offered, :not_in_catalog or :not_fit (nil for a model the list offers).
+  Option = Struct.new(:id, :name, :provider, :price_in, :price_out, :badges, :recommended, :note, :reason, keyword_init: true) do
     def missing?
       note.present?
     end
@@ -129,7 +131,7 @@ class SuperAdmin::AiModelOptions
     with_snapshots do
       model_id = Llm::Models.canonical_model_name(model_id)
       offered = candidates(SLOT_FEATURES.fetch(key, []))
-      option_for(model_id, note: (offered.include?(model_id) ? nil : unavailable_note(model_id)))
+      option_for(model_id, unavailable: !offered.include?(model_id))
     end
   end
 
@@ -162,12 +164,15 @@ class SuperAdmin::AiModelOptions
     Llm::ProviderVisibilityPolicy.normal_captain_provider?(Llm::Models.provider_for(model_id))
   end
 
-  def option_for(model_id, note: nil)
+  # unavailable: the list does not offer the model (it is saved, so it is returned with a mark and the reason)
+  def option_for(model_id, unavailable: false)
     config = Llm::Models.model_config(model_id).to_h
+    reason = (config.present? ? :not_fit : :not_in_catalog) if unavailable
     Option.new(
       id: model_id, name: config['display_name'].presence || model_id, provider: self.class.provider_title(model_id),
       price_in: price_per_million(config.dig('pricing', 'prompt')), price_out: price_per_million(config.dig('pricing', 'completion')),
-      badges: badges_for(config), recommended: @recommended.include?(model_id), note: note
+      badges: badges_for(config), recommended: @recommended.include?(model_id),
+      note: (I18n.t("super_admin.app_config.captain.models.#{reason}") if reason), reason: reason
     )
   end
 
@@ -175,11 +180,7 @@ class SuperAdmin::AiModelOptions
   def missing_option(current, offered)
     return if current.blank? || offered.include?(current)
 
-    option_for(current, note: unavailable_note(current))
-  end
-
-  def unavailable_note(model_id)
-    I18n.t("super_admin.app_config.captain.models.#{Llm::Models.model_config(model_id).present? ? 'not_fit' : 'not_in_catalog'}")
+    option_for(current, unavailable: true)
   end
 
   # [[«Рекомендуемые», [...]], [«OpenAI», [...]], ...]

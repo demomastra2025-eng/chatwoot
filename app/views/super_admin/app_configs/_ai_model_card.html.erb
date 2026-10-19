@@ -2,7 +2,7 @@
 # A card of a model setting
 
 One function of the platform and the model it uses: the title and a one-line explanation, the list to pick the model from,
-what is in force («Используется встроенная: …» or «Вы выбрали: … — Вернуть встроенную»), what it was before the last
+what is in force («Используется встроенная: …» or «Выбрано: … — Вернуть встроенную»), what it was before the last
 change («Было: …, изменил … — Вернуть», from the audit log), and the error of the last save, if it was refused. The
 technical name of the setting shows only under «Показать технические имена».
 
@@ -13,7 +13,8 @@ technical name of the setting shows only under «Показать техниче
 <%
   scope = 'super_admin.app_config.captain'
   choices = slot.choices
-  stored = slot.value.to_s.strip
+  # the name the lists use: an old spelling of a model (`claude-sonnet-4.6`) is the same model as `claude-sonnet-4-6`
+  stored = Llm::Models.canonical_model_name(slot.value.to_s.strip)
   previous = slot.previous
 %>
 <div class="admin-slot <%= 'admin-slot--invalid' if slot.invalid? %>" data-config="<%= slot.key %>" data-source="<%= slot.configured ? 'set' : 'default' %>">
@@ -30,7 +31,7 @@ technical name of the setting shows only under «Показать техниче
 
   <% if choices.missing && choices.missing.id == stored %>
     <p class="admin-slot__warn" data-testid="slot-missing">
-      <%= t("#{scope}.models.missing_hint", reason: choices.missing.note) %>
+      <%= t("#{scope}.models.missing_hint_#{choices.missing.reason}") %>
     </p>
   <% end %>
 

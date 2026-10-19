@@ -11,6 +11,9 @@
 #   is (and does not stop the other settings from being saved); it is replaced only when the admin picks another one.
 # * The short list and the default model are checked together, against each other's NEW values, in one save: adding a
 #   model and making it the default is one step, and a default that is not on the list can not be built.
+# * The checklist never saves an empty list: a list with nothing ticked is refused («Отметьте хотя бы одну модель»), and the
+#   recommended models are saved as a list of those models when a list was saved before (a blank value would let accounts
+#   choose any model, while the page says the list limits them). A blank TEXT still clears the list, as it always did.
 # * The model of the knowledge base search is changed only on an explicit confirmation (`confirmed_embedding`): a new model
 #   makes the search worse until the bases are indexed again.
 # * A secret that is left empty keeps the stored value.
@@ -95,9 +98,9 @@ class SuperAdmin::AiModelsForm
     return check_number(key, value) if NUMBER_KEYS.include?(key)
     return check_endpoint(key, value) if key == ENDPOINT
 
-    # a browser sends the line breaks of a text area as CRLF: the text is the same text
+    # a browser sends the line breaks of a text area as CRLF, and the old page stored them that way: the text is the same text
     text = value.is_a?(String) ? value.gsub("\r\n", "\n") : value
-    change(key, text) unless text.to_s == @stored[key].to_s
+    change(key, text) unless text.to_s == @stored[key].to_s.gsub("\r\n", "\n")
   end
 
   # --- a model of one function ---------------------------------------------------------------------------------------
@@ -137,10 +140,20 @@ class SuperAdmin::AiModelsForm
     return stored_list unless @submitted.key?(ALLOWLIST)
 
     @submitted_list = Llm::InstallationModelConfig.parse_models(@submitted[ALLOWLIST])
-    return @submitted_list if @submitted_list
+    return add_list_error(:list_invalid) unless @submitted_list
+    return add_list_error(:list_empty) if nothing_ticked?
 
-    add_error(ALLOWLIST, I18n.t("#{SCOPE}.list_invalid"))
+    @submitted_list
+  end
+
+  def add_list_error(name)
+    add_error(ALLOWLIST, I18n.t("#{SCOPE}.#{name}"))
     nil
+  end
+
+  # The checklist was sent with no model ticked while a list is saved: the admin removed every model
+  def nothing_ticked?
+    @submitted[ALLOWLIST].is_a?(Array) && @submitted_list.empty? && stored_list.any?
   end
 
   def stored_list
@@ -166,13 +179,12 @@ class SuperAdmin::AiModelsForm
 
     # what is in force stays valid: the stored models, or the recommended list while none is stored
     trusted = stored_list.presence || Llm::Models::DEFAULT_CURATED_MODELS
-    # the recommended list is not a choice of models but «follow the recommended list» (an empty value):
-    # only its size and the default model are checked
+    # the models the platform recommends are its own choice: only their number and the default model are checked
     trusted = @submitted_list if recommended_list?
     result = Llm::InstallationModelConfig.normalize(ALLOWLIST, @submitted_list, default_model: default, trusted: trusted)
     return add_error(ALLOWLIST, result.error) unless result.valid?
 
-    change(ALLOWLIST, recommended_list? ? '' : result.value)
+    change(ALLOWLIST, result.value)
   end
 
   def recommended_list?
@@ -191,16 +203,19 @@ class SuperAdmin::AiModelsForm
 
   def check_number(key, value)
     digits = value.to_s.gsub(/[\s_]/, '')
+    # a value that was not changed is not checked: a stored value of another shape (set from a console) does not block the page
+    return if [value.to_s.strip, digits].include?(@stored[key].to_s.strip)
     return add_error(key, I18n.t("#{SCOPE}.number_invalid")) unless digits.match?(/\A\d*\z/)
 
-    change(key, digits) unless digits == @stored[key].to_s
+    change(key, digits)
   end
 
   def check_endpoint(key, value)
     text = value.to_s.strip
+    return if text == @stored[key].to_s.strip
     return add_error(key, I18n.t("#{SCOPE}.endpoint_invalid")) unless text.empty? || text.match?(%r{\Ahttps?://\S+\z})
 
-    change(key, text) unless text == @stored[key].to_s
+    change(key, text)
   end
 
   def check_prompts(value)
@@ -242,9 +257,15 @@ class SuperAdmin::AiModelsForm
   end
 
   def list_change(change)
-    before = Llm::InstallationModelConfig.parse_models(change.old).to_a.size
-    after = Llm::InstallationModelConfig.parse_models(change.new).to_a.size
-    I18n.t("#{SCOPE}.changed.list", before: before, after: after)
+    I18n.t("#{SCOPE}.changed.list", before: list_size_text(change.old), after: list_size_text(change.new))
+  end
+
+  # «3», or «рекомендуемый (5)» for a blank list: the platform shows its recommended models then
+  def list_size_text(raw)
+    models = Llm::InstallationModelConfig.parse_models(raw).to_a
+    return models.size.to_s if models.any?
+
+    I18n.t("#{SCOPE}.changed.list_recommended", count: Llm::Models::DEFAULT_CURATED_MODELS.size)
   end
 
   def model_key?(key)

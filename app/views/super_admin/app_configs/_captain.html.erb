@@ -25,6 +25,7 @@ small forms at the end of the page with the `form` attribute.
     changed: %w[one few many other].index_with { |form| t("#{scope}.savebar.changed.#{form}", count: '%{count}') },
     leave: t("#{scope}.savebar.leave"), counter: t("#{scope}.agent.counter", count: '%{count}', max: '%{max}'),
     too_many: t("#{scope}.agent.too_many", max: Llm::InstallationModelConfig::ALLOWLIST_LIMIT), keep_default: t("#{scope}.agent.keep_default"),
+    keep_one: t("#{scope}.agent.keep_one"), default_kept: t("#{scope}.agent.default_kept", name: '%{name}'),
     remove_confirm: t("#{scope}.prompts.remove_confirm"), remove_yes: t("#{scope}.prompts.remove_yes"), remove_no: t("#{scope}.prompts.remove_no"),
     prompt_title: t("#{scope}.prompts.title"), custom_group: t("#{scope}.prompts.custom_group", value: '%{value}'),
     custom_slot: t("#{scope}.prompts.custom_slot", value: '%{value}')
