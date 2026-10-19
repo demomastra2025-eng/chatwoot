@@ -152,22 +152,29 @@ RSpec.describe SuperAdmin::GlobalSearch do
   end
 
   describe 'the cost' do
+    let(:organization) { create(:organization, :with_requisites, name: 'Сезим холдинг') }
+
     def seed(count)
-      organization = create(:organization, :with_requisites, name: 'Сезим холдинг')
-      count.times do |index|
-        account = create(:account, name: "Сезим филиал #{index}", organization: organization)
-        create(:user, email: "sezim#{index}@example.test", name: "Сезим сотрудник #{index}", account: account)
+      count.times do
+        number = SecureRandom.hex(3)
+        account = create(:account, name: "Сезим филиал #{number}", organization: organization)
+        create(:user, email: "sezim#{number}@example.test", name: "Сезим сотрудник #{number}", account: account)
       end
     end
 
     it 'is the same for one match and for many' do
       seed(1)
-      few = sql_queries_during { search('сезим') }.size
+      few = sql_queries_during { search('сезим') }
       seed(11)
-      many = sql_queries_during { search('сезим') }.size
+      many = sql_queries_during { search('сезим') }
 
-      expect(many).to eq(few)
-      expect(many).to be <= 10
+      expect(many.size).to eq(few.size), "few:
+#{few.join("
+")}
+many:
+#{many.join("
+")}"
+      expect(many.size).to be <= 10
     end
   end
 end

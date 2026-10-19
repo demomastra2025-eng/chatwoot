@@ -60,7 +60,7 @@ RSpec.describe 'Super admin search', type: :request do
     context 'with a super admin' do
       let!(:alatau) { create(:account, name: 'Клиника «Алатау»') }
       let!(:organization) { create(:organization, :with_requisites, name: 'Алатау Медикал') }
-      let!(:ivan) { create(:user, email: 'ivan.alatau@example.test', name: 'Иван Петров', account: alatau) }
+      let!(:ivan) { create(:user, email: 'ivan@example.test', name: 'Иван Алатауов', account: alatau) }
 
       before { sign_in(super_admin, scope: :super_admin) }
 
@@ -74,7 +74,7 @@ RSpec.describe 'Super admin search', type: :request do
         expect(group(:accounts).at_css('a')['href']).to eq("/super_admin/accounts/#{alatau.id}")
         expect(group(:accounts).text).to include('Клиника «Алатау»', "##{alatau.id}")
         expect(group(:users).at_css('a')['href']).to eq("/super_admin/users/#{ivan.id}")
-        expect(group(:users).text).to include('ivan.alatau@example.test', 'Иван Петров', 'в 1 аккаунте')
+        expect(group(:users).text).to include('ivan@example.test', 'Иван Алатауов', 'в 1 аккаунте')
         expect(group(:organizations).at_css('a')['href']).to eq("/super_admin/organizations/#{organization.id}")
         expect(group(:organizations).text).to include('Алатау Медикал', "БИН #{organization.bin}")
       end
@@ -131,14 +131,19 @@ RSpec.describe 'Super admin search', type: :request do
       it 'costs the same number of queries for one match and for many' do
         alatau.update!(organization: organization) # the organizations of the accounts are read with one query, so one has one
         get '/super_admin/search', params: { q: 'алатау' }
-        few = sql_queries_during { get '/super_admin/search', params: { q: 'алатау' } }.size
+        few = sql_queries_during { get '/super_admin/search', params: { q: 'алатау' } }
         12.times do |index|
           account = create(:account, name: "Алатау филиал #{index}", organization: organization)
           create(:user, email: "alatau#{index}@example.test", name: "Алатау #{index}", account: account)
         end
-        many = sql_queries_during { get '/super_admin/search', params: { q: 'алатау' } }.size
+        many = sql_queries_during { get '/super_admin/search', params: { q: 'алатау' } }
 
-        expect(many).to eq(few)
+        expect(many.size).to eq(few.size), "few:
+#{few.join("
+")}
+many:
+#{many.join("
+")}"
       end
     end
   end
