@@ -124,7 +124,7 @@ RSpec.describe 'Super admin settings pages', type: :request do
 
       expect(agents['data-source']).to eq('set')
       status = agents.at_css('[data-testid="slot-status"]')
-      expect(text(status)).to include('Вы выбрали: GPT-5.6 Luna', 'Вернуть встроенную')
+      expect(text(status)).to include('Модель по умолчанию: GPT-5.6 Luna (выбрана вами).', 'Вернуть встроенную')
       expect(agents.at_css('input[type="radio"][value="openai/gpt-5.6-luna"]')['checked']).to be_present
     end
 
@@ -143,6 +143,7 @@ RSpec.describe 'Super admin settings pages', type: :request do
 
     it 'ticks the models of the short list and no others' do
       agents = card('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')
+      expect(text(agents.at_css('[data-testid="list-status"]'))).to eq('Список: задан вами.')
       ticked = agents.css('input[type="checkbox"][checked]').pluck('value')
 
       expect(ticked).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])

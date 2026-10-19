@@ -8,6 +8,12 @@
 
 @layer base {
   // ----------------------------------------------------------------- page
+  // The script shows and hides parts of the page with the `hidden` attribute; the buttons and badges of the design
+  // system set their own `display`, which would win over it.
+  .admin-ai [hidden] {
+    display: none !important;
+  }
+
   .admin-ai__toolbar {
     @apply flex flex-wrap items-center justify-between gap-3;
   }

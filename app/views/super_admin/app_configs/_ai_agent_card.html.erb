@@ -36,15 +36,16 @@ platform recommends. A model that was saved but has left the catalog is still in
 <div class="admin-slot admin-slot--wide <%= 'admin-slot--invalid' if invalid %>" data-config="<%= default_slot.key %> <%= list_key %>" data-source="<%= default_slot.configured ? 'set' : 'default' %>"
      data-allowlist data-max="<%= max %>" data-recommended="<%= recommended.to_json %>" data-testid="agent-models">
   <div class="admin-slot__head">
-    <p class="admin-slot__title"><%= t("#{scope}.agent.list_title") %></p>
+    <p class="admin-slot__title"><%= t("#{scope}.agent.card_title") %></p>
     <span class="admin-badge admin-badge--amber" data-unsaved-badge hidden><%= t("#{scope}.status.unsaved") %></span>
   </div>
   <p class="admin-slot__hint"><%= t("#{scope}.agent.list_hint", max: max) %></p>
+  <p class="admin-slot__hint"><%= t("#{scope}.agent.default_hint") %></p>
 
   <div class="admin-checklist" data-checklist>
     <input type="hidden" name="app_config[<%= list_key %>][]" value="">
     <div class="admin-checklist__head">
-      <span><%= t("#{scope}.agent.list_title") %> <span class="admin-checklist__counter" data-counter aria-live="polite"><%= t("#{scope}.agent.counter", count: shown_list.size, max: max) %></span></span>
+      <span><%= t("#{scope}.agent.list_head") %> <span class="admin-checklist__counter" data-counter aria-live="polite"><%= t("#{scope}.agent.counter", count: shown_list.size, max: max) %></span></span>
       <span><%= t("#{scope}.agent.default_column") %></span>
     </div>
 
@@ -52,7 +53,7 @@ platform recommends. A model that was saved but has left the catalog is still in
       <li class="admin-checklist__row admin-checklist__row--platform" data-row-platform>
         <span class="admin-checklist__model">
           <span class="admin-checklist__name"><%= t("#{scope}.agent.platform_default", name: default_options.builtin_name) %></span>
-          <span class="admin-checklist__meta"><%= default_slot.hint %></span>
+          <span class="admin-checklist__meta"><%= t("#{scope}.agent.platform_default_note") %></span>
         </span>
         <input type="radio" name="app_config[<%= default_slot.key %>]" value="" id="default_platform" <%= 'checked' if shown_default.blank? %>
                aria-label="<%= t("#{scope}.agent.platform_default", name: default_options.builtin_name) %>" data-default-radio>
@@ -93,13 +94,13 @@ platform recommends. A model that was saved but has left the catalog is still in
     </div>
   </div>
 
+  <p class="admin-slot__status" data-testid="list-status"><%= t("#{scope}.agent.#{configured_list ? 'list_custom' : 'list_recommended'}") %></p>
   <p class="admin-slot__status" data-testid="slot-status">
-    <%= t("#{scope}.agent.#{configured_list ? 'list_custom' : 'list_recommended'}") %>
     <% if default_slot.configured %>
-      <%= t("#{scope}.status.chosen", name: ai_model_name(default_slot.value)) %>
+      <%= t("#{scope}.agent.default_chosen", name: ai_model_name(default_slot.value)) %>
       <button type="button" class="admin-link-button reset-base" data-revert="<%= default_slot.key %>" data-revert-value="" hidden><%= t("#{scope}.status.revert_builtin") %></button>
     <% else %>
-      <%= t("#{scope}.status.builtin", name: default_options.builtin_name) %>
+      <%= t("#{scope}.agent.default_builtin", name: default_options.builtin_name) %>
     <% end %>
   </p>
 

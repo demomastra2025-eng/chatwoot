@@ -90,6 +90,16 @@ describe('initSettingsForm', () => {
     document.body.innerHTML = '';
   });
 
+  it('shows the buttons «Вернуть», which are hidden in the page the server draws', () => {
+    mount(page({ body: modelSelect({ selected: 'openai/gpt-6-luna' }) }));
+    const buttons = Array.from(document.querySelectorAll('[data-revert]'));
+    expect(buttons.every(button => button.hidden)).toBe(true);
+
+    build();
+
+    expect(Array.from(document.querySelectorAll('[data-revert]')).every(button => !button.hidden)).toBe(true);
+  });
+
   it('shows no bar while nothing is changed', () => {
     const { settings } = build();
 

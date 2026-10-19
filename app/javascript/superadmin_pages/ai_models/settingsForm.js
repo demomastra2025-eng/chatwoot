@@ -77,6 +77,10 @@ export const initSettingsForm = (
   const barText = form.querySelector('[data-savebar-text]');
   const cancel = form.querySelector('[data-savebar-cancel]');
   const forced = (page.dataset.unsavedKeys || '').split(/\s+/).filter(Boolean);
+  // «Вернуть встроенную» / «Вернуть» work only with the script: they are hidden until it runs
+  page.querySelectorAll('[data-revert][hidden]').forEach(button => {
+    button.hidden = false;
+  });
   let initial = snapshot(form);
   let submitting = false;
   let dirty = [];

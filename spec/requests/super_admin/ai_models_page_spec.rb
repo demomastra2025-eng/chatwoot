@@ -303,7 +303,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
     it 'offers «Вернуть встроенную» next to the model that was chosen' do
       status = card('CAPTAIN_DEFAULT_MODEL').at_css('[data-testid="slot-status"]')
 
-      expect(text(status)).to include('Вы выбрали: GPT-5.6 Luna', 'Вернуть встроенную')
+      expect(text(status)).to include('Модель по умолчанию: GPT-5.6 Luna (выбрана вами).', 'Вернуть встроенную')
       expect(status.at_css('button[data-revert="CAPTAIN_DEFAULT_MODEL"]')['data-revert-value']).to eq('')
     end
 
@@ -323,7 +323,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
       open_page
 
       expect(stored('CAPTAIN_DEFAULT_MODEL').to_s).to eq('')
-      expect(text(card('CAPTAIN_DEFAULT_MODEL').at_css('[data-testid="slot-status"]'))).to include('Используется встроенная: GPT-6 Luna')
+      expect(text(card('CAPTAIN_DEFAULT_MODEL').at_css('[data-testid="slot-status"]'))).to eq('Модель по умолчанию: GPT-6 Luna (встроенная).')
     end
 
     it 'puts an earlier short list back, whole' do
