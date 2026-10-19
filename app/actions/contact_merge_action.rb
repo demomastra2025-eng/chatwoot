@@ -50,10 +50,10 @@ class ContactMergeAction
   end
 
   def merge_communication_threads
-    bulk_reassign(
-      CommunicationThread.where(contact_id: @mergee_contact.id),
-      contact_id: @base_contact.id
-    )
+    Contacts::CommunicationThreadMergeService.new(
+      base_contact: @base_contact,
+      mergee_contact: @mergee_contact
+    ).perform
   end
 
   def merge_contact_notes
@@ -94,20 +94,10 @@ class ContactMergeAction
   end
 
   def merge_crm_deal_contacts
-    Crm::DealContact.where(contact_id: @mergee_contact.id, account_id: @account.id).find_each do |deal_contact|
-      existing_link = Crm::DealContact.find_by(deal_id: deal_contact.deal_id, contact_id: @base_contact.id)
-      if existing_link
-        merge_duplicate_deal_contact(existing_link, deal_contact)
-      else
-        deal_contact.update!(contact_id: @base_contact.id)
-      end
-    end
-  end
-
-  def merge_duplicate_deal_contact(existing_link, duplicate_link)
-    duplicate_was_primary = duplicate_link.primary?
-    duplicate_link.destroy!
-    existing_link.update!(primary: true) if duplicate_was_primary && !existing_link.primary?
+    Contacts::ChannelSyncMergeService.merge_crm_deal_contacts!(
+      base_contact: @base_contact,
+      mergee_contact: @mergee_contact
+    )
   end
 
   def merge_and_remove_mergee_contact
