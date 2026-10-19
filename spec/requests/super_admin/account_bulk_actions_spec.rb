@@ -104,7 +104,9 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
       stats = page.css("[data-testid='stat']").map { |stat| stat.text.squish }
       expect(stats).to eq(['Изменятся 2 аккаунтов', 'Будут пропущены 1 уже заблокирован — 1'])
       rows = page.css("[data-testid='bulk-entries'] tbody tr")
-      expect(rows.map { |row| [row['data-account-id'].to_i, row['data-outcome']] }).to eq([[first.id, 'change'], [second.id, 'change'], [blocked.id, 'skip']])
+      expect(rows.map { |row| [row['data-account-id'].to_i, row['data-outcome']] }).to eq(
+        [[first.id, 'change'], [second.id, 'change'], [blocked.id, 'skip']]
+      )
       expect(rows.first.css('td').map { |cell| cell.text.squish }).to eq(["Клиника «Алатау» ##{first.id}", 'Активен', 'Изменится Заблокирован'])
       expect(rows.last['data-reason']).to eq('already_suspended')
       expect(page.at_css("[data-testid='bulk-warning']").text).to include('Заблокированный аккаунт не обслуживает операторов')

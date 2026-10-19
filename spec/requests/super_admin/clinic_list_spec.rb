@@ -10,8 +10,9 @@ RSpec.describe 'Super Admin clinic list', type: :request do
     page.at_css("tr[data-account-id='#{account.id}']")
   end
 
+  # The cells of the account without the one that holds the tick of the bulk actions
   def cell(account, index)
-    row_of(account).css('td')[index]
+    row_of(account).css('td:not([data-bulk-cell])')[index]
   end
 
   def text(node)
@@ -46,7 +47,7 @@ RSpec.describe 'Super Admin clinic list', type: :request do
       get '/super_admin/accounts'
 
       headers = page.css('[data-testid="clinics-table"] thead th').map { |header| text(header) }
-      expect(headers).to eq(%w[Аккаунт Организация Тариф Операторы Хранилище Каналы Статус Действия])
+      expect(headers).to eq(['', *%w[Аккаунт Организация Тариф Операторы Хранилище Каналы Статус Действия]]) # the first holds the tick of «Выбрать все»
     end
 
     it 'shows an empty state when nothing matches' do

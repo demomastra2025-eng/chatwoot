@@ -271,7 +271,7 @@ RSpec.describe 'Super Admin organizations', type: :request do
 
         expect(found).to be_empty
         expect(response.body).to include('Ничего не найдено')
-        expect(page.at_css('input[type="search"]')['value']).to eq('999999999999')
+        expect(page.at_css('main input[type="search"]')['value']).to eq('999999999999')
       end
     end
 

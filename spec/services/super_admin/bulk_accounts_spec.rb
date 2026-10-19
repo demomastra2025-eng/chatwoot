@@ -70,7 +70,9 @@ RSpec.describe SuperAdmin::BulkAccounts do
       expect(result).to have_attributes(done: 1, skipped: { already_suspended: 1 })
       expect(active.reload).to be_suspended
       expect(audits(active).pluck(:action)).to eq(['suspend_account'])
-      expect(audits(active).first).to have_attributes(user_id: actor.id, comment: 'super_admin', audited_changes: { 'status' => %w[active suspended], 'bulk' => true })
+      expect(audits(active).first).to have_attributes(
+        user_id: actor.id, comment: 'super_admin', audited_changes: { 'status' => %w[active suspended], 'bulk' => true }
+      )
       expect(audits(suspended)).to be_empty
     end
 

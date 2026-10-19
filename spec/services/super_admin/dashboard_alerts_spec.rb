@@ -82,7 +82,9 @@ RSpec.describe SuperAdmin::DashboardAlerts do
     end
 
     it 'shows ten and counts all' do
-      create_list(:account, 12) { |account, index| account.update!(custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => (index + 1).hours.from_now.iso8601 }) }
+      create_list(:account, 12) do |account, index|
+        account.update!(custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => (index + 1).hours.from_now.iso8601 })
+      end
 
       found = alert('trials_ending')
 
@@ -163,7 +165,8 @@ RSpec.describe SuperAdmin::DashboardAlerts do
 
   describe 'the queues' do
     it 'raises a danger alert for a queue that has waited more than a minute' do
-      allow(SuperAdmin::QueueStats).to receive(:read).and_return(queue_stats(queues: [queue('default', 61), queue('mailers', 60), queue('low', 400, jobs: 9)]))
+      queues = [queue('default', 61), queue('mailers', 60), queue('low', 400, jobs: 9)]
+      allow(SuperAdmin::QueueStats).to receive(:read).and_return(queue_stats(queues: queues))
 
       found = alert('queues_slow')
 
@@ -213,7 +216,8 @@ RSpec.describe SuperAdmin::DashboardAlerts do
 
     it 'counts a WhatsApp channel that keeps the mark in its settings even when Redis lost it' do
       channel = whatsapp
-      channel.update_columns(provider_config: channel.provider_config.merge('reauthorization_required' => true)) # rubocop:disable Rails/SkipsModelValidations
+      config = channel.provider_config.merge('reauthorization_required' => true)
+      channel.update_columns(provider_config: config) # rubocop:disable Rails/SkipsModelValidations
 
       expect(alert('reauthorization')).to include(count: 1)
     end

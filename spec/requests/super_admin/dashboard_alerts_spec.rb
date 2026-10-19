@@ -58,7 +58,8 @@ RSpec.describe 'Super admin «Сводка»: Требует внимания', 
   end
 
   it 'writes the name of an account as text' do
-    create(:account, name: '<img src=x onerror=alert(1)>', custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => 1.day.from_now.iso8601 })
+    create(:account, name: '<img src=x onerror=alert(1)>',
+                     custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => 1.day.from_now.iso8601 })
 
     get '/super_admin'
 

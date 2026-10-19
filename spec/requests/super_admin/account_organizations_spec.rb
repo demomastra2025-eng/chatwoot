@@ -455,11 +455,11 @@ RSpec.describe 'Super Admin account organizations', type: :request do
       before { create(:account, name: 'Аккаунт Нур', organization: nur) }
 
       def names
-        page.css('[data-testid="clinics-table"] tbody tr[data-account-id] td:first-child a').map { |link| text(link) }
+        page.css('[data-testid="clinics-table"] tbody tr[data-account-id] td[data-bulk-cell] + td a').map { |link| text(link) }
       end
 
       def organization_cell(account)
-        page.at_css("tr[data-account-id='#{account.id}']").css('td')[1]
+        page.at_css("tr[data-account-id='#{account.id}']").css('td:not([data-bulk-cell])')[1]
       end
 
       describe 'the column' do
@@ -476,8 +476,8 @@ RSpec.describe 'Super Admin account organizations', type: :request do
           get '/super_admin/accounts'
 
           headers = page.css('[data-testid="clinics-table"] thead th').map { |header| text(header) }
-          expect(headers).to eq(%w[Аккаунт Организация Тариф Операторы Хранилище Каналы Статус Действия])
-          expect(text(page.at_css("tr[data-account-id='#{free.id}']").css('td')[2])).to eq('Не назначен')
+          expect(headers).to eq(['', *%w[Аккаунт Организация Тариф Операторы Хранилище Каналы Статус Действия]]) # the first holds the tick
+          expect(text(page.at_css("tr[data-account-id='#{free.id}']").css('td:not([data-bulk-cell])')[2])).to eq('Не назначен')
         end
 
         it 'costs the same number of queries for 2 and for 12 accounts with organizations' do

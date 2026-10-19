@@ -196,7 +196,7 @@ RSpec.describe 'Super Admin render smoke', type: :request do
       current = page.css('.segmented [aria-current="true"]')
       expect(current.size).to eq(1)
       expect(current.first['href']).to include('search=active')
-      expect(page.at_css('input[type="search"]')['value']).to eq('active: Smoke')
+      expect(page.at_css('main input[type="search"]')['value']).to eq('active: Smoke')
       expect(response.body).to include('Smoke clinic')
     end
 
