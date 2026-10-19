@@ -1,0 +1,13 @@
+<%#
+# What the edit form of an account was drawn from
+
+One hidden token per section (SuperAdmin::AccountFormState). The update refuses to save a section whose token no longer
+matches the account: somebody else changed it while the form was open.
+
+## Local variables:
+
+- `account`: the account (Account).
+%>
+<% SuperAdmin::AccountFormState.tokens_for(account, params[:form_state]).each do |section, token| %>
+  <%= hidden_field_tag "form_state[#{section}]", token, id: nil %>
+<% end %>

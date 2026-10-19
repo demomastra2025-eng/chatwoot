@@ -49,6 +49,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     # The organization of the account is changed through SuperAdmin::OrganizationLinks (see #update), never by the
     # generic save: it would leave an unsigned «update» entry in the audit log next to the signed one.
     permitted_params.delete(:organization_id)
+    drop_stale_form_sections!(permitted_params)
     # A request without `limits` (the «Тонкая настройка» switches of the card) must not wipe the limits of the clinic.
     permitted_params[:limits] = normalize_limits(permitted_params[:limits]) if permitted_params.key?(:limits)
     merge_selected_feature_flags!(permitted_params)
@@ -75,14 +76,18 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
 
   # The owner-decision switches of «Служебные» are saved with this update too; a change of one leaves an entry in the
   # audit log of the clinic.
+  # The organization and the sections of the form that were changed by somebody else while the form was open are left
+  # as they are (see SuperAdmin::AccountFormState and SuperAdmin::OrganizationLinks); the operator is told which.
   def update
     owner_changes = owner_decision_changes
     organization = submitted_organization
+    expected = expected_organization
     super
     return unless response.redirect?
 
     record_owner_decision_audit(owner_changes) if owner_changes.any?
-    save_submitted_organization(organization)
+    save_submitted_organization(organization, expected)
+    announce_stale_form_sections
   end
 
   # The select of the «Организация» block of the card: links the account to the organization, moves it to another one
@@ -91,8 +96,10 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     organization = submitted_organization
     return redirect_to([namespace, requested_resource], alert: organization_flash(:missing)) if organization.nil? || organization == :missing
 
-    notice = change_organization(requested_resource, organization) || organization_flash(:unchanged)
+    notice = change_organization(requested_resource, organization, expected_organization) || organization_flash(:unchanged)
     redirect_to [namespace, requested_resource], notice: notice
+  rescue SuperAdmin::OrganizationLinks::Refused => e
+    redirect_to [namespace, requested_resource], alert: organization_stale_flash(e.holder)
   end
 
   def seed
@@ -341,39 +348,98 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     Organization.find_by(id: value.strip) || :missing
   end
 
-  # The edit form saves the organization after the account itself, and only when the account was saved
-  def save_submitted_organization(organization)
+  # What the edit form drew the select with (`expected_organization_id`): ANY_HOLDER when the request does not say (it may
+  # move the account from wherever it is), nil for an account that had none, the Organization, or :missing for one that
+  # does not exist any more (or a value that is not a number).
+  def expected_organization
+    return SuperAdmin::OrganizationLinks::ANY_HOLDER unless params.key?(:expected_organization_id)
+
+    value = params[:expected_organization_id]
+    return :missing unless value.is_a?(String)
+    return nil if value.strip.empty?
+
+    Organization.find_by(id: value.strip) || :missing
+  end
+
+  # The edit form saves the organization after the account itself, and only when the account was saved. A select the
+  # operator left as it was drawn changes nothing (it must not undo a move made elsewhere meanwhile); a changed one is
+  # refused when the account is not where the form saw it.
+  def save_submitted_organization(organization, expected)
     return if organization.nil?
+    return if untouched_organization?(organization, expected)
 
     if organization == :missing
       flash[:alert] = organization_flash(:missing)
-    elsif (message = change_organization(requested_resource, organization))
+    elsif (message = change_organization(requested_resource, organization, expected))
       flash[:notice] = [flash[:notice], message].compact_blank.join(' ')
     end
+  rescue SuperAdmin::OrganizationLinks::Refused => e
+    flash[:alert] = [flash[:alert], organization_stale_flash(e.holder)].compact_blank.join(' ')
+  end
+
+  # The select was sent as it was drawn: «Без организации» for an account that had none, or the organization it had
+  def untouched_organization?(organization, expected)
+    return false if expected.equal?(SuperAdmin::OrganizationLinks::ANY_HOLDER) || expected == :missing
+
+    organization == :none ? expected.nil? : organization == expected
   end
 
   # Moves the account to the organization (:none unlinks it) through SuperAdmin::OrganizationLinks, which writes only the
   # foreign key and leaves the entries of the audit log on both sides with the super admin as the actor. The page this
   # request came from may be out of date, so the organization the account leaves is the one the links found under the
-  # lock of the account row (the account card and the edit form may move an account from wherever it is). Returns what
-  # to tell the operator, nil when the account was where it was asked to be.
-  def change_organization(account, target)
+  # lock of the account row. `expected` is the organization the page was drawn with: when the account is held by another
+  # one now, the links raise Refused and nothing changes. Returns what to tell the operator, nil when the account was where
+  # it was asked to be.
+  def change_organization(account, target, expected = SuperAdmin::OrganizationLinks::ANY_HOLDER)
+    raise SuperAdmin::OrganizationLinks::Refused, account.organization if expected == :missing
+
     links = SuperAdmin::OrganizationLinks.new(actor: current_super_admin, request: request)
-    if target == :none
-      result = links.unlink(account: account)
-      return unless result.changed?
+    return unlink_organization(links, account, expected) if target == :none
 
-      organization_flash(:unlinked, organization: result.previous.name)
-    else
-      result = links.link(account: account, organization: target)
-      return unless result.changed?
+    result = links.link(account: account, organization: target, expected_holder: expected)
+    return unless result.changed?
 
-      organization_flash(result.previous ? :moved : :linked, organization: target.name)
-    end
+    organization_flash(result.previous ? :moved : :linked, organization: target.name)
+  end
+
+  # An account that somebody else has already unlinked is where the operator wanted it; one moved to another organization
+  # is not what the page showed
+  def unlink_organization(links, account, expected)
+    result = links.unlink(account: account, expected_holder: expected)
+    result.changed? ? organization_flash(:unlinked, organization: result.previous.name) : nil
+  rescue SuperAdmin::OrganizationLinks::Refused => e
+    raise if e.holder
   end
 
   def organization_flash(key, **)
     I18n.t("super_admin.accounts.flashes.organization_#{key}", **)
+  end
+
+  # The account is held by someone else than the page said; `holder` is the organization that holds it now
+  def organization_stale_flash(holder)
+    organization_flash(:stale, holder: holder ? "«#{holder.name}»" : organization_flash(:stale_none))
+  end
+
+  # The sections of the edit form that changed while it was open (SuperAdmin::AccountFormState); they are not saved
+  def stale_form_sections
+    @stale_form_sections ||=
+      action_name == 'update' ? SuperAdmin::AccountFormState.stale_sections(requested_resource, params[:form_state]) : []
+  end
+
+  def drop_stale_form_sections!(permitted_params)
+    permitted_params.delete(:name) if stale_form_sections.include?('main')
+    permitted_params.delete(:locale) if stale_form_sections.include?('main')
+    permitted_params.delete(:status) if stale_form_sections.include?('main')
+    permitted_params.delete(:limits) if stale_form_sections.include?('limits')
+    permitted_params.delete(:limit_counter_excluded_user_ids_raw) if stale_form_sections.include?('limits')
+  end
+
+  def announce_stale_form_sections
+    return if stale_form_sections.empty?
+
+    sections = stale_form_sections.map { |section| I18n.t("super_admin.accounts.form_sections.#{section}") }
+    message = I18n.t('super_admin.accounts.flashes.form_stale', sections: sections.join(', '))
+    flash[:alert] = [flash[:alert], message].compact_blank.join(' ')
   end
 
   # The list can be narrowed to the accounts of one organization (`organization_id`, or `none` for the accounts that have
@@ -529,6 +595,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
 
   def merge_limit_counter_user_exclusions!(permitted_params)
     return unless params[:account]&.key?(:limit_counter_excluded_user_ids_raw)
+    return if stale_form_sections.include?('limits')
 
     normalized_ids = normalize_limit_counter_excluded_user_ids(
       params[:account][:limit_counter_excluded_user_ids_raw]
@@ -563,6 +630,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   def submitted_feature_states
     raw_features = params[:enabled_features]
     return {} unless raw_features.respond_to?(:to_unsafe_h)
+    return {} if stale_form_sections.include?('features')
 
     boolean_type = ActiveModel::Type::Boolean.new
     raw_features.to_unsafe_h.each_with_object({}) do |(feature_name, enabled), features|

@@ -36,6 +36,8 @@ posts to `link_organization`; changing or unlinking asks first. The plan, limits
     <div class="flex flex-col gap-1.5">
       <%= label_tag :organization_id, t('super_admin.accounts.organization.select_label'), class: 'text-xs text-n-slate-11' %>
       <%= select_tag :organization_id, options_for_select(options, organization&.id.to_s) %>
+      <%# What this page shows: a save that finds the account in another organization is refused. %>
+      <%= hidden_field_tag :expected_organization_id, organization&.id.to_s, id: nil %>
     </div>
     <div class="admin-block__footer">
       <%= submit_tag t('super_admin.shell.save'), name: nil, data: { confirm: confirm }.compact %>

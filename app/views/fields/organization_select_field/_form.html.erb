@@ -10,6 +10,9 @@
   # A form that comes back with errors keeps the organization that was picked, although it was not saved with the rest
   sent = params[:account]
   selected = sent.respond_to?(:key?) && sent.key?(:organization_id) ? sent[:organization_id].to_s : field.data.to_s
+  # The organization the page was first drawn with. A save that finds the account in another organization refuses the
+  # change instead of undoing a move made elsewhere in the meantime; a form that comes back with errors keeps it.
+  drawn = params.key?(:expected_organization_id) ? params[:expected_organization_id].to_s : field.data.to_s
 %>
 
 <div class="field-unit__label">
@@ -17,4 +20,5 @@
 </div>
 <div class="field-unit__field">
   <%= f.select(field.attribute, options_for_select(field.selectable_options, selected)) %>
+  <%= hidden_field_tag :expected_organization_id, drawn, id: nil %>
 </div>

@@ -116,6 +116,13 @@ ru:
         organization_unlinked: "Аккаунт отвязан от организации «%{organization}»."
         organization_unchanged: "Организация аккаунта не изменилась."
         organization_missing: "Выберите организацию из списка: такой организации нет."
+        organization_stale: "Организация аккаунта уже изменена: сейчас — %{holder}. Ваш выбор не применён: откройте страницу заново и повторите."
+        organization_stale_none: "без организации"
+        form_stale: "Пока форма была открыта, в аккаунте изменилось: %{sections}. Эти разделы не сохранены, чтобы не затереть чужие правки. Откройте форму заново и повторите."
+      form_sections:
+        main: "основное"
+        limits: "лимиты"
+        features: "функции"
 
     organizations:
       controller:
