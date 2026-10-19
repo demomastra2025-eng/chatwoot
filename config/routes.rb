@@ -1023,6 +1023,8 @@ Rails.application.routes.draw do
     namespace :super_admin do
       resources :audits, only: [:index]
       root to: 'dashboard#index'
+      # The search box of the header: accounts, users and organizations in one page
+      resource :search, only: [:show]
 
       resource :app_config, only: [:show, :create] do
         post :refresh_openrouter_models
@@ -1040,6 +1042,8 @@ Rails.application.routes.draw do
         post :link_account, on: :member
         delete :unlink_account, on: :member
       end
+      # A confirmation page («new») and the run («create») of an action on the accounts selected in the list
+      resources :account_bulk_actions, only: [:new, :create]
       resources :accounts, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
         post :seed, on: :member
         post :reset_cache, on: :member
