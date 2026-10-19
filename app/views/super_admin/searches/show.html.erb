@@ -1,0 +1,107 @@
+<%#
+# Search results
+
+What the search box of the header found: accounts (name, #number), users (e-mail, name) and organizations (name, БИН),
+at most ten of each. A group with more than ten says how many there are and links to the list of that kind, filtered by
+the same term («Показать все»).
+
+## Local variables (controller instance variables):
+
+- `@result`: the `SuperAdmin::GlobalSearch::Result` (the term, its state and the three groups).
+%>
+<% content_for(:title) do %><%= t('super_admin.search.title') %><% end %>
+
+<% result = @result %>
+<% statuses = { active: 'teal', suspended: 'amber', deleting: 'ruby' } %>
+
+<%= render layout: 'super_admin/shared/page_header', locals: { title: content_for(:title), description: (result.found? ? t('super_admin.search.results_for', query: result.term) : t('super_admin.search.description')) } do %><% end %>
+
+<section class="main-content__body" data-testid="search-results" data-search-state="<%= result.state %>">
+  <% if result.state == :blank %>
+    <div class="admin-notice" role="status" data-testid="search-hint"><%= t('super_admin.search.blank') %></div>
+  <% elsif result.state == :too_short %>
+    <div class="admin-notice admin-notice--amber" role="status" data-testid="search-hint"><%= t('super_admin.search.too_short') %></div>
+  <% elsif result.nothing? %>
+    <div class="admin-notice" role="status" data-testid="search-nothing"><%= t('super_admin.search.nothing', query: result.term) %></div>
+  <% else %>
+    <div class="flex flex-col gap-5">
+      <% result.groups.each do |group| %>
+        <% list_path = { accounts: super_admin_accounts_path(search: result.term), users: super_admin_users_path(search: result.term),
+                         organizations: super_admin_organizations_path(search: result.term) }.fetch(group.key) %>
+        <section class="admin-card" aria-labelledby="search-<%= group.key %>-title" data-testid="search-group-<%= group.key %>" data-total="<%= group.total %>">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-n-weak px-5 py-4">
+            <div class="flex items-center gap-2.5">
+              <h2 class="m-0 text-heading-2 text-n-slate-12" id="search-<%= group.key %>-title"><%= t("super_admin.search.groups.#{group.key}") %></h2>
+              <span class="admin-badge admin-badge--quiet tabular-nums"><%= super_admin_number(group.total) %></span>
+            </div>
+            <% if group.more? %>
+              <%= link_to t('super_admin.search.show_all', count: super_admin_number(group.total)), list_path, class: 'text-sm font-medium text-n-brand hover:underline', data: { testid: "search-all-#{group.key}" } %>
+            <% end %>
+          </div>
+
+          <% if group.empty? %>
+            <p class="m-0 px-5 py-4 text-sm text-n-slate-11"><%= t('super_admin.search.none_in_group') %></p>
+          <% else %>
+            <div class="admin-card--table">
+              <table aria-labelledby="search-<%= group.key %>-title">
+                <tbody>
+                  <% group.records.each do |record| %>
+                    <% if group.key == :accounts %>
+                      <tr data-account-id="<%= record.id %>">
+                        <td>
+                          <%= link_to record.name, super_admin_account_path(record), class: 'font-medium text-n-slate-12 hover:text-n-brand' %>
+                          <div class="text-xs tabular-nums text-n-slate-10">#<%= record.id %></div>
+                        </td>
+                        <td class="text-n-slate-11">
+                          <% if record.organization %>
+                            <%= link_to record.organization.name, super_admin_organization_path(record.organization), class: 'text-n-slate-11 hover:text-n-brand' %>
+                          <% else %>
+                            <span class="text-n-slate-10">—</span>
+                          <% end %>
+                        </td>
+                        <td class="text-end">
+                          <% status = SuperAdmin::AccountPlanState.new(record) %>
+                          <span class="admin-badge admin-badge--<%= statuses.fetch(status.status) %>"><%= status.status_label %></span>
+                        </td>
+                      </tr>
+                    <% elsif group.key == :users %>
+                      <tr data-user-id="<%= record.id %>">
+                        <td>
+                          <%= link_to record.email, super_admin_user_path(record), class: 'font-medium text-n-slate-12 hover:text-n-brand' %>
+                          <div class="text-xs text-n-slate-10"><%= record.name %></div>
+                        </td>
+                        <td class="text-n-slate-11 tabular-nums">
+                          <%= t('super_admin.search.user_accounts', count: group.extras.fetch(record.id, 0)) %>
+                        </td>
+                        <td class="text-end">
+                          <% if record.type == 'SuperAdmin' %>
+                            <span class="admin-badge admin-badge--iris"><%= t('super_admin.search.super_admin') %></span>
+                          <% end %>
+                        </td>
+                      </tr>
+                    <% else %>
+                      <tr data-organization-id="<%= record.id %>">
+                        <td>
+                          <%= link_to record.name, super_admin_organization_path(record), class: 'font-medium text-n-slate-12 hover:text-n-brand' %>
+                          <% if record.legal_name.present? && record.legal_name != record.name %>
+                            <div class="text-xs text-n-slate-10"><%= record.legal_name %></div>
+                          <% end %>
+                        </td>
+                        <td class="text-n-slate-11 tabular-nums">
+                          <% if record.bin.present? %><%= Organization.human_attribute_name(:bin) %> <%= record.bin %><% else %><span class="text-n-slate-10">—</span><% end %>
+                        </td>
+                        <td class="text-end text-n-slate-11 tabular-nums">
+                          <%= t('super_admin.search.organization_accounts', count: group.extras.fetch(record.id, 0)) %>
+                        </td>
+                      </tr>
+                    <% end %>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
+          <% end %>
+        </section>
+      <% end %>
+    </div>
+  <% end %>
+</section>

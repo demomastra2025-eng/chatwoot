@@ -25,6 +25,8 @@ Resources that nobody placed in a group land in "Дополнительно".
     settings
     audits
     channels
+    searches
+    account_bulk_actions
   ]
 
   primary_nav_items = Administrate::Namespace.new(namespace).resources.filter_map do |resource|
@@ -66,6 +68,16 @@ Resources that nobody placed in a group land in "Дополнительно".
     </button>
   </div>
 
+  <%# The search box of every page: accounts, users and organizations. It stays in view on a phone, under the top bar. %>
+  <%= form_with url: super_admin_search_path, method: :get, local: true, html: { role: 'search' }, class: 'px-2.5 pb-2.5 md:pb-3', data: { testid: 'global-search' } do %>
+    <%= label_tag :super_admin_search, t('super_admin.search.label'), class: 'sr-only' %>
+    <div class="relative">
+      <span class="i-lucide-search pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-n-slate-10" aria-hidden="true"></span>
+      <%= search_field_tag :q, (params[:q] if super_admin_nav_active?(:searches) && params[:q].is_a?(String)), id: 'super_admin_search', class: 'ps-9',
+                           placeholder: t('super_admin.search.placeholder'), autocomplete: 'off', maxlength: SuperAdmin::GlobalSearch::MAX_LENGTH %>
+    </div>
+  <% end %>
+
   <div id="super-admin-menu" class="hidden max-h-[70vh] min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2.5 pb-3 md:flex md:max-h-none">
     <%= render layout: 'nav_group', locals: { id: 'nav-group-clinics', title: t('super_admin.navigation.groups.clinics') } do %>
       <%= render 'nav_item', icon: 'i-lucide-layout-dashboard', url: super_admin_root_path, label: t('super_admin.navigation.items.dashboard'), active: super_admin_nav_active?(:dashboard) %>
@@ -73,7 +85,7 @@ Resources that nobody placed in a group land in "Дополнительно".
         <%= render 'nav_item', icon: 'i-lucide-landmark', url: resource_urls['organizations'], label: t('super_admin.navigation.items.organizations'), active: super_admin_nav_active?(:organizations) %>
       <% end %>
       <% if resource_urls['accounts'] %>
-        <%= render 'nav_item', icon: 'i-lucide-building-2', url: resource_urls['accounts'], label: t('super_admin.navigation.items.accounts'), active: super_admin_nav_active?(:accounts, :account_users) %>
+        <%= render 'nav_item', icon: 'i-lucide-building-2', url: resource_urls['accounts'], label: t('super_admin.navigation.items.accounts'), active: super_admin_nav_active?(:accounts, :account_users, :account_bulk_actions) %>
       <% end %>
       <% if resource_urls['users'] %>
         <%= render 'nav_item', icon: 'i-lucide-users', url: resource_urls['users'], label: t('super_admin.navigation.items.users'), active: super_admin_nav_active?(:users) %>
