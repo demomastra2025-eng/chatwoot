@@ -449,6 +449,17 @@ RSpec.describe 'Super Admin Users API', type: :request do
       expect(audit).to have_attributes(user_id: super_admin.id)
     end
 
+    it 'records a user a super admin created, with the role and without the password' do
+      post '/super_admin/users', params: { user: { name: 'Новый', email: 'created@example.com', password: 'Password1!', type: 'SuperAdmin',
+                                                  super_admin_confirmation: 'created@example.com' } }
+
+      created = User.from_email('created@example.com')
+      audit = Audited::Audit.where(auditable_type: 'User', auditable_id: created.id, action: 'create').sole
+      expect(audit).to have_attributes(user_id: super_admin.id, comment: 'super_admin')
+      expect(audit.audited_changes).to eq('name' => 'Новый', 'email' => 'created@example.com', 'type' => 'SuperAdmin')
+      expect(audit.audited_changes.to_s).not_to include('Password1!')
+    end
+
     it 'records a new password as changed and never writes it or its hash' do
       old_hash = user.encrypted_password
 

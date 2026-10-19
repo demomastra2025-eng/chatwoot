@@ -5,8 +5,7 @@ require 'rails_helper'
 RSpec.describe SuperAdmin::OrganizationLinks do
   subject(:links) { described_class.new(actor: super_admin) }
 
-  # Created up front: a new user has an entry of its own in the audit log, which is not what these examples count
-  let!(:super_admin) { create(:super_admin) }
+  let(:super_admin) { create(:super_admin) }
   let(:first) { create(:organization, name: 'Первая') }
   let(:second) { create(:organization, name: 'Вторая') }
   let(:account) { create(:account, name: 'Филиал') }
@@ -14,9 +13,6 @@ RSpec.describe SuperAdmin::OrganizationLinks do
   def audits(record, action)
     Audited::Audit.where(auditable_type: record.class.name, auditable_id: record.id, action: action)
   end
-
-  # Everything the links wrote to the audit log (the entries of the users the examples created are not theirs)
-  def link_audits = Audited::Audit.where.not(auditable_type: 'User')
 
   describe '#link' do
     it 'links an account without an organization and records both sides' do
@@ -47,7 +43,7 @@ RSpec.describe SuperAdmin::OrganizationLinks do
 
       expect(links.link(account: account, organization: first)).not_to be_changed
 
-      expect(link_audits).to be_empty
+      expect(Audited::Audit.count).to eq(0)
     end
 
     it 'signs the entries with the actor, or as the system without one' do
@@ -75,7 +71,7 @@ RSpec.describe SuperAdmin::OrganizationLinks do
     it 'does nothing and records nothing for an account without an organization' do
       expect(links.unlink(account: account)).not_to be_changed
 
-      expect(link_audits).to be_empty
+      expect(Audited::Audit.count).to eq(0)
     end
   end
 
@@ -103,7 +99,7 @@ RSpec.describe SuperAdmin::OrganizationLinks do
           .to raise_error(described_class::Refused) { |error| expect(error.holder).to eq(second) }
 
         expect(account.reload.organization).to eq(second)
-        expect(link_audits).to be_empty
+        expect(Audited::Audit.count).to eq(0)
       end
 
       it 'is not a refusal when the account was linked to this very organization in the meantime' do
@@ -112,7 +108,7 @@ RSpec.describe SuperAdmin::OrganizationLinks do
 
         expect(links.link(account: stale, organization: first, expected_holder: nil)).not_to be_changed
 
-        expect(link_audits).to be_empty
+        expect(Audited::Audit.count).to eq(0)
       end
     end
 
@@ -133,7 +129,7 @@ RSpec.describe SuperAdmin::OrganizationLinks do
           .to raise_error(described_class::Refused) { |error| expect(error.holder).to eq(second) }
 
         expect(account.reload.organization).to eq(second)
-        expect(link_audits).to be_empty
+        expect(Audited::Audit.count).to eq(0)
       end
 
       it 'refuses an account that was unlinked in the meantime' do
@@ -143,7 +139,7 @@ RSpec.describe SuperAdmin::OrganizationLinks do
         expect { links.unlink(account: stale, expected_holder: first) }
           .to raise_error(described_class::Refused) { |error| expect(error.holder).to be_nil }
 
-        expect(link_audits).to be_empty
+        expect(Audited::Audit.count).to eq(0)
       end
     end
 

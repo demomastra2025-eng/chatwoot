@@ -17,6 +17,7 @@ class SuperAdmin::UsersController < SuperAdmin::ApplicationController
     authorize_resource(resource)
 
     if resource.save
+      record_creation(resource)
       redirect_to super_admin_user_path(resource), notice: translate_with_resource('create.success')
     else
       notice = resource.errors.full_messages.first
@@ -85,6 +86,14 @@ class SuperAdmin::UsersController < SuperAdmin::ApplicationController
 
   def audit_as_current_super_admin(&)
     Audited.audit_class.as_user(current_super_admin, &)
+  end
+
+  # The creation of a user by a super admin: who it is and the role, never the password
+  def record_creation(user)
+    SuperAdmin::PlatformAudit.record(
+      auditable: user, action: 'create', actor: current_super_admin, request: request,
+      changes: user.attributes.slice('name', 'display_name', 'email', 'type').compact
+    )
   end
 
   def record_password_change

@@ -62,5 +62,28 @@ RSpec.describe User do
         expect(Audited::Audit.where(auditable_type: 'User', action: 'create').count).to eq 0
       end
     end
+
+    context 'when the name, the e-mail or the role of a user changes' do
+      it 'writes the old and the new value' do
+        user.update!(name: 'Новое имя', email: 'new-address@example.com')
+
+        audit = Audited::Audit.where(auditable_type: 'User', auditable_id: user.id, action: 'update').last
+        expect(audit.audited_changes).to include('name' => [user.name_before_last_save, 'Новое имя'],
+                                                 'email' => [user.email_before_last_save, 'new-address@example.com'])
+      end
+
+      it 'writes nothing about the password, the tokens, the availability or the second factor' do
+        user.update!(password: 'NewPassword1!', password_confirmation: 'NewPassword1!', availability: :busy, otp_required_for_login: true)
+
+        expect(Audited::Audit.where(auditable_type: 'User', auditable_id: user.id, action: 'update')).to be_empty
+      end
+
+      it 'writes the deletion of a user' do
+        deleted_id = user.id
+        user.destroy!
+
+        expect(Audited::Audit.where(auditable_type: 'User', auditable_id: deleted_id, action: 'destroy')).to exist
+      end
+    end
   end
 end
