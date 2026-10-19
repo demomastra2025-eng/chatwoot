@@ -428,7 +428,7 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
     end
 
     it 'goes back to the plain list when the way back cannot be read' do
-      run('activate', [first], back: '/super_admin/accounts?a[=%')
+      run('activate', [first], back: '/super_admin/accounts?search=%E0%A4%A')
 
       expect(response).to redirect_to('/super_admin/accounts')
     end
