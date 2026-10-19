@@ -47,8 +47,7 @@ RSpec.describe SuperAdmin::AiModelsHistory do
   end
 
   it 'keeps a short list of models whole, so that it can be put back' do
-    first = %w[openai/gpt-6-luna openai/gpt-5.6-luna openai/gpt-5.4 openai/gpt-5.4-mini anthropic/claude-haiku-5.5 anthropic/claude-sonnet-4.6
-               google/gemini-2.5-pro google/gemini-2.5-flash mistralai/mistral-large qwen/qwen3-max]
+    first = Array.new(16) { |index| "vendor/model-number-#{index}" }
     expect(JSON.generate(first).length).to be > SuperAdmin::AppConfigSaver::VALUE_LIMIT
     saver.save('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', JSON.generate(first), secret: false)
     saver.save('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', JSON.generate(first.first(2)), secret: false)

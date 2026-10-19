@@ -425,7 +425,8 @@ RSpec.describe 'Super admin AI models page', type: :request do
       bar = page.at_css('form#ai-models-form [data-savebar]')
 
       expect(bar.has_attribute?('hidden')).to be(true)
-      expect(text(bar)).to include('Отменить', 'Сохранить')
+      expect(text(bar)).to include('Отменить')
+      expect(bar.at_css('input[type="submit"]')['value']).to eq('Сохранить')
       expect(page.at_css('form#ai-models-form [data-static-save] input[type="submit"]')['value']).to eq('Сохранить настройки')
     end
 

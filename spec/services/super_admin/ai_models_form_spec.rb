@@ -295,8 +295,8 @@ RSpec.describe SuperAdmin::AiModelsForm do
                     stored_values: stored_values)
 
       expect(result.summary).to eq(
-        ['Расшифровка голоса: GPT Audio Mini → встроенная', 'Распознавание картинок и документов: встроенная → GPT-6 Luna',
-         'Загрузка сайтов в базу знаний (FireCrawl, необязательно): обновлён', 'Короткий список моделей: 1 → 2']
+        ['Загрузка сайтов в базу знаний (FireCrawl, необязательно): обновлён', 'Расшифровка голоса: GPT Audio Mini → встроенная',
+         'Распознавание картинок и документов: встроенная → GPT-6 Luna', 'Короткий список моделей: 1 → 2']
       )
       expect(result.summary.join).not_to include('fc-secret')
     end
