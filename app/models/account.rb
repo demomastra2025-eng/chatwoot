@@ -81,7 +81,7 @@ class Account < ApplicationRecord
   store_accessor :settings, :conversation_status_reason_config
   store_accessor :settings, :scheduling_contact_required, :scheduling_company_enabled
   store_accessor :settings, :conversation_assignment_policy_id
-  store_accessor :settings, :conversation_auto_assignment_enabled
+  store_accessor :settings, :conversation_auto_assignment_enabled, :conversation_assign_on_first_reply_enabled
   include AccountCaptainAutoResolve
 
   # The paying parent (requisites, BIN, contract); an account without one works as before
@@ -270,6 +270,10 @@ class Account < ApplicationRecord
   def conversation_auto_assignment_enabled?
     value = conversation_auto_assignment_enabled
     value.nil? || ActiveModel::Type::Boolean.new.cast(value)
+  end
+
+  def conversation_assign_on_first_reply_enabled?
+    ActiveModel::Type::Boolean.new.cast(conversation_assign_on_first_reply_enabled)
   end
 
   def workspace_assignment_policy

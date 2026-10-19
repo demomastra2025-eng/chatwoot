@@ -20,6 +20,7 @@ const isFetching = ref(false);
 const fetchFailed = ref(false);
 const isSaving = ref(false);
 const autoAssignmentEnabled = ref(true);
+const assignOnFirstReplyEnabled = ref(false);
 const isWorkspaceAdmin = computed(() => checkPermissions(['administrator']));
 const savedPolicyId = computed(
   () => currentAccount.value?.settings?.conversation_assignment_policy_id
@@ -28,6 +29,14 @@ watch(
   () => currentAccount.value?.settings?.conversation_auto_assignment_enabled,
   value => {
     autoAssignmentEnabled.value = value !== false;
+  },
+  { immediate: true }
+);
+watch(
+  () =>
+    currentAccount.value?.settings?.conversation_assign_on_first_reply_enabled,
+  value => {
+    assignOnFirstReplyEnabled.value = value === true;
   },
   { immediate: true }
 );
@@ -149,6 +158,27 @@ const saveAutoAssignment = async () => {
     isSaving.value = false;
   }
 };
+
+const saveAssignOnFirstReply = async () => {
+  if (!isWorkspaceAdmin.value || isSaving.value) return;
+  isSaving.value = true;
+  try {
+    await updateAccount(
+      {
+        conversation_assign_on_first_reply_enabled:
+          assignOnFirstReplyEnabled.value,
+      },
+      { silent: true }
+    );
+  } catch {
+    assignOnFirstReplyEnabled.value = !assignOnFirstReplyEnabled.value;
+    useAlert(
+      t('GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_UPDATE_ERROR')
+    );
+  } finally {
+    isSaving.value = false;
+  }
+};
 </script>
 
 <template>
@@ -168,6 +198,27 @@ const saveAutoAssignment = async () => {
           @change="saveAutoAssignment"
         />
         {{ t('GENERAL_SETTINGS.CONVERSATIONS.AUTO_ASSIGNMENT_ENABLED') }}
+      </label>
+      <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+        <span class="flex items-center gap-3">
+          <input
+            v-model="assignOnFirstReplyEnabled"
+            data-test="workspace-assign-on-first-reply"
+            type="checkbox"
+            :disabled="!isWorkspaceAdmin || isSaving"
+            @change="saveAssignOnFirstReply"
+          />
+          {{
+            t('GENERAL_SETTINGS.CONVERSATIONS.ASSIGN_ON_FIRST_REPLY_ENABLED')
+          }}
+        </span>
+        <span class="pl-6 text-xs text-n-slate-11">
+          {{
+            t(
+              'GENERAL_SETTINGS.CONVERSATIONS.ASSIGN_ON_FIRST_REPLY_DESCRIPTION'
+            )
+          }}
+        </span>
       </label>
       <label class="flex flex-col gap-2 text-sm font-medium text-n-slate-12">
         {{ t('GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_LABEL') }}

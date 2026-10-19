@@ -499,6 +499,7 @@ class Message < ApplicationRecord
     # rails issue with order of active record callbacks being executed https://github.com/rails/rails/issues/20911
     reopen_conversation
     mark_pending_conversation_as_open_for_human_response
+    assign_conversation_to_responding_agent
     set_conversation_activity
     Telephony::MissedCallCallbackTracker.clear_on_outgoing_message!(self)
     ensure_communication_thread_for_create_event
@@ -647,6 +648,15 @@ class Message < ApplicationRecord
     return if scheduled_touch_message?
 
     transition_conversation_status!('open', source: 'system')
+  end
+
+  def assign_conversation_to_responding_agent
+    return unless account&.conversation_assign_on_first_reply_enabled?
+    return unless human_response? && !private? && !scheduled_touch_message?
+    return unless sender.is_a?(User) && conversation.assignee_id.blank?
+    return unless account.users.exists?(id: sender.id)
+
+    conversation.update(assignee: sender)
   end
 
   def activate_captain_human_control_for_human_response; end

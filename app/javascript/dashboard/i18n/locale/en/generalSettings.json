@@ -228,7 +228,9 @@
       "CSAT_UPDATE_ERROR": "Could not update CSAT settings. Please try again.",
       "SELECT_ALL_CHANNELS": "Select all",
       "CLEAR_ALL_CHANNELS": "Clear all",
-      "NO_TEXT_CHANNELS": "No text channels connected yet."
+      "NO_TEXT_CHANNELS": "No text channels connected yet.",
+      "ASSIGN_ON_FIRST_REPLY_ENABLED": "Assign unassigned conversation to the first replying agent",
+      "ASSIGN_ON_FIRST_REPLY_DESCRIPTION": "When a conversation has no assignee, it will automatically be assigned to the first agent who sends a public reply."
     },
     "SIDEBAR_VISIBILITY": {
       "TITLE": "Sidebar settings",

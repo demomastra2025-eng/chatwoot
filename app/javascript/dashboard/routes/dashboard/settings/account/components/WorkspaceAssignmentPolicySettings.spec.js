@@ -148,4 +148,18 @@ describe('WorkspaceAssignmentPolicySettings', () => {
       { silent: true }
     );
   });
+
+  it('saves the workspace assign-on-first-reply switch', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await wrapper
+      .get('[data-test="workspace-assign-on-first-reply"]')
+      .setValue(true);
+
+    expect(updateAccountMock).toHaveBeenCalledWith(
+      { conversation_assign_on_first_reply_enabled: true },
+      { silent: true }
+    );
+  });
 });

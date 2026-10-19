@@ -151,6 +151,7 @@ class Api::V1::AccountsController < Api::BaseController
       { workspace_days_off: %i[date title recurring_yearly] },
       :conversation_assignment_policy_id,
       :conversation_auto_assignment_enabled,
+      :conversation_assign_on_first_reply_enabled,
       *DASHBOARD_NAVIGATION_SETTINGS_PARAMS
     ]
   end
