@@ -190,7 +190,7 @@ export const initAllowlist = (card, texts = {}) => {
   }
 
   // The model by default has to stay on the list, and a list that is put back does not ask to change it: when the list
-  // leaves it out, its row stays ticked. Returns that row (nil when the default model is on the list or is the platform's).
+  // leaves it out, its row stays ticked. Returns that row (null when the default model is on the list or is the platform's).
   const keepDefaultOnList = () => {
     const radio = rowsBox.querySelector('[data-default-radio]:checked');
     const row = radio && radio.closest('[data-row]');
