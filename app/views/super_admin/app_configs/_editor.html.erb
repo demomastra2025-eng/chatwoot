@@ -30,7 +30,8 @@ The password field with the reveal button only shows what is typed into it.
 <% if kind == :prompts %>
   <%
     prompts_scope = 'super_admin.app_config.captain.prompts'
-    current_system_prompts = (value.is_a?(String) ? (JSON.parse(value.presence || '[]') rescue []) : Array(value)).map { |entry| entry.respond_to?(:to_h) ? entry.to_h : entry }
+    prompts_value = value.is_a?(String) ? (JSON.parse(value.presence || '[]') rescue []) : value
+    current_system_prompts = (prompts_value.is_a?(Array) ? prompts_value : []).map { |entry| entry.respond_to?(:to_h) ? entry.to_h : entry }
   %>
   <%= hidden_field_tag field_name, current_system_prompts.to_json, id: field_id %>
   <div

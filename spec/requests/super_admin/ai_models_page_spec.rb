@@ -138,6 +138,41 @@ RSpec.describe 'Super admin AI models page', type: :request do
     end
   end
 
+  describe 'with the key of OpenRouter and the catalog that was never loaded (the built-in list of models)' do
+    before do
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'sk-test-key')
+      open_page
+    end
+
+    it 'says so, and still lists the built-in models of every function' do
+      expect(Llm::OpenRouterModelCatalog.metadata[:using_fallback]).to be(true)
+      expect(page.at_css('[data-testid="catalog-source"]')['data-source']).to eq('source_fallback')
+      expect(text(page.at_css('[data-testid="catalog-source"]'))).to include('Каталог OpenRouter не загружен — показан встроенный список моделей')
+      expect(page.css('select[name="app_config[CAPTAIN_DEFAULT_MODEL]"] option, input[name="app_config[CAPTAIN_DEFAULT_MODEL]"]')).not_to be_empty
+      expect(page.at_css('select[name="app_config[CAPTAIN_AUDIO_TRANSCRIPTION_MODEL]"] option[value="openai/gpt-4o-mini-transcribe"]')).to be_present
+    end
+
+    it 'keeps what is saved and saves another setting without touching it' do
+      upsert_installation_config('CAPTAIN_IMAGE_RECOGNITION_MODEL', 'vendor/gone')
+      open_page
+      submit_form('app_config[CAPTAIN_MODERATION_MODEL]' => 'openai/gpt-oss-safeguard-20b')
+
+      expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
+      expect(stored('CAPTAIN_IMAGE_RECOGNITION_MODEL')).to eq('vendor/gone')
+    end
+  end
+
+  describe 'without a key of OpenRouter' do
+    it 'says the lists hold only the built-in models, and offers no check of a key that is not there' do
+      InstallationConfig.where(name: 'CAPTAIN_OPENROUTER_API_KEY').delete_all
+      open_page
+
+      expect(page.at_css('[data-testid="catalog-source"]')['data-source']).to eq('source_no_key')
+      expect(text(page.at_css('[data-testid="catalog-source"]'))).to include('Ключ OpenRouter не задан')
+      expect(page.at_css('button[form="ai-check-key-form"]')).to be_nil
+    end
+  end
+
   describe 'posting the whole form without changing anything' do
     it 'saves nothing and says so' do
       open_page
