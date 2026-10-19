@@ -26,7 +26,7 @@
         ],
         "operationId": "create-an-account",
         "summary": "Create an Account",
-        "description": "Create an Account",
+        "description": "Create an Account. Features go through the same checks as the platform admin screens: a feature that no plan enables, one that must stay on\nand a platform-internal one are refused with 422 and nothing is saved. Every call is recorded in the audit log.",
         "security": [
           {
             "platformAppApiKey": []
@@ -55,6 +55,16 @@
           },
           "401": {
             "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request changes a feature that cannot be changed through the API, or the data is not valid",
             "content": {
               "application/json": {
                 "schema": {
@@ -123,7 +133,7 @@
         ],
         "operationId": "update-an-account",
         "summary": "Update an account",
-        "description": "Update an account's attributes",
+        "description": "Update an account's attributes. Features go through the same checks as the platform admin screens: a feature that no plan enables, one that must stay on\nand a platform-internal one are refused with 422 and nothing is saved. Every call is recorded in the audit log.",
         "security": [
           {
             "platformAppApiKey": []
@@ -152,6 +162,16 @@
           },
           "401": {
             "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request changes a feature that cannot be changed through the API, or the data is not valid",
             "content": {
               "application/json": {
                 "schema": {
@@ -347,7 +367,7 @@
         ],
         "operationId": "create-a-user",
         "summary": "Create a User",
-        "description": "Create a User",
+        "description": "Create a User. The user is owned by the platform app that created it; the app can read, change, sign in as and delete only its own users.\nAn email that already belongs to another user is never attached to the app: the request is refused with 409.\nRepeating the request for a user the app created itself returns that user unchanged.",
         "security": [
           {
             "platformAppApiKey": []
@@ -376,6 +396,16 @@
           },
           "401": {
             "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A user with this email already exists",
             "content": {
               "application/json": {
                 "schema": {

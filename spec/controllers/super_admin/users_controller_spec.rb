@@ -450,8 +450,9 @@ RSpec.describe 'Super Admin Users API', type: :request do
     end
 
     it 'records a user a super admin created, with the role and without the password' do
-      post '/super_admin/users', params: { user: { name: 'Новый', email: 'created@example.com', password: 'Password1!', type: 'SuperAdmin',
-                                                  super_admin_confirmation: 'created@example.com' } }
+      new_user = { name: 'Новый', email: 'created@example.com', password: 'Password1!', type: 'SuperAdmin',
+                   super_admin_confirmation: 'created@example.com' }
+      post '/super_admin/users', params: { user: new_user }
 
       created = User.from_email('created@example.com')
       audit = Audited::Audit.where(auditable_type: 'User', auditable_id: created.id, action: 'create').sole
