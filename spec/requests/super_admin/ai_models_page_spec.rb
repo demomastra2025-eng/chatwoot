@@ -207,7 +207,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
       expect(text(selected)).to eq('vendor/gone · нет в каталоге')
       expect(text(card('CAPTAIN_IMAGE_RECOGNITION_MODEL').at_css('[data-testid="slot-missing"]')))
         .to eq('Эта модель сохранена, но её нет в каталоге. Она останется выбранной, пока вы не выберете другую.')
-      expect(text(card('CAPTAIN_IMAGE_RECOGNITION_MODEL').at_css('[data-testid="slot-status"]'))).to include('Вы выбрали: vendor/gone')
+      expect(text(card('CAPTAIN_IMAGE_RECOGNITION_MODEL').at_css('[data-testid="slot-status"]'))).to include('Выбрано: vendor/gone')
     end
 
     it 'is not replaced when the form is saved for another setting' do
@@ -334,6 +334,87 @@ RSpec.describe 'Super admin AI models page', type: :request do
     end
   end
 
+  describe 'a model that is saved but does not fit its function (any more)' do
+    before do
+      upsert_installation_config('CAPTAIN_LABEL_SUGGESTION_MODEL', 'claude-sonnet-4-6')
+      open_page
+    end
+
+    it 'stays selected, marked, and the card says it does not fit (not that it is missing)' do
+      selected = card('CAPTAIN_LABEL_SUGGESTION_MODEL').at_css('select option[selected]')
+
+      expect(selected['value']).to eq('claude-sonnet-4-6')
+      expect(text(card('CAPTAIN_LABEL_SUGGESTION_MODEL').at_css('[data-testid="slot-missing"]')))
+        .to eq('Эта модель сохранена, но она сейчас не подходит для этой функции. Она останется выбранной, пока вы не выберете другую.')
+    end
+  end
+
+  describe 'a model that is saved under its old spelling' do
+    before do
+      upsert_installation_config('CAPTAIN_LABEL_SUGGESTION_MODEL', 'claude-sonnet-4.6')
+      open_page
+    end
+
+    it 'is shown as selected, under the name the lists use' do
+      selected = card('CAPTAIN_LABEL_SUGGESTION_MODEL').at_css('select option[selected]')
+
+      expect(selected['value']).to eq('claude-sonnet-4-6')
+      expect(card('CAPTAIN_LABEL_SUGGESTION_MODEL').at_css('[data-testid="slot-missing"]')).to be_present
+    end
+
+    it 'is not replaced by «Встроенная» when the form is saved for another setting' do
+      submit_form('app_config[CAPTAIN_MODERATION_MODEL]' => 'openai/gpt-oss-safeguard-20b')
+
+      expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
+      expect(stored('CAPTAIN_LABEL_SUGGESTION_MODEL')).to eq('claude-sonnet-4.6')
+      # one setting changed (the moderation model), not two
+      expect(flash[:notice].scan('→').size).to eq(1)
+    end
+
+    it 'is not touched when the form is saved with no change at all' do
+      submit_form
+
+      expect(stored('CAPTAIN_LABEL_SUGGESTION_MODEL')).to eq('claude-sonnet-4.6')
+      expect(flash[:notice]).to eq('Ничего не изменилось: все значения такие же, как были.')
+      expect(Audited::Audit.where(action: SuperAdmin::AppConfigSaver::AUDIT_ACTION)).to be_empty
+    end
+  end
+
+  describe 'a short list' do
+    before do
+      upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-6-luna","openai/gpt-5.6-luna"]')
+      upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-6-luna')
+      open_page
+    end
+
+    it 'cannot be saved with nothing ticked, the entered state stays and the card says what to do' do
+      submit_form('app_config[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST][]' => [''])
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(refused('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')).to eq('Отметьте хотя бы одну модель.')
+      expect(stored('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')).to eq('["openai/gpt-6-luna","openai/gpt-5.6-luna"]')
+    end
+
+    it 'is saved as a list when the recommended models are sent, and is then called the recommended one' do
+      submit_form('app_config[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST][]' => ['', *Llm::Models::DEFAULT_CURATED_MODELS])
+      open_page
+
+      expect(JSON.parse(stored('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST'))).to eq(Llm::Models::DEFAULT_CURATED_MODELS)
+      agents = card('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')
+      expect(text(agents.at_css('[data-testid="list-status"]'))).to eq('Список: рекомендуемый платформой.')
+      expect(text(agents.at_css('[data-history-for="CAPTAIN_ASSISTANT_MODEL_ALLOWLIST"]'))).to include('Было: 2 модели')
+    end
+
+    it 'is named «рекомендуемый список» in the history when the earlier list was the recommended one' do
+      submit_form('app_config[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST][]' => ['', *Llm::Models::DEFAULT_CURATED_MODELS])
+      submit_form('app_config[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST][]' => ['', 'openai/gpt-6-luna'])
+      open_page
+
+      history = card('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST').at_css('[data-history-for="CAPTAIN_ASSISTANT_MODEL_ALLOWLIST"]')
+      expect(text(history)).to include('Было: рекомендуемый список')
+    end
+  end
+
   describe 'putting a value back' do
     before do
       upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-6-luna')
@@ -357,7 +438,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
     it 'offers «Вернуть встроенную» next to the model that was chosen' do
       status = card('CAPTAIN_DEFAULT_MODEL').at_css('[data-testid="slot-status"]')
 
-      expect(text(status)).to include('Модель по умолчанию: GPT-5.6 Luna (выбрана вами).', 'Вернуть встроенную')
+      expect(text(status)).to include('Модель по умолчанию: GPT-5.6 Luna (выбрана вручную).', 'Вернуть встроенную')
       expect(status.at_css('button[data-revert="CAPTAIN_DEFAULT_MODEL"]')['data-revert-value']).to eq('')
     end
 

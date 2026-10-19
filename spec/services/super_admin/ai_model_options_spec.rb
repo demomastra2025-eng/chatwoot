@@ -142,7 +142,7 @@ RSpec.describe SuperAdmin::AiModelOptions do
     it 'comes back as the missing model, marked, and is never replaced by another' do
       choices = options.choices_for('CAPTAIN_IMAGE_RECOGNITION_MODEL', current: 'vendor/gone')
 
-      expect(choices.missing).to have_attributes(id: 'vendor/gone', note: 'нет в каталоге')
+      expect(choices.missing).to have_attributes(id: 'vendor/gone', note: 'нет в каталоге', reason: :not_in_catalog)
       expect(choices.missing).to be_missing
       expect(ids(choices)).not_to include('vendor/gone')
     end
@@ -150,7 +150,7 @@ RSpec.describe SuperAdmin::AiModelOptions do
     it 'says «сейчас не подходит» for a model the catalog knows but the function cannot use' do
       choices = options.choices_for('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL', current: 'openai/gpt-6-luna')
 
-      expect(choices.missing).to have_attributes(id: 'openai/gpt-6-luna', note: 'сейчас не подходит для этой функции')
+      expect(choices.missing).to have_attributes(id: 'openai/gpt-6-luna', note: 'сейчас не подходит для этой функции', reason: :not_fit)
     end
 
     it 'has no missing model when the saved model is on the list, or nothing is saved' do
@@ -160,8 +160,8 @@ RSpec.describe SuperAdmin::AiModelOptions do
     end
 
     it 'describes a model the list does not offer with its mark' do
-      expect(options.describe('vendor/gone', key: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')).to have_attributes(id: 'vendor/gone', note: 'нет в каталоге')
-      expect(options.describe('openai/gpt-6-luna', key: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST').note).to be_nil
+      expect(options.describe('vendor/gone', key: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')).to have_attributes(id: 'vendor/gone', note: 'нет в каталоге', reason: :not_in_catalog)
+      expect(options.describe('openai/gpt-6-luna', key: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST').reason).to be_nil
     end
   end
 

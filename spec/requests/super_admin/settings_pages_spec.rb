@@ -120,12 +120,12 @@ RSpec.describe 'Super admin settings pages', type: :request do
       get '/super_admin/app_config?config=captain'
     end
 
-    it 'says «Вы выбрали» and offers to put the built-in model back for a setting the platform has set' do
+    it 'says «Выбрано» and offers to put the built-in model back for a setting the platform has set' do
       agents = card('CAPTAIN_DEFAULT_MODEL')
 
       expect(agents['data-source']).to eq('set')
       status = agents.at_css('[data-testid="slot-status"]')
-      expect(text(status)).to include('Модель по умолчанию: GPT-5.6 Luna (выбрана вами).', 'Вернуть встроенную')
+      expect(text(status)).to include('Модель по умолчанию: GPT-5.6 Luna (выбрана вручную).', 'Вернуть встроенную')
       expect(agents.at_css('input[type="radio"][value="openai/gpt-5.6-luna"]')['checked']).to be_present
     end
 
@@ -144,7 +144,7 @@ RSpec.describe 'Super admin settings pages', type: :request do
 
     it 'ticks the models of the short list and no others' do
       agents = card('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')
-      expect(text(agents.at_css('[data-testid="list-status"]'))).to eq('Список: задан вами.')
+      expect(text(agents.at_css('[data-testid="list-status"]'))).to eq('Список: задан вручную.')
       ticked = agents.css('input[type="checkbox"][checked]').pluck('value')
 
       expect(ticked).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])

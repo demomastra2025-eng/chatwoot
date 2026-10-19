@@ -131,11 +131,48 @@ RSpec.describe SuperAdmin::AiModelsForm do
       expect(added).not_to be_valid
     end
 
-    it 'stores the recommended list as «follow the recommended list» (an empty value)' do
+    it 'writes nothing while no list is saved and the recommended one is sent' do
       result = form({ 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => Llm::Models::DEFAULT_CURATED_MODELS.dup }, stored_values: {})
 
+      expect(result).to be_valid
       expect(result.changes).to be_empty
+    end
+
+    it 'saves the recommended models as a list when a list was saved before, never as a blank value' do
       result = form({ 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => Llm::Models::DEFAULT_CURATED_MODELS.dup }, stored_values: stored)
+
+      expect(changed(result)).to eq('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => JSON.generate(Llm::Models::DEFAULT_CURATED_MODELS))
+    end
+
+    it 'does not change a saved list that already holds the recommended models, in any order' do
+      stored_values = { 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => JSON.generate(Llm::Models::DEFAULT_CURATED_MODELS) }
+
+      result = form({ 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => Llm::Models::DEFAULT_CURATED_MODELS.reverse }, stored_values: stored_values)
+
+      expect(result).to be_valid
+      expect(result.changes).to be_empty
+    end
+
+    it 'refuses a checklist with nothing ticked while a list is saved, and says what to do' do
+      result = form('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => [''])
+
+      expect(result).not_to be_valid
+      expect(result.errors['CAPTAIN_ASSISTANT_MODEL_ALLOWLIST']).to eq(['Отметьте хотя бы одну модель.'])
+    end
+
+    it 'does not block the page when nothing is ticked and no readable list is saved' do
+      ['', '[]', '{broken'].each do |saved|
+        result = form({ 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => [''] }, stored_values: { 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => saved })
+
+        expect(result).to be_valid, saved
+        expect(result.changes).to be_empty, saved
+      end
+    end
+
+    it 'still clears the list with a blank text, as before' do
+      result = form('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => '  ')
+
+      expect(result).to be_valid
       expect(changed(result)).to eq('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => '')
     end
 
@@ -203,11 +240,41 @@ RSpec.describe SuperAdmin::AiModelsForm do
 
     it 'takes an address that starts with http or https' do
       expect(form('CAPTAIN_OPENROUTER_ENDPOINT' => 'https://openrouter.example/api/v1')).to be_valid
-      expect(form('CAPTAIN_OPENROUTER_ENDPOINT' => 'openrouter.example').errors['CAPTAIN_OPENROUTER_ENDPOINT']).to eq(['Адрес должен начинаться с https://'])
+      expect(form('CAPTAIN_OPENROUTER_ENDPOINT' => 'openrouter.example').errors['CAPTAIN_OPENROUTER_ENDPOINT']).to eq(['Адрес должен начинаться с http:// или https://'])
+    end
+
+    it 'does not check a number or an address that was not changed, even when it is stored in another shape' do
+      stored_values = { 'ACCOUNT_CAPTAIN_TOKENS_LIMIT' => '2 млн', 'CAPTAIN_OPENROUTER_ENDPOINT' => 'openrouter.example' }
+
+      result = form({ 'ACCOUNT_CAPTAIN_TOKENS_LIMIT' => '2 млн', 'CAPTAIN_OPENROUTER_ENDPOINT' => 'openrouter.example ',
+                      'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL' => 'openai/gpt-audio-mini' }, stored_values: stored_values)
+
+      expect(result).to be_valid
+      expect(changed(result)).to eq('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL' => 'openai/gpt-audio-mini')
+    end
+
+    it 'still checks a number or an address that is changed, also when the stored one is in another shape' do
+      stored_values = { 'ACCOUNT_CAPTAIN_TOKENS_LIMIT' => '2 млн', 'CAPTAIN_OPENROUTER_ENDPOINT' => 'openrouter.example' }
+
+      result = form({ 'ACCOUNT_CAPTAIN_TOKENS_LIMIT' => '3 млн', 'CAPTAIN_OPENROUTER_ENDPOINT' => 'other.example' }, stored_values: stored_values)
+
+      expect(result.errors.keys).to contain_exactly('ACCOUNT_CAPTAIN_TOKENS_LIMIT', 'CAPTAIN_OPENROUTER_ENDPOINT')
     end
 
     it 'ignores what is not a setting of the page' do
       expect(form('FB_APP_ID' => 'x', 'SOMETHING' => 'y').changes).to be_empty
+    end
+  end
+
+  describe 'a text with line breaks' do
+    it 'is the same text whether the line breaks are stored as CRLF (the old page) or sent as CRLF (a browser)' do
+      stored_values = { 'CAPTAIN_AI_AGENT_SYSTEM_PROMPT' => "First line.\r\nSecond line." }
+
+      untouched = form({ 'CAPTAIN_AI_AGENT_SYSTEM_PROMPT' => "First line.\r\nSecond line." }, stored_values: stored_values)
+      changed_text = form({ 'CAPTAIN_AI_AGENT_SYSTEM_PROMPT' => "First line.\r\nThird line." }, stored_values: stored_values)
+
+      expect(untouched.changes).to be_empty
+      expect(changed(changed_text)).to eq('CAPTAIN_AI_AGENT_SYSTEM_PROMPT' => "First line.\nThird line.")
     end
   end
 
@@ -303,10 +370,19 @@ RSpec.describe SuperAdmin::AiModelsForm do
                     stored_values: stored_values)
 
       expect(result.summary).to eq(
-        ['Загрузка сайтов в базу знаний (FireCrawl, необязательно): обновлён', 'Расшифровка голоса: GPT Audio Mini → встроенная',
+        ['Загрузка сайтов в базу знаний (FireCrawl, необязательно): новое значение сохранено', 'Расшифровка голоса: GPT Audio Mini → встроенная',
          'Распознавание картинок и документов: встроенная → GPT-6 Luna', 'Короткий список моделей: 1 → 2']
       )
       expect(result.summary.join).not_to include('fc-secret')
+    end
+
+    it 'says «рекомендуемый (5)» for a blank list, which the platform shows as its recommended models' do
+      blank_to_six = form({ 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => %w[openai/gpt-6-luna openai/gpt-5.6-luna] }, stored_values: {})
+      six_to_blank = form({ 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => '  ' },
+                          stored_values: { 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => '["openai/gpt-6-luna"]' })
+
+      expect(blank_to_six.summary).to eq(['Короткий список моделей: рекомендуемый (5) → 2'])
+      expect(six_to_blank.summary).to eq(['Короткий список моделей: 1 → рекомендуемый (5)'])
     end
   end
 
