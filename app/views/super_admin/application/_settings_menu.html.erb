@@ -32,6 +32,7 @@ The AI models page has its own entry in the "ИИ" group and is not repeated her
       <% page_active = super_admin_nav_active?(:app_configs) && current_config == attrs['config_key'] %>
       <%= link_to super_admin_app_config_path(config: attrs['config_key']),
                   class: "flex h-8 items-center rounded-lg px-2 text-sm hover:bg-n-alpha-2 #{page_active ? 'bg-n-alpha-2 font-medium text-n-slate-12 hover:text-n-slate-12' : 'text-n-slate-11 hover:text-n-slate-11'}",
+                  title: attrs['name'],
                   aria: { current: (page_active ? 'page' : nil) } do %>
         <span class="min-w-0 truncate"><%= attrs['name'] %></span>
       <% end %>

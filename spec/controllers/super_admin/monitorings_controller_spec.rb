@@ -166,9 +166,9 @@ RSpec.describe 'Super Admin Monitoring', type: :request do
       get '/super_admin/monitoring', params: { tab: 'queues' }
 
       rows = page.css('[data-testid="queue-list"] tbody tr').map { |row| row.css('th, td').map { |cell| text(cell) } }
-      expect(rows).to eq([['default', '1 200', '125 секунд'], ['low', '34', '1 секунда']])
+      expect(rows).to eq([['default', '1 200', '2 минуты'], ['low', '34', '1 секунда']])
       figures = page.css('[data-testid="stat"] dd').map { |node| text(node) }
-      expect(figures).to eq(['2', '1 234', '0', '3', '1', '125 секунд'])
+      expect(figures).to eq(['2', '1 234', '0', '3', '1', '2 минуты'])
     end
 
     it 'marks dead jobs and a long wait' do

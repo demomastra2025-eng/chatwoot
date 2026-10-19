@@ -6,6 +6,7 @@
 #   instead of a zone name, so the screen does not depend on how fresh the tzdata of the server is.
 # * Sizes use Russian units (Б, КБ, МБ, ГБ, ТБ), 1 КБ = 1024 Б like the quotas.
 # * Numbers have a space between thousands and a comma before decimals; dollar amounts have two decimals.
+# * A waiting time is shown in its largest whole unit («3 дня»).
 module SuperAdmin::DisplayHelper
   DATETIME_FORMAT = '%d.%m.%Y %H:%M'
   DATE_FORMAT = '%d.%m.%Y'
@@ -13,6 +14,8 @@ module SuperAdmin::DisplayHelper
   INPUT_FORMAT = '%Y-%m-%dT%H:%M:%S'
   BYTE_UNITS = %w[Б КБ МБ ГБ ТБ].freeze
   NUMBER_OPTIONS = { delimiter: ' ', separator: ',' }.freeze
+  # The units of a waiting time, the largest first: the size in seconds and the key of time_units in the locale
+  WAIT_UNITS = [[86_400, 'days'], [3600, 'hours'], [60, 'minutes']].freeze
 
   class << self
     # The moment as Time with the Astana offset; nil for a blank or unreadable value.
@@ -59,6 +62,14 @@ module SuperAdmin::DisplayHelper
       ActiveSupport::NumberHelper.number_to_delimited(number, **NUMBER_OPTIONS)
     end
 
+    # A waiting time of a number of seconds in its largest whole unit, with the Russian form of the noun: "45 секунд",
+    # "2 минуты", "5 часов", "3 дня" (the units of time_units in config/locales/ru.yml)
+    def format_wait(seconds)
+      seconds = seconds.to_i
+      size, unit = WAIT_UNITS.find { |unit_size, _| seconds >= unit_size } || [1, 'seconds']
+      I18n.t("time_units.#{unit}", count: seconds / size)
+    end
+
     # An amount in US dollars (the AI models are paid in dollars): "$1 234,50"
     def format_usd(amount)
       return if amount.nil?
@@ -103,6 +114,11 @@ module SuperAdmin::DisplayHelper
   # "12 450"
   def super_admin_number(number)
     SuperAdmin::DisplayHelper.format_number(number)
+  end
+
+  # "2 минуты"
+  def super_admin_wait(seconds)
+    SuperAdmin::DisplayHelper.format_wait(seconds)
   end
 
   # "$1 234,50"

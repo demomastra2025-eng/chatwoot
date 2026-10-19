@@ -87,6 +87,26 @@ RSpec.describe SuperAdmin::DisplayHelper do
     end
   end
 
+  describe 'a waiting time' do
+    it 'is written in the largest whole unit with the Russian form of the noun' do
+      expected = {
+        0 => '0 секунд', 1 => '1 секунда', 45 => '45 секунд', 60 => '1 минута', 125 => '2 минуты', 3599 => '59 минут',
+        3600 => '1 час', 18_000 => '5 часов', 86_400 => '1 день', 309_782 => '3 дня', 1_814_400 => '21 день'
+      }
+
+      expect(expected.keys.index_with { |seconds| described_class.format_wait(seconds) }).to eq(expected)
+    end
+
+    it 'takes a number that is not whole or not a number as seconds' do
+      expect(described_class.format_wait(59.9)).to eq('59 секунд')
+      expect(described_class.format_wait(nil)).to eq('0 секунд')
+    end
+
+    it 'is a helper of the pages' do
+      expect(helper.super_admin_wait(7200)).to eq('2 часа')
+    end
+  end
+
   describe 'numbers' do
     it 'puts a space between thousands' do
       expect(described_class.format_number(12_450)).to eq('12 450')

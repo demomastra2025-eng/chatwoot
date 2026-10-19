@@ -23,7 +23,7 @@ The figures of the background queues in Russian, the queues with their waiting t
     { label: t('super_admin.monitoring.queue_stats.scheduled'), value: super_admin_number(stats.scheduled) },
     { label: t('super_admin.monitoring.queue_stats.retries'), value: super_admin_number(stats.retries) },
     { label: t('super_admin.monitoring.queue_stats.dead'), value: super_admin_number(stats.dead), tone: (:bad if stats.dead.positive?) },
-    { label: t('super_admin.monitoring.queue_stats.latency'), value: t('super_admin.monitoring.queue_stats.seconds', count: stats.latency),
+    { label: t('super_admin.monitoring.queue_stats.latency'), value: super_admin_wait(stats.latency),
       tone: (:bad if stats.latency >= SuperAdmin::QueueStats::SLOW_LATENCY) }
   ] %>
 
@@ -47,7 +47,7 @@ The figures of the background queues in Russian, the queues with their waiting t
               <tr class="border-b border-n-weak last:border-b-0" data-queue="<%= queue.name %>">
                 <th scope="row" class="px-3 py-2.5 font-normal first:ps-5"><%= queue.name %></th>
                 <td class="px-3 py-2.5 text-end tabular-nums"><%= super_admin_number(queue.jobs) %></td>
-                <td class="px-3 py-2.5 text-end tabular-nums last:pe-5 <%= 'text-n-ruby-11' if queue.slow? %>"><%= t('super_admin.monitoring.queue_stats.seconds', count: queue.latency) %></td>
+                <td class="px-3 py-2.5 text-end tabular-nums last:pe-5 <%= 'text-n-ruby-11' if queue.slow? %>"><%= super_admin_wait(queue.latency) %></td>
               </tr>
             <% end %>
           </tbody>
