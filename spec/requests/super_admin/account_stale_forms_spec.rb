@@ -277,9 +277,11 @@ RSpec.describe 'Super Admin forms drawn from an earlier state of an account', ty
       state = drawn_form_state
       account.update!(status: :suspended, name: 'Филиал 1 (другое имя)')
 
+      language = account.locale
+
       save(state, account_params: { name: 'Филиал 1 (новый)', locale: 'kk', status: 'active' })
 
-      expect(account.reload).to have_attributes(name: 'Филиал 1 (другое имя)', status: 'suspended', locale: 'ru')
+      expect(account.reload).to have_attributes(name: 'Филиал 1 (другое имя)', status: 'suspended', locale: language)
       expect(flashes).to include('в аккаунте изменилось: основное.')
     end
 
