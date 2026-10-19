@@ -12,19 +12,26 @@ class SuperAdmin::DashboardAlerts::Trials < SuperAdmin::DashboardAlerts::Check
   TRIAL_ENDING_DAYS = 3
   TRIAL_EXPIRED_DAYS = 7
   # Whether a plan was applied to the account (the same mark as SuperAdmin::AccountPlanState#assigned?)
-  PLAN_ASSIGNED_SQL = "COALESCE(custom_attributes->>'#{Accounts::ApplyPlan::PLAN_KEY}', '') <> ''"
+  PLAN_ASSIGNED_SQL = "COALESCE(custom_attributes->>'#{Accounts::ApplyPlan::PLAN_KEY}', '') <> ''".freeze
 
   Trial = Struct.new(:id, :name, :ends_at, :planned)
 
   def alerts
     now = Time.current
-    ending = trials.select { |trial| trial.ends_at > now && trial.ends_at <= now + TRIAL_ENDING_DAYS.days }.sort_by(&:ends_at)
-    expired = trials.select { |trial| !trial.planned && trial.ends_at <= now && trial.ends_at > now - TRIAL_EXPIRED_DAYS.days }
-                    .sort_by(&:ends_at).reverse
-    [ending_alert(ending, now), expired_alert(expired)].compact
+    [ending_alert(ending_trials(now), now), expired_alert(expired_trials(now))].compact
   end
 
   private
+
+  def ending_trials(now)
+    trials.select { |trial| trial.ends_at > now && trial.ends_at <= now + TRIAL_ENDING_DAYS.days }.sort_by(&:ends_at)
+  end
+
+  # The trials that ended lately on accounts without a plan, the latest first
+  def expired_trials(now)
+    trials.select { |trial| !trial.planned && trial.ends_at <= now && trial.ends_at > now - TRIAL_EXPIRED_DAYS.days }
+          .sort_by(&:ends_at).reverse
+  end
 
   # The accounts that have a trial with a readable end
   def trials

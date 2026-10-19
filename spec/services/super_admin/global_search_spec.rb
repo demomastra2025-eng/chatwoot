@@ -145,13 +145,11 @@ RSpec.describe SuperAdmin::GlobalSearch do
     end
 
     it 'passes a number without the sign, and says the list finds more: it takes every number that contains it' do
-      %w[#12 12].each do |term|
-        %i[accounts users].each do |key|
-          list = group(search(term), key)
+      %w[#12 12].product(%i[accounts users]).each do |term, key|
+        list = group(search(term), key)
 
-          expect(list.list_term).to eq('12'), "«#{term}» should pass 12 to the list of #{key}"
-          expect(list.list_alike).to be(false)
-        end
+        expect(list.list_term).to eq('12'), "«#{term}» should pass 12 to the list of #{key}"
+        expect(list.list_alike).to be(false)
       end
     end
 
