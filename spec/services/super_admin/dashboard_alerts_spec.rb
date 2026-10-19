@@ -95,6 +95,45 @@ RSpec.describe SuperAdmin::DashboardAlerts do
       expect(found[:items].pluck(:label)).not_to include(planned.name)
     end
 
+    describe 'an ended trial of an account with a plan whose limits the end put at zero' do
+      def ended_with_plan(snapshot_extra = {}, limits: { 'agents' => 0, 'inboxes' => 0 })
+        snapshot = { 'features' => [], 'limits' => {}, 'taken_at' => 3.days.ago.iso8601 }.merge(snapshot_extra)
+        account = trial_account(2.days.ago, 'plan' => 'base', 'trial_snapshot' => snapshot)
+        account.update!(limits: limits)
+        account
+      end
+
+      it 'is listed with a note that says the limits stayed at zero, as the plan does not give them back' do
+        held = ended_with_plan('limits_locked' => true)
+
+        found = alert('trials_expired')
+
+        expect(found[:items].pluck(:label)).to eq([held.name])
+        expect(found[:items].first[:note]).to match(/\Aзакончился \d\d\.\d\d\.\d{4} \d\d:\d\d · лимиты операторов и каналов остались на нуле\z/)
+      end
+
+      it 'is listed when only one of the two limits is zero and for a snapshot that does not say whether the end locked them' do
+        ended_with_plan({}, limits: { 'agents' => 5, 'inboxes' => 0 })
+
+        expect(alert('trials_expired')[:count]).to eq(1)
+      end
+
+      it 'is not listed when the end kept the limits, when they are above zero or when the trial has no snapshot' do
+        ended_with_plan('limits_locked' => false)
+        ended_with_plan({ 'limits_locked' => true }, limits: { 'agents' => 3, 'inboxes' => 2 })
+        ended_with_plan({ 'limits_locked' => true }, limits: {})
+        trial_account(2.days.ago, 'plan' => 'base').update!(limits: { 'agents' => 0 })
+
+        expect(alert('trials_expired')).to be_nil
+      end
+
+      it 'keeps the plain note for an account without a plan' do
+        trial_account(1.day.ago)
+
+        expect(alert('trials_expired')[:items].first[:note]).to match(/\Aзакончился \d\d\.\d\d\.\d{4} \d\d:\d\d\z/)
+      end
+    end
+
     it 'still lists a trial with a plan that is about to end, as the functions it lent beyond the plan switch off' do
       planned = trial_account(1.day.from_now, 'plan' => 'base')
 
