@@ -54,7 +54,12 @@ const cardsOf = (root, key) =>
     card.dataset.config.split(/\s+/).includes(key)
   );
 
-export const initSettingsForm = (page, form, texts = {}) => {
+export const initSettingsForm = (
+  page,
+  form,
+  texts = {},
+  { navigate = url => window.location.assign(url) } = {}
+) => {
   const bar = form.querySelector('[data-savebar]');
   const barText = form.querySelector('[data-savebar-text]');
   const cancel = form.querySelector('[data-savebar-cancel]');
@@ -85,19 +90,20 @@ export const initSettingsForm = (page, form, texts = {}) => {
     submitting = true;
   });
 
-  window.addEventListener('beforeunload', event => {
+  const warnBeforeLeaving = event => {
     if (submitting || dirty.length === 0) return undefined;
     event.preventDefault();
     // eslint-disable-next-line no-param-reassign
     event.returnValue = texts.leave || '';
     return texts.leave || '';
-  });
+  };
+  window.addEventListener('beforeunload', warnBeforeLeaving);
 
   if (cancel) {
     cancel.addEventListener('click', () => {
       // what the server refused is not in the form as it was saved: ask for the page again
       if (forced.length) {
-        window.location.assign(form.dataset.cancelUrl || window.location.pathname);
+        navigate(form.dataset.cancelUrl || window.location.pathname);
         return;
       }
       form.reset();
@@ -126,7 +132,14 @@ export const initSettingsForm = (page, form, texts = {}) => {
   window.addEventListener('pageshow', update);
 
   update();
-  return { update, dirty: () => dirty, markClean: () => { initial = snapshot(form); update(); } };
+  return {
+    update,
+    dirty: () => dirty,
+    destroy: () => {
+      window.removeEventListener('beforeunload', warnBeforeLeaving);
+      window.removeEventListener('pageshow', update);
+    },
+  };
 };
 
 // A plain select of one model: a saved model the list does not offer is added so that it can be put back
