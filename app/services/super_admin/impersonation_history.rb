@@ -21,8 +21,9 @@ class SuperAdmin::ImpersonationHistory
     new(audits_scope.where(auditable_id: account.id)).entries
   end
 
-  # The accounts the user belongs to now: the entries of an account are found by its number (an indexed read), and only
-  # then by the user they name
+  # The accounts the user belongs to NOW: the entries of an account are found by its number (an indexed read), and only then
+  # by the user they name. An entry into an account the user has left since stays on the card of that account but is not
+  # found here (the audit log has no index on the user, so the other way would read the whole log); the page says so.
   def self.for_user(user)
     account_ids = AccountUser.where(user_id: user.id).pluck(:account_id)
     return [] if account_ids.empty?

@@ -76,6 +76,26 @@ RSpec.describe 'Super admin entries into an account', type: :request do
       expect(row.at_css('a')['href']).to eq("/super_admin/accounts/#{account.id}")
     end
 
+    it 'says that the accounts are the ones the user belongs to now, and where the entries into a left account are' do
+      get "/super_admin/users/#{operator.id}"
+
+      hint = history.at_css('summary').text.squish
+      expect(hint).to include('в аккаунты, где он состоит сейчас')
+      expect(hint).to include('виден на карточке этого аккаунта')
+    end
+
+    it 'does not find an entry into an account the user has left (it stays on the card of that account)' do
+      post "/super_admin/accounts/#{account.id}/impersonate", params: { user_id: operator.id }
+      AccountUser.where(user_id: operator.id, account_id: account.id).delete_all
+      create(:account_user, user: operator, account: create(:account))
+
+      get "/super_admin/users/#{operator.id}"
+      expect(history.at_css("[data-testid='impersonation-empty']")).to be_present
+
+      get "/super_admin/accounts/#{account.id}"
+      expect(history.css("[data-testid='impersonation-entry']").size).to eq(1)
+    end
+
     it 'is empty for a user nobody has entered as' do
       get "/super_admin/users/#{operator.id}"
 
