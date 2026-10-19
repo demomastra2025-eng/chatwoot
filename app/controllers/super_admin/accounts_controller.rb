@@ -75,9 +75,9 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   end
 
   # The owner-decision switches of «Служебные» are saved with this update too; a change of one leaves an entry in the
-  # audit log of the clinic.
-  # The organization and the sections of the form that were changed by somebody else while the form was open are left
-  # as they are (see SuperAdmin::AccountFormState and SuperAdmin::OrganizationLinks); the operator is told which.
+  # audit log of the clinic. The organization and the sections of the edit form that somebody else changed while the form
+  # was open are left as they are (see SuperAdmin::AccountFormState and SuperAdmin::OrganizationLinks); the operator is
+  # told which.
   def update
     owner_changes = owner_decision_changes
     organization = submitted_organization
