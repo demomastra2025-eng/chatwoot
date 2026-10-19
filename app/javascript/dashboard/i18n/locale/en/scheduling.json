@@ -679,7 +679,9 @@
         "ALL_TYPES": "All types",
         "ALL_SOURCES": "All sources",
         "MOYSKLAD_ONLY": "MoySklad only",
-        "LOCAL_ONLY": "Local only"
+        "LOCAL_ONLY": "Local only",
+        "ALL_CATEGORIES": "All categories",
+        "SHOW_INACTIVE": "Show inactive"
       },
       "SUMMARY": {
         "TOTAL": "Total items",
@@ -705,6 +707,17 @@
         "SAVE_AND_SYNC": "Save & Sync Now",
         "CONFIG_SAVED": "MoySklad settings saved",
         "SYNC_SUCCESS": "MoySklad sync completed: {count} items updated"
+      },
+      "DRAWER_SUBTITLE": "Configure product details, pricing, and inventory balances.",
+      "ITEM_TYPE": "Item type",
+      "BUY_PRICE": "Purchase price",
+      "MIN_PRICE": "Minimum price",
+      "ACTIVE_LABEL": "Product is active and visible in catalog",
+      "TABLE": {
+        "NAME": "Product",
+        "CATEGORY": "Category",
+        "PRICE": "Price",
+        "STOCK": "Stock & Reserve"
       }
     }
   }
