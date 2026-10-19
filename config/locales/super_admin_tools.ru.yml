@@ -116,6 +116,7 @@ ru:
         already_there: "Уже в этой организации"
         already_free: "Уже без организации"
         failed: "Не удалось выполнить"
+        out_of_time: "Не хватило времени, аккаунт не тронут"
       detail:
         enable: "Включится: %{count}"
         disable: "Отключится: %{count}"

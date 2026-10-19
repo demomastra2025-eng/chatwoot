@@ -14,11 +14,16 @@
 # * Every account that is changed leaves ONE entry in the audit log, marked `'bulk' => true`: the same entry the action
 #   leaves when it is done from the card of the account (the entry the model writes on a save is left out, so the log does
 #   not say the same thing twice).
-# * At most LIMIT accounts a time.
+# * At most LIMIT accounts a time, and a run stops starting new accounts after TIME_BUDGET seconds (see below).
 #
 # What each action does is in SuperAdmin::BulkAccounts::<Action>; they answer `evaluate(account)` and `perform(account)`.
 class SuperAdmin::BulkAccounts
   LIMIT = 200
+  # Seconds after which a run stops starting new accounts; the ones left are counted as `:out_of_time` and not touched. The
+  # web server cuts a request off at 15 seconds (rack-timeout), and a summary of what was done is better than a cut-off page
+  # with an unknown number of changed accounts. LIMIT accounts take 5-7 seconds on a quiet server (measured: 200 accounts, each
+  # action), so this is a safety net for a busy one.
+  TIME_BUDGET = 9
   ACTIONS = %w[apply_plan extend_trial suspend activate link_organization].freeze
   # Written into the audit entry of every account of a bulk action
   AUDIT_EXTRA = { 'bulk' => true }.freeze
@@ -75,8 +80,9 @@ class SuperAdmin::BulkAccounts
 
   def apply
     result = Result.new(done: 0, skipped: Hash.new(0))
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     ids.each do |id|
-      reason = apply_one(accounts[id], id)
+      reason = out_of_time?(started) ? :out_of_time : apply_one(accounts[id], id)
       reason ? result.skipped[reason] += 1 : result.done += 1
     end
     result
@@ -108,7 +114,13 @@ class SuperAdmin::BulkAccounts
     SuperAdmin::AccountDeletion.new(account: account).scheduled?
   end
 
-  # nil when the account was changed, otherwise why it was not
+  def out_of_time?(started)
+    Process.clock_gettime(Process::CLOCK_MONOTONIC) - started > TIME_BUDGET
+  end
+
+  # nil when the account was changed, otherwise why it was not. `rescue StandardError` does not hide a request timeout:
+  # rack-timeout interrupts the thread with Rack::Timeout::RequestTimeoutException, an Exception (not a StandardError) so that
+  # an application cannot swallow it. It stops the whole run, and is never counted as an account that failed.
   def apply_one(account, id)
     entry = judge(account, id)
     return entry.reason if entry.skip?

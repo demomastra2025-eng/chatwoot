@@ -26,7 +26,7 @@ class SuperAdmin::AccountBulkActionsController < SuperAdmin::ApplicationControll
     return redirect_to(back_path, alert: flash_text(:not_ready)) unless @bulk.ready?
 
     result = @bulk.apply
-    flash_key = result.done.positive? && result.skipped[:failed].zero? ? :notice : :alert
+    flash_key = result.done.positive? && result.skipped[:failed].zero? && result.skipped[:out_of_time].zero? ? :notice : :alert
     redirect_to back_path, flash_key => result_text(result)
   end
 

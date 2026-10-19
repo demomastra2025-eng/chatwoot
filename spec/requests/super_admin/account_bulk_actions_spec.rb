@@ -407,6 +407,16 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
       expect(flash[:alert]).to eq('Заблокировать: успешно 0, пропущено 1 (уже заблокирован — 1).')
     end
 
+    it 'is a warning that counts the accounts it had no time for, and leaves them untouched' do
+      stub_const('SuperAdmin::BulkAccounts::TIME_BUDGET', -1)
+
+      run('suspend', [first, second])
+
+      expect(flash[:notice]).to be_nil
+      expect(flash[:alert]).to eq('Заблокировать: успешно 0, пропущено 2 (не хватило времени, аккаунт не тронут — 2).')
+      expect([first.reload, second.reload]).to all(be_active)
+    end
+
     it 'refuses more than 200 accounts whole, and changes none' do
       post bulk_path, params: { bulk_action: 'suspend', account_ids: ids(first, second) + (900_000_000...900_000_199).to_a }
 

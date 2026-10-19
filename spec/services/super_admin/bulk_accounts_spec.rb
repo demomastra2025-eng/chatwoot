@@ -116,6 +116,29 @@ RSpec.describe SuperAdmin::BulkAccounts do
       expect(audits(broken)).to be_empty
     end
 
+    it 'stops starting accounts when its time is up, leaves the rest untouched and says so' do
+      done, late, later = Array.new(3) { create(:account, status: 'active') }
+      run_of_the_request = bulk('suspend', [done, late, later])
+      allow(run_of_the_request).to receive(:out_of_time?).and_return(false, true, true)
+
+      result = run(run_of_the_request)
+
+      expect(result).to have_attributes(done: 1, skipped: { out_of_time: 2 })
+      expect(done.reload).to be_suspended
+      expect([late.reload, later.reload]).to all(be_active)
+      expect(audits(done, 'suspend_account').count).to eq(1)
+      expect(audits(late)).to be_empty
+    end
+
+    it 'does not take a request timeout for an account that failed' do
+      first, second = Array.new(2) { create(:account, status: 'active') }
+      run_of_the_request = bulk('suspend', [first, second])
+      allow(run_of_the_request.strategy).to receive(:perform).and_raise(Rack::Timeout::RequestTimeoutException.new({}))
+
+      expect { run(run_of_the_request) }.to raise_error(Rack::Timeout::RequestTimeoutException)
+      expect(second.reload).to be_active
+    end
+
     it 'looks at an account again when it is its turn' do
       account = create(:account, status: 'active')
       run_of_the_request = bulk('suspend', [account])
