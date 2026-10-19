@@ -83,6 +83,24 @@ RSpec.describe SuperAdmin::DashboardAlerts do
       expect(alerts).to eq([])
     end
 
+    it 'does not list an ended trial of an account that already has a plan, as there is nothing left to assign' do
+      planned = trial_account(2.days.ago, 'plan' => 'base', 'plan_modules' => ['ai_agents'])
+      without_plan = trial_account(1.day.ago)
+      blank_plan = trial_account(3.days.ago, 'plan' => '')
+
+      found = alert('trials_expired')
+
+      expect(found).to include(count: 2)
+      expect(found[:items].pluck(:label)).to contain_exactly(without_plan.name, blank_plan.name)
+      expect(found[:items].pluck(:label)).not_to include(planned.name)
+    end
+
+    it 'still lists a trial with a plan that is about to end, as the functions it lent beyond the plan switch off' do
+      planned = trial_account(1.day.from_now, 'plan' => 'base')
+
+      expect(alert('trials_ending')[:items].pluck(:label)).to eq([planned.name])
+    end
+
     it 'shows ten and counts all' do
       create_list(:account, 12) do |account, index|
         account.update!(custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => (index + 1).hours.from_now.iso8601 })
@@ -182,12 +200,13 @@ RSpec.describe SuperAdmin::DashboardAlerts do
       expect(found).to include(severity: :danger, count: 2)
       expect(found[:items].pluck(:label)).to eq(%w[low default])
       expect(found[:items].first).to include(url: '/super_admin/monitoring?tab=queues', note: 'ждёт 6 минут, задач в очереди: 9')
+      expect(found[:listed]).to be(true)
     end
 
     it 'raises a warning for jobs that are dead' do
       allow(SuperAdmin::QueueStats).to receive(:read).and_return(queue_stats(dead: 4, queues: [queue('default', 2)]))
 
-      expect(alert('queues_dead')).to include(severity: :warning, count: 4)
+      expect(alert('queues_dead')).to include(severity: :warning, count: 4, listed: false)
       expect(alert('queues_slow')).to be_nil
     end
 
@@ -207,6 +226,18 @@ RSpec.describe SuperAdmin::DashboardAlerts do
       channel
     end
 
+    def telegram_personal(**states)
+      channel = create(:channel_telegram_personal, account: account, **states)
+      channel.inbox.update!(name: 'Telegram клиники')
+      channel
+    end
+
+    def whatsapp_web(**states)
+      channel = create(:channel_whatsapp_web, account: account, **states)
+      channel.inbox.update!(name: 'WhatsApp Web клиники')
+      channel
+    end
+
     it 'lists the channels that ask for it, with the kind and the account' do
       marked = whatsapp
       mark_for_reauthorization(marked)
@@ -219,7 +250,7 @@ RSpec.describe SuperAdmin::DashboardAlerts do
 
       expect(found).to include(severity: :danger, count: 2)
       expect(found[:items].pluck(:label)).to contain_exactly('WhatsApp клиники · Клиника «Алатау»', 'Почта клиники · Клиника «Алатау»')
-      expect(found[:items].pluck(:note)).to contain_exactly('WhatsApp', 'Email')
+      expect(found[:items].pluck(:note)).to contain_exactly('WhatsApp', 'Почта')
       expect(found[:items].pluck(:url).uniq).to eq(["/super_admin/accounts/#{account.id}"])
     end
 
@@ -234,8 +265,62 @@ RSpec.describe SuperAdmin::DashboardAlerts do
     it 'is quiet when no channel asks' do
       whatsapp
       create(:channel_email, account: account)
+      telegram_personal(connection_state: 'connected', lifecycle_state: 'connected')
+      whatsapp_web(connection_state: 'open', lifecycle_state: 'connected')
 
       expect(alert('reauthorization')).to be_nil
+    end
+
+    describe 'a personal Telegram that asks for a new login' do
+      it 'lists a session that wants authorizing again, a QR code that ran out and a cloud password that is asked for' do
+        telegram_personal(connection_state: 'auth_required', lifecycle_state: 'disconnected')
+        telegram_personal(connection_state: 'disconnected', lifecycle_state: 'qr_expired')
+        telegram_personal(connection_state: 'connecting', lifecycle_state: 'password_required')
+
+        found = alert('reauthorization')
+
+        expect(found).to include(severity: :danger, count: 3)
+        expect(found[:items].pluck(:note).uniq).to eq(['Telegram (личный)'])
+        expect(found[:items].pluck(:label).uniq).to eq(['Telegram клиники · Клиника «Алатау»'])
+        expect(found[:items].pluck(:url).uniq).to eq(["/super_admin/accounts/#{account.id}"])
+      end
+
+      it 'does not list a connected one, one that waits for its first login or one that is being removed' do
+        telegram_personal(connection_state: 'connected', lifecycle_state: 'connected')
+        telegram_personal(connection_state: 'disconnected', lifecycle_state: 'pending_auth')
+        telegram_personal(connection_state: 'disconnected', lifecycle_state: 'qr_ready')
+        telegram_personal(connection_state: 'disconnected', lifecycle_state: 'disconnected')
+        telegram_personal(connection_state: 'flood_wait', lifecycle_state: 'connected')
+
+        expect(alert('reauthorization')).to be_nil
+      end
+    end
+
+    describe 'a WhatsApp Web number that was logged out' do
+      it 'lists a number that disconnected and one that failed, and does not list a connected or a waiting one' do
+        whatsapp_web(connection_state: 'close', lifecycle_state: 'disconnected')
+        whatsapp_web(connection_state: 'refused', lifecycle_state: 'failed')
+        whatsapp_web(connection_state: 'open', lifecycle_state: 'connected')
+        whatsapp_web(connection_state: 'close', lifecycle_state: 'qr_ready')
+        whatsapp_web(connection_state: 'close', lifecycle_state: 'deleting')
+
+        found = alert('reauthorization')
+
+        expect(found).to include(severity: :danger, count: 2)
+        expect(found[:items].pluck(:note).uniq).to eq(['WhatsApp Web'])
+        expect(found[:items].pluck(:label).uniq).to eq(['WhatsApp Web клиники · Клиника «Алатау»'])
+      end
+
+      it 'sits in one alert with the channels that carry the mark' do
+        mark_for_reauthorization(whatsapp)
+        whatsapp_web(connection_state: 'close', lifecycle_state: 'disconnected')
+        telegram_personal(connection_state: 'auth_required', lifecycle_state: 'disconnected')
+
+        found = alert('reauthorization')
+
+        expect(found[:count]).to eq(3)
+        expect(found[:items].pluck(:note)).to contain_exactly('WhatsApp', 'WhatsApp Web', 'Telegram (личный)')
+      end
     end
   end
 
@@ -300,6 +385,8 @@ RSpec.describe SuperAdmin::DashboardAlerts do
         write_snapshot(full, consumed: 97)
         channel = create(:channel_email, account: full)
         mark_for_reauthorization(channel)
+        create(:channel_telegram_personal, account: full, connection_state: 'auth_required')
+        create(:channel_whatsapp_web, account: full, lifecycle_state: 'disconnected')
       end
     end
 

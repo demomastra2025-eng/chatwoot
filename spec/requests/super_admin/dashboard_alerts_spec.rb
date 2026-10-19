@@ -74,6 +74,34 @@ RSpec.describe 'Super admin «Сводка»: Нужно проверить', ty
     expect(card.css('a').last.text.squish).to eq('Все аккаунты на пробном периоде')
   end
 
+  it 'says how many jobs are dead and does not promise a list of them: one link opens the queues' do
+    allow(SuperAdmin::QueueStats).to receive(:read).and_return(queue_stats(dead: 4))
+
+    get '/super_admin'
+
+    card = page.at_css("[data-alert='queues_dead']")
+    expect(card['data-severity']).to eq('warning')
+    expect(card.text.squish).to include('Найдено: 4')
+    expect(card.text.squish).not_to include('Показаны первые')
+    expect(card.css('[data-alert-item]').size).to eq(1)
+    expect(card.css('a').map { |link| link['href'] }).to eq(['/super_admin/monitoring?tab=queues'])
+  end
+
+  it 'lists a personal Telegram and a WhatsApp Web number that need a new login, with a link to the account' do
+    account = create(:account, name: 'Клиника «Алатау»')
+    create(:channel_telegram_personal, account: account, connection_state: 'auth_required').inbox.update!(name: 'Рабочий Telegram')
+    create(:channel_whatsapp_web, account: account, lifecycle_state: 'disconnected').inbox.update!(name: 'Номер регистратуры')
+
+    get '/super_admin'
+
+    card = page.at_css("[data-alert='reauthorization']")
+    expect(card['data-severity']).to eq('danger')
+    expect(card.css('[data-alert-item]').map { |item| item.text.squish }).to contain_exactly(
+      'Рабочий Telegram · Клиника «Алатау» Telegram (личный)', 'Номер регистратуры · Клиника «Алатау» WhatsApp Web'
+    )
+    expect(card.css('a').map { |link| link['href'] }.uniq).to eq(["/super_admin/accounts/#{account.id}"])
+  end
+
   it 'writes the name of an account as text' do
     create(:account, name: '<img src=x onerror=alert(1)>',
                      custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => 1.day.from_now.iso8601 })
