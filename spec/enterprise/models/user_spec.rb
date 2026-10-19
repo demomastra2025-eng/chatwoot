@@ -65,6 +65,7 @@ RSpec.describe User do
 
     context 'when the name, the e-mail or the role of a user changes' do
       it 'writes the old and the new value' do
+        user.skip_reconfirmation!
         user.update!(name: 'Новое имя', email: 'new-address@example.com')
 
         audit = Audited::Audit.where(auditable_type: 'User', auditable_id: user.id, action: 'update').last

@@ -3,8 +3,8 @@ require 'rails_helper'
 RSpec.describe SuperAdmin::AccountDeletion do
   subject(:deletion) { described_class.new(account: account, actor: super_admin) }
 
-  let(:account) { create(:account, name: 'Аккаунт Алатау', custom_attributes: { 'plan' => 'base' }) }
-  let(:super_admin) { create(:super_admin) }
+  let!(:account) { create(:account, name: 'Аккаунт Алатау', custom_attributes: { 'plan' => 'base' }) }
+  let!(:super_admin) { create(:super_admin) }
 
   describe '#schedule' do
     it 'marks the account for deletion after the grace period and keeps its other attributes' do

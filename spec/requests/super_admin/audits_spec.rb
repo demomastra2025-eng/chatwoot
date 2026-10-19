@@ -76,12 +76,14 @@ RSpec.describe 'Super Admin Audits', type: :request do
       end
 
       it 'names an actor whose partner access was deleted by its number' do
+        partner = create(:platform_app)
         Audited::Audit.create!(auditable: account, associated: account, action: 'partner_update_account', audited_changes: {},
-                               user_id: 987_654, user_type: 'PlatformApp', comment: 'platform_app')
+                               user: partner, comment: 'platform_app')
+        PlatformApp.where(id: partner.id).delete_all
 
         get '/super_admin/audits'
 
-        expect(response.body).to include('Партнёр: №987654')
+        expect(response.body).to include("Партнёр: №#{partner.id}")
       end
 
       it 'shows an entry that has no object (an unknown e-mail at the sign-in) with the typed e-mail and a dash' do
@@ -92,7 +94,7 @@ RSpec.describe 'Super Admin Audits', type: :request do
 
         row = Nokogiri::HTML(response.body).css('tbody tr').find { |tr| tr.text.include?('nobody@example.com') }
         expect(row.text).to include('Неудачная попытка входа в супер-админку')
-        expect(row.text).not_to include('{', 'account')
+        expect(row.css('td')[2].text.squish).to eq('—')
       end
 
       it 'offers the actions of the security side in the filter, with Russian names' do
