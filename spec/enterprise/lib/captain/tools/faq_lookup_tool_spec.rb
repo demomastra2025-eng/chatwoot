@@ -62,6 +62,58 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     expect(second_payload['matches'].first).to include('document_chunk_id' => document_chunk.id)
   end
 
+  it 'rejects a moderate-similarity candidate (distance <= 0.62) when morphological corroboration fails' do
+    therapist_faq = create(
+      :captain_assistant_response,
+      assistant: assistant,
+      account: account,
+      question: 'Принимает ли терапевт?',
+      answer: 'Да, терапевт принимает ежедневно.',
+      status: 'approved'
+    )
+    scored = Captain::AssistantResponse.select('captain_assistant_responses.*, 0.48 AS neighbor_distance').where(id: therapist_faq.id)
+    allow(Captain::AssistantResponse).to receive(:search).and_return(scored)
+
+    payload = JSON.parse(tool.perform(tool_context, query: 'стоимость приема терапевта'))
+
+    expect(payload).to include(
+      'total_count' => 0,
+      'result' => 'not_found',
+      'lookup_strategy' => 'semantic_faq'
+    )
+    expect(payload['matches']).to be_empty
+    expect(payload.dig('retrieval_trace', 'no_match_reason')).to eq('relevance_threshold_not_met')
+    expect(payload.dig('retrieval_trace', 'relevance_check', 'corroboration', 'passed')).to be(false)
+    expect(Captain::KnowledgeAnswerCacheEntry.count).to eq(0)
+  end
+
+  it 'returns corroborated_faq without caching when morphological corroboration rescues a moderate candidate' do
+    therapist_faq = create(
+      :captain_assistant_response,
+      assistant: assistant,
+      account: account,
+      question: 'Принимает ли терапевт?',
+      answer: 'Да, терапевт принимает ежедневно.',
+      status: 'approved'
+    )
+    scored = Captain::AssistantResponse.select('captain_assistant_responses.*, 0.48 AS neighbor_distance').where(id: therapist_faq.id)
+    allow(Captain::AssistantResponse).to receive(:search).and_return(scored)
+
+    payload = JSON.parse(tool.perform(tool_context, query: 'хочу к терапевту'))
+
+    expect(payload).to include(
+      'total_count' => 1,
+      'result' => 'found',
+      'lookup_strategy' => 'corroborated_faq'
+    )
+    expect(payload['matches'].first).to include(
+      'id' => therapist_faq.id,
+      'question_corroboration_passed' => true,
+      'relevance_selected' => true
+    )
+    expect(Captain::KnowledgeAnswerCacheEntry.count).to eq(0)
+  end
+
   it 'does not expose a semantic candidate outside the relevance threshold' do
     faq_response.define_singleton_method(:neighbor_distance) { 0.9 }
     allow(Captain::AssistantResponse).to receive(:search).and_return([faq_response])

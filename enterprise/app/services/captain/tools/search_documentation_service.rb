@@ -194,31 +194,22 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
 
   def lexical_fallback_responses(*queries)
     queries.compact.each do |candidate_query|
+      faq_responses = Captain::AssistantResponse.lexical_search(
+        candidate_query,
+        account_id: assistant.account_id,
+        assistant_id: assistant.id,
+        limit: SEMANTIC_RESULT_LIMIT
+      )
+      return faq_responses if faq_responses.any?
+
       tokens = lexical_tokens(candidate_query)
       next if tokens.blank?
-
-      faq_responses = lexical_faq_responses(tokens)
-      return faq_responses if faq_responses.any?
 
       document_chunks = lexical_document_chunks(tokens)
       return document_chunks if document_chunks.any?
     end
 
     Captain::AssistantResponse.none
-  end
-
-  def lexical_faq_responses(tokens)
-    conditions = tokens.each_with_index.map do |_token, index|
-      "LOWER(question) LIKE :term_#{index} OR LOWER(answer) LIKE :term_#{index}"
-    end.join(' OR ')
-    bind_values = lexical_bind_values(tokens)
-
-    assistant.account.captain_assistant_responses
-             .approved
-             .visible_to_assistant(assistant.id)
-             .where(conditions, bind_values)
-             .ordered
-             .limit(5)
   end
 
   def lexical_document_chunks(tokens)
@@ -240,7 +231,7 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
   end
 
   def lexical_tokens(*queries)
-    queries.compact.join(' ').downcase.scan(/[\p{Alnum}]+/).select { |token| token.length >= 3 }.uniq.first(5)
+    Captain::AssistantResponse.send(:lexical_tokens, queries.compact.join(' '))
   end
 
   def format_response(response)

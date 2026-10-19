@@ -6,7 +6,6 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   SEMANTIC_LOOKUP_TIMEOUT_SECONDS = 8
   TOTAL_LOOKUP_TIMEOUT_SECONDS = 12
   SEMANTIC_DISTANCE_THRESHOLD = 0.3
-  CORROBORATED_DISTANCE_THRESHOLD = 0.62
   SEMANTIC_SIMILARITY_THRESHOLD = 1.0 - SEMANTIC_DISTANCE_THRESHOLD
 
   class TotalLookupTimeout < Timeout::Error; end
@@ -114,8 +113,8 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
 
   def lookup_responses(query, semantic: true)
     if semantic
-      responses, relevance_check = semantic_responses(query)
-      return [responses, 'semantic_faq', nil, relevance_check] if responses.any?
+      responses, relevance_check, strategy = semantic_responses(query)
+      return [responses, strategy, nil, relevance_check] if responses.any?
 
       if relevance_check[:candidate_count].zero?
         responses = lexical_fallback_responses(query)
@@ -137,18 +136,13 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
         limit: SEMANTIC_RESULT_LIMIT
       ).to_a
       responses = candidates.select { |response| semantic_distance_acceptable?(response) }
-      return [responses, semantic_relevance_check(candidates, responses)] if responses.any?
+      relevance_check = semantic_relevance_check(candidates, responses)
+      return [responses, relevance_check, 'semantic_faq'] if responses.any?
 
       selection = Captain::Knowledge::FaqRelevance.select(candidates, query: query)
-      if selection[:response].present?
-        rescued = [selection[:response]]
-        return [rescued, semantic_relevance_check(candidates, rescued).merge(corroboration: selection[:check])]
-      end
-
-      near = candidates.select { |response| corroborated_distance_acceptable?(response) }
-      lexical = lexical_fallback_responses(query).to_a
-      combined = (lexical + near.first(3)).uniq(&:id).first(SEMANTIC_RESULT_LIMIT)
-      [combined, semantic_relevance_check(candidates, combined)]
+      relevance_check[:corroboration] = selection[:check]
+      relevance_check[:selection_passed] = selection[:response].present?
+      [[selection[:response]].compact, relevance_check, 'corroborated_faq']
     end
   end
 
@@ -170,11 +164,6 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   def semantic_distance_acceptable?(response)
     distance = response.respond_to?(:neighbor_distance) ? response.neighbor_distance : nil
     distance.present? && distance.to_f <= SEMANTIC_DISTANCE_THRESHOLD
-  end
-
-  def corroborated_distance_acceptable?(response)
-    distance = response.respond_to?(:neighbor_distance) ? response.neighbor_distance : nil
-    distance.present? && distance.to_f <= CORROBORATED_DISTANCE_THRESHOLD
   end
 
   def bounded_cache_fetch(cache, query:)
@@ -343,7 +332,11 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
       score: score,
       relevance_threshold: SEMANTIC_SIMILARITY_THRESHOLD,
       relevance_threshold_passed: score >= SEMANTIC_SIMILARITY_THRESHOLD
-    }
+    }.tap do |payload|
+      next unless lookup_strategy == 'corroborated_faq'
+
+      payload.merge!(question_corroboration_passed: true, relevance_selected: true, relevance_selection: 'question_corroboration')
+    end
   end
 
   def semantic_similarity_score(response)
