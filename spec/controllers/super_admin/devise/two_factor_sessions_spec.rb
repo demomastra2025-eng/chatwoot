@@ -268,7 +268,7 @@ RSpec.describe 'Super Admin sign-in with two-factor authentication', type: :requ
       sign_in_with_password
       accept_codes(false)
       5.times { post '/super_admin/sign_in/two_factor', params: { otp_code: '000000' } }
-      expect($alfred.with { |redis| redis.ttl(attempts_key) }).to be_between(1, 15.minutes.to_i)
+      expect($alfred.with { |redis| redis.ttl(attempts_key) }).to be_between(1, 15.minutes.to_i) # rubocop:disable Style/GlobalVars
 
       Redis::Alfred.delete(attempts_key) # what the expiry of the key does
       sign_in_with_password

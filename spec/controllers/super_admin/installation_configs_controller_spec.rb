@@ -53,8 +53,9 @@ RSpec.describe 'Super Admin Installation Config API', type: :request do
       end
 
       it 'treats a webhook URL as a secret: whoever has the URL can post to the channel' do
-        upsert_installation_config('ACCOUNT_SECURITY_NOTIFICATION_WEBHOOK_URL', 'https://discord.com/api/webhooks/123/hook-token-ABCDEF', locked: false)
-        upsert_installation_config('INSTALLATION_EVENTS_WEBHOOK_URL', 'https://hooks.example.test/services/T0/B0/hook-token-GHIJKL', locked: false)
+        upsert_installation_config('ACCOUNT_SECURITY_NOTIFICATION_WEBHOOK_URL', 'https://discord.com/api/webhooks/1/hook-token-ABCDEF',
+                                   locked: false)
+        upsert_installation_config('INSTALLATION_EVENTS_WEBHOOK_URL', 'https://hooks.example.test/services/T0/hook-token-GHIJKL', locked: false)
 
         get '/super_admin/installation_configs'
 
