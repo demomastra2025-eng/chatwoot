@@ -90,23 +90,46 @@ class Imap::ImapMailbox
   end
 
   def find_or_create_conversation
-    @conversation = find_conversation_by_in_reply_to || find_conversation_by_reference_ids || ::Conversation.create!(
-      {
-        account_id: @account.id,
-        inbox_id: @inbox.id,
-        contact_id: @contact.id,
-        contact_inbox_id: @contact_inbox.id,
-        additional_attributes: {
-          source: 'email',
-          in_reply_to: in_reply_to,
-          auto_reply: @processed_mail.auto_reply?,
-          mail_subject: @processed_mail.subject,
-          initiated_at: {
-            timestamp: Time.now.utc
-          }
-        }
+    @conversation = find_existing_conversation
+    return sync_conversation_email_subject!(@conversation) if @conversation.present?
+
+    @conversation = create_email_conversation!
+  end
+
+  def find_existing_conversation
+    find_conversation_by_in_reply_to || find_conversation_by_reference_ids || find_existing_contact_conversation
+  end
+
+  def create_email_conversation!
+    ::Conversation.create!(
+      account_id: @account.id,
+      inbox_id: @inbox.id,
+      contact_id: @contact.id,
+      contact_inbox_id: @contact_inbox.id,
+      additional_attributes: {
+        source: 'email',
+        in_reply_to: in_reply_to,
+        auto_reply: @processed_mail.auto_reply?,
+        mail_subject: @processed_mail.subject,
+        initiated_at: { timestamp: Time.now.utc }
       }
     )
+  end
+
+  def find_existing_contact_conversation
+    return unless @inbox.lock_to_single_conversation? && @contact.present?
+
+    @inbox.conversations.where(contact_id: @contact.id).order(:id).last
+  end
+
+  def sync_conversation_email_subject!(conversation)
+    return conversation if @processed_mail.subject.blank?
+
+    attrs = (conversation.additional_attributes || {}).deep_dup
+    attrs['mail_subject'] = @processed_mail.subject
+    attrs['in_reply_to'] = in_reply_to if in_reply_to.present?
+    conversation.update!(additional_attributes: attrs) if attrs != conversation.additional_attributes
+    conversation
   end
 
   def find_or_create_contact

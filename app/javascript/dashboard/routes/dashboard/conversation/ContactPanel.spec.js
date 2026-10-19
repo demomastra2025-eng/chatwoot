@@ -44,7 +44,6 @@ vi.mock('dashboard/composables/useUISettings', async () => {
       conversationSidebarItemsOrder: createRef([
         { name: 'contact_attributes' },
         { name: 'contact_notes' },
-        { name: 'previous_conversation' },
       ]),
     }),
   };
@@ -108,9 +107,6 @@ describe('ContactPanel selected patient details', () => {
     expect(
       wrapper.findComponent({ name: 'ContactNotes' }).props('contactId')
     ).toBe(84);
-    expect(
-      wrapper.findComponent({ name: 'ContactConversations' }).props('contactId')
-    ).toBe(42);
     expect(mocks.dispatch).toHaveBeenCalledWith('contacts/show', { id: 42 });
     expect(mocks.dispatch).toHaveBeenCalledWith('contacts/show', { id: 84 });
     await wrapper.setProps({
@@ -120,9 +116,6 @@ describe('ContactPanel selected patient details', () => {
       wrapper.findComponent({ name: 'ContactNotes' }).props('contactId')
     ).toBe(85);
     expect(mocks.dispatch).toHaveBeenCalledWith('contacts/show', { id: 85 });
-    expect(
-      wrapper.findComponent({ name: 'ContactConversations' }).props('contactId')
-    ).toBe(42);
     expect(chat.meta.sender.id).toBe(42);
   });
 });

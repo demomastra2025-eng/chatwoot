@@ -10,6 +10,8 @@ module ActivityMessageHandler
   private
 
   def create_activity
+    return if skip_activity_messages
+
     user_name = determine_user_name
 
     handle_status_change(user_name)

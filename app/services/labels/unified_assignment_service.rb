@@ -20,8 +20,9 @@ class Labels::UnifiedAssignmentService
     event_id = SecureRandom.uuid
     ActiveRecord::Base.transaction do
       contact.update_labels(labels) if contact.present?
-      conversations.each do |conversation|
+      conversations.each_with_index do |conversation, index|
         conversation.communication_thread_event_id ||= event_id
+        conversation.skip_activity_messages = index.positive?
         conversation.update_labels(labels)
       end
     end

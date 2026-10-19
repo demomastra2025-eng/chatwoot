@@ -290,6 +290,10 @@
           "LABEL": "BCC",
           "PLACEHOLDER": "Emails separated by commas",
           "ERROR": "Please enter valid email addresses"
+        },
+        "SUBJECT": {
+          "LABEL": "Subject",
+          "PLACEHOLDER": "Enter email subject"
         }
       },
       "UNDEFINED_VARIABLES": {

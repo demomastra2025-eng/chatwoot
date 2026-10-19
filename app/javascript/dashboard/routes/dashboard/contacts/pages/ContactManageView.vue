@@ -10,7 +10,7 @@ import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import ContactDetails from 'dashboard/components-next/Contacts/Pages/ContactDetails.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 import ContactNotes from 'dashboard/components-next/Contacts/ContactsSidebar/ContactNotes.vue';
-import ContactHistory from 'dashboard/components-next/Contacts/ContactsSidebar/ContactHistory.vue';
+import ContactNotificationRoute from 'dashboard/components-next/Contacts/ContactsSidebar/ContactNotificationRoute.vue';
 import ContactMerge from 'dashboard/components-next/Contacts/ContactsSidebar/ContactMerge.vue';
 import ContactCustomAttributes from 'dashboard/components-next/Contacts/ContactsSidebar/ContactCustomAttributes.vue';
 import ContactSharedPhoneHint from 'dashboard/components-next/Contacts/ContactsSidebar/ContactSharedPhoneHint.vue';
@@ -58,7 +58,6 @@ const { t } = useI18n();
 
 const CONTACT_TABS_OPTIONS = [
   { key: 'ATTRIBUTES', value: 'attributes' },
-  { key: 'HISTORY', value: 'history' },
   { key: 'NOTES', value: 'notes' },
   { key: 'MERGE', value: 'merge' },
 ];
@@ -99,11 +98,6 @@ const handleTabChange = tab => {
 const fetchContactNotes = () => {
   const { contactId } = route.params;
   if (contactId) store.dispatch('contactNotes/get', { contactId });
-};
-
-const fetchContactConversations = () => {
-  const { contactId } = route.params;
-  if (contactId) store.dispatch('contactConversations/get', contactId);
 };
 
 const fetchAttributes = () => {
@@ -151,7 +145,6 @@ const promoteSharedPhone = async () => {
     useAlert(t('CONTACTS_LAYOUT.SIDEBAR.SHARED_PHONE.PROMOTED'));
     promotionDialogRef.value?.close();
     await store.dispatch('contacts/show', { id: contactId });
-    store.dispatch('contactConversations/get', contactId);
   } catch (error) {
     useAlert(sharedPhoneErrorMessage(error?.response?.data?.code));
   } finally {
@@ -214,7 +207,6 @@ const toggleContactBlock = async isBlocked => {
 onMounted(() => {
   fetchActiveContact();
   fetchContactNotes();
-  fetchContactConversations();
   fetchAttributes();
   fetchSharedPhone();
 });

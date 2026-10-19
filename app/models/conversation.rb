@@ -67,7 +67,7 @@ class Conversation < ApplicationRecord
   AUTOMATED_OUTBOUND_ATTRIBUTE = 'outbound_automated'.freeze
 
   attr_accessor :skip_runtime_events, :skip_communication_thread_refresh, :skip_communication_thread_realtime,
-                :communication_thread_event_id
+                :communication_thread_event_id, :skip_activity_messages
 
   validates :account_id, presence: true
   validates :inbox_id, presence: true

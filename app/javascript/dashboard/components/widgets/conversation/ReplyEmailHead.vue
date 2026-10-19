@@ -20,8 +20,17 @@ export default {
       type: String,
       default: '',
     },
+    subject: {
+      type: String,
+      default: '',
+    },
   },
-  emits: ['update:bccEmails', 'update:ccEmails', 'update:toEmails'],
+  emits: [
+    'update:bccEmails',
+    'update:ccEmails',
+    'update:toEmails',
+    'update:subject',
+  ],
   setup() {
     return { v$: useVuelidate() };
   },
@@ -31,6 +40,7 @@ export default {
       ccEmailsVal: '',
       bccEmailsVal: '',
       toEmailsVal: '',
+      subjectVal: '',
     };
   },
   watch: {
@@ -49,11 +59,17 @@ export default {
         this.toEmailsVal = newVal;
       }
     },
+    subject(newVal) {
+      if (newVal !== this.subjectVal) {
+        this.subjectVal = newVal;
+      }
+    },
   },
   mounted() {
     this.ccEmailsVal = this.ccEmails;
     this.bccEmailsVal = this.bccEmails;
     this.toEmailsVal = this.toEmails;
+    this.subjectVal = this.subject;
   },
   validations: {
     ccEmailsVal: {
@@ -76,11 +92,15 @@ export default {
     handleAddBcc() {
       this.showBcc = true;
     },
+    onSubjectInput() {
+      this.$emit('update:subject', this.subjectVal);
+    },
     onBlur() {
       this.v$.$touch();
       this.$emit('update:bccEmails', this.bccEmailsVal);
       this.$emit('update:ccEmails', this.ccEmailsVal);
       this.$emit('update:toEmails', this.toEmailsVal);
+      this.$emit('update:subject', this.subjectVal);
     },
   },
 };
@@ -88,6 +108,23 @@ export default {
 
 <template>
   <div>
+    <div class="input-group small">
+      <label class="input-group-label">
+        {{ $t('CONVERSATION.REPLYBOX.EMAIL_HEAD.SUBJECT.LABEL') }}
+      </label>
+      <div class="flex-1 min-w-0 m-0 rounded-none whitespace-nowrap">
+        <woot-input
+          v-model="subjectVal"
+          type="text"
+          class="[&>input]:!mb-0 [&>input]:border-transparent [&>input]:!outline-none [&>input]:h-8 [&>input]:!text-sm [&>input]:!border-0 [&>input]:border-none [&>input]:!bg-transparent dark:[&>input]:!bg-transparent"
+          :placeholder="
+            $t('CONVERSATION.REPLYBOX.EMAIL_HEAD.SUBJECT.PLACEHOLDER')
+          "
+          @input="onSubjectInput"
+          @blur="onBlur"
+        />
+      </div>
+    </div>
     <div v-if="toEmails">
       <div class="input-group small" :class="{ error: v$.toEmailsVal.$error }">
         <label class="input-group-label">

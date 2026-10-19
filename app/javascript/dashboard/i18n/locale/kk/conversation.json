@@ -265,6 +265,10 @@
           "LABEL": "BCC",
           "PLACEHOLDER": "Emails separated by commas",
           "ERROR": "Please enter valid email addresses"
+        },
+        "SUBJECT": {
+          "LABEL": "Тақырып",
+          "PLACEHOLDER": "Хат тақырыбын енгізіңіз"
         }
       },
       "UNDEFINED_VARIABLES": {

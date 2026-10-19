@@ -46,6 +46,7 @@ class ContactMergeAction
       Conversation.where(contact_id: @mergee_contact.id),
       contact_id: @base_contact.id
     )
+    Conversations::SingleDialogConsolidator.new(account: @account, contact_id: @base_contact.id).perform
   end
 
   def merge_communication_threads

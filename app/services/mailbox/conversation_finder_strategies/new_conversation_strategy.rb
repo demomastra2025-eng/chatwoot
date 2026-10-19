@@ -28,8 +28,14 @@ class Mailbox::ConversationFinderStrategies::NewConversationStrategy < Mailbox::
     existing_conversation = find_conversation_by_in_reply_to
     return existing_conversation if existing_conversation
 
-    # Prepare contact (persisted) and build conversation (not persisted)
+    # Prepare contact (persisted) and reuse or build conversation
     find_or_create_contact
+    existing_contact_conversation = find_existing_contact_conversation
+    if existing_contact_conversation
+      sync_conversation_email_subject!(existing_contact_conversation)
+      return existing_contact_conversation
+    end
+
     build_conversation
   end
 
@@ -79,5 +85,20 @@ class Mailbox::ConversationFinderStrategies::NewConversationStrategy < Mailbox::
     return if in_reply_to.blank?
 
     @account.conversations.where("additional_attributes->>'in_reply_to' = ?", in_reply_to).first
+  end
+
+  def find_existing_contact_conversation
+    return unless @inbox&.lock_to_single_conversation? && @contact.present?
+
+    @inbox.conversations.where(contact_id: @contact.id).order(:id).last
+  end
+
+  def sync_conversation_email_subject!(conversation)
+    return if @processed_mail.subject.blank?
+
+    attrs = (conversation.additional_attributes || {}).deep_dup
+    attrs['mail_subject'] = @processed_mail.subject
+    attrs['in_reply_to'] = in_reply_to if in_reply_to.present?
+    conversation.update!(additional_attributes: attrs) if attrs != conversation.additional_attributes
   end
 end

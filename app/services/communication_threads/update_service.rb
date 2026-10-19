@@ -27,14 +27,15 @@ class CommunicationThreads::UpdateService
   attr_reader :communication_thread, :current_account, :params, :accessible_links, :actor, :source
 
   def sync_accessible_conversations!
-    accessible_links.each do |link|
-      sync_conversation!(link.conversation)
+    accessible_links.each_with_index do |link, index|
+      sync_conversation!(link.conversation, skip_activity: index.positive?)
     end
   end
 
-  def sync_conversation!(conversation)
+  def sync_conversation!(conversation, skip_activity: false)
     conversation.skip_communication_thread_refresh = true
     conversation.skip_communication_thread_realtime = true
+    conversation.skip_activity_messages = skip_activity
     conversation.communication_thread_event_id = communication_thread_event_id
     assign_priority!(conversation)
     assign_agent!(conversation)

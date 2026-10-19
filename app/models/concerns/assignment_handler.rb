@@ -45,6 +45,8 @@ module AssignmentHandler
   end
 
   def process_assignment_activities
+    return if skip_activity_messages
+
     user_name = Current.user.name if Current.user.present?
     create_team_change_activity(user_name) if saved_change_to_team_id?
     create_assignee_change_activity(user_name) if saved_change_to_assignee_id?

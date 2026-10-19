@@ -113,15 +113,21 @@ class ConversationReplyMailer < ApplicationMailer
   end
 
   def mail_subject
+    return explicit_message_subject if explicit_message_subject.present?
+
     subject = @conversation.additional_attributes['mail_subject']
     return "[##{@conversation.display_id}] #{I18n.t('conversations.reply.email_subject')}" if subject.nil?
 
-    chat_count = @conversation.messages.chat.count
-    if chat_count > 1
-      "Re: #{subject}"
-    else
-      subject
-    end
+    reply_prefix_needed?(subject) ? "Re: #{subject}" : subject
+  end
+
+  def explicit_message_subject
+    attrs = current_message&.content_attributes || {}
+    attrs.dig('email', 'subject').presence || attrs.dig(:email, :subject).presence
+  end
+
+  def reply_prefix_needed?(subject)
+    @conversation.messages.chat.count > 1 && !subject.to_s.match?(/\Are:\s/i)
   end
 
   def reply_email
@@ -157,14 +163,14 @@ class ConversationReplyMailer < ApplicationMailer
   end
 
   def conversation_reply_email_id
-    # Find the last incoming message's message_id to reply to
-    content_attributes = @conversation.messages.incoming.last&.content_attributes
+    message_id = reply_target_email_message&.content_attributes&.dig('email', 'message_id')
+    "<#{message_id}>" if message_id.present?
+  end
 
-    if content_attributes && content_attributes['email'] && content_attributes['email']['message_id']
-      return "<#{content_attributes['email']['message_id']}>"
-    end
-
-    nil
+  def reply_target_email_message
+    replied_to_id = current_message&.in_reply_to
+    replied = @conversation.messages.find_by(id: replied_to_id) if replied_to_id.present?
+    replied || @conversation.messages.incoming.last
   end
 
   def references_header

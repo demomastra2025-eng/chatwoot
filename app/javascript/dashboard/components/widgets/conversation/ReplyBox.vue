@@ -134,6 +134,7 @@ export default {
       bccEmails: '',
       ccEmails: '',
       toEmails: '',
+      emailSubject: '',
       doAutoSaveDraft: () => {},
       showWhatsAppTemplatesModal: false,
       showContentTemplatesModal: false,

@@ -265,6 +265,7 @@ class CommunicationThreadApi extends ApiClient {
       ccEmails = '',
       bccEmails = '',
       toEmails = '',
+      mailSubject = '',
       templateParams,
       channelKey,
       targetInboxId,
@@ -286,6 +287,7 @@ class CommunicationThreadApi extends ApiClient {
         ccEmails,
         bccEmails,
         toEmails,
+        mailSubject,
         templateParams,
         extraParams: {
           conversation_id: conversationId,

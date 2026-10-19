@@ -261,7 +261,40 @@ class Messages::MessageBuilder
                                       end
 
     email_attributes[:text_content] = build_text_content(processed_content)
+    apply_email_subject!(email_attributes)
     email_attributes
+  end
+
+  def apply_email_subject!(email_attributes)
+    explicit_subject = @params[:mail_subject].presence ||
+                       content_attributes.dig(:email, :subject).presence ||
+                       content_attributes.dig('email', 'subject').presence
+    resolved_subject = explicit_subject.presence || default_outgoing_email_subject
+    email_attributes[:subject] = resolved_subject.to_s.strip if resolved_subject.present?
+    sync_conversation_mail_subject!(explicit_subject.to_s.strip) if explicit_subject.present?
+  end
+
+  def default_outgoing_email_subject
+    base_subject = replied_email_subject || @conversation.additional_attributes&.dig('mail_subject').presence
+    return if base_subject.blank?
+
+    base_subject.to_s.match?(/\Are:\s/i) ? base_subject : "Re: #{base_subject}"
+  end
+
+  def replied_email_subject
+    return if @in_reply_to.blank?
+
+    @conversation.messages.find_by(id: @in_reply_to)&.content_attributes&.dig('email', 'subject').presence
+  end
+
+  def sync_conversation_mail_subject!(subject_text)
+    return if subject_text.blank?
+
+    attrs = (@conversation.additional_attributes || {}).deep_dup
+    return if attrs['mail_subject'] == subject_text
+
+    attrs['mail_subject'] = subject_text
+    @conversation.update!(additional_attributes: attrs)
   end
 
   def build_html_content(normalized_content)

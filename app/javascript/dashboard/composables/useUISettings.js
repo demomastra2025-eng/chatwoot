@@ -8,7 +8,6 @@ export const DEFAULT_CONVERSATION_SIDEBAR_ITEMS_ORDER = Object.freeze([
   { name: 'contact_attributes' },
   { name: 'contact_notes' },
   { name: 'shared_files' },
-  { name: 'previous_conversation' },
   { name: 'conversation_participants' },
   { name: 'linear_issues' },
   { name: 'shopify_orders' },
@@ -17,7 +16,6 @@ export const DEFAULT_CONVERSATION_SIDEBAR_ITEMS_ORDER = Object.freeze([
 export const DEFAULT_CONTACT_SIDEBAR_ITEMS_ORDER = Object.freeze([
   { name: 'contact_attributes' },
   { name: 'contact_labels' },
-  { name: 'previous_conversation' },
 ]);
 
 /**
@@ -49,7 +47,7 @@ const useConversationSidebarItemsOrder = uiSettings => {
         itemsOrderCopy.push(item);
       }
     });
-    return itemsOrderCopy;
+    return itemsOrderCopy.filter(item => item.name !== 'previous_conversation');
   });
 };
 
@@ -61,7 +59,9 @@ const useConversationSidebarItemsOrder = uiSettings => {
 const useContactSidebarItemsOrder = uiSettings => {
   return computed(() => {
     const { contact_sidebar_items_order: itemsOrder } = uiSettings.value;
-    return itemsOrder || DEFAULT_CONTACT_SIDEBAR_ITEMS_ORDER;
+    return (itemsOrder || DEFAULT_CONTACT_SIDEBAR_ITEMS_ORDER).filter(
+      item => item.name !== 'previous_conversation'
+    );
   });
 };
 

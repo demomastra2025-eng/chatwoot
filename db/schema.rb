@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_19_000000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_19_150000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2054,7 +2054,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_000000) do
     t.boolean "csat_survey_enabled", default: false
     t.boolean "allow_messages_after_resolved", default: true
     t.jsonb "auto_assignment_config", default: {}
-    t.boolean "lock_to_single_conversation", default: false, null: false
+    t.boolean "lock_to_single_conversation", default: true, null: false
     t.bigint "portal_id"
     t.integer "sender_name_type", default: 0, null: false
     t.string "business_name"

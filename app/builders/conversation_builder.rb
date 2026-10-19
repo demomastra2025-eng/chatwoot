@@ -2,7 +2,9 @@ class ConversationBuilder
   pattr_initialize [:params!, :contact_inbox!]
 
   def perform
-    look_up_exising_conversation || create_new_conversation
+    @contact_inbox.with_lock do
+      look_up_exising_conversation || create_new_conversation
+    end
   end
 
   private
@@ -10,7 +12,8 @@ class ConversationBuilder
   def look_up_exising_conversation
     return unless @contact_inbox.inbox.lock_to_single_conversation?
 
-    @contact_inbox.conversations.last
+    @contact_inbox.conversations.last ||
+      (@contact_inbox.contact_id.present? ? @contact_inbox.inbox.conversations.where(contact_id: @contact_inbox.contact_id).last : nil)
   end
 
   def create_new_conversation

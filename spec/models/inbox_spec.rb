@@ -128,19 +128,19 @@ RSpec.describe Inbox do
       end
     end
 
-    it 'keeps false by default for excluded non-single-conversation channels' do
-      non_messenger_channels = [
+    it 'defaults to true for API, Email, and WebWidget channels as well' do
+      other_channels = [
         Channel::Api.new(account: account),
         Channel::Email.new(account: account),
         Channel::WebWidget.new(account: account)
       ]
 
-      non_messenger_channels.each do |channel|
+      other_channels.each do |channel|
         inbox = build_inbox(channel: channel)
 
         inbox.valid?
 
-        expect(inbox.lock_to_single_conversation).to be(false), channel.class.name
+        expect(inbox.lock_to_single_conversation).to be(true), channel.class.name
       end
     end
 

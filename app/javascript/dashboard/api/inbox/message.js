@@ -11,6 +11,7 @@ export const buildCreatePayload = ({
   ccEmails = '',
   bccEmails = '',
   toEmails = '',
+  mailSubject = '',
   templateParams,
   extraParams = {},
 }) => {
@@ -45,6 +46,9 @@ export const buildCreatePayload = ({
     if (toEmails) {
       payload.append('to_emails', toEmails);
     }
+    if (mailSubject) {
+      payload.append('mail_subject', mailSubject);
+    }
     if (contentAttributes) {
       payload.append('content_attributes', JSON.stringify(contentAttributes));
     }
@@ -60,6 +64,7 @@ export const buildCreatePayload = ({
       cc_emails: ccEmails,
       bcc_emails: bccEmails,
       to_emails: toEmails,
+      mail_subject: mailSubject || undefined,
       template_params: templateParams,
     };
   }
@@ -82,6 +87,7 @@ class MessageApi extends ApiClient {
     ccEmails = '',
     bccEmails = '',
     toEmails = '',
+    mailSubject = '',
     templateParams,
   }) {
     return axios({
@@ -96,6 +102,7 @@ class MessageApi extends ApiClient {
         ccEmails,
         bccEmails,
         toEmails,
+        mailSubject,
         templateParams,
       }),
     });

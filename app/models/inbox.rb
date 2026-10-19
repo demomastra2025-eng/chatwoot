@@ -448,11 +448,7 @@ class Inbox < ApplicationRecord
     self.lock_to_single_conversation = default_single_conversation_for_channel?
   end
 
-  SINGLE_CONVERSATION_EXCLUDED_CHANNEL_TYPES = %w[
-    Channel::Email
-    Channel::WebWidget
-    Channel::Api
-  ].freeze
+  SINGLE_CONVERSATION_EXCLUDED_CHANNEL_TYPES = [].freeze
 
   def default_single_conversation_for_channel?
     type = resolved_channel_type

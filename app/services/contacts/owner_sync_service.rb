@@ -39,14 +39,24 @@ class Contacts::OwnerSyncService
   end
 
   def sync_conversations!
+    already_assigned = owner_id.present? &&
+                       contact.conversations.exists?(account_id: contact.account_id, assignee_id: owner_id)
+    event_id = SecureRandom.uuid
+    emitted_activity = false
+
     conversations_requiring_owner_sync.find_each do |conversation|
       next unless owner_assignable_to_conversation?(conversation)
 
       attributes = { assignee_id: owner_id }
       attributes[:assignee_agent_bot_id] = nil if owner_id.present?
 
+      conversation.skip_activity_messages = already_assigned || emitted_activity
+      conversation.communication_thread_event_id ||= event_id
       conversation.assign_attributes(attributes)
-      conversation.save! if conversation.changed?
+      if conversation.changed?
+        conversation.save!
+        emitted_activity = true
+      end
     end
   end
 
