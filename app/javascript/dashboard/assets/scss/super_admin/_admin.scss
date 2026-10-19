@@ -572,6 +572,21 @@ $administrate-buttons: 'button:not(.reset-base)',
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
   }
 
+  // A tick that stands for some of a group (the tick in the header of the account list while only some rows are ticked)
+  // is a dash on the same fill.
+  [type="checkbox"]:indeterminate {
+    @apply border-n-brand-solid bg-n-brand-solid;
+  }
+
+  [type="checkbox"]:indeterminate::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-color: rgb(var(--brand-contrast));
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M4 8h8'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M4 8h8'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  }
+
   [type="radio"] {
     @apply rounded-full;
   }
