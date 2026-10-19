@@ -21,7 +21,7 @@ RSpec.describe 'Super Admin Dashboard', type: :request do
         expect(response.body).to include('Супер-админка')
         expect(response.body).not_to include('Super Admin Console')
         expect(response.body).to include('Dashboard')
-        expect(response.body).to include('Agent Dashboard')
+        expect(response.body).to include('Кабинет оператора')
         expect(response.body).to include('href="/app"')
       end
 
