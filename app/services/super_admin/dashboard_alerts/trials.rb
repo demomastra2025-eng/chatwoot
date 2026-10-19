@@ -21,8 +21,11 @@ class SuperAdmin::DashboardAlerts::Trials < SuperAdmin::DashboardAlerts::Check
     zero = Account::TRIAL_LOCKED_LIMITS.map do |key|
       "CASE WHEN jsonb_typeof(limits->'#{key}') = 'number' THEN (limits->>'#{key}')::numeric = 0 ELSE false END"
     end
-    "(jsonb_typeof(#{snapshot}->'features') = 'array' AND COALESCE(#{snapshot}->>'limits_locked', '') <> 'false' " \
-      "AND (#{zero.join(' OR ')}))".freeze
+    [
+      "(jsonb_typeof(#{snapshot}->'features') = 'array'",
+      "COALESCE(#{snapshot}->>'limits_locked', '') <> 'false'",
+      "(#{zero.join(' OR ')}))"
+    ].join(' AND ').freeze
   end
 
   # What is read of each account, in the order of Trial

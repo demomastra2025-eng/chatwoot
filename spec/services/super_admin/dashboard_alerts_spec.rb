@@ -96,15 +96,17 @@ RSpec.describe SuperAdmin::DashboardAlerts do
     end
 
     describe 'an ended trial of an account with a plan whose limits the end put at zero' do
-      def ended_with_plan(snapshot_extra = {}, limits: { 'agents' => 0, 'inboxes' => 0 })
-        snapshot = { 'features' => [], 'limits' => {}, 'taken_at' => 3.days.ago.iso8601 }.merge(snapshot_extra)
+      # locked: what the snapshot says about the end locking the limits (true, false, or nothing for an older snapshot)
+      def ended_with_plan(locked: nil, limits: { 'agents' => 0, 'inboxes' => 0 })
+        snapshot = { 'features' => [], 'limits' => {}, 'taken_at' => 3.days.ago.iso8601 }
+        snapshot['limits_locked'] = locked unless locked.nil?
         account = trial_account(2.days.ago, 'plan' => 'base', 'trial_snapshot' => snapshot)
         account.update!(limits: limits)
         account
       end
 
       it 'is listed with a note that says the limits stayed at zero, as the plan does not give them back' do
-        held = ended_with_plan('limits_locked' => true)
+        held = ended_with_plan(locked: true)
 
         found = alert('trials_expired')
 
@@ -113,15 +115,15 @@ RSpec.describe SuperAdmin::DashboardAlerts do
       end
 
       it 'is listed when only one of the two limits is zero and for a snapshot that does not say whether the end locked them' do
-        ended_with_plan({}, limits: { 'agents' => 5, 'inboxes' => 0 })
+        ended_with_plan(limits: { 'agents' => 5, 'inboxes' => 0 })
 
         expect(alert('trials_expired')[:count]).to eq(1)
       end
 
       it 'is not listed when the end kept the limits, when they are above zero or when the trial has no snapshot' do
-        ended_with_plan('limits_locked' => false)
-        ended_with_plan({ 'limits_locked' => true }, limits: { 'agents' => 3, 'inboxes' => 2 })
-        ended_with_plan({ 'limits_locked' => true }, limits: {})
+        ended_with_plan(locked: false)
+        ended_with_plan(locked: true, limits: { 'agents' => 3, 'inboxes' => 2 })
+        ended_with_plan(locked: true, limits: {})
         trial_account(2.days.ago, 'plan' => 'base').update!(limits: { 'agents' => 0 })
 
         expect(alert('trials_expired')).to be_nil
