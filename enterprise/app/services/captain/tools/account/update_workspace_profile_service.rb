@@ -8,8 +8,6 @@ class Captain::Tools::Account::UpdateWorkspaceProfileService < Captain::Tools::A
   description 'Update the current OneLink workspace profile and safe account-level settings after operator confirmation'
   param :name, type: :string, desc: 'Optional workspace/company display name', required: false
   param :locale, type: :string, desc: 'Optional workspace default locale, for example ru, en, or kk', required: false
-  param :domain, type: :string, desc: 'Optional custom reply domain. Empty string clears the value', required: false
-  param :support_email, type: :string, desc: 'Optional public support email. Empty string clears the configured value', required: false
   param :industry, type: :string, desc: 'Optional company industry custom attribute. Empty string clears the value', required: false
   param :company_size, type: :string, desc: 'Optional company size custom attribute. Empty string clears the value', required: false
   param :timezone, type: :string, desc: 'Optional company timezone custom attribute. Empty string clears the value', required: false

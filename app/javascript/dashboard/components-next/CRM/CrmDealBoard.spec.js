@@ -365,4 +365,39 @@ describe('CrmDealBoard', () => {
 
     expect(wrapper.emitted('loadMore')).toHaveLength(1);
   });
+
+  it("renders stage and card checkboxes when canManage is true and emits selection events", async () => {
+    const wrapper = mountBoard(
+      {
+        canManage: true,
+        deals: [
+          { id: 10, stageId: 1, title: "Alpha" },
+          { id: 20, stageId: 1, title: "Beta" },
+        ],
+        selectedDealIds: [10],
+      },
+      {
+        Draggable: {
+          props: ["list"],
+          template:
+            "<div><slot v-for=\"element in list\" name=\"item\" :element=\"element\" /></div>",
+        },
+      }
+    );
+
+    const stageCheckbox = wrapper.find("[data-test=\"stage-select-all\"]");
+    expect(stageCheckbox.exists()).toBe(true);
+    stageCheckbox.element.checked = true;
+    await stageCheckbox.trigger("change");
+    expect(wrapper.emitted("toggleStageSelection")?.[0]?.[0]).toEqual({
+      stageId: 1,
+      dealIds: [10, 20],
+      checked: true,
+    });
+
+    const cardCheckboxes = wrapper.findAll("[data-test=\"deal-card-select\"]");
+    expect(cardCheckboxes).toHaveLength(2);
+    await cardCheckboxes[1].trigger("change");
+    expect(wrapper.emitted("toggleDealSelection")?.[0]).toEqual([20]);
+  });
 });

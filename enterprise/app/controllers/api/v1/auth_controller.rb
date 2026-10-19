@@ -42,12 +42,8 @@ class Api::V1::AuthController < Api::BaseController
     @account = account_user.account
   end
 
-  def find_account_with_saml(user)
-    user.account_users
-        .joins(account: :saml_settings)
-        .where.not(saml_settings: { sso_url: [nil, ''] })
-        .where.not(saml_settings: { certificate: [nil, ''] })
-        .find { |account_user| account_user.account.feature_enabled?('saml') }
+  def find_account_with_saml(_user)
+    nil
   end
 
   def render_saml_error
@@ -76,6 +72,6 @@ class Api::V1::AuthController < Api::BaseController
   end
 
   def saml_sso_enabled?
-    GlobalConfigService.load('ENABLE_SAML_SSO_LOGIN', 'true').to_s == 'true'
+    false
   end
 end

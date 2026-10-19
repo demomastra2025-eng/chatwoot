@@ -13,12 +13,12 @@ export default {
   routes: [
     {
       path: frontendURL('accounts/:accountId/settings/custom-attributes'),
-      redirect: to => redirectToAdditionalFields(to, 'conversation_attribute'),
+      redirect: to => redirectToAdditionalFields(to, 'contact_attribute'),
     },
     {
       path: frontendURL('accounts/:accountId/settings/custom-attributes/list'),
       name: 'attributes_list',
-      redirect: to => redirectToAdditionalFields(to, 'conversation_attribute'),
+      redirect: to => redirectToAdditionalFields(to, 'contact_attribute'),
     },
     {
       path: frontendURL('accounts/:accountId/settings/contacts'),

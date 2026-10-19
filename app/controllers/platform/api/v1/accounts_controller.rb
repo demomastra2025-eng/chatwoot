@@ -4,7 +4,7 @@
 # in the audit log with the partner as the actor.
 class Platform::Api::V1::AccountsController < PlatformController
   # The settings of an account whose new values are written to the audit log
-  AUDITED_ACCOUNT_FIELDS = %w[name locale domain support_email status limits custom_attributes].freeze
+  AUDITED_ACCOUNT_FIELDS = %w[name locale status limits custom_attributes].freeze
 
   def index
     @resources = @platform_app.platform_app_permissibles
@@ -105,6 +105,6 @@ class Platform::Api::V1::AccountsController < PlatformController
   end
 
   def permitted_params
-    params.permit(:name, :locale, :domain, :support_email, :status, features: {}, limits: {}, custom_attributes: {})
+    params.permit(:name, :locale, :status, features: {}, limits: {}, custom_attributes: {})
   end
 end

@@ -1115,6 +1115,82 @@ const togglePageDealSelection = event => {
   selectedDealIds.value = [...nextSelectedIds];
 };
 
+const bulkStageId = ref('');
+const bulkOwnerId = ref('');
+const isBulkActionSubmitting = ref(false);
+
+const toggleSingleDealSelection = dealId => {
+  const normalizedId = Number(dealId);
+  const nextSelectedIds = new Set(selectedDealIdSet.value);
+  if (nextSelectedIds.has(normalizedId)) {
+    nextSelectedIds.delete(normalizedId);
+  } else {
+    nextSelectedIds.add(normalizedId);
+  }
+  selectedDealIds.value = [...nextSelectedIds];
+};
+
+const toggleStageDealSelection = ({ dealIds = [], checked }) => {
+  const nextSelectedIds = new Set(selectedDealIdSet.value);
+  dealIds.forEach(rawId => {
+    const id = Number(rawId);
+    if (checked) {
+      nextSelectedIds.add(id);
+    } else {
+      nextSelectedIds.delete(id);
+    }
+  });
+  selectedDealIds.value = [...nextSelectedIds];
+};
+
+const clearDealSelection = () => {
+  selectedDealIds.value = [];
+  bulkStageId.value = '';
+  bulkOwnerId.value = '';
+};
+
+const executeBulkDealAction = async (actionType, extraPayload = {}) => {
+  if (!selectedDealIds.value.length || isBulkActionSubmitting.value) return;
+
+  isBulkActionSubmitting.value = true;
+  try {
+    await CrmDealsAPI.bulkAction({
+      action_type: actionType,
+      deal_ids: selectedDealIds.value,
+      ...extraPayload,
+    });
+    clearDealSelection();
+    await loadDeals();
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  } finally {
+    isBulkActionSubmitting.value = false;
+  }
+};
+
+const handleBulkStageApply = async () => {
+  if (!bulkStageId.value) return;
+  await executeBulkDealAction('transition_stage', {
+    stage_id: Number(bulkStageId.value),
+  });
+};
+
+const handleBulkOwnerApply = async () => {
+  if (bulkOwnerId.value === '') return;
+  const ownerId =
+    bulkOwnerId.value === 'none' ? null : Number(bulkOwnerId.value);
+  await executeBulkDealAction('assign_owner', { owner_id: ownerId });
+};
+
+const handleBulkArchive = async () => {
+  await executeBulkDealAction(filters.archived ? 'unarchive' : 'archive');
+};
+
+const handleBulkDelete = async () => {
+  await executeBulkDealAction('delete');
+};
+
+
 const stripedDealRowIds = computed(
   () =>
     new Set(
@@ -4356,11 +4432,14 @@ watch(
             :stage-counts="stageCounts"
             :stages="visibleBoardStages"
             :sort-direction-labels="boardSortDirectionLabels"
+            :selected-deal-ids="selectedDealIds"
             :sort-directions="boardSortDirections"
             :sort-key="boardSort.key"
             @change-stage="handleDealStageChange"
             @load-more="loadMoreDeals"
             @select-deal="openDealPage"
+            @toggle-deal-selection="toggleSingleDealSelection"
+            @toggle-stage-selection="toggleStageDealSelection"
             @toggle-sort-direction="toggleBoardSortDirection"
           />
 
@@ -4550,6 +4629,101 @@ watch(
               />
             </div>
           </div>
+<div
+  v-if="canManageDeals && selectedDealIds.length > 0 && !isDealPage"
+  data-test="crm-deals-bulk-bar"
+  class="sticky bottom-3 z-30 mx-auto mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-n-solid-2 px-4 py-2.5 shadow-lg outline outline-1 -outline-offset-1 outline-n-brand/40"
+>
+  <span class="text-xs font-semibold text-n-slate-12">
+    Выбрано: {{ selectedDealIds.length }}
+  </span>
+
+  <div class="flex items-center gap-1.5 border-l border-n-weak pl-2">
+    <select
+      v-model="bulkStageId"
+      data-test="bulk-stage-select"
+      class="h-8 rounded-lg border border-n-weak bg-n-solid-1 px-2.5 text-xs text-n-slate-12 focus:border-n-brand focus:outline-none"
+    >
+      <option value="">{{ 'Сменить этап...' }}</option>
+      <option
+        v-for="stage in boardStages"
+        :key="stage.id"
+        :value="stage.id"
+      >
+        {{ stage.label }}
+      </option>
+    </select>
+    <Button
+      size="xs"
+      color="blue"
+      variant="faded"
+      label="Применить"
+      data-test="bulk-stage-apply"
+      :disabled="!bulkStageId || isBulkActionSubmitting"
+      @click="handleBulkStageApply"
+    />
+  </div>
+
+  <div class="flex items-center gap-1.5 border-l border-n-weak pl-2">
+    <select
+      v-model="bulkOwnerId"
+      data-test="bulk-owner-select"
+      class="h-8 rounded-lg border border-n-weak bg-n-solid-1 px-2.5 text-xs text-n-slate-12 focus:border-n-brand focus:outline-none"
+    >
+      <option value="">Ответственный...</option>
+      <option value="none">Без ответственного</option>
+      <option
+        v-for="owner in ownerOptions"
+        :key="owner.value"
+        :value="owner.value"
+      >
+        {{ owner.label }}
+      </option>
+    </select>
+    <Button
+      size="xs"
+      color="blue"
+      variant="faded"
+      label="Назначить"
+      data-test="bulk-owner-apply"
+      :disabled="bulkOwnerId === '' || isBulkActionSubmitting"
+      @click="handleBulkOwnerApply"
+    />
+  </div>
+
+  <div class="flex items-center gap-1.5 border-l border-n-weak pl-2">
+    <Button
+      size="xs"
+      color="slate"
+      variant="faded"
+      icon="i-lucide-archive"
+      :label="filters.archived ? 'Разархивировать' : 'В архив'"
+      data-test="bulk-archive-btn"
+      :disabled="isBulkActionSubmitting"
+      @click="handleBulkArchive"
+    />
+    <Button
+      size="xs"
+      color="ruby"
+      variant="faded"
+      icon="i-lucide-trash-2"
+      label="Удалить"
+      data-test="bulk-delete-btn"
+      :disabled="isBulkActionSubmitting"
+      @click="handleBulkDelete"
+    />
+    <Button
+      size="xs"
+      color="slate"
+      variant="ghost"
+      icon="i-lucide-x"
+      label="Снять выделение"
+      data-test="bulk-clear-btn"
+      :disabled="isBulkActionSubmitting"
+      @click="clearDealSelection"
+    />
+  </div>
+</div>
         </div>
       </div>
     </div>

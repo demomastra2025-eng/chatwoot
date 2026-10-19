@@ -34,4 +34,12 @@ class Crm::DealPolicy < Crm::BasePolicy
   def unarchive?
     deal_manage_access?
   end
+
+  def destroy?
+    deal_manage_access?
+  end
+
+  def bulk_action?
+    deal_manage_access?
+  end
 end

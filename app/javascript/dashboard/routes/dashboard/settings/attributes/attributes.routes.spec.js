@@ -5,7 +5,7 @@ describe('additional fields legacy routes', () => {
     attributesRoutes.routes.find(route => route.name === name);
 
   it.each([
-    ['attributes_list', 'conversation_attribute'],
+    ['attributes_list', 'contact_attribute'],
     ['contact_fields_settings_index', 'contact_attribute'],
     ['company_fields_settings_index', 'company_attribute'],
   ])('redirects %s to the unified workspace page', (routeName, tab) => {

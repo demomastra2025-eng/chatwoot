@@ -92,7 +92,7 @@ module Enterprise::Account
   end
 
   def saml_enabled?
-    saml_settings&.saml_enabled? || false
+    false
   end
 
   private
