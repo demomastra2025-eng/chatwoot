@@ -90,6 +90,7 @@ ru:
         super_admin_login_failed: "Неудачная попытка входа в супер-админку"
         super_admin_two_factor_failed: "Неверный код второго шага входа"
         super_admin_logout: "Выход из супер-админки"
+        export_accounts: "Выгрузка списка аккаунтов (CSV)"
         partner_create_account: "Партнёр: создание аккаунта"
         partner_update_account: "Партнёр: изменение аккаунта"
         partner_destroy_account: "Партнёр: удаление аккаунта"

@@ -54,7 +54,8 @@ en:
         remaining_minutes: "%{minutes} minutes left"
         no_expiry: "No expiration date"
       csv:
-        headers: ["ID", "Name", "Plan", "Trial status", "Trial expiration", "Agents", "Channels", "Storage used (MB)", "Storage limit (GB)", "Status", "Created at"]
+        headers: ["ID", "Name", "Organization", "Plan", "Trial status", "Trial expiration", "Agents", "Channels", "Storage used (MB)", "Storage limit (GB)", "Status", "Created at"]
+        no_organization: "No organization"
         no_trial: "No"
         active: "Active"
         expired: "Expired"

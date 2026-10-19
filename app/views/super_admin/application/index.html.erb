@@ -44,7 +44,8 @@ It renders the `_collection` partial to display details about the resources.
 
   <div class="main-content__actions">
     <% if page.resource_name.to_s == 'account' %>
-      <%= link_to([:export, namespace, :accounts], class: "button button--secondary") do %>
+      <%# The file holds the accounts the list shows: the search box, the filters and the organization filter go along. %>
+      <%= link_to(export_super_admin_accounts_path(list_scope_params.merge(search: search_term.presence).compact), class: "button button--secondary") do %>
         <span class="i-lucide-download size-4" aria-hidden="true"></span>
         <%= t('super_admin.accounts.export_csv') %>
       <% end %>

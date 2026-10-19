@@ -2,6 +2,7 @@
 class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   STORAGE_GB_IN_BYTES = 1.gigabyte
   OWNER_DECISION_AUDIT_ACTION = 'update_service_flags'.freeze
+  EXPORT_AUDIT_ACTION = 'export_accounts'.freeze
   # What a malformed value (an array or a string where the form sends a map) is parsed as
   MALFORMED = Object.new.freeze
 
@@ -219,55 +220,24 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     end
   end
 
-  # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+  # The list as a CSV file: the same accounts the list shows (its search box, its filters and its organization filter),
+  # not only the page, and one entry of the audit log with who took it and how many rows it holds.
   def export
     require 'csv'
 
-    accounts = Account.includes(:users, :inboxes)
-
+    exported = 0
     csv_data = CSV.generate(headers: true) do |csv|
-      csv << [
-        *I18n.t('super_admin.accounts.csv.headers')
-      ]
-
-      accounts.find_each do |acc|
-        plan_state = SuperAdmin::AccountPlanState.new(acc)
-        trial_status = case plan_state.trial_state
-                       when :none then I18n.t('super_admin.accounts.csv.no_trial')
-                       when :active then I18n.t('super_admin.accounts.csv.active')
-                       else I18n.t('super_admin.accounts.csv.expired')
-                       end
-
-        # Times are Astana time (UTC+5)
-        trial_exp = SuperAdmin::DisplayHelper.format_time(plan_state.trial_expires_at) || '-'
-
-        storage_bytes = acc.limits&.[]('storage_bytes')
-        limit_gb = storage_bytes.present? ? (storage_bytes.to_f / 1.gigabyte).round(1) : I18n.t('super_admin.accounts.csv.unlimited')
-        # The breakdown is cached and refreshed hourly for every account, so the export does not have to scan
-        # the disk and run a dozen queries per account inside one web request.
-        measured_bytes = acc.storage_breakdown[:total]
-        used_mb = measured_bytes.nil? ? nil : (measured_bytes.to_f / 1.megabyte).round(2)
-
-        csv << [
-          acc.id,
-          csv_safe(acc.name),
-          plan_state.label,
-          trial_status,
-          trial_exp,
-          acc.users.size,
-          acc.inboxes.size,
-          used_mb,
-          limit_gb,
-          plan_state.status_label,
-          SuperAdmin::DisplayHelper.format_time(acc.created_at)
-        ]
+      csv << I18n.t('super_admin.accounts.csv.headers')
+      export_scope.find_each do |account|
+        csv << export_row(account)
+        exported += 1
       end
     end
 
+    record_export_audit(exported)
     filename = "onelink-accounts-#{SuperAdmin::DisplayHelper.format_time(Time.current, '%Y%m%d_%H%M%S')}.csv"
-    send_data "\uFEFF#{csv_data}", filename: filename, type: 'text/csv; charset=utf-8; header=present', disposition: 'attachment'
+    send_data "﻿#{csv_data}", filename: filename, type: 'text/csv; charset=utf-8; header=present', disposition: 'attachment'
   end
-  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
   # «Удалить аккаунт» marks the account for deletion: the daily job removes it when the grace period is over, and until
   # then the deletion can be cancelled (SuperAdmin::AccountDeletion). It needs the name of the account typed in.
@@ -297,6 +267,59 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   end
 
   private
+
+  # The accounts of the list the export button was pressed on
+  def export_scope
+    filter_resources(scoped_resource, search_term: params[:search].to_s.strip).includes(:users, :inboxes, :organization)
+  end
+
+  # One account as a row of the file (the order of the columns is super_admin.accounts.csv.headers). Times are Astana time
+  # (UTC+5).
+  def export_row(account)
+    plan_state = SuperAdmin::AccountPlanState.new(account)
+    [
+      account.id,
+      csv_safe(account.name),
+      csv_safe(account.organization&.name.presence || I18n.t('super_admin.accounts.csv.no_organization')),
+      plan_state.label,
+      export_trial_status(plan_state),
+      SuperAdmin::DisplayHelper.format_time(plan_state.trial_expires_at) || '-',
+      account.users.size,
+      account.inboxes.size,
+      export_used_mb(account),
+      export_limit_gb(account),
+      plan_state.status_label,
+      SuperAdmin::DisplayHelper.format_time(account.created_at)
+    ]
+  end
+
+  def export_trial_status(plan_state)
+    case plan_state.trial_state
+    when :none then I18n.t('super_admin.accounts.csv.no_trial')
+    when :active then I18n.t('super_admin.accounts.csv.active')
+    else I18n.t('super_admin.accounts.csv.expired')
+    end
+  end
+
+  def export_limit_gb(account)
+    storage_bytes = account.limits&.[]('storage_bytes')
+    storage_bytes.present? ? (storage_bytes.to_f / 1.gigabyte).round(1) : I18n.t('super_admin.accounts.csv.unlimited')
+  end
+
+  # The breakdown is cached and refreshed hourly for every account, so the export does not have to scan the disk and run
+  # a dozen queries per account inside one web request.
+  def export_used_mb(account)
+    measured_bytes = account.storage_breakdown[:total]
+    measured_bytes.nil? ? nil : (measured_bytes.to_f / 1.megabyte).round(2)
+  end
+
+  # Who took the file and what it holds: the number of rows and what narrowed the list (never the content of the rows)
+  def record_export_audit(rows)
+    SuperAdmin::PlatformAudit.record(
+      auditable: current_super_admin, action: EXPORT_AUDIT_ACTION, actor: current_super_admin, request: request,
+      changes: { 'rows' => rows, 'search' => params[:search].to_s.strip.truncate(200).presence, 'organization_id' => organization_filter }.compact
+    )
+  end
 
   # The «Тонкая настройка» form of the clinic card posts only the switches (`enabled_features`) and no `account` group.
   # Re-sending the name the page was drawn with would undo a rename made in another tab or by another administrator.
