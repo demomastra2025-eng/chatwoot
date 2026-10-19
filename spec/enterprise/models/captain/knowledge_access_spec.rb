@@ -54,7 +54,7 @@ RSpec.describe Concerns::CaptainKnowledgeAccess do
     faq = selected_response
     [first_agent, second_agent, third_agent].each do |agent|
       search_tool = Captain::Tools::SearchDocumentationService.new(agent)
-      reply_tool = Captain::Tools::SearchReplyDocumentationService.new(account: account, assistant: agent)
+      reply_tool = Captain::Tools::Account::FaqLookupService.new(agent)
       [search_tool, reply_tool].each do |tool|
         results = tool.send(:lexical_fallback_responses, 'refund')
         if agent == third_agent
