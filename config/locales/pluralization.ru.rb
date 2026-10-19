@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # The plural categories of Russian (CLDR): one (1, 21, 101 ...), few (2-4, 22-24 ...), many (0, 5-20, 25-30 ...), other
-# (a fraction). Used by Onelink::Pluralization (config/initializers/i18n_pluralization.rb).
+# (a fraction). Used by LocalePluralization (config/initializers/i18n_pluralization.rb).
 {
   ru: {
     i18n: {
