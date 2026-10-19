@@ -322,6 +322,16 @@ class Whatsapp::MonthlyUsageService
                                    .merge(Whatsapp::UsageCoverageSummary.for_account(
                                             snapshot: snapshot, delivery_counts: delivery_counts, costs: costs
                                           ))
+                                   .merge(manager_breakdown(snapshot))
+  end
+
+  def manager_breakdown(snapshot)
+    Whatsapp::ManagerUsageBreakdownService.new(
+      account: @account,
+      period_start: snapshot.period_start,
+      period_end: snapshot.period_end,
+      exchange_rate: snapshot.exchange_rate
+    ).perform
   end
 
   def estimate_costs(groups, snapshot)

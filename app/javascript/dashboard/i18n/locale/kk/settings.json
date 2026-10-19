@@ -547,7 +547,8 @@
     "WORKING_HOURS": "Жұмыс кестесі",
     "CATALOG": "Тауарлар мен қызметтер",
     "CATALOG_PRODUCTS": "Тауарлар",
-    "CATALOG_SERVICES": "Қызметтер"
+    "CATALOG_SERVICES": "Қызметтер",
+    "REPORTS_WHATSAPP": "WhatsApp"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",
