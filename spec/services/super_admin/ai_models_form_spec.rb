@@ -28,7 +28,8 @@ RSpec.describe SuperAdmin::AiModelsForm do
       result = form('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL' => 'vendor/unknown', 'CAPTAIN_IMAGE_RECOGNITION_MODEL' => 'openai/gpt-4o-mini-transcribe')
 
       expect(result).not_to be_valid
-      expect(result.errors.keys).to contain_exactly('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL', 'CAPTAIN_IMAGE_RECOGNITION_MODEL')
+      expect(result.errors).to include('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL', 'CAPTAIN_IMAGE_RECOGNITION_MODEL')
+      expect(result.errors.size).to eq(2)
       expect(result.errors['CAPTAIN_AUDIO_TRANSCRIPTION_MODEL'].first).to include('vendor/unknown', 'не найдена в каталоге')
     end
 
@@ -58,7 +59,8 @@ RSpec.describe SuperAdmin::AiModelsForm do
     end
 
     it 'saves a model added to the list and made the default in one step' do
-      result = form('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => %w[openai/gpt-6-luna openai/gpt-5.6-luna], 'CAPTAIN_DEFAULT_MODEL' => 'openai/gpt-5.6-luna')
+      result = form('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => %w[openai/gpt-6-luna openai/gpt-5.6-luna],
+                    'CAPTAIN_DEFAULT_MODEL' => 'openai/gpt-5.6-luna')
 
       expect(result).to be_valid
       expect(changed(result)).to eq(
@@ -92,7 +94,8 @@ RSpec.describe SuperAdmin::AiModelsForm do
     end
 
     it 'accepts a list of two models and the platform default together' do
-      result = form({ 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => %w[openai/gpt-6-luna openai/gpt-5.6-luna], 'CAPTAIN_DEFAULT_MODEL' => '' }, stored_values: {})
+      result = form({ 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => %w[openai/gpt-6-luna openai/gpt-5.6-luna], 'CAPTAIN_DEFAULT_MODEL' => '' },
+                    stored_values: {})
 
       expect(result).to be_valid
     end
@@ -140,7 +143,8 @@ RSpec.describe SuperAdmin::AiModelsForm do
       ['{not json', '{"a": 1}', '[1]'].each do |value|
         result = form('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => value)
 
-        expect(result.errors['CAPTAIN_ASSISTANT_MODEL_ALLOWLIST']).to eq(['Список моделей не распознан. Обновите страницу и отметьте модели ещё раз.']), value
+        expect(result.errors['CAPTAIN_ASSISTANT_MODEL_ALLOWLIST']).to eq(['Список моделей не распознан. Обновите страницу и отметьте модели ещё раз.']),
+                                                                      value
       end
     end
 
@@ -193,7 +197,8 @@ RSpec.describe SuperAdmin::AiModelsForm do
     it 'takes a whole number of tokens, with spaces, and refuses anything else in words' do
       expect(changed(form('ACCOUNT_CAPTAIN_TOKENS_LIMIT' => '2 000 000'))).to eq('ACCOUNT_CAPTAIN_TOKENS_LIMIT' => '2000000')
       expect(form('ACCOUNT_CAPTAIN_TOKENS_LIMIT' => '').changes).to be_empty
-      expect(form('ACCOUNT_CAPTAIN_TOKENS_LIMIT' => '2 млн').errors['ACCOUNT_CAPTAIN_TOKENS_LIMIT']).to eq(['Введите целое число без букв или оставьте поле пустым.'])
+      expect(form('ACCOUNT_CAPTAIN_TOKENS_LIMIT' => '2 млн').errors['ACCOUNT_CAPTAIN_TOKENS_LIMIT'])
+        .to eq(['Введите целое число без букв или оставьте поле пустым.'])
     end
 
     it 'takes an address that starts with http or https' do
@@ -228,7 +233,8 @@ RSpec.describe SuperAdmin::AiModelsForm do
         .to eq('Правило 1: группа «Строгие правила» не из списка. Выберите группу из списка.')
       expect(form('CAPTAIN_SYSTEM_PROMPTS' => [rule.merge('slot' => 'assistant_idenity')].to_json).errors['CAPTAIN_SYSTEM_PROMPTS'].first)
         .to eq('Правило 1: место в промпте «assistant_idenity» не из списка. Выберите место из списка.')
-      expect(form('CAPTAIN_SYSTEM_PROMPTS' => '{not json').errors['CAPTAIN_SYSTEM_PROMPTS']).to eq(['Правила не удалось прочитать. Обновите страницу и повторите.'])
+      expect(form('CAPTAIN_SYSTEM_PROMPTS' => '{not json').errors['CAPTAIN_SYSTEM_PROMPTS'])
+        .to eq(['Правила не удалось прочитать. Обновите страницу и повторите.'])
       expect(form('CAPTAIN_SYSTEM_PROMPTS' => '{"a":1}').errors['CAPTAIN_SYSTEM_PROMPTS']).to be_present
     end
 
@@ -243,7 +249,8 @@ RSpec.describe SuperAdmin::AiModelsForm do
 
     it 'keeps a group or a place that a saved rule already has, even when the lists do not know it' do
       old_rule = rule.merge('group' => 'Своя группа', 'slot' => 'old_slot')
-      result = form({ 'CAPTAIN_SYSTEM_PROMPTS' => [old_rule.merge('content' => 'Changed text.')].to_json }, stored_values: { 'CAPTAIN_SYSTEM_PROMPTS' => [old_rule] })
+      result = form({ 'CAPTAIN_SYSTEM_PROMPTS' => [old_rule.merge('content' => 'Changed text.')].to_json },
+                    stored_values: { 'CAPTAIN_SYSTEM_PROMPTS' => [old_rule] })
 
       expect(result).to be_valid
       expect(changed(result)['CAPTAIN_SYSTEM_PROMPTS'].first).to include('group' => 'Своя группа', 'slot' => 'old_slot', 'content' => 'Changed text.')
@@ -289,7 +296,8 @@ RSpec.describe SuperAdmin::AiModelsForm do
 
   describe '#summary' do
     it 'says what changed in words: the names of the models, «встроенная», the number of models of a list' do
-      stored_values = { 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL' => 'openai/gpt-audio-mini', 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => '["openai/gpt-6-luna"]' }
+      stored_values = { 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL' => 'openai/gpt-audio-mini',
+                        'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => '["openai/gpt-6-luna"]' }
       result = form({ 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL' => '', 'CAPTAIN_IMAGE_RECOGNITION_MODEL' => 'openai/gpt-6-luna',
                       'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => %w[openai/gpt-6-luna openai/gpt-5.6-luna], 'CAPTAIN_FIRECRAWL_API_KEY' => 'fc-secret' },
                     stored_values: stored_values)

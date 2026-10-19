@@ -116,7 +116,7 @@ RSpec.describe SuperAdmin::AiModelOptions do
       choices = options.choices_for('CAPTAIN_DEFAULT_MODEL', builtin: Llm::Config::DEFAULT_MODEL)
 
       expect(option(choices, 'anthropic/claude-sonnet-4.6')).to have_attributes(price_in: 3, price_out: 15, provider: 'Anthropic',
-                                                                                 price_text: 'вход $3 / выход $15 за 1 млн')
+                                                                                price_text: 'вход $3 / выход $15 за 1 млн')
       expect(option(choices, 'alpha-ai/alpha-2').price_text).to eq('вход $0,15 / выход $0,6 за 1 млн')
       expect(option(choices, 'zeta-ai/zeta-1').price_text).to eq('бесплатно')
       expect(option(choices, 'vendor/no-price').price_text).to be_nil

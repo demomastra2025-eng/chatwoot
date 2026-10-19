@@ -58,10 +58,11 @@ RSpec.describe SuperAdmin::AiModelsHistory do
   end
 
   it 'does not offer a value that the log cut short' do
+    cut = "#{"[\"#{'x' * 300}"[0, 297]}..."
     audit = SuperAdmin::PlatformAudit.record(
       auditable: InstallationConfig.find_or_create_by!(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST') { |config| config.value = '["a"]' },
       action: SuperAdmin::AppConfigSaver::AUDIT_ACTION, actor: super_admin,
-      changes: { 'name' => 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', 'value' => ["[\"#{'x' * 300}"[0, 297] + '...', '["a"]'] }
+      changes: { 'name' => 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', 'value' => [cut, '["a"]'] }
     )
     InstallationConfig.find_by!(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST').update!(value: '["a"]')
 
@@ -72,7 +73,7 @@ RSpec.describe SuperAdmin::AiModelsHistory do
   it 'names nobody when the person who made the change is gone' do
     saver.save('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-5.6-luna', secret: false)
     saver.save('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-6-luna', secret: false)
-    Audited::Audit.where(action: SuperAdmin::AppConfigSaver::AUDIT_ACTION).update_all(user_id: nil, user_type: nil)
+    Audited::Audit.where(action: SuperAdmin::AppConfigSaver::AUDIT_ACTION).update_all(user_id: nil, user_type: nil) # rubocop:disable Rails/SkipsModelValidations
 
     expect(history.previous('CAPTAIN_DEFAULT_MODEL')).to have_attributes(value: 'openai/gpt-5.6-luna', actor: nil)
   end

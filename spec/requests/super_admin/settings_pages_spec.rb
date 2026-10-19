@@ -80,7 +80,8 @@ RSpec.describe 'Super admin settings pages', type: :request do
     it 'gives every card a Russian title in plain words' do
       expect(text(card('CAPTAIN_MODERATION_MODEL').at_css('.admin-slot__title'))).to eq('Проверка безопасности ответов')
       expect(text(card('CAPTAIN_EMBEDDING_MODEL').at_css('.admin-slot__title'))).to eq('Поиск по базе знаний (индексация)')
-      expect(text(card('CAPTAIN_OPENROUTER_MANAGEMENT_API_KEY').at_css('.admin-slot__title'))).to eq('Ключ OpenRouter для проверки баланса (необязательно)')
+      expect(text(card('CAPTAIN_OPENROUTER_MANAGEMENT_API_KEY').at_css('.admin-slot__title')))
+        .to eq('Ключ OpenRouter для проверки баланса (необязательно)')
       expect(text(card('CAPTAIN_FIRECRAWL_API_KEY').at_css('.admin-slot__title'))).to eq('Загрузка сайтов в базу знаний (FireCrawl, необязательно)')
       expect(text(card('CAPTAIN_OPENROUTER_API_KEY').at_css('.admin-slot__title'))).to eq('Ключ OpenRouter')
     end
@@ -106,7 +107,7 @@ RSpec.describe 'Super admin settings pages', type: :request do
     end
 
     it 'has the entry of the scripts of the page' do
-      expect(response.body).to match(%r{superadmin_ai_models})
+      expect(response.body).to match(/superadmin_ai_models/)
     end
   end
 
@@ -179,10 +180,11 @@ RSpec.describe 'Super admin settings pages', type: :request do
     let(:diagnostics) do
       {
         key_status: { effective_configured: true, global_configured: true, account_configured: false,
-                      health: { status: 'valid', checked_at: '2026-10-15T12:05:09Z', key: { key_type: 'inference', limit: '50', limit_remaining: '12.5' },
+                      health: { status: 'valid', checked_at: '2026-10-15T12:05:09Z',
+                                key: { key_type: 'inference', limit: '50', limit_remaining: '12.5' },
                                 credits: { status: 'available', remaining_credits: 12.5, total_credits: 100, total_usage: 87.5 } } },
-        catalog: { refresh_status: 'success', source: 'openrouter_api', using_fallback: false, last_refreshed_at: '2026-10-15T12:05:09Z', total_models: 1200,
-                   counts_by_type: { chat: 1000, embedding: 20 }, stale_models: 2, disabled_models: 0, last_refresh_diff: {} },
+        catalog: { refresh_status: 'success', source: 'openrouter_api', using_fallback: false, last_refreshed_at: '2026-10-15T12:05:09Z',
+                   total_models: 1200, counts_by_type: { chat: 1000, embedding: 20 }, stale_models: 2, disabled_models: 0, last_refresh_diff: {} },
         endpoints: { refresh_status: 'running', total_endpoints: 3400, providers: %w[azure openai] },
         runtime: { total_events: 10, request_count: 8, error_count: 1, provider_failure_count: 0, estimated_cost: 0.42 },
         features: { 'assistant' => { available_model_count: 7, selected_model: 'openai/gpt-6-luna', default_model: 'openai/gpt-6-luna' } }
@@ -377,7 +379,8 @@ RSpec.describe 'Super admin settings pages', type: :request do
       post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_DEFAULT_MODEL: 'vendor/not-in-catalog' } }
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(Nokogiri::HTML(response.body).at_css('.flash-alert').text.squish).to eq('Ничего не сохранено: исправьте 1 настройку, она отмечена красным.')
+      expect(Nokogiri::HTML(response.body).at_css('.flash-alert').text.squish)
+        .to eq('Ничего не сохранено: исправьте 1 настройку, она отмечена красным.')
       message = Nokogiri::HTML(response.body).at_css('[data-error-for="CAPTAIN_DEFAULT_MODEL"]')
       expect(message.text.squish).to include('Модель «vendor/not-in-catalog» не найдена')
     end

@@ -166,14 +166,13 @@ RSpec.describe SuperAdmin::AiModelsPage do
 
   describe 'editors' do
     it 'picks the editor of each kind of setting' do
-      expect(slot('CAPTAIN_DEFAULT_MODEL').editor).to eq(:model)
-      expect(slot('CAPTAIN_EMBEDDING_MODEL').editor).to eq(:model)
-      expect(slot('CAPTAIN_OPENROUTER_ENDPOINT').editor).to eq(:text)
-      expect(slot('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST').editor).to eq(:allowlist)
-      expect(slot('CAPTAIN_SYSTEM_PROMPTS').editor).to eq(:prompts)
-      expect(slot('CAPTAIN_AI_AGENT_SYSTEM_PROMPT').editor).to eq(:textarea)
-      expect(slot('CAPTAIN_OPENROUTER_API_KEY').editor).to eq(:secret)
-      expect(slot('ACCOUNT_CAPTAIN_TOKENS_LIMIT').editor).to eq(:number)
+      editors = {
+        'CAPTAIN_DEFAULT_MODEL' => :model, 'CAPTAIN_EMBEDDING_MODEL' => :model, 'CAPTAIN_OPENROUTER_ENDPOINT' => :text,
+        'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => :allowlist, 'CAPTAIN_SYSTEM_PROMPTS' => :prompts, 'CAPTAIN_AI_AGENT_SYSTEM_PROMPT' => :textarea,
+        'CAPTAIN_OPENROUTER_API_KEY' => :secret, 'ACCOUNT_CAPTAIN_TOKENS_LIMIT' => :number
+      }
+
+      expect(editors.keys.index_with { |key| slot(key).editor }).to eq(editors)
     end
 
     it 'gives the wide cards to the text areas, the short list and the prompts' do

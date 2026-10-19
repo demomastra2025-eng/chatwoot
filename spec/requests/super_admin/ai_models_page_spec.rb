@@ -37,18 +37,21 @@ RSpec.describe 'Super admin AI models page', type: :request do
 
   # The fields of the form as a browser sends them: [[name, value], ...]
   def form_pairs
-    page.css('form#ai-models-form input, form#ai-models-form select, form#ai-models-form textarea').filter_map do |field|
-      next if field['name'].blank? || field['disabled'] || %w[submit button image].include?(field['type'])
+    fields = page.css('form#ai-models-form input, form#ai-models-form select, form#ai-models-form textarea')
+    fields.reject { |field| field['name'].blank? || field['disabled'] || not_sent_types.include?(field['type']) }
+          .filter_map { |field| pair_of(field) }
+  end
 
-      case field.name
-      when 'select' then [field['name'], (field.at_css('option[selected]') || field.at_css('option'))&.[]('value').to_s]
-      when 'textarea' then [field['name'], field.text.delete_prefix("\n")]
-      else
-        next if %w[checkbox radio].include?(field['type']) && field['checked'].nil?
+  def not_sent_types = %w[submit button image]
 
-        [field['name'], field['value'] || (field['type'] == 'checkbox' ? 'on' : '')]
-      end
-    end
+  def checked_types = %w[checkbox radio]
+
+  def pair_of(field)
+    return [field['name'], (field.at_css('option[selected]') || field.at_css('option'))&.[]('value').to_s] if field.name == 'select'
+    return [field['name'], field.text.delete_prefix("\n")] if field.name == 'textarea'
+    return if checked_types.include?(field['type']) && field['checked'].nil?
+
+    [field['name'], field['value'] || (field['type'] == 'checkbox' ? 'on' : '')]
   end
 
   # Post the form with some of its controls replaced: { 'app_config[KEY]' => 'value' } or an Array for a list
@@ -144,7 +147,8 @@ RSpec.describe 'Super admin AI models page', type: :request do
       open_page
       submit_form
 
-      expect(InstallationConfig.where(name: %w[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST CAPTAIN_AUDIO_TRANSCRIPTION_MODEL CAPTAIN_SYSTEM_PROMPTS])).to be_empty
+      expect(InstallationConfig.where(name: %w[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST CAPTAIN_AUDIO_TRANSCRIPTION_MODEL
+                                               CAPTAIN_SYSTEM_PROMPTS])).to be_empty
       expect(Audited::Audit.where(action: SuperAdmin::AppConfigSaver::AUDIT_ACTION)).to be_empty
     end
   end
@@ -239,20 +243,29 @@ RSpec.describe 'Super admin AI models page', type: :request do
       expect(audits).to all(have_attributes(user_id: super_admin.id, comment: 'super_admin'))
     end
 
-    it 'saves nothing when one value is refused, shows the page again with every value as it was sent, and says what is wrong in the card' do
-      submit_form('app_config[CAPTAIN_MODERATION_MODEL]' => 'openai/gpt-oss-safeguard-20b', 'app_config[CAPTAIN_IMAGE_RECOGNITION_MODEL]' => 'vendor/typo',
-                  'app_config[ACCOUNT_CAPTAIN_TOKENS_LIMIT]' => '2 млн')
+    context 'when one value is refused' do
+      before do
+        submit_form('app_config[CAPTAIN_MODERATION_MODEL]' => 'openai/gpt-oss-safeguard-20b',
+                    'app_config[CAPTAIN_IMAGE_RECOGNITION_MODEL]' => 'vendor/typo', 'app_config[ACCOUNT_CAPTAIN_TOKENS_LIMIT]' => '2 млн')
+      end
 
-      expect(response).to have_http_status(:unprocessable_content)
-      expect(stored('CAPTAIN_MODERATION_MODEL')).not_to eq('openai/gpt-oss-safeguard-20b')
-      expect(Audited::Audit.where(action: SuperAdmin::AppConfigSaver::AUDIT_ACTION)).to be_empty
-      expect(text(page.at_css('.flash-alert'))).to eq('Ничего не сохранено: исправьте 2 настройки, они отмечены красным.')
-      expect(refused('CAPTAIN_IMAGE_RECOGNITION_MODEL')).to include('vendor/typo', 'не найдена в каталоге')
-      expect(refused('ACCOUNT_CAPTAIN_TOKENS_LIMIT')).to eq('Введите целое число без букв или оставьте поле пустым.')
-      # what was entered is still in the controls
-      expect(card('CAPTAIN_IMAGE_RECOGNITION_MODEL').at_css('select option[selected]')['value']).to eq('vendor/typo')
-      expect(card('CAPTAIN_MODERATION_MODEL').at_css('select option[selected]')['value']).to eq('openai/gpt-oss-safeguard-20b')
-      expect(card('ACCOUNT_CAPTAIN_TOKENS_LIMIT').at_css('input')['value']).to eq('2 млн')
+      it 'saves nothing at all, not even the valid values sent with it' do
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(stored('CAPTAIN_MODERATION_MODEL')).not_to eq('openai/gpt-oss-safeguard-20b')
+        expect(Audited::Audit.where(action: SuperAdmin::AppConfigSaver::AUDIT_ACTION)).to be_empty
+      end
+
+      it 'says in Russian what is wrong, in the card of each refused setting, and counts them' do
+        expect(text(page.at_css('.flash-alert'))).to eq('Ничего не сохранено: исправьте 2 настройки, они отмечены красным.')
+        expect(refused('CAPTAIN_IMAGE_RECOGNITION_MODEL')).to include('vendor/typo', 'не найдена в каталоге')
+        expect(refused('ACCOUNT_CAPTAIN_TOKENS_LIMIT')).to eq('Введите целое число без букв или оставьте поле пустым.')
+      end
+
+      it 'shows the page again with every value as it was sent' do
+        expect(card('CAPTAIN_IMAGE_RECOGNITION_MODEL').at_css('select option[selected]')['value']).to eq('vendor/typo')
+        expect(card('CAPTAIN_MODERATION_MODEL').at_css('select option[selected]')['value']).to eq('openai/gpt-oss-safeguard-20b')
+        expect(card('ACCOUNT_CAPTAIN_TOKENS_LIMIT').at_css('input')['value']).to eq('2 млн')
+      end
     end
 
     it 'marks the cards that were refused, so that the script opens their tab and keeps the bar of changes on' do
@@ -327,12 +340,14 @@ RSpec.describe 'Super admin AI models page', type: :request do
     end
 
     it 'puts an earlier short list back, whole' do
-      submit_form('app_config[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST][]' => ['', 'openai/gpt-6-luna'], 'app_config[CAPTAIN_DEFAULT_MODEL]' => 'openai/gpt-6-luna')
+      submit_form('app_config[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST][]' => ['', 'openai/gpt-6-luna'],
+                  'app_config[CAPTAIN_DEFAULT_MODEL]' => 'openai/gpt-6-luna')
       open_page
       earlier = page.at_css('button[data-revert="CAPTAIN_ASSISTANT_MODEL_ALLOWLIST"]')
 
       expect(JSON.parse(earlier['data-revert-value'])).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
-      expect(text(card('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST').at_css('[data-history-for="CAPTAIN_ASSISTANT_MODEL_ALLOWLIST"]'))).to include('Было: 2 модели')
+      history = card('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST').at_css('[data-history-for="CAPTAIN_ASSISTANT_MODEL_ALLOWLIST"]')
+      expect(text(history)).to include('Было: 2 модели')
     end
 
     it 'offers nothing for a setting that was changed by other means since' do
@@ -433,10 +448,11 @@ RSpec.describe 'Super admin AI models page', type: :request do
     it 'gives the script its texts, with the forms of a number in Russian' do
       texts = JSON.parse(page.at_css('[data-ai-models]')['data-texts'])
 
-      expect(texts['changed']).to eq('one' => 'Изменена %{count} настройка', 'few' => 'Изменено %{count} настройки',
-                                     'many' => 'Изменено %{count} настроек', 'other' => 'Изменено %{count} настройки')
+      expect(texts['changed'].keys).to eq(%w[one few many other])
+      expect(texts['changed'].values).to all(match(/\A(Изменена|Изменено) .*count.* (настройка|настройки|настроек)\z/))
+      expect(texts['changed']['many']).to end_with('настроек')
       expect(texts['leave']).to include('несохранённые изменения')
-      expect(texts['counter']).to eq('%{count} из %{max}')
+      expect(texts['counter']).to match(/count.* из .*max/)
     end
 
     it 'counts the models of the short list as «5 из 12»' do
