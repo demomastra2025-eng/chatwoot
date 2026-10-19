@@ -38,7 +38,8 @@ export const initAllowlist = (card, texts = {}) => {
   const rows = () => Array.from(rowsBox.querySelectorAll('[data-row]'));
   const checkOf = row => row.querySelector('[data-list-check]');
   const radioOf = row => row.querySelector('[data-default-radio]');
-  const platformRadio = () => rowsBox.querySelector('[data-row-platform] [data-default-radio]');
+  const platformRadio = () =>
+    rowsBox.querySelector('[data-row-platform] [data-default-radio]');
   const checkedRows = () => rows().filter(row => checkOf(row).checked);
   const defaultRadio = () =>
     rowsBox.querySelector('[data-default-radio]:checked') || platformRadio();
@@ -150,17 +151,28 @@ export const initAllowlist = (card, texts = {}) => {
       const id = addSelect.value;
       if (!id) return;
       const option = addSelect.options[addSelect.selectedIndex];
-      if (checkedRows().length >= max && !(rowFor(id) && checkOf(rowFor(id)).checked)) {
+      if (
+        checkedRows().length >= max &&
+        !(rowFor(id) && checkOf(rowFor(id)).checked)
+      ) {
         say(texts.too_many);
       } else {
-        const row = rowFor(id) || buildRow({
-          id,
-          name: option.dataset.name || id,
-          meta: [option.dataset.price, (option.dataset.badges || '').split(',').filter(Boolean).join(', ')]
-            .filter(Boolean)
-            .join(' · '),
-          note: option.dataset.note || '',
-        });
+        const row =
+          rowFor(id) ||
+          buildRow({
+            id,
+            name: option.dataset.name || id,
+            meta: [
+              option.dataset.price,
+              (option.dataset.badges || '')
+                .split(',')
+                .filter(Boolean)
+                .join(', '),
+            ]
+              .filter(Boolean)
+              .join(' · '),
+            note: option.dataset.note || '',
+          });
         checkOf(row).checked = true;
         say('');
         fire(checkOf(row));
@@ -220,7 +232,9 @@ export const initAllowlist = (card, texts = {}) => {
 
   // the form was reset: the rows that were added are gone, the others are as the server drew them
   const onReset = () => {
-    rows().filter(row => row.dataset.added).forEach(row => row.remove());
+    rows()
+      .filter(row => row.dataset.added)
+      .forEach(row => row.remove());
     sync();
   };
   card.closest('[data-ai-models]')?.addEventListener(RESET_EVENT, onReset);

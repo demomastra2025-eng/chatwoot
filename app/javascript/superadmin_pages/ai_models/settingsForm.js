@@ -45,14 +45,27 @@ const FORMS = ['one', 'few', 'many', 'other'];
 
 export const countText = (texts, count) => {
   const form = new Intl.PluralRules('ru').select(count);
-  const template = (texts.changed || {})[FORMS.includes(form) ? form : 'other'] || '';
+  const template =
+    (texts.changed || {})[FORMS.includes(form) ? form : 'other'] || '';
   return template.replace('%{count}', String(count));
 };
 
-const cardsOf = (root, key) =>
-  Array.from(root.querySelectorAll('[data-config]')).filter(card =>
-    card.dataset.config.split(/\s+/).includes(key)
-  );
+// A plain select of one model: a saved model the list does not offer is added so that it can be put back
+export const setSelectValue = (form, key, value) => {
+  const select = form.querySelector(`select[name="app_config[${key}]"]`);
+  if (!select) return false;
+  if (!Array.from(select.options).some(option => option.value === value)) {
+    const option = select.ownerDocument.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    option.dataset.name = value;
+    select.appendChild(option);
+  }
+  select.value = value;
+  select.dispatchEvent(new Event('input', { bubbles: true }));
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
+};
 
 export const initSettingsForm = (
   page,
@@ -80,7 +93,9 @@ export const initSettingsForm = (
       bar.hidden = dirty.length === 0;
       if (barText) barText.textContent = countText(texts, dirty.length);
     }
-    page.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: { keys: dirty } }));
+    page.dispatchEvent(
+      new CustomEvent(CHANGE_EVENT, { detail: { keys: dirty } })
+    );
     return dirty;
   };
 
@@ -117,9 +132,16 @@ export const initSettingsForm = (
     const button = event.target.closest('[data-revert]');
     if (!button) return;
     event.preventDefault();
-    const detail = { key: button.dataset.revert, value: button.dataset.revertValue || '' };
+    const detail = {
+      key: button.dataset.revert,
+      value: button.dataset.revertValue || '',
+    };
     const handled = !button.dispatchEvent(
-      new CustomEvent(SET_VALUE_EVENT, { detail, bubbles: true, cancelable: true })
+      new CustomEvent(SET_VALUE_EVENT, {
+        detail,
+        bubbles: true,
+        cancelable: true,
+      })
     );
     if (!handled) setSelectValue(form, detail.key, detail.value);
     update();
@@ -140,21 +162,4 @@ export const initSettingsForm = (
       window.removeEventListener('pageshow', update);
     },
   };
-};
-
-// A plain select of one model: a saved model the list does not offer is added so that it can be put back
-export const setSelectValue = (form, key, value) => {
-  const select = form.querySelector(`select[name="app_config[${key}]"]`);
-  if (!select) return false;
-  if (!Array.from(select.options).some(option => option.value === value)) {
-    const option = select.ownerDocument.createElement('option');
-    option.value = value;
-    option.textContent = value;
-    option.dataset.name = value;
-    select.appendChild(option);
-  }
-  select.value = value;
-  select.dispatchEvent(new Event('input', { bubbles: true }));
-  select.dispatchEvent(new Event('change', { bubbles: true }));
-  return true;
 };

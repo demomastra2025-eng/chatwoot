@@ -1,10 +1,25 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { initPromptsBuilder, serializePrompts } from '../ai_models/promptsBuilder';
+import {
+  initPromptsBuilder,
+  serializePrompts,
+} from '../ai_models/promptsBuilder';
 import { TEXTS, fire, mount, promptsBuilder } from './aiModelsFixture';
 
 const RULES = [
-  { id: 'r1', type: 'system', group: 'Strict rules', content: 'Stay in scope.', slot: null },
-  { id: 'r2', type: 'system', group: 'Conversation flow', content: 'Be brief.', slot: 'assistant_identity' },
+  {
+    id: 'r1',
+    type: 'system',
+    group: 'Strict rules',
+    content: 'Stay in scope.',
+    slot: null,
+  },
+  {
+    id: 'r2',
+    type: 'system',
+    group: 'Conversation flow',
+    content: 'Be brief.',
+    slot: 'assistant_identity',
+  },
 ];
 
 const build = (prompts = RULES) => {
@@ -15,7 +30,8 @@ const build = (prompts = RULES) => {
   return { builder, api, hidden };
 };
 
-const rows = () => Array.from(document.querySelectorAll('[data-role="prompt-row"]'));
+const rows = () =>
+  Array.from(document.querySelectorAll('[data-role="prompt-row"]'));
 const field = (row, name) => row.querySelector(`[data-field="${name}"]`);
 const saved = hidden => JSON.parse(hidden.value);
 
@@ -33,7 +49,9 @@ describe('initPromptsBuilder', () => {
     expect(field(rows()[1], 'group').value).toBe('Conversation flow');
     expect(field(rows()[1], 'slot').value).toBe('assistant_identity');
     expect(field(rows()[1], 'content').value).toBe('Be brief.');
-    expect(rows().map(row => row.querySelector('[data-role="title"]').textContent)).toEqual(['Правило 1', 'Правило 2']);
+    expect(
+      rows().map(row => row.querySelector('[data-role="title"]').textContent)
+    ).toEqual(['Правило 1', 'Правило 2']);
   });
 
   it('has the same rules in the field that is sent', () => {
@@ -42,23 +60,38 @@ describe('initPromptsBuilder', () => {
     expect(saved(hidden)).toEqual(RULES);
   });
 
-  it('offers a group or a place that the lists do not know, as the rule\'s own, so that it is not lost', () => {
+  it("offers a group or a place that the lists do not know, as the rule's own, so that it is not lost", () => {
     const { hidden } = build([
-      { id: 'old', type: 'system', group: 'Своя группа', content: 'Old rule.', slot: 'old_slot' },
+      {
+        id: 'old',
+        type: 'system',
+        group: 'Своя группа',
+        content: 'Old rule.',
+        slot: 'old_slot',
+      },
     ]);
     const [row] = rows();
 
     expect(field(row, 'group').value).toBe('Своя группа');
-    expect(field(row, 'group').options[field(row, 'group').selectedIndex].textContent).toBe('Своя группа (своя группа)');
+    expect(
+      field(row, 'group').options[field(row, 'group').selectedIndex].textContent
+    ).toBe('Своя группа (своя группа)');
     expect(field(row, 'slot').value).toBe('old_slot');
-    expect(field(row, 'slot').options[field(row, 'slot').selectedIndex].textContent).toBe('old_slot (своё место)');
-    expect(saved(hidden)[0]).toMatchObject({ group: 'Своя группа', slot: 'old_slot' });
+    expect(
+      field(row, 'slot').options[field(row, 'slot').selectedIndex].textContent
+    ).toBe('old_slot (своё место)');
+    expect(saved(hidden)[0]).toMatchObject({
+      group: 'Своя группа',
+      slot: 'old_slot',
+    });
   });
 
   it('keeps no field of a group or a place to type into', () => {
     build();
 
-    expect(document.querySelectorAll('[data-role="prompt-row"] input[type="text"]')).toHaveLength(0);
+    expect(
+      document.querySelectorAll('[data-role="prompt-row"] input[type="text"]')
+    ).toHaveLength(0);
   });
 
   it('writes a change of the text, the group and the place into the field that is sent', () => {
@@ -73,7 +106,11 @@ describe('initPromptsBuilder', () => {
     fire(field(row, 'slot'));
 
     expect(saved(hidden)[0]).toEqual({
-      id: 'r1', type: 'system', group: 'Conversation flow', content: 'Changed.', slot: 'assistant_identity',
+      id: 'r1',
+      type: 'system',
+      group: 'Conversation flow',
+      content: 'Changed.',
+      slot: 'assistant_identity',
     });
   });
 
@@ -88,7 +125,12 @@ describe('initPromptsBuilder', () => {
     field(row, 'content').value = 'New rule.';
     fire(field(row, 'content'), 'input');
     expect(saved(hidden)).toHaveLength(3);
-    expect(saved(hidden)[2]).toMatchObject({ content: 'New rule.', group: 'Strict rules', slot: null, type: 'system' });
+    expect(saved(hidden)[2]).toMatchObject({
+      content: 'New rule.',
+      group: 'Strict rules',
+      slot: null,
+      type: 'system',
+    });
   });
 
   it('deletes a rule only after the question, and not when the answer is «Отмена»', () => {
@@ -112,7 +154,9 @@ describe('initPromptsBuilder', () => {
     row.querySelector('[data-role="remove-yes"]').click();
     expect(rows()).toHaveLength(1);
     expect(saved(hidden).map(rule => rule.id)).toEqual(['r2']);
-    expect(rows()[0].querySelector('[data-role="title"]').textContent).toBe('Правило 1');
+    expect(rows()[0].querySelector('[data-role="title"]').textContent).toBe(
+      'Правило 1'
+    );
   });
 
   it('tells the form when a rule is deleted', () => {
@@ -146,9 +190,16 @@ describe('initPromptsBuilder', () => {
   });
 
   it('reads rules that are damaged as no rules', () => {
-    mount(`<form><input type="hidden" id="app_config_CAPTAIN_SYSTEM_PROMPTS" value="{broken"><div data-prompts-builder data-target-input="app_config_CAPTAIN_SYSTEM_PROMPTS" data-initial-prompts="{broken"><div data-role="rows"></div><template><div data-role="prompt-row"></div></template></div></form>`);
+    mount(
+      `<form><input type="hidden" id="app_config_CAPTAIN_SYSTEM_PROMPTS" value="{broken"><div data-prompts-builder data-target-input="app_config_CAPTAIN_SYSTEM_PROMPTS" data-initial-prompts="{broken"><div data-role="rows"></div><template><div data-role="prompt-row"></div></template></div></form>`
+    );
 
-    expect(() => initPromptsBuilder(document.querySelector('[data-prompts-builder]'), TEXTS)).not.toThrow();
+    expect(() =>
+      initPromptsBuilder(
+        document.querySelector('[data-prompts-builder]'),
+        TEXTS
+      )
+    ).not.toThrow();
     expect(rows()).toHaveLength(0);
   });
 });

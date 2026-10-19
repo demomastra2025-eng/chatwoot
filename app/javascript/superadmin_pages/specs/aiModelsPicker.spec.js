@@ -87,8 +87,12 @@ describe('enhanceModelSelect', () => {
     setup();
     const trigger = document.querySelector('.admin-combo__trigger');
 
-    expect(document.querySelector('label').getAttribute('for')).toBe(trigger.id);
-    expect(trigger.getAttribute('aria-labelledby')).toContain('label_CAPTAIN_IMAGE_RECOGNITION_MODEL');
+    expect(document.querySelector('label').getAttribute('for')).toBe(
+      trigger.id
+    );
+    expect(trigger.getAttribute('aria-labelledby')).toContain(
+      'label_CAPTAIN_IMAGE_RECOGNITION_MODEL'
+    );
   });
 
   it('opens a panel with every model under its group, and closes it on a second click', () => {
@@ -107,7 +111,9 @@ describe('enhanceModelSelect', () => {
       'anthropic/claude-haiku-5.5',
     ]);
     expect(
-      Array.from(document.querySelectorAll('.admin-combo__group')).map(node => node.textContent)
+      Array.from(document.querySelectorAll('.admin-combo__group')).map(
+        node => node.textContent
+      )
     ).toEqual(['Рекомендуемые', 'Anthropic']);
     trigger.click();
     expect(panel.hidden).toBe(true);
@@ -123,13 +129,18 @@ describe('enhanceModelSelect', () => {
     expect(groups.map(node => node.hidden)).toEqual([true, false]);
 
     search('openai luna');
-    expect(visibleOptions()).toEqual(['openai/gpt-6-luna', 'openai/gpt-5.6-luna']);
+    expect(visibleOptions()).toEqual([
+      'openai/gpt-6-luna',
+      'openai/gpt-5.6-luna',
+    ]);
     expect(groups.map(node => node.hidden)).toEqual([false, true]);
 
     search('zzz');
     expect(visibleOptions()).toEqual([]);
     expect(document.querySelector('.admin-combo__empty').hidden).toBe(false);
-    expect(document.querySelector('.admin-combo__empty').textContent).toBe('Ничего не найдено');
+    expect(document.querySelector('.admin-combo__empty').textContent).toBe(
+      'Ничего не найдено'
+    );
   });
 
   it('writes the chosen model into the select and tells the form', () => {
@@ -142,7 +153,9 @@ describe('enhanceModelSelect', () => {
 
     expect(select.value).toBe('anthropic/claude-haiku-5.5');
     expect(seen).toContain('anthropic/claude-haiku-5.5');
-    expect(document.querySelector('.admin-combo__trigger').textContent).toContain('Claude Haiku 5.5');
+    expect(
+      document.querySelector('.admin-combo__trigger').textContent
+    ).toContain('Claude Haiku 5.5');
     expect(document.querySelector('.admin-combo__panel').hidden).toBe(true);
   });
 
@@ -189,7 +202,9 @@ describe('enhanceModelSelect', () => {
     select.value = 'openai/gpt-5.6-luna';
     fire(select);
 
-    expect(document.querySelector('.admin-combo__trigger').textContent).toContain('GPT-5.6 Luna');
+    expect(
+      document.querySelector('.admin-combo__trigger').textContent
+    ).toContain('GPT-5.6 Luna');
   });
 
   it('shows the text of an option that it was not built with', () => {
@@ -202,6 +217,8 @@ describe('enhanceModelSelect', () => {
     select.value = 'vendor/new';
     picker.refresh();
 
-    expect(document.querySelector('.admin-combo__trigger').textContent).toContain('vendor/new');
+    expect(
+      document.querySelector('.admin-combo__trigger').textContent
+    ).toContain('vendor/new');
   });
 });

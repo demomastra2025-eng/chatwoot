@@ -12,19 +12,30 @@ import { TEXTS, fire, modelSelect, mount, page } from './aiModelsFixture';
 let running = [];
 
 const build = ({ unsaved = '', navigate } = {}) => {
-  mount(page({ unsaved, body: modelSelect({ selected: 'openai/gpt-6-luna' }) }));
+  mount(
+    page({ unsaved, body: modelSelect({ selected: 'openai/gpt-6-luna' }) })
+  );
   const root = document.querySelector('[data-ai-models]');
   const form = document.querySelector('form');
   const pickers = enhanceAll(root, TEXTS);
-  const settings = initSettingsForm(root, form, TEXTS, navigate ? { navigate } : undefined);
+  const settings = initSettingsForm(
+    root,
+    form,
+    TEXTS,
+    navigate ? { navigate } : undefined
+  );
   running.push(settings);
   return { root, form, settings, pickers };
 };
 
 describe('settingKey', () => {
   it('reads the name of a setting from the name of a control', () => {
-    expect(settingKey('app_config[CAPTAIN_DEFAULT_MODEL]')).toBe('CAPTAIN_DEFAULT_MODEL');
-    expect(settingKey('app_config[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST][]')).toBe('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST');
+    expect(settingKey('app_config[CAPTAIN_DEFAULT_MODEL]')).toBe(
+      'CAPTAIN_DEFAULT_MODEL'
+    );
+    expect(settingKey('app_config[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST][]')).toBe(
+      'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST'
+    );
     expect(settingKey('confirm_embedding_change')).toBeNull();
     expect(settingKey(undefined)).toBeNull();
   });
@@ -45,11 +56,16 @@ describe('snapshot and changedKeys', () => {
       <input name="other" value="x">
     </form>`);
 
-    expect(snapshot(document.querySelector('form'))).toEqual({ A: '1', L: 'b\u0000z' });
+    expect(snapshot(document.querySelector('form'))).toEqual({
+      A: '1',
+      L: 'b\u0000z',
+    });
   });
 
   it('names the settings whose value is not the first one, and the ones the server refused', () => {
-    expect(changedKeys({ A: '1', B: '2' }, { A: '1', B: '3', C: 'x' })).toEqual(['B', 'C']);
+    expect(changedKeys({ A: '1', B: '2' }, { A: '1', B: '3', C: 'x' })).toEqual(
+      ['B', 'C']
+    );
     expect(changedKeys({ A: '1' }, { A: '' })).toEqual(['A']);
     expect(changedKeys({ A: '1' }, { A: '1' }, ['Z'])).toEqual(['Z']);
     expect(changedKeys({ A: '' }, {})).toEqual([]);
@@ -89,7 +105,9 @@ describe('initSettingsForm', () => {
     fire(select);
 
     expect(document.querySelector('[data-savebar]').hidden).toBe(false);
-    expect(document.querySelector('[data-savebar-text]').textContent).toBe('Изменена 1 настройка');
+    expect(document.querySelector('[data-savebar-text]').textContent).toBe(
+      'Изменена 1 настройка'
+    );
     expect(document.querySelector('[data-unsaved-badge]').hidden).toBe(false);
   });
 
@@ -102,7 +120,9 @@ describe('initSettingsForm', () => {
     fire(secret, 'input');
     select.value = 'openai/gpt-5.6-luna';
     fire(select);
-    expect(document.querySelector('[data-savebar-text]').textContent).toBe('Изменено 2 настройки');
+    expect(document.querySelector('[data-savebar-text]').textContent).toBe(
+      'Изменено 2 настройки'
+    );
 
     secret.value = '';
     fire(secret, 'input');
@@ -132,7 +152,9 @@ describe('initSettingsForm', () => {
     expect(document.querySelector('[data-savebar]').hidden).toBe(false);
     document.querySelector('[data-savebar-cancel]').click();
 
-    expect(navigate).toHaveBeenCalledWith('/super_admin/app_config?config=captain');
+    expect(navigate).toHaveBeenCalledWith(
+      '/super_admin/app_config?config=captain'
+    );
   });
 
   it('warns before the page is left while there are changes, never after a save and never without changes', () => {
@@ -162,22 +184,32 @@ describe('initSettingsForm', () => {
 
     earlier.click();
     expect(select.value).toBe('anthropic/claude-haiku-5.5');
-    expect(document.querySelector('.admin-combo__trigger').textContent).toContain('Claude Haiku 5.5');
-    expect(document.querySelector('[data-savebar-text]').textContent).toBe('Изменена 1 настройка');
+    expect(
+      document.querySelector('.admin-combo__trigger').textContent
+    ).toContain('Claude Haiku 5.5');
+    expect(document.querySelector('[data-savebar-text]').textContent).toBe(
+      'Изменена 1 настройка'
+    );
 
     builtin.click();
     expect(select.value).toBe('');
-    expect(document.querySelector('.admin-combo__trigger').textContent).toContain('Встроенная: GPT-6 Luna');
+    expect(
+      document.querySelector('.admin-combo__trigger').textContent
+    ).toContain('Встроенная: GPT-6 Luna');
   });
 
   it('can put back a model that the list was not built with', () => {
     build();
-    const button = document.querySelector('[data-revert-value="anthropic/claude-haiku-5.5"]');
+    const button = document.querySelector(
+      '[data-revert-value="anthropic/claude-haiku-5.5"]'
+    );
     button.dataset.revertValue = 'vendor/old';
 
     button.click();
 
     expect(document.querySelector('select').value).toBe('vendor/old');
-    expect(document.querySelector('.admin-combo__trigger').textContent).toContain('vendor/old');
+    expect(
+      document.querySelector('.admin-combo__trigger').textContent
+    ).toContain('vendor/old');
   });
 });

@@ -45,7 +45,9 @@ export const readEntries = select => {
   Array.from(select.children).forEach(child => {
     if (child.tagName === 'OPTGROUP') {
       entries.push({ type: 'group', label: child.label });
-      Array.from(child.children).forEach(option => pushOption(option, child.label));
+      Array.from(child.children).forEach(option =>
+        pushOption(option, child.label)
+      );
     } else if (child.tagName === 'OPTION') {
       pushOption(child, '');
     }
@@ -65,7 +67,12 @@ const describe = (doc, entry) => {
   );
   if (entry.note) {
     meta.appendChild(
-      create(doc, 'span', 'admin-combo__badge admin-combo__badge--warn', entry.note)
+      create(
+        doc,
+        'span',
+        'admin-combo__badge admin-combo__badge--warn',
+        entry.note
+      )
     );
   }
   return [name, meta];
@@ -88,7 +95,11 @@ export const enhanceModelSelect = (select, texts = {}) => {
   trigger.setAttribute('aria-expanded', 'false');
   trigger.setAttribute('aria-controls', listId);
   const value = create(doc, 'span', 'admin-combo__value');
-  const chevron = create(doc, 'span', 'admin-combo__chevron i-lucide-chevron-down size-4');
+  const chevron = create(
+    doc,
+    'span',
+    'admin-combo__chevron i-lucide-chevron-down size-4'
+  );
   chevron.setAttribute('aria-hidden', 'true');
   trigger.append(value, chevron);
 
@@ -104,7 +115,12 @@ export const enhanceModelSelect = (select, texts = {}) => {
   const list = create(doc, 'ul', 'admin-combo__list');
   list.id = listId;
   list.setAttribute('role', 'listbox');
-  const empty = create(doc, 'p', 'admin-combo__empty', texts.nothing_found || '');
+  const empty = create(
+    doc,
+    'p',
+    'admin-combo__empty',
+    texts.nothing_found || ''
+  );
   empty.hidden = true;
   panel.append(search, list, empty);
   wrapper.append(trigger, panel);
@@ -133,7 +149,9 @@ export const enhanceModelSelect = (select, texts = {}) => {
 
   const selectedEntry = () => {
     const option = selectedOption();
-    return option ? optionItems().find(item => item.entry.value === option.value) : null;
+    return option
+      ? optionItems().find(item => item.entry.value === option.value)
+      : null;
   };
 
   const renderTrigger = () => {
@@ -143,7 +161,9 @@ export const enhanceModelSelect = (select, texts = {}) => {
     } else {
       // a value the list was not built with (put back by «Вернуть»): its own text
       const option = selectedOption();
-      const text = option ? option.dataset.name || option.textContent.trim() : '';
+      const text = option
+        ? option.dataset.name || option.textContent.trim()
+        : '';
       value.replaceChildren(create(doc, 'span', 'admin-combo__name', text));
     }
     optionItems().forEach(item => {
@@ -179,7 +199,11 @@ export const enhanceModelSelect = (select, texts = {}) => {
     items.forEach((item, index) => {
       if (item.entry.type !== 'group') return;
       let visible = false;
-      for (let next = index + 1; next < items.length && items[next].entry.type === 'option'; next += 1) {
+      for (
+        let next = index + 1;
+        next < items.length && items[next].entry.type === 'option';
+        next += 1
+      ) {
         if (!items[next].node.hidden) visible = true;
       }
       item.node.hidden = !visible;
@@ -192,7 +216,6 @@ export const enhanceModelSelect = (select, texts = {}) => {
     if (panel.hidden) return;
     panel.hidden = true;
     trigger.setAttribute('aria-expanded', 'false');
-    doc.removeEventListener('mousedown', onOutside, true);
     if (focus) trigger.focus();
   };
 
@@ -202,16 +225,25 @@ export const enhanceModelSelect = (select, texts = {}) => {
     filter();
     panel.hidden = false;
     trigger.setAttribute('aria-expanded', 'true');
-    doc.addEventListener('mousedown', onOutside, true);
     const current = selectedEntry();
     const options = visibleOptions();
-    setActive(Math.max(0, options.findIndex(item => item === current)));
+    setActive(
+      Math.max(
+        0,
+        options.findIndex(item => item === current)
+      )
+    );
     search.focus();
   };
 
-  function onOutside(event) {
-    if (!wrapper.contains(event.target)) close();
-  }
+  // a click anywhere else on the page closes the panel
+  doc.addEventListener(
+    'mousedown',
+    event => {
+      if (!panel.hidden && !wrapper.contains(event.target)) close();
+    },
+    true
+  );
 
   const choose = item => {
     if (!item) return;
@@ -260,7 +292,9 @@ export const enhanceModelSelect = (select, texts = {}) => {
   // the value is changed from outside (the «Вернуть» buttons, a reset of the form)
   select.addEventListener('change', renderTrigger);
 
-  const label = select.id ? doc.querySelector(`label[for="${select.id}"]`) : null;
+  const label = select.id
+    ? doc.querySelector(`label[for="${select.id}"]`)
+    : null;
   if (label) {
     if (!label.id) label.id = `${triggerId}-label`;
     trigger.setAttribute('aria-labelledby', `${label.id} ${triggerId}`);

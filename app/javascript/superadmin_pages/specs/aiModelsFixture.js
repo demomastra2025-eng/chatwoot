@@ -42,7 +42,10 @@ export const modelSelect = ({
     <button type="button" data-revert="${key}" data-revert-value="anthropic/claude-haiku-5.5" hidden>Вернуть</button>
   </div>`;
 
-export const checklist = ({ ticked = ['a/one', 'b/two'], defaultId = '' } = {}) => {
+export const checklist = ({
+  ticked = ['a/one', 'b/two'],
+  defaultId = '',
+} = {}) => {
   const rows = ['a/one', 'b/two', 'c/three', 'd/four']
     .map(
       id => `
@@ -137,4 +140,6 @@ export const fire = (element, type = 'change') =>
   element.dispatchEvent(new Event(type, { bubbles: true }));
 
 export const key = (element, name) =>
-  element.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
+  element.dispatchEvent(
+    new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true })
+  );

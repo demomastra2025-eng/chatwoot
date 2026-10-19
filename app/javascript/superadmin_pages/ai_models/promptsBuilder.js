@@ -24,7 +24,11 @@ export const serializePrompts = rows =>
   );
 
 const ensureOption = (select, value, template) => {
-  if (!value || Array.from(select.options).some(option => option.value === value)) return;
+  if (
+    !value ||
+    Array.from(select.options).some(option => option.value === value)
+  )
+    return;
   const option = select.ownerDocument.createElement('option');
   option.value = value;
   option.textContent = (template || '%{value}').replace('%{value}', value);
@@ -33,18 +37,22 @@ const ensureOption = (select, value, template) => {
 
 export const initPromptsBuilder = (builder, texts = {}) => {
   if (!builder) return null;
-  const hidden = builder.ownerDocument.getElementById(builder.dataset.targetInput);
+  const hidden = builder.ownerDocument.getElementById(
+    builder.dataset.targetInput
+  );
   const rowsBox = builder.querySelector('[data-role="rows"]');
   const template = builder.querySelector('template');
   const addButton = builder.querySelector('[data-role="add"]');
   const empty = builder.querySelector('[data-role="empty"]');
   const initial = hidden ? hidden.value : '[]';
 
-  const rows = () => Array.from(rowsBox.querySelectorAll('[data-role="prompt-row"]'));
+  const rows = () =>
+    Array.from(rowsBox.querySelectorAll('[data-role="prompt-row"]'));
 
   const renumber = () => {
     rows().forEach((row, index) => {
-      row.querySelector('[data-role="title"]').textContent = `${texts.prompt_title || ''} ${index + 1}`.trim();
+      row.querySelector('[data-role="title"]').textContent =
+        `${texts.prompt_title || ''} ${index + 1}`.trim();
     });
     if (empty) empty.hidden = rows().length > 0;
   };
@@ -83,11 +91,15 @@ export const initPromptsBuilder = (builder, texts = {}) => {
       confirm.hidden = false;
       remove.hidden = true;
     });
-    row.querySelector('[data-role="remove-yes"]').addEventListener('click', dropRow);
-    row.querySelector('[data-role="remove-no"]').addEventListener('click', () => {
-      confirm.hidden = true;
-      remove.hidden = false;
-    });
+    row
+      .querySelector('[data-role="remove-yes"]')
+      .addEventListener('click', dropRow);
+    row
+      .querySelector('[data-role="remove-no"]')
+      .addEventListener('click', () => {
+        confirm.hidden = true;
+        remove.hidden = false;
+      });
   };
 
   const addRow = (prompt = {}) => {

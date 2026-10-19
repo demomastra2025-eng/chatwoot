@@ -10,8 +10,15 @@ const build = options => {
   mount(page({ body: checklist(options) }));
   const root = document.querySelector('[data-ai-models]');
   enhanceAll(root, TEXTS);
-  const allowlist = initAllowlist(root.querySelector('[data-allowlist]'), TEXTS);
-  const settings = initSettingsForm(root, document.querySelector('form'), TEXTS);
+  const allowlist = initAllowlist(
+    root.querySelector('[data-allowlist]'),
+    TEXTS
+  );
+  const settings = initSettingsForm(
+    root,
+    document.querySelector('form'),
+    TEXTS
+  );
   running.push(settings);
   return { root, allowlist, settings };
 };
@@ -19,7 +26,8 @@ const build = options => {
 const row = id => document.querySelector(`[data-model-id="${id}"]`);
 const check = id => row(id).querySelector('[data-list-check]');
 const radio = id => row(id).querySelector('[data-default-radio]');
-const platform = () => document.querySelector('[data-row-platform] [data-default-radio]');
+const platform = () =>
+  document.querySelector('[data-row-platform] [data-default-radio]');
 const counter = () => document.querySelector('[data-counter]').textContent;
 const note = () => document.querySelector('[data-checklist-note]');
 const tick = (id, value) => {
@@ -105,8 +113,12 @@ describe('initAllowlist', () => {
     const added = row('e/five');
     expect(added).toBeTruthy();
     expect(added.querySelector('[data-list-check]').checked).toBe(true);
-    expect(added.querySelector('[data-list-check]').name).toBe('app_config[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST][]');
-    expect(added.querySelector('[data-default-radio]').name).toBe('app_config[CAPTAIN_DEFAULT_MODEL]');
+    expect(added.querySelector('[data-list-check]').name).toBe(
+      'app_config[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST][]'
+    );
+    expect(added.querySelector('[data-default-radio]').name).toBe(
+      'app_config[CAPTAIN_DEFAULT_MODEL]'
+    );
     expect(added.textContent).toContain('Five');
     expect(added.textContent).toContain('$2 за 1 млн');
     expect(add.value).toBe('');
@@ -122,8 +134,13 @@ describe('initAllowlist', () => {
     radio('e/five').checked = true;
     fire(radio('e/five'));
 
-    expect(settings.dirty().sort()).toEqual(['CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', 'CAPTAIN_DEFAULT_MODEL']);
-    expect(document.querySelector('[data-savebar-text]').textContent).toBe('Изменено 2 настройки');
+    expect(settings.dirty().sort()).toEqual([
+      'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST',
+      'CAPTAIN_DEFAULT_MODEL',
+    ]);
+    expect(document.querySelector('[data-savebar-text]').textContent).toBe(
+      'Изменено 2 настройки'
+    );
     expect(document.querySelector('[data-unsaved-badge]').hidden).toBe(false);
   });
 
@@ -145,7 +162,9 @@ describe('initAllowlist', () => {
 
     reset.click();
 
-    expect(['a/one', 'b/two', 'c/three', 'd/four'].map(id => check(id).checked)).toEqual([true, true, false, false]);
+    expect(
+      ['a/one', 'b/two', 'c/three', 'd/four'].map(id => check(id).checked)
+    ).toEqual([true, true, false, false]);
     // the default model went off the list: the model of the platform is the default again
     expect(platform().checked).toBe(true);
     expect(counter()).toBe('2 из 3');
@@ -153,19 +172,27 @@ describe('initAllowlist', () => {
 
   it('puts an earlier short list back, adding the rows it needs', () => {
     build({ ticked: ['b/two', 'd/four'] });
-    const button = document.querySelector('[data-revert="CAPTAIN_ASSISTANT_MODEL_ALLOWLIST"]');
+    const button = document.querySelector(
+      '[data-revert="CAPTAIN_ASSISTANT_MODEL_ALLOWLIST"]'
+    );
     button.dataset.revertValue = '["a/one","x/new"]';
 
     button.click();
 
-    expect(['a/one', 'b/two', 'd/four'].map(id => check(id).checked)).toEqual([true, false, false]);
+    expect(['a/one', 'b/two', 'd/four'].map(id => check(id).checked)).toEqual([
+      true,
+      false,
+      false,
+    ]);
     expect(check('x/new').checked).toBe(true);
     expect(counter()).toBe('2 из 3');
   });
 
   it('puts an earlier default model back, ticking its row', () => {
     build({ defaultId: 'a/one' });
-    const button = document.querySelector('[data-revert="CAPTAIN_DEFAULT_MODEL"]');
+    const button = document.querySelector(
+      '[data-revert="CAPTAIN_DEFAULT_MODEL"]'
+    );
 
     button.click();
 

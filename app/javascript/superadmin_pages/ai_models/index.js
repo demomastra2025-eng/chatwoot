@@ -25,7 +25,9 @@ export const initAiModelsPage = (root = document) => {
   initPromptsBuilder(page.querySelector('[data-prompts-builder]'), texts);
   initTabs(page);
   const settings = initSettingsForm(page, form, texts);
-  page.addEventListener(RESET_EVENT, () => pickers.forEach(picker => picker.refresh()));
+  page.addEventListener(RESET_EVENT, () =>
+    pickers.forEach(picker => picker.refresh())
+  );
   page.classList.add('is-enhanced');
   return { page, form, settings };
 };

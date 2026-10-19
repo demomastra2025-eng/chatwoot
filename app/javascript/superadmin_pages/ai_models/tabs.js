@@ -27,33 +27,49 @@ export const initTabs = (page, { hash = true } = {}) => {
 
   const markDots = () => {
     panels.forEach(panel => {
-      const button = buttons.find(candidate => candidate.dataset.tab === nameOf(panel));
+      const button = buttons.find(
+        candidate => candidate.dataset.tab === nameOf(panel)
+      );
       const dot = button && button.querySelector('[data-tab-dot]');
       if (!dot) return;
       const hasError = Boolean(panel.querySelector('[data-error-for]'));
-      const hasChange = Boolean(panel.querySelector('[data-unsaved-badge]:not([hidden])'));
+      const hasChange = Boolean(
+        panel.querySelector('[data-unsaved-badge]:not([hidden])')
+      );
       dot.hidden = !(hasError || hasChange);
       dot.classList.toggle('admin-tab__dot--error', hasError);
     });
   };
 
-  const firstWithError = panels.find(panel => panel.querySelector('[data-error-for]'));
+  const firstWithError = panels.find(panel =>
+    panel.querySelector('[data-error-for]')
+  );
   const fromHash = hash ? window.location.hash.replace('#', '') : '';
-  const start = (firstWithError && nameOf(firstWithError)) ||
-    (panels.some(panel => nameOf(panel) === fromHash) ? fromHash : nameOf(panels[0]));
+  const start =
+    (firstWithError && nameOf(firstWithError)) ||
+    (panels.some(panel => nameOf(panel) === fromHash)
+      ? fromHash
+      : nameOf(panels[0]));
 
   list.hidden = false;
   page.classList.add('admin-tabs-ready');
   select(start);
   markDots();
 
-  buttons.forEach(button => button.addEventListener('click', () => select(button.dataset.tab)));
+  buttons.forEach(button =>
+    button.addEventListener('click', () => select(button.dataset.tab))
+  );
   list.addEventListener('keydown', event => {
-    const index = buttons.findIndex(button => button.getAttribute('aria-selected') === 'true');
+    const index = buttons.findIndex(
+      button => button.getAttribute('aria-selected') === 'true'
+    );
     const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
     if (!step) return;
     event.preventDefault();
-    select(buttons[(index + step + buttons.length) % buttons.length].dataset.tab, { focus: true });
+    select(
+      buttons[(index + step + buttons.length) % buttons.length].dataset.tab,
+      { focus: true }
+    );
   });
   page.addEventListener('ai:changed', markDots);
 
