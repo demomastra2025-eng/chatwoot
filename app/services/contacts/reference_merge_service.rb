@@ -30,18 +30,27 @@ class Contacts::ReferenceMergeService
     communication_threads contact_channel_profiles contact_inboxes conversations crm_deal_contacts notes
   ].freeze
 
-  def initialize(account:, base_contact:, mergee_contact:)
+  def initialize(account:, base_contact:, mergee_contact:, lock_patient_bindings: true)
     @account = account
     @base_contact = base_contact
     @mergee_contact = mergee_contact
+    @lock_patient_bindings = lock_patient_bindings
   end
 
   def perform
+    ensure_safe_to_merge!
+    reassign_remaining_references!
+  end
+
+  def ensure_safe_to_merge!
     ensure_patient_bindings_are_settled!
     ensure_provider_commands_do_not_collide!
     ensure_assignment_ownerships_do_not_collide!
-    deduplicate_assignment_quota_usages!
     ensure_campaign_deliveries_do_not_collide!
+  end
+
+  def reassign_remaining_references!
+    deduplicate_assignment_quota_usages!
     self.class.merge_reminder_references!(base_contact: base_contact, mergee_contact: mergee_contact)
     self.class.merge_automation_rule_references!(base_contact: base_contact, mergee_contact: mergee_contact)
 
@@ -127,7 +136,7 @@ class Contacts::ReferenceMergeService
   end
 
   def ensure_patient_bindings_are_settled!
-    Contacts::PatientIdentityMergeGuard.lock_patient_bindings!(base_contact, mergee_contact)
+    Contacts::PatientIdentityMergeGuard.lock_patient_bindings!(base_contact, mergee_contact) if @lock_patient_bindings
     return unless Contacts::PatientIdentityMergeGuard.patient_binding_write_in_flight?(base_contact, mergee_contact)
 
     raise UnsafeMergeError, 'A MedElement write for this patient card is in progress or awaits verification. Finish it before merging.'

@@ -271,66 +271,10 @@ class TelegramPersonal::ContactSyncService
   # Returns true only when the records were merged; the locked re-check can still refuse (a provider write that
   # started after the unlocked pre-check), and the caller then keeps the source contact and blocks the phone update.
   def merge_contact_records!(source_contact:, target_contact:)
-    # Lock order: phone identity lock first, then appointments, contacts and their chats (see the number transfer).
-    Contacts::PhoneIdentityLock.acquire!(account_id: target_contact.account_id)
-    Contacts::PatientIdentityMergeGuard.lock_patient_bindings!(source_contact, target_contact)
-    return false unless Contacts::PatientIdentityMergeGuard.allowed?(source_contact: source_contact, target_contact: target_contact)
-
-    now = Time.current
-    # Duplicate merge changes the captured patient ID without dispatching another provider write.
-    Scheduling::Appointment.where(account_id: target_contact.account_id, patient_contact_id: source_contact.id)
-                           .update_all(patient_contact_id: target_contact.id, updated_at: now) # rubocop:disable Rails/SkipsModelValidations
-
-    source_contact.contact_inboxes.update_all(contact_id: target_contact.id, updated_at: now)
-    ContactChannelProfile.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
-    Conversation.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
-    Message.where(sender_type: 'Contact', sender_id: source_contact.id).update_all(sender_id: target_contact.id, updated_at: now)
-    Contacts::ReferenceMergeService.merge_reminder_references!(
-      base_contact: target_contact,
-      mergee_contact: source_contact
-    )
-    Contacts::ReferenceMergeService.merge_automation_rule_references!(base_contact: target_contact, mergee_contact: source_contact)
-
-    {
-      'Note' => :contact_id,
-      'CampaignDelivery' => :contact_id,
-      'CsatSurveyResponse' => :contact_id,
-      'Scheduling::Appointment' => :contact_id
-    }.each do |class_name, foreign_key|
-      klass = class_name.safe_constantize
-      next if klass.blank?
-
-      klass.where(foreign_key => source_contact.id).update_all(foreign_key => target_contact.id, :updated_at => now)
-    end
-
-    source_attributes = (source_contact.additional_attributes || {}).deep_stringify_keys
-    target_attributes = (target_contact.additional_attributes || {}).deep_stringify_keys
-    merged_additional_attributes = source_attributes.merge(target_attributes)
-
-    merged_channel_profiles = (source_attributes['channel_profiles'] || {}).deep_stringify_keys
-                                                                           .merge((target_attributes['channel_profiles'] || {}).deep_stringify_keys) do |_key, old_value, new_value|
-      old_hash = old_value.is_a?(Hash) ? old_value.deep_stringify_keys : {}
-      new_hash = new_value.is_a?(Hash) ? new_value.deep_stringify_keys : {}
-      old_hash.merge(new_hash)
-    end
-    merged_additional_attributes['channel_profiles'] = merged_channel_profiles if merged_channel_profiles.present?
-
-    source_contact.update_columns(identifier: nil, updated_at: now) if source_contact.identifier.present?
-
-    target_contact.skip_runtime_events = true
-    target_contact.update!(
-      additional_attributes: merged_additional_attributes,
-      name: preferred_contact_name(target_contact, source_contact),
-      phone_number: target_contact.phone_number.presence || source_contact.phone_number,
-      identifier: target_contact.identifier.presence || source_contact.identifier
-    )
-
-    source_contact.skip_runtime_events = true
-    source_contact.destroy!
-    true
-  rescue ActiveRecord::RecordNotDestroyed
-    source_contact.update_columns(identifier: nil, updated_at: now) if source_contact.identifier.present?
-    true
+    Contacts::ChannelSyncMergeService.new(
+      source_contact: source_contact,
+      target_contact: target_contact
+    ) { preferred_contact_name(target_contact, source_contact) }.perform
   end
 
   def preferred_contact_name(target_contact, source_contact)
