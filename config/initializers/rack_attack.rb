@@ -55,6 +55,16 @@ class Rack::Attack
       nil
     end
 
+    # The e-mail of the super admin sign-in form, which posts it as super_admin[email] (not as the plain 'email' of the
+    # operator app). nil for a blank or non-string value, so a throttle keyed on this skips instead of sharing one bucket.
+    def super_admin_email
+      nested = params['super_admin']
+      email = nested['email'] if nested.is_a?(Hash)
+      email.strip.downcase.presence if email.is_a?(String)
+    rescue StandardError
+      nil
+    end
+
     # include_header only for sign-in, which merges the 'email' header into params;
     # reset/resend read params only, so honoring it there lets a spoofed header
     # exhaust a victim's bucket.
@@ -106,7 +116,7 @@ class Rack::Attack
   end
 
   throttle('super_admin_login/email', limit: 5, period: 15.minutes) do |req|
-    req.normalized_auth_email if req.path_without_extentions == '/super_admin/sign_in' && req.post?
+    req.super_admin_email if req.path_without_extentions == '/super_admin/sign_in' && req.post?
   end
 
   # The second step of the sign-in (a code from the authenticator app): a code has only 6 digits

@@ -125,6 +125,36 @@ describe 'Rack::Attack auth throttles' do
     end
   end
 
+  describe 'super_admin_login/email' do
+    def sign_in_env(params, path = '/super_admin/sign_in')
+      form_env(params, path)
+    end
+
+    it 'keys the sign-in of the super admin by his e-mail, which the form posts as super_admin[email]' do
+      env = sign_in_env({ 'super_admin' => { 'email' => ' Admin@Example.COM ', 'password' => 'x' } })
+
+      expect(throttle_key('super_admin_login/email', env)).to eq('admin@example.com')
+    end
+
+    it 'skips a sign-in without an e-mail instead of sharing a blank key' do
+      expect(throttle_key('super_admin_login/email', sign_in_env({ 'super_admin' => { 'password' => 'x' } }))).to be_nil
+      expect(throttle_key('super_admin_login/email', sign_in_env({ 'super_admin' => { 'email' => '  ' } }))).to be_nil
+    end
+
+    it 'skips a value that is not a form of e-mail and password instead of raising' do
+      expect(throttle_key('super_admin_login/email', sign_in_env({ 'super_admin' => 'admin@example.com' }))).to be_nil
+      expect(throttle_key('super_admin_login/email', sign_in_env({ 'super_admin' => { 'email' => ['a@b.com'] } }))).to be_nil
+    end
+
+    it 'does not count other paths or reads' do
+      other_path = sign_in_env({ 'super_admin' => { 'email' => 'admin@example.com' } }, '/auth/sign_in')
+      get_env = sign_in_env({ 'super_admin' => { 'email' => 'admin@example.com' } }).merge('REQUEST_METHOD' => 'GET')
+
+      expect(throttle_key('super_admin_login/email', other_path)).to be_nil
+      expect(throttle_key('super_admin_login/email', get_env)).to be_nil
+    end
+  end
+
   describe 'super_admin_two_factor/ip' do
     it 'counts the codes sent to the second step of the super admin sign-in by ip' do
       env = form_env({ 'otp_code' => '123456' }, '/super_admin/sign_in/two_factor')
