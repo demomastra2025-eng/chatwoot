@@ -1,6 +1,6 @@
-# MedElement allows at most five requests per second for each request type of an account. This limiter spaces the requests
-# of one type of one account (credentials) by a minimum interval (200 ms by default) across every process: each caller
-# reserves the next free slot atomically in Redis and sleeps until it comes. A slot that is taken too far ahead is not
+# Spaces MedElement HTTP calls across Sidekiq workers and web processes per clinic and request type.
+# MedElement allows five requests per second per request type; the default 200ms spacing matches that floor.
+# If the next free slot for this request type is farther away than MAX_INLINE_WAIT_MS, the slot is not
 # reserved at all: the caller gets BusyError (nothing was sent) and is expected to try again a little later instead of
 # sleeping long.
 class Integrations::Medelement::RequestRateLimiter
@@ -63,14 +63,28 @@ class Integrations::Medelement::RequestRateLimiter
   # Waits for the next free slot of this request type. The operation is the MedElement endpoint the request goes to.
   def wait!(operation: nil, write: false)
     delay_ms = reserve_delay_ms(operation, write ? MAX_INLINE_WRITE_WAIT_MS : MAX_INLINE_WAIT_MS)
-    raise BusyError.new(operation: operation.to_s, retry_after_ms: delay_ms.abs, write: write) if delay_ms.negative?
+    raise BusyError.new(operation: lane_name(operation), retry_after_ms: -delay_ms, write: write) if delay_ms.negative?
+    return unless delay_ms.positive?
 
-    sleeper.call(delay_ms.to_f / 1000) if delay_ms.positive?
+    release_idle_db_connection
+    sleeper.call(delay_ms.to_f / 1000)
   end
 
   private
 
   attr_reader :account_login, :clock, :connection_pool, :integrator_key, :interval_ms, :sleeper
+
+  def release_idle_db_connection
+    return unless defined?(ActiveRecord::Base)
+
+    ar_pool = ActiveRecord::Base.connection_pool
+    return unless ar_pool.active_connection?
+    return unless ActiveRecord::Base.connection.open_transactions.zero?
+
+    ar_pool.release_connection
+  rescue StandardError
+    nil
+  end
 
   def reserve_delay_ms(operation, max_wait_ms)
     key = key_for(operation)

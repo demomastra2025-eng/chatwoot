@@ -6,6 +6,8 @@ class Reminders::MaterializeDueEnrollmentsJob < ApplicationJob
   MAX_DUE_STEPS_PER_ENROLLMENT = 100
 
   def perform(batch_number = 0, excluded_ids = [])
+    return unless candidate_enrollments_exist?
+
     processed_ids = Array(excluded_ids).map(&:to_i)
     batch_ids = []
 
@@ -88,14 +90,29 @@ class Reminders::MaterializeDueEnrollmentsJob < ApplicationJob
     )
   end
 
-  def candidate_enrollments
+  def candidate_enrollments_exist?
+    TouchPlanEnrollment.due.exists? || resumable_enrollments?
+  end
+
+  def resumable_enrollments?
+    return @resumable_enrollments if defined?(@resumable_enrollments)
+
+    @resumable_enrollments = resumable_enrollments_scope.exists?
+  end
+
+  def resumable_enrollments_scope
     feature_name = Reminders::DeferredMaterializationPolicy::FEATURE_NAME
+    TouchPlanEnrollment
+      .paused_by_feature(feature_name)
+      .joins(:account)
+      .where('accounts.feature_flags_overflow @> ?', [feature_name].to_json)
+  end
+
+  def candidate_enrollments
+    return TouchPlanEnrollment.due unless resumable_enrollments?
+
     due_ids = TouchPlanEnrollment.due.select(:id)
-    resumable_ids = TouchPlanEnrollment
-                    .paused_by_feature(feature_name)
-                    .joins(:account)
-                    .where('accounts.feature_flags_overflow @> ?', [feature_name].to_json)
-                    .select(:id)
+    resumable_ids = resumable_enrollments_scope.select(:id)
 
     union_sql = "(#{due_ids.to_sql}) UNION (#{resumable_ids.to_sql})"
     TouchPlanEnrollment.where("touch_plan_enrollments.id IN (#{union_sql})")

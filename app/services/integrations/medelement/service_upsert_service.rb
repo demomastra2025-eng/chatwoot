@@ -1,11 +1,12 @@
 class Integrations::Medelement::ServiceUpsertService
   MAX_NAME_LENGTH = 255
 
-  def initialize(account:, payload:, now:, conflict_tracker: nil)
+  def initialize(account:, payload:, now:, conflict_tracker: nil, existing_services_by_code: nil)
     @account = account
     @payload = payload.to_h.with_indifferent_access
     @now = now
     @conflict_tracker = conflict_tracker
+    @existing_services_by_code = existing_services_by_code
   end
 
   def perform
@@ -23,7 +24,7 @@ class Integrations::Medelement::ServiceUpsertService
 
   private
 
-  attr_reader :account, :conflict_tracker, :now, :payload
+  attr_reader :account, :conflict_tracker, :existing_services_by_code, :now, :payload
 
   def assign_required_attributes(service)
     service.assign_attributes(
@@ -65,10 +66,12 @@ class Integrations::Medelement::ServiceUpsertService
   end
 
   def find_service
-    account.scheduling_services.find_by(
-      "custom_attributes ->> '#{Integrations::Medelement::ServicesSyncService::EXTERNAL_CODE_KEY}' = ?",
-      code.to_s
-    )
+    return existing_services_by_code[code.to_s] if existing_services_by_code
+
+    external_key = Integrations::Medelement::ServicesSyncService::EXTERNAL_CODE_KEY
+    account.scheduling_services
+           .where("NULLIF(btrim(custom_attributes ->> '#{external_key}'), '') IS NOT NULL")
+           .find_by("custom_attributes ->> '#{external_key}' = ?", code.to_s)
   end
 
   def normalized_duration

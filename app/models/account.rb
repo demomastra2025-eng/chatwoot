@@ -445,24 +445,35 @@ class Account < ApplicationRecord
                                                                 .select('active_storage_attachments.blob_id').distinct
     trash_attachment_blob_ids = tenant_attachment_records_scope.where("(attachments.meta->'trash') IS NOT NULL")
                                                                .select('active_storage_attachments.blob_id').distinct
-    captain_source_blob_ids = if defined?(Captain::Document) && Captain::Document.table_exists?
-                                ActiveStorage::Attachment.where(record_type: 'Captain::Document', name: %w[pdf_file source_file])
+    has_captain_docs = defined?(Captain::Document) && Captain::Document.table_exists? &&
+                       Captain::Document.exists?(account_id: id)
+    if has_captain_docs
+      captain_source_blob_ids = ActiveStorage::Attachment.where(record_type: 'Captain::Document', name: %w[pdf_file source_file])
                                                          .where(record_id: Captain::Document.where(account_id: id).select(:id))
                                                          .select(:blob_id).distinct
-                              else
-                                ActiveStorage::Attachment.none.select(:blob_id)
-                              end
-    captain_blob_ids_sql = if defined?(ActiveStorage::VariantRecord) && ActiveStorage::VariantRecord.table_exists?
-                             AccountLimits::StorageUsageService.source_with_variants_cte_sql(captain_source_blob_ids)
-                           else
-                             captain_source_blob_ids.to_sql
-                           end
-    captain_bytes = ActiveStorage::Blob.where("active_storage_blobs.id IN (#{captain_blob_ids_sql})")
-                                       .where.not(id: active_attachment_blob_ids)
-                                       .sum(:byte_size).to_i
-    trash_att_bytes = ActiveStorage::Blob.where(id: trash_attachment_blob_ids)
-                                         .where.not(id: active_attachment_blob_ids)
-                                         .where("active_storage_blobs.id NOT IN (#{captain_blob_ids_sql})")
+      captain_blob_ids_sql = if defined?(ActiveStorage::VariantRecord) && ActiveStorage::VariantRecord.table_exists?
+                               AccountLimits::StorageUsageService.source_with_variants_cte_sql(captain_source_blob_ids)
+                             else
+                               captain_source_blob_ids.to_sql
+                             end
+      shared_active_captain_blob_ids = active_attachment_blob_ids
+                                       .where("active_storage_attachments.blob_id IN (#{captain_blob_ids_sql})")
+      exclusive_captain_blob_ids_sql = "SELECT blob_id FROM (#{captain_blob_ids_sql}) captain_blobs " \
+                                       "EXCEPT (#{shared_active_captain_blob_ids.to_sql})"
+      captain_bytes = ActiveStorage::Blob.where("active_storage_blobs.id IN (#{exclusive_captain_blob_ids_sql})")
+                                         .sum(:byte_size).to_i
+    else
+      captain_bytes = 0
+    end
+
+    shared_active_trash_blob_ids = active_attachment_blob_ids
+                                   .where(active_storage_attachments: { blob_id: trash_attachment_blob_ids })
+    exclusive_trash_blob_ids_sql = "(#{trash_attachment_blob_ids.to_sql}) EXCEPT (#{shared_active_trash_blob_ids.to_sql})"
+    if has_captain_docs
+      exclusive_trash_blob_ids_sql = "#{exclusive_trash_blob_ids_sql} " \
+                                     "EXCEPT SELECT blob_id FROM (#{captain_blob_ids_sql}) captain_blobs"
+    end
+    trash_att_bytes = ActiveStorage::Blob.where("active_storage_blobs.id IN (#{exclusive_trash_blob_ids_sql})")
                                          .sum(:byte_size).to_i
 
     storage_service = AccountLimits::StorageUsageService.new(account: self)

@@ -310,7 +310,10 @@ class WhatsappWeb::IncomingEventService
   end
 
   def process_message_delete
-    message = Message.find_by(source_id: event_data.dig(:key, :id).to_s, inbox_id: channel.inbox.id)
+    source_id = event_data.dig(:key, :id).to_s
+    return if source_id.blank?
+
+    message = Message.find_by(source_id: source_id, inbox_id: channel.inbox.id)
     return if message.blank?
 
     ActiveRecord::Base.transaction do
@@ -325,7 +328,10 @@ class WhatsappWeb::IncomingEventService
 
   def process_message_edit
     key = event_data[:key].to_h
-    message = Message.find_by(source_id: key[:id].to_s, inbox_id: channel.inbox.id)
+    source_id = key[:id].to_s
+    return if source_id.blank?
+
+    message = Message.find_by(source_id: source_id, inbox_id: channel.inbox.id)
     return if message.blank?
 
     message.update!(
@@ -597,9 +603,12 @@ class WhatsappWeb::IncomingEventService
   end
 
   def process_outgoing_message_update(update)
-    message = Message.find_by(source_id: update.dig(:key, :id).to_s, inbox_id: channel.inbox.id)
+    source_id = update.dig(:key, :id).to_s
+    return if source_id.blank?
+
+    message = Message.find_by(source_id: source_id, inbox_id: channel.inbox.id)
     if message.blank?
-      channel.record_echo_status_miss!(source_id: update.dig(:key, :id).to_s)
+      channel.record_echo_status_miss!(source_id: source_id)
       cache_pending_message_status!(update)
       log_pending_message_update_backfill(update)
       Channels::WhatsappWeb::MessageUpdateBackfillJob.set(wait: MESSAGE_UPDATE_BACKFILL_DELAY).perform_later(
@@ -615,8 +624,11 @@ class WhatsappWeb::IncomingEventService
   def process_incoming_message_update(update, mapped_status)
     return unless mapped_status == :read
 
+    source_id = update.dig(:key, :id).to_s
+    return if source_id.blank?
+
     message = Message.find_by(
-      source_id: update.dig(:key, :id).to_s,
+      source_id: source_id,
       inbox_id: channel.inbox.id,
       message_type: :incoming
     )

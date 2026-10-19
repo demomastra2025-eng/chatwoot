@@ -69,6 +69,14 @@ RSpec.describe AccountLimits::StorageUsageService do
       )
     end
 
+    it 'computes storage usage_limits lazily and skips blob ownership queries when account is unlimited' do
+      expect(described_class).not_to receive(:blobs_for_source_and_variants)
+
+      expect(account.usage_limits[:agents]).to be_present
+      expect(account.usage_limits[:conversations]).to be_present
+      account.logo.attach(io: StringIO.new('l' * 128), filename: 'lazy-logo.png', content_type: 'image/png')
+    end
+
     it 'treats an explicit storage limit as bounded even when it matches the sentinel value' do
       account.update!(limits: { 'storage_bytes' => ChatwootApp.max_limit })
 

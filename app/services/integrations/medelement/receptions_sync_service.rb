@@ -704,6 +704,8 @@ class Integrations::Medelement::ReceptionsSyncService
         # Fallback to synchronous fetch on main thread so error handling & conflict tracking stay deterministic.
         next
       end
+    ensure
+      ActiveRecord::Base.connection_pool.release_connection if ActiveRecord::Base.connection_pool.active_connection?
     end
   end
 

@@ -2,8 +2,9 @@ module CommunicationThreads::FilterService::Counters
   private
 
   def thread_counts
+    unread_scope = unread_thread_scope(@communication_threads)
     assignee_counts = assignee_counts_for(@communication_threads)
-    unread_assignee_counts = assignee_counts_for(unread_thread_scope(@communication_threads))
+    unread_assignee_counts = assignee_counts_for(unread_scope)
     {
       mine_count: assignee_counts[:mine_count],
       assigned_count: assignee_counts[:assigned_count],
@@ -14,14 +15,12 @@ module CommunicationThreads::FilterService::Counters
       unassigned_unread_count: unread_assignee_counts[:unassigned_count],
       all_unread_count: unread_assignee_counts[:all_count],
       assignee_counts: assignee_counts,
-      unread_counts: unread_counts
+      unread_counts: unread_counts(unread_scope)
     }
   end
 
   # Only the team badge is shown in the dashboard, see Conversations::SidebarUnreadCountService.
-  def unread_counts
-    unread_scope = unread_thread_scope(@communication_threads)
-
+  def unread_counts(unread_scope = unread_thread_scope(@communication_threads))
     Conversations::SidebarUnreadCountService.unread_counts_with(
       teams: normalize_counts(unread_scope.where.not(team_id: nil).group(:team_id).count)
     )

@@ -49,6 +49,8 @@ module AttachmentConcern
     return true if account.blank?
 
     storage_service = AccountLimits::StorageUsageService.new(account: account)
+    return true if storage_service.unlimited?
+
     storage_service.within_limit?(extra_bytes: storage_service.new_blob_bytes(blobs))
   end
 end
