@@ -220,7 +220,7 @@ RSpec.describe SuperAdmin::DashboardAlerts do
 
     it 'is quiet when no channel asks' do
       whatsapp
-      create(:channel_facebook_page, account: account)
+      create(:channel_email, account: account)
 
       expect(alert('reauthorization')).to be_nil
     end
