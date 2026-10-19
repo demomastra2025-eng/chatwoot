@@ -48,8 +48,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
 
   def pair_of(field)
     return select_pair(field) if field.name == 'select'
-    return [field['name'], field.text.delete_prefix("
-")] if field.name == 'textarea'
+    return [field['name'], field.text.delete_prefix("\n")] if field.name == 'textarea'
     return if checked_types.include?(field['type']) && field['checked'].nil?
 
     [field['name'], field['value'] || (field['type'] == 'checkbox' ? 'on' : '')]
