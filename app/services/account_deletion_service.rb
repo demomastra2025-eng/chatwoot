@@ -27,6 +27,9 @@ class AccountDeletionService
 
   def soft_delete_orphaned_users
     account.users.each do |user|
+      # A super admin manages the platform, not this account: he only loses his membership when the account goes (his
+      # e-mail would otherwise be renamed and he would be locked out of both consoles).
+      next if user.type == 'SuperAdmin'
       # Skip users who are still associated with another account.
       next if user.account_users.where.not(account_id: account.id).exists?
 

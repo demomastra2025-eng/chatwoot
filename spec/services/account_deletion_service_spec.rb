@@ -50,6 +50,19 @@ RSpec.describe AccountDeletionService do
         expect(user_with_one_account.email).not_to eq(original_email)
       end
 
+      it 'does not rename a super admin whose only membership is the deleted account, so he can still sign in' do
+        super_admin = create(:super_admin)
+        create(:account_user, user: super_admin, account: account)
+        original_email = super_admin.email
+
+        service = described_class.new(account: account)
+        service.perform
+
+        expect(super_admin.reload.email).to eq(original_email)
+        expect(service.soft_deleted_users.pluck(:id)).not_to include(super_admin.id.to_s)
+        expect(service.soft_deleted_users.pluck(:id)).to include(user_with_one_account.id.to_s)
+      end
+
       it 'does not modify emails for users belonging to multiple accounts' do
         original_email = user_with_multiple_accounts.email
 
