@@ -1,0 +1,371 @@
+// The «Модели ИИ» page of the super admin: tabs, the searchable list of models, the checklist of the short list, the
+// builder of the platform rules, the sticky bar of unsaved changes. Same rules as `_settings.scss`: `n-*` tokens only,
+// one rule for both themes, in `@layer base` so a utility class in a view still wins. Tailwind keeps a rule here only
+// for a class name it finds in the views or in app/javascript/superadmin_pages (see tailwind.config.js).
+//
+// Without a script every rule below that belongs to the script (`.admin-combo`, `.admin-tabs`, the revert buttons) has
+// nothing to style: the page is one list of cards with plain selects.
+
+@layer base {
+  // ----------------------------------------------------------------- page
+  .admin-ai__toolbar {
+    @apply flex flex-wrap items-center justify-between gap-3;
+  }
+
+  .admin-ai__tech {
+    @apply ms-auto inline-flex cursor-pointer items-center gap-2 text-sm font-normal text-n-slate-11;
+  }
+
+  // The technical name of a setting (CAPTAIN_DEFAULT_MODEL): only under «Показать технические имена»
+  .admin-ai [data-tech-name] {
+    @apply m-0 hidden font-mono text-[11px] text-n-slate-10;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-ai:has([data-tech-toggle]:checked) [data-tech-name] {
+    @apply block;
+  }
+
+  .admin-ai__source {
+    @apply m-0 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-n-slate-2 px-3.5 py-2.5 text-sm text-n-slate-11 outline outline-1 -outline-offset-1 outline-n-weak;
+  }
+
+  .admin-ai__source--warn {
+    @apply bg-n-amber-2 text-n-amber-11 outline-n-amber-4;
+  }
+
+  .admin-stat-grid--quad {
+    @apply xl:grid-cols-4;
+  }
+
+  .admin-stat__actions {
+    @apply mt-1 flex flex-wrap gap-2;
+  }
+
+  // -------------------------------------------------------------- tabs
+  // The tab buttons are drawn by the script (the panels are one page without it).
+  .admin-tabs {
+    @apply inline-flex max-w-full flex-wrap gap-0.5 rounded-lg bg-n-solid-2 p-0.5 outline outline-1 -outline-offset-1 outline-n-weak;
+  }
+
+  .admin-tabs[hidden] {
+    @apply hidden;
+  }
+
+  .admin-tab {
+    @apply relative inline-flex h-[30px] cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent px-3 text-[13px] font-normal text-n-slate-11;
+
+    &:hover {
+      @apply bg-n-alpha-2 text-n-slate-12;
+    }
+
+    &:focus-visible {
+      @apply outline outline-2 outline-offset-2 outline-n-brand;
+    }
+
+    &[aria-selected="true"] {
+      @apply bg-n-slate-4 font-medium text-n-slate-12;
+    }
+  }
+
+  .admin-tab__dot {
+    @apply inline-block size-1.5 rounded-full bg-n-amber-9;
+  }
+
+  .admin-tab__dot[hidden] {
+    @apply hidden;
+  }
+
+  .admin-tab__dot--error {
+    @apply bg-n-ruby-9;
+  }
+
+  // The title of a panel only labels it when the panels are under each other
+  .admin-tabs-ready .admin-tab-panel__title {
+    @apply sr-only;
+  }
+
+  .admin-tab-panel__title {
+    @apply m-0 border-b border-n-weak pb-2 text-heading-1 text-n-slate-12;
+  }
+
+  .admin-tab-panel[hidden] {
+    @apply hidden;
+  }
+
+  // ------------------------------------------------------------- a card
+  .admin-slot--invalid {
+    @apply outline-n-ruby-6;
+  }
+
+  .admin-slot__status,
+  .admin-slot__history {
+    @apply m-0 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-n-slate-11;
+  }
+
+  .admin-slot__warn {
+    @apply m-0 rounded-lg bg-n-amber-2 px-3 py-2 text-xs text-n-amber-11 outline outline-1 -outline-offset-1 outline-n-amber-4;
+  }
+
+  .admin-slot__errors {
+    @apply flex flex-col gap-1 rounded-lg bg-n-ruby-2 px-3 py-2 text-sm text-n-ruby-11 outline outline-1 -outline-offset-1 outline-n-ruby-4;
+  }
+
+  .admin-slot__errors p {
+    @apply m-0;
+  }
+
+  // «Вернуть встроенную», «Вернуть»: a quiet text button that appears only with the script
+  button.admin-link-button {
+    @apply inline cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-n-brand underline underline-offset-2;
+
+    &:hover {
+      @apply text-n-slate-12;
+    }
+
+    &:focus-visible {
+      @apply rounded-sm outline outline-2 outline-offset-2 outline-n-brand;
+    }
+  }
+
+  button.admin-link-button[hidden] {
+    @apply hidden;
+  }
+
+  .admin-confirm {
+    @apply flex cursor-pointer items-start gap-2 text-sm font-normal text-n-slate-12;
+  }
+
+  // --------------------------------------------------- the searchable list
+  // A select that the script replaced: a button that shows the chosen model and a panel with a search box and the models.
+  .admin-combo {
+    @apply relative min-w-0;
+  }
+
+  .admin-combo__trigger {
+    @apply flex min-h-9 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border-0 bg-n-alpha-black2 px-3 py-1.5 text-start text-sm font-normal text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-weak transition-all;
+
+    &:hover {
+      @apply outline-n-slate-6;
+    }
+
+    &:focus-visible,
+    &[aria-expanded="true"] {
+      @apply outline outline-1 -outline-offset-1 outline-n-brand;
+    }
+  }
+
+  .admin-combo[data-invalid] .admin-combo__trigger {
+    @apply outline-n-ruby-8;
+  }
+
+  .admin-combo__value {
+    @apply flex min-w-0 flex-1 flex-col gap-0.5;
+  }
+
+  .admin-combo__name {
+    @apply min-w-0 truncate font-medium;
+  }
+
+  .admin-combo__meta {
+    @apply flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-normal text-n-slate-11;
+  }
+
+  .admin-combo__chevron {
+    @apply shrink-0 text-n-slate-11;
+  }
+
+  .admin-combo__panel {
+    @apply absolute inset-x-0 top-full z-30 mt-1 flex max-h-[26rem] flex-col overflow-hidden rounded-xl bg-n-solid-2 shadow-lg outline outline-1 -outline-offset-1 outline-n-container;
+  }
+
+  .admin-combo__panel[hidden] {
+    @apply hidden;
+  }
+
+  .admin-combo__search {
+    @apply m-2 w-auto;
+  }
+
+  .admin-combo__list {
+    @apply m-0 flex list-none flex-col overflow-y-auto p-1 pt-0;
+  }
+
+  .admin-combo__group {
+    @apply px-2.5 pb-1 pt-2.5 text-xs font-medium text-n-slate-10;
+  }
+
+  .admin-combo__option {
+    @apply flex cursor-pointer flex-col gap-0.5 rounded-lg px-2.5 py-1.5 text-sm text-n-slate-12;
+
+    &[data-active],
+    &:hover {
+      @apply bg-n-alpha-2;
+    }
+
+    &[aria-selected="true"] {
+      @apply bg-n-slate-3;
+    }
+  }
+
+  .admin-combo__option[hidden],
+  .admin-combo__group[hidden] {
+    @apply hidden;
+  }
+
+  .admin-combo__badge {
+    @apply inline-flex h-[18px] items-center rounded bg-n-slate-3 px-1.5 text-[11px] font-medium text-n-slate-11;
+  }
+
+  .admin-combo__badge--warn {
+    @apply bg-n-amber-2 text-n-amber-11;
+  }
+
+  .admin-combo__empty {
+    @apply m-0 px-3 py-4 text-center text-sm text-n-slate-11;
+  }
+
+  // ------------------------------------------------ the checklist of models
+  .admin-checklist {
+    @apply flex min-w-0 flex-col gap-3;
+  }
+
+  .admin-checklist__head {
+    @apply flex items-center justify-between gap-3 border-b border-n-weak pb-2 text-xs font-medium text-n-slate-11;
+  }
+
+  .admin-checklist__counter {
+    @apply ms-1 rounded bg-n-slate-3 px-1.5 py-0.5 text-n-slate-12;
+  }
+
+  .admin-checklist__counter.is-over {
+    @apply bg-n-ruby-2 text-n-ruby-11;
+  }
+
+  .admin-checklist__rows {
+    @apply m-0 flex list-none flex-col p-0;
+  }
+
+  .admin-checklist__row {
+    @apply flex items-center justify-between gap-3 border-b border-n-weak py-2 last:border-b-0;
+  }
+
+  .admin-checklist__row--platform {
+    @apply pb-3;
+  }
+
+  .admin-checklist__model {
+    @apply flex min-w-0 flex-1 cursor-pointer items-start gap-3 text-sm font-normal text-n-slate-12;
+  }
+
+  .admin-checklist__row--platform .admin-checklist__model {
+    @apply cursor-default flex-col gap-0.5;
+  }
+
+  .admin-checklist__text {
+    @apply flex min-w-0 flex-col gap-0.5;
+  }
+
+  .admin-checklist__name {
+    @apply flex min-w-0 flex-wrap items-center gap-2 font-medium;
+  }
+
+  .admin-checklist__meta {
+    @apply text-xs font-normal text-n-slate-11;
+  }
+
+  .admin-checklist__row[data-disabled] .admin-checklist__name {
+    @apply text-n-slate-11;
+  }
+
+  .admin-checklist__actions {
+    @apply flex flex-wrap items-end justify-between gap-3;
+  }
+
+  .admin-checklist__add {
+    @apply flex min-w-0 max-w-xl flex-1 basis-72 flex-col gap-1;
+  }
+
+  .admin-checklist__add-label {
+    @apply text-xs font-medium text-n-slate-11;
+  }
+
+  .admin-checklist__note {
+    @apply m-0 rounded-lg bg-n-amber-2 px-3 py-2 text-xs text-n-amber-11 outline outline-1 -outline-offset-1 outline-n-amber-4;
+  }
+
+  .admin-checklist__note[hidden] {
+    @apply hidden;
+  }
+
+  // -------------------------------------------------- rules of the platform
+  .admin-prompts__empty {
+    @apply m-0 text-sm text-n-slate-11;
+  }
+
+  .admin-prompts__empty[hidden] {
+    @apply hidden;
+  }
+
+  .admin-prompt {
+    @apply flex flex-col gap-3 rounded-lg bg-n-slate-2 p-4 outline outline-1 -outline-offset-1 outline-n-weak;
+  }
+
+  .admin-prompt__head {
+    @apply flex flex-wrap items-start justify-between gap-3;
+  }
+
+  .admin-prompt__title {
+    @apply m-0 text-sm font-medium text-n-slate-12;
+  }
+
+  .admin-prompt__remove {
+    @apply flex flex-wrap items-center justify-end gap-2;
+  }
+
+  .admin-prompt__confirm {
+    @apply flex flex-wrap items-center gap-2 text-xs text-n-slate-11;
+  }
+
+  .admin-prompt__confirm[hidden] {
+    @apply hidden;
+  }
+
+  .admin-prompt__fields {
+    @apply grid grid-cols-1 gap-3 md:grid-cols-2;
+  }
+
+  .admin-prompt__field {
+    @apply flex min-w-0 flex-col gap-1;
+  }
+
+  .admin-prompt__label {
+    @apply text-xs font-medium text-n-slate-11;
+  }
+
+  .admin-prompt__hint {
+    @apply m-0 text-xs text-n-slate-11;
+  }
+
+  // ------------------------------------------------------ sticky save bar
+  .admin-savebar {
+    @apply sticky bottom-3 z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-n-solid-3 px-4 py-3 shadow-lg outline outline-1 -outline-offset-1 outline-n-container;
+  }
+
+  .admin-savebar[hidden] {
+    @apply hidden;
+  }
+
+  .admin-savebar__text {
+    @apply m-0 text-sm font-medium text-n-slate-12;
+  }
+
+  .admin-savebar__actions {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  // The plain save button at the bottom of the form is replaced by the bar while a script runs
+  .admin-tabs-ready [data-static-save] {
+    @apply hidden;
+  }
+}

@@ -1,0 +1,57 @@
+<%#
+# A card of a model setting
+
+One function of the platform and the model it uses: the title and a one-line explanation, the list to pick the model from,
+what is in force («Используется встроенная: …» or «Вы выбрали: … — Вернуть встроенную»), what it was before the last
+change («Было: …, изменил … — Вернуть», from the audit log), and the error of the last save, if it was refused. The
+technical name of the setting shows only under «Показать технические имена».
+
+## Local variables:
+
+- `slot`: a `SuperAdmin::AiModelsPage::Slot` of a model setting.
+%>
+<%
+  scope = 'super_admin.app_config.captain'
+  choices = slot.choices
+  stored = slot.value.to_s.strip
+  previous = slot.previous
+%>
+<div class="admin-slot <%= 'admin-slot--invalid' if slot.invalid? %>" data-config="<%= slot.key %>" data-source="<%= slot.configured ? 'set' : 'default' %>">
+  <div class="admin-slot__head">
+    <label class="admin-slot__title" for="app_config_<%= slot.key %>" id="label_<%= slot.key %>"><%= slot.title %></label>
+    <span class="admin-badge admin-badge--amber" data-unsaved-badge hidden><%= t("#{scope}.status.unsaved") %></span>
+  </div>
+
+  <% if slot.hint.present? %>
+    <p class="admin-slot__hint"><%= slot.hint %></p>
+  <% end %>
+
+  <%= render 'ai_model_select', slot: slot %>
+
+  <% if choices.missing && choices.missing.id == stored %>
+    <p class="admin-slot__warn" data-testid="slot-missing">
+      <%= t("#{scope}.models.missing_hint", reason: choices.missing.note) %>
+    </p>
+  <% end %>
+
+  <p class="admin-slot__status" data-testid="slot-status">
+    <% if stored.blank? %>
+      <%= t("#{scope}.status.builtin", name: choices.builtin_name || t("#{scope}.models.builtin_unknown")) %>
+    <% else %>
+      <%= t("#{scope}.status.chosen", name: ai_model_name(stored)) %>
+      <button type="button" class="admin-link-button reset-base" data-revert="<%= slot.key %>" data-revert-value="" hidden><%= t("#{scope}.status.revert_builtin") %></button>
+    <% end %>
+  </p>
+
+  <% if previous %>
+    <p class="admin-slot__history" data-testid="slot-history">
+      <% name = previous.value.blank? ? t("#{scope}.status.was_builtin") : ai_model_name(previous.value) %>
+      <% when_text = SuperAdmin::DisplayHelper.format_time(previous.at) %>
+      <%= previous.actor.present? ? t("#{scope}.status.was", name: name, who: previous.actor, when: when_text) : t("#{scope}.status.was_no_actor", name: name, when: when_text) %>
+      <button type="button" class="admin-link-button reset-base" data-revert="<%= slot.key %>" data-revert-value="<%= previous.value %>" hidden><%= t("#{scope}.status.revert") %></button>
+    </p>
+  <% end %>
+
+  <%= render 'ai_slot_errors', slot: slot %>
+  <p class="admin-field__key" data-tech-name><%= slot.key %></p>
+</div>

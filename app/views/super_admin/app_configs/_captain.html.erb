@@ -1,41 +1,75 @@
 <%#
 # AI models
 
-The settings of the AI agents of the platform as cards grouped by purpose
-(SuperAdmin::AiModelsPage): the main agent model, moderation and safety,
-knowledge base search, voice, images, classifiers and service models, the
-connection to OpenRouter, system prompts. Every card says whether the value
-is set by the platform or follows the built-in default. One form saves them all.
-The diagnostics of OpenRouter are one collapsed block above it (the system
-prompts make the form long, and the block has forms of its own).
+The settings of the AI agents of the platform on three tabs (SuperAdmin::AiModelsPage): «Подключение» (the key of
+OpenRouter and its state), «Модели» (the model of every function, chosen from a list) and «Промпты» (the rules added
+to every agent). What only a developer changes is folded away at the bottom. One form saves everything at once, all or
+nothing; a sticky bar says how many settings were changed. Without a script the tabs are one page under each other,
+every model list is a plain select and the form still saves.
+
+The buttons of the OpenRouter checks are in the form of their own (a form cannot sit inside a form): they point at the
+small forms at the end of the page with the `form` attribute.
 
 ## Local variables (controller instance variables):
 
 - `@ai_models_page`: the `SuperAdmin::AiModelsPage`.
 - `@openrouter_diagnostics`: the hash of Llm::OpenRouterDiagnostics.
+- `@unsaved_keys`: the settings that were sent and refused; the page shows them as not saved.
 %>
-<div class="flex flex-col gap-8">
-  <%= render 'openrouter_diagnostics', diagnostics: @openrouter_diagnostics.to_h %>
+<%
+  scope = 'super_admin.app_config.captain'
+  page = @ai_models_page
+  state = SuperAdmin::AiConnectionState.new(@openrouter_diagnostics)
+  js_texts = {
+    search: t("#{scope}.models.search"), nothing_found: t("#{scope}.models.nothing_found"),
+    changed: %w[one few many other].index_with { |form| t("#{scope}.savebar.changed.#{form}", count: '%{count}') },
+    leave: t("#{scope}.savebar.leave"), counter: t("#{scope}.agent.counter", count: '%{count}', max: '%{max}'),
+    too_many: t("#{scope}.agent.too_many", max: Llm::InstallationModelConfig::ALLOWLIST_LIMIT), keep_default: t("#{scope}.agent.keep_default"),
+    remove_confirm: t("#{scope}.prompts.remove_confirm"), remove_yes: t("#{scope}.prompts.remove_yes"), remove_no: t("#{scope}.prompts.remove_no"),
+    prompt_title: t("#{scope}.prompts.title"), custom_group: t("#{scope}.prompts.custom_group", value: '%{value}'),
+    custom_slot: t("#{scope}.prompts.custom_slot", value: '%{value}')
+  }
+%>
+<div id="ai-models-page" class="admin-ai flex flex-col gap-6" data-ai-models
+     data-texts="<%= js_texts.to_json %>" data-unsaved-keys="<%= Array(@unsaved_keys).join(' ') %>" data-max-models="<%= Llm::InstallationModelConfig::ALLOWLIST_LIMIT %>">
+  <div class="admin-ai__toolbar">
+    <div class="admin-tabs" role="tablist" aria-label="<%= t("#{scope}.tab_nav_label") %>" data-tablist hidden>
+      <% page.tabs.each do |tab| %>
+        <button type="button" role="tab" id="ai-tab-btn-<%= tab %>" class="admin-tab reset-base" data-tab="<%= tab %>"
+                aria-controls="ai-tab-<%= tab %>" aria-selected="false"><%= t("#{scope}.tabs.#{tab}") %><span class="admin-tab__dot" data-tab-dot hidden></span></button>
+      <% end %>
+    </div>
+    <label class="admin-ai__tech">
+      <input type="checkbox" id="show-tech-names" data-tech-toggle>
+      <span><%= t("#{scope}.tech_names") %></span>
+    </label>
+  </div>
 
-  <%= form_with url: super_admin_app_config_url(config: @config), method: :post, local: true, class: 'flex flex-col gap-8', data: { testid: 'ai-models-form' } do %>
-    <% @ai_models_page.groups.each do |group| %>
-      <section class="flex flex-col gap-3" aria-labelledby="ai-group-<%= group.key %>" data-testid="ai-group-<%= group.key %>">
-        <div class="admin-block__head">
-          <h2 class="admin-block__title" id="ai-group-<%= group.key %>"><%= group.title %></h2>
-          <% if group.hint.present? %>
-            <p class="admin-block__hint"><%= group.hint %></p>
-          <% end %>
-        </div>
-        <div class="admin-slot-grid">
-          <% group.slots.each do |slot| %>
-            <%= render 'slot', slot: slot %>
-          <% end %>
-        </div>
+  <%= form_with url: super_admin_app_config_url(config: @config), method: :post, local: true, id: 'ai-models-form',
+                class: 'flex flex-col gap-6', data: { testid: 'ai-models-form', cancel_url: super_admin_app_config_path(config: 'captain') } do %>
+    <% page.tabs.each do |tab| %>
+      <section class="admin-tab-panel flex flex-col gap-6" id="ai-tab-<%= tab %>" role="tabpanel" aria-labelledby="ai-tab-btn-<%= tab %>"
+               data-tab-panel="<%= tab %>">
+        <h2 class="admin-tab-panel__title"><%= t("#{scope}.tabs.#{tab}") %></h2>
+        <%= render "ai_tab_#{tab}", page: page, state: state %>
       </section>
     <% end %>
 
-    <div class="form-actions">
+    <%= render 'ai_developer', page: page, state: state %>
+
+    <div class="form-actions" data-static-save>
       <%= submit_tag t('super_admin.app_config.save'), name: nil %>
     </div>
+
+    <div class="admin-savebar" data-savebar hidden role="status" aria-live="polite">
+      <p class="admin-savebar__text" data-savebar-text></p>
+      <div class="admin-savebar__actions">
+        <button type="button" class="button button--secondary button--small" data-savebar-cancel><%= t("#{scope}.savebar.cancel") %></button>
+        <%= submit_tag t("#{scope}.savebar.save"), name: nil, class: 'button button--small', data: { savebar_save: true } %>
+      </div>
+    </div>
   <% end %>
+
+  <%= form_with url: refresh_openrouter_key_health_super_admin_app_config_path(config: 'captain'), method: :post, local: true, id: 'ai-check-key-form' do %><% end %>
+  <%= form_with url: refresh_openrouter_models_super_admin_app_config_path(config: 'captain'), method: :post, local: true, id: 'ai-refresh-catalog-form' do %><% end %>
 </div>

@@ -10,6 +10,7 @@ OpenRouter diagnostics); every other page is one list of fields.
 - `@config`: the name of the page.
 %>
 <% content_for(:title) { app_config_page_title(@config) } %>
+<% content_for(:vue_entry) { vite_javascript_tag 'superadmin_ai_models' } if @config == 'captain' %>
 
 <header class="main-content__header" role="banner">
   <div class="main-content__heading">

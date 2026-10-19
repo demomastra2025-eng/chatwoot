@@ -1,0 +1,49 @@
+<%#
+# AI models: «Для разработчика»
+
+What only a developer changes, folded away at the bottom of the page under every tab: the address of OpenRouter, the
+model of the knowledge base search (a change of it needs a confirmation and a re-index by a developer), the instruction
+for the operator assistant and the technical details of OpenRouter. The controls are in the form, so they are saved with
+the rest.
+
+## Local variables:
+
+- `page`: the `SuperAdmin::AiModelsPage`.
+- `state`: the `SuperAdmin::AiConnectionState`.
+%>
+<% scope = 'super_admin.app_config.captain' %>
+<% groups = page.developer_groups + page.other_groups %>
+<details class="admin-collapse" id="ai-developer" data-testid="developer-block" <%= 'open' if groups.flat_map(&:slots).any?(&:invalid?) %>>
+  <summary>
+    <span class="flex min-w-0 flex-col gap-0.5">
+      <span class="text-heading-2 text-n-slate-12"><%= t("#{scope}.groups.developer.title") %></span>
+      <span class="text-body-main text-n-slate-11"><%= t("#{scope}.groups.developer.hint") %></span>
+    </span>
+    <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
+  </summary>
+
+  <div class="admin-collapse__body flex flex-col gap-5">
+    <div class="admin-notice admin-notice--amber"><%= t("#{scope}.developer.warning") %></div>
+
+    <% groups.each do |group| %>
+      <section class="flex flex-col gap-3" data-testid="ai-group-<%= group.key %>">
+        <% if group.key == SuperAdmin::AiModelsPage::OTHER_GROUP %>
+          <div class="admin-block__head">
+            <h2 class="admin-block__title"><%= group.title %></h2>
+          </div>
+        <% end %>
+        <div class="admin-slot-grid">
+          <% group.slots.each do |slot| %>
+            <% if slot.key == 'CAPTAIN_EMBEDDING_MODEL' %>
+              <%= render 'ai_embedding_card', slot: slot %>
+            <% else %>
+              <%= render 'slot', slot: slot %>
+            <% end %>
+          <% end %>
+        </div>
+      </section>
+    <% end %>
+
+    <%= render 'openrouter_diagnostics', diagnostics: @openrouter_diagnostics.to_h %>
+  </div>
+</details>

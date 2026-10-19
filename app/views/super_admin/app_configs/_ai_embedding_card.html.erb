@@ -1,0 +1,41 @@
+<%#
+# The model of the knowledge base search (under «Для разработчика»)
+
+A new model makes the search of the knowledge bases and FAQ of every account worse until a developer indexes the bases
+again, and this page does not start that. So the list holds only models that fit the search, and a change is saved only
+with the tick «Я понимаю последствия» (the server checks it too).
+
+## Local variables:
+
+- `slot`: the `SuperAdmin::AiModelsPage::Slot` of `CAPTAIN_EMBEDDING_MODEL`.
+%>
+<%
+  scope = 'super_admin.app_config.captain'
+  stored = slot.value.to_s.strip
+%>
+<div class="admin-slot admin-slot--wide <%= 'admin-slot--invalid' if slot.invalid? %>" data-config="<%= slot.key %>" data-source="<%= slot.configured ? 'set' : 'default' %>">
+  <div class="admin-slot__head">
+    <label class="admin-slot__title" for="app_config_<%= slot.key %>" id="label_<%= slot.key %>"><%= slot.title %></label>
+    <span class="admin-badge admin-badge--amber" data-unsaved-badge hidden><%= t("#{scope}.status.unsaved") %></span>
+  </div>
+  <p class="admin-slot__hint"><%= slot.hint %></p>
+  <div class="admin-notice admin-notice--amber"><%= t("#{scope}.developer.embedding_warning") %></div>
+
+  <%= render 'ai_model_select', slot: slot %>
+
+  <p class="admin-slot__status" data-testid="slot-status">
+    <% if stored.blank? %>
+      <%= t("#{scope}.status.builtin", name: slot.choices.builtin_name || t("#{scope}.models.builtin_unknown")) %>
+    <% else %>
+      <%= t("#{scope}.status.chosen", name: ai_model_name(stored)) %>
+    <% end %>
+  </p>
+
+  <label class="admin-confirm">
+    <input type="checkbox" name="confirm_embedding_change" value="1" id="confirm_embedding_change">
+    <span><%= t("#{scope}.developer.embedding_confirm") %></span>
+  </label>
+
+  <%= render 'ai_slot_errors', slot: slot %>
+  <p class="admin-field__key" data-tech-name><%= slot.key %></p>
+</div>

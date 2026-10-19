@@ -40,6 +40,9 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     GRAFANA_OVERVIEW_DASHBOARD GRAFANA_LOGS_DASHBOARD
   ].freeze
 
+  # The changes the message after a save lists; the rest is «и ещё N»
+  MAX_SUMMARY_LINES = 6
+
   helper SuperAdmin::AppConfigHelper
   before_action :set_config
   before_action :ensure_known_config
@@ -47,35 +50,17 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   helper_method :masked_secret_config?
 
   def show
-    # ref: https://github.com/rubocop/rubocop/issues/7767
-    # rubocop:disable Style/HashTransformValues
-    @app_config = InstallationConfig.where(name: @allowed_configs)
-                                    .pluck(:name, :serialized_value)
-                                    .map { |name, serialized_value| [name, serialized_value['value']] }
-                                    .to_h
-    # rubocop:enable Style/HashTransformValues
-    @app_config[Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG] ||= Captain::Assistant.installation_system_prompt_entries
-    @installation_configs = config_definitions
-    secret_keys = @allowed_configs.select { |key| masked_secret_config?(key) }
-    @configured_secrets = secret_keys.select { |key| @app_config[key].present? }
-    if @config == 'captain'
-      @openrouter_diagnostics = Llm::OpenRouterDiagnostics.call
-      @ai_models_page = SuperAdmin::AiModelsPage.new(
-        keys: @allowed_configs, values: @app_config, definitions: @installation_configs, masked_keys: secret_keys
-      )
-    end
-    # A secret never leaves the controller: the views get only whether it is set
-    @app_config = @app_config.except(*secret_keys)
+    prepare_show
   end
 
   def create
+    return create_ai_models if @config == 'captain'
+
     errors = persist_app_config
 
     if errors.any?
       redirect_to super_admin_app_config_path(config: @config), alert: errors.join('; ')
     else
-      expire_openrouter_key_health_cache if @config == 'captain'
-      refresh_llm_config if @config == 'captain'
       redirect_to super_admin_app_config_path(config: @config), notice: flash_text(:saved, page: SuperAdmin::AppConfigLabels.page_title(@config))
     end
   end
@@ -109,6 +94,82 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
 
   def flash_text(key, **)
     I18n.t("super_admin.app_config.flashes.#{key}", **)
+  end
+
+  # What the page shows: the stored settings (a secret only as «set»), and on the AI models page its cards. `form` is the
+  # form that was just sent and refused: its values and errors are shown instead of the stored ones.
+  def prepare_show(form: nil)
+    @app_config = stored_app_config
+    @installation_configs = config_definitions
+    secret_keys = @allowed_configs.select { |key| masked_secret_config?(key) }
+    @configured_secrets = secret_keys.select { |key| @app_config[key].present? }
+    prepare_ai_models_page(secret_keys, form) if @config == 'captain'
+    # A secret never leaves the controller: the views get only whether it is set
+    @app_config = @app_config.except(*secret_keys)
+  end
+
+  def stored_app_config
+    # ref: https://github.com/rubocop/rubocop/issues/7767
+    # rubocop:disable Style/HashTransformValues
+    values = InstallationConfig.where(name: @allowed_configs)
+                               .pluck(:name, :serialized_value)
+                               .map { |name, serialized_value| [name, serialized_value['value']] }
+                               .to_h
+    # rubocop:enable Style/HashTransformValues
+    values[Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG] ||= Captain::Assistant.installation_system_prompt_entries if @config == 'captain'
+    values
+  end
+
+  def prepare_ai_models_page(secret_keys, form)
+    @openrouter_diagnostics = Llm::OpenRouterDiagnostics.call
+    @ai_models_page = SuperAdmin::AiModelsPage.new(
+      keys: @allowed_configs, values: @app_config, definitions: @installation_configs, masked_keys: secret_keys,
+      submitted: form&.input.to_h, errors: form&.errors.to_h, options: SuperAdmin::AiModelOptions.new(recommended: recommended_models),
+      history: SuperAdmin::AiModelsHistory.new(values: @app_config)
+    )
+    @unsaved_keys = form ? (form.changes.map(&:key) + form.errors.keys).uniq : []
+  end
+
+  # The models the lists show first: the short list the platform has set (or the recommended one) and the built-in model
+  def recommended_models
+    Llm::Models.configured_model_allowlist.to_a + Llm::Models::DEFAULT_CURATED_MODELS + [Llm::Config::DEFAULT_MODEL]
+  end
+
+  # The AI models page is saved as a whole (SuperAdmin::AiModelsForm): either everything that was sent is saved, or
+  # nothing is, and the page is shown again with what was sent and what is wrong with it.
+  def create_ai_models
+    stored = stored_app_config
+    form = SuperAdmin::AiModelsForm.new(
+      submitted: params.fetch('app_config', {}).to_unsafe_h, stored: stored, keys: @allowed_configs,
+      masked_keys: @allowed_configs.select { |key| masked_secret_config?(key) }, confirmed_embedding: params[:confirm_embedding_change] == '1'
+    )
+    errors = form.save(actor: current_super_admin, request: request)
+    return render_ai_models_errors(form, errors) if errors.any?
+
+    after_ai_models_saved(form)
+  end
+
+  def after_ai_models_saved(form)
+    if form.changes.any?
+      expire_openrouter_key_health_cache
+      refresh_llm_config
+    end
+    redirect_to super_admin_app_config_path(config: @config), notice: saved_notice(form)
+  end
+
+  def saved_notice(form)
+    lines = form.summary
+    return flash_text(:nothing_changed) if lines.empty?
+
+    shown = lines.first(MAX_SUMMARY_LINES)
+    rest = lines.size - shown.size
+    flash_text(:saved_changes, changes: shown.join('; ') + (rest.positive? ? flash_text(:and_more, count: rest) : ''))
+  end
+
+  def render_ai_models_errors(form, errors)
+    prepare_show(form: form)
+    flash.now[:alert] = flash_text(:not_saved, count: errors.size)
+    render :show, status: :unprocessable_entity
   end
 
   # The entries of config/installation_config.yml by name: display title, description, type, options
@@ -149,36 +210,8 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
 
   def normalize_app_config_value(key, value, errors)
     return normalize_json_object_config(key, value, errors) if WHATSAPP_WEBHOOK_ROUTING_CONFIG_KEYS.include?(key)
-    return normalize_model_config(key, value, errors) if Llm::InstallationModelConfig.manages?(key)
-    return normalize_system_prompts_config(value, errors) if key == Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG
 
     value
-  end
-
-  def normalize_system_prompts_config(value, errors)
-    parsed_value = value.present? ? JSON.parse(value) : []
-    Captain::Assistant.normalize_installation_system_prompt_entries(parsed_value).map do |entry|
-      {
-        'id' => entry[:id],
-        'type' => entry[:type],
-        'group' => entry[:group],
-        'content' => entry[:content],
-        'slot' => entry[:slot]
-      }
-    end
-  rescue JSON::ParserError
-    errors << flash_text(:prompts_invalid)
-    :invalid
-  end
-
-  # A blank value keeps the built-in default; a filled one must be a catalog model fit for its feature, or a short
-  # list of such models (see Llm::InstallationModelConfig).
-  def normalize_model_config(key, value, errors)
-    result = Llm::InstallationModelConfig.normalize(key, value)
-    return result.value if result.valid?
-
-    errors << flash_text(:field_error, title: config_title(key), key: key, error: result.error)
-    :invalid
   end
 
   def normalize_json_object_config(key, value, errors)

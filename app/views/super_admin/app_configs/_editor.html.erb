@@ -13,7 +13,7 @@ The password field with the reveal button only shows what is typed into it.
 ## Local variables:
 
 - `key`: the name of the setting (CAPTAIN_DEFAULT_MODEL).
-- `kind`: :text, :textarea, :allowlist, :boolean, :secret, :select, :number or :prompts.
+- `kind`: :text, :textarea, :boolean, :secret, :select, :number or :prompts.
 - `value`: the stored value (not used for a secret: it is never printed).
 - `masked` (optional): true for a secret that is set.
 - `show_state` (optional, default true): draw the «задан» / «не задан» badge of a secret (the AI models card has its own).
@@ -28,39 +28,60 @@ The password field with the reveal button only shows what is typed into it.
 %>
 
 <% if kind == :prompts %>
-  <% current_system_prompts = Array(value).map { |entry| entry.respond_to?(:to_h) ? entry.to_h : entry } %>
+  <%
+    prompts_scope = 'super_admin.app_config.captain.prompts'
+    current_system_prompts = (value.is_a?(String) ? (JSON.parse(value.presence || '[]') rescue []) : Array(value)).map { |entry| entry.respond_to?(:to_h) ? entry.to_h : entry }
+  %>
   <%= hidden_field_tag field_name, current_system_prompts.to_json, id: field_id %>
   <div
     id="captain-system-prompts-builder"
-    class="flex flex-col gap-3"
+    class="admin-prompts flex flex-col gap-3"
+    data-prompts-builder
     data-target-input="<%= field_id %>"
     data-initial-prompts="<%= h(current_system_prompts.to_json) %>"
   >
+    <p class="admin-prompts__empty" data-role="empty" hidden><%= t("#{prompts_scope}.empty") %></p>
     <div data-role="rows" class="flex flex-col gap-3"></div>
-    <button type="button" class="button button--small button--secondary add-captain-system-prompt w-fit">
-      <%= t('super_admin.app_config.captain.prompts.add') %>
-    </button>
+    <button type="button" class="button button--small button--secondary w-fit" data-role="add" hidden><%= t("#{prompts_scope}.add") %></button>
+    <noscript><p class="admin-slot__hint"><%= t("#{prompts_scope}.no_script") %></p></noscript>
     <template>
-      <div data-role="prompt-row" class="flex flex-col gap-3 rounded-lg bg-n-slate-2 p-4 outline outline-1 -outline-offset-1 outline-n-weak">
-        <div class="flex items-center justify-between gap-3">
-          <p class="m-0 text-sm font-medium text-n-slate-12"><%= t('super_admin.app_config.captain.prompts.title') %></p>
-          <button type="button" class="button button--small button--danger remove-captain-system-prompt">
-            <%= t('super_admin.app_config.captain.prompts.remove') %>
-          </button>
+      <div data-role="prompt-row" class="admin-prompt">
+        <input type="hidden" data-field="id">
+        <input type="hidden" data-field="type" value="system">
+        <div class="admin-prompt__head">
+          <p class="admin-prompt__title" data-role="title"><%= t("#{prompts_scope}.title") %></p>
+          <div class="admin-prompt__remove">
+            <button type="button" class="button button--small button--danger" data-role="remove"><%= t("#{prompts_scope}.remove") %></button>
+            <span class="admin-prompt__confirm" data-role="confirm" hidden>
+              <span class="admin-prompt__confirm-text"><%= t("#{prompts_scope}.remove_confirm") %></span>
+              <button type="button" class="button button--small button--danger" data-role="remove-yes"><%= t("#{prompts_scope}.remove_yes") %></button>
+              <button type="button" class="button button--small button--secondary" data-role="remove-no"><%= t("#{prompts_scope}.remove_no") %></button>
+            </span>
+          </div>
         </div>
-        <input type="hidden" data-field="id" />
-        <div class="flex flex-col gap-1">
-          <label class="text-xs text-n-slate-11"><%= t('super_admin.app_config.captain.prompts.group') %></label>
-          <input type="text" data-field="group" placeholder="<%= t('super_admin.app_config.captain.prompts.group_placeholder') %>" />
+        <div class="admin-prompt__fields">
+          <div class="admin-prompt__field">
+            <label class="admin-prompt__label"><%= t("#{prompts_scope}.group") %></label>
+            <select data-field="group">
+              <% SuperAdmin::SystemPromptOptions.groups.each do |group_value, group_title| %>
+                <option value="<%= group_value %>"><%= group_title %></option>
+              <% end %>
+            </select>
+            <p class="admin-prompt__hint"><%= t("#{prompts_scope}.group_hint") %></p>
+          </div>
+          <div class="admin-prompt__field">
+            <label class="admin-prompt__label"><%= t("#{prompts_scope}.slot") %></label>
+            <select data-field="slot">
+              <% SuperAdmin::SystemPromptOptions.slots.each do |slot_value, slot_title| %>
+                <option value="<%= slot_value %>"><%= slot_title %></option>
+              <% end %>
+            </select>
+            <p class="admin-prompt__hint"><%= t("#{prompts_scope}.slot_hint") %></p>
+          </div>
         </div>
-        <div class="flex flex-col gap-1">
-          <label class="text-xs text-n-slate-11"><%= t('super_admin.app_config.captain.prompts.content') %></label>
-          <textarea data-field="content" rows="5" class="font-mono text-xs" placeholder="<%= t('super_admin.app_config.captain.prompts.content_placeholder') %>"></textarea>
-        </div>
-        <div class="flex flex-col gap-1">
-          <label class="text-xs text-n-slate-11"><%= t('super_admin.app_config.captain.prompts.slot') %></label>
-          <input type="text" data-field="slot" placeholder="<%= t('super_admin.app_config.captain.prompts.slot_placeholder') %>" />
-          <p class="m-0 text-xs text-n-slate-11"><%= t('super_admin.app_config.captain.prompts.slot_hint') %></p>
+        <div class="admin-prompt__field">
+          <label class="admin-prompt__label"><%= t("#{prompts_scope}.content") %></label>
+          <textarea data-field="content" rows="5" class="font-mono text-xs" placeholder="<%= t("#{prompts_scope}.content_placeholder") %>"></textarea>
         </div>
       </div>
     </template>
@@ -74,8 +95,6 @@ The password field with the reveal button only shows what is typed into it.
   <%= select_tag field_name, options_for_select(local_assigns.fetch(:options, {}).map { |option_value, label| [label, option_value] }, value), id: field_id %>
 <% elsif kind == :textarea %>
   <%= text_area_tag field_name, app_config_field_value(value), id: field_id, rows: 10, wrap: 'off', class: 'font-mono text-xs' %>
-<% elsif kind == :allowlist %>
-  <%= text_area_tag field_name, app_config_field_value(value), id: field_id, rows: 4, wrap: 'off', class: 'font-mono text-xs', placeholder: placeholder %>
 <% elsif kind == :secret %>
   <% if local_assigns.fetch(:show_state, true) %>
     <p class="m-0 mb-1.5">

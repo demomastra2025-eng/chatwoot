@@ -1,0 +1,14 @@
+<%#
+# The messages of a setting that was sent and not saved: in the card, in Russian, red. The value the admin entered is still in the control.
+
+## Local variables:
+
+- `slot`: a `SuperAdmin::AiModelsPage::Slot`.
+%>
+<% if slot.invalid? %>
+  <div class="admin-slot__errors" role="alert" data-testid="slot-errors" data-error-for="<%= slot.key %>">
+    <% slot.errors.each do |message| %>
+      <p><%= message.to_s.upcase_first %></p>
+    <% end %>
+  </div>
+<% end %>

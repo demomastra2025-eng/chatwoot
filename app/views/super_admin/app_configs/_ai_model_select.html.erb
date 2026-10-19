@@ -1,0 +1,41 @@
+<%#
+# The list of models of one setting
+
+A plain `<select>` (it works without a script and is what the form posts); a script turns it into a searchable list with
+the price and the badges of every model. The first option is «Встроенная» (an empty value: the platform decides). The
+value that is saved always stays selected, even when the list does not offer it any more: it is marked and never replaced
+by the first option.
+
+## Local variables:
+
+- `slot`: a `SuperAdmin::AiModelsPage::Slot` of a model setting (`choices` is set).
+- `placeholder` (optional): the text of the empty option of a list that has no built-in model (the list to add a model to the short list).
+%>
+<%
+  choices = slot.choices
+  shown = slot.input.to_s.strip
+  stored = slot.value.to_s.strip
+  known = choices.include?(shown) || shown.blank?
+%>
+<select name="app_config[<%= slot.key %>]" id="app_config_<%= slot.key %>" data-model-select data-stored="<%= stored %>" data-builtin-id="<%= choices.builtin_id %>"
+        <%= 'aria-invalid="true"'.html_safe if slot.invalid? %>>
+  <%= ai_builtin_option(choices, shown) %>
+  <% if choices.missing %>
+    <optgroup label="<%= t('super_admin.app_config.captain.models.saved_group') %>">
+      <%= ai_model_option(choices.missing, shown) %>
+    </optgroup>
+  <% end %>
+  <% unless known || shown == choices.missing&.id %>
+    <%# what was sent and refused: it stays selected so that the admin sees what he entered %>
+    <optgroup label="<%= t('super_admin.app_config.captain.models.saved_group') %>">
+      <%= ai_model_option(@ai_models_page.options.describe(shown, key: slot.key), shown) %>
+    </optgroup>
+  <% end %>
+  <% choices.groups.each do |title, options| %>
+    <optgroup label="<%= title %>">
+      <% options.each do |option| %>
+        <%= ai_model_option(option, shown) %>
+      <% end %>
+    </optgroup>
+  <% end %>
+</select>

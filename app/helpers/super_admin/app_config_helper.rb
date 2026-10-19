@@ -41,6 +41,27 @@ module SuperAdmin::AppConfigHelper
     end
   end
 
+  # An <option> of a list of models. The text is the whole option for a list without a script; the data attributes are what the
+  # searchable list draws (name, price, what the model can do, the company, the mark of a model the list does not offer).
+  def ai_model_option(option, selected_value)
+    content_tag(
+      :option, option.label,
+      value: option.id, selected: option.id == selected_value,
+      data: { name: option.name, price: option.price_text, badges: option.badges.join(','), provider: option.provider, note: option.note.presence }
+    )
+  end
+
+  # The option «Встроенная: GPT-6 Luna» (an empty value: the platform decides)
+  def ai_builtin_option(choices, selected)
+    label = choices.builtin_id ? t('super_admin.app_config.captain.models.builtin_option', name: choices.builtin_name) : t('super_admin.app_config.captain.models.builtin_unknown')
+    content_tag(:option, label, value: '', selected: selected.blank?, data: { name: label, kind: 'builtin' })
+  end
+
+  # The readable name of a model id, «встроенная» for none
+  def ai_model_name(model_id)
+    SuperAdmin::AiModelOptions.name_of(model_id) || t('super_admin.app_config.captain.status.was_builtin')
+  end
+
   # The Russian name of a status of the OpenRouter diagnostics (`scope` is key, credits, refresh or source); a status the
   # list does not know is shown as it came.
   def diagnostics_status(scope, value)

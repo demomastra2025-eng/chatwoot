@@ -1,0 +1,40 @@
+<%#
+# AI models: the tab «Модели»
+
+The model of every function of the platform, each chosen from a list of the models that fit it (searchable, with the price
+for a million tokens and what the model can do). The first option of every list is «Встроенная»: the platform decides. The
+line over the cards says where the list comes from.
+
+## Local variables:
+
+- `page`: the `SuperAdmin::AiModelsPage`.
+- `state`: the `SuperAdmin::AiConnectionState`.
+%>
+<% scope = 'super_admin.app_config.captain' %>
+<% source_key = !state.key_set? ? 'source_no_key' : (state.catalog_loaded? ? 'source_api' : 'source_fallback') %>
+<p class="admin-ai__source <%= 'admin-ai__source--warn' unless state.catalog_loaded? %>" data-testid="catalog-source" data-source="<%= source_key %>">
+  <%= t("#{scope}.models.#{source_key}", time: SuperAdmin::DisplayHelper.format_time(state.catalog_refreshed_at)) %>
+  <% if state.key_set? && !state.catalog_loaded? %>
+    <button type="submit" form="ai-refresh-catalog-form" class="button button--small button--secondary"><%= t("#{scope}.connection.refresh_catalog") %></button>
+  <% end %>
+</p>
+
+<% page.groups_of('models').each do |group| %>
+  <section class="flex flex-col gap-3" aria-labelledby="ai-group-<%= group.key %>" data-testid="ai-group-<%= group.key %>">
+    <div class="admin-block__head">
+      <h2 class="admin-block__title" id="ai-group-<%= group.key %>"><%= group.title %></h2>
+      <% if group.hint.present? %>
+        <p class="admin-block__hint"><%= group.hint %></p>
+      <% end %>
+    </div>
+    <div class="admin-slot-grid">
+      <% if group.key == 'agent' %>
+        <%= render 'ai_agent_card', page: page, default_slot: group.slots.find(&:model?), list_slot: group.slots.find { |slot| slot.editor == :allowlist } %>
+      <% else %>
+        <% group.slots.each do |slot| %>
+          <%= render 'ai_model_card', slot: slot %>
+        <% end %>
+      <% end %>
+    </div>
+  </section>
+<% end %>

@@ -10,6 +10,12 @@ class SuperAdmin::AppConfigSaver
   AUDIT_ACTION = 'update_setting'
   # The longest old or new value that an entry keeps
   VALUE_LIMIT = 300
+  # A short list of models is longer than that and the page offers to put the old list back, so it is kept whole
+  LONG_VALUE_LIMITS = { Llm::Models::MODEL_ALLOWLIST_INSTALLATION_CONFIG => 1000 }.freeze
+
+  def self.value_limit(name)
+    LONG_VALUE_LIMITS.fetch(name.to_s, VALUE_LIMIT)
+  end
 
   def initialize(actor:, request: nil)
     @actor = actor
@@ -29,13 +35,13 @@ class SuperAdmin::AppConfigSaver
   private
 
   def audit(config, previous, secret)
-    value = secret ? 'changed' : [text(previous), text(config.value)]
+    value = secret ? 'changed' : [text(previous, config.name), text(config.value, config.name)]
     SuperAdmin::PlatformAudit.record(
       auditable: config, action: AUDIT_ACTION, actor: @actor, request: @request, changes: { 'name' => config.name, 'value' => value }
     )
   end
 
-  def text(value)
-    SuperAdmin::InstallationConfigs.printable(value).truncate(VALUE_LIMIT)
+  def text(value, name)
+    SuperAdmin::InstallationConfigs.printable(value).truncate(self.class.value_limit(name))
   end
 end

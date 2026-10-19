@@ -1,32 +1,30 @@
 <%#
-# A card of the AI models page
+# A card of an AI setting that is not a model
 
-One setting: the Russian title and description, whether it is set by the
-platform or follows the built-in default (and what that default is), the value
-in force, and the control. A masked secret shows only that it is set.
+A key (only «задан» / «не задан»: a secret is never printed), the token limit, the address of OpenRouter, an instruction
+for the agents or the builder of the rules of the platform: the Russian title and a one-line explanation, the control, what
+is in force, and the error of the last save when it was refused. The technical name of the setting shows only under
+«Показать технические имена».
 
 ## Local variables:
 
 - `slot`: a `SuperAdmin::AiModelsPage::Slot`.
 %>
 <%
-  slot_scope = 'super_admin.app_config.captain.slot'
+  scope = 'super_admin.app_config.captain'
+  slot_scope = "#{scope}.status"
   configured = slot.configured
-  if slot.secret?
-    badge_text = t("#{slot_scope}.#{configured ? 'secret_set' : 'secret_unset'}")
-  else
-    badge_text = t("#{slot_scope}.#{configured ? 'set' : 'default'}")
-  end
-  effective = slot.effective_items
-  default_items = slot.default_items
-  placeholder = default_items.join(', ').presence
+  field_id = "app_config_#{slot.key}"
+  builtin = slot.default_items.join(', ').presence
 %>
 
-<div class="admin-slot <%= 'admin-slot--wide' if slot.wide? %>" data-config="<%= slot.key %>" data-source="<%= configured ? 'set' : 'default' %>">
+<div class="admin-slot <%= 'admin-slot--wide' if slot.wide? %> <%= 'admin-slot--invalid' if slot.invalid? %>" data-config="<%= slot.key %>" data-source="<%= configured ? 'set' : 'default' %>">
   <div class="admin-slot__head">
-    <label class="admin-slot__title" for="app_config_<%= slot.key %>"><%= slot.title %></label>
-    <% unless slot.editor == :prompts %>
-      <span class="admin-badge <%= configured ? 'admin-badge--iris' : 'admin-badge--quiet' %>" data-testid="slot-source"><%= badge_text %></span>
+    <label class="admin-slot__title" for="<%= field_id %>"><%= slot.title %></label>
+    <% if slot.secret? %>
+      <span class="admin-badge <%= configured ? 'admin-badge--teal' : 'admin-badge--quiet' %>" data-testid="slot-source"><%= t("super_admin.app_config.captain.slot.#{configured ? 'secret_set' : 'secret_unset'}") %></span>
+    <% elsif slot.editor != :prompts %>
+      <span class="admin-badge admin-badge--amber" data-unsaved-badge hidden><%= t("#{slot_scope}.unsaved") %></span>
     <% end %>
   </div>
 
@@ -34,46 +32,17 @@ in force, and the control. A masked secret shows only that it is set.
     <p class="admin-slot__hint"><%= slot.hint %></p>
   <% end %>
 
-  <% unless slot.secret? || slot.editor == :prompts %>
-    <dl class="admin-slot__facts" data-testid="slot-facts">
-      <% if configured && effective.any? %>
-        <div class="admin-slot__fact">
-          <dt><%= t("#{slot_scope}.in_force") %></dt>
-          <dd>
-            <span class="admin-chips">
-              <% effective.each do |item| %><code class="admin-chip"><%= item %></code><% end %>
-            </span>
-          </dd>
-        </div>
-        <% if default_items.any? && default_items != effective %>
-          <div class="admin-slot__fact">
-            <dt><%= t("#{slot_scope}.default_is") %></dt>
-            <dd><%= default_items.join(', ') %><%= " (#{t("#{slot_scope}.follows_default_model")})" if slot.default_note == :default_model %></dd>
-          </div>
-        <% end %>
-      <% elsif default_items.any? %>
-        <div class="admin-slot__fact">
-          <dt><%= t("#{slot_scope}.in_force_default") %></dt>
-          <dd>
-            <span class="admin-chips">
-              <% default_items.each do |item| %><code class="admin-chip"><%= item %></code><% end %>
-            </span>
-            <%= t("#{slot_scope}.follows_default_model") if slot.default_note == :default_model %>
-          </dd>
-        </div>
-      <% else %>
-        <div class="admin-slot__fact">
-          <dt><%= t("#{slot_scope}.in_force") %></dt>
-          <dd><%= slot.editor == :number ? t("#{slot_scope}.no_limit") : t("#{slot_scope}.not_set") %></dd>
-        </div>
-      <% end %>
-    </dl>
-  <% end %>
-
   <div>
-    <%= render 'editor', key: slot.key, kind: slot.editor, value: slot.value, masked: slot.secret? && configured,
-                         placeholder: placeholder, show_state: false %>
+    <%= render 'editor', key: slot.key, kind: slot.editor, value: slot.input, masked: slot.secret? && configured,
+                         placeholder: builtin, show_state: false %>
   </div>
 
-  <p class="admin-field__key"><%= slot.key %></p>
+  <% if slot.editor == :number %>
+    <p class="admin-slot__status" data-testid="slot-status"><%= configured ? t("#{slot_scope}.number_set", count: slot.value.to_s.to_i) : t("#{slot_scope}.no_limit") %></p>
+  <% elsif slot.key == 'CAPTAIN_OPENROUTER_ENDPOINT' %>
+    <p class="admin-slot__status" data-testid="slot-status"><%= configured ? t("#{slot_scope}.endpoint_set") : t("#{slot_scope}.builtin", name: builtin) %></p>
+  <% end %>
+
+  <%= render 'ai_slot_errors', slot: slot %>
+  <p class="admin-field__key" data-tech-name><%= slot.key %></p>
 </div>

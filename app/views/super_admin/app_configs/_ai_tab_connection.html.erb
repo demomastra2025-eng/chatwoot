@@ -1,0 +1,67 @@
+<%#
+# AI models: the tab «Подключение»
+
+The state of the connection to OpenRouter in plain words (is the key working, the balance, the spend of the last day, the
+catalog of models) and, under it, the keys and the limit. The technical details of OpenRouter are folded away at the
+bottom of the page, under «Для разработчика».
+
+## Local variables:
+
+- `page`: the `SuperAdmin::AiModelsPage`.
+- `state`: the `SuperAdmin::AiConnectionState`.
+%>
+<% scope = 'super_admin.app_config.captain' %>
+<% tone_classes = { 'teal' => 'admin-badge--teal', 'amber' => 'admin-badge--amber', 'ruby' => 'admin-badge--ruby' } %>
+<% page.groups_of('connection').each do |group| %>
+  <section class="flex flex-col gap-3" aria-labelledby="ai-group-<%= group.key %>" data-testid="ai-group-<%= group.key %>">
+    <div class="admin-block__head">
+      <h2 class="admin-block__title" id="ai-group-<%= group.key %>"><%= group.title %></h2>
+      <p class="admin-block__hint"><%= group.hint %></p>
+    </div>
+
+    <div class="admin-stat-grid admin-stat-grid--quad" data-testid="openrouter-state">
+      <div class="admin-stat" data-testid="diagnostics-key">
+        <p class="admin-stat__label"><%= t("#{scope}.connection.key") %></p>
+        <p class="admin-stat__value"><span class="admin-badge <%= tone_classes.fetch(state.key_tone) %>"><%= state.key_text %></span></p>
+        <p class="admin-stat__note"><%= state.key_note %></p>
+        <% if state.key_set? %>
+          <div class="admin-stat__actions">
+            <button type="submit" form="ai-check-key-form" class="button button--small button--secondary"><%= t("#{scope}.connection.check_key") %></button>
+          </div>
+        <% end %>
+      </div>
+
+      <div class="admin-stat" data-testid="diagnostics-credits">
+        <p class="admin-stat__label"><%= t("#{scope}.connection.balance") %></p>
+        <p class="admin-stat__value"><%= state.balance_text %></p>
+        <p class="admin-stat__note"><%= state.balance_note %></p>
+      </div>
+
+      <div class="admin-stat" data-testid="diagnostics-events">
+        <p class="admin-stat__label"><%= t("#{scope}.connection.spend") %></p>
+        <p class="admin-stat__value"><%= state.spend_text %></p>
+        <p class="admin-stat__note"><%= state.spend_note %></p>
+      </div>
+
+      <div class="admin-stat" data-testid="diagnostics-catalog">
+        <p class="admin-stat__label"><%= t("#{scope}.connection.catalog") %></p>
+        <p class="admin-stat__value"><%= state.catalog_text %></p>
+        <p class="admin-stat__note"><%= state.catalog_note %></p>
+        <% if state.key_set? %>
+          <div class="admin-stat__actions">
+            <button type="submit" form="ai-refresh-catalog-form" class="button button--small"><%= t("#{scope}.connection.refresh_catalog") %></button>
+          </div>
+        <% end %>
+      </div>
+    </div>
+    <% if state.catalog_error %>
+      <div class="admin-notice admin-notice--ruby" data-testid="catalog-error"><%= t("#{scope}.connection.catalog_error", error: state.catalog_error) %></div>
+    <% end %>
+
+    <div class="admin-slot-grid">
+      <% group.slots.each do |slot| %>
+        <%= render 'slot', slot: slot %>
+      <% end %>
+    </div>
+  </section>
+<% end %>

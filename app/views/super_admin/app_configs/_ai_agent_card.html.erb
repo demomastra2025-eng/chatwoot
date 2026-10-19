@@ -1,0 +1,125 @@
+<%#
+# The card of the main agent model
+
+Two settings that depend on each other, one control: the short list of models the account admin picks from (a checklist,
+at most 12 models, the counter «5 из 12») and the model by default (a radio among the ticked models; the first radio is
+«Как у платформы»: the built-in model). Both are saved in one step and checked together: the model by default has to be on
+the list, so a new model can be added and made the default at once. «Вернуть рекомендуемый список» ticks the list the
+platform recommends. A model that was saved but has left the catalog is still in the list, marked, until it is unticked.
+
+## Local variables:
+
+- `page`: the `SuperAdmin::AiModelsPage`.
+- `default_slot`: the slot of `CAPTAIN_DEFAULT_MODEL`.
+- `list_slot`: the slot of `CAPTAIN_ASSISTANT_MODEL_ALLOWLIST`.
+%>
+<%
+  scope = 'super_admin.app_config.captain'
+  options = page.options
+  list_key = list_slot.key
+  max = Llm::InstallationModelConfig::ALLOWLIST_LIMIT
+  recommended = Llm::Models::DEFAULT_CURATED_MODELS
+  stored_list = SuperAdmin::AiModelsPage.model_list(list_slot.value).map { |id| Llm::Models.canonical_model_name(id) }
+  configured_list = stored_list.any?
+  shown_list = SuperAdmin::AiModelsPage.model_list(list_slot.input).map { |id| Llm::Models.canonical_model_name(id) }.uniq
+  shown_list = recommended.dup if shown_list.empty? && !list_slot.configured && !list_slot.invalid?
+  shown_default = default_slot.input.to_s.strip
+  # the models of the rows: the ticked ones in their order, the recommended ones that are not ticked, and the default one
+  row_ids = (shown_list + recommended + stored_list + [shown_default].compact_blank).uniq
+  rows = row_ids.map { |id| [id, options.describe(id, key: list_key)] }
+  # a recommended model the catalog does not offer is not shown, unless it is ticked or saved
+  rows = rows.reject { |id, option| option.missing? && !shown_list.include?(id) && !stored_list.include?(id) && id != shown_default }
+  pickable = list_slot.choices
+  invalid = default_slot.invalid? || list_slot.invalid?
+  default_options = default_slot.choices
+%>
+<div class="admin-slot admin-slot--wide <%= 'admin-slot--invalid' if invalid %>" data-config="<%= default_slot.key %> <%= list_key %>" data-source="<%= default_slot.configured ? 'set' : 'default' %>"
+     data-allowlist data-max="<%= max %>" data-recommended="<%= recommended.to_json %>" data-testid="agent-models">
+  <div class="admin-slot__head">
+    <p class="admin-slot__title"><%= t("#{scope}.agent.list_title") %></p>
+    <span class="admin-badge admin-badge--amber" data-unsaved-badge hidden><%= t("#{scope}.status.unsaved") %></span>
+  </div>
+  <p class="admin-slot__hint"><%= t("#{scope}.agent.list_hint", max: max) %></p>
+
+  <div class="admin-checklist" data-checklist>
+    <input type="hidden" name="app_config[<%= list_key %>][]" value="">
+    <div class="admin-checklist__head">
+      <span><%= t("#{scope}.agent.list_title") %> <span class="admin-checklist__counter" data-counter aria-live="polite"><%= t("#{scope}.agent.counter", count: shown_list.size, max: max) %></span></span>
+      <span><%= t("#{scope}.agent.default_column") %></span>
+    </div>
+
+    <ul class="admin-checklist__rows" data-checklist-rows>
+      <li class="admin-checklist__row admin-checklist__row--platform" data-row-platform>
+        <span class="admin-checklist__model">
+          <span class="admin-checklist__name"><%= t("#{scope}.agent.platform_default", name: default_options.builtin_name) %></span>
+          <span class="admin-checklist__meta"><%= default_slot.hint %></span>
+        </span>
+        <input type="radio" name="app_config[<%= default_slot.key %>]" value="" id="default_platform" <%= 'checked' if shown_default.blank? %>
+               aria-label="<%= t("#{scope}.agent.platform_default", name: default_options.builtin_name) %>" data-default-radio>
+      </li>
+      <% rows.each do |id, option| %>
+        <% checked = shown_list.include?(id) %>
+        <li class="admin-checklist__row" data-row data-model-id="<%= id %>">
+          <label class="admin-checklist__model" for="allow_<%= id.parameterize %>">
+            <input type="checkbox" name="app_config[<%= list_key %>][]" value="<%= id %>" id="allow_<%= id.parameterize %>" <%= 'checked' if checked %> data-list-check>
+            <span class="admin-checklist__text">
+              <span class="admin-checklist__name"><%= option.name %><% if option.missing? %> <span class="admin-badge admin-badge--amber"><%= option.note %></span><% end %></span>
+              <span class="admin-checklist__meta"><%= [option.price_text, option.badges.join(', ').presence].compact.join(' · ') %></span>
+            </span>
+          </label>
+          <input type="radio" name="app_config[<%= default_slot.key %>]" value="<%= id %>" <%= 'checked' if id == shown_default %> data-default-radio
+                 aria-label="<%= t("#{scope}.agent.default_label", name: option.name) %>">
+        </li>
+      <% end %>
+    </ul>
+
+    <p class="admin-checklist__note" data-checklist-note hidden></p>
+
+    <div class="admin-checklist__actions">
+      <div class="admin-checklist__add">
+        <label class="admin-checklist__add-label" for="app_config_<%= list_key %>"><%= t("#{scope}.agent.add") %></label>
+        <select name="app_config[<%= list_key %>][]" id="app_config_<%= list_key %>" data-model-select data-allowlist-add data-stored="">
+          <option value="" data-name="<%= t("#{scope}.agent.add_placeholder") %>" data-kind="placeholder"><%= t("#{scope}.agent.add_placeholder") %></option>
+          <% pickable.groups.each do |title, group_options| %>
+            <optgroup label="<%= title %>">
+              <% group_options.each do |option| %>
+                <%= ai_model_option(option, nil) %>
+              <% end %>
+            </optgroup>
+          <% end %>
+        </select>
+      </div>
+      <button type="button" class="button button--small button--secondary" data-reset-recommended hidden><%= t("#{scope}.agent.reset") %></button>
+    </div>
+  </div>
+
+  <p class="admin-slot__status" data-testid="slot-status">
+    <%= t("#{scope}.agent.#{configured_list ? 'list_custom' : 'list_recommended'}") %>
+    <% if default_slot.configured %>
+      <%= t("#{scope}.status.chosen", name: ai_model_name(default_slot.value)) %>
+      <button type="button" class="admin-link-button reset-base" data-revert="<%= default_slot.key %>" data-revert-value="" hidden><%= t("#{scope}.status.revert_builtin") %></button>
+    <% else %>
+      <%= t("#{scope}.status.builtin", name: default_options.builtin_name) %>
+    <% end %>
+  </p>
+
+  <% [default_slot, list_slot].each do |history_slot| %>
+    <% previous = history_slot.previous %>
+    <% next unless previous %>
+    <p class="admin-slot__history" data-testid="slot-history" data-history-for="<%= history_slot.key %>">
+      <% name = if history_slot.key == list_key
+                  previous.value.blank? ? t("#{scope}.agent.list_was_recommended") : t("#{scope}.agent.list_count", count: SuperAdmin::AiModelsPage.model_list(previous.value).size)
+                else
+                  previous.value.blank? ? t("#{scope}.status.was_builtin") : ai_model_name(previous.value)
+                end %>
+      <% when_text = SuperAdmin::DisplayHelper.format_time(previous.at) %>
+      <%= "#{history_slot.title}. " %>
+      <%= previous.actor.present? ? t("#{scope}.status.was", name: name, who: previous.actor, when: when_text) : t("#{scope}.status.was_no_actor", name: name, when: when_text) %>
+      <button type="button" class="admin-link-button reset-base" data-revert="<%= history_slot.key %>" data-revert-value="<%= previous.value %>" hidden><%= t("#{scope}.status.revert") %></button>
+    </p>
+  <% end %>
+
+  <%= render 'ai_slot_errors', slot: default_slot %>
+  <%= render 'ai_slot_errors', slot: list_slot %>
+  <p class="admin-field__key" data-tech-name><%= default_slot.key %> · <%= list_key %></p>
+</div>

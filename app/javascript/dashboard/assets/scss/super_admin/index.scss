@@ -14,6 +14,8 @@
 @import './clinic';
 // Field lists, AI model slots, tiles and feature cards of the settings pages.
 @import './settings';
+// The AI models page: tabs, the searchable list of models, the checklist, the builder of rules, the sticky bar.
+@import './ai_models';
 
 body {
   font-family: Geist, -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
