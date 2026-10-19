@@ -17,6 +17,7 @@ const LabelReports = () => import('./LabelReports.vue');
 const TeamReports = () => import('./TeamReports.vue');
 const CsatResponses = () => import('./CsatResponses.vue');
 const BotReports = () => import('./BotReports.vue');
+const WhatsappReports = () => import('./WhatsappReports.vue');
 const DealReports = () => import('./DealReports.vue');
 const CallReports = () => import('./CallReports.vue');
 const LeadReports = () => import('./LeadReports.vue');
@@ -192,6 +193,12 @@ export default {
           name: 'bot_reports',
           meta,
           component: BotReports,
+        },
+        {
+          path: 'whatsapp',
+          name: 'whatsapp_reports',
+          meta,
+          component: WhatsappReports,
         },
       ],
     },

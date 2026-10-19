@@ -563,7 +563,8 @@
     "WORKING_HOURS": "График работы",
     "CATALOG": "Товары и Услуги",
     "CATALOG_PRODUCTS": "Товары",
-    "CATALOG_SERVICES": "Услуги"
+    "CATALOG_SERVICES": "Услуги",
+    "REPORTS_WHATSAPP": "WhatsApp"
   },
   "LEAD_FORMS": {
     "KICKER": "Прием заявок",

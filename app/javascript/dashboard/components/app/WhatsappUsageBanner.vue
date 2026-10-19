@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useDocumentVisibility, useIntervalFn } from '@vueuse/core';
-import { vOnClickOutside } from '@vueuse/components';
 import { useI18n } from 'vue-i18n';
+import { useRouter } from 'vue-router';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useAdmin } from 'dashboard/composables/useAdmin';
 import { LOCAL_STORAGE_KEYS } from 'dashboard/constants/localStorage';
@@ -10,6 +10,7 @@ import WhatsappUsageAPI from 'dashboard/api/whatsappUsage';
 import { LocalStorage } from 'shared/helpers/localStorage';
 
 const { t, locale } = useI18n();
+const router = useRouter();
 const { accountId } = useAccount();
 const { isAdmin } = useAdmin();
 
@@ -18,10 +19,6 @@ const isDismissed = ref(false);
 const requestInProgress = ref(false);
 const accessDenied = ref(false);
 const hasNoCloudPhones = ref(false);
-const isCategoryBreakdownOpen = ref(false);
-const isCategoryBreakdownPinned = ref(false);
-const isCategoryBreakdownHovered = ref(false);
-const isCategoryBreakdownFocused = ref(false);
 let requestGeneration = 0;
 let lastFetchedAt = 0;
 let utcDayBoundaryTimeout = null;
@@ -54,34 +51,6 @@ const toFiniteNumber = value => {
   return Number.isFinite(number) ? number : null;
 };
 
-const categoryDefinitions = [
-  { category: 'service', labelKey: 'WHATSAPP_USAGE.CATEGORY_SERVICE' },
-  { category: 'utility', labelKey: 'WHATSAPP_USAGE.CATEGORY_UTILITY' },
-  { category: 'marketing', labelKey: 'WHATSAPP_USAGE.CATEGORY_MARKETING' },
-  { category: 'authentication', labelKey: 'WHATSAPP_USAGE.CATEGORY_AUTH' },
-  {
-    category: 'authentication-international',
-    labelKey: 'WHATSAPP_USAGE.CATEGORY_AUTH_INTERNATIONAL',
-  },
-  {
-    category: 'referral_conversion',
-    labelKey: 'WHATSAPP_USAGE.CATEGORY_REFERRAL_CONVERSION',
-  },
-  { category: 'unknown', labelKey: 'WHATSAPP_USAGE.CATEGORY_UNKNOWN' },
-];
-const alwaysVisibleCategories = new Set([
-  'service',
-  'utility',
-  'marketing',
-  'unknown',
-]);
-const categoryCountFields = [
-  'delivered_count',
-  'chargeable_count',
-  'free_count',
-  'unknown_billable_count',
-];
-
 const formatCount = value => {
   const count = toFiniteNumber(value);
   if (count === null) return t('WHATSAPP_USAGE.COUNT_UNAVAILABLE');
@@ -94,8 +63,6 @@ const formatCount = value => {
 const formatKztAmount = value => {
   const amount = toFiniteNumber(value);
   if (amount === null) return null;
-  // An explicit zero from the backend does not require currency conversion.
-  // Missing amounts remain unavailable rather than being converted to zero.
   if (usage.value?.exchange_rate?.available !== true) {
     const isConfirmedFree =
       amount === 0 &&
@@ -111,18 +78,15 @@ const formatKztAmount = value => {
   }).format(amount);
 };
 
-const formattedAmount = computed(() =>
+const displayedRawAmount = computed(() => {
+  const withVat = toFiniteNumber(usage.value?.estimated_amount_with_vat_kzt);
+  if (withVat !== null) return withVat;
+  return usage.value?.estimated_amount_kzt;
+});
+
+const formattedAmount = computed(() => formatKztAmount(displayedRawAmount.value));
+const formattedBaseAmount = computed(() =>
   formatKztAmount(usage.value?.estimated_amount_kzt)
-);
-const formattedServiceAmount = computed(
-  () =>
-    formatKztAmount(usage.value?.estimated_service_amount_kzt) ||
-    t('WHATSAPP_USAGE.ESTIMATE_UNAVAILABLE')
-);
-const formattedTemplateAmount = computed(
-  () =>
-    formatKztAmount(usage.value?.estimated_template_amount_kzt) ||
-    t('WHATSAPP_USAGE.ESTIMATE_UNAVAILABLE')
 );
 const formattedDeliveredCount = computed(() =>
   formatCount(usage.value?.delivered_count)
@@ -133,15 +97,12 @@ const formattedFreeQuotaCount = computed(() =>
 const formattedFreeQuotaLimit = computed(() =>
   formatCount(usage.value?.free_service_quota_limit_per_phone)
 );
-const freeQuotaHistoryStatus = computed(() =>
-  usage.value?.free_service_quota_complete === true
-    ? t('WHATSAPP_USAGE.HISTORY_COMPLETE')
-    : t('WHATSAPP_USAGE.HISTORY_INCOMPLETE')
-);
+
 const connectedPhones = computed(() => {
   const phones = Array.isArray(usage.value?.phones) ? usage.value.phones : [];
   return phones.filter(phone => phone?.connected === true);
 });
+
 const freeQuotaSummary = computed(() => {
   const key =
     connectedPhones.value.length === 1 ||
@@ -155,6 +116,21 @@ const freeQuotaSummary = computed(() => {
     limit: formattedFreeQuotaLimit.value,
   });
 });
+
+const consecutiveCount = computed(
+  () =>
+    toFiniteNumber(
+      usage.value?.consecutive_summary?.chargeable_consecutive_count
+    ) || 0
+);
+
+const formattedConsecutiveOverpayment = computed(() =>
+  formatKztAmount(
+    usage.value?.consecutive_summary?.estimated_overpayment_with_vat_kzt ??
+      usage.value?.consecutive_summary?.estimated_overpayment_kzt
+  )
+);
+
 const compactSummary = computed(
   () =>
     `${t('WHATSAPP_USAGE.BANNER_TITLE', {
@@ -162,291 +138,96 @@ const compactSummary = computed(
       amount: formattedAmount.value || t('WHATSAPP_USAGE.ESTIMATE_UNAVAILABLE'),
     })} · ${freeQuotaSummary.value}`
 );
-const breakdownTriggerLabel = computed(
-  () =>
-    `${compactSummary.value}. ${t('WHATSAPP_USAGE.BREAKDOWN_TRIGGER', {
-      count: formattedDeliveredCount.value,
-    })}`
-);
-const formattedFreeQuotaByPhone = computed(() => {
-  return (
-    connectedPhones.value
-      .map((phone, index) => {
-        const digits = String(phone?.phone_number || '').replace(/\D/g, '');
-        const label =
-          digits.length > 4 ? `…${digits.slice(-4)}` : String(index + 1);
-        return t('WHATSAPP_USAGE.FREE_QUOTA_BY_PHONE', {
-          phone: label,
-          count: formatCount(phone?.free_service_quota_count),
-          limit: formatCount(phone?.free_service_quota_limit),
-        });
-      })
-      .join('; ') || t('WHATSAPP_USAGE.VALUE_UNAVAILABLE')
-  );
-});
-const formattedTemplateCount = computed(() =>
-  formatCount(usage.value?.template_delivered_count)
-);
-const formattedUnpricedCount = computed(() =>
-  formatCount(usage.value?.unpriced_billable_count)
-);
-const formattedUnknownBillableCount = computed(() =>
-  formatCount(usage.value?.unknown_billable_count)
-);
-const categoryRowsByKey = computed(() => {
-  const rows = usage.value?.category_breakdown;
-  if (!Array.isArray(rows)) return null;
 
-  return new Map(
-    rows
-      .filter(row => row && typeof row.category === 'string')
-      .map(row => [row.category, row])
-  );
-});
-const categoryBreakdownComplete = computed(() => {
-  const rowsByKey = categoryRowsByKey.value;
-  if (!rowsByKey) return false;
+const bannerTooltip = computed(() =>
+  t('WHATSAPP_USAGE.BANNER_CLICK_HINT', {
+    baseAmount:
+      formattedBaseAmount.value || t('WHATSAPP_USAGE.ESTIMATE_UNAVAILABLE'),
+    vatAmount:
+       formattedAmount.value || t('WHATSAPP_USAGE.ESTIMATE_UNAVAILABLE'),
+  })
+);
 
-  return categoryDefinitions.every(({ category }) => {
-    const row = rowsByKey.get(category);
-    return (
-      row &&
-      categoryCountFields.every(field => toFiniteNumber(row[field]) !== null)
-    );
+const openWhatsappReport = () => {
+  if (!accountId.value || !router) return;
+  router.push({
+    name: 'whatsapp_reports',
+    params: { accountId: accountId.value },
   });
-});
-const categoryBreakdownRows = computed(() => {
-  const rowsByKey = categoryRowsByKey.value;
-  if (!rowsByKey) return null;
-
-  return categoryDefinitions
-    .filter(({ category }) => {
-      if (alwaysVisibleCategories.has(category)) return true;
-      const row = rowsByKey.get(category);
-      return categoryCountFields.some(
-        field => toFiniteNumber(row?.[field]) > 0
-      );
-    })
-    .map(({ category, labelKey }) => {
-      const row = rowsByKey.get(category);
-      return {
-        category,
-        labelKey,
-        deliveredCount: formatCount(row?.delivered_count),
-        chargeableCount: formatCount(row?.chargeable_count),
-        freeCount: formatCount(row?.free_count),
-        unknownBillableCount: formatCount(row?.unknown_billable_count),
-      };
-    });
-});
-const formattedRate = computed(() => {
-  if (usage.value?.exchange_rate?.available !== true) {
-    return t('WHATSAPP_USAGE.RATE_UNAVAILABLE');
-  }
-
-  const rate = toFiniteNumber(usage.value.exchange_rate.rate_per_usd);
-  if (rate === null) return t('WHATSAPP_USAGE.RATE_UNAVAILABLE');
-
-  return new Intl.NumberFormat(formatLocale.value, {
-    maximumFractionDigits: 4,
-  }).format(rate);
-});
-
-const isEstimateIncomplete = computed(() => {
-  const data = usage.value;
-  if (!data) return true;
-  const requiresExchangeRate =
-    toFiniteNumber(data.chargeable_message_count) !== 0;
-  const hasExchangeRate =
-    data.exchange_rate?.available === true &&
-    Boolean(data.exchange_rate?.month) &&
-    Boolean(data.exchange_rate?.requested_date) &&
-    Boolean(data.exchange_rate?.effective_date) &&
-    toFiniteNumber(data.exchange_rate?.rate_per_usd) !== null;
-
-  return (
-    data.estimate_complete !== true ||
-    data.coverage_complete === false ||
-    data.free_service_quota_complete !== true ||
-    data.template_costs_included !== true ||
-    data.estimated_amount_scope !== 'billable_message_base_rates' ||
-    data.volume_discounts_included !== false ||
-    (requiresExchangeRate && !hasExchangeRate) ||
-    toFiniteNumber(data.delivered_count) === null ||
-    toFiniteNumber(data.template_delivered_count) === null ||
-    toFiniteNumber(data.chargeable_service_count) === null ||
-    toFiniteNumber(data.chargeable_template_count) === null ||
-    toFiniteNumber(data.chargeable_message_count) === null ||
-    toFiniteNumber(data.unpriced_billable_count) === null ||
-    toFiniteNumber(data.unpriced_billable_count) > 0 ||
-    toFiniteNumber(data.unknown_billable_count) === null ||
-    toFiniteNumber(data.unknown_billable_count) > 0 ||
-    !categoryBreakdownComplete.value ||
-    formattedServiceAmount.value === t('WHATSAPP_USAGE.ESTIMATE_UNAVAILABLE') ||
-    formattedTemplateAmount.value ===
-      t('WHATSAPP_USAGE.ESTIMATE_UNAVAILABLE') ||
-    formattedAmount.value === null
-  );
-});
-
-const bannerTooltip = computed(() => {
-  const rate = usage.value?.exchange_rate;
-
-  return t('WHATSAPP_USAGE.BANNER_TOOLTIP', {
-    month: usage.value?.month || t('WHATSAPP_USAGE.VALUE_UNAVAILABLE'),
-    rateMonth:
-      rate?.month ||
-      usage.value?.month ||
-      t('WHATSAPP_USAGE.VALUE_UNAVAILABLE'),
-    serviceAmount: formattedServiceAmount.value,
-    templateAmount: formattedTemplateAmount.value,
-    requestedDate:
-      rate?.requested_date || t('WHATSAPP_USAGE.VALUE_UNAVAILABLE'),
-    effectiveDate:
-      rate?.effective_date || t('WHATSAPP_USAGE.VALUE_UNAVAILABLE'),
-    rate: formattedRate.value,
-    templateCount: formattedTemplateCount.value,
-    unpricedCount: formattedUnpricedCount.value,
-    unknownCount: formattedUnknownBillableCount.value,
-    freeQuotaCount: formattedFreeQuotaCount.value,
-    freeQuotaByPhone: formattedFreeQuotaByPhone.value,
-    freeQuotaHistoryStatus: freeQuotaHistoryStatus.value,
-  });
-});
-
-const closeCategoryBreakdown = () => {
-  isCategoryBreakdownOpen.value = false;
-  isCategoryBreakdownPinned.value = false;
-  isCategoryBreakdownHovered.value = false;
-  isCategoryBreakdownFocused.value = false;
 };
 
-const handleDocumentKeydown = event => {
-  if (event.key === 'Escape' && isCategoryBreakdownOpen.value) {
-    event.preventDefault();
-    closeCategoryBreakdown();
-  }
+const syncDismissedState = () => {
+  const key = storageKey.value;
+  isDismissed.value = key ? Boolean(LocalStorage.get(key)) : false;
 };
-
-const syncCategoryBreakdownVisibility = () => {
-  isCategoryBreakdownOpen.value =
-    isCategoryBreakdownPinned.value ||
-    isCategoryBreakdownHovered.value ||
-    isCategoryBreakdownFocused.value;
-};
-
-const toggleCategoryBreakdown = () => {
-  if (isCategoryBreakdownPinned.value) {
-    closeCategoryBreakdown();
-    return;
-  }
-
-  isCategoryBreakdownPinned.value = true;
-  isCategoryBreakdownOpen.value = true;
-};
-
-const handleCategoryBreakdownMouseEnter = () => {
-  isCategoryBreakdownHovered.value = true;
-  isCategoryBreakdownOpen.value = true;
-};
-
-const handleCategoryBreakdownMouseLeave = () => {
-  isCategoryBreakdownHovered.value = false;
-  syncCategoryBreakdownVisibility();
-};
-
-const handleCategoryBreakdownFocusIn = () => {
-  isCategoryBreakdownFocused.value = true;
-  isCategoryBreakdownOpen.value = true;
-};
-
-const handleCategoryBreakdownFocusOut = event => {
-  if (event.currentTarget.contains(event.relatedTarget)) return;
-
-  isCategoryBreakdownFocused.value = false;
-  isCategoryBreakdownPinned.value = false;
-  syncCategoryBreakdownVisibility();
-};
-
-const handleCategoryBreakdownClickOutside = () => {
-  if (isCategoryBreakdownOpen.value) closeCategoryBreakdown();
-};
-
-const currentUtcMonth = () => new Date().toISOString().slice(0, 7);
-const isUsageMonthStale = () =>
-  Boolean(usage.value?.month) && usage.value.month !== currentUtcMonth();
 
 const syncUtcDay = () => {
-  const today = currentUtcDay();
-  if (today === utcDay.value) return false;
+  const nextUtcDay = currentUtcDay();
+  if (utcDay.value === nextUtcDay) return false;
 
-  utcDay.value = today;
-  requestGeneration += 1;
-  requestInProgress.value = false;
-  lastFetchedAt = 0;
-  usage.value = null;
-  isDismissed.value = false;
-  closeCategoryBreakdown();
+  utcDay.value = nextUtcDay;
+  syncDismissedState();
   return true;
 };
 
-function scheduleUtcDayBoundaryRefresh(refresh) {
+const isUsageMonthStale = () => {
+  const currentMonth = currentUtcDay().slice(0, 7);
+  return Boolean(usage.value?.month && usage.value.month !== currentMonth);
+};
+
+const setUsage = payload => {
+  usage.value = payload;
+  syncUtcDay();
+  syncDismissedState();
+};
+
+const scheduleUtcDayBoundaryRefresh = callback => {
   if (utcDayBoundaryTimeout) clearTimeout(utcDayBoundaryTimeout);
 
   const now = new Date();
-  const nextUtcDayStart = Date.UTC(
+  const nextUtcMidnight = Date.UTC(
     now.getUTCFullYear(),
     now.getUTCMonth(),
     now.getUTCDate() + 1
   );
-  const delay = Math.min(
-    Math.max(0, nextUtcDayStart - now.getTime()),
-    MAX_TIMEOUT_DELAY
-  );
-  utcDayBoundaryTimeout = setTimeout(() => {
-    utcDayBoundaryTimeout = null;
-    if (syncUtcDay()) refresh();
-    scheduleUtcDayBoundaryRefresh(refresh);
-  }, delay);
-}
+  const delay = Math.max(nextUtcMidnight - now.getTime() + 100, 100);
+  if (delay > MAX_TIMEOUT_DELAY) {
+    utcDayBoundaryTimeout = setTimeout(() => {
+      scheduleUtcDayBoundaryRefresh(callback);
+    }, MAX_TIMEOUT_DELAY);
+    return;
+  }
 
-const setUsage = payload => {
-  usage.value = payload;
-  const key = storageKey.value;
-  isDismissed.value = key ? LocalStorage.get(key) === true : false;
+  utcDayBoundaryTimeout = setTimeout(() => {
+    syncUtcDay();
+    callback();
+    scheduleUtcDayBoundaryRefresh(callback);
+  }, delay);
 };
 
 const fetchUsage = async ({ force = false } = {}) => {
-  const utcDayChanged = syncUtcDay();
-  if (utcDayChanged) {
+  const dayChanged = syncUtcDay();
+  if (dayChanged) {
     scheduleUtcDayBoundaryRefresh(() => fetchUsage({ force: true }));
   }
-
+  const shouldForce = force || dayChanged || isUsageMonthStale();
   const requestedAccountId = Number(accountId.value);
-  if (
-    !isAdmin.value ||
-    !Number.isInteger(requestedAccountId) ||
-    !requestedAccountId
-  ) {
+  if (!requestedAccountId || !isAdmin.value) {
     usage.value = null;
     isDismissed.value = false;
-    closeCategoryBreakdown();
     return;
   }
 
-  const usageMonthChanged = isUsageMonthStale();
-  const shouldForce = force || utcDayChanged;
-
-  if (accessDenied.value) return;
-  if (isDismissed.value && !shouldForce && !usageMonthChanged) return;
-  if (requestInProgress.value) return;
   if (
     !shouldForce &&
-    !usageMonthChanged &&
-    Date.now() - lastFetchedAt < 30_000
+    (requestInProgress.value ||
+      isDismissed.value ||
+      accessDenied.value ||
+      hasNoCloudPhones.value)
   ) {
     return;
   }
+  if (!shouldForce && Date.now() - lastFetchedAt < 15_000) return;
 
   requestGeneration += 1;
   const generation = requestGeneration;
@@ -479,7 +260,6 @@ const fetchUsage = async ({ force = false } = {}) => {
       setUsage(null);
       isDismissed.value = false;
       hasNoCloudPhones.value = true;
-      closeCategoryBreakdown();
       return;
     }
 
@@ -487,11 +267,9 @@ const fetchUsage = async ({ force = false } = {}) => {
     setUsage(payload);
   } catch (error) {
     if (generation === requestGeneration) {
-      // Keep endpoint failures and authorization changes from exposing stale data.
       usage.value = null;
       isDismissed.value = false;
       accessDenied.value = [401, 403].includes(error?.response?.status);
-      closeCategoryBreakdown();
     }
   } finally {
     if (generation === requestGeneration) requestInProgress.value = false;
@@ -529,7 +307,6 @@ const dismissBanner = () => {
 
   LocalStorage.set(key, true);
   isDismissed.value = true;
-  closeCategoryBreakdown();
 };
 
 const onWindowFocus = () => fetchUsage({ force: isUsageMonthStale() });
@@ -547,7 +324,6 @@ watch(
     lastFetchedAt = 0;
     usage.value = null;
     isDismissed.value = false;
-    closeCategoryBreakdown();
 
     accessDenied.value = false;
     hasNoCloudPhones.value = false;
@@ -559,7 +335,6 @@ watch(
 onMounted(() => {
   window.addEventListener('focus', onWindowFocus);
   document.addEventListener('visibilitychange', onVisibilityChange);
-  document.addEventListener('keydown', handleDocumentKeydown);
   scheduleUtcDayBoundaryRefresh(() => fetchUsage({ force: true }));
 });
 
@@ -567,7 +342,6 @@ onUnmounted(() => {
   requestGeneration += 1;
   window.removeEventListener('focus', onWindowFocus);
   document.removeEventListener('visibilitychange', onVisibilityChange);
-  document.removeEventListener('keydown', handleDocumentKeydown);
   if (utcDayBoundaryTimeout) clearTimeout(utcDayBoundaryTimeout);
 });
 </script>
@@ -577,109 +351,54 @@ onUnmounted(() => {
     v-if="shouldShowBanner"
     role="status"
     aria-live="polite"
-    class="flex items-center justify-between gap-2 border-y border-n-ruby-4 bg-n-ruby-2 px-3 py-0 text-n-ruby-12"
-    @keydown.esc.stop.prevent="closeCategoryBreakdown"
+    class="flex items-center justify-between gap-2 border-b border-n-weak bg-n-solid-2 px-3 py-1 text-n-slate-12"
   >
-    <div class="min-w-0 flex-1">
-      <div
-        v-on-click-outside="handleCategoryBreakdownClickOutside"
-        class="relative min-w-0"
-        data-testid="whatsapp-usage-breakdown-wrapper"
-        @mouseenter="handleCategoryBreakdownMouseEnter"
-        @mouseleave="handleCategoryBreakdownMouseLeave"
-        @focusin="handleCategoryBreakdownFocusIn"
-        @focusout="handleCategoryBreakdownFocusOut"
-      >
-        <button
-          type="button"
-          class="flex w-full min-w-0 items-center gap-1 rounded px-2.5 py-1 text-left text-[11px] font-medium leading-4 hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-ruby-8 sm:text-xs"
-          :aria-label="breakdownTriggerLabel"
-          :aria-expanded="isCategoryBreakdownOpen"
-          aria-controls="whatsapp-usage-breakdown"
-          data-testid="whatsapp-usage-breakdown-trigger"
-          @click.stop="toggleCategoryBreakdown"
-        >
-          <span
-            class="min-w-0 flex-1 break-words"
-            data-testid="whatsapp-usage-title"
-          >
-            {{ compactSummary }}
-          </span>
-          <i
-            class="i-lucide-info mt-0.5 size-3.5 shrink-0 self-start text-n-ruby-10"
-            aria-hidden="true"
-          />
-        </button>
-        <div
-          v-if="isCategoryBreakdownOpen"
-          id="whatsapp-usage-breakdown"
-          role="region"
-          tabindex="0"
-          :aria-label="t('WHATSAPP_USAGE.BREAKDOWN_TITLE')"
-          class="absolute left-0 top-full z-50 max-h-72 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-lg bg-n-alpha-3 p-3 text-n-slate-12 shadow-lg outline outline-1 outline-n-weak backdrop-blur-[50px]"
-          data-testid="whatsapp-usage-breakdown"
-        >
-          <p class="m-0 mb-2 text-xs font-medium">
-            {{ t('WHATSAPP_USAGE.BREAKDOWN_TITLE') }}
-          </p>
-          <div v-if="categoryBreakdownRows" class="flex flex-col gap-2">
-            <div
-              v-for="row in categoryBreakdownRows"
-              :key="row.category"
-              class="min-w-0"
-            >
-              <div
-                class="flex items-baseline justify-between gap-2 text-xs font-medium"
-              >
-                <span class="min-w-0">{{ t(row.labelKey) }}</span>
-                <span class="shrink-0">
-                  {{
-                    t('WHATSAPP_USAGE.CATEGORY_DELIVERED', {
-                      count: row.deliveredCount,
-                    })
-                  }}
-                </span>
-              </div>
-              <p class="m-0 mt-0.5 text-[11px] leading-4 text-n-slate-11">
-                {{
-                  t('WHATSAPP_USAGE.CATEGORY_BILLABILITY', {
-                    chargeable: row.chargeableCount,
-                    free: row.freeCount,
-                    unknown: row.unknownBillableCount,
-                  })
-                }}
-              </p>
-            </div>
-          </div>
-          <p v-else class="m-0 text-xs text-n-slate-11">
-            {{ t('WHATSAPP_USAGE.CATEGORY_BREAKDOWN_UNAVAILABLE') }}
-          </p>
-          <p
-            class="m-0 mt-2 border-t border-n-weak pt-2 text-[11px] leading-4 text-n-slate-11"
-          >
-            {{ t('WHATSAPP_USAGE.CATEGORY_BREAKDOWN_NOTE') }}
-          </p>
-          <p
-            v-if="isEstimateIncomplete"
-            class="m-0 mt-2 text-[11px] font-medium leading-4 text-n-ruby-11"
-            data-testid="whatsapp-usage-estimate-incomplete"
-          >
-            {{ t('WHATSAPP_USAGE.ESTIMATE_INCOMPLETE') }}
-          </p>
-          <p class="m-0 mt-2 text-[11px] leading-4 text-n-slate-11">
-            {{ bannerTooltip }}
-          </p>
-        </div>
-      </div>
-    </div>
     <button
       type="button"
-      class="grid size-7 shrink-0 place-items-center rounded-md p-0 text-n-ruby-10 hover:bg-n-ruby-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-ruby-8"
+      class="group flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-2 py-0.5 text-left text-xs transition-colors hover:bg-n-alpha-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-brand"
+      :title="bannerTooltip"
+      data-testid="whatsapp-usage-report-link"
+      @click="openWhatsappReport"
+    >
+      <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+        <span class="inline-flex items-center gap-1.5 font-medium text-n-slate-12">
+          <i
+            class="i-lucide-message-circle size-3.5 shrink-0 text-n-teal-10"
+            aria-hidden="true"
+          />
+          <span data-testid="whatsapp-usage-title">
+            {{ compactSummary }}
+          </span>
+        </span>
+        <span
+          v-if="consecutiveCount > 0 && formattedConsecutiveOverpayment"
+          class="inline-flex items-center gap-1 rounded-full bg-n-amber-3 px-2 py-0.5 text-[11px] font-medium text-n-amber-11"
+          data-testid="whatsapp-usage-consecutive-badge"
+        >
+          <i class="i-lucide-layers size-3 shrink-0" aria-hidden="true" />
+          {{
+            t('WHATSAPP_USAGE.BANNER_CONSECUTIVE_BADGE', {
+              count: formatCount(consecutiveCount),
+              amount: formattedConsecutiveOverpayment,
+            })
+          }}
+        </span>
+      </div>
+      <span
+        class="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-n-teal-11 group-hover:underline"
+      >
+        {{ t('WHATSAPP_USAGE.OPEN_REPORT') }}
+        <i class="i-lucide-arrow-right size-3" aria-hidden="true" />
+      </span>
+    </button>
+    <button
+      type="button"
+      class="grid size-6 shrink-0 place-items-center rounded-md p-0 text-n-slate-10 hover:bg-n-alpha-2 hover:text-n-slate-12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-brand"
       :aria-label="t('WHATSAPP_USAGE.DISMISS')"
       :title="t('WHATSAPP_USAGE.DISMISS')"
       @click="dismissBanner"
     >
-      <i class="i-lucide-x size-4" aria-hidden="true" />
+      <i class="i-lucide-x size-3.5" aria-hidden="true" />
     </button>
   </section>
 </template>

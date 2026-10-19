@@ -565,7 +565,8 @@
     "WORKING_HOURS": "Working hours",
     "CATALOG": "Products & Services",
     "CATALOG_PRODUCTS": "Products",
-    "CATALOG_SERVICES": "Services"
+    "CATALOG_SERVICES": "Services",
+    "REPORTS_WHATSAPP": "WhatsApp"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",

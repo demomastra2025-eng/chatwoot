@@ -1528,6 +1528,12 @@ const menuItems = computed(() => {
             label: t('AI_REPORTS.TITLE'),
             to: accountScopedRoute('bot_reports'),
           },
+          {
+            name: 'Reports WhatsApp',
+            visibilityKey: 'Reports:WhatsApp',
+            label: t('SIDEBAR.REPORTS_WHATSAPP'),
+            to: accountScopedRoute('whatsapp_reports'),
+          },
         ],
       },
       {
