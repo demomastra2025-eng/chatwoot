@@ -44,22 +44,31 @@ class Integrations::Medelement::ServicesSyncService
   def import_services(rows)
     services = {}
     skipped_count = 0
+    existing_by_code = preload_existing_services_by_code
 
     rows.each do |raw_payload|
       payload = raw_payload.to_h.with_indifferent_access
       next if group_payload?(payload)
 
-      service = Integrations::Medelement::ServiceUpsertService.new(
-        account: account,
-        payload: payload,
-        now: now,
-        conflict_tracker: conflict_tracker
-      ).perform
+      service = upsert_service_row(payload, existing_by_code)
       skipped_count += 1 unless service
-      services[service.custom_attributes[EXTERNAL_CODE_KEY]] = service if service
+      next unless service
+
+      service_code = service.custom_attributes[EXTERNAL_CODE_KEY]
+      services[service_code] = existing_by_code[service_code] = service
     end
 
     [services, skipped_count]
+  end
+
+  def upsert_service_row(payload, existing_by_code)
+    Integrations::Medelement::ServiceUpsertService.new(
+      account: account,
+      payload: payload,
+      now: now,
+      conflict_tracker: conflict_tracker,
+      existing_services_by_code: existing_by_code
+    ).perform
   end
 
   def group_payload?(payload)
@@ -67,13 +76,35 @@ class Integrations::Medelement::ServicesSyncService
   end
 
   def sync_specialist_services(services_by_code)
-    Array(specialist_service_payloads).count do |payload|
+    payloads = Array(specialist_service_payloads)
+    return 0 if payloads.empty?
+
+    resources_by_code = preload_resources_by_code
+    payloads.count do |payload|
       Integrations::Medelement::SpecialistServiceUpsertService.new(
         account: account,
         payload: payload,
         services_by_code: services_by_code,
+        resources_by_code: resources_by_code,
         conflict_tracker: conflict_tracker
       ).perform
+    end
+  end
+
+  def preload_existing_services_by_code
+    medelement_services.each_with_object({}) do |service, memo|
+      code = service.custom_attributes[EXTERNAL_CODE_KEY].to_s.presence
+      memo[code] ||= service if code
+    end
+  end
+
+  def preload_resources_by_code
+    specialist_code_key = Integrations::Medelement::SpecialistsSyncService::SPECIALIST_CODE_KEY
+    account.scheduling_resources
+           .where("(custom_attributes ->> '#{specialist_code_key}') IS NOT NULL")
+           .each_with_object({}) do |resource, memo|
+      code = resource.custom_attributes[specialist_code_key].to_s.presence
+      memo[code] ||= resource if code
     end
   end
 
@@ -88,11 +119,11 @@ class Integrations::Medelement::ServicesSyncService
   end
 
   def medelement_services
-    account.scheduling_services.where("NULLIF(custom_attributes ->> '#{EXTERNAL_CODE_KEY}', '') IS NOT NULL")
+    account.scheduling_services.where("NULLIF(btrim(custom_attributes ->> '#{EXTERNAL_CODE_KEY}'), '') IS NOT NULL")
   end
 
   def local_services
-    account.scheduling_services.active.where("NULLIF(custom_attributes ->> '#{EXTERNAL_CODE_KEY}', '') IS NULL")
+    account.scheduling_services.active.where("NULLIF(btrim(custom_attributes ->> '#{EXTERNAL_CODE_KEY}'), '') IS NULL")
   end
 
   def provider_service_codes(rows)

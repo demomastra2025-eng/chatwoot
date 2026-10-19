@@ -20,10 +20,10 @@ class Telephony::Wazo::CallLogSyncJob < ApplicationJob
       return
     end
 
-    Telephony::ProviderConnection.where(provider_kind: 'wazo', status: 'active').find_each do |connection|
+    Telephony::ProviderConnection.where(provider_kind: 'wazo', status: 'active').find_each do |active_connection|
       next unless sync_enabled_for_connection?(connection)
 
-      self.class.perform_later(connection_id: connection.id)
+      self.class.perform_later(connection_id: active_connection.id)
     end
   end
 

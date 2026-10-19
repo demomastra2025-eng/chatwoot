@@ -1269,6 +1269,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_183000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "communication_thread_id", "conversation_id"], name: "idx_ctc_account_thread_conversation"
+    t.index ["account_id", "conversation_id", "communication_thread_id"], name: "index_ctc_on_account_conversation_thread"
     t.index ["account_id", "conversation_id"], name: "idx_ctc_account_conversation_unique", unique: true
     t.index ["account_id"], name: "index_communication_thread_conversations_on_account_id"
     t.index ["communication_thread_id", "inbox_id"], name: "idx_ctc_thread_inbox"
@@ -2979,6 +2980,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_183000) do
     t.index ["owner_id"], name: "index_reminders_on_owner_id"
     t.index ["remindable_type", "remindable_id"], name: "index_reminders_on_remindable"
     t.index ["reminder_group_id"], name: "index_reminders_on_reminder_group_id"
+    t.index ["scheduled_at", "created_at", "id"], name: "index_reminders_on_pending_scheduled_at", where: "(status = 1)"
     t.index ["target_contact_id"], name: "index_reminders_on_target_contact_id"
     t.index ["target_contact_inbox_id"], name: "index_reminders_on_target_contact_inbox_id"
     t.index ["target_conversation_id"], name: "index_reminders_on_target_conversation_id"

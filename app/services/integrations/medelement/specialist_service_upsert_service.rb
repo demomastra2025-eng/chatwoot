@@ -1,9 +1,10 @@
 class Integrations::Medelement::SpecialistServiceUpsertService
-  def initialize(account:, payload:, services_by_code:, conflict_tracker: nil)
+  def initialize(account:, payload:, services_by_code:, conflict_tracker: nil, resources_by_code: nil)
     @account = account
     @payload = payload.to_h.with_indifferent_access
     @services_by_code = services_by_code
     @conflict_tracker = conflict_tracker
+    @resources_by_code = resources_by_code
   end
 
   def perform
@@ -21,7 +22,7 @@ class Integrations::Medelement::SpecialistServiceUpsertService
 
   private
 
-  attr_reader :account, :conflict_tracker, :payload, :services_by_code
+  attr_reader :account, :conflict_tracker, :payload, :resources_by_code, :services_by_code
 
   def active?
     return true unless payload.key?('active')
@@ -75,17 +76,23 @@ class Integrations::Medelement::SpecialistServiceUpsertService
   end
 
   def resource
-    @resource ||= account.scheduling_resources.find_by(
-      "custom_attributes ->> '#{Integrations::Medelement::SpecialistsSyncService::SPECIALIST_CODE_KEY}' = ?",
-      specialist_code
-    )
+    @resource ||= if resources_by_code
+                    resources_by_code[specialist_code]
+                  else
+                    specialist_key = Integrations::Medelement::SpecialistsSyncService::SPECIALIST_CODE_KEY
+                    account.scheduling_resources
+                           .where("(custom_attributes ->> '#{specialist_key}') IS NOT NULL")
+                           .find_by("custom_attributes ->> '#{specialist_key}' = ?", specialist_code)
+                  end
   end
 
   def service
-    @service ||= services_by_code[service_code] || account.scheduling_services.find_by(
-      "custom_attributes ->> '#{Integrations::Medelement::ServicesSyncService::EXTERNAL_CODE_KEY}' = ?",
-      service_code
-    )
+    @service ||= services_by_code[service_code] || begin
+      external_key = Integrations::Medelement::ServicesSyncService::EXTERNAL_CODE_KEY
+      account.scheduling_services
+             .where("NULLIF(btrim(custom_attributes ->> '#{external_key}'), '') IS NOT NULL")
+             .find_by("custom_attributes ->> '#{external_key}' = ?", service_code)
+    end
   end
 
   def log_skipped(reason)
