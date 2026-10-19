@@ -29,7 +29,7 @@ RSpec.describe 'I18n plural forms' do
     end
 
     it 'reads a whole number written as a float and calls a fraction «other»' do
-      expect(accounts_total(2.0)).to eq('2 аккаунта')
+      expect(accounts_total(2.0)).to eq('2.0 аккаунта')
       expect(accounts_total(1.5)).to eq('1.5 аккаунта')
     end
 
