@@ -26,7 +26,14 @@ describe Integrations::Medelement::SyncStatusPresenter do
 
     delta = described_class.new(hook: hook).payload[:delta]
 
-    expect(delta).to include(enabled: true, current_interval_seconds: 60, misses_24h: 1, unexplained_misses_24h: 1)
+    expect(delta).to include(
+      enabled: true,
+      current_interval_seconds: 60,
+      full_sweep_interval_minutes: 2,
+      misses_24h: 1,
+      unexplained_misses_24h: 1,
+      poll_errors_24h: 0
+    )
     expect(delta[:last_poll_at]).to be_present
     expect(delta[:cursor_age_seconds]).to be_between(100, 140)
   end

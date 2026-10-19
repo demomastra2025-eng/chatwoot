@@ -76,7 +76,8 @@ class Integrations::Medelement::SyncStatusPresenter
       last_poll_at: cursor&.last_poll_at&.iso8601,
       last_success_at: cursor&.last_success_at&.iso8601,
       cursor_age_seconds: cursor&.value && (Time.current - cursor.value).to_i,
-      current_interval_seconds: cursor&.current_interval_seconds || configuration.incremental_receptions_interval_seconds
+      current_interval_seconds: cursor&.current_interval_seconds || configuration.incremental_receptions_interval_seconds,
+      full_sweep_interval_minutes: configuration.receptions_full_sweep_interval_minutes
     }
   end
 
@@ -84,7 +85,8 @@ class Integrations::Medelement::SyncStatusPresenter
     misses = Integrations::Medelement::DeltaMiss.where(hook_id: hook.id, detected_at: 24.hours.ago..)
     {
       misses_24h: misses.count,
-      unexplained_misses_24h: misses.where(classification: 'unexplained').count
+      unexplained_misses_24h: misses.where(classification: 'unexplained').count,
+      poll_errors_24h: misses.where(kind: 'poll_error').count
     }
   end
 

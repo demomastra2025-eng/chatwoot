@@ -79,4 +79,39 @@ RSpec.describe Integrations::Medelement::DeltaMissAudit do
     expect(Integrations::Medelement::DeltaSeenReception.exists?(old.id)).to be(false)
     expect(Integrations::Medelement::DeltaSeenReception.exists?(recent.id)).to be(true)
   end
+
+  it 'logarithmically increases full sweep interval on clean sweeps and resets to 2 minutes on errors or misses' do
+    schedule_service = instance_double(Integrations::Medelement::CronScheduleService, sync!: true)
+    allow(Integrations::Medelement::CronScheduleService).to receive(:new).with(hook: hook).and_return(schedule_service)
+    config = Integrations::Medelement::Configuration.new(hook: hook)
+
+    [4, 8, 15, 30, 60, 60].each do |expected_minutes|
+      Integrations::Medelement::SyncCursor.find_by!(hook: hook, name: 'receptions_delta').update!(
+        last_poll_at: Time.current, last_success_at: Time.current
+      )
+      audit.record_full_sweep_result!
+      expect(config.receptions_full_sweep_interval_minutes).to eq(expected_minutes)
+    end
+
+    record_change
+    travel 2.minutes + 1.second do
+      audit.resolve_candidates!(poll_completed_at: Time.current)
+    end
+    expect(config.receptions_full_sweep_interval_minutes).to eq(2)
+
+    Integrations::Medelement::SyncCursor.find_by!(hook: hook, name: 'receptions_delta').update!(
+      last_poll_at: Time.current, last_success_at: Time.current
+    )
+    audit.record_full_sweep_result!
+    expect(config.receptions_full_sweep_interval_minutes).to eq(4)
+
+    error = Integrations::Medelement::Client::ApiError.new('Delta forbidden', status: 401)
+    audit.record_poll_error!(error)
+    expect(config.receptions_full_sweep_interval_minutes).to eq(2)
+    expect(
+      Integrations::Medelement::DeltaMiss.where(
+        hook: hook, kind: 'poll_error', classification: 'provider_error', reception_code: 'poll_error:http_401'
+      )
+    ).to exist
+  end
 end

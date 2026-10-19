@@ -74,6 +74,7 @@ class Integrations::Medelement::ReceptionsDeltaJob < ApplicationJob
     interval = cursor.current_interval_seconds || configuration.incremental_receptions_interval_seconds
     interval = [interval * 2, MAX_BACKOFF_SECONDS].min if retryable?(error)
     cursor.update!(current_interval_seconds: interval, last_poll_at: Time.current)
+    Integrations::Medelement::DeltaMissAudit.new(hook: hook).record_poll_error!(error)
     Rails.logger.warn(
       "[MEDELEMENT::DELTA] hook=#{hook.id} error=#{error.class.name} " \
       "status=#{error.respond_to?(:status) ? error.status : 'none'} interval=#{interval}"

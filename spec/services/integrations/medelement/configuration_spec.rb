@@ -74,9 +74,12 @@ RSpec.describe Integrations::Medelement::Configuration do
   end
 
   describe 'incremental reception settings' do
-    it 'defaults the feature off and the interval to sixty seconds' do
-      expect(configuration.incremental_receptions_enabled?).to be(false)
+    it 'defaults the feature on and the interval to sixty seconds, while respecting an explicit false' do
+      expect(configuration.incremental_receptions_enabled?).to be(true)
       expect(configuration.incremental_receptions_interval_seconds).to eq(60)
+
+      allow(hook).to receive(:settings).and_return('incremental_receptions_enabled' => false)
+      expect(configuration.incremental_receptions_enabled?).to be(false)
     end
 
     it 'accepts only the supported intervals and uses minute cron when appropriate' do
@@ -98,6 +101,18 @@ RSpec.describe Integrations::Medelement::Configuration do
     it 'rejects unsupported delta and full sweep intervals' do
       expect(real_hook.update(settings: real_hook.settings.merge('incremental_receptions_interval_seconds' => 11))).to be(false)
       expect(real_hook.update(settings: real_hook.settings.merge('receptions_full_sweep_interval_minutes' => 3))).to be(false)
+    end
+
+    it 'uses the adaptive full sweep backoff cursor when incremental sync is enabled' do
+      Integrations::Medelement::SyncCursor.create!(
+        hook: real_hook,
+        name: 'receptions_full_sweep_backoff',
+        current_interval_seconds: 900
+      )
+      real_config = described_class.new(hook: real_hook)
+
+      expect(real_config.receptions_full_sweep_interval_minutes).to eq(15)
+      expect(real_config.receptions_sync_cron_expression).to eq('*/15 * * * * Asia/Almaty')
     end
   end
 

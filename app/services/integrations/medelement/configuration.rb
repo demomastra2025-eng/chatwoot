@@ -9,7 +9,9 @@ class Integrations::Medelement::Configuration
   RECEPTIONS_SYNC_INTERVAL_MINUTES = 2
   DELTA_INTERVAL_SECONDS = 60
   DELTA_INTERVAL_OPTIONS = [10, 30, 60, 120].freeze
-  FULL_SWEEP_INTERVAL_OPTIONS = [2, 15, 60, 1440].freeze
+  ADAPTIVE_FULL_SWEEP_STEPS_MINUTES = [2, 4, 8, 15, 30, 60].freeze
+  FULL_SWEEP_INTERVAL_OPTIONS = [2, 4, 8, 15, 30, 60, 1440].freeze
+  FULL_SWEEP_BACKOFF_CURSOR_NAME = 'receptions_full_sweep_backoff'.freeze
   DEFAULT_RECEPTION_DETAIL_REFRESH_MINUTES = 360
   DEFAULT_RECEPTION_DETAIL_BUDGET = 50
   DEFAULT_SYNC_TIME_OF_DAY = '06:15'.freeze
@@ -59,7 +61,7 @@ class Integrations::Medelement::Configuration
   end
 
   def incremental_receptions_enabled?
-    boolean_setting('incremental_receptions_enabled', false)
+    boolean_setting('incremental_receptions_enabled', true)
   end
 
   def incremental_receptions_interval_seconds
@@ -67,8 +69,11 @@ class Integrations::Medelement::Configuration
   end
 
   def receptions_full_sweep_interval_minutes
-    supported_integer_setting('receptions_full_sweep_interval_minutes', RECEPTIONS_SYNC_INTERVAL_MINUTES,
-                              FULL_SWEEP_INTERVAL_OPTIONS)
+    configured = supported_integer_setting('receptions_full_sweep_interval_minutes', RECEPTIONS_SYNC_INTERVAL_MINUTES,
+                                           FULL_SWEEP_INTERVAL_OPTIONS)
+    return configured if configured > RECEPTIONS_SYNC_INTERVAL_MINUTES || !incremental_receptions_enabled?
+
+    adaptive_full_sweep_interval_minutes || configured
   end
 
   def sync_services?
@@ -144,6 +149,14 @@ class Integrations::Medelement::Configuration
   private
 
   attr_reader :hook
+
+  def adaptive_full_sweep_interval_minutes
+    return unless hook.id
+
+    cursor = Integrations::Medelement::SyncCursor.find_by(hook_id: hook.id, name: FULL_SWEEP_BACKOFF_CURSOR_NAME)
+    minutes = cursor&.current_interval_seconds.to_i / 60
+    minutes if ADAPTIVE_FULL_SWEEP_STEPS_MINUTES.include?(minutes)
+  end
 
   def cron_expression(interval_hours:, minute_offset: 0)
     anchor_hour, anchor_minute = sync_time_of_day.split(':').map(&:to_i)

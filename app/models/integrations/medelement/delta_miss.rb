@@ -1,8 +1,8 @@
 class Integrations::Medelement::DeltaMiss < ApplicationRecord
   self.table_name = 'medelement_delta_misses'
 
-  KINDS = %w[created changed removed].freeze
-  CLASSIFICATIONS = %w[own_api_change unexplained].freeze
+  KINDS = %w[created changed removed poll_error].freeze
+  CLASSIFICATIONS = %w[own_api_change unexplained provider_error].freeze
 
   belongs_to :hook, class_name: 'Integrations::Hook'
   belongs_to :full_sweep_run, class_name: 'Integrations::Medelement::SyncRun', optional: true

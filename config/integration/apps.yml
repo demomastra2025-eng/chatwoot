@@ -473,7 +473,7 @@ medelement:
           'sync_receptions': { 'type': 'boolean' },
           'incremental_receptions_enabled': { 'type': 'boolean' },
           'incremental_receptions_interval_seconds': { 'type': 'integer', 'enum': [10, 30, 60, 120] },
-          'receptions_full_sweep_interval_minutes': { 'type': 'integer', 'enum': [2, 15, 60, 1440] },
+          'receptions_full_sweep_interval_minutes': { 'type': 'integer', 'enum': [2, 4, 8, 15, 30, 60, 1440] },
           'sync_patients': { 'type': 'boolean' },
           'write_enabled': { 'type': 'boolean' },
           'remove_reception_on_cancel': { 'type': 'boolean' },

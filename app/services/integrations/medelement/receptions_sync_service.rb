@@ -7,7 +7,7 @@ class Integrations::Medelement::ReceptionsSyncService
   LIST_FINGERPRINT_KEY = 'medelement_list_fingerprint'.freeze
   DETAIL_SYNCED_AT_KEY = 'medelement_detail_synced_at'.freeze
   DETAIL_RETRY_AT_KEY = 'medelement_detail_retry_at'.freeze
-  AUDIT_METADATA_KEYS = [LIST_FINGERPRINT_KEY, DETAIL_SYNCED_AT_KEY, DETAIL_RETRY_AT_KEY].freeze
+  AUDIT_METADATA_KEYS = [LIST_FINGERPRINT_KEY, DETAIL_SYNCED_AT_KEY, DETAIL_RETRY_AT_KEY, 'provider_status_audit'].freeze
   DETAIL_STATE_KEY = '_MEDELEMENT_DETAIL_STATE'.freeze
   DETAIL_RETRY_INTERVAL = 15.minutes
   REALTIME_DAYS_BACK = 1
@@ -45,10 +45,7 @@ class Integrations::Medelement::ReceptionsSyncService
     contacts_by_patient_code = synced_contacts(snapshot)
     sync_result = sync_snapshot(snapshot, resource_map, contacts_by_patient_code)
     cleanup_missing_appointments!(sync_result[:desired_external_refs]) if @complete_resource_ids.any?
-    sync_result[:skipped_pair_count] = skipped_pair_count
-    sync_result.merge!(window_metadata)
-    log_sync_summary(sync_result)
-    sync_result.except(:desired_external_refs)
+    finalize_sync_result(sync_result)
   end
 
   # A reported delta code does not authorize absence reconciliation for any other reception.
@@ -343,6 +340,22 @@ class Integrations::Medelement::ReceptionsSyncService
     end
   end
 
+  def finalize_sync_result(sync_result)
+    audit_full_sweep_result!
+    sync_result[:skipped_pair_count] = skipped_pair_count
+    sync_result.merge!(window_metadata)
+    log_sync_summary(sync_result)
+    sync_result.except(:desired_external_refs)
+  end
+
+  def audit_full_sweep_result!
+    return unless @hook
+
+    Integrations::Medelement::DeltaMissAudit.new(hook: @hook).record_full_sweep_result!
+  rescue ActiveRecord::ActiveRecordError => e
+    raise Integrations::Medelement::DeltaMissAudit::AuditUnavailableError, 'Medelement delta miss audit failed', cause: e
+  end
+
   def audit_change!(appointment, reception)
     return unless @hook && appointment.previous_changes.present?
 
@@ -515,8 +528,7 @@ class Integrations::Medelement::ReceptionsSyncService
   def sync_snapshot_reception(reception, resource, contacts_by_patient_code, result)
     if reception[DETAIL_STATE_KEY] != 'fetched'
       preserve_unprocessed_reception_conflict!(reception)
-      counter = detail_state_counter(reception[DETAIL_STATE_KEY])
-      result[counter] += 1
+      result[detail_state_counter(reception[DETAIL_STATE_KEY])] += 1
       return
     end
 
@@ -677,9 +689,7 @@ class Integrations::Medelement::ReceptionsSyncService
     @preloaded_contacts = nil
     return nil unless configuration.sync_patients?
 
-    candidate_codes = sorted_receptions.filter_map do |item|
-      item['PATIENT_CODE'].to_s.presence if item['REMOVED'].to_i != 1
-    end.uniq
+    candidate_codes = prefetch_candidate_patient_codes(sorted_receptions)
     return nil if candidate_codes.empty?
 
     patients_service = build_patients_sync_service
@@ -695,6 +705,12 @@ class Integrations::Medelement::ReceptionsSyncService
         next
       end
     end
+  end
+
+  def prefetch_candidate_patient_codes(sorted_receptions)
+    sorted_receptions.filter_map do |item|
+      item['PATIENT_CODE'].to_s.presence if item['REMOVED'].to_i != 1
+    end.uniq
   end
 
   def build_patients_sync_service

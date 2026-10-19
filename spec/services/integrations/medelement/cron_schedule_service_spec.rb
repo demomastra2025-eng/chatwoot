@@ -129,10 +129,10 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
 
   it 'attempts every schedule when one cron job cannot be created' do
     hook = build_stubbed(:integrations_hook, :medelement, account: account)
-    allow(Sidekiq::Cron::Job).to receive(:create).and_return(false, true, true, true)
+    allow(Sidekiq::Cron::Job).to receive(:create).and_return(false, true, true, true, true)
 
     expect(described_class.new(hook: hook).sync!).to be(false)
-    expect(Sidekiq::Cron::Job).to have_received(:create).exactly(4).times
+    expect(Sidekiq::Cron::Job).to have_received(:create).exactly(5).times
   end
 
   it 'carries the catalog offset into the next hour' do

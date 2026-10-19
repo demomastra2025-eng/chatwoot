@@ -59,7 +59,13 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
     appointment = instance_double(
       Scheduling::Appointment,
       previous_changes: {
-        'custom_attributes' => [{}, { 'medelement_detail_synced_at' => Time.current.iso8601 }],
+        'custom_attributes' => [
+          {},
+          {
+            'medelement_detail_synced_at' => Time.current.iso8601,
+            'provider_status_audit' => { 'observed_at' => Time.current.iso8601 }
+          }
+        ],
         'updated_at' => [1.minute.ago, Time.current]
       }
     )
