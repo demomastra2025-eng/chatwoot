@@ -2,8 +2,7 @@ require 'rails_helper'
 
 RSpec.describe DashboardController, type: :controller do
   describe '#active_platform_banners' do
-    it 'returns active cloud banners for global config' do
-      allow(ChatwootApp).to receive(:chatwoot_cloud?).and_return(true)
+    it 'returns active banners for global config' do
       inactive_banner = create(:platform_banner, active: false)
       older_banner = create(
         :platform_banner,
@@ -28,15 +27,14 @@ RSpec.describe DashboardController, type: :controller do
       )
     end
 
-    it 'returns an empty list outside cloud mode' do
+    it 'returns the banners of a self-hosted installation as well, not only of the cloud' do
       allow(ChatwootApp).to receive(:chatwoot_cloud?).and_return(false)
-      create(:platform_banner)
+      banner = create(:platform_banner, banner_message: 'Технические работы в субботу')
 
-      expect(controller.send(:active_platform_banners)).to eq([])
+      expect(controller.send(:active_platform_banners).pluck('id')).to eq([banner.id])
     end
 
     it 'degrades safely before the platform banners table is available' do
-      allow(ChatwootApp).to receive(:chatwoot_cloud?).and_return(true)
       allow(PlatformBanner).to receive(:table_exists?).and_return(false)
 
       expect(controller.send(:active_platform_banners)).to eq([])

@@ -3,10 +3,6 @@ require 'rails_helper'
 RSpec.describe 'Super Admin platform banners', type: :request do
   let(:super_admin) { create(:super_admin) }
 
-  before do
-    allow(ChatwootApp).to receive(:chatwoot_cloud?).and_return(true)
-  end
-
   describe 'GET /super_admin/platform_banners' do
     context 'when unauthenticated' do
       it 'redirects to login' do
@@ -66,14 +62,26 @@ RSpec.describe 'Super Admin platform banners', type: :request do
     end
   end
 
-  context 'when the instance is not cloud' do
-    it 'returns not found' do
+  context 'when the instance is self-hosted' do
+    before do
       allow(ChatwootApp).to receive(:chatwoot_cloud?).and_return(false)
       sign_in(super_admin, scope: :super_admin)
+    end
+
+    it 'shows the list, with the line that says what a banner is for' do
+      create(:platform_banner, banner_message: 'Технические работы в субботу')
 
       get '/super_admin/platform_banners'
 
-      expect(response).to have_http_status(:not_found)
+      expect(response).to have_http_status(:success)
+      expect(response.body).to include('Технические работы в субботу', 'например о технических работах')
+    end
+
+    it 'creates a banner that the operator app gets with its settings' do
+      post '/super_admin/platform_banners', params: { platform_banner: { banner_message: 'Работы с 22:00', banner_type: 'warning', active: '1' } }
+
+      expect(response).to redirect_to(super_admin_platform_banner_path(PlatformBanner.last))
+      expect(DashboardController.new.send(:active_platform_banners).pluck('banner_message')).to eq(['Работы с 22:00'])
     end
   end
 end

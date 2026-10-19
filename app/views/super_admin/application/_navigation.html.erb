@@ -29,7 +29,6 @@ Resources that nobody placed in a group land in "Дополнительно".
 
   primary_nav_items = Administrate::Namespace.new(namespace).resources.filter_map do |resource|
     next if hidden_primary_nav_resources.include?(resource.resource)
-    next if resource.resource == 'platform_banners' && !ChatwootApp.chatwoot_cloud?
 
     begin
       {

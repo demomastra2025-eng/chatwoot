@@ -139,13 +139,13 @@ RSpec.describe 'Super Admin sidebar', type: :request do
       expect(link('Баннеры')).to be_present
     end
 
-    it 'are not listed on other installations' do
+    it 'are listed on other installations too, for the notices of technical works' do
       allow(ChatwootApp).to receive(:chatwoot_cloud?).and_return(false)
 
       get '/super_admin'
 
-      expect(link('Баннеры')).to be_nil
-      expect(link_texts(group('extra'))).to eq(['Доступ по API для партнёров', 'Каналы'])
+      expect(link('Баннеры')['href']).to eq('/super_admin/platform_banners')
+      expect(link_texts(group('extra'))).to eq(['Доступ по API для партнёров', 'Баннеры', 'Каналы'])
     end
   end
 

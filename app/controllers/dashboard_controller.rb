@@ -91,8 +91,9 @@ class DashboardController < ActionController::Base
     }
   end
 
+  # The notices of the platform (technical works, an outage of a provider) for every operator of every account. They are
+  # written in the super admin («Баннеры») and work on any installation, not only on the cloud.
   def active_platform_banners
-    return [] unless ChatwootApp.chatwoot_cloud?
     return [] unless PlatformBanner.table_exists?
 
     PlatformBanner.active.order(created_at: :desc).as_json(only: %i[id banner_message banner_type updated_at])
