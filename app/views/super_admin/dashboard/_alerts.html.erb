@@ -52,7 +52,7 @@ keeps, and the result is kept for a couple of minutes. With nothing to report it
           </ul>
         <% end %>
 
-        <% if alert[:count] > alert[:items].size && alert[:items].any? %>
+        <% if alert[:count] > alert[:items].size && alert[:items].any? && alert.fetch(:listed, true) %>
           <p class="m-0 flex flex-wrap items-baseline gap-x-3 text-xs">
             <span class="tabular-nums"><%= t('super_admin.alerts.and_more', count: super_admin_number(alert[:count] - alert[:items].size)) %></span>
             <% if alert[:more_url].present? %>

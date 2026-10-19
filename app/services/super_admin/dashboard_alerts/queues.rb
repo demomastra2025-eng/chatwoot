@@ -33,6 +33,7 @@ class SuperAdmin::DashboardAlerts::Queues < SuperAdmin::DashboardAlerts::Check
   def dead_alert(stats)
     return unless stats.dead.positive?
 
-    alert(:queues_dead, severity: :warning, items: [link], count: stats.dead)
+    # The one item is a link to the place where the dead jobs are, not a list of them: there is no «ещё N» after it
+    alert(:queues_dead, severity: :warning, items: [link], count: stats.dead, listed: false)
   end
 end

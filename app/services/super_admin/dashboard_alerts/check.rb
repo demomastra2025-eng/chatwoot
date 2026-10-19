@@ -17,12 +17,14 @@ class SuperAdmin::DashboardAlerts::Check
   end
 
   # extra: count (the number of things found; the items by default), more_url and more_label (the link to the whole list and
-  # what it opens), title and body (the texts of the key by default)
+  # what it opens), title and body (the texts of the key by default) and listed (true by default: the items are the things
+  # found, so «ещё N» after the first ten makes sense; false when the items are one link that opens the place to look at them)
   def alert(key, severity:, items:, **extra)
     {
       key: key.to_s.tr('.', '_'), severity: severity, title: extra.fetch(:title) { text("#{key}.title") },
       text: extra.fetch(:body) { text("#{key}.text") }, count: extra.fetch(:count, items.size),
-      items: items.first(SuperAdmin::DashboardAlerts::LIST_LIMIT), more_url: extra[:more_url], more_label: extra[:more_label]
+      items: items.first(SuperAdmin::DashboardAlerts::LIST_LIMIT), more_url: extra[:more_url], more_label: extra[:more_label],
+      listed: extra.fetch(:listed, true)
     }
   end
 
