@@ -806,6 +806,7 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
 
   it 'prefetches stale patients into Concurrent::Map and passes Hash to sync_patient_codes when sync_patients? is enabled' do
     allow(configuration).to receive(:sync_patients?).and_return(true)
+    allow(client).to receive(:search_patients_by_codes).and_return([])
     allow(client).to receive(:get_patient).with(patient_code: '550990851604984873').and_return(
       'PATIENT_CODE' => '550990851604984873',
       'FIRSTNAME' => 'Test',

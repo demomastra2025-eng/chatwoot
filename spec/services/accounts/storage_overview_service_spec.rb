@@ -276,4 +276,18 @@ RSpec.describe Accounts::StorageOverviewService do
   ensure
     travel_back
   end
+  it 'sweeps accounts in batches with MGET and only enqueues refreshes for stale accounts' do
+    fresh_account = create(:account)
+    stale_account = create(:account)
+    described_class.new(account: fresh_account).refresh!
+
+    expect do
+      Accounts::StorageBreakdownRefreshJob.perform_now
+    end.to have_enqueued_job(Accounts::StorageBreakdownRefreshJob).with(stale_account.id)
+
+    enqueued_ids = ActiveJob::Base.queue_adapter.enqueued_jobs
+                                  .select { |j| j[:job] == Accounts::StorageBreakdownRefreshJob }
+                                  .flat_map { |j| j[:args] }
+    expect(enqueued_ids).not_to include(fresh_account.id)
+  end
 end

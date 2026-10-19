@@ -184,5 +184,13 @@ RSpec.describe Integrations::Medelement::RequestRateLimiter do
       expect { limiter.wait!(operation: 'reception move') }.to raise_error(described_class::BusyError)
       expect { limiter.wait!(operation: 'reception move', write: true) }.not_to raise_error
     end
+    it 'releases an idle ActiveRecord connection before sleeping when no transaction is open' do
+      limiter.wait!(operation: 'reception create')
+      allow(ActiveRecord::Base.connection_pool).to receive(:active_connection?).and_return(true)
+      allow(ActiveRecord::Base.connection).to receive(:open_transactions).and_return(0)
+      expect(ActiveRecord::Base.connection_pool).to receive(:release_connection).once
+
+      limiter.wait!(operation: 'reception create')
+    end
   end
 end

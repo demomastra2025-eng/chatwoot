@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_19_150000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_19_183000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -373,8 +373,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_150000) do
     t.index ["billing_account_id"], name: "idx_billing_memberships_one_active_owner", unique: true, where: "(((role)::text = 'owner'::text) AND ((status)::text = 'active'::text))"
     t.index ["billing_account_id"], name: "index_billing_account_memberships_on_billing_account_id"
     t.index ["user_id"], name: "index_billing_account_memberships_on_user_id"
-    t.check_constraint "role::text = ANY (ARRAY['owner'::character varying, 'billing_admin'::character varying, 'viewer'::character varying]::text[])", name: "chk_billing_memberships_role"
-    t.check_constraint "status::text = ANY (ARRAY['active'::character varying, 'inactive'::character varying]::text[])", name: "chk_billing_memberships_status"
+    t.check_constraint "role::text = ANY (ARRAY['owner'::character varying::text, 'billing_admin'::character varying::text, 'viewer'::character varying::text])", name: "chk_billing_memberships_role"
+    t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'inactive'::character varying::text])", name: "chk_billing_memberships_status"
   end
 
   create_table "billing_account_workspaces", force: :cascade do |t|
@@ -389,7 +389,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_150000) do
     t.index ["account_id"], name: "index_billing_account_workspaces_on_account_id"
     t.index ["billing_account_id"], name: "index_billing_account_workspaces_on_billing_account_id"
     t.check_constraint "status::text = 'active'::text AND detached_at IS NULL OR status::text = 'detached'::text AND detached_at IS NOT NULL", name: "chk_billing_workspaces_detached_at"
-    t.check_constraint "status::text = ANY (ARRAY['active'::character varying, 'detached'::character varying]::text[])", name: "chk_billing_workspaces_status"
+    t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'detached'::character varying::text])", name: "chk_billing_workspaces_status"
   end
 
   create_table "billing_accounts", force: :cascade do |t|
@@ -402,7 +402,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_150000) do
     t.datetime "updated_at", null: false
     t.index ["status"], name: "index_billing_accounts_on_status"
     t.check_constraint "default_currency::text ~ '^[A-Z]{3}$'::text", name: "chk_billing_accounts_currency"
-    t.check_constraint "status::text = ANY (ARRAY['active'::character varying, 'past_due'::character varying, 'suspended'::character varying, 'closed'::character varying]::text[])", name: "chk_billing_accounts_status"
+    t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'past_due'::character varying::text, 'suspended'::character varying::text, 'closed'::character varying::text])", name: "chk_billing_accounts_status"
   end
 
   create_table "billing_audit_events", force: :cascade do |t|
@@ -455,7 +455,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_150000) do
     t.datetime "updated_at", null: false
     t.index ["billing_plan_id", "currency", "interval", "interval_count"], name: "idx_billing_prices_unique_period", unique: true
     t.index ["billing_plan_id"], name: "index_billing_plan_prices_on_billing_plan_id"
-    t.check_constraint "\"interval\"::text = ANY (ARRAY['month'::character varying, 'year'::character varying]::text[])", name: "chk_billing_prices_interval"
+    t.check_constraint "\"interval\"::text = ANY (ARRAY['month'::character varying::text, 'year'::character varying::text])", name: "chk_billing_prices_interval"
     t.check_constraint "amount_cents >= 0", name: "chk_billing_prices_amount"
     t.check_constraint "currency::text ~ '^[A-Z]{3}$'::text", name: "chk_billing_prices_currency"
     t.check_constraint "interval_count > 0", name: "chk_billing_prices_interval_count"
@@ -473,7 +473,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_150000) do
     t.datetime "updated_at", null: false
     t.index ["code", "version"], name: "index_billing_plans_on_code_and_version", unique: true
     t.index ["status", "public"], name: "index_billing_plans_on_status_and_public"
-    t.check_constraint "status::text = ANY (ARRAY['draft'::character varying, 'active'::character varying, 'retired'::character varying]::text[])", name: "chk_billing_plans_status"
+    t.check_constraint "status::text = ANY (ARRAY['draft'::character varying::text, 'active'::character varying::text, 'retired'::character varying::text])", name: "chk_billing_plans_status"
     t.check_constraint "version > 0", name: "chk_billing_plans_version"
   end
 
@@ -492,13 +492,13 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_150000) do
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["billing_account_id"], name: "idx_billing_subscriptions_one_entitling", unique: true, where: "((status)::text = ANY ((ARRAY['trialing'::character varying, 'active'::character varying, 'past_due'::character varying, 'grace_period'::character varying])::text[]))"
+    t.index ["billing_account_id"], name: "idx_billing_subscriptions_one_entitling", unique: true, where: "((status)::text = ANY (ARRAY[('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text, ('grace_period'::character varying)::text]))"
     t.index ["billing_account_id"], name: "index_billing_subscriptions_on_billing_account_id"
     t.index ["billing_plan_id"], name: "index_billing_subscriptions_on_billing_plan_id"
     t.index ["billing_plan_price_id"], name: "index_billing_subscriptions_on_billing_plan_price_id"
     t.index ["provider", "external_id"], name: "idx_billing_subscriptions_provider_external", unique: true, where: "(external_id IS NOT NULL)"
     t.check_constraint "current_period_starts_at IS NULL OR current_period_ends_at IS NULL OR current_period_ends_at > current_period_starts_at", name: "chk_billing_subscriptions_period"
-    t.check_constraint "status::text = ANY (ARRAY['incomplete'::character varying, 'trialing'::character varying, 'active'::character varying, 'past_due'::character varying, 'grace_period'::character varying, 'suspended'::character varying, 'canceled'::character varying]::text[])", name: "chk_billing_subscriptions_status"
+    t.check_constraint "status::text = ANY (ARRAY['incomplete'::character varying::text, 'trialing'::character varying::text, 'active'::character varying::text, 'past_due'::character varying::text, 'grace_period'::character varying::text, 'suspended'::character varying::text, 'canceled'::character varying::text])", name: "chk_billing_subscriptions_status"
   end
 
   create_table "bulk_action_runs", force: :cascade do |t|
@@ -751,7 +751,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_150000) do
     t.index ["id", "account_id"], name: "index_captain_assistants_on_id_and_account_id", unique: true
     t.index ["legacy_scenario_id"], name: "index_captain_assistants_on_legacy_scenario_id", unique: true
     t.index ["usage_mode"], name: "index_captain_assistants_on_usage_mode"
-    t.check_constraint "channel_scope::text = ANY (ARRAY['all'::character varying, 'selected'::character varying]::text[])", name: "captain_assistants_channel_scope"
+    t.check_constraint "channel_scope::text = ANY (ARRAY['all'::character varying::text, 'selected'::character varying::text])", name: "captain_assistants_channel_scope"
   end
 
   create_table "captain_custom_tools", force: :cascade do |t|
@@ -889,7 +889,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_150000) do
     t.index ["account_id"], name: "index_captain_knowledge_grants_on_account_id"
     t.index ["assistant_id"], name: "index_captain_knowledge_grants_on_assistant_id"
     t.index ["knowledge_record_type", "knowledge_record_id", "assistant_id"], name: "idx_captain_knowledge_grants_record_assistant", unique: true
-    t.check_constraint "knowledge_record_type::text = ANY (ARRAY['Captain::Document'::character varying, 'Captain::AssistantResponse'::character varying]::text[])", name: "captain_knowledge_grants_record_type"
+    t.check_constraint "knowledge_record_type::text = ANY (ARRAY['Captain::Document'::character varying::text, 'Captain::AssistantResponse'::character varying::text])", name: "captain_knowledge_grants_record_type"
   end
 
   create_table "captain_mcp_servers", force: :cascade do |t|
@@ -1764,7 +1764,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_150000) do
     t.index ["pipeline_id"], name: "index_crm_stage_visits_on_pipeline_id"
     t.index ["stage_id"], name: "index_crm_stage_visits_on_stage_id"
     t.check_constraint "exited_at IS NULL OR exited_at >= entered_at", name: "crm_stage_visits_valid_interval"
-    t.check_constraint "terminal_attribution_version IS NULL AND owner_id_at_terminal IS NULL AND team_id_at_terminal IS NULL OR terminal_attribution_version IS NOT NULL AND terminal_attribution_version = 1 AND stage_outcome IS NOT NULL AND (stage_outcome::text = ANY (ARRAY['won'::character varying, 'lost'::character varying]::text[]))", name: "crm_stage_visits_terminal_attribution_valid"
+    t.check_constraint "terminal_attribution_version IS NULL AND owner_id_at_terminal IS NULL AND team_id_at_terminal IS NULL OR terminal_attribution_version IS NOT NULL AND terminal_attribution_version = 1 AND stage_outcome IS NOT NULL AND (stage_outcome::text = ANY (ARRAY['won'::character varying::text, 'lost'::character varying::text]))", name: "crm_stage_visits_terminal_attribution_valid"
   end
 
   create_table "crm_stages", force: :cascade do |t|
@@ -1786,7 +1786,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_150000) do
     t.index ["account_id", "pipeline_id", "position"], name: "index_crm_stages_on_account_pipeline_position"
     t.index ["account_id"], name: "index_crm_stages_on_account_id"
     t.index ["pipeline_id", "code"], name: "index_crm_stages_on_pipeline_id_and_code", unique: true
-    t.index ["pipeline_id", "outcome"], name: "index_crm_stages_on_pipeline_unique_active_terminal", unique: true, where: "((active = true) AND ((outcome)::text = ANY ((ARRAY['won'::character varying, 'lost'::character varying])::text[])))"
+    t.index ["pipeline_id", "outcome"], name: "index_crm_stages_on_pipeline_unique_active_terminal", unique: true, where: "((active = true) AND ((outcome)::text = ANY (ARRAY[('won'::character varying)::text, ('lost'::character varying)::text])))"
     t.index ["pipeline_id"], name: "index_crm_stages_on_pipeline_default_active", unique: true, where: "((\"default\" = true) AND (active = true))"
     t.index ["pipeline_id"], name: "index_crm_stages_on_pipeline_id"
   end
@@ -2506,8 +2506,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_150000) do
     t.datetime "executed_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["account_id", "appointment_id"], name: "idx_medelement_commands_unfinished_appointment", unique: true, where: "((appointment_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['awaiting_confirmation'::character varying, 'awaiting_patient_selection'::character varying, 'awaiting_patient_creation'::character varying, 'awaiting_phone_refresh'::character varying, 'queued'::character varying, 'processing'::character varying, 'reconciliation_required'::character varying, 'provider_status_unknown'::character varying, 'v2_awaiting_confirmation'::character varying, 'v2_awaiting_patient_selection'::character varying, 'v2_awaiting_patient_creation'::character varying, 'v2_awaiting_phone_refresh'::character varying, 'v2_queued'::character varying, 'v2_processing'::character varying, 'v2_reconciliation_required'::character varying, 'v2_provider_status_unknown'::character varying])::text[])))"
-    t.index ["account_id", "contact_id"], name: "idx_medelement_commands_unfinished_patient_identity", unique: true, where: "((contact_id IS NOT NULL) AND (((operation)::text = ANY ((ARRAY['create_patient'::character varying, 'update_patient'::character varying])::text[])) OR (((operation)::text = 'create_reception'::text) AND ((provider_patient_code IS NULL) OR ((provider_patient_code)::text = ''::text)))) AND ((status)::text = ANY ((ARRAY['awaiting_confirmation'::character varying, 'awaiting_patient_selection'::character varying, 'awaiting_patient_creation'::character varying, 'awaiting_phone_refresh'::character varying, 'queued'::character varying, 'processing'::character varying, 'reconciliation_required'::character varying, 'provider_status_unknown'::character varying, 'v2_awaiting_confirmation'::character varying, 'v2_awaiting_patient_selection'::character varying, 'v2_awaiting_patient_creation'::character varying, 'v2_awaiting_phone_refresh'::character varying, 'v2_queued'::character varying, 'v2_processing'::character varying, 'v2_reconciliation_required'::character varying, 'v2_provider_status_unknown'::character varying])::text[])))"
+    t.index ["account_id", "appointment_id"], name: "idx_medelement_commands_unfinished_appointment", unique: true, where: "((appointment_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('awaiting_confirmation'::character varying)::text, ('awaiting_patient_selection'::character varying)::text, ('awaiting_patient_creation'::character varying)::text, ('awaiting_phone_refresh'::character varying)::text, ('queued'::character varying)::text, ('processing'::character varying)::text, ('reconciliation_required'::character varying)::text, ('provider_status_unknown'::character varying)::text, ('v2_awaiting_confirmation'::character varying)::text, ('v2_awaiting_patient_selection'::character varying)::text, ('v2_awaiting_patient_creation'::character varying)::text, ('v2_awaiting_phone_refresh'::character varying)::text, ('v2_queued'::character varying)::text, ('v2_processing'::character varying)::text, ('v2_reconciliation_required'::character varying)::text, ('v2_provider_status_unknown'::character varying)::text])))"
+    t.index ["account_id", "contact_id"], name: "idx_medelement_commands_unfinished_patient_identity", unique: true, where: "((contact_id IS NOT NULL) AND (((operation)::text = ANY (ARRAY[('create_patient'::character varying)::text, ('update_patient'::character varying)::text])) OR (((operation)::text = 'create_reception'::text) AND ((provider_patient_code IS NULL) OR ((provider_patient_code)::text = ''::text)))) AND ((status)::text = ANY (ARRAY[('awaiting_confirmation'::character varying)::text, ('awaiting_patient_selection'::character varying)::text, ('awaiting_patient_creation'::character varying)::text, ('awaiting_phone_refresh'::character varying)::text, ('queued'::character varying)::text, ('processing'::character varying)::text, ('reconciliation_required'::character varying)::text, ('provider_status_unknown'::character varying)::text, ('v2_awaiting_confirmation'::character varying)::text, ('v2_awaiting_patient_selection'::character varying)::text, ('v2_awaiting_patient_creation'::character varying)::text, ('v2_awaiting_phone_refresh'::character varying)::text, ('v2_queued'::character varying)::text, ('v2_processing'::character varying)::text, ('v2_reconciliation_required'::character varying)::text, ('v2_provider_status_unknown'::character varying)::text])))"
     t.index ["account_id", "idempotency_key"], name: "idx_medelement_commands_account_idempotency", unique: true
     t.index ["account_id"], name: "index_medelement_provider_commands_on_account_id"
     t.index ["appointment_id", "status"], name: "idx_medelement_commands_appointment_status"
@@ -3453,14 +3453,18 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_150000) do
     t.index ["account_id", "conversation_id"], name: "index_telephony_call_sessions_on_account_conversation"
     t.index ["account_id", "created_at"], name: "index_telephony_call_sessions_on_account_created_at"
     t.index ["account_id", "external_call_ref"], name: "index_telephony_call_sessions_on_account_call_ref", unique: true
+    t.index ["account_id", "id"], name: "index_telephony_call_sessions_on_account_with_recordings", where: "((NULLIF((recording_ref)::text, ''::text) IS NOT NULL) OR ((metadata -> 'trash'::text) IS NOT NULL) OR ((metadata #> '{recording,retained_original}'::text[]) IS NOT NULL))"
     t.index ["account_id", "provider_call_sid"], name: "index_telephony_call_sessions_on_account_provider_sid", unique: true, where: "(provider_call_sid IS NOT NULL)"
     t.index ["account_id", "status", "direction"], name: "index_telephony_call_sessions_on_account_status_direction"
     t.index ["account_id"], name: "index_telephony_call_sessions_on_account_id"
     t.index ["agent_binding_id"], name: "index_telephony_call_sessions_on_agent_binding_id"
     t.index ["contact_id"], name: "index_telephony_call_sessions_on_contact_id"
     t.index ["conversation_id"], name: "index_telephony_call_sessions_on_conversation_id"
+    t.index ["external_call_ref"], name: "index_telephony_call_sessions_on_external_call_ref"
     t.index ["inbox_id"], name: "index_telephony_call_sessions_on_inbox_id"
     t.index ["number_binding_id"], name: "index_telephony_call_sessions_on_number_binding_id"
+    t.index ["provider", "status", "started_at", "created_at"], name: "index_telephony_call_sessions_on_active_status_started_at", where: "((status)::text <> ALL ((ARRAY['completed'::character varying, 'failed'::character varying, 'no_answer'::character varying, 'busy'::character varying, 'canceled'::character varying, 'rejected'::character varying, 'missed'::character varying])::text[]))"
+    t.index ["provider_call_sid"], name: "index_telephony_call_sessions_on_provider_call_sid", where: "(provider_call_sid IS NOT NULL)"
   end
 
   create_table "telephony_contact_endpoints", force: :cascade do |t|
@@ -3503,6 +3507,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_19_150000) do
     t.index ["account_id", "event_type", "created_at"], name: "index_telephony_events_on_account_event_type_created_at"
     t.index ["account_id"], name: "index_telephony_events_on_account_id"
     t.index ["call_session_id"], name: "index_telephony_events_on_call_session_id"
+    t.index ["created_at", "id"], name: "index_telephony_events_on_failed_status_created_at", where: "((status)::text = 'failed'::text)"
   end
 
   create_table "telephony_number_bindings", force: :cascade do |t|
