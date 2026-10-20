@@ -29,6 +29,18 @@ ru:
         submit: "Создать клиента"
         cancel: "Отмена"
         errors_title: "Клиент не создан, ничего не сохранено. Исправьте отмеченные поля: всё, что вы ввели, осталось на месте."
+        error_fields:
+          account_name: "Название аккаунта"
+          timezone: "Часовой пояс"
+          organization_mode: "Организация"
+          organization_id: "Организация"
+          organization_name: "Название организации"
+          organization_bin: "БИН"
+          modules: "Тариф"
+          admin_name: "Имя администратора"
+          admin_email: "E-mail администратора"
+          admin_access: "Доступ администратора"
+          admin_password: "Пароль администратора"
 
       account:
         title: "Аккаунт"

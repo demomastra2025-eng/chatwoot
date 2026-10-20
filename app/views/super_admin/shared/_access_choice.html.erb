@@ -25,7 +25,7 @@ The password is shown once more on the page that says «Готово» and is no
   access_key = :"#{local_assigns.fetch(:error_prefix, '')}access"
 %>
 
-<div class="flex flex-col gap-3" data-choice-group data-testid="access-choice" data-access-choice>
+<div class="flex flex-col gap-3" id="<%= scope %>_access" data-choice-group data-testid="access-choice" data-access-choice>
   <div class="flex flex-wrap items-center justify-between gap-2">
     <h3 class="m-0 text-heading-3 text-n-slate-12"><%= t('super_admin.onboarding.access.title') %></h3>
     <span class="admin-badge <%= mail_ok ? 'admin-badge--teal' : 'admin-badge--amber' %>" data-testid="mail-state" data-mail="<%= mail_ok ? 'on' : 'off' %>">

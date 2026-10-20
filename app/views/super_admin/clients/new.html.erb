@@ -21,6 +21,13 @@ the plan and are not asked) and its first administrator (an invitation by e-mail
   chosen_modules = Accounts::Plans.module_keys & form.modules
   trial_modules = Accounts::Plans.trial_modules.map { |key| Accounts::Plans.module_name(key) }.join(', ')
   adopt_offered = @conflict.present? || administrator.adopt
+  # Where each problem of the summary leads: the field (or the section) it is about
+  anchors = {
+    account_name: 'account_name', timezone: 'account_timezone', organization_mode: 'client-organization-title', organization_id: 'organization_id',
+    organization_name: 'organization_name', organization_bin: 'organization_bin', modules: 'client-plan-title', admin_name: 'admin_name',
+    admin_email: 'admin_email', admin_access: 'admin_access', admin_password: 'admin_password'
+  }
+  listed_errors = errors.except(:base).select { |field, _| anchors.key?(field) }
 %>
 <% content_for(:title) { t('super_admin.onboarding.page.title') } %>
 
@@ -39,6 +46,16 @@ the plan and are not asked) and its first administrator (an invitation by e-mail
         <p class="m-0 font-medium"><%= t('super_admin.onboarding.page.errors_title') %></p>
         <% if errors[:base].present? %>
           <p class="m-0 mt-1"><%= errors[:base] %></p>
+        <% end %>
+        <%# Every problem, and a link to its field: the field can be far down the page. %>
+        <% if listed_errors.any? %>
+          <ul class="m-0 mt-2 flex list-none flex-col gap-1 p-0" data-testid="client-error-list">
+            <% listed_errors.each do |field, message| %>
+              <li data-error-item="<%= field %>">
+                <a href="#<%= anchors[field] %>" class="font-medium underline" data-error-link><%= t("super_admin.onboarding.page.error_fields.#{field}") %></a>: <%= message %>
+              </li>
+            <% end %>
+          </ul>
         <% end %>
       </div>
     <% end %>
@@ -193,3 +210,20 @@ the plan and are not asked) and its first administrator (an invitation by e-mail
     </div>
   <% end %>
 </section>
+
+<%# A link of the summary of problems brings the field into the middle of the screen and puts the cursor in it (without the script it is a plain link to the field). %>
+<% if listed_errors.any? %>
+  <script>
+    (function () {
+      document.querySelectorAll('[data-error-link]').forEach(function (link) {
+        link.addEventListener('click', function (event) {
+          var target = document.getElementById(link.getAttribute('href').slice(1));
+          if (!target) return;
+          event.preventDefault();
+          target.scrollIntoView({ block: 'center' });
+          if (target.focus) target.focus({ preventScroll: true });
+        });
+      });
+    })();
+  </script>
+<% end %>

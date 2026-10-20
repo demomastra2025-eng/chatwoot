@@ -412,6 +412,42 @@ RSpec.describe 'Super Admin new client', type: :request do
       expect(error_for('admin_password')).to eq('Введите пароль или нажмите «Сгенерировать».')
     end
 
+    it 'lists every problem in the summary at the top, each a link to its field', :aggregate_failures do
+      create_client(account: { name: '' }, organization: { mode: 'new', name: '', bin: '123' },
+                    admin: { name: '', email: 'ivan@clinic', access: 'password', password: '' })
+
+      items = page.css('[data-testid="client-error-list"] li')
+      expect(items.map { |item| item['data-error-item'] }).to contain_exactly(
+        'account_name', 'organization_name', 'organization_bin', 'admin_name', 'admin_email', 'admin_password'
+      )
+      expect(text(items.find { |item| item['data-error-item'] == 'account_name' })).to eq('Название аккаунта: Введите название аккаунта.')
+      expect(text(items.find { |item| item['data-error-item'] == 'admin_email' })).to eq('E-mail администратора: Проверьте e-mail: в нём ошибка.')
+      items.each do |item|
+        target = item.at_css('a')['href'].delete_prefix('#')
+        expect(page.at_css("[id='#{target}']")).to be_present, "no field with the id #{target} for #{item['data-error-item']}"
+      end
+    end
+
+    it 'leads the problem of the way of access and the plan to their sections' do
+      allow(SuperAdmin::MailState).to receive(:configured?).and_return(false)
+
+      create_client(modules: %w[ghost])
+
+      anchors = page.css('[data-testid="client-error-list"] a').to_h { |link| [link.parent['data-error-item'], link['href']] }
+      expect(anchors).to include('modules' => '#client-plan-title', 'admin_access' => '#admin_access')
+      expect(page.at_css('#admin_access[data-access-choice]')).to be_present
+      expect(page.at_css('#client-plan-title')).to be_present
+    end
+
+    it 'puts no list into the summary for a problem that is no field of the page' do
+      allow(AccountUser).to receive(:create!).and_raise(ActiveRecord::StatementInvalid, 'boom')
+
+      create_client
+
+      expect(page.at_css('[data-testid="client-errors"]')).to be_present
+      expect(page.at_css('[data-testid="client-error-list"]')).to be_nil
+    end
+
     it 'does not take a long name' do
       create_client(account: { name: 'А' * 256 })
 
