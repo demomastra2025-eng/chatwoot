@@ -43,8 +43,6 @@ describe('buildAgentDraft', () => {
       model: 'smart-model',
       thinkingEffort: 'low',
       temperature: 0.4,
-      handoffTeamId: '',
-      bookingResourceIds: [],
     });
   });
 
@@ -56,29 +54,11 @@ describe('buildAgentDraft', () => {
       model: '',
       thinkingEffort: '',
       temperature: null,
-      handoffTeamId: '',
-      bookingResourceIds: [],
     });
   });
 });
 
 describe('isAgentDraftDirty', () => {
-  it('saves the handoff team and booking resource scope as config changes', () => {
-    const base = buildAgentDraft(assistant);
-    const draft = {
-      ...base,
-      handoffTeamId: '4',
-      bookingResourceIds: ['10', '11'],
-    };
-
-    expect(isAgentDraftDirty(base, draft)).toBe(true);
-    expect(buildAgentUpdatePayload(base, draft)).toEqual({
-      config: {
-        handoff_team_id: '4',
-        booking_scope: { resource_ids: [10, 11] },
-      },
-    });
-  });
 
   it('is clean for an untouched draft and ignores surrounding spaces', () => {
     const base = buildAgentDraft(assistant);

@@ -5,16 +5,13 @@ const ReportsWrapper = () => import('./components/ReportsWrapper.vue');
 const Index = () => import('./Index.vue');
 const AgentReportsIndex = () => import('./AgentReportsIndex.vue');
 const InboxReportsIndex = () => import('./InboxReportsIndex.vue');
-const TeamReportsIndex = () => import('./TeamReportsIndex.vue');
 const LabelReportsIndex = () => import('./LabelReportsIndex.vue');
 const AgentReportsShow = () => import('./AgentReportsShow.vue');
 const InboxReportsShow = () => import('./InboxReportsShow.vue');
-const TeamReportsShow = () => import('./TeamReportsShow.vue');
 const LabelReportsShow = () => import('./LabelReportsShow.vue');
 const AgentReports = () => import('./AgentReports.vue');
 const InboxReports = () => import('./InboxReports.vue');
 const LabelReports = () => import('./LabelReports.vue');
-const TeamReports = () => import('./TeamReports.vue');
 const CsatResponses = () => import('./CsatResponses.vue');
 const BotReports = () => import('./BotReports.vue');
 const WhatsappReports = () => import('./WhatsappReports.vue');
@@ -46,12 +43,6 @@ const oldReportRoutes = [
     name: 'label_reports',
     meta,
     component: LabelReports,
-  },
-  {
-    path: 'teams',
-    name: 'team_reports',
-    meta,
-    component: TeamReports,
   },
 ];
 
@@ -88,22 +79,6 @@ const revisedReportRoutes = [
       permissions: ['administrator', 'report_manage'],
     },
     component: InboxReportsShow,
-  },
-  {
-    path: 'teams_overview',
-    name: 'team_reports_index',
-    meta: {
-      permissions: ['administrator', 'report_manage'],
-    },
-    component: TeamReportsIndex,
-  },
-  {
-    path: 'teams/:id',
-    name: 'team_reports_show',
-    meta: {
-      permissions: ['administrator', 'report_manage'],
-    },
-    component: TeamReportsShow,
   },
   {
     path: 'labels_overview',

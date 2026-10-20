@@ -30,8 +30,8 @@ class Conversations::SidebarUnreadCountService
 
   private
 
-  def team_unread_counts(scope)
-    normalize_counts(scope.where.not(team_id: nil).group(:team_id).distinct.count('conversations.id'))
+  def team_unread_counts(_scope)
+    {}
   end
 
   def accessible_conversations

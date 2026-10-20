@@ -25,7 +25,6 @@ import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 import AgentPageHeader from 'dashboard/components-next/captain/agent/AgentPageHeader.vue';
 import AgentInstructionTab from 'dashboard/components-next/captain/agent/AgentInstructionTab.vue';
 import AgentFollowUpsTab from 'dashboard/components-next/captain/agent/AgentFollowUpsTab.vue';
-import AgentCheckTab from 'dashboard/components-next/captain/agent/AgentCheckTab.vue';
 import AgentVoiceTab from 'dashboard/components-next/captain/agent/AgentVoiceTab.vue';
 import { isVoiceAgent } from 'dashboard/components-next/captain/agent/agentVoice';
 import {
@@ -39,7 +38,6 @@ import {
 } from 'dashboard/components-next/captain/agent/agentDraft';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 import { useCaptainChannelMatrixStore } from 'dashboard/store/captain/channelMatrix';
-import SchedulingResourcesAPI from 'dashboard/api/scheduling/resources';
 
 // One AI agent: header (name, description, active, «Проверить», «Сохранить»)
 // and the tabs «Инструкция» · «Дожимы» · «Проверка» · «Голос», driven by the
@@ -47,7 +45,6 @@ import SchedulingResourcesAPI from 'dashboard/api/scheduling/resources';
 const TABS = Object.freeze({
   INSTRUCTION: 'instruction',
   FOLLOW_UPS: 'follow-ups',
-  CHECK: 'check',
   VOICE: 'voice',
 });
 
@@ -62,8 +59,6 @@ const channelMatrixStore = useCaptainChannelMatrixStore();
 
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
 const inboxes = useMapGetter('inboxes/getInboxes');
-const teams = useMapGetter('teams/getTeams');
-const bookingResources = ref([]);
 
 const isAdmin = computed(() => checkPermissions(['administrator']));
 const isPaywalled = computed(
@@ -185,7 +180,6 @@ const tabs = computed(() => [
         },
       ]
     : []),
-  { key: TABS.CHECK, label: t('CAPTAIN.AGENT_PAGE.TABS.CHECK') },
   ...(showVoiceTab.value
     ? [{ key: TABS.VOICE, label: t('CAPTAIN.AGENT_PAGE.TABS.VOICE') }]
     : []),
@@ -289,14 +283,6 @@ onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload);
   captainConfigStore.fetch();
   if (isAdmin.value) channelMatrixStore.fetch();
-  store.dispatch('teams/get');
-  SchedulingResourcesAPI.get()
-    .then(response => {
-      bookingResources.value = response.data?.payload || [];
-    })
-    .catch(() => {
-      bookingResources.value = [];
-    });
 });
 
 onBeforeUnmount(() => {
@@ -324,7 +310,6 @@ onBeforeUnmount(() => {
         :is-valid="validation.valid"
         :is-saving="isSaving"
         @save="save"
-        @check="setTab(TABS.CHECK)"
         @deleted="handleDeleted"
       />
     </template>
@@ -348,8 +333,6 @@ onBeforeUnmount(() => {
           v-show="activeTab === TABS.INSTRUCTION"
           v-model:draft="draft"
           :assistant="assistant"
-          :teams="teams"
-          :booking-resources="bookingResources"
           :errors="validation.errors"
           :show-errors="isDirty"
           :can-edit="isAdmin"
@@ -363,12 +346,6 @@ onBeforeUnmount(() => {
           :can-edit="isAdmin"
           @dirty-change="setTabDirty(TABS.FOLLOW_UPS, $event)"
           @saved="setTabDirty(TABS.FOLLOW_UPS, false)"
-        />
-        <AgentCheckTab
-          v-if="visitedTabs[TABS.CHECK]"
-          v-show="activeTab === TABS.CHECK"
-          :assistant="assistant"
-          :account-id="route.params.accountId"
         />
         <AgentVoiceTab
           v-if="showVoiceTab && visitedTabs[TABS.VOICE]"

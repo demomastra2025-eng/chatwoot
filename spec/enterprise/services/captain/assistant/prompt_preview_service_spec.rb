@@ -10,7 +10,7 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
     it 'strictly compiles main, copilot and routed prompts with the rules and the instruction, and no glossary' do
       assistant.update!(description: 'Use [Name](field://contact.name) and [@FAQ](tool://faq_lookup).')
       create(:captain_assistant, account: account, description: 'Use [Email](field://contact.email).',
-                                 config: { 'handoff_team_id' => create(:team, account: account).id })
+                                 config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['add_private_note'] } } })
 
       preview = described_class.new(assistant: assistant).preview
 
@@ -97,21 +97,22 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
     it 'shows the routed agent own prompt without importing its tools or instructions into the entry agent' do
       custom = create(:captain_custom_tool, account: account, slug: 'custom_peer_only', title: 'Peer tool')
       target = create(:captain_assistant, account: account, description: "Own peer prompt: [Peer tool](tool://#{custom.slug})",
-                                          config: { 'handoff_team_id' => create(:team, account: account).id })
+                                          config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['add_private_note'] } } })
       preview = described_class.new(assistant: assistant).preview
       expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
       expect(preview.dig(:assistant, :compiled_prompt)).not_to include('Own peer prompt', custom.slug)
       expect(preview.dig(:scenarios, 0, :id)).to eq(target.id)
       expect(preview.dig(:scenarios, 0, :compiled_prompt)).to include('Own peer prompt', custom.slug)
       expect(preview.dig(:scenarios, 0, :compiled_prompt)).not_to include('Handle billing questions only.')
-      expect(preview.dig(:scenarios, 0, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation', custom.slug)
+      expect(preview.dig(:scenarios, 0,
+                         :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation', 'add_private_note', custom.slug)
     end
 
     it 'lists every active external agent regardless of stored handoff lists or legacy channel scope' do
       shared = create(:captain_assistant, account: account, name: 'Shared agent', routing_description: 'Prices',
-                                          config: { 'handoff_team_id' => create(:team, account: account, name: 'Prices Team').id })
+                                          config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['add_private_note'] } } })
       stored_only = create(:captain_assistant, account: account, name: 'Selected agent', routing_description: 'Records', channel_scope: 'selected',
-                                               config: { 'handoff_team_id' => create(:team, account: account, name: 'Records Team').id })
+                                               config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['add_private_note'] } } })
       assistant.update!(handoff_agent_ids: [stored_only.id])
 
       preview = described_class.new(assistant: assistant).preview
@@ -144,19 +145,19 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
         title: 'Fetch Order'
       )
       create(:captain_assistant, account: account, description: 'Use [@Fetch Order](tool://custom_fetch-order)',
-                                 config: { 'handoff_team_id' => create(:team, account: account).id })
+                                 config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['add_private_note'] } } })
 
       custom_tool.update!(enabled: false)
 
       preview = described_class.new(assistant: assistant).preview
 
-      expect(preview.dig(:scenarios, 0, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
+      expect(preview.dig(:scenarios, 0, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation', 'add_private_note')
       expect(preview.dig(:scenarios, 0, :layers)).to include(
         include(
           id: 'tool_ids',
           title: 'Runtime tool IDs',
           enabled: true,
-          values: contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
+          values: contain_exactly('faq_lookup', 'handoff', 'resolve_conversation', 'add_private_note')
         )
       )
     end

@@ -29,7 +29,7 @@ const props = defineProps({
   isSaving: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['update:draft', 'save', 'check', 'deleted']);
+const emit = defineEmits(['update:draft', 'save', 'deleted']);
 
 const { t } = useI18n();
 const route = useRoute();
@@ -294,15 +294,6 @@ const handleMenuAction = ({ action }) => {
               : t('CAPTAIN.ASSISTANTS.ROUTING.INACTIVE_STATUS')
           }}
         </span>
-        <Button
-          :label="t('CAPTAIN.AGENT_PAGE.CHECK')"
-          icon="i-lucide-message-circle"
-          color="slate"
-          variant="faded"
-          size="sm"
-          data-test="agent-check"
-          @click="emit('check')"
-        />
         <Button
           v-if="canEdit"
           :label="t('CAPTAIN.AGENT_PAGE.SAVE')"

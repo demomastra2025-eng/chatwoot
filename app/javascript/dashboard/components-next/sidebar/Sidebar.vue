@@ -752,12 +752,6 @@ const newReportRoutes = () => [
     to: accountScopedRoute('inbox_reports_index'),
     activeOn: ['inbox_reports_show'],
   },
-  {
-    name: 'Reports Team',
-    label: t('SIDEBAR.REPORTS_TEAM'),
-    to: accountScopedRoute('team_reports_index'),
-    activeOn: ['team_reports_show'],
-  },
 ];
 
 const reportRoutes = computed(() => newReportRoutes());
@@ -976,14 +970,6 @@ const buildSettingsMenuItems = () =>
       to: accountScopedRoute('agent_list'),
     },
     {
-      name: 'Teams',
-      visibilityKey: 'MyCompany:Teams',
-      label: t('EMPLOYEE_SETTINGS.TABS.TEAM'),
-      icon: 'i-lucide-users-round',
-      activeOn: activeOnForEmployeeTab('settings_teams_list'),
-      to: accountScopedRoute('settings_teams_list'),
-    },
-    {
       name: 'Roles',
       visibilityKey: 'MyCompany:Roles',
       label: t('EMPLOYEE_SETTINGS.TABS.ROLES'),
@@ -1110,29 +1096,6 @@ const menuItems = computed(() => {
               ),
             })),
           },
-          {
-            name: 'Teams',
-            visibilityKey: 'Conversation:Teams',
-            label: t('SIDEBAR.TEAMS'),
-            icon: 'i-lucide-users',
-            active: hasRouteTeamScopeAny(),
-            to: withTeamScopeToggle(),
-            suppressExactPathActive: true,
-            activeOn: [],
-            suppressHeaderActiveWhenChildActive: true,
-            children: teams.value.map(team => ({
-              name: `${team.name}-${team.id}`,
-              label: team.name,
-              badge: teamUnreadCount(team.id),
-              to: withConversationStatus(
-                'team_conversations',
-                {
-                  teamId: team.id,
-                },
-                exclusiveConversationScopeQuery()
-              ),
-            })),
-          },
           ...(labels.value.length
             ? [
                 {
@@ -1208,6 +1171,13 @@ const menuItems = computed(() => {
             label: t('CAPTAIN.NAV.AGENTS'),
             activeOn: ['captain_agents_index', 'captain_agent_show'],
             to: accountScopedRoute('captain_agents_index'),
+          },
+          {
+            name: 'Sandbox',
+            visibilityKey: 'Captain:Sandbox',
+            label: t('CAPTAIN.NAV.SANDBOX'),
+            activeOn: ['captain_playground_index'],
+            to: accountScopedRoute('captain_playground_index'),
           },
           ...(checkPermissions(['administrator'])
             ? [
@@ -1487,7 +1457,6 @@ const menuItems = computed(() => {
               'Reports Agent': 'Reports:Agent',
               'Reports Label': 'Reports:Label',
               'Reports Inbox': 'Reports:Inbox',
-              'Reports Team': 'Reports:Team',
             }[reportRoute.name],
           })),
           {

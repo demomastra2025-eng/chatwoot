@@ -720,7 +720,6 @@ class ActionCableConnector extends BaseActionCableConnector {
     const keys = data.cache_keys;
     this.app.$store.dispatch('labels/revalidate', { newKey: keys.label });
     this.app.$store.dispatch('inboxes/revalidate', { newKey: keys.inbox });
-    this.app.$store.dispatch('teams/revalidate', { newKey: keys.team });
   };
 
   // eslint-disable-next-line class-methods-use-this

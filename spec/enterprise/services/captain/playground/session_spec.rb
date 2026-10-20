@@ -214,12 +214,12 @@ RSpec.describe Captain::Playground::Session do
     end
   end
 
-  it 'works alone without a chosen channel: other agents of the workspace are not reachable' do
+  it 'reaches other active external agents of the workspace even without a chosen channel' do
     destination = create(:captain_assistant, account: account)
     session.with_lock do |workspace|
       expect(workspace.routing_inbox).to be_nil
-      expect { workspace.activate_agent!(destination) }.to raise_error(Pundit::NotAuthorizedError, /no longer reachable/)
-      expect(workspace.assistant).to eq(assistant)
+      expect(workspace.activate_agent!(destination)).to eq(destination)
+      expect(workspace.assistant).to eq(destination)
     end
   end
 

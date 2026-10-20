@@ -262,9 +262,12 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
 
     it 'builds one lazy runtime agent per channel agent and wires them together' do
-      assistant.update!(config: assistant.config.to_h.merge('handoff_team_id' => create(:team, account: account).id))
-      scenario.update!(config: scenario.config.to_h.merge('handoff_team_id' => create(:team, account: account).id))
-      second_scenario.update!(config: second_scenario.config.to_h.merge('handoff_team_id' => create(:team, account: account).id))
+      assistant.update!(config: (assistant.config || {}).merge('tool_access' => { 'agent' => { 'enabled' => true,
+                                                                                               'tool_ids' => ['add_private_note'] } }))
+      scenario.update!(config: (scenario.config || {}).merge('tool_access' => { 'agent' => { 'enabled' => true,
+                                                                                             'tool_ids' => ['add_contact_note'] } }))
+      second_scenario.update!(config: (second_scenario.config || {}).merge('tool_access' => { 'agent' => { 'enabled' => true,
+                                                                                                           'tool_ids' => ['update_priority'] } }))
       agents = capture_runtime_agents
 
       service.generate_response(message_history: message_history)
@@ -275,9 +278,12 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
 
     it 'wires the agents of the channel for direct handoff without any saved handoff edges' do
-      assistant.update!(config: assistant.config.to_h.merge('handoff_team_id' => create(:team, account: account).id))
-      scenario.update!(config: scenario.config.to_h.merge('handoff_team_id' => create(:team, account: account).id))
-      second_scenario.update!(config: second_scenario.config.to_h.merge('handoff_team_id' => create(:team, account: account).id))
+      assistant.update!(config: (assistant.config || {}).merge('tool_access' => { 'agent' => { 'enabled' => true,
+                                                                                               'tool_ids' => ['add_private_note'] } }))
+      scenario.update!(config: (scenario.config || {}).merge('tool_access' => { 'agent' => { 'enabled' => true,
+                                                                                             'tool_ids' => ['add_contact_note'] } }))
+      second_scenario.update!(config: (second_scenario.config || {}).merge('tool_access' => { 'agent' => { 'enabled' => true,
+                                                                                                           'tool_ids' => ['update_priority'] } }))
       assistant.update!(handoff_agent_ids: [])
       scenario.update!(handoff_agent_ids: [])
       agents = capture_runtime_agents

@@ -45,7 +45,6 @@ const filterListMenuItems = computed(() => {
     { id: '1', name: t('SLA_REPORTS.DROPDOWN.SLA'), type: 'sla' },
     { id: '2', name: t('SLA_REPORTS.DROPDOWN.INBOXES'), type: 'inboxes' },
     { id: '3', name: t('SLA_REPORTS.DROPDOWN.AGENTS'), type: 'agents' },
-    { id: '4', name: t('SLA_REPORTS.DROPDOWN.TEAMS'), type: 'teams' },
     { id: '5', name: t('SLA_REPORTS.DROPDOWN.LABELS'), type: 'labels' },
   ];
 

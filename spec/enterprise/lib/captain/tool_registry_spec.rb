@@ -66,7 +66,6 @@ RSpec.describe Captain::ToolRegistry do
         'create_contact',
         'complete_task',
         'merge_contacts',
-
         'list_macros',
         'get_macro',
         'create_macro',
@@ -285,11 +284,6 @@ RSpec.describe Captain::ToolRegistry do
       update_user_availability
       deactivate_user
       reactivate_user
-      assign_user_to_team
-      remove_user_from_team
-      create_team
-      update_team
-      archive_team
       list_inboxes
       list_assignment_policies
       set_inbox_assignment_policy
@@ -306,7 +300,6 @@ RSpec.describe Captain::ToolRegistry do
       set_automation_rule_status
       delete_automation_rule
       list_account_users
-      list_teams
       list_inboxes
       list_assignment_policies
       get_account_health

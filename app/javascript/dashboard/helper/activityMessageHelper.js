@@ -7,6 +7,8 @@ const EXACT_ACTIVITY_TRANSLATION_KEYS = {
 
 const DEFAULT_POLICY_ASSIGNED_PATTERN =
   /^Политика по умолчанию назначил (?<assigneeName>.+) ответственным$/;
+const SHORT_RU_DEFAULT_POLICY_ASSIGNED_PATTERN =
+  /^Назначен:\s+(?<assigneeName>.+?)\.?$/;
 const LEGACY_RU_ASSIGNEE_ASSIGNED_PATTERN =
   /^Назначен ответственный: (?<assigneeName>.+)\. Инициатор: (?<initiatorName>.+)$/;
 const LEGACY_EN_ASSIGNEE_ASSIGNED_PATTERN =
@@ -15,6 +17,10 @@ const CURRENT_RU_ASSIGNEE_ASSIGNED_PATTERN =
   /^Назначен: (?<assigneeName>.+)\.\nИнициатор: (?<initiatorName>.+)$/;
 const CURRENT_EN_ASSIGNEE_ASSIGNED_PATTERN =
   /^Assigned: (?<assigneeName>.+)\.\nInitiator: (?<initiatorName>.+)$/;
+const ACTIVE_RU_ASSIGNEE_ASSIGNED_PATTERN =
+  /^(?<initiatorName>.+?) назначил (?<assigneeName>.+?)(?: ответственным)?$/;
+const LEGACY_RU_ASSIGNEE_REMOVED_PATTERN =
+  /^Ответственный снят (?<initiatorName>.+)$/;
 const CURRENT_RU_CAPTAIN_OPEN_WITH_REASON_PATTERN =
   /^Диалог был открыт (?<userName>.+?) \((?<reason>.+)\)$/u;
 const CURRENT_EN_CAPTAIN_OPEN_WITH_REASON_PATTERN =
@@ -49,7 +55,7 @@ const normalizePolicyInitiator = (initiatorName, translate) => {
 };
 
 const formatAssignedActivity = (translate, assigneeName, initiatorName) => {
-  const normalizedAssigneeName = assigneeName.trim();
+  const normalizedAssigneeName = assigneeName.trim().replace(/\.$/, '');
 
   if (isPolicyInitiator(initiatorName, translate)) {
     return translate('CONVERSATION.ACTIVITY.ASSIGNEE.DEFAULT_POLICY_ASSIGNED', {
@@ -59,6 +65,12 @@ const formatAssignedActivity = (translate, assigneeName, initiatorName) => {
 
   return translate('CONVERSATION.ACTIVITY.ASSIGNEE.ASSIGNED_BY', {
     assigneeName: normalizedAssigneeName,
+    initiatorName: normalizePolicyInitiator(initiatorName, translate),
+  });
+};
+
+const formatRemovedActivity = (translate, initiatorName) => {
+  return translate('CONVERSATION.ACTIVITY.ASSIGNEE.REMOVED_BY', {
     initiatorName: normalizePolicyInitiator(initiatorName, translate),
   });
 };
@@ -137,9 +149,9 @@ export const getLocalizedActivityMessage = (
     EXACT_ACTIVITY_TRANSLATION_KEYS[normalizedContent];
   if (exactTranslationKey) return translate(exactTranslationKey);
 
-  const defaultPolicyMatch = normalizedContent.match(
-    DEFAULT_POLICY_ASSIGNED_PATTERN
-  );
+  const defaultPolicyMatch =
+    normalizedContent.match(DEFAULT_POLICY_ASSIGNED_PATTERN) ||
+    normalizedContent.match(SHORT_RU_DEFAULT_POLICY_ASSIGNED_PATTERN);
   if (defaultPolicyMatch?.groups?.assigneeName) {
     return formatAssignedActivity(
       translate,
@@ -150,7 +162,8 @@ export const getLocalizedActivityMessage = (
 
   const currentAssignedMatch =
     normalizedContent.match(CURRENT_RU_ASSIGNEE_ASSIGNED_PATTERN) ||
-    normalizedContent.match(CURRENT_EN_ASSIGNEE_ASSIGNED_PATTERN);
+    normalizedContent.match(CURRENT_EN_ASSIGNEE_ASSIGNED_PATTERN) ||
+    normalizedContent.match(ACTIVE_RU_ASSIGNEE_ASSIGNED_PATTERN);
   if (currentAssignedMatch?.groups?.assigneeName) {
     return formatAssignedActivity(
       translate,
@@ -167,6 +180,16 @@ export const getLocalizedActivityMessage = (
       translate,
       legacyAssignedMatch.groups.assigneeName,
       legacyAssignedMatch.groups.initiatorName
+    );
+  }
+
+  const legacyRemovedMatch = normalizedContent.match(
+    LEGACY_RU_ASSIGNEE_REMOVED_PATTERN
+  );
+  if (legacyRemovedMatch?.groups?.initiatorName) {
+    return formatRemovedActivity(
+      translate,
+      legacyRemovedMatch.groups.initiatorName
     );
   }
 

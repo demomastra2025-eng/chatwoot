@@ -10,11 +10,13 @@ import {
   redirectToAgents,
   redirectToAiSettings,
   redirectToChannels,
+  redirectToPlayground,
 } from './captainLegacyRedirects';
 
 const CaptainPageRouteView = () => import('./pages/CaptainPageRouteView.vue');
 const AgentsIndex = () => import('./agents/Index.vue');
 const AgentPage = () => import('./agents/AgentPage.vue');
+const PlaygroundIndex = () => import('./playground/Index.vue');
 const ChannelsIndex = () => import('./channels/Index.vue');
 const AiSettingsIndex = () => import('./aiSettings/Index.vue');
 const DocumentsIndex = () => import('./documents/Index.vue');
@@ -66,6 +68,12 @@ const agentRoutes = [
     name: 'captain_agent_show',
     meta,
     beforeEnter: redirectHiddenAssistant,
+  },
+  {
+    path: frontendURL('accounts/:accountId/captain/playground'),
+    component: PlaygroundIndex,
+    name: 'captain_playground_index',
+    meta,
   },
   {
     path: frontendURL('accounts/:accountId/captain/channels'),
@@ -210,7 +218,7 @@ const legacyAgentRoutes = [
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/playground'),
-    redirect: redirectToAgentPage(AGENT_PAGE_TABS.CHECK),
+    redirect: redirectToPlayground,
     name: 'captain_assistants_playground_index',
     meta,
   },

@@ -11,6 +11,7 @@ const props = defineProps({
   models: { type: Array, default: () => [] },
   disabled: { type: Boolean, default: false },
   defaultLabel: { type: String, default: '' },
+  hideDefaultEffort: { type: Boolean, default: false },
   // One column (narrow side blocks, e.g. the agent page «Модель» block).
   stacked: { type: Boolean, default: false },
   // Label of the model select; empty keeps the playground wording.
@@ -27,10 +28,15 @@ const supportsTemperature = computed(
 );
 const efforts = computed(() => props.metadata?.reasoning_efforts || []);
 const effortOptions = computed(() => [
-  {
-    value: '',
-    label: props.defaultLabel || t('CAPTAIN.MODEL_SETTINGS.PROVIDER_DEFAULT'),
-  },
+  ...(props.hideDefaultEffort
+    ? []
+    : [
+        {
+          value: '',
+          label:
+            props.defaultLabel || t('CAPTAIN.MODEL_SETTINGS.PROVIDER_DEFAULT'),
+        },
+      ]),
   ...efforts.value.map(value => ({
     value,
     label: t(`CAPTAIN.PLAYGROUND.REASONING_${value.toUpperCase()}`),

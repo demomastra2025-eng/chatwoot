@@ -167,7 +167,6 @@ const stageRequirementFieldOptions = computed(() => [
   { key: 'title', label: t('CRM.DEALS.FORM.TITLE') },
   { key: 'description', label: t('CRM.DEALS.FORM.DESCRIPTION') },
   { key: 'owner_id', label: t('CRM.DEALS.FORM.OWNER') },
-  { key: 'team_id', label: t('CRM.DEALS.FORM.TEAM') },
   { key: 'company_id', label: t('CRM.DEALS.FORM.COMPANY') },
   { key: 'primary_contact_id', label: t('CRM.DEALS.FORM.PRIMARY_CONTACT') },
   { key: 'amount_minor', label: t('CRM.DEALS.FORM.AMOUNT') },

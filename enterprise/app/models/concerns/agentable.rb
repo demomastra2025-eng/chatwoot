@@ -109,7 +109,7 @@ module Concerns::Agentable
       ).variables
     end
     variables = variables.merge(human_handoff_enabled: false) if part || suggestion
-    variables = variables.merge(reply_suggestion_mode: true) if suggestion
+    variables = variables.merge(reply_suggestion_mode: suggestion ? true : false)
 
     time_agent_phase('prompt_render') do
       Captain::PromptRenderer.render(template_name, enhanced_context.merge(variables).with_indifferent_access)

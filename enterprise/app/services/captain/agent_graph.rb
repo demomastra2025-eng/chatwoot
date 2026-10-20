@@ -80,11 +80,11 @@ class Captain::AgentGraph
 
   private
 
-  # Without a text channel, or for an agent that is not external, there are no peers.
+  # For an external agent on a text channel or in the workspace sandbox, every active external agent is a peer.
   def channel_members
-    return [] unless inbox && entry.external_agent?
+    return [] unless entry.external_agent?
 
-    return [] if inbox.channel_type == 'Channel::Voice'
+    return [] if inbox&.channel_type == 'Channel::Voice'
 
     Captain::Assistant.entry_eligible.where(account_id: entry.account_id).order(:id).to_a
   end

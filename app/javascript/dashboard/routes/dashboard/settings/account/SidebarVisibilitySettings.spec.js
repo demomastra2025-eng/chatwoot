@@ -121,7 +121,7 @@ describe('SidebarVisibilitySettings', () => {
   it('keeps conversation navigation choices when saving the menu', async () => {
     currentAccount.value = {
       settings: {
-        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Conversation:Teams'],
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Conversation:Labels'],
         [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
           SIDEBAR_VISIBILITY_CURRENT_VERSION,
       },
@@ -133,7 +133,7 @@ describe('SidebarVisibilitySettings', () => {
 
     expect(
       updateAccount.mock.calls[0][0][SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]
-    ).toEqual(['Conversation:Teams', 'Contacts']);
+    ).toEqual(['Conversation:Labels', 'Contacts']);
   });
 
   it('reports a failed save', async () => {

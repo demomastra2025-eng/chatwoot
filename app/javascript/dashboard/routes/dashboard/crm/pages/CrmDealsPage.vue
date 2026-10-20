@@ -519,9 +519,7 @@ const teamOptions = computed(() =>
   }))
 );
 
-const shouldShowTeamField = computed(
-  () => teamOptions.value.length > 0 || !!form.teamId
-);
+const shouldShowTeamField = computed(() => false);
 
 const drawerModalClass = computed(() => {
   if (isDealPage.value) {

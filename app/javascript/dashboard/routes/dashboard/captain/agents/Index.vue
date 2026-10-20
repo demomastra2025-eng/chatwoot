@@ -103,6 +103,13 @@ const openAgent = agent => {
   });
 };
 
+const openSandbox = () => {
+  router.push({
+    name: 'captain_playground_index',
+    params: { accountId: route.params.accountId },
+  });
+};
+
 const handleToggleActive = async (agent, active) => {
   if (!active && mainAgentId.value === Number(agent.id)) return;
   const saved = await setActive(agent, active);
@@ -182,10 +189,20 @@ onMounted(() => {
     <template #body>
       <div class="flex flex-col gap-4 pb-6">
         <div
-          v-if="isAdmin && toggleableAgents.length"
-          class="flex items-center justify-end"
+          v-if="agents.length"
+          class="flex flex-wrap items-center justify-end gap-2"
         >
           <Button
+            :label="t('CAPTAIN.NAV.SANDBOX')"
+            icon="i-lucide-message-circle"
+            color="slate"
+            variant="faded"
+            size="sm"
+            data-testid="agents-open-sandbox"
+            @click="openSandbox"
+          />
+          <Button
+            v-if="isAdmin && toggleableAgents.length"
             :label="
               hasActiveToggleableAgents
                 ? t('CAPTAIN.GALLERY.DISABLE_ALL_AGENTS')

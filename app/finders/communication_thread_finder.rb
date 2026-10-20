@@ -407,12 +407,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def team_unread_counts
-    scope = scoped_thread_relation(
-      { include_team: false, include_assignee: true, include_unread: false },
-      base_scope: base_thread_scope.where.not(team_id: nil)
-    )
-
-    normalize_counts(unread_thread_scope(scope).group(:team_id).count)
+    {}
   end
 
   def unread_thread_scope(scope)

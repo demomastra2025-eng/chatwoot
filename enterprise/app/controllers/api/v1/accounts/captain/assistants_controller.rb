@@ -152,12 +152,12 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
            status: :unprocessable_entity
   end
 
-  def with_model_metadata_snapshot
+  def with_model_metadata_snapshot(&)
     return yield if @assistant.internal_assistant?
 
     Llm::Config.with_runtime_cache do
       Llm::OpenRouterModelCatalog.with_model_configs_snapshot do
-        Llm::OpenRouterEndpointCatalog.with_endpoint_configs_snapshot { yield }
+        Llm::OpenRouterEndpointCatalog.with_endpoint_configs_snapshot(&)
       end
     end
   end
@@ -197,8 +197,6 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
 
     merge_optional_config_param!(permitted, :context_access)
     merge_optional_config_param!(permitted, :tool_access)
-    merge_optional_config_param!(permitted, :handoff_team_id)
-    merge_optional_config_param!(permitted, :booking_scope)
     merge_optional_config_param!(permitted, :follow_up_settings)
     merge_optional_config_param!(permitted, :outcome_reason_settings)
     merge_optional_config_param!(permitted, :voice_settings, voice_settings: true)
@@ -362,7 +360,11 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     action = attributes[:playground_action].presence || 'message'
     raise ArgumentError, 'Invalid Playground action' unless %w[message session reset permissions confirm].include?(action)
     raise ArgumentError, 'The Playground caller always stays synthetic' if attributes[:conversation_id].present?
-    raise ArgumentError, 'External delivery is unavailable in Playground' if ActiveModel::Type::Boolean.new.cast(attributes[:external_delivery_enabled])
+
+    if ActiveModel::Type::Boolean.new.cast(attributes[:external_delivery_enabled])
+      raise ArgumentError,
+            'External delivery is unavailable in Playground'
+    end
 
     session = Captain::Playground::Session.new(
       assistant: @assistant, account: Current.account, user: Current.user, mode: mode, session_id: attributes[:playground_session_id]

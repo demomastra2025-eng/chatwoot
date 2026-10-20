@@ -59,7 +59,6 @@ describe('sidebarVisibility', () => {
         'Conversation:AppointmentStatuses',
         'Conversation:AppointmentStatus:no_show',
         'Conversation:Folders',
-        'Conversation:Teams',
         'Conversation:Organization',
         'Conversation:Labels',
       ])
@@ -100,14 +99,14 @@ describe('sidebarVisibility', () => {
           'Conversation:Open',
           'Conversation:Snoozed',
           'Conversation:Resolved',
-          'Conversation:Teams',
+          'Conversation:Labels',
         ],
         [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]: version,
       };
 
-      expect(getSidebarHiddenItems(settings)).toEqual(['Conversation:Teams']);
+      expect(getSidebarHiddenItems(settings)).toEqual(['Conversation:Labels']);
       expect(getConversationSidebarHiddenItems(settings)).toEqual([
-        'Conversation:Teams',
+        'Conversation:Labels',
       ]);
     }
   );
@@ -253,11 +252,11 @@ describe('sidebarVisibility', () => {
           'Captain:Prompts',
           'MyCompany:Tags',
           'Reports',
-          'Conversation:Teams',
+          'Conversation:Labels',
           'Unknown',
         ])
       )
-    ).toEqual(['Conversation:Teams', 'Reports']);
+    ).toEqual(['Conversation:Labels', 'Reports']);
   });
 
   it('migrates the legacy default pipeline key', () => {
@@ -410,12 +409,12 @@ describe('sidebarVisibility', () => {
         visibilityKey: 'Conversation:Assignee:unassigned',
       },
       { name: 'Folders', visibilityKey: 'Conversation:Folders' },
-      { name: 'Teams', visibilityKey: 'Conversation:Teams' },
+      { name: 'Labels', visibilityKey: 'Conversation:Labels' },
     ];
     const settings = currentSettings([
       'Conversation:Assignee',
       'Conversation:Assignee:all',
-      'Conversation:Teams',
+      'Conversation:Labels',
     ]);
 
     expect(filterSidebarMenuItems(items, settings)).toEqual([
@@ -509,7 +508,7 @@ describe('sidebarVisibility', () => {
     it('opens the new settings with the saved lists and saves them back unchanged', () => {
       const settings = legacySettings([
         'Conversation:Assignee:unassigned',
-        'Conversation:Teams',
+        'Conversation:Labels',
       ]);
       const state = buildSidebarVisibilityState(settings);
 
@@ -524,7 +523,7 @@ describe('sidebarVisibility', () => {
       );
       expect(getConversationSidebarHiddenItems(settings)).toEqual([
         'Conversation:Assignee:unassigned',
-        'Conversation:Teams',
+        'Conversation:Labels',
       ]);
       // The company Navigation page saves the whole list: nothing is lost.
       expect(getSidebarHiddenItemsFromState(state)).toEqual(

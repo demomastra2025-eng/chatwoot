@@ -40,27 +40,11 @@ module Captain::Runtime::TransferCapabilities
   def useful?(source, target)
     source_ids = Array(source.tool_ids).map(&:to_s)
     target_ids = Array(target.tool_ids).map(&:to_s)
-    (target_ids - source_ids).any? { |id| write_tool?(id) } ||
-      (target.handoff_team_id.present? && target.handoff_team_id != source.handoff_team_id) ||
-      booking_reach?(source, target, source_ids, target_ids)
-  end
-
-  def booking_reach?(source, target, source_ids, target_ids)
-    return false unless target_ids.intersect?(%w[create_appointment update_appointment])
-    return false unless source_ids.intersect?(%w[create_appointment update_appointment])
-
-    source_scope = Array(source.booking_resource_ids)
-    target_scope = Array(target.booking_resource_ids)
-    source_scope.any? && (target_scope.empty? || (target_scope - source_scope).any?)
+    (target_ids - source_ids).any? { |id| write_tool?(id) }
   end
 
   def actions(source, target)
-    phrases = write_phrases(source, target)
-    if target.handoff_team_id.present? && target.handoff_team_id != source.handoff_team_id
-      phrases << "hands the conversation to the team «#{target.handoff_team_name}»"
-    end
-    phrases << 'books specialists and rooms outside your booking scope' if booking_reach?(source, target, source.tool_ids, target.tool_ids)
-    phrases.join('; ')
+    write_phrases(source, target).join('; ')
   end
 
   def write_phrases(source, target)

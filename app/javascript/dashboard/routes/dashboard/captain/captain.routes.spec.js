@@ -107,6 +107,7 @@ describe('captain routes', () => {
     it.each([
       [`${BASE}/agents`, 'captain_agents_index'],
       [`${BASE}/agents/2`, 'captain_agent_show'],
+      [`${BASE}/playground`, 'captain_playground_index'],
       [`${BASE}/channels`, 'captain_channels_index'],
       [`${BASE}/settings`, 'captain_ai_settings_index'],
       [`${BASE}/faqs`, 'captain_assistants_responses_index'],
@@ -178,12 +179,11 @@ describe('captain routes', () => {
       }
     );
 
-    it('opens the «Проверка» tab from the former playground page', async () => {
+    it('opens the shared «Песочница» page from the former per-agent playground page', async () => {
       const route = await open(`${BASE}/2/playground?source=legacy`);
 
-      expect(route.name).toBe('captain_agent_show');
-      expect(route.params.assistantId).toBe('2');
-      expect(route.query).toEqual({ source: 'legacy', tab: 'check' });
+      expect(route.name).toBe('captain_playground_index');
+      expect(route.query).toEqual({ source: 'legacy' });
     });
 
     it('opens the «Дожимы» tab from the former follow-ups page', async () => {
@@ -253,8 +253,7 @@ describe('captain routes', () => {
         params: { accountId: '1', assistantId: '2' },
       });
 
-      expect(route.name).toBe('captain_agent_show');
-      expect(route.query).toEqual({ tab: 'check' });
+      expect(route.name).toBe('captain_playground_index');
     });
 
     it.each([

@@ -4,13 +4,13 @@
 // keep the query of the old link.
 export const CAPTAIN_AGENTS_ROUTE = 'captain_agents_index';
 export const CAPTAIN_AGENT_ROUTE = 'captain_agent_show';
+export const CAPTAIN_PLAYGROUND_ROUTE = 'captain_playground_index';
 export const CAPTAIN_CHANNELS_ROUTE = 'captain_channels_index';
 export const CAPTAIN_AI_SETTINGS_ROUTE = 'captain_ai_settings_index';
 
 // Tabs of the agent page (query param `tab`; the instruction tab is the
 // default and is never written to the URL).
 export const AGENT_PAGE_TABS = Object.freeze({
-  CHECK: 'check',
   FOLLOW_UPS: 'follow-ups',
 });
 
@@ -48,6 +48,12 @@ export const navigationPathRouteName = navigationPath => {
 
 export const redirectToAgents = to => ({
   name: CAPTAIN_AGENTS_ROUTE,
+  params: accountParams(to),
+  query: to.query,
+});
+
+export const redirectToPlayground = to => ({
+  name: CAPTAIN_PLAYGROUND_ROUTE,
   params: accountParams(to),
   query: to.query,
 });

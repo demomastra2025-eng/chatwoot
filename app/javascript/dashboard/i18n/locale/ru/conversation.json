@@ -320,8 +320,9 @@
         "OPEN_WITH_REASON": "Диалог был открыт {userName}: {reason}"
       },
       "ASSIGNEE": {
-        "DEFAULT_POLICY_ASSIGNED": "Назначен: {assigneeName}.",
-        "ASSIGNED_BY": "Назначен: {assigneeName}.\nИнициатор: {initiatorName}",
+        "DEFAULT_POLICY_ASSIGNED": "Назначен {assigneeName}",
+        "ASSIGNED_BY": "{initiatorName} назначил {assigneeName}",
+        "REMOVED_BY": "{initiatorName} снял ответственного",
         "POLICY_SYSTEM": "Система политики"
       }
     },

@@ -321,8 +321,9 @@
         "OPEN_WITH_REASON": "Conversation was marked open by {userName}: {reason}"
       },
       "ASSIGNEE": {
-        "DEFAULT_POLICY_ASSIGNED": "Assigned: {assigneeName}.",
-        "ASSIGNED_BY": "Assigned: {assigneeName}.\nInitiator: {initiatorName}",
+        "DEFAULT_POLICY_ASSIGNED": "Assigned {assigneeName}",
+        "ASSIGNED_BY": "{initiatorName} assigned {assigneeName}",
+        "REMOVED_BY": "{initiatorName} removed assignee",
         "POLICY_SYSTEM": "Policy system"
       }
     },

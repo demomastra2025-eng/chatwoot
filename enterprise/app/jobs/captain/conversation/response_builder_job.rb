@@ -700,8 +700,6 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
           audit: audit,
           &
         )
-        team = response_assistant.handoff_team if result == :applied && v2_handoff_tool_fired?
-        @conversation.update!(team: team) if team
         result
       end
     end

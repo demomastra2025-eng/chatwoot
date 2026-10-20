@@ -58,11 +58,6 @@ const PRIMARY_NAVIGATION_ITEMS = Object.freeze([
     labelKey: 'SIDEBAR.CUSTOM_VIEWS_FOLDER',
   },
   {
-    key: 'teams',
-    visibilityKey: 'Conversation:Teams',
-    labelKey: 'SIDEBAR.TEAMS',
-  },
-  {
     key: 'labels',
     visibilityKey: 'Conversation:Labels',
     labelKey: 'SIDEBAR.LABELS',

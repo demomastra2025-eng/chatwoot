@@ -14,8 +14,6 @@ const DRAFT_FIELDS = Object.freeze([
   'model',
   'thinkingEffort',
   'temperature',
-  'handoffTeamId',
-  'bookingResourceIds',
 ]);
 
 const hasOwn = (object, key) =>
@@ -31,6 +29,29 @@ const toTemperature = value => {
 
 const trimmed = value => toText(value).trim();
 
+export const resolveModelIcon = (model = {}) => {
+  const raw = typeof model === 'string'
+    ? model
+    : `${model?.provider || ''} ${model?.id || ''} ${model?.display_name || ''}`;
+  if (/anthropic|claude/i.test(raw)) {
+    return { icon: 'i-logos-claude-icon', iconClass: '' };
+  }
+  if (/openai|chatgpt|\bgpt\b|gpt-|\bo[134]\b/i.test(raw)) {
+    return { icon: 'i-ri-openai-fill', iconClass: 'text-n-slate-12' };
+  }
+  return { icon: '', iconClass: '' };
+};
+
+export const resolveDefaultAgentEffort = metadata => {
+  const efforts = Array.isArray(metadata?.reasoning_efforts)
+    ? metadata.reasoning_efforts
+    : [];
+  if (!efforts.length) return '';
+  if (efforts.includes('low')) return 'low';
+  if (efforts.includes('none')) return 'none';
+  return efforts[0] || '';
+};
+
 export const buildAgentDraft = (assistant = {}) => {
   const config = assistant?.config || {};
   return {
@@ -41,8 +62,6 @@ export const buildAgentDraft = (assistant = {}) => {
     model: toText(config.model),
     thinkingEffort: toText(config.thinking_effort),
     temperature: toTemperature(config.temperature),
-    handoffTeamId: config.handoff_team_id || '',
-    bookingResourceIds: config.booking_scope?.resource_ids || [],
   };
 };
 
@@ -78,7 +97,10 @@ const effectiveTemperature = (temperature, metadata) => {
 
 const effectiveEffort = (effort, metadata) => {
   if (!Array.isArray(metadata?.reasoning_efforts)) return effort || '';
-  return metadata.reasoning_efforts.includes(effort) ? effort : '';
+  if (!metadata.reasoning_efforts.length) return '';
+  return metadata.reasoning_efforts.includes(effort)
+    ? effort
+    : resolveDefaultAgentEffort(metadata);
 };
 
 const modelSettingsChanged = (base, draft, metadata) =>
@@ -94,9 +116,6 @@ export const isAgentDraftDirty = (base, draft, modelMetadata = null) => {
     trimmed(base.name) !== trimmed(draft.name) ||
     trimmed(base.routingDescription) !== trimmed(draft.routingDescription) ||
     toText(base.instruction) !== toText(draft.instruction) ||
-    String(base.handoffTeamId || '') !== String(draft.handoffTeamId || '') ||
-    JSON.stringify(base.bookingResourceIds || []) !==
-      JSON.stringify(draft.bookingResourceIds || []) ||
     modelSettingsChanged(base, draft, modelMetadata)
   );
 };
@@ -142,33 +161,14 @@ export const buildAgentUpdatePayload = (base, draft, modelMetadata = {}) => {
   }
 
   if (modelSettingsChanged(base, draft, modelMetadata)) {
-    const efforts = Array.isArray(modelMetadata?.reasoning_efforts)
-      ? modelMetadata.reasoning_efforts
-      : [];
+    const resolvedEffort = effectiveEffort(draft.thinkingEffort, modelMetadata);
     payload.config = {
       model: toText(draft.model) || null,
-      thinking_effort:
-        draft.thinkingEffort && efforts.includes(draft.thinkingEffort)
-          ? draft.thinkingEffort
-          : null,
+      thinking_effort: resolvedEffort || null,
       temperature:
         modelMetadata?.supports_temperature === true
           ? toTemperature(draft.temperature)
           : null,
-    };
-  }
-
-  if (String(base.handoffTeamId || '') !== String(draft.handoffTeamId || '')) {
-    payload.config ||= {};
-    payload.config.handoff_team_id = draft.handoffTeamId || null;
-  }
-  if (
-    JSON.stringify(base.bookingResourceIds || []) !==
-    JSON.stringify(draft.bookingResourceIds || [])
-  ) {
-    payload.config ||= {};
-    payload.config.booking_scope = {
-      resource_ids: (draft.bookingResourceIds || []).map(Number),
     };
   }
 

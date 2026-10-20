@@ -242,9 +242,6 @@ describe('ConversationBulkActions Index', () => {
     expect(wrapper.findComponent(BulkAgentActionsStub).props('disabled')).toBe(
       true
     );
-    expect(wrapper.findComponent(BulkTeamActionsStub).props('disabled')).toBe(
-      true
-    );
     expect(wrapper.findComponent(CheckboxStub).props('disabled')).toBe(true);
     expect(wrapper.findAllComponents(NextButtonStub)[0].props('disabled')).toBe(
       true
@@ -267,9 +264,6 @@ describe('ConversationBulkActions Index', () => {
     wrapper
       .findComponent(BulkAgentActionsStub)
       .vm.$emit('select', { id: 1, name: 'Agent' });
-    wrapper
-      .findComponent(BulkTeamActionsStub)
-      .vm.$emit('select', { id: 2, name: 'Team' });
     await wrapper.findAllComponents(NextButtonStub)[1].trigger('click');
     await flushPromises();
 
@@ -280,7 +274,6 @@ describe('ConversationBulkActions Index', () => {
     expect(wrapper.emitted('assignAgent')).toEqual([
       [{ id: 1, name: 'Agent' }],
     ]);
-    expect(wrapper.emitted('assignTeam')).toEqual([[{ id: 2, name: 'Team' }]]);
     expect(wrapper.emitted('markRead')).toEqual([[]]);
   });
 
@@ -340,7 +333,7 @@ describe('ConversationBulkActions Index', () => {
     expect(actionsRow.findComponent(BulkLabelActionsStub).exists()).toBe(true);
     expect(actionsRow.findComponent(BulkUpdateActionsStub).exists()).toBe(true);
     expect(actionsRow.findComponent(BulkAgentActionsStub).exists()).toBe(true);
-    expect(actionsRow.findComponent(BulkTeamActionsStub).exists()).toBe(true);
+    expect(actionsRow.findComponent(BulkTeamActionsStub).exists()).toBe(false);
     expect(actionsRow.findComponent(NextButtonStub).exists()).toBe(true);
     expect(
       panel.findAll('*').some(element => {

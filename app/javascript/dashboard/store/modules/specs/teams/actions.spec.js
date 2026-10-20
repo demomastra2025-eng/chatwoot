@@ -29,66 +29,11 @@ describe('#actions', () => {
   });
 
   describe('#get', () => {
-    it('sends correct actions if API is success', async () => {
-      const mockedGet = vi.fn(url => {
-        if (url === '/api/v1/teams') {
-          return Promise.resolve({ data: teamsList[1] });
-        }
-        if (url === '/api/v1/accounts//cache_keys') {
-          return Promise.resolve({ data: { cache_keys: { teams: 0 } } });
-        }
-        // Return default value or throw an error for unexpected requests
-        return Promise.reject(new Error('Unexpected request: ' + url));
-      });
-
-      axios.get = mockedGet;
-
+    it('clears teams without calling the removed teams API', async () => {
       await actions.get({ commit });
       expect(commit.mock.calls).toEqual([
-        [SET_TEAM_UI_FLAG, { isFetching: true }],
         [CLEAR_TEAMS],
-        [SET_TEAMS, teamsList[1]],
-        [SET_TEAM_UI_FLAG, { isFetching: false }],
-      ]);
-    });
-    it('sends correct actions if API is error', async () => {
-      axios.get.mockRejectedValue({ message: 'Incorrect header' });
-      await expect(actions.get({ commit })).rejects.toEqual({
-        message: 'Incorrect header',
-      });
-      expect(commit.mock.calls).toEqual([
-        [SET_TEAM_UI_FLAG, { isFetching: true }],
-        [SET_TEAM_UI_FLAG, { isFetching: false }],
-      ]);
-    });
-
-    it('does not commit stale teams when the route account changes before the response resolves', async () => {
-      let resolveTeams;
-
-      window.history.pushState({}, '', '/app/accounts/64/settings/teams');
-      axios.get.mockImplementation(url => {
-        if (url === '/api/v1/accounts/64/cache_keys') {
-          return Promise.resolve({ data: { cache_keys: {} } });
-        }
-        if (url === '/api/v1/accounts/64/teams') {
-          return new Promise(resolve => {
-            resolveTeams = resolve;
-          });
-        }
-        return Promise.reject(new Error('Unexpected request: ' + url));
-      });
-
-      const request = actions.get({ commit });
-      await vi.waitFor(() =>
-        expect(resolveTeams).toEqual(expect.any(Function))
-      );
-      window.history.pushState({}, '', '/app/accounts/6/settings/teams');
-
-      resolveTeams({ data: teamsList[1] });
-      await request;
-
-      expect(commit.mock.calls).toEqual([
-        [SET_TEAM_UI_FLAG, { isFetching: true }],
+        [SET_TEAMS, []],
       ]);
     });
   });

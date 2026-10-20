@@ -259,9 +259,9 @@ ru:
         updated: "%{user_name} изменил приоритет с %{old_priority} на %{new_priority}"
         removed: "%{user_name} удалил приоритет"
       assignee:
-        self_assigned: "%{user_name} назначил(а) разговор себе"
-        assigned: "Назначен: %{assignee_name}.\nИнициатор: %{user_name}"
-        removed: Ответственный снят %{user_name}
+        self_assigned: "%{user_name} назначил себя"
+        assigned: "%{user_name} назначил %{assignee_name}"
+        removed: "%{user_name} снял ответственного"
       team:
         assigned: "%{user_name} назначил %{team_name} ответственным"
         assigned_with_assignee: "%{user_name} назначил %{assignee_name} в %{team_name}"

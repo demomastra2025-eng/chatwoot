@@ -248,10 +248,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
   end
 
   def team_unread_counts
-    scope = scoped_count_relation(include_team: false, include_assignee: true, include_unread: false)
-    unread_scope = unread_conversation_scope(scope)
-
-    normalize_counts(unread_scope.where.not(team_id: nil).group(:team_id).distinct.count('conversations.id'))
+    {}
   end
 
   def unread_conversation_scope(scope)

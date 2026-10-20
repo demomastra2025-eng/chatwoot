@@ -147,14 +147,12 @@ describe('ConversationVisibilitySettings', () => {
     ]);
     expect(wrapper.vm.PRIMARY_NAVIGATION_ITEMS.map(item => item.key)).toEqual([
       'folders',
-      'teams',
       'labels',
     ]);
     // The assignee lists come first, as a group with one switch per list.
     expect(wrapper.vm.navigationRows.map(row => row.key)).toEqual([
       'assignee',
       'folders',
-      'teams',
       'labels',
       'pipeline',
       'appointments',
@@ -172,7 +170,6 @@ describe('ConversationVisibilitySettings', () => {
       'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.APPOINTMENTS'
     );
     expect(wrapper.text()).toContain('SIDEBAR.CUSTOM_VIEWS_FOLDER');
-    expect(wrapper.text()).toContain('SIDEBAR.TEAMS');
     expect(wrapper.text()).toContain('SIDEBAR.LABELS');
     expect(wrapper.text()).not.toContain(
       'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.ORGANIZATION'
@@ -185,9 +182,8 @@ describe('ConversationVisibilitySettings', () => {
       expect.arrayContaining(['divide-y', 'rounded-xl', 'outline'])
     );
     expect(framedDescendants(primaryNavigation)).toEqual([]);
-    expect(primaryNavigation.findAll('label')).toHaveLength(3);
+    expect(primaryNavigation.findAll('label')).toHaveLength(2);
     expect(wrapper.vm.visibilityDraft['Conversation:Folders']).toBe(true);
-    expect(wrapper.vm.visibilityDraft['Conversation:Teams']).toBe(true);
     expect(wrapper.vm.visibilityDraft['Conversation:Labels']).toBe(true);
     expect(
       wrapper
@@ -199,7 +195,7 @@ describe('ConversationVisibilitySettings', () => {
     ).toBe(true);
     expect(
       wrapper.find('#conversation-visibility-conversation-teams').exists()
-    ).toBe(true);
+    ).toBe(false);
     expect(
       wrapper.find('#conversation-visibility-conversation-labels').exists()
     ).toBe(true);
@@ -242,14 +238,14 @@ describe('ConversationVisibilitySettings', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.vm.hasChanges).toBe(false);
-    wrapper.vm.visibilityDraft['Conversation:Teams'] = false;
+    wrapper.vm.visibilityDraft['Conversation:Labels'] = false;
     await wrapper.vm.saveVisibility();
 
     expect(updateAccount).toHaveBeenCalledWith(
       expect.objectContaining({
         [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
           'Campaigns:MassBroadcasts',
-          'Conversation:Teams',
+          'Conversation:Labels',
         ],
         [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]: 21,
       })
@@ -291,7 +287,6 @@ describe('ConversationVisibilitySettings', () => {
     wrapper.vm.togglePrimaryNavigationItem(foldersItem);
 
     expect(wrapper.vm.visibilityDraft['Conversation:Folders']).toBe(false);
-    expect(wrapper.vm.visibilityDraft['Conversation:Teams']).toBe(true);
     expect(wrapper.vm.visibilityDraft['Conversation:Labels']).toBe(true);
     expect(wrapper.vm.visibilityDraft['Conversation:Assignee']).toBe(true);
   });
@@ -305,7 +300,7 @@ describe('ConversationVisibilitySettings', () => {
     wrapper.vm.togglePrimaryNavigationItem(foldersItem);
     currentAccount.value = {
       settings: {
-        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Conversation:Teams'],
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Conversation:Labels'],
         [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
           SIDEBAR_VISIBILITY_CURRENT_VERSION,
       },
@@ -313,7 +308,7 @@ describe('ConversationVisibilitySettings', () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.vm.visibilityDraft['Conversation:Folders']).toBe(false);
-    expect(wrapper.vm.visibilityDraft['Conversation:Teams']).toBe(true);
+    expect(wrapper.vm.visibilityDraft['Conversation:Labels']).toBe(true);
   });
 
   it('hides unavailable business sections', () => {

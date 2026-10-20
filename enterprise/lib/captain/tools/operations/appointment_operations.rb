@@ -30,7 +30,6 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     @already_booked_appointment = nil
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
     resource_id = resolve_agent_resource_id(resource_id, service_id)
-    enforce_booking_scope!(resource_id)
     starts_at, ends_at = normalize_appointment_times(resource_id: resource_id, starts_at: starts_at, ends_at: ends_at)
     validated_service = validate_booking_inputs!(starts_at: starts_at, ends_at: ends_at, duration_min: duration_min, service_id: service_id)
     service_id = validated_service.id if validated_service
@@ -68,7 +67,6 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     @unchanged_appointment = nil
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
     appointment = target_appointment(appointment_id, appointment_access_token: appointment_access_token, patient_confirmed: patient_confirmed)
-    enforce_booking_scope!(resource_id) if resource_id.present?
 
     starts_at, ends_at = normalize_appointment_times(resource_id: resource_id || appointment.resource_id, starts_at: starts_at, ends_at: ends_at)
     validated_service = validate_booking_inputs!(starts_at: starts_at, ends_at: ends_at, duration_min: duration_min,
@@ -257,6 +255,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
         token: appointment_access_token, assistant: assistant, conversation: conversation, appointment_id: appointment_id
       )
       raise ArgumentError, 'Record is not available' unless appointment
+
       require_patient_confirmation!(appointment, patient_confirmed)
       return scoped_appointment!(appointment)
     end
@@ -278,7 +277,6 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   end
 
   def scoped_appointment!(appointment)
-    enforce_booking_scope!(appointment.resource_id)
     appointment
   end
 
@@ -287,18 +285,9 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     return resource_id if account.scheduling_resources.exists?(id: resource_id)
 
     linked = Scheduling::ServicePrice.active.where(account_id: account.id, service_id: service_id).distinct.pluck(:resource_id)
-    allowed = assistant.booking_resource_ids
-    linked &= allowed if allowed.present?
     linked.one? ? linked.first : resource_id
   rescue StandardError
     resource_id
-  end
-
-  def enforce_booking_scope!(resource_id)
-    ids = assistant.booking_resource_ids
-    return if !actor.is_a?(Captain::Assistant) || ids.empty? || ids.include?(resource_id.to_i)
-
-    raise Scheduling::Error.new(code: 'RESOURCE_UNAVAILABLE', message: 'Resource is outside this agent booking scope', status: :not_found)
   end
 
   def require_patient_confirmation!(appointment, confirmed)

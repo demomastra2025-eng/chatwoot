@@ -210,7 +210,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     let(:scenario) do
       target = create(:captain_assistant, account: account, name: 'Billing disputes', routing_description: 'Handles disputed charge flows.',
                                           description: 'Collect the dispute reason, then use [@Handoff](tool://handoff) if finance approval is needed.',
-                                          config: { 'handoff_team_id' => create(:team, account: account).id })
+                                          config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['add_private_note'] } } })
       target
     end
 

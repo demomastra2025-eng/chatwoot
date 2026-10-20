@@ -158,16 +158,6 @@ describe('useConversationHotKeys', () => {
     expect(removeLabelAction).toBeUndefined();
   });
 
-  it('should return the correct team assignment actions', () => {
-    const { conversationHotKeys } = useConversationHotKeys();
-    const assignTeamAction = conversationHotKeys.value.find(
-      action => action.id === 'assign_a_team'
-    );
-
-    expect(assignTeamAction).toBeDefined();
-    expect(assignTeamAction.children.length).toBe(mockTeamsList.length);
-  });
-
   it('should return the correct priority assignment actions', () => {
     const { conversationHotKeys } = useConversationHotKeys();
     const assignPriorityAction = conversationHotKeys.value.find(

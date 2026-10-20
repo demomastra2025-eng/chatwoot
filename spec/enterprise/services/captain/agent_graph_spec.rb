@@ -30,14 +30,14 @@ RSpec.describe Captain::AgentGraph do
     expect(described_class::EntryDisabledError.ancestors).to include(ArgumentError)
   end
 
-  it 'lets the entry agent work alone when there is no channel, whatever else the workspace has' do
+  it 'includes active external agents of the workspace even when there is no channel (workspace sandbox)' do
     member
     other
     graph = described_class.new(entry)
 
-    expect(graph.agents).to eq([entry])
-    expect(graph.payload.pluck(:id)).to eq([entry.id])
-    expect(graph.peers?).to be(false)
+    expect(graph.agents.map(&:id)).to contain_exactly(entry.id, member.id, other.id)
+    expect(graph.payload.pluck(:id)).to contain_exactly(entry.id, member.id, other.id)
+    expect(graph.peers?).to be(true)
     expect(graph.allows?(entry, member)).to be(false)
   end
 
@@ -62,13 +62,6 @@ RSpec.describe Captain::AgentGraph do
     expect(graph.agents.map(&:id)).to contain_exactly(entry.id, member.id, other.id)
     expect(graph.allows?(entry, member)).to be(false)
     expect(graph.allows?(entry, other)).to be(false)
-  end
-
-  it 'allows a colleague with a different handoff team' do
-    team = create(:team, account: account)
-    member.update!(config: member.config.merge('handoff_team_id' => team.id))
-
-    expect(described_class.new(entry, inbox: inbox).allows?(entry, member)).to be(true)
   end
 
   it 'leaves out an agent that is switched off or is not an external agent' do

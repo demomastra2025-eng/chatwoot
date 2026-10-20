@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, h, nextTick, reactive, ref } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
-import SchedulingResourcesAPI from 'dashboard/api/scheduling/resources';
 
 const dispatchMock = vi.fn();
 const useAlertMock = vi.fn();
@@ -49,10 +48,6 @@ const configStore = {
   getSelectedModelForFeature: () => 'default-model',
 };
 const matrixStore = { fetch: vi.fn() };
-
-vi.mock('dashboard/api/scheduling/resources', () => ({
-  default: { get: vi.fn().mockResolvedValue({ data: { payload: [] } }) },
-}));
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key, te: () => true }),
@@ -147,9 +142,6 @@ vi.mock(
   'dashboard/components-next/captain/agent/AgentFollowUpsTab.vue',
   () => ({ default: simpleStub('AgentFollowUpsTab') })
 );
-vi.mock('dashboard/components-next/captain/agent/AgentCheckTab.vue', () => ({
-  default: simpleStub('AgentCheckTab'),
-}));
 vi.mock('dashboard/components-next/captain/agent/AgentVoiceTab.vue', () => ({
   default: simpleStub('AgentVoiceTab'),
 }));
@@ -267,7 +259,6 @@ const instructionTab = wrapper =>
 
 describe('Agent page', () => {
   beforeEach(() => {
-    SchedulingResourcesAPI.get.mockResolvedValue({ data: { payload: [] } });
     policy.isAdmin = true;
     route.query = {};
     route.params = { accountId: '3', assistantId: '12' };
@@ -379,20 +370,20 @@ describe('Agent page', () => {
     const wrapper = mountPage();
     await flushPromises();
 
-    expect(wrapper.find('[data-stub="AgentCheckTab"]').exists()).toBe(false);
+    expect(wrapper.find('[data-stub="AgentFollowUpsTab"]').exists()).toBe(false);
 
-    await wrapper.find('button[data-tab="check"]').trigger('click');
+    await wrapper.find('button[data-tab="follow-ups"]').trigger('click');
     expect(routerReplaceMock).toHaveBeenLastCalledWith({
       name: 'captain_agent_show',
       params: { accountId: '3', assistantId: '12' },
-      query: { tab: 'check' },
+      query: { tab: 'follow-ups' },
     });
 
-    route.query = { tab: 'check' };
+    route.query = { tab: 'follow-ups' };
     await nextTick();
-    const checkTab = wrapper.find('[data-stub="AgentCheckTab"]');
-    expect(checkTab.exists()).toBe(true);
-    expect(checkTab.attributes('style') || '').not.toContain('display: none');
+    const followUpsTab = wrapper.find('[data-stub="AgentFollowUpsTab"]');
+    expect(followUpsTab.exists()).toBe(true);
+    expect(followUpsTab.attributes('style') || '').not.toContain('display: none');
     // The instruction tab stays mounted (hidden) to keep its state.
     expect(
       wrapper.find('[data-stub="AgentInstructionTab"]').attributes('style')
@@ -404,16 +395,6 @@ describe('Agent page', () => {
       params: { accountId: '3', assistantId: '12' },
       query: {},
     });
-  });
-
-  it('opens the check tab from the header button', async () => {
-    const wrapper = mountPage();
-    await flushPromises();
-
-    await wrapper.find('[data-test="agent-check"]').trigger('click');
-    expect(routerReplaceMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({ query: { tab: 'check' } })
-    );
   });
 
   it('asks before leaving with unsaved changes but not when switching tabs', async () => {

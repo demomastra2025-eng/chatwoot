@@ -311,7 +311,6 @@ class ReconnectService {
     await Promise.all([
       this.store.dispatch('labels/revalidate', { newKey: label }),
       this.store.dispatch('inboxes/revalidate', { newKey: inbox }),
-      this.store.dispatch('teams/revalidate', { newKey: team }),
     ]);
   };
 

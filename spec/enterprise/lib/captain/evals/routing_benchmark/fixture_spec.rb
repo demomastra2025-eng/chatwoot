@@ -51,19 +51,6 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
   end
 
   describe '.new' do
-    it 'accepts account teams and named booking resources and rejects unknown names' do
-      fixture = data.deep_dup
-      fixture[:workspace][:teams] = [{ name: 'Бухгалтерия' }]
-      fixture[:workspace][:resources] = [{ key: 'doctor', name: 'Врач Иванова' }]
-      agent = fixture[:workspace][:agents].first
-      agent[:handoff_team] = 'Бухгалтерия'
-      agent[:booking_scope] = { resources: ['Врач Иванова'] }
-
-      expect { described_class.new(fixture) }.not_to raise_error
-      agent[:booking_scope] = { resources: ['Неизвестный врач'] }
-      expect { described_class.new(fixture) }.to raise_error(described_class::Invalid, /unknown resources/)
-    end
-
     it 'accepts the customer-scoped tools that the real fixtures use' do
       agent = described_class.new(data).workspace.fetch('agents').first
 
@@ -98,7 +85,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
     end
 
     def with_operation(**operation)
-      with_expect(operations: [{ model: 'appointment', kind: 'create', params: { status: 'scheduled', starts_at: '2026-10-15T12:00:00+05:00' } }.merge(operation)])
+      with_expect(operations: [{ model: 'appointment', kind: 'create',
+                                 params: { status: 'scheduled', starts_at: '2026-10-15T12:00:00+05:00' } }.merge(operation)])
     end
 
     it 'accepts the v2 form: the start pinned among the params' do
@@ -146,10 +134,14 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
     end
 
     it 'rejects a doctor, service or patient that the workspace does not have' do
-      expect { described_class.new(with_operation(resource: 'doctor_z')) }.to raise_error(described_class::Invalid, /Unknown resource in an operation: doctor_z/)
+      expect do
+        described_class.new(with_operation(resource: 'doctor_z'))
+      end.to raise_error(described_class::Invalid, /Unknown resource in an operation: doctor_z/)
       expect { described_class.new(with_operation(service: 'surgery')) }.to raise_error(described_class::Invalid, /Unknown service/)
       expect { described_class.new(with_operation(patient: 'stranger')) }.to raise_error(described_class::Invalid, /Unknown patient/)
-      expect { described_class.new(with_operation(previous_resource: 'doctor_z')) }.to raise_error(described_class::Invalid, /Unknown previous_resource/)
+      expect do
+        described_class.new(with_operation(previous_resource: 'doctor_z'))
+      end.to raise_error(described_class::Invalid, /Unknown previous_resource/)
     end
 
     it 'rejects a start without an offset, a bad count and an unknown kind' do
@@ -200,7 +192,11 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
       end
 
       it 'rejects a staff_handoff and a reply_language outside the schema' do
-        ['yes', nil, 1].each { |value| expect { described_class.new(with_expect(staff_handoff: value)) }.to raise_error(described_class::Invalid, /staff_handoff/) }
+        ['yes', nil, 1].each do |value|
+          expect do
+            described_class.new(with_expect(staff_handoff: value))
+          end.to raise_error(described_class::Invalid, /staff_handoff/)
+        end
         ['RU', 'russian', 'r', 'ru-RU', '', nil, 1, ['ru']].each do |value|
           expect { described_class.new(with_expect(reply_language: value)) }.to raise_error(described_class::Invalid, /reply_language/), value.inspect
         end
@@ -217,7 +213,9 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
       it 'accepts must_not_succeed of mutation tools only' do
         expect { described_class.new(with_expect(must_not_succeed: %w[create_appointment update_appointment])) }.not_to raise_error
         expect { described_class.new(with_expect(must_not_succeed: ['faq_lookup'])) }.to raise_error(described_class::Invalid, /must_not_succeed/)
-        expect { described_class.new(with_expect(must_not_succeed: 'create_appointment')) }.to raise_error(described_class::Invalid, /must_not_succeed/)
+        expect do
+          described_class.new(with_expect(must_not_succeed: 'create_appointment'))
+        end.to raise_error(described_class::Invalid, /must_not_succeed/)
       end
 
       it 'accepts the listed hard-zero counters, the new one included, and rejects another' do
@@ -229,7 +227,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
     describe 'acts' do
       let(:acting_data) do
         booking_data.deep_dup.tap do |copy|
-          copy[:workspace][:agents] << { name: 'Диагностика', routing_description: 'УЗИ', instructions: 'Отвечай.', tool_ids: %w[faq_lookup create_appointment] }
+          copy[:workspace][:agents] << { name: 'Диагностика', routing_description: 'УЗИ', instructions: 'Отвечай.',
+                                         tool_ids: %w[faq_lookup create_appointment] }
           copy[:workspace][:agents].first[:tool_ids] = %w[faq_lookup update_appointment]
         end
       end
@@ -243,9 +242,15 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
       end
 
       it 'rejects an unknown agent, a tool the agent does not have, a tool that is no mutation and an unknown key' do
-        expect { described_class.new(with_acts([{ tool: 'create_appointment', agent: 'Никто' }])) }.to raise_error(described_class::Invalid, /act agent is unknown/)
-        expect { described_class.new(with_acts([{ tool: 'create_appointment', agent: 'Запись к врачу' }])) }.to raise_error(described_class::Invalid, /not a tool of/)
-        expect { described_class.new(with_acts([{ tool: 'faq_lookup', agent: 'Запись к врачу' }])) }.to raise_error(described_class::Invalid, /not a mutation tool/)
+        expect do
+          described_class.new(with_acts([{ tool: 'create_appointment', agent: 'Никто' }]))
+        end.to raise_error(described_class::Invalid, /act agent is unknown/)
+        expect do
+          described_class.new(with_acts([{ tool: 'create_appointment', agent: 'Запись к врачу' }]))
+        end.to raise_error(described_class::Invalid, /not a tool of/)
+        expect do
+          described_class.new(with_acts([{ tool: 'faq_lookup', agent: 'Запись к врачу' }]))
+        end.to raise_error(described_class::Invalid, /not a mutation tool/)
         expect { described_class.new(with_acts([{ tool: 'create_appointment', agent: 'Диагностика', note: 'x' }])) }
           .to raise_error(described_class::Invalid, /Unknown key in act/)
         expect { described_class.new(with_acts('create_appointment')) }.to raise_error(described_class::Invalid, /acts must be an array/)
@@ -294,29 +299,32 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
     end
 
     describe 'the doctors of a service' do
-    def with_services(services)
-      data.deep_dup.tap do |copy|
-        copy[:workspace].merge!(resources: [{ key: 'doctor_a', name: 'Терапевт Иванов' }, { key: 'doctor_b', name: 'Кардиолог Петров' }], services: services)
+      def with_services(services)
+        data.deep_dup.tap do |copy|
+          copy[:workspace].merge!(resources: [{ key: 'doctor_a', name: 'Терапевт Иванов' }, { key: 'doctor_b', name: 'Кардиолог Петров' }],
+                                  services: services)
+        end
+      end
+
+      it 'takes a list of the resources that perform the service, and none' do
+        listed = { key: 'consult', name: 'Консультация', resources: %w[doctor_a] }
+        open = { key: 'checkup', name: 'Чек-ап' }
+
+        expect { described_class.new(with_services([listed, open])) }.not_to raise_error
+      end
+
+      it 'refuses an unknown resource, an empty list, a repeated resource and a list that is no array' do
+        [{ resources: %w[doctor_x] }, { resources: [] }, { resources: %w[doctor_a doctor_a] }, { resources: 'doctor_a' }].each do |extra|
+          service = { key: 'consult', name: 'Консультация' }.merge(extra)
+
+          expect do
+            described_class.new(with_services([service]))
+          end.to raise_error(described_class::Invalid, /services\.consult\.resources/), extra.inspect
+        end
       end
     end
 
-    it 'takes a list of the resources that perform the service, and none' do
-      listed = { key: 'consult', name: 'Консультация', resources: %w[doctor_a] }
-      open = { key: 'checkup', name: 'Чек-ап' }
-
-      expect { described_class.new(with_services([listed, open])) }.not_to raise_error
-    end
-
-    it 'refuses an unknown resource, an empty list, a repeated resource and a list that is no array' do
-      [{ resources: %w[doctor_x] }, { resources: [] }, { resources: %w[doctor_a doctor_a] }, { resources: 'doctor_a' }].each do |extra|
-        service = { key: 'consult', name: 'Консультация' }.merge(extra)
-
-        expect { described_class.new(with_services([service])) }.to raise_error(described_class::Invalid, /services\.consult\.resources/), extra.inspect
-      end
-    end
-  end
-
-  describe 'unknown keys' do
+    describe 'unknown keys' do
       it 'rejects a typo at the level of the fixture, the workspace, the agent, the dialogue, the turn, the expectation and the operation' do
         misspelled = {
           'fixture' => ->(copy) { copy[:extra] = 1 },
@@ -368,7 +376,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
       end
 
       it 'rejects agent and agents together, and a list of one agent (write agent: for one)' do
-        expectation = ->(extra, keep_agent: false) do
+        expectation = lambda do |extra, keep_agent: false|
           booking_data.deep_dup.tap do |copy|
             turn_expect = copy[:dialogues].first[:turns].first[:expect]
             turn_expect.delete(:agent) unless keep_agent
@@ -376,7 +384,9 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
           end
         end
 
-        expect { described_class.new(expectation.call({ agents: ['Запись к врачу'] })) }.to raise_error(described_class::Invalid, /at least two agents/)
+        expect do
+          described_class.new(expectation.call({ agents: ['Запись к врачу'] }))
+        end.to raise_error(described_class::Invalid, /at least two agents/)
         expect { described_class.new(expectation.call({ agents: ['Запись к врачу', 'Запись к врачу'] }, keep_agent: true)) }
           .to raise_error(described_class::Invalid, /either agent or agents/)
       end

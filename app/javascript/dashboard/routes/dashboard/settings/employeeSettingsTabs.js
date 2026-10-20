@@ -2,14 +2,6 @@ import { FEATURE_FLAGS } from '../../../featureFlags';
 
 export const EMPLOYEE_SETTINGS_ACTIVE_ROUTE_NAMES = [
   'agent_list',
-  'settings_teams_list',
-  'settings_teams_new',
-  'settings_teams_finish',
-  'settings_teams_add_agents',
-  'settings_teams_show',
-  'settings_teams_edit',
-  'settings_teams_edit_members',
-  'settings_teams_edit_finish',
   'custom_roles_list',
   'assignment_policy_index',
   'agent_assignment_policy_index',
@@ -25,20 +17,6 @@ export const employeeSettingsTabs = [
     labelKey: 'EMPLOYEE_SETTINGS.TABS.EMPLOYEES',
     routeName: 'agent_list',
     activeOn: ['agent_list'],
-  },
-  {
-    labelKey: 'EMPLOYEE_SETTINGS.TABS.TEAM',
-    routeName: 'settings_teams_list',
-    activeOn: [
-      'settings_teams_list',
-      'settings_teams_new',
-      'settings_teams_finish',
-      'settings_teams_add_agents',
-      'settings_teams_show',
-      'settings_teams_edit',
-      'settings_teams_edit_members',
-      'settings_teams_edit_finish',
-    ],
   },
   {
     labelKey: 'EMPLOYEE_SETTINGS.TABS.ROLES',

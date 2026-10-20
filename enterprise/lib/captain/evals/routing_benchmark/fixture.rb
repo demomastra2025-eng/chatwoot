@@ -16,8 +16,8 @@ class Captain::Evals::RoutingBenchmark::Fixture
   SYMBOLIC_OPERATION_KEYS = %w[resource service starts_at patient patient_name count previous_starts_at previous_resource].freeze
   OPERATION_KEYS = (%w[model kind params] + SYMBOLIC_OPERATION_KEYS).freeze
   TOP_KEYS = %w[workspace dialogues].freeze
-  WORKSPACE_KEYS = %w[agents teams channels knowledge contacts resources services slots appointments deals].freeze
-  AGENT_KEYS = %w[name routing_description instructions tool_ids model handoff_team booking_scope].freeze
+  WORKSPACE_KEYS = %w[agents channels knowledge contacts resources services slots appointments deals].freeze
+  AGENT_KEYS = %w[name routing_description instructions tool_ids model].freeze
   DIALOGUE_KEYS = %w[id channel contact rubric turns].freeze
   TURN_KEYS = %w[customer at delay_seconds staff rubric expect].freeze
   EXPECT_KEYS = %w[agent agents council transfers must_call must_not_call must_not_succeed operations acts staff_handoff reply_language
@@ -31,7 +31,7 @@ class Captain::Evals::RoutingBenchmark::Fixture
   COUNCIL_VALUES = [true, false, 'any'].freeze
   # The keys of the rows of the workspace (the workspace builder reads these and nothing else).
   ROW_KEYS = {
-    'teams' => %w[name], 'channels' => %w[key entry_agent], 'knowledge' => %w[agent question answer], 'contacts' => %w[key name],
+    'channels' => %w[key entry_agent], 'knowledge' => %w[agent question answer], 'contacts' => %w[key name],
     'resources' => %w[key name timezone], 'services' => %w[key name duration_min base_price resources],
     'slots' => %w[resource weekday start_minute end_minute], 'appointments' => %w[resource service contact starts_at], 'deals' => %w[title]
   }.freeze
@@ -78,7 +78,6 @@ class Captain::Evals::RoutingBenchmark::Fixture
       end
     end
     channel_keys = validate_channels!(names)
-    validate_routing_settings!
     contact_keys = validate_contacts!
     validate_calendar_keys!
     validate_workspace_records!(names, contact_keys)
@@ -111,25 +110,6 @@ class Captain::Evals::RoutingBenchmark::Fixture
     raise Invalid, 'Agent names must be unique' unless tools.size == agents.size
 
     tools
-  end
-
-  def validate_routing_settings!
-    teams = workspace.fetch('teams', []).pluck('name')
-    raise Invalid, 'Team names must be unique' unless teams.uniq.size == teams.size
-
-    teams.each { |name| require_string!(name, 'team.name') }
-    resource_names = workspace.fetch('resources', []).pluck('name')
-    workspace.fetch('agents').each { |agent| validate_agent_routing!(agent, teams, resource_names) }
-  end
-
-  def validate_agent_routing!(agent, teams, resource_names)
-    raise Invalid, 'Agent handoff team is unknown' if agent.key?('handoff_team') && teams.exclude?(agent['handoff_team'])
-    return unless agent.key?('booking_scope')
-
-    scope = require_hash!(agent['booking_scope'], 'agent.booking_scope')
-    reject_unknown_keys!(scope, %w[resources], 'agent.booking_scope')
-    names = require_array!(scope.fetch('resources'), 'agent.booking_scope.resources')
-    raise Invalid, 'Agent booking scope has unknown resources' unless (names - resource_names).empty? && names.uniq == names
   end
 
   def validate_channels!(names)
@@ -216,6 +196,7 @@ class Captain::Evals::RoutingBenchmark::Fixture
     if turn.key?('delay_seconds') && (!turn['delay_seconds'].is_a?(Numeric) || turn['delay_seconds'].negative?)
       raise Invalid, 'delay_seconds must be nonnegative'
     end
+
     validate_staff!(turn['staff']) if turn['staff']
     validate_expectation!(turn['expect'], tools_by_agent, operation_keys)
   end
@@ -249,9 +230,8 @@ class Captain::Evals::RoutingBenchmark::Fixture
     validate_v2_values!(expect)
     Array(expect['operations']).each { |operation| validate_operation!(operation, operation_keys) }
     validate_acts!(expect['acts'], tools_by_agent) if expect.key?('acts')
-    if expect.key?('human_request') && [true, false].exclude?(expect['human_request'])
-      raise Invalid, 'Expected human_request must be true or false'
-    end
+    raise Invalid, 'Expected human_request must be true or false' if expect.key?('human_request') && [true, false].exclude?(expect['human_request'])
+
     require_array!(expect['forbidden'], 'turn.expect.forbidden') if expect.key?('forbidden')
     Array(expect['forbidden']).each do |counter|
       raise Invalid, 'Unknown hard-zero counter' unless LISTABLE_COUNTERS.include?(counter)
@@ -264,7 +244,11 @@ class Captain::Evals::RoutingBenchmark::Fixture
     expected = Array(expect['agents'] || expect['agent'])
     raise Invalid, 'Expected acting agent is required' if expected.empty?
     raise Invalid, 'Expected agent is unknown' unless (expected - names).empty?
-    raise Invalid, 'agents lists at least two agents; write agent: for one' if expect.key?('agents') && (!expect['agents'].is_a?(Array) || expected.size < 2)
+
+    return unless expect.key?('agents') && (!expect['agents'].is_a?(Array) || expected.size < 2)
+
+    raise Invalid,
+          'agents lists at least two agents; write agent: for one'
   end
 
   def validate_tool_lists!(expect, council)
@@ -432,6 +416,7 @@ class Captain::Evals::RoutingBenchmark::Fixture
       raise Invalid, 'Appointment resource is unknown' unless resource_keys.include?(row['resource'])
       raise Invalid, 'Appointment contact is unknown' unless contact_keys.include?(row['contact'])
       raise Invalid, 'Appointment service is unknown' if row['service'] && service_keys.exclude?(row['service'])
+
       Time.iso8601(row.fetch('starts_at'))
     end
     workspace.fetch('deals', []).each do |row|

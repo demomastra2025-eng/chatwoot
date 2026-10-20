@@ -1,13 +1,17 @@
 <script setup>
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import Icon from 'dashboard/components-next/icon/Icon.vue';
 import ModelSettings from 'dashboard/components-next/captain/assistant/ModelSettings.vue';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
-import { findAgentModelMetadata } from './agentDraft';
+import {
+  findAgentModelMetadata,
+  resolveDefaultAgentEffort,
+  resolveModelIcon,
+} from './agentDraft';
 
 // «Модель» block of the agent page side column: the model from the platform
-// allowlist (the platform default is marked «по умолчанию») and only the
-// parameters that model supports.
+// allowlist and only the parameters that model supports.
 const props = defineProps({
   model: { type: String, default: '' },
   temperature: { type: Number, default: null },
@@ -59,13 +63,14 @@ const modelOptions = computed(() => {
     )
     .map(model => {
       const name = clientModelLabel(model.display_name || model.id);
-      let label = model.current_only
+      const label = model.current_only
         ? markedLabel(name, 'CAPTAIN.AGENT_PAGE.MODEL.CURRENT_MARK')
         : name;
-      if (model.id === platformModelId.value) {
-        label = markedLabel(name, 'CAPTAIN.AGENT_PAGE.MODEL.DEFAULT_MARK');
-      }
-      return { value: model.id, label };
+      return {
+        value: model.id,
+        label,
+        ...resolveModelIcon(model),
+      };
     });
 
   // A saved model outside today's allowlist stays visible and selected.
@@ -80,6 +85,7 @@ const modelOptions = computed(() => {
         clientModelLabel(savedName || props.model),
         'CAPTAIN.AGENT_PAGE.MODEL.CURRENT_MARK'
       ),
+      ...resolveModelIcon({ id: props.model, display_name: savedName }),
     });
   }
 
@@ -89,10 +95,8 @@ const modelOptions = computed(() => {
   ) {
     options.unshift({
       value: platformModelId.value,
-      label: markedLabel(
-        clientModelLabel(platformModelId.value),
-        'CAPTAIN.AGENT_PAGE.MODEL.DEFAULT_MARK'
-      ),
+      label: clientModelLabel(platformModelId.value),
+      ...resolveModelIcon(platformModelId.value),
     });
   }
 
@@ -107,6 +111,14 @@ const metadata = computed(() =>
   })
 );
 
+const selectedEffortValue = computed(() => {
+  const supported = Array.isArray(metadata.value?.reasoning_efforts)
+    ? metadata.value.reasoning_efforts
+    : [];
+  if (props.effort && supported.includes(props.effort)) return props.effort;
+  return resolveDefaultAgentEffort(metadata.value);
+});
+
 // Without access to the catalog (non-admins) only the name is shown.
 const readOnlyModelName = computed(() => {
   const playgroundModel = props.assistant?.playground_model;
@@ -116,6 +128,12 @@ const readOnlyModelName = computed(() => {
   if (props.model) return clientModelLabel(props.model);
   return t('CAPTAIN.AGENT_PAGE.MODEL.PLATFORM_DEFAULT');
 });
+
+const readOnlyModelIcon = computed(() =>
+  resolveModelIcon(
+    props.assistant?.playground_model || props.model || platformModelId.value
+  )
+);
 </script>
 
 <template>
@@ -133,22 +151,29 @@ const readOnlyModelName = computed(() => {
         v-if="modelOptions.length"
         v-model:model="selectedModelValue"
         :temperature="temperature"
-        :effort="effort"
+        :effort="selectedEffortValue"
         :metadata="metadata"
         :models="modelOptions"
         :disabled="disabled"
         :default-label="t('CAPTAIN.AGENT_PAGE.MODEL.DEFAULT_OPTION')"
         :model-label="t('CAPTAIN.AGENT_PAGE.MODEL.SELECT_LABEL')"
+        hide-default-effort
         stacked
         @update:temperature="emit('update:temperature', $event)"
         @update:effort="emit('update:effort', $event)"
       />
       <p
         v-else
-        class="mb-0 text-body-main text-n-slate-12"
+        class="mb-0 flex items-center gap-2 text-body-main text-n-slate-12"
         data-test="agent-model-name"
       >
-        {{ readOnlyModelName }}
+        <Icon
+          v-if="readOnlyModelIcon.icon"
+          :icon="readOnlyModelIcon.icon"
+          class="size-4 shrink-0"
+          :class="readOnlyModelIcon.iconClass || 'text-n-slate-12'"
+        />
+        <span>{{ readOnlyModelName }}</span>
       </p>
     </div>
   </section>

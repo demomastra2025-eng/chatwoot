@@ -1,10 +1,5 @@
 export const MACRO_ACTION_TYPES = [
   {
-    key: 'assign_team',
-    label: 'ASSIGN_TEAM',
-    inputType: 'search_select',
-  },
-  {
     key: 'assign_agent',
     label: 'ASSIGN_AGENT',
     inputType: 'search_select',
@@ -22,11 +17,6 @@ export const MACRO_ACTION_TYPES = [
   {
     key: 'remove_assigned_agent',
     label: 'REMOVE_ASSIGNED_AGENT',
-    inputType: null,
-  },
-  {
-    key: 'remove_assigned_team',
-    label: 'REMOVE_ASSIGNED_TEAM',
     inputType: null,
   },
   {

@@ -109,7 +109,6 @@ export const CONVERSATION_SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.ORGANIZATION'
   ),
   item('Conversation:Folders', 'SIDEBAR.CUSTOM_VIEWS_FOLDER'),
-  item('Conversation:Teams', 'SIDEBAR.TEAMS'),
   item('Conversation:Labels', 'SIDEBAR.LABELS'),
 ]);
 

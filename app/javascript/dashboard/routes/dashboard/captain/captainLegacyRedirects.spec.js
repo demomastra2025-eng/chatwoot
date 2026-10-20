@@ -88,13 +88,13 @@ describe('captainLegacyRedirects', () => {
 
     it('opens the requested tab and keeps the rest of the query', () => {
       expect(
-        redirectToAgentPage(AGENT_PAGE_TABS.CHECK)(
+        redirectToAgentPage(AGENT_PAGE_TABS.FOLLOW_UPS)(
           legacyRoute({ assistantId: '2' })
         )
       ).toEqual({
         name: 'captain_agent_show',
         params: { accountId: '1', assistantId: '2' },
-        query: { source: 'legacy', tab: 'check' },
+        query: { source: 'legacy', tab: 'follow-ups' },
       });
     });
 
@@ -112,7 +112,7 @@ describe('captainLegacyRedirects', () => {
 
     it('opens the gallery when the old link has no numeric agent id', () => {
       expect(
-        redirectToAgentPage(AGENT_PAGE_TABS.CHECK)(
+        redirectToAgentPage(AGENT_PAGE_TABS.FOLLOW_UPS)(
           legacyRoute({ assistantId: 'agents' })
         )
       ).toEqual({

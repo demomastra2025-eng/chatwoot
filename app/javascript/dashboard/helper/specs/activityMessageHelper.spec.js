@@ -6,8 +6,9 @@ describe('activityMessageHelper', () => {
       'CONVERSATION.ACTIVITY.CAPTAIN.AUTO_OPENED_AFTER_AGENT_REPLY':
         'Разговор был открыт автоматически после ответа сотрудника',
       'CONVERSATION.ACTIVITY.CAPTAIN.OPEN_WITH_REASON': `Диалог был открыт ${params.userName}: ${params.reason}`,
-      'CONVERSATION.ACTIVITY.ASSIGNEE.DEFAULT_POLICY_ASSIGNED': `Назначен: ${params.assigneeName}.`,
-      'CONVERSATION.ACTIVITY.ASSIGNEE.ASSIGNED_BY': `Назначен: ${params.assigneeName}.\nИнициатор: ${params.initiatorName}`,
+      'CONVERSATION.ACTIVITY.ASSIGNEE.DEFAULT_POLICY_ASSIGNED': `Назначен ${params.assigneeName}`,
+      'CONVERSATION.ACTIVITY.ASSIGNEE.ASSIGNED_BY': `${params.initiatorName} назначил ${params.assigneeName}`,
+      'CONVERSATION.ACTIVITY.ASSIGNEE.REMOVED_BY': `${params.initiatorName} снял ответственного`,
       'CONVERSATION.ACTIVITY.ASSIGNEE.POLICY_SYSTEM': 'Система политики',
     };
     return translations[key] || key;
@@ -28,25 +29,28 @@ describe('activityMessageHelper', () => {
         'Политика по умолчанию назначил John ответственным',
         translate
       )
-    ).toBe('Назначен: John.');
+    ).toBe('Назначен John');
   });
 
-  it('normalizes legacy one-line policy assignment text into two lines', () => {
+  it('normalizes legacy one-line policy assignment text into single-line format', () => {
     expect(
       getLocalizedActivityMessage(
         'Назначен ответственный: Жандаулет. Инициатор: Система автоматизации через Политика по умолчанию',
         translate
       )
-    ).toBe('Назначен: Жандаулет.');
+    ).toBe('Назначен Жандаулет');
   });
 
-  it('hides system policy initiator from current two-line assignment text', () => {
+  it('hides system policy initiator from two-line or active assignment text', () => {
     expect(
       getLocalizedActivityMessage(
         'Назначен: Akhan Bakhitov.\nИнициатор: Система политики',
         translate
       )
-    ).toBe('Назначен: Akhan Bakhitov.');
+    ).toBe('Назначен Akhan Bakhitov');
+    expect(
+      getLocalizedActivityMessage('Система политики назначил Асет', translate)
+    ).toBe('Назначен Асет');
   });
 
   it('localizes AI open activity with reason', () => {
@@ -58,13 +62,25 @@ describe('activityMessageHelper', () => {
     ).toBe('Диалог был открыт Captain: Customer requested a specialist');
   });
 
-  it('normalizes legacy one-line manual assignment text into two lines', () => {
+  it('normalizes manual assignment text into compact single-line format', () => {
     expect(
       getLocalizedActivityMessage(
         'Назначен ответственный: Жандаулет. Инициатор: John',
         translate
       )
-    ).toBe('Назначен: Жандаулет.\nИнициатор: John');
+    ).toBe('John назначил Жандаулет');
+    expect(
+      getLocalizedActivityMessage(
+        'Назначен: Алуа.\nИнициатор: Асет',
+        translate
+      )
+    ).toBe('Асет назначил Алуа');
+  });
+
+  it('normalizes legacy removed assignee text into active voice', () => {
+    expect(
+      getLocalizedActivityMessage('Ответственный снят Асет', translate)
+    ).toBe('Асет снял ответственного');
   });
 
   it('replaces technical label titles in activity content with display names', () => {

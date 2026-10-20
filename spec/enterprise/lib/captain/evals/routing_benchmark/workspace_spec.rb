@@ -23,18 +23,6 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Workspace do
   before { allow(Captain::Llm::UpdateEmbeddingJob).to receive(:perform_now) }
 
   describe '#create!' do
-    it 'creates fixture teams and named booking scopes for the agent' do
-      data = fixture.data.deep_dup
-      data['workspace']['teams'] = [{ 'name' => 'Бухгалтерия' }]
-      data['workspace']['agents'].first['handoff_team'] = 'Бухгалтерия'
-      data['workspace']['agents'].first['booking_scope'] = { 'resources' => ['Кардиолог Омаров Тимур'] }
-      seeded = described_class.new(Captain::Evals::RoutingBenchmark::Fixture.new(data), model: 'openai/gpt-6-luna', reasoning: 'none').create!
-      actor = seeded.agents.fetch('Регистратор')
-
-      expect(actor.handoff_team.name).to eq('бухгалтерия')
-      expect(seeded.account.scheduling_resources.where(id: actor.booking_resource_ids).pluck(:name)).to eq(['Кардиолог Омаров Тимур'])
-    end
-
     it 'turns audit_logs on for the synthetic account, so executed tools leave their arguments and results' do
       expect(workspace.account.feature_enabled?('audit_logs')).to be(true)
       expect(described_class::FEATURES).not_to include('audit_logs')
@@ -73,7 +61,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Workspace do
     let(:fixture) do
       Captain::Evals::RoutingBenchmark::Fixture.new(
         workspace: {
-          agents: [{ name: 'Регистратор', routing_description: 'Запись', instructions: 'Отвечай по-русски.', tool_ids: %w[faq_lookup], model: 'openai/gpt-6-luna' }],
+          agents: [{ name: 'Регистратор', routing_description: 'Запись', instructions: 'Отвечай по-русски.', tool_ids: %w[faq_lookup],
+                     model: 'openai/gpt-6-luna' }],
           contacts: [{ key: 'patient', name: 'Дана Нурланова' }],
           resources: names.map { |key, name| { key: key, name: name } }
         },
@@ -109,7 +98,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Workspace do
     let(:fixture) do
       Captain::Evals::RoutingBenchmark::Fixture.new(
         workspace: {
-          agents: [{ name: 'Регистратор', routing_description: 'Запись', instructions: 'Отвечай по-русски.', tool_ids: %w[faq_lookup], model: 'openai/gpt-6-luna' }],
+          agents: [{ name: 'Регистратор', routing_description: 'Запись', instructions: 'Отвечай по-русски.', tool_ids: %w[faq_lookup],
+                     model: 'openai/gpt-6-luna' }],
           contacts: [{ key: 'patient', name: 'Дана Нурланова' }],
           resources: [{ key: 'terapevt', name: 'Терапевт Абдрахманова Сауле' }, { key: 'kardiolog', name: 'Кардиолог Омаров Тимур' },
                       { key: 'lab', name: 'Процедурный кабинет (забор анализов)' }],
@@ -135,7 +125,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Workspace do
     end
 
     it 'are every doctor of the workspace for a service that lists none (the fixtures of the first version)' do
-      expect(links.fetch('Консультация без списка врачей')).to eq(['Кардиолог Омаров Тимур', 'Процедурный кабинет (забор анализов)', 'Терапевт Абдрахманова Сауле'])
+      expect(links.fetch('Консультация без списка врачей')).to eq(['Кардиолог Омаров Тимур', 'Процедурный кабинет (забор анализов)',
+                                                                   'Терапевт Абдрахманова Сауле'])
     end
 
     it 'take the price of the service' do

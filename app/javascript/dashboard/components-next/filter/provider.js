@@ -184,17 +184,6 @@ export function useConversationFilterContext() {
       attributeModel: 'standard',
     },
     {
-      attributeKey: CONVERSATION_ATTRIBUTES.TEAM_ID,
-      value: CONVERSATION_ATTRIBUTES.TEAM_ID,
-      attributeName: t('FILTER.ATTRIBUTES.TEAM_NAME'),
-      label: t('FILTER.ATTRIBUTES.TEAM_NAME'),
-      inputType: 'searchSelect',
-      options: teams.value,
-      dataType: 'number',
-      filterOperators: presenceOperators.value,
-      attributeModel: 'standard',
-    },
-    {
       attributeKey: CONVERSATION_ATTRIBUTES.DISPLAY_ID,
       value: CONVERSATION_ATTRIBUTES.DISPLAY_ID,
       attributeName: t('FILTER.ATTRIBUTES.CONVERSATION_IDENTIFIER'),

@@ -3442,7 +3442,8 @@
       "SETTINGS": "Настройки",
       "LOGS": "Логи",
       "LOGS_AGENT_FILTER": "Агент: {name}",
-      "LOGS_AGENT_FILTER_CLEAR": "Сбросить фильтр по агенту"
+      "LOGS_AGENT_FILTER_CLEAR": "Сбросить фильтр по агенту",
+      "SANDBOX": "Песочница"
     }
   }
 }

@@ -120,12 +120,6 @@ const DEAL_AUTOMATION_CONDITIONS = [
     inputType: 'search_select',
     filterOperators: OPERATOR_TYPES_3,
   },
-  {
-    key: 'team_id',
-    name: 'TEAM_NAME',
-    inputType: 'search_select',
-    filterOperators: OPERATOR_TYPES_3,
-  },
   CONTACT_AUTOMATION_CONDITION,
   {
     key: 'title',
@@ -193,10 +187,6 @@ const DEAL_AUTOMATION_ACTIONS = [
     name: 'ASSIGN_DEAL_OWNER',
   },
   {
-    key: 'assign_deal_team',
-    name: 'ASSIGN_DEAL_TEAM',
-  },
-  {
     key: 'archive_deal',
     name: 'ARCHIVE_DEAL',
   },
@@ -228,12 +218,6 @@ const TASK_AUTOMATION_CONDITIONS = [
   {
     key: 'assignee_id',
     name: 'TASK_ASSIGNEE',
-    inputType: 'search_select',
-    filterOperators: OPERATOR_TYPES_3,
-  },
-  {
-    key: 'team_id',
-    name: 'TEAM_NAME',
     inputType: 'search_select',
     filterOperators: OPERATOR_TYPES_3,
   },
@@ -296,10 +280,6 @@ const TASK_AUTOMATION_ACTIONS = [
   {
     key: 'assign_task_assignee',
     name: 'ASSIGN_TASK_ASSIGNEE',
-  },
-  {
-    key: 'assign_task_team',
-    name: 'ASSIGN_TASK_TEAM',
   },
   {
     key: 'change_task_priority',
@@ -368,12 +348,6 @@ const CONVERSATION_AUTOMATION_CONDITIONS = [
   {
     key: 'assignee_id',
     name: 'ASSIGNEE_NAME',
-    inputType: 'search_select',
-    filterOperators: OPERATOR_TYPES_3,
-  },
-  {
-    key: 'team_id',
-    name: 'TEAM_NAME',
     inputType: 'search_select',
     filterOperators: OPERATOR_TYPES_3,
   },
@@ -453,24 +427,12 @@ const CONVERSATION_AUTOMATION_ACTIONS = [
     name: 'REMOVE_LABEL',
   },
   {
-    key: 'send_email_to_team',
-    name: 'SEND_EMAIL_TO_TEAM',
-  },
-  {
-    key: 'assign_team',
-    name: 'ASSIGN_TEAM',
-  },
-  {
     key: 'assign_agent',
     name: 'ASSIGN_AGENT',
   },
   {
     key: 'remove_assigned_agent',
     name: 'REMOVE_ASSIGNED_AGENT',
-  },
-  {
-    key: 'remove_assigned_team',
-    name: 'REMOVE_ASSIGNED_TEAM',
   },
   {
     key: 'send_webhook_event',
@@ -715,18 +677,8 @@ export const AUTOMATION_ACTION_TYPES = [
     inputType: 'search_select',
   },
   {
-    key: 'assign_team',
-    label: 'ASSIGN_TEAM',
-    inputType: 'search_select',
-  },
-  {
     key: 'remove_assigned_agent',
     label: 'REMOVE_ASSIGNED_AGENT',
-    inputType: null,
-  },
-  {
-    key: 'remove_assigned_team',
-    label: 'REMOVE_ASSIGNED_TEAM',
     inputType: null,
   },
   {
@@ -738,11 +690,6 @@ export const AUTOMATION_ACTION_TYPES = [
     key: 'remove_label',
     label: 'REMOVE_LABEL',
     inputType: 'multi_select',
-  },
-  {
-    key: 'send_email_to_team',
-    label: 'SEND_EMAIL_TO_TEAM',
-    inputType: 'team_message',
   },
   {
     key: 'send_email_transcript',
@@ -795,11 +742,6 @@ export const AUTOMATION_ACTION_TYPES = [
     inputType: 'search_select',
   },
   {
-    key: 'assign_deal_team',
-    label: 'ASSIGN_DEAL_TEAM',
-    inputType: 'search_select',
-  },
-  {
     key: 'archive_deal',
     label: 'ARCHIVE_DEAL',
     inputType: null,
@@ -817,11 +759,6 @@ export const AUTOMATION_ACTION_TYPES = [
   {
     key: 'assign_task_assignee',
     label: 'ASSIGN_TASK_ASSIGNEE',
-    inputType: 'search_select',
-  },
-  {
-    key: 'assign_task_team',
-    label: 'ASSIGN_TASK_TEAM',
     inputType: 'search_select',
   },
   {

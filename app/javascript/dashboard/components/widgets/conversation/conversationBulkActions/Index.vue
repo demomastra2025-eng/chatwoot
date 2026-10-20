@@ -17,7 +17,6 @@ import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import BulkAgentActions from './BulkAgentActions.vue';
 import BulkUpdateActions from './BulkUpdateActions.vue';
 import BulkLabelActions from './BulkLabelActions.vue';
-import BulkTeamActions from './BulkTeamActions.vue';
 import CustomSnoozeModal from 'dashboard/components/CustomSnoozeModal.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import ConversationStatusReasonDialog from 'dashboard/components-next/ConversationWorkflow/ConversationStatusReasonDialog.vue';
@@ -398,11 +397,6 @@ onUnmounted(() => {
               :conversation-count="selectedCount"
               :disabled="bulkActionUiFlags.isUpdating"
               @select="assignAgent"
-            />
-            <BulkTeamActions
-              :conversation-count="selectedCount"
-              :disabled="bulkActionUiFlags.isUpdating"
-              @select="assignTeam"
             />
           </div>
         </div>

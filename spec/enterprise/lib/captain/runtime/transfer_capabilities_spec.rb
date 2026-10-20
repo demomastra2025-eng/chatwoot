@@ -4,24 +4,19 @@ require 'rails_helper'
 
 RSpec.describe Captain::Runtime::TransferCapabilities do
   describe '.useful?' do
-    let(:facts) { Struct.new(:tool_ids, :handoff_team_id, :handoff_team_name, :booking_resource_ids) }
+    let(:facts) { Struct.new(:tool_ids) }
 
     it 'excludes read-only colleagues and colleagues with no new action' do
-      source = facts.new(%w[faq_lookup search_scheduling_services create_appointment], nil, nil, [])
-      expect(described_class.useful?(source, facts.new(%w[faq_lookup search_scheduling_services], nil, nil, []))).to be(false)
-      expect(described_class.useful?(source, facts.new(%w[create_appointment search_available_slots], nil, nil, []))).to be(false)
+      source = facts.new(%w[faq_lookup search_scheduling_services create_appointment])
+      expect(described_class.useful?(source, facts.new(%w[faq_lookup search_scheduling_services]))).to be(false)
+      expect(described_class.useful?(source, facts.new(%w[create_appointment search_available_slots]))).to be(false)
     end
 
-    it 'offers missing writes, another team and booking reach with action-first text' do
-      source = facts.new(%w[create_appointment], 1, 'Регистратура', [10])
-      writer = facts.new(%w[create_appointment cancel_appointment], nil, nil, [])
-      team = facts.new([], 2, 'Бухгалтерия', [])
-      booker = facts.new(%w[create_appointment], 1, 'Регистратура', [11])
+    it 'offers missing writes with action-first text' do
+      source = facts.new(%w[create_appointment])
+      writer = facts.new(%w[create_appointment cancel_appointment])
       expect(described_class.useful?(source, writer)).to be(true)
-      expect(described_class.actions(source, writer)).to eq('cancel appointments; books specialists and rooms outside your booking scope')
-      expect(described_class.useful?(source, team)).to be(true)
-      expect(described_class.actions(source, team)).to eq('hands the conversation to the team «Бухгалтерия»')
-      expect(described_class.useful?(source, booker)).to be(true)
+      expect(described_class.actions(source, writer)).to eq('cancel appointments')
     end
   end
 

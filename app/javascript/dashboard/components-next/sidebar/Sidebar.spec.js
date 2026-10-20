@@ -323,6 +323,7 @@ describe('Sidebar', () => {
   describe('AI group', () => {
     const ADMIN_AI_ITEMS = [
       'Agents',
+      'Sandbox',
       'Channels',
       'Knowledge Base',
       'Tools',
@@ -364,6 +365,7 @@ describe('Sidebar', () => {
         ADMIN_AI_ITEMS.map(name => captainChild(wrapper, name).to.name)
       ).toEqual([
         'captain_agents_index',
+        'captain_playground_index',
         'captain_channels_index',
         'captain_assistants_responses_index',
         'captain_tools_index',
@@ -399,7 +401,7 @@ describe('Sidebar', () => {
       ]);
     });
 
-    it('shows employees only the agents, the knowledge and the tools', async () => {
+    it('shows employees only the agents, sandbox, knowledge and the tools', async () => {
       const wrapper = await mountSidebar({
         permissions: AGENT,
         routeName: 'contacts_dashboard_index',
@@ -407,6 +409,7 @@ describe('Sidebar', () => {
 
       expect(navigationChildNames(sidebarGroup(wrapper, 'Captain'))).toEqual([
         'Agents',
+        'Sandbox',
         'Knowledge Base',
         'Tools',
       ]);
@@ -450,8 +453,7 @@ describe('Sidebar', () => {
         'size-2.5 rounded-sm',
         'inline-flex size-[14px] items-center justify-center overflow-hidden text-sm leading-none',
       ]);
-      const [team] = conversationChild(wrapper, 'Teams').children;
-      expect(team.badge).toBe(3);
+      expect(conversationChild(wrapper, 'Teams')).toBeUndefined();
       expect(classes.join(' ')).not.toContain('text-xl');
       expect(classes.join(' ')).not.toContain('size-3');
     });
@@ -583,7 +585,6 @@ describe('Sidebar', () => {
         'Settings Webhooks',
         'Settings Automation',
         'Employees',
-        'Teams',
         'Roles',
         'Policies',
         'Audit Logs',
@@ -678,7 +679,7 @@ describe('Sidebar', () => {
       expect(
         navigationChildNames(sidebarGroup(wrapper, 'Conversation'))
       ).toEqual(
-        expect.arrayContaining(['Assignee:all', 'AppointmentStatuses', 'Teams'])
+        expect.arrayContaining(['Assignee:all', 'AppointmentStatuses'])
       );
     });
 

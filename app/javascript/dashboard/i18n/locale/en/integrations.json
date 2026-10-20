@@ -4088,7 +4088,8 @@
       "SETTINGS": "Settings",
       "LOGS": "Logs",
       "LOGS_AGENT_FILTER": "Agent: {name}",
-      "LOGS_AGENT_FILTER_CLEAR": "Clear the agent filter"
+      "LOGS_AGENT_FILTER_CLEAR": "Clear the agent filter",
+      "SANDBOX": "Sandbox"
     }
   }
 }

@@ -25,7 +25,7 @@ const varaintBaseMap = {
   [MESSAGE_VARIANTS.PRIVATE]:
     'bg-n-solid-amber text-n-amber-12 [&_.prosemirror-mention-node]:font-semibold',
   [MESSAGE_VARIANTS.USER]: 'bg-n-alpha-1 text-n-slate-12',
-  [MESSAGE_VARIANTS.ACTIVITY]: 'bg-transparent text-n-slate-11 text-sm',
+  [MESSAGE_VARIANTS.ACTIVITY]: 'bg-transparent text-n-slate-11 text-xs leading-4',
   [MESSAGE_VARIANTS.BOT]: 'bg-n-solid-iris text-n-slate-12',
   [MESSAGE_VARIANTS.TEMPLATE]: 'bg-n-solid-iris text-n-slate-12',
   [MESSAGE_VARIANTS.ERROR]: 'bg-n-ruby-4 text-n-ruby-12',
@@ -100,8 +100,9 @@ const replyToPreview = computed(() => {
 
 <template>
   <div
-    class="text-sm min-w-0 max-w-full"
+    class="min-w-0 max-w-full"
     :class="[
+      variant === MESSAGE_VARIANTS.ACTIVITY ? 'text-xs leading-4' : 'text-sm',
       messageClass,
       {
         'max-w-lg': variant !== MESSAGE_VARIANTS.EMAIL,

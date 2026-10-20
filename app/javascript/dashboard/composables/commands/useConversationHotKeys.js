@@ -378,7 +378,6 @@ export function useConversationHotKeys() {
       ...statusActions.value,
       ...conversationAdditionalActions.value,
       ...assignAgentActions.value,
-      ...assignTeamActions.value,
       ...labelActions.value,
       ...assignPriorityActions.value,
     ];

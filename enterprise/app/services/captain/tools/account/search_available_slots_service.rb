@@ -30,7 +30,6 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
     end
     service_id = scheduling_service_id(service_id)
     scheduling_service!(service_id)
-    resource_ids = scoped_agent_resource_ids(resource_ids, service_id: service_id)
     service_id ||= inferred_agent_service_id(resource_ids) if duration_min.blank?
     search_params = {
       account: account,
@@ -47,13 +46,13 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
     formatted_payload(prioritize_slot_keys(payload))
   rescue Scheduling::AvailableSlotSearchService::MissingServiceLinkError => e
     scheduling_tool_failure(Scheduling::Error.new(
-      code: 'SERVICE_NOT_AVAILABLE_FOR_RESOURCE', status: :unprocessable_content,
-      message: "#{e.message}: no recorded service-price link for these resources; provider eligibility is unverified",
-      details: { reason: 'service_not_linked' }
-    ))
+                              code: 'SERVICE_NOT_AVAILABLE_FOR_RESOURCE', status: :unprocessable_content,
+                              message: "#{e.message}: no recorded service-price link for these resources; provider eligibility is unverified",
+                              details: { reason: 'service_not_linked' }
+                            ))
   rescue ActiveRecord::RecordNotFound => e
     scheduling_tool_failure(Scheduling::Error.new(code: 'RESOURCE_NOT_FOUND', message: e.message, status: :not_found,
-                                                details: { reason: 'unknown_resource' }))
+                                                  details: { reason: 'unknown_resource' }))
   rescue StandardError => e
     scheduling_tool_failure(e)
   end
@@ -74,36 +73,6 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
     service_ids.first if service_ids.one?
   rescue StandardError
     nil
-  end
-
-  def scoped_agent_resource_ids(resource_ids, service_id: nil)
-    return resource_ids unless agent_scope? && assistant.booking_resource_ids.present?
-
-    allowed = assistant.booking_resource_ids
-    requested = Scheduling::AvailableSlotSearchService.normalize_resource_ids(resource_ids)
-    raise_resource_outside_scope! if (requested - allowed).any?
-    return requested if requested.present?
-
-    filter_allowed_by_service(allowed, service_id)
-  end
-
-  def filter_allowed_by_service(allowed, service_id)
-    return allowed if service_id.blank?
-
-    linked = Scheduling::ServicePrice.active.where(account_id: account.id, service_id: service_id).distinct.pluck(:resource_id)
-    return allowed if linked.empty?
-
-    scoped = allowed & linked
-    return scoped if scoped.present?
-
-    raise_resource_outside_scope!
-  end
-
-  def raise_resource_outside_scope!
-    raise Scheduling::Error.new(
-      code: 'RESOURCE_UNAVAILABLE', message: 'Resource is outside this agent booking scope',
-      status: :not_found, details: { reason: 'resource_outside_scope' }
-    )
   end
 
   def prioritize_slot_keys(payload)

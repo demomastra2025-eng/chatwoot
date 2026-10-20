@@ -24,37 +24,13 @@ export const actions = {
       commit(SET_TEAM_UI_FLAG, { isCreating: false });
     }
   },
-  revalidate: async ({ commit }, { newKey }) => {
-    const accountId = currentRouteAccountId();
-    try {
-      const isExistingKeyValid = await TeamsAPI.validateCacheKey(
-        newKey,
-        accountId
-      );
-      if (!isExistingKeyValid) {
-        const response = await TeamsAPI.refetchAndCommit(newKey, accountId);
-        if (!isCurrentRouteAccountId(accountId)) return;
-
-        commit(SET_TEAMS, response.data);
-      }
-    } catch (error) {
-      // Ignore error
-    }
+  revalidate: async ({ commit }) => {
+    commit(CLEAR_TEAMS);
+    commit(SET_TEAMS, []);
   },
   get: async ({ commit }) => {
-    const accountId = currentRouteAccountId();
-    commit(SET_TEAM_UI_FLAG, { isFetching: true });
-    try {
-      const { data } = await TeamsAPI.get(true);
-      if (!isCurrentRouteAccountId(accountId)) return;
-
-      commit(CLEAR_TEAMS);
-      commit(SET_TEAMS, data);
-    } finally {
-      if (isCurrentRouteAccountId(accountId)) {
-        commit(SET_TEAM_UI_FLAG, { isFetching: false });
-      }
-    }
+    commit(CLEAR_TEAMS);
+    commit(SET_TEAMS, []);
   },
 
   show: async ({ commit }, { id }) => {

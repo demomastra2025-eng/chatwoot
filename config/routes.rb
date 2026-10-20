@@ -580,15 +580,6 @@ Rails.application.routes.draw do
             delete :disconnect_telegram
           end
 
-          resources :teams do
-            resources :team_members, only: [:index, :create] do
-              collection do
-                delete :destroy
-                patch :update
-              end
-            end
-          end
-
           # Assignment V2 Routes
           resources :assignment_policies do
             resources :inboxes, only: [:index, :create, :destroy], module: :assignment_policies
@@ -790,7 +781,6 @@ Rails.application.routes.draw do
           resources :summary_reports, only: [] do
             collection do
               get :agent
-              get :team
               get :inbox
               get :label
               get :channel
@@ -803,7 +793,6 @@ Rails.application.routes.draw do
               get :agents
               get :inboxes
               get :labels
-              get :teams
               get :conversations
               get :conversations_summary
               get :conversation_traffic
