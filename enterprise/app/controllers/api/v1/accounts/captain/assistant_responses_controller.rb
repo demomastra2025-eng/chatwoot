@@ -27,7 +27,10 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
   end
 
   def update
-    @response.update!(response_params_with_valid_assistant)
+    attrs = response_params_with_valid_assistant
+    approving_pending = @response.pending? && attrs[:status].to_s == 'approved'
+    @response.update!(attrs)
+    @response = Captain::Knowledge::FaqMergerService.canonicalize_on_approve!(@response) if approving_pending
   rescue ActiveRecord::RecordInvalid => e
     render_could_not_create_error(e.record.errors.full_messages.join(', '))
   rescue ActiveRecord::RecordNotFound => e

@@ -54,6 +54,47 @@ RSpec.describe 'Api::V1::Accounts::Captain::BulkActions', type: :request do
       end
     end
 
+    context 'when merging duplicate responses' do
+      let!(:first_dup) do
+        create(
+          :captain_assistant_response,
+          assistant: assistant,
+          account: account,
+          status: 'approved',
+          question: 'Как подготовиться к ФГДС?',
+          answer: 'ФГДС проводится строго натощак.'
+        )
+      end
+      let!(:second_dup) do
+        create(
+          :captain_assistant_response,
+          assistant: assistant,
+          account: account,
+          status: 'pending',
+          question: 'Какая подготовка нужна перед ФГДС?',
+          answer: 'ФГДС проводится строго натощак. Не принимать пищу за 10 часов.'
+        )
+      end
+
+      it 'merges the selected responses into a single canonical approved response' do
+        expect do
+          post "/api/v1/accounts/#{account.id}/captain/bulk_actions",
+               params: {
+                 type: 'AssistantResponse',
+                 ids: [first_dup.id, second_dup.id],
+                 fields: { status: 'merge' }
+               },
+               headers: admin.create_new_auth_token,
+               as: :json
+        end.to change(Captain::AssistantResponse, :count).by(-1)
+
+        expect(response).to have_http_status(:ok)
+        expect(json_response.length).to eq(1)
+        expect(json_response.first[:id]).to eq(first_dup.id)
+        expect(json_response.first[:answer]).to include('Не принимать пищу за 10 часов')
+      end
+    end
+
     context 'when deleting responses' do
       let(:delete_params) do
         {

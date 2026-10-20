@@ -2787,6 +2787,11 @@
           "TITLE": "Captain FAQ",
           "NOTE": "Captain FAQs detects common customer questions—whether missing from your knowledge base or frequently asked—and generates relevant FAQs to improve support. You can review each suggestion and decide whether to approve or reject it."
         }
+      },
+      "BULK_MERGE_BUTTON": "Біріктіру",
+      "BULK_MERGE": {
+        "SUCCESS_MESSAGE": "Таңдалған FAQ жазбалары біріктірілді",
+        "ERROR_MESSAGE": "FAQ жазбаларын біріктіру мүмкін болмады"
       }
     },
     "INBOXES": {

@@ -180,6 +180,21 @@ const onBulkDeleteSuccess = () => {
   fetchResponseAfterBulkAction();
 };
 
+const handleBulkMerge = async () => {
+  try {
+    await store.dispatch(
+      'captainBulkActions/handleBulkMerge',
+      Array.from(bulkSelectedIds.value)
+    );
+    bulkSelectedIds.value = new Set();
+    useAlert(t('CAPTAIN.RESPONSES.BULK_MERGE.SUCCESS_MESSAGE'));
+  } catch (error) {
+    useAlert(
+      error?.message || t('CAPTAIN.RESPONSES.BULK_MERGE.ERROR_MESSAGE')
+    );
+  }
+};
+
 const debouncedSearch = debounce(async () => {
   fetchResponses(1);
 }, 500);
@@ -265,7 +280,19 @@ watch(
           'mb-2': bulkSelectedIds.size > 0,
         }"
         @bulk-delete="bulkDeleteDialog.dialogRef.open()"
-      />
+      >
+        <template #secondary-actions>
+          <Button
+            v-if="bulkSelectedIds.size > 1"
+            :label="$t('CAPTAIN.RESPONSES.BULK_MERGE_BUTTON')"
+            sm
+            ghost
+            icon="i-lucide-git-merge"
+            class="!px-1.5"
+            @click="handleBulkMerge"
+          />
+        </template>
+      </BulkSelectBar>
     </template>
 
     <template #emptyState>

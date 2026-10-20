@@ -36,7 +36,6 @@ export default createStore({
       });
 
       if (type === 'AssistantResponse') {
-        // Update the response store after successful API call
         await dispatch('captainResponses/removeBulkResponses', ids, {
           root: true,
         });
@@ -55,10 +54,26 @@ export default createStore({
         ids,
       });
 
-      // Update response store after successful API call
-      await dispatch('captainResponses/updateBulkResponses', response, {
-        root: true,
+      await dispatch(
+        'captainResponses/updateBulkResponses',
+        { responses: response, consumedIds: ids },
+        { root: true }
+      );
+      return response;
+    },
+
+    handleBulkMerge: async function handleBulkMerge({ dispatch }, ids) {
+      const response = await dispatch('processBulkAction', {
+        type: 'AssistantResponse',
+        actionType: 'merge',
+        ids,
       });
+
+      await dispatch(
+        'captainResponses/updateBulkResponses',
+        { responses: response, consumedIds: ids },
+        { root: true }
+      );
       return response;
     },
   }),
