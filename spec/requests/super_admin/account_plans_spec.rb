@@ -206,12 +206,7 @@ RSpec.describe 'Super admin account plans', type: :request do
   describe 'the plan of a clinic that signed up by itself, after its trial' do
     let(:card_path) { "/super_admin/accounts/#{signed_up.id}" }
     let(:owner) { create(:user) }
-    let(:signed_up) do
-      AccountBuilder.new(account_name: 'Самозапись', email: owner.email, user: owner).perform.last.tap do |record|
-        record.update!(limits: record.limits.to_h.merge('agents' => 5, 'inboxes' => 3)) if limits_before_trial
-      end
-    end
-    let(:limits_before_trial) { false }
+    let(:signed_up) { AccountBuilder.new(account_name: 'Самозапись', email: owner.email, user: owner).perform.last }
 
     def page = Nokogiri::HTML(response.body)
 
@@ -281,7 +276,13 @@ RSpec.describe 'Super admin account plans', type: :request do
     end
 
     context 'when the clinic had limits of its own before the trial' do
-      let(:limits_before_trial) { true }
+      # The steps of AccountBuilder, with the limits there from the start
+      let(:signed_up) do
+        create(:account, limits: { 'agents' => 5, 'inboxes' => 3 }).tap do |record|
+          Accounts::ApplyPlan.new(account: record, modules: [], keep_existing_limits: true).call
+          record.activate_trial!
+        end
+      end
 
       it 'gives back the numbers it had', :aggregate_failures do
         signed_up.expire_trial!
