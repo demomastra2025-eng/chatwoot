@@ -24,6 +24,10 @@ export default {
       type: Object,
       default: null,
     },
+    inline: {
+      type: Boolean,
+      default: false,
+    },
   },
   emits: ['close'],
   setup(props) {
@@ -295,8 +299,12 @@ export default {
 </script>
 
 <template>
-  <div class="flex flex-col h-auto overflow-auto integration-hooks">
+  <div
+    class="flex flex-col h-auto overflow-auto"
+    :class="{ 'integration-hooks': !inline }"
+  >
     <woot-modal-header
+      v-if="!inline"
       :header-title="integration.name"
       :header-content="replaceInstallationName(integration.short_description)"
     />

@@ -1,21 +1,15 @@
 <script setup>
 import { computed } from 'vue';
-import { useStoreGetters } from 'dashboard/composables/store';
+import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { frontendURL } from 'dashboard/helper/URLHelper';
 import { useBranding } from 'shared/composables/useBranding';
-
-import Button from 'dashboard/components-next/button/Button.vue';
-import Label from 'dashboard/components-next/label/Label.vue';
+import { buildIntegrationLogoUrls } from 'dashboard/helper/integrationLogo';
 
 const props = defineProps({
   id: {
     type: [String, Number],
     required: true,
-  },
-  logo: {
-    type: String,
-    default: '',
   },
   name: {
     type: String,
@@ -25,91 +19,112 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  logo: {
+    type: String,
+    default: '',
+  },
   enabled: {
     type: Boolean,
     default: false,
   },
 });
 
-const getters = useStoreGetters();
-const accountId = getters.getCurrentAccountId;
-
+const route = useRoute();
 const { t } = useI18n();
 const { replaceInstallationName } = useBranding();
 
-const integrationStatus = computed(() =>
+const accountId = computed(() => route.params.accountId);
+
+const statusBadgeText = computed(() =>
   props.enabled
-    ? t('INTEGRATION_APPS.STATUS.ENABLED')
-    : t('INTEGRATION_APPS.STATUS.DISABLED')
+    ? t('INTEGRATION_SETTINGS.STATUS.ACTIVE')
+    : t('INTEGRATION_SETTINGS.STATUS.INACTIVE')
 );
 
-const integrationStatusColor = computed(() =>
-  props.enabled ? 'teal' : 'slate'
+const statusBadgeClass = computed(() =>
+  props.enabled
+    ? 'bg-n-teal-3 text-n-teal-11 border-n-teal-6'
+    : 'bg-n-alpha-2 text-n-slate-11 border-n-weak'
 );
 
-const hasCustomLogo = computed(
-  () => !!props.logo && props.logo !== `${props.id}.png`
-);
-
-const lightLogoSource = computed(() =>
-  props.logo
-    ? `/dashboard/images/integrations/${props.logo}`
-    : `/dashboard/images/integrations/${props.id}.png`
-);
-
-const darkLogoSource = computed(() =>
-  hasCustomLogo.value
-    ? lightLogoSource.value
-    : `/dashboard/images/integrations/${props.id}-dark.png`
+const statusDotClass = computed(() =>
+  props.enabled ? 'bg-n-teal-9' : 'bg-n-slate-8'
 );
 
 const actionURL = computed(() =>
-  frontendURL(`accounts/${accountId.value}/settings/integrations/${props.id}`)
+  frontendURL(
+    `accounts/${accountId.value}/settings/integrations/` +
+      (props.id === 'dashboard_apps' ? 'dashboard_apps' : props.id)
+  )
 );
+
+const logoUrls = computed(() =>
+  buildIntegrationLogoUrls({ id: props.id, logo: props.logo })
+);
+const lightLogoSource = computed(() => logoUrls.value.light);
+const darkLogoSource = computed(() => logoUrls.value.dark);
 </script>
 
 <template>
-  <div
-    class="flex flex-col flex-1 p-4 m-px outline outline-n-container outline-1 bg-n-card rounded-xl"
+  <router-link
+    :to="actionURL"
+    class="group flex flex-col justify-between p-5 rounded-xl border border-n-weak bg-n-solid-2 shadow-sm transition-all duration-150 hover:border-n-slate-7 hover:bg-n-solid-3 focus:outline-none"
   >
-    <div class="flex items-start justify-between">
-      <div
-        class="flex h-12 w-12 mb-2 items-center justify-center overflow-hidden rounded-md border border-n-weak bg-n-alpha-3 p-1 shadow-sm dark:bg-n-alpha-2"
-      >
-        <img
-          :src="lightLogoSource"
-          class="block h-full w-full object-contain dark:hidden"
-          :alt="name"
-        />
-        <img
-          :src="darkLogoSource"
-          class="hidden h-full w-full object-contain dark:block"
-          :alt="name"
-        />
+    <div>
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex items-center gap-3.5 min-w-0">
+          <div
+            class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-n-weak bg-n-solid-1 p-2 shadow-xs"
+          >
+            <img
+              :src="lightLogoSource"
+              :alt="name"
+              class="max-w-full max-h-full rounded-md block dark:hidden"
+            />
+            <img
+              :src="darkLogoSource"
+              :alt="name"
+              class="max-w-full max-h-full rounded-md hidden dark:block"
+            />
+          </div>
+          <div class="min-w-0">
+            <h3
+              class="truncate text-base font-semibold text-n-slate-12 transition-colors group-hover:text-n-brand"
+            >
+              {{ name }}
+            </h3>
+          </div>
+        </div>
+        <span
+          class="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium"
+          :class="statusBadgeClass"
+        >
+          <span class="h-1.5 w-1.5 rounded-full" :class="statusDotClass" />
+          {{ statusBadgeText }}
+        </span>
       </div>
-      <Label
-        :label="integrationStatus"
-        :color="integrationStatusColor"
-        compact
-      />
-    </div>
-    <div class="flex flex-col m-0 flex-1">
-      <div
-        class="font-medium mb-2 text-n-slate-12 flex justify-between items-center"
-      >
-        <span class="text-heading-3 text-n-slate-12">{{ name }}</span>
-        <router-link :to="actionURL">
-          <Button
-            :label="$t('INTEGRATION_APPS.CONFIGURE')"
-            icon="i-woot-settings"
-            link
-            xs
-          />
-        </router-link>
-      </div>
-      <p class="text-n-slate-11 text-body-main">
+
+      <p class="mt-3 line-clamp-2 text-sm leading-relaxed text-n-slate-11">
         {{ replaceInstallationName(description) }}
       </p>
     </div>
-  </div>
+
+    <div
+      class="mt-5 flex items-center justify-between border-t border-n-weak pt-3.5"
+    >
+      <span class="text-xs text-n-slate-10">
+        {{
+          enabled
+            ? $t('INTEGRATION_APPS.STATUS.ENABLED')
+            : $t('INTEGRATION_APPS.STATUS.DISABLED')
+        }}
+      </span>
+      <span
+        class="inline-flex items-center gap-1.5 rounded-lg bg-n-alpha-2 px-3 py-1.5 text-xs font-medium text-n-slate-12 transition-colors group-hover:bg-n-brand group-hover:text-white"
+      >
+        <span class="i-lucide-sliders-horizontal size-3.5" />
+        {{ $t('INTEGRATION_APPS.CONFIGURE') }}
+      </span>
+    </div>
+  </router-link>
 </template>

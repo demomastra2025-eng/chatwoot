@@ -4,7 +4,6 @@ import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useStore } from 'vuex';
 import { useAlert } from 'dashboard/composables';
-import { copyTextToClipboard } from 'shared/helpers/clipboard';
 import { useIntegrationHook } from 'dashboard/composables/useIntegrationHook';
 import { useBranding } from 'shared/composables/useBranding';
 import BaseSettingsHeader from 'dashboard/routes/dashboard/settings/components/BaseSettingsHeader.vue';
@@ -12,6 +11,7 @@ import NextButton from 'dashboard/components-next/button/Button.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import SchedulingProductsAPI from 'dashboard/api/scheduling/products';
+import NewHook from './NewHook.vue';
 
 const props = defineProps({
   integrationId: {
@@ -20,7 +20,7 @@ const props = defineProps({
   },
 });
 
-defineEmits(['add', 'edit', 'delete']);
+defineEmits(['add', 'delete']);
 
 const { integration, hasConnectedHooks } = useIntegrationHook(
   props.integrationId
@@ -41,9 +41,8 @@ const uiFlags = computed(() => store.getters['integrations/getUIFlags']);
 const isMedelement = computed(() => props.integrationId === 'medelement');
 const isMoysklad = computed(() => props.integrationId === 'moysklad');
 const isRunningMoyskladSync = ref(false);
-const isMacrocrm = computed(() => props.integrationId === 'macrocrm');
+const isEditingInline = ref(false);
 const medelementMetadata = computed(() => connectedHook.value?.metadata || {});
-const macrocrmMetadata = computed(() => connectedHook.value?.metadata || {});
 const medelementCatalogFileInput = ref(null);
 const medelementCatalogFile = ref(null);
 const medelementCatalogMaxBytes = 5 * 1024 * 1024;
@@ -416,14 +415,6 @@ const medelementScheduleDetails = computed(() => {
     },
   ];
 });
-
-const macrocrmWebhookUrl = computed(
-  () => macrocrmMetadata.value.webhook_url || ''
-);
-
-const macrocrmWebhookKey = computed(
-  () => connectedHook.value?.reference_id || ''
-);
 
 function clearHookSyncPoll() {
   window.clearTimeout(hookSyncPollTimer);
@@ -949,19 +940,6 @@ async function importMedelementCatalog() {
   }
 }
 
-async function copyMacrocrmWebhookUrl() {
-  if (!macrocrmWebhookUrl.value) {
-    return;
-  }
-
-  try {
-    await copyTextToClipboard(macrocrmWebhookUrl.value);
-    useAlert(t('INTEGRATION_APPS.MACROCRM.WEBHOOK.COPY_SUCCESS'));
-  } catch (error) {
-    useAlert(error.message);
-  }
-}
-
 watch(
   () => connectedHook.value?.id,
   hookId => {
@@ -988,7 +966,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex flex-col flex-1 gap-8 overflow-auto">
+  <div class="flex flex-col flex-1 gap-6 overflow-auto">
     <BaseSettingsHeader
       :title="integration.name"
       :description="headerDescription"
@@ -1016,12 +994,6 @@ onBeforeUnmount(() => {
           />
           <NextButton
             faded
-            slate
-            :label="$t('INTEGRATION_APPS.CONFIGURE')"
-            @click="$emit('edit', connectedHook)"
-          />
-          <NextButton
-            faded
             ruby
             :label="$t('INTEGRATION_APPS.DISCONNECT.BUTTON_TEXT')"
             @click="$emit('delete', connectedHook)"
@@ -1036,996 +1008,105 @@ onBeforeUnmount(() => {
       </template>
     </BaseSettingsHeader>
 
-    <section v-if="showHookSyncPanel" class="flex flex-col gap-5">
-      <header class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 class="text-base font-medium text-n-slate-12">
-            {{ $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.TITLE') }}
-          </h3>
-          <p v-if="syncRun" class="mt-1 text-sm text-n-slate-11">
-            {{
-              $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.STARTED_AT_VALUE', {
-                date: formatSyncDate(syncRun.started_at || syncRun.created_at),
-              })
-            }}
-          </p>
-        </div>
-        <span
-          v-if="syncRun"
-          class="rounded-full bg-n-alpha-3 px-3 py-1 text-sm font-medium text-n-slate-12"
-        >
-          {{ syncStatusLabel(syncRun.status) }}
-        </span>
-      </header>
-
-      <p
-        class="rounded-lg border border-n-weak bg-n-solid-1 p-3 text-sm text-n-slate-11"
-      >
-        {{ $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.DIRECTION_NOTE') }}
-      </p>
-
-      <div
-        v-if="hookSyncStatus?.delta?.enabled"
-        class="rounded-lg border border-n-weak bg-n-solid-1 p-3 text-sm text-n-slate-11"
-      >
-        <p>
-          {{ $t('INTEGRATION_APPS.MEDELEMENT.DELTA.LAST_POLL') }}:
-          {{
-            hookSyncStatus.delta.last_poll_at
-              ? formatSyncDate(hookSyncStatus.delta.last_poll_at)
-              : '--'
-          }}
-        </p>
-        <p>
-          {{ $t('INTEGRATION_APPS.MEDELEMENT.DELTA.DELAY') }}:
-          {{ hookSyncStatus.delta.cursor_age_seconds ?? '--' }}
-          {{ $t('INTEGRATION_APPS.MEDELEMENT.DELTA.SECONDS') }}
-        </p>
-        <p>
-          {{ $t('INTEGRATION_APPS.MEDELEMENT.DELTA.MISSES_24H') }}:
-          {{ hookSyncStatus.delta.misses_24h }}
-          {{ $t('INTEGRATION_APPS.MEDELEMENT.DELTA.UNEXPLAINED_24H') }}:
-          {{ hookSyncStatus.delta.unexplained_misses_24h }}
-        </p>
-      </div>
-
-      <div v-if="syncRun" class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <article
-          v-for="row in syncPhaseRows"
-          :key="row.phase"
-          class="rounded-lg border border-n-weak bg-n-solid-1 p-3"
-          :class="{ 'ring-2 ring-n-brand': row.isCurrent }"
-        >
-          <p class="text-sm font-medium text-n-slate-12">
-            {{ syncPhaseLabel(row.phase) }}
-          </p>
-          <p class="mt-1 text-xs text-n-slate-10">
-            {{
-              row.status
-                ? syncStatusLabel(row.status)
-                : $t('INTEGRATION_APPS.MEDELEMENT.SYNC_STATUS.PENDING')
-            }}
-          </p>
-          <p v-if="row.lastSyncedAt" class="mt-1 text-xs text-n-slate-9">
-            {{
-              $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.LAST_PHASE_SYNC', {
-                date: formatSyncDate(row.lastSyncedAt),
-              })
-            }}
-          </p>
-          <dl
-            v-if="syncResultCounters(row.result).length"
-            class="mt-2 space-y-1"
+    <div
+      v-if="hasConnectedHooks"
+      class="rounded-xl border border-n-weak bg-n-solid-2 p-5 shadow-xs"
+    >
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-4 min-w-0">
+          <div
+            class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-n-weak bg-n-solid-1 p-2"
           >
-            <div
-              v-for="[key, value] in syncResultCounters(row.result)"
-              :key="key"
-              class="flex justify-between gap-2 text-xs text-n-slate-11"
-            >
-              <dt>{{ syncCounterLabel(key) }}</dt>
-              <dd class="font-medium text-n-slate-12">{{ value }}</dd>
+            <img
+              :src="lightLogoSource"
+              class="max-w-full max-h-full rounded-md block dark:hidden"
+            />
+            <img
+              :src="darkLogoSource"
+              class="max-w-full max-h-full rounded-md hidden dark:block"
+            />
+          </div>
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2.5">
+              <h3 class="text-base font-semibold text-n-slate-12">
+                {{ integration.name }}
+              </h3>
+              <span
+                class="inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+                :class="hookStatusClass"
+              >
+                {{ hookStatusLabel }}
+              </span>
             </div>
-          </dl>
-        </article>
+            <p class="mt-0.5 text-xs text-n-slate-11">
+              {{ $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.DIRECTION_NOTE') }}
+            </p>
+          </div>
+        </div>
+        <NextButton
+          faded
+          slate
+          size="sm"
+          :icon="
+            isEditingInline
+              ? 'i-lucide-chevron-up'
+              : 'i-lucide-sliders-horizontal'
+          "
+          :label="
+            isEditingInline
+              ? $t('INTEGRATION_APPS.ADD.FORM.CANCEL')
+              : $t('INTEGRATION_APPS.EDIT.TITLE')
+          "
+          @click="isEditingInline = !isEditingInline"
+        />
       </div>
 
       <div
-        v-if="syncRun?.error_message"
-        class="rounded-lg border border-n-ruby-5 bg-n-ruby-2 p-3 text-sm text-n-ruby-11"
+        v-if="
+          !isEditingInline &&
+          (hookDetails.length || medelementScheduleDetails.length)
+        "
+        class="mt-4 grid grid-cols-1 gap-3 border-t border-n-weak pt-4 md:grid-cols-2 xl:grid-cols-4"
       >
-        {{
-          $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.ERROR_WITH_MESSAGE', {
-            message: syncRun.error_message,
-          })
-        }}
+        <div
+          v-for="detail in hookDetails"
+          :key="detail.key"
+          class="rounded-lg border border-n-weak bg-n-solid-1 px-3.5 py-2.5"
+        >
+          <p class="text-[11px] uppercase tracking-wider text-n-slate-10">
+            {{ detail.label }}
+          </p>
+          <p class="mt-1 break-all text-sm font-medium text-n-slate-12">
+            {{ detail.value }}
+          </p>
+        </div>
+        <div
+          v-for="detail in medelementScheduleDetails"
+          :key="detail.key"
+          class="rounded-lg border border-n-weak bg-n-solid-1 px-3.5 py-2.5"
+        >
+          <p class="text-[11px] uppercase tracking-wider text-n-slate-10">
+            {{ detail.label }}
+          </p>
+          <p class="mt-1 break-all text-sm font-medium text-n-slate-12">
+            {{ detail.value }}
+          </p>
+        </div>
       </div>
 
-      <div class="flex flex-col gap-3">
-        <div class="flex items-center justify-between gap-3">
-          <h4 class="text-sm font-medium text-n-slate-12">
-            {{ $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.CONFLICTS') }}
-          </h4>
-          <span class="text-xs text-n-slate-10">
-            {{ hookSyncStatus.conflict_counts?.open || 0 }}
-            {{ $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.OPEN_CONFLICTS') }}
-          </span>
-        </div>
-
-        <div
-          class="grid gap-3 rounded-lg border border-n-weak bg-n-alpha-2 p-3 md:grid-cols-2 xl:grid-cols-5"
-        >
-          <label class="flex flex-col gap-1 text-xs text-n-slate-11">
-            {{
-              $t(
-                'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.STATUS'
-              )
-            }}
-            <select
-              v-model="conflictFilters.status"
-              class="rounded-lg border border-n-weak bg-n-solid-1 px-3 py-2 text-sm"
-            >
-              <option value="">
-                {{
-                  $t(
-                    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.ALL'
-                  )
-                }}
-              </option>
-              <option value="open">{{ conflictStatusLabel('open') }}</option>
-              <option value="ignored">
-                {{ conflictStatusLabel('ignored') }}
-              </option>
-              <option value="resolved">
-                {{ conflictStatusLabel('resolved') }}
-              </option>
-            </select>
-          </label>
-          <label class="flex flex-col gap-1 text-xs text-n-slate-11">
-            {{
-              $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.TYPE')
-            }}
-            <select
-              v-model="conflictFilters.conflict_type"
-              class="rounded-lg border border-n-weak bg-n-solid-1 px-3 py-2 text-sm"
-            >
-              <option value="">
-                {{
-                  $t(
-                    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.ALL'
-                  )
-                }}
-              </option>
-              <option
-                v-for="(_, type) in syncConflictTranslation"
-                :key="type"
-                :value="type"
-              >
-                {{ syncConflictLabel(type) }}
-              </option>
-            </select>
-          </label>
-          <Input
-            v-model="conflictFilters.contact"
-            :label="
-              $t(
-                'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.CONTACT'
-              )
-            "
-          />
-          <Input
-            v-model="conflictFilters.from"
-            type="date"
-            :label="
-              $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.FROM')
-            "
-          />
-          <Input
-            v-model="conflictFilters.to"
-            type="date"
-            :label="
-              $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.TO')
-            "
-          />
-          <div class="flex flex-wrap gap-2 md:col-span-2 xl:col-span-5">
-            <NextButton
-              blue
-              :label="
-                $t(
-                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.APPLY'
-                )
-              "
-              @click="applyConflictFilters"
-            />
-            <NextButton
-              faded
-              slate
-              :label="
-                $t(
-                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.CLEAR'
-                )
-              "
-              @click="clearConflictFilters"
-            />
-          </div>
-        </div>
-
-        <p
-          v-if="!syncConflicts.length"
-          class="rounded-lg border border-n-weak bg-n-solid-1 p-4 text-sm text-n-slate-10"
-        >
-          {{
-            $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.EMPTY')
-          }}
-        </p>
-
-        <article
-          v-for="conflict in syncConflicts"
-          :key="conflict.id"
-          class="flex flex-col gap-4 border-t border-n-weak pt-4"
-        >
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p class="text-sm font-medium text-n-slate-12">
-                {{ syncConflictLabel(conflict.conflict_type) }}
-              </p>
-              <p class="mt-1 text-xs text-n-slate-10">
-                {{
-                  $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.CONFLICT_META', {
-                    phase: syncPhaseLabel(conflict.phase),
-                    count: conflict.occurrences,
-                  })
-                }}
-              </p>
-            </div>
-            <span
-              class="rounded-full bg-n-alpha-3 px-2 py-1 text-xs text-n-slate-11"
-            >
-              {{ conflictStatusLabel(conflict.status) }}
-            </span>
-          </div>
-
-          <div
-            v-if="conflict.contact_resolution"
-            class="grid gap-3 lg:grid-cols-2"
-          >
-            <article
-              v-for="(contact, role) in {
-                primary: conflict.contact_resolution.primary_contact,
-                conflicting: conflict.contact_resolution.conflicting_contact,
-              }"
-              :key="role"
-              class="rounded-lg border border-n-weak bg-n-alpha-2 p-3"
-            >
-              <template v-if="contact">
-                <p
-                  class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
-                >
-                  {{ contactRoleLabel(role) }}
-                </p>
-                <p class="mt-1 text-sm font-medium text-n-slate-12">
-                  {{ contact.name || `#${contact.id}` }}
-                </p>
-                <dl class="mt-2 grid grid-cols-2 gap-2 text-xs text-n-slate-11">
-                  <div>
-                    <dt>
-                      {{
-                        $t(
-                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PHONE'
-                        )
-                      }}
-                    </dt>
-                    <dd>{{ contact.phone_number || '—' }}</dd>
-                  </div>
-                  <div>
-                    <dt>
-                      {{
-                        $t(
-                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.IIN'
-                        )
-                      }}
-                    </dt>
-                    <dd>{{ contact.identifier_masked || '—' }}</dd>
-                  </div>
-                  <div v-if="contact.birth_date">
-                    <dt>
-                      {{
-                        $t(
-                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.BIRTH_DATE'
-                        )
-                      }}
-                    </dt>
-                    <dd>{{ contact.birth_date }}</dd>
-                  </div>
-                  <div v-if="contact.patient_code">
-                    <dt>
-                      {{
-                        $t(
-                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PATIENT_CODE'
-                        )
-                      }}
-                    </dt>
-                    <dd>{{ contact.patient_code }}</dd>
-                  </div>
-                  <div>
-                    <dt>
-                      {{
-                        $t(
-                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.CONVERSATIONS'
-                        )
-                      }}
-                    </dt>
-                    <dd>{{ contact.conversations_count }}</dd>
-                  </div>
-                  <div>
-                    <dt>
-                      {{
-                        $t(
-                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.APPOINTMENTS'
-                        )
-                      }}
-                    </dt>
-                    <dd>{{ contact.appointments_count }}</dd>
-                  </div>
-                  <div>
-                    <dt>
-                      {{
-                        $t(
-                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.DEALS'
-                        )
-                      }}
-                    </dt>
-                    <dd>{{ contact.deals_count }}</dd>
-                  </div>
-                  <div>
-                    <dt>
-                      {{
-                        $t(
-                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.CALLS'
-                        )
-                      }}
-                    </dt>
-                    <dd>{{ contact.call_sessions_count }}</dd>
-                  </div>
-                </dl>
-                <div class="mt-3 flex flex-wrap gap-2">
-                  <NextButton
-                    faded
-                    slate
-                    size="sm"
-                    :label="
-                      $t(
-                        'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.OPEN_EDIT'
-                      )
-                    "
-                    @click="openContact(contact)"
-                  />
-                  <NextButton
-                    v-if="
-                      role === 'primary'
-                        ? conflict.contact_resolution.can_delete_primary
-                        : conflict.contact_resolution.can_delete_conflicting
-                    "
-                    faded
-                    ruby
-                    size="sm"
-                    :label="
-                      $t(
-                        'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.DELETE_EMPTY'
-                      )
-                    "
-                    @click="deleteConflictContact(conflict, contact)"
-                  />
-                </div>
-              </template>
-              <p v-else class="text-sm text-n-slate-10">
-                {{
-                  $t(
-                    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.CONTACT_MISSING'
-                  )
-                }}
-              </p>
-            </article>
-
-            <div
-              v-if="conflict.contact_resolution.field_comparisons?.length"
-              class="overflow-x-auto rounded-lg border border-n-weak lg:col-span-2"
-              data-test="contact-field-comparison"
-            >
-              <table class="w-full text-left text-xs text-n-slate-11">
-                <thead class="bg-n-alpha-3 text-n-slate-12">
-                  <tr>
-                    <th class="px-3 py-2">
-                      {{
-                        $t(
-                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.DIRECTION'
-                        )
-                      }}
-                    </th>
-                    <th class="px-3 py-2">
-                      {{
-                        $t(
-                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FIELD_LABEL'
-                        )
-                      }}
-                    </th>
-                    <th class="px-3 py-2">
-                      {{
-                        $t(
-                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.ONELINK_SOURCE'
-                        )
-                      }}
-                    </th>
-                    <th class="px-3 py-2">
-                      {{
-                        $t(
-                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.MEDELEMENT_SOURCE'
-                        )
-                      }}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="field in conflict.contact_resolution
-                      .field_comparisons"
-                    :key="field.field"
-                    :class="field.differs ? 'bg-n-amber-1' : ''"
-                    class="border-t border-n-weak"
-                  >
-                    <td class="px-3 py-2">
-                      <select
-                        :data-test="`field-direction-${field.field}`"
-                        class="min-w-48 rounded-md border border-n-weak bg-n-solid-2 px-2 py-1 text-xs text-n-slate-12"
-                        :value="
-                          fieldDirectionsForConflict(conflict)[field.field] ||
-                          ''
-                        "
-                        @change="
-                          setConflictFieldDirection(
-                            conflict,
-                            field.field,
-                            $event.target.value
-                          )
-                        "
-                      >
-                        <option value="">
-                          {{
-                            $t(
-                              'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.DO_NOT_CHANGE'
-                            )
-                          }}
-                        </option>
-                        <option
-                          v-if="field.can_sync_to_onelink"
-                          value="medelement_to_onelink"
-                        >
-                          {{
-                            $t(
-                              'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FROM_MEDELEMENT_TO_ONELINK'
-                            )
-                          }}
-                        </option>
-                        <option
-                          v-if="field.can_sync_to_medelement"
-                          value="onelink_to_medelement"
-                        >
-                          {{
-                            $t(
-                              'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FROM_ONELINK_TO_MEDELEMENT'
-                            )
-                          }}
-                        </option>
-                      </select>
-                    </td>
-                    <td class="px-3 py-2 font-medium text-n-slate-12">
-                      {{ conflictFieldLabel(field.field) }}
-                    </td>
-                    <td class="px-3 py-2">{{ field.onelink_value || '—' }}</td>
-                    <td class="px-3 py-2">
-                      {{ field.medelement_value || '—' }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div
-            v-else-if="conflict.entity_context?.kind === 'specialist'"
-            class="rounded-lg border border-n-weak bg-n-alpha-2 p-3"
-            data-test="specialist-conflict-card"
-          >
-            <p
-              class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
-            >
-              {{
-                $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SPECIALIST')
-              }}
-            </p>
-            <p class="mt-1 text-sm font-medium text-n-slate-12">
-              {{
-                conflict.entity_context.resource?.name ||
-                conflict.entity_context.specialist_name ||
-                conflict.entity_context.specialist_code ||
-                '—'
-              }}
-            </p>
-            <dl
-              class="mt-2 grid gap-2 text-xs text-n-slate-11 sm:grid-cols-2 lg:grid-cols-4"
-            >
-              <div>
-                <dt>
-                  {{
-                    $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.CODE')
-                  }}
-                </dt>
-                <dd>{{ conflict.entity_context.specialist_code || '—' }}</dd>
-              </div>
-              <div>
-                <dt>
-                  {{
-                    $t(
-                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SPECIALTY'
-                    )
-                  }}
-                </dt>
-                <dd>{{ conflict.entity_context.specialty || '—' }}</dd>
-              </div>
-              <div>
-                <dt>
-                  {{
-                    $t(
-                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.CABINET'
-                    )
-                  }}
-                </dt>
-                <dd>{{ conflict.entity_context.cabinet_code || '—' }}</dd>
-              </div>
-              <div>
-                <dt>
-                  {{
-                    $t(
-                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SERVICE'
-                    )
-                  }}
-                </dt>
-                <dd>
-                  {{
-                    conflict.entity_context.service?.name ||
-                    conflict.entity_context.service_code ||
-                    '—'
-                  }}
-                </dd>
-              </div>
-            </dl>
-          </div>
-
-          <div
-            v-else-if="conflict.entity_context?.kind === 'appointment'"
-            class="rounded-lg border border-n-weak bg-n-alpha-2 p-3"
-            data-test="appointment-conflict-card"
-          >
-            <p
-              class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
-            >
-              {{
-                $t(
-                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.APPOINTMENT'
-                )
-              }}
-            </p>
-            <p class="mt-1 text-sm font-medium text-n-slate-12">
-              {{
-                conflict.entity_context.appointment?.client_name ||
-                conflict.entity_context.patient_code ||
-                conflict.entity_context.reception_code ||
-                '—'
-              }}
-            </p>
-            <dl
-              class="mt-2 grid gap-2 text-xs text-n-slate-11 sm:grid-cols-2 lg:grid-cols-4"
-            >
-              <div>
-                <dt>
-                  {{
-                    $t(
-                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.RECEPTION_CODE'
-                    )
-                  }}
-                </dt>
-                <dd>{{ conflict.entity_context.reception_code || '—' }}</dd>
-              </div>
-              <div>
-                <dt>
-                  {{
-                    $t(
-                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.DATE_TIME'
-                    )
-                  }}
-                </dt>
-                <dd>
-                  {{ formatConflictDate(conflict.entity_context.starts_at) }}
-                </dd>
-              </div>
-              <div>
-                <dt>
-                  {{
-                    $t(
-                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SPECIALIST'
-                    )
-                  }}
-                </dt>
-                <dd>
-                  {{
-                    conflict.entity_context.appointment?.resource_name ||
-                    conflict.entity_context.resource?.name ||
-                    conflict.entity_context.specialist_code ||
-                    '—'
-                  }}
-                </dd>
-              </div>
-              <div>
-                <dt>
-                  {{
-                    $t(
-                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SERVICE'
-                    )
-                  }}
-                </dt>
-                <dd>
-                  {{ conflict.entity_context.appointment?.service_name || '—' }}
-                </dd>
-              </div>
-              <div>
-                <dt>
-                  {{
-                    $t(
-                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.STATUS_LABEL'
-                    )
-                  }}
-                </dt>
-                <dd>
-                  {{
-                    schedulingStatusLabel(
-                      'appointment',
-                      conflict.entity_context.appointment?.status
-                    )
-                  }}
-                </dd>
-              </div>
-              <div>
-                <dt>
-                  {{
-                    $t(
-                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PAYMENT_STATUS'
-                    )
-                  }}
-                </dt>
-                <dd>
-                  {{
-                    schedulingStatusLabel(
-                      'payment',
-                      conflict.entity_context.appointment?.payment_status
-                    )
-                  }}
-                </dd>
-              </div>
-              <div>
-                <dt>
-                  {{
-                    $t(
-                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.LOCAL_AMOUNT'
-                    )
-                  }}
-                </dt>
-                <dd>
-                  {{
-                    formatConflictAmount(
-                      conflict.entity_context.local_amount ??
-                        conflict.entity_context.appointment?.service_amount
-                    )
-                  }}
-                </dd>
-              </div>
-              <div>
-                <dt>
-                  {{
-                    $t(
-                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PROVIDER_AMOUNT'
-                    )
-                  }}
-                </dt>
-                <dd>
-                  {{
-                    formatConflictAmount(
-                      conflict.entity_context.provider_amount
-                    )
-                  }}
-                </dd>
-              </div>
-            </dl>
-          </div>
-
-          <div class="flex flex-wrap gap-2">
-            <NextButton
-              v-if="
-                conflict.status === 'open' &&
-                conflict.contact_resolution?.can_merge
-              "
-              blue
-              :is-loading="resolvingConflictId === conflict.id"
-              :label="
-                $t(
-                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.MERGE_TO_PRIMARY'
-                )
-              "
-              @click="mergeContactConflict(conflict, 'primary')"
-            />
-            <NextButton
-              v-if="
-                conflict.status === 'open' &&
-                conflict.contact_resolution?.can_merge
-              "
-              faded
-              blue
-              :is-loading="resolvingConflictId === conflict.id"
-              :label="
-                $t(
-                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.MERGE_TO_CONFLICTING'
-                )
-              "
-              @click="mergeContactConflict(conflict, 'conflicting')"
-            />
-            <NextButton
-              v-if="
-                conflict.status === 'open' &&
-                conflict.contact_resolution?.can_sync_fields
-              "
-              blue
-              :is-loading="resolvingConflictId === conflict.id"
-              :disabled="
-                !Object.keys(fieldDirectionsForConflict(conflict)).length
-              "
-              :label="
-                $t(
-                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.APPLY_FIELD_DIRECTIONS'
-                )
-              "
-              @click="syncConflictFields(conflict)"
-            />
-            <NextButton
-              v-if="conflict.status === 'open' && conflict.contact_resolution"
-              faded
-              slate
-              :label="
-                $t(
-                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.KEEP_SEPARATE'
-                )
-              "
-              @click="keepContactsSeparate(conflict)"
-            />
-            <NextButton
-              v-if="conflict.status === 'open'"
-              faded
-              blue
-              :disabled="isSyncActive"
-              :label="$t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.RETRY_PHASE')"
-              @click="retrySyncPhase(conflict)"
-            />
-            <NextButton
-              v-if="conflict.status === 'open' && !conflict.contact_resolution"
-              faded
-              slate
-              :label="$t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.IGNORE')"
-              @click="updateSyncConflict(conflict, 'ignore')"
-            />
-            <NextButton
-              v-if="conflict.status === 'ignored'"
-              faded
-              slate
-              :label="$t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.REOPEN')"
-              @click="updateSyncConflict(conflict, 'reopen')"
-            />
-          </div>
-        </article>
-
-        <div
-          v-if="conflictPagination.total_pages > 1"
-          class="flex items-center justify-end gap-2"
-        >
-          <NextButton
-            faded
-            slate
-            :disabled="conflictPagination.page <= 1"
-            :label="
-              $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PREVIOUS')
-            "
-            @click="loadConflictPage(conflictPagination.page - 1)"
-          />
-          <span class="text-xs text-n-slate-10">
-            {{
-              $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PAGE', {
-                page: conflictPagination.page,
-                total: conflictPagination.total_pages,
-              })
-            }}
-          </span>
-          <NextButton
-            faded
-            slate
-            :disabled="
-              conflictPagination.page >= conflictPagination.total_pages
-            "
-            :label="$t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.NEXT')"
-            @click="loadConflictPage(conflictPagination.page + 1)"
-          />
-        </div>
-      </div>
-    </section>
-
-    <div v-if="hasConnectedHooks" class="border-t border-n-weak pt-5">
-      <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
-        <div class="flex h-16 w-16 shrink-0 items-center justify-center">
-          <img
-            :src="lightLogoSource"
-            class="max-w-full rounded-md border border-n-weak shadow-sm block dark:hidden bg-n-alpha-3 dark:bg-n-alpha-2"
-          />
-          <img
-            :src="darkLogoSource"
-            class="max-w-full rounded-md border border-n-weak shadow-sm hidden dark:block bg-n-alpha-3 dark:bg-n-alpha-2"
-          />
-        </div>
-        <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-start justify-end gap-3">
-            <span
-              class="inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-medium"
-              :class="hookStatusClass"
-            >
-              {{ hookStatusLabel }}
-            </span>
-          </div>
-
-          <div
-            class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"
-          >
-            <div
-              v-for="detail in hookDetails"
-              :key="detail.key"
-              class="rounded-md bg-n-alpha-2 px-4 py-3"
-            >
-              <p class="text-xs uppercase tracking-[1px] text-n-slate-10">
-                {{ detail.label }}
-              </p>
-              <p class="mt-1 break-all text-sm font-medium text-n-slate-12">
-                {{ detail.value }}
-              </p>
-            </div>
-          </div>
-
-          <div
-            v-if="medelementScheduleDetails.length"
-            class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2"
-          >
-            <div
-              v-for="detail in medelementScheduleDetails"
-              :key="detail.key"
-              class="rounded-md bg-n-alpha-2 px-4 py-3"
-            >
-              <p class="text-xs uppercase tracking-[1px] text-n-slate-10">
-                {{ detail.label }}
-              </p>
-              <p class="mt-1 break-all text-sm font-medium text-n-slate-12">
-                {{ detail.value }}
-              </p>
-            </div>
-          </div>
-
-          <div v-if="isMedelement" class="mt-4 rounded-md bg-n-alpha-2 p-4">
-            <p class="text-sm font-medium text-n-slate-12">
-              {{ $t('INTEGRATION_APPS.MEDELEMENT.IMPORT.TITLE') }}
-            </p>
-            <p class="mt-1 text-sm leading-6 text-n-slate-11">
-              {{ $t('INTEGRATION_APPS.MEDELEMENT.IMPORT.DESCRIPTION') }}
-              <a
-                href="/downloads/medelement-catalog-sample.json"
-                download="medelement-catalog-sample.json"
-                class="text-n-blue-11"
-              >
-                {{ $t('INTEGRATION_APPS.MEDELEMENT.IMPORT.DOWNLOAD_SAMPLE') }}
-              </a>
-            </p>
-            <div class="mt-3 flex flex-wrap items-center gap-2">
-              <NextButton
-                faded
-                slate
-                size="sm"
-                icon="i-lucide-upload"
-                :label="$t('INTEGRATION_APPS.MEDELEMENT.IMPORT.CHOOSE_FILE')"
-                :disabled="uiFlags.isImportingHookCatalog"
-                @click="openMedelementCatalogFilePicker"
-              />
-              <span
-                v-if="medelementCatalogFile"
-                class="max-w-64 truncate text-sm text-n-slate-11"
-              >
-                {{ medelementCatalogFile.name }}
-              </span>
-              <NextButton
-                v-if="medelementCatalogFile"
-                blue
-                size="sm"
-                :label="$t('INTEGRATION_APPS.MEDELEMENT.IMPORT.BUTTON')"
-                :is-loading="uiFlags.isImportingHookCatalog"
-                @click="importMedelementCatalog"
-              />
-              <input
-                ref="medelementCatalogFileInput"
-                type="file"
-                accept=".json,application/json"
-                class="hidden"
-                @change="selectMedelementCatalogFile"
-              />
-            </div>
-          </div>
-
-          <div
-            v-if="isMacrocrm && macrocrmWebhookUrl"
-            class="mt-4 rounded-md bg-n-alpha-2 p-4"
-          >
-            <p class="text-sm leading-6 text-n-slate-11">
-              {{ $t('INTEGRATION_APPS.MACROCRM.WEBHOOK.DESCRIPTION') }}
-            </p>
-
-            <div class="mt-3 flex flex-wrap gap-2">
-              <span
-                class="inline-flex items-center rounded-full bg-n-alpha-3 px-3 py-1 text-xs font-medium text-n-slate-12"
-              >
-                {{ $t('INTEGRATION_APPS.MACROCRM.WEBHOOK.METHOD') }}
-              </span>
-              <span
-                class="inline-flex items-center rounded-full bg-n-alpha-3 px-3 py-1 text-xs font-medium text-n-slate-12"
-              >
-                {{ $t('INTEGRATION_APPS.MACROCRM.WEBHOOK.EVENT') }}
-              </span>
-            </div>
-
-            <div
-              class="mt-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"
-            >
-              <div class="min-w-0 flex-1">
-                <p class="text-xs uppercase tracking-[1px] text-n-slate-10">
-                  {{ $t('INTEGRATION_APPS.MACROCRM.WEBHOOK.URL_LABEL') }}
-                </p>
-                <p class="mt-1 break-all text-sm font-medium text-n-slate-12">
-                  {{ macrocrmWebhookUrl }}
-                </p>
-              </div>
-              <NextButton
-                faded
-                slate
-                size="sm"
-                icon="i-lucide-clipboard"
-                :label="$t('INTEGRATION_APPS.MACROCRM.WEBHOOK.COPY')"
-                @click="copyMacrocrmWebhookUrl"
-              />
-            </div>
-
-            <div v-if="macrocrmWebhookKey" class="mt-4">
-              <p class="text-xs uppercase tracking-[1px] text-n-slate-10">
-                {{ $t('INTEGRATION_APPS.MACROCRM.WEBHOOK.KEY_LABEL') }}
-              </p>
-              <p class="mt-1 break-all text-sm font-medium text-n-slate-12">
-                {{ macrocrmWebhookKey }}
-              </p>
-            </div>
-          </div>
-        </div>
+      <div v-if="isEditingInline" class="mt-4 border-t border-n-weak pt-4">
+        <NewHook
+          inline
+          :integration-id="integrationId"
+          :hook="connectedHook"
+          @close="isEditingInline = false"
+        />
       </div>
     </div>
 
     <div
       v-else
-      class="outline outline-n-container outline-1 bg-n-alpha-3 rounded-md shadow p-8 text-center text-sm text-n-slate-11"
+      class="outline outline-n-container outline-1 bg-n-alpha-3 rounded-xl shadow-xs p-8 text-center text-sm text-n-slate-11"
     >
       {{
         $t('INTEGRATION_APPS.NO_HOOK_CONFIGURED', {
@@ -2033,6 +1114,905 @@ onBeforeUnmount(() => {
         })
       }}
     </div>
+
+    <section v-if="showHookSyncPanel" class="flex flex-col gap-5">
+      <div
+        class="rounded-xl border border-n-weak bg-n-solid-2 p-5 shadow-xs flex flex-col gap-4"
+      >
+        <header class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 class="text-base font-medium text-n-slate-12">
+              {{ $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.TITLE') }}
+            </h3>
+            <p v-if="syncRun" class="mt-1 text-sm text-n-slate-11">
+              {{
+                $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.STARTED_AT_VALUE', {
+                  date: formatSyncDate(
+                    syncRun.started_at || syncRun.created_at
+                  ),
+                })
+              }}
+            </p>
+          </div>
+          <span
+            v-if="syncRun"
+            class="rounded-full bg-n-alpha-3 px-3 py-1 text-sm font-medium text-n-slate-12"
+          >
+            {{ syncStatusLabel(syncRun.status) }}
+          </span>
+        </header>
+
+        <div v-if="syncRun" class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <article
+            v-for="row in syncPhaseRows"
+            :key="row.phase"
+            class="rounded-lg border border-n-weak bg-n-solid-1 p-3"
+            :class="{ 'ring-2 ring-n-brand': row.isCurrent }"
+          >
+            <p class="text-sm font-medium text-n-slate-12">
+              {{ syncPhaseLabel(row.phase) }}
+            </p>
+            <p class="mt-1 text-xs text-n-slate-10">
+              {{
+                row.status
+                  ? syncStatusLabel(row.status)
+                  : $t('INTEGRATION_APPS.MEDELEMENT.SYNC_STATUS.PENDING')
+              }}
+            </p>
+            <p v-if="row.lastSyncedAt" class="mt-1 text-xs text-n-slate-9">
+              {{
+                $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.LAST_PHASE_SYNC', {
+                  date: formatSyncDate(row.lastSyncedAt),
+                })
+              }}
+            </p>
+            <dl
+              v-if="syncResultCounters(row.result).length"
+              class="mt-2 space-y-1 border-t border-n-weak pt-2"
+            >
+              <div
+                v-for="[key, value] in syncResultCounters(row.result)"
+                :key="key"
+                class="flex justify-between gap-2 text-xs text-n-slate-11"
+              >
+                <dt>{{ syncCounterLabel(key) }}</dt>
+                <dd class="font-medium text-n-slate-12">{{ value }}</dd>
+              </div>
+            </dl>
+          </article>
+        </div>
+
+        <div
+          v-if="syncRun?.error_message"
+          class="rounded-lg border border-n-ruby-5 bg-n-ruby-2 p-3 text-sm text-n-ruby-11"
+        >
+          {{
+            $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.ERROR_WITH_MESSAGE', {
+              message: syncRun.error_message,
+            })
+          }}
+        </div>
+      </div>
+
+      <details
+        class="group rounded-xl border border-n-weak bg-n-solid-2 p-5 shadow-xs"
+        :open="Boolean(hookSyncStatus.conflict_counts?.open)"
+      >
+        <summary
+          class="flex cursor-pointer list-none items-center justify-between gap-3"
+        >
+          <div class="flex items-center gap-2">
+            <span
+              class="i-lucide-chevron-right size-4 text-n-slate-10 transition-transform group-open:rotate-90"
+            />
+            <h4 class="text-sm font-medium text-n-slate-12">
+              {{ $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.CONFLICTS') }}
+            </h4>
+          </div>
+          <span
+            class="rounded-full px-2.5 py-0.5 text-xs font-medium"
+            :class="
+              (hookSyncStatus.conflict_counts?.open || 0) > 0
+                ? 'bg-n-amber-3 text-n-amber-11'
+                : 'bg-n-alpha-3 text-n-slate-11'
+            "
+          >
+            {{ hookSyncStatus.conflict_counts?.open || 0 }}
+            {{ $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.OPEN_CONFLICTS') }}
+          </span>
+        </summary>
+
+        <div class="mt-4 flex flex-col gap-3 border-t border-n-weak pt-4">
+          <div
+            class="grid gap-3 rounded-lg border border-n-weak bg-n-alpha-2 p-3 md:grid-cols-2 xl:grid-cols-5"
+          >
+            <label class="flex flex-col gap-1 text-xs text-n-slate-11">
+              {{
+                $t(
+                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.STATUS'
+                )
+              }}
+              <select
+                v-model="conflictFilters.status"
+                class="rounded-lg border border-n-weak bg-n-solid-1 px-3 py-2 text-sm"
+              >
+                <option value="">
+                  {{
+                    $t(
+                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.ALL'
+                    )
+                  }}
+                </option>
+                <option value="open">{{ conflictStatusLabel('open') }}</option>
+                <option value="ignored">
+                  {{ conflictStatusLabel('ignored') }}
+                </option>
+                <option value="resolved">
+                  {{ conflictStatusLabel('resolved') }}
+                </option>
+              </select>
+            </label>
+            <label class="flex flex-col gap-1 text-xs text-n-slate-11">
+              {{
+                $t(
+                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.TYPE'
+                )
+              }}
+              <select
+                v-model="conflictFilters.conflict_type"
+                class="rounded-lg border border-n-weak bg-n-solid-1 px-3 py-2 text-sm"
+              >
+                <option value="">
+                  {{
+                    $t(
+                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.ALL'
+                    )
+                  }}
+                </option>
+                <option
+                  v-for="(_, type) in syncConflictTranslation"
+                  :key="type"
+                  :value="type"
+                >
+                  {{ syncConflictLabel(type) }}
+                </option>
+              </select>
+            </label>
+            <Input
+              v-model="conflictFilters.contact"
+              :label="
+                $t(
+                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.CONTACT'
+                )
+              "
+            />
+            <Input
+              v-model="conflictFilters.from"
+              type="date"
+              :label="
+                $t(
+                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.FROM'
+                )
+              "
+            />
+            <Input
+              v-model="conflictFilters.to"
+              type="date"
+              :label="
+                $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.TO')
+              "
+            />
+            <div class="flex flex-wrap gap-2 md:col-span-2 xl:col-span-5">
+              <NextButton
+                blue
+                :label="
+                  $t(
+                    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.APPLY'
+                  )
+                "
+                @click="applyConflictFilters"
+              />
+              <NextButton
+                faded
+                slate
+                :label="
+                  $t(
+                    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.CLEAR'
+                  )
+                "
+                @click="clearConflictFilters"
+              />
+            </div>
+          </div>
+
+          <p
+            v-if="!syncConflicts.length"
+            class="rounded-lg border border-n-weak bg-n-solid-1 p-4 text-sm text-n-slate-10"
+          >
+            {{
+              $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.EMPTY')
+            }}
+          </p>
+
+          <article
+            v-for="conflict in syncConflicts"
+            :key="conflict.id"
+            class="flex flex-col gap-4 border-t border-n-weak pt-4"
+          >
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p class="text-sm font-medium text-n-slate-12">
+                  {{ syncConflictLabel(conflict.conflict_type) }}
+                </p>
+                <p class="mt-1 text-xs text-n-slate-10">
+                  {{
+                    $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.CONFLICT_META', {
+                      phase: syncPhaseLabel(conflict.phase),
+                      count: conflict.occurrences,
+                    })
+                  }}
+                </p>
+              </div>
+              <span
+                class="rounded-full bg-n-alpha-3 px-2 py-1 text-xs text-n-slate-11"
+              >
+                {{ conflictStatusLabel(conflict.status) }}
+              </span>
+            </div>
+
+            <div
+              v-if="conflict.contact_resolution"
+              class="grid gap-3 lg:grid-cols-2"
+            >
+              <article
+                v-for="(contact, role) in {
+                  primary: conflict.contact_resolution.primary_contact,
+                  conflicting: conflict.contact_resolution.conflicting_contact,
+                }"
+                :key="role"
+                class="rounded-lg border border-n-weak bg-n-alpha-2 p-3"
+              >
+                <template v-if="contact">
+                  <p
+                    class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
+                  >
+                    {{ contactRoleLabel(role) }}
+                  </p>
+                  <p class="mt-1 text-sm font-medium text-n-slate-12">
+                    {{ contact.name || `#${contact.id}` }}
+                  </p>
+                  <dl
+                    class="mt-2 grid grid-cols-2 gap-2 text-xs text-n-slate-11"
+                  >
+                    <div>
+                      <dt>
+                        {{
+                          $t(
+                            'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PHONE'
+                          )
+                        }}
+                      </dt>
+                      <dd>{{ contact.phone_number || '—' }}</dd>
+                    </div>
+                    <div>
+                      <dt>
+                        {{
+                          $t(
+                            'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.IIN'
+                          )
+                        }}
+                      </dt>
+                      <dd>{{ contact.identifier_masked || '—' }}</dd>
+                    </div>
+                    <div v-if="contact.birth_date">
+                      <dt>
+                        {{
+                          $t(
+                            'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.BIRTH_DATE'
+                          )
+                        }}
+                      </dt>
+                      <dd>{{ contact.birth_date }}</dd>
+                    </div>
+                    <div v-if="contact.patient_code">
+                      <dt>
+                        {{
+                          $t(
+                            'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PATIENT_CODE'
+                          )
+                        }}
+                      </dt>
+                      <dd>{{ contact.patient_code }}</dd>
+                    </div>
+                    <div>
+                      <dt>
+                        {{
+                          $t(
+                            'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.CONVERSATIONS'
+                          )
+                        }}
+                      </dt>
+                      <dd>{{ contact.conversations_count }}</dd>
+                    </div>
+                    <div>
+                      <dt>
+                        {{
+                          $t(
+                            'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.APPOINTMENTS'
+                          )
+                        }}
+                      </dt>
+                      <dd>{{ contact.appointments_count }}</dd>
+                    </div>
+                    <div>
+                      <dt>
+                        {{
+                          $t(
+                            'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.DEALS'
+                          )
+                        }}
+                      </dt>
+                      <dd>{{ contact.deals_count }}</dd>
+                    </div>
+                    <div>
+                      <dt>
+                        {{
+                          $t(
+                            'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.CALLS'
+                          )
+                        }}
+                      </dt>
+                      <dd>{{ contact.call_sessions_count }}</dd>
+                    </div>
+                  </dl>
+                  <div class="mt-3 flex flex-wrap gap-2">
+                    <NextButton
+                      faded
+                      slate
+                      size="sm"
+                      :label="
+                        $t(
+                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.OPEN_EDIT'
+                        )
+                      "
+                      @click="openContact(contact)"
+                    />
+                    <NextButton
+                      v-if="
+                        role === 'primary'
+                          ? conflict.contact_resolution.can_delete_primary
+                          : conflict.contact_resolution.can_delete_conflicting
+                      "
+                      faded
+                      ruby
+                      size="sm"
+                      :label="
+                        $t(
+                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.DELETE_EMPTY'
+                        )
+                      "
+                      @click="deleteConflictContact(conflict, contact)"
+                    />
+                  </div>
+                </template>
+                <p v-else class="text-sm text-n-slate-10">
+                  {{
+                    $t(
+                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.CONTACT_MISSING'
+                    )
+                  }}
+                </p>
+              </article>
+
+              <div
+                v-if="conflict.contact_resolution.field_comparisons?.length"
+                class="overflow-x-auto rounded-lg border border-n-weak lg:col-span-2"
+                data-test="contact-field-comparison"
+              >
+                <table class="w-full text-left text-xs text-n-slate-11">
+                  <thead class="bg-n-alpha-3 text-n-slate-12">
+                    <tr>
+                      <th class="px-3 py-2">
+                        {{
+                          $t(
+                            'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.DIRECTION'
+                          )
+                        }}
+                      </th>
+                      <th class="px-3 py-2">
+                        {{
+                          $t(
+                            'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FIELD_LABEL'
+                          )
+                        }}
+                      </th>
+                      <th class="px-3 py-2">
+                        {{
+                          $t(
+                            'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.ONELINK_SOURCE'
+                          )
+                        }}
+                      </th>
+                      <th class="px-3 py-2">
+                        {{
+                          $t(
+                            'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.MEDELEMENT_SOURCE'
+                          )
+                        }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="field in conflict.contact_resolution
+                        .field_comparisons"
+                      :key="field.field"
+                      :class="field.differs ? 'bg-n-amber-1' : ''"
+                      class="border-t border-n-weak"
+                    >
+                      <td class="px-3 py-2">
+                        <select
+                          :data-test="`field-direction-${field.field}`"
+                          class="min-w-48 rounded-md border border-n-weak bg-n-solid-2 px-2 py-1 text-xs text-n-slate-12"
+                          :value="
+                            fieldDirectionsForConflict(conflict)[field.field] ||
+                            ''
+                          "
+                          @change="
+                            setConflictFieldDirection(
+                              conflict,
+                              field.field,
+                              $event.target.value
+                            )
+                          "
+                        >
+                          <option value="">
+                            {{
+                              $t(
+                                'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.DO_NOT_CHANGE'
+                              )
+                            }}
+                          </option>
+                          <option
+                            v-if="field.can_sync_to_onelink"
+                            value="medelement_to_onelink"
+                          >
+                            {{
+                              $t(
+                                'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FROM_MEDELEMENT_TO_ONELINK'
+                              )
+                            }}
+                          </option>
+                          <option
+                            v-if="field.can_sync_to_medelement"
+                            value="onelink_to_medelement"
+                          >
+                            {{
+                              $t(
+                                'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FROM_ONELINK_TO_MEDELEMENT'
+                              )
+                            }}
+                          </option>
+                        </select>
+                      </td>
+                      <td class="px-3 py-2 font-medium text-n-slate-12">
+                        {{ conflictFieldLabel(field.field) }}
+                      </td>
+                      <td class="px-3 py-2">
+                        {{ field.onelink_value || '—' }}
+                      </td>
+                      <td class="px-3 py-2">
+                        {{ field.medelement_value || '—' }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div
+              v-else-if="conflict.entity_context?.kind === 'specialist'"
+              class="rounded-lg border border-n-weak bg-n-alpha-2 p-3"
+              data-test="specialist-conflict-card"
+            >
+              <p
+                class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
+              >
+                {{
+                  $t(
+                    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SPECIALIST'
+                  )
+                }}
+              </p>
+              <p class="mt-1 text-sm font-medium text-n-slate-12">
+                {{
+                  conflict.entity_context.resource?.name ||
+                  conflict.entity_context.specialist_name ||
+                  conflict.entity_context.specialist_code ||
+                  '—'
+                }}
+              </p>
+              <dl
+                class="mt-2 grid gap-2 text-xs text-n-slate-11 sm:grid-cols-2 lg:grid-cols-4"
+              >
+                <div>
+                  <dt>
+                    {{
+                      $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.CODE')
+                    }}
+                  </dt>
+                  <dd>{{ conflict.entity_context.specialist_code || '—' }}</dd>
+                </div>
+                <div>
+                  <dt>
+                    {{
+                      $t(
+                        'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SPECIALTY'
+                      )
+                    }}
+                  </dt>
+                  <dd>{{ conflict.entity_context.specialty || '—' }}</dd>
+                </div>
+                <div>
+                  <dt>
+                    {{
+                      $t(
+                        'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.CABINET'
+                      )
+                    }}
+                  </dt>
+                  <dd>{{ conflict.entity_context.cabinet_code || '—' }}</dd>
+                </div>
+                <div>
+                  <dt>
+                    {{
+                      $t(
+                        'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SERVICE'
+                      )
+                    }}
+                  </dt>
+                  <dd>
+                    {{
+                      conflict.entity_context.service?.name ||
+                      conflict.entity_context.service_code ||
+                      '—'
+                    }}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            <div
+              v-else-if="conflict.entity_context?.kind === 'appointment'"
+              class="rounded-lg border border-n-weak bg-n-alpha-2 p-3"
+              data-test="appointment-conflict-card"
+            >
+              <p
+                class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
+              >
+                {{
+                  $t(
+                    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.APPOINTMENT'
+                  )
+                }}
+              </p>
+              <p class="mt-1 text-sm font-medium text-n-slate-12">
+                {{
+                  conflict.entity_context.appointment?.client_name ||
+                  conflict.entity_context.patient_code ||
+                  conflict.entity_context.reception_code ||
+                  '—'
+                }}
+              </p>
+              <dl
+                class="mt-2 grid gap-2 text-xs text-n-slate-11 sm:grid-cols-2 lg:grid-cols-4"
+              >
+                <div>
+                  <dt>
+                    {{
+                      $t(
+                        'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.RECEPTION_CODE'
+                      )
+                    }}
+                  </dt>
+                  <dd>{{ conflict.entity_context.reception_code || '—' }}</dd>
+                </div>
+                <div>
+                  <dt>
+                    {{
+                      $t(
+                        'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.DATE_TIME'
+                      )
+                    }}
+                  </dt>
+                  <dd>
+                    {{ formatConflictDate(conflict.entity_context.starts_at) }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>
+                    {{
+                      $t(
+                        'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SPECIALIST'
+                      )
+                    }}
+                  </dt>
+                  <dd>
+                    {{
+                      conflict.entity_context.appointment?.resource_name ||
+                      conflict.entity_context.resource?.name ||
+                      conflict.entity_context.specialist_code ||
+                      '—'
+                    }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>
+                    {{
+                      $t(
+                        'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SERVICE'
+                      )
+                    }}
+                  </dt>
+                  <dd>
+                    {{
+                      conflict.entity_context.appointment?.service_name || '—'
+                    }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>
+                    {{
+                      $t(
+                        'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.STATUS_LABEL'
+                      )
+                    }}
+                  </dt>
+                  <dd>
+                    {{
+                      schedulingStatusLabel(
+                        'appointment',
+                        conflict.entity_context.appointment?.status
+                      )
+                    }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>
+                    {{
+                      $t(
+                        'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PAYMENT_STATUS'
+                      )
+                    }}
+                  </dt>
+                  <dd>
+                    {{
+                      schedulingStatusLabel(
+                        'payment',
+                        conflict.entity_context.appointment?.payment_status
+                      )
+                    }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>
+                    {{
+                      $t(
+                        'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.LOCAL_AMOUNT'
+                      )
+                    }}
+                  </dt>
+                  <dd>
+                    {{
+                      formatConflictAmount(
+                        conflict.entity_context.local_amount ??
+                          conflict.entity_context.appointment?.service_amount
+                      )
+                    }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>
+                    {{
+                      $t(
+                        'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PROVIDER_AMOUNT'
+                      )
+                    }}
+                  </dt>
+                  <dd>
+                    {{
+                      formatConflictAmount(
+                        conflict.entity_context.provider_amount
+                      )
+                    }}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              <NextButton
+                v-if="
+                  conflict.status === 'open' &&
+                  conflict.contact_resolution?.can_merge
+                "
+                blue
+                :is-loading="resolvingConflictId === conflict.id"
+                :label="
+                  $t(
+                    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.MERGE_TO_PRIMARY'
+                  )
+                "
+                @click="mergeContactConflict(conflict, 'primary')"
+              />
+              <NextButton
+                v-if="
+                  conflict.status === 'open' &&
+                  conflict.contact_resolution?.can_merge
+                "
+                faded
+                blue
+                :is-loading="resolvingConflictId === conflict.id"
+                :label="
+                  $t(
+                    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.MERGE_TO_CONFLICTING'
+                  )
+                "
+                @click="mergeContactConflict(conflict, 'conflicting')"
+              />
+              <NextButton
+                v-if="
+                  conflict.status === 'open' &&
+                  conflict.contact_resolution?.can_sync_fields
+                "
+                blue
+                :is-loading="resolvingConflictId === conflict.id"
+                :disabled="
+                  !Object.keys(fieldDirectionsForConflict(conflict)).length
+                "
+                :label="
+                  $t(
+                    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.APPLY_FIELD_DIRECTIONS'
+                  )
+                "
+                @click="syncConflictFields(conflict)"
+              />
+              <NextButton
+                v-if="conflict.status === 'open' && conflict.contact_resolution"
+                faded
+                slate
+                :label="
+                  $t(
+                    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.KEEP_SEPARATE'
+                  )
+                "
+                @click="keepContactsSeparate(conflict)"
+              />
+              <NextButton
+                v-if="conflict.status === 'open'"
+                faded
+                blue
+                :disabled="isSyncActive"
+                :label="$t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.RETRY_PHASE')"
+                @click="retrySyncPhase(conflict)"
+              />
+              <NextButton
+                v-if="
+                  conflict.status === 'open' && !conflict.contact_resolution
+                "
+                faded
+                slate
+                :label="$t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.IGNORE')"
+                @click="updateSyncConflict(conflict, 'ignore')"
+              />
+              <NextButton
+                v-if="conflict.status === 'ignored'"
+                faded
+                slate
+                :label="$t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.REOPEN')"
+                @click="updateSyncConflict(conflict, 'reopen')"
+              />
+            </div>
+          </article>
+
+          <div
+            v-if="conflictPagination.total_pages > 1"
+            class="flex items-center justify-end gap-2"
+          >
+            <NextButton
+              faded
+              slate
+              :disabled="conflictPagination.page <= 1"
+              :label="
+                $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PREVIOUS')
+              "
+              @click="loadConflictPage(conflictPagination.page - 1)"
+            />
+            <span class="text-xs text-n-slate-10">
+              {{
+                $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PAGE', {
+                  page: conflictPagination.page,
+                  total: conflictPagination.total_pages,
+                })
+              }}
+            </span>
+            <NextButton
+              faded
+              slate
+              :disabled="
+                conflictPagination.page >= conflictPagination.total_pages
+              "
+              :label="
+                $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.NEXT')
+              "
+              @click="loadConflictPage(conflictPagination.page + 1)"
+            />
+          </div>
+        </div>
+      </details>
+
+      <details
+        v-if="isMedelement"
+        class="group rounded-xl border border-n-weak bg-n-solid-2 p-5 shadow-xs"
+      >
+        <summary
+          class="flex cursor-pointer list-none items-center justify-between gap-3"
+        >
+          <div class="flex items-center gap-2">
+            <span
+              class="i-lucide-chevron-right size-4 text-n-slate-10 transition-transform group-open:rotate-90"
+            />
+            <span class="text-sm font-medium text-n-slate-12">
+              {{ $t('INTEGRATION_APPS.MEDELEMENT.IMPORT.TITLE') }}
+            </span>
+          </div>
+        </summary>
+        <div class="mt-4 border-t border-n-weak pt-4">
+          <p class="text-sm leading-6 text-n-slate-11">
+            {{ $t('INTEGRATION_APPS.MEDELEMENT.IMPORT.DESCRIPTION') }}
+            <a
+              href="/downloads/medelement-catalog-sample.json"
+              download="medelement-catalog-sample.json"
+              class="text-n-blue-11"
+            >
+              {{ $t('INTEGRATION_APPS.MEDELEMENT.IMPORT.DOWNLOAD_SAMPLE') }}
+            </a>
+          </p>
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <NextButton
+              faded
+              slate
+              size="sm"
+              icon="i-lucide-upload"
+              :label="$t('INTEGRATION_APPS.MEDELEMENT.IMPORT.CHOOSE_FILE')"
+              :disabled="uiFlags.isImportingHookCatalog"
+              @click="openMedelementCatalogFilePicker"
+            />
+            <span
+              v-if="medelementCatalogFile"
+              class="max-w-64 truncate text-sm text-n-slate-11"
+            >
+              {{ medelementCatalogFile.name }}
+            </span>
+            <NextButton
+              v-if="medelementCatalogFile"
+              blue
+              size="sm"
+              :label="$t('INTEGRATION_APPS.MEDELEMENT.IMPORT.BUTTON')"
+              :is-loading="uiFlags.isImportingHookCatalog"
+              @click="importMedelementCatalog"
+            />
+            <input
+              ref="medelementCatalogFileInput"
+              type="file"
+              accept=".json,application/json"
+              class="hidden"
+              @change="selectMedelementCatalogFile"
+            />
+          </div>
+        </div>
+      </details>
+    </section>
 
     <Dialog
       ref="conflictResolutionDialog"

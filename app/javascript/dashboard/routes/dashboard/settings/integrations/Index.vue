@@ -22,7 +22,7 @@ const integrationList = computed(
 
 const pluginIntegrationList = computed(() =>
   integrationList.value
-    .filter(item => item.id !== 'webhook')
+    .filter(item => item.id !== 'webhook' && item.id !== 'macrocrm')
     .map(item => {
       if (item.id !== 'dashboard_apps') return item;
       return {

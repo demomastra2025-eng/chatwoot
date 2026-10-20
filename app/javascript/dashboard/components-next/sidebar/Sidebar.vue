@@ -1460,12 +1460,6 @@ const menuItems = computed(() => {
             }[reportRoute.name],
           })),
           {
-            name: 'Reports CSAT',
-            visibilityKey: 'Reports:CSAT',
-            label: t('SIDEBAR.CSAT'),
-            to: accountScopedRoute('csat_reports'),
-          },
-          {
             name: 'Reports SLA',
             visibilityKey: 'Reports:SLA',
             label: t('SIDEBAR.REPORTS_SLA'),

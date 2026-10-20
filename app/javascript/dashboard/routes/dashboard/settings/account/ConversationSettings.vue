@@ -9,7 +9,6 @@ import CaptainAiEditorSettings from './components/CaptainAiEditorSettings.vue';
 import MediaTranscription from './components/MediaTranscription.vue';
 import WorkspaceAssignmentPolicySettings from './components/WorkspaceAssignmentPolicySettings.vue';
 import WorkspaceGreetingSettings from './components/WorkspaceGreetingSettings.vue';
-import WorkspaceCsatSettings from './components/WorkspaceCsatSettings.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 
@@ -43,7 +42,6 @@ onMounted(() => {
       <div class="flex flex-col">
         <WorkspaceAssignmentPolicySettings class="!pt-0" />
         <WorkspaceGreetingSettings :disabled="isWorkspaceReadOnly" />
-        <WorkspaceCsatSettings :disabled="isWorkspaceReadOnly" />
         <CaptainAiEditorSettings :disabled="isWorkspaceReadOnly" />
         <MediaTranscription :disabled="isWorkspaceReadOnly" />
       </div>

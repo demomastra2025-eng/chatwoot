@@ -6,7 +6,9 @@ import ConversationSettings from './ConversationSettings.vue';
 const { storeDispatch, accountState, inboxesState } = vi.hoisted(() => ({
   storeDispatch: vi.fn(() => Promise.resolve()),
   accountState: { current: { id: 1 } },
-  inboxesState: { list: [{ id: 10, name: 'WhatsApp', channel_type: 'Channel::Whatsapp' }] },
+  inboxesState: {
+    list: [{ id: 10, name: 'WhatsApp', channel_type: 'Channel::Whatsapp' }],
+  },
 }));
 let canManageWorkspace = true;
 
@@ -50,11 +52,6 @@ const mountComponent = () =>
           template:
             '<div data-test="workspace-greeting-settings" :data-disabled="String(disabled)" />',
         },
-        WorkspaceCsatSettings: {
-          props: ['disabled'],
-          template:
-            '<div data-test="workspace-csat-settings" :data-disabled="String(disabled)" />',
-        },
         CaptainAiEditorSettings: {
           props: ['disabled'],
           template:
@@ -73,7 +70,9 @@ describe('ConversationSettings', () => {
   beforeEach(() => {
     storeDispatch.mockClear();
     accountState.current = { id: 1 };
-    inboxesState.list = [{ id: 10, name: 'WhatsApp', channel_type: 'Channel::Whatsapp' }];
+    inboxesState.list = [
+      { id: 10, name: 'WhatsApp', channel_type: 'Channel::Whatsapp' },
+    ];
     canManageWorkspace = true;
   });
 
@@ -97,11 +96,6 @@ describe('ConversationSettings', () => {
         .get('[data-test="workspace-greeting-settings"]')
         .attributes('data-disabled')
     ).toBe('true');
-    expect(
-      wrapper
-        .get('[data-test="workspace-csat-settings"]')
-        .attributes('data-disabled')
-    ).toBe('true');
   });
 
   it('enables transcription for workspace managers', () => {
@@ -122,11 +116,6 @@ describe('ConversationSettings', () => {
         .get('[data-test="workspace-greeting-settings"]')
         .attributes('data-disabled')
     ).toBe('false');
-    expect(
-      wrapper
-        .get('[data-test="workspace-csat-settings"]')
-        .attributes('data-disabled')
-    ).toBe('false');
   });
 
   it('renders the workspace policy, greeting, CSAT, and AI settings without blocking on a page-wide fetch', () => {
@@ -137,9 +126,6 @@ describe('ConversationSettings', () => {
     ).toBeTruthy();
     expect(
       wrapper.get('[data-test="workspace-greeting-settings"]')
-    ).toBeTruthy();
-    expect(
-      wrapper.get('[data-test="workspace-csat-settings"]')
     ).toBeTruthy();
     expect(
       wrapper.get('[data-test="captain-ai-editor-settings"]')

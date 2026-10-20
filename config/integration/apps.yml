@@ -348,6 +348,7 @@ macrocrm:
   logo: Official_Macro.png
   i18n_key: macrocrm
   hook_type: account
+  hidden_in_ui: true
   allow_multiple_hooks: false
   access_token_required: true
   settings_json_schema:
