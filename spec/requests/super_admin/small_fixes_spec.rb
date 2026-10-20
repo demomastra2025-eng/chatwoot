@@ -69,13 +69,13 @@ RSpec.describe 'Super Admin small fixes', type: :request do
   end
 
   describe 'the WhatsApp quick connection' do
-    it 'has a Russian name in the menu, on its page and among the functions' do
+    it 'has a Russian name in the menu, on its page and in the contents of the settings' do
       get '/super_admin/app_config?config=whatsapp_embedded'
       expect(text(page.at_css('h1'))).to eq('WhatsApp: быстрое подключение')
       expect(response.body).not_to include('WhatsApp Embedded')
 
       get '/super_admin/settings'
-      expect(text(page.at_css('[data-feature="whatsapp_embedded"] h3'))).to eq('WhatsApp: быстрое подключение')
+      expect(text(page.at_css('[data-page="whatsapp_embedded"] a'))).to eq('WhatsApp: быстрое подключение')
       expect(response.body).not_to include('WhatsApp Embedded')
     end
   end

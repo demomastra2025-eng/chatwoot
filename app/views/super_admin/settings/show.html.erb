@@ -1,12 +1,16 @@
 <%#
-# Instance settings
+# Settings
 
-The version of OneLink that is running and the functions of the platform: which
-ones are on in this installation and a link to the settings of the ones that
-have a config page. OneLink has no editions to upgrade to, so a function that is
-not available is only marked as such.
+The contents of the settings: every page of settings with one line about what it holds and whether it is set up
+(SuperAdmin::AppConfigStatus). The page is no showcase of the functions of the platform: what the functions are and which
+of them an account has is on the card of the account. The version of the build that is running is a small line at the
+bottom.
 %>
 <% content_for(:title) { t('super_admin.settings.title') } %>
+<%
+  pages = settings_pages.filter_map { |_feature, attrs| attrs['config_key'] }
+  entries = SuperAdmin::AppConfigStatus.new(pages: pages).entries.group_by(&:group)
+%>
 
 <header class="main-content__header" role="banner">
   <div class="main-content__heading">
@@ -17,46 +21,43 @@ not available is only marked as such.
 
 <section class="main-content__body">
   <div class="flex flex-col gap-6">
-    <section class="admin-block" aria-labelledby="installation-title" data-testid="installation-block">
-      <div class="admin-block__head">
-        <h2 class="admin-block__title" id="installation-title"><%= t('super_admin.settings.version_title') %></h2>
-        <p class="admin-block__hint"><%= t('super_admin.settings.version_hint') %></p>
-      </div>
-      <dl class="attribute-list">
-        <dt class="attribute-label"><%= t('super_admin.settings.version_label') %></dt>
-        <dd class="attribute-data" data-testid="onelink-version"><%= SuperAdmin::BuildInfo.version %></dd>
-        <dt class="attribute-label"><%= t('super_admin.settings.build_label') %></dt>
-        <dd class="attribute-data break-all" data-testid="onelink-build"><%= SuperAdmin::BuildInfo.build %></dd>
-      </dl>
-    </section>
-
-    <section class="flex flex-col gap-3" aria-labelledby="features-title" data-testid="features-block">
-      <div class="admin-block__head">
-        <h2 class="admin-block__title" id="features-title"><%= t('super_admin.settings.features') %></h2>
-        <p class="admin-block__hint"><%= t('super_admin.settings.features_hint') %></p>
-      </div>
-
-      <div class="admin-feature-grid">
-        <% SuperAdmin::FeaturesHelper.available_features.each do |feature, attrs| %>
-          <% enabled = attrs[:enabled] %>
-          <div class="admin-feature" data-feature="<%= feature %>" data-enabled="<%= enabled ? 'true' : 'false' %>">
-            <div class="admin-feature__head">
-              <span class="admin-feature__icon">
-                <svg width="20" height="20" aria-hidden="true"><use xlink:href="#<%= attrs[:icon] %>" /></svg>
-              </span>
-              <span class="admin-badge <%= enabled ? 'admin-badge--teal' : 'admin-badge--quiet' %>">
-                <%= enabled ? t('super_admin.settings.feature_enabled') : t('super_admin.settings.feature_unavailable') %>
-              </span>
+    <% %i[platform connections].each do |group| %>
+      <% next if entries[group].blank? %>
+      <section class="flex flex-col gap-3" aria-labelledby="settings-group-<%= group %>" data-testid="settings-group-<%= group %>">
+        <div class="admin-block__head">
+          <h2 class="admin-block__title" id="settings-group-<%= group %>"><%= t("super_admin.settings.groups.#{group}.title") %></h2>
+          <p class="admin-block__hint"><%= t("super_admin.settings.groups.#{group}.hint") %></p>
+        </div>
+        <div class="admin-fields">
+          <% entries[group].each do |entry| %>
+            <div class="admin-field" data-page="<%= entry.config %>" data-configured="<%= entry.configured.nil? ? 'none' : entry.configured %>">
+              <div class="admin-field__label">
+                <%= link_to app_config_page_title(entry.config), super_admin_app_config_path(config: entry.config), class: 'admin-field__title text-n-brand hover:underline' %>
+                <p class="admin-field__hint"><%= t("super_admin.settings.pages.#{entry.config}") %></p>
+              </div>
+              <div class="admin-field__control flex flex-wrap items-center gap-3">
+                <%# On a wide screen the status has a place of its own, so the buttons stand in one column whatever the words are. %>
+                <span class="<%= entry.configured.nil? ? 'hidden md:block' : '' %> md:w-28 md:shrink-0">
+                  <% unless entry.configured.nil? %>
+                    <span class="admin-badge <%= entry.configured ? 'admin-badge--teal' : 'admin-badge--amber' %>" data-testid="page-status">
+                      <%= t("super_admin.settings.status.#{entry.configured ? 'configured' : 'not_configured'}") %>
+                    </span>
+                  <% end %>
+                </span>
+                <%= link_to t('super_admin.settings.open'), super_admin_app_config_path(config: entry.config), class: 'button button--small button--secondary' %>
+              </div>
             </div>
-            <h3 class="admin-feature__title"><%= feature_label(attrs, feature) %></h3>
-            <p class="admin-feature__text"><%= feature_description(feature, attrs) %></p>
-            <% if attrs[:config_key].present? && enabled %>
-              <%= link_to t('super_admin.settings.configure'), super_admin_app_config_path(config: attrs[:config_key]),
-                          class: 'button button--small button--secondary w-fit' %>
-            <% end %>
-          </div>
-        <% end %>
-      </div>
-    </section>
+          <% end %>
+        </div>
+      </section>
+    <% end %>
+
+    <%# Small on purpose: the version is what a person names when he writes to support, the whole commit is the build. %>
+    <p class="m-0 flex flex-wrap items-baseline gap-x-2 text-xs text-n-slate-11" data-testid="installation-block">
+      <span><%= t('super_admin.settings.version_footer') %> <span class="font-medium text-n-slate-12" data-testid="onelink-version"><%= SuperAdmin::BuildInfo.version %></span></span>
+      <% if SuperAdmin::BuildInfo.known? %>
+        <span class="break-all font-mono text-n-slate-10" data-testid="onelink-build" title="<%= t('super_admin.settings.build_label') %>"><%= SuperAdmin::BuildInfo.build %></span>
+      <% end %>
+    </p>
   </div>
 </section>
