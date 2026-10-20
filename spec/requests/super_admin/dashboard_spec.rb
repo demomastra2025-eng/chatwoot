@@ -90,7 +90,8 @@ RSpec.describe 'Super Admin Dashboard', type: :request do
       end
 
       describe 'the headline tiles' do
-        let(:page) { Nokogiri::HTML(response.body) }
+        # Not memoized: an example opens the page twice
+        def page = Nokogiri::HTML(response.body)
 
         def tiles = page.css("[data-testid='dashboard-tiles'] [data-testid='stat']")
 

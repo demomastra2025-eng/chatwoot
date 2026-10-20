@@ -22,12 +22,12 @@ module SuperAdmin::TwoFactorNotice
 
     def hide!(user, request: nil)
       change!(user, "COALESCE(custom_attributes, '{}'::jsonb) || ?::jsonb", { KEY => Time.current.iso8601 }.to_json)
-      record(user, 'hide_two_factor_notice', 'two_factor_notice' => %w[shown hidden], request: request)
+      record(user, 'hide_two_factor_notice', { 'two_factor_notice' => %w[shown hidden] }, request: request)
     end
 
     def restore!(user, request: nil)
       change!(user, "COALESCE(custom_attributes, '{}'::jsonb) - ?::text", KEY)
-      record(user, 'show_two_factor_notice', 'two_factor_notice' => %w[hidden shown], request: request)
+      record(user, 'show_two_factor_notice', { 'two_factor_notice' => %w[hidden shown] }, request: request)
     end
 
     private

@@ -7,8 +7,9 @@ require 'rails_helper'
 # never one per account.
 RSpec.describe 'Super admin «Сводка»: queries', type: :request do
   let(:super_admin) { create(:super_admin) }
-  # The most queries the page may run; it ran 0 below this number when it was measured, with room for a query of the layout
-  let(:query_limit) { 150 }
+  # The most queries the page may run: it ran 30 when this was measured (the sign-in, the tiles, the table, the checks), with room
+  # for a query or two of the layout. A new query per account would pass this, so the examples below compare two sizes of the platform.
+  let(:query_limit) { 40 }
 
   before do
     allow(Llm::OpenRouterKeyHealth).to receive(:metadata).and_return({ status: 'valid' })
@@ -35,8 +36,10 @@ RSpec.describe 'Super admin «Сводка»: queries', type: :request do
     end
   end
 
-  # The queries the page runs for one visit (the ones the database answers from its own cache and the plumbing of a transaction are not counted)
+  # The queries the page runs for one visit (the ones the database answers from its own cache and the plumbing of a transaction are not
+  # counted). The first visit of a process also reads the settings of the installation once, so it is made before the count.
   def queries_for_a_visit
+    get '/super_admin'
     queries = []
     counter = lambda do |*, payload|
       queries << payload[:sql] unless payload[:name] == 'SCHEMA' || payload[:cached] || payload[:sql].match?(/\A\s*(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)/i)
@@ -56,14 +59,15 @@ RSpec.describe 'Super admin «Сводка»: queries', type: :request do
     expect(many.size).to eq(few.size), "two accounts: #{few.size} queries, twelve: #{many.size}\n#{(many - few).first(10).join("\n")}"
   end
 
-  it 'shows the problems of all of them while it does so' do
+  it 'stays within a small number of queries and still counts the problems of all of them' do
     add_accounts(12)
 
     queries = queries_for_a_visit
 
     expect(queries.size).to be < query_limit
     page = Nokogiri::HTML(response.body)
-    expect(page.at_css("[data-testid='dashboard-checklist-count']").text.squish.delete(' ').to_i).to be >= 36
+    # a trial that ends, a disk that is full, a channel to log in again and a message that did not go out, for each of the twelve
+    expect(page.at_css("[data-testid='dashboard-checklist-count']").text.squish.delete(' ').to_i).to eq(48)
   end
 
   it 'asks the database for the figures of the tiles once, and for the checks once, not once for each of them' do
@@ -71,7 +75,7 @@ RSpec.describe 'Super admin «Сводка»: queries', type: :request do
 
     queries = queries_for_a_visit
 
-    expect(queries.grep(/FROM "messages"/).size).to be <= 3
-    expect(queries.grep(/FROM "conversations"/).size).to be <= 2
+    expect(queries.grep(/FROM "messages"/).size).to be <= 2
+    expect(queries.grep(/FROM "conversations"/).size).to be <= 1
   end
 end

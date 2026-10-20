@@ -130,7 +130,7 @@ RSpec.describe 'Super admin «Сводка»: Нужно проверить', ty
     expect(rest.at_css('summary').text.squish).to eq('Показать ещё 3')
     expect(rest.css('li').size).to eq(3)
     closing = rest.css('li').last
-    expect(closing['data-more']).to be_present
+    expect(closing.key?('data-more')).to be(true)
     expect(closing.text.squish).to include('Показаны первые 10 из 12.')
     expect(closing.at_css('a')['href']).to eq('/super_admin/accounts?search=trial_active%3A')
     expect(closing.at_css('a').text.squish).to eq('Все аккаунты на пробном периоде')
