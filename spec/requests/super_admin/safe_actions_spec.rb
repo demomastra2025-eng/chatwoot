@@ -211,6 +211,19 @@ RSpec.describe 'Super Admin safe actions', type: :request do
       expect(page.css('[data-confirm]')).to be_empty
     end
 
+    it 'says it in the singular for one account and in the plural for several' do
+      get '/super_admin/users'
+      warning = text(panel("delete-user-#{person.id}").at_css('.admin-ask__warning'))
+      expect(warning).to eq('Он единственный администратор в аккаунте «Аккаунт Алатау»: он останется без администратора.')
+
+      AccountUser.find_by(user_id: person.id, account: Account.find_by(name: 'Второй')).update!(role: :administrator)
+      get '/super_admin/users'
+
+      warning = text(panel("delete-user-#{person.id}").at_css('.admin-ask__warning'))
+      expect(warning).to start_with('Он единственный администратор в аккаунтах')
+      expect(warning).to include('«Аккаунт Алатау»', '«Второй»', 'они останутся без администратора')
+    end
+
     it 'reads the accounts of the whole page at once, not once per person' do
       create_list(:user, 4).each { |user| create(:account_user, account: account, user: user) }
       allow(SuperAdmin::UserRemovalNotes).to receive(:for).and_call_original

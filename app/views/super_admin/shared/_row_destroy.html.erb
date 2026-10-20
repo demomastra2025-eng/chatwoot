@@ -32,7 +32,7 @@ audit log (users by the model, the others by their controllers).
   <%= render 'super_admin/shared/confirm_action', **common,
              title: t("#{texts}.title", name: resource.name),
              text: [t("#{texts}.text", count: note.accounts), t('super_admin.safety.audited')],
-             warning: (t("#{texts}.sole_admin", accounts: note.sole_admin_in.map { |name| "«#{name}»" }.to_sentence) if note.sole_admin_in.any?),
+             warning: (t("#{texts}.sole_admin", count: note.sole_admin_in.size, accounts: note.sole_admin_in.map { |name| "«#{name}»" }.to_sentence) if note.sole_admin_in.any?),
              submit: t("#{texts}.submit") %>
 <% else %>
   <% name = kind == 'platform_banner' ? truncate(resource.banner_message.to_s, length: 60) : (resource.try(:name).presence || collection_presenter.dashboard.display_resource(resource)) %>
