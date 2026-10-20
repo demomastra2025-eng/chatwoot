@@ -232,6 +232,7 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       expect(field['inputmode']).to eq('decimal')
       expect(field['value']).to eq('4.66')
       expect(text(row('storage_bytes').at_css('[data-testid="limit-now"]'))).to eq('Сейчас: 4,66 ГБ')
+      expect(text(row('storage_bytes').at_css('.admin-limit__usage'))).to include('из 4,66 ГБ')
       expect(text(row('storage_bytes').at_css('.admin-limit__value'))).to include('ГБ')
     end
   end

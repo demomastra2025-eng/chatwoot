@@ -20,7 +20,7 @@ them belongs to the page (the card has its own, the edit form of the account is 
     <%
       id = "limit-#{row.key}"
       usage = row.usage
-      format_value = ->(number) { row.bytes ? super_admin_bytes(number) : super_admin_number(number) }
+      format_value = ->(number) { row.bytes ? SuperAdmin::LimitWords.storage_size(number) : super_admin_number(number) }
       options = [
         ['plan', t('super_admin.limits.choices.plan'), t('super_admin.limits.choices.plan_now', value: row.plan_text)],
         ['unlimited', t('super_admin.limits.choices.unlimited'), nil],
