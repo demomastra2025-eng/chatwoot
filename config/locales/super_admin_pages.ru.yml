@@ -45,7 +45,7 @@ ru:
       whatsapp_connected: "%{count} подключено"
       whatsapp_reauthorization: "Требует авторизации"
       telephony_none: "Нет линий"
-      telephony_janus_missing: "Janus URL не задан"
+      telephony_janus_missing: "Сервер звонков не настроен"
       telephony_unbound: "Линии не привязаны"
       telephony_profiles_ok:
         one: "%{count} профиль OK"
@@ -60,6 +60,14 @@ ru:
         other: "%{count} конфликта"
       medelement_error: "Ошибка синхронизации"
       medelement_ok: "В норме"
+      # What a source that could not be read is called when the dashboard says so
+      sources:
+        message: "сообщения"
+        telephony_sip_profile: "линии телефонии"
+        telephony_number_binding: "номера телефонии"
+        telephony_provider_connection: "подключения телефонии"
+        integrations_medelement_sync_run: "синхронизации МедЭлемента"
+        integrations_medelement_sync_conflict: "конфликты МедЭлемента"
 
     ai_analytics:
       title: "AI-аналитика"

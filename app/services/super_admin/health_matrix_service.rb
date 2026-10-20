@@ -5,6 +5,9 @@ class SuperAdmin::HealthMatrixService
   CACHE_TTL = 90.seconds
   RECENT_RUNS = 5
   VOICE_CHANNEL_TYPE = 'Channel::Voice'
+  # Messages that did not go out count while they are this fresh: a failure of a year ago is nothing anyone can put right today,
+  # and an account with one of them would stay in «Нужно проверить» for ever
+  FAILED_WINDOW = 3.days
 
   def self.build(force_refresh: false)
     new.build(force_refresh: force_refresh)
@@ -71,7 +74,9 @@ class SuperAdmin::HealthMatrixService
   end
 
   def fetch_failed_messages_map(account_ids)
-    load_source('Message') { Message.unscoped.where(account_id: account_ids, status: :failed).group(:account_id).count }
+    load_source('Message') do
+      Message.unscoped.where(account_id: account_ids, status: :failed).where(created_at: FAILED_WINDOW.ago..).group(:account_id).count
+    end
   end
 
   def fetch_med_conflicts_map(account_ids)
@@ -164,6 +169,11 @@ class SuperAdmin::HealthMatrixService
     has_error ? { state: 'error', label: label(:medelement_error) } : { state: 'healthy', label: label(:medelement_ok) }
   end
 
+  # What a source that could not be read is called on the page (a class name means nothing to the person who reads it)
+  def source_name(source)
+    I18n.t("super_admin.health_matrix.sources.#{source.to_s.underscore.tr('/', '_')}", locale: :ru, default: source.to_s)
+  end
+
   # The text of a state. The matrix is cached for every viewer, so the language is fixed: the super admin is Russian only,
   # and a count takes the Russian form of its noun (config/locales/super_admin_pages.ru.yml).
   def label(key, **)
@@ -177,7 +187,7 @@ class SuperAdmin::HealthMatrixService
       whatsapp_healthy: accounts.count { |a| a[:whatsapp][:state] == 'healthy' },
       telephony_healthy: accounts.count { |a| a[:telephony][:state] == 'healthy' },
       git_sha: GIT_HASH.presence || 'unknown',
-      incomplete_sources: Array(@failed_sources).uniq,
+      incomplete_sources: Array(@failed_sources).uniq.map { |source| source_name(source) },
       # shown on the dashboard as «Обновлено: …», in Astana time (UTC+5)
       updated_at: SuperAdmin::DisplayHelper.format_time(Time.current, '%H:%M:%S')
     }

@@ -70,7 +70,7 @@ RSpec.describe SuperAdmin::HealthMatrixService, type: :service do
         service = described_class.new
         res = service.send(:calculate_telephony_status, account, context)
         expect(res[:state]).to eq('error')
-        expect(res[:label]).to eq('Janus URL не задан')
+        expect(res[:label]).to eq('Сервер звонков не настроен')
       end
 
       it 'returns warning when phone inbox has no number binding' do
@@ -208,7 +208,17 @@ RSpec.describe SuperAdmin::HealthMatrixService, type: :service do
 
         _matrix, summary = described_class.new.build(force_refresh: true)
 
-        expect(summary[:incomplete_sources]).to include('Message')
+        expect(summary[:incomplete_sources]).to include('сообщения')
+      end
+
+      it 'names a source that could not be read in words, not by the name of its class' do
+        service = described_class.new
+
+        names = %w[Message Telephony::SipProfile Telephony::NumberBinding Telephony::ProviderConnection
+                   Integrations::Medelement::SyncRun Integrations::Medelement::SyncConflict Unknown::Thing].map { |source| service.send(:source_name, source) }
+
+        expect(names).to eq(['сообщения', 'линии телефонии', 'номера телефонии', 'подключения телефонии',
+                             'синхронизации МедЭлемента', 'конфликты МедЭлемента', 'Unknown::Thing'])
       end
 
       it 'reports no incomplete sources when everything could be read' do
@@ -223,6 +233,33 @@ RSpec.describe SuperAdmin::HealthMatrixService, type: :service do
 
           expect(summary[:updated_at]).to eq('17:00:07')
         end
+      end
+    end
+
+    context 'when counting the messages that did not go out' do
+      def failed_message(created_at)
+        create(:message, account: account, status: :failed, created_at: created_at)
+      end
+
+      it 'counts only the fresh ones: a failure older than the window is nothing anyone can put right today' do
+        failed_message(1.hour.ago)
+        failed_message(2.days.ago)
+        failed_message(4.days.ago)
+        failed_message(400.days.ago)
+
+        counts = described_class.new.send(:fetch_failed_messages_map, [account.id])
+
+        expect(counts).to eq(account.id => 2)
+      end
+
+      it 'keeps the window at three days, as the texts of the dashboard say' do
+        expect(described_class::FAILED_WINDOW).to eq(3.days)
+      end
+
+      it 'does not count the messages that went out' do
+        create(:message, account: account, status: :delivered)
+
+        expect(described_class.new.send(:fetch_failed_messages_map, [account.id])).to eq({})
       end
     end
 
