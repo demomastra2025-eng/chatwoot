@@ -80,7 +80,7 @@ RSpec.describe SuperAdmin::FineTuning do
       switches = tuning.service_switches
 
       expect(switches.map(&:name)).to eq(described_class::OWNER_DECISION_FLAGS)
-      expect(switches.map(&:label)).to eq(['Один чат на контакт', 'Автораспределение, версия 2', 'Свой ключ OpenRouter у аккаунта'])
+      expect(switches.map(&:label)).to eq(['Один чат на контакт', 'Автораспределение, версия 2', 'Разрешить свой ключ OpenRouter'])
       expect(described_class::OWNER_DECISION_FLAGS & names).to be_empty
     end
 

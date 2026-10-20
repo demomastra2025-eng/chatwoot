@@ -44,7 +44,7 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
 
       expect(rows.pluck('data-flag')).to eq(SuperAdmin::FineTuning::OWNER_DECISION_FLAGS)
       expect(text(rows.first)).to include('Один чат на контакт', 'Диалоги контакта из разных каналов собираются в один чат.')
-      expect(text(service_block)).to include('Автораспределение, версия 2', 'Свой ключ OpenRouter у аккаунта')
+      expect(text(service_block)).to include('Автораспределение, версия 2', 'Разрешить свой ключ OpenRouter')
     end
 
     it 'posts the switches like the fine tuning does: a hidden «false» before the checkbox, to the update of the clinic' do

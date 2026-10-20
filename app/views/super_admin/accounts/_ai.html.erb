@@ -1,0 +1,79 @@
+<%#
+# «ИИ» of an account
+
+A small block of the card: the model the AI agents of the account really answer with (the platform's own or one the account
+chose), how many AI agents it has and how many are on, and whether the account may bring its own OpenRouter key and has
+connected one. It only shows; the answers are changed where they live (the model on «Модели ИИ», the key in «Служебные»).
+
+## Local variables:
+
+- `account`: the account (Account).
+%>
+<%
+  ai = SuperAdmin::AccountAiState.new(account)
+  total = ai.agents_total
+  own_agents = ai.agents_with_own_model
+  allowed = ai.own_key_allowed?
+  connected = ai.own_key_connected?
+  # The switch of the key lives in the collapsed block «Служебные»; the link opens it
+  service_flags = SuperAdmin::FineTuning.new(account).service_switches.any?
+%>
+
+<section class="admin-block" aria-labelledby="ai-title" data-testid="ai-block">
+  <div class="admin-block__head-row">
+    <div class="admin-block__head">
+      <h2 class="admin-block__title" id="ai-title"><%= t('super_admin.safety.ai.title') %></h2>
+      <p class="admin-block__hint"><%= t('super_admin.safety.ai.hint') %></p>
+    </div>
+    <span class="admin-badge <%= ai.module_enabled? ? 'admin-badge--teal' : 'admin-badge--quiet' %>" data-testid="ai-module">
+      <%= t(ai.module_enabled? ? 'super_admin.safety.ai.module_on' : 'super_admin.safety.ai.module_off') %>
+    </span>
+  </div>
+
+  <dl class="admin-kv admin-kv--stackable">
+    <div class="admin-kv__row" data-ai-row="model">
+      <dt class="admin-kv__key"><%= t('super_admin.safety.ai.model') %></dt>
+      <dd class="admin-kv__value">
+        <% if ai.model_id.present? %>
+          <span class="font-medium"><%= ai.model_name %></span>
+          <span class="admin-badge <%= ai.own_model? ? 'admin-badge--iris' : 'admin-badge--quiet' %> ms-1"><%= t(ai.own_model? ? 'super_admin.safety.ai.model_own' : 'super_admin.safety.ai.model_platform') %></span>
+        <% else %>
+          <span class="text-n-slate-11"><%= t('super_admin.safety.ai.model_unknown') %></span>
+        <% end %>
+      </dd>
+    </div>
+    <div class="admin-kv__row" data-ai-row="agents">
+      <dt class="admin-kv__key"><%= t('super_admin.safety.ai.agents') %></dt>
+      <dd class="admin-kv__value">
+        <% if total.zero? %>
+          <span class="text-n-slate-11"><%= t('super_admin.safety.ai.agents_none') %></span>
+        <% else %>
+          <span class="tabular-nums"><%= t('super_admin.safety.ai.agents_value', enabled: ai.agents_enabled, total: total) %></span>
+        <% end %>
+      </dd>
+    </div>
+    <div class="admin-kv__row" data-ai-row="own-key">
+      <dt class="admin-kv__key"><%= t('super_admin.safety.ai.own_key') %></dt>
+      <dd class="admin-kv__value">
+        <span class="admin-badge <%= allowed ? 'admin-badge--teal' : 'admin-badge--quiet' %>"><%= t(allowed ? 'super_admin.safety.ai.allowed' : 'super_admin.safety.ai.not_allowed') %></span>
+        <span class="ms-1 text-n-slate-11" data-testid="own-key-state"><%= t(connected ? 'super_admin.safety.ai.key_connected' : 'super_admin.safety.ai.key_not_connected') %></span>
+      </dd>
+    </div>
+  </dl>
+
+  <%# What the numbers do not say: the agents with a model of their own and the key that is connected but not in use %>
+  <% if own_agents.positive? %>
+    <p class="admin-block__note" data-testid="ai-own-agents"><%= t('super_admin.safety.ai.agents_own_model', count: own_agents) %></p>
+  <% end %>
+  <% if connected && !allowed %>
+    <p class="admin-block__note" data-testid="ai-key-unused"><%= t('super_admin.safety.ai.key_unused') %></p>
+  <% elsif allowed && !connected %>
+    <p class="admin-block__note" data-testid="ai-key-platform"><%= t('super_admin.safety.ai.platform_key_used') %></p>
+  <% end %>
+  <p class="admin-block__note">
+    <%= t('super_admin.safety.ai.where_to_change') %>
+    <% if service_flags %>
+      <a href="#service-flags" data-open-details class="text-n-brand underline"><%= t('super_admin.safety.ai.open_service') %></a>
+    <% end %>
+  </p>
+</section>

@@ -116,6 +116,8 @@ basic facts, organization, maintenance.
 
       <% if ChatwootApp.enterprise? %>
         <%= render 'limits_usage', account: account, usage: SuperAdmin::AccountUsage.new(account) %>
+        <%# The model of the agents, their number and the key of OpenRouter: what the account does with the AI %>
+        <%= render 'ai', account: account %>
       <% end %>
 
       <%= render 'channels', account: account %>

@@ -150,6 +150,48 @@ RSpec.describe 'Super Admin render smoke', type: :request do
     end
   end
 
+  # The pages of the safe actions in each state they have: the card of an account (working, blocked, being deleted, with an ended
+  # trial that holds the limits), the card of a user with and without the second factor, a banner hidden and shown.
+  describe 'the states of the safe actions' do
+    it 'opens the card of an account that works, is blocked, is being deleted, or has an ended trial' do
+      account = create(:account)
+      [
+        -> {},
+        -> { account.update!(status: :suspended) },
+        -> { account.update!(custom_attributes: account.custom_attributes.merge('marked_for_deletion_at' => 3.days.from_now.iso8601)) },
+        lambda {
+          account.update!(status: :active, custom_attributes: { 'plan_type' => 'trial' }, limits: { 'agents' => 5 })
+          account.activate_trial!(3)
+          account.expire_trial!
+        }
+      ].each do |change|
+        change.call
+        get "/super_admin/accounts/#{account.id}"
+
+        expect_shell("/super_admin/accounts/#{account.id}")
+        expect(page.at_css('[data-testid="ai-block"]')).to be_present
+      end
+    end
+
+    it 'opens the card of a user with and without the second factor' do
+      [create(:user, otp_required_for_login: true), create(:user)].each do |user|
+        get "/super_admin/users/#{user.id}"
+
+        expect_shell("/super_admin/users/#{user.id}")
+      end
+    end
+
+    it 'opens the card of a banner that is hidden and of one that is shown, and the form of each' do
+      [create(:platform_banner, active: false), create(:platform_banner, active: true)].each do |banner|
+        ["/super_admin/platform_banners/#{banner.id}", "/super_admin/platform_banners/#{banner.id}/edit"].each do |path|
+          get path
+
+          expect_shell(path)
+        end
+      end
+    end
+  end
+
   describe 'custom pages' do
     {
       'dashboard' => '/super_admin',
