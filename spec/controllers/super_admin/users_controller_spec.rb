@@ -161,6 +161,21 @@ RSpec.describe 'Super Admin Users API', type: :request do
         expect(response.body).not_to include('Password1!')
       end
 
+      it 'draws the form again for a super admin with a problem, keeping the role that was chosen' do
+        sign_in(super_admin, scope: :super_admin)
+
+        expect do
+          post '/super_admin/users', params: { user: { name: 'Новый', email: 'broken@clinic', password: 'Password1!', type: 'SuperAdmin',
+                                                       super_admin_confirmation: 'broken@clinic' } }
+        end.not_to change(User, :count)
+
+        page = Nokogiri::HTML(response.body)
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(page.at_css('#error_explanation[role="alert"]')).to be_present
+        expect(page.at_css('input[name="user[email]"]')['value']).to eq('broken@clinic')
+        expect(page.at_css('form.form')['action']).to eq('/super_admin/users')
+      end
+
       it 'creates unconfirmed users when confirmed_at is not provided in payload' do
         sign_in(super_admin, scope: :super_admin)
 

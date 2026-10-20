@@ -722,8 +722,8 @@ RSpec.describe 'Super Admin new client', type: :request do
       expect(response).to have_http_status(:unprocessable_content)
       expect(token).to eq(form_token)
 
-      expect { send_form(token) }.to change(Account, :count).by(1)
-      expect { send_form(token) }.not_to(change { counts })
+      expect { send_form(form_token) }.to change(Account, :count).by(1)
+      expect { send_form(form_token) }.not_to(change { counts })
     end
 
     it 'lets a form opened again create another client' do

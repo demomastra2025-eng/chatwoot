@@ -22,7 +22,7 @@ class SuperAdmin::UsersController < SuperAdmin::ApplicationController
       record_creation(resource)
       redirect_to super_admin_user_path(resource), notice: translate_with_resource('create.success')
     else
-      render :new, locals: { page: Administrate::Page::Form.new(dashboard, resource) }, status: :unprocessable_content
+      render_new_with_problems(resource)
     end
   end
 
@@ -84,6 +84,14 @@ class SuperAdmin::UsersController < SuperAdmin::ApplicationController
   end
 
   private
+
+  # The form again, with the problems in its banner. The password is not sent back to the browser: it is typed again. A user of the
+  # role «Супер-администратор» is a `SuperAdmin` here; the form is drawn for a `User`, as it is for every other page of users.
+  def render_new_with_problems(resource)
+    resource.password = nil
+    resource.password_confirmation = nil
+    render :new, locals: { page: Administrate::Page::Form.new(dashboard, resource.becomes(User)) }, status: :unprocessable_content
+  end
 
   def audit_as_current_super_admin(&)
     Audited.audit_class.as_user(current_super_admin, &)
