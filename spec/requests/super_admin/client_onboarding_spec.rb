@@ -368,7 +368,7 @@ RSpec.describe 'Super Admin new client', type: :request do
       expect(text(page.at_css('[data-testid="client-errors"]'))).to include('Клиент не создан, ничего не сохранено')
       expect(error_for('account_name')).to eq('Введите название аккаунта.')
       expect(error_for('organization_name')).to eq('Введите название организации.')
-      expect(error_for('organization_bin')).to be_present
+      expect(error_for('organization_bin')).to eq('БИН должен состоять из 12 цифр.')
       expect(error_for('admin_name')).to eq('Введите имя и фамилию.')
       expect(error_for('admin_email')).to eq('Проверьте e-mail: в нём ошибка.')
 
@@ -422,7 +422,7 @@ RSpec.describe 'Super Admin new client', type: :request do
       create_client(organization: { mode: 'new', name: 'ТОО Ошибка', bin: '980140000123' })
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(error_for('organization_bin')).to be_present
+      expect(error_for('organization_bin')).to eq('БИН указан неверно: не совпадает контрольная цифра.')
       expect(Organization.where(name: 'ТОО Ошибка')).to be_empty
     end
 

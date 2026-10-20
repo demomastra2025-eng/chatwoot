@@ -89,7 +89,7 @@ class SuperAdmin::ClientOnboarding
     return i18n('errors.organization_name_blank') if error.attribute == :name && error.type == :blank
     return i18n('errors.organization_bin_taken') if error.attribute == :bin && error.type == :taken
 
-    error.message
+    "#{error.full_message}."
   end
 
   def validate_modules
