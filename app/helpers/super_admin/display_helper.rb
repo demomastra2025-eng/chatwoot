@@ -141,86 +141,6 @@ module SuperAdmin::DisplayHelper
     readable_account_changes(changes)
   end
 
-  # "2 минуты", "5 часов", "3 дня" (the units of time_units in config/locales/ru.yml)
-    def format_wait(seconds)
-      seconds = seconds.to_i
-      size, unit = WAIT_UNITS.find { |unit_size, _| seconds >= unit_size } || [1, 'seconds']
-      I18n.t("time_units.#{unit}", count: seconds / size)
-    end
-
-    # An amount in US dollars (the AI models are paid in dollars): "$1 234,50"
-    def format_usd(amount)
-      return if amount.nil?
-
-      "$#{ActiveSupport::NumberHelper.number_to_rounded(amount, precision: 2, **NUMBER_OPTIONS)}"
-    end
-
-    private
-
-    def parse(text)
-      Time.zone.parse(text)
-    rescue ArgumentError
-      nil
-    end
-  end
-
-  # "15.10.2026 22:15" in Astana time; nil for a blank time
-  def super_admin_time(time, format = DATETIME_FORMAT)
-    SuperAdmin::DisplayHelper.format_time(time, format)
-  end
-
-  # "15.10.2026"
-  def super_admin_date(time)
-    SuperAdmin::DisplayHelper.format_time(time, DATE_FORMAT)
-  end
-
-  # "15.10.2026" for a date without a time of day (the date of a contract)
-  def super_admin_calendar_date(date)
-    SuperAdmin::DisplayHelper.format_calendar_date(date)
-  end
-
-  # The value of a datetime-local input, in Astana time
-  def super_admin_input_time(time)
-    SuperAdmin::DisplayHelper.format_time(time, INPUT_FORMAT)
-  end
-
-  # "36 ГБ", "512 МБ"
-  def super_admin_bytes(bytes)
-    SuperAdmin::DisplayHelper.format_bytes(bytes)
-  end
-
-  # "12 450"
-  def super_admin_number(number)
-    SuperAdmin::DisplayHelper.format_number(number)
-  end
-
-  # A limit of an account as the preview of a plan says it: «не задан», «Не ограничено» (the number the plan writes for no limit),
-  # a size for the storage, a number for the rest. `given_back`: the limit goes back to «not set» (a trial put a zero on it), and
-  # the general value of the platform applies again.
-  def super_admin_limit_value(key, value, given_back: false)
-    return I18n.t('super_admin.clinic_card.preview.general_value') if value.nil? && given_back
-    return I18n.t('super_admin.clinic_card.preview.not_set') if value.nil?
-    return I18n.t('super_admin.limits.unlimited') if Accounts::Plans.unlimited_value?(key, value)
-
-    key.to_s == 'storage_bytes' ? super_admin_bytes(value) : super_admin_number(value)
-  end
-
-  # The changes of an entry of the audit log as the page shows them. The limits a plan wrote are shown in words, not as the number
-  # that stands for no limit (100 000 operators): { 'limits' => { 'conversations' => { 'from' => 'не задан', 'to' => 'Без ограничений' } } }.
-  # What is stored is not touched.
-  def super_admin_audit_changes(audit)
-    changes = audit.audited_changes
-    return changes unless audit.action == 'apply_plan' && changes.is_a?(Hash) && changes['limits'].is_a?(Hash)
-
-    readable = changes['limits'].to_h do |key, change|
-      next [key, change] unless change.is_a?(Hash) && Accounts::Plans::LIMIT_KEYS.include?(key)
-
-      given_back = !change['from'].nil?
-      [key, { 'from' => super_admin_limit_value(key, change['from']), 'to' => super_admin_limit_value(key, change['to'], given_back: given_back) }]
-    end
-    changes.merge('limits' => readable)
-  end
-
   # "2 минуты"
   def super_admin_wait(seconds)
     SuperAdmin::DisplayHelper.format_wait(seconds)
@@ -259,13 +179,13 @@ module SuperAdmin::DisplayHelper
   def readable_limit_numbers(limits)
     case limits
     when Array then limits.map { |side| readable_limit_numbers(side) }
-    when Hash
-      limits.to_h do |key, value|
-        number = Accounts::Plans::LIMIT_KEYS.include?(key.to_s) && (value.nil? || value.is_a?(Numeric))
-        [key, number ? super_admin_limit_value(key, value) : value]
-      end
+    when Hash then limits.to_h { |key, value| [key, readable_limit_number?(key, value) ? super_admin_limit_value(key, value) : value] }
     else limits
     end
+  end
+
+  def readable_limit_number?(key, value)
+    Accounts::Plans::LIMIT_KEYS.include?(key.to_s) && (value.nil? || value.is_a?(Numeric))
   end
 
   def without_limit_lists(attributes)

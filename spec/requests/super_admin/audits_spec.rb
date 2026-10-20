@@ -67,14 +67,14 @@ RSpec.describe 'Super Admin Audits', type: :request do
         expect(audit.reload.audited_changes['limits']['conversations']['to']).to eq(ChatwootApp.max_limit)
       end
 
-      it 'shows the limits of an ordinary save of an account in words, and leaves out the lists the limits keep for themselves', :aggregate_failures do
+      it 'shows the limits of an ordinary save in words, and leaves out the lists the limits keep for themselves', :aggregate_failures do
         max = ChatwootApp.max_limit
         before = { 'conversations' => max, 'storage_bytes' => 50.gigabytes, 'agents' => 3 }
         after = { 'conversations' => max, 'storage_bytes' => max * 1.gigabyte, 'captain_tokens' => max * 1_000_000 }
         lists = { 'limit_overrides' => { 'agents' => 3 }, 'limit_plan_numbers' => { 'conversations' => max } }
+        attributes = [{ 'crm_id' => '1' }, { 'crm_id' => '1' }.merge(lists)]
         audit = Audited::Audit.create!(auditable: account, associated: account, action: 'update', comment: 'super_admin',
-                                       audited_changes: { 'limits' => [before, after], 'custom_attributes' => [{ 'crm_id' => '1' }, { 'crm_id' => '1' }.merge(lists)],
-                                                          'name' => %w[Old New] })
+                                       audited_changes: { 'limits' => [before, after], 'custom_attributes' => attributes, 'name' => %w[Old New] })
 
         get '/super_admin/audits'
         details = Nokogiri::HTML(response.body).css('pre').map(&:text).join

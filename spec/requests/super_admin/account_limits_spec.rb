@@ -53,14 +53,24 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
 
   def drawn_value(node)
     case node.name
-    when 'select' then (node.at_css('option[selected]') || node.at_css('option'))&.then { |option| option['value'] || option.text }
+    when 'select' then selected_value(node)
     when 'textarea' then node.text
-    else
-      type = (node['type'] || 'text').downcase
-      return if %w[submit button image file].include?(type) || (%w[radio checkbox].include?(type) && !node['checked'])
-
-      node['value'] || (type == 'checkbox' ? 'on' : '')
+    else input_value(node)
     end
+  end
+
+  def selected_value(select)
+    option = select.at_css('option[selected]') || select.at_css('option')
+    option && (option['value'] || option.text)
+  end
+
+  # nil: the control is not sent (a button, a radio button or a checkbox that is not checked)
+  def input_value(input)
+    type = (input['type'] || 'text').downcase
+    return if %w[submit button image file].include?(type)
+    return if %w[radio checkbox].include?(type) && !input['checked']
+
+    input['value'] || (type == 'checkbox' ? 'on' : '')
   end
 
   def send_drawn(form, overrides)
@@ -635,7 +645,8 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
         save_card_as_drawn('account[limit_choices][storage_bytes]' => 'custom', 'account[limit_values][storage_bytes]' => '4,7')
 
         expect(account.reload.limits['storage_bytes']).to eq((BigDecimal('4.7') * 1.gigabyte).round(0).to_i)
-        expect(limit_audits.last.audited_changes['limits']['storage_bytes']).to include('from' => 'своё число (4,66 ГБ)', 'to' => 'своё число (4,7 ГБ)')
+        expect(limit_audits.last.audited_changes['limits']['storage_bytes'])
+          .to include('from' => 'своё число (4,66 ГБ)', 'to' => 'своё число (4,7 ГБ)')
       end
     end
 

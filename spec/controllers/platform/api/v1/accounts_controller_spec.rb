@@ -108,7 +108,8 @@ RSpec.describe 'Platform Accounts API', type: :request do
         end
 
         it 'does not let the partner write the lists of the limits (Accounts::LimitSettings) into a new account' do
-          created = create_account(custom_attributes: { 'crm_id' => '5', 'limit_overrides' => { 'agents' => 1 }, 'limit_plan_numbers' => { 'agents' => 2 } })
+          lists = { 'limit_overrides' => { 'agents' => 1 }, 'limit_plan_numbers' => { 'agents' => 2 } }
+          created = create_account(custom_attributes: { 'crm_id' => '5' }.merge(lists))
 
           expect(created.custom_attributes).to include('crm_id' => '5', 'plan' => 'base')
           expect(created.custom_attributes).not_to include('limit_overrides')

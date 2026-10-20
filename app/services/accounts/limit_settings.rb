@@ -72,6 +72,8 @@ class Accounts::LimitSettings
       attributes
     end
   end
+  # The three lists while choices are applied to them, and the limits a choice has been applied to
+  Draft = Struct.new(:limits, :marks, :plan_numbers, :touched)
   # One limit as it stands: where it comes from (:plan, :unlimited or :custom) and the number that applies (nil: no limit)
   Position = Struct.new(:source, :value, keyword_init: true)
 
@@ -109,15 +111,17 @@ class Accounts::LimitSettings
   end
 
   # modules     : the modules of the plan to read the plan numbers from (default: the plan applied to the account, none without one)
-  # limits      : the limits to read instead of the ones of the account (what Accounts::ApplyPlan is about to write)
+  # limits      : the limits to read instead of the ones of the account (what a choice would write: see #apply)
   # marks       : the list of the limits chosen by hand to read instead of the one of the account
   # plan_numbers: the list of the numbers the plan wrote to read instead of the one of the account
-  def initialize(account, modules: nil, limits: nil, marks: nil, plan_numbers: nil)
+  # held        : the limits an ended trial holds at 0 to read instead of the ones it holds now (only with `limits`)
+  def initialize(account, modules: nil, limits: nil, marks: nil, plan_numbers: nil, held: nil)
     @account = account
     @modules = modules
     @limits = limits
     @given_marks = marks
     @given_plan_numbers = plan_numbers
+    @given_held = held
   end
 
   # { 'agents' => 5, 'conversations' => 'unlimited' }: the limits chosen by hand as they are listed
@@ -225,55 +229,56 @@ class Accounts::LimitSettings
   # ({ 'agents' => 5, 'storage_bytes' => :plan }) are made; the limits that are not named stay as they are, and so do the ones whose
   # choice is the one they have (#same_choice?). Nothing is written.
   def apply(choices)
-    limits = stored_limits.dup
-    marks = self.marks.dup
-    plan_numbers = self.plan_numbers.dup
+    draft = Draft.new(stored_limits.dup, marks.dup, plan_numbers.dup, [])
     choices.each do |key, choice|
       key = key.to_s
       next unless Accounts::Plans::LIMIT_KEYS.include?(key)
       next if same_choice?(key, choice)
 
-      apply_choice(limits, marks, plan_numbers, key, choice)
+      apply_choice(draft, key, choice)
     end
-    Result.new(limits: limits, marks: marks, plan_numbers: plan_numbers, changes: changes_between(limits, marks, plan_numbers))
+    Result.new(limits: draft.limits, marks: draft.marks, plan_numbers: draft.plan_numbers, changes: changes_between(draft))
   end
 
   private
 
-  def apply_choice(limits, marks, plan_numbers, key, choice)
+  def apply_choice(draft, key, choice)
+    draft.touched << key
     case choice
-    when :plan then follow_plan(limits, marks, plan_numbers, key)
-    when :unlimited then choose(limits, marks, plan_numbers, key, UNLIMITED, Accounts::Plans.unlimited_value(key))
+    when :plan then follow_plan(draft, key)
+    when :unlimited then choose(draft, key, UNLIMITED, Accounts::Plans.unlimited_value(key))
     else
       raise ArgumentError, "Not a choice for #{key}: #{choice.inspect}" unless choice.is_a?(Integer) && !choice.negative?
 
-      choose(limits, marks, plan_numbers, key, choice, choice)
+      choose(draft, key, choice, choice)
     end
   end
 
   # «Как в тарифе»: the number of the plan, or no number where the plan has none (the general value of the platform applies then)
-  def follow_plan(limits, marks, plan_numbers, key)
-    marks.delete(key)
+  def follow_plan(draft, key)
+    draft.marks.delete(key)
     plan = plan_value(key)
     if plan.nil?
-      limits.delete(key)
-      plan_numbers.delete(key)
+      draft.limits.delete(key)
+      draft.plan_numbers.delete(key)
     else
-      limits[key] = plan
-      plan_numbers[key] = plan
+      draft.limits[key] = plan
+      draft.plan_numbers[key] = plan
     end
   end
 
   # «Без ограничений» and «Своё число»: the mark and the number, and nothing of the plan
-  def choose(limits, marks, plan_numbers, key, mark, number)
-    marks[key] = mark
-    limits[key] = number
-    plan_numbers.delete(key)
+  def choose(draft, key, mark, number)
+    draft.marks[key] = mark
+    draft.limits[key] = number
+    draft.plan_numbers.delete(key)
   end
 
   # { 'agents' => { 'from' => Position, 'to' => Position } } for the limits whose source or number differs after the choices
-  def changes_between(limits, marks, plan_numbers)
-    after = self.class.new(@account, modules: @modules, limits: limits, marks: marks, plan_numbers: plan_numbers)
+  # (the zero an ended trial holds on a limit nobody touched is still the platform's, not a choice)
+  def changes_between(draft)
+    after = self.class.new(@account, modules: @modules, limits: draft.limits, marks: draft.marks, plan_numbers: draft.plan_numbers,
+                                     held: held_keys - draft.touched)
     Accounts::Plans::LIMIT_KEYS.each_with_object({}) do |key, changes|
       before = Position.new(source: source(key), value: effective(key))
       now = Position.new(source: after.source(key), value: after.effective(key))
@@ -303,10 +308,11 @@ class Accounts::LimitSettings
 
   # The zero a trial left on a limit is the platform's, not a choice
   def held?(key)
-    return false if @limits
+    held_keys.include?(key.to_s)
+  end
 
-    @held ||= @account.trial_held_limits
-    @held.key?(key.to_s)
+  def held_keys
+    @held_keys ||= @given_held || (@limits ? [] : @account.trial_held_limits.keys)
   end
 
   # The number is the one of the plan, or the one the plan wrote the last time (a number that the plan has changed since: it is
