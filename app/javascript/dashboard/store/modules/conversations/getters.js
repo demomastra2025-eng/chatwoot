@@ -167,7 +167,7 @@ const getters = {
     const currentUserId = rootGetters.getCurrentUser?.id;
     const getWatchers = rootGetters['conversationWatchers/getByConversationId'];
     return _state.allConversations.filter(conversation => {
-      const watchers = getWatchers(conversation.id);
+      const watchers = getWatchers?.(conversation.id);
       // Watchers are only loaded for the conversation open in the detail
       // panel. If loaded and current user is not in them, filter it out.
       if (watchers && !watchers.some(w => w.id === currentUserId)) {

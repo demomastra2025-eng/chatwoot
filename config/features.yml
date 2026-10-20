@@ -35,6 +35,7 @@
   display_name: Help Center
   enabled: false
   help_url:
+  deprecated: true
 - name: agent_bots
   display_name: Agent Bots
   enabled: true
@@ -131,6 +132,7 @@
   enabled: false
   premium: true
   chatwoot_internal: true
+  deprecated: true
 - name: linear_integration
   display_name: Linear Integration
   enabled: false
