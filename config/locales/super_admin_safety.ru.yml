@@ -11,6 +11,7 @@ ru:
         reset_email_usage: "Сброс счётчика писем"
         delete_push_subscriptions: "Удаление подписок на уведомления"
         delete_avatar: "Удаление фото пользователя"
+        reset_two_factor: "Сброс двухфакторного входа"
         publish_banner: "Показ баннера всем операторам"
         hide_banner: "Скрытие баннера"
       types:
@@ -122,6 +123,16 @@ ru:
           already_suspended: "Аккаунт «%{name}» уже заблокирован."
           already_active: "Аккаунт «%{name}» уже работает."
           deleting: "Аккаунт назначен на удаление: сначала отмените удаление."
+
+      # The second factor of a user who lost the phone
+      two_factor:
+        reset: "Сбросить двухфакторный вход"
+        title: "Сбросить двухфакторный вход у «%{name}»?"
+        text: "Пользователь войдёт по паролю и сможет включить двухфакторный вход заново. Старые резервные коды перестанут работать. Нужно, если человек потерял телефон."
+        submit: "Да, сбросить"
+        done: "Двухфакторный вход у «%{name}» сброшен: он входит по паролю и может включить защиту заново."
+        not_enabled: "У этого пользователя двухфакторный вход не включён."
+        refused_self: "Свой двухфакторный вход сбрасывается в кабинете оператора: там сначала спрашивают код."
 
     # The banner shown on top of the screens of the operators: a draft first, shown by its own action
     platform_banners:

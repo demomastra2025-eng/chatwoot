@@ -1058,6 +1058,8 @@ Rails.application.routes.draw do
       end
       resources :users, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
         delete :avatar, on: :member, action: :destroy_avatar
+        # The person lost the phone: the second factor is taken off (asks first, leaves an entry of the audit log)
+        post :reset_two_factor, on: :member
       end
 
       resources :access_tokens, only: [:index, :show]

@@ -60,6 +60,22 @@ class SuperAdmin::UsersController < SuperAdmin::ApplicationController
   # and `dashboard`:
   #
 
+  # «Сбросить двухфакторный вход»: the person lost the phone, so the second factor is taken off (the secret and the backup codes
+  # go). The person signs in with the password and can switch it on again. Not for your own sign-in: that is changed in the
+  # operator app, where the code is asked first. Leaves an entry of the audit log.
+  def reset_two_factor
+    user = requested_resource
+    return redirect_to(super_admin_user_path(user), alert: I18n.t('super_admin.safety.two_factor.refused_self')) if user.id == current_super_admin.id
+    return redirect_to(super_admin_user_path(user), alert: I18n.t('super_admin.safety.two_factor.not_enabled')) unless user.mfa_enabled?
+
+    user.disable_two_factor!
+    SuperAdmin::PlatformAudit.record(
+      auditable: user, action: 'reset_two_factor', actor: current_super_admin, request: request,
+      changes: { 'two_factor' => %w[enabled disabled], 'email' => user.email }
+    )
+    redirect_to super_admin_user_path(user), notice: I18n.t('super_admin.safety.two_factor.done', name: user.name)
+  end
+
   def destroy_avatar
     avatar = requested_resource.avatar
     avatar.purge

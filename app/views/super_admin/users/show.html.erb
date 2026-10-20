@@ -26,6 +26,14 @@ as well as a link to its edit page.
   </div>
 
   <div class="main-content__actions">
+    <%# The second factor of a person who lost the phone: asks first, never for your own sign-in (SuperAdmin::UsersController#reset_two_factor) %>
+    <% if page.resource.mfa_enabled? && page.resource.id != current_super_admin.id %>
+      <%= render 'super_admin/shared/confirm_action', key: 'reset-two-factor', label: t('super_admin.safety.two_factor.reset'), floating: true,
+                 title: t('super_admin.safety.two_factor.title', name: page.resource.name),
+                 text: [t('super_admin.safety.two_factor.text'), t('super_admin.safety.audited')],
+                 url: reset_two_factor_super_admin_user_path(page.resource), submit: t('super_admin.safety.two_factor.submit'),
+                 trigger_class: 'button button--secondary' %>
+    <% end %>
     <%= link_to(
             t("administrate.actions.edit"),
             [:edit, namespace,  page.resource.becomes(User)],
