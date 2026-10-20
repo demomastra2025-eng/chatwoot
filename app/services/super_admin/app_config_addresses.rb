@@ -33,4 +33,9 @@ module SuperAdmin::AppConfigAddresses
   def base_url(request)
     ENV['FRONTEND_URL'].presence || request.base_url
   end
+
+  # The sign-in page of the application of the operators, on that address: what a person who was given a password opens
+  def sign_in_url(request)
+    "#{base_url(request).to_s.chomp('/')}/app/login"
+  end
 end

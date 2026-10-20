@@ -232,6 +232,16 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
       expect(page.at_css('[data-testid="users-block"]').text).to include('dinara@sezim.example')
     end
 
+    it 'hands over the e-mail and the address of sign-in with the password, each with a copy button', :aggregate_failures do
+      with_modified_env(FRONTEND_URL: 'https://app.example.test') { add_with_password }
+
+      rows = page.css('[data-testid="added-member-password"] [data-sign-in]')
+      expect(rows.to_h { |row| [row['data-sign-in'], row.at_css('input[readonly]')['value']] }).to eq(
+        'password' => password, 'email' => 'dinara@sezim.example', 'address' => 'https://app.example.test/app/login'
+      )
+      expect(rows.map { |row| row.at_css('button[data-password-copy]')['data-copy-from'] }).to eq(rows.map { |row| row.at_css('input')['id'] })
+    end
+
     it 'shows the password on no other page and writes it nowhere' do
       add_with_password
 

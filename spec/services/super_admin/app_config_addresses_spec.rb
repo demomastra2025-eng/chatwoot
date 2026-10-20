@@ -54,4 +54,20 @@ RSpec.describe SuperAdmin::AppConfigAddresses do
       end
     end
   end
+
+  describe '.sign_in_url' do
+    let(:request) { instance_double(ActionDispatch::Request, base_url: 'http://other.test') }
+
+    it 'is the sign-in page of the application of the operators, on the address of the platform' do
+      with_modified_env(FRONTEND_URL: 'https://front.example.test/') do
+        expect(described_class.sign_in_url(request)).to eq('https://front.example.test/app/login')
+      end
+    end
+
+    it 'is on the address the page was opened on when the server has none' do
+      with_modified_env(FRONTEND_URL: nil) do
+        expect(described_class.sign_in_url(request)).to eq('http://other.test/app/login')
+      end
+    end
+  end
 end

@@ -269,6 +269,29 @@ RSpec.describe 'Super Admin new client', type: :request do
       expect(response.headers['Cache-Control']).to include('no-store')
     end
 
+    it 'hands over all that is needed to sign in: the password, the e-mail and the address, each with a copy button', :aggregate_failures do
+      with_modified_env(FRONTEND_URL: 'https://app.example.test/') { create_with_password }
+
+      rows = page.css('[data-testid="one-time-password"] [data-sign-in]')
+      expect(rows.to_h { |row| [row['data-sign-in'], row.at_css('input[readonly]')['value']] }).to eq(
+        'password' => password, 'email' => 'aigerim@alatau.example', 'address' => 'https://app.example.test/app/login'
+      )
+      expect(rows.map { |row| text(row.at_css('label')) }).to eq(['Пароль', 'E-mail для входа', 'Адрес входа'])
+      expect(rows.map { |row| row.at_css('button[data-password-copy]')['data-copy-from'] }).to eq(rows.map { |row| row.at_css('input')['id'] })
+    end
+
+    it 'gives the address the page was opened on when the platform has no address of its own' do
+      with_modified_env(FRONTEND_URL: '') { create_with_password }
+
+      expect(page.at_css('[data-sign-in="address"] input')['value']).to eq('http://www.example.com/app/login')
+    end
+
+    it 'gives no address of sign-in to a person who got an invitation: the letter has the link' do
+      create_client
+
+      expect(page.at_css('[data-testid="sign-in-details"]')).to be_nil
+    end
+
     it 'shows the password on no other page and writes it nowhere' do
       create_with_password
 
