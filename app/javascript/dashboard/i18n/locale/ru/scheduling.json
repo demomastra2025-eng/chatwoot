@@ -136,7 +136,8 @@
       "RESOURCES_SELECTED": "Выбрано: {count}",
       "RESOURCE_SEARCH": "Поиск специалиста",
       "SHOW_INACTIVE_APPOINTMENTS": "Показывать завершённые, отменённые и неявки",
-      "STATUS": "Статус записи"
+      "STATUS": "Статус записи",
+      "HIDE_CANCELLED_APPOINTMENTS": "Не показывать отменённые"
     },
     "CALENDAR": {
       "ALL_RESOURCES_UNAVAILABLE": "Все специалисты недоступны",

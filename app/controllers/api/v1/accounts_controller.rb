@@ -62,7 +62,7 @@ class Api::V1::AccountsController < Api::BaseController
       permitted_settings = settings_params
       validate_conversation_assignment_policy!(permitted_settings)
 
-      @account.assign_attributes(account_params.slice(:name, :locale, :domain, :support_email, :logo))
+      @account.assign_attributes(account_params.slice(:name, :locale, :logo))
       @account.custom_attributes.merge!(custom_attributes_params)
       @account.settings.merge!(permitted_settings)
       @account.custom_attributes['onboarding_step'] = 'invite_team' if @account.custom_attributes['onboarding_step'] == 'account_update'
@@ -99,7 +99,6 @@ class Api::V1::AccountsController < Api::BaseController
     {
       label: fetch_value_for_key(params[:id], Label.name.underscore),
       inbox: fetch_value_for_key(params[:id], Inbox.name.underscore),
-      team: fetch_value_for_key(params[:id], Team.name.underscore),
       'crm/stage': fetch_value_for_key(params[:id], Crm::Stage.name.underscore)
     }
   end

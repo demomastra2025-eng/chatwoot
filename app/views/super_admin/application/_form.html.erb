@@ -66,8 +66,8 @@ against the gem when it is upgraded.
       <% end -%>
     </div>
 
-    <div class="form-actions border-t border-n-weak px-5 py-4">
-      <%= f.submit page.resource.persisted? ? t("super_admin.shell.save") : t("super_admin.shell.create") %>
+    <div class="form-actions sticky bottom-0 z-10 flex justify-end border-t border-n-weak bg-n-solid-2 px-5 py-4">
+      <%= f.submit(page.resource.persisted? ? t("super_admin.shell.save") : t("super_admin.shell.create"), class: "button") %>
     </div>
   </div>
 <% end %>

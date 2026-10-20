@@ -162,7 +162,7 @@ const customFieldFilters = ref({});
 const filterDialogRef = ref(null);
 const appointmentFilterDraft = reactive({
   customFieldFilters: {},
-  showInactiveAppointments: false,
+  hideCancelledAppointments: false,
   statusFilters: [],
 });
 const pendingCreateCustomFieldDefaultsHydration = ref(false);
@@ -981,8 +981,8 @@ const cloneAppointmentCustomFieldFilters = filters =>
 
 const syncAppointmentFilterDraft = () => {
   appointmentFilterDraft.statusFilters = [...calendarStore.statusFilters];
-  appointmentFilterDraft.showInactiveAppointments =
-    calendarStore.showInactiveAppointments;
+  appointmentFilterDraft.hideCancelledAppointments =
+    Boolean(calendarStore.hideCancelledAppointments);
   appointmentFilterDraft.customFieldFilters =
     cloneAppointmentCustomFieldFilters(customFieldFilters.value);
 };
@@ -1000,8 +1000,8 @@ const applyAppointmentFilters = async () => {
   );
 
   calendarStore.setStatusFilters(appointmentFilterDraft.statusFilters);
-  calendarStore.setShowInactiveAppointments(
-    appointmentFilterDraft.showInactiveAppointments
+  calendarStore.setHideCancelledAppointments?.(
+    appointmentFilterDraft.hideCancelledAppointments
   );
   customFieldFilters.value = nextCustomFieldFilters;
   calendarStore.setCustomAttributeFilters(nextCustomFieldFilters);
@@ -2930,8 +2930,8 @@ onMounted(async () => {
         <label
           class="flex cursor-pointer items-center gap-2 text-sm text-n-slate-12"
         >
-          <Checkbox v-model="appointmentFilterDraft.showInactiveAppointments" />
-          <span>{{ $t('SCHEDULING.TOOLBAR.SHOW_INACTIVE_APPOINTMENTS') }}</span>
+          <Checkbox v-model="appointmentFilterDraft.hideCancelledAppointments" />
+          <span>{{ $t('SCHEDULING.TOOLBAR.HIDE_CANCELLED_APPOINTMENTS') }}</span>
         </label>
 
         <div class="grid gap-4 md:grid-cols-3">

@@ -1876,7 +1876,6 @@ export default {
           formData: false,
           channel: {
             provider_config: {
-              ...this.inbox.provider_config,
               calling_enabled: this.callingEnabled,
             },
           },
@@ -1893,7 +1892,6 @@ export default {
           formData: false,
           channel: {
             provider_config: {
-              ...this.inbox.provider_config,
               ai_voice_enabled: this.aiVoiceEnabled,
             },
           },

@@ -12,9 +12,12 @@ import {
   shiftAnchorDate,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
 import {
-  ACTIVE_APPOINTMENT_STATUS_VALUES,
+  APPOINTMENT_STATUS_VALUES,
   CALENDAR_STORAGE_KEY,
 } from 'dashboard/routes/dashboard/scheduling/constants';
+
+const NON_CANCELLED_APPOINTMENT_STATUS_VALUES =
+  APPOINTMENT_STATUS_VALUES.filter(status => status !== 'cancelled');
 import { appointmentMatchesCustomFieldFilters } from 'dashboard/routes/dashboard/scheduling/customFieldFilters';
 import { preserveCustomAttributeKeys } from 'dashboard/utils/preserveCustomAttributeKeys';
 
@@ -58,17 +61,17 @@ const matchesNumericFilter = (selectedIds, value) => {
 
 const effectiveAppointmentStatusFilters = (
   statusFilters,
-  showInactiveAppointments
+  hideCancelledAppointments
 ) => {
-  if (showInactiveAppointments) return statusFilters;
+  if (!hideCancelledAppointments) return statusFilters;
 
-  const activeStatusFilters = statusFilters.filter(status =>
-    ACTIVE_APPOINTMENT_STATUS_VALUES.includes(status)
+  const nonCancelledStatusFilters = statusFilters.filter(
+    status => status !== 'cancelled'
   );
 
-  return activeStatusFilters.length
-    ? activeStatusFilters
-    : ACTIVE_APPOINTMENT_STATUS_VALUES;
+  return nonCancelledStatusFilters.length
+    ? nonCancelledStatusFilters
+    : NON_CANCELLED_APPOINTMENT_STATUS_VALUES;
 };
 
 export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
@@ -81,7 +84,8 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
     initialized: false,
     payload: defaultPayload(),
     selectedResourceIds: [],
-    showInactiveAppointments: false,
+    hideCancelledAppointments: false,
+    showInactiveAppointments: true,
     statusFilters: [],
     workspaceTimezone: null,
     ui: {
@@ -144,8 +148,8 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         this.selectedResourceIds = Array.isArray(parsed.selectedResourceIds)
           ? parsed.selectedResourceIds.map(Number)
           : [];
-        this.showInactiveAppointments =
-          parsed.showInactiveAppointments === true;
+        this.hideCancelledAppointments =
+          parsed.hideCancelledAppointments === true;
       } catch {
         // Ignore malformed local preferences and continue with defaults.
       } finally {
@@ -162,7 +166,7 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
           anchorDate: this.anchorDate,
           currentView: this.currentView,
           selectedResourceIds: this.selectedResourceIds,
-          showInactiveAppointments: this.showInactiveAppointments,
+          hideCancelledAppointments: this.hideCancelledAppointments,
         })
       );
     },
@@ -214,14 +218,19 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
       this.statusFilters = [...statuses];
     },
 
-    setShowInactiveAppointments(showInactiveAppointments) {
-      this.showInactiveAppointments = Boolean(showInactiveAppointments);
-      if (!this.showInactiveAppointments) {
-        this.statusFilters = this.statusFilters.filter(status =>
-          ACTIVE_APPOINTMENT_STATUS_VALUES.includes(status)
+    setHideCancelledAppointments(hideCancelledAppointments) {
+      this.hideCancelledAppointments = Boolean(hideCancelledAppointments);
+      if (this.hideCancelledAppointments) {
+        this.statusFilters = this.statusFilters.filter(
+          status => status !== 'cancelled'
         );
       }
       this.persistPreferences();
+    },
+
+    setShowInactiveAppointments(showInactiveAppointments) {
+      this.showInactiveAppointments = Boolean(showInactiveAppointments);
+      this.setHideCancelledAppointments(!showInactiveAppointments);
     },
 
     setCustomAttributeFilters(filters = {}) {
@@ -235,7 +244,7 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
     resetFilters() {
       this.clearQuickFilters();
       this.setCustomAttributeFilters({});
-      this.setShowInactiveAppointments(false);
+      this.setHideCancelledAppointments(false);
     },
 
     async fetchCalendar(options = {}) {
@@ -267,7 +276,7 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
 
         const effectiveStatusFilters = effectiveAppointmentStatusFilters(
           this.statusFilters,
-          this.showInactiveAppointments
+          this.hideCancelledAppointments
         );
         if (effectiveStatusFilters.length) {
           params.status = effectiveStatusFilters.join(',');
@@ -337,7 +346,7 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
       );
       const effectiveStatusFilters = effectiveAppointmentStatusFilters(
         this.statusFilters,
-        this.showInactiveAppointments
+        this.hideCancelledAppointments
       );
 
       return (

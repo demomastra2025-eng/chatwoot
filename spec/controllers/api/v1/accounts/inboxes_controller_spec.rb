@@ -1373,6 +1373,41 @@ RSpec.describe 'Inboxes API', type: :request do
         )
       end
 
+      it 'toggles calling_enabled on a WhatsApp Cloud inbox without re-validating the Meta token' do
+        account.update!(limits: { 'non_web_inboxes' => 10 })
+        expect(Whatsapp::TokenValidationService).not_to receive(:new)
+
+        whatsapp_channel = create(
+          :channel_whatsapp,
+          account: account,
+          provider: 'whatsapp_cloud',
+          validate_provider_config: false,
+          sync_templates: false
+        )
+        whatsapp_channel.update_column(
+          :provider_config,
+          {
+            'api_key' => 'existing_cloud_token',
+            'business_account_id' => 'waba-1',
+            'phone_number_id' => 'phone-1',
+            'source' => 'embedded_signup',
+            'calling_enabled' => true
+          }
+        )
+        whatsapp_inbox = whatsapp_channel.inbox
+
+        patch "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}",
+              headers: admin.create_new_auth_token,
+              params: { channel: { provider_config: { calling_enabled: false } } },
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(whatsapp_channel.reload.provider_config).to include(
+          'api_key' => 'existing_cloud_token',
+          'calling_enabled' => false
+        )
+      end
+
       it 'merges provider config when updating a voice inbox webhook token' do
         provider_connection = create(:telephony_provider_connection, account: account, provider_kind: 'sipuni')
         voice_channel = create(

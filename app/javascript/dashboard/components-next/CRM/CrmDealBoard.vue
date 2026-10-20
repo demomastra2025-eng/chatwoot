@@ -16,6 +16,10 @@ import { formatDealAmount, resolveDealAmountMajor } from './dealAmount';
 import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
 
 const props = defineProps({
+  bulkSelectionMode: {
+    type: Boolean,
+    default: false,
+  },
   canManage: {
     type: Boolean,
     default: false,
@@ -420,7 +424,7 @@ const handleColumnChange = (event, stageId) => {
           <div class="flex items-center justify-between gap-2">
             <div class="flex min-w-0 items-center gap-1.5">
               <input
-                v-if="canManage"
+                v-if="canManage && bulkSelectionMode"
                 type="checkbox"
                 class="size-3.5 shrink-0 cursor-pointer rounded border-n-weak text-n-brand focus:ring-n-brand"
                 data-test="stage-select-all"
@@ -489,7 +493,7 @@ const handleColumnChange = (event, stageId) => {
             >
               <div class="flex items-start justify-between gap-2">
                 <input
-                  v-if="canManage"
+                  v-if="canManage && bulkSelectionMode"
                   type="checkbox"
                   class="mt-0.5 size-3.5 shrink-0 cursor-pointer rounded border-n-weak text-n-brand focus:ring-n-brand"
                   data-test="deal-card-select"

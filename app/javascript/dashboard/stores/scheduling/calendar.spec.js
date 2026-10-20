@@ -192,23 +192,25 @@ describe('useSchedulingCalendarStore', () => {
     );
   });
 
-  it('hides inactive appointments by default and includes them on opt-in', async () => {
+  it('shows all appointment statuses by default and excludes cancelled when hideCancelledAppointments is enabled', async () => {
     showMock.mockResolvedValue({ data: { payload: {} } });
     const store = useSchedulingCalendarStore();
 
     await store.fetchCalendar();
 
-    expect(showMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({ status: 'scheduled,confirmed' })
-    );
+    expect(showMock.mock.calls.at(-1)[0]).not.toHaveProperty('status');
 
-    store.setShowInactiveAppointments(true);
+    store.setHideCancelledAppointments(true);
     await store.fetchCalendar();
 
-    expect(showMock.mock.calls.at(-1)[0]).not.toHaveProperty('status');
+    expect(showMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'scheduled,confirmed,completed,no_show',
+      })
+    );
     expect(
       JSON.parse(window.localStorage.getItem(CALENDAR_STORAGE_KEY))
-        .showInactiveAppointments
+        .hideCancelledAppointments
     ).toBe(true);
   });
 
@@ -216,14 +218,14 @@ describe('useSchedulingCalendarStore', () => {
     const store = useSchedulingCalendarStore();
     store.setStatusFilters(['confirmed']);
     store.setCustomAttributeFilters({ visit_reason: ['follow_up'] });
-    store.setShowInactiveAppointments(true);
+    store.setHideCancelledAppointments(true);
     store.setView('month');
 
     store.resetFilters();
 
     expect(store.statusFilters).toEqual([]);
     expect(store.customAttributeFilters).toEqual({});
-    expect(store.showInactiveAppointments).toBe(false);
+    expect(store.hideCancelledAppointments).toBe(false);
     expect(store.currentView).toBe('month');
   });
 
@@ -383,26 +385,27 @@ describe('useSchedulingCalendarStore', () => {
     ]);
   });
 
-  it('applies inactive visibility to realtime appointment updates', () => {
+  it('applies cancelled visibility to realtime appointment updates', () => {
     const store = useSchedulingCalendarStore();
     store.currentView = 'week';
     store.anchorDate = '2026-03-09T00:00:00.000Z';
-    const completedAppointment = {
+
+    const cancelledAppointment = {
       ends_at: '2026-03-11T09:30:00.000Z',
       id: 7,
       resource_id: 5,
       starts_at: '2026-03-11T09:00:00.000Z',
-      status: 'completed',
+      status: 'cancelled',
     };
 
-    store.syncAppointment(completedAppointment);
-    expect(store.payload.appointments).toEqual([]);
-
-    store.setShowInactiveAppointments(true);
-    store.syncAppointment(completedAppointment);
-
+    store.syncAppointment(cancelledAppointment);
     expect(store.payload.appointments).toHaveLength(1);
-    expect(store.payload.appointments[0].status).toBe('completed');
+    expect(store.payload.appointments[0].status).toBe('cancelled');
+
+    store.setHideCancelledAppointments(true);
+    store.syncAppointment(cancelledAppointment);
+
+    expect(store.payload.appointments).toEqual([]);
   });
 
   it('removes synced appointments that no longer match active custom field filters', () => {

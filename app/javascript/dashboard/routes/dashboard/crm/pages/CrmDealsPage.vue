@@ -183,6 +183,7 @@ const filterSearchTriggerRef = ref(null);
 const filterPopoverOpen = ref(false);
 const filterPopoverStyle = ref({});
 const listCurrentPage = ref(1);
+const bulkSelectionMode = ref(false);
 const selectedDealIds = ref([]);
 const dealsListScrollRef = ref(null);
 const dealBoardRef = ref(null);
@@ -732,11 +733,15 @@ const boardSortDirectionLabels = computed(() => ({
 }));
 
 const tableColumns = computed(() => [
-  {
-    key: 'select',
-    label: '',
-    width: '24px',
-  },
+  ...(canManageDeals.value && (bulkSelectionMode.value || selectedDealIds.value.length > 0)
+    ? [
+        {
+          key: 'select',
+          label: '',
+          width: '24px',
+        },
+      ]
+    : []),
   {
     key: 'title',
     label: t('CRM.DEALS.TABLE.TITLE'),
@@ -1139,6 +1144,15 @@ const toggleStageDealSelection = ({ dealIds = [], checked }) => {
     }
   });
   selectedDealIds.value = [...nextSelectedIds];
+};
+
+const toggleBulkSelectionMode = () => {
+  bulkSelectionMode.value = !bulkSelectionMode.value;
+  if (!bulkSelectionMode.value) {
+    selectedDealIds.value = [];
+    bulkStageId.value = '';
+    bulkOwnerId.value = '';
+  }
 };
 
 const clearDealSelection = () => {
@@ -4354,6 +4368,16 @@ watch(
           <Button
             v-if="canManageDeals"
             size="sm"
+            :color="bulkSelectionMode ? 'blue' : 'slate'"
+            :variant="bulkSelectionMode ? 'faded' : 'outline'"
+            icon="i-lucide-check-square"
+            :label="$t('CRM.DEALS.BULK_ACTIONS')"
+            data-test="toggle-bulk-actions"
+            @click="toggleBulkSelectionMode"
+          />
+          <Button
+            v-if="canManageDeals"
+            size="sm"
             icon="i-lucide-plus"
             :label="$t('CRM.DEALS.NEW_DEAL')"
             @click="openCreateDrawer()"
@@ -4416,6 +4440,7 @@ watch(
             v-else-if="currentPresentation === 'board'"
             ref="dealBoardRef"
             class="min-h-0 flex-1"
+            :bulk-selection-mode="bulkSelectionMode"
             :can-manage="canManageDeals"
             :can-reorder="!hasListSearchQuery"
             :deals="boardDeals"

@@ -33,7 +33,10 @@ module Captain::Playground::RecordSnapshots
   private
 
   def load_snapshot_association(record, name, target)
-    record.association(name).tap { |association| association.target = target; association.loaded! }
+    record.association(name).tap do |association|
+      association.target = target
+      association.loaded!
+    end
     record
   end
 
@@ -49,10 +52,9 @@ module Captain::Playground::RecordSnapshots
     channel_config = config.fetch('channel', {}).slice('provider', 'medium')
     channel = native_snapshot(klass, channel_config.merge('id' => config['id']))
     channel.message_templates = @data.fetch('channel_templates') if channel.has_attribute?(:message_templates)
-    if channel.has_attribute?(:content_templates)
-      channel.content_templates = { 'templates' => @data.fetch('channel_templates') }
-    end
-    Inbox.new(id: config['id'], account_id: @session.account.id, name: config['name'].presence || 'Synthetic channel', channel: channel).tap do |inbox|
+    channel.content_templates = { 'templates' => @data.fetch('channel_templates') } if channel.has_attribute?(:content_templates)
+    Inbox.new(id: config['id'], account_id: @session.account.id, name: config['name'].presence || 'Synthetic channel',
+              channel: channel).tap do |inbox|
       load_snapshot_association(inbox, :account, @session.account)
       load_snapshot_association(inbox, :channel, channel)
     end
@@ -75,7 +77,7 @@ module Captain::Playground::RecordSnapshots
   def snapshot_assignment_account
     Struct.new(:users, :teams).new(
       SnapshotScope.new(snapshot_staff),
-      SnapshotScope.new(@data.fetch('teams').map { |record| Team.new(record.slice('id', 'name')) })
+      SnapshotScope.new(@data.fetch('teams', []).map { |record| OpenStruct.new(record.slice('id', 'name')) })
     )
   end
 

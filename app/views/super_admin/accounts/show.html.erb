@@ -79,10 +79,13 @@ basic facts, organization, maintenance.
         </summary>
         <div class="admin-collapse__body">
           <%= form_with url: super_admin_account_path(account), method: :patch, local: true, class: 'flex flex-col gap-5' do %>
+            <div class="admin-block__footer">
+              <%= submit_tag t('super_admin.shell.save'), name: nil, class: 'button' %>
+            </div>
             <%# Only the switches are posted: the update does not re-send the name, so it cannot undo a rename made elsewhere. %>
             <%= render 'fine_tuning', account: account %>
-            <div class="admin-block__footer">
-              <%= submit_tag t('super_admin.shell.save'), name: nil %>
+            <div class="admin-block__footer sticky bottom-0 z-10 border-t border-n-weak bg-n-solid-2 py-3">
+              <%= submit_tag t('super_admin.shell.save'), name: nil, class: 'button' %>
             </div>
           <% end %>
         </div>

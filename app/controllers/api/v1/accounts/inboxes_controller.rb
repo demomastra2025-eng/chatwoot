@@ -266,13 +266,21 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def reauthorize_and_update_channel(channel_attributes)
+    raw_channel_params = permitted_params(channel_attributes)[:channel]
     identity_guard = Whatsapp::ChannelIdentityUpdateGuard.new(@inbox.channel)
-    identity_guard.validate!(permitted_params(channel_attributes)[:channel])
+    identity_guard.validate!(raw_channel_params)
     channel_params = identity_guard.validate!(normalized_channel_update_params(channel_attributes))
-    @inbox.channel.reauthorized! if @inbox.channel.respond_to?(:reauthorized!)
+    @inbox.channel.reauthorized! if @inbox.channel.respond_to?(:reauthorized!) && channel_reauthorization_update?(raw_channel_params)
     @inbox.channel.update!(channel_params)
     @sync_telegram_personal_channel_after_update ||= telegram_personal_runtime_state_update?(channel_params)
     sync_voice_telephony!(@inbox.channel)
+  end
+
+  def channel_reauthorization_update?(raw_channel_params)
+    return true unless @inbox.channel.is_a?(Channel::Whatsapp)
+
+    incoming_config = raw_channel_params.to_h.with_indifferent_access[:provider_config].to_h.stringify_keys
+    incoming_config['api_key'].to_s.strip.present?
   end
 
   def telegram_personal_runtime_state_update?(channel_params)
@@ -566,12 +574,21 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     return attrs unless provider == 'whatsapp_cloud'
     return attrs if attrs[:provider_config].blank?
 
-    provider_config = existing_channel&.provider_config.to_h || {}
-    provider_config = provider_config.merge(attrs[:provider_config].to_h.deep_stringify_keys)
-    token_health = inspect_whatsapp_cloud_token(provider_config)
-    provider_config[Channel::Whatsapp::TOKEN_HEALTH_CONFIG_KEY] = token_health if token_health.present?
+    incoming_config = attrs[:provider_config].to_h.deep_stringify_keys
+    provider_config = (existing_channel&.provider_config.to_h || {}).merge(incoming_config)
+    if whatsapp_cloud_credentials_updating?(incoming_config, existing_channel)
+      token_health = inspect_whatsapp_cloud_token(provider_config)
+      provider_config[Channel::Whatsapp::TOKEN_HEALTH_CONFIG_KEY] = token_health if token_health.present?
+    end
     attrs[:provider_config] = provider_config
     attrs
+  end
+
+  def whatsapp_cloud_credentials_updating?(incoming_config, existing_channel)
+    return true if existing_channel.nil?
+
+    incoming_api_key = incoming_config['api_key'].to_s.strip
+    incoming_api_key.present? && incoming_api_key != existing_channel.provider_config.to_h['api_key'].to_s
   end
 
   def inspect_whatsapp_cloud_token(provider_config)

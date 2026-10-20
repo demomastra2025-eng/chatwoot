@@ -497,7 +497,8 @@
         "SEARCH_PLACEHOLDER": "Search reasons",
         "STAGE_FALLBACK": "stage",
         "TITLE": "Transition reason: {stage}"
-      }
+      },
+      "BULK_ACTIONS": "Bulk actions"
     },
     "TASKS": {
       "CREATE_TITLE": "Create task",

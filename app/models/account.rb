@@ -574,6 +574,14 @@ class Account < ApplicationRecord
   end
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
 
+  def domain
+    nil
+  end
+
+  def support_email
+    nil
+  end
+
   private
 
   def refresh_crm_appointment_timezone
@@ -709,7 +717,6 @@ class Account < ApplicationRecord
 
     errors.add(:reporting_timezone, I18n.t('errors.account.reporting_timezone.invalid'))
   end
-
 
   def remove_account_sequences
     ActiveRecord::Base.connection.exec_query("drop sequence IF EXISTS camp_dpid_seq_#{id}")

@@ -37,14 +37,26 @@ module Captain::Runtime::TransferCapabilities
     WRITE_TOOL_IDS.include?(id) || (id.match?(WRITE_PREFIX) && Captain::ToolRegistry.definition_for(id).present?)
   end
 
+  def distinct_routing_domain?(source, target)
+    return false unless source.respond_to?(:routing_description) && target.respond_to?(:routing_description)
+
+    source_desc = source.routing_description.to_s.strip
+    target_desc = target.routing_description.to_s.strip
+    source_desc.present? && target_desc.present? && source_desc != target_desc
+  end
+
   def useful?(source, target)
     source_ids = Array(source.tool_ids).map(&:to_s)
     target_ids = Array(target.tool_ids).map(&:to_s)
-    (target_ids - source_ids).any? { |id| write_tool?(id) }
+    return true if (target_ids - source_ids).any? { |id| write_tool?(id) }
+
+    target_ids.any? { |id| write_tool?(id) } && distinct_routing_domain?(source, target)
   end
 
   def actions(source, target)
-    write_phrases(source, target).join('; ')
+    phrases = write_phrases(source, target)
+    phrases = write_phrases(Struct.new(:tool_ids).new([]), target) if phrases.empty? && distinct_routing_domain?(source, target)
+    phrases.join('; ')
   end
 
   def write_phrases(source, target)

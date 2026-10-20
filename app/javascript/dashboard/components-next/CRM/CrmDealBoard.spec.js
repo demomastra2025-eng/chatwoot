@@ -366,9 +366,17 @@ describe('CrmDealBoard', () => {
     expect(wrapper.emitted('loadMore')).toHaveLength(1);
   });
 
-  it("renders stage and card checkboxes when canManage is true and emits selection events", async () => {
+  it("hides stage and card checkboxes by default and renders them when bulkSelectionMode is true", async () => {
+    const defaultWrapper = mountBoard({
+      canManage: true,
+      deals: [{ id: 10, stageId: 1, title: "Alpha" }],
+    });
+    expect(defaultWrapper.find("[data-test=\"stage-select-all\"]").exists()).toBe(false);
+    expect(defaultWrapper.find("[data-test=\"deal-card-select\"]").exists()).toBe(false);
+
     const wrapper = mountBoard(
       {
+        bulkSelectionMode: true,
         canManage: true,
         deals: [
           { id: 10, stageId: 1, title: "Alpha" },

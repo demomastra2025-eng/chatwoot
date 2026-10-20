@@ -96,7 +96,7 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
     function sync() {
       var modules = selected();
       var changed = !assigned || modules.slice().sort().join(',') !== initial;
-      submit.disabled = !changed;
+      submit.disabled = false;
       if (!changed) {
         requestId += 1;
         box.hidden = true;

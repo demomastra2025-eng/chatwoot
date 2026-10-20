@@ -497,7 +497,8 @@
         "SEARCH_PLACEHOLDER": "Поиск причины",
         "STAGE_FALLBACK": "этап",
         "TITLE": "Причина перехода: {stage}"
-      }
+      },
+      "BULK_ACTIONS": "Массовые действия"
     },
     "TASKS": {
       "CREATE_TITLE": "Создать задачу",

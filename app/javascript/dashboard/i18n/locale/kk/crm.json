@@ -497,7 +497,8 @@
         "SEARCH_PLACEHOLDER": "Себеп іздеу",
         "STAGE_FALLBACK": "кезең",
         "TITLE": "Ауыстыру себебі: {stage}"
-      }
+      },
+      "BULK_ACTIONS": "Жаппай әрекеттер"
     },
     "TASKS": {
       "CREATE_TITLE": "Міндет құру",

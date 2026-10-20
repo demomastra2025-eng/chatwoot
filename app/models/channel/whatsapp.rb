@@ -221,8 +221,22 @@ class Channel::Whatsapp < ApplicationRecord # rubocop:disable Metrics/ClassLengt
     provider_config['webhook_verify_token'] ||= SecureRandom.hex(16) if provider == 'whatsapp_cloud'
   end
 
+  CREDENTIAL_CONFIG_KEYS = %w[api_key business_account_id phone_number_id].freeze
+
   def validate_provider_config
+    return if persisted? && !provider_credentials_changed?
+
     errors.add(:provider_config, 'Invalid Credentials') unless provider_service.validate_provider_config?
+  end
+
+  def provider_credentials_changed?
+    return true if will_save_change_to_provider? || will_save_change_to_phone_number?
+    return false unless will_save_change_to_provider_config?
+
+    previous_config, current_config = provider_config_change_to_be_saved
+    previous_hash = (previous_config || {}).to_h.stringify_keys
+    current_hash = (current_config || {}).to_h.stringify_keys
+    previous_hash.slice(*CREDENTIAL_CONFIG_KEYS) != current_hash.slice(*CREDENTIAL_CONFIG_KEYS)
   end
 
   def perform_webhook_setup(strict: false, force_registration: false)

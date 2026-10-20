@@ -40,7 +40,7 @@ posts to `link_organization`; changing or unlinking asks first. The plan, limits
       <%= hidden_field_tag :expected_organization_id, organization&.id.to_s, id: nil %>
     </div>
     <div class="admin-block__footer">
-      <%= submit_tag t('super_admin.shell.save'), name: nil, data: { confirm: confirm }.compact %>
+      <%= submit_tag t('super_admin.shell.save'), name: nil, class: 'button', data: { confirm: confirm }.compact %>
     </div>
   <% end %>
 </section>

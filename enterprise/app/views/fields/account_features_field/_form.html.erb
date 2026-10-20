@@ -8,6 +8,12 @@ switches post `enabled_features[feature_<flag>]` with the rest of the form.
   <%= f.label field.attribute %>
 </div>
 <div class="field-unit__field">
-  <p class="mb-4 mt-0 text-xs text-n-slate-11"><%= t('super_admin.fine_tuning.hint') %></p>
+  <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <p class="m-0 text-xs text-n-slate-11"><%= t('super_admin.fine_tuning.hint') %></p>
+    <%= f.submit t('super_admin.shell.save'), class: 'button button--small' %>
+  </div>
   <%= render 'super_admin/accounts/fine_tuning', account: f.object, columns: 2 %>
+  <div class="mt-4 flex justify-end">
+    <%= f.submit t('super_admin.shell.save'), class: 'button' %>
+  </div>
 </div>

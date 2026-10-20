@@ -152,8 +152,6 @@ RSpec.describe 'Accounts API', type: :request do
         expect(response).to conform_schema(200)
         expect(response.body).to include(account.name)
         expect(response.body).to include(account.locale)
-        expect(response.body).to include(account.domain)
-        expect(response.body).to include(account.support_email)
         expect(response.body).to include(account.locale)
       end
     end
@@ -171,7 +169,7 @@ RSpec.describe 'Accounts API', type: :request do
           as: :json
 
       expect(response).to have_http_status(:success)
-      expect(response.parsed_body['cache_keys'].keys).to match_array(%w[label inbox team crm/stage])
+      expect(response.parsed_body['cache_keys'].keys).to match_array(%w[label inbox crm/stage])
     end
 
     it 'sets the appropriate cache headers' do
@@ -242,8 +240,6 @@ RSpec.describe 'Accounts API', type: :request do
         expect(response).to have_http_status(:success)
         expect(account.reload.name).to eq(params[:name])
         expect(account.reload.locale).to eq(params[:locale])
-        expect(account.reload.domain).to eq(params[:domain])
-        expect(account.reload.support_email).to eq(params[:support_email])
 
         %w[
           auto_resolve_after

@@ -136,7 +136,8 @@
       "RESOURCES_SELECTED": "{count} selected",
       "RESOURCE_SEARCH": "Search specialists",
       "SHOW_INACTIVE_APPOINTMENTS": "Show completed, cancelled and missed visits",
-      "STATUS": "Appointment status"
+      "STATUS": "Appointment status",
+      "HIDE_CANCELLED_APPOINTMENTS": "Hide cancelled appointments"
     },
     "CALENDAR": {
       "ALL_RESOURCES_UNAVAILABLE": "All specialists unavailable",
