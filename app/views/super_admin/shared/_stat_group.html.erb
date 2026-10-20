@@ -15,9 +15,10 @@ ERB and a page drawn by Vue show their figures alike.
   <% items.each do |item| %>
     <div class="min-w-0 border-0 border-solid border-n-weak px-5 py-[18px] md:border-e md:last:border-e-0 max-md:odd:border-e max-md:[&:nth-child(n+3)]:border-t" data-testid="stat">
       <dt class="text-ds-caption text-n-slate-11"><%= item[:label] %></dt>
-      <dd class="m-0 mt-1.5 truncate text-ds-figure <%= item[:tone] == :bad ? 'text-n-ruby-11' : 'text-n-slate-12' %>">
+      <% figure_color = item[:tone] == :bad ? 'text-n-ruby-11' : 'text-n-slate-12' %>
+      <dd class="m-0 mt-1.5 truncate text-ds-figure <%= figure_color %>">
         <% if item[:href].present? %>
-          <%= link_to item[:value], item[:href], class: 'text-inherit no-underline hover:underline', data: { testid: 'stat-link' } %>
+          <%= link_to item[:value], item[:href], class: "#{figure_color} no-underline hover:underline", data: { testid: 'stat-link' } %>
         <% else %>
           <%= item[:value] %>
         <% end %>
