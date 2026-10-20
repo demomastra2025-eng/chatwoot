@@ -23,6 +23,16 @@ module SuperAdmin::AccountFeaturesHelper
     feature_display_names[name.to_s].presence || name.to_s.humanize
   end
 
+  # The functions a module includes, named for the hint under its card. The second version of a function is not named (it is the same
+  # function), a function whose name repeats another's is said by its hint name (super_admin.plans.hint_labels.<flag>, blank = not
+  # named), and a name is said once: «ИИ-агенты, Задачи ИИ-агентов», not «ИИ-агенты, ИИ-агенты, версия 2, ...».
+  def self.module_feature_labels(module_key)
+    Accounts::Plans.module_features(module_key).filter_map do |flag|
+      key = "super_admin.plans.hint_labels.#{flag}"
+      (I18n.exists?(key) ? I18n.t(key) : feature_label(flag)).presence
+    end.uniq
+  end
+
   def self.filter_internal_features(features)
     return features if ChatwootApp.chatwoot_cloud?
 

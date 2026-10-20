@@ -133,7 +133,9 @@ RSpec.describe 'Super Admin clinic card', type: :request do
         cards = block('plan-block').css('[data-plan-card]').map { |card| text(card) }.join(' ')
 
         expect(cards).to include('ИИ-агенты', 'Рассылки', 'Контроль качества', 'Расширения')
-        expect(cards).to include('Входит: ИИ-агенты')
+        expect(cards).to include('Входит: ИИ-агенты, Задачи ИИ-агентов, Умный поиск по базе знаний')
+        expect(cards).to include('Входит: Рассылки (в том числе в WhatsApp)')
+        expect(cards).not_to include('ИИ-агенты, версия 2', 'Рассылки в WhatsApp')
         expect(cards).to include('SLA')
       end
 

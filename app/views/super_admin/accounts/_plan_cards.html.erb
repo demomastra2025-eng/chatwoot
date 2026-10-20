@@ -9,8 +9,6 @@ the plan block of the clinic card and by the new-clinic form.
 
 - `chosen`: the keys of the modules that are switched on.
 %>
-<% feature_label = SuperAdmin::AccountFeaturesHelper.method(:feature_label) %>
-
 <fieldset class="m-0 min-w-0 border-0 p-0">
   <legend class="sr-only"><%= t('super_admin.clinic_card.plan.choose') %></legend>
   <div class="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3">
@@ -34,7 +32,7 @@ the plan block of the clinic card and by the new-clinic form.
         </span>
         <span class="text-[13px] text-n-slate-11"><%= t("super_admin.plans.modules.#{key}.description") %></span>
         <span class="text-xs text-n-slate-10">
-          <%= t('super_admin.clinic_card.plan.includes', features: Accounts::Plans.module_features(key).map { |name| feature_label.call(name) }.join(', ')) %>
+          <%= t('super_admin.clinic_card.plan.includes', features: SuperAdmin::AccountFeaturesHelper.module_feature_labels(key).join(', ')) %>
         </span>
       </label>
     <% end %>

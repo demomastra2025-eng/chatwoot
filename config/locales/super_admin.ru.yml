@@ -293,6 +293,12 @@ ru:
         extensions:
           name: "Расширения"
           description: "Свои инструменты агента, интеграция с CRM, обязательные поля диалога, без брендинга"
+      # How a function is named in the «Входит: …» line of a module card, where its usual name repeats another's. Blank: not named
+      # (it is the same function as the one before it).
+      hint_labels:
+        captain_integration_v2: ""
+        whatsapp_campaign: ""
+        campaigns: "Рассылки (в том числе в WhatsApp)"
       notes:
         trial_active: "Аккаунт на пробном периоде. По его окончании отключатся функции, которые дал пробный период и которых нет в тарифе."
         trial_locks_limits: "По окончании пробного периода лимиты операторов и каналов станут нулевыми. Чтобы вернуть их, примените тариф ещё раз (кнопка «Вернуть лимиты и применить тариф» в блоке «Тариф») или продлите пробный период."

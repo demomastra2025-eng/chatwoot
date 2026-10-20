@@ -41,4 +41,37 @@ RSpec.describe SuperAdmin::AccountFeaturesHelper do
       expect(described_class.feature_label('some_new_flag')).to eq('Some new flag')
     end
   end
+
+  # The «Входит: …» line of a module card: every function once, and a second version of a function is not named again
+  describe '.module_feature_labels' do
+    it 'names the functions of a module without repeating a name' do
+      Accounts::Plans.module_keys.each do |key|
+        labels = described_class.module_feature_labels(key)
+
+        expect(labels).not_to be_empty
+        expect(labels).to eq(labels.uniq), "#{key}: #{labels.inspect}"
+        expect(labels.grep(/версия|v2/i)).to be_empty, "#{key}: #{labels.inspect}"
+        expect(labels).to all(be_present)
+      end
+    end
+
+    it 'says the AI agents once, and the mailings once' do
+      expect(described_class.module_feature_labels('ai_agents')).to eq(['ИИ-агенты', 'Задачи ИИ-агентов', 'Умный поиск по базе знаний'])
+      expect(described_class.module_feature_labels('broadcasts')).to eq(['Рассылки (в том числе в WhatsApp)'])
+    end
+
+    it 'leaves the other modules as they were named' do
+      expect(described_class.module_feature_labels('quality')).to eq(['SLA', 'Журнал аудита', 'Заметки к оценкам клиентов'])
+    end
+
+    it 'does not lose a function: a function that is hidden has another that stands for it' do
+      hidden = Accounts::Plans.module_keys.flat_map do |key|
+        Accounts::Plans.module_features(key).select do |flag|
+          I18n.exists?("super_admin.plans.hint_labels.#{flag}") && I18n.t("super_admin.plans.hint_labels.#{flag}").blank?
+        end
+      end
+
+      expect(hidden).to match_array(%w[captain_integration_v2 whatsapp_campaign])
+    end
+  end
 end
