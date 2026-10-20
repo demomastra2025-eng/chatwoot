@@ -15,4 +15,9 @@ class PlatformBanner < ApplicationRecord
   validates :banner_message, presence: true
 
   scope :active, -> { where(active: true) }
+
+  # How many accounts show a banner once it is published: the active ones (a blocked account does not serve its operators)
+  def self.reach
+    Account.active.count
+  end
 end

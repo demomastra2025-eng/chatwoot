@@ -11,6 +11,10 @@ ru:
         reset_email_usage: "Сброс счётчика писем"
         delete_push_subscriptions: "Удаление подписок на уведомления"
         delete_avatar: "Удаление фото пользователя"
+        publish_banner: "Показ баннера всем операторам"
+        hide_banner: "Скрытие баннера"
+      types:
+        platform_banner: "Баннер платформы"
 
     # The two answers of every question
     confirm:
@@ -117,3 +121,35 @@ ru:
           already_suspended: "Аккаунт «%{name}» уже заблокирован."
           already_active: "Аккаунт «%{name}» уже работает."
           deleting: "Аккаунт назначен на удаление: сначала отмените удаление."
+
+    # The banner shown on top of the screens of the operators: a draft first, shown by its own action
+    platform_banners:
+      controller:
+        create:
+          success: "Баннер создан, но пока не показывается. Чтобы операторы его увидели, нажмите «Показать всем операторам»."
+        update:
+          success: "Баннер сохранён."
+        destroy:
+          success: "Баннер удалён."
+      flashes:
+        published: "Баннер показывается операторам всех активных аккаунтов (%{count})."
+        hidden: "Баннер скрыт: операторы его больше не видят."
+        already_shown: "Баннер уже показывается."
+        already_hidden: "Баннер уже скрыт."
+      card:
+        title: "Баннер №%{id}"
+        breadcrumb: "Путь"
+        draft: "Не показывается"
+        shown: "Показывается всем"
+        publish: "Показать всем операторам"
+        publish_title: "Показать баннер всем операторам?"
+        publish_text: "Его увидят операторы всех активных аккаунтов (сейчас их %{count}). Оператор может скрыть баннер у себя."
+        publish_submit: "Да, показать всем"
+        hide: "Скрыть у всех"
+        preview: "Как увидят операторы"
+        draft_hint: "Баннер сохранён, но пока не показывается: его никто не видит."
+        shown_hint: "Баннер сейчас виден операторам всех активных аккаунтов (%{count})."
+        edit_live: "Этот баннер сейчас показывается операторам всех активных аккаунтов (%{count}). Изменения они увидят сразу."
+        facts: "Основное"
+        created: "Создан"
+        updated: "Изменён"

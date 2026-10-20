@@ -15,7 +15,8 @@ class PlatformBannerDashboard < Administrate::BaseDashboard
 
   COLLECTION_ATTRIBUTES = %i[id banner_message banner_type active created_at].freeze
   SHOW_PAGE_ATTRIBUTES = %i[id banner_message banner_type active created_at updated_at].freeze
-  FORM_ATTRIBUTES = %i[banner_message banner_type active].freeze
+  # No switch «активен»: a banner is made hidden and shown by its own action (SuperAdmin::PlatformBannersController#publish)
+  FORM_ATTRIBUTES = %i[banner_message banner_type].freeze
 
   def display_resource(platform_banner)
     type = I18n.t("super_admin.platform_banners.types.#{platform_banner.banner_type}", default: platform_banner.banner_type.to_s)

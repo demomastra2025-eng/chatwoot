@@ -1,0 +1,47 @@
+<%#
+# Edit
+
+This view is the template for the edit page.
+
+It displays a header, and renders the `_form` partial to do the heavy lifting.
+
+Copied from the generic edit page of the super admin with one line more: a banner that is shown now says that what is saved
+is seen by the operators at once.
+
+## Local variables:
+
+- `page`:
+  An instance of [Administrate::Page::Form][1].
+  Contains helper methods to help display a form,
+  and knows which attributes should be displayed in the resource's form.
+
+[1]: http://www.rubydoc.info/gems/administrate/Administrate/Page/Form
+%>
+
+<% content_for(:title) { t("administrate.actions.edit_resource", name: page.page_title) } %>
+
+<header class="main-content__header">
+  <div class="main-content__heading">
+    <h1 class="main-content__page-title">
+      <%= content_for(:title) %>
+    </h1>
+  </div>
+
+  <div class="main-content__actions">
+    <% if accessible_action?(page.resource, :show) %>
+      <%= link_to([namespace, page.resource], class: "button button--secondary") do %>
+        <span class="i-lucide-arrow-left size-4" aria-hidden="true"></span>
+        <%= t("administrate.actions.show_resource", name: page.page_title) %>
+      <% end %>
+    <% end %>
+  </div>
+</header>
+
+<section class="main-content__body">
+  <% if page.resource.active? %>
+    <div class="admin-notice admin-notice--amber mb-5 max-w-3xl" role="status" data-testid="banner-live-note">
+      <%= t('super_admin.platform_banners.card.edit_live', count: PlatformBanner.reach) %>
+    </div>
+  <% end %>
+  <%= render "form", page: page %>
+</section>

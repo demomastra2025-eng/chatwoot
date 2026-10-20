@@ -1066,7 +1066,11 @@ Rails.application.routes.draw do
       resources :platform_apps, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
         post :reissue_token, on: :member
       end
-      resources :platform_banners, only: [:index, :new, :create, :show, :edit, :update, :destroy]
+      resources :platform_banners, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
+        # A banner is shown to the operators of every account only by «Показать всем» (it asks first); «Скрыть у всех» takes it off
+        post :publish, on: :member
+        post :hide, on: :member
+      end
       # One page in tabs (?tab=metrics|logs|queues|status); the pages it replaced redirect to their tab
       resource :monitoring, only: [:show]
       get 'logs', to: redirect('/super_admin/monitoring?tab=logs')

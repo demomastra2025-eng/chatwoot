@@ -1,0 +1,92 @@
+<%#
+# Card of a platform banner
+
+The page of one banner: the colour preview the operators will see, whether it is shown now, and the actions. A banner is a
+draft until «Показать всем операторам» (it asks first, says how many accounts will see it and shows the preview again);
+«Скрыть у всех» takes it off the screens of the operators. Every action is written to the audit log.
+
+## Local variables:
+
+- `page`: an `Administrate::Page::Show`; `page.resource` is the banner.
+%>
+<%
+  banner = page.resource
+  tone = { 'info' => 'admin-notice--blue', 'warning' => 'admin-notice--amber', 'error' => 'admin-notice--ruby' }.fetch(banner.banner_type, '')
+  type_name = t("super_admin.platform_banners.types.#{banner.banner_type}", default: banner.banner_type.to_s)
+%>
+<% content_for(:title) { t('super_admin.platform_banners.card.title', id: banner.id) } %>
+
+<header class="main-content__header" role="banner">
+  <div class="main-content__heading">
+    <nav aria-label="<%= t('super_admin.platform_banners.card.breadcrumb') %>" class="text-[13px] text-n-slate-11">
+      <%= link_to t('super_admin.navigation.items.platform_banners'), super_admin_platform_banners_path, class: 'text-n-brand hover:underline' %>
+      <span class="mx-1.5 text-n-slate-10" aria-hidden="true">/</span>
+      <span><%= t('super_admin.platform_banners.card.title', id: banner.id) %></span>
+    </nav>
+    <div class="flex flex-wrap items-center gap-2.5">
+      <h1 class="main-content__page-title"><%= content_for(:title) %></h1>
+      <span class="admin-badge <%= banner.active? ? 'admin-badge--teal' : 'admin-badge--quiet' %>" data-testid="banner-state">
+        <%= t(banner.active? ? 'super_admin.platform_banners.card.shown' : 'super_admin.platform_banners.card.draft') %>
+      </span>
+    </div>
+  </div>
+
+  <div class="main-content__actions">
+    <% if banner.active? %>
+      <%= button_to t('super_admin.platform_banners.card.hide'), hide_super_admin_platform_banner_path(banner), method: :post,
+                    class: 'button button--secondary', form_class: 'inline-block' %>
+    <% else %>
+      <%# The preview again inside the question: what exactly goes to the screens of everybody %>
+      <% preview_fields = capture do %>
+        <div class="admin-notice <%= tone %> !items-start" data-testid="publish-preview"><span class="whitespace-pre-line break-words"><%= banner.banner_message %></span></div>
+      <% end %>
+      <%= render 'super_admin/shared/confirm_action', key: 'publish-banner', label: t('super_admin.platform_banners.card.publish'), floating: true,
+                 title: t('super_admin.platform_banners.card.publish_title'),
+                 text: [t('super_admin.platform_banners.card.publish_text', count: PlatformBanner.reach), t('super_admin.safety.audited')],
+                 fields: preview_fields, url: publish_super_admin_platform_banner_path(banner), tone: :primary,
+                 submit: t('super_admin.platform_banners.card.publish_submit'), trigger_class: 'button' %>
+    <% end %>
+    <%= link_to(t('administrate.actions.edit'), [:edit, namespace, banner], class: 'button button--secondary') if accessible_action?(banner, :edit) %>
+    <% if accessible_action?(banner, :destroy) %>
+      <%= render 'super_admin/shared/confirm_action', key: 'delete-banner', label: t('administrate.actions.destroy'), floating: true,
+                 title: t('super_admin.safety.destroy.platform_banner.title', name: truncate(banner.banner_message.to_s, length: 60)),
+                 text: [t('super_admin.safety.destroy.platform_banner.text'), t('super_admin.safety.audited')],
+                 url: polymorphic_path([namespace, banner]), http_method: :delete, submit: t('super_admin.safety.destroy.generic.submit'),
+                 trigger_class: 'button button--danger' %>
+    <% end %>
+  </div>
+</header>
+
+<section class="main-content__body">
+  <div class="admin-card-layout">
+    <div class="flex min-w-0 flex-col gap-5">
+      <section class="admin-block" aria-labelledby="banner-preview-title" data-testid="banner-preview">
+        <div class="admin-block__head">
+          <h2 class="admin-block__title" id="banner-preview-title"><%= t('super_admin.platform_banners.card.preview') %></h2>
+          <p class="admin-block__hint"><%= banner.active? ? t('super_admin.platform_banners.card.shown_hint', count: PlatformBanner.reach) : t('super_admin.platform_banners.card.draft_hint') %></p>
+        </div>
+        <div class="admin-notice <%= tone %> !items-start"><span class="whitespace-pre-line break-words"><%= banner.banner_message %></span></div>
+      </section>
+    </div>
+
+    <div class="flex min-w-0 flex-col gap-5">
+      <section class="admin-block" aria-labelledby="banner-facts-title" data-testid="banner-facts">
+        <h2 class="admin-block__title" id="banner-facts-title"><%= t('super_admin.platform_banners.card.facts') %></h2>
+        <dl class="admin-kv">
+          <div class="admin-kv__row">
+            <dt class="admin-kv__key"><%= t('helpers.label.platform_banner.banner_type') %></dt>
+            <dd class="admin-kv__value"><%= type_name %></dd>
+          </div>
+          <div class="admin-kv__row">
+            <dt class="admin-kv__key"><%= t('super_admin.platform_banners.card.created') %></dt>
+            <dd class="admin-kv__value"><%= super_admin_time(banner.created_at) %></dd>
+          </div>
+          <div class="admin-kv__row">
+            <dt class="admin-kv__key"><%= t('super_admin.platform_banners.card.updated') %></dt>
+            <dd class="admin-kv__value"><%= super_admin_time(banner.updated_at) %></dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+  </div>
+</section>
