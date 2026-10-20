@@ -12,7 +12,7 @@ the POST itself, nothing keeps the password, the browser is told not to either.
   <p class="m-0 font-medium text-n-slate-12"><%= t('super_admin.onboarding.member.password_for', email: member.user.email) %></p>
   <p class="admin-block__hint m-0"><%= t('super_admin.onboarding.created.password_once') %></p>
   <div class="flex flex-wrap items-center gap-2">
-    <input type="text" readonly value="<%= member.one_time_password %>" id="member-one-time-password" class="min-w-0 flex-1 font-mono" autocomplete="off" spellcheck="false"
+    <input type="text" readonly value="<%= member.one_time_password %>" id="member-one-time-password" class="min-w-[10rem] flex-1 font-mono" autocomplete="off" spellcheck="false"
            aria-label="<%= t('super_admin.onboarding.created.password_title') %>" onclick="this.select()">
     <button type="button" class="button button--small button--secondary" data-password-copy data-copy-from="member-one-time-password"
             data-copied="<%= t('super_admin.onboarding.password.copied') %>" hidden><%= t('super_admin.onboarding.password.copy') %></button>

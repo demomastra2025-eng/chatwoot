@@ -64,7 +64,7 @@ response of the POST that created everything, nothing keeps the password, and th
           <p class="admin-block__hint"><%= t('super_admin.onboarding.created.password_once') %></p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <input type="text" readonly value="<%= password %>" id="client-one-time-password" class="min-w-0 flex-1 font-mono" autocomplete="off" spellcheck="false"
+          <input type="text" readonly value="<%= password %>" id="client-one-time-password" class="min-w-[10rem] flex-1 font-mono" autocomplete="off" spellcheck="false"
                  aria-label="<%= t('super_admin.onboarding.created.password_title') %>" onclick="this.select()">
           <button type="button" class="button button--small button--secondary" data-password-copy data-copy-from="client-one-time-password"
                   data-copied="<%= t('super_admin.onboarding.password.copied') %>" hidden><%= t('super_admin.onboarding.password.copy') %></button>

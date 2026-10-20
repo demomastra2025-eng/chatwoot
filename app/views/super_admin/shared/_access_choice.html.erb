@@ -47,7 +47,7 @@ The password is shown once more on the page that says «Готово» and is no
       <%= super_admin_with_error({ password_key => password_error }, password_key) do %>
         <label for="<%= field_id %>" class="text-xs text-n-slate-11"><%= t('super_admin.onboarding.password.label') %></label>
         <div class="flex flex-wrap items-center gap-2">
-          <%= text_field_tag "#{scope}[password]", password, id: field_id, class: 'min-w-0 flex-1 font-mono', autocomplete: 'off', spellcheck: 'false',
+          <%= text_field_tag "#{scope}[password]", password, id: field_id, class: 'min-w-[10rem] flex-1 font-mono', autocomplete: 'off', spellcheck: 'false',
                              maxlength: interpolation[:max], placeholder: t('super_admin.onboarding.password.placeholder'), data: { password_input: true } %>
           <button type="button" class="button button--small button--secondary" data-password-generate hidden><%= t('super_admin.onboarding.password.generate') %></button>
           <button type="button" class="button button--small button--secondary" data-password-copy data-copied="<%= t('super_admin.onboarding.password.copied') %>" hidden><%= t('super_admin.onboarding.password.copy') %></button>
