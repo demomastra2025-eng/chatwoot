@@ -4,7 +4,6 @@ import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { frontendURL } from 'dashboard/helper/URLHelper';
 import { useBranding } from 'shared/composables/useBranding';
-import { buildIntegrationLogoUrls } from 'dashboard/helper/integrationLogo';
 
 const props = defineProps({
   id: {
@@ -58,11 +57,21 @@ const actionURL = computed(() =>
   )
 );
 
-const logoUrls = computed(() =>
-  buildIntegrationLogoUrls({ id: props.id, logo: props.logo })
+const hasCustomLogo = computed(
+  () => Boolean(props.logo) && props.logo !== `${props.id}.png`
 );
-const lightLogoSource = computed(() => logoUrls.value.light);
-const darkLogoSource = computed(() => logoUrls.value.dark);
+
+const lightLogoSource = computed(() =>
+  props.logo
+    ? `/dashboard/images/integrations/${props.logo}`
+    : `/dashboard/images/integrations/${props.id}.png`
+);
+
+const darkLogoSource = computed(() =>
+  hasCustomLogo.value
+    ? lightLogoSource.value
+    : `/dashboard/images/integrations/${props.id}-dark.png`
+);
 </script>
 
 <template>
