@@ -182,6 +182,14 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
       expect(user_audit.audited_changes).to include('access' => 'invitation')
     end
 
+    it 'goes back to the card even when the form was sent again from the page of an earlier mistake' do
+      referer = "http://www.example.com/super_admin/accounts/#{account.id}/add_user"
+
+      post "/super_admin/accounts/#{account.id}/add_user", params: { member: new_person }, headers: { 'HTTP_REFERER' => referer }
+
+      expect(response).to redirect_to("/super_admin/accounts/#{account.id}")
+    end
+
     it 'does not take the invitation while the mail of the platform is not set up' do
       allow(SuperAdmin::MailState).to receive(:configured?).and_return(false)
 

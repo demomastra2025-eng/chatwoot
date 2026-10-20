@@ -332,7 +332,8 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   # not a redirect, so nothing keeps it); every other way goes back to the card.
   def announce_member(member)
     text = member_notice(member)
-    return redirect_to_account(notice: text) if member.one_time_password.blank?
+    # Not `redirect_back`: a form that was sent again from the page of an earlier mistake comes from the address of `add_user`
+    return redirect_to([namespace, requested_resource], notice: text) if member.one_time_password.blank?
 
     @added_member = member
     response.headers['Cache-Control'] = 'no-store'
