@@ -245,6 +245,30 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
         expect(note.text).to include('Аккаунтов с отметкой — 1')
       end
 
+      it 'says in the line of an account whose trial has ended which limits the plan gives back, and how many accounts have it', :aggregate_failures do
+        first.update!(limits: { 'agents' => 5, 'inboxes' => 3 })
+        first.activate_trial!(3)
+        first.expire_trial!
+
+        confirm('apply_plan', [first, second], chosen: '1', modules: %w[ai_agents])
+
+        rows = page.css("[data-testid='bulk-entries'] tbody tr")
+        expect(rows.first.at_css('[data-testid="bulk-limits-restored"]').text.squish)
+          .to eq('Вернёт лимиты после пробного периода: операторы 0 → 5, каналы 0 → 3')
+        expect(rows.last.at_css('[data-testid="bulk-limits-restored"]')).to be_nil
+        expect(page.at_css("[data-bulk-note='trial_limits_restored']").text).to include('Аккаунтов с отметкой — 1')
+      end
+
+      it 'says it with the general value when the limit was not set before the trial' do
+        first.activate_trial!(3)
+        first.expire_trial!
+
+        confirm('apply_plan', [first], chosen: '1', modules: [])
+
+        expect(page.at_css('[data-testid="bulk-limits-restored"]').text.squish)
+          .to eq('Вернёт лимиты после пробного периода: операторы 0 → общее значение платформы, каналы 0 → общее значение платформы')
+      end
+
       it 'refuses a module that does not exist' do
         confirm('apply_plan', [first], chosen: '1', modules: %w[ghost])
 

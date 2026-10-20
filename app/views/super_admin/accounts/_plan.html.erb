@@ -20,6 +20,14 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
 <%
   chosen = state.modules
   drift = state.drift
+  # The end of the trial put operators and channels at 0 and the plan gives them back: applying has something to do even
+  # when the modules are the ones the clinic has
+  held = state.trial_limits_held?
+  hint_text = if held
+                t('super_admin.clinic_card.plan.hint_restore')
+              else
+                state.assigned? ? t('super_admin.clinic_card.plan.hint_assigned') : t('super_admin.clinic_card.plan.hint_unassigned')
+              end
   feature_label = SuperAdmin::AccountFeaturesHelper.method(:feature_label)
 %>
 
@@ -61,7 +69,7 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
   <% end %>
 
   <%= form_with url: apply_plan_super_admin_account_path(account), method: :post, local: true, class: 'flex flex-col gap-4',
-                data: { plan_form: true, assigned: state.assigned?.to_s, initial_modules: chosen.to_json,
+                data: { plan_form: true, assigned: state.assigned?.to_s, limits_held: held.to_s, initial_modules: chosen.to_json,
                         preview_url: plan_preview_super_admin_account_path(account) } do %>
     <%= render 'plan_cards', chosen: chosen %>
 
@@ -72,8 +80,8 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
     </noscript>
 
     <div class="admin-block__footer">
-      <span class="admin-block__note" data-plan-hint><%= state.assigned? ? t('super_admin.clinic_card.plan.hint_assigned') : t('super_admin.clinic_card.plan.hint_unassigned') %></span>
-      <%= button_tag(state.assigned? ? t('super_admin.clinic_card.plan.apply') : t('super_admin.clinic_card.plan.assign'), type: 'submit', class: 'button', data: { plan_submit: true }) %>
+      <span class="admin-block__note" data-plan-hint><%= hint_text %></span>
+      <%= button_tag(state.apply_label, type: 'submit', class: 'button', data: { plan_submit: true }) %>
     </div>
   <% end %>
 </section>
@@ -86,6 +94,8 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
     var submit = form.querySelector('[data-plan-submit]');
     var hint = form.querySelector('[data-plan-hint]');
     var assigned = form.getAttribute('data-assigned') === 'true';
+    // The end of a trial left the limits at 0: applying the plan gives them back, so it is possible with the modules as they are
+    var held = form.getAttribute('data-limits-held') === 'true';
     var initial = JSON.parse(form.getAttribute('data-initial-modules') || '[]').slice().sort().join(',');
     var requestId = 0;
 
@@ -93,11 +103,12 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
       return Array.prototype.map.call(form.querySelectorAll('input[name="modules[]"]:checked'), function (input) { return input.value; });
     }
 
-    // A clinic with a plan can apply once the modules differ; a clinic without one can always take the base.
+    // A clinic with a plan can apply once the modules differ; a clinic without one can always take the base, and so can one
+    // whose limits the end of a trial holds at 0.
     function sync() {
       var modules = selected();
-      var changed = !assigned || modules.slice().sort().join(',') !== initial;
-      submit.disabled = false;
+      var changed = !assigned || held || modules.slice().sort().join(',') !== initial;
+      submit.disabled = !changed;
       if (!changed) {
         requestId += 1;
         box.hidden = true;

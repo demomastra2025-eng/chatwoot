@@ -179,7 +179,8 @@ RSpec.describe 'Super admin account plans', type: :request do
 
     it 'says on the card of the clinic that the plan gives the limits back, until it has' do
       get card_path
-      expect(page.at_css('[data-testid="trial-limits-held"]').text.squish).to include('лимиты стоят на 0', 'Назначьте тариф')
+      expect(page.at_css('[data-testid="trial-limits-held"]').text.squish).to include('лимиты стоят на 0', 'Нажмите «Назначить базу и вернуть лимиты» в блоке «Тариф»')
+      expect(page.at_css('form[data-plan-form] button[data-plan-submit]').text.squish).to eq('Назначить базу и вернуть лимиты')
 
       post "#{card_path}/apply_plan"
       get card_path
@@ -196,6 +197,117 @@ RSpec.describe 'Super admin account plans', type: :request do
       get "/super_admin/accounts/#{other.id}"
 
       expect(page.at_css('[data-testid="trial-limits-held"]')).to be_nil
+    end
+  end
+
+  # A clinic that signed up by itself (or came through the Platform API) has «База» from its first minute: AccountBuilder applies it
+  # before the trial starts. So when the trial ends the plan is "assigned" and its modules are the ones the form shows, and the card
+  # must still offer to give the operator and channel limits back.
+  describe 'the plan of a clinic that signed up by itself, after its trial' do
+    let(:card_path) { "/super_admin/accounts/#{signed_up.id}" }
+    let(:owner) { create(:user) }
+    let(:signed_up) do
+      AccountBuilder.new(account_name: 'Самозапись', email: owner.email, user: owner).perform.last.tap do |record|
+        record.update!(limits: record.limits.to_h.merge('agents' => 5, 'inboxes' => 3)) if limits_before_trial
+      end
+    end
+    let(:limits_before_trial) { false }
+
+    def page = Nokogiri::HTML(response.body)
+
+    def plan_form = page.at_css('form[data-plan-form]')
+
+    def plan_button = plan_form.at_css('button[data-plan-submit]')
+
+    before { sign_in(super_admin, scope: :super_admin) }
+
+    it 'has «База» assigned when the trial starts, and the end of the trial closes operators and channels' do
+      signed_up.expire_trial!
+
+      expect(signed_up.reload.custom_attributes).to include('plan' => 'base', 'plan_modules' => [])
+      expect(signed_up.limits).to include('agents' => 0, 'inboxes' => 0)
+      expect(signed_up.trial_held_limits).to be_present
+    end
+
+    it 'offers an action on the card that is not switched off: it names the limits and is not waiting for another choice of modules' do
+      signed_up.expire_trial!
+
+      get card_path
+
+      expect(plan_form['data-assigned']).to eq('true')
+      expect(plan_form['data-limits-held']).to eq('true')
+      expect(plan_form['data-initial-modules']).to eq('[]')
+      expect(plan_button.text.squish).to eq('Вернуть лимиты и применить тариф')
+      expect(plan_button['disabled']).to be_nil
+      expect(plan_form.at_css('[data-plan-hint]').text.squish).to include('вернёт им прежние лимиты')
+      expect(page.at_css('[data-testid="trial-limits-held"]').text.squish).to include('Нажмите «Вернуть лимиты и применить тариф» в блоке «Тариф»')
+    end
+
+    it 'keeps the usual «Применить» of an assigned plan while the trial runs, and after the limits are back' do
+      get card_path
+      expect(plan_form['data-limits-held']).to eq('false')
+      expect(plan_button.text.squish).to eq('Применить')
+
+      signed_up.expire_trial!
+      post "#{card_path}/apply_plan"
+      get card_path
+
+      expect(plan_form['data-limits-held']).to eq('false')
+      expect(plan_button.text.squish).to eq('Применить')
+    end
+
+    it 'shows in the preview, for the modules the clinic has now, that the limits come back', :aggregate_failures do
+      signed_up.expire_trial!
+
+      get "#{card_path}/plan_preview", params: { modules: [], fragment: 1 }
+
+      preview = page.at_css('[data-testid="plan-preview"]')
+      expect(preview['data-changed']).to eq('true')
+      expect(preview.text.squish).to include('а операторам и каналам вернутся прежние лимиты')
+      expect(preview.at_css('[data-preview="limits"]').text.squish).to include('Операторы: 0 → общее значение платформы', 'Каналы: 0 → общее значение платформы')
+      expect(preview.at_css('[data-preview-note="trial_limits_restored"]')).to be_present
+    end
+
+    it 'gives the limits back, takes the zeros off, and leaves an entry in the audit log', :aggregate_failures do
+      signed_up.expire_trial!
+
+      expect { post "#{card_path}/apply_plan" }.to change { Audited::Audit.where(auditable_id: signed_up.id, action: 'apply_plan').count }.by(1)
+
+      expect(signed_up.reload.limits.to_h.slice('agents', 'inboxes')).to be_empty
+      expect(signed_up.trial_held_limits).to be_empty
+      audit = Audited::Audit.where(auditable_id: signed_up.id, action: 'apply_plan').last
+      expect(audit.audited_changes['limits']).to include('agents' => { 'from' => 0, 'to' => nil }, 'inboxes' => { 'from' => 0, 'to' => nil })
+      expect(audit).to have_attributes(user_id: super_admin.id)
+    end
+
+    context 'when the clinic had limits of its own before the trial' do
+      let(:limits_before_trial) { true }
+
+      it 'gives back the numbers it had', :aggregate_failures do
+        signed_up.expire_trial!
+        expect(signed_up.reload.limits).to include('agents' => 0, 'inboxes' => 0)
+
+        get "#{card_path}/plan_preview", params: { modules: [], fragment: 1 }
+        expect(page.at_css('[data-preview="limits"]').text.squish).to include('Операторы: 0 → 5', 'Каналы: 0 → 3')
+
+        post "#{card_path}/apply_plan"
+
+        expect(signed_up.reload.limits).to include('agents' => 5, 'inboxes' => 3)
+        audit = Audited::Audit.where(auditable_id: signed_up.id, action: 'apply_plan').last
+        expect(audit.audited_changes['limits']).to include('agents' => { 'from' => 0, 'to' => 5 }, 'inboxes' => { 'from' => 0, 'to' => 3 })
+      end
+    end
+
+    it 'does not offer it to a clinic whose trial kept the limits' do
+      other = create(:account).tap { |record| record.disable_features!(*Featurable::FEATURE_NAMES) }
+      Accounts::ApplyPlan.new(account: other, modules: []).call
+      other.activate_trial!(3, keep_limits: true)
+      other.expire_trial!
+
+      get "/super_admin/accounts/#{other.id}"
+
+      expect(plan_form['data-limits-held']).to eq('false')
+      expect(plan_button.text.squish).to eq('Применить')
     end
   end
 

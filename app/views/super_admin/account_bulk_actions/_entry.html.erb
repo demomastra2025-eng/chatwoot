@@ -61,6 +61,13 @@ is skipped).
             <% parts << t('super_admin.bulk.detail.limits', count: diff.limits.size) if diff.limits.any? %>
             <%= parts.any? ? parts.join(' · ') : t('super_admin.bulk.detail.nothing') %>
           </span>
+          <%# A trial that has ended holds the operator and channel limits at 0: the plan gives them back, so the row says which and how much %>
+          <% if diff.notes.include?('trial_limits_restored') %>
+            <% restored = diff.limits.slice(*account.trial_held_limits.keys).map do |key, change|
+                 "#{t("super_admin.limits.#{key}.label").downcase} #{super_admin_limit_value(key, change['from'])} → #{super_admin_limit_value(key, change['to'], given_back: !change['from'].nil?)}"
+               end %>
+            <span class="block text-xs text-n-amber-11" data-testid="bulk-limits-restored"><%= t('super_admin.bulk.detail.limits_restored', limits: restored.join(', ')) %></span>
+          <% end %>
         <% elsif action == 'extend_trial' %>
           <%= t('super_admin.bulk.detail.trial_active', time: super_admin_time(detail[:to])) %>
           <% if detail[:ended] %>

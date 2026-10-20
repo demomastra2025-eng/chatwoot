@@ -13,19 +13,11 @@ and off, the limits that would change and the facts the operator should know
 <%
   feature_label = SuperAdmin::AccountFeaturesHelper.method(:feature_label)
   names = ->(flags) { flags.map { |flag| feature_label.call(flag) }.sort }
-  # `given_back`: the limit goes back to «not set» (a trial put a zero on it): the general value of the platform applies again
-  limit_value = lambda do |key, value, given_back = false|
-    next t('super_admin.clinic_card.preview.general_value') if value.nil? && given_back
-    next t('super_admin.clinic_card.preview.not_set') if value.nil?
-    next t('super_admin.limits.unlimited') if value.to_i == ChatwootApp.max_limit.to_i
-
-    key.to_s == 'storage_bytes' ? super_admin_bytes(value) : super_admin_number(value)
-  end
   next_plan = Accounts::Plans.plan_label(diff.modules)
   headline = if diff.previous_plan.blank?
                t('super_admin.clinic_card.preview.assign', plan: next_plan)
              elsif diff.previous_modules.sort == diff.modules.sort
-               t('super_admin.clinic_card.preview.same', plan: next_plan)
+               t(diff.notes.include?('trial_limits_restored') ? 'super_admin.clinic_card.preview.restore' : 'super_admin.clinic_card.preview.same', plan: next_plan)
              else
                t('super_admin.clinic_card.preview.change', from: Accounts::Plans.plan_label(diff.previous_modules), to: next_plan)
              end
@@ -48,7 +40,7 @@ and off, the limits that would change and the facts the operator should know
         <% if diff.limits.any? %>
           <ul class="m-0 flex list-none flex-col gap-0.5 p-0 text-n-slate-11">
             <% diff.limits.each do |key, change| %>
-              <li><%= t("super_admin.limits.#{key}.label") %>: <%= limit_value.call(key, change['from']) %> → <%= limit_value.call(key, change['to'], !change['from'].nil?) %></li>
+              <li><%= t("super_admin.limits.#{key}.label") %>: <%= super_admin_limit_value(key, change['from']) %> → <%= super_admin_limit_value(key, change['to'], given_back: !change['from'].nil?) %></li>
             <% end %>
           </ul>
         <% else %>

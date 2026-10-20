@@ -123,6 +123,7 @@ ru:
         enable: "Включится: %{count}"
         disable: "Отключится: %{count}"
         limits: "Лимиты: %{count}"
+        limits_restored: "Вернёт лимиты после пробного периода: %{limits}"
         nothing: "Функции и лимиты не меняются"
         trial_none: "Пробного периода нет"
         trial_active: "До %{time}"

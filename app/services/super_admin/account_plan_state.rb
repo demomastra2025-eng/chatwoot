@@ -50,6 +50,17 @@ class SuperAdmin::AccountPlanState
     attributes[Accounts::ApplyPlan::VERSION_KEY]
   end
 
+  # The text of the button of the plan block: «Применить», «Назначить базу», or - while the end of a trial holds the operator and
+  # channel limits at 0 and applying the plan gives them back - «Вернуть лимиты и применить тариф» (the trial block names it too)
+  def apply_label
+    key = if trial_limits_held?
+            assigned? ? 'apply_restore' : 'assign_restore'
+          else
+            assigned? ? 'apply' : 'assign'
+          end
+    I18n.t("super_admin.clinic_card.plan.#{key}")
+  end
+
   # When the plan was applied (Time), nil when unknown
   def applied_at
     Time.zone.parse(attributes[Accounts::ApplyPlan::APPLIED_AT_KEY].to_s)

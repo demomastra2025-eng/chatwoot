@@ -116,6 +116,17 @@ module SuperAdmin::DisplayHelper
     SuperAdmin::DisplayHelper.format_number(number)
   end
 
+  # A limit of an account as the preview of a plan says it: «не задан», «Не ограничено» (the number the plan writes for no limit),
+  # a size for the storage, a number for the rest. `given_back`: the limit goes back to «not set» (a trial put a zero on it), and
+  # the general value of the platform applies again.
+  def super_admin_limit_value(key, value, given_back: false)
+    return I18n.t('super_admin.clinic_card.preview.general_value') if value.nil? && given_back
+    return I18n.t('super_admin.clinic_card.preview.not_set') if value.nil?
+    return I18n.t('super_admin.limits.unlimited') if value.to_i == ChatwootApp.max_limit.to_i
+
+    key.to_s == 'storage_bytes' ? super_admin_bytes(value) : super_admin_number(value)
+  end
+
   # "2 минуты"
   def super_admin_wait(seconds)
     SuperAdmin::DisplayHelper.format_wait(seconds)

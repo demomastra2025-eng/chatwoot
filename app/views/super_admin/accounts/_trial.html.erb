@@ -54,7 +54,7 @@ are Astana time.
     </p>
     <%# The end of the trial closed operators and channels (limits 0): the plan gives them back by itself %>
     <% if state.trial_limits_held? %>
-      <p class="admin-block__note text-n-amber-11" data-testid="trial-limits-held"><%= t('super_admin.safety.trial.limits_held') %></p>
+      <p class="admin-block__note text-n-amber-11" data-testid="trial-limits-held"><%= t('super_admin.safety.trial.limits_held', button: state.apply_label) %></p>
     <% end %>
   <% else %>
     <p class="admin-block__hint">
