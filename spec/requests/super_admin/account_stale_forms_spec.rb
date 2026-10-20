@@ -274,16 +274,26 @@ RSpec.describe 'Super Admin forms drawn from an earlier state of an account', ty
       expect(account.reload).not_to be_feature_enabled('communication_threads')
     end
 
-    it 'leaves the name, the language and the status as they are when somebody changed them meanwhile' do
+    it 'leaves the name and the language as they are when somebody changed them meanwhile' do
       state = drawn_form_state
-      account.update!(status: :suspended, name: 'Филиал 1 (другое имя)')
+      account.update!(name: 'Филиал 1 (другое имя)')
 
       language = account.locale
 
-      save(state, account_params: { name: 'Филиал 1 (новый)', locale: 'kk', status: 'active' })
+      save(state, account_params: { name: 'Филиал 1 (новый)', locale: 'kk' })
 
-      expect(account.reload).to have_attributes(name: 'Филиал 1 (другое имя)', status: 'suspended', locale: language)
+      expect(account.reload).to have_attributes(name: 'Филиал 1 (другое имя)', locale: language)
       expect(flashes).to include('в аккаунте изменилось: основное.')
+    end
+
+    it 'does not take a block or an unblock made meanwhile for a change of the form: the status is not in it' do
+      state = drawn_form_state
+      account.update!(status: :suspended)
+
+      save(state, account_params: { name: 'Филиал 1 (новый)' })
+
+      expect(account.reload).to have_attributes(name: 'Филиал 1 (новый)', status: 'suspended')
+      expect(flashes).not_to include('в аккаунте изменилось')
     end
 
     it 'names every section that changed' do
@@ -325,7 +335,7 @@ RSpec.describe 'Super Admin forms drawn from an earlier state of an account', ty
   describe SuperAdmin::AccountFormState do
     it 'has a token of 16 characters for each section that depends only on what the section holds' do
       tokens = described_class.new(account).tokens
-      account.update!(status: :suspended)
+      account.update!(name: 'Другое название')
       changed = described_class.new(account).tokens
 
       expect(tokens.keys).to eq(%w[main limits features])

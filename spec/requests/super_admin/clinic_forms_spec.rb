@@ -146,7 +146,7 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
       get "/super_admin/accounts/#{account.id}/edit"
 
       expect(text(page.at_css('label[for="account_name"]'))).to eq('Название аккаунта')
-      expect(text(page.at_css('label[for="account_status"]'))).to eq('Статус')
+      expect(page.css('label[for="account_status"]')).to be_empty
       expect(text(page.at_css('[data-testid="account-language"]'))).to eq('Язык: русский')
       expect(page.css('[name="account[locale]"]')).to be_empty
     end
@@ -162,11 +162,8 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
       expect(account.reload).to have_attributes(name: 'Аккаунт Алатау 3', locale: 'kk')
     end
 
-    it 'shows the status in Russian and keeps the stored value' do
-      select = page.at_css('select[name="account[status]"]')
-
-      expect(options_of(select)).to eq([%w[Активен active], %w[Заблокирован suspended]])
-      expect(select.at_css('option[selected]')['value']).to eq('active')
+    it 'does not edit the status: an account is blocked and unblocked by the button of the card (see account_blocking_spec)' do
+      expect(page.css('select[name="account[status]"]')).to be_empty
     end
 
     it 'names every limit and explains it' do
@@ -213,14 +210,14 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
 
     it 'saves what the browser sends' do
       patch "/super_admin/accounts/#{account.id}", params: {
-        account: { name: 'Аккаунт Алатау 2', locale: 'kk', status: 'suspended',
+        account: { name: 'Аккаунт Алатау 2', locale: 'kk',
                    limits: { agents: '12', storage_bytes: '1.5', emails: '' }, limit_counter_excluded_user_ids_raw: '4, 5' },
         enabled_features: { feature_sla: 'true', feature_crm: 'false' }
       }
 
       expect(response).to redirect_to("/super_admin/accounts/#{account.id}")
       account.reload
-      expect(account).to have_attributes(name: 'Аккаунт Алатау 2', locale: 'kk', status: 'suspended')
+      expect(account).to have_attributes(name: 'Аккаунт Алатау 2', locale: 'kk', status: 'active')
       expect(account.limits).to eq('agents' => 12, 'storage_bytes' => 1.5.gigabytes.to_i)
       expect(account.custom_attributes['limit_counter_excluded_user_ids']).to eq([4, 5])
       expect(account.feature_enabled?('sla')).to be(true)

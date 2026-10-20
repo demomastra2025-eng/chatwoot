@@ -59,7 +59,7 @@ class SuperAdmin::AccountFormState
 
   def state_of(section)
     case section
-    when 'main' then [@account.name, @account.locale, @account.status.to_s]
+    when 'main' then [@account.name, @account.locale]
     when 'limits' then [sorted(@account.limits), excluded_user_ids]
     else @account.selected_feature_flags.map(&:to_s).sort
     end

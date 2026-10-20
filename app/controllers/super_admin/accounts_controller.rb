@@ -151,6 +151,22 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     reset_counter(:emails, failed: nil) { requested_resource.reset_email_sent_count }
   end
 
+  # «Заблокировать» of the header of the card. The panel asks for a reason (a choice and a free comment, both optional); the
+  # entry of the audit log keeps them and the card says them on its strip (SuperAdmin::AccountBlocking). Not for an
+  # account that is being deleted: its deletion is cancelled first.
+  def suspend
+    return redirect_to_account(alert: I18n.t('super_admin.safety.block.flashes.deleting')) if deletion_scheduled?
+
+    outcome = account_blocking.suspend(reason: params[:reason], note: params[:note])
+    redirect_to_account(**block_flash(outcome))
+  end
+
+  def activate
+    return redirect_to_account(alert: I18n.t('super_admin.safety.block.flashes.deleting')) if deletion_scheduled?
+
+    redirect_to_account(**block_flash(account_blocking.activate))
+  end
+
   # Extends a running (or ended) trial. Putting an account that is not on a trial onto one is an explicit
   # decision: it needs `start=true`, which only the dedicated "start trial" button sends.
   def extend_trial
@@ -292,6 +308,21 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   end
 
   private
+
+  def account_blocking
+    SuperAdmin::AccountBlocking.new(account: requested_resource, actor: current_super_admin, request: request)
+  end
+
+  def deletion_scheduled?
+    account_deletion(requested_resource).scheduled?
+  end
+
+  # { notice: } for what was done, { alert: } for an account that was already where it was asked to be
+  def block_flash(outcome)
+    key = "super_admin.safety.block.flashes.#{outcome}"
+    text = I18n.t(key, name: requested_resource.name)
+    %i[suspended activated].include?(outcome) ? { notice: text } : { alert: text }
+  end
 
   # Sets one counter to zero (the block does it and answers whether it worked) and says what the number was
   def reset_counter(kind, failed:)
@@ -507,7 +538,6 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   def drop_stale_form_sections!(permitted_params)
     permitted_params.delete(:name) if stale_form_sections.include?('main')
     permitted_params.delete(:locale) if stale_form_sections.include?('main')
-    permitted_params.delete(:status) if stale_form_sections.include?('main')
     permitted_params.delete(:limits) if stale_form_sections.include?('limits')
     permitted_params.delete(:limit_counter_excluded_user_ids_raw) if stale_form_sections.include?('limits')
   end

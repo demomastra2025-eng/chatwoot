@@ -1045,6 +1045,9 @@ Rails.application.routes.draw do
         # The «Добавить пользователя» form of the card: a user from the list, or a new one with an invitation or a password
         post :add_user, on: :member
         post :cancel_deletion, on: :member
+        # «Заблокировать» / «Разблокировать» of the header of the card (asks for a reason first, leaves an entry of the audit log)
+        post :suspend, on: :member
+        post :activate, on: :member
         post :impersonate, on: :member
         get :export, on: :collection
         if ChatwootApp.enterprise?

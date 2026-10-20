@@ -116,7 +116,6 @@ class AccountDashboard < Administrate::BaseDashboard
   FORM_ATTRIBUTES = (%i[
     name
     locale
-    status
   ] + enterprise_form_attributes).freeze
 
   # A new clinic is created with a name and a language; the plan modules and the trial are chosen on the same page
@@ -131,7 +130,7 @@ class AccountDashboard < Administrate::BaseDashboard
                                  []
                                end
   FORM_ATTRIBUTES_EDIT = {
-    section_main: %i[name locale status organization_id],
+    section_main: %i[name locale organization_id],
     section_limits: enterprise_limit_section,
     section_features: enterprise_feature_section
   }.reject { |_section, section_attributes| section_attributes.empty? }.freeze
@@ -204,8 +203,11 @@ class AccountDashboard < Administrate::BaseDashboard
   # to prevent an error from being raised (wrong number of arguments)
   # Reference: https://github.com/thoughtbot/administrate/pull/2356/files#diff-4e220b661b88f9a19ac527c50d6f1577ef6ab7b0bed2bfdf048e22e6bfa74a05R204
   def permitted_attributes(action)
-    # The status is not on the new-clinic form, but a request that sends it keeps working.
-    attrs = super + [:status, { limits: {} }]
+    # The status is not on the new-clinic form, but a request that creates an account with it keeps working. An account is blocked and
+    # unblocked only by the button of its card (SuperAdmin::AccountBlocking: it asks first and writes the audit log), so the save of
+    # the edit form does not take a status: a page opened long ago or a script cannot change it unseen.
+    attrs = super + [{ limits: {} }]
+    attrs << :status unless action.to_s == 'update'
     attrs << :limit_counter_excluded_user_ids_raw if ChatwootApp.enterprise?
 
     # Add manually_managed_features to permitted attributes only for Chatwoot Cloud

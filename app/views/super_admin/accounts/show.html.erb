@@ -2,7 +2,8 @@
 # Clinic card
 
 The page of one clinic. Header: name, status, #id, creation date (Astana time),
-«Войти в аккаунт» and «Редактировать». Main column: plan (base + modules, with
+«Войти в аккаунт», «Заблокировать» / «Разблокировать» (asks first, with a reason) and «Редактировать»; a blocked account has
+a strip on top that says when, by whom and why it was blocked. Main column: plan (base + modules, with
 the preview of what a change does), limits and spend, channels, «Тонкая
 настройка» and «Служебные» (both collapsed), users, «Входы в аккаунт» and «Для разработчика» (all collapsed). Side column: trial,
 basic facts, organization, maintenance.
@@ -16,6 +17,9 @@ basic facts, organization, maintenance.
   state = SuperAdmin::AccountPlanState.new(account)
   status_tone = { active: 'admin-badge--teal', suspended: 'admin-badge--amber', deleting: 'admin-badge--ruby' }.fetch(state.status)
   target_user = account.administrators.first || account.users.first
+  # An account that is being deleted is neither blocked nor unblocked: its deletion is cancelled first
+  blockable = state.status != :deleting
+  block = SuperAdmin::AccountBlocking.last_block(account) if blockable && account.suspended?
 %>
 
 <% content_for(:title) { account.name } %>
@@ -43,6 +47,37 @@ basic facts, organization, maintenance.
       <%= button_to(t('super_admin.clinic_card.actions.enter'), [:impersonate, :super_admin, account], method: :post, form: { target: "_blank" },
                     class: "button button--secondary", title: t('super_admin.clinic_card.actions.enter_hint')) %>
     <% end %>
+    <% if blockable %>
+      <%# «Заблокировать» / «Разблокировать» ask first; a block asks for the reason (both optional) and is written to the audit log %>
+      <% if account.suspended? %>
+        <%= render 'super_admin/shared/confirm_action', key: 'unblock', label: t('super_admin.safety.block.unblock'), floating: true,
+                   title: t('super_admin.safety.block.unblock_title', name: account.name),
+                   text: [t('super_admin.safety.block.unblock_text'), t('super_admin.safety.audited')],
+                   url: activate_super_admin_account_path(account), tone: :primary, submit: t('super_admin.safety.block.unblock_submit'),
+                   trigger_class: 'button button--secondary' %>
+      <% else %>
+        <% reason_fields = capture do %>
+          <label class="flex flex-col gap-1 text-xs text-n-slate-11" for="block-reason">
+            <%= t('super_admin.safety.block.reason') %>
+            <select name="reason" id="block-reason">
+              <option value=""><%= t('super_admin.safety.block.no_reason') %></option>
+              <% SuperAdmin::AccountBlocking::REASONS.each do |reason| %>
+                <option value="<%= reason %>"><%= t("super_admin.safety.block.reasons.#{reason}") %></option>
+              <% end %>
+            </select>
+          </label>
+          <label class="flex flex-col gap-1 text-xs text-n-slate-11" for="block-note">
+            <%= t('super_admin.safety.block.note') %>
+            <textarea name="note" id="block-note" rows="2" maxlength="<%= SuperAdmin::AccountBlocking::NOTE_LIMIT %>"></textarea>
+          </label>
+        <% end %>
+        <%= render 'super_admin/shared/confirm_action', key: 'block', label: t('super_admin.safety.block.block'), floating: true,
+                   title: t('super_admin.safety.block.block_title', name: account.name),
+                   text: [t('super_admin.safety.block.block_text'), t('super_admin.safety.audited')], fields: reason_fields,
+                   url: suspend_super_admin_account_path(account), submit: t('super_admin.safety.block.block_submit'),
+                   trigger_class: 'button button--alt' %>
+      <% end %>
+    <% end %>
     <%= link_to(t("administrate.actions.edit"), [:edit, namespace, account], class: "button") if accessible_action?(account, :edit) %>
   </div>
 </header>
@@ -56,6 +91,22 @@ basic facts, organization, maintenance.
       <%= render 'super_admin/shared/confirm_action', key: 'cancel-deletion', label: t('super_admin.clinic_card.deletion.cancel'),
                  text: [t('super_admin.clinic_card.deletion.cancel_confirm', name: account.name)], url: cancel_deletion_super_admin_account_path(account),
                  tone: :primary, submit: t('super_admin.safety.deletion.cancel_submit'), trigger_class: 'button button--small button--secondary' %>
+    </div>
+  <% end %>
+
+  <%# A blocked account says so at the top: when, by whom, why (the entry of the audit log) and what it means. The button that takes the block off is in the header. %>
+  <% if blockable && account.suspended? %>
+    <div class="admin-notice admin-notice--amber mb-5 !flex-col !items-start gap-1" role="status" data-testid="block-banner">
+      <span class="font-medium">
+        <%= block ? t('super_admin.safety.block.banner_at', time: super_admin_time(block.at)) : t('super_admin.safety.block.banner') %><%= " · #{block.by}" if block&.by.present? %>
+      </span>
+      <% if block&.reason.present? || block&.note.present? %>
+        <span class="text-[13px]" data-testid="block-reason">
+          <%= t('super_admin.safety.block.banner_reason', reason: t("super_admin.safety.block.reasons.#{block.reason}")) if block.reason.present? %>
+          <%= t('super_admin.safety.block.banner_note', note: block.note) if block.note.present? %>
+        </span>
+      <% end %>
+      <span class="text-[13px]"><%= t('super_admin.safety.block.banner_effect') %></span>
     </div>
   <% end %>
 
