@@ -38,6 +38,21 @@ by providing a `content_for(:javascript)` block.
   });
 </script>
 
+<%# A form that creates things (`data-single-submit`) is sent once: a second click while the first is on its way would create it twice. %>
+<script>
+  document.addEventListener('submit', function (event) {
+    var form = event.target;
+    if (!form.matches || !form.matches('form[data-single-submit]')) return;
+    if (form.dataset.sent) { event.preventDefault(); return; }
+    form.dataset.sent = '1';
+  });
+  // The page comes back from the cache with «Назад»: the form can be sent again
+  window.addEventListener('pageshow', function (event) {
+    if (!event.persisted) return;
+    document.querySelectorAll('form[data-single-submit]').forEach(function (form) { delete form.dataset.sent; });
+  });
+</script>
+
 <%= yield :javascript %>
 
 <% if Rails.env.test? %>

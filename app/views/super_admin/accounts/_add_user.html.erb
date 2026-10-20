@@ -28,7 +28,7 @@ set; the same choice as on «Новый клиент»). The role is chosen from
   </summary>
 
   <div class="px-5 pb-5 pt-1">
-    <%= form_with url: add_user_super_admin_account_path(account), method: :post, local: true, class: 'form flex flex-col gap-4' do %>
+    <%= form_with url: add_user_super_admin_account_path(account), method: :post, local: true, class: 'form flex flex-col gap-4', data: { single_submit: true } do %>
       <% if errors.any? %>
         <div role="alert" class="rounded-xl bg-n-ruby-2 px-4 py-3 text-sm text-n-ruby-11 outline outline-1 -outline-offset-1 outline-n-ruby-4" data-testid="add-user-errors">
           <p class="m-0 font-medium"><%= t('super_admin.onboarding.member.errors_title') %></p>

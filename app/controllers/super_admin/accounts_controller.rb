@@ -325,7 +325,6 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   def render_member_errors(member)
     @add_user = member
     response.headers['Cache-Control'] = 'no-store'
-    flash.now[:alert] = I18n.t('super_admin.onboarding.member.errors_title')
     render :show, locals: { page: Administrate::Page::Show.new(dashboard, requested_resource) }, status: :unprocessable_content
   end
 

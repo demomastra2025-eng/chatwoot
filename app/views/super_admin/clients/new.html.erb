@@ -31,7 +31,7 @@ the plan and are not asked) and its first administrator (an invitation by e-mail
 <% end %>
 
 <section class="main-content__body">
-  <%= form_with url: super_admin_clients_path, method: :post, local: true, class: 'form flex max-w-3xl flex-col gap-5', data: { testid: 'client-form' } do %>
+  <%= form_with url: super_admin_clients_path, method: :post, local: true, class: 'form flex max-w-3xl flex-col gap-5', data: { testid: 'client-form', single_submit: true } do %>
     <% if errors.any? %>
       <div id="error_explanation" role="alert" class="rounded-xl bg-n-ruby-2 px-4 py-3 text-sm text-n-ruby-11 outline outline-1 -outline-offset-1 outline-n-ruby-4" data-testid="client-errors">
         <p class="m-0 font-medium"><%= t('super_admin.onboarding.page.errors_title') %></p>

@@ -119,7 +119,7 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
       expect(error_for('user')).to eq('Выберите пользователя из списка.')
       expect(page.at_css('[data-testid="add-user"]').has_attribute?('open')).to be(true)
       expect(page.at_css('select[name="member[role]"] option[selected]')['value']).to eq('administrator')
-      expect(page.at_css('.flash-alert').text).to include('Пользователь не добавлен')
+      expect(text(page.at_css('[data-testid="add-user-errors"]'))).to include('Пользователь не добавлен')
     end
 
     it 'says so, in red, when the person is in the account already, and keeps who was chosen' do
