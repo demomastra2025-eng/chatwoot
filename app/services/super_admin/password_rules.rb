@@ -8,7 +8,7 @@ require 'support/string/character_counter'
 # admin shows these messages instead, before anything is saved.
 #
 #   SuperAdmin::PasswordRules.problems('abc')   # => [:length, :uppercase, :number, :special]
-#   SuperAdmin::PasswordRules.message('abc')    # => "Пароль не подходит. Нужно: не короче 6 знаков; ..."
+#   SuperAdmin::PasswordRules.message('abc')    # => "Пароль не подходит: он должен содержать не меньше 6 знаков; ..."
 class SuperAdmin::PasswordRules
   # The order the rules are listed in (a list under the field, a message after a failed save)
   RULES = %i[length uppercase lowercase number special].freeze
@@ -28,7 +28,7 @@ class SuperAdmin::PasswordRules
       problems(password).empty?
     end
 
-    # «Пароль не подходит. Нужно: ...» for a bad password, nil for a good one
+    # «Пароль не подходит: он должен содержать ...» for a bad password, nil for a good one
     def message(password)
       broken = problems(password)
       return if broken.empty?

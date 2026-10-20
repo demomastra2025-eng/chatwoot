@@ -393,7 +393,7 @@ RSpec.describe 'Super Admin new client', type: :request do
       create_client(admin: { access: 'password', password: 'abc' })
 
       expect(error_for('admin_password')).to eq(
-        'Пароль не подходит. Нужно: не меньше 6 знаков; заглавную латинскую букву; цифру; спецсимвол (например ! @ # $ %).'
+        'Пароль не подходит: он должен содержать не меньше 6 знаков; заглавную латинскую букву; цифру; спецсимвол (например ! @ # $ %).'
       )
       expect(page.css('[data-password-rules] li').to_h { |rule| [rule['data-rule'], rule['data-state']] }).to eq(
         'length' => 'todo', 'uppercase' => 'todo', 'lowercase' => 'ok', 'number' => 'todo', 'special' => 'todo'
@@ -522,7 +522,7 @@ RSpec.describe 'Super Admin new client', type: :request do
       expect(AccountUser.find_by!(account: created_account, user: existing).role).to eq('administrator')
       expect(ActionMailer::Base.deliveries.select { |mail| mail.to == ['bauyrzhan@alatau.example'] }).to be_empty
       expect(page.css('[data-testid="created-line"]').map { |line| text(line) }).to include(
-        'Бауыржан Сейт (bauyrzhan@alatau.example) стал администратором аккаунта. Его пароль не менялся.'
+        'Бауыржан Сейт (bauyrzhan@alatau.example) назначен(а) администратором аккаунта. Пароль не менялся.'
       )
       expect(audits_of(created_account, 'create_client').first.audited_changes['administrator']).to eq(
         'email' => 'bauyrzhan@alatau.example', 'access' => 'existing'

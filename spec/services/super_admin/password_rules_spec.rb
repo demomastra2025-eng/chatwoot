@@ -43,7 +43,7 @@ RSpec.describe SuperAdmin::PasswordRules do
 
     it 'lists what is missing, in Russian' do
       expect(described_class.message('abc')).to eq(
-        'Пароль не подходит. Нужно: не меньше 6 знаков; заглавную латинскую букву; цифру; спецсимвол (например ! @ # $ %).'
+        'Пароль не подходит: он должен содержать не меньше 6 знаков; заглавную латинскую букву; цифру; спецсимвол (например ! @ # $ %).'
       )
     end
 
