@@ -12,6 +12,8 @@ class SuperAdmin::UsersController < SuperAdmin::ApplicationController
   # Overwrite any of the RESTful controller actions to implement custom behavior
   # For example, you may want to send an email after a foo is updated.
 
+  # A form with a problem is drawn again with what was typed and the problems in the red banner of the form (422), as every
+  # other form of the super admin does: not an empty form with the problem in the green banner of a success.
   def create
     resource = resource_class.new(resource_params)
     authorize_resource(resource)
@@ -20,8 +22,7 @@ class SuperAdmin::UsersController < SuperAdmin::ApplicationController
       record_creation(resource)
       redirect_to super_admin_user_path(resource), notice: translate_with_resource('create.success')
     else
-      notice = resource.errors.full_messages.first
-      redirect_to new_super_admin_user_path, notice: notice
+      render :new, locals: { page: Administrate::Page::Form.new(dashboard, resource) }, status: :unprocessable_content
     end
   end
 

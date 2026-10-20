@@ -93,7 +93,7 @@ RSpec.describe 'Super Admin Users API', type: :request do
         expect(SuperAdmin.last.email).to eq('admin@example.com')
 
         post '/super_admin/users', params: params
-        expect(response).to redirect_to('http://www.example.com/super_admin/users/new')
+        expect(response).to have_http_status(:unprocessable_content)
       end
 
       it 'uses the display name when the name is left blank' do
@@ -135,14 +135,30 @@ RSpec.describe 'Super Admin Users API', type: :request do
         expect(User.last).to have_attributes(name: 'Full Name', display_name: 'Short')
       end
 
-      it 'answers with a validation notice instead of a server error when nothing usable is submitted' do
+      it 'answers with the form and its problem in the red banner instead of a server error when nothing usable is submitted' do
         sign_in(super_admin, scope: :super_admin)
 
         expect do
           post '/super_admin/users', params: { user: { name: '', display_name: '', email: '', password: 'Password1!' } }
         end.not_to change(User, :count)
 
-        expect(response).to redirect_to('http://www.example.com/super_admin/users/new')
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(Nokogiri::HTML(response.body).at_css('#error_explanation[role="alert"]')).to be_present
+      end
+
+      it 'draws the form again with what was typed, the problem in the red banner and no password in the page' do
+        sign_in(super_admin, scope: :super_admin)
+        typed = { name: 'Асем Кайрат', display_name: 'Асем', email: 'asem@clinic', password: 'Password1!' }
+
+        expect { post '/super_admin/users', params: { user: typed } }.not_to change(User, :count)
+
+        page = Nokogiri::HTML(response.body)
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(page.at_css('#error_explanation[role="alert"]')).to be_present
+        expect(page.at_css('input[name="user[name]"]')['value']).to eq('Асем Кайрат')
+        expect(page.at_css('input[name="user[email]"]')['value']).to eq('asem@clinic')
+        expect(page.at_css('.flash-notice, .flashes .flash')).to be_nil
+        expect(response.body).not_to include('Password1!')
       end
 
       it 'creates unconfirmed users when confirmed_at is not provided in payload' do
