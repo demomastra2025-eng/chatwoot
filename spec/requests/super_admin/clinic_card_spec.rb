@@ -755,7 +755,8 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       open_card
 
       info = text(block('info-block'))
-      expect(info).to include('Язык', 'Создан', 'Тариф применён', "версия #{Accounts::Plans.version}")
+      expect(info).to include('Язык', 'Создан', 'Тариф применён')
+      expect(info).not_to include('версия')
       expect(info).to include(SuperAdmin::DisplayHelper.format_time(account.reload.created_at))
     end
 

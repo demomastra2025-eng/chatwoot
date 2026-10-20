@@ -1,29 +1,45 @@
 <%#
-# Technical data of a clinic
+# «Для разработчика» of an account
 
-Collapsed. The service attributes of the clinic (`custom_attributes`) as a
-readable list of key and value instead of a Ruby hash, and the users the
-operator limit does not count.
+Collapsed. What only a developer reads: the number of the account, the code of its language, the version of the plan that
+was applied, the service attributes of the account (`custom_attributes`) as a readable list of key and value instead of a
+Ruby hash, and the users the operator limit does not count. Nothing here is changed from this block.
 
 ## Local variables:
 
-- `account`: the clinic (Account).
+- `account`: the account (Account).
+- `state`: its `SuperAdmin::AccountPlanState`.
 %>
 <%
   attributes = account.custom_attributes.to_h.sort_by { |key, _value| key.to_s }
   excluded_ids = account.respond_to?(:limit_counter_excluded_user_ids) ? account.limit_counter_excluded_user_ids : []
+  facts = [
+    [t('super_admin.developer.id'), account.id],
+    [t('super_admin.developer.locale_code'), account.locale],
+    [t('super_admin.developer.updated'), super_admin_time(account.updated_at)]
+  ]
+  facts << [t('super_admin.developer.plan_version'), state.version] if state.assigned? && state.version
 %>
 
 <details class="admin-collapse" data-testid="technical-block">
   <summary>
     <span class="flex min-w-0 flex-col gap-0.5">
-      <span class="text-heading-2 text-n-slate-12"><%= t('super_admin.clinic_card.technical.title') %></span>
-      <span class="text-body-main text-n-slate-11"><%= t('super_admin.clinic_card.technical.hint') %></span>
+      <span class="text-heading-2 text-n-slate-12"><%= t('super_admin.developer.title') %></span>
+      <span class="text-body-main text-n-slate-11"><%= t('super_admin.developer.account_hint') %></span>
     </span>
     <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
   </summary>
 
   <div class="admin-collapse__body flex flex-col gap-5">
+    <dl class="admin-kv" data-testid="developer-facts">
+      <% facts.each do |key, value| %>
+        <div class="admin-kv__row">
+          <dt class="admin-kv__key"><%= key %></dt>
+          <dd class="admin-kv__value tabular-nums"><%= value %></dd>
+        </div>
+      <% end %>
+    </dl>
+
     <div class="flex flex-col gap-2">
       <h3 class="m-0 text-heading-3 text-n-slate-12"><%= t('super_admin.clinic_card.technical.attributes') %></h3>
       <% if attributes.empty? %>

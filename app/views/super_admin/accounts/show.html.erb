@@ -4,7 +4,7 @@
 The page of one clinic. Header: name, status, #id, creation date (Astana time),
 «Войти в аккаунт» and «Редактировать». Main column: plan (base + modules, with
 the preview of what a change does), limits and spend, channels, «Тонкая
-настройка» and «Служебные» (both collapsed), users, «Входы в аккаунт» and technical data (all collapsed). Side column: trial,
+настройка» and «Служебные» (both collapsed), users, «Входы в аккаунт» and «Для разработчика» (all collapsed). Side column: trial,
 basic facts, organization, maintenance.
 
 ## Local variables:
@@ -98,7 +98,7 @@ basic facts, organization, maintenance.
       <%# Who from the super admins entered this account, and as whom: collapsed, the last 20. %>
       <%= render 'super_admin/shared/impersonation_history', entries: SuperAdmin::ImpersonationHistory.for_account(account), scope: :account %>
 
-      <%= render 'technical', account: account %>
+      <%= render 'technical', account: account, state: state %>
     </div>
 
     <div class="flex min-w-0 flex-col gap-5">

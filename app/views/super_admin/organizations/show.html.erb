@@ -1,9 +1,9 @@
 <%#
 # Organization card
 
-The page of one organization, the paying parent of accounts. Header: name, #id, creation date (Astana time), «Редактировать»
+The page of one organization, the paying parent of accounts. Header: name, creation date (Astana time), «Редактировать»
 and «Удалить». Main column: the accounts of the organization (with a form that links one more and «Отвязать» per
-row). Side column: «Реквизиты» and «Договор».
+row). Side column: «Реквизиты», «Договор» and «Для разработчика» (collapsed: the number and the dates).
 
 ## Local variables:
 
@@ -22,8 +22,7 @@ row). Side column: «Реквизиты» and «Договор».
     </nav>
     <h1 class="main-content__page-title"><%= organization.name %></h1>
     <p class="main-content__description" data-testid="organization-meta">
-      <span class="tabular-nums">#<%= organization.id %></span>
-      · <%= t('super_admin.organizations.card.created', date: super_admin_date(organization.created_at)) %>
+      <%= t('super_admin.organizations.card.created_on', date: super_admin_date(organization.created_at)) %>
     </p>
   </div>
 
@@ -47,6 +46,7 @@ row). Side column: «Реквизиты» and «Договор».
     <div class="flex min-w-0 flex-col gap-5">
       <%= render 'requisites', organization: organization %>
       <%= render 'contract', organization: organization %>
+      <%= render 'technical', organization: organization %>
     </div>
   </div>
 </section>

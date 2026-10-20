@@ -1,0 +1,38 @@
+<%#
+# «Для разработчика» of an organization
+
+Collapsed, at the bottom of the side column: the number of the organization and the exact dates (Astana time). Nothing here is
+changed from this block.
+
+## Local variables:
+
+- `organization`: the organization.
+%>
+<%
+  facts = [
+    [t('super_admin.developer.id'), organization.id],
+    [t('super_admin.developer.created'), super_admin_time(organization.created_at)],
+    [t('super_admin.developer.updated'), super_admin_time(organization.updated_at)]
+  ]
+%>
+
+<details class="admin-collapse" data-testid="technical-block">
+  <summary>
+    <span class="flex min-w-0 flex-col gap-0.5">
+      <span class="text-heading-2 text-n-slate-12"><%= t('super_admin.developer.title') %></span>
+      <span class="text-body-main text-n-slate-11"><%= t('super_admin.developer.organization_hint') %></span>
+    </span>
+    <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
+  </summary>
+
+  <div class="admin-collapse__body">
+    <dl class="admin-kv" data-testid="developer-facts">
+      <% facts.each do |key, value| %>
+        <div class="admin-kv__row">
+          <dt class="admin-kv__key"><%= key %></dt>
+          <dd class="admin-kv__value tabular-nums"><%= value %></dd>
+        </div>
+      <% end %>
+    </dl>
+  </div>
+</details>

@@ -160,6 +160,7 @@ ru:
       card:
         breadcrumb: "Путь"
         created: "создана %{date}"
+        created_on: "Создана %{date}"
         destroy_confirm: "Удалить организацию «%{name}»? Организацию, к которой привязаны аккаунты, удалить нельзя."
         requisites:
           title: "Реквизиты"

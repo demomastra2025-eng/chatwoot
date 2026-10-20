@@ -34,8 +34,18 @@ as well as a link to its edit page.
   </div>
 </header>
 
+<%
+  # What only a developer reads (the number, the date of the last change, the token) is folded away; an empty row is not drawn.
+  developer_attributes = %w[id updated_at access_token]
+  groups = page.attributes.map do |title, attributes|
+    shown = attributes.reject do |attribute|
+      developer_attributes.include?(attribute.name.to_s) || (attribute.name.to_s == 'unconfirmed_email' && attribute.data.blank?)
+    end
+    [title, shown]
+  end
+  developer = page.attributes.flat_map { |_title, attributes| attributes }.select { |attribute| developer_attributes.include?(attribute.name.to_s) }
+%>
 <section class="main-content__body">
-  <% groups = page.attributes %>
   <div class="flex flex-col gap-5">
     <% groups.each_with_index do |(title, attributes), index| %>
       <section class="admin-card">
@@ -68,6 +78,33 @@ as well as a link to its edit page.
           <% end %>
         </dl>
       </section>
+    <% end %>
+
+    <% if developer.any? %>
+      <details class="admin-collapse" data-testid="developer-block">
+        <summary>
+          <span class="flex min-w-0 flex-col gap-0.5">
+            <span class="text-heading-2 text-n-slate-12"><%= t('super_admin.developer.title') %></span>
+            <span class="text-body-main text-n-slate-11"><%= t('super_admin.developer.user_hint') %></span>
+          </span>
+          <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
+        </summary>
+        <div class="admin-collapse__body">
+          <dl class="attribute-list">
+            <% developer.each do |attribute| %>
+              <dt class="attribute-label" id="<%= attribute.name %>">
+                <%= t(
+                  "helpers.label.#{resource_name}.#{attribute.name}",
+                  default: page.resource.class.human_attribute_name(attribute.name),
+                ) %>
+              </dt>
+
+              <dd class="attribute-data attribute-data--<%=attribute.html_class%>"
+                  ><%= render_field attribute, page: page %></dd>
+            <% end %>
+          </dl>
+        </div>
+      </details>
     <% end %>
   </div>
 </section>

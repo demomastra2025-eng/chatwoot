@@ -281,12 +281,13 @@ RSpec.describe 'Super Admin organizations', type: :request do
                                                 contract_number: 'ДГ-12', contract_date: Date.new(2026, 3, 15), notes: 'Договор на год.')
       end
 
-      it 'has the name, the id, the creation date and the actions' do
+      it 'has the name, the creation date and the actions; the number is under «Для разработчика»' do
         get "/super_admin/organizations/#{organization.id}"
 
         expect(response).to have_http_status(:ok)
         expect(text(page.at_css('h1'))).to eq('Алатау Медикал')
-        expect(text(page.at_css('[data-testid="organization-meta"]'))).to include("##{organization.id}", 'создана')
+        expect(text(page.at_css('[data-testid="organization-meta"]'))).to start_with('Создана ')
+        expect(text(page.at_css('[data-testid="organization-meta"]'))).not_to include("##{organization.id}")
         expect(page.at_css("a[href='/super_admin/organizations/#{organization.id}/edit']")).to be_present
         expect(page.at_css("form[action='/super_admin/organizations/#{organization.id}'] input[name='_method'][value='delete']")).to be_present
         expect(response.body).not_to include('translation missing')
