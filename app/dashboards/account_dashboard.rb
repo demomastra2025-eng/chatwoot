@@ -50,8 +50,9 @@ class AccountDashboard < Administrate::BaseDashboard
     updated_at: Field::DateTime,
     users: CountField,
     conversations: CountField,
-    # Lambdas: the names are looked up when the form is drawn, not when the class loads.
-    locale: Field::Select.with_options(collection: -> { AccountDashboard.locale_options }),
+    # The language is text, not a list: the platform is Russian only for now (see LanguageField).
+    locale: LanguageField,
+    # A lambda: the names are looked up when the form is drawn, not when the class loads.
     status: Field::Select.with_options(collection: -> { AccountDashboard.status_options }),
     account_users: Field::HasMany,
     custom_attributes: Field::String,

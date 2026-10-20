@@ -24,15 +24,17 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
       expect(response.body).not_to include('translation missing')
     end
 
-    it 'asks for a name and a language, with the names of the languages' do
+    it 'asks for a name, and says the language is Russian as text: no list of languages, nothing sent for it' do
       expect(text(page.at_css('label[for="account_name"]'))).to eq('Название аккаунта')
       expect(page.at_css('input[name="account[name]"]')).to be_present
-      expect(text(page.at_css('label[for="account_locale"]'))).to eq('Язык')
-      expect(options_of(page.at_css('select[name="account[locale]"]'))).to eq([%w[Русский ru], %w[Қазақша kk], %w[English en]])
+      expect(text(page.at_css('[data-testid="account-language"]'))).to eq('Язык: русский')
+      expect(page.at_css('select[name="account[locale]"]')).to be_nil
+      expect(page.css('[name="account[locale]"]')).to be_empty
+      expect(response.body).not_to include('Қазақша', 'English')
     end
 
-    it 'preselects Russian, the language of the platform' do
-      expect(page.at_css('select[name="account[locale]"] option[selected]')['value']).to eq('ru')
+    it 'explains that the platform works in Russian only for now' do
+      expect(response.body).to include('Платформа пока работает только на русском, поэтому язык аккаунта не выбирается.')
     end
 
     it 'does not ask for limits, the status or single functions' do
@@ -126,7 +128,13 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
       expect(text(page.at_css('[data-testid="new-trial-block"]'))).to include('лимиты аккаунта останутся как есть')
     end
 
-    it 'keeps English when the operator picks it (only the empty form defaults to Russian)' do
+    it 'creates the account in Russian when the form sends no language, which is how the form is now' do
+      post '/super_admin/accounts', params: { account: { name: 'Русский аккаунт' } }
+
+      expect(Account.find_by!(name: 'Русский аккаунт').locale).to eq('ru')
+    end
+
+    it 'keeps the language a request names (an old form, a script); only the form without one defaults to Russian' do
       post '/super_admin/accounts', params: { account: { name: 'English clinic', locale: 'en' } }
 
       expect(Account.find_by!(name: 'English clinic').locale).to eq('en')
@@ -165,11 +173,25 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
       expect(response.body).not_to include('translation missing')
     end
 
-    it 'labels the main fields in Russian and offers the names of the languages' do
+    it 'labels the main fields in Russian and says the language as text, with no list of languages' do
+      account.update!(locale: 'ru')
+      get "/super_admin/accounts/#{account.id}/edit"
+
       expect(text(page.at_css('label[for="account_name"]'))).to eq('Название аккаунта')
-      expect(text(page.at_css('label[for="account_locale"]'))).to eq('Язык')
       expect(text(page.at_css('label[for="account_status"]'))).to eq('Статус')
-      expect(options_of(page.at_css('select[name="account[locale]"]'))).to eq([%w[Русский ru], %w[Қазақша kk], %w[English en]])
+      expect(text(page.at_css('[data-testid="account-language"]'))).to eq('Язык: русский')
+      expect(page.css('[name="account[locale]"]')).to be_empty
+    end
+
+    it 'says the language an account already has, as it is, and does not change it when the form is saved' do
+      account.update!(locale: 'kk')
+      get "/super_admin/accounts/#{account.id}/edit"
+
+      expect(text(page.at_css('[data-testid="account-language"]'))).to eq('Язык: казахский')
+
+      patch "/super_admin/accounts/#{account.id}", params: { account: { name: 'Аккаунт Алатау 3', status: 'active' } }
+
+      expect(account.reload).to have_attributes(name: 'Аккаунт Алатау 3', locale: 'kk')
     end
 
     it 'shows the status in Russian and keeps the stored value' do

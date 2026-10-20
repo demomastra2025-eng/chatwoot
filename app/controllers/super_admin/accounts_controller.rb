@@ -548,10 +548,13 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     flash[:alert] = I18n.t('super_admin.accounts.flashes.plan_apply_failed')
   end
 
-  # A new clinic speaks Russian until the operator picks another language (the column default is English)
-  def new_resource(*)
+  # A new account speaks Russian (the column default is English): the forms offer no language to pick, so the account is
+  # created with the language of the platform unless the request names one (an old form, a script).
+  def new_resource(*args)
     resource = super
-    resource.locale = I18n.default_locale.to_s if action_name == 'new'
+    submitted = args.first
+    named = submitted.respond_to?(:key?) && submitted.key?(:locale)
+    resource.locale = I18n.default_locale.to_s if action_name == 'new' || (action_name == 'create' && !named)
     resource
   end
 

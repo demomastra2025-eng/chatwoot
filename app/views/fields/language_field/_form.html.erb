@@ -1,0 +1,13 @@
+<%#
+# The language of an account, as text
+
+No list to pick from: the platform is Russian only for now. The line says what language the account has, and nothing is
+sent with the form.
+
+## Local variables:
+
+- `field`: a `LanguageField`; `field.data` is the language code of the account.
+%>
+<p class="m-0 text-sm text-n-slate-12" data-testid="account-language">
+  <span class="font-medium"><%= t('helpers.label.account.locale') %>:</span> <%= field.to_s %>
+</p>
