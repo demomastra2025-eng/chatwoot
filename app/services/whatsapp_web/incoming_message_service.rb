@@ -17,13 +17,27 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
   def create_message(message, source_id: nil)
     super.tap do |created_message|
       created_message.preserve_initial_pending_status = true if @preserve_initial_pending_status
+      if group_message? && !outgoing_echo && group_sender_attributes.present?
+        created_message.content_attributes = (created_message.content_attributes || {}).merge(
+          'group_sender' => group_sender_attributes
+        )
+      end
     end
   end
 
   def conversation_params
-    pending = inbox.channel.conversation_pending?
+    pending = inbox.channel.conversation_pending? && !group_message?
     @preserve_initial_pending_status = pending && !outgoing_echo
-    super.merge(status: pending ? :pending : :open)
+    base_params = super.merge(status: pending ? :pending : :open)
+    return base_params unless group_message?
+
+    base_params.merge(
+      additional_attributes: (base_params[:additional_attributes] || {}).merge(
+        'is_group' => true,
+        'chat_type' => 'group',
+        'chat_title' => group_subject
+      ).compact
+    )
   end
 
   def processed_params
@@ -88,9 +102,10 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
         remoteJid: params.dig(:key, :remoteJid),
         remoteJidAlt: params.dig(:key, :remoteJidAlt),
         remoteLid: params.dig(:key, :remoteLid),
-        pushName: params[:pushName]
+        pushName: group_message? ? nil : params[:pushName],
+        name: group_message? ? group_subject : nil
       },
-      trust_payload_display_name: !outgoing_echo
+      trust_payload_display_name: group_message? ? group_subject.present? : !outgoing_echo
     ).perform
     return if contact_inbox.blank?
 
@@ -109,11 +124,52 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
   end
 
   def contact_display_name(remote_identity)
+    return group_display_name(remote_identity) if group_message?(remote_identity)
     return params[:pushName].presence if params[:pushName].present?
     return "+#{remote_identity.split('@').first}" if remote_identity.to_s.end_with?('@s.whatsapp.net')
     return remote_identity if remote_identity.to_s.include?('@')
 
     "+#{remote_identity}"
+  end
+
+  def group_display_name(remote_identity)
+    group_subject.presence || @contact&.name.presence || "Group #{remote_identity.to_s.split('@').first}"
+  end
+
+  def group_message?(remote_identity = contact_remote_identity)
+    remote_identity.to_s.end_with?('@g.us')
+  end
+
+  def group_subject
+    params[:groupSubject].presence ||
+      params.dig(:groupMetadata, :subject).presence ||
+      params[:subject].presence ||
+      params[:chatName].presence
+  end
+
+  def group_sender_attributes
+    participant_jid = group_participant_jid
+    phone_number = group_participant_phone(participant_jid)
+    display_name = params[:pushName].to_s.strip.presence || phone_number || participant_jid.to_s.split('@').first.presence
+    return if display_name.blank? && participant_jid.blank?
+
+    {
+      'id' => participant_jid || display_name,
+      'name' => display_name,
+      'phone_number' => phone_number
+    }.compact
+  end
+
+  def group_participant_jid
+    key = params[:key].to_h.deep_symbolize_keys
+    (key[:participant] || key[:participantAlt] || params[:participant]).to_s.presence
+  end
+
+  def group_participant_phone(participant_jid)
+    return unless participant_jid.to_s.end_with?('@s.whatsapp.net')
+
+    digits = participant_jid.to_s.split('@').first.to_s.split(':').first.to_s.gsub(/\D/, '')
+    "+#{digits}" if digits.present?
   end
 
   def message_payload_for(message_type)

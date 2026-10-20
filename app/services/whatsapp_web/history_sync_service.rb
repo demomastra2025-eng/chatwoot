@@ -107,20 +107,25 @@ class WhatsappWeb::HistorySyncService
   def sync_chat_record(record)
     payload = record.to_h.deep_symbolize_keys
     remote_jid = payload[:remoteJid].to_s
-    return if remote_jid.blank? || remote_jid.end_with?('@g.us')
+    return if remote_jid.blank?
+    return if remote_jid.end_with?('@g.us') && !channel.sync_groups?
     return if channel.ignored_remote_jid?(remote_jid)
 
     activity_at = chat_activity_at(payload)
     return if activity_at.present? && outside_import_window?(activity_at)
 
+    is_group = remote_jid.end_with?('@g.us')
+    group_title = payload[:name].presence || payload[:subject].presence || payload[:pushName].presence if is_group
+
     contact_inbox = WhatsappWeb::ContactSyncService.new(
       channel: channel,
       contact_payload: {
         remoteJid: remote_jid,
-        pushName: payload[:pushName],
+        pushName: is_group ? nil : payload[:pushName],
+        name: group_title,
         profilePicUrl: payload[:profilePicUrl]
       },
-      trust_payload_display_name: false
+      trust_payload_display_name: is_group && group_title.present?
     ).perform
     return if contact_inbox.blank?
 

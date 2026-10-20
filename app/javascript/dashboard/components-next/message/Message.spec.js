@@ -3,6 +3,7 @@ import { shallowMount } from '@vue/test-utils';
 import { ref } from 'vue';
 
 import Message from './Message.vue';
+import BaseBubble from './bubbles/Base.vue';
 import { MESSAGE_STATUS, MESSAGE_TYPES } from './constants';
 
 vi.mock('@vueuse/core', () => ({
@@ -555,5 +556,39 @@ describe('Message', () => {
       customer.findComponent({ name: 'CaptainSenderAvatars' }).exists()
     ).toBe(false);
     expect(gridClasses(customer)).toContain('grid-cols-[24px_minmax(0,1fr)]');
+  });
+
+  it('renders the group participant header and avatar for incoming group messages', () => {
+    const wrapper = createWrapper(
+      {
+        messageType: MESSAGE_TYPES.INCOMING,
+        sender: {
+          id: 9,
+          type: 'contact',
+          name: 'Рабочая группа',
+          thumbnail: '',
+        },
+        senderId: 9,
+        senderType: 'Contact',
+        contentAttributes: {
+          groupSender: {
+            id: '777',
+            name: 'Айгуль Смагулова',
+            username: 'aigul_s',
+            avatarUrl: 'https://cdn.test/aigul.png',
+          },
+        },
+      },
+      { TextBubble: BaseBubble }
+    );
+
+    const header = wrapper.find('[data-testid="group-sender-header"]');
+    expect(header.exists()).toBe(true);
+    expect(header.text()).toContain('Айгуль Смагулова');
+    expect(header.text()).toContain('@aigul_s');
+    expect(wrapper.findComponent({ name: 'Avatar' }).props()).toMatchObject({
+      name: 'Айгуль Смагулова',
+      src: 'https://cdn.test/aigul.png',
+    });
   });
 });

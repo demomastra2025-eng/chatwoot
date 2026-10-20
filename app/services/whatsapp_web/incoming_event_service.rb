@@ -285,7 +285,7 @@ class WhatsappWeb::IncomingEventService
   end
 
   def process_message_upsert
-    return if group_message?
+    return if group_message? && !channel.sync_groups?
     return if ignored_remote_jid?
 
     if outgoing_echo_event?

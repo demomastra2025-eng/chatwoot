@@ -7,9 +7,8 @@ class Telegram::IncomingMessageService
   pattr_initialize [:inbox!, :params!]
 
   def perform
-    # chatwoot doesn't support group conversations at the moment
     transform_business_message!
-    return unless private_message?
+    return unless supported_message_chat?
 
     set_contact
     update_contact_avatar
@@ -69,7 +68,7 @@ class Telegram::IncomingMessageService
   end
 
   def update_contact_avatar
-    return if @contact.avatar.attached?
+    return if group_message? || @contact.avatar.attached?
 
     avatar_url = inbox.channel.get_telegram_profile_image(telegram_params_from_id)
     ::Avatar::AvatarFromUrlJob.perform_later(@contact, avatar_url) if avatar_url
@@ -101,12 +100,29 @@ class Telegram::IncomingMessageService
 
   def contact_attributes
     {
-      name: "#{telegram_params_first_name} #{telegram_params_last_name}",
+      name: contact_display_name,
       additional_attributes: additional_attributes
     }
   end
 
+  def contact_display_name
+    return telegram_params_chat_title.presence || "Group #{telegram_params_chat_id}" if group_message?
+
+    "#{telegram_params_first_name} #{telegram_params_last_name}"
+  end
+
   def additional_attributes
+    if group_message?
+      return {
+        is_group: true,
+        chat_type: telegram_params_chat_type,
+        chat_title: telegram_params_chat_title,
+        username: telegram_params_username,
+        social_telegram_user_id: telegram_params_chat_id,
+        social_telegram_user_name: telegram_params_username
+      }.compact
+    end
+
     {
       # TODO: Remove this once we show the social_telegram_user_name in the UI instead of the username
       username: telegram_params_username,
@@ -117,6 +133,15 @@ class Telegram::IncomingMessageService
   end
 
   def conversation_additional_attributes
+    if group_message?
+      return {
+        chat_id: telegram_params_chat_id,
+        chat_type: telegram_params_chat_type,
+        chat_title: telegram_params_chat_title,
+        is_group: true
+      }.compact
+    end
+
     {
       chat_id: telegram_params_chat_id,
       business_connection_id: telegram_params_business_connection_id

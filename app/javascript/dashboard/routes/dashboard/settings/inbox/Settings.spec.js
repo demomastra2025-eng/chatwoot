@@ -185,3 +185,64 @@ describe('WhatsApp health requests', () => {
     expect(context.healthError).toBe('health unavailable');
   });
 });
+
+describe('Group chat sync settings & Telegram Personal status', () => {
+  it('hides stale telegramPersonalLastError when channel is connected', () => {
+    expect(
+      Settings.computed.telegramPersonalLastError.call({
+        isTelegramPersonalConnected: true,
+        inbox: { last_error: 'Cannot enter the confirmation code' },
+        telegramPersonalDiagnostics: {
+          last_error: 'Cannot enter the confirmation code',
+        },
+        telegramPersonalRuntimeState: {
+          last_error: 'Cannot enter the confirmation code',
+        },
+      })
+    ).toBe('');
+  });
+
+  it('reads telegramPersonalSyncGroups from runtime_state', () => {
+    expect(
+      Settings.computed.telegramPersonalSyncGroups.call({
+        telegramPersonalRuntimeState: {},
+      })
+    ).toBe(false);
+
+    expect(
+      Settings.computed.telegramPersonalSyncGroups.call({
+        telegramPersonalRuntimeState: { sync_groups: true },
+      })
+    ).toBe(true);
+  });
+
+  it('persists sync_groups when toggling Telegram Personal group sync', async () => {
+    const dispatch = vi.fn().mockResolvedValue({});
+    const fetchTelegramPersonalDiagnostics = vi.fn().mockResolvedValue({});
+    const context = {
+      currentInboxId: 25,
+      telegramPersonalRuntimeState: { ignored_chat_ids: ['123'] },
+      isSavingTelegramPersonalSyncGroups: false,
+      $store: { dispatch },
+      $t: key => key,
+      fetchTelegramPersonalDiagnostics,
+    };
+
+    await Settings.methods.toggleTelegramPersonalSyncGroups.call(context, {
+      target: { checked: true },
+    });
+
+    expect(dispatch).toHaveBeenCalledWith('inboxes/updateInbox', {
+      id: 25,
+      formData: false,
+      channel: {
+        runtime_state: {
+          ignored_chat_ids: ['123'],
+          sync_groups: true,
+        },
+      },
+    });
+    expect(fetchTelegramPersonalDiagnostics).toHaveBeenCalledWith(true);
+    expect(context.isSavingTelegramPersonalSyncGroups).toBe(false);
+  });
+});

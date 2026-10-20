@@ -16,16 +16,68 @@ const props = defineProps({
   hideMeta: { type: Boolean, default: false },
 });
 
-const { variant, orientation, inReplyTo, shouldGroupWithNext } =
-  useMessageContext();
+const {
+  variant,
+  orientation,
+  inReplyTo,
+  shouldGroupWithNext,
+  contentAttributes,
+} = useMessageContext();
 const { t } = useI18n();
+
+const groupSender = computed(
+  () =>
+    contentAttributes?.value?.groupSender ||
+    contentAttributes?.value?.group_sender ||
+    null
+);
+
+const shouldShowGroupSender = computed(
+  () =>
+    orientation.value === ORIENTATION.LEFT &&
+    variant.value === MESSAGE_VARIANTS.USER &&
+    Boolean(groupSender.value?.name)
+);
+
+const groupSenderHandle = computed(() => {
+  const username = groupSender.value?.username;
+  if (username) {
+    return username.startsWith('@') ? username : `@${username}`;
+  }
+  const phone =
+    groupSender.value?.phoneNumber || groupSender.value?.phone_number;
+  if (phone && phone !== groupSender.value?.name) {
+    return phone;
+  }
+  return '';
+});
+
+const GROUP_SENDER_COLOR_CLASSES = [
+  'text-n-teal-11',
+  'text-n-blue-11',
+  'text-n-iris-11',
+  'text-n-amber-11',
+  'text-n-ruby-11',
+];
+
+const groupSenderColorClass = computed(() => {
+  const seed = String(groupSender.value?.id || groupSender.value?.name || '');
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) % 997;
+  }
+  return GROUP_SENDER_COLOR_CLASSES[
+    Math.abs(hash) % GROUP_SENDER_COLOR_CLASSES.length
+  ];
+});
 
 const varaintBaseMap = {
   [MESSAGE_VARIANTS.AGENT]: 'bg-n-blue-2 dark:bg-n-blue-1 text-n-slate-12',
   [MESSAGE_VARIANTS.PRIVATE]:
     'bg-n-solid-amber text-n-amber-12 [&_.prosemirror-mention-node]:font-semibold',
   [MESSAGE_VARIANTS.USER]: 'bg-n-alpha-1 text-n-slate-12',
-  [MESSAGE_VARIANTS.ACTIVITY]: 'bg-transparent text-n-slate-11 text-xs leading-4',
+  [MESSAGE_VARIANTS.ACTIVITY]:
+    'bg-transparent text-n-slate-11 text-xs leading-4',
   [MESSAGE_VARIANTS.BOT]: 'bg-n-solid-iris text-n-slate-12',
   [MESSAGE_VARIANTS.TEMPLATE]: 'bg-n-solid-iris text-n-slate-12',
   [MESSAGE_VARIANTS.ERROR]: 'bg-n-ruby-4 text-n-ruby-12',
@@ -109,6 +161,21 @@ const replyToPreview = computed(() => {
       },
     ]"
   >
+    <div
+      v-if="shouldShowGroupSender"
+      data-testid="group-sender-header"
+      class="mb-1 flex items-baseline gap-1.5 text-xs leading-4"
+    >
+      <span class="truncate font-semibold" :class="groupSenderColorClass">
+        {{ groupSender.name }}
+      </span>
+      <span
+        v-if="groupSenderHandle"
+        class="shrink-0 text-[11px] font-normal text-n-slate-10"
+      >
+        {{ groupSenderHandle }}
+      </span>
+    </div>
     <div
       v-if="inReplyTo"
       class="p-2 -mx-1 mb-2 rounded-lg cursor-pointer bg-n-alpha-black1"

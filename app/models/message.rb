@@ -712,7 +712,7 @@ class Message < ApplicationRecord
 
   def perform_reopen_transition
     # mark resolved bot conversation as pending to be reopened by bot processor service
-    if conversation.inbox.active_bot?
+    if conversation.inbox.active_bot? && !conversation.group_conversation?
       transition_conversation_status!('pending', source: 'contact')
     elsif conversation.inbox.api?
       Current.executed_by = sender if reopened_by_contact?

@@ -153,6 +153,7 @@ if resource.whatsapp_web?
   json.import_contacts resource.channel.try(:import_contacts)
   json.import_messages resource.channel.try(:import_messages)
   json.sync_labels resource.channel.try(:sync_labels)
+  json.sync_groups resource.channel.try(:sync_groups)
   json.additional_attributes do
     json.evolution resource.channel.try(:evolution_state_payload, include_qr_code: include_whatsapp_web_qr_code)
   end

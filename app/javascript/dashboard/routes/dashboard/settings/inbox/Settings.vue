@@ -18,7 +18,6 @@ import GoogleReauthorize from './channels/google/Reauthorize.vue';
 import WhatsappReauthorize from './channels/whatsapp/Reauthorize.vue';
 import InboxHealthAPI from 'dashboard/api/inboxHealth';
 import PreChatFormSettings from './PreChatForm/Settings.vue';
-import GreetingsEditor from 'shared/components/GreetingsEditor.vue';
 import ConfigurationPage from './settingsPage/ConfigurationPage.vue';
 import CustomerSatisfactionPage from './settingsPage/CustomerSatisfactionPage.vue';
 import WhatsAppTemplatesPage from './settingsPage/WhatsAppTemplatesPage.vue';
@@ -80,7 +79,6 @@ export default {
     ConfigurationPage,
     CustomerSatisfactionPage,
     FacebookReauthorize,
-    GreetingsEditor,
     WhatsAppTemplatesPage,
     PreChatFormSettings,
     SettingIntroBanner,
@@ -162,6 +160,7 @@ export default {
       telegramPersonalQrCode: '',
       telegramPersonalIgnoredChatId: '',
       isSavingTelegramPersonalIgnoredChats: false,
+      isSavingTelegramPersonalSyncGroups: false,
       weixinDiagnostics: null,
       isLoadingWeixinDiagnostics: false,
       isRunningWeixinRequestQr: false,
@@ -186,6 +185,7 @@ export default {
       whatsappWebImportContacts: true,
       whatsappWebImportMessages: true,
       whatsappWebSyncLabels: true,
+      whatsappWebSyncGroups: false,
     };
   },
   computed: {
@@ -305,6 +305,9 @@ export default {
       return this.normalizeTelegramPersonalIgnoredChatIds(
         this.telegramPersonalRuntimeState.ignored_chat_ids
       );
+    },
+    telegramPersonalSyncGroups() {
+      return Boolean(this.telegramPersonalRuntimeState.sync_groups);
     },
     telegramPersonalLifecycleState() {
       return (
@@ -1145,6 +1148,7 @@ export default {
           : true;
       this.whatsappWebSyncLabels =
         this.inbox.sync_labels !== undefined ? this.inbox.sync_labels : true;
+      this.whatsappWebSyncGroups = Boolean(this.inbox.sync_groups);
       this.selectedPortalSlug = this.inbox.help_center
         ? this.inbox.help_center.slug
         : '';
@@ -1426,6 +1430,34 @@ export default {
         );
       } finally {
         this.isSavingTelegramPersonalIgnoredChats = false;
+      }
+    },
+    async toggleTelegramPersonalSyncGroups(event) {
+      const syncGroups = Boolean(event?.target?.checked);
+
+      try {
+        this.isSavingTelegramPersonalSyncGroups = true;
+        await this.$store.dispatch('inboxes/updateInbox', {
+          id: this.currentInboxId,
+          formData: false,
+          channel: {
+            runtime_state: {
+              ...this.telegramPersonalRuntimeState,
+              sync_groups: syncGroups,
+            },
+          },
+        });
+        await this.fetchTelegramPersonalDiagnostics(true);
+        useAlert(
+          this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.SYNC_GROUPS_SUCCESS')
+        );
+      } catch (error) {
+        useAlert(
+          error.message ||
+            this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.SYNC_GROUPS_ERROR')
+        );
+      } finally {
+        this.isSavingTelegramPersonalSyncGroups = false;
       }
     },
     stopWhatsappWebPolling() {
@@ -2188,6 +2220,7 @@ export default {
           channelPayload.import_contacts = this.whatsappWebImportContacts;
           channelPayload.import_messages = this.whatsappWebImportMessages;
           channelPayload.sync_labels = this.whatsappWebSyncLabels;
+          channelPayload.sync_groups = this.whatsappWebSyncGroups;
         }
 
         const payload = {
@@ -2789,6 +2822,27 @@ export default {
                       </div>
                       <input
                         v-model="whatsappWebConversationPending"
+                        type="checkbox"
+                        class="mt-0.5 size-4 shrink-0 rounded border-n-strong text-n-brand focus:ring-n-brand"
+                      />
+                    </label>
+
+                    <label
+                      class="flex items-start justify-between gap-3 rounded-lg border border-n-weak bg-n-surface-1 p-3 cursor-pointer hover:border-n-strong transition-colors sm:col-span-2"
+                    >
+                      <div class="min-w-0">
+                        <span class="block text-sm font-medium text-n-slate-12">
+                          {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SYNC_GROUPS') }}
+                        </span>
+                        <span class="mt-0.5 block text-xs text-n-slate-11">
+                          {{
+                            $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SYNC_GROUPS_HINT')
+                          }}
+                        </span>
+                      </div>
+                      <input
+                        v-model="whatsappWebSyncGroups"
+                        data-testid="whatsapp-web-sync-groups-checkbox"
                         type="checkbox"
                         class="mt-0.5 size-4 shrink-0 rounded border-n-strong text-n-brand focus:ring-n-brand"
                       />
@@ -3732,6 +3786,33 @@ export default {
                       </div>
                     </div>
                   </div>
+
+                  <label
+                    class="mt-4 flex items-start justify-between gap-3 rounded-lg border border-n-weak bg-n-alpha-1 p-4 cursor-pointer hover:border-n-strong transition-colors"
+                  >
+                    <div class="min-w-0">
+                      <span class="block text-sm font-medium text-n-slate-12">
+                        {{
+                          $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.SYNC_GROUPS')
+                        }}
+                      </span>
+                      <span class="mt-0.5 block text-xs text-n-slate-11">
+                        {{
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.SYNC_GROUPS_HINT'
+                          )
+                        }}
+                      </span>
+                    </div>
+                    <input
+                      :checked="telegramPersonalSyncGroups"
+                      :disabled="isSavingTelegramPersonalSyncGroups"
+                      data-testid="telegram-personal-sync-groups-checkbox"
+                      type="checkbox"
+                      class="mt-0.5 size-4 shrink-0 rounded border-n-strong text-n-brand focus:ring-n-brand"
+                      @change="toggleTelegramPersonalSyncGroups"
+                    />
+                  </label>
                 </div>
 
                 <!-- Ignored Telegram Chats Section -->

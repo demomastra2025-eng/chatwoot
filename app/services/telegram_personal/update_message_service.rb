@@ -25,9 +25,20 @@ class TelegramPersonal::UpdateMessageService
     message_id = params[:message_id].to_s
     return if message_id.blank?
 
-    inbox.messages.find_by(source_id: message_id) ||
-      inbox.messages.find_each.find do |message|
+    scope = scoped_messages
+    scope.find_by(source_id: message_id) ||
+      scope.find_each.find do |message|
         Array.wrap(message.content_attributes&.dig('telegram_message_ids')).map(&:to_s).include?(message_id)
       end
+  end
+
+  def scoped_messages
+    chat_id = params[:chat_id].to_s.presence
+    return inbox.messages if chat_id.blank?
+
+    contact_inbox = inbox.contact_inboxes.find_by(source_id: chat_id)
+    return inbox.messages if contact_inbox.blank?
+
+    inbox.messages.joins(:conversation).where(conversations: { contact_inbox_id: contact_inbox.id })
   end
 end

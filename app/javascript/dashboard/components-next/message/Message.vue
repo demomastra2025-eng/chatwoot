@@ -624,6 +624,16 @@ function handleEdit() {
 
 const avatarInfo = computed(() => {
   if (orientation.value === ORIENTATION.LEFT) {
+    const groupSender =
+      props.contentAttributes?.groupSender ||
+      props.contentAttributes?.group_sender;
+    if (groupSender?.name) {
+      return {
+        name: String(groupSender.name).trim(),
+        src: groupSender.avatarUrl || groupSender.avatar_url || '',
+      };
+    }
+
     const { channel_type: channelType, medium } = inbox.value;
     const iconName = withoutNeutralChannelColor(
       getInboxIconByType(channelType, medium, 'line')

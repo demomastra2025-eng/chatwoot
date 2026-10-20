@@ -66,29 +66,37 @@ class WhatsappWeb::ContactSyncService
     @source_id ||= payload_source_id
   end
 
-  # LID-only payloads keep the full LID JID as their source; phone JIDs use the digits of the number.
+  # LID-only and group payloads keep the full JID as their source; phone JIDs use the digits of the number.
   def payload_source_id
-    return canonical_remote_jid if lid_only_identity?
+    return canonical_remote_jid if lid_only_identity? || group_remote_jid?
 
     candidate = canonical_remote_jid.to_s.split('@').first.to_s.gsub(/\D/, '')
     candidate.presence if candidate.present? && candidate != '0'
   end
 
   def phone_number
-    return if lid_only_identity?
+    return if lid_only_identity? || group_remote_jid?
     return if source_id.blank?
 
     "+#{source_id}"
   end
 
   def resolved_phone_number(contact = nil)
+    return if group_remote_jid?
+
     phone_number.presence || contact&.phone_number.presence
   end
 
   def display_name(contact = nil, profile: nil)
     value = preferred_display_name || stored_provider_display_name(contact: contact, profile: profile) ||
-            resolved_phone_number(contact) || source_id
+            resolved_phone_number(contact) || group_fallback_display_name || source_id
     value.to_s.truncate(100)
+  end
+
+  def group_fallback_display_name
+    return unless group_remote_jid?
+
+    "Group #{canonical_remote_jid.to_s.split('@').first}"
   end
 
   def profile_pic_url
@@ -110,6 +118,8 @@ class WhatsappWeb::ContactSyncService
       raw_jid: raw_remote_jid,
       canonical_jid: canonical_remote_jid,
       lid_jid: lid_jid,
+      is_group: (true if group_remote_jid?),
+      chat_type: ('group' if group_remote_jid?),
       provisional_whatsapp_identity: lid_only_identity?,
       provider: 'whatsapp_web',
       profile_pic_url: profile_pic_url
@@ -224,6 +234,8 @@ class WhatsappWeb::ContactSyncService
       canonical_jid: canonical_remote_jid,
       raw_jid: raw_remote_jid,
       lid_jid: lid_jid,
+      is_group: (true if group_remote_jid?),
+      chat_type: ('group' if group_remote_jid?),
       phone_number: resolved_phone_number(contact),
       provider: 'whatsapp_web',
       profile_pic_url: profile_pic_url,
@@ -359,7 +371,8 @@ class WhatsappWeb::ContactSyncService
       raw_remote_jid,
       canonical_remote_jid,
       lid_jid,
-      contact_identifier
+      contact_identifier,
+      group_fallback_display_name
     ]
 
     if contact.present?
@@ -478,9 +491,7 @@ class WhatsappWeb::ContactSyncService
 
     name = preferred_display_name.to_s.strip
     return attributes if name.blank?
-    if attributes[LAST_PROVIDER_DISPLAY_NAME_KEY] == name && attributes[LAST_PROVIDER_DISPLAY_NAME_RECORDED_AT_KEY].present?
-      return attributes
-    end
+    return attributes if attributes[LAST_PROVIDER_DISPLAY_NAME_KEY] == name && attributes[LAST_PROVIDER_DISPLAY_NAME_RECORDED_AT_KEY].present?
 
     attributes.merge(
       LAST_PROVIDER_DISPLAY_NAME_KEY => name,
@@ -493,7 +504,12 @@ class WhatsappWeb::ContactSyncService
   end
 
   def supported_personal_remote_jid?
-    canonical_remote_jid.end_with?('@s.whatsapp.net', '@lid')
+    canonical_remote_jid.end_with?('@s.whatsapp.net', '@lid') ||
+      (group_remote_jid? && channel.respond_to?(:sync_groups?) && channel.sync_groups?)
+  end
+
+  def group_remote_jid?
+    canonical_remote_jid.to_s.end_with?('@g.us')
   end
 
   def lid_jid
@@ -507,10 +523,11 @@ class WhatsappWeb::ContactSyncService
   end
 
   def resolved_lid_identity?
-    source_id.present? && lid_jid.present? && !lid_only_identity?
+    source_id.present? && lid_jid.present? && !lid_only_identity? && !group_remote_jid?
   end
 
   def contact_identifier
+    return "whatsapp_web:#{canonical_remote_jid}" if group_remote_jid? && canonical_remote_jid.present?
     return if lid_jid.blank?
 
     "whatsapp_web:#{lid_jid}"

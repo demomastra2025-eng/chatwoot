@@ -35,7 +35,7 @@ class Channel::TelegramPersonal < ApplicationRecord
     :api_hash,
     :phone_number,
     :string_session,
-    { runtime_state: [ignored_chat_ids: []] }
+    { runtime_state: [:sync_groups, { ignored_chat_ids: [] }] }
   ].freeze
   CONNECTION_STATES = %w[disconnected connecting connected auth_required failed flood_wait].freeze
   LIFECYCLE_STATES = %w[pending_auth code_sent qr_ready qr_expired password_required connected disconnected failed].freeze
@@ -81,7 +81,8 @@ class Channel::TelegramPersonal < ApplicationRecord
     'contacts_sync_error' => nil,
     'contacts_sync_count' => 0,
     'contacts_synced_until' => nil,
-    'ignored_chat_ids' => []
+    'ignored_chat_ids' => [],
+    'sync_groups' => false
   }.freeze
 
   has_secure_token :webhook_identifier
@@ -138,6 +139,10 @@ class Channel::TelegramPersonal < ApplicationRecord
 
   def runtime_state_payload
     normalize_runtime_state(runtime_state)
+  end
+
+  def sync_groups?
+    ActiveModel::Type::Boolean.new.cast(runtime_state_payload['sync_groups']) == true
   end
 
   def history_sync_checkpoint
@@ -236,8 +241,10 @@ class Channel::TelegramPersonal < ApplicationRecord
              .flat_map { |item| item.to_s.split(/[,\s;]+/) }
              .filter_map(&:presence)
              .uniq
+      sync_groups = ActiveModel::Type::Boolean.new.cast(runtime['sync_groups']) == true
       runtime.compact_blank!
       runtime['ignored_chat_ids'] = ignored_chat_ids
+      runtime['sync_groups'] = sync_groups
     end
   end
 end

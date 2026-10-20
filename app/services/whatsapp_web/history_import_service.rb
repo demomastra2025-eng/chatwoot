@@ -37,7 +37,7 @@ class WhatsappWeb::HistoryImportService
     from_me = ActiveModel::Type::Boolean.new.cast(key[:fromMe])
     return if source_id.blank? || remote_jid.blank?
     return if ignored_remote_jid?(remote_jid)
-    return if remote_jid.end_with?('@g.us')
+    return if remote_jid.end_with?('@g.us') && !channel.sync_groups?
     return if outside_import_window?(record)
     return if duplicate_message?(source_id)
 
@@ -47,15 +47,19 @@ class WhatsappWeb::HistoryImportService
     content = resolve_content(content, attachment_payload: attachment_payload, attachment_file: attachment_file)
     return if skip_empty_history_record?(record, content: content, attachment_payload: attachment_payload, attachment_file: attachment_file)
 
+    is_group = remote_jid.end_with?('@g.us')
+    group_title = (record[:groupSubject] || record.dig(:groupMetadata, :subject) || record[:subject] || record[:chatName]).presence if is_group
+
     contact_inbox = WhatsappWeb::ContactSyncService.new(
       channel: channel,
       contact_payload: {
         remoteJid: remote_jid,
         remoteJidAlt: key[:remoteJidAlt],
         remoteLid: key[:remoteLid],
-        pushName: record[:pushName]
+        pushName: is_group ? nil : record[:pushName],
+        name: group_title
       },
-      trust_payload_display_name: !from_me
+      trust_payload_display_name: is_group ? group_title.present? : !from_me
     ).perform
     return if contact_inbox.blank?
 
@@ -108,6 +112,10 @@ class WhatsappWeb::HistoryImportService
       imported_history: true
     }
     content_attributes[:external_echo] = true if outgoing
+    if !outgoing && group_record?(record)
+      sender_attrs = group_sender_attributes(record)
+      content_attributes[:group_sender] = sender_attrs if sender_attrs.present?
+    end
 
     reply_to = extract_stanza_id(record)
     content_attributes[:in_reply_to_external_id] = reply_to if reply_to.present?
@@ -121,6 +129,27 @@ class WhatsappWeb::HistoryImportService
       }.compact
     end
     content_attributes
+  end
+
+  def group_record?(record)
+    record.dig(:key, :remoteJid).to_s.end_with?('@g.us')
+  end
+
+  def group_sender_attributes(record)
+    key = record[:key].to_h.deep_symbolize_keys
+    participant_jid = (key[:participant] || key[:participantAlt] || record[:participant]).to_s.presence
+    sender_name = record[:pushName].to_s.strip.presence
+    raw_user = participant_jid.to_s.split('@').first.to_s.split(':').first.to_s
+    digits = raw_user.gsub(/\D/, '')
+    phone_number = "+#{digits}" if participant_jid.to_s.end_with?('@s.whatsapp.net') && digits.present?
+    display_name = sender_name || phone_number || raw_user.presence
+    return if display_name.blank? && participant_jid.blank?
+
+    {
+      id: participant_jid || display_name,
+      name: display_name,
+      phone_number: phone_number
+    }.compact
   end
 
   def find_or_create_conversation(contact_inbox, message_time)

@@ -18,7 +18,7 @@ class WhatsappWeb::ConversationSyncService
   def latest_contact_conversation
     current_contact_inbox_conversation = contact_inbox.conversations.order(last_activity_at: :desc, id: :desc).first
     latest_contact_conversation = channel.inbox.conversations.where(contact_id: contact_inbox.contact_id)
-                                       .order(last_activity_at: :desc, id: :desc).first
+                                         .order(last_activity_at: :desc, id: :desc).first
 
     [current_contact_inbox_conversation, latest_contact_conversation].compact.max_by do |conversation|
       [conversation.last_activity_at, conversation.id]
@@ -32,7 +32,7 @@ class WhatsappWeb::ConversationSyncService
 
     updates = {}
     updates[:last_activity_at] = activity_at if activity_at.present? &&
-                                           (conversation.last_activity_at.blank? || conversation.last_activity_at < activity_at)
+                                                (conversation.last_activity_at.blank? || conversation.last_activity_at < activity_at)
     updates[:agent_last_seen_at] = activity_at if activity_at.present? && conversation.agent_last_seen_at.blank?
     updates[:assignee_last_seen_at] = activity_at if activity_at.present? && conversation.assignee_last_seen_at.blank?
     return conversation if updates.blank?
@@ -43,12 +43,14 @@ class WhatsappWeb::ConversationSyncService
 
   def create_conversation!
     timestamp = activity_at || Time.current
+    additional_attrs = contact_inbox.source_id.to_s.end_with?('@g.us') ? { 'is_group' => true, 'chat_type' => 'group' } : {}
 
     Conversation.new(
       account_id: channel.account_id,
       inbox_id: channel.inbox.id,
       contact_id: contact_inbox.contact_id,
       contact_inbox_id: contact_inbox.id,
+      additional_attributes: additional_attrs,
       created_at: timestamp,
       updated_at: timestamp,
       last_activity_at: timestamp,

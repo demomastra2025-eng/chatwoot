@@ -77,13 +77,14 @@ class Channel::WhatsappWeb < ApplicationRecord
     'lifecycle_operation_started_at' => nil,
     'lifecycle_operation_completed_at' => nil,
     'last_runtime_event_sequence' => nil,
+    'sync_groups' => false,
     'label_map' => {}
   }.freeze
   HISTORY_SYNC_REQUEST_STALE_AFTER = 30.minutes
   IMMUTABLE_RUNTIME_ATTRS = %i[phone_number provider provider_config].freeze
   EDITABLE_ATTRS = [
     :phone_number, :provider, :conversation_pending, :history_lookback_days,
-    :sign_messages, :sign_delimiter, :import_contacts, :import_messages, :sync_labels,
+    :sign_messages, :sign_delimiter, :import_contacts, :import_messages, :sync_labels, :sync_groups,
     { provider_config: {} }, { ignore_jids: [] }
   ].freeze
 
@@ -243,6 +244,17 @@ class Channel::WhatsappWeb < ApplicationRecord
 
   def history_sync_enabled?
     import_contacts? || import_messages?
+  end
+
+  def sync_groups
+    ActiveModel::Type::Boolean.new.cast(sync_state_payload['sync_groups']) == true
+  end
+  alias sync_groups? sync_groups
+
+  def sync_groups=(value)
+    self.sync_state = sync_state_payload.merge(
+      'sync_groups' => ActiveModel::Type::Boolean.new.cast(value) == true
+    )
   end
 
   def sync_state_payload

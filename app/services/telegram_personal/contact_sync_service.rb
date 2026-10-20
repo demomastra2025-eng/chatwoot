@@ -110,6 +110,8 @@ class TelegramPersonal::ContactSyncService
   end
 
   def display_name
+    return group_display_name if group_chat?
+
     [
       (@contact&.name if self_profile_payload?),
       [safe_first_name, safe_last_name].compact.join(' ').strip.presence,
@@ -119,7 +121,26 @@ class TelegramPersonal::ContactSyncService
     ].compact.first.to_s.truncate(100)
   end
 
+  def group_display_name
+    (params[:chat_title].presence || params[:title].presence || safe_username || "Group #{peer_user_id}").to_s.truncate(100)
+  end
+
   def additional_attributes
+    if group_chat?
+      return {
+        provider: 'telegram_personal',
+        is_group: true,
+        chat_type: params[:chat_type].presence || 'group',
+        chat_title: params[:chat_title].presence || params[:title].presence,
+        social_telegram_user_id: social_telegram_user_id,
+        social_telegram_user_name: safe_username,
+        username: safe_username,
+        sync_source: sync_source,
+        last_message_at: latest_activity_at&.iso8601,
+        unread_count: unread_count
+      }.compact
+    end
+
     {
       provider: 'telegram_personal',
       social_telegram_user_id: social_telegram_user_id,
@@ -173,8 +194,11 @@ class TelegramPersonal::ContactSyncService
       source_id: peer_user_id.to_s,
       inbox_id: inbox.id,
       peer_user_id: social_telegram_user_id,
+      is_group: (true if group_chat?),
+      chat_type: (params[:chat_type].presence || 'group' if group_chat?),
+      chat_title: (params[:chat_title].presence || params[:title].presence if group_chat?),
       username: safe_username,
-      language_code: params[:language_code],
+      language_code: (params[:language_code] unless group_chat?),
       first_name: safe_first_name,
       last_name: safe_last_name,
       phone_number: safe_phone_number,
@@ -308,7 +332,8 @@ class TelegramPersonal::ContactSyncService
       normalized_phone_number,
       contact_identifier,
       params[:username].presence,
-      username_handle
+      username_handle,
+      ("Group #{peer_user_id}" if group_chat?)
     ].compact.uniq
   end
 
@@ -332,13 +357,13 @@ class TelegramPersonal::ContactSyncService
   end
 
   def safe_first_name
-    return if self_profile_payload?
+    return if self_profile_payload? || group_chat?
 
     params[:first_name].presence
   end
 
   def safe_last_name
-    return if self_profile_payload?
+    return if self_profile_payload? || group_chat?
 
     params[:last_name].presence
   end
@@ -346,11 +371,11 @@ class TelegramPersonal::ContactSyncService
   def safe_username
     return if self_profile_payload?
 
-    params[:username].presence
+    (group_chat? ? params[:chat_username] : params[:username]).presence
   end
 
   def safe_phone_number
-    return if self_profile_payload?
+    return if self_profile_payload? || group_chat?
 
     normalized_phone_number
   end
@@ -374,6 +399,7 @@ class TelegramPersonal::ContactSyncService
   end
 
   def normalized_phone_number
+    return if group_chat?
     return @normalized_phone_number if defined?(@normalized_phone_number)
 
     raw_value = params[:phone_number].to_s.strip
@@ -383,11 +409,18 @@ class TelegramPersonal::ContactSyncService
     @normalized_phone_number = Contacts::PhoneNumberNormalizer.normalize(candidate)
   end
 
+  def group_chat?
+    params[:chat_type].to_s.in?(%w[group supergroup]) || ActiveModel::Type::Boolean.new.cast(params[:is_group]) == true
+  end
+
   def peer_user_id
+    return params[:chat_id] || params[:peer_user_id] if group_chat?
+
     params[:peer_user_id] || params[:sender_id] || params[:chat_id]
   end
 
   def self_profile_payload?
+    return false if group_chat?
     return @self_profile_payload if defined?(@self_profile_payload)
 
     @self_profile_payload = sync_source.in?(%w[message_event activity_event]) &&
