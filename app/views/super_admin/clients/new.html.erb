@@ -182,7 +182,7 @@ the plan and are not asked) and its first administrator (an invitation by e-mail
       <% end %>
 
       <%= render 'super_admin/shared/access_choice', scope: 'admin', access: administrator.access, password: administrator.password.to_s,
-                                                     access_error: errors[:admin_access], password_error: errors[:admin_password] %>
+                                                     access_error: errors[:admin_access], password_error: errors[:admin_password], error_prefix: 'admin_' %>
     </section>
 
     <div class="form-actions flex flex-wrap items-center gap-3">

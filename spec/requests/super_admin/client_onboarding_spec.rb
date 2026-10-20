@@ -165,7 +165,7 @@ RSpec.describe 'Super Admin new client', type: :request do
   describe 'creating a client with an invitation' do
     it 'creates the account, the plan and the administrator, sends one letter and says «Готово»' do
       expect do
-        perform_enqueued_jobs { create_client }
+        perform_enqueued_jobs(only: ApplicationMailDeliveryJob) { create_client }
       end.to change(Account, :count).by(1).and change(User, :count).by(1).and change(AccountUser, :count).by(1)
 
       expect(response).to have_http_status(:ok)
@@ -186,7 +186,7 @@ RSpec.describe 'Super Admin new client', type: :request do
     end
 
     it 'sends exactly one letter, with the link where the person sets a password' do
-      perform_enqueued_jobs { create_client }
+      perform_enqueued_jobs(only: ApplicationMailDeliveryJob) { create_client }
 
       letters = ActionMailer::Base.deliveries.select { |mail| mail.to == ['aigerim@alatau.example'] }
       expect(letters.size).to eq(1)
@@ -239,7 +239,7 @@ RSpec.describe 'Super Admin new client', type: :request do
     def create_with_password = create_client(admin: { access: 'password', password: password })
 
     it 'confirms the person, lets them sign in with it and sends no letter' do
-      perform_enqueued_jobs { create_with_password }
+      perform_enqueued_jobs(only: ApplicationMailDeliveryJob) { create_with_password }
 
       expect(response).to have_http_status(:ok)
       user = User.find_by!(email: 'aigerim@alatau.example')
@@ -478,7 +478,7 @@ RSpec.describe 'Super Admin new client', type: :request do
       before = existing.reload.attributes.slice('encrypted_password', 'name', 'confirmed_at', 'email')
 
       expect do
-        perform_enqueued_jobs { create_client(admin: { email: 'bauyrzhan@alatau.example', adopt: '1', access: 'invitation' }) }
+        perform_enqueued_jobs(only: ApplicationMailDeliveryJob) { create_client(admin: { email: 'bauyrzhan@alatau.example', adopt: '1', access: 'invitation' }) }
       end.to change(Account, :count).by(1).and change(User, :count).by(0)
 
       expect(response).to have_http_status(:ok)

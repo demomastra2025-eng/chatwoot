@@ -13,12 +13,16 @@ The password is shown once more on the page that says «Готово» and is no
 - `access`: the chosen way (`invitation` or `password`).
 - `password`: what is in the password field.
 - `access_error`, `password_error`: the problems (text), nil when there is none.
+- `error_prefix` (optional): put before the name of the fields in `data-error-for` (`admin_` on «Новый клиент», where every problem is
+  `admin_<field>`).
 %>
 <%
   mail_ok = SuperAdmin::MailState.configured?
   broken = SuperAdmin::PasswordRules.problems(password)
   interpolation = SuperAdmin::PasswordRules.interpolation
   field_id = "#{scope}_password"
+  password_key = :"#{local_assigns.fetch(:error_prefix, '')}password"
+  access_key = :"#{local_assigns.fetch(:error_prefix, '')}access"
 %>
 
 <div class="flex flex-col gap-3" data-choice-group data-testid="access-choice" data-access-choice>
@@ -40,7 +44,7 @@ The password is shown once more on the page that says «Готово» and is no
                        hint: t('super_admin.onboarding.access.password.hint') } do %>
     <div class="flex flex-col gap-2" data-password-widget data-min-length="<%= interpolation[:min] %>" data-max-length="<%= interpolation[:max] %>"
          data-specials="<%= SuperAdmin::PasswordRules.special_characters %>">
-      <%= super_admin_with_error({ password: password_error }, :password) do %>
+      <%= super_admin_with_error({ password_key => password_error }, password_key) do %>
         <label for="<%= field_id %>" class="text-xs text-n-slate-11"><%= t('super_admin.onboarding.password.label') %></label>
         <div class="flex flex-wrap items-center gap-2">
           <%= text_field_tag "#{scope}[password]", password, id: field_id, class: 'min-w-0 flex-1 font-mono', autocomplete: 'off', spellcheck: 'false',
@@ -49,7 +53,7 @@ The password is shown once more on the page that says «Готово» and is no
           <button type="button" class="button button--small button--secondary" data-password-copy data-copied="<%= t('super_admin.onboarding.password.copied') %>" hidden><%= t('super_admin.onboarding.password.copy') %></button>
         </div>
       <% end %>
-      <%= super_admin_field_error({ password: password_error }, :password) %>
+      <%= super_admin_field_error({ password_key => password_error }, password_key) %>
 
       <div class="flex flex-col gap-1">
         <span class="text-xs text-n-slate-11"><%= t('super_admin.onboarding.password.requirements') %></span>
@@ -67,7 +71,7 @@ The password is shown once more on the page that says «Готово» and is no
     </div>
   <% end %>
 
-  <%= super_admin_field_error({ access: access_error }, :access) %>
+  <%= super_admin_field_error({ access_key => access_error }, access_key) %>
 </div>
 
 <%= render 'super_admin/shared/password_script' %>

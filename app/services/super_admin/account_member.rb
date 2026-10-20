@@ -127,16 +127,22 @@ class SuperAdmin::AccountMember
     refuse_member(account)
   end
 
+  # Every problem is collected, so the form shows them together: a wrong e-mail does not hide a missing name or password
   def prepare_new(account)
     email = input.email.to_s.strip.downcase
-    return error(:email, :email_blank) if email.blank?
-    return error(:email, :email_invalid) unless email.match?(Devise.email_regexp)
-
-    existing = User.from_email(email)
+    existing = prepare_email(email)
     return prepare_existing(existing, account) if existing
 
     prepare_name
     prepare_access
+  end
+
+  # The user who has the e-mail, nil when nobody has it (or the e-mail is blank or wrong, which is an error of its own)
+  def prepare_email(email)
+    return error(:email, :email_blank) if email.blank?
+    return error(:email, :email_invalid) unless email.match?(Devise.email_regexp)
+
+    User.from_email(email)
   end
 
   # The e-mail is somebody's already. They are added only when the super admin said so; nothing about them changes.

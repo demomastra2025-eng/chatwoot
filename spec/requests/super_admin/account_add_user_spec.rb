@@ -36,7 +36,7 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
     it 'has a collapsed «Добавить пользователя» form with two ways: a user from the list and a new one' do
       block = page.at_css('[data-testid="add-user"]')
 
-      expect(block['open']).to be_nil
+      expect(block.has_attribute?('open')).to be(false)
       expect(text(block.at_css('summary'))).to eq('Добавить пользователя')
       expect(block.at_css('form')['action']).to eq("/super_admin/accounts/#{account.id}/add_user")
       expect(block.css('input[name="member[mode]"]').map { |choice| choice['value'] }).to eq(%w[pick create])
@@ -105,7 +105,7 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
     end
 
     it 'sends no letter' do
-      perform_enqueued_jobs { add_user(mode: 'pick', user_id: person.id.to_s, role: 'agent') }
+      perform_enqueued_jobs(only: ApplicationMailDeliveryJob) { add_user(mode: 'pick', user_id: person.id.to_s, role: 'agent') }
 
       expect(ActionMailer::Base.deliveries.select { |mail| mail.to == ['erbol@example.test'] }).to be_empty
     end
@@ -115,7 +115,7 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(error_for('user')).to eq('Выберите пользователя из списка.')
-      expect(page.at_css('[data-testid="add-user"]')['open']).to be_present
+      expect(page.at_css('[data-testid="add-user"]').has_attribute?('open')).to be(true)
       expect(page.at_css('select[name="member[role]"] option[selected]')['value']).to eq('administrator')
       expect(page.at_css('.flash-alert').text).to include('Пользователь не добавлен')
     end
@@ -147,7 +147,7 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
   describe 'adding a new person with an invitation' do
     it 'creates the user, adds them with the role, sends one letter and goes back to the card' do
       expect do
-        perform_enqueued_jobs { add_user(new_person(role: 'administrator')) }
+        perform_enqueued_jobs(only: ApplicationMailDeliveryJob) { add_user(new_person(role: 'administrator')) }
       end.to change(User, :count).by(1).and change { account.account_users.count }.by(1)
 
       expect(response).to redirect_to("/super_admin/accounts/#{account.id}")
@@ -194,7 +194,7 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
     def add_with_password(overrides = {}) = add_user(new_person(access: 'password', password: password).merge(overrides))
 
     it 'confirms the person, adds them, and shows the password once on the card itself' do
-      perform_enqueued_jobs { add_with_password }
+      perform_enqueued_jobs(only: ApplicationMailDeliveryJob) { add_with_password }
 
       expect(response).to have_http_status(:ok)
       user = User.find_by!(email: 'dinara@sezim.example')
@@ -236,7 +236,7 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
       expect(page.at_css('input[name="member[password]"]')['value']).to eq('abcdef')
       expect(page.at_css('input[name="member[mode]"][value="create"]')['checked']).to be_present
       expect(page.at_css('input[name="member[access]"][value="password"]')['checked']).to be_present
-      expect(page.at_css('[data-testid="add-user"]')['open']).to be_present
+      expect(page.at_css('[data-testid="add-user"]').has_attribute?('open')).to be(true)
     end
   end
 
