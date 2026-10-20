@@ -221,7 +221,7 @@ RSpec.describe 'Super Admin safe actions', type: :request do
 
       warning = text(panel("delete-user-#{person.id}").at_css('.admin-ask__warning'))
       expect(warning).to start_with('Он единственный администратор в аккаунтах')
-      expect(warning).to include('«Аккаунт Алатау»', '«Второй»', 'они останутся без администратора')
+      expect(warning).to match(/«(Аккаунт Алатау» и «Второй|Второй» и «Аккаунт Алатау)»: они останутся без администратора/)
     end
 
     it 'reads the accounts of the whole page at once, not once per person' do

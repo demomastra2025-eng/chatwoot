@@ -29,10 +29,12 @@ audit log (users by the model, the others by their controllers).
              submit: t('super_admin.safety.remove_user.submit') %>
 <% elsif kind == 'user' %>
   <% note = notes&.dig(resource.id) || SuperAdmin::UserRemovalNotes::EMPTY %>
+  <%# «А и Б», «А, Б и В»: the Russian conjunction (to_sentence has no Russian words in this app) %>
+  <% accounts = note.sole_admin_in.map { |name| "«#{name}»" }.to_sentence(words_connector: ', ', two_words_connector: t('super_admin.safety.conjunction'), last_word_connector: t('super_admin.safety.conjunction')) %>
   <%= render 'super_admin/shared/confirm_action', **common,
              title: t("#{texts}.title", name: resource.name),
              text: [t("#{texts}.text", count: note.accounts), t('super_admin.safety.audited')],
-             warning: (t("#{texts}.sole_admin", count: note.sole_admin_in.size, accounts: note.sole_admin_in.map { |name| "«#{name}»" }.to_sentence) if note.sole_admin_in.any?),
+             warning: (t("#{texts}.sole_admin", count: note.sole_admin_in.size, accounts: accounts) if note.sole_admin_in.any?),
              submit: t("#{texts}.submit") %>
 <% else %>
   <% name = kind == 'platform_banner' ? truncate(resource.banner_message.to_s, length: 60) : (resource.try(:name).presence || collection_presenter.dashboard.display_resource(resource)) %>

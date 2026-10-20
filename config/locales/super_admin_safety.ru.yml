@@ -24,6 +24,8 @@ ru:
 
     safety:
       audited: "Действие запишется в журнал аудита."
+      # The word between the last two names of a list («А и Б»)
+      conjunction: " и "
 
       # The counters that count by themselves until somebody resets them
       counters:
