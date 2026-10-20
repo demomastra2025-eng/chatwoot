@@ -70,9 +70,9 @@ const resetProvider = () => {
 
 <template>
   <div class="overflow-auto col-span-6 p-6 w-full h-full">
-    <div v-if="showProviderSelection">
-      <div class="mb-10 text-left">
-        <h1 class="mb-2 text-lg font-medium text-n-slate-12">
+    <div v-if="showProviderSelection" class="max-w-3xl">
+      <div class="mb-8 text-left">
+        <h1 class="mb-2 text-lg font-semibold text-n-slate-12">
           {{ $t('INBOX_MGMT.ADD.TELEGRAM.SELECT_PROVIDER.TITLE') }}
         </h1>
         <p class="text-sm leading-relaxed text-n-slate-11">
@@ -80,7 +80,7 @@ const resetProvider = () => {
         </p>
       </div>
 
-      <div class="flex gap-6 justify-start">
+      <div class="flex flex-wrap gap-6 justify-start">
         <ChannelSelector
           v-for="provider in availableProviders"
           :key="provider.key"
@@ -92,8 +92,8 @@ const resetProvider = () => {
       </div>
     </div>
 
-    <div v-else>
-      <div class="mb-4 flex justify-end">
+    <div v-else class="max-w-2xl">
+      <div class="mb-4 flex items-center justify-between">
         <Button
           link
           xs

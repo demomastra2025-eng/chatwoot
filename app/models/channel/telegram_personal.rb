@@ -173,9 +173,16 @@ class Channel::TelegramPersonal < ApplicationRecord
 
   def apply_runtime_update!(attrs = {})
     next_attrs = attrs.compact
+    next_attrs[:last_error] = nil if clear_last_error?(attrs, next_attrs)
     next_attrs[:runtime_state] = normalize_runtime_state(next_attrs[:runtime_state]) if next_attrs.key?(:runtime_state)
 
     update!(next_attrs)
+  end
+
+  def clear_last_error?(attrs, next_attrs)
+    return attrs[:last_error].blank? if attrs.key?(:last_error)
+
+    next_attrs[:connection_state] == 'connected' && (next_attrs[:lifecycle_state] || lifecycle_state) == 'connected'
   end
 
   private
