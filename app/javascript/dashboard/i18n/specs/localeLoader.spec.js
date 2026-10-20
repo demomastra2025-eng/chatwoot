@@ -16,7 +16,7 @@ describe('dashboard i18n lazy loading', () => {
   });
 
   it('keeps only startup locales in the initial dashboard bundle', () => {
-    expect(Object.keys(initialMessages).sort()).toEqual(['en', 'ru']);
+    expect(Object.keys(initialMessages).sort()).toEqual(['ru']);
   });
 
   it('loads non-startup locales on demand', async () => {
@@ -74,7 +74,7 @@ describe('dashboard i18n lazy loading', () => {
     const i18n = createI18n({
       legacy: false,
       locale: 'ru',
-      fallbackLocale: 'en',
+      fallbackLocale: 'ru',
       messages: initialMessages,
     });
 

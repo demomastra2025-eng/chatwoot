@@ -75,7 +75,13 @@ export default {
     currentChatReplyInboxId: {
       immediate: true,
       handler(inboxId) {
-        if (inboxId) {
+        if (!inboxId) return;
+        const cachedAgents =
+          this.$store.state?.inboxAssignableAgents?.records?.[inboxId];
+        if (
+          !cachedAgents?.length &&
+          !this.$store.getters?.['inboxAssignableAgents/getUIFlags']?.isFetching
+        ) {
           this.$store.dispatch('inboxAssignableAgents/fetch', [inboxId]);
         }
       },
@@ -87,7 +93,12 @@ export default {
   },
   mounted() {
     this.fetchLabels();
-    this.$store.dispatch('dashboardApps/get');
+    if (
+      !this.dashboardApps?.length &&
+      !this.$store.getters?.['dashboardApps/getUIFlags']?.isFetching
+    ) {
+      this.$store.dispatch('dashboardApps/get');
+    }
   },
   methods: {
     fetchLabels() {

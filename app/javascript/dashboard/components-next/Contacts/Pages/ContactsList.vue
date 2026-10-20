@@ -87,7 +87,11 @@ const handleAvatarHover = (id, isHovered) => {
 
 <template>
   <div class="flex flex-col gap-4">
-    <div v-for="contact in contacts" :key="contact.id" class="relative">
+    <div
+      v-for="contact in contacts"
+      :key="contact.id"
+      class="relative [content-visibility:auto] [contain-intrinsic-size:auto_76px]"
+    >
       <ContactsCard
         :id="contact.id"
         :name="contact.name"

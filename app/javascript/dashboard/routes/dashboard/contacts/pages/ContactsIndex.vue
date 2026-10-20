@@ -222,6 +222,14 @@ const updatePageParam = (page, search = '', company = '') => {
     delete query.company;
   }
 
+  if (
+    String(route.query?.page || '') === String(query.page || '') &&
+    String(route.query?.search || '') === String(query.search || '') &&
+    String(route.query?.company || '') === String(query.company || '')
+  ) {
+    return;
+  }
+
   router.replace({ query });
 };
 
@@ -616,7 +624,7 @@ watch(
       @load-more="loadMoreSearchResults"
     >
       <div
-        v-if="isFetchingList && !(isSearchView && hasContacts)"
+        v-if="isFetchingList && !hasContacts"
         class="flex items-center justify-center py-10 text-n-slate-11"
       >
         <Spinner />

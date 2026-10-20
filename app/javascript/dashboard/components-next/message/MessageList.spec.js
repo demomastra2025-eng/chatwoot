@@ -401,4 +401,17 @@ describe('MessageList', () => {
 
     expect(renderedMessages[0].props('groupWithNext')).toBe(true);
   });
+
+  it('reuses memoized camelCase message objects across updates for unchanged messages', async () => {
+    const msg1 = message({ id: 1, created_at: atLocalNoon(2026, 6, 24) });
+    const msg2 = message({ id: 2, created_at: atLocalNoon(2026, 6, 24) + 10 });
+    const wrapper = createWrapper({ messages: [msg1] });
+
+    const firstPassMessageRef = wrapper.vm.$.setupState.allMessages[0];
+
+    await wrapper.setProps({ messages: [msg1, msg2] });
+
+    const secondPassMessageRef = wrapper.vm.$.setupState.allMessages[0];
+    expect(secondPassMessageRef).toBe(firstPassMessageRef);
+  });
 });

@@ -41,7 +41,13 @@ export default {
     },
   },
   mounted() {
-    this.$store.dispatch('contactConversations/get', this.contactId);
+    const hasCachedConversations = Object.prototype.hasOwnProperty.call(
+      this.$store.state?.contactConversations?.records || {},
+      Number(this.contactId)
+    );
+    if (this.contactId && !hasCachedConversations && !this.uiFlags?.isFetching) {
+      this.$store.dispatch('contactConversations/get', this.contactId);
+    }
   },
 };
 </script>
