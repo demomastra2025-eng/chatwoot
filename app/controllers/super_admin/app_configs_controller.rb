@@ -35,13 +35,15 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     'captain' => CAPTAIN_CONFIG_KEYS
   }.freeze
   DEFAULT_ALLOWED_CONFIGS = %w[
-    ENABLE_ACCOUNT_SIGNUP FIREBASE_PROJECT_ID FIREBASE_CREDENTIALS WEBHOOK_TIMEOUT MAXIMUM_FILE_UPLOAD_SIZE
-    WIDGET_TOKEN_EXPIRY ACCOUNT_CONVERSATIONS_LIMIT ACCOUNT_NON_WEB_INBOXES_LIMIT ACCOUNT_STORAGE_BYTES_LIMIT
-    GRAFANA_OVERVIEW_DASHBOARD GRAFANA_LOGS_DASHBOARD
+    ENABLE_ACCOUNT_SIGNUP HCAPTCHA_SITE_KEY HCAPTCHA_SERVER_KEY FIREBASE_PROJECT_ID FIREBASE_CREDENTIALS WEBHOOK_TIMEOUT
+    MAXIMUM_FILE_UPLOAD_SIZE WIDGET_TOKEN_EXPIRY ACCOUNT_CONVERSATIONS_LIMIT ACCOUNT_NON_WEB_INBOXES_LIMIT
+    ACCOUNT_STORAGE_BYTES_LIMIT GRAFANA_OVERVIEW_DASHBOARD GRAFANA_LOGS_DASHBOARD
   ].freeze
 
   # The changes the message after a save lists; the rest is «и ещё N»
   MAX_SUMMARY_LINES = 6
+  # The version of an API of Meta or TikTok: «v25.0». Anything else would break every call to the service for every account.
+  API_VERSION_PATTERN = /\Av\d+(\.\d+)?\z/
 
   helper SuperAdmin::AppConfigHelper
   before_action :set_config
@@ -49,7 +51,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   before_action :allowed_configs
   # The page of the AI models reads the catalog of models for every card: once for the whole request, not once per model
   around_action :with_llm_snapshots, only: :show
-  helper_method :masked_secret_config?
+  helper_method :masked_secret_config?, :boolean_config?
 
   def show
     prepare_show
@@ -106,8 +108,17 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     secret_keys = @allowed_configs.select { |key| masked_secret_config?(key) }
     @configured_secrets = secret_keys.select { |key| @app_config[key].present? }
     prepare_ai_models_page(secret_keys, form) if @config == 'captain'
+    prepare_config_page unless @config == 'captain'
     # A secret never leaves the controller: the views get only whether it is set
     @app_config = @app_config.except(*secret_keys)
+  end
+
+  # What a config page draws: its settings in view, the ones folded under «Для разработчика», the addresses to copy into
+  # the console of the service. The AI models page has its own layout.
+  def prepare_config_page
+    @layout = SuperAdmin::AppConfigLayout.page(@config, @allowed_configs)
+    @addresses = SuperAdmin::AppConfigAddresses.for(@config, SuperAdmin::AppConfigAddresses.base_url(request))
+    @guards = @layout.editable_keys.filter_map { |key| SuperAdmin::AppConfigGuards.for(key) }.index_by(&:key)
   end
 
   def stored_app_config
@@ -206,18 +217,33 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   def persist_app_config
     errors = []
     saver = SuperAdmin::AppConfigSaver.new(actor: current_super_admin, request: request)
+    stored = stored_app_config
     params.fetch('app_config', {}).each do |key, value|
-      next unless @allowed_configs.include?(key)
-      # A secret that is left empty keeps the stored value (the field never shows it, so empty means «do not change»)
-      next if masked_secret_config?(key) && value.blank?
+      next unless saveable_config?(key, value)
 
       normalized_value = normalize_app_config_value(key, value, errors)
-      next if normalized_value == :invalid
+      next if normalized_value == :invalid || unchanged_config?(key, normalized_value, stored[key])
 
       # Saved and, when the value changed, written to the audit log (never the value of a secret)
       errors.concat(saver.save(key, normalized_value, secret: masked_secret_config?(key)))
     end
     errors
+  end
+
+  # What the page sends is not always a change: a switch that says what the stored value already means (a stored text
+  # «true», or «api_only» set by the server, stays as it is), an empty value over a setting that has none (a row with an
+  # empty value would also stop the platform from falling back to the value of the server environment), the same text.
+  def unchanged_config?(key, new_value, stored_value)
+    return (ActiveModel::Type::Boolean.new.cast(stored_value) || false) == new_value if boolean_config?(key)
+
+    # The same text over a stored number («5» over 5) is not a change either: the type of the stored value stays
+    (new_value.blank? && stored_value.blank?) || (!stored_value.nil? && new_value.to_s == stored_value.to_s)
+  end
+
+  # A setting of the page that was sent. A secret that is left empty keeps the stored value (the field never shows it, so
+  # empty means «do not change»).
+  def saveable_config?(key, value)
+    @allowed_configs.include?(key) && !(masked_secret_config?(key) && value.blank?)
   end
 
   # The Russian reason the catalog cannot be refreshed with the key in its present state, or nil
@@ -230,8 +256,26 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
 
   def normalize_app_config_value(key, value, errors)
     return normalize_json_object_config(key, value, errors) if WHATSAPP_WEBHOOK_ROUTING_CONFIG_KEYS.include?(key)
+    return normalize_api_version(key, value, errors) if key.end_with?('_API_VERSION')
+    # A switch is stored as a real true / false, like the installation config seeds it
+    return ActiveModel::Type::Boolean.new.cast(value) || false if boolean_config?(key)
 
     value
+  end
+
+  # A setting of the type `boolean` in config/installation_config.yml: drawn as a switch
+  def boolean_config?(key)
+    config_definitions[key.to_s].to_h['type'] == 'boolean'
+  end
+
+  # An empty version is never saved (the field shows the built-in one as a hint); a version that is not «v25.0» is refused
+  def normalize_api_version(key, value, errors)
+    version = value.to_s.strip
+    return :invalid if version.blank?
+    return version if version.match?(API_VERSION_PATTERN)
+
+    errors << flash_text(:api_version_invalid, title: config_title(key))
+    :invalid
   end
 
   def normalize_json_object_config(key, value, errors)

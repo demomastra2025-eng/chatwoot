@@ -253,16 +253,17 @@ RSpec.describe 'Super admin settings pages', type: :request do
   end
 
   describe 'the config pages' do
-    it 'titles a page with its Russian name and lists the fields with a Russian title, hint and technical name' do
+    it 'titles a page with its Russian name and lists the fields with a Russian title and hint, the technical name only under «Для разработчика»' do
       get '/super_admin/app_config?config=facebook'
 
       expect(text(page.at_css('h1'))).to eq('Facebook & Messenger')
       card = field('FB_APP_ID')
       expect(text(card.at_css('.admin-field__title'))).to eq('Facebook: ID приложения')
       expect(text(card.at_css('.admin-field__hint'))).to eq('Идентификатор приложения Meta для Messenger.')
-      expect(text(card.at_css('.admin-field__key'))).to eq('FB_APP_ID')
+      expect(card.at_css('.admin-field__key')).to be_nil
       expect(card.at_css('label')['for']).to eq('app_config_FB_APP_ID')
       expect(card.at_css('input#app_config_FB_APP_ID')).to be_present
+      expect(text(field('FACEBOOK_API_VERSION').at_css('.admin-field__key'))).to eq('FACEBOOK_API_VERSION')
     end
 
     it 'covers every field of every page with a Russian title' do
@@ -279,15 +280,20 @@ RSpec.describe 'Super admin settings pages', type: :request do
       end
     end
 
-    it 'shows a yes/no setting as «Да» / «Нет» with the stored value chosen' do
+    it 'shows a yes/no setting as a switch with the stored value chosen' do
       upsert_installation_config('ENABLE_ACCOUNT_SIGNUP', false)
 
       get '/super_admin/app_config?config=general'
 
-      select = field('ENABLE_ACCOUNT_SIGNUP').at_css('select')
-      expect(select.css('option').map { |option| text(option) }).to eq(%w[Да Нет])
-      expect(select.at_css('option[selected]')['value']).to eq('false')
+      row = field('ENABLE_ACCOUNT_SIGNUP')
+      expect(row.at_css('select')).to be_nil
+      expect(row.at_css('input.admin-switch__input[type="checkbox"]')['checked']).to be_nil
       expect(response.body).not_to match(/>True<|>False</)
+
+      upsert_installation_config('ENABLE_ACCOUNT_SIGNUP', 'true')
+      get '/super_admin/app_config?config=general'
+      switched_on = Nokogiri::HTML(response.body).at_css('[data-config="ENABLE_ACCOUNT_SIGNUP"] input.admin-switch__input')
+      expect(switched_on['checked']).to be_present
     end
 
     it 'shows a secret without its value: «задан», an empty field to replace it, and a reveal button for what is typed' do
@@ -341,11 +347,11 @@ RSpec.describe 'Super admin settings pages', type: :request do
     end
 
     it 'shows a JSON setting as readable text' do
-      upsert_installation_config('ACCOUNT_EMAILS_PLAN_LIMITS', { 'startups' => 10 })
+      upsert_installation_config('WHATSAPP_WEBHOOK_ROUTING_RULES', '{"123456":["dev"]}')
 
-      get '/super_admin/app_config?config=email'
+      get '/super_admin/app_config?config=whatsapp_embedded'
 
-      expect(field('ACCOUNT_EMAILS_PLAN_LIMITS').at_css('textarea').text).to include('"startups": 10')
+      expect(field('WHATSAPP_WEBHOOK_ROUTING_RULES').at_css('input')['value']).to eq('{"123456":["dev"]}')
       expect(response.body).not_to include('=&gt;')
     end
 
@@ -448,45 +454,7 @@ RSpec.describe 'Super admin settings pages', type: :request do
     end
   end
 
-  describe 'the instance settings page' do
-    before { get '/super_admin/settings' }
-
-    it 'shows the version of OneLink and the functions of the platform' do
-      expect(response).to have_http_status(:ok)
-      expect(text(page.at_css('h1'))).to eq('Настройки платформы')
-      expect(text(page.at_css('[data-testid="installation-block"] h2'))).to eq('Версия OneLink')
-      expect(text(page.at_css('[data-testid="onelink-version"]'))).to eq(SuperAdmin::BuildInfo.version)
-      expect(text(page.at_css('[data-testid="onelink-build"]'))).to eq(SuperAdmin::BuildInfo.build)
-      expect(page.css('[data-testid="features-block"] [data-feature]').size).to eq(SuperAdmin::FeaturesHelper.available_features.size)
-    end
-
-    it 'does not show the identifier the installation has at the hub of the base, nor a button to copy it' do
-      expect(response.body).not_to include(ChatwootHub.installation_identifier)
-      expect(response.body).not_to match(/Идентификатор установки|data-secret-text|secretField/)
-    end
-
-    it 'has no upgrade offer and no mention of editions to buy' do
-      expect(response.body).not_to match(/тариф выше|Enterprise|sales@|Перейти на|upgrade/i)
-      expect(page.css('a').map { |link| link['href'].to_s }).not_to include(a_string_matching(/chatwoot\.com/))
-    end
-
-    it 'links the functions that have a config page to it' do
-      link = page.at_css('[data-feature="captain"] a')
-
-      expect(link['href']).to eq('/super_admin/app_config?config=captain')
-      expect(text(link)).to eq('Настроить')
-    end
-
-    it 'marks a function that is not available as such, without a link' do
-      allow(ChatwootHub).to receive(:pricing_plan).and_return('community')
-      get '/super_admin/settings'
-
-      branding = page.at_css('[data-feature="custom_branding"]')
-      expect(branding['data-enabled']).to eq('false')
-      expect(text(branding)).to include('Недоступна')
-      expect(branding.at_css('a')).to be_nil
-    end
-  end
+  # The contents of the settings (what is on the page, the statuses, the version) is in config_pages_layout_spec.rb.
 
   describe 'the pages of integrations the platform does not use' do
     removed = %w[linear notion shopify saml internal]

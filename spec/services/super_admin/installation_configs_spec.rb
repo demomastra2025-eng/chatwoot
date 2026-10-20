@@ -39,6 +39,14 @@ RSpec.describe SuperAdmin::InstallationConfigs do
       expect(described_class.page_for('BRAND_NAME')).to eq('custom_branding')
     end
 
+    it 'is nil for a parameter its page does not draw as a control: one that does nothing, one shown as text' do
+      %w[ACCOUNT_EMAILS_PLAN_LIMITS GOOGLE_OAUTH_REDIRECT_URI WHATSAPP_WEBHOOK_FORWARD_TARGETS].each do |name|
+        expect(described_class.page_for(name)).to be_nil, name
+      end
+      expect(described_class.page_for('WHATSAPP_WEBHOOK_ROUTING_RULES')).to eq('whatsapp_embedded')
+      expect(described_class.page_for('HCAPTCHA_SERVER_KEY')).to eq('general')
+    end
+
     it 'is nil for a parameter no page edits' do
       expect(described_class.page_for('SOMETHING_ELSE')).to be_nil
     end

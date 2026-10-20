@@ -8,7 +8,8 @@
 #   credential itself: whoever has the URL can post), and any row the catalogue does not know (an unknown row can
 #   hold anything).
 # * Another value is shown as it is, cut to VALUE_LIMIT characters.
-# * Every parameter that a settings page edits knows that page (`page_for`), so the read-only list links to it.
+# * Every parameter that a settings page edits knows that page (`page_for`), so the read-only list links to it. A parameter
+#   that the page does not draw as a control (one that does nothing, one shown as text) knows none.
 module SuperAdmin::InstallationConfigs
   # The one thing a screen shows of a value: a kind and a text
   Display = Struct.new(:kind, :text, keyword_init: true)
@@ -58,7 +59,8 @@ module SuperAdmin::InstallationConfigs
         pages = pages.merge('custom_branding' => Enterprise::SuperAdmin::AppConfigsController::CUSTOM_BRANDING_CONFIG_KEYS)
       end
       pages.each_with_object({}) do |(page, names), result|
-        names.each { |name| result[name] ||= page }
+        # A setting the page does not draw (it does nothing, or it is shown as text) is not edited there: no link to it
+        (names - SuperAdmin::AppConfigLayout.not_editable(page)).each { |name| result[name] ||= page }
       end.freeze
     end
   end

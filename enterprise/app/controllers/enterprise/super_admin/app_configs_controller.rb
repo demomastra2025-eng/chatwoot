@@ -15,8 +15,12 @@ module Enterprise::SuperAdmin::AppConfigsController
 
   private
 
-  # The branding page exists next to the pages of the community controller
+  # The branding page exists next to the pages of the community controller, but only where the function is available
+  # (see features.yml). Without it the address is not found: it must never show another page (the general settings)
+  # under the title «Брендирование».
   def known_configs
+    return super if ChatwootHub.pricing_plan == 'community'
+
     super + %w[custom_branding]
   end
 

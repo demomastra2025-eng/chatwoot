@@ -41,6 +41,33 @@ module SuperAdmin::AppConfigHelper
     end
   end
 
+  # Whether the server has what the button «Войти через Google» needs (the keys of the application in its environment, see
+  # DashboardController#allowed_login_methods). Without them the switch of the page changes nothing.
+  def google_login_available?
+    ENV['GOOGLE_OAUTH_CLIENT_ID'].present? && ENV['GOOGLE_OAUTH_CALLBACK_URL'].present?
+  end
+
+  # The bot protection of the signup form: :on (both keys of hCaptcha are stored), :half (one of them) or :off.
+  # `configured` is the list of the secrets of the page that are set; the site key is not a secret, so it is looked up in `values`.
+  def signup_protection_state(values, configured)
+    site = values['HCAPTCHA_SITE_KEY'].present?
+    server = configured.include?('HCAPTCHA_SERVER_KEY')
+    return :on if site && server
+
+    site || server ? :half : :off
+  end
+
+  # The addresses the WhatsApp webhook is forwarded to, as [[«DEV», url], ...], from the stored JSON; none when it is
+  # not set or cannot be read (the page then says «Не задано»).
+  def whatsapp_forward_targets(value)
+    targets = value.is_a?(String) ? JSON.parse(value.presence || '{}') : value
+    return [] unless targets.is_a?(Hash)
+
+    targets.map { |destination, url| [t("super_admin.app_config.layout.developer.targets.#{destination}", default: destination.to_s), url.to_s] }
+  rescue JSON::ParserError
+    []
+  end
+
   # An <option> of a list of models. The text is the whole option for a list without a script; the data attributes are what the
   # searchable list draws (name, price, what the model can do, the company, the mark of a model the list does not offer).
   def ai_model_option(option, selected_value)

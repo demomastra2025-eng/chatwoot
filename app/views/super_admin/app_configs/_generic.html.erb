@@ -1,42 +1,42 @@
 <%#
 # A config page
 
-Every config page except the AI models one: the settings of the page as one
-list, title and hint on the left, the control on the right. Titles and hints are
-Russian (SuperAdmin::AppConfigLabels); a setting without a Russian text shows
-the one of installation_config.yml. Saving posts `app_config[<NAME>]` for all
-of them to `app_config#create`.
+Every config page except the AI models one. The settings the owner really sets are in view, in groups; the technical
+ones are folded under «Для разработчика»; a setting that does nothing is not drawn at all (its stored value is never
+touched: a setting that is not drawn is not sent). The layout of each page is SuperAdmin::AppConfigLayout. Titles and
+hints are Russian (SuperAdmin::AppConfigLabels). Saving posts `app_config[<NAME>]` for the controls of the page to
+`app_config#create`; a switch that changes the platform for every account asks first (see `_scripts`).
 
 ## Local variables (controller instance variables):
 
 - `@config`: the name of the page (general, facebook, ...).
-- `@allowed_configs`: the names of the settings of the page.
+- `@layout`: the `SuperAdmin::AppConfigLayout::Page` of the page.
+- `@addresses`: the addresses to copy into the console of a service (SuperAdmin::AppConfigAddresses).
+- `@guards`: key => `SuperAdmin::AppConfigGuards::Guard` of the switches that ask before they change.
 - `@app_config`: name => stored value (a secret is not in it: its state is `@configured_secrets`).
 - `@configured_secrets`: the secrets of the page that have a stored value.
 - `@installation_configs`: name => entry of installation_config.yml.
 %>
-<%= form_with url: super_admin_app_config_url(config: @config), method: :post, local: true, class: 'flex flex-col gap-5' do %>
-  <div class="admin-fields" data-testid="config-fields">
-    <% @allowed_configs.each do |key| %>
-      <%
-        definition = @installation_configs[key].to_h
-        kind = app_config_editor_kind(key, definition)
-        masked = kind == :secret && @configured_secrets.include?(key)
-        hint = app_config_hint(key, definition)
-      %>
-      <div class="admin-field" data-config="<%= key %>">
-        <div class="admin-field__label">
-          <label class="admin-field__title" for="app_config_<%= key %>"><%= app_config_title(key, definition) %></label>
-          <% if hint.present? %>
-            <p class="admin-field__hint"><%= hint %></p>
+<%= form_with url: super_admin_app_config_url(config: @config), method: :post, local: true, class: 'flex flex-col gap-5', data: { config_form: true } do %>
+  <div class="flex flex-col gap-6" data-testid="config-fields">
+    <% @layout.sections.each do |section| %>
+      <section class="flex flex-col gap-3" data-section="<%= section.id || 'main' %>">
+        <% if section.id %>
+          <div class="admin-block__head">
+            <h2 class="admin-block__title"><%= t("super_admin.app_config.layout.sections.#{@config}.#{section.id}.title") %></h2>
+            <p class="admin-block__hint"><%= t("super_admin.app_config.layout.sections.#{@config}.#{section.id}.hint") %></p>
+          </div>
+        <% end %>
+        <div class="admin-fields">
+          <% section.keys.each do |key| %>
+            <%= render 'config_field', key: key %>
           <% end %>
-          <p class="admin-field__key"><%= key %></p>
         </div>
-        <div class="admin-field__control">
-          <%= render 'editor', key: key, kind: kind, value: @app_config[key], masked: masked, options: definition['options'].to_h %>
-        </div>
-      </div>
+      </section>
     <% end %>
+
+    <%= render 'config_addresses' if @addresses.any? %>
+    <%= render 'config_developer' if @layout.developer_block? %>
   </div>
 
   <div class="form-actions">

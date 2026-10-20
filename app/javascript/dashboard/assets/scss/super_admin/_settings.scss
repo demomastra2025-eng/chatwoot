@@ -38,6 +38,32 @@
     @apply min-w-0 max-w-xl;
   }
 
+  // The one line that says what a switch does for every account (a switch that changes the platform for everyone).
+  .admin-field__effect {
+    @apply m-0 text-xs text-n-slate-12;
+    overflow-wrap: anywhere;
+  }
+
+  // A switch with the word of its state next to it. The word follows the switch (`:has` keeps it working without JS).
+  .admin-switch-line {
+    @apply inline-flex items-center gap-3 text-sm text-n-slate-12;
+  }
+
+  .admin-switch-line:has(.admin-switch__input:checked) .admin-switch-state--off,
+  .admin-switch-line:not(:has(.admin-switch__input:checked)) .admin-switch-state--on {
+    @apply hidden;
+  }
+
+  // An address to copy into the console of a service: the text on the left, the copy button on the right.
+  .admin-address {
+    @apply flex flex-wrap items-center justify-between gap-3 border-t border-n-weak py-3 first:border-t-0 first:pt-0 last:pb-0;
+  }
+
+  .admin-address__url {
+    @apply min-w-0 rounded-md bg-n-slate-3 px-2 py-1 font-mono text-xs text-n-slate-12;
+    overflow-wrap: anywhere;
+  }
+
   // A secret field: the reveal button sits inside the input.
   .admin-secret {
     @apply relative;

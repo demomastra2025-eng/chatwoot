@@ -1,0 +1,78 @@
+<%#
+# One setting of a config page
+
+The title and the hint on the left, the control on the right. A switch that changes the platform for every account also
+says in one line what it does (and asks before it is saved, see `_scripts`). The technical name of a setting is printed
+only under «Для разработчика» (`show_key`).
+
+## Local variables:
+
+- `key`: the name of the setting (FB_APP_ID).
+- `show_key` (optional): print the technical name under the hint.
+- `read_only` (optional): show the value as text (a setting whose only valid value is fixed).
+%>
+<%
+  show_key = local_assigns.fetch(:show_key, false)
+  read_only = local_assigns.fetch(:read_only, false)
+  definition = @installation_configs[key].to_h
+  kind = app_config_editor_kind(key, definition)
+  masked = kind == :secret && @configured_secrets.include?(key)
+  guard = @guards[key]
+  # The line that says what a guarded switch does for every account takes the place of its hint
+  hint = guard ? '' : app_config_hint(key, definition)
+  # The built-in version of an API is shown in the empty field (and an empty field is never saved)
+  version_default = definition['value'].to_s if key.end_with?('_API_VERSION')
+  server_ready = key != 'ENABLE_GOOGLE_OAUTH_LOGIN' || google_login_available?
+%>
+<div class="admin-field" data-config="<%= key %>" <%= tag.attributes(data: { readonly: true }) if read_only %>>
+  <div class="admin-field__label">
+    <% if read_only %>
+      <span class="admin-field__title"><%= app_config_title(key, definition) %></span>
+    <% else %>
+      <label class="admin-field__title" for="app_config_<%= key %>"><%= app_config_title(key, definition) %></label>
+    <% end %>
+    <% if hint.present? %>
+      <p class="admin-field__hint"><%= hint %></p>
+    <% end %>
+    <% if version_default.present? %>
+      <p class="admin-field__hint"><%= t('super_admin.app_config.layout.developer.version_default', version: version_default) %></p>
+    <% end %>
+    <% if guard %>
+      <p class="admin-field__effect" data-testid="switch-effect"><%= guard.effect %></p>
+    <% end %>
+    <% if show_key %>
+      <p class="admin-field__key"><%= key %></p>
+    <% end %>
+  </div>
+  <div class="admin-field__control">
+    <% if read_only %>
+      <% targets = whatsapp_forward_targets(@app_config[key]) %>
+      <% if targets.any? %>
+        <dl class="admin-kv" data-testid="forward-targets">
+          <% targets.each do |label, url| %>
+            <div class="admin-kv__row flex-col items-start gap-0.5">
+              <dt class="admin-kv__key"><%= label %></dt>
+              <dd class="admin-kv__value break-all text-start"><%= url %></dd>
+            </div>
+          <% end %>
+        </dl>
+      <% else %>
+        <p class="m-0 text-sm text-n-slate-11" data-testid="forward-targets"><%= t('super_admin.app_config.layout.developer.targets.not_set') %></p>
+      <% end %>
+      <p class="admin-field__hint mt-2"><%= t('super_admin.app_config.layout.developer.read_only') %></p>
+    <% else %>
+      <%= render 'editor', key: key, kind: kind, value: @app_config[key], masked: masked, options: definition['options'].to_h,
+                           guard: guard, disabled: !server_ready, placeholder: version_default %>
+      <% unless server_ready %>
+        <p class="admin-field__hint mt-2" data-testid="google-login-note"><%= t('super_admin.app_config.layout.google_login.server_not_ready') %></p>
+      <% end %>
+    <% end %>
+    <% if key == 'ENABLE_ACCOUNT_SIGNUP' %>
+      <% protection = signup_protection_state(@app_config, @configured_secrets) %>
+      <p class="m-0 mt-2 flex flex-wrap items-center gap-2 text-xs text-n-slate-11" data-testid="signup-protection" data-state="<%= protection %>">
+        <span class="admin-badge <%= { on: 'admin-badge--teal', half: 'admin-badge--amber', off: 'admin-badge--amber' }.fetch(protection) %>"><%= t('super_admin.app_config.layout.signup.protection_label') %></span>
+        <span><%= t("super_admin.app_config.layout.signup.protection_#{protection}") %></span>
+      </p>
+    <% end %>
+  </div>
+</div>

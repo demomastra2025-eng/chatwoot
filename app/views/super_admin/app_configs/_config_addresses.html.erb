@@ -1,0 +1,30 @@
+<%#
+# The addresses to copy into the console of a service
+
+The webhook and the return address the platform gives to Meta, Google, Microsoft or TikTok, built from the address of the
+platform (SuperAdmin::AppConfigAddresses). They are text with a copy button, never a field: the system does not read them
+from a setting.
+
+## Local variables (controller instance variables):
+
+- `@config`: the name of the page.
+- `@addresses`: the list of `SuperAdmin::AppConfigAddresses::Address`.
+%>
+<% scope = 'super_admin.app_config.addresses' %>
+<section class="admin-block" aria-labelledby="addresses-title" data-testid="addresses-block">
+  <div class="admin-block__head">
+    <h2 class="admin-block__title" id="addresses-title"><%= t("#{scope}.pages.#{@config}.title", default: t("#{scope}.title")) %></h2>
+    <p class="admin-block__hint"><%= t("#{scope}.pages.#{@config}.hint", default: '') %></p>
+  </div>
+  <div class="flex flex-col">
+    <% @addresses.each do |address| %>
+      <div class="admin-address" data-address="<%= address.kind %>">
+        <div class="flex min-w-0 flex-col gap-1">
+          <span class="text-sm font-medium text-n-slate-12"><%= t("#{scope}.#{address.kind}") %></span>
+          <code class="admin-address__url" data-testid="address-url"><%= address.url %></code>
+        </div>
+        <button type="button" class="button button--small button--secondary shrink-0" data-copy="<%= address.url %>" data-copied="<%= t("#{scope}.copied") %>"><%= t("#{scope}.copy") %></button>
+      </div>
+    <% end %>
+  </div>
+</section>

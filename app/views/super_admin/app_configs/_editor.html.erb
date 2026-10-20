@@ -13,18 +13,23 @@ The password field with the reveal button only shows what is typed into it.
 ## Local variables:
 
 - `key`: the name of the setting (CAPTAIN_DEFAULT_MODEL).
-- `kind`: :text, :textarea, :boolean, :secret, :select, :number or :prompts.
+- `kind`: :text, :textarea, :boolean (a switch), :secret, :select, :number or :prompts.
 - `value`: the stored value (not used for a secret: it is never printed).
 - `masked` (optional): true for a secret that is set.
 - `show_state` (optional, default true): draw the «задан» / «не задан» badge of a secret (the AI models card has its own).
 - `options` (optional): `{ "value" => "Label" }` of a select.
 - `placeholder` (optional): the hint inside an empty text field (the built-in value).
+- `guard` (optional): the `SuperAdmin::AppConfigGuards::Guard` of a switch that changes the platform for every account:
+  its question is asked in the browser before the page is saved (see `_scripts`).
+- `disabled` (optional): a switch that cannot be changed now. It is not sent at all, so the stored value stays.
 %>
 <%
   field_id = "app_config_#{key}"
   field_name = "app_config[#{key}]"
   masked = local_assigns.fetch(:masked, false)
   placeholder = local_assigns[:placeholder].presence
+  guard = local_assigns[:guard]
+  disabled = local_assigns.fetch(:disabled, false)
 %>
 
 <% if kind == :prompts %>
@@ -88,10 +93,18 @@ The password field with the reveal button only shows what is typed into it.
     </template>
   </div>
 <% elsif kind == :boolean %>
-  <%= select_tag field_name,
-                 options_for_select([[t('super_admin.app_config.yes'), 'true'], [t('super_admin.app_config.no'), 'false']],
-                                    (ActiveModel::Type::Boolean.new.cast(value) || false).to_s),
-                 id: field_id %>
+  <%# A switch. The hidden «false» before the checkbox sends an unchecked switch too; a disabled switch sends nothing. %>
+  <label class="admin-switch-line cursor-pointer font-normal" for="<%= field_id %>">
+    <span class="admin-switch">
+      <%= hidden_field_tag field_name, 'false', id: nil unless disabled %>
+      <%= check_box_tag field_name, 'true', ActiveModel::Type::Boolean.new.cast(value) || false, id: field_id, class: 'admin-switch__input',
+                        disabled: disabled, data: { confirm_on: guard&.confirm_on, confirm_off: guard&.confirm_off } %>
+      <span class="admin-switch__track" aria-hidden="true"></span>
+      <span class="admin-switch__thumb" aria-hidden="true"></span>
+    </span>
+    <span class="admin-switch-state admin-switch-state--on"><%= t('super_admin.app_config.switch_on') %></span>
+    <span class="admin-switch-state admin-switch-state--off"><%= t('super_admin.app_config.switch_off') %></span>
+  </label>
 <% elsif kind == :select %>
   <%= select_tag field_name, options_for_select(local_assigns.fetch(:options, {}).map { |option_value, label| [label, option_value] }, value), id: field_id %>
 <% elsif kind == :textarea %>

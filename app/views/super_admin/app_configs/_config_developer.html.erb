@@ -1,0 +1,33 @@
+<%#
+# «Для разработчика» of a config page
+
+Collapsed, at the bottom of the page. The technical settings of the page (versions of an API, tokens that a service checks,
+the routing of the WhatsApp webhooks between servers): the owner rarely or never changes them, and a typo here can stop a
+channel for every account. The controls are in the form, so they are saved with the rest; a setting whose only valid value
+is fixed is shown as text.
+
+## Local variables (controller instance variables):
+
+- `@layout`: the `SuperAdmin::AppConfigLayout::Page` of the page.
+%>
+<details class="admin-collapse" id="config-developer" data-testid="developer-block">
+  <summary>
+    <span class="flex min-w-0 flex-col gap-0.5">
+      <span class="text-heading-2 text-n-slate-12"><%= t('super_admin.app_config.layout.developer.title') %></span>
+      <span class="text-body-main text-n-slate-11"><%= t('super_admin.app_config.layout.developer.hint') %></span>
+    </span>
+    <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
+  </summary>
+
+  <div class="admin-collapse__body flex flex-col gap-4">
+    <div class="admin-notice admin-notice--amber"><%= t('super_admin.app_config.layout.developer.warning') %></div>
+    <div class="admin-fields">
+      <% @layout.developer.each do |key| %>
+        <%= render 'config_field', key: key, show_key: true %>
+      <% end %>
+      <% @layout.read_only.each do |key| %>
+        <%= render 'config_field', key: key, show_key: true, read_only: true %>
+      <% end %>
+    </div>
+  </div>
+</details>

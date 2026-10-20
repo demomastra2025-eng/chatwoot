@@ -1,8 +1,9 @@
 <%#
 # Scripts of the config pages
 
-The reveal button of a password field. It looks for its markup and does nothing
-when it is not there. (The scripts of the AI models page are a module of their own,
+The reveal button of a password field, the question before a switch that changes the platform for every
+account is saved, and the copy button of an address. Each looks for its markup and does nothing when it is
+not there. (The scripts of the AI models page are a module of their own,
 app/javascript/superadmin_pages/ai_models.)
 %>
 <style>
@@ -28,6 +29,50 @@ app/javascript/superadmin_pages/ai_models.)
           svg.classList.remove('eye-hide')
         } else {
           svg.classList.add('eye-hide')
+        }
+      });
+    });
+
+    // A switch that moved asks first: the question is the data-confirm-on / data-confirm-off text of the switch.
+    document.querySelectorAll('form[data-config-form]').forEach(form => {
+      form.addEventListener('submit', event => {
+        const questions = [];
+        form.querySelectorAll('input.admin-switch__input').forEach(box => {
+          if (box.checked === box.defaultChecked) return;
+          const text = box.checked ? box.dataset.confirmOn : box.dataset.confirmOff;
+          if (text) questions.push(text);
+        });
+        if (questions.length > 0 && !window.confirm(questions.join('\n\n'))) event.preventDefault();
+      });
+    });
+
+    // The copy button of an address: the clipboard of the browser; where it is not allowed (a page without https, or the
+    // browser refuses) a hidden field is selected and copied instead.
+    const copyWithField = text => {
+      const field = document.createElement('textarea');
+      field.value = text;
+      field.setAttribute('readonly', '');
+      field.style.position = 'fixed';
+      field.style.opacity = '0';
+      document.body.appendChild(field);
+      field.select();
+      let copied = false;
+      try { copied = document.execCommand('copy'); } catch (error) { copied = false; }
+      document.body.removeChild(field);
+      return copied;
+    };
+    document.querySelectorAll('[data-copy]').forEach(button => {
+      button.addEventListener('click', () => {
+        const text = button.dataset.copy;
+        const label = button.textContent;
+        const done = () => {
+          button.textContent = button.dataset.copied;
+          setTimeout(() => { button.textContent = label; }, 2000);
+        };
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(done, () => { if (copyWithField(text)) done(); });
+        } else if (copyWithField(text)) {
+          done();
         }
       });
     });
