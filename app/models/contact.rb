@@ -192,6 +192,21 @@ class Contact < ApplicationRecord
     last_name.present? || middle_name.present? || attrs['medelement_last_name'].present? || attrs['medelement_middle_name'].present?
   end
 
+  def self.strip_structured_name_suffix(value, *suffixes)
+    return if value.blank?
+
+    tokens = value.to_s.split
+    suffixes.compact_blank.each { |suffix| tokens = trim_trailing_name_tokens(tokens, suffix.to_s.split) }
+    tokens.join(' ').presence || value.to_s.squish.presence
+  end
+
+  def self.trim_trailing_name_tokens(tokens, suffix_tokens)
+    return tokens if tokens.length <= suffix_tokens.length
+    return tokens unless tokens.last(suffix_tokens.length).map(&:downcase) == suffix_tokens.map(&:downcase)
+
+    tokens.first(tokens.length - suffix_tokens.length)
+  end
+
   def push_event_data(contact_inbox: nil)
     data = {
       additional_attributes: additional_attributes,
@@ -199,6 +214,8 @@ class Contact < ApplicationRecord
       email: email,
       id: id,
       identifier: identifier,
+      last_name: last_name,
+      middle_name: middle_name,
       name: display_full_name,
       owner_id: owner_id,
       owner: owner&.push_event_data,

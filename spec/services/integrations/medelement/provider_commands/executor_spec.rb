@@ -543,6 +543,26 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       expect(client).not_to have_received(:create_patient)
     end
 
+    it 'allows creating a patient without a middlename (patronymic)' do
+      contact.update!(
+        name: 'Асет',
+        last_name: 'Хамзаулы',
+        middle_name: nil,
+        custom_attributes: { 'medelement_iin' => '940720300129' }
+      )
+      command.update!(execution_state: command.execution_state.merge('patient_creation_confirmed' => true))
+      allow(client).to receive(:search_patients_by_iin).with(iin: '940720300129').twice.and_return([])
+      allow(client).to receive(:create_patient).and_return('profile_code' => 'patient-no-middlename')
+      allow(client).to receive(:get_patient)
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'succeeded', provider_patient_code: 'patient-no-middlename')
+      expect(client).to have_received(:create_patient).with(
+        params: hash_including('name' => 'Асет', 'lastname' => 'Хамзаулы', 'middlename' => nil)
+      )
+    end
+
     it 'links a created patient by the returned code without reading it back' do
       contact.update!(
         name: 'Ivanov Ivan Ivanovich',

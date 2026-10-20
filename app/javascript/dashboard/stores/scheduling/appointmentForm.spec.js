@@ -1143,6 +1143,67 @@ describe('useSchedulingAppointmentFormStore', () => {
     });
   });
 
+  it('always includes first_name when middle_name or last_name changes and allows clearing middle_name', async () => {
+    SchedulingContactsAPI.update.mockResolvedValue({
+      data: {
+        payload: {
+          id: 17,
+          first_name: 'Асет',
+          last_name: 'Хамзаулы',
+          middle_name: 'Серикович',
+          full_name: 'Асет Хамзаулы Серикович',
+        },
+      },
+    });
+    const store = useSchedulingAppointmentFormStore();
+    store.openCreate();
+    store.beginInlineContactEdit({
+      id: 17,
+      firstName: 'Асет',
+      lastName: 'Хамзаулы',
+      middleName: '',
+      fullName: 'Асет Хамзаулы',
+      phone: '+77001112233',
+    });
+
+    await store.updateInlineContact(17, {
+      firstName: 'Асет',
+      lastName: 'Хамзаулы',
+      middleName: 'Серикович',
+      fullName: 'Асет Хамзаулы Серикович',
+      phone: '+77001112233',
+    });
+
+    expect(SchedulingContactsAPI.update).toHaveBeenCalledWith(17, {
+      first_name: 'Асет',
+      full_name: 'Асет Хамзаулы Серикович',
+      middle_name: 'Серикович',
+    });
+
+    store.beginInlineContactEdit({
+      id: 17,
+      firstName: 'Асет',
+      lastName: 'Хамзаулы',
+      middleName: 'Серикович',
+      fullName: 'Асет Хамзаулы Серикович',
+      phone: '+77001112233',
+    });
+
+    await store.updateInlineContact(17, {
+      firstName: 'Асет',
+      lastName: 'Хамзаулы',
+      middleName: '',
+      fullName: 'Асет Хамзаулы',
+      phone: '+77001112233',
+    });
+
+    expect(SchedulingContactsAPI.update).toHaveBeenLastCalledWith(17, {
+      first_name: 'Асет',
+      full_name: 'Асет Хамзаулы',
+      middle_name: '',
+    });
+  });
+
   // The grid shows appointments on the clinic clock (Asia/Almaty, UTC+5);
   // the drawer must show and save the same wall clock in any browser zone.
   // These expectations hold for any process TZ (run with UTC and Berlin).

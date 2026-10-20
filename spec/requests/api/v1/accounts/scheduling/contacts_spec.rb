@@ -393,4 +393,46 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
     )
     expect(contact.reload.custom_attributes).to eq(response_body.dig('payload', 'custom_attributes'))
   end
+
+  it 'preserves structured first_name when updating middle_name alongside full_name' do
+    contact = create(:contact, account: account, name: 'Асет', last_name: 'Хамзаулы', middle_name: nil)
+
+    patch "#{path}/#{contact.id}",
+          params: {
+            full_name: 'Асет Хамзаулы Серикович',
+            middle_name: 'Серикович'
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(contact.reload).to have_attributes(name: 'Асет', last_name: 'Хамзаулы', middle_name: 'Серикович')
+    expect(response_body['payload']).to include(
+      'first_name' => 'Асет',
+      'last_name' => 'Хамзаулы',
+      'middle_name' => 'Серикович',
+      'full_name' => 'Асет Хамзаулы Серикович'
+    )
+  end
+
+  it 'strips duplicated last_name from first_name and allows clearing middle_name' do
+    contact = create(:contact, account: account, name: 'Асет', last_name: 'Хамзаулы', middle_name: 'Серикович')
+
+    patch "#{path}/#{contact.id}",
+          params: {
+            first_name: 'Асет Хамзаулы',
+            full_name: 'Асет Хамзаулы',
+            middle_name: ''
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(contact.reload).to have_attributes(name: 'Асет', last_name: 'Хамзаулы', middle_name: nil)
+    expect(response_body['payload']).to include(
+      'first_name' => 'Асет',
+      'last_name' => 'Хамзаулы',
+      'middle_name' => nil
+    )
+  end
 end
