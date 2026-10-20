@@ -115,6 +115,7 @@ RSpec.describe Captain::ReplySuggestionService do
         create(
           :captain_assistant,
           account: account,
+          name: 'Координатор',
           active: true,
           config: {
             'tool_access' => {
@@ -129,17 +130,21 @@ RSpec.describe Captain::ReplySuggestionService do
 
       it 'delegates reply suggestion to Captain::Assistant::AgentRunnerService in read-only mode with follow_up_context' do
         runner_double = instance_double(Captain::Assistant::AgentRunnerService)
-        expect(Captain::Assistant::AgentRunnerService).to receive(:new).with(
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new).with(
           assistant: assistant,
           conversation: conversation,
-          source: 'reply_suggestion'
+          source: 'reply_suggestion',
+          callbacks: kind_of(Hash)
         ).and_return(runner_double)
 
-        expect(runner_double).to receive(:generate_response).with(
+        allow(runner_double).to receive(:generate_response).with(
           message_history: [{ role: 'user', content: 'I need help' }]
         ).and_return(
           {
             'response' => 'Available slots for Dr. Smith tomorrow are 10:00 and 14:30.',
+            'reasoning' => 'Checked schedule for Dr. Smith and found 2 open slots.',
+            'agent_id' => assistant.id,
+            'agent_display_name' => assistant.name,
             'usage' => { 'prompt_tokens' => 120, 'completion_tokens' => 30, 'total_tokens' => 150 }
           }
         )
@@ -148,9 +153,38 @@ RSpec.describe Captain::ReplySuggestionService do
 
         expect(result[:message]).to eq('Available slots for Dr. Smith tomorrow are 10:00 and 14:30.')
         expect(result[:usage]).to eq({ 'prompt_tokens' => 120, 'completion_tokens' => 30, 'total_tokens' => 150 })
-        expect(result.dig(:follow_up_context, :event_name)).to eq('reply_suggestion')
-        expect(result.dig(:follow_up_context, :last_response)).to eq('Available slots for Dr. Smith tomorrow are 10:00 and 14:30.')
+        expect(result.dig(:captain_trace, 'reasoning')).to eq('Checked schedule for Dr. Smith and found 2 open slots.')
+        expect(result.dig(:suggestion_meta, 'agent', 'name')).to eq('Координатор')
+        expect(result[:follow_up_context]).to include(
+          event_name: 'reply_suggestion',
+          last_response: 'Available slots for Dr. Smith tomorrow are 10:00 and 14:30.'
+        )
         expect(result.dig(:follow_up_context, :original_context)).to include('User: I need help')
+      end
+
+      it 'broadcasts live progress over ActionCable and records tool calls and council parts' do
+        specialist = create(:captain_assistant, account: account, name: 'ЛОР-специалист', active: true)
+        allow(ActionCable.server).to receive(:broadcast)
+        stub_council_runner_execution(assistant, specialist)
+
+        result = service.perform
+
+        expect(ActionCable.server).to have_received(:broadcast).with(
+          agent.pubsub_token,
+          hash_including(event: 'captain.reply_suggestion.progress', data: hash_including(account_id: account.id))
+        ).at_least(:once)
+        expect(result.dig(:captain_trace, 'reasoning')).to include('Найдено свободное время у врача Дани на 15:00.')
+
+        slot_call = result.dig(:captain_trace, 'tool_calls').find { |tc| tc['tool_name'] == 'search_available_slots' }
+        expect(slot_call['current_agent']).to eq('ЛОР-специалист')
+
+        part = result.dig(:suggestion_meta, 'council', 'parts').first
+        expect(part).to include(
+          'fragment' => 'Болит ухо, нужно к Дани',
+          'status' => 'answered',
+          'reasoning' => 'Найдено свободное время у врача Дани на 15:00.'
+        )
+        expect(result.dig(:suggestion_meta, 'working_agents').pluck('name')).to include('Координатор', 'ЛОР-специалист')
       end
 
       it 'builds read-only agent tools and ephemeral session without mutating conversation additional_attributes' do
@@ -181,6 +215,66 @@ RSpec.describe Captain::ReplySuggestionService do
         result = service.perform
 
         expect(result[:message]).to eq('Sure, I can help!')
+      end
+
+      def stub_council_runner_execution(entry_assistant, specialist)
+        runner_double = instance_double(Captain::Assistant::AgentRunnerService)
+        captured_callbacks = nil
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |**kwargs|
+          captured_callbacks = kwargs[:callbacks]
+          runner_double
+        end
+
+        allow(runner_double).to receive(:generate_response) do
+          simulate_council_callbacks(captured_callbacks, entry_assistant, specialist)
+          {
+            'response' => 'Ближайшее окно к Дани сегодня в 15:00.',
+            'agent_id' => entry_assistant.id,
+            'agent_display_name' => entry_assistant.name,
+            'council_contributors' => [
+              { 'id' => entry_assistant.id, 'name' => entry_assistant.name },
+              { 'id' => specialist.id, 'name' => specialist.name }
+            ]
+          }
+        end
+      end
+
+      def simulate_council_callbacks(callbacks, entry_assistant, specialist)
+        simulate_plan_callbacks(callbacks, entry_assistant, specialist)
+        simulate_specialist_callbacks(callbacks, specialist)
+      end
+
+      def simulate_plan_callbacks(callbacks, entry_assistant, specialist)
+        plan_ctx = OpenStruct.new(
+          context: {
+            state: { assistant_id: entry_assistant.id },
+            part_plan: {
+              mode: 'council',
+              parts: [{ 'id' => 1, 'executor_agent_id' => specialist.id, 'fragment' => 'Болит ухо, нужно к Дани', 'patient' => 'self' }]
+            }
+          }
+        )
+        callbacks[:on_agent_thinking].call(entry_assistant.agent_name, 'I need help', plan_ctx)
+        callbacks[:on_tool_start].call('plan_request', { mode: 'council' }, plan_ctx)
+        callbacks[:on_tool_complete].call('plan_request', { status: 'planned' }, plan_ctx)
+      end
+
+      def simulate_specialist_callbacks(callbacks, specialist)
+        part_ctx = OpenStruct.new(
+          context: {
+            part_run: true, active_part_id: 1, current_agent: specialist.agent_name, state: { assistant_id: specialist.id },
+            part_info: { id: 1, fragment: 'Болит ухо, нужно к Дани', patient: 'self' }
+          }
+        )
+        callbacks[:on_agent_thinking].call(specialist.agent_name, 'Болит ухо, нужно к Дани', part_ctx)
+        callbacks[:on_tool_start].call('search_available_slots', { resource: 'Дани' }, part_ctx)
+        callbacks[:on_tool_complete].call('search_available_slots', { slots: ['15:00'] }, part_ctx)
+        llm_json = {
+          status: 'answered', patient_language: 'ru', customer_text: 'Ближайшее окно к Дани сегодня в 15:00.',
+          questions: [], sources: ['search_available_slots'], suggested_agent: '', reasoning: 'Найдено свободное время у врача Дани на 15:00.'
+        }.to_json
+        llm_msg = instance_double(RubyLLM::Message, tool_call?: false, content: llm_json)
+        callbacks[:on_llm_call_complete].call(specialist.agent_name, 'gpt-5.4-mini', llm_msg, part_ctx)
       end
     end
   end

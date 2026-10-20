@@ -45,10 +45,9 @@ describe CsatSurveyListener do
     end
 
     context 'when conversation is resolved and CSAT is enabled' do
-      it 'triggers CSAT survey service' do
+      it 'does not trigger legacy CSAT survey service' do
         event = Events::Base.new(event_name, Time.zone.now, conversation: resolved_conversation)
-        expect(csat_service).to receive(:perform)
-        expect(CsatSurveyService).to receive(:new).with(conversation: resolved_conversation).and_return(csat_service)
+        expect(CsatSurveyService).not_to receive(:new)
 
         listener.conversation_status_changed(event)
       end

@@ -133,7 +133,6 @@ export default {
           <SingleIntegrationHooks
             :integration-id="integrationId"
             @add="openAddHookModal"
-            @edit="openAddHookModal"
             @delete="openDeletePopup"
           />
         </div>

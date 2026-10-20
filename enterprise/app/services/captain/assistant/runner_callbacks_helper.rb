@@ -4,8 +4,10 @@ module Captain::Assistant::RunnerCallbacksHelper
   def add_callbacks_to_runner(runner)
     runner = add_agent_thinking_callback(runner) if @callbacks[:on_agent_thinking]
     runner = add_tool_start_callback(runner) if @callbacks[:on_tool_start]
+    runner = add_tool_progress_callback(runner) if @callbacks[:on_tool_progress]
     runner = add_tool_complete_callback(runner) if @callbacks[:on_tool_complete]
     runner = add_agent_handoff_callback(runner) if @callbacks[:on_agent_handoff]
+    runner = add_llm_call_complete_callback(runner) if @callbacks[:on_llm_call_complete]
     runner
   end
 
@@ -35,6 +37,14 @@ module Captain::Assistant::RunnerCallbacksHelper
     end
   end
 
+  def add_tool_progress_callback(runner)
+    runner.on_tool_progress do |*args|
+      @callbacks[:on_tool_progress].call(*args)
+    rescue StandardError => e
+      Rails.logger.warn "[Captain] Callback error for tool_progress: #{e.message}"
+    end
+  end
+
   def add_tool_complete_callback(runner)
     runner.on_tool_complete do |*args|
       @callbacks[:on_tool_complete].call(*args)
@@ -48,6 +58,14 @@ module Captain::Assistant::RunnerCallbacksHelper
       @callbacks[:on_agent_handoff].call(*args)
     rescue StandardError => e
       Rails.logger.warn "[Captain] Callback error for agent_handoff: #{e.message}"
+    end
+  end
+
+  def add_llm_call_complete_callback(runner)
+    runner.on_llm_call_complete do |*args|
+      @callbacks[:on_llm_call_complete].call(*args)
+    rescue StandardError => e
+      Rails.logger.warn "[Captain] Callback error for llm_call_complete: #{e.message}"
     end
   end
 end

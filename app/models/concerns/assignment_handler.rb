@@ -10,7 +10,7 @@ module AssignmentHandler
   private
 
   def ensure_assignee_is_from_team
-    return unless team_id_changed?
+    return unless respond_to?(:team_id_changed?) && team_id_changed?
 
     validate_current_assignee_team
     self.assignee ||= find_assignee_from_team
@@ -32,7 +32,7 @@ module AssignmentHandler
 
     {
       ASSIGNEE_CHANGED => -> { saved_change_to_assignee_id? },
-      TEAM_CHANGED => -> { saved_change_to_team_id? }
+      TEAM_CHANGED => -> { respond_to?(:saved_change_to_team_id?) && saved_change_to_team_id? }
     }.each do |event, condition|
       condition.call && dispatcher_dispatch(event, previous_changes)
     end
@@ -48,7 +48,7 @@ module AssignmentHandler
     return if skip_activity_messages
 
     user_name = Current.user.name if Current.user.present?
-    create_team_change_activity(user_name) if saved_change_to_team_id?
+    create_team_change_activity(user_name) if respond_to?(:saved_change_to_team_id?) && saved_change_to_team_id?
     create_assignee_change_activity(user_name) if saved_change_to_assignee_id?
   end
 

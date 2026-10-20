@@ -152,6 +152,8 @@ class ActionCableConnector extends BaseActionCableConnector {
       'notification.created': this.onNotificationCreated,
       'notification.deleted': this.onNotificationDeleted,
       'notification.updated': this.onNotificationUpdated,
+      'captain.reply_suggestion.progress':
+        this.onCaptainReplySuggestionProgress,
       'conversation.read': this.onConversationRead,
       'conversation.updated': this.onConversationUpdated,
       'communication_thread.updated': this.onCommunicationThreadUpdated,
@@ -714,6 +716,11 @@ class ActionCableConnector extends BaseActionCableConnector {
 
   onNotificationUpdated = data => {
     this.app.$store.dispatch('notifications/updateNotification', data);
+  };
+
+  // eslint-disable-next-line class-methods-use-this
+  onCaptainReplySuggestionProgress = data => {
+    emitter.emit(BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_PROGRESS, data);
   };
 
   onCacheInvalidate = data => {

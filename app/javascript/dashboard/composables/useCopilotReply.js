@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue';
+import { ref, computed, getCurrentInstance, onBeforeUnmount } from 'vue';
 import { useCaptain } from 'dashboard/composables/useCaptain';
 import { useTrack } from 'dashboard/composables';
 import { CAPTAIN_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
@@ -6,6 +6,8 @@ import {
   CAPTAIN_ERROR_TYPES,
   CAPTAIN_GENERATION_FAILURE_REASONS,
 } from 'dashboard/composables/captain/constants';
+import { emitter } from 'shared/helpers/mitt';
+import { BUS_EVENTS } from 'shared/constants/busEvents';
 
 // Actions that map to REWRITE events (with operation attribute)
 const REWRITE_ACTIONS = [
@@ -76,13 +78,21 @@ function trackGenerationFailure({
  * @returns {Object} Copilot reply state and methods
  */
 export function useCopilotReply() {
-  const { processEvent, followUp, currentChat } = useCaptain();
+  const {
+    processEvent,
+    followUp,
+    currentChat,
+    conversationId: captainConversationId,
+  } = useCaptain();
 
   const showEditor = ref(false);
   const isGenerating = ref(false);
   const isContentReady = ref(false);
   const generatedContent = ref('');
   const followUpContext = ref(null);
+  const captainTrace = ref(null);
+  const suggestionMeta = ref(null);
+  const liveProgress = ref(null);
   const abortController = ref(null);
 
   // Tracking state
@@ -90,7 +100,9 @@ export function useCopilotReply() {
   const followUpCount = ref(0);
   const trackedConversationId = ref(null);
 
-  const conversationId = computed(() => currentChat.value?.id);
+  const conversationId = computed(
+    () => captainConversationId?.value ?? currentChat.value?.id
+  );
 
   const isActive = computed(() => showEditor.value || isGenerating.value);
   const isButtonDisabled = computed(
@@ -99,6 +111,34 @@ export function useCopilotReply() {
   const editorTransitionKey = computed(() =>
     isActive.value ? 'copilot' : 'rich'
   );
+
+  function handleProgressEvent(data) {
+    if (!isGenerating.value || currentAction.value !== 'reply_suggestion') {
+      return;
+    }
+    if (
+      data?.conversation_id &&
+      trackedConversationId.value &&
+      Number(data.conversation_id) !== Number(trackedConversationId.value) &&
+      Number(data.conversation_id) !== Number(currentChat.value?.id)
+    ) {
+      return;
+    }
+    liveProgress.value = data || null;
+  }
+
+  function stopProgressListener() {
+    emitter.off(
+      BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_PROGRESS,
+      handleProgressEvent
+    );
+  }
+
+  if (getCurrentInstance()) {
+    onBeforeUnmount(() => {
+      stopProgressListener();
+    });
+  }
 
   /**
    * Resets all copilot editor state and cancels any ongoing generation.
@@ -118,6 +158,7 @@ export function useCopilotReply() {
       );
     }
 
+    stopProgressListener();
     if (abortController.value) {
       abortController.value.abort();
       abortController.value = null;
@@ -127,6 +168,9 @@ export function useCopilotReply() {
     isContentReady.value = false;
     generatedContent.value = '';
     followUpContext.value = null;
+    captainTrace.value = null;
+    suggestionMeta.value = null;
+    liveProgress.value = null;
     currentAction.value = null;
     followUpCount.value = 0;
     trackedConversationId.value = null;
@@ -162,10 +206,19 @@ export function useCopilotReply() {
     followUpCount.value = 0;
     trackedConversationId.value = conversationId.value;
 
+    if (action === 'reply_suggestion') {
+      emitter.on(
+        BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_PROGRESS,
+        handleProgressEvent
+      );
+    }
+
     try {
       const {
         message: content,
         followUpContext: newContext,
+        captainTrace: trace,
+        suggestionMeta: meta,
         errorType,
       } = await processEvent(action, data, {
         signal: requestController.signal,
@@ -181,6 +234,8 @@ export function useCopilotReply() {
 
       generatedContent.value = content;
       followUpContext.value = newContext;
+      captainTrace.value = trace || liveProgress.value?.captain_trace || null;
+      suggestionMeta.value = meta || null;
       if (content) {
         showEditor.value = true;
         // Track "Used" event on successful generation
@@ -221,6 +276,7 @@ export function useCopilotReply() {
       });
       isGenerating.value = false;
     } finally {
+      stopProgressListener();
       if (abortController.value === requestController) {
         abortController.value = null;
       }
@@ -331,10 +387,14 @@ export function useCopilotReply() {
       );
     }
 
+    stopProgressListener();
     // Reset state without tracking dismiss
     showEditor.value = false;
     generatedContent.value = '';
     followUpContext.value = null;
+    captainTrace.value = null;
+    suggestionMeta.value = null;
+    liveProgress.value = null;
     currentAction.value = null;
     followUpCount.value = 0;
     trackedConversationId.value = null;
@@ -348,6 +408,9 @@ export function useCopilotReply() {
     isContentReady,
     generatedContent,
     followUpContext,
+    captainTrace,
+    suggestionMeta,
+    liveProgress,
 
     isActive,
     isButtonDisabled,

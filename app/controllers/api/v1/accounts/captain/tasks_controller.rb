@@ -62,6 +62,8 @@ class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseContr
     else
       response_data = { message: result[:message] }
       response_data[:follow_up_context] = result[:follow_up_context] if result[:follow_up_context]
+      response_data[:captain_trace] = result[:captain_trace] if result[:captain_trace].present?
+      response_data[:suggestion_meta] = result[:suggestion_meta] if result[:suggestion_meta].present?
       render json: response_data
     end
   end

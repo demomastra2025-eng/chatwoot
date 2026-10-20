@@ -195,7 +195,7 @@ export function useCaptain() {
    * Gets a reply suggestion for the current conversation.
    * @param {Object} [options={}] - Additional options.
    * @param {AbortSignal} [options.signal] - AbortSignal to cancel the request.
-   * @returns {Promise<{message: string, followUpContext?: Object}>} The reply suggestion and optional follow-up context.
+   * @returns {Promise<{message: string, followUpContext?: Object, captainTrace?: Object|null, suggestionMeta?: Object|null}>} The reply suggestion, optional follow-up context, and work trace metadata.
    */
   const getReplySuggestion = async (options = {}) => {
     try {
@@ -204,9 +204,19 @@ export function useCaptain() {
         options.signal
       );
       const {
-        data: { message: generatedMessage, follow_up_context: followUpContext },
+        data: {
+          message: generatedMessage,
+          follow_up_context: followUpContext,
+          captain_trace: captainTrace,
+          suggestion_meta: suggestionMeta,
+        },
       } = result;
-      return { message: generatedMessage, followUpContext };
+      return {
+        message: generatedMessage,
+        followUpContext,
+        captainTrace: captainTrace || null,
+        suggestionMeta: suggestionMeta || null,
+      };
     } catch (error) {
       handleAPIError(error);
       return { message: '', errorType: getErrorType(error) };
@@ -277,6 +287,7 @@ export function useCaptain() {
     // Conversation context
     draftMessage,
     currentChat,
+    conversationId,
 
     // Task methods
     rewriteContent,

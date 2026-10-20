@@ -507,6 +507,25 @@ describe('buildCaptainToolTraceMessages', () => {
     expect(message.output).toBe('Найдено: 1');
   });
 
+  it('preserves current_agent as agentName on grouped tool messages', () => {
+    const [{ message }] = buildCaptainToolTraceMessages({
+      captain_trace: {
+        tool_calls: [
+          {
+            tool_call_id: 'call-agent-1',
+            tool_name: 'search_doctors',
+            status: 'completed',
+            current_agent: 'Дана (Педиатр)',
+            input: { query: 'Дани' },
+            output: { returned_count: 1 },
+          },
+        ],
+      },
+    });
+
+    expect(message.agentName).toBe('Дана (Педиатр)');
+  });
+
   it('returns an empty array when trace data is missing', () => {
     expect(buildCaptainToolTraceMessages({})).toEqual([]);
     expect(buildCaptainToolTraceMessages(null)).toEqual([]);

@@ -1,10 +1,7 @@
 class CsatSurveyListener < BaseListener
-  def conversation_status_changed(event)
-    conversation = extract_conversation_and_account(event)[0]
-
-    return unless conversation.resolved?
-
-    CsatSurveyService.new(conversation: conversation).perform
+  def conversation_status_changed(_event)
+    # Legacy per-channel CSAT survey on conversation resolve is disabled.
+    nil
   end
 
   def message_updated(event)

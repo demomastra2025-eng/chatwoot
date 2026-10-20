@@ -11,8 +11,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Tasks', type: :request do
     JSON.parse(response.body, symbolize_names: true)
   end
 
-  def stub_task_service(service_class)
-    service = instance_double(service_class, perform: { message: 'AI result' })
+  def stub_task_service(service_class, payload = { message: 'AI result' })
+    service = instance_double(service_class, perform: payload)
     allow(service_class).to receive(:new).and_return(service)
     service
   end
@@ -56,6 +56,29 @@ RSpec.describe 'Api::V1::Accounts::Captain::Tasks', type: :request do
         expect(json_response[:error]).to eq(I18n.t('captain.text_improvement_disabled', locale: account.locale))
         expect(service_class).not_to have_received(:new)
       end
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/captain/tasks/reply_suggestion trace & meta' do
+    it 'includes captain_trace and suggestion_meta when present in result' do
+      stub_task_service(
+        Captain::ReplySuggestionService,
+        {
+          message: 'Suggested reply',
+          captain_trace: { 'version' => 1, 'reasoning' => 'Checked slots', 'tool_calls' => [{ 'tool_name' => 'search_available_slots' }] },
+          suggestion_meta: { 'agent' => { 'id' => 10, 'name' => 'Администратор' } }
+        }
+      )
+
+      post "#{tasks_path}/reply_suggestion",
+           params: { conversation_display_id: 1 },
+           headers: agent.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(json_response[:message]).to eq('Suggested reply')
+      expect(json_response.dig(:captain_trace, :reasoning)).to eq('Checked slots')
+      expect(json_response.dig(:suggestion_meta, :agent, :name)).to eq('Администратор')
     end
   end
 

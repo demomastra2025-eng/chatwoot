@@ -20,10 +20,14 @@ module AutoAssignmentHandler
       AutoAssignment::AssignmentJob.enqueue(inbox_id: inbox.id)
     else
       # Use legacy assignment system
-      # If conversation has a team, only consider team members for assignment
-      allowed_agent_ids = team_id.present? ? team_member_ids_with_capacity : inbox.member_ids_with_assignment_capacity
-      AutoAssignment::AgentAssignmentService.new(conversation: self, allowed_agent_ids: allowed_agent_ids).perform
+      AutoAssignment::AgentAssignmentService.new(conversation: self, allowed_agent_ids: legacy_allowed_agent_ids).perform
     end
+  end
+
+  def legacy_allowed_agent_ids
+    return team_member_ids_with_capacity if respond_to?(:team_id) && team_id.present?
+
+    inbox.member_ids_with_assignment_capacity
   end
 
   def conversation_status_changed_to_resolved_or_snoozed?
@@ -41,7 +45,7 @@ module AutoAssignmentHandler
   end
 
   def team_member_ids_with_capacity
-    return [] if team.blank? || team.allow_auto_assign.blank?
+    return [] if !respond_to?(:team) || team.blank? || team.allow_auto_assign.blank?
 
     inbox.member_ids_with_assignment_capacity & team.members.ids
   end

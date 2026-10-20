@@ -106,6 +106,7 @@ watch(
         :status="copilotMessage.message.status"
         :input="copilotMessage.message.input"
         :output="copilotMessage.message.output"
+        :agent-name="copilotMessage.message.agentName"
       />
     </div>
   </div>

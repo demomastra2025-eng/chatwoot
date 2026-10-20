@@ -1055,7 +1055,7 @@ onBeforeUnmount(() => {
           :label="
             isEditingInline
               ? $t('INTEGRATION_APPS.ADD.FORM.CANCEL')
-              : $t('INTEGRATION_APPS.EDIT.TITLE')
+              : $t('INTEGRATION_APPS.CONFIGURE')
           "
           @click="isEditingInline = !isEditingInline"
         />

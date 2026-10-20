@@ -357,6 +357,15 @@ const canonicalToolCallContent = toolCall => {
   return `Running ${toolName}`;
 };
 
+const stepAgentName = step =>
+  String(
+    step.agentName ||
+      step.agent_name ||
+      step.currentAgent ||
+      step.current_agent ||
+      ''
+  ).trim();
+
 const normalizeCanonicalToolCall = toolCall => ({
   id: toolCall.id || toolCall.tool_call_id || toolCall.toolCallId,
   content: toolCall.content || canonicalToolCallContent(toolCall),
@@ -367,20 +376,26 @@ const normalizeCanonicalToolCall = toolCall => ({
   output: toolCall.output,
   error: toolCall.error,
   tool_call_id: toolCall.tool_call_id || toolCall.toolCallId,
+  current_agent: stepAgentName(toolCall),
 });
 
-const createTraceGroup = (step, index) => ({
-  id: step.id || `${normalizedStepToolName(step)}-${index}`,
-  message: {
-    content: step.content,
-    toolName: normalizedStepToolName(step),
-    status: stepStatus(step),
-  },
-});
+const createTraceGroup = (step, index) => {
+  const agentName = stepAgentName(step);
+  return {
+    id: step.id || `${normalizedStepToolName(step)}-${index}`,
+    message: {
+      content: step.content,
+      toolName: normalizedStepToolName(step),
+      status: stepStatus(step),
+      ...(agentName ? { agentName } : {}),
+    },
+  };
+};
 
 const mergeStepIntoTraceGroup = (group, step) => {
   const input = formatToolTraceDetail(stepInput(step));
   const output = formatToolTraceDetail(stepOutput(step));
+  const agentName = stepAgentName(step);
 
   group.message.content = step.content || group.message.content;
   group.message.status = stepStatus(step);
@@ -391,6 +406,10 @@ const mergeStepIntoTraceGroup = (group, step) => {
 
   if (output) {
     group.message.output = output;
+  }
+
+  if (agentName && !group.message.agentName) {
+    group.message.agentName = agentName;
   }
 
   return group;

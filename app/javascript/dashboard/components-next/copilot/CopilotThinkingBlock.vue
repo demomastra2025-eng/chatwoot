@@ -30,6 +30,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  agentName: {
+    type: String,
+    default: '',
+  },
 });
 
 const { t } = useI18n();
@@ -143,6 +147,13 @@ const copyTracePanel = async value => {
           class="flex flex-wrap items-center gap-1.5 text-xs text-n-slate-12"
         >
           <span class="font-medium break-words">{{ displayTitle }}</span>
+          <span
+            v-if="agentName"
+            class="inline-flex items-center gap-1 rounded-full bg-n-alpha-2 px-1.5 py-0.5 text-[10px] font-medium leading-3 text-n-slate-11"
+            data-test="tool-trace-agent-name"
+          >
+            {{ agentName }}
+          </span>
           <span
             v-if="statusLabel"
             class="rounded-full border px-1.5 py-0.5 text-[10px] font-medium leading-3"
