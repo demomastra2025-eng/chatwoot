@@ -870,17 +870,12 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_20_051000) do
     t.bigint "source_node_id", null: false
     t.bigint "target_node_id", null: false
     t.string "relation_type", null: false
-    t.bigint "evidence_response_id"
-    t.bigint "evidence_document_id"
-    t.float "weight", default: 1.0, null: false
     t.jsonb "properties", default: {}, null: false
+    t.bigint "evidence_response_id"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["account_id", "relation_type"], name: "idx_captain_knowledge_edges_on_account_and_type"
-    t.index ["account_id", "source_node_id", "target_node_id", "relation_type", "evidence_response_id"], name: "idx_captain_knowledge_edges_unique_rel", unique: true
-    t.index ["account_id"], name: "index_captain_knowledge_edges_on_account_id"
-    t.index ["evidence_document_id"], name: "index_captain_knowledge_edges_on_evidence_document_id"
-    t.index ["evidence_response_id"], name: "index_captain_knowledge_edges_on_evidence_response_id"
+    t.index ["account_id", "relation_type"], name: "idx_captain_kg_edges_account_relation"
+    t.index ["account_id", "source_node_id", "relation_type", "target_node_id"], name: "idx_captain_kg_edges_unique_triplet", unique: true
     t.index ["source_node_id"], name: "index_captain_knowledge_edges_on_source_node_id"
     t.index ["target_node_id"], name: "index_captain_knowledge_edges_on_target_node_id"
   end
@@ -905,20 +900,19 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_20_051000) do
     t.string "node_type", null: false
     t.string "canonical_name", null: false
     t.string "normalized_key", null: false
-    t.jsonb "aliases", default: [], null: false
+    t.string "aliases", default: [], null: false, array: true
     t.string "search_stems", default: [], null: false, array: true
     t.jsonb "attributes_data", default: {}, null: false
-    t.jsonb "metadata", default: {}, null: false
+    t.bigint "evidence_response_ids", default: [], null: false, array: true
     t.string "source_type"
     t.bigint "source_id"
+    t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["account_id", "assistant_id", "node_type", "normalized_key"], name: "idx_captain_knowledge_nodes_unique_key", unique: true
-    t.index ["account_id", "node_type"], name: "idx_captain_knowledge_nodes_on_account_and_type"
-    t.index ["account_id"], name: "index_captain_knowledge_nodes_on_account_id"
-    t.index ["assistant_id"], name: "index_captain_knowledge_nodes_on_assistant_id"
-    t.index ["search_stems"], name: "idx_captain_knowledge_nodes_on_search_stems", using: :gin
-    t.index ["source_type", "source_id"], name: "idx_captain_knowledge_nodes_on_source"
+    t.index ["account_id", "assistant_id", "visibility"], name: "idx_captain_kg_nodes_account_visibility"
+    t.index ["account_id", "node_type", "normalized_key"], name: "idx_captain_kg_nodes_account_type_norm_key", unique: true
+    t.index ["attributes_data"], name: "idx_captain_kg_nodes_attributes_gin", using: :gin
+    t.index ["search_stems"], name: "idx_captain_kg_nodes_search_stems_gin", using: :gin
   end
 
   create_table "captain_mcp_servers", force: :cascade do |t|
@@ -4109,15 +4103,12 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_20_051000) do
   add_foreign_key "captain_follow_up_attempts", "messages", column: "anchor_message_id", on_delete: :cascade
   add_foreign_key "captain_knowledge_answer_cache_entries", "accounts", on_delete: :cascade
   add_foreign_key "captain_knowledge_answer_cache_entries", "captain_assistants", column: "assistant_id", on_delete: :nullify
-  add_foreign_key "captain_knowledge_edges", "accounts", on_delete: :cascade
-  add_foreign_key "captain_knowledge_edges", "captain_assistant_responses", column: "evidence_response_id", on_delete: :cascade
-  add_foreign_key "captain_knowledge_edges", "captain_documents", column: "evidence_document_id", on_delete: :cascade
-  add_foreign_key "captain_knowledge_edges", "captain_knowledge_nodes", column: "source_node_id", on_delete: :cascade
-  add_foreign_key "captain_knowledge_edges", "captain_knowledge_nodes", column: "target_node_id", on_delete: :cascade
+  add_foreign_key "captain_knowledge_edges", "accounts"
+  add_foreign_key "captain_knowledge_edges", "captain_knowledge_nodes", column: "source_node_id"
+  add_foreign_key "captain_knowledge_edges", "captain_knowledge_nodes", column: "target_node_id"
   add_foreign_key "captain_knowledge_grants", "accounts", on_delete: :cascade
   add_foreign_key "captain_knowledge_grants", "captain_assistants", column: "assistant_id", on_delete: :cascade
-  add_foreign_key "captain_knowledge_nodes", "accounts", on_delete: :cascade
-  add_foreign_key "captain_knowledge_nodes", "captain_assistants", column: "assistant_id", on_delete: :cascade
+  add_foreign_key "captain_knowledge_nodes", "accounts"
   add_foreign_key "captain_mcp_servers", "accounts"
   add_foreign_key "captain_skills", "accounts"
   add_foreign_key "communication_thread_conversations", "accounts"
