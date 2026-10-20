@@ -80,14 +80,44 @@ const camelCaseMessageCache = new WeakMap();
 
 const toCamelCaseMessage = rawMessage => {
   if (!rawMessage || typeof rawMessage !== 'object') return rawMessage;
+  const contentAttrs = rawMessage.content_attributes;
+  const contentAttrsData = contentAttrs?.data;
+  const contentAttrsStatus = contentAttrsData?.status;
+  const contentAttrsTranslations = contentAttrs?.translations;
+  const attachmentsLen = Array.isArray(rawMessage.attachments)
+    ? rawMessage.attachments.length
+    : 0;
+
   const cached = camelCaseMessageCache.get(rawMessage);
-  if (cached) return cached;
+  if (
+    cached &&
+    cached.status === rawMessage.status &&
+    cached.content === rawMessage.content &&
+    cached.updatedAt === rawMessage.updated_at &&
+    cached.contentAttrs === contentAttrs &&
+    cached.contentAttrsData === contentAttrsData &&
+    cached.contentAttrsStatus === contentAttrsStatus &&
+    cached.contentAttrsTranslations === contentAttrsTranslations &&
+    cached.attachmentsLen === attachmentsLen
+  ) {
+    return cached.transformed;
+  }
 
   const transformed = useCamelCase(rawMessage, {
     deep: true,
     stopPaths: ['content_attributes.translations'],
   });
-  camelCaseMessageCache.set(rawMessage, transformed);
+  camelCaseMessageCache.set(rawMessage, {
+    transformed,
+    status: rawMessage.status,
+    content: rawMessage.content,
+    updatedAt: rawMessage.updated_at,
+    contentAttrs,
+    contentAttrsData,
+    contentAttrsStatus,
+    contentAttrsTranslations,
+    attachmentsLen,
+  });
   return transformed;
 };
 

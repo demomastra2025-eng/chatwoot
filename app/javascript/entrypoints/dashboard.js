@@ -11,6 +11,7 @@ import FloatingVue from 'floating-vue';
 import WootUiKit from 'dashboard/components';
 import App from 'dashboard/App.vue';
 import i18nMessages, {
+  loadLocaleMessages,
   registerDashboardI18n,
   setDashboardLocale,
 } from 'dashboard/i18n';
@@ -44,7 +45,7 @@ import 'floating-vue/dist/style.css';
 const i18n = createI18n({
   legacy: false, // https://github.com/intlify/vue-i18n/issues/1902
   locale: 'ru',
-  fallbackLocale: 'ru',
+  fallbackLocale: 'en',
   messages: i18nMessages,
 });
 

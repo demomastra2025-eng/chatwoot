@@ -152,9 +152,12 @@ onMounted(() => {
     store.dispatch('attributes/get', 0);
   }
   // Load integrations to ensure linear integration state is available
+  const hasLinearIntegrationLoaded = appIntegrations.value?.some(
+    integration => integration?.id === 'linear'
+  );
   if (
     isLinearFeatureEnabled.value &&
-    !appIntegrations.value?.length &&
+    !hasLinearIntegrationLoaded &&
     !integrationsUIFlags.value?.isFetching
   ) {
     store.dispatch('integrations/get', 'linear');

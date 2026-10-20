@@ -413,5 +413,12 @@ describe('MessageList', () => {
 
     const secondPassMessageRef = wrapper.vm.$.setupState.allMessages[0];
     expect(secondPassMessageRef).toBe(firstPassMessageRef);
+
+    // In-place mutation (e.g. UPDATE_MESSAGE_CALL_STATUS) must invalidate cache for mutated message
+    msg1.content_attributes = { data: { status: 'completed' } };
+    await wrapper.setProps({ messages: [msg1, msg2] });
+    const thirdPassMessageRef = wrapper.vm.$.setupState.allMessages[0];
+    expect(thirdPassMessageRef).not.toBe(firstPassMessageRef);
+    expect(thirdPassMessageRef.contentAttributes.data.status).toBe('completed');
   });
 });
