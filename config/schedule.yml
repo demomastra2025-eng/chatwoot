@@ -263,3 +263,10 @@ accounts_expire_trials_job:
   cron: '5 * * * *'
   class: 'Accounts::ExpireTrialsJob'
   queue: housekeeping
+
+# Daily at 04:00 UTC (09:00 Asia/Almaty): moves active contracts expiring within 30 days to renewal stage and creates manager tasks.
+crm_contract_renewal_sweep_job:
+  cron: '0 4 * * *'
+  class: 'Crm::Contracts::RenewalSweepJob'
+  queue: scheduled_jobs
+  active_job: true
