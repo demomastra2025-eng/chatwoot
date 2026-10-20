@@ -95,6 +95,12 @@ RSpec.describe 'Super Admin render smoke', type: :request do
         it 'opens the new page with its form' do
           get "/super_admin/#{resource}/new"
 
+          # A new account is a new client: the old address leads to the page that creates the account with everything else.
+          if resource == :accounts
+            expect(response).to redirect_to('/super_admin/clients/new')
+            get '/super_admin/clients/new'
+          end
+
           expect_shell("/super_admin/#{resource}/new")
           expect(page.at_css(submit_button)).to be_present
         end
@@ -283,7 +289,7 @@ RSpec.describe 'Super Admin render smoke', type: :request do
         prepare.call(account)
 
         card = "/super_admin/accounts/#{account.id}"
-        ['/super_admin/accounts', card, "#{card}/edit", '/super_admin/accounts/new'].each do |path|
+        ['/super_admin/accounts', card, "#{card}/edit", '/super_admin/clients/new'].each do |path|
           get path
           expect_shell(path)
         end

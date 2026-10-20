@@ -314,8 +314,8 @@ RSpec.describe 'Super Admin account organizations', type: :request do
         expect(select.at_css('option[selected]')['value']).to eq('')
       end
 
-      it 'is not on the form of a new account' do
-        get '/super_admin/accounts/new'
+      it 'is not on the form of a new account (the organization of a new client has its own block)' do
+        get '/super_admin/clients/new'
 
         expect(response).to have_http_status(:ok)
         expect(page.at_css('select[name="account[organization_id]"]')).to be_nil

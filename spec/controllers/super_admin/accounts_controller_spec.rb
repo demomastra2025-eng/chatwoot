@@ -52,13 +52,15 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
   end
 
   describe 'GET /super_admin/accounts/new' do
-    it 'renders the new workspace form for a super admin' do
+    it 'leads to «Новый клиент», the page that creates the account together with its plan and first administrator' do
       sign_in(super_admin, scope: :super_admin)
 
       get '/super_admin/accounts/new'
 
+      expect(response).to redirect_to('/super_admin/clients/new')
+      follow_redirect!
       expect(response).to have_http_status(:success)
-      expect(response.body).to include('Создать аккаунт', 'Всегда включена')
+      expect(response.body).to include('Создать клиента', 'Всегда включена')
       expect(response.body).not_to include('Outbound emails today')
     end
   end

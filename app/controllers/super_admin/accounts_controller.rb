@@ -65,7 +65,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   # top of it.
   def create
     modules = requested_plan_modules
-    return redirect_to(new_super_admin_account_path, alert: I18n.t('super_admin.accounts.flashes.plan_unknown_module')) if modules.nil?
+    return redirect_to(new_super_admin_client_path, alert: I18n.t('super_admin.accounts.flashes.plan_unknown_module')) if modules.nil?
 
     super do |account|
       yield(account) if block_given?

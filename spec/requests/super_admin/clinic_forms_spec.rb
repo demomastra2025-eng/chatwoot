@@ -15,51 +15,19 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
   end
 
   describe 'the new clinic form' do
-    before { get '/super_admin/accounts/new' }
+    it 'is now «Новый клиент»: the old address leads to it' do
+      get '/super_admin/accounts/new'
 
-    it 'is a short form with a Russian title' do
-      expect(response).to have_http_status(:ok)
+      expect(response).to redirect_to('/super_admin/clients/new')
+    end
+
+    it 'is drawn by the old template only for a form that was posted with a problem, and points to the new page' do
+      post '/super_admin/accounts', params: { account: { name: '', locale: 'ru' } }
+
+      expect(response).to have_http_status(:unprocessable_content)
       expect(text(page.at_css('h1'))).to eq('Новый аккаунт')
-      expect(page.at_css('input[type="submit"]')['value']).to eq('Создать аккаунт')
+      expect(page.at_css('[data-testid="moved-notice"] a')['href']).to eq('/super_admin/clients/new')
       expect(response.body).not_to include('translation missing')
-    end
-
-    it 'asks for a name, and says the language is Russian as text: no list of languages, nothing sent for it' do
-      expect(text(page.at_css('label[for="account_name"]'))).to eq('Название аккаунта')
-      expect(page.at_css('input[name="account[name]"]')).to be_present
-      expect(text(page.at_css('[data-testid="account-language"]'))).to eq('Язык: русский')
-      expect(page.at_css('select[name="account[locale]"]')).to be_nil
-      expect(page.css('[name="account[locale]"]')).to be_empty
-      expect(response.body).not_to include('Қазақша', 'English')
-    end
-
-    it 'explains that the platform works in Russian only for now' do
-      expect(response.body).to include('Платформа пока работает только на русском, поэтому язык аккаунта не выбирается.')
-    end
-
-    it 'does not ask for limits, the status or single functions' do
-      expect(page.at_css('select[name="account[status]"]')).to be_nil
-      expect(page.css('input[name^="account[limits]"]')).to be_empty
-      expect(page.css('input[name^="enabled_features"]')).to be_empty
-      expect(response.body).not_to include('Outbound emails')
-    end
-
-    it 'shows the base as always included and the modules as unchecked checkboxes' do
-      plan = page.at_css('[data-testid="new-plan-block"]')
-
-      expect(text(plan.at_css('[data-plan-card="base"]'))).to include('База', 'Всегда включена')
-      boxes = plan.css('input[type="checkbox"][name="modules[]"]')
-      expect(boxes.map { |box| box['value'] }).to eq(%w[ai_agents broadcasts quality extensions])
-      expect(boxes.map { |box| box['checked'] }).to all(be_nil)
-    end
-
-    it 'offers an optional trial and says what it includes' do
-      trial = page.at_css('[data-testid="new-trial-block"]')
-      checkbox = trial.at_css('input[type="checkbox"][name="start_trial"]')
-
-      expect(checkbox).to be_present
-      expect(checkbox['checked']).to be_nil
-      expect(text(trial)).to include('Запустить пробный период на 3 дн.', 'ИИ-агенты')
     end
   end
 
@@ -123,7 +91,7 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
     end
 
     it 'says on the form what happens to the limits when the trial ends' do
-      get '/super_admin/accounts/new'
+      get '/super_admin/clients/new'
 
       expect(text(page.at_css('[data-testid="new-trial-block"]'))).to include('лимиты аккаунта останутся как есть')
     end

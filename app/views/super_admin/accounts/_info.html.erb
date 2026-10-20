@@ -12,7 +12,7 @@ creation date and when the plan was applied. All times are Astana time.
 <%
   rows = [
     [t('super_admin.clinic_card.info.locale'), LanguageField.name_of(account.locale)],
-    [t('super_admin.clinic_card.info.timezone'), account.reporting_timezone.presence || t('super_admin.clinic_card.info.timezone_default')],
+    [t('super_admin.clinic_card.info.timezone'), SuperAdmin::AccountTimezones.label_for(account.reporting_timezone).presence || t('super_admin.clinic_card.info.timezone_default')],
     [t('super_admin.clinic_card.info.created'), super_admin_time(account.created_at)]
   ]
   # The version of the plan is a technical number: it is under «Для разработчика» (see `_technical`)

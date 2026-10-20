@@ -32,13 +32,13 @@ RSpec.describe 'Super Admin clinic list', type: :request do
   end
 
   describe 'the page' do
-    it 'is titled «Аккаунты», explains itself and offers a new clinic and the export' do
+    it 'is titled «Аккаунты», explains itself and offers a new client and the export' do
       get '/super_admin/accounts'
 
       expect(response).to have_http_status(:ok)
       expect(text(page.at_css('h1.main-content__page-title'))).to eq('Аккаунты')
       expect(text(page.at_css('.main-content__description'))).to include('Все аккаунты платформы')
-      expect(text(page.at_css('a[href="/super_admin/accounts/new"]'))).to eq('Новый аккаунт')
+      expect(text(page.at_css('a[href="/super_admin/clients/new"]'))).to eq('Новый клиент')
       expect(text(page.at_css('a[href="/super_admin/accounts/export"]'))).to eq('Экспорт в CSV')
       expect(page.at_css('title').text).to include('Аккаунты')
     end

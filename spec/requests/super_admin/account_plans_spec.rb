@@ -182,7 +182,7 @@ RSpec.describe 'Super admin account plans', type: :request do
         post '/super_admin/accounts', params: { account: { name: 'Без модуля', locale: 'ru', status: 'active' }, modules: %w[ghost] }
       end.not_to change(Account, :count)
 
-      expect(response).to redirect_to(new_super_admin_account_path)
+      expect(response).to redirect_to(new_super_admin_client_path)
       expect(flash[:alert]).to eq(flash_text(:plan_unknown_module))
     end
 
