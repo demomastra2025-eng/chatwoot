@@ -101,9 +101,18 @@ RSpec.describe 'Platform Accounts API', type: :request do
           created = create_account(limits: { conversations: 50, agents: 3 }, features: { campaigns: true, crm: false })
 
           expect(created.limits).to include('conversations' => 50, 'agents' => 3, 'non_web_inboxes' => ChatwootApp.max_limit)
-          expect(Accounts::LimitSettings.new(created)).to be_tracked
+          settings = Accounts::LimitSettings.new(created)
+          expect([settings.source('conversations'), settings.source('agents'), settings.source('non_web_inboxes')]).to eq(%i[custom custom plan])
           expect(created.feature_enabled?('campaigns')).to be(true)
           expect(created.feature_enabled?('crm')).to be(false)
+        end
+
+        it 'does not let the partner write the lists of the limits (Accounts::LimitSettings) into a new account' do
+          created = create_account(custom_attributes: { 'crm_id' => '5', 'limit_overrides' => { 'agents' => 1 }, 'limit_plan_numbers' => { 'agents' => 2 } })
+
+          expect(created.custom_attributes).to include('crm_id' => '5', 'plan' => 'base')
+          expect(created.custom_attributes).not_to include('limit_overrides')
+          expect(created.custom_attributes['limit_plan_numbers']).not_to include('agents')
         end
 
         it 'writes one system entry in the audit log' do
@@ -395,6 +404,7 @@ RSpec.describe 'Platform Accounts API', type: :request do
       # The limits a super admin chose for the account (Accounts::LimitSettings) are not the partner's to change
       describe 'the limits a super admin chose' do
         let(:marks_key) { Accounts::LimitSettings::KEY }
+        let(:plan_numbers_key) { Accounts::LimitSettings::PLAN_NUMBERS_KEY }
 
         before do
           own.update!(limits: { 'agents' => 8, 'inboxes' => 4, 'conversations' => ChatwootApp.max_limit },
@@ -409,14 +419,18 @@ RSpec.describe 'Platform Accounts API', type: :request do
           expect(response.parsed_body['limits']).to include('agents' => 8)
         end
 
-        it 'keeps the list when the partner replaces custom_attributes, and does not let the partner write it' do
+        it 'keeps the lists when the partner replaces custom_attributes, and does not let the partner write them' do
+          own.update!(custom_attributes: own.custom_attributes.merge(plan_numbers_key => { 'inboxes' => 4 }))
+
           patch "/platform/api/v1/accounts/#{own.id}",
-                params: { custom_attributes: { 'crm_id' => '77', marks_key => { 'agents' => 1 } } }, headers: headers, as: :json
+                params: { custom_attributes: { 'crm_id' => '77', marks_key => { 'agents' => 1 }, plan_numbers_key => { 'agents' => 2 } } },
+                headers: headers, as: :json
 
           expect(response).to have_http_status(:success)
           attributes = own.reload.custom_attributes
           expect(attributes).to include('crm_id' => '77')
           expect(attributes[marks_key]).to eq('agents' => 8, 'conversations' => 'unlimited')
+          expect(attributes[plan_numbers_key]).to eq('inboxes' => 4)
           expect(own.limits).to include('agents' => 8)
         end
 
@@ -427,11 +441,21 @@ RSpec.describe 'Platform Accounts API', type: :request do
           expect(own.limits).to include('agents' => 8, 'inboxes' => 4)
         end
 
-        it 'lets the partner change a number of a limit that follows the plan, again and again' do
+        it 'lets the partner change a number that is not one a super admin chose, again and again' do
           patch "/platform/api/v1/accounts/#{own.id}", params: { limits: { inboxes: 6 } }, headers: headers, as: :json
           patch "/platform/api/v1/accounts/#{own.id}", params: { limits: { inboxes: 9 } }, headers: headers, as: :json
 
           expect(own.reload.limits).to include('inboxes' => 9)
+        end
+
+        it 'makes the number of the partner a number of its own for the account, which a plan applied later does not overwrite' do
+          Accounts::ApplyPlan.new(account: own, modules: []).call
+          patch "/platform/api/v1/accounts/#{own.id}", params: { limits: { non_web_inboxes: 12 } }, headers: headers, as: :json
+
+          Accounts::ApplyPlan.new(account: own.reload, modules: []).call
+
+          expect(own.reload.limits).to include('non_web_inboxes' => 12)
+          expect(Accounts::LimitSettings.new(own).source('non_web_inboxes')).to eq(:custom)
         end
       end
     end

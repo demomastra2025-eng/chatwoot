@@ -38,6 +38,47 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
     patch card_path, params: { account: account_params, form_state: tokens, return_to: 'card' }.merge(extra)
   end
 
+  # What a browser sends for a form: every successful control as it is drawn (the checked radio buttons, the hidden fields, the number of
+  # every row), with `overrides` ({ 'account[name]' => 'New' }) for what the person changed
+  def drawn_body(form, overrides = {})
+    pairs = form.css('input, select, textarea').filter_map do |node|
+      name = node['name']
+      next if name.blank? || node['disabled']
+
+      value = drawn_value(node)
+      [name, overrides.fetch(name, value)] unless value.nil?
+    end
+    URI.encode_www_form(pairs)
+  end
+
+  def drawn_value(node)
+    case node.name
+    when 'select' then (node.at_css('option[selected]') || node.at_css('option'))&.then { |option| option['value'] || option.text }
+    when 'textarea' then node.text
+    else
+      type = (node['type'] || 'text').downcase
+      return if %w[submit button image file].include?(type) || (%w[radio checkbox].include?(type) && !node['checked'])
+
+      node['value'] || (type == 'checkbox' ? 'on' : '')
+    end
+  end
+
+  def send_drawn(form, overrides)
+    post form['action'], params: drawn_body(form, overrides), headers: { 'CONTENT_TYPE' => 'application/x-www-form-urlencoded' }
+  end
+
+  def save_edit_form_as_drawn(overrides = {})
+    get "/super_admin/accounts/#{account.id}/edit"
+    send_drawn(page.at_css('form.form'), overrides)
+  end
+
+  def save_card_as_drawn(overrides = {})
+    get card_path
+    send_drawn(page.at_css('form#limits-form'), overrides)
+  end
+
+  def limit_audits = Audited::Audit.where(action: 'update_limits')
+
   before do
     sign_in(super_admin, scope: :super_admin)
     GlobalConfig.clear_cache
@@ -54,8 +95,9 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
         radios = row(key).css('input[type=radio]')
         expect(radios.map { |radio| radio['value'] }).to eq(%w[plan unlimited custom])
         expect(radios.map { |radio| radio['name'] }.uniq).to eq(["account[limit_choices][#{key}]"])
-        expect(row(key).at_css("input[type=number][name='account[limit_values][#{key}]']")).to be_present
+        expect(row(key).at_css("input[name='account[limit_values][#{key}]']")).to be_present
       end
+      expect(row('agents').at_css('input[name="account[limit_values][agents]"]')['type']).to eq('number')
       expect(response.body).not_to include('translation missing')
     end
 
@@ -103,7 +145,7 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       expect(choice_of('agents')).to eq('custom')
       expect(row('agents').at_css('input[type=number]')['value']).to eq('5')
       expect(choice_of('storage_bytes')).to eq('custom')
-      expect(row('storage_bytes').at_css('input[type=number]')['value']).to eq('1.5')
+      expect(row('storage_bytes').at_css('input[name="account[limit_values][storage_bytes]"]')['value']).to eq('1.5')
       expect(text(row('storage_bytes').at_css('.admin-limit__value'))).to include('ГБ')
       expect(choice_of('inboxes')).to eq('unlimited')
       expect(choice_of('conversations')).to eq('plan')
@@ -155,6 +197,32 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       expect(text(row('agents').at_css('[data-testid="limit-now"]'))).to include('Сейчас: 0 операторов')
       expect(choice_of('agents')).to eq('plan')
       expect(row('agents').at_css('[data-testid="limit-drift"]')).to be_nil
+    end
+
+    it 'says why a limit is 0 when the end of a trial put it there, and says nothing for the others' do
+      account.update!(limits: account.limits.merge('agents' => 5, 'inboxes' => 3))
+      account.activate_trial!(3)
+      account.expire_trial!
+
+      get card_path
+
+      note = 'Пробный период закончился и закрыл этот лимит (0). Он вернётся, когда вы примените тариф.'
+      expect(text(row('agents').at_css('[data-testid="limit-held"]'))).to eq(note)
+      expect(text(row('inboxes').at_css('[data-testid="limit-held"]'))).to eq(note)
+      expect(row('conversations').at_css('[data-testid="limit-held"]')).to be_nil
+    end
+
+    it 'says the storage with the decimals of its field, and takes the comma in a text field made for it' do
+      account.update!(limits: account.limits.merge('storage_bytes' => 5_000_000_000))
+
+      get card_path
+
+      field = row('storage_bytes').at_css('input[name="account[limit_values][storage_bytes]"]')
+      expect(field['type']).to eq('text')
+      expect(field['inputmode']).to eq('decimal')
+      expect(field['value']).to eq('4.66')
+      expect(text(row('storage_bytes').at_css('[data-testid="limit-now"]'))).to eq('Сейчас: 4,66 ГБ')
+      expect(text(row('storage_bytes').at_css('.admin-limit__value'))).to include('ГБ')
     end
   end
 
@@ -272,7 +340,7 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       account.reload
       expect(account.limits).not_to have_key('inboxes')
       expect(account.limits).to include('conversations' => max)
-      expect(account.custom_attributes[marks_key]).to eq({})
+      expect(Accounts::LimitSettings.marks_in(account.custom_attributes)).to eq({})
     end
 
     it 'turns gigabytes into bytes, with a comma or a dot' do
@@ -456,6 +524,148 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       account.update!(custom_attributes: account.custom_attributes.merge(marks_key => { 'agents' => 0 }))
 
       expect(SuperAdmin::AccountFormState.stale_sections(account.reload, tokens)).to eq(['limits'])
+    end
+  end
+
+  # The browser sends every row, the ones nobody touched included. Saving the name, or one row, must leave every other limit as it is:
+  # a zero an ended trial put on a limit, a number the plan has changed since, a number a partner wrote, a size of odd bytes.
+  describe 'a form saved as the browser draws it' do
+    before { apply_plan! }
+
+    context 'when an ended trial holds the operator and channel limits at 0' do
+      before do
+        account.update!(limits: account.limits.merge('agents' => 5, 'inboxes' => 3))
+        account.reload.activate_trial!(3)
+        account.expire_trial!
+      end
+
+      it 'keeps the zeros when only the name is saved on the edit form, and writes no entry about the limits' do
+        expect(account.reload.limits).to include('agents' => 0, 'inboxes' => 0)
+
+        save_edit_form_as_drawn('account[name]' => 'Аккаунт переименован')
+
+        expect(response).to redirect_to(card_path)
+        expect(account.reload.name).to eq('Аккаунт переименован')
+        expect(account.limits).to include('agents' => 0, 'inboxes' => 0)
+        expect(account.trial_held_limits.keys).to contain_exactly('agents', 'inboxes')
+        expect(limit_audits).to be_empty
+        follow_redirect!
+        expect(text(page.at_css('.flashes'))).not_to include('Лимиты сохранены')
+      end
+
+      it 'changes only the row that was changed on the card, and says so' do
+        save_card_as_drawn('account[limit_choices][emails]' => 'custom', 'account[limit_values][emails]' => '50')
+
+        expect(account.reload.limits).to include('agents' => 0, 'inboxes' => 0, 'emails' => 50)
+        expect(limit_audits.last.audited_changes['limits'].keys).to eq(['emails'])
+        follow_redirect!
+        expect(text(page.at_css('.flashes'))).to include('Лимиты сохранены: изменён 1 лимит.')
+      end
+
+      it 'gives a zero back when its row is set to another choice' do
+        save_card_as_drawn('account[limit_choices][agents]' => 'custom', 'account[limit_values][agents]' => '4')
+
+        expect(account.reload.limits).to include('agents' => 4, 'inboxes' => 0)
+        expect(limit_audits.last.audited_changes['limits'].keys).to eq(['agents'])
+      end
+    end
+
+    context 'when the plan has changed a number since it was applied' do
+      before do
+        allow(Accounts::Plans).to(receive(:limits_for).and_wrap_original { |original, *args| original.call(*args).merge('conversations' => 1000) })
+      end
+
+      it 'keeps the old number when only the name is saved, and still says that the plan will change it' do
+        save_edit_form_as_drawn('account[name]' => 'Аккаунт переименован')
+
+        expect(account.reload.limits['conversations']).to eq(max)
+        expect(limit_audits).to be_empty
+        get card_path
+        expect(choice_of('conversations')).to eq('plan')
+        expect(row('conversations').at_css('[data-testid="limit-drift"]')).to be_present
+      end
+
+      it 'keeps it when another row is saved on the card' do
+        save_card_as_drawn('account[limit_choices][agents]' => 'custom', 'account[limit_values][agents]' => '9')
+
+        expect(account.reload.limits).to include('conversations' => max, 'agents' => 9)
+      end
+
+      it 'takes the new number of the plan only when the plan is applied' do
+        Accounts::ApplyPlan.new(account: account.reload, modules: []).call
+
+        expect(account.reload.limits['conversations']).to eq(1000)
+      end
+    end
+
+    context 'when a partner wrote a number through the Platform API' do
+      before { account.update!(limits: account.limits.merge('conversations' => 1000)) }
+
+      it 'shows it as «Своё число» and keeps it when only the name is saved' do
+        get card_path
+        expect(choice_of('conversations')).to eq('custom')
+        expect(row('conversations').at_css('input[type=number]')['value']).to eq('1000')
+
+        save_edit_form_as_drawn('account[name]' => 'Аккаунт переименован')
+
+        expect(account.reload.limits['conversations']).to eq(1000)
+        expect(limit_audits).to be_empty
+      end
+
+      it 'keeps it when a plan is applied' do
+        Accounts::ApplyPlan.new(account: account.reload, modules: []).call
+
+        expect(account.reload.limits['conversations']).to eq(1000)
+      end
+    end
+
+    context 'when the size of the storage is not a round number of gigabytes' do
+      before { account.update!(limits: account.limits.merge('storage_bytes' => 5_000_000_000)) }
+
+      it 'keeps the exact bytes when only the name is saved, on the card and on the edit form' do
+        save_edit_form_as_drawn('account[name]' => 'Аккаунт переименован')
+        expect(account.reload.limits['storage_bytes']).to eq(5_000_000_000)
+
+        save_card_as_drawn('account[limit_choices][emails]' => 'unlimited')
+        expect(account.reload.limits).to include('storage_bytes' => 5_000_000_000, 'emails' => max)
+        expect(limit_audits.map { |audit| audit.audited_changes['limits'].keys }).to eq([['emails']])
+      end
+
+      it 'changes it when a different size is typed' do
+        save_card_as_drawn('account[limit_choices][storage_bytes]' => 'custom', 'account[limit_values][storage_bytes]' => '4,7')
+
+        expect(account.reload.limits['storage_bytes']).to eq((BigDecimal('4.7') * 1.gigabyte).round(0).to_i)
+        expect(limit_audits.last.audited_changes['limits']['storage_bytes']).to include('from' => 'своё число (4,66 ГБ)', 'to' => 'своё число (4,7 ГБ)')
+      end
+    end
+
+    context 'when the account is from before the choices (no list of any kind), with numbers of its own' do
+      before do
+        account.update!(custom_attributes: account.custom_attributes.except(*Accounts::LimitSettings::ATTRIBUTE_KEYS),
+                        limits: { 'agents' => 7, 'inboxes' => 3, 'conversations' => 500, 'storage_bytes' => 10.gigabytes, 'emails' => 200 })
+      end
+
+      it 'changes nothing about the limits, and writes no list, when only the name is saved' do
+        stored = account.reload.limits.dup
+
+        save_edit_form_as_drawn('account[name]' => 'Аккаунт переименован')
+
+        expect(response).to redirect_to(card_path)
+        expect(account.reload.name).to eq('Аккаунт переименован')
+        expect(account.limits).to eq(stored)
+        expect(account.custom_attributes).not_to include(*Accounts::LimitSettings::ATTRIBUTE_KEYS)
+        expect(limit_audits).to be_empty
+      end
+    end
+
+    it 'saves the whole form of an account that follows the plan without a single change of the limits' do
+      stored = account.reload.attributes.slice('limits', 'custom_attributes')
+
+      save_card_as_drawn
+
+      expect(response).to redirect_to(card_path)
+      expect(account.reload.attributes.slice('limits', 'custom_attributes')).to eq(stored)
+      expect(limit_audits).to be_empty
     end
   end
 

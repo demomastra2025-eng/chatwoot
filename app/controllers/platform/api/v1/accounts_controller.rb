@@ -4,10 +4,10 @@
 # in the audit log with the partner as the actor.
 #
 # The limits a super admin chose for an account (a number of its own or «без ограничений», see Accounts::LimitSettings) are not
-# the partner's to change: the numbers a request sends for them are ignored, and the list of them survives a request that replaces
-# `custom_attributes`. The numbers the partner sends for the other limits are applied on top of what the account has (the limits
-# the request does not name stay), and they are the partner's numbers for the moment: a plan applied later writes its own number
-# over a limit that follows the plan.
+# the partner's to change: the numbers a request sends for them are ignored, and the lists the limits keep in `custom_attributes`
+# survive a request that replaces them (a partner cannot write them either). The numbers the partner sends for the other limits are
+# applied on top of what the account has (the limits the request does not name stay). A number that is not the number of the plan
+# is a number of its own for the account from then on: a plan applied later leaves it as it is.
 class Platform::Api::V1::AccountsController < PlatformController
   # The settings of an account whose new values are written to the audit log
   AUDITED_ACCOUNT_FIELDS = %w[name locale status limits custom_attributes].freeze
@@ -26,7 +26,7 @@ class Platform::Api::V1::AccountsController < PlatformController
   def create
     violations = []
     ActiveRecord::Base.transaction do
-      @resource = Account.create!(account_params.except(:limits))
+      @resource = Account.create!(new_account_params)
       Accounts::ApplyPlan.new(account: @resource, modules: []).call
       violations = feature_violations(@resource)
       raise ActiveRecord::Rollback if violations.any?
@@ -68,15 +68,24 @@ class Platform::Api::V1::AccountsController < PlatformController
     permitted_params.except(:features)
   end
 
+  # The settings of a new account: the limits go through #assign_partner_limits (after the plan), and `custom_attributes` cannot carry
+  # the lists of the limits (Accounts::LimitSettings), which the partner does not write.
+  def new_account_params
+    attributes = account_params.except(:limits)
+    return attributes unless attributes.key?(:custom_attributes)
+
+    attributes.merge(custom_attributes: attributes[:custom_attributes].to_h.except(*Accounts::LimitSettings::ATTRIBUTE_KEYS))
+  end
+
   # The settings of the request on the account (nothing is saved): `custom_attributes` replaces the old ones as a whole, but cannot
-  # take the list of the limits a super admin chose, nor write it; the limits go through #assign_partner_limits.
+  # take the lists of the limits a super admin chose, nor write them; the limits go through #assign_partner_limits.
   def assign_account_attributes(account)
-    chosen = account.custom_attributes.to_h.slice(Accounts::LimitSettings::KEY)
+    kept = account.custom_attributes.to_h.slice(*Accounts::LimitSettings::ATTRIBUTE_KEYS)
     attributes = account_params
     numbers = attributes.delete(:limits)
     account.assign_attributes(attributes)
     if attributes.key?(:custom_attributes)
-      account.custom_attributes = account.custom_attributes.to_h.except(Accounts::LimitSettings::KEY).merge(chosen)
+      account.custom_attributes = account.custom_attributes.to_h.except(*Accounts::LimitSettings::ATTRIBUTE_KEYS).merge(kept)
     end
     assign_partner_limits(account, numbers)
   end

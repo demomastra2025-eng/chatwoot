@@ -56,6 +56,9 @@ them belongs to the page (the card has its own, the edit form of the account is 
       <% if row.drift %>
         <span class="admin-limit__drift" data-testid="limit-drift"><%= row.drift %></span>
       <% end %>
+      <% if row.held %>
+        <span class="admin-limit__drift" data-testid="limit-held"><%= row.held %></span>
+      <% end %>
 
       <fieldset class="admin-limit__choices" aria-labelledby="<%= id %>-label">
         <% options.each do |value, title, detail| %>
@@ -73,8 +76,14 @@ them belongs to the page (the card has its own, the edit form of the account is 
         <label for="account_limit_values_<%= row.key %>">
           <%= t('super_admin.limits.number_label') %><span class="sr-only"> · <%= row.input_label %></span>
         </label>
-        <%= number_field_tag "account[limit_values][#{row.key}]", row.input_value, id: "account_limit_values_#{row.key}", min: 0,
-                             step: (row.bytes ? 'any' : 1), class: 'admin-limit__input', placeholder: t('super_admin.limits.number_placeholder') %>
+        <%# The storage is typed in gigabytes with a comma or a dot (1,5): a field of type number refuses the comma in some browsers %>
+        <% if row.bytes %>
+          <%= text_field_tag "account[limit_values][#{row.key}]", row.input_value, id: "account_limit_values_#{row.key}", inputmode: 'decimal',
+                             autocomplete: 'off', class: 'admin-limit__input', placeholder: t('super_admin.limits.number_placeholder') %>
+        <% else %>
+          <%= number_field_tag "account[limit_values][#{row.key}]", row.input_value, id: "account_limit_values_#{row.key}", min: 0, step: 1,
+                               class: 'admin-limit__input', placeholder: t('super_admin.limits.number_placeholder') %>
+        <% end %>
         <% if row.bytes %><span class="admin-limit__unit"><%= t('super_admin.limits.gigabytes') %></span><% end %>
       </div>
     </div>

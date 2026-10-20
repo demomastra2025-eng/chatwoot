@@ -690,8 +690,10 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   end
 
   # The limits of the form (SuperAdmin::LimitForm): each is «как в тарифе», «без ограничений» or a number of its own. They become the
-  # numbers of Account#limits and the list of the limits chosen by hand (Accounts::LimitSettings) in one save; the words of the
-  # change are kept for the audit log.
+  # numbers of Account#limits and the lists of the limits chosen by hand and of the numbers of the plan (Accounts::LimitSettings) in one
+  # save; the words of the change are kept for the audit log. The form sends every row, the ones nobody touched too: those change
+  # nothing (a zero a trial put on a limit, a number a partner wrote, a number the plan changed since stay as they are), and a request
+  # that changes no limit writes none.
   def limit_form
     @limit_form ||= SuperAdmin::LimitForm.from_params(params[:account])
   end
@@ -701,7 +703,9 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     return unless limit_form.submitted? && limit_form.valid? && stale_form_sections.exclude?('limits')
 
     @limit_result = Accounts::LimitSettings.new(limit_account).apply(limit_form.choices)
-    @limit_attributes = limit_account.custom_attributes.to_h.deep_dup.merge(Accounts::LimitSettings::KEY => @limit_result.marks)
+    return if @limit_result.changes.empty?
+
+    @limit_attributes = @limit_result.custom_attributes(limit_account.custom_attributes)
     permitted_params[:limits] = @limit_result.limits
     permitted_params[:custom_attributes] = @limit_attributes
   end
@@ -715,8 +719,11 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   def record_limits_audit
     return if @limit_result.nil? || @limit_result.changes.empty?
 
-    record_super_admin_audit(LIMITS_AUDIT_ACTION, 'limits' => SuperAdmin::LimitWords.audit_changes(@limit_result.changes))
-    flash[:notice] = [flash[:notice], I18n.t('super_admin.limits.saved', count: @limit_result.changes.size)].compact_blank.join(' ')
+    words = SuperAdmin::LimitWords.audit_changes(@limit_result.changes)
+    return if words.empty?
+
+    record_super_admin_audit(LIMITS_AUDIT_ACTION, 'limits' => words)
+    flash[:notice] = [flash[:notice], I18n.t('super_admin.limits.saved', count: words.size)].compact_blank.join(' ')
   end
 
   # Runs before create and update: a problem with the limits sends the form (the page it came from) back, nothing is saved

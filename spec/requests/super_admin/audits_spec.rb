@@ -67,6 +67,34 @@ RSpec.describe 'Super Admin Audits', type: :request do
         expect(audit.reload.audited_changes['limits']['conversations']['to']).to eq(ChatwootApp.max_limit)
       end
 
+      it 'shows the limits of an ordinary save of an account in words, and leaves out the lists the limits keep for themselves', :aggregate_failures do
+        max = ChatwootApp.max_limit
+        before = { 'conversations' => max, 'storage_bytes' => 50.gigabytes, 'agents' => 3 }
+        after = { 'conversations' => max, 'storage_bytes' => max * 1.gigabyte, 'captain_tokens' => max * 1_000_000 }
+        lists = { 'limit_overrides' => { 'agents' => 3 }, 'limit_plan_numbers' => { 'conversations' => max } }
+        audit = Audited::Audit.create!(auditable: account, associated: account, action: 'update', comment: 'super_admin',
+                                       audited_changes: { 'limits' => [before, after], 'custom_attributes' => [{ 'crm_id' => '1' }, { 'crm_id' => '1' }.merge(lists)],
+                                                          'name' => %w[Old New] })
+
+        get '/super_admin/audits'
+        details = Nokogiri::HTML(response.body).css('pre').map(&:text).join
+
+        expect(details).to include('"conversations": "Без ограничений"', '"storage_bytes": "50 ГБ"', '"storage_bytes": "Без ограничений"',
+                                   '"captain_tokens": "Без ограничений"', '"agents": "3"', '"name"')
+        expect(details).not_to include(max.to_s, (max * 1.gigabyte).to_s, 'limit_overrides', 'limit_plan_numbers')
+        expect(audit.reload.audited_changes['limits'].last['conversations']).to eq(max)
+      end
+
+      it 'shows the limits a partner wrote in words as well' do
+        Audited::Audit.create!(auditable: account, associated: account, action: 'partner_create_account', comment: 'platform_app',
+                               audited_changes: { 'limits' => { 'agents' => 5, 'conversations' => ChatwootApp.max_limit } })
+
+        get '/super_admin/audits'
+        details = Nokogiri::HTML(response.body).css('pre').map(&:text).join
+
+        expect(details).to include('"agents": "5"', '"conversations": "Без ограничений"')
+      end
+
       it 'shows the words of a change of the limits as they were written' do
         Audited::Audit.create!(auditable: account, associated: account, action: 'update_limits', comment: 'super_admin',
                                audited_changes: { 'limits' => { 'agents' => { 'label' => 'Операторы', 'from' => 'как в тарифе (без ограничений)',

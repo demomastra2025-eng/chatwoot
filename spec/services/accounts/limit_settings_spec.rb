@@ -154,19 +154,61 @@ RSpec.describe Accounts::LimitSettings do
         expect(settings.source('agents')).to eq(:plan)
       end
 
-      it 'calls a number the account holds that is not the plan one «своё число» while the account is not tracked yet' do
-        account.update!(custom_attributes: account.custom_attributes.to_h.except(marks_key), limits: { 'agents' => 3 })
-
-        expect(settings).not_to be_tracked
-        expect(settings.source('agents')).to eq(:custom)
-      end
-
-      it 'calls it an older number of the plan once the account is tracked' do
+      it 'calls a number that is neither the plan one nor the one the plan wrote «своё число»' do
         account.update!(limits: account.limits.merge('agents' => 3))
 
-        expect(settings).to be_tracked
+        expect(settings.source('agents')).to eq(:custom)
+        expect(settings.custom_value('agents')).to eq(3)
+      end
+
+      it 'calls a number an account from before the lists holds «своё число» as well, and reads nothing it never wrote' do
+        account.update!(custom_attributes: account.custom_attributes.to_h.except(*described_class::ATTRIBUTE_KEYS), limits: { 'agents' => 3 })
+
+        expect(settings.source('agents')).to eq(:custom)
+        expect(account.reload.custom_attributes).not_to include(*described_class::ATTRIBUTE_KEYS)
+      end
+
+      it 'calls the number the plan wrote and has changed since an older number of the plan, until the plan is applied again' do
+        plan_with('agents' => 20)
+
         expect(settings.source('agents')).to eq(:plan)
-        expect(settings.effective('agents')).to eq(3) # what the code enforces until the plan is applied again
+        expect(settings.effective('agents')).to eq(10) # what the code enforces until the plan is applied again
+        expect(settings.plan_value('agents')).to eq(20)
+      end
+
+      it 'does not take the number the plan wrote for a number of the plan once the plan has none for the limit any more' do
+        plan_with('agents' => nil)
+
+        expect(settings.source('agents')).to eq(:custom)
+      end
+    end
+
+    # The first plan an old account gets after the deploy has no number for the limit; a number somebody typed there stays his, however
+    # the plan changes later
+    context 'when the plan gets a number for a limit where an account holds a number of its own' do
+      before do
+        account.update!(limits: { 'agents' => 10, 'conversations' => max, 'non_web_inboxes' => max },
+                        custom_attributes: { 'plan' => 'base', 'plan_modules' => [], 'plan_version' => 2 })
+      end
+
+      it 'keeps the number as «своё число» through the first plan, the new number of the plan and the next plan' do
+        expect(settings.source('agents')).to eq(:custom)
+        apply_plan!
+        expect(settings.source('agents')).to eq(:custom)
+
+        plan_with('agents' => 5)
+        expect(settings.source('agents')).to eq(:custom)
+        apply_plan!
+
+        expect(account.reload.limits['agents']).to eq(10)
+        expect(settings.source('agents')).to eq(:custom)
+        expect(account.custom_attributes[described_class::PLAN_NUMBERS_KEY]).not_to include('agents')
+      end
+
+      it 'follows the plan again once the number of the plan is the very number it holds' do
+        plan_with('agents' => 10)
+
+        expect(settings.source('agents')).to eq(:plan)
       end
     end
 
@@ -249,6 +291,18 @@ RSpec.describe Accounts::LimitSettings do
       expect(result.marks).to eq({})
     end
 
+    it 'remembers the number the plan writes for «как в тарифе», and forgets it for the other choices' do
+      plan_with('agents' => 10, 'emails' => 100)
+      account.update!(limits: account.limits.merge('agents' => 8, 'emails' => 100),
+                      custom_attributes: account.custom_attributes.merge(marks_key => { 'agents' => 8 },
+                                                                         described_class::PLAN_NUMBERS_KEY => { 'emails' => 100 }))
+
+      result = settings.apply('agents' => :plan, 'emails' => 30)
+
+      expect(result.limits).to include('agents' => 10, 'emails' => 30)
+      expect(result.plan_numbers).to eq('agents' => 10)
+    end
+
     it 'leaves the limits it is not told about as they are, chosen ones included' do
       account.update!(limits: account.limits.merge('inboxes' => 7, 'agents' => 2))
       choose('inboxes' => 7)
@@ -259,12 +313,14 @@ RSpec.describe Accounts::LimitSettings do
       expect(result.marks).to include('inboxes' => 7, 'emails' => 100)
     end
 
-    it 'keeps the numbers an account from before the list holds, as chosen ones' do
-      account.update!(custom_attributes: account.custom_attributes.to_h.except(marks_key), limits: { 'agents' => 3, 'conversations' => 500 })
+    it 'lists only what was chosen: the numbers an account from before the lists holds are read as chosen without being listed' do
+      account.update!(custom_attributes: account.custom_attributes.to_h.except(*described_class::ATTRIBUTE_KEYS),
+                      limits: { 'agents' => 3, 'conversations' => 500 })
 
       result = settings.apply('inboxes' => 4)
 
-      expect(result.marks).to eq('agents' => 3, 'conversations' => 500, 'inboxes' => 4)
+      expect(result.marks).to eq('inboxes' => 4)
+      expect(result.limits).to eq('agents' => 3, 'conversations' => 500, 'inboxes' => 4)
     end
 
     it 'says what changed, with the source and the number before and after' do
@@ -291,6 +347,132 @@ RSpec.describe Accounts::LimitSettings do
 
     it 'writes nothing to the account' do
       expect { settings.apply('agents' => 8) }.not_to(change { account.reload.attributes })
+    end
+  end
+
+  # The form of the screens sends every row, the ones nobody touched included: those must change nothing
+  describe 'a choice that says what the limit already is' do
+    before { apply_plan! }
+
+    it 'is the same for «как в тарифе» on a limit that follows the plan, whatever number it holds' do
+      expect(settings.same_choice?('conversations', :plan)).to be(true)
+      expect(settings.same_choice?('conversations', :unlimited)).to be(false)
+      expect(settings.same_choice?('conversations', 50)).to be(false)
+    end
+
+    it 'is the same for «без ограничений» and for the number of «своё число»' do
+      choose('agents' => 'unlimited', 'inboxes' => 4)
+      account.update!(limits: account.limits.merge('agents' => max, 'inboxes' => 4))
+
+      expect(settings.same_choice?('agents', :unlimited)).to be(true)
+      expect(settings.same_choice?('agents', :plan)).to be(false)
+      expect(settings.same_choice?('inboxes', 4)).to be(true)
+      expect(settings.same_choice?('inboxes', 5)).to be(false)
+      expect(settings.same_choice?('inboxes', :unlimited)).to be(false)
+    end
+
+    it 'is the same for a storage size that is the same at the precision of the field (gigabytes with two decimals)' do
+      account.update!(limits: account.limits.merge('storage_bytes' => 5_000_000_000))
+
+      expect(settings.source('storage_bytes')).to eq(:custom)
+      expect(settings.same_choice?('storage_bytes', (BigDecimal('4.66') * 1.gigabyte).round(0).to_i)).to be(true)
+      expect(settings.same_choice?('storage_bytes', (BigDecimal('4.67') * 1.gigabyte).round(0).to_i)).to be(false)
+      expect(settings.same_choice?('storage_bytes', 5_000_000_000)).to be(true)
+    end
+
+    it 'is never the same for something that is no choice (it is refused by #apply)' do
+      expect(settings.same_choice?('agents', 'five')).to be(false)
+      expect { settings.apply('agents' => 'five') }.to raise_error(ArgumentError)
+    end
+
+    it 'leaves a zero that an ended trial put on a limit, and says nothing changed' do
+      account.update!(limits: account.limits.merge('agents' => 5, 'inboxes' => 3))
+      account.reload.activate_trial!(3)
+      account.expire_trial!
+      expect(account.reload.limits).to include('agents' => 0, 'inboxes' => 0)
+
+      result = settings.apply('agents' => :plan, 'inboxes' => :plan, 'emails' => 50)
+
+      expect(result.limits).to include('agents' => 0, 'inboxes' => 0, 'emails' => 50)
+      expect(result.changes.keys).to eq(['emails'])
+    end
+
+    it 'leaves the number of the plan that the plan has changed since, until somebody chooses something else' do
+      plan_with('conversations' => 1000)
+
+      result = settings.apply('conversations' => :plan, 'agents' => :plan)
+
+      expect(result.limits).to include('conversations' => max)
+      expect(result.changes).to be_empty
+      expect(result.marks).to eq({})
+    end
+
+    it 'leaves a number a partner wrote, which is a number of its own for the account' do
+      account.update!(limits: account.limits.merge('conversations' => 1000))
+
+      expect(settings.source('conversations')).to eq(:custom)
+      result = settings.apply('conversations' => 1000)
+
+      expect(result.changes).to be_empty
+      expect(result.limits).to include('conversations' => 1000)
+      expect(result.marks).to eq({})
+    end
+
+    it 'leaves a storage size of odd bytes when the form sends the number as it shows it' do
+      account.update!(limits: account.limits.merge('storage_bytes' => 5_000_000_000))
+
+      result = settings.apply('storage_bytes' => (BigDecimal('4.66') * 1.gigabyte).round(0).to_i)
+
+      expect(result.limits['storage_bytes']).to eq(5_000_000_000)
+      expect(result.changes).to be_empty
+    end
+
+    it 'changes the limit as soon as the choice is a different one, a zero of a trial and a drifted plan number included' do
+      plan_with('conversations' => 1000)
+
+      result = settings.apply('conversations' => :unlimited)
+
+      expect(result.limits['conversations']).to eq(max)
+      expect(result.marks).to eq('conversations' => 'unlimited')
+      expect(result.changes.keys).to eq(['conversations'])
+    end
+  end
+
+  describe '#following_plan_numbers' do
+    it 'lists the numbers of the plan that the limits following it hold, and nothing for the limits chosen by hand or left alone' do
+      plan_with('agents' => 10, 'emails' => 100)
+      apply_plan!
+      choose('emails' => 30)
+      account.update!(limits: account.limits.merge('emails' => 30))
+
+      expect(settings.following_plan_numbers).to eq('conversations' => max, 'non_web_inboxes' => max, 'agents' => 10)
+    end
+
+    it 'is empty for an account without a plan' do
+      expect(settings.following_plan_numbers).to eq({})
+    end
+  end
+
+  describe 'Result#custom_attributes' do
+    before { apply_plan! }
+
+    it 'sets the two lists beside the other attributes, and does not store an empty one' do
+      account.update!(custom_attributes: account.custom_attributes.merge('crm_id' => '7'))
+
+      result = settings.apply('agents' => 8)
+      attributes = result.custom_attributes(account.custom_attributes)
+
+      expect(attributes).to include('crm_id' => '7', 'plan' => 'base', marks_key => { 'agents' => 8 })
+      expect(attributes[described_class::PLAN_NUMBERS_KEY]).to eq('conversations' => max, 'non_web_inboxes' => max)
+      expect(settings.apply('agents' => :plan).custom_attributes(attributes)).not_to have_key(marks_key)
+    end
+
+    it 'keeps the attributes it is given untouched' do
+      attributes = account.reload.custom_attributes
+
+      settings.apply('agents' => 8).custom_attributes(attributes)
+
+      expect(attributes).not_to have_key(marks_key)
     end
   end
 end

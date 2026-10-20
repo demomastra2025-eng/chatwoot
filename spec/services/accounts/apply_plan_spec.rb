@@ -464,10 +464,12 @@ RSpec.describe Accounts::ApplyPlan do
   end
 
   # The limits a super admin chose for the account (a number of its own, «без ограничений») are listed in
-  # custom_attributes['limit_overrides'] (Accounts::LimitSettings): the plan writes its numbers into the limits that follow it only.
+  # custom_attributes['limit_overrides'] (Accounts::LimitSettings): the plan writes its numbers into the limits that follow it only, and
+  # keeps the numbers it wrote (custom_attributes['limit_plan_numbers']) to tell them from a number somebody typed.
   describe 'limits chosen for the account' do
     let(:max) { ChatwootApp.max_limit }
     let(:marks_key) { Accounts::LimitSettings::KEY }
+    let(:plan_numbers_key) { Accounts::LimitSettings::PLAN_NUMBERS_KEY }
 
     def choose!(marks, limits)
       account.update!(limits: limits, custom_attributes: account.custom_attributes.to_h.merge(marks_key => marks))
@@ -537,15 +539,64 @@ RSpec.describe Accounts::ApplyPlan do
       expect(preview.limits).to be_empty
       expect(preview.kept_limits).to eq(['non_web_inboxes'])
       expect(account.reload.limits).to eq('conversations' => max, 'non_web_inboxes' => 3, 'agents' => 7)
-      # listed from now on: a number where the plan has one of its own would else be taken for an older number of the plan
-      expect(account.custom_attributes[marks_key]).to eq('non_web_inboxes' => 3)
+      # nothing is listed for it: a number that is not the plan one is read as its own
+      expect(account.custom_attributes).not_to have_key(marks_key)
+      expect(Accounts::LimitSettings.new(account).source('non_web_inboxes')).to eq(:custom)
     end
 
-    it 'lists nothing for an account that chose nothing, and still marks it as one that has the list' do
+    it 'keeps the numbers it wrote, so that a number of the plan that changes later is told from a number typed by hand' do
       service.call
 
-      expect(account.reload.custom_attributes).to include(marks_key => {})
-      expect(Accounts::LimitSettings.new(account)).to be_tracked
+      expect(account.reload.custom_attributes[plan_numbers_key]).to eq('conversations' => max, 'non_web_inboxes' => max)
+
+      plan_numbers('agents' => 10)
+      service.call
+
+      expect(account.reload.custom_attributes[plan_numbers_key]).to eq('conversations' => max, 'non_web_inboxes' => max, 'agents' => 10)
+    end
+
+    it 'does not keep a number for a limit chosen by hand, nor for one the plan leaves alone' do
+      choose!({ 'conversations' => 50 }, { 'conversations' => 50, 'inboxes' => 9 })
+
+      service.call
+
+      expect(account.reload.custom_attributes[plan_numbers_key]).to eq('non_web_inboxes' => max)
+    end
+
+    it 'keeps a number typed by hand where the plan had none through the first plan and a number that comes to the plan later' do
+      account.update!(limits: { 'agents' => 10, 'conversations' => max, 'non_web_inboxes' => max },
+                      custom_attributes: { 'plan' => 'base', 'plan_modules' => [], 'plan_version' => 2 })
+
+      service.call
+      expect(Accounts::LimitSettings.new(account.reload).source('agents')).to eq(:custom)
+
+      plan_numbers('agents' => 5)
+      preview = service.preview
+      service.call
+
+      expect(preview.limits).to be_empty
+      expect(preview.kept_limits).to eq(['agents'])
+      expect(account.reload.limits['agents']).to eq(10)
+      expect(Accounts::LimitSettings.new(account).source('agents')).to eq(:custom)
+    end
+
+    it 'writes the new number of the plan over the number it wrote, and not over a number written by anybody else' do
+      service.call
+      account.update!(limits: account.limits.merge('inboxes' => 6, 'emails' => 40))
+      plan_numbers('conversations' => 1000, 'inboxes' => 20)
+      service.call # 'inboxes' is somebody's number (the plan had none when it was applied before): it stays
+      expect(account.reload.limits).to include('conversations' => 1000, 'inboxes' => 6, 'emails' => 40)
+
+      plan_numbers('conversations' => 2000, 'inboxes' => 20)
+      service.call
+
+      expect(account.reload.limits).to include('conversations' => 2000, 'inboxes' => 6)
+    end
+
+    it 'does not write the list of the limits chosen by hand when nothing was chosen' do
+      service.call
+
+      expect(account.reload.custom_attributes).not_to have_key(marks_key)
     end
 
     it 'keeps the list a plan wrote when the plan is applied again' do

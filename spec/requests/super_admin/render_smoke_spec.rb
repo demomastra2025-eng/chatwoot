@@ -327,11 +327,19 @@ RSpec.describe 'Super Admin render smoke', type: :request do
         Accounts::ApplyPlan.new(account: account, modules: []).call
         result = Accounts::LimitSettings.new(account).apply('agents' => 5, 'storage_bytes' => :unlimited, 'captain_tokens' => :unlimited,
                                                             'inboxes' => 0, 'emails' => 30)
-        account.update!(limits: result.limits, custom_attributes: account.custom_attributes.merge(Accounts::LimitSettings::KEY => result.marks))
+        account.update!(limits: result.limits, custom_attributes: result.custom_attributes(account.custom_attributes))
       },
       'with an older number of the plan' => lambda { |account|
         Accounts::ApplyPlan.new(account: account, modules: []).call
-        account.update!(limits: account.limits.merge('conversations' => 50))
+        numbers = account.custom_attributes[Accounts::LimitSettings::PLAN_NUMBERS_KEY].merge('conversations' => 50)
+        account.update!(limits: account.limits.merge('conversations' => 50),
+                        custom_attributes: account.custom_attributes.merge(Accounts::LimitSettings::PLAN_NUMBERS_KEY => numbers))
+      },
+      'with a number of its own and an ended trial' => lambda { |account|
+        Accounts::ApplyPlan.new(account: account, modules: []).call
+        account.update!(limits: account.limits.merge('conversations' => 50, 'agents' => 5))
+        account.activate_trial!(3)
+        account.expire_trial!
       },
       'suspended' => ->(account) { account.update!(status: :suspended) },
       'being deleted' => ->(account) { account.update!(custom_attributes: { 'marked_for_deletion_at' => 3.days.from_now.iso8601 }) }

@@ -51,7 +51,8 @@ class Accounts::Plans
     end
 
     # The number that stands for «no limit» in Account#limits. The code treats it as no limit; the storage is counted in bytes and
-    # the AI tokens in thousands, so a bare ChatwootApp.max_limit (100 000) would be a tiny quota there: they get a number nobody reaches.
+    # the AI tokens one by one (every token the model uses), so a bare ChatwootApp.max_limit (100 000) would be a tiny quota there (100 000
+    # bytes, 100 000 tokens): they get a number nobody reaches.
     def unlimited_value(key)
       case key.to_s
       when 'storage_bytes' then ChatwootApp.max_limit.to_i * 1.gigabyte

@@ -10,7 +10,7 @@
 # with those choices and numbers instead of the saved ones, and `problems` marks the limits that were not understood.
 class SuperAdmin::LimitRows
   Row = Struct.new(
-    :key, :usage_key, :label, :input_label, :hint, :bytes, :choice, :input_value, :now, :plan_text, :drift, :usage, :problem,
+    :key, :usage_key, :label, :input_label, :hint, :bytes, :choice, :input_value, :now, :plan_text, :drift, :held, :usage, :problem,
     keyword_init: true
   )
 
@@ -48,6 +48,7 @@ class SuperAdmin::LimitRows
       now: now_text(key, usage_row),
       plan_text: SuperAdmin::LimitWords.amount(key, @settings.plan_following_value(key)),
       drift: drift_text(key, source, usage_row),
+      held: held_text(key),
       problem: @problems[key]
     )
   end
@@ -71,7 +72,8 @@ class SuperAdmin::LimitRows
 
     return value.round.to_s unless bytes
 
-    ActiveSupport::NumberHelper.number_to_rounded(value.to_f / 1.gigabyte, precision: 2, strip_insignificant_zeros: true)
+    ActiveSupport::NumberHelper.number_to_rounded(value.to_f / 1.gigabyte, precision: Accounts::LimitSettings::GIGABYTE_DECIMALS,
+                                                                           strip_insignificant_zeros: true)
   end
 
   # What applies now, from the same numbers the usage meter is drawn from (they are what the code enforces)
@@ -87,12 +89,24 @@ class SuperAdmin::LimitRows
     usage_row.unlimited ? nil : usage_row.total
   end
 
-  # A limit that follows the plan but still holds an older number of it: the plan writes the new one when it is applied
+  # A limit that follows the plan but still holds an older number of it: the plan writes the new one when it is applied (the zero of an
+  # ended trial has a note of its own)
   def drift_text(key, source, usage_row)
     plan = @settings.plan_value(key)
-    return if source != :plan || plan.nil? || @settings.stored(key) == plan
+    return if source != :plan || plan.nil? || @settings.stored(key) == plan || held?(key)
 
     I18n.t('super_admin.limits.drift', now: SuperAdmin::LimitWords.amount(key, applying(key, usage_row)),
                                        plan: SuperAdmin::LimitWords.amount(key, plan))
+  end
+
+  # The zero the end of a trial put on the limit and still holds there: the limit says «как в тарифе», and without this line nothing
+  # says why it is 0 (applying the plan gives it back)
+  def held_text(key)
+    I18n.t('super_admin.limits.held') if held?(key)
+  end
+
+  def held?(key)
+    @held ||= @account.trial_held_limits
+    @held.key?(key)
   end
 end

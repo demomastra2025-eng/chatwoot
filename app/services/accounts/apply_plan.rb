@@ -12,9 +12,11 @@
 #             account has, so a plan never changes an infrastructure switch.
 # * limits  : numbers of the plan are written; keys the plan leaves null are not touched.
 #             A limit chosen for this account (a number of its own or «без ограничений», see Accounts::LimitSettings) is left as it
-#             is: the plan only writes the limits that follow it. A number a not yet tracked account holds that differs from what
-#             the plan would write counts as chosen too, and so does a number a new account was created with (the plan only fills the
-#             blanks). The list of the limits chosen by hand is written with the plan (custom_attributes['limit_overrides']).
+#             is: the plan only writes the limits that follow it. Any number that is neither the number of the plan nor the number
+#             this plan wrote last counts as chosen: one a super admin typed, one an account from before the plan holds, one a
+#             partner wrote through the Platform API, one a new account was created with (the plan only fills the blanks). The
+#             numbers written for the limits that follow the plan are kept (custom_attributes['limit_plan_numbers']), so a number of
+#             the plan that changes later is still told from a number somebody typed.
 #             The operator and channel limits that the end of a trial put at 0 are given back (the values from before the
 #             trial, from the snapshot of the trial) without anybody asking: a plan is what the account pays for, so it must not
 #             stay locked out; a number the plan itself sets wins over the restored one.
@@ -96,6 +98,8 @@ class Accounts::ApplyPlan
   def build_diff
     # Read again for every diff: the account is reloaded under its lock before it is written
     @limit_settings = Accounts::LimitSettings.new(account, modules: modules)
+    # Read before anything is written: the zero of a trial that is about to be given back is what tells a limit follows the plan
+    @plan_numbers = limit_settings.following_plan_numbers
     attributes = account.custom_attributes.to_h
     enabled = account.enabled_features.keys
     desired = desired_features
@@ -162,15 +166,20 @@ class Accounts::ApplyPlan
     account.disable_features(*diff.disable)
     account.enable_features(*diff.enable)
     account.limits = limits_after(diff)
-    account.custom_attributes = account.custom_attributes.to_h.deep_dup.merge(plan_attributes(diff)).merge(limit_marks(diff))
+    account.custom_attributes = custom_attributes_after(diff)
     account.save!
   end
 
-  # The limits chosen for this account, written with the plan: the ones listed already and the numbers it holds where the plan has
-  # a number of its own
-  def limit_marks(diff)
-    marks = Accounts::LimitSettings.new(account, modules: modules, limits: limits_after(diff)).plan_marks
-    { Accounts::LimitSettings::KEY => marks }
+  # The attributes with the plan written; the list of the limits chosen by hand stays as it is, and the numbers of the plan the
+  # limits that follow it hold are kept for the next time (Accounts::LimitSettings)
+  def custom_attributes_after(diff)
+    attributes = account.custom_attributes.to_h.deep_dup.merge(plan_attributes(diff))
+    if @plan_numbers.empty?
+      attributes.delete(Accounts::LimitSettings::PLAN_NUMBERS_KEY)
+    else
+      attributes[Accounts::LimitSettings::PLAN_NUMBERS_KEY] = @plan_numbers
+    end
+    attributes
   end
 
   # The limits of the account with the changes of the plan written; a limit that the plan gives back as «not set» is taken off

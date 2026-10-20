@@ -16,23 +16,37 @@
 #   account.custom_attributes['limit_overrides'] = { 'agents' => 5, 'conversations' => 'unlimited' }
 #
 # Only the limits chosen by hand are listed (an Integer, or 'unlimited'); every other limit follows the plan. The key is written by
-# the screens of the super admin and by Accounts::ApplyPlan, and it is never lost: a plan, a trial or the Platform API leaves
-# the listed limits as they are.
+# the screens of the super admin, and it is never lost: a plan, a trial or the Platform API leaves the listed limits as they are.
 #
-# An account that has no such key yet (every account that existed before this) is read like this, and nothing is written for it:
-# a number that equals what its plan would write is «как в тарифе», any other number is «своё число» (or «без ограничений» for the
-# number that stands for no limit), and a limit with no number follows the plan. An account that has the key (even an empty one)
-# is tracked: a number it holds that is not listed and differs from a number of its plan is an older number of the plan, not a
-# choice (the plan writes the new one when it is applied).
+# A number that follows the plan is not listed, so it has to be told from a number somebody typed. A limit follows the plan when
+# it holds no number, when the end of a trial holds it at 0, or when its number is the number of the plan now or the number the plan
+# wrote last. The last one is kept beside the list:
+#
+#   account.custom_attributes['limit_plan_numbers'] = { 'conversations' => 1000 }
+#
+# (the numbers Accounts::ApplyPlan and the choice «Как в тарифе» wrote). So a number of the plan that has changed since is still told
+# from a number of the account: the limit follows the plan, and the plan writes its new number when it is applied. Any other number
+# is «своё число» (or «без ограничений» for the number that stands for no limit), whoever typed it: the screens of the super admin,
+# an older form, the Platform API.
+#
+# An account that has neither key (every account that existed before this) is read the same way, and nothing is written for it: a
+# number that equals what its plan would write is «как в тарифе», any other number is «своё число», and a limit with no number
+# follows the plan. Saving a form leaves alone every limit whose choice did not change (#apply), so nothing is written for the limits
+# nobody touched: a zero a trial put on a limit, a number a partner wrote, a number the plan has changed since stay as they are.
 #
 #   settings = Accounts::LimitSettings.new(account)
 #   settings.source('agents')       # => :plan | :unlimited | :custom
 #   settings.effective('agents')    # => 5 (what the code enforces now); nil = no limit
 #   result = settings.apply('agents' => 5, 'conversations' => :unlimited, 'storage_bytes' => :plan)
-#   account.update!(limits: result.limits, custom_attributes: account.custom_attributes.merge(described_class::KEY => result.marks))
+#   account.update!(limits: result.limits, custom_attributes: result.custom_attributes(account.custom_attributes))
 class Accounts::LimitSettings
   KEY = 'limit_overrides'
+  PLAN_NUMBERS_KEY = 'limit_plan_numbers'
+  # What this class keeps in the custom attributes of an account (code that replaces the attributes as a whole has to keep both)
+  ATTRIBUTE_KEYS = [KEY, PLAN_NUMBERS_KEY].freeze
   UNLIMITED = Accounts::Plans::UNLIMITED
+  # The storage is typed and shown in gigabytes with this many decimals (1,5 or 4,66); two sizes that differ by less are the same size
+  GIGABYTE_DECIMALS = 2
 
   # The setting of the platform that gives a limit its general value (the same names the enforcement code reads). A limit without
   # a setting has no general value.
@@ -46,9 +60,18 @@ class Accounts::LimitSettings
     'emails' => 'ACCOUNT_EMAILS_LIMIT'
   }.freeze
 
-  # What applying a choice gives: the new Account#limits, the new list of the limits chosen by hand, and for each limit whose choice
-  # or number changed { 'from' => Position, 'to' => Position }.
-  Result = Struct.new(:limits, :marks, :changes, keyword_init: true)
+  # What applying a choice gives: the new Account#limits, the new list of the limits chosen by hand, the new list of the numbers of the
+  # plan the limits hold, and for each limit whose choice or number changed { 'from' => Position, 'to' => Position }.
+  Result = Struct.new(:limits, :marks, :plan_numbers, :changes, keyword_init: true) do
+    # The custom attributes of the account with the two lists set (a list that is empty is not stored)
+    def custom_attributes(attributes)
+      attributes = attributes.to_h.deep_dup
+      { KEY => marks, PLAN_NUMBERS_KEY => plan_numbers }.each do |name, list|
+        list.empty? ? attributes.delete(name) : attributes[name] = list
+      end
+      attributes
+    end
+  end
   # One limit as it stands: where it comes from (:plan, :unlimited or :custom) and the number that applies (nil: no limit)
   Position = Struct.new(:source, :value, keyword_init: true)
 
@@ -56,42 +79,55 @@ class Accounts::LimitSettings
     # The limits chosen by hand, as { 'agents' => 5, 'conversations' => 'unlimited' }, from the custom attributes of an account. A
     # malformed entry (an unknown limit, a negative or fractional number, anything else) is ignored.
     def marks_in(attributes)
-      raw = attributes.to_h[KEY]
-      return {} unless raw.is_a?(Hash)
-
-      raw.each_with_object({}) do |(key, mark), marks|
-        key = key.to_s
-        marks[key] = mark if Accounts::Plans::LIMIT_KEYS.include?(key) && valid_mark?(mark)
-      end
+      list_in(attributes, KEY) { |mark| valid_mark?(mark) }
     end
 
-    # Whether the custom attributes hold the list at all (an empty list counts: it says that nothing was chosen by hand)
-    def tracked?(attributes)
-      attributes.to_h[KEY].is_a?(Hash)
+    # The numbers the plan wrote into the limits, as { 'conversations' => 1000 }, from the custom attributes of an account
+    def plan_numbers_in(attributes)
+      list_in(attributes, PLAN_NUMBERS_KEY) { |number| valid_number?(number) }
     end
 
     def valid_mark?(mark)
-      mark == UNLIMITED || (mark.is_a?(Integer) && !mark.negative?)
+      mark == UNLIMITED || valid_number?(mark)
+    end
+
+    def valid_number?(number)
+      number.is_a?(Integer) && !number.negative?
+    end
+
+    private
+
+    def list_in(attributes, name)
+      raw = attributes.to_h[name]
+      return {} unless raw.is_a?(Hash)
+
+      raw.each_with_object({}) do |(key, value), list|
+        key = key.to_s
+        list[key] = value if Accounts::Plans::LIMIT_KEYS.include?(key) && yield(value)
+      end
     end
   end
 
-  # modules: the modules of the plan to read the plan numbers from (default: the plan applied to the account, none without one)
-  # limits : the limits to read instead of the ones of the account (what Accounts::ApplyPlan is about to write)
-  # marks  : the list of the limits chosen by hand to read instead of the one of the account
-  def initialize(account, modules: nil, limits: nil, marks: nil)
+  # modules     : the modules of the plan to read the plan numbers from (default: the plan applied to the account, none without one)
+  # limits      : the limits to read instead of the ones of the account (what Accounts::ApplyPlan is about to write)
+  # marks       : the list of the limits chosen by hand to read instead of the one of the account
+  # plan_numbers: the list of the numbers the plan wrote to read instead of the one of the account
+  def initialize(account, modules: nil, limits: nil, marks: nil, plan_numbers: nil)
     @account = account
     @modules = modules
     @limits = limits
     @given_marks = marks
-  end
-
-  def tracked?
-    @given_marks ? true : self.class.tracked?(attributes)
+    @given_plan_numbers = plan_numbers
   end
 
   # { 'agents' => 5, 'conversations' => 'unlimited' }: the limits chosen by hand as they are listed
   def marks
     @marks ||= @given_marks || self.class.marks_in(attributes)
+  end
+
+  # { 'conversations' => 1000 }: the numbers the plan wrote into the limits the last time (see the top of this file)
+  def plan_numbers
+    @plan_numbers ||= @given_plan_numbers || self.class.plan_numbers_in(attributes)
   end
 
   # The number in Account#limits; nil when the limit has none
@@ -164,60 +200,80 @@ class Accounts::LimitSettings
     Accounts::Plans::LIMIT_KEYS.index_with { |key| Position.new(source: source(key), value: effective(key)) }
   end
 
-  # The list of the limits chosen by hand as it has to be stored now: the list the account has, plus the numbers it holds that
-  # are its own (an account from before the list, a number somebody typed into a plan limit)
-  def materialized_marks
-    Accounts::Plans::LIMIT_KEYS.each_with_object({}) do |key, marks|
-      case source(key)
-      when :unlimited then marks[key] = UNLIMITED
-      when :custom then marks[key] = custom_value(key)
-      end
+  # The numbers of the plan that the limits following it hold once the plan is applied: what Accounts::ApplyPlan stores as the numbers
+  # the plan wrote ({ 'conversations' => 1000 }). A limit the plan leaves alone, and one chosen by hand, is not in it.
+  def following_plan_numbers
+    Accounts::Plans::LIMIT_KEYS.each_with_object({}) do |key, numbers|
+      number = plan_value(key)
+      numbers[key] = number if !number.nil? && source(key) == :plan
     end
   end
 
-  # The list to store when a plan is applied: the limits chosen by hand that are listed already, and the numbers the account holds
-  # where the plan has a number of its own (an account that is tracked from now on would take them for an older number of the
-  # plan and write the new one over them). A number in a limit the plan leaves alone is the account's own without being listed.
-  def plan_marks
-    materialized_marks.select { |key, _mark| marks.key?(key) || !plan_value(key).nil? }
+  # Whether `choice` (:plan, :unlimited or an Integer) says what the limit already is. The forms of the screens send every row, the
+  # ones nobody touched included, and those must change nothing. A number is the same when it is the same at the precision of the
+  # field it was typed in (the storage is shown in gigabytes with two decimals).
+  def same_choice?(key, choice)
+    key = key.to_s
+    case choice
+    when :plan, :unlimited then source(key) == choice
+    when Integer then source(key) == :custom && same_amount?(key, custom_value(key), choice)
+    else false
+    end
   end
 
-  # What Account#limits and the list of limits chosen by hand become when `choices` ({ 'agents' => 5, 'storage_bytes' => :plan })
-  # are made; the limits that are not named stay as they are. Nothing is written.
+  # What Account#limits, the list of the limits chosen by hand and the list of the numbers of the plan become when `choices`
+  # ({ 'agents' => 5, 'storage_bytes' => :plan }) are made; the limits that are not named stay as they are, and so do the ones whose
+  # choice is the one they have (#same_choice?). Nothing is written.
   def apply(choices)
     limits = stored_limits.dup
-    marks = materialized_marks
+    marks = self.marks.dup
+    plan_numbers = self.plan_numbers.dup
     choices.each do |key, choice|
       key = key.to_s
       next unless Accounts::Plans::LIMIT_KEYS.include?(key)
+      next if same_choice?(key, choice)
 
-      apply_choice(limits, marks, key, choice)
+      apply_choice(limits, marks, plan_numbers, key, choice)
     end
-    Result.new(limits: limits, marks: marks, changes: changes_between(limits, marks))
+    Result.new(limits: limits, marks: marks, plan_numbers: plan_numbers, changes: changes_between(limits, marks, plan_numbers))
   end
 
   private
 
-  def apply_choice(limits, marks, key, choice)
+  def apply_choice(limits, marks, plan_numbers, key, choice)
     case choice
-    when :plan
-      marks.delete(key)
-      plan = plan_value(key)
-      plan.nil? ? limits.delete(key) : limits[key] = plan
-    when :unlimited
-      marks[key] = UNLIMITED
-      limits[key] = Accounts::Plans.unlimited_value(key)
+    when :plan then follow_plan(limits, marks, plan_numbers, key)
+    when :unlimited then choose(limits, marks, plan_numbers, key, UNLIMITED, Accounts::Plans.unlimited_value(key))
     else
       raise ArgumentError, "Not a choice for #{key}: #{choice.inspect}" unless choice.is_a?(Integer) && !choice.negative?
 
-      marks[key] = choice
-      limits[key] = choice
+      choose(limits, marks, plan_numbers, key, choice, choice)
     end
   end
 
+  # «Как в тарифе»: the number of the plan, or no number where the plan has none (the general value of the platform applies then)
+  def follow_plan(limits, marks, plan_numbers, key)
+    marks.delete(key)
+    plan = plan_value(key)
+    if plan.nil?
+      limits.delete(key)
+      plan_numbers.delete(key)
+    else
+      limits[key] = plan
+      plan_numbers[key] = plan
+    end
+  end
+
+  # «Без ограничений» and «Своё число»: the mark and the number, and nothing of the plan
+  def choose(limits, marks, plan_numbers, key, mark, number)
+    marks[key] = mark
+    limits[key] = number
+    plan_numbers.delete(key)
+  end
+
   # { 'agents' => { 'from' => Position, 'to' => Position } } for the limits whose source or number differs after the choices
-  def changes_between(limits, marks)
-    after = self.class.new(@account, modules: @modules, limits: limits, marks: marks)
+  def changes_between(limits, marks, plan_numbers)
+    after = self.class.new(@account, modules: @modules, limits: limits, marks: marks, plan_numbers: plan_numbers)
     Accounts::Plans::LIMIT_KEYS.each_with_object({}) do |key, changes|
       before = Position.new(source: source(key), value: effective(key))
       now = Position.new(source: after.source(key), value: after.effective(key))
@@ -253,13 +309,24 @@ class Accounts::LimitSettings
     @held.key?(key.to_s)
   end
 
-  # The number is the one of the plan, or (for an account that is tracked) an older number of it that the plan writes over
+  # The number is the one of the plan, or the one the plan wrote the last time (a number that the plan has changed since: it is
+  # written over when the plan is applied). Where the plan has no number there is nothing to follow.
   def follows_plan_number?(key, value)
     plan = plan_value(key)
-    !plan.nil? && (same_number?(plan, value) || tracked?)
+    !plan.nil? && (same_number?(plan, value) || same_number?(plan_numbers[key], value))
   end
 
   def same_number?(first, second)
     first.is_a?(Numeric) && second.is_a?(Numeric) && first == second
+  end
+
+  def same_amount?(key, current, chosen)
+    return current == chosen unless key == 'storage_bytes'
+
+    !current.nil? && gigabytes(current) == gigabytes(chosen)
+  end
+
+  def gigabytes(bytes)
+    (BigDecimal(bytes.to_s) / 1.gigabyte).round(GIGABYTE_DECIMALS)
   end
 end
