@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
-# The block «Нужно проверить» of the «Сводка»: what a super admin should look at first, with a link to each account or
-# page. Every check reads what the platform already keeps (counts, the hourly storage snapshots, the cached OpenRouter key
-# check, the Sidekiq counters, the marks of channels that need authorizing again): no call to an outside service is made
-# when the page is opened. The answer is kept for a short while (CACHE_TTL), so many opened pages cost one run.
+# The checks behind the list «Нужно проверить» of the «Сводка»: what a super admin should look at first, with a link to each
+# account or page. SuperAdmin::DashboardChecklist arranges what they find, together with the problems of the table of accounts,
+# into the rows of the list. Every check reads what the platform already keeps (counts, the hourly storage snapshots, the cached
+# OpenRouter key check, the Sidekiq counters, the marks of channels that need authorizing again): no call to an outside service is
+# made when the page is opened. The answer is kept for a short while (CACHE_TTL), so many opened pages cost one run.
 #
 #   SuperAdmin::DashboardAlerts.build                      # => [alert, ...], the most serious first
 #   SuperAdmin::DashboardAlerts.build(force_refresh: true) # the «Обновить» button of the page

@@ -42,7 +42,7 @@ developer reads (the names of queues) is folded under «Для разработ�
     <% if rows.size > shown_rows %>
       <details class="flex flex-col gap-1" data-testid="dashboard-checklist-rest">
         <summary class="cursor-pointer text-sm font-medium text-n-slate-11 hover:text-n-slate-12"><%= t('super_admin.checklist.show_rest', count: super_admin_number(rows.size - shown_rows)) %></summary>
-        <ul class="m-0 mt-2 flex list-none flex-col border-t border-n-weak p-0">
+        <ul class="m-0 mt-2 flex list-none flex-col p-0">
           <%= render partial: 'super_admin/dashboard/checklist_row', collection: rows.drop(shown_rows), as: :row %>
         </ul>
       </details>
