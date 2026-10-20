@@ -109,6 +109,13 @@ RSpec.describe 'Super Admin new client', type: :request do
       expect(trial['checked']).to be_nil
     end
 
+    it 'says its problems itself, in Russian under the fields: the browser does not check the e-mail first, and a second click is not sent' do
+      form = page.at_css('form[data-testid="client-form"]')
+
+      expect(form.has_attribute?('novalidate')).to be(true)
+      expect(form['data-single-submit']).to eq('true')
+    end
+
     it 'does not ask for limits, the status or single functions: the limits come from the plan' do
       expect(page.css('input[name^="account[limits]"], select[name="account[status]"], input[name^="enabled_features"]')).to be_empty
       expect(text(page.at_css('[data-testid="limits-note"]'))).to include('Лимиты операторов и хранилища берутся из тарифа')

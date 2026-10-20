@@ -43,6 +43,13 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
       expect(block.at_css('input[name="member[mode]"][checked]')['value']).to eq('pick')
     end
 
+    it 'says its problems itself, in Russian under the fields, and is sent once' do
+      form = page.at_css('[data-testid="add-user"] form')
+
+      expect(form.has_attribute?('novalidate')).to be(true)
+      expect(form['data-single-submit']).to eq('true')
+    end
+
     it 'picks an existing user with the search of the user field' do
       select = page.at_css('[data-testid="add-user"] select[name="member[user_id]"]')
 
