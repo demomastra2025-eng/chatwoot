@@ -260,7 +260,9 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
       expect { add_with_password(password: 'abcdef') }.not_to change(User, :count)
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(error_for('password')).to eq('Пароль не подходит: он должен содержать заглавную латинскую букву; цифру; спецсимвол (например ! @ # $ %).')
+      expect(error_for('password')).to eq(
+        'Пароль не подходит: он должен содержать заглавную латинскую букву; цифру; спецсимвол (например ! @ # $ %).'
+      )
       expect(page.at_css('input[name="member[name]"]')['value']).to eq('Динара Касым')
       expect(page.at_css('input[name="member[email]"]')['value']).to eq('dinara@sezim.example')
       expect(page.at_css('input[name="member[password]"]')['value']).to eq('abcdef')

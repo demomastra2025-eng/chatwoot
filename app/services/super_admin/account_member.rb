@@ -73,11 +73,10 @@ class SuperAdmin::AccountMember
   # who typed it at the same time) offers to add that user, an e-mail the model refuses is a wrong one. True when it did; false for
   # a failure that is not about the person (the caller says its own words).
   def explain_failure(failure)
-    case email_failure(failure)
-    when :taken then email_taken_since_check
-    when :invalid then error(:email, :email_invalid)
-    else return false
-    end
+    reason = email_failure(failure)
+    return false unless reason
+
+    reason == :taken ? email_taken_since_check : error(:email, :email_invalid)
     true
   end
 
@@ -157,13 +156,10 @@ class SuperAdmin::AccountMember
   # The user who has the e-mail, nil when nobody has it (or the e-mail is blank or wrong, which is an error of its own). Somebody
   # who has it is found first: whatever the rules say today, the e-mail of a user who exists is theirs.
   def prepare_email(email)
-    if email.blank?
-      error(:email, :email_blank)
-    elsif (existing = User.from_email(email))
-      return existing
-    elsif !email_accepted?(email)
-      error(:email, :email_invalid)
-    end
+    existing = User.from_email(email) if email.present?
+    return existing if existing
+
+    error(:email, email.blank? ? :email_blank : :email_invalid) unless email.present? && email_accepted?(email)
     nil
   end
 
@@ -213,11 +209,11 @@ class SuperAdmin::AccountMember
   def email_failure(failure)
     return :taken if failure.is_a?(ActiveRecord::RecordNotUnique) && failure.message.include?('users')
 
-    record = failure.respond_to?(:record) ? failure.record : nil
+    record = failure.try(:record)
     types = record.is_a?(User) ? record.errors.details[:email].pluck(:error) : []
-    return if types.empty?
+    return :taken if types.include?(:taken)
 
-    types.include?(:taken) ? :taken : :invalid
+    :invalid if types.any?
   end
 
   # Somebody has the e-mail now, though nobody had it when the form was checked

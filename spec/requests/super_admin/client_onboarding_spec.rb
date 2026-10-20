@@ -511,7 +511,7 @@ RSpec.describe 'Super Admin new client', type: :request do
       expect(Account.where(name: 'Клиника «Алатау»')).to be_empty
     end
 
-    it 'says a mistyped e-mail is a mistake, not that somebody has it: a domain without a dot or in Cyrillic fails the rules of the user', :aggregate_failures do
+    it 'says a mistyped e-mail is a mistake, not a taken one: a domain without a dot or in Cyrillic fails the user rules', :aggregate_failures do
       ['ivan@clinic', 'ivan@клиника.kz', 'ivan @clinic.kz', 'ivan@clinic.k'].each do |typo|
         expect { create_client(admin: { email: typo }) }.not_to(change { [Account.count, User.count] })
 
@@ -748,7 +748,9 @@ RSpec.describe 'Super Admin new client', type: :request do
       expect { post('/super_admin/clients', params: params_for) }.to change(Account, :count).by(1)
 
       expect { send_form('not-a-token', account: { name: 'Клиника «Нур»' }, admin: { email: 'nur@alatau.example' }) }.to change(Account, :count).by(1)
-      expect { send_form('not-a-token', account: { name: 'Клиника «Нур 2»' }, admin: { email: 'nur2@alatau.example' }) }.to change(Account, :count).by(1)
+      expect do
+        send_form('not-a-token', account: { name: 'Клиника «Нур 2»' }, admin: { email: 'nur2@alatau.example' })
+      end.to change(Account, :count).by(1)
     end
 
     it 'remembers only the last ten forms' do
