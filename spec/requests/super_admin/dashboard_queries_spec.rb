@@ -27,7 +27,8 @@ RSpec.describe 'Super admin «Сводка»: queries', type: :request do
   # needs a new login, a message that did not go out
   def add_accounts(count)
     Array.new(count) do |index|
-      account = create(:account, name: "Аккаунт #{index}", custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => (index + 1).hours.from_now.iso8601 })
+      trial = { 'plan_type' => 'trial', 'trial_expires_at' => (index + 1).hours.from_now.iso8601 }
+      account = create(:account, name: "Аккаунт #{index}", custom_attributes: trial)
       create(:channel_telegram_personal, account: account, connection_state: 'auth_required')
       create(:message, account: account, status: :failed)
       Redis::Alfred.set("account:#{account.id}:storage_overview_v1",
@@ -41,8 +42,11 @@ RSpec.describe 'Super admin «Сводка»: queries', type: :request do
   def queries_for_a_visit
     get '/super_admin'
     queries = []
+    plumbing = /\A\s*(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)/i
     counter = lambda do |*, payload|
-      queries << payload[:sql] unless payload[:name] == 'SCHEMA' || payload[:cached] || payload[:sql].match?(/\A\s*(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)/i)
+      next if payload[:name] == 'SCHEMA' || payload[:cached] || payload[:sql].match?(plumbing)
+
+      queries << payload[:sql]
     end
     ActiveSupport::Notifications.subscribed(counter, 'sql.active_record') { get '/super_admin' }
     expect(response).to have_http_status(:ok)

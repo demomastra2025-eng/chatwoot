@@ -93,8 +93,13 @@ class SuperAdmin::DashboardChecklist
       row(key, severity, title: text("rows.#{key}"), subject: item[:label], note: item[:note], label: key_action(key), url: anchored(item[:url], key))
     end
     shown = items.size
-    rows << more_row(key, severity, shown: shown, count: alert[:count].to_i, url: alert[:more_url], label: alert[:more_label]) if more?(alert, shown)
+    rows << more_row(key, severity, note: text('more', shown: shown, count: alert[:count].to_i), link: alert_link(alert)) if more?(alert, shown)
     rows
+  end
+
+  # The list the alert says holds all it found: { url:, label: }, or nil when the alert has no such list
+  def alert_link(alert)
+    { url: alert[:more_url], label: alert[:more_label] } if alert[:more_url].present?
   end
 
   def more?(alert, shown)
@@ -138,7 +143,7 @@ class SuperAdmin::DashboardChecklist
 
     found = found.sort_by { |account| -account[:failed_messages].to_i } if kind[:key] == 'failed_messages'
     rows = found.first(LIST_LIMIT).map { |account| matrix_row(account, kind) }
-    rows << more_row(kind[:key], kind[:severity], shown: rows.size, count: found.size) if found.size > rows.size
+    rows << more_row(kind[:key], kind[:severity], note: text('more', shown: rows.size, count: found.size)) if found.size > rows.size
     { key: kind[:key], severity: kind[:severity], count: found.size, rows: rows }
   end
 
@@ -149,9 +154,15 @@ class SuperAdmin::DashboardChecklist
 
   def matrix_row(account, kind)
     key = kind[:key]
-    note = key == 'failed_messages' ? text('notes.failed_messages', days: failed_window, count: SuperAdmin::DisplayHelper.format_number(account[:failed_messages])) : account[kind[:line]][:label]
-    row(key, kind[:severity], title: text("rows.#{key}"), subject: account[:name], note: note, label: text('actions.account'),
+    row(key, kind[:severity], title: text("rows.#{key}"), subject: account[:name], note: matrix_note(account, kind), label: text('actions.account'),
                               url: routes.super_admin_account_path(account[:id]))
+  end
+
+  # The messages are counted in the note; the other lines say it in their own words (the label of the table)
+  def matrix_note(account, kind)
+    return account[kind[:line]][:label] unless kind[:key] == 'failed_messages'
+
+    text('notes.failed_messages', days: failed_window, count: SuperAdmin::DisplayHelper.format_number(account[:failed_messages]))
   end
 
   # The table could not be read at all, or a part of it could not
@@ -174,20 +185,19 @@ class SuperAdmin::DashboardChecklist
   end
 
   # ------------------------------------------------------------------- a row
-  # `label` is the word on the button and `url` the place it opens; without a place there is no button
-  def row(key, severity, title:, subject: nil, note: nil, hint: nil, details: [], label: nil, url: nil)
+  # `label` is the word on the button and `url` the place it opens; without a place there is no button. The rest are the fields of the row
+  # (title, subject, note, hint, details).
+  def row(key, severity, label: nil, url: nil, **fields)
     {
-      key: key, severity: severity, title: title, subject: subject, note: note, hint: hint, details: details, more: false,
+      key: key, severity: severity, title: nil, subject: nil, note: nil, hint: nil, details: [], more: false,
       action: url.present? ? { label: label, url: url } : nil
-    }
+    }.merge(fields)
   end
 
   # «Показаны первые 10 из 25» after the rows of one kind, with the link to the whole list when there is one
-  def more_row(key, severity, shown:, count:, url: nil, label: nil)
-    {
-      key: key, severity: severity, title: nil, subject: nil, note: text('more', shown: shown, count: count), hint: url ? nil : text('more_in_table'),
-      details: [], more: true, action: url.present? ? { label: label.presence || text('show_all'), url: url } : nil
-    }
+  def more_row(key, severity, note:, link: nil)
+    row(key, severity, note: note, hint: link ? nil : text('more_in_table'), more: true,
+                       label: link && (link[:label].presence || text('show_all')), url: link && link[:url])
   end
 
   def failed_window = SuperAdmin::DisplayHelper.format_wait(SuperAdmin::HealthMatrixService::FAILED_WINDOW)

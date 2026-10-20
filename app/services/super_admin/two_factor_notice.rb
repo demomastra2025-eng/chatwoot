@@ -34,7 +34,9 @@ module SuperAdmin::TwoFactorNotice
 
     # One statement on the one column, without the validations and callbacks of the user: a record with an old defect can still change it
     def change!(user, expression, value)
+      # rubocop:disable Rails/SkipsModelValidations
       User.where(id: user.id).update_all(["custom_attributes = #{expression}", value])
+      # rubocop:enable Rails/SkipsModelValidations
       user.reload
     end
 

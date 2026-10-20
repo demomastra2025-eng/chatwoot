@@ -492,7 +492,7 @@ RSpec.describe 'Super Admin sign-in with two-factor authentication', type: :requ
       end
 
       it 'keeps what else the user keeps in his attributes' do
-        super_admin.update_columns(custom_attributes: { 'note' => 'keep me' })
+        super_admin.update!(custom_attributes: { 'note' => 'keep me' })
 
         post '/super_admin/two_factor_notice/hide'
 

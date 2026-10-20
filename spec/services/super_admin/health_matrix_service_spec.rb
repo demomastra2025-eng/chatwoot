@@ -214,8 +214,9 @@ RSpec.describe SuperAdmin::HealthMatrixService, type: :service do
       it 'names a source that could not be read in words, not by the name of its class' do
         service = described_class.new
 
-        names = %w[Message Telephony::SipProfile Telephony::NumberBinding Telephony::ProviderConnection
-                   Integrations::Medelement::SyncRun Integrations::Medelement::SyncConflict Unknown::Thing].map { |source| service.send(:source_name, source) }
+        sources = %w[Message Telephony::SipProfile Telephony::NumberBinding Telephony::ProviderConnection
+                     Integrations::Medelement::SyncRun Integrations::Medelement::SyncConflict Unknown::Thing]
+        names = sources.map { |source| service.send(:source_name, source) }
 
         expect(names).to eq(['сообщения', 'линии телефонии', 'номера телефонии', 'подключения телефонии',
                              'синхронизации МедЭлемента', 'конфликты МедЭлемента', 'Unknown::Thing'])

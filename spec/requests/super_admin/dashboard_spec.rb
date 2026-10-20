@@ -103,8 +103,9 @@ RSpec.describe 'Super Admin Dashboard', type: :request do
 
         before do
           allow(Llm::OpenRouterKeyHealth).to receive(:metadata).and_return({ status: 'valid' })
-          allow(SuperAdmin::QueueStats).to receive(:read)
-            .and_return(SuperAdmin::QueueStats::Result.new(busy: 0, enqueued: 0, scheduled: 0, retries: 0, dead: 0, processed: 0, failed: 0, queues: []))
+          allow(SuperAdmin::QueueStats).to receive(:read).and_return(
+            SuperAdmin::QueueStats::Result.new(busy: 0, enqueued: 0, scheduled: 0, retries: 0, dead: 0, processed: 0, failed: 0, queues: [])
+          )
           sign_in(super_admin, scope: :super_admin)
         end
 
@@ -151,13 +152,17 @@ RSpec.describe 'Super Admin Dashboard', type: :request do
           expect(tile('Сообщений за сутки').at_css('a')).to be_nil
         end
 
-        it 'counts the problems of the list below, leads to it and is red only when there are some' do
+        it 'says «всё в порядке» and is not red when the list below is empty' do
           get '/super_admin'
+
           expect(value_of('Требуют внимания')).to eq('0')
           expect(note_of('Требуют внимания')).to eq('всё в порядке')
           expect(tile('Требуют внимания').at_css('dd')['class']).not_to include('text-n-ruby-11')
+        end
 
+        it 'counts the problems of the list below, leads to it and is red' do
           create(:account, custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => 1.day.from_now.iso8601 })
+
           get '/super_admin'
 
           expect(value_of('Требуют внимания')).to eq('1')

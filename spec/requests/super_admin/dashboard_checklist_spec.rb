@@ -48,25 +48,41 @@ RSpec.describe 'Super admin «Сводка»: Нужно проверить', ty
     expect(list['data-severity']).to eq('clear')
   end
 
-  it 'lists what needs attention in one list, the serious first, each row with one button' do
-    ending = create(:account, name: 'Клиника «Алатау»', custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => 2.days.from_now.iso8601 })
-    allow(SuperAdmin::QueueStats).to receive(:read)
-      .and_return(queue_stats(queues: [SuperAdmin::QueueStats::Queue.new(name: 'default', jobs: 7, latency: 180)]))
+  describe 'a list with a problem of the platform and a problem of an account' do
+    let!(:ending) do
+      create(:account, name: 'Клиника «Алатау»', custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => 2.days.from_now.iso8601 })
+    end
+    let(:slow_queue) { SuperAdmin::QueueStats::Queue.new(name: 'default', jobs: 7, latency: 180) }
 
-    get '/super_admin'
+    before do
+      allow(SuperAdmin::QueueStats).to receive(:read).and_return(queue_stats(queues: [slow_queue]))
+      get '/super_admin'
+    end
 
-    expect(row_keys).to eq(%w[queues_slow trials_ending])
-    expect(rows.pluck('data-severity')).to eq(%w[danger warning])
-    queue_row, trial_row = rows.to_a
-    expect(queue_row.at_css("[data-testid='row-severity']").text.squish).to eq('Срочно')
-    expect(trial_row.at_css("[data-testid='row-severity']").text.squish).to eq('Важно')
-    expect(queue_row.at_css("[data-testid='row-title']").text.squish).to eq('Фоновые задачи отстают')
-    expect(queue_row.at_css("[data-testid='row-subject']").text.squish).to eq('Вся платформа')
-    expect(queue_row.css("[data-testid='row-action']").map { |link| link['href'] }).to eq(['/super_admin/monitoring?tab=queues'])
-    expect(trial_row.at_css("[data-testid='row-title']").text.squish).to eq('Пробный период заканчивается')
-    expect(trial_row.at_css("[data-testid='row-subject']").text.squish).to eq('Клиника «Алатау»')
-    expect(trial_row.css('a').map { |link| link['href'] }).to eq(["/super_admin/accounts/#{ending.id}#trial-title"])
-    expect(trial_row.at_css("[data-testid='row-action']").text.squish).to eq('Продлить или назначить тариф')
+    def text_of(row, testid) = row.at_css("[data-testid='#{testid}']").text.squish
+
+    it 'puts the serious first and says how serious each is with a word, not with a colour alone' do
+      expect(row_keys).to eq(%w[queues_slow trials_ending])
+      expect(rows.pluck('data-severity')).to eq(%w[danger warning])
+      expect(rows.map { |row| text_of(row, 'row-severity') }).to eq(%w[Срочно Важно])
+    end
+
+    it 'gives a problem of the platform one button to the place where it is put right' do
+      row = rows.first
+
+      expect(text_of(row, 'row-title')).to eq('Фоновые задачи отстают')
+      expect(text_of(row, 'row-subject')).to eq('Вся платформа')
+      expect(row.css("[data-testid='row-action']").map { |link| link['href'] }).to eq(['/super_admin/monitoring?tab=queues'])
+    end
+
+    it 'gives a problem of an account its name and one button to the block of the card where it is put right' do
+      row = rows.last
+
+      expect(text_of(row, 'row-title')).to eq('Пробный период заканчивается')
+      expect(text_of(row, 'row-subject')).to eq('Клиника «Алатау»')
+      expect(row.css('a').map { |link| link['href'] }).to eq(["/super_admin/accounts/#{ending.id}#trial-title"])
+      expect(text_of(row, 'row-action')).to eq('Продлить или назначить тариф')
+    end
   end
 
   it 'colours the badge by the most serious problem and counts the problems' do
@@ -76,7 +92,8 @@ RSpec.describe 'Super admin «Сводка»: Нужно проверить', ty
     expect(list.at_css("[data-testid='dashboard-checklist-count']")['class']).to include('admin-badge--amber')
     expect(list.at_css("[data-testid='dashboard-checklist-count']").text.squish).to eq('1')
 
-    allow(SuperAdmin::QueueStats).to receive(:read).and_return(queue_stats(queues: [SuperAdmin::QueueStats::Queue.new(name: 'default', jobs: 7, latency: 180)]))
+    allow(SuperAdmin::QueueStats).to receive(:read)
+      .and_return(queue_stats(queues: [SuperAdmin::QueueStats::Queue.new(name: 'default', jobs: 7, latency: 180)]))
     get '/super_admin'
     expect(list.at_css("[data-testid='dashboard-checklist-count']")['class']).to include('admin-badge--ruby')
     expect(list.at_css("[data-testid='dashboard-checklist-count']").text.squish).to eq('2')
@@ -124,13 +141,20 @@ RSpec.describe 'Super admin «Сводка»: Нужно проверить', ty
     get '/super_admin'
 
     expect(rows.size).to eq(10)
-    shown = list.css("[data-testid='dashboard-checklist-rows'] > li")
+    expect(list.css("[data-testid='dashboard-checklist-rows'] > li").size).to eq(8)
     rest = list.at_css("[data-testid='dashboard-checklist-rest']")
-    expect(shown.size).to eq(8)
     expect(rest.at_css('summary').text.squish).to eq('Показать ещё 3')
     expect(rest.css('li').size).to eq(3)
-    closing = rest.css('li').last
-    expect(closing.key?('data-more')).to be(true)
+  end
+
+  it 'closes the rows of a kind with the link to the whole list when only the first ten are listed' do
+    create_list(:account, 12) do |account, index|
+      account.update!(custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => (index + 1).hours.from_now.iso8601 })
+    end
+
+    get '/super_admin'
+
+    closing = list.at_css('[data-more]')
     expect(closing.text.squish).to include('Показаны первые 10 из 12.')
     expect(closing.at_css('a')['href']).to eq('/super_admin/accounts?search=trial_active%3A')
     expect(closing.at_css('a').text.squish).to eq('Все аккаунты на пробном периоде')

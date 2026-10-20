@@ -76,9 +76,9 @@ RSpec.describe SuperAdmin::DashboardChecklist do
 
   describe 'a row of an alert about the whole platform' do
     it 'is one row with the advice of the alert, the first link of the alert as its button and «Вся платформа» as its subject' do
-      key = alert('openrouter_invalid', severity: :danger, items: [{ label: 'Модели ИИ', url: '/super_admin/app_config?config=captain#openrouter-diagnostics', note: nil }], count: 1)
+      link = { label: 'Модели ИИ', url: '/super_admin/app_config?config=captain#openrouter-diagnostics', note: nil }
 
-      row = build(alerts: [key]).rows.first
+      row = build(alerts: [alert('openrouter_invalid', severity: :danger, items: [link], count: 1)]).rows.first
 
       expect(row).to include(title: 'Заголовок openrouter_invalid', subject: 'Вся платформа', hint: 'Совет openrouter_invalid')
       expect(row[:action]).to eq(label: 'Открыть «Модели ИИ»', url: '/super_admin/app_config?config=captain#openrouter-diagnostics')
@@ -144,7 +144,8 @@ RSpec.describe SuperAdmin::DashboardChecklist do
   describe 'the rows after the first ones of a kind' do
     it 'says that only the first ones are listed and links to the whole list when the alert has one' do
       items = Array.new(10) { |index| item("Аккаунт #{index}", id: index + 1) }
-      ending = alert('trials_ending', items: items, count: 25, more_url: '/super_admin/accounts?search=trial_active%3A', more_label: 'Все аккаунты на пробном периоде')
+      ending = alert('trials_ending', items: items, count: 25,
+                                      more_url: '/super_admin/accounts?search=trial_active%3A', more_label: 'Все аккаунты на пробном периоде')
 
       checklist = build(alerts: [ending])
 
@@ -165,7 +166,7 @@ RSpec.describe SuperAdmin::DashboardChecklist do
       expect(more[:action]).to be_nil
     end
 
-    it 'does not count a row of this kind as a problem' do
+    it 'has no closing row when all the accounts are listed' do
       items = Array.new(10) { |index| item("А#{index}", id: index + 1) }
 
       expect(build(alerts: [alert('trials_ending', items: items, count: 10)]).rows.count { |row| row[:more] }).to eq(0)
@@ -178,7 +179,8 @@ RSpec.describe SuperAdmin::DashboardChecklist do
 
       row = build(accounts: accounts).rows.first
 
-      expect(row).to include(key: 'telephony_error', severity: :danger, title: 'Телефония не настроена', subject: 'Звонки', note: 'Сервер звонков не настроен')
+      expect(row).to include(key: 'telephony_error', severity: :danger, title: 'Телефония не настроена', subject: 'Звонки',
+                             note: 'Сервер звонков не настроен')
       expect(row[:action]).to eq(label: 'Открыть аккаунт', url: '/super_admin/accounts/5')
     end
 
