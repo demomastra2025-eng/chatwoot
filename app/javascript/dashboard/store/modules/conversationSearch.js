@@ -119,7 +119,6 @@ export const actions = {
         dispatch('contactSearch', { q, ...filters }),
         dispatch('conversationSearch', { q, ...filters }),
         dispatch('messageSearch', { q, ...filters }),
-        dispatch('articleSearch', { q, ...filters }),
       ]);
     } catch (error) {
       // Ignore error

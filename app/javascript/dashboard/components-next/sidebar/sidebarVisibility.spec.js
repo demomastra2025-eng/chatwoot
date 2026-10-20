@@ -38,7 +38,6 @@ describe('sidebarVisibility', () => {
       'Scheduling',
       'Catalog',
       'Reports',
-      'Portals',
       'Settings',
     ]);
     expect(itemKeys).not.toContain('Inbox');
@@ -349,7 +348,6 @@ describe('sidebarVisibility', () => {
       'Scheduling',
       'Catalog',
       'Reports',
-      'Portals',
       'Settings',
     ]);
     expect(getSidebarItemOrder({})).toEqual(

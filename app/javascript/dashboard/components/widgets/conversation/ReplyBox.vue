@@ -13,7 +13,6 @@ import ReplyTopPanel from 'dashboard/components/widgets/WootWriter/ReplyTopPanel
 import ReplyEmailHead from './ReplyEmailHead.vue';
 import ReplyBottomPanel from 'dashboard/components/widgets/WootWriter/ReplyBottomPanel.vue';
 import CopilotReplyBottomPanel from 'dashboard/components/widgets/WootWriter/CopilotReplyBottomPanel.vue';
-import ArticleSearchPopover from 'dashboard/routes/dashboard/helpcenter/components/ArticleSearch/SearchPopover.vue';
 import CopilotEditorSection from './CopilotEditorSection.vue';
 import MessageSignatureMissingAlert from './MessageSignatureMissingAlert.vue';
 import ReplyBoxBanner from './ReplyBoxBanner.vue';
@@ -74,7 +73,6 @@ const EmojiInput = defineAsyncComponent(
 
 export default {
   components: {
-    ArticleSearchPopover,
     AttachmentPreview,
     AudioRecorder,
     ReplyBoxBanner,
@@ -145,7 +143,6 @@ export default {
       showCannedMenu: false,
       showVariablesMenu: false,
       newConversationModalActive: false,
-      showArticleSearchPopover: false,
       hasRecordedAudio: false,
       copilotAcceptedMessages: {},
       selectedReplyConversationId: null,
@@ -521,11 +518,6 @@ export default {
         inbox: this.inbox,
       });
       return variables;
-    },
-    connectedPortalSlug() {
-      const { help_center: portal = {} } = this.inbox;
-      const { slug = '' } = portal;
-      return slug;
     },
     isQuotedEmailReplyEnabled() {
       return this.isFeatureEnabledonAccount(
@@ -1516,12 +1508,6 @@ export default {
       // When new conversation modal is open
       this.newConversationModalActive = isActive;
     },
-    onSearchPopoverClose() {
-      this.showArticleSearchPopover = false;
-    },
-    toggleInsertArticle() {
-      this.showArticleSearchPopover = !this.showArticleSearchPopover;
-    },
     resetAudioRecorderInput() {
       this.recordingAudioDurationText = '00:00';
       this.isRecordingAudio = false;
@@ -1565,12 +1551,6 @@ export default {
       @toggle-editor-size="toggleEditorSize"
       @toggle-copilot="copilot.toggleEditor"
       @execute-copilot-action="executeCopilotAction"
-    />
-    <ArticleSearchPopover
-      v-if="showArticleSearchPopover && connectedPortalSlug"
-      :selected-portal-slug="connectedPortalSlug"
-      @insert="handleInsert"
-      @close="onSearchPopoverClose"
     />
     <Transition
       mode="out-in"
@@ -1749,11 +1729,9 @@ export default {
         :toggle-audio-recorder="toggleAudioRecorder"
         :toggle-emoji-picker="toggleEmojiPicker"
         :message="message"
-        :portal-slug="connectedPortalSlug"
         :new-conversation-modal-active="newConversationModalActive"
         @select-whatsapp-template="openWhatsappTemplateModal"
         @select-content-template="openContentTemplateModal"
-        @toggle-insert-article="toggleInsertArticle"
         @toggle-quoted-reply="toggleQuotedReply"
         @select-reply-channel="selectReplyChannel"
         @select-direct-reply-action="selectDirectReplyAction"

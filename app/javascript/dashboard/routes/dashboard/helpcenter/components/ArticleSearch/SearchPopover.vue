@@ -67,12 +67,6 @@ export default {
     },
   },
   mounted() {
-    if (
-      !this.portal &&
-      !this.$store.getters['portals/uiFlagsIn']?.isFetching
-    ) {
-      this.$store.dispatch('portals/index');
-    }
     this.fetchArticlesByQuery(this.searchQuery);
     this.debounceSearch = debounce(this.fetchArticlesByQuery, 500, false);
   },

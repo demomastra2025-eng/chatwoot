@@ -73,7 +73,6 @@ export const defaultRedirectPage = (
     },
     { permissions: CONTACT_ACCESS_PERMISSIONS, path: 'contacts' },
     { permissions: [REPORTS_PERMISSIONS], path: 'reports/overview' },
-    { permissions: [PORTAL_PERMISSIONS], path: 'portals' },
     {
       permissions: CRM_DEAL_VIEW_PERMISSIONS,
       path: 'crm/deals',

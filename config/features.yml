@@ -33,7 +33,7 @@
   enabled: false
 - name: help_center
   display_name: Help Center
-  enabled: true
+  enabled: false
   help_url:
 - name: agent_bots
   display_name: Agent Bots

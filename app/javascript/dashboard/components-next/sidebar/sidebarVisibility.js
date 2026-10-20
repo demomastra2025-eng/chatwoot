@@ -129,7 +129,6 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
   item('Scheduling', 'SIDEBAR.SCHEDULING'),
   item('Catalog', 'SIDEBAR.CATALOG'),
   item('Reports', 'SIDEBAR.REPORTS'),
-  item('Portals', 'SIDEBAR.HELP_CENTER.TITLE'),
   item('Settings', 'SIDEBAR.ADDITIONAL', [], false),
 ]);
 
