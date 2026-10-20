@@ -332,17 +332,49 @@ watch(
   { immediate: true, flush: 'sync' }
 );
 
+let isMounted = false;
+let adminListenersAttached = false;
+
+const detachAdminListeners = () => {
+  if (adminListenersAttached) {
+    window.removeEventListener('focus', onWindowFocus);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    adminListenersAttached = false;
+  }
+  if (utcDayBoundaryTimeout) {
+    clearTimeout(utcDayBoundaryTimeout);
+    utcDayBoundaryTimeout = null;
+  }
+};
+
+const syncAdminListeners = () => {
+  if (!isMounted || !isAdmin.value) {
+    detachAdminListeners();
+    return;
+  }
+  if (!adminListenersAttached) {
+    window.addEventListener('focus', onWindowFocus);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    adminListenersAttached = true;
+  }
+  if (!utcDayBoundaryTimeout) {
+    scheduleUtcDayBoundaryRefresh(() => fetchUsage({ force: true }));
+  }
+};
+
+watch(isAdmin, () => {
+  syncAdminListeners();
+});
+
 onMounted(() => {
-  window.addEventListener('focus', onWindowFocus);
-  document.addEventListener('visibilitychange', onVisibilityChange);
-  scheduleUtcDayBoundaryRefresh(() => fetchUsage({ force: true }));
+  isMounted = true;
+  syncAdminListeners();
 });
 
 onUnmounted(() => {
+  isMounted = false;
   requestGeneration += 1;
-  window.removeEventListener('focus', onWindowFocus);
-  document.removeEventListener('visibilitychange', onVisibilityChange);
-  if (utcDayBoundaryTimeout) clearTimeout(utcDayBoundaryTimeout);
+  detachAdminListeners();
 });
 </script>
 

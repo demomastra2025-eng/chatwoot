@@ -79,6 +79,10 @@ const isLinearConnected = computed(
 
 const store = useStore();
 const currentChat = useMapGetter('getSelectedChat');
+const attributesList = useMapGetter('attributes/getAttributes');
+const attributesUIFlags = useMapGetter('attributes/getUIFlags');
+const appIntegrations = useMapGetter('integrations/getAppIntegrations');
+const integrationsUIFlags = useMapGetter('integrations/getUIFlags');
 const conversationId = computed(() => props.conversationId);
 const conversationMetadataGetter = useMapGetter(
   'conversationMetadata/getConversationMetadata'
@@ -144,9 +148,17 @@ const closeContactPanel = () => {
 onMounted(() => {
   conversationSidebarItems.value = conversationSidebarItemsOrder.value;
   getContactDetails();
-  store.dispatch('attributes/get', 0);
+  if (!attributesList.value?.length && !attributesUIFlags.value?.isFetching) {
+    store.dispatch('attributes/get', 0);
+  }
   // Load integrations to ensure linear integration state is available
-  store.dispatch('integrations/get', 'linear');
+  if (
+    isLinearFeatureEnabled.value &&
+    !appIntegrations.value?.length &&
+    !integrationsUIFlags.value?.isFetching
+  ) {
+    store.dispatch('integrations/get', 'linear');
+  }
 });
 </script>
 

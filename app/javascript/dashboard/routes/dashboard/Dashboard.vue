@@ -163,18 +163,33 @@ export default {
       },
       immediate: true,
     },
-  },
-  mounted() {
-    this.trialTimer = setInterval(() => {
-      this.currentTime = Date.now();
-    }, 30000);
+    isTrialPlan: {
+      handler(isTrial) {
+        if (isTrial) {
+          this.startTrialTimer();
+        } else {
+          this.stopTrialTimer();
+        }
+      },
+      immediate: true,
+    },
   },
   beforeUnmount() {
-    if (this.trialTimer) {
-      clearInterval(this.trialTimer);
-    }
+    this.stopTrialTimer();
   },
   methods: {
+    startTrialTimer() {
+      if (this.trialTimer) return;
+      this.currentTime = Date.now();
+      this.trialTimer = setInterval(() => {
+        this.currentTime = Date.now();
+      }, 30000);
+    },
+    stopTrialTimer() {
+      if (!this.trialTimer) return;
+      clearInterval(this.trialTimer);
+      this.trialTimer = null;
+    },
     toggleMobileSidebar() {
       this.isMobileSidebarOpen = !this.isMobileSidebarOpen;
     },

@@ -144,4 +144,47 @@ describe('ConversationView', () => {
       expect(context.$router.replace).not.toHaveBeenCalled();
     });
   });
+
+  describe('#mounted', () => {
+    it('does not fetch portals on mount and skips agents/get when agents are already loaded', () => {
+      const context = {
+        initialize: vi.fn(),
+        setActiveChat: vi.fn(),
+        $watch: vi.fn(),
+        $store: {
+          getters: {
+            'agents/getAgents': [{ id: 1, name: 'Agent' }],
+            'agents/getUIFlags': { isFetching: false },
+          },
+          dispatch: vi.fn(),
+        },
+      };
+
+      ConversationView.mounted.call(context);
+
+      expect(context.$store.dispatch).not.toHaveBeenCalledWith('agents/get');
+      expect(context.$store.dispatch).not.toHaveBeenCalledWith('portals/index');
+      expect(context.initialize).toHaveBeenCalledTimes(1);
+    });
+
+    it('dispatches agents/get on mount only when agents store is empty and not fetching', () => {
+      const context = {
+        initialize: vi.fn(),
+        setActiveChat: vi.fn(),
+        $watch: vi.fn(),
+        $store: {
+          getters: {
+            'agents/getAgents': [],
+            'agents/getUIFlags': { isFetching: false },
+          },
+          dispatch: vi.fn(),
+        },
+      };
+
+      ConversationView.mounted.call(context);
+
+      expect(context.$store.dispatch).toHaveBeenCalledWith('agents/get');
+      expect(context.$store.dispatch).not.toHaveBeenCalledWith('portals/index');
+    });
+  });
 });

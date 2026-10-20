@@ -117,5 +117,6 @@ describe('Dashboard call windows', () => {
     expect(wrapper.find('[data-testid="standalone-call-cards"]').exists()).toBe(
       true
     );
+    expect(wrapper.vm.trialTimer).toBeNull();
   });
 });

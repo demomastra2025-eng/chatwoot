@@ -127,8 +127,12 @@ export default {
   },
 
   mounted() {
-    this.$store.dispatch('agents/get');
-    this.$store.dispatch('portals/index');
+    if (
+      !this.$store.getters['agents/getAgents']?.length &&
+      !this.$store.getters['agents/getUIFlags']?.isFetching
+    ) {
+      this.$store.dispatch('agents/get');
+    }
     this.initialize();
     this.$watch('$store.state.route', () => {
       this.isLeavingConversationRoute = false;

@@ -142,14 +142,20 @@ describe('WhatsappUsageBanner', () => {
     });
   });
 
-  it('does not fetch or render for non-administrators', async () => {
+  it('does not fetch, render, or attach window focus listeners for non-administrators', async () => {
+    const addEventListenerSpy = vi.spyOn(window, 'addEventListener');
     mocks.isAdmin.value = false;
 
     const wrapper = mount(WhatsappUsageBanner);
     await flushPromises();
 
     expect(mocks.getMonthlyUsage).not.toHaveBeenCalled();
+    expect(
+      addEventListenerSpy.mock.calls.some(([event]) => event === 'focus')
+    ).toBe(false);
     expect(wrapper.find('[role="status"]').exists()).toBe(false);
+    wrapper.unmount();
+    addEventListenerSpy.mockRestore();
   });
 
   it('dismisses the banner for the current UTC day', async () => {

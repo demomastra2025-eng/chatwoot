@@ -194,4 +194,17 @@ describe('ContactInfo', () => {
       owner_id: 9,
     });
   });
+
+  it('does not request contactable inboxes or conversations when contact id is missing', () => {
+    buildWrapper({ contact: { id: undefined } });
+
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      'contacts/fetchContactableInbox',
+      undefined
+    );
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      'contactConversations/get',
+      undefined
+    );
+  });
 });

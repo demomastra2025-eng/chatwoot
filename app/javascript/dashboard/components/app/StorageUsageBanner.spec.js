@@ -92,14 +92,17 @@ describe('StorageUsageBanner', () => {
     wrapper.unmount();
   });
 
-  it('does not request or display account quota for non-administrators', async () => {
+  it('does not request or display account quota or start background timers for non-administrators', async () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
     isAdmin.value = false;
     const wrapper = mountBanner();
     await flushPromises();
 
     expect(StorageAPI.getStorage).not.toHaveBeenCalled();
+    expect(setIntervalSpy).not.toHaveBeenCalled();
     expect(wrapper.findComponent(Banner).exists()).toBe(false);
     wrapper.unmount();
+    setIntervalSpy.mockRestore();
   });
 
   it('reloads quota when the selected account changes', async () => {

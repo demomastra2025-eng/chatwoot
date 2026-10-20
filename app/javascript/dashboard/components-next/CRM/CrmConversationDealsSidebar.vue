@@ -85,6 +85,7 @@ const referencesStore = useCrmReferencesStore();
 
 const accountId = useMapGetter('getCurrentAccountId');
 const agents = useMapGetter('agents/getAgents');
+const agentsUIFlags = useMapGetter('agents/getUIFlags');
 const currentUser = useMapGetter('getCurrentUser');
 const teams = useMapGetter('teams/getTeams');
 const isFeatureEnabledonAccount = useMapGetter(
@@ -106,6 +107,9 @@ const forms = reactive({});
 let sidebarInitializationGeneration = 0;
 let dealMutationGeneration = 0;
 let isSidebarMounted = true;
+let loadedReferencesAccountId = null;
+let cachedCompaniesAccountId = null;
+let cachedCompanyOptions = [];
 const dealConflictKey = ref('');
 const dealConflictAppliedUpdatePayload = ref(null);
 const {
@@ -487,11 +491,13 @@ const invalidateDealMutations = () => {
   resetDealConflict();
 };
 
-const initializeSidebar = async () => {
+const initializeSidebar = async (options = {}) => {
+  const forceReloadReferences = options?.forceReloadReferences === true;
   sidebarInitializationGeneration += 1;
   const generation = sidebarInitializationGeneration;
   const context = currentDealSourceContext.value;
   const contextKey = currentSidebarContextKey.value;
+  const resolvedAccountId = Number(accountId.value) || null;
   const isCurrent = () =>
     isSidebarMounted &&
     generation === sidebarInitializationGeneration &&
@@ -501,7 +507,10 @@ const initializeSidebar = async () => {
   ui.error = null;
   ui.isInitializing = false;
   deals.value = [];
-  companyOptions.value = [];
+  companyOptions.value =
+    !forceReloadReferences && cachedCompaniesAccountId === resolvedAccountId
+      ? cachedCompanyOptions
+      : [];
   resetForms();
   isCreating.value = false;
   openDealKeys.value = [];
@@ -510,20 +519,41 @@ const initializeSidebar = async () => {
   ui.isInitializing = true;
 
   try {
-    if (!agents.value.length) await store.dispatch('agents/get');
-    if (!teams.value.length) await store.dispatch('teams/get');
+    if (!agents.value?.length && !agentsUIFlags.value?.isFetching) {
+      await store.dispatch('agents/get');
+    }
+    if (!teams.value?.length) await store.dispatch('teams/get');
 
-    const [, , , , , nextCompanyOptions] = await Promise.all([
-      referencesStore.loadPipelines(),
-      referencesStore.loadTaskStatuses(),
-      referencesStore.loadTaskTypes(),
-      referencesStore.loadFieldDefinitions('deal'),
-      referencesStore.loadFieldDefinitions('task'),
-      loadCompanies(),
+    const shouldLoadReferences =
+      forceReloadReferences || loadedReferencesAccountId !== resolvedAccountId;
+    const shouldLoadCompanies =
+      forceReloadReferences || cachedCompaniesAccountId !== resolvedAccountId;
+
+    const referencesPromise = shouldLoadReferences
+      ? Promise.all([
+          referencesStore.loadPipelines(),
+          referencesStore.loadTaskStatuses(),
+          referencesStore.loadTaskTypes(),
+          referencesStore.loadFieldDefinitions('deal'),
+          referencesStore.loadFieldDefinitions('task'),
+        ]).then(() => {
+          loadedReferencesAccountId = resolvedAccountId;
+        })
+      : Promise.resolve();
+
+    const companiesPromise = shouldLoadCompanies
+      ? loadCompanies().then(nextCompanies => {
+          cachedCompaniesAccountId = resolvedAccountId;
+          cachedCompanyOptions = nextCompanies;
+          return nextCompanies;
+        })
+      : Promise.resolve(cachedCompanyOptions);
+
+    const [, nextCompanyOptions, nextDeals] = await Promise.all([
+      referencesPromise,
+      companiesPromise,
+      loadDeals(context),
     ]);
-    if (!isCurrent()) return;
-
-    const nextDeals = await loadDeals(context);
     if (!isCurrent()) return;
 
     companyOptions.value = nextCompanyOptions;
@@ -895,7 +925,7 @@ onBeforeUnmount(() => {
         class="m-4"
         :title="$t('CRM.ERRORS.LOAD_TITLE')"
         :description="formatCrmErrorMessage(ui.error, t)"
-        @retry="initializeSidebar"
+        @retry="() => initializeSidebar({ forceReloadReferences: true })"
       />
 
       <div v-else>
