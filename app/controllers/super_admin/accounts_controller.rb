@@ -319,7 +319,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     end
   rescue StandardError => e
     Rails.logger.warn("[SuperAdmin] User was not added to account #{requested_resource.id}: #{e.class.name}: #{e.message}")
-    member.refuse(:base, I18n.t('super_admin.onboarding.member.errors.failed'))
+    member.refuse(:base, I18n.t('super_admin.onboarding.member.errors.failed')) unless member.explain_failure(e)
   end
 
   def render_member_errors(member)

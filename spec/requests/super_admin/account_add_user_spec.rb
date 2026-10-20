@@ -269,6 +269,38 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
       expect(page.at_css('[data-testid="add-user-errors"]').text).to include('Пользователь не добавлен')
     end
 
+    it 'says a mistyped e-mail is a mistake, in Russian and on the field, not that a developer is needed', :aggregate_failures do
+      ['ivan@clinic', 'ivan@клиника.kz'].each do |typo|
+        expect { add_user(new_person(email: typo)) }.not_to(change { [User.count, AccountUser.count] })
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(error_for('email')).to eq('Проверьте e-mail: в нём ошибка.')
+        expect(page.at_css('[data-testid="add-user-errors"]').text).not_to include('разработчику')
+        expect(page.at_css('[data-testid="add-user"] [data-testid="adopt-existing"]')).to be_nil
+      end
+    end
+
+    it 'says the same when the e-mail gets past the check and the save of the user refuses it' do
+      allow_any_instance_of(SuperAdmin::AccountMember).to receive(:email_accepted?).and_return(true) # rubocop:disable RSpec/AnyInstance
+
+      expect { add_user(new_person(email: 'ivan@clinic')) }.not_to(change { [User.count, AccountUser.count] })
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(error_for('email')).to eq('Проверьте e-mail: в нём ошибка.')
+      expect(page.at_css('[data-testid="add-user-errors"]').text).not_to include('разработчику')
+    end
+
+    it 'names the owner of an e-mail taken a moment ago and offers to add them' do
+      taken = create(:user, name: 'Нурлан Аман', email: 'dinara@sezim.example')
+      calls = 0
+      allow(User).to receive(:from_email) { (calls += 1) == 1 ? nil : taken }
+
+      expect { add_user(new_person) }.not_to(change { [User.count, AccountUser.count] })
+
+      expect(error_for('email')).to eq('Пользователь с таким e-mail уже есть: Нурлан Аман.')
+      expect(page.at_css('[data-testid="add-user"] [data-testid="adopt-existing"]')).to be_present
+    end
+
     it 'asks for the name and the way' do
       add_user(mode: 'create', name: '', email: 'ok@example.test', role: 'agent', access: '')
 

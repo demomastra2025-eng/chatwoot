@@ -69,6 +69,18 @@ class SuperAdmin::AccountMember
     errors[field] = text
   end
 
+  # Says in `errors` what a failed write means for the person, when it is about them: an e-mail taken a moment ago (by somebody
+  # who typed it at the same time) offers to add that user, an e-mail the model refuses is a wrong one. True when it did; false for
+  # a failure that is not about the person (the caller says its own words).
+  def explain_failure(failure)
+    case email_failure(failure)
+    when :taken then email_taken_since_check
+    when :invalid then error(:email, :email_invalid)
+    else return false
+    end
+    true
+  end
+
   # Writes the user (when they are new) and the membership. Call it inside a transaction: nothing else here opens one.
   def add_to(account)
     @account = account
@@ -142,12 +154,25 @@ class SuperAdmin::AccountMember
     prepare_access
   end
 
-  # The user who has the e-mail, nil when nobody has it (or the e-mail is blank or wrong, which is an error of its own)
+  # The user who has the e-mail, nil when nobody has it (or the e-mail is blank or wrong, which is an error of its own). Somebody
+  # who has it is found first: whatever the rules say today, the e-mail of a user who exists is theirs.
   def prepare_email(email)
-    return User.from_email(email) if email.present? && email.match?(Devise.email_regexp)
-
-    error(:email, email.blank? ? :email_blank : :email_invalid)
+    if email.blank?
+      error(:email, :email_blank)
+    elsif (existing = User.from_email(email))
+      return existing
+    elsif !email_accepted?(email)
+      error(:email, :email_invalid)
+    end
     nil
+  end
+
+  # The e-mail passes the rules of the User model itself (Devise's and DeviseTokenAuth's: «ivan@clinic» and a domain in Cyrillic do not),
+  # so a wrong e-mail is found here and not by the failure of the save. Being taken is not a fault of its writing.
+  def email_accepted?(email)
+    probe = User.new(email: email)
+    probe.validate
+    probe.errors.details[:email].all? { |detail| detail[:error] == :taken }
   end
 
   # The e-mail is somebody's already. They are added only when the super admin said so; nothing about them changes.
@@ -182,6 +207,23 @@ class SuperAdmin::AccountMember
 
     message = SuperAdmin::PasswordRules.message(input.password)
     errors[:password] = message if message
+  end
+
+  # :taken or :invalid when the failure is about the e-mail of the person, nil otherwise
+  def email_failure(failure)
+    return :taken if failure.is_a?(ActiveRecord::RecordNotUnique) && failure.message.include?('users')
+
+    record = failure.respond_to?(:record) ? failure.record : nil
+    types = record.is_a?(User) ? record.errors.details[:email].pluck(:error) : []
+    return if types.empty?
+
+    types.include?(:taken) ? :taken : :invalid
+  end
+
+  # Somebody has the e-mail now, though nobody had it when the form was checked
+  def email_taken_since_check
+    @conflict = User.from_email(input.email.to_s.strip.downcase)
+    @conflict ? error(:email, :email_taken, name: @conflict.name) : error(:email, :email_taken_plain)
   end
 
   def refuse_member(account)

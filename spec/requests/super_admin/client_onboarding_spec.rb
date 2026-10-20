@@ -452,6 +452,26 @@ RSpec.describe 'Super Admin new client', type: :request do
       expect(Account.where(name: 'Клиника «Алатау»')).to be_empty
     end
 
+    it 'says a mistyped e-mail is a mistake, not that somebody has it: a domain without a dot or in Cyrillic fails the rules of the user', :aggregate_failures do
+      ['ivan@clinic', 'ivan@клиника.kz', 'ivan @clinic.kz', 'ivan@clinic.k'].each do |typo|
+        expect { create_client(admin: { email: typo }) }.not_to(change { [Account.count, User.count] })
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(error_for('admin_email')).to eq('Проверьте e-mail: в нём ошибка.')
+        expect(page.at_css('[data-testid="adopt-existing"]')).to be_nil
+      end
+    end
+
+    it 'says the same when the e-mail gets past the check and the save of the user refuses it' do
+      allow_any_instance_of(SuperAdmin::AccountMember).to receive(:email_accepted?).and_return(true) # rubocop:disable RSpec/AnyInstance
+
+      expect { create_client(admin: { email: 'ivan@clinic' }) }.not_to(change { [Account.count, Organization.count, User.count, AccountUser.count] })
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(error_for('admin_email')).to eq('Проверьте e-mail: в нём ошибка.')
+      expect(page.at_css('[data-testid="adopt-existing"]')).to be_nil
+    end
+
     it 'takes only text: a list or a map where a field is expected is an empty value' do
       post '/super_admin/clients', params: { account: { name: %w[a b] }, admin: { email: { x: 1 } } }
 
@@ -531,14 +551,26 @@ RSpec.describe 'Super Admin new client', type: :request do
       expect(Audited::Audit.where(action: %w[create_client apply_plan start_trial link_organization])).to be_empty
     end
 
-    it 'shows an e-mail taken a moment ago on its field' do
+    it 'shows an e-mail taken a moment ago on its field, without a name when the owner cannot be found' do
       allow(User).to receive(:from_email).and_return(nil)
       create(:user, email: 'aigerim@alatau.example')
 
       expect { create_client }.not_to change(Account, :count)
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(error_for('admin_email')).to include('уже есть')
+      expect(error_for('admin_email')).to eq('Пользователь с таким e-mail уже есть.')
+    end
+
+    it 'names the owner of an e-mail taken a moment ago and offers to add them' do
+      taken = create(:user, name: 'Нурлан Аман', email: 'aigerim@alatau.example')
+      calls = 0
+      allow(User).to receive(:from_email) { (calls += 1) == 1 ? nil : taken }
+
+      expect { create_client }.not_to change(Account, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(error_for('admin_email')).to eq('Пользователь с таким e-mail уже есть: Нурлан Аман.')
+      expect(page.at_css('[data-testid="adopt-existing"]')).to be_present
     end
 
     it 'keeps the client when the letter cannot be handed over, and says so' do

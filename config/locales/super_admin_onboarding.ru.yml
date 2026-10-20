@@ -109,6 +109,7 @@ ru:
           email_blank: "Введите e-mail."
           email_invalid: "Проверьте e-mail: в нём ошибка."
           email_taken: "Пользователь с таким e-mail уже есть: %{name}."
+          email_taken_plain: "Пользователь с таким e-mail уже есть."
           name_blank: "Введите имя и фамилию."
           name_long: "Имя длиннее %{max} знаков."
           access_missing: "Выберите, как человек получит доступ."

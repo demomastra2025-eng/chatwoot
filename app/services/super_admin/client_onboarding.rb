@@ -174,19 +174,12 @@ class SuperAdmin::ClientOnboarding
   end
 
   def rolled_back_errors(error)
+    return member.errors.transform_keys { |field| :"admin_#{field}" } if member.explain_failure(error)
+
     record = error.respond_to?(:record) ? error.record : nil
-    return { admin_email: member_taken_text } if record.is_a?(User) || user_email_race?(error)
     return { organization_bin: record.errors[:bin].first || i18n('errors.failed') } if record.is_a?(Organization) && record.errors[:bin].any?
 
     { base: i18n('errors.failed') }
-  end
-
-  def user_email_race?(error)
-    error.is_a?(ActiveRecord::RecordNotUnique) && error.message.include?('users')
-  end
-
-  def member_taken_text
-    I18n.t('super_admin.onboarding.member.errors.email_taken', name: User.from_email(form.admin.email)&.name.to_s)
   end
 
   def i18n(key, **)
