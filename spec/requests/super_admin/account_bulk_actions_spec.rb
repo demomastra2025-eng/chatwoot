@@ -245,7 +245,7 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
         expect(note.text).to include('Аккаунтов с отметкой — 1')
       end
 
-      it 'says in the line of an account whose trial has ended which limits the plan gives back, and how many accounts have it', :aggregate_failures do
+      it 'says in the line of an account whose trial has ended which limits the plan gives back, and how many have it', :aggregate_failures do
         first.update!(limits: { 'agents' => 5, 'inboxes' => 3 })
         first.activate_trial!(3)
         first.expire_trial!

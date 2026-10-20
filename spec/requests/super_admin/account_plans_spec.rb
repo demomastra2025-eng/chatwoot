@@ -165,7 +165,8 @@ RSpec.describe 'Super admin account plans', type: :request do
       preview = page.at_css('[data-testid="plan-preview"]')
       expect(preview['data-changed']).to eq('true')
       note = preview.at_css('[data-preview-note="trial_limits_restored"]').text.squish
-      expect(note).to eq('Пробный период закончился и закрыл операторов и каналы (лимиты стоят на 0). '                          'Тариф сам вернёт им лимиты, какие были до пробного периода.')
+      expect(note).to eq('Пробный период закончился и закрыл операторов и каналы (лимиты стоят на 0). ' \
+                         'Тариф сам вернёт им лимиты, какие были до пробного периода.')
       limits = preview.at_css('[data-preview="limits"]').text.squish
       expect(limits).to include('Операторы: 0 → 5')
     end
@@ -179,7 +180,8 @@ RSpec.describe 'Super admin account plans', type: :request do
 
     it 'says on the card of the clinic that the plan gives the limits back, until it has' do
       get card_path
-      expect(page.at_css('[data-testid="trial-limits-held"]').text.squish).to include('лимиты стоят на 0', 'Нажмите «Назначить базу и вернуть лимиты» в блоке «Тариф»')
+      expect(page.at_css('[data-testid="trial-limits-held"]').text.squish)
+        .to include('лимиты стоят на 0', 'Нажмите «Назначить базу и вернуть лимиты» в блоке «Тариф»')
       expect(page.at_css('form[data-plan-form] button[data-plan-submit]').text.squish).to eq('Назначить базу и вернуть лимиты')
 
       post "#{card_path}/apply_plan"
@@ -259,7 +261,8 @@ RSpec.describe 'Super admin account plans', type: :request do
       preview = page.at_css('[data-testid="plan-preview"]')
       expect(preview['data-changed']).to eq('true')
       expect(preview.text.squish).to include('а операторам и каналам вернутся прежние лимиты')
-      expect(preview.at_css('[data-preview="limits"]').text.squish).to include('Операторы: 0 → общее значение платформы', 'Каналы: 0 → общее значение платформы')
+      expect(preview.at_css('[data-preview="limits"]').text.squish)
+        .to include('Операторы: 0 → общее значение платформы', 'Каналы: 0 → общее значение платформы')
       expect(preview.at_css('[data-preview-note="trial_limits_restored"]')).to be_present
     end
 
