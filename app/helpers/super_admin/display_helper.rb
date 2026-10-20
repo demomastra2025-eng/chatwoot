@@ -127,18 +127,10 @@ module SuperAdmin::DisplayHelper
     key.to_s == 'storage_bytes' ? super_admin_bytes(value) : super_admin_number(value)
   end
 
-  # The changes of an entry of the audit log as the page shows them. The limits are shown in words, never as the number that stands
-  # for no limit (100 000 operators): { 'limits' => { 'conversations' => { 'from' => 'не задан', 'to' => 'Без ограничений' } } } for a
-  # plan, 'Без ограничений' in the place of 100000 for the numbers of any other entry (the generic save of an account, the Platform
-  # API). The entries that carry their own words (a change of the limits by a super admin) are shown as they were written, and the
-  # lists the limits keep for themselves in the custom attributes (Accounts::LimitSettings) are left out. What is stored is not touched.
+  # The changes of an entry of the audit log as the page shows them: the limits in words (never 100 000 operators), the lists the limits
+  # keep for themselves left out. What is stored is not touched (SuperAdmin::AuditChanges).
   def super_admin_audit_changes(audit)
-    changes = audit.audited_changes
-    return changes unless changes.is_a?(Hash)
-    return readable_plan_limits(changes) if audit.action == 'apply_plan'
-    return changes if audit.action == 'update_limits'
-
-    readable_account_changes(changes)
+    SuperAdmin::AuditChanges.new(audit, method(:super_admin_limit_value)).readable
   end
 
   # "2 минуты"
@@ -149,50 +141,5 @@ module SuperAdmin::DisplayHelper
   # "$1 234,50"
   def super_admin_usd(amount)
     SuperAdmin::DisplayHelper.format_usd(amount)
-  end
-
-  private
-
-  # The limits a plan wrote: { 'conversations' => { 'from' => nil, 'to' => 100000 } }
-  def readable_plan_limits(changes)
-    return changes unless changes['limits'].is_a?(Hash)
-
-    readable = changes['limits'].to_h do |key, change|
-      next [key, change] unless change.is_a?(Hash) && Accounts::Plans::LIMIT_KEYS.include?(key)
-
-      given_back = !change['from'].nil?
-      [key, { 'from' => super_admin_limit_value(key, change['from']), 'to' => super_admin_limit_value(key, change['to'], given_back: given_back) }]
-    end
-    changes.merge('limits' => readable)
-  end
-
-  # The limits of a save of an account: the numbers in words, the lists of the limits left out of the custom attributes
-  def readable_account_changes(changes)
-    readable = changes.dup
-    readable['limits'] = readable_limit_numbers(changes['limits']) if changes.key?('limits')
-    readable['custom_attributes'] = without_limit_lists(changes['custom_attributes']) if changes.key?('custom_attributes')
-    readable.delete('custom_attributes') if readable['custom_attributes'].is_a?(Array) && readable['custom_attributes'].uniq.size == 1
-    readable
-  end
-
-  # { 'agents' => 5, 'conversations' => 100000 } or the pair [before, after] of it
-  def readable_limit_numbers(limits)
-    case limits
-    when Array then limits.map { |side| readable_limit_numbers(side) }
-    when Hash then limits.to_h { |key, value| [key, readable_limit_number?(key, value) ? super_admin_limit_value(key, value) : value] }
-    else limits
-    end
-  end
-
-  def readable_limit_number?(key, value)
-    Accounts::Plans::LIMIT_KEYS.include?(key.to_s) && (value.nil? || value.is_a?(Numeric))
-  end
-
-  def without_limit_lists(attributes)
-    case attributes
-    when Array then attributes.map { |side| without_limit_lists(side) }
-    when Hash then attributes.except(*Accounts::LimitSettings::ATTRIBUTE_KEYS)
-    else attributes
-    end
   end
 end

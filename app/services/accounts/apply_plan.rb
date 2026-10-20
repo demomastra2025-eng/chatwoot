@@ -96,10 +96,7 @@ class Accounts::ApplyPlan
   end
 
   def build_diff
-    # Read again for every diff: the account is reloaded under its lock before it is written
-    @limit_settings = Accounts::LimitSettings.new(account, modules: modules)
-    # Read before anything is written: the zero of a trial that is about to be given back is what tells a limit follows the plan
-    @plan_numbers = limit_settings.following_plan_numbers
+    read_limits
     attributes = account.custom_attributes.to_h
     enabled = account.enabled_features.keys
     desired = desired_features
@@ -111,6 +108,14 @@ class Accounts::ApplyPlan
       disable: (Accounts::Plans.managed_features - desired) & enabled,
       limits: limit_changes, kept_limits: kept_limits, notes: notes
     )
+  end
+
+  # Read again for every diff: the account is reloaded under its lock before it is written. The numbers of the plan that the limits
+  # following it hold are read before anything is written: the zero of a trial that is about to be given back is what tells that a
+  # limit follows the plan.
+  def read_limits
+    @limit_settings = Accounts::LimitSettings.new(account, modules: modules)
+    @plan_numbers = limit_settings.following_plan_numbers
   end
 
   # The flags base + the chosen modules switch on. While a trial runs, the functions it granted count as wanted too
