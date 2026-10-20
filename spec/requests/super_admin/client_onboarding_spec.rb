@@ -599,6 +599,108 @@ RSpec.describe 'Super Admin new client', type: :request do
     end
   end
 
+  describe 'the same form sent again (a reload of «Готово»)' do
+    def token = page.at_css('input[name="submission"]')['value']
+
+    def open_form
+      get '/super_admin/clients/new'
+      token
+    end
+
+    def send_form(token, overrides = {}) = post('/super_admin/clients', params: params_for(overrides).merge(submission: token))
+
+    def counts = [Account.count, Organization.count, User.count, AccountUser.count]
+
+    it 'gives every opening of the form a token of its own' do
+      first = open_form
+
+      expect(first).to match(/\A\h{32}\z/)
+      expect(open_form).not_to eq(first)
+    end
+
+    it 'creates one client: the second send says it exists, leads to the card and creates nothing', :aggregate_failures do
+      form_token = open_form
+      send_form(form_token)
+      account = created_account
+      expect(text(page.at_css('h1'))).to eq('Готово: клиент подключён')
+
+      expect { send_form(form_token) }.not_to(change { counts })
+
+      expect(response).to have_http_status(:ok)
+      expect(text(page.at_css('h1'))).to eq('Клиент уже создан')
+      expect(page.at_css('[data-testid="created-card-link"]')['href']).to eq("/super_admin/accounts/#{account.id}")
+      expect(page.at_css('[data-testid="client-created"]')).to be_nil
+      expect(response.headers['Cache-Control']).to include('no-store')
+    end
+
+    it 'does not show the password again' do
+      form_token = open_form
+      send_form(form_token, admin: { access: 'password', password: 'Sezim-2026x' })
+      expect(response.body).to include('Sezim-2026x')
+
+      send_form(form_token, admin: { access: 'password', password: 'Sezim-2026x' })
+
+      expect(response.body).not_to include('Sezim-2026x')
+      expect(page.at_css('[data-testid="one-time-password"]')).to be_nil
+    end
+
+    it 'does not make a second account or organization for a person who was on the platform already' do
+      create(:user, name: 'Бауыржан Сейт', email: 'bauyrzhan@alatau.example')
+      form_token = open_form
+      send_form(form_token, organization: { mode: 'new', name: 'ТОО Алатау', bin: '' }, admin: { email: 'bauyrzhan@alatau.example', adopt: '1' })
+
+      expect do
+        send_form(form_token, organization: { mode: 'new', name: 'ТОО Алатау', bin: '' }, admin: { email: 'bauyrzhan@alatau.example', adopt: '1' })
+      end.not_to(change { counts })
+
+      expect(Account.where(name: 'Клиника «Алатау»').count).to eq(1)
+      expect(Organization.where(name: 'ТОО Алатау').count).to eq(1)
+    end
+
+    it 'keeps the token of a form that came back with a problem, and the corrected form creates the client once' do
+      form_token = open_form
+      send_form(form_token, account: { name: '' })
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(token).to eq(form_token)
+
+      expect { send_form(token) }.to change(Account, :count).by(1)
+      expect { send_form(token) }.not_to(change { counts })
+    end
+
+    it 'lets a form opened again create another client' do
+      send_form(open_form)
+
+      expect { send_form(open_form, account: { name: 'Клиника «Нур»' }, admin: { email: 'nur@alatau.example' }) }.to change(Account, :count).by(1)
+
+      expect(text(page.at_css('h1'))).to eq('Готово: клиент подключён')
+    end
+
+    it 'creates the client again when the account of that form is gone since' do
+      form_token = open_form
+      send_form(form_token)
+      created_account.destroy!
+
+      expect { send_form(form_token, admin: { email: 'other@alatau.example' }) }.to change(Account, :count).by(1)
+
+      expect(text(page.at_css('h1'))).to eq('Готово: клиент подключён')
+    end
+
+    it 'creates the client as it is when there is no token or a wrong one (an old tab, a script)' do
+      expect { post('/super_admin/clients', params: params_for) }.to change(Account, :count).by(1)
+
+      expect { send_form('not-a-token', account: { name: 'Клиника «Нур»' }, admin: { email: 'nur@alatau.example' }) }.to change(Account, :count).by(1)
+      expect { send_form('not-a-token', account: { name: 'Клиника «Нур 2»' }, admin: { email: 'nur2@alatau.example' }) }.to change(Account, :count).by(1)
+    end
+
+    it 'remembers only the last ten forms' do
+      first = open_form
+      send_form(first)
+      11.times { |index| send_form(open_form, account: { name: "Клиника #{index}" }, admin: { email: "person#{index}@alatau.example" }) }
+
+      expect(session[SuperAdmin::ClientsController::SUBMISSIONS_KEY].size).to eq(10)
+    end
+  end
+
   describe 'the card of the account made here' do
     it 'shows the time zone by its name' do
       create_client

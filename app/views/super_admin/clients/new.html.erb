@@ -11,6 +11,7 @@ the plan and are not asked) and its first administrator (an invitation by e-mail
 - `@form`: the `SuperAdmin::ClientOnboarding::Form` (what the fields hold).
 - `@errors`: the problems of the last attempt, field => text (empty for a new form).
 - `@conflict`: the user whose e-mail was typed, when somebody has it already (it offers to add that user).
+- `@submission`: the token of this form: a form that created a client is not able to create a second one when it is sent again.
 %>
 <%
   form = @form
@@ -32,6 +33,7 @@ the plan and are not asked) and its first administrator (an invitation by e-mail
 
 <section class="main-content__body">
   <%= form_with url: super_admin_clients_path, method: :post, local: true, class: 'form flex max-w-3xl flex-col gap-5', data: { testid: 'client-form', single_submit: true }, html: { novalidate: true } do %>
+    <%= hidden_field_tag 'submission', @submission, id: nil %>
     <% if errors.any? %>
       <div id="error_explanation" role="alert" class="rounded-xl bg-n-ruby-2 px-4 py-3 text-sm text-n-ruby-11 outline outline-1 -outline-offset-1 outline-n-ruby-4" data-testid="client-errors">
         <p class="m-0 font-medium"><%= t('super_admin.onboarding.page.errors_title') %></p>

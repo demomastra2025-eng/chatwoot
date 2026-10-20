@@ -1,0 +1,26 @@
+<%#
+# Клиент уже создан
+
+The answer to a form that created a client and was sent again (a reload of «Готово»): nothing was created twice. It shows no password
+(it was shown once, on the first answer) and leads to the card of the account.
+
+## Local variables:
+
+- `account`: the account that this form created before.
+%>
+<% content_for(:title) { t('super_admin.onboarding.already.title') } %>
+
+<%= render layout: 'super_admin/shared/page_header', locals: { title: content_for(:title), description: t('super_admin.onboarding.already.description', name: account.name) } do %><% end %>
+
+<section class="main-content__body" data-testid="client-already-created" data-account-id="<%= account.id %>">
+  <div class="flex max-w-3xl flex-col gap-5">
+    <section class="admin-block" aria-labelledby="already-created-title">
+      <h2 class="admin-block__title" id="already-created-title"><%= t('super_admin.onboarding.already.next_title') %></h2>
+      <p class="admin-block__note m-0"><%= t('super_admin.onboarding.already.note') %></p>
+      <div class="flex flex-wrap items-center gap-2">
+        <%= link_to t('super_admin.onboarding.created.card'), super_admin_account_path(account), class: 'button', data: { testid: 'created-card-link' } %>
+        <%= link_to t('super_admin.onboarding.created.another'), new_super_admin_client_path, class: 'button button--secondary' %>
+      </div>
+    </section>
+  </div>
+</section>
