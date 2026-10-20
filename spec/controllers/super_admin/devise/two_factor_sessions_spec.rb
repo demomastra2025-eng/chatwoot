@@ -394,17 +394,36 @@ RSpec.describe 'Super Admin sign-in with two-factor authentication', type: :requ
   describe 'the notice on «Сводка»' do
     before { sign_in(super_admin, scope: :super_admin) }
 
+    # Not memoized: some examples open several pages in a row
+    def page = Nokogiri::HTML(response.body)
+
     def notice = page.at_css('[data-testid="two-factor-notice"]')
 
-    it 'tells a super admin without two-factor authentication where to turn it on' do
+    it 'tells a super admin without two-factor authentication where to turn it on, and opens that page' do
       allow(Chatwoot).to receive(:mfa_enabled?).and_return(true)
-      create(:account_user, user: super_admin, account: create(:account))
+      account = create(:account)
+      create(:account_user, user: super_admin, account: account)
 
       get '/super_admin'
 
       expect(notice.at_css('h2').text.squish).to eq('Двухфакторная защита выключена')
-      expect(notice.text).to include('«Профиль» → «Безопасность» → «Управление двухфакторной аутентификацией»')
-      expect(notice.at_css('a')['href']).to eq('/app')
+      expect(notice.at_css('[data-testid="two-factor-notice-steps"]').text)
+        .to include('«Настройки профиля» → «Безопасность» → «Управление двухфакторной аутентификацией»')
+      expect(notice.text).not_to include('«Профиль»')
+      expect(notice.at_css('[data-testid="two-factor-notice-enable"]')['href']).to eq("/app/accounts/#{account.id}/profile/mfa")
+      expect(notice.at_css('[data-testid="two-factor-notice-enable"]').text.squish).to eq('Включить двухфакторный вход')
+    end
+
+    it 'opens the page in the first account of the super admin' do
+      allow(Chatwoot).to receive(:mfa_enabled?).and_return(true)
+      first = create(:account)
+      second = create(:account)
+      create(:account_user, user: super_admin, account: second)
+      create(:account_user, user: super_admin, account: first)
+
+      get '/super_admin'
+
+      expect(notice.at_css('[data-testid="two-factor-notice-enable"]')['href']).to eq("/app/accounts/#{first.id}/profile/mfa")
     end
 
     it 'tells a super admin who is in no account that the profile needs one, and links to his user card' do
@@ -416,13 +435,17 @@ RSpec.describe 'Super Admin sign-in with two-factor authentication', type: :requ
       expect(notice.css('a').map { |link| link['href'] }).to eq(["/super_admin/users/#{super_admin.id}"])
     end
 
-    it 'says that it cannot be turned on yet when the server has no encryption keys' do
+    it 'says that it cannot be turned on yet when the server has no encryption keys, and folds the names of the settings' do
       allow(Chatwoot).to receive(:mfa_enabled?).and_return(false)
 
       get '/super_admin'
 
-      expect(notice.text).to include('не заданы ключи шифрования')
+      expect(notice.text).to include('не заданы ключи шифрования', 'её делает разработчик')
+      expect(notice.text).not_to include('администратору сервера')
       expect(notice.at_css('a')).to be_nil
+      developer = notice.at_css('[data-testid="two-factor-notice-developer"]')
+      expect(developer.at_css('summary').text.squish).to eq('Для разработчика')
+      expect(developer.text).to include('ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY')
     end
 
     it 'is not there for a super admin who has it on' do
@@ -432,6 +455,92 @@ RSpec.describe 'Super Admin sign-in with two-factor authentication', type: :requ
 
       expect(response).to have_http_status(:ok)
       expect(notice).to be_nil
+    end
+
+    describe '«Больше не показывать»' do
+      let(:other) { create(:super_admin) }
+
+      before { allow(Chatwoot).to receive(:mfa_enabled?).and_return(true) }
+
+      it 'is a button under the notice' do
+        get '/super_admin'
+
+        form = notice.at_css('form')
+        expect(form['action']).to eq('/super_admin/two_factor_notice/hide')
+        expect(form['method']).to eq('post')
+        expect(form.at_css('button').text.squish).to eq('Больше не показывать')
+      end
+
+      it 'hides the notice for this super admin and says how to bring it back' do
+        post '/super_admin/two_factor_notice/hide'
+
+        expect(response).to redirect_to('/super_admin')
+        follow_redirect!
+        expect(notice).to be_nil
+        expect(page.text.squish).to include('Напоминание скрыто', 'Вернуть напоминание можно на своей карточке пользователя')
+        expect(SuperAdmin::TwoFactorNotice.hidden?(super_admin.reload)).to be(true)
+      end
+
+      it 'leaves the notice of another super admin as it was' do
+        post '/super_admin/two_factor_notice/hide'
+        sign_out(:super_admin)
+        sign_in(other, scope: :super_admin)
+
+        get '/super_admin'
+
+        expect(notice).to be_present
+      end
+
+      it 'keeps what else the user keeps in his attributes' do
+        super_admin.update_columns(custom_attributes: { 'note' => 'keep me' })
+
+        post '/super_admin/two_factor_notice/hide'
+
+        expect(super_admin.reload.custom_attributes).to include('note' => 'keep me', SuperAdmin::TwoFactorNotice::KEY => be_present)
+      end
+
+      it 'leaves an entry of the audit log' do
+        expect { post '/super_admin/two_factor_notice/hide' }.to change { Audited::Audit.where(action: 'hide_two_factor_notice').count }.by(1)
+
+        expect(Audited::Audit.find_by(action: 'hide_two_factor_notice'))
+          .to have_attributes(auditable_id: super_admin.id, user_id: super_admin.id, comment: 'super_admin')
+      end
+
+      it 'is brought back on the card of the user, with an entry of the audit log' do
+        post '/super_admin/two_factor_notice/hide'
+
+        get "/super_admin/users/#{super_admin.id}"
+        hidden = page.at_css('[data-testid="two-factor-notice-hidden"]')
+        expect(hidden.text.squish).to include('Напоминание на «Сводке» скрыто', 'Показывать снова')
+        expect(hidden.at_css('form')['action']).to eq('/super_admin/two_factor_notice/restore')
+
+        expect { post '/super_admin/two_factor_notice/restore', headers: { 'HTTP_REFERER' => "http://www.example.com/super_admin/users/#{super_admin.id}" } }
+          .to change { Audited::Audit.where(action: 'show_two_factor_notice').count }.by(1)
+        expect(response).to redirect_to("/super_admin/users/#{super_admin.id}")
+
+        get '/super_admin'
+        expect(notice).to be_present
+        expect(SuperAdmin::TwoFactorNotice.hidden?(super_admin.reload)).to be(false)
+      end
+
+      it 'does not offer the way back on the card of another user or when nothing is hidden' do
+        get "/super_admin/users/#{super_admin.id}"
+        expect(page.at_css('[data-testid="two-factor-notice-hidden"]')).to be_nil
+
+        post '/super_admin/two_factor_notice/hide'
+        get "/super_admin/users/#{other.id}"
+        expect(page.at_css('[data-testid="two-factor-notice-hidden"]')).to be_nil
+      end
+
+      it 'needs a sign-in' do
+        sign_out(:super_admin)
+
+        post '/super_admin/two_factor_notice/hide'
+
+        expect(response).to have_http_status(:redirect)
+        expect(response.location).to include('/super_admin/sign_in')
+        expect(SuperAdmin::TwoFactorNotice.hidden?(super_admin.reload)).to be(false)
+      end
     end
   end
 end

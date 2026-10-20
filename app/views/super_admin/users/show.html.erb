@@ -82,6 +82,14 @@ as well as a link to its edit page.
               <span class="<%= mfa_enabled ? 'bg-n-teal-2 text-n-teal-11 outline-n-teal-4' : 'bg-n-slate-2 text-n-slate-12 outline-n-weak' %> inline-flex h-[22px] items-center rounded-md px-2 text-xs font-medium outline outline-1 -outline-offset-1">
                 <%= mfa_enabled ? t('super_admin.users.two_factor_on') : t('super_admin.users.two_factor_off') %>
               </span>
+              <%# The reminder on «Сводка» was hidden by this very super admin: it says so and brings it back (SuperAdmin::TwoFactorNoticesController) %>
+              <% if !mfa_enabled && page.resource.id == current_super_admin.id && SuperAdmin::TwoFactorNotice.hidden?(current_super_admin) %>
+                <span class="ms-2 inline-flex flex-wrap items-center gap-2 align-middle" data-testid="two-factor-notice-hidden">
+                  <span class="text-xs text-n-slate-11"><%= t('super_admin.two_factor.notice.card_hidden') %></span>
+                  <%= button_to t('super_admin.two_factor.notice.card_restore'), restore_super_admin_two_factor_notice_path, method: :post,
+                                class: 'button button--small button--secondary', form: { class: 'm-0' } %>
+                </span>
+              <% end %>
             </dd>
           <% end %>
         </dl>

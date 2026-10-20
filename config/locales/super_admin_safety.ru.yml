@@ -12,6 +12,8 @@ ru:
         delete_push_subscriptions: "Удаление подписок на уведомления"
         delete_avatar: "Удаление фото пользователя"
         reset_two_factor: "Сброс двухфакторного входа"
+        hide_two_factor_notice: "Скрыто напоминание о двухфакторном входе"
+        show_two_factor_notice: "Возвращено напоминание о двухфакторном входе"
         publish_banner: "Показ баннера всем операторам"
         hide_banner: "Скрытие баннера"
       types:

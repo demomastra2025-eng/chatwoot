@@ -1014,6 +1014,11 @@ Rails.application.routes.draw do
       root to: 'dashboard#index'
       # The search box of the header: accounts, users and organizations in one page
       resource :search, only: [:show]
+      # «Больше не показывать» under the reminder about the second step of the sign-in on «Сводка», and the way back on the card of the user
+      resource :two_factor_notice, only: [] do
+        post :hide
+        post :restore
+      end
 
       resource :app_config, only: [:show, :create] do
         post :refresh_openrouter_models
