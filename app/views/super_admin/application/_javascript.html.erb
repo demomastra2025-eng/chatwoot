@@ -53,6 +53,39 @@ by providing a `content_for(:javascript)` block.
   });
 </script>
 
+<%# The question before a dangerous action (shared/_confirm_action, a <details>): «Отмена» and Escape close it. A click or a key inside it
+    never reaches the row of a table it stands in (Administrate opens the page of the row on a click and on Enter / Space), and
+    the link «Изменить» of a block that sits in a collapsed <details> opens that block first. %>
+<script>
+  (function () {
+    function closePanel(panel) {
+      panel.open = false;
+      var trigger = panel.querySelector('summary');
+      if (trigger) trigger.focus();
+    }
+    document.addEventListener('click', function (event) {
+      var target = event.target;
+      if (!target || !target.closest) return;
+      var close = target.closest('[data-confirm-close]');
+      if (close) closePanel(close.closest('details'));
+      var opener = target.closest('a[data-open-details]');
+      if (opener) {
+        var section = document.getElementById((opener.getAttribute('href') || '').replace(/^#/, ''));
+        if (section && section.tagName === 'DETAILS') section.open = true;
+      }
+      if (target.closest('.admin-ask') && target.closest('.js-table-row')) event.stopPropagation();
+    }, true);
+    document.addEventListener('keydown', function (event) {
+      var target = event.target;
+      if (!target || !target.closest) return;
+      var panel = target.closest('.admin-ask');
+      if (!panel) return;
+      if (event.key === 'Escape' && panel.open) closePanel(panel);
+      if (target.closest('.js-table-row')) event.stopPropagation();
+    }, true);
+  })();
+</script>
+
 <%= yield :javascript %>
 
 <% if Rails.env.test? %>

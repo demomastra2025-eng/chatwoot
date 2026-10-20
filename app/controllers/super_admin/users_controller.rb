@@ -63,6 +63,8 @@ class SuperAdmin::UsersController < SuperAdmin::ApplicationController
   def destroy_avatar
     avatar = requested_resource.avatar
     avatar.purge
+    SuperAdmin::PlatformAudit.record(auditable: requested_resource, action: 'delete_avatar', actor: current_super_admin, request: request,
+                                     changes: { 'avatar' => 'removed' })
     redirect_back(fallback_location: super_admin_users_path)
   end
 

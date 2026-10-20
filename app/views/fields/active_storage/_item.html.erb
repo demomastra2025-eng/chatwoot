@@ -1,0 +1,39 @@
+<%#
+# Item Partial
+
+Replaces the partial of administrate-field-active_storage with one change: removing an attachment (the picture of a user) asks
+«точно?» in the panel of the super admin (shared/_confirm_action), not in a pop-up of the browser. The panel sits inside the edit
+form, so its answer is a link the Rails script sends as `DELETE` (a form of its own cannot be nested).
+
+## Local variables:
+
+- `field`: an `Administrate::Field::ActiveStorage`.
+- `attachment`: the file.
+- `size`: [x, y], the largest size of the preview.
+- `preview_only`: if true, show only the preview and not the name or the remove link.
+%>
+<% preview_only = local_assigns.fetch(:preview_only, false)
+   display_preview = local_assigns.fetch(:display_preview, field.show_display_preview?) %>
+<% if display_preview && attachment.persisted? %>
+  <div>
+    <%= render partial: 'fields/active_storage/preview', locals: local_assigns %>
+  </div>
+<% end %>
+
+<% unless preview_only %>
+<% if attachment.persisted? %>
+  <div>
+    <%= link_to attachment.filename, field.blob_url(attachment), title: attachment.filename %>
+  </div>
+<% end %>
+
+<% if field.destroy_url.present? %>
+  <% destroy_url = field.destroy_url.call(namespace, field.data.record, attachment) %>
+  <div>
+    <%= render 'super_admin/shared/confirm_action', key: "remove-file-#{attachment.id}", label: t('administrate.fields.active_storage.remove', default: 'Удалить файл'),
+               title: t('super_admin.safety.file.title', name: attachment.filename), text: [t('super_admin.safety.file.text'), t('super_admin.safety.audited')],
+               url: url_for(destroy_url), http_method: :delete, as_link: true, submit: t('super_admin.safety.file.submit') %>
+  </div>
+  <hr>
+<% end %>
+<% end %>

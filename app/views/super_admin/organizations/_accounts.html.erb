@@ -79,10 +79,10 @@ totals row that adds up ALL the accounts of the organization, not only the ones 
             </td>
 
             <td class="text-end">
-              <%= button_to t('super_admin.organizations.card.accounts.unlink'), unlink_account_super_admin_organization_path(organization),
-                            method: :delete, params: { account_id: account.id },
-                            class: 'button button--small button--alt', form_class: 'inline-block',
-                            data: { confirm: t('super_admin.organizations.card.accounts.unlink_confirm', account: account.name, organization: organization.name) } %>
+              <%= render 'super_admin/shared/confirm_action', key: "unlink-#{account.id}", label: t('super_admin.organizations.card.accounts.unlink'),
+                         text: [t('super_admin.organizations.card.accounts.unlink_confirm', account: account.name, organization: organization.name), t('super_admin.safety.audited')],
+                         url: unlink_account_super_admin_organization_path(organization), http_method: :delete,
+                         params: { account_id: account.id }, submit: t('super_admin.safety.organization.unlink_submit') %>
             </td>
           </tr>
         <% end %>

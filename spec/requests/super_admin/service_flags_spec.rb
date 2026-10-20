@@ -272,8 +272,9 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
 
       form = page.at_css(%(form[action="/super_admin/account_users/#{membership.id}"]))
       expect(form.at_css('input[name="_method"]')['value']).to eq('delete')
-      expect(text(form.at_css('button'))).to eq('Убрать из аккаунта')
-      expect(form.at_css('button')['data-confirm']).to include('Мерей', 'Аккаунт Алатау', 'сам пользователь и его данные не удаляются')
+      expect(text(form.ancestors('details').first.at_css('summary'))).to eq('Убрать из аккаунта')
+      expect(text(form)).to include('Мерей', 'Аккаунт Алатау', 'Сам пользователь и его данные не удаляются', 'Да, убрать')
+      expect(page.css('[data-confirm]')).to be_empty
     end
 
     it 'takes the member out of the clinic and keeps the user' do

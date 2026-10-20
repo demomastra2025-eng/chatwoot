@@ -49,7 +49,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
         'plan-block', 'usage-block', 'channels-block', 'fine-tuning-block', 'users-block', 'technical-block'
       )
       # `account-organization` is the line inside the block «Организация»
-      expect(side.css('[data-testid]').map { |node| node['data-testid'] })
+      expect(side.css('[data-testid]').map { |node| node['data-testid'] }.grep_v(/\Aconfirm-/))
         .to eq(%w[trial-block info-block organization-block account-organization maintenance-block deletion-form])
     end
   end
@@ -186,10 +186,12 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       end
 
       it 'resets to the plan with a button that applies the same modules again' do
-        form = block('plan-drift').at_css('form')
+        node = block('plan-drift').at_css('[data-testid="confirm-reset-plan"]')
+        form = node.at_css('form')
 
         expect(form['action']).to eq("#{card_path}/apply_plan")
-        expect(text(form)).to eq('Сбросить к тарифу')
+        expect(text(node.at_css('summary'))).to eq('Сбросить к тарифу')
+        expect(text(node.at_css('.admin-ask__panel'))).to include('Вернуть функции аккаунта к тарифу?', 'Ручные изменения функций сбросятся')
         expect(form.css('input[name="modules[]"]').map { |input| input['value'] }).to eq(%w[ai_agents])
 
         post "#{card_path}/apply_plan", params: { modules: %w[ai_agents] }
@@ -351,8 +353,9 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       open_card
 
       expect(text(block('trial-block'))).to include('Пробный период', 'Не запускался')
-      form = block('trial-block').at_css("form[action='#{card_path}/extend_trial']")
-      expect(text(form)).to eq('Запустить на 3 дн.')
+      node = block('trial-block').at_css('[data-testid="confirm-start-trial"]')
+      form = node.at_css("form[action='#{card_path}/extend_trial']")
+      expect(text(node.at_css('summary'))).to eq('Запустить на 3 дн.')
       expect(form.at_css('input[name="start"]')['value']).to eq('true')
     end
 
@@ -365,8 +368,8 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       expect(trial['data-trial-state']).to eq('active')
       expect(text(trial)).to include('Идёт', 'Осталось:')
       expect(text(trial)).to include("До: #{SuperAdmin::DisplayHelper.format_time(account.reload.trial_expires_at)}")
-      expect(text(trial.at_css("form[action='#{card_path}/extend_trial']"))).to eq('Продлить на 3 дн.')
-      expect(text(trial.at_css("form[action='#{card_path}/expire_trial']"))).to eq('Завершить сейчас')
+      expect(text(trial.at_css('[data-testid="confirm-extend-trial"] summary'))).to eq('Продлить на 3 дн.')
+      expect(text(trial.at_css('[data-testid="confirm-expire-trial"] summary'))).to eq('Завершить сейчас')
     end
 
     it 'shows when a trial ended and still offers to reopen it' do
@@ -398,7 +401,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       trial = block('trial-block')
       expect(text(trial)).to include('задан вручную')
       expect(trial.at_css("form[action='#{card_path}/expire_trial']")).to be_nil
-      expect(text(trial.at_css("form[action='#{card_path}/extend_trial']"))).to eq('Запустить на 3 дн.')
+      expect(text(trial.at_css('[data-testid="confirm-start-trial"] summary'))).to eq('Запустить на 3 дн.')
     end
 
     it 'tells what starting a trial does to a trial typed in by hand: the present functions stay after it ends' do
@@ -414,7 +417,8 @@ RSpec.describe 'Super Admin clinic card', type: :request do
 
       trial = block('trial-block')
       expect(text(trial)).to include('Лимиты операторов и каналов при этом станут нулевыми')
-      expect(trial.at_css('form[action$="/extend_trial"] button')['data-confirm']).to include('лимиты операторов и каналов станут нулевыми')
+      question = text(trial.at_css('[data-testid="confirm-start-trial"] .admin-ask__panel'))
+      expect(question).to include('лимиты операторов и каналов станут нулевыми')
     end
 
     it 'says that a clinic with a plan keeps its limits when the trial ends' do
@@ -424,7 +428,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
 
       trial = block('trial-block')
       expect(text(trial)).to include('Лимиты аккаунта при этом не меняются')
-      expect(trial.at_css('form[action$="/extend_trial"] button')['data-confirm']).to include('лимиты аккаунта не изменятся')
+      expect(text(trial.at_css('[data-testid="confirm-start-trial"] .admin-ask__panel'))).to include('лимиты аккаунта не изменятся')
     end
 
     it 'asks before ending a running trial and says what happens to the limits of a clinic with a plan and a trial a super admin started' do
@@ -433,7 +437,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
 
       open_card
 
-      confirm = block('trial-block').at_css("form[action='#{card_path}/expire_trial'] button")['data-confirm']
+      confirm = text(block('trial-block').at_css('[data-testid="confirm-expire-trial"] .admin-ask__panel'))
       expect(confirm).to include('остальные функции и лимиты аккаунта не изменятся')
       expect(confirm).not_to include('станут нулевыми')
       expect(text(block('trial-block').at_css('[data-testid="trial-end-note"]'))).to include('Лимиты аккаунта при этом не меняются')
@@ -445,7 +449,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
 
       open_card
 
-      confirm = block('trial-block').at_css("form[action='#{card_path}/expire_trial'] button")['data-confirm']
+      confirm = text(block('trial-block').at_css('[data-testid="confirm-expire-trial"] .admin-ask__panel'))
       expect(confirm).to include('лимиты операторов и каналов станут нулевыми')
       expect(text(block('trial-block').at_css('[data-testid="trial-end-note"]'))).to include('Лимиты операторов и каналов при этом станут нулевыми')
     end
@@ -533,7 +537,9 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       open_card
 
       expect(block('usage-block').at_css('[data-testid="storage-breakdown"]')).to be_present
-      resets = block('usage-block').css('[data-testid="counter-resets"] form').to_h { |form| [form['action'], text(form)] }
+      resets = block('usage-block').css('[data-testid="counter-resets"] details').to_h do |node|
+        [node.at_css('form')['action'], text(node.at_css('summary'))]
+      end
       expect(resets).to eq(
         "#{card_path}/reset_captain_responses_usage" => 'Сбросить ответы ИИ',
         "#{card_path}/reset_captain_tokens_usage" => 'Сбросить токены ИИ',
@@ -685,8 +691,9 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       users = block('users-block')
       expect(text(users)).to include('Всего: 2')
       rows = users.css('tbody tr').to_h { |row| [row['data-user-id'].to_i, row.css('td').map { |cell| text(cell) }] }
-      expect(rows[admin.id]).to eq(['Айгерим', admin.email, 'Администратор', '15.10.2026 17:00', 'Убрать из аккаунта'])
-      expect(rows[agent.id]).to eq(['Мерей', agent.email, 'Оператор', '—', 'Убрать из аккаунта'])
+      expect(rows[admin.id].first(4)).to eq(['Айгерим', admin.email, 'Администратор', '15.10.2026 17:00'])
+      expect(rows[agent.id].first(4)).to eq(['Мерей', agent.email, 'Оператор', '—'])
+      expect(rows.values.map(&:last)).to all(start_with('Убрать из аккаунта'))
       expect(users.at_css("a[href='/super_admin/users/#{admin.id}']")).to be_present
     end
 
@@ -766,7 +773,8 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       maintenance = block('maintenance-block')
       forms = maintenance.css('form').index_by { |form| form['action'] }
       expect(forms.keys).to contain_exactly("#{card_path}/reset_cache", "#{card_path}/seed", card_path)
-      expect(maintenance.css('button').map { |button| button['data-confirm'] }).to all(be_present)
+      expect(maintenance.css('details.admin-ask').size).to eq(2)
+      expect(maintenance.css('[data-confirm]')).to be_empty
     end
 
     it 'deletes an account only after its name is typed in, and says that nothing is deleted at once' do
@@ -792,10 +800,10 @@ RSpec.describe 'Super Admin clinic card', type: :request do
 
         banner = block('deletion-banner')
         expect(text(banner)).to include('Аккаунт будет удалён 26.10.2026 14:30 (Астана)')
-        form = banner.at_css('form')
-        expect(form['action']).to eq("#{card_path}/cancel_deletion")
-        expect(text(form)).to eq('Отменить удаление')
-        expect(form.at_css('button')['data-confirm']).to include('Аккаунт Алатау')
+        node = banner.at_css('[data-testid="confirm-cancel-deletion"]')
+        expect(node.at_css('form')['action']).to eq("#{card_path}/cancel_deletion")
+        expect(text(node.at_css('summary'))).to eq('Отменить удаление')
+        expect(text(node.at_css('.admin-ask__panel'))).to include('Аккаунт Алатау')
         expect(block('maintenance-block').at_css('[data-testid="deletion-form"]')).to be_nil
         expect(text(block('deletion-note'))).to include('Удаление назначено на 26.10.2026 14:30 (Астана)')
       end

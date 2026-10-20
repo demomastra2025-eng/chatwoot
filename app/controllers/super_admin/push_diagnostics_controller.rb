@@ -31,6 +31,7 @@ class SuperAdmin::PushDiagnosticsController < SuperAdmin::ApplicationController
 
     deleted_count = user.notification_subscriptions.where(id: ids).destroy_all.size
     log_super_admin_action("deleted #{deleted_count} subscriptions for user #{user.id}: #{ids}")
+    record_deletion(user, deleted_count, ids)
     redirect_to super_admin_push_diagnostics_path(user_query: user.id),
                 notice: I18n.t('super_admin.push_diagnostics.subscriptions_deleted', count: deleted_count)
   end
@@ -47,6 +48,12 @@ class SuperAdmin::PushDiagnosticsController < SuperAdmin::ApplicationController
 
     log_super_admin_action("test sent for user #{@user.id} subscriptions #{ids}")
     render :show
+  end
+
+  # The audit log keeps who took subscriptions of whom away, and which ones
+  def record_deletion(user, deleted_count, ids)
+    SuperAdmin::PlatformAudit.record(auditable: user, action: 'delete_push_subscriptions', actor: current_super_admin, request: request,
+                                     changes: { 'deleted' => deleted_count, 'subscription_ids' => ids })
   end
 
   def log_super_admin_action(message)

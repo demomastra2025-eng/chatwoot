@@ -3,7 +3,7 @@
 
 The members with their role (Администратор / Оператор), e-mail and last
 sign-in (Astana time), each linking to the user page, and «Убрать из аккаунта»
-(asks first, written to the audit log); below, a collapsed form that adds a
+(asks first with a panel that says what happens, written to the audit log); below, a collapsed form that adds a
 member: a user from the list or a new one (see `_add_user`).
 
 ## Local variables:
@@ -16,6 +16,8 @@ member: a user from the list or a new one (see `_add_user`).
   members = account.account_users.includes(:user).order(:id)
   total = members.size
   shown = members.limit(limit).to_a
+  # The only administrator of the account is not taken out without saying so
+  administrators = account.account_users.administrator.count
 %>
 
 <section class="admin-card" aria-labelledby="users-title" data-testid="users-block">
@@ -54,10 +56,13 @@ member: a user from the list or a new one (see `_add_user`).
             </td>
             <td class="whitespace-nowrap tabular-nums text-n-slate-11"><%= super_admin_time(user.current_sign_in_at || user.last_sign_in_at) || '—' %></td>
             <td class="text-end">
-              <%# Only the membership goes: the user and their data stay. %>
-              <%= button_to t('super_admin.clinic_card.users.remove'), super_admin_account_user_path(membership), method: :delete,
-                            class: 'button button--small button--alt', form_class: 'inline-block',
-                            data: { confirm: t('super_admin.clinic_card.users.remove_confirm', user: user.name, clinic: account.name) } %>
+              <%# Only the membership goes: the user and their data stay. The panel says so, and says it when this is the only administrator. %>
+              <%= render 'super_admin/shared/confirm_action',
+                         key: "remove-user-#{user.id}", label: t('super_admin.clinic_card.users.remove'),
+                         title: t('super_admin.safety.remove_user.title', user: user.name, account: account.name),
+                         text: [t('super_admin.safety.remove_user.text', account: account.name), t('super_admin.safety.audited')],
+                         warning: (t('super_admin.safety.remove_user.last_administrator', account: account.name) if membership.administrator? && administrators == 1),
+                         url: super_admin_account_user_path(membership), http_method: :delete, submit: t('super_admin.safety.remove_user.submit') %>
             </td>
           </tr>
         <% end %>

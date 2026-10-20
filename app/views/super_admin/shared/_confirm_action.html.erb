@@ -1,0 +1,86 @@
+<%#
+# A dangerous action behind a question
+
+The one way the super admin asks «точно?» before an action that cannot be taken back or that every operator will see: a
+button that opens a small panel with the question, what will happen, the fields the action needs (a reason) and the two
+answers. It is a <details>: it works without a script (the button opens it, the script only closes it with «Отмена» and
+Escape and keeps a click in a table row from opening the row). The action itself is a normal form, so nothing is done
+before «Да».
+
+## Local variables:
+
+- `key`: a short name of the action; `data-testid="confirm-<key>"` of the block and the ids inside it.
+- `label`: the text of the button that opens the panel.
+- `title`: the question («Обнулить ответы ИИ?»); without it the first line of `text` is the question.
+- `text`: what will happen, a line or a list of lines (plain text).
+- `warning`: a line that stands out (the person is the last administrator); optional.
+- `url`: where the answer «Да» goes. `http_method`: :post (default), :delete, :patch.
+- `submit`: the text of «Да» (default «Да, выполнить»). `tone`: :danger (default, a red answer) or :primary.
+- `params`: hidden fields sent with the answer, as a hash (a list is sent as `name[]`, once for each item).
+- `fields`: more fields the action needs, as HTML (`capture do ... end`); optional.
+- `trigger_class`: the classes of the opening button (default: a small quiet one).
+- `floating`: true for a button of a page header (the panel hangs under it on a wide screen).
+- `in_form`: true inside a form that already exists (the answer is a button with `formaction`; no form of its own).
+- `as_link`: true inside a form that cannot post to the address (a field of the edit form): the answer is a link that the
+  Rails script sends with `http_method` (`data-method`), so there is no form of its own either.
+%>
+<%
+  http_method = local_assigns.fetch(:http_method, :post)
+  tone = local_assigns.fetch(:tone, :danger)
+  lines = Array(local_assigns[:text]).compact_blank
+  hidden = local_assigns.fetch(:params, {})
+  title = local_assigns[:title].presence
+  if title.nil?
+    # No title given: the first line is the question (up to its «?»); the rest of the line is what will happen
+    head, tail = lines.shift.to_s.split(/(?<=\?)\s+/, 2)
+    title = head
+    lines.unshift(tail) if tail.present?
+  end
+  title_id = "confirm-#{key}-title"
+  answer_class = tone == :primary ? 'button button--small' : 'button button--small button--danger'
+  open_class = local_assigns.fetch(:trigger_class, 'button button--small button--alt')
+  panel = capture do
+%>
+    <div class="admin-ask__panel" role="group" aria-labelledby="<%= title_id %>">
+      <p class="admin-ask__title" id="<%= title_id %>"><%= title %></p>
+      <% lines.each do |line| %>
+        <p class="admin-ask__text"><%= line %></p>
+      <% end %>
+      <% if local_assigns[:warning].present? %>
+        <p class="admin-ask__warning" role="note"><%= local_assigns[:warning] %></p>
+      <% end %>
+      <% if local_assigns[:fields].present? %>
+        <div class="admin-ask__fields"><%= local_assigns[:fields] %></div>
+      <% end %>
+      <div class="admin-ask__actions">
+        <% if local_assigns[:as_link] %>
+          <%= link_to local_assigns.fetch(:submit, t('super_admin.confirm.yes')), url, method: http_method, rel: 'nofollow', class: answer_class %>
+        <% elsif local_assigns[:in_form] %>
+          <button type="submit" formaction="<%= url %>" formmethod="post" class="<%= answer_class %>"><%= local_assigns.fetch(:submit, t('super_admin.confirm.yes')) %></button>
+        <% else %>
+          <button type="submit" class="<%= answer_class %>"><%= local_assigns.fetch(:submit, t('super_admin.confirm.yes')) %></button>
+        <% end %>
+        <button type="button" class="button button--small button--alt" data-confirm-close><%= t('super_admin.confirm.cancel') %></button>
+      </div>
+    </div>
+<% end %>
+
+<details class="admin-ask<%= ' admin-ask--floating' if local_assigns[:floating] %>" data-testid="confirm-<%= key %>">
+  <summary class="<%= open_class %>"><%= label %></summary>
+  <% if local_assigns[:in_form] || local_assigns[:as_link] %>
+    <%= panel %>
+  <% else %>
+    <%= form_with url: url, method: http_method, local: true, class: 'm-0', data: { single_submit: true } do %>
+      <% hidden.each do |name, value| %>
+        <% if value.is_a?(Array) %>
+          <% value.each do |item| %>
+            <%= hidden_field_tag "#{name}[]", item, id: nil %>
+          <% end %>
+        <% else %>
+          <%= hidden_field_tag name, value, id: nil %>
+        <% end %>
+      <% end %>
+      <%= panel %>
+    <% end %>
+  <% end %>
+</details>

@@ -69,19 +69,20 @@ are Astana time.
   <% if state.trial_managed? || state.can_start_trial? %>
     <div class="flex flex-wrap gap-2">
       <% if state.trial_managed? %>
-        <%= button_to t('super_admin.accounts.trial.extend', days: days), [:extend_trial, :super_admin, account], method: :post,
-                      class: 'button button--small button--secondary', form_class: 'inline-block',
-                      data: { confirm: t('super_admin.accounts.trial.extend_confirm', days: days) } %>
+        <%= render 'super_admin/shared/confirm_action', key: 'extend-trial', label: t('super_admin.accounts.trial.extend', days: days),
+                   text: [t('super_admin.accounts.trial.extend_confirm', days: days)], url: extend_trial_super_admin_account_path(account),
+                   tone: :primary, submit: t('super_admin.safety.trial.extend_submit'), trigger_class: 'button button--small button--secondary' %>
         <%# An ended trial cannot be ended again (expire_trial! refuses it), so the button is only there while it runs. %>
         <% if trial_state == :active %>
-          <%= button_to t('super_admin.accounts.trial.expire'), [:expire_trial, :super_admin, account], method: :post,
-                        class: 'button button--small button--alt', form_class: 'inline-block',
-                        data: { confirm: t("super_admin.accounts.trial.expire_confirm_#{limits_key}") } %>
+          <%= render 'super_admin/shared/confirm_action', key: 'expire-trial', label: t('super_admin.accounts.trial.expire'),
+                     text: [t("super_admin.accounts.trial.expire_confirm_#{limits_key}"), t('super_admin.safety.audited')],
+                     url: expire_trial_super_admin_account_path(account), submit: t('super_admin.safety.trial.expire_submit') %>
         <% end %>
       <% else %>
-        <%= button_to t('super_admin.accounts.trial.start', days: days), [:extend_trial, :super_admin, account], method: :post, params: { start: true },
-                      class: 'button button--small button--secondary', form_class: 'inline-block',
-                      data: { confirm: t("super_admin.accounts.trial.start_confirm_#{limits_key}", days: days) } %>
+        <%= render 'super_admin/shared/confirm_action', key: 'start-trial', label: t('super_admin.accounts.trial.start', days: days),
+                   text: [t("super_admin.accounts.trial.start_confirm_#{limits_key}", days: days)], url: extend_trial_super_admin_account_path(account),
+                   params: { start: true }, tone: :primary, submit: t('super_admin.safety.trial.start_submit'),
+                   trigger_class: 'button button--small button--secondary' %>
       <% end %>
     </div>
   <% end %>

@@ -137,25 +137,18 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     redirect_to_account(notice: I18n.t('super_admin.accounts.flashes.cache_reset'))
   end
 
+  # The three counters that count by themselves until somebody resets them (SuperAdmin::CounterResets). The card asks
+  # «точно?» before it posts here; the entry of the audit log says what the number was, and so does the message.
   def reset_captain_responses_usage
-    if requested_resource.reset_response_usage
-      redirect_to_account(notice: I18n.t('super_admin.accounts.flashes.response_usage_reset'))
-    else
-      redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.response_usage_reset_failed'))
-    end
+    reset_counter(:responses, failed: 'response_usage_reset_failed') { requested_resource.reset_response_usage }
   end
 
   def reset_captain_tokens_usage
-    if requested_resource.reset_token_usage
-      redirect_to_account(notice: I18n.t('super_admin.accounts.flashes.token_usage_reset'))
-    else
-      redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.token_usage_reset_failed'))
-    end
+    reset_counter(:tokens, failed: 'token_usage_reset_failed') { requested_resource.reset_token_usage }
   end
 
   def reset_email_usage
-    requested_resource.reset_email_sent_count
-    redirect_to_account(notice: I18n.t('super_admin.accounts.flashes.email_usage_reset'))
+    reset_counter(:emails, failed: nil) { requested_resource.reset_email_sent_count }
   end
 
   # Extends a running (or ended) trial. Putting an account that is not on a trial onto one is an explicit
@@ -299,6 +292,16 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   end
 
   private
+
+  # Sets one counter to zero (the block does it and answers whether it worked) and says what the number was
+  def reset_counter(kind, failed:)
+    before = SuperAdmin::CounterResets.new(requested_resource).current(kind)
+    worked = yield
+    return redirect_to_account(alert: I18n.t("super_admin.accounts.flashes.#{failed}")) if failed && !worked
+
+    record_super_admin_audit(SuperAdmin::CounterResets.action_for(kind), 'before' => before, 'after' => 0)
+    redirect_to_account(notice: I18n.t("super_admin.safety.counters.#{kind}.done", before: SuperAdmin::DisplayHelper.format_number(before)))
+  end
 
   # The person of the form, checked against this account (nothing is written)
   def account_member

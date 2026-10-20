@@ -1,0 +1,90 @@
+# Russian texts of the safe actions of the super admin: the question «точно?» before an action that cannot be taken back or
+# that every operator will see (shared/_confirm_action), the reset of the counters, taking a user out of an account,
+# every delete, blocking an account, the banner shown to everybody, the second factor of a user and the AI block of the card.
+# The main file of the super admin is super_admin.ru.yml.
+ru:
+  super_admin:
+    audits:
+      actions:
+        reset_captain_responses_usage: "Сброс счётчика ответов ИИ"
+        reset_captain_tokens_usage: "Сброс счётчика токенов ИИ"
+        reset_email_usage: "Сброс счётчика писем"
+        delete_push_subscriptions: "Удаление подписок на уведомления"
+        delete_avatar: "Удаление фото пользователя"
+
+    # The two answers of every question
+    confirm:
+      "yes": "Да, выполнить"
+      cancel: "Отмена"
+
+    safety:
+      audited: "Действие запишется в журнал аудита."
+
+      # The counters that count by themselves until somebody resets them
+      counters:
+        last_reset: "Последний сброс: %{time}"
+        never_reset: "Ещё ни разу не сбрасывали"
+        responses:
+          title: "Обнулить ответы ИИ?"
+          text: "Сейчас учтено ответов: %{value}. Счётчик станет 0, и аккаунт снова сможет получать ответы ИИ в пределах лимита. Эти ответы оплачивает платформа."
+          submit: "Да, обнулить"
+          done: "Ответы ИИ обнулены: было %{before}, теперь 0."
+        tokens:
+          title: "Обнулить токены ИИ?"
+          text: "Сейчас учтено токенов: %{value}. Счётчик станет 0, и аккаунт снова сможет тратить токены ИИ в пределах лимита. Их оплачивает платформа."
+          submit: "Да, обнулить"
+          done: "Токены ИИ обнулены: было %{before}, теперь 0."
+        emails:
+          title: "Обнулить счётчик писем?"
+          text: "Сегодня отправлено писем: %{value}. Счётчик станет 0, и аккаунт снова сможет отправлять письма до дневного лимита."
+          submit: "Да, обнулить"
+          done: "Счётчик писем обнулён: было %{before}, теперь 0."
+
+      # Taking a person out of an account (the card of the account, the card of the user)
+      remove_user:
+        title: "Убрать %{user} из аккаунта «%{account}»?"
+        text: "Он потеряет доступ к аккаунту «%{account}». Сам пользователь и его данные не удаляются, в другие аккаунты он входит как раньше."
+        last_administrator: "Это единственный администратор аккаунта «%{account}»: после этого настройками аккаунта некому будет управлять."
+        submit: "Да, убрать"
+
+      # Every delete
+      destroy:
+        generic:
+          title: "Удалить «%{name}»?"
+          text: "Запись будет удалена, вернуть её нельзя."
+          submit: "Да, удалить"
+        user:
+          title: "Удалить пользователя «%{name}»?"
+          text: "Пользователь будет удалён с платформы навсегда, вернуть его нельзя. Аккаунтов у него: %{count}."
+          sole_admin: "Он единственный администратор в аккаунтах %{accounts}: они останутся без администратора."
+          submit: "Да, удалить пользователя"
+        platform_app:
+          title: "Удалить партнёрский доступ «%{name}»?"
+          text: "Токен партнёра перестанет работать. Аккаунты и пользователи, которых он создал, останутся."
+        platform_banner:
+          title: "Удалить баннер «%{name}»?"
+          text: "Если баннер сейчас показывается, он сразу пропадёт у всех операторов."
+
+      file:
+        title: "Удалить файл «%{name}»?"
+        text: "Файл будет удалён у пользователя, вернуть его нельзя."
+        submit: "Да, удалить файл"
+      trial:
+        extend_submit: "Да, продлить"
+        expire_submit: "Да, завершить пробный период"
+        start_submit: "Да, запустить"
+      maintenance:
+        reset_cache_submit: "Да, сбросить кэш"
+        seed_submit: "Да, заменить демо-данными"
+      plan:
+        reset_submit: "Да, вернуть к тарифу"
+      organization:
+        unlink_submit: "Да, отвязать"
+        destroy_submit: "Да, удалить организацию"
+      deletion:
+        cancel_submit: "Да, отменить удаление"
+      partner:
+        reissue_submit: "Да, перевыпустить"
+        destroy_submit: "Да, удалить доступ"
+      push:
+        delete_submit: "Да, удалить подписки"

@@ -53,9 +53,10 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
         <% end %>
       </span>
       <%# Applying the same plan again brings the functions back to it. %>
-      <%= button_to t('super_admin.plans.drift.reset'), [:apply_plan, :super_admin, account], method: :post, params: { modules: chosen },
-                    class: 'button button--small button--secondary', form_class: 'shrink-0',
-                    data: { confirm: t('super_admin.plans.drift.reset_confirm') } %>
+      <%= render 'super_admin/shared/confirm_action', key: 'reset-plan', label: t('super_admin.plans.drift.reset'),
+                 text: [t('super_admin.plans.drift.reset_confirm')], url: apply_plan_super_admin_account_path(account),
+                 params: { modules: chosen }, tone: :primary, submit: t('super_admin.safety.plan.reset_submit'),
+                 trigger_class: 'button button--small button--secondary' %>
     </div>
   <% end %>
 

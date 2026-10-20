@@ -30,9 +30,10 @@ row). Side column: «Реквизиты», «Договор» and «Для ра�
     <%= link_to(t('administrate.actions.edit'), [:edit, namespace, organization], class: 'button') if accessible_action?(organization, :edit) %>
     <% if accessible_action?(organization, :destroy) %>
       <%# Refused with a message while accounts are linked; the button asks first either way. %>
-      <%= button_to t('administrate.actions.destroy'), [namespace, organization], method: :delete,
-                    class: 'button button--danger', form_class: 'inline-block',
-                    data: { confirm: t('super_admin.organizations.card.destroy_confirm', name: organization.name) } %>
+      <%= render 'super_admin/shared/confirm_action', key: 'delete-organization', label: t('administrate.actions.destroy'), floating: true,
+                 text: [t('super_admin.organizations.card.destroy_confirm', name: organization.name), t('super_admin.safety.audited')],
+                 url: polymorphic_path([namespace, organization]), http_method: :delete, submit: t('super_admin.safety.organization.destroy_submit'),
+                 trigger_class: 'button button--danger' %>
     <% end %>
   </div>
 </header>

@@ -32,13 +32,16 @@ as well as a link to its edit page.
       class: "button",
     ) if accessible_action?(page.resource, :edit) %>
 
-    <%= link_to(
-      t("administrate.actions.destroy"),
-      [namespace, page.resource],
-      class: "button button--danger",
-      method: :delete,
-      data: { confirm: t("administrate.actions.confirm") }
-    ) if accessible_action?(page.resource, :destroy) %>
+    <%# Asks «точно?» with the name of the object and what happens to it (shared/_confirm_action) %>
+    <% if accessible_action?(page.resource, :destroy) %>
+      <% kind = page.resource_name.to_s %>
+      <% object_name = kind == 'platform_banner' ? truncate(page.resource.banner_message.to_s, length: 60) : page.dashboard.display_resource(page.resource) %>
+      <%= render 'super_admin/shared/confirm_action', key: "delete-#{kind}", label: t('administrate.actions.destroy'), floating: true,
+                 title: t("super_admin.safety.destroy.#{kind}.title", name: object_name, default: t('super_admin.safety.destroy.generic.title', name: object_name)),
+                 text: [t("super_admin.safety.destroy.#{kind}.text", default: t('super_admin.safety.destroy.generic.text')), t('super_admin.safety.audited')],
+                 url: polymorphic_path([namespace, page.resource]), http_method: :delete, submit: t('super_admin.safety.destroy.generic.submit'),
+                 trigger_class: 'button button--danger' %>
+    <% end %>
   </div>
 </header>
 

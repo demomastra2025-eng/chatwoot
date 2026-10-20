@@ -15,10 +15,11 @@ where the storage goes and the buttons that reset the counters that can be reset
   # A snapshot without a breakdown is treated like a measurement that has not finished
   breakdown = account.storage_breakdown.presence || { calculating: true }
   breakdown_keys = %i[recordings audio images videos documents captain other trash]
+  resets = SuperAdmin::CounterResets.new(account)
   counters = [
-    { key: :responses, consumed: usage.overview.dig(:captain, :responses, :consumed), action: :reset_captain_responses_usage },
-    { key: :tokens, consumed: usage.overview.dig(:captain, :tokens, :consumed), action: :reset_captain_tokens_usage },
-    { key: :emails, consumed: usage.overview.dig(:emails, :consumed), action: :reset_email_usage }
+    { key: :responses, action: :reset_captain_responses_usage },
+    { key: :tokens, action: :reset_captain_tokens_usage },
+    { key: :emails, action: :reset_email_usage }
   ]
 %>
 
@@ -59,13 +60,30 @@ where the storage goes and the buttons that reset the counters that can be reset
     </div>
     <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
       <% counters.each do |counter| %>
-        <div class="flex flex-col gap-2 rounded-lg p-3 outline outline-1 -outline-offset-1 outline-n-weak">
-          <span class="text-n-slate-12"><%= t("super_admin.clinic_card.usage.counters.#{counter[:key]}.label") %></span>
+        <% kind = counter[:key] %>
+        <% current = resets.current(kind) %>
+        <% last = resets.last(kind) %>
+        <div class="flex flex-col gap-2 rounded-lg p-3 outline outline-1 -outline-offset-1 outline-n-weak" data-counter="<%= kind %>">
+          <span class="text-n-slate-12"><%= t("super_admin.clinic_card.usage.counters.#{kind}.label") %></span>
           <span class="text-xs text-n-slate-11">
-            <%= t("super_admin.clinic_card.usage.counters.#{counter[:key]}.current", value: super_admin_number(counter[:consumed].to_i)) %>
+            <%= t("super_admin.clinic_card.usage.counters.#{kind}.current", value: super_admin_number(current)) %>
           </span>
-          <%= button_to t("super_admin.clinic_card.usage.counters.#{counter[:key]}.button"), [counter[:action], :super_admin, account], method: :post,
-                        class: 'button button--small button--secondary w-full', form_class: 'block w-full mt-auto' %>
+          <%# Who set the counter back last: the entry of the audit log %>
+          <span class="text-xs text-n-slate-10" data-testid="last-reset">
+            <% if last %>
+              <%= t('super_admin.safety.counters.last_reset', time: super_admin_time(last.at)) %><%= ", #{last.by}" if last.by.present? %>
+            <% else %>
+              <%= t('super_admin.safety.counters.never_reset') %>
+            <% end %>
+          </span>
+          <div class="mt-auto w-full">
+            <%= render 'super_admin/shared/confirm_action',
+                       key: "reset-#{kind}", label: t("super_admin.clinic_card.usage.counters.#{kind}.button"),
+                       title: t("super_admin.safety.counters.#{kind}.title"),
+                       text: [t("super_admin.safety.counters.#{kind}.text", value: super_admin_number(current)), t('super_admin.safety.audited')],
+                       url: polymorphic_path([counter[:action], :super_admin, account]), submit: t("super_admin.safety.counters.#{kind}.submit"),
+                       trigger_class: 'button button--small button--secondary w-full' %>
+          </div>
         </div>
       <% end %>
     </div>

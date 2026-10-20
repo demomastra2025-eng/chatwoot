@@ -123,11 +123,11 @@ steps on one page. Times are Astana time.
 
           <div class="flex flex-wrap gap-2">
             <%= f.submit t('super_admin.push_diagnostics.send_test') %>
-            <%= submit_tag t('super_admin.push_diagnostics.delete_selected'),
-                           formaction: destroy_subscriptions_super_admin_push_diagnostics_path,
-                           formmethod: 'post',
-                           data: { confirm: t('super_admin.push_diagnostics.delete_confirm') },
-                           class: 'button button--danger' %>
+            <%# Inside the form of the table: the answer «Да» takes the ticked rows to the delete (shared/_confirm_action, in_form) %>
+            <%= render 'super_admin/shared/confirm_action', key: 'delete-subscriptions', label: t('super_admin.push_diagnostics.delete_selected'),
+                       in_form: true, url: destroy_subscriptions_super_admin_push_diagnostics_path,
+                       text: [t('super_admin.push_diagnostics.delete_confirm'), t('super_admin.safety.audited')],
+                       submit: t('super_admin.safety.push.delete_submit'), trigger_class: 'button button--danger' %>
           </div>
         <% end %>
       <% end %>

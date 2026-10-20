@@ -41,14 +41,16 @@ partner created through the Platform API (the only ones its token can read or ch
   </div>
 
   <div class="main-content__actions">
-    <%= button_to t('super_admin.platform_apps.card.reissue'), reissue_token_super_admin_platform_app_path(platform_app), method: :post,
-                  class: 'button button--secondary', form_class: 'inline-block',
-                  data: { confirm: t('super_admin.platform_apps.card.reissue_confirm', name: platform_app.name) } %>
+    <%= render 'super_admin/shared/confirm_action', key: 'reissue-token', label: t('super_admin.platform_apps.card.reissue'), floating: true,
+               text: [t('super_admin.platform_apps.card.reissue_confirm', name: platform_app.name), t('super_admin.safety.audited')],
+               url: reissue_token_super_admin_platform_app_path(platform_app), submit: t('super_admin.safety.partner.reissue_submit'),
+               trigger_class: 'button button--secondary' %>
     <%= link_to(t('administrate.actions.edit'), [:edit, namespace, platform_app], class: 'button') if accessible_action?(platform_app, :edit) %>
     <% if accessible_action?(platform_app, :destroy) %>
-      <%= button_to t('administrate.actions.destroy'), [namespace, platform_app], method: :delete,
-                    class: 'button button--danger', form_class: 'inline-block',
-                    data: { confirm: t('super_admin.platform_apps.card.destroy_confirm', name: platform_app.name) } %>
+      <%= render 'super_admin/shared/confirm_action', key: 'delete-partner', label: t('administrate.actions.destroy'), floating: true,
+                 text: [t('super_admin.platform_apps.card.destroy_confirm', name: platform_app.name), t('super_admin.safety.audited')],
+                 url: polymorphic_path([namespace, platform_app]), http_method: :delete, submit: t('super_admin.safety.partner.destroy_submit'),
+                 trigger_class: 'button button--danger' %>
     <% end %>
   </div>
 </header>

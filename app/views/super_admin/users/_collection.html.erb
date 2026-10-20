@@ -25,6 +25,8 @@ narrow screens). A collection without rows shows an empty-state line.
   rows = resources.to_a
   action_columns = [existing_action?(collection_presenter.resource_name, :edit),
                     existing_action?(collection_presenter.resource_name, :destroy)].count(true)
+  # What the question before deleting a user says about each person of the page (read for the page at once)
+  user_notes = SuperAdmin::UserRemovalNotes.for(rows) if collection_presenter.resource_name == 'user'
 %>
 
 <div class="admin-card admin-card--table">
@@ -95,13 +97,11 @@ narrow screens). A collection without rows shows an empty-state line.
           <% end %>
 
           <% if existing_action? collection_presenter.resource_name, :destroy %>
-            <td class="text-end"><%= link_to(
-              t("administrate.actions.destroy"),
-              [namespace, collection_presenter.resource_name == 'account_user' ? resource : resource.becomes(User)],
-              class: "text-color-red",
-              method: :delete,
-              data: { confirm: t("administrate.actions.confirm") }
-            ) if authorized_action? resource, :destroy %></td>
+            <td class="text-end">
+              <%# Asks «точно?» with what happens to the object (shared/_row_destroy) %>
+              <%= render 'super_admin/shared/row_destroy', resource: resource, collection_presenter: collection_presenter, notes: user_notes,
+                         target: (collection_presenter.resource_name == 'account_user' ? resource : resource.becomes(User)) if authorized_action? resource, :destroy %>
+            </td>
           <% end %>
         </tr>
       <% end %>

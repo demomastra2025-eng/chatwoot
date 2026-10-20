@@ -23,13 +23,13 @@ until the date the deletion can be cancelled (the banner at the top of the card)
   </div>
 
   <div class="flex flex-wrap gap-2">
-    <%= button_to t('super_admin.clinic_card.maintenance.reset_cache'), [:reset_cache, :super_admin, account], method: :post,
-                  class: 'button button--small button--alt', form_class: 'inline-block',
-                  data: { confirm: t('super_admin.clinic_card.maintenance.reset_cache_confirm') } %>
+    <%= render 'super_admin/shared/confirm_action', key: 'reset-cache', label: t('super_admin.clinic_card.maintenance.reset_cache'),
+               text: [t('super_admin.clinic_card.maintenance.reset_cache_confirm')], url: reset_cache_super_admin_account_path(account),
+               tone: :primary, submit: t('super_admin.safety.maintenance.reset_cache_submit') %>
     <% if seeding_enabled %>
-      <%= button_to t('super_admin.clinic_card.maintenance.seed'), [:seed, :super_admin, account], method: :post,
-                    class: 'button button--small button--alt', form_class: 'inline-block',
-                    data: { confirm: t('super_admin.clinic_card.maintenance.seed_confirm') } %>
+      <%= render 'super_admin/shared/confirm_action', key: 'seed', label: t('super_admin.clinic_card.maintenance.seed'),
+                 text: [t('super_admin.clinic_card.maintenance.seed_confirm')], url: seed_super_admin_account_path(account),
+                 submit: t('super_admin.safety.maintenance.seed_submit') %>
     <% end %>
   </div>
 

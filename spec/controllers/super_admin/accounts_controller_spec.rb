@@ -269,7 +269,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         post "/super_admin/accounts/#{account.id}/reset_captain_responses_usage"
 
         expect(response).to have_http_status(:redirect)
-        expect(flash[:notice]).to eq(I18n.t('super_admin.accounts.flashes.response_usage_reset', locale: admin_request_locale))
+        expect(flash[:notice]).to eq('Ответы ИИ обнулены: было 12, теперь 0.')
         expect(account.reload.custom_attributes['captain_responses_usage']).to eq(0)
       end
     end
@@ -284,7 +284,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         post "/super_admin/accounts/#{account.id}/reset_captain_tokens_usage"
 
         expect(response).to have_http_status(:redirect)
-        expect(flash[:notice]).to eq(I18n.t('super_admin.accounts.flashes.token_usage_reset', locale: admin_request_locale))
+        expect(flash[:notice]).to eq('Токены ИИ обнулены: было 1 200, теперь 0.')
         expect(account.reload.custom_attributes['captain_tokens_usage']).to eq(0)
       end
     end
@@ -299,7 +299,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         post "/super_admin/accounts/#{account.id}/reset_email_usage"
 
         expect(response).to have_http_status(:redirect)
-        expect(flash[:notice]).to eq(I18n.t('super_admin.accounts.flashes.email_usage_reset', locale: admin_request_locale))
+        expect(flash[:notice]).to eq('Счётчик писем обнулён: было 1, теперь 0.')
         expect(account.emails_sent_today).to eq(0)
       end
     end

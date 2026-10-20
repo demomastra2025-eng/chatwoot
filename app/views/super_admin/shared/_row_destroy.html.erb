@@ -1,0 +1,43 @@
+<%#
+# «Удалить» of a row of a list
+
+The last cell of a row of the generic lists (users, partners, banners, the accounts of a user): a button that asks «точно?»
+with the name of the object and what happens to it (`shared/_confirm_action`), then deletes through the normal
+`DELETE` of the resource. A user says in how many accounts the person is and warns when the person is the only
+administrator of one; a row of «account user» only takes the person out of the account. Every delete leaves an entry in the
+audit log (users by the model, the others by their controllers).
+
+## Local variables:
+
+- `resource`: the record of the row.
+- `collection_presenter`: the presenter of the list (its `resource_name` says what a row is).
+- `target`: what the address of the delete is built from (the record; a user as `User`, not as its subclass).
+- `notes`: `SuperAdmin::UserRemovalNotes.for(users)` of the page (users only); optional.
+%>
+<%
+  kind = collection_presenter.resource_name.to_s
+  notes = local_assigns[:notes]
+  texts = "super_admin.safety.destroy.#{kind}"
+  common = { key: "delete-#{kind}-#{resource.id}", label: t('administrate.actions.destroy'), url: polymorphic_path([namespace, target]), http_method: :delete }
+%>
+<% if kind == 'account_user' %>
+  <%# The person leaves the account; the person and the data stay %>
+  <%= render 'super_admin/shared/confirm_action', **common, label: t('super_admin.clinic_card.users.remove'),
+             title: t('super_admin.safety.remove_user.title', user: resource.user&.name, account: resource.account&.name),
+             text: [t('super_admin.safety.remove_user.text', account: resource.account&.name), t('super_admin.safety.audited')],
+             warning: (t('super_admin.safety.remove_user.last_administrator', account: resource.account&.name) if SuperAdmin::UserRemovalNotes.sole_administrator?(resource)),
+             submit: t('super_admin.safety.remove_user.submit') %>
+<% elsif kind == 'user' %>
+  <% note = notes&.dig(resource.id) || SuperAdmin::UserRemovalNotes::EMPTY %>
+  <%= render 'super_admin/shared/confirm_action', **common,
+             title: t("#{texts}.title", name: resource.name),
+             text: [t("#{texts}.text", count: note.accounts), t('super_admin.safety.audited')],
+             warning: (t("#{texts}.sole_admin", accounts: note.sole_admin_in.map { |name| "«#{name}»" }.to_sentence) if note.sole_admin_in.any?),
+             submit: t("#{texts}.submit") %>
+<% else %>
+  <% name = kind == 'platform_banner' ? truncate(resource.banner_message.to_s, length: 60) : (resource.try(:name).presence || collection_presenter.dashboard.display_resource(resource)) %>
+  <%= render 'super_admin/shared/confirm_action', **common,
+             title: t("#{texts}.title", name: name, default: t('super_admin.safety.destroy.generic.title', name: name)),
+             text: [t("#{texts}.text", default: t('super_admin.safety.destroy.generic.text')), t('super_admin.safety.audited')],
+             submit: t('super_admin.safety.destroy.generic.submit') %>
+<% end %>

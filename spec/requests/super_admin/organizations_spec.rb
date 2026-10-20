@@ -578,12 +578,13 @@ RSpec.describe 'Super Admin organizations', type: :request do
 
         get "/super_admin/organizations/#{organization.id}"
 
-        form = page.at_css("[data-testid='accounts-block'] form[action='/super_admin/organizations/#{organization.id}/unlink_account']")
+        node = page.at_css("[data-testid='accounts-block'] [data-testid='confirm-unlink-#{account.id}']")
+        form = node.at_css("form[action='/super_admin/organizations/#{organization.id}/unlink_account']")
         expect(form.at_css('input[name="account_id"]')['value']).to eq(account.id.to_s)
         expect(form.at_css('input[name="_method"]')['value']).to eq('delete')
-        button = form.at_css('button[type="submit"], input[type="submit"]')
-        expect(button.text.squish.presence || button['value']).to eq('Отвязать')
-        expect(button['data-confirm']).to include('Филиал 1', organization.name)
+        expect(text(node.at_css('summary'))).to eq('Отвязать')
+        expect(text(node.at_css('.admin-ask__panel'))).to include('Филиал 1', organization.name, 'Да, отвязать')
+        expect(node.at_css('[data-confirm]')).to be_nil
       end
 
       it 'offers only the accounts without an organization in the select to link' do
