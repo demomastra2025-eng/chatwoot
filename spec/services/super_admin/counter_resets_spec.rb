@@ -59,6 +59,29 @@ RSpec.describe SuperAdmin::CounterResets do
       expect(resets.last(:emails).by).to eq('Второй')
     end
 
+    it 'finds the last reset of a counter however many times another one was reset since' do
+      reset!(:emails, by: create(:super_admin, name: 'Давний'))
+      35.times { reset!(:responses) }
+
+      expect(resets.last(:emails)).to have_attributes(by: 'Давний')
+      expect(resets.last(:responses)).to have_attributes(by: 'Айдар Админ')
+      expect(resets.last(:tokens)).to be_nil
+    end
+
+    it 'reads the entries of the three counters with one query' do
+      reset!(:emails)
+      reset!(:tokens)
+      reset!(:responses)
+      queries = []
+      callback = ->(*, payload) { queries << payload[:sql] if payload[:sql].include?('"audits"') }
+
+      ActiveSupport::Notifications.subscribed(callback, 'sql.active_record') do
+        described_class::KINDS.each_key { |kind| resets.last(kind) }
+      end
+
+      expect(queries.size).to eq(1)
+    end
+
     it 'does not read the resets of another account' do
       other = create(:account)
       SuperAdmin::AccountAudit.record(account: other, actor: admin, action: described_class.action_for(:responses))

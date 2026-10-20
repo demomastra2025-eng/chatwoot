@@ -30,6 +30,17 @@ RSpec.describe SuperAdmin::AccountBlocking do
       expect(audits('suspend_account')).to be_empty
     end
 
+    it 'writes the entry of the audit log after the lock is let go, so a problem of the log cannot undo the block' do
+      level = nil
+      base = ActiveRecord::Base.connection.open_transactions
+      allow(SuperAdmin::AccountAudit).to receive(:record) { level = ActiveRecord::Base.connection.open_transactions }
+
+      expect(blocking.suspend(reason: 'other')).to eq(:suspended)
+
+      expect(level).to eq(base)
+      expect(account.reload).to be_suspended
+    end
+
     it 'keeps only the reasons of the list, and drops an empty comment' do
       blocking.suspend(reason: 'whatever', note: '   ')
 
@@ -54,6 +65,17 @@ RSpec.describe SuperAdmin::AccountBlocking do
 
       expect(account.reload).to be_active
       expect(audits('activate_account').last.audited_changes).to eq('status' => %w[suspended active])
+    end
+
+    it 'writes its entry after the lock as well' do
+      level = nil
+      base = ActiveRecord::Base.connection.open_transactions
+      allow(SuperAdmin::AccountAudit).to receive(:record) { level = ActiveRecord::Base.connection.open_transactions }
+
+      blocking.activate
+
+      expect(level).to eq(base)
+      expect(account.reload).to be_active
     end
 
     it 'does nothing for an account that works' do

@@ -57,22 +57,24 @@ class SuperAdmin::AccountBlocking
 
   private
 
-  # Moves the status under the lock of the account row, so two operators pressing the button together change it once
+  # Moves the status under the lock of the account row, so two operators pressing the button together change it once. The entry of
+  # the audit log is written after the lock is let go (as the bulk block does), so a problem of the log cannot undo the change.
   def change(status, done, already, action, **extra)
-    outcome = already
+    source = nil
     @account.with_lock do
       next if @account.status == status
 
       source = @account.status
-      # The entry below says who and why; the automatic «Изменение» entry would only repeat it (the bulk block does the same)
+      # The entry below says who and why; the automatic «Изменение» entry would only repeat it
       Account.without_auditing { @account.update!(status: status) }
-      SuperAdmin::AccountAudit.record(
-        account: @account, actor: @actor, action: action, request: @request,
-        changes: { 'status' => [source, status] }.merge(extra.compact)
-      )
-      outcome = done
     end
-    outcome
+    return already if source.nil?
+
+    SuperAdmin::AccountAudit.record(
+      account: @account, actor: @actor, action: action, request: @request,
+      changes: { 'status' => [source, status] }.merge(extra.compact)
+    )
+    done
   end
 
   def normalize_reason(reason)

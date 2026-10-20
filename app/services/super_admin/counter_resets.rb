@@ -42,11 +42,13 @@ class SuperAdmin::CounterResets
 
   private
 
-  # One read for the three counters: the newest entry of each
+  # One read for the three counters: the newest entry of each (however many times another counter has been reset since)
   def latest
     @latest ||= begin
+      table = Audited::Audit.table_name
       audits = Audited::Audit.where(auditable_type: 'Account', auditable_id: @account.id, action: KINDS.values)
-                             .order(id: :desc).limit(30).includes(:user).to_a
+                             .select("DISTINCT ON (#{table}.action) #{table}.*").order(Arel.sql("#{table}.action"), id: :desc)
+                             .includes(:user).to_a
       KINDS.each_with_object({}) do |(kind, action), found|
         audit = audits.find { |candidate| candidate.action == action }
         found[kind] = Last.new(at: audit.created_at, by: person(audit)) if audit
