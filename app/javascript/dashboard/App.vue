@@ -2,7 +2,6 @@
 import { mapGetters } from 'vuex';
 import LoadingState from './components/widgets/LoadingState.vue';
 import NetworkNotification from './components/NetworkNotification.vue';
-import PaymentPendingBanner from './components/app/PaymentPendingBanner.vue';
 import StatusBanner from './components/app/StatusBanner.vue';
 import PendingEmailVerificationBanner from './components/app/PendingEmailVerificationBanner.vue';
 import WhatsappUsageBanner from './components/app/WhatsappUsageBanner.vue';
@@ -32,7 +31,6 @@ export default {
   components: {
     LoadingState,
     NetworkNotification,
-    PaymentPendingBanner,
     StatusBanner,
     WootSnackbarBox,
     PendingEmailVerificationBanner,
@@ -58,7 +56,6 @@ export default {
   },
   data() {
     return {
-      latestChatwootVersion: null,
       reconnectService: null,
     };
   },
@@ -122,13 +119,11 @@ export default {
       this.$store.dispatch('setActiveAccount', {
         accountId: this.currentAccountId,
       });
-      const { locale, latest_chatwoot_version: latestChatwootVersion } =
-        this.getAccount(this.currentAccountId);
+      const { locale } = this.getAccount(this.currentAccountId);
       const { pubsub_token: pubsubToken } = this.currentUser || {};
       const authClientId = AuthAPI.getAuthData()?.client;
       // If user locale is set, use it; otherwise use account locale
       await this.setLocale(this.uiSettings?.locale || locale);
-      this.latestChatwootVersion = latestChatwootVersion;
       vueActionCable.init(this.store, pubsubToken, authClientId);
       this.reconnectService?.disconnect();
       this.reconnectService = new ReconnectService(this.store, this.router);
@@ -159,7 +154,6 @@ export default {
     <StatusBanner />
     <template v-if="currentAccountId">
       <PendingEmailVerificationBanner v-if="hideOnOnboardingView" />
-      <PaymentPendingBanner v-if="hideOnOnboardingView" />
     </template>
     <router-view v-slot="{ Component }">
       <transition name="fade" mode="out-in">

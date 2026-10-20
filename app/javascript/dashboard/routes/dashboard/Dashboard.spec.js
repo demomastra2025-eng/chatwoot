@@ -38,9 +38,6 @@ vi.mock('dashboard/components/widgets/modal/WootKeyShortcutModal.vue', () => ({
 vi.mock('dashboard/components/app/AddAccountModal.vue', () => ({
   default: { name: 'AddAccountModal', template: '<div />' },
 }));
-vi.mock('dashboard/routes/dashboard/upgrade/UpgradePage.vue', () => ({
-  default: { name: 'UpgradePage', template: '<div><slot /></div>' },
-}));
 vi.mock('dashboard/components-next/sidebar/MobileSidebarLauncher.vue', () => ({
   default: { name: 'MobileSidebarLauncher', template: '<div />' },
 }));

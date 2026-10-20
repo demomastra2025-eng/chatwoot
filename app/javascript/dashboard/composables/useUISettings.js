@@ -8,9 +8,13 @@ export const DEFAULT_CONVERSATION_SIDEBAR_ITEMS_ORDER = Object.freeze([
   { name: 'contact_attributes' },
   { name: 'contact_notes' },
   { name: 'shared_files' },
-  { name: 'conversation_participants' },
-  { name: 'linear_issues' },
-  { name: 'shopify_orders' },
+]);
+
+const REMOVED_CONVERSATION_SIDEBAR_ITEMS = new Set([
+  'previous_conversation',
+  'conversation_participants',
+  'linear_issues',
+  'shopify_orders',
 ]);
 
 export const DEFAULT_CONTACT_SIDEBAR_ITEMS_ORDER = Object.freeze([
@@ -47,7 +51,9 @@ const useConversationSidebarItemsOrder = uiSettings => {
         itemsOrderCopy.push(item);
       }
     });
-    return itemsOrderCopy.filter(item => item.name !== 'previous_conversation');
+    return itemsOrderCopy.filter(
+      item => !REMOVED_CONVERSATION_SIDEBAR_ITEMS.has(item.name)
+    );
   });
 };
 

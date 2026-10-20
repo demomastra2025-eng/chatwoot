@@ -12,7 +12,6 @@ const dummyCustomRolesData = [
     description: 'All permissions',
     permissions: [
       'conversation_manage',
-      'conversation_participating_manage',
       'conversation_unassigned_manage',
       'contact_manage',
       'report_manage',
@@ -23,7 +22,6 @@ const dummyCustomRolesData = [
     description: 'Conversation permissions',
     permissions: [
       'conversation_manage',
-      'conversation_participating_manage',
       'conversation_unassigned_manage',
     ],
   },

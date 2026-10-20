@@ -83,12 +83,14 @@ linear:
   i18n_key: linear
   action: https://linear.app/oauth/authorize
   hook_type: account
+  hidden_in_ui: true
   allow_multiple_hooks: false
 notion:
   id: notion
   logo: notion.png
   i18n_key: notion
   hook_type: account
+  hidden_in_ui: true
   allow_multiple_hooks: false
 slack:
   id: slack
@@ -96,6 +98,7 @@ slack:
   i18n_key: slack
   action: https://slack.com/oauth/v2/authorize?scope=commands,chat:write,channels:read,channels:manage,channels:join,groups:read,groups:write,im:write,mpim:write,users:read,users:read.email,chat:write.customize,channels:history,groups:history,mpim:history,im:history,files:read,files:write
   hook_type: account
+  hidden_in_ui: true
   allow_multiple_hooks: false
 dialogflow:
   id: dialogflow
@@ -262,6 +265,7 @@ shopify:
   logo: shopify.png
   i18n_key: shopify
   hook_type: account
+  hidden_in_ui: true
   allow_multiple_hooks: false
 
 leadsquared:

@@ -79,7 +79,6 @@ import {
 } from '../helper/conversationListContext';
 import {
   isOnMentionsView,
-  isOnParticipatingView,
   isOnUnattendedView,
 } from '../store/modules/conversations/helpers/actionHelpers';
 import { filterByUnread } from '../store/modules/conversations/helpers';
@@ -231,7 +230,6 @@ const chatLists = useMapGetter('getFilteredConversations');
 const mineChatsList = useMapGetter('getMineChats');
 const allChatList = useMapGetter('getAllStatusChats');
 const unAssignedChatsList = useMapGetter('getUnAssignedChats');
-const participatingChatsList = useMapGetter('getParticipatingChats');
 const chatListLoading = useMapGetter('getChatListLoadingStatus');
 const chatListLoadingError = useMapGetter('getChatListLoadingError');
 const activeInbox = useMapGetter('getSelectedInbox');
@@ -573,7 +571,6 @@ const normalizeListRouteName = routeName => {
     conversations_through_folders: 'folder_conversations',
     conversation_through_mentions: 'conversation_mentions',
     conversation_through_unattended: 'conversation_unattended',
-    conversation_through_participating: 'conversation_participating',
   };
   return detailToListMap[routeName] || routeName;
 };
@@ -833,11 +830,6 @@ const pageTitle = computed(() => {
   if (props.conversationType === wootConstants.CONVERSATION_TYPE.MENTION) {
     return t('CHAT_LIST.MENTION_HEADING');
   }
-  if (
-    props.conversationType === wootConstants.CONVERSATION_TYPE.PARTICIPATING
-  ) {
-    return t('CONVERSATION_PARTICIPANTS.SIDEBAR_MENU_TITLE');
-  }
   if (props.conversationType === wootConstants.CONVERSATION_TYPE.UNATTENDED) {
     return t('CHAT_LIST.UNATTENDED_HEADING');
   }
@@ -864,13 +856,7 @@ const conversationList = computed(() => {
 
   if (!hasAppliedFiltersOrActiveFolders.value) {
     const filters = conversationFilters.value;
-    if (
-      props.conversationType === wootConstants.CONVERSATION_TYPE.PARTICIPATING
-    ) {
-      localConversationList = filterByAssigneeTab(
-        participatingChatsList.value(filters)
-      );
-    } else if (activeAssigneeTab.value === 'me') {
+    if (activeAssigneeTab.value === 'me') {
       localConversationList = [...mineChatsList.value(filters)];
     } else if (activeAssigneeTab.value === 'unassigned') {
       localConversationList = [...unAssignedChatsList.value(filters)];
@@ -1673,8 +1659,6 @@ function redirectToConversationList() {
   let conversationType = '';
   if (isOnMentionsView({ route: { name } })) {
     conversationType = wootConstants.CONVERSATION_TYPE.MENTION;
-  } else if (isOnParticipatingView({ route: { name } })) {
-    conversationType = wootConstants.CONVERSATION_TYPE.PARTICIPATING;
   } else if (isOnUnattendedView({ route: { name } })) {
     conversationType = wootConstants.CONVERSATION_TYPE.UNATTENDED;
   }

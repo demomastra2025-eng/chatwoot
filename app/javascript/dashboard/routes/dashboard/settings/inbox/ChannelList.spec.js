@@ -29,15 +29,12 @@ vi.mock('dashboard/composables/useAccount', () => ({
 const ALL_TILES = [
   'website',
   'facebook',
-  'twitter',
   'whatsapp',
   'sms',
   'email',
   'api',
   'telegram',
-  'weixin',
   'vk_community',
-  'line',
   'instagram',
   'voice',
 ];

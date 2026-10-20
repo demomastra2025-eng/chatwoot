@@ -282,7 +282,6 @@ describe('isAConversationRoute', () => {
     expect(isAConversationRoute('label_conversations', true)).toBe(true);
     expect(isAConversationRoute('team_conversations', true)).toBe(true);
     expect(isAConversationRoute('folder_conversations', true)).toBe(true);
-    expect(isAConversationRoute('conversation_participating', true)).toBe(true);
     expect(isAConversationRoute('communication_threads_dashboard', true)).toBe(
       true
     );
@@ -296,9 +295,6 @@ describe('isAConversationRoute', () => {
     expect(isAConversationRoute('label_conversations', false)).toBe(false);
     expect(isAConversationRoute('team_conversations', false)).toBe(false);
     expect(isAConversationRoute('folder_conversations', false)).toBe(false);
-    expect(isAConversationRoute('conversation_participating', false)).toBe(
-      false
-    );
     expect(isAConversationRoute('communication_threads_dashboard', false)).toBe(
       false
     );
@@ -316,9 +312,6 @@ describe('isAConversationRoute', () => {
     expect(isAConversationRoute('label_conversations', true, true)).toBe(true);
     expect(isAConversationRoute('team_conversations', true, true)).toBe(true);
     expect(isAConversationRoute('folder_conversations', true, true)).toBe(true);
-    expect(isAConversationRoute('conversation_participating', true, true)).toBe(
-      true
-    );
     expect(
       isAConversationRoute('communication_threads_dashboard', true, true)
     ).toBe(true);
@@ -350,9 +343,6 @@ describe('getConversationDashboardRoute', () => {
     expect(
       getConversationDashboardRoute('conversations_through_folders')
     ).toEqual('folder_conversations');
-    expect(
-      getConversationDashboardRoute('conversation_through_participating')
-    ).toEqual('conversation_participating');
     expect(getConversationDashboardRoute('conversation_through_inbox')).toEqual(
       'inbox_dashboard'
     );
