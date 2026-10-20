@@ -82,7 +82,7 @@ RSpec.describe 'Super Admin account card, the AI block', type: :request do
     it 'is not allowed and not connected by default, and the block says no more about it' do
       get card_path
 
-      expect(row('own-key')).to eq('Разрешить свой ключ OpenRouter не разрешён ключ не подключён')
+      expect(row('own-key')).to eq('Свой ключ OpenRouter не разрешён ключ не подключён')
       expect(block.at_css('[data-testid="ai-key-unused"]')).to be_nil
       expect(block.at_css('[data-testid="ai-key-platform"]')).to be_nil
     end
@@ -93,7 +93,7 @@ RSpec.describe 'Super Admin account card, the AI block', type: :request do
 
       get card_path
 
-      expect(row('own-key')).to eq('Разрешить свой ключ OpenRouter разрешён ключ подключён')
+      expect(row('own-key')).to eq('Свой ключ OpenRouter разрешён ключ подключён')
       expect(response.body).not_to include('account-openrouter-key')
     end
 
@@ -102,7 +102,7 @@ RSpec.describe 'Super Admin account card, the AI block', type: :request do
 
       get card_path
 
-      expect(row('own-key')).to eq('Разрешить свой ключ OpenRouter разрешён ключ не подключён')
+      expect(row('own-key')).to eq('Свой ключ OpenRouter разрешён ключ не подключён')
       expect(text(block.at_css('[data-testid="ai-key-platform"]'))).to include('пока агенты работают на ключе платформы')
     end
 
@@ -111,7 +111,7 @@ RSpec.describe 'Super Admin account card, the AI block', type: :request do
 
       get card_path
 
-      expect(row('own-key')).to eq('Разрешить свой ключ OpenRouter не разрешён ключ подключён')
+      expect(row('own-key')).to eq('Свой ключ OpenRouter не разрешён ключ подключён')
       expect(text(block.at_css('[data-testid="ai-key-unused"]'))).to include('Ключ подключён, но не используется')
     end
 
