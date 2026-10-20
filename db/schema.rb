@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_20_030000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_20_051000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -865,6 +865,26 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_20_030000) do
     t.index ["expires_at"], name: "idx_captain_answer_cache_expires_at"
   end
 
+  create_table "captain_knowledge_edges", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "source_node_id", null: false
+    t.bigint "target_node_id", null: false
+    t.string "relation_type", null: false
+    t.bigint "evidence_response_id"
+    t.bigint "evidence_document_id"
+    t.float "weight", default: 1.0, null: false
+    t.jsonb "properties", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "relation_type"], name: "idx_captain_knowledge_edges_on_account_and_type"
+    t.index ["account_id", "source_node_id", "target_node_id", "relation_type", "evidence_response_id"], name: "idx_captain_knowledge_edges_unique_rel", unique: true
+    t.index ["account_id"], name: "index_captain_knowledge_edges_on_account_id"
+    t.index ["evidence_document_id"], name: "index_captain_knowledge_edges_on_evidence_document_id"
+    t.index ["evidence_response_id"], name: "index_captain_knowledge_edges_on_evidence_response_id"
+    t.index ["source_node_id"], name: "index_captain_knowledge_edges_on_source_node_id"
+    t.index ["target_node_id"], name: "index_captain_knowledge_edges_on_target_node_id"
+  end
+
   create_table "captain_knowledge_grants", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "assistant_id", null: false
@@ -876,6 +896,29 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_20_030000) do
     t.index ["assistant_id"], name: "index_captain_knowledge_grants_on_assistant_id"
     t.index ["knowledge_record_type", "knowledge_record_id", "assistant_id"], name: "idx_captain_knowledge_grants_record_assistant", unique: true
     t.check_constraint "knowledge_record_type::text = ANY (ARRAY['Captain::Document'::character varying::text, 'Captain::AssistantResponse'::character varying::text])", name: "captain_knowledge_grants_record_type"
+  end
+
+  create_table "captain_knowledge_nodes", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "assistant_id"
+    t.integer "visibility", default: 0, null: false
+    t.string "node_type", null: false
+    t.string "canonical_name", null: false
+    t.string "normalized_key", null: false
+    t.jsonb "aliases", default: [], null: false
+    t.string "search_stems", default: [], null: false, array: true
+    t.jsonb "attributes_data", default: {}, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.string "source_type"
+    t.bigint "source_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "assistant_id", "node_type", "normalized_key"], name: "idx_captain_knowledge_nodes_unique_key", unique: true
+    t.index ["account_id", "node_type"], name: "idx_captain_knowledge_nodes_on_account_and_type"
+    t.index ["account_id"], name: "index_captain_knowledge_nodes_on_account_id"
+    t.index ["assistant_id"], name: "index_captain_knowledge_nodes_on_assistant_id"
+    t.index ["search_stems"], name: "idx_captain_knowledge_nodes_on_search_stems", using: :gin
+    t.index ["source_type", "source_id"], name: "idx_captain_knowledge_nodes_on_source"
   end
 
   create_table "captain_mcp_servers", force: :cascade do |t|
@@ -1414,8 +1457,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_20_030000) do
     t.index "lower((email)::text), account_id", name: "index_contacts_on_lower_email_account_id"
     t.index "regexp_replace((phone_number)::text, '[^0-9]'::text, ''::text, 'g'::text) gin_trgm_ops", name: "index_contacts_on_phone_digits_trgm", using: :gin
     t.index ["account_id", "contact_type"], name: "index_contacts_on_account_id_and_contact_type"
-    t.index ["account_id", "id"], name: "index_contacts_on_account_id_and_id"
     t.index ["account_id", "email", "phone_number", "identifier"], name: "index_contacts_on_nonempty_fields", where: "(((email)::text <> ''::text) OR ((phone_number)::text <> ''::text) OR ((identifier)::text <> ''::text))"
+    t.index ["account_id", "id"], name: "index_contacts_on_account_id_and_id"
     t.index ["account_id", "last_activity_at"], name: "index_contacts_on_account_id_and_last_activity_at", order: { last_activity_at: "DESC NULLS LAST" }
     t.index ["account_id"], name: "index_contacts_on_account_id"
     t.index ["account_id"], name: "index_resolved_contact_account_id", where: "(((email)::text <> ''::text) OR ((phone_number)::text <> ''::text) OR ((identifier)::text <> ''::text))"
@@ -2594,9 +2637,9 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_20_030000) do
     t.index ["completed_at"], name: "idx_medelement_sync_runs_terminal_completed", where: "((status)::text = ANY (ARRAY[('succeeded'::character varying)::text, ('partial'::character varying)::text, ('failed'::character varying)::text]))"
     t.index ["hook_id", "completed_at", "id"], name: "index_medelement_sync_runs_on_hook_completed_at"
     t.index ["hook_id", "created_at"], name: "idx_medelement_sync_runs_hook_created"
-    t.index ["phase_results"], name: "index_medelement_sync_runs_on_phase_results", using: :gin
     t.index ["hook_id"], name: "idx_medelement_sync_runs_one_active_hook", unique: true, where: "((hook_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('retrying'::character varying)::text])))"
     t.index ["hook_id"], name: "index_medelement_sync_runs_on_hook_id"
+    t.index ["phase_results"], name: "index_medelement_sync_runs_on_phase_results", using: :gin
     t.index ["requested_by_id"], name: "index_medelement_sync_runs_on_requested_by_id"
   end
 
@@ -3446,16 +3489,16 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_20_030000) do
     t.index ["account_id", "external_call_ref"], name: "index_telephony_call_sessions_on_account_call_ref", unique: true
     t.index ["account_id", "id"], name: "index_telephony_call_sessions_on_account_with_recordings", where: "((NULLIF((recording_ref)::text, ''::text) IS NOT NULL) OR ((metadata -> 'trash'::text) IS NOT NULL) OR ((metadata #> '{recording,retained_original}'::text[]) IS NOT NULL))"
     t.index ["account_id", "provider_call_sid"], name: "index_telephony_call_sessions_on_account_provider_sid", unique: true, where: "(provider_call_sid IS NOT NULL)"
+    t.index ["account_id", "started_at"], name: "index_telephony_call_sessions_on_active_status_started_at", where: "((status)::text = ANY (ARRAY[('created'::character varying)::text, ('ringing'::character varying)::text, ('connecting'::character varying)::text, ('in_progress'::character varying)::text, ('queued'::character varying)::text, ('initiated'::character varying)::text, ('answered'::character varying)::text, ('in-progress'::character varying)::text, ('inprogress'::character varying)::text, ('session_started'::character varying)::text, ('decision_received'::character varying)::text, ('operator_ringing'::character varying)::text, ('operator_answered'::character varying)::text]))"
     t.index ["account_id", "status", "direction"], name: "index_telephony_call_sessions_on_account_status_direction"
     t.index ["account_id"], name: "index_telephony_call_sessions_on_account_id"
     t.index ["agent_binding_id"], name: "index_telephony_call_sessions_on_agent_binding_id"
     t.index ["contact_id"], name: "index_telephony_call_sessions_on_contact_id"
     t.index ["conversation_id"], name: "index_telephony_call_sessions_on_conversation_id"
     t.index ["external_call_ref"], name: "index_telephony_call_sessions_on_external_call_ref"
+    t.index ["id"], name: "index_telephony_call_sessions_on_unanswered_with_actor", where: "((answered_at IS NULL) AND (answered_by IS NOT NULL) AND ((answered_by)::text <> ''::text))"
     t.index ["inbox_id"], name: "index_telephony_call_sessions_on_inbox_id"
     t.index ["number_binding_id"], name: "index_telephony_call_sessions_on_number_binding_id"
-    t.index ["account_id", "started_at"], name: "index_telephony_call_sessions_on_active_status_started_at", where: "((status)::text = ANY ((ARRAY['created'::character varying, 'ringing'::character varying, 'connecting'::character varying, 'in_progress'::character varying, 'queued'::character varying, 'initiated'::character varying, 'answered'::character varying, 'in-progress'::character varying, 'inprogress'::character varying, 'session_started'::character varying, 'decision_received'::character varying, 'operator_ringing'::character varying, 'operator_answered'::character varying])::text[]))"
-    t.index ["id"], name: "index_telephony_call_sessions_on_unanswered_with_actor", where: "((answered_at IS NULL) AND (answered_by IS NOT NULL) AND ((answered_by)::text <> ''::text))"
     t.index ["provider_call_sid"], name: "index_telephony_call_sessions_on_provider_call_sid", where: "(provider_call_sid IS NOT NULL)"
   end
 
@@ -4066,8 +4109,15 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_20_030000) do
   add_foreign_key "captain_follow_up_attempts", "messages", column: "anchor_message_id", on_delete: :cascade
   add_foreign_key "captain_knowledge_answer_cache_entries", "accounts", on_delete: :cascade
   add_foreign_key "captain_knowledge_answer_cache_entries", "captain_assistants", column: "assistant_id", on_delete: :nullify
+  add_foreign_key "captain_knowledge_edges", "accounts", on_delete: :cascade
+  add_foreign_key "captain_knowledge_edges", "captain_assistant_responses", column: "evidence_response_id", on_delete: :cascade
+  add_foreign_key "captain_knowledge_edges", "captain_documents", column: "evidence_document_id", on_delete: :cascade
+  add_foreign_key "captain_knowledge_edges", "captain_knowledge_nodes", column: "source_node_id", on_delete: :cascade
+  add_foreign_key "captain_knowledge_edges", "captain_knowledge_nodes", column: "target_node_id", on_delete: :cascade
   add_foreign_key "captain_knowledge_grants", "accounts", on_delete: :cascade
   add_foreign_key "captain_knowledge_grants", "captain_assistants", column: "assistant_id", on_delete: :cascade
+  add_foreign_key "captain_knowledge_nodes", "accounts", on_delete: :cascade
+  add_foreign_key "captain_knowledge_nodes", "captain_assistants", column: "assistant_id", on_delete: :cascade
   add_foreign_key "captain_mcp_servers", "accounts"
   add_foreign_key "captain_skills", "accounts"
   add_foreign_key "communication_thread_conversations", "accounts"

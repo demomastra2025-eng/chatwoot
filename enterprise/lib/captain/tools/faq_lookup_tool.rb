@@ -1,6 +1,7 @@
 require 'timeout'
 
 class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
+  include Captain::Knowledge::Graph::LookupIntegration
   SEMANTIC_RESULT_LIMIT = 5
   CACHE_FETCH_TIMEOUT_SECONDS = 3
   SEMANTIC_LOOKUP_TIMEOUT_SECONDS = 8
@@ -114,7 +115,10 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   def lookup_responses(query, semantic: true)
     if semantic
       responses, relevance_check, strategy = semantic_responses(query)
-      return [responses, strategy, nil, relevance_check] if responses.any?
+      if responses.any?
+        enriched = enrich_responses_with_graph(responses, query: query)
+        return [enriched, strategy, nil, relevance_check]
+      end
 
       if relevance_check[:candidate_count].zero?
         responses = lexical_fallback_responses(query)
@@ -142,7 +146,12 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
       selection = Captain::Knowledge::FaqRelevance.select(candidates, query: query)
       relevance_check[:corroboration] = selection[:check]
       relevance_check[:selection_passed] = selection[:response].present?
-      [[selection[:response]].compact, relevance_check, 'corroborated_faq']
+      return [[selection[:response]], relevance_check, 'corroborated_faq'] if selection[:response].present?
+
+      graph_rescue = rescue_with_knowledge_graph(query, nil, relevance_check)
+      return graph_rescue if graph_rescue.present?
+
+      [[], relevance_check, 'corroborated_faq']
     end
   end
 
@@ -231,6 +240,8 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
       )
     }
     payload[:lookup_strategy] = lookup_strategy if lookup_strategy.present?
+    graph_data = knowledge_graph_payload_for(query: query)
+    payload[:knowledge_graph] = graph_data if graph_data.present? && responses.any?
 
     payload
   end
@@ -326,16 +337,22 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
     return { score: 1.0, relevance_threshold: 1.0, relevance_threshold_passed: true } if lookup_strategy == 'lexical_exact'
 
     score = semantic_similarity_score(response)
-    return {} if score.nil?
+    if score.nil?
+      return { graph_corroboration_passed: true, relevance_selected: true, relevance_selection: 'knowledge_graph' } if lookup_strategy == 'graph_faq'
+
+      return {}
+    end
 
     {
       score: score,
       relevance_threshold: SEMANTIC_SIMILARITY_THRESHOLD,
       relevance_threshold_passed: score >= SEMANTIC_SIMILARITY_THRESHOLD
     }.tap do |payload|
-      next unless lookup_strategy == 'corroborated_faq'
-
-      payload.merge!(question_corroboration_passed: true, relevance_selected: true, relevance_selection: 'question_corroboration')
+      if lookup_strategy == 'corroborated_faq'
+        payload.merge!(question_corroboration_passed: true, relevance_selected: true, relevance_selection: 'question_corroboration')
+      elsif lookup_strategy == 'graph_faq'
+        payload.merge!(graph_corroboration_passed: true, relevance_selected: true, relevance_selection: 'knowledge_graph')
+      end
     end
   end
 

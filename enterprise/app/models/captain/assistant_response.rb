@@ -50,6 +50,8 @@ class Captain::AssistantResponse < ApplicationRecord
   before_validation :ensure_status
   before_validation :mark_as_edited, on: :update
   after_commit :update_response_embedding
+  after_commit :sync_knowledge_graph_entry, on: [:create, :update]
+  after_commit :remove_knowledge_graph_entry, on: :destroy
 
   scope :ordered, -> { order(created_at: :desc) }
   scope :by_account, ->(account_id) { where(account_id: account_id) }
@@ -225,5 +227,19 @@ class Captain::AssistantResponse < ApplicationRecord
     return unless saved_change_to_question? || saved_change_to_answer? || embedding.nil?
 
     Captain::Llm::UpdateEmbeddingJob.perform_later(self, "#{question}: #{answer}")
+  end
+
+  def sync_knowledge_graph_entry
+    Captain::Knowledge::Graph::FaqExtractorService.sync_response!(self)
+  rescue StandardError => e
+    Rails.logger.warn("[Captain::KnowledgeGraph] Failed to sync response #{id}: #{e.class}: #{e.message}")
+  end
+
+  def remove_knowledge_graph_entry
+    return if account.blank?
+
+    Captain::Knowledge::Graph::UpsertService.new(account: account).remove_response_evidence!(id)
+  rescue StandardError => e
+    Rails.logger.warn("[Captain::KnowledgeGraph] Failed to remove response #{id}: #{e.class}: #{e.message}")
   end
 end
