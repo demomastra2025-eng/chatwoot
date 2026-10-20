@@ -645,8 +645,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
 
   # An account that cannot take the plan stays created; the operator is told and can apply it from the card.
   def apply_plan_to_new_account(account, modules)
-    Accounts::ApplyPlan.new(account: account, modules: modules, actor: current_super_admin, request: request,
-                            keep_existing_limits: true).call
+    Accounts::ApplyPlan.new(account: account, modules: modules, actor: current_super_admin, request: request).call
   rescue StandardError => e
     Rails.logger.warn("[SuperAdmin] Plan apply on create failed for account #{account.id}: #{e.class.name}: #{e.message}")
     flash[:alert] = I18n.t('super_admin.accounts.flashes.plan_apply_failed')

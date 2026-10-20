@@ -282,7 +282,7 @@ RSpec.describe 'Super admin account plans', type: :request do
       # The steps of AccountBuilder, with the limits there from the start
       let(:signed_up) do
         create(:account, limits: { 'agents' => 5, 'inboxes' => 3 }).tap do |record|
-          Accounts::ApplyPlan.new(account: record, modules: [], keep_existing_limits: true).call
+          Accounts::ApplyPlan.new(account: record, modules: []).call
           record.activate_trial!
         end
       end

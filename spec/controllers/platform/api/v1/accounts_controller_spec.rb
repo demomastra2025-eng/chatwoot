@@ -101,6 +101,7 @@ RSpec.describe 'Platform Accounts API', type: :request do
           created = create_account(limits: { conversations: 50, agents: 3 }, features: { campaigns: true, crm: false })
 
           expect(created.limits).to include('conversations' => 50, 'agents' => 3, 'non_web_inboxes' => ChatwootApp.max_limit)
+          expect(Accounts::LimitSettings.new(created)).to be_tracked
           expect(created.feature_enabled?('campaigns')).to be(true)
           expect(created.feature_enabled?('crm')).to be(false)
         end
@@ -389,6 +390,49 @@ RSpec.describe 'Platform Accounts API', type: :request do
 
         expect(response).to have_http_status(:unprocessable_content)
         expect(own.reload.feature_enabled?('labels')).to be(true)
+      end
+
+      # The limits a super admin chose for the account (Accounts::LimitSettings) are not the partner's to change
+      describe 'the limits a super admin chose' do
+        let(:marks_key) { Accounts::LimitSettings::KEY }
+
+        before do
+          own.update!(limits: { 'agents' => 8, 'inboxes' => 4, 'conversations' => ChatwootApp.max_limit },
+                      custom_attributes: { 'plan' => 'base', 'plan_modules' => [], marks_key => { 'agents' => 8, 'conversations' => 'unlimited' } })
+        end
+
+        it 'ignores the numbers sent for them, applies the others and keeps the limits the request does not name' do
+          patch "/platform/api/v1/accounts/#{own.id}", params: { limits: { agents: 2, conversations: 5, emails: 30 } }, headers: headers, as: :json
+
+          expect(response).to have_http_status(:success)
+          expect(own.reload.limits).to eq('agents' => 8, 'inboxes' => 4, 'conversations' => ChatwootApp.max_limit, 'emails' => 30)
+          expect(response.parsed_body['limits']).to include('agents' => 8)
+        end
+
+        it 'keeps the list when the partner replaces custom_attributes, and does not let the partner write it' do
+          patch "/platform/api/v1/accounts/#{own.id}",
+                params: { custom_attributes: { 'crm_id' => '77', marks_key => { 'agents' => 1 } } }, headers: headers, as: :json
+
+          expect(response).to have_http_status(:success)
+          attributes = own.reload.custom_attributes
+          expect(attributes).to include('crm_id' => '77')
+          expect(attributes[marks_key]).to eq('agents' => 8, 'conversations' => 'unlimited')
+          expect(own.limits).to include('agents' => 8)
+        end
+
+        it 'does not drop the list when a request changes nothing about the limits' do
+          patch "/platform/api/v1/accounts/#{own.id}", params: { name: 'Renamed' }, headers: headers, as: :json
+
+          expect(own.reload.custom_attributes[marks_key]).to eq('agents' => 8, 'conversations' => 'unlimited')
+          expect(own.limits).to include('agents' => 8, 'inboxes' => 4)
+        end
+
+        it 'lets the partner change a number of a limit that follows the plan, again and again' do
+          patch "/platform/api/v1/accounts/#{own.id}", params: { limits: { inboxes: 6 } }, headers: headers, as: :json
+          patch "/platform/api/v1/accounts/#{own.id}", params: { limits: { inboxes: 9 } }, headers: headers, as: :json
+
+          expect(own.reload.limits).to include('inboxes' => 9)
+        end
       end
     end
   end

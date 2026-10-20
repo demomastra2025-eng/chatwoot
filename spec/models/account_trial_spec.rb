@@ -94,7 +94,7 @@ RSpec.describe Account, type: :model do
     describe 'a clinic that has a plan from the system and started its trial by itself (self-registration)' do
       before do
         account.update!(limits: { 'agents' => 7, 'inboxes' => 9 })
-        Accounts::ApplyPlan.new(account: account, modules: [], keep_existing_limits: true).call
+        Accounts::ApplyPlan.new(account: account, modules: []).call
         account.activate_trial!(3)
       end
 
@@ -132,6 +132,54 @@ RSpec.describe Account, type: :model do
         account.expire_trial!
 
         expect(account.reload.limits).to include('agents' => 0, 'inboxes' => 0)
+      end
+    end
+
+    # A limit a super admin chose for the clinic (a number of its own or «без ограничений», Accounts::LimitSettings) is never
+    # overwritten by a trial: not locked when the trial ends, not given back from the snapshot when it is extended
+    describe 'the limits a super admin chose' do
+      let(:marks_key) { Accounts::LimitSettings::KEY }
+
+      before do
+        account.update!(limits: { 'agents' => 7, 'inboxes' => 9 })
+        Accounts::ApplyPlan.new(account: account, modules: []).call
+        account.activate_trial!(3)
+        # chosen while the trial runs: the operator limit is a number of the clinic, the channel limit stays with the plan
+        account.update!(limits: account.limits.merge('agents' => 2),
+                        custom_attributes: account.custom_attributes.merge(marks_key => { 'agents' => 2 }))
+      end
+
+      it 'is not locked when the trial ends, and the limit that was not chosen is' do
+        account.expire_trial!
+
+        expect(account.reload.limits).to include('agents' => 2, 'inboxes' => 0)
+        expect(account.trial_held_limits.keys).to eq(['inboxes'])
+      end
+
+      it 'is not given back from the snapshot when the trial is extended' do
+        account.expire_trial!
+
+        account.extend_trial!(3)
+
+        expect(account.reload.limits).to include('agents' => 2, 'inboxes' => 9)
+      end
+
+      it 'is not given back by the trial that ended before it was chosen either' do
+        account.expire_trial!
+        account.update!(limits: account.limits.merge('inboxes' => 0, 'agents' => 0),
+                        custom_attributes: account.custom_attributes.merge(marks_key => { 'agents' => 0 }))
+
+        expect(account.reload.trial_held_limits.keys).to eq(['inboxes'])
+        account.extend_trial!(3)
+        expect(account.reload.limits).to include('agents' => 0, 'inboxes' => 9)
+      end
+
+      it 'is not locked either by the scheduled expiry' do
+        account.update!(custom_attributes: account.custom_attributes.merge('trial_expires_at' => 1.hour.ago.iso8601))
+
+        Accounts::ExpireTrialsJob.perform_now
+
+        expect(account.reload.limits).to include('agents' => 2, 'inboxes' => 0)
       end
     end
 

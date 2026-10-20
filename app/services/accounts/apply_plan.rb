@@ -11,7 +11,10 @@
 #             not chosen and the never_enabled flags. Internal flags (and any flag no plan names) keep whatever the
 #             account has, so a plan never changes an infrastructure switch.
 # * limits  : numbers of the plan are written; keys the plan leaves null are not touched.
-#             With keep_existing_limits the account's own values win, the plan only fills the blanks (new accounts).
+#             A limit chosen for this account (a number of its own or «без ограничений», see Accounts::LimitSettings) is left as it
+#             is: the plan only writes the limits that follow it. A number a not yet tracked account holds that differs from what
+#             the plan would write counts as chosen too, and so does a number a new account was created with (the plan only fills the
+#             blanks). The list of the limits chosen by hand is written with the plan (custom_attributes['limit_overrides']).
 #             The operator and channel limits that the end of a trial put at 0 are given back (the values from before the
 #             trial, from the snapshot of the trial) without anybody asking: a plan is what the account pays for, so it must not
 #             stay locked out; a number the plan itself sets wins over the restored one.
@@ -29,12 +32,13 @@ class Accounts::ApplyPlan
 
   # What applying the plan changes (preview) or changed (call).
   # limits: { 'conversations' => { 'from' => 500, 'to' => 100000 } }
+  # kept_limits: the limits chosen for this account that the plan would have changed and left alone: ['conversations']
   # notes : facts the operator should know, e.g. 'trial_active' (the account is on a trial that has its own end),
   #         'trial_locks_limits' (and its end will put the operator and channel limits at zero) or
   #         'trial_limits_restored' (a trial has ended and holds the operator and channel limits at zero: this plan gives
   #         them back, see #trial_limit_restore)
   Diff = Struct.new(:plan, :modules, :plan_version, :previous_plan, :previous_modules, :previous_version,
-                    :enable, :disable, :limits, :notes, keyword_init: true) do
+                    :enable, :disable, :limits, :kept_limits, :notes, keyword_init: true) do
     def changed?
       enable.any? || disable.any? || limits.any?
     end
@@ -43,19 +47,18 @@ class Accounts::ApplyPlan
       {
         'plan' => plan, 'modules' => modules, 'plan_version' => plan_version,
         'previous' => { 'plan' => previous_plan, 'modules' => previous_modules, 'plan_version' => previous_version },
-        'enable' => enable, 'disable' => disable, 'limits' => limits, 'notes' => notes, 'changed' => changed?
+        'enable' => enable, 'disable' => disable, 'limits' => limits, 'kept_limits' => kept_limits, 'notes' => notes, 'changed' => changed?
       }
     end
   end
 
   attr_reader :account, :modules
 
-  def initialize(account:, modules: [], actor: nil, request: nil, keep_existing_limits: false)
+  def initialize(account:, modules: [], actor: nil, request: nil)
     @account = account
     @modules = normalize_modules(modules)
     @actor = actor
     @request = request
-    @keep_existing_limits = keep_existing_limits
     @audit_extra = {}
   end
 
@@ -82,6 +85,8 @@ class Accounts::ApplyPlan
 
   private
 
+  attr_reader :limit_settings
+
   def normalize_modules(requested)
     Accounts::Plans.normalize_modules(requested)
   rescue ArgumentError => e
@@ -89,6 +94,8 @@ class Accounts::ApplyPlan
   end
 
   def build_diff
+    # Read again for every diff: the account is reloaded under its lock before it is written
+    @limit_settings = Accounts::LimitSettings.new(account, modules: modules)
     attributes = account.custom_attributes.to_h
     enabled = account.enabled_features.keys
     desired = desired_features
@@ -98,7 +105,7 @@ class Accounts::ApplyPlan
       previous_plan: attributes[PLAN_KEY], previous_modules: Array(attributes[MODULES_KEY]), previous_version: attributes[VERSION_KEY],
       enable: desired - enabled,
       disable: (Accounts::Plans.managed_features - desired) & enabled,
-      limits: limit_changes, notes: notes
+      limits: limit_changes, kept_limits: kept_limits, notes: notes
     )
   end
 
@@ -111,17 +118,26 @@ class Accounts::ApplyPlan
     features
   end
 
+  # The limits that follow the plan get its numbers; the ones chosen for this account stay (see Accounts::LimitSettings#source). The
+  # plan is the one being applied: «what their plan would write» for an account that has none yet.
   def limit_changes
     current = account.limits.to_h
     changes = trial_limit_restore(current)
     effective = current.merge(changes.transform_values { |change| change['to'] })
     Accounts::Plans.limits_for(modules).each do |key, value|
       next if value.nil? || effective[key] == value
-      next if @keep_existing_limits && !current[key].nil?
+      next if limit_settings.manual?(key)
 
       changes[key] = { 'from' => current[key], 'to' => value }
     end
     changes
+  end
+
+  # The limits chosen for this account whose number the plan would have changed
+  def kept_limits
+    Accounts::Plans.limits_for(modules).filter_map do |key, value|
+      key if !value.nil? && limit_settings.manual?(key) && limit_settings.effective(key) != value
+    end
   end
 
   # The limits the end of a trial put at 0 and left there, as changes back to what they were before the trial. 'to' is nil for
@@ -146,8 +162,15 @@ class Accounts::ApplyPlan
     account.disable_features(*diff.disable)
     account.enable_features(*diff.enable)
     account.limits = limits_after(diff)
-    account.custom_attributes = account.custom_attributes.to_h.deep_dup.merge(plan_attributes(diff))
+    account.custom_attributes = account.custom_attributes.to_h.deep_dup.merge(plan_attributes(diff)).merge(limit_marks(diff))
     account.save!
+  end
+
+  # The limits chosen for this account, written with the plan: the ones listed already and the numbers it holds where the plan has
+  # a number of its own
+  def limit_marks(diff)
+    marks = Accounts::LimitSettings.new(account, modules: modules, limits: limits_after(diff)).plan_marks
+    { Accounts::LimitSettings::KEY => marks }
   end
 
   # The limits of the account with the changes of the plan written; a limit that the plan gives back as «not set» is taken off

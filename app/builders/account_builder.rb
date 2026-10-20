@@ -47,7 +47,7 @@ class AccountBuilder
   # modules on top. When the trial ends, only the modules go away.
   def create_account
     @account = Account.create!(name: account_name, locale: I18n.locale)
-    Accounts::ApplyPlan.new(account: @account, modules: [], keep_existing_limits: true).call
+    Accounts::ApplyPlan.new(account: @account, modules: []).call
     @account.activate_trial!
     Current.account = @account
   end

@@ -139,7 +139,7 @@ class SuperAdmin::ClientOnboarding
 
   # The limits of the plan fill the blanks of the new account (nothing is asked for them here)
   def apply_plan
-    Accounts::ApplyPlan.new(account: account, modules: modules, actor: @actor, request: @request, keep_existing_limits: true).call
+    Accounts::ApplyPlan.new(account: account, modules: modules, actor: @actor, request: @request).call
   end
 
   def start_trial

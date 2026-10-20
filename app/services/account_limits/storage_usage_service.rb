@@ -79,7 +79,11 @@ class AccountLimits::StorageUsageService
 
   # Enforced for uploads by staff, imports and Captain documents. Incoming messages and calls never go through
   # this check: inbound attachments carry skip_storage_limit_validation! and inbound recordings are not validated.
+  # No limit of its own and none of the platform, or the number that stands for «без ограничений» (Accounts::Plans.unlimited_value): an
+  # account that was given no limit by a super admin does not fall back to the limit of the platform
   def unlimited?
+    return true if Accounts::Plans.unlimited_value?('storage_bytes', account_storage_limit)
+
     account_storage_limit.blank? && global_storage_limit.blank?
   end
 

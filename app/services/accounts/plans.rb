@@ -50,6 +50,21 @@ class Accounts::Plans
       I18n.t("super_admin.plans.modules.#{key}.name", default: key.to_s)
     end
 
+    # The number that stands for «no limit» in Account#limits. The code treats it as no limit; the storage is counted in bytes and
+    # the AI tokens in thousands, so a bare ChatwootApp.max_limit (100 000) would be a tiny quota there: they get a number nobody reaches.
+    def unlimited_value(key)
+      case key.to_s
+      when 'storage_bytes' then ChatwootApp.max_limit.to_i * 1.gigabyte
+      when 'captain_tokens' then ChatwootApp.max_limit.to_i * 1_000_000
+      else ChatwootApp.max_limit.to_i
+      end
+    end
+
+    # Whether a stored number is the «no limit» one of that limit
+    def unlimited_value?(key, value)
+      value.is_a?(Numeric) && value >= unlimited_value(key)
+    end
+
     delegate :version, :base_features, :base_limits, :module_keys, :module?, :module_features, :module_limits,
              :locked_on, :never_enabled, :internal, :classified_features, :managed_features, :unclassified_features,
              :features_for, :limits_for, :normalize_modules, :known_modules, :module_for_feature,
@@ -115,13 +130,14 @@ class Accounts::Plans
   end
 
   # Limit values of base + these modules, for every key: a number, or nil when the plan leaves the key alone.
-  # `unlimited` is resolved to ChatwootApp.max_limit. A module value (when not nil) wins over the base.
+  # `unlimited` is resolved to the «no limit» number of that limit (see .unlimited_value). A module value (when not nil) wins
+  # over the base.
   def limits_for(modules)
     merged = @base_limits.dup
     normalize_modules(modules).each do |key|
       module_limits(key).each { |limit_key, value| merged[limit_key] = value unless value.nil? }
     end
-    merged.transform_values { |value| resolve_limit(value) }.freeze
+    merged.to_h { |limit_key, value| [limit_key, resolve_limit(limit_key, value)] }.freeze
   end
 
   # Known module keys in registry order, without duplicates. Unknown keys raise ArgumentError.
@@ -159,8 +175,8 @@ class Accounts::Plans
     @modules.fetch(key.to_s) { raise ArgumentError, "Unknown plan module: #{key}" }
   end
 
-  def resolve_limit(value)
-    value == UNLIMITED ? ChatwootApp.max_limit.to_i : value
+  def resolve_limit(key, value)
+    value == UNLIMITED ? self.class.unlimited_value(key) : value
   end
 
   def parse_version(raw)

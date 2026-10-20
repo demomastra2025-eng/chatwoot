@@ -11,8 +11,12 @@
 #                 May name flags that are absent from features.yml (another branch deletes scheduling_finance).
 #   internal      flags a plan never touches: whatever the account has is kept as it is
 #
-# Limits: a number sets the limit, `unlimited` stores ChatwootApp.max_limit (the code treats it as "no limit"),
-# null leaves the clinic's own value untouched. A key that is not listed is invalid; base lists every key.
+# Limits: a number sets the limit, `unlimited` stores the number the code treats as "no limit" (Accounts::Plans.unlimited_value:
+# ChatwootApp.max_limit, and a number nobody reaches for the storage and the AI tokens), null leaves the clinic's own value
+# untouched. A key that is not listed is invalid; base lists every key.
+# These numbers go to the limits of an account that FOLLOWS the plan («Как в тарифе» in the super admin). A limit a super admin chose
+# for one account (a number of its own or «Без ограничений», Accounts::LimitSettings) is not touched when the plan is applied: change a
+# number here, press «Применить тариф» (one account or many), and only the accounts that follow the plan get the new number.
 # Version history: 1 = first base + modules, 2 = agent_bots left the base (the Agent Bots were removed from the product).
 # An account keeps the version it was applied with; applying the plan again moves it to the current one.
 version: 2

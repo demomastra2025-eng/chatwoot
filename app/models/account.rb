@@ -407,7 +407,7 @@ class Account < ApplicationRecord
     return {} unless snapshot.is_a?(Hash) && snapshot['limits_locked'] != false && trial_expired?
 
     before = Hash(snapshot['limits'])
-    held = TRIAL_LOCKED_LIMITS.select { |key| zero_limit?(key) }.index_with { |key| before[key] }
+    held = trial_lockable_limits.select { |key| zero_limit?(key) }.index_with { |key| before[key] }
     held.reject { |_key, value| value.is_a?(Numeric) && value.zero? }
   end
 
@@ -635,7 +635,13 @@ class Account < ApplicationRecord
     attrs['trial_expired_at'] = Time.current.iso8601
     self.custom_attributes = attrs
     disable_features(*(trial_features_for(snapshot) - snapshot['features'] - planned_features(attrs)))
-    self.limits = (limits || {}).merge(TRIAL_LOCKED_LIMITS.index_with { 0 }) if lock_limits
+    self.limits = (limits || {}).merge(trial_lockable_limits(attrs).index_with { 0 }) if lock_limits
+  end
+
+  # The limits the end of a trial may put at 0: not the ones a super admin chose for this account (a number or «без ограничений»,
+  # see Accounts::LimitSettings), which no trial overwrites
+  def trial_lockable_limits(attributes = custom_attributes)
+    TRIAL_LOCKED_LIMITS - Accounts::LimitSettings.marks_in(attributes).keys
   end
 
   def zero_limit?(key)
@@ -680,7 +686,8 @@ class Account < ApplicationRecord
     enable_features(*trial_features_for(snapshot)) if snapshot.key?('features')
     return if snapshot['limits_locked'] == false
 
-    self.limits = (limits || {}).except(*TRIAL_LOCKED_LIMITS).merge(snapshot['limits'] || {})
+    chosen = Accounts::LimitSettings.marks_in(custom_attributes).keys
+    self.limits = (limits || {}).except(*trial_lockable_limits).merge((snapshot['limits'] || {}).except(*chosen))
   end
 
   # The exact list a trial granted is stored in its snapshot when the trial starts, so later changes of the plans

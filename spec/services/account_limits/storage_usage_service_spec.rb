@@ -87,6 +87,14 @@ RSpec.describe AccountLimits::StorageUsageService do
         unlimited: false
       )
     end
+
+    it 'is unlimited for the number that stands for «без ограничений» (the choice of a super admin), whatever the platform says' do
+      account.update!(limits: { 'storage_bytes' => Accounts::Plans.unlimited_value('storage_bytes') })
+      allow(GlobalConfig).to receive(:get).and_call_original
+      allow(GlobalConfig).to receive(:get).with('ACCOUNT_STORAGE_BYTES_LIMIT').and_return('ACCOUNT_STORAGE_BYTES_LIMIT' => 1000)
+
+      expect(summary).to include(unlimited: true, current_available: ChatwootApp.max_limit)
+    end
   end
 
   describe 'call recordings' do
@@ -262,6 +270,14 @@ RSpec.describe AccountLimits::StorageUsageService do
 
       expect(service.within_limit?(extra_bytes: 1, released_bytes: 0)).to be(false)
       expect(service.within_limit?(extra_bytes: 1500, released_bytes: 2048)).to be(true)
+    end
+
+    it 'allows every upload for the number that stands for «без ограничений», even when the platform has a limit' do
+      account.update!(limits: { 'storage_bytes' => Accounts::Plans.unlimited_value('storage_bytes') })
+      allow(GlobalConfig).to receive(:get).and_call_original
+      allow(GlobalConfig).to receive(:get).with('ACCOUNT_STORAGE_BYTES_LIMIT').and_return('ACCOUNT_STORAGE_BYTES_LIMIT' => 1000)
+
+      expect(service.within_limit?(extra_bytes: 10.terabytes)).to be(true)
     end
 
     it 'uses the global limit when the account has none' do
