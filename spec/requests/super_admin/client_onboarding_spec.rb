@@ -201,7 +201,8 @@ RSpec.describe 'Super Admin new client', type: :request do
         "Аккаунт создан: Клиника «Алатау» (##{created_account.id}). Язык: русский, часовой пояс: Астана, Алматы (UTC+5).",
         'Организация: без организации.',
         'Тариф: База + ИИ-агенты.',
-        'Приглашение отправлено на aigerim@alatau.example. Ссылка в письме действует 6 ч.; '         'если человек не успеет, на странице входа есть «Забыли пароль?».'
+        ['Приглашение отправлено на aigerim@alatau.example. Ссылка в письме действует 6 ч.;',
+         'если человек не успеет, на странице входа есть «Забыли пароль?».'].join(' ')
       )
       expect(page.at_css('[data-testid="one-time-password"]')).to be_nil
       expect(page.at_css('[data-testid="created-card-link"]')['href']).to eq("/super_admin/accounts/#{created_account.id}")
@@ -478,7 +479,7 @@ RSpec.describe 'Super Admin new client', type: :request do
       expect(page.at_css('input[name="admin[adopt]"]')['checked']).to be_nil
     end
 
-    it 'joins the new account as its administrator when the super admin says so, and nothing about the person changes' do
+    it 'joins the new account as its administrator when the super admin says so, and nothing about the person changes', :aggregate_failures do
       before = existing.reload.attributes.slice('encrypted_password', 'name', 'confirmed_at', 'email')
       users_before = User.count
       adopted = { email: 'bauyrzhan@alatau.example', adopt: '1', access: 'invitation' }

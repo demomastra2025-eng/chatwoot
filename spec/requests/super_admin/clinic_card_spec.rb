@@ -690,13 +690,13 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       expect(users.at_css("a[href='/super_admin/users/#{admin.id}']")).to be_present
     end
 
-    it 'has the form that adds a member, collapsed' do
+    it 'has the form that adds a user, collapsed (a user from the list or a new one: see account_add_user_spec)' do
       open_card
 
       details = block('users-block').at_css('details')
-      expect(details['open']).to be_nil
-      expect(details.at_css('form[action="/super_admin/account_users"]')).to be_present
-      expect(details.at_css('input[type="hidden"][name="account_user[account_id]"]')['value']).to eq(account.id.to_s)
+      expect(details.has_attribute?('open')).to be(false)
+      expect(text(details.at_css('summary'))).to eq('Добавить пользователя')
+      expect(details.at_css("form[action='/super_admin/accounts/#{account.id}/add_user']")).to be_present
     end
 
     it 'says so when the clinic has no users' do
