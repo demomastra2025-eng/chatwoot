@@ -25,7 +25,9 @@ RSpec.describe 'Super Admin blocking an account', type: :request do
       node = panel('block')
       expect(text(node.at_css('summary'))).to eq('Заблокировать')
       expect(text(node.at_css('.admin-ask__title'))).to eq('Заблокировать аккаунт «Аккаунт Алатау»?')
-      expect(text(node.at_css('.admin-ask__panel'))).to include('Операторы не смогут работать в аккаунте', 'Данные не удаляются', 'журнал аудита')
+      expect(text(node.at_css('.admin-ask__panel')))
+        .to include('Операторы не смогут работать в аккаунте', 'Сообщения клиентов из WhatsApp, Telegram, почты и чата на сайте',
+                    'не сохранятся', 'сохранённые данные не удаляются', 'журнал аудита')
       expect(node.at_css('form')['action']).to eq("#{card_path}/suspend")
       expect(node.css('select[name="reason"] option').map { |option| [text(option), option['value']] })
         .to eq([['Не указана', ''], %w[Неоплата non_payment], ['По просьбе клиента', 'client_request'], %w[Другое other]])
@@ -45,7 +47,8 @@ RSpec.describe 'Super Admin blocking an account', type: :request do
       expect(text(node.at_css('.admin-ask__title'))).to eq('Разблокировать аккаунт «Аккаунт Алатау»?')
       expect(node.at_css('form')['action']).to eq("#{card_path}/activate")
       expect(panel('block')).to be_nil
-      expect(text(page.at_css('[data-testid="block-banner"]'))).to include('Аккаунт заблокирован', 'Операторы не могут работать в аккаунте')
+      expect(text(page.at_css('[data-testid="block-banner"]')))
+        .to include('Аккаунт заблокирован', 'Операторы не могут работать в аккаунте', 'новые сообщения клиентов', 'не принимаются')
       expect(text(page.at_css('[data-testid="account-status"]'))).to eq('Заблокирован')
     end
 
