@@ -76,7 +76,7 @@ RSpec.describe 'Super Admin new client', type: :request do
       expect(response.body).not_to include('translation missing')
     end
 
-    it 'asks for the name, says the language is Russian as text and offers the time zone with Astana chosen' do
+    it 'asks for the name, says the language is Russian as text and offers the time zone with Astana chosen', :aggregate_failures do
       expect(text(page.at_css('label[for="account_name"]'))).to eq('Название аккаунта')
       expect(text(page.at_css('[data-testid="account-language"]'))).to eq('Язык: русский')
       expect(page.css('[name="account[locale]"]')).to be_empty
@@ -163,7 +163,7 @@ RSpec.describe 'Super Admin new client', type: :request do
   end
 
   describe 'creating a client with an invitation' do
-    it 'creates the account, the plan and the administrator, sends one letter and says «Готово»' do
+    it 'creates the account, the plan and the administrator, sends one letter and says «Готово»', :aggregate_failures do
       expect do
         perform_enqueued_jobs(only: ApplicationMailDeliveryJob) { create_client }
       end.to change(Account, :count).by(1).and change(User, :count).by(1).and change(AccountUser, :count).by(1)
@@ -201,7 +201,7 @@ RSpec.describe 'Super Admin new client', type: :request do
         "Аккаунт создан: Клиника «Алатау» (##{created_account.id}). Язык: русский, часовой пояс: Астана, Алматы (UTC+5).",
         'Организация: без организации.',
         'Тариф: База + ИИ-агенты.',
-        'Приглашение отправлено на aigerim@alatau.example. Ссылка в письме действует 6 ч.; если человек не успеет, на странице входа есть «Забыли пароль?».'
+        'Приглашение отправлено на aigerim@alatau.example. Ссылка в письме действует 6 ч.; '         'если человек не успеет, на странице входа есть «Забыли пароль?».'
       )
       expect(page.at_css('[data-testid="one-time-password"]')).to be_nil
       expect(page.at_css('[data-testid="created-card-link"]')['href']).to eq("/super_admin/accounts/#{created_account.id}")
@@ -298,7 +298,8 @@ RSpec.describe 'Super Admin new client', type: :request do
       expect(page.css('[data-testid="created-line"]').map { |line| text(line) }).to include('Организация: аккаунт привязан к «Алатау Групп».')
       expect(audits_of(created_account, 'link_organization')).to exist
       expect(audits_of(organization, 'link_account')).to exist
-      expect(audits_of(created_account, 'create_client').first.audited_changes).to include('organization_id' => organization.id, 'organization_created' => false)
+      changes = audits_of(created_account, 'create_client').first.audited_changes
+      expect(changes).to include('organization_id' => organization.id, 'organization_created' => false)
     end
 
     it 'creates a new organization with its БИН and links the account to it' do
@@ -311,7 +312,8 @@ RSpec.describe 'Super Admin new client', type: :request do
       organization = Organization.find_by!(name: 'ТОО Алатау')
       expect(organization.bin).to eq(bin)
       expect(created_account.organization).to eq(organization)
-      expect(page.css('[data-testid="created-line"]').map { |line| text(line) }).to include('Организация: создана «ТОО Алатау», аккаунт привязан к ней.')
+      lines = page.css('[data-testid="created-line"]').map { |line| text(line) }
+      expect(lines).to include('Организация: создана «ТОО Алатау», аккаунт привязан к ней.')
       expect(audits_of(organization, 'create')).to exist
       expect(audits_of(created_account, 'create_client').first.audited_changes).to include('organization_created' => true)
     end
@@ -331,7 +333,8 @@ RSpec.describe 'Super Admin new client', type: :request do
       expect(account).to be_trial_active
       expect(account.custom_attributes).to include('plan' => 'base', 'plan_modules' => %w[ai_agents])
       expect(audits_of(account, 'start_trial')).to exist
-      expect(page.css('[data-testid="created-line"]').map { |line| text(line) }).to include(a_string_matching(/\AПробный период до \d{2}\.\d{2}\.\d{4} \d{2}:\d{2} \(Астана\)\.\z/))
+      lines = page.css('[data-testid="created-line"]').map { |line| text(line) }
+      expect(lines).to include(a_string_matching(/\AПробный период до \d{2}\.\d{2}\.\d{4} \d{2}:\d{2} \(Астана\)\.\z/))
     end
 
     it 'applies the base alone when no module is chosen, and leaves the limits to the plan' do
@@ -345,12 +348,13 @@ RSpec.describe 'Super Admin new client', type: :request do
   end
 
   describe 'a form with a problem' do
-    it 'is drawn again with everything typed and the problems under their fields, and creates nothing' do
+    it 'is drawn again with everything typed and the problems under their fields, and creates nothing', :aggregate_failures do
       organization_params = { mode: 'new', name: '', bin: '123' }
+      admin_params = { name: '', email: 'not-an-email', access: 'password', password: 'abc' }
       expect do
-        create_client(account: { name: '', timezone: 'Europe/Moscow' }, organization: organization_params, modules: %w[quality broadcasts], start_trial: '1',
-                      admin: { name: '', email: 'not-an-email', access: 'password', password: 'abc' })
-      end.not_to change { [Account.count, Organization.count, User.count, AccountUser.count] }
+        create_client(account: { name: '', timezone: 'Europe/Moscow' }, organization: organization_params, modules: %w[quality broadcasts],
+                      start_trial: '1', admin: admin_params)
+      end.not_to(change { [Account.count, Organization.count, User.count, AccountUser.count] })
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(text(page.at_css('[data-testid="client-errors"]'))).to include('Клиент не создан, ничего не сохранено')
@@ -466,7 +470,7 @@ RSpec.describe 'Super Admin new client', type: :request do
     it 'is not created again: the form says who has the e-mail and offers to add them, creating nothing' do
       expect do
         create_client(admin: { email: 'bauyrzhan@alatau.example' })
-      end.not_to change { [Account.count, User.count] }
+      end.not_to(change { [Account.count, User.count] })
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(error_for('admin_email')).to eq('Пользователь с таким e-mail уже есть: Бауыржан Сейт.')
@@ -476,10 +480,14 @@ RSpec.describe 'Super Admin new client', type: :request do
 
     it 'joins the new account as its administrator when the super admin says so, and nothing about the person changes' do
       before = existing.reload.attributes.slice('encrypted_password', 'name', 'confirmed_at', 'email')
+      users_before = User.count
+      adopted = { email: 'bauyrzhan@alatau.example', adopt: '1', access: 'invitation' }
 
       expect do
-        perform_enqueued_jobs(only: ApplicationMailDeliveryJob) { create_client(admin: { email: 'bauyrzhan@alatau.example', adopt: '1', access: 'invitation' }) }
-      end.to change(Account, :count).by(1).and change(User, :count).by(0)
+        perform_enqueued_jobs(only: ApplicationMailDeliveryJob) { create_client(admin: adopted) }
+      end.to change(Account, :count).by(1)
+
+      expect(User.count).to eq(users_before)
 
       expect(response).to have_http_status(:ok)
       expect(existing.reload.attributes.slice('encrypted_password', 'name', 'confirmed_at', 'email')).to eq(before)
@@ -506,7 +514,7 @@ RSpec.describe 'Super Admin new client', type: :request do
 
       expect do
         create_client(organization: { mode: 'new', name: 'ТОО Откат', bin: '' }, start_trial: '1')
-      end.not_to change { [Account.count, Organization.count, User.count, AccountUser.count] }
+      end.not_to(change { [Account.count, Organization.count, User.count, AccountUser.count] })
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(text(page.at_css('[data-testid="client-errors"]'))).to include('ничего не сохранено')

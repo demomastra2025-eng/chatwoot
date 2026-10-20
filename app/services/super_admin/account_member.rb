@@ -64,6 +64,11 @@ class SuperAdmin::AccountMember
     errors.empty?
   end
 
+  # A problem the checks could not foresee, found while writing (the form shows it with the others)
+  def refuse(field, text)
+    errors[field] = text
+  end
+
   # Writes the user (when they are new) and the membership. Call it inside a transaction: nothing else here opens one.
   def add_to(account)
     @account = account
@@ -139,10 +144,10 @@ class SuperAdmin::AccountMember
 
   # The user who has the e-mail, nil when nobody has it (or the e-mail is blank or wrong, which is an error of its own)
   def prepare_email(email)
-    return error(:email, :email_blank) if email.blank?
-    return error(:email, :email_invalid) unless email.match?(Devise.email_regexp)
+    return User.from_email(email) if email.present? && email.match?(Devise.email_regexp)
 
-    User.from_email(email)
+    error(:email, email.blank? ? :email_blank : :email_invalid)
+    nil
   end
 
   # The e-mail is somebody's already. They are added only when the super admin said so; nothing about them changes.

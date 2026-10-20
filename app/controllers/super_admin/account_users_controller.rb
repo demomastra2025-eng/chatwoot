@@ -16,7 +16,7 @@ class SuperAdmin::AccountUsersController < SuperAdmin::ApplicationController
     authorize_resource(resource)
 
     flash_type, text = resource.save ? [:notice, translate_with_resource('create.success')] : [:alert, resource.errors.full_messages.first]
-    redirect_back(fallback_location: [namespace, resource.account], flash_type => text)
+    redirect_back(fallback_location: [namespace, resource.account], flash: { flash_type => text })
   end
 
   # Takes the user out of the clinic (the user and their data stay). Leaves an entry in the audit log of the clinic.

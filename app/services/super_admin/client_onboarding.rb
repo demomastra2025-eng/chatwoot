@@ -23,29 +23,17 @@ class SuperAdmin::ClientOnboarding
     # The form as the page first shows it: Astana, no organization, no modules, the invitation when the mail works and the
     # password when it does not
     def self.blank
+      admin = SuperAdmin::AccountMember::Input.new(
+        mode: 'create', role: 'administrator', adopt: false, email: '', name: '', password: '',
+        access: SuperAdmin::MailState.configured? ? 'invitation' : 'password'
+      )
       new(account_name: '', timezone: SuperAdmin::AccountTimezones::DEFAULT, organization_mode: 'none', organization_id: '',
-          organization_name: '', organization_bin: '', modules: [], start_trial: false,
-          admin: SuperAdmin::AccountMember::Input.new(mode: 'create', role: 'administrator', adopt: false, email: '', name: '', password: '',
-                                                       access: SuperAdmin::MailState.configured? ? 'invitation' : 'password'))
+          organization_name: '', organization_bin: '', modules: [], start_trial: false, admin: admin)
     end
 
     # The form of a request (`params`): only text is taken, anything else is an empty value
     def self.from_params(params)
-      account, organization, admin = %i[account organization admin].map { |key| group(params[key]) }
-      blank.tap do |form|
-        form.account_name = account['name'].to_s
-        form.timezone = account['timezone'].presence || form.timezone
-        form.organization_mode = organization['mode'].presence || 'none'
-        form.organization_id = organization['id'].to_s
-        form.organization_name = organization['name'].to_s
-        form.organization_bin = organization['bin'].to_s
-        form.modules = module_list(params[:modules])
-        form.start_trial = ActiveModel::Type::Boolean.new.cast(params[:start_trial]) ? true : false
-        form.admin = SuperAdmin::AccountMember::Input.from_params(admin, access: form.admin.access)
-        # The first person of an account is a new administrator, whatever the request says
-        form.admin.mode = 'create'
-        form.admin.role = 'administrator'
-      end
+      blank.tap { |form| form.read(params) }
     end
 
     def self.group(raw)
@@ -56,6 +44,32 @@ class SuperAdmin::ClientOnboarding
 
     def self.module_list(raw)
       Array(raw.is_a?(Array) || raw.is_a?(String) ? raw : []).select { |value| value.is_a?(String) }
+    end
+
+    def read(params)
+      account = self.class.group(params[:account])
+      self.account_name = account['name'].to_s
+      self.timezone = account['timezone'].presence || timezone
+      read_organization(self.class.group(params[:organization]))
+      self.modules = self.class.module_list(params[:modules])
+      self.start_trial = ActiveModel::Type::Boolean.new.cast(params[:start_trial]) ? true : false
+      read_admin(self.class.group(params[:admin]))
+    end
+
+    private
+
+    def read_organization(organization)
+      self.organization_mode = organization['mode'].presence || 'none'
+      self.organization_id = organization['id'].to_s
+      self.organization_name = organization['name'].to_s
+      self.organization_bin = organization['bin'].to_s
+    end
+
+    def read_admin(admin_params)
+      self.admin = SuperAdmin::AccountMember::Input.from_params(admin_params, access: admin.access)
+      # The first person of an account is a new administrator, whatever the request says
+      admin.mode = 'create'
+      admin.role = 'administrator'
     end
   end
 

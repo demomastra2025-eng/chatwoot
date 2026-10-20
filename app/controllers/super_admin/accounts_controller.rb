@@ -60,6 +60,13 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   # See https://administrate-prototype.herokuapp.com/customizing_controller_actions
   # for more information
 
+  # «Новый аккаунт» is a part of «Новый клиент»: one page for the account, its organization, its plan and its first
+  # administrator (SuperAdmin::ClientsController). The old address leads there. `create` below stays for the form of an old
+  # tab and for scripts; a form with a problem is drawn by the old template, which points to the new page.
+  def new
+    redirect_to new_super_admin_client_path
+  end
+
   # A new account gets the base plan (plus the optional `modules` param) right after it is saved. The limits the
   # operator typed into the form win over the plan; the plan only fills the blanks. `start_trial` starts a trial on
   # top of it.
@@ -72,13 +79,6 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
       apply_plan_to_new_account(account, modules)
       start_trial_for_new_account(account) if start_trial_requested?
     end
-  end
-
-  # «Новый аккаунт» is a part of «Новый клиент»: one page for the account, its organization, its plan and its first
-  # administrator (SuperAdmin::ClientsController). The old address leads there. `create` below stays for the form of an old
-  # tab and for scripts; a form with a problem is drawn by the old template, which points to the new page.
-  def new
-    redirect_to new_super_admin_client_path
   end
 
   # The owner-decision switches of «Служебные» are saved with this update too; a change of one leaves an entry in the
@@ -319,7 +319,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     end
   rescue StandardError => e
     Rails.logger.warn("[SuperAdmin] User was not added to account #{requested_resource.id}: #{e.class.name}: #{e.message}")
-    member.errors[:base] = I18n.t('super_admin.onboarding.member.errors.failed')
+    member.refuse(:base, I18n.t('super_admin.onboarding.member.errors.failed'))
   end
 
   def render_member_errors(member)
@@ -342,8 +342,8 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   end
 
   def member_notice(member)
-    key = if member.access == :existing then :existing
-          elsif member.access == :password then :password
+    key = case member.access
+          when :existing, :password then member.access
           else member.delivery == :queued ? :invited : :invite_failed
           end
     I18n.t("super_admin.onboarding.member.added.#{key}", name: member.user.name, email: member.user.email,

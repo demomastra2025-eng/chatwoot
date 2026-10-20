@@ -100,7 +100,9 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
       add_user(mode: 'pick', user_id: person.id.to_s, role: 'agent')
 
       audit = Audited::Audit.find_by!(auditable_type: 'Account', auditable_id: account.id, action: 'add_user')
-      expect(audit.audited_changes).to include('user_id' => person.id, 'email' => 'erbol@example.test', 'role' => 'agent', 'new_user' => false, 'access' => 'existing')
+      expect(audit.audited_changes).to include(
+        'user_id' => person.id, 'email' => 'erbol@example.test', 'role' => 'agent', 'new_user' => false, 'access' => 'existing'
+      )
       expect(audit.user).to eq(super_admin)
     end
 
@@ -158,7 +160,9 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
       expect(letters.size).to eq(1)
       expect(letters.first.body.encoded).to include('auth/password/edit?reset_password_token=')
       follow_redirect!
-      expect(page.at_css('.flashes').text).to include('Динара Касым добавлен(а) в аккаунт: администратор. Приглашение отправлено на dinara@sezim.example.')
+      expect(page.at_css('.flashes').text).to include(
+        'Динара Касым добавлен(а) в аккаунт: администратор. Приглашение отправлено на dinara@sezim.example.'
+      )
     end
 
     it 'leaves entries: the new user (with the way, not a password) and the user added to the account' do
@@ -167,7 +171,8 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
       audit = Audited::Audit.find_by!(auditable_type: 'Account', auditable_id: account.id, action: 'add_user')
       expect(audit.audited_changes).to include('email' => 'dinara@sezim.example', 'new_user' => true, 'access' => 'invitation')
       user = User.find_by!(email: 'dinara@sezim.example')
-      expect(Audited::Audit.find_by!(auditable_type: 'User', auditable_id: user.id, action: 'create').audited_changes).to include('access' => 'invitation')
+      user_audit = Audited::Audit.find_by!(auditable_type: 'User', auditable_id: user.id, action: 'create')
+      expect(user_audit.audited_changes).to include('access' => 'invitation')
     end
 
     it 'does not take the invitation while the mail of the platform is not set up' do
@@ -193,7 +198,7 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
 
     def add_with_password(overrides = {}) = add_user(new_person(access: 'password', password: password).merge(overrides))
 
-    it 'confirms the person, adds them, and shows the password once on the card itself' do
+    it 'confirms the person, adds them, and shows the password once on the card itself', :aggregate_failures do
       perform_enqueued_jobs(only: ApplicationMailDeliveryJob) { add_with_password }
 
       expect(response).to have_http_status(:ok)
@@ -226,7 +231,7 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
       expect { add_with_password }.to change(User, :count).by(1)
     end
 
-    it 'names what a weak password lacks, keeps everything typed and adds nobody' do
+    it 'names what a weak password lacks, keeps everything typed and adds nobody', :aggregate_failures do
       expect { add_with_password(password: 'abcdef') }.not_to change(User, :count)
 
       expect(response).to have_http_status(:unprocessable_content)
@@ -292,7 +297,7 @@ RSpec.describe 'Super Admin adding a user to an account', type: :request do
     it 'adds nobody when the membership cannot be saved: the new user is not left behind' do
       allow(AccountUser).to receive(:create!).and_raise(ActiveRecord::StatementInvalid, 'boom')
 
-      expect { add_user(new_person) }.not_to change { [User.count, AccountUser.count] }
+      expect { add_user(new_person) }.not_to(change { [User.count, AccountUser.count] })
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(page.at_css('[data-testid="add-user-errors"]').text).to include('ничего не сохранено')
