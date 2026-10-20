@@ -52,6 +52,10 @@ are Astana time.
     <p class="admin-block__hint">
       <%= t('super_admin.accounts.trial.ended_at', time: super_admin_time(state.trial_expired_at || state.trial_expires_at) || t('super_admin.accounts.trial.unknown_time')) %>
     </p>
+    <%# The end of the trial closed operators and channels (limits 0): the plan gives them back by itself %>
+    <% if state.trial_limits_held? %>
+      <p class="admin-block__note text-n-amber-11" data-testid="trial-limits-held"><%= t('super_admin.safety.trial.limits_held') %></p>
+    <% end %>
   <% else %>
     <p class="admin-block__hint">
       <%= t('super_admin.accounts.trial.description', days: days) %>

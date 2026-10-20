@@ -6,16 +6,16 @@
 #
 # A trial that ended on an account that already has a plan («База + модули» was applied during the trial) is not a problem
 # to look at, as the plan stays: it is left out of the expired ones. The exception is a trial whose end put the operator
-# and channel limits at zero and left them there (the plans do not set those numbers, so the plan does not give them back):
-# that account is listed, and its note says so. The ones that end soon are listed whatever the plan: the functions the trial
-# lent beyond the plan switch off when it ends.
+# and channel limits at zero and left them there (a plan applied BEFORE the end of the trial did not touch them; applying
+# a plan again gives them back, see Account#trial_held_limits): that account is listed, and its note says so. The ones that
+# end soon are listed whatever the plan: the functions the trial lent beyond the plan switch off when it ends.
 class SuperAdmin::DashboardAlerts::Trials < SuperAdmin::DashboardAlerts::Check
   TRIAL_ENDING_DAYS = 3
   TRIAL_EXPIRED_DAYS = 7
   # Whether a plan was applied to the account (the same mark as SuperAdmin::AccountPlanState#assigned?)
   PLAN_ASSIGNED_SQL = "COALESCE(custom_attributes->>'#{Accounts::ApplyPlan::PLAN_KEY}', '') <> ''".freeze
   # Whether the end of the trial left a limit at zero: the trial has its snapshot, the snapshot does not say the end kept the
-  # limits, and one of the limits the end locks is the number 0 (the same test as the note «trial_expired» of Accounts::ApplyPlan)
+  # limits, and one of the limits the end locks is the number 0 (the same test as the note «trial_limits_restored» of Accounts::ApplyPlan)
   LIMITS_HELD_SQL = begin
     snapshot = "custom_attributes->'#{Account::TRIAL_SNAPSHOT_KEY}'"
     zero = Account::TRIAL_LOCKED_LIMITS.map do |key|

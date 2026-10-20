@@ -12,6 +12,9 @@
 #             account has, so a plan never changes an infrastructure switch.
 # * limits  : numbers of the plan are written; keys the plan leaves null are not touched.
 #             With keep_existing_limits the account's own values win, the plan only fills the blanks (new accounts).
+#             The operator and channel limits that the end of a trial put at 0 are given back (the values from before the
+#             trial, from the snapshot of the trial) without anybody asking: a plan is what the account pays for, so it must not
+#             stay locked out; a number the plan itself sets wins over the restored one.
 # * custom_attributes: plan = 'base', plan_modules, plan_version, plan_applied_at (ISO 8601, Astana time).
 #   The trial attributes (plan_type 'trial', trial_expires_at, trial_snapshot ...) are left exactly as they are, and the
 #   functions a running trial granted stay switched on (the trial takes them back itself when it ends).
@@ -28,7 +31,8 @@ class Accounts::ApplyPlan
   # limits: { 'conversations' => { 'from' => 500, 'to' => 100000 } }
   # notes : facts the operator should know, e.g. 'trial_active' (the account is on a trial that has its own end),
   #         'trial_locks_limits' (and its end will put the operator and channel limits at zero) or
-  #         'trial_expired' (a trial has ended and still holds the operator and channel limits at zero)
+  #         'trial_limits_restored' (a trial has ended and holds the operator and channel limits at zero: this plan gives
+  #         them back, see #trial_limit_restore)
   Diff = Struct.new(:plan, :modules, :plan_version, :previous_plan, :previous_modules, :previous_version,
                     :enable, :disable, :limits, :notes, keyword_init: true) do
     def changed?
@@ -109,12 +113,21 @@ class Accounts::ApplyPlan
 
   def limit_changes
     current = account.limits.to_h
-    Accounts::Plans.limits_for(modules).each_with_object({}) do |(key, value), changes|
-      next if value.nil? || current[key] == value
+    changes = trial_limit_restore(current)
+    effective = current.merge(changes.transform_values { |change| change['to'] })
+    Accounts::Plans.limits_for(modules).each do |key, value|
+      next if value.nil? || effective[key] == value
       next if @keep_existing_limits && !current[key].nil?
 
       changes[key] = { 'from' => current[key], 'to' => value }
     end
+    changes
+  end
+
+  # The limits the end of a trial put at 0 and left there, as changes back to what they were before the trial. 'to' is nil for
+  # a limit that was not set before: the key is taken off (see #write), the platform's general value applies again.
+  def trial_limit_restore(current)
+    account.trial_held_limits.to_h { |key, before| [key, { 'from' => current[key], 'to' => before }] }
   end
 
   def notes
@@ -124,27 +137,23 @@ class Accounts::ApplyPlan
       # Asked for the moment after the plan is applied: that is when a trial a super admin started keeps the limits
       notes << 'trial_locks_limits' if account.trial_snapshot? && account.trial_locks_limits?(assuming_plan: true)
     end
-    notes << 'trial_expired' if account.trial_snapshot? && account.trial_expired? && locked_trial_limits?
+    # The end of the trial put the operator and channel limits at zero and they are still there: the plan gives them back
+    notes << 'trial_limits_restored' if account.trial_held_limits.any?
     notes
-  end
-
-  # The end of the trial put the operator and channel limits at zero and they are still there. The snapshot says whether
-  # the end locked them at all (see Account#expire_trial!): a zero the clinic was given on purpose after a trial that
-  # kept the limits is not the trial's (an older snapshot has no `limits_locked` and always locked them).
-  def locked_trial_limits?
-    snapshot = account.custom_attributes.to_h[Account::TRIAL_SNAPSHOT_KEY]
-    return false if snapshot.is_a?(Hash) && snapshot['limits_locked'] == false
-
-    current = account.limits.to_h
-    Account::TRIAL_LOCKED_LIMITS.any? { |key| current[key].is_a?(Numeric) && current[key].zero? }
   end
 
   def write(diff)
     account.disable_features(*diff.disable)
     account.enable_features(*diff.enable)
-    account.limits = account.limits.to_h.merge(diff.limits.transform_values { |change| change['to'] })
+    account.limits = limits_after(diff)
     account.custom_attributes = account.custom_attributes.to_h.deep_dup.merge(plan_attributes(diff))
     account.save!
+  end
+
+  # The limits of the account with the changes of the plan written; a limit that the plan gives back as «not set» is taken off
+  def limits_after(diff)
+    written = account.limits.to_h.merge(diff.limits.transform_values { |change| change['to'] })
+    written.except(*diff.limits.select { |_key, change| change['to'].nil? }.keys)
   end
 
   def plan_attributes(diff)

@@ -145,6 +145,60 @@ RSpec.describe 'Super admin account plans', type: :request do
     end
   end
 
+  # The end of a trial that nobody chose for the clinic closed operators and channels (limits 0): the plan gives them back, and the
+  # preview, the card and the entry of the audit log say so (the states of the trial: see spec/services/accounts/apply_plan_spec.rb)
+  describe 'the plan of a clinic whose trial has ended' do
+    let(:card_path) { "/super_admin/accounts/#{account.id}" }
+
+    def page = Nokogiri::HTML(response.body)
+
+    before do
+      account.update!(limits: { 'agents' => 5, 'inboxes' => 3 })
+      account.activate_trial!(3)
+      account.expire_trial!
+      sign_in(super_admin, scope: :super_admin)
+    end
+
+    it 'says in the preview that the limits come back, and shows them', :aggregate_failures do
+      get "#{card_path}/plan_preview", params: { modules: [], fragment: 1 }
+
+      preview = page.at_css('[data-testid="plan-preview"]')
+      expect(preview['data-changed']).to eq('true')
+      note = preview.at_css('[data-preview-note="trial_limits_restored"]').text.squish
+      expect(note).to eq('Пробный период закончился и закрыл операторов и каналы (лимиты стоят на 0). '                          'Тариф сам вернёт им лимиты, какие были до пробного периода.')
+      limits = preview.at_css('[data-preview="limits"]').text.squish
+      expect(limits).to include('Операторы: 0 → 5')
+    end
+
+    it 'gives the limits back when the plan is applied, and writes them in the audit log' do
+      post "#{card_path}/apply_plan"
+
+      expect(account.reload.limits).to include('agents' => 5, 'inboxes' => 3)
+      expect(Audited::Audit.where(action: 'apply_plan').last.audited_changes['limits']).to include('agents' => { 'from' => 0, 'to' => 5 })
+    end
+
+    it 'says on the card of the clinic that the plan gives the limits back, until it has' do
+      get card_path
+      expect(page.at_css('[data-testid="trial-limits-held"]').text.squish).to include('лимиты стоят на 0', 'Назначьте тариф')
+
+      post "#{card_path}/apply_plan"
+      get card_path
+
+      expect(page.at_css('[data-testid="trial-limits-held"]')).to be_nil
+    end
+
+    it 'does not say it for a clinic whose trial kept the limits' do
+      other = create(:account).tap { |record| record.disable_features!(*Featurable::FEATURE_NAMES) }
+      Accounts::ApplyPlan.new(account: other, modules: []).call
+      other.activate_trial!(3, keep_limits: true)
+      other.expire_trial!
+
+      get "/super_admin/accounts/#{other.id}"
+
+      expect(page.at_css('[data-testid="trial-limits-held"]')).to be_nil
+    end
+  end
+
   describe 'POST /super_admin/accounts (creating a clinic)' do
     def create_clinic(name, extra = {})
       post '/super_admin/accounts', params: { account: { name: name, locale: 'ru', status: 'active' } }.merge(extra)

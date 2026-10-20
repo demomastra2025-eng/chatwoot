@@ -162,13 +162,13 @@ RSpec.describe Accounts::ApplyPlan do
       expect(service.preview.notes).to eq(['trial_active']) # ... but the preview asks for the moment after it has one
     end
 
-    it 'tells that an ended trial still holds the operator and channel limits at zero' do
+    it 'tells that an ended trial holds the operator and channel limits at zero, and that the plan gives them back' do
       account.activate_trial!(3)
       account.expire_trial!
 
-      expect(service.preview.notes).to eq(['trial_expired'])
+      expect(service.preview.notes).to eq(['trial_limits_restored'])
       service.call
-      expect(account.reload.limits).to include('agents' => 0, 'inboxes' => 0)
+      expect(account.reload.limits).not_to include('agents', 'inboxes')
     end
 
     it 'does not claim zero limits for an ended trial of a clinic that had a plan, which kept its limits' do
@@ -257,6 +257,208 @@ RSpec.describe Accounts::ApplyPlan do
       account.disable_features!('captain_tasks')
 
       expect(service.preview.enable).to eq(%w[captain_tasks])
+    end
+  end
+
+  # The end of a trial that nobody chose for the clinic (self-registration) puts the operator and channel limits at 0 and keeps
+  # the earlier values in the snapshot. Applying a plan gives them back by itself, whatever state the trial is in.
+  describe 'after a trial' do
+    def end_trial!(days: 3)
+      account.activate_trial!(days)
+      account.expire_trial!
+    end
+
+    context 'when the account has never had a trial' do
+      it 'restores nothing and says nothing' do
+        account.update!(limits: { 'agents' => 0 })
+
+        preview = service.preview
+
+        expect(preview.notes).to eq([])
+        expect(preview.limits).not_to include('agents')
+        service.call
+        expect(account.reload.limits).to include('agents' => 0)
+      end
+    end
+
+    context 'when the trial is running' do
+      it 'restores nothing yet: the limits are locked only when it ends' do
+        account.update!(limits: { 'agents' => 5, 'inboxes' => 3 })
+        account.activate_trial!(3)
+
+        preview = service.preview
+
+        expect(preview.limits).not_to include('agents', 'inboxes')
+        expect(preview.notes).to eq(%w[trial_active trial_locks_limits])
+        service.call
+        expect(account.reload.limits).to include('agents' => 5, 'inboxes' => 3)
+      end
+
+      it 'restores nothing for a trial a super admin started, which keeps the limits' do
+        account.update!(limits: { 'agents' => 5 })
+        service.call
+        account.activate_trial!(3, keep_limits: true)
+
+        expect(service.preview.limits).not_to include('agents')
+        expect(service.preview.notes).to eq(['trial_active'])
+      end
+    end
+
+    context 'when the trial has ended and put the limits at zero' do
+      before do
+        account.update!(limits: { 'agents' => 5, 'inboxes' => 3, 'conversations' => 200 })
+        end_trial!
+      end
+
+      it 'shows the old values as the change, in the preview, before anything is written' do
+        expect(account.reload.limits).to include('agents' => 0, 'inboxes' => 0)
+
+        preview = service.preview
+
+        expect(preview.limits).to include('agents' => { 'from' => 0, 'to' => 5 }, 'inboxes' => { 'from' => 0, 'to' => 3 })
+        expect(preview.notes).to eq(['trial_limits_restored'])
+        expect(preview).to be_changed
+        expect(account.reload.limits).to include('agents' => 0, 'inboxes' => 0)
+      end
+
+      it 'gives the values from before the trial back when the plan is applied, and leaves the other limits alone' do
+        service.call
+
+        expect(account.reload.limits).to include('agents' => 5, 'inboxes' => 3)
+        expect(account.limits['conversations']).to eq(ChatwootApp.max_limit)
+      end
+
+      it 'writes what it restored into the entry of the audit log' do
+        service.call
+
+        audit = Audited::Audit.where(action: 'apply_plan').last
+        expect(audit.audited_changes['limits']).to include('agents' => { 'from' => 0, 'to' => 5 }, 'inboxes' => { 'from' => 0, 'to' => 3 })
+      end
+
+      it 'is done once: the next application finds nothing to give back' do
+        service.call
+        second = service.preview
+
+        expect(second.limits).not_to include('agents', 'inboxes')
+        expect(second.notes).to eq([])
+      end
+
+      it 'lets a number the plan itself sets win over the restored one' do
+        allow(plans).to receive(:limits_for).and_return('agents' => 2)
+
+        expect(service.preview.limits).to include('agents' => { 'from' => 0, 'to' => 2 }, 'inboxes' => { 'from' => 0, 'to' => 3 })
+        service.call
+
+        expect(account.reload.limits).to include('agents' => 2, 'inboxes' => 3)
+      end
+    end
+
+    context 'when a plan was applied during the trial and the trial then ended' do
+      it 'gives the limits back when the plan is applied again' do
+        account.update!(limits: { 'agents' => 5, 'inboxes' => 3 })
+        service.call
+        account.reload.activate_trial!(3)
+        account.expire_trial!
+        expect(account.reload.limits).to include('agents' => 0)
+
+        service.call
+
+        expect(account.reload.limits).to include('agents' => 5, 'inboxes' => 3)
+      end
+    end
+
+    context 'when the account had no limits of its own before the trial' do
+      before { end_trial! }
+
+      it 'takes the zero off, so the general value applies again, and keeps the other limits' do
+        account.update!(limits: account.limits.merge('conversations' => 10))
+
+        preview = service.preview
+
+        expect(preview.limits).to include('agents' => { 'from' => 0, 'to' => nil }, 'inboxes' => { 'from' => 0, 'to' => nil })
+        service.call
+        expect(account.reload.limits).not_to include('agents', 'inboxes')
+        expect(account.limits).to include('conversations' => ChatwootApp.max_limit)
+      end
+    end
+
+    context 'when a limit was changed by hand after the trial ended' do
+      it 'gives back only the zero that is still there' do
+        account.update!(limits: { 'agents' => 5, 'inboxes' => 3 })
+        end_trial!
+        account.update!(limits: account.limits.merge('agents' => 8))
+
+        preview = service.preview
+
+        expect(preview.limits).to include('inboxes' => { 'from' => 0, 'to' => 3 })
+        expect(preview.limits).not_to include('agents')
+        service.call
+        expect(account.reload.limits).to include('agents' => 8, 'inboxes' => 3)
+      end
+    end
+
+    context 'when the end of the trial kept the limits (the trial of a clinic with a plan)' do
+      it 'restores nothing, even for a zero the clinic was given on purpose' do
+        account.update!(limits: { 'agents' => 7 })
+        service.call
+        account.activate_trial!(3, keep_limits: true)
+        account.expire_trial!
+        account.update!(limits: account.limits.merge('inboxes' => 0))
+
+        preview = service.preview
+
+        expect(preview.notes).to eq([])
+        expect(preview.limits).not_to include('inboxes')
+        service.call
+        expect(account.reload.limits).to include('agents' => 7, 'inboxes' => 0)
+      end
+    end
+
+    context 'when the snapshot comes from before the plans (it has no mark of what the end did)' do
+      it 'treats the end as locking the limits, as it always did' do
+        account.update!(limits: { 'agents' => 5 })
+        end_trial!
+        attributes = account.reload.custom_attributes.deep_dup
+        attributes['trial_snapshot'].delete('limits_locked')
+        account.update!(custom_attributes: attributes)
+
+        expect(service.preview.limits).to include('agents' => { 'from' => 0, 'to' => 5 })
+      end
+    end
+
+    context 'when the trial was typed in by hand (no snapshot)' do
+      it 'restores nothing: the trial locked nothing' do
+        account.update!(custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => 2.days.ago.iso8601 }, limits: { 'agents' => 0 })
+
+        preview = service.preview
+
+        expect(preview.notes).to eq([])
+        expect(preview.limits).not_to include('agents')
+      end
+    end
+
+    context 'when the trial was extended again after it ended' do
+      it 'gets the limits back from the extension, and the plan finds nothing more to restore' do
+        account.update!(limits: { 'agents' => 5 })
+        end_trial!
+        account.extend_trial!(3)
+
+        expect(account.reload.limits).to include('agents' => 5)
+        expect(service.preview.limits).not_to include('agents')
+        expect(service.preview.notes).to eq(%w[trial_active trial_locks_limits])
+      end
+    end
+
+    context 'when many accounts are given a plan at once' do
+      it 'restores the limits of each account whose trial has ended' do
+        account.update!(limits: { 'agents' => 5, 'inboxes' => 3 })
+        end_trial!
+        bulk = SuperAdmin::BulkAccounts.new(action: 'apply_plan', ids: [account.id], options: { chosen: '1', modules: [] }, actor: actor)
+
+        bulk.apply
+
+        expect(account.reload.limits).to include('agents' => 5, 'inboxes' => 3)
+      end
     end
   end
 

@@ -397,6 +397,20 @@ class Account < ApplicationRecord
     locks_limits_at_trial_end?(custom_attributes.to_h, assuming_plan: assuming_plan)
   end
 
+  # The operator and channel limits that the end of a trial put at 0 and that still sit there, each with the value it had before the
+  # trial (nil: the limit was not set, so it is taken off again): { 'agents' => 5, 'inboxes' => nil }. Empty while the trial runs,
+  # when the trial has no snapshot (a trial typed in by hand locked nothing), when its end kept the limits, and once the limits
+  # have been given back (a limit that is not 0 now is somebody's decision and is left alone). A snapshot from before the
+  # `limits_locked` mark always locked them. Applying a plan gives these back (Accounts::ApplyPlan).
+  def trial_held_limits
+    snapshot = custom_attributes.to_h[TRIAL_SNAPSHOT_KEY]
+    return {} unless snapshot.is_a?(Hash) && snapshot['limits_locked'] != false && trial_expired?
+
+    before = Hash(snapshot['limits'])
+    held = TRIAL_LOCKED_LIMITS.select { |key| zero_limit?(key) }.index_with { |key| before[key] }
+    held.reject { |_key, value| value.is_a?(Numeric) && value.zero? }
+  end
+
   # Upload/quota reads use the last background measurement. A cold HTTP read must never traverse recording directories.
   def local_recordings_bytes
     overview = Accounts::StorageOverviewService.new(account: self)
@@ -622,6 +636,11 @@ class Account < ApplicationRecord
     self.custom_attributes = attrs
     disable_features(*(trial_features_for(snapshot) - snapshot['features'] - planned_features(attrs)))
     self.limits = (limits || {}).merge(TRIAL_LOCKED_LIMITS.index_with { 0 }) if lock_limits
+  end
+
+  def zero_limit?(key)
+    value = limits.to_h[key]
+    value.is_a?(Numeric) && value.zero?
   end
 
   # `keep_limits` is written into the snapshot by #activate_trial!; it only counts for a clinic that has a plan.

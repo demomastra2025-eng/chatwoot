@@ -13,7 +13,9 @@ and off, the limits that would change and the facts the operator should know
 <%
   feature_label = SuperAdmin::AccountFeaturesHelper.method(:feature_label)
   names = ->(flags) { flags.map { |flag| feature_label.call(flag) }.sort }
-  limit_value = lambda do |key, value|
+  # `given_back`: the limit goes back to «not set» (a trial put a zero on it): the general value of the platform applies again
+  limit_value = lambda do |key, value, given_back = false|
+    next t('super_admin.clinic_card.preview.general_value') if value.nil? && given_back
     next t('super_admin.clinic_card.preview.not_set') if value.nil?
     next t('super_admin.limits.unlimited') if value.to_i == ChatwootApp.max_limit.to_i
 
@@ -46,7 +48,7 @@ and off, the limits that would change and the facts the operator should know
         <% if diff.limits.any? %>
           <ul class="m-0 flex list-none flex-col gap-0.5 p-0 text-n-slate-11">
             <% diff.limits.each do |key, change| %>
-              <li><%= t("super_admin.limits.#{key}.label") %>: <%= limit_value.call(key, change['from']) %> → <%= limit_value.call(key, change['to']) %></li>
+              <li><%= t("super_admin.limits.#{key}.label") %>: <%= limit_value.call(key, change['from']) %> → <%= limit_value.call(key, change['to'], !change['from'].nil?) %></li>
             <% end %>
           </ul>
         <% else %>

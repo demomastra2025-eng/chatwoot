@@ -95,6 +95,11 @@ class SuperAdmin::AccountPlanState
     !assigned?
   end
 
+  # Whether the end of the trial left the operator and channel limits at 0 (applying a plan gives them back)
+  def trial_limits_held?
+    account.trial_held_limits.any?
+  end
+
   def trial_expires_at
     account.trial_expires_at
   end
