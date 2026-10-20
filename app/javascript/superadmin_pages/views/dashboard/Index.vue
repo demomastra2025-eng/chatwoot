@@ -2,10 +2,8 @@
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
-  DsCard,
   DsChartFrame,
   DsState,
-  DsStatGroup,
   DsStatusDot,
   DsTable,
 } from 'dashboard/components-next/ds';
@@ -15,8 +13,10 @@ import {
   statusTone,
 } from '../../helpers/healthMatrix';
 
-// «Сводка»: the state of every clinic at a glance. The page title, the time of the data and the refresh
-// button are drawn by the server (app/views/super_admin/dashboard/index.html.erb), this is the body.
+// «Сводка»: the part of the page that needs a script. The page title, the headline tiles, the list «Нужно проверить» and the
+// reminder about two-factor sign-in are drawn by the server (app/views/super_admin/dashboard/index.html.erb). This is the
+// detail: the table «Подробно по каналам» (every account with its WhatsApp, telephony and MedElement), folded away because the
+// list «Нужно проверить» already names what is wrong, and the chart of conversations.
 const props = defineProps({
   componentData: {
     type: Object,
@@ -28,12 +28,16 @@ const { t } = useI18n();
 
 const searchQuery = ref('');
 const view = ref('all');
+const showDetails = ref(false);
 const showChart = ref(false);
 
 const healthAccounts = computed(() => props.componentData.healthAccounts || []);
 const healthSummary = computed(() => props.componentData.healthSummary || {});
 const incompleteSources = computed(
   () => healthSummary.value.incomplete_sources || []
+);
+const attentionCount = computed(
+  () => healthAccounts.value.filter(account => account.needs_attention).length
 );
 
 const filteredAccounts = computed(() =>
@@ -42,33 +46,6 @@ const filteredAccounts = computed(() =>
     onlyNeedsAttention: view.value === 'attention',
   })
 );
-
-const kpiItems = computed(() => [
-  {
-    key: 'clinics',
-    label: t('DASHBOARD.KPI.CLINICS'),
-    value: healthSummary.value.total_accounts ?? 0,
-    note: t('DASHBOARD.KPI.CLINICS_NOTE'),
-  },
-  {
-    key: 'attention',
-    label: t('DASHBOARD.KPI.ATTENTION'),
-    value: healthSummary.value.needs_attention ?? 0,
-    note: t('DASHBOARD.KPI.ATTENTION_NOTE'),
-  },
-  {
-    key: 'whatsapp',
-    label: t('DASHBOARD.KPI.WHATSAPP'),
-    value: healthSummary.value.whatsapp_healthy ?? 0,
-    note: t('DASHBOARD.KPI.WHATSAPP_NOTE'),
-  },
-  {
-    key: 'telephony',
-    label: t('DASHBOARD.KPI.TELEPHONY'),
-    value: healthSummary.value.telephony_healthy ?? 0,
-    note: t('DASHBOARD.KPI.TELEPHONY_NOTE'),
-  },
-]);
 
 const viewOptions = computed(() => [
   { value: 'all', label: t('DASHBOARD.TOOLBAR.VIEW_ALL') },
@@ -98,136 +75,162 @@ const clinicUrl = account => `/super_admin/accounts/${account.id}`;
 
 <template>
   <div class="flex min-w-0 flex-col gap-5" data-testid="health-dashboard">
-    <div
-      v-if="incompleteSources.length"
-      class="admin-notice admin-notice--amber"
-      role="status"
-      data-testid="health-incomplete-sources"
-    >
-      {{ t('DASHBOARD.INCOMPLETE', { sources: incompleteSources.join(', ') }) }}
-    </div>
-
-    <DsStatGroup :items="kpiItems" data-testid="health-kpi">
-      <template #value="{ item }">
-        <span
-          :class="
-            item.key === 'attention' && item.value > 0 ? 'text-n-ruby-11' : ''
-          "
-        >
-          {{ item.value }}
-        </span>
-      </template>
-    </DsStatGroup>
-
-    <DsCard
-      :padded="false"
-      :title="t('DASHBOARD.TABLE.TITLE')"
-      :subtitle="
-        t('DASHBOARD.TABLE.SHOWING', {
-          shown: filteredAccounts.length,
-          total: healthAccounts.length,
-        })
-      "
-    >
-      <div class="flex flex-wrap items-center gap-3 px-5 pb-4">
-        <input
-          v-model="searchQuery"
-          type="search"
-          class="min-w-0 flex-1 basis-64 sm:max-w-sm"
-          :placeholder="t('DASHBOARD.TOOLBAR.SEARCH_PLACEHOLDER')"
-          :aria-label="t('DASHBOARD.TOOLBAR.SEARCH_PLACEHOLDER')"
-        />
-        <div
-          class="segmented"
-          role="group"
-          :aria-label="t('DASHBOARD.TOOLBAR.VIEW')"
-        >
-          <button
-            v-for="option in viewOptions"
-            :key="option.value"
-            type="button"
-            class="segmented__item reset-base"
-            :aria-current="view === option.value ? 'true' : null"
-            @click="view = option.value"
-          >
-            {{ option.label }}
-          </button>
-        </div>
-      </div>
-
-      <DsState
-        v-if="!filteredAccounts.length"
-        state="empty"
-        compact
-        :title="t('DASHBOARD.TABLE.EMPTY_TITLE')"
-        :description="t('DASHBOARD.TABLE.EMPTY_HINT')"
-      />
-      <DsTable
-        v-else
-        :columns="columns"
-        :rows="filteredAccounts"
-        :caption="t('DASHBOARD.TABLE.TITLE')"
+    <section class="admin-collapse" data-testid="health-details">
+      <button
+        type="button"
+        class="reset-base flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border-0 bg-transparent px-5 py-4 text-start"
+        :aria-expanded="showDetails"
+        aria-controls="health-details-body"
+        data-testid="health-details-toggle"
+        @click="showDetails = !showDetails"
       >
-        <template #cell-name="{ row }">
-          <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span class="text-xs tabular-nums text-n-slate-11">
-              {{ `#${row.id}` }}
-            </span>
+        <span class="flex min-w-0 flex-col gap-0.5">
+          <span class="text-heading-2 text-n-slate-12">
+            {{ t('DASHBOARD.DETAILS.TITLE') }}
+          </span>
+          <span class="text-body-main text-n-slate-11">
+            {{
+              attentionCount
+                ? t('DASHBOARD.DETAILS.HINT_ATTENTION', {
+                    count: attentionCount,
+                    total: healthAccounts.length,
+                  })
+                : t('DASHBOARD.DETAILS.HINT', { total: healthAccounts.length })
+            }}
+          </span>
+        </span>
+        <span
+          class="i-lucide-chevron-down size-4 shrink-0 text-n-slate-11 transition-transform"
+          :class="{ 'rotate-180': showDetails }"
+          aria-hidden="true"
+        />
+      </button>
+
+      <div
+        v-if="showDetails"
+        id="health-details-body"
+        class="flex flex-col gap-4 border-0 border-t border-solid border-n-weak pb-2 pt-4"
+        data-testid="health-details-body"
+      >
+        <div
+          v-if="incompleteSources.length"
+          class="admin-notice admin-notice--amber mx-5"
+          role="status"
+          data-testid="health-incomplete-sources"
+        >
+          {{
+            t('DASHBOARD.INCOMPLETE', { sources: incompleteSources.join(', ') })
+          }}
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 px-5">
+          <input
+            v-model="searchQuery"
+            type="search"
+            class="min-w-0 flex-1 basis-64 sm:max-w-sm"
+            :placeholder="t('DASHBOARD.TOOLBAR.SEARCH_PLACEHOLDER')"
+            :aria-label="t('DASHBOARD.TOOLBAR.SEARCH_PLACEHOLDER')"
+          />
+          <div
+            class="segmented"
+            role="group"
+            :aria-label="t('DASHBOARD.TOOLBAR.VIEW')"
+          >
+            <button
+              v-for="option in viewOptions"
+              :key="option.value"
+              type="button"
+              class="segmented__item reset-base"
+              :aria-current="view === option.value ? 'true' : null"
+              @click="view = option.value"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+          <span class="text-xs tabular-nums text-n-slate-11">
+            {{
+              t('DASHBOARD.TABLE.SHOWING', {
+                shown: filteredAccounts.length,
+                total: healthAccounts.length,
+              })
+            }}
+          </span>
+        </div>
+
+        <DsState
+          v-if="!filteredAccounts.length"
+          state="empty"
+          compact
+          :title="t('DASHBOARD.TABLE.EMPTY_TITLE')"
+          :description="t('DASHBOARD.TABLE.EMPTY_HINT')"
+        />
+        <DsTable
+          v-else
+          :columns="columns"
+          :rows="filteredAccounts"
+          :caption="t('DASHBOARD.DETAILS.TITLE')"
+        >
+          <template #cell-name="{ row }">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span class="text-xs tabular-nums text-n-slate-11">
+                {{ `#${row.id}` }}
+              </span>
+              <a
+                :href="clinicUrl(row)"
+                class="font-medium text-n-slate-12 hover:text-n-brand hover:underline"
+              >
+                {{ row.name }}
+              </a>
+              <span
+                v-if="row.status === 'suspended'"
+                class="admin-badge admin-badge--amber"
+              >
+                {{ t('DASHBOARD.TABLE.SUSPENDED') }}
+              </span>
+            </div>
+          </template>
+
+          <template #cell-whatsapp="{ value }">
+            <DsStatusDot
+              :status="statusTone(value?.state)"
+              :label="value?.label || ''"
+            />
+          </template>
+
+          <template #cell-telephony="{ value }">
+            <DsStatusDot
+              :status="statusTone(value?.state)"
+              :label="value?.label || ''"
+            />
+          </template>
+
+          <template #cell-medelement="{ value }">
+            <DsStatusDot
+              :status="statusTone(value?.state)"
+              :label="value?.label || ''"
+            />
+          </template>
+
+          <template #cell-failed_messages="{ value }">
+            <DsStatusDot
+              v-if="value > 0"
+              status="bad"
+              :label="t('DASHBOARD.TABLE.STUCK_COUNT', { count: value })"
+            />
+            <span v-else class="text-n-slate-11">{{ value || 0 }}</span>
+          </template>
+
+          <template #cell-actions="{ row }">
             <a
               :href="clinicUrl(row)"
-              class="font-medium text-n-slate-12 hover:text-n-brand hover:underline"
+              class="text-sm font-medium text-n-brand hover:text-n-brand hover:underline"
             >
-              {{ row.name }}
+              {{ t('DASHBOARD.TABLE.OPEN') }}
             </a>
-            <span
-              v-if="row.status === 'suspended'"
-              class="admin-badge admin-badge--amber"
-            >
-              {{ t('DASHBOARD.TABLE.SUSPENDED') }}
-            </span>
-          </div>
-        </template>
-
-        <template #cell-whatsapp="{ value }">
-          <DsStatusDot
-            :status="statusTone(value?.state)"
-            :label="value?.label || ''"
-          />
-        </template>
-
-        <template #cell-telephony="{ value }">
-          <DsStatusDot
-            :status="statusTone(value?.state)"
-            :label="value?.label || ''"
-          />
-        </template>
-
-        <template #cell-medelement="{ value }">
-          <DsStatusDot
-            :status="statusTone(value?.state)"
-            :label="value?.label || ''"
-          />
-        </template>
-
-        <template #cell-failed_messages="{ value }">
-          <DsStatusDot
-            v-if="value > 0"
-            status="bad"
-            :label="t('DASHBOARD.TABLE.STUCK_COUNT', { count: value })"
-          />
-          <span v-else class="text-n-slate-11">{{ value || 0 }}</span>
-        </template>
-
-        <template #cell-actions="{ row }">
-          <a
-            :href="clinicUrl(row)"
-            class="text-sm font-medium text-n-brand hover:text-n-brand hover:underline"
-          >
-            {{ t('DASHBOARD.TABLE.OPEN') }}
-          </a>
-        </template>
-      </DsTable>
-    </DsCard>
+          </template>
+        </DsTable>
+      </div>
+    </section>
 
     <div class="flex flex-col gap-3">
       <div>

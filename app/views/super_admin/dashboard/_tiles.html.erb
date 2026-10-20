@@ -1,0 +1,44 @@
+<%#
+# Главные цифры
+
+The tiles on top of «Сводка»: six figures, each with a line of what it means. A figure that opens a list of accounts is a link to
+that list, with the filter the list itself uses (so the tile and the list always show the same number); «Требуют внимания» is
+the number of problems in «Нужно проверить» below and leads there. A figure that could not be counted says «нет данных», never 0.
+Drawn by the same block as the other key figures of the super admin (shared/_stat_group).
+
+## Local variables:
+
+- `summary`: the figures (SuperAdmin::DashboardSummary).
+- `attention`: how many problems «Нужно проверить» holds (SuperAdmin::DashboardChecklist#total).
+%>
+<%
+  tiles = 'super_admin.dashboard.tiles'
+  list = ->(filter) { super_admin_accounts_path(search: "#{filter}:") }
+  # The figure and its note: «нет данных» when the figure is missing
+  figure = ->(value, note) { [value.nil? ? '—' : super_admin_number(value), value.nil? ? t("#{tiles}.no_data") : note] }
+  days = super_admin_wait(SuperAdmin::DashboardSummary::TRIAL_ENDING_DAYS.days)
+
+  active, active_note = figure.call(summary[:active], t("#{tiles}.active.note"))
+  trial_note = if summary[:trial_ending].to_i.positive?
+                 t("#{tiles}.trial.note_ending", days: days, count: super_admin_number(summary[:trial_ending]))
+               else
+                 t("#{tiles}.trial.note_quiet", days: days)
+               end
+  trial, trial_note = figure.call(summary[:trial], trial_note)
+  recent, recent_note = figure.call(summary[:recent], t("#{tiles}.recent.note"))
+  messages, messages_note = figure.call(summary[:messages_day], t("#{tiles}.messages.note"))
+  suspended, suspended_note = figure.call(summary[:suspended], t("#{tiles}.suspended.note"))
+
+  items = [
+    { label: t("#{tiles}.active.label"), value: active, note: active_note, href: (list.call('active') unless summary[:active].nil?) },
+    { label: t("#{tiles}.trial.label"), value: trial, note: trial_note, href: (list.call('trial_active') unless summary[:trial].nil?) },
+    { label: t("#{tiles}.attention.label"), value: super_admin_number(attention), href: '#dashboard-checklist',
+      note: t("#{tiles}.attention.#{attention.positive? ? 'note_some' : 'note_none'}"), tone: (:bad if attention.positive?) },
+    { label: t("#{tiles}.recent.label"), value: recent, note: recent_note, href: (list.call('recent') unless summary[:recent].nil?) },
+    { label: t("#{tiles}.messages.label"), value: messages, note: messages_note },
+    { label: t("#{tiles}.suspended.label"), value: suspended, note: suspended_note, href: (list.call('suspended') unless summary[:suspended].nil?) }
+  ]
+%>
+<div data-testid="dashboard-tiles" role="group" aria-label="<%= t("#{tiles}.label") %>">
+  <%= render 'super_admin/shared/stat_group', items: items %>
+</div>

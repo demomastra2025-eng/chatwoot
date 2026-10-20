@@ -31,7 +31,7 @@ const componentData = {
       needs_attention: true,
     }),
     clinic(3, 'Медцентр «Достар»', {
-      telephony: { state: 'healthy', label: '2 профилей OK' },
+      telephony: { state: 'healthy', label: '2 профиля OK' },
     }),
   ],
   healthSummary: {
@@ -54,40 +54,81 @@ const render = (data = componentData) =>
     global: { plugins: [createSuperAdminI18n()] },
   });
 
+// The table is folded away until the title «Подробно по каналам» is pressed
+const toggle = wrapper => wrapper.find('[data-testid="health-details-toggle"]');
+const open = async (data = componentData) => {
+  const wrapper = render(data);
+  await toggle(wrapper).trigger('click');
+  return wrapper;
+};
 const rows = wrapper => wrapper.findAll('tbody tr');
 
-describe('the «Сводка» body', () => {
-  it('shows the four key figures of the summary', () => {
+describe('the «Сводка» body: the table «Подробно по каналам»', () => {
+  it('is folded away at first and says how many accounts are in it', () => {
     const wrapper = render();
-    const figures = wrapper.findAll('[data-test-id="ds-stat"]');
 
-    expect(figures.map(figure => figure.find('dt').text())).toEqual([
-      ru.DASHBOARD.KPI.CLINICS,
-      ru.DASHBOARD.KPI.ATTENTION,
-      ru.DASHBOARD.KPI.WHATSAPP,
-      ru.DASHBOARD.KPI.TELEPHONY,
-    ]);
-    expect(figures.map(figure => figure.findAll('dd')[0].text())).toEqual([
-      '3',
-      '1',
-      '0',
-      '1',
-    ]);
+    expect(wrapper.find('table').exists()).toBe(false);
+    expect(toggle(wrapper).attributes('aria-expanded')).toBe('false');
+    expect(toggle(wrapper).text()).toContain(ru.DASHBOARD.DETAILS.TITLE);
+    expect(toggle(wrapper).text()).toContain('С проблемами в каналах: 1 из 3');
   });
 
-  it('lists a row per clinic with a link to its card', () => {
-    const wrapper = render();
+  it('says only the number of accounts when none has a problem', () => {
+    const wrapper = render({
+      ...componentData,
+      healthAccounts: [clinic(1, 'Acme Inc')],
+    });
+
+    expect(toggle(wrapper).text()).toContain('Аккаунтов: 1');
+    expect(toggle(wrapper).text()).not.toContain('С проблемами');
+  });
+
+  it('opens on a press of its title and folds again on a second press', async () => {
+    const wrapper = await open();
+
+    expect(toggle(wrapper).attributes('aria-expanded')).toBe('true');
+    expect(wrapper.find('table').exists()).toBe(true);
+
+    await toggle(wrapper).trigger('click');
+    expect(toggle(wrapper).attributes('aria-expanded')).toBe('false');
+    expect(wrapper.find('table').exists()).toBe(false);
+  });
+
+  it('leaves the headline figures to the server: no tiles are drawn here', async () => {
+    const wrapper = await open();
+
+    expect(wrapper.find('[data-test-id="ds-stat"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="health-kpi"]').exists()).toBe(false);
+  });
+
+  it('lists a row per account with a link to its card', async () => {
+    const wrapper = await open();
 
     expect(rows(wrapper)).toHaveLength(3);
     const links = wrapper.findAll('tbody a').map(a => a.attributes('href'));
     expect(links).toContain('/super_admin/accounts/2');
     expect(wrapper.text()).toContain(ru.DASHBOARD.TABLE.SUSPENDED);
     expect(wrapper.text()).toContain('Требует авторизации');
-    expect(wrapper.text()).toContain('Зависших: 4');
+    expect(wrapper.text()).toContain('Не отправлено: 4');
   });
 
-  it('draws every status as a dot with a word', () => {
-    const wrapper = render();
+  it('names the columns in plain words', async () => {
+    const wrapper = await open();
+    const headers = wrapper.findAll('thead th').map(th => th.text());
+
+    expect(headers).toEqual([
+      'Аккаунт',
+      'WhatsApp',
+      'Телефония',
+      'МедЭлемент',
+      'Не отправлены за 3 дня',
+      'Действия',
+    ]);
+    expect(wrapper.text()).not.toMatch(/Janus|МИС/);
+  });
+
+  it('draws every status as a dot with a word', async () => {
+    const wrapper = await open();
     const states = wrapper
       .findAll('[data-status]')
       .map(dot => dot.attributes('data-status'));
@@ -97,15 +138,15 @@ describe('the «Сводка» body', () => {
     expect(states).toContain('neutral');
   });
 
-  it('keeps the wide table inside its own scrolling container', () => {
-    const wrapper = render();
+  it('keeps the wide table inside its own scrolling container', async () => {
+    const wrapper = await open();
     const table = wrapper.find('table');
 
     expect(table.element.parentElement.classList).toContain('overflow-x-auto');
   });
 
   it('searches by name or number', async () => {
-    const wrapper = render();
+    const wrapper = await open();
 
     await wrapper.find('input[type="search"]').setValue('сезим');
     expect(rows(wrapper)).toHaveLength(1);
@@ -115,8 +156,8 @@ describe('the «Сводка» body', () => {
     expect(rows(wrapper)[0].text()).toContain('Достар');
   });
 
-  it('shows only the clinics that need attention', async () => {
-    const wrapper = render();
+  it('shows only the accounts with a problem in a channel', async () => {
+    const wrapper = await open();
     const attention = wrapper
       .findAll('.segmented__item')
       .find(button => button.text() === ru.DASHBOARD.TOOLBAR.VIEW_ATTENTION);
@@ -127,8 +168,8 @@ describe('the «Сводка» body', () => {
     expect(rows(wrapper)[0].text()).toContain('Сезим');
   });
 
-  it('marks the chosen view and switches back to every clinic', async () => {
-    const wrapper = render();
+  it('marks the chosen view and switches back to every account', async () => {
+    const wrapper = await open();
     const [all, attention] = wrapper.findAll('.segmented__item');
 
     expect(all.attributes('aria-current')).toBe('true');
@@ -143,7 +184,7 @@ describe('the «Сводка» body', () => {
   });
 
   it('says so when nothing matches', async () => {
-    const wrapper = render();
+    const wrapper = await open();
 
     await wrapper.find('input[type="search"]').setValue('нет такой');
 
@@ -152,46 +193,57 @@ describe('the «Сводка» body', () => {
     expect(wrapper.text()).toContain(ru.DASHBOARD.TABLE.EMPTY_HINT);
   });
 
-  it('warns when a part of the data is missing', () => {
-    const wrapper = render({
+  it('warns inside the table when a part of the data is missing', async () => {
+    const data = {
       ...componentData,
       healthSummary: {
         ...componentData.healthSummary,
-        incomplete_sources: ['Message', 'Telephony::SipProfile'],
+        incomplete_sources: ['сообщения', 'линии телефонии'],
       },
-    });
+    };
+    const wrapper = render(data);
+    expect(
+      wrapper.find('[data-testid="health-incomplete-sources"]').exists()
+    ).toBe(false);
+
+    await toggle(wrapper).trigger('click');
     const notice = wrapper.find('[data-testid="health-incomplete-sources"]');
 
     expect(notice.exists()).toBe(true);
-    expect(notice.text()).toContain('Message, Telephony::SipProfile');
+    expect(notice.text()).toContain('сообщения, линии телефонии');
   });
 
+  it('renders with no data at all', async () => {
+    const wrapper = render({});
+    expect(toggle(wrapper).text()).toContain('Аккаунтов: 0');
+
+    await toggle(wrapper).trigger('click');
+    expect(wrapper.text()).toContain(ru.DASHBOARD.TABLE.EMPTY_TITLE);
+  });
+});
+
+describe('the «Сводка» body: the chart', () => {
   it('shows the chart only on demand, in the colours of the theme', async () => {
     const wrapper = render();
-    const toggle = wrapper.find('[data-testid="health-chart-toggle"]');
+    const button = wrapper.find('[data-testid="health-chart-toggle"]');
 
     expect(wrapper.text()).not.toContain(ru.DASHBOARD.CHART.TITLE);
-    expect(toggle.text()).toBe(ru.DASHBOARD.CHART.SHOW);
+    expect(button.text()).toBe(ru.DASHBOARD.CHART.SHOW);
 
-    await toggle.trigger('click');
+    await button.trigger('click');
 
     expect(wrapper.text()).toContain(ru.DASHBOARD.CHART.TITLE);
-    expect(toggle.text()).toBe(ru.DASHBOARD.CHART.HIDE);
-    expect(toggle.attributes('aria-expanded')).toBe('true');
+    expect(button.text()).toBe(ru.DASHBOARD.CHART.HIDE);
+    expect(button.attributes('aria-expanded')).toBe('true');
     // the chart takes its colours from the theme tokens, never a fixed colour
     expect(wrapper.html()).toContain('stroke-n-brand');
     expect(wrapper.html()).not.toMatch(/rgb\(|#[0-9a-f]{6}/i);
   });
+});
 
-  it('renders with no data at all', () => {
-    const wrapper = render({});
-
-    expect(wrapper.text()).toContain(ru.DASHBOARD.TABLE.EMPTY_TITLE);
-    expect(wrapper.findAll('[data-test-id="ds-stat"] dd')[0].text()).toBe('0');
-  });
-
-  it('has no emoji and no English product names in the text', () => {
-    const wrapper = render();
+describe('the text of the «Сводка» body', () => {
+  it('has no emoji and no English product names', async () => {
+    const wrapper = await open();
 
     expect(wrapper.text()).not.toMatch(/\p{Extended_Pictographic}/u);
     expect(wrapper.text()).not.toMatch(/Health Matrix/i);
@@ -214,6 +266,20 @@ describe('the Russian texts of the dashboard', () => {
 
     expect(keys.length).toBeGreaterThan(15);
     keys.forEach(key => expect(lookup(key), key).toBeTypeOf('string'));
+  });
+
+  it('keeps no text the component does not ask for', () => {
+    const asked = new Set(
+      [...source.matchAll(/\bt\(\s*'([A-Z_.]+)'/g)].map(m => m[1])
+    );
+    const leaves = (node, path = []) =>
+      typeof node === 'string'
+        ? [path.join('.')]
+        : Object.entries(node).flatMap(([key, value]) =>
+            leaves(value, [...path, key])
+          );
+
+    leaves(ru).forEach(key => expect(asked.has(key), key).toBe(true));
   });
 
   it('has no emoji, no leftover English title and no empty text', () => {

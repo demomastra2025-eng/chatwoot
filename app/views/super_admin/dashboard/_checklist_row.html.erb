@@ -1,0 +1,50 @@
+<%#
+# One row of «Нужно проверить»
+
+A problem: how serious it is (a dot and a word, never the colour alone), what is wrong, which account (or the whole platform),
+a note and one button to the place where it is put right. A row with `more` is not a problem: it follows the rows of one kind and
+says that only the first ones are listed (with a link to the whole list when there is one).
+
+## Local variables:
+
+- `row`: the row (see SuperAdmin::DashboardChecklist).
+%>
+<%
+  dots = { danger: 'bg-n-status-bad', warning: 'bg-n-status-warn' }
+  severity = row[:severity].to_sym
+%>
+<li class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-n-weak py-3 first:border-t-0 first:pt-0 <%= 'text-xs text-n-slate-11' if row[:more] %>"
+    data-checklist-row="<%= row[:key] %>" data-severity="<%= severity %>" <%= 'data-more' if row[:more] %>>
+  <div class="flex min-w-0 flex-1 basis-72 flex-col gap-0.5">
+    <% if row[:more] %>
+      <p class="m-0"><%= [row[:note], row[:hint]].compact_blank.join(' ') %></p>
+    <% else %>
+      <div class="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+        <span class="inline-flex items-center gap-1.5 whitespace-nowrap text-ds-caption text-n-slate-12" data-testid="row-severity">
+          <span class="inline-block size-[7px] flex-shrink-0 rounded-full <%= dots.fetch(severity, 'bg-n-slate-9') %>" aria-hidden="true"></span>
+          <%= t("super_admin.checklist.severity.#{severity}") %>
+        </span>
+        <span class="font-medium text-n-slate-12" data-testid="row-title"><%= row[:title] %></span>
+      </div>
+      <p class="m-0 text-[13px] text-n-slate-11">
+        <span class="text-n-slate-12" data-testid="row-subject"><%= row[:subject] %></span><% if row[:note].present? %><span aria-hidden="true"> · </span><span data-testid="row-note"><%= row[:note] %></span><% end %>
+      </p>
+      <% if row[:hint].present? %>
+        <p class="m-0 text-[13px] text-n-slate-11" data-testid="row-hint"><%= row[:hint] %></p>
+      <% end %>
+      <% if row[:details].any? %>
+        <details class="mt-0.5 text-xs text-n-slate-11" data-testid="row-developer">
+          <summary class="cursor-pointer"><%= t('super_admin.checklist.developer') %></summary>
+          <ul class="m-0 mt-1 list-none p-0">
+            <% row[:details].each do |detail| %>
+              <li><%= detail %></li>
+            <% end %>
+          </ul>
+        </details>
+      <% end %>
+    <% end %>
+  </div>
+  <% if row[:action] %>
+    <%= link_to row[:action][:label], row[:action][:url], class: "button button--small button--secondary #{'!h-7 !text-xs' if row[:more]}", data: { testid: 'row-action' } %>
+  <% end %>
+</li>

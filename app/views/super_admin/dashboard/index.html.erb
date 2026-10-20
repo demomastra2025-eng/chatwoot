@@ -1,15 +1,17 @@
 <%#
 # Сводка
 
-The state of every clinic at a glance. The header is drawn here; the body (key figures, the table of clinics,
-the chart of conversations) is the Vue component DashboardIndex.
+The state of the platform at a glance. The header is drawn here, and so are the body parts that cost nothing to draw: the tiles with
+the headline figures, the list «Нужно проверить» and the reminder about two-factor sign-in. The table of accounts «Подробно по
+каналам» and the chart are the Vue component DashboardIndex.
 
 ## Local variables (controller instance variables):
 
-- `@data`: conversations per day for 30 days, `[[day, count], ...]`.
-- `@health_accounts`, `@health_summary`: one row per clinic and the totals (SuperAdmin::HealthMatrixService);
+- `@summary`: the figures of the tiles (SuperAdmin::DashboardSummary); the chart of conversations is `@summary[:chart]`.
+- `@checklist`: the list «Нужно проверить» (SuperAdmin::DashboardChecklist): the alerts of SuperAdmin::DashboardAlerts and the
+  problems of the accounts in one list.
+- `@health_accounts`, `@health_summary`: one row per account and the totals (SuperAdmin::HealthMatrixService);
   `@health_summary[:updated_at]` is already Astana time.
-- `@alerts`: what needs attention first (SuperAdmin::DashboardAlerts), drawn above the Vue body by `_alerts`.
 %>
 
 <% content_for(:title) do %><%= t('super_admin.dashboard.title') %><% end %>
@@ -30,12 +32,15 @@ the chart of conversations) is the Vue component DashboardIndex.
 <% end %>
 
 <section class="main-content__body">
-  <%# What needs a look first: trials, disk space, the OpenRouter key, the queues, channels to authorize again. %>
-  <%= render 'alerts', alerts: @alerts %>
-  <%= render 'super_admin/shared/two_factor_notice', super_admin: current_super_admin %>
-  <%= render_vue_component('DashboardIndex', {
-    chartData: @data,
-    healthAccounts: @health_accounts,
-    healthSummary: @health_summary
-  }) %>
+  <div class="flex flex-col gap-5">
+    <%= render 'tiles', summary: @summary, attention: @checklist.total %>
+    <%# What needs a look first: trials, disk space, the OpenRouter key, the queues, channels, telephony, MedElement. %>
+    <%= render 'checklist', checklist: @checklist %>
+    <%= render 'super_admin/shared/two_factor_notice', super_admin: current_super_admin %>
+    <%= render_vue_component('DashboardIndex', {
+      chartData: @summary[:chart],
+      healthAccounts: @health_accounts,
+      healthSummary: @health_summary
+    }) %>
+  </div>
 </section>

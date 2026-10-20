@@ -1,0 +1,73 @@
+# Russian texts of the «Сводка» of the super admin: the headline tiles and the list «Нужно проверить»
+# (SuperAdmin::DashboardSummary, SuperAdmin::DashboardChecklist). The super admin is Russian only (ru-only freeze).
+# The rest of the page is in super_admin.ru.yml (dashboard), super_admin_tools.ru.yml (alerts) and the Vue file of the page.
+ru:
+  super_admin:
+    dashboard:
+      tiles:
+        label: "Главные цифры платформы"
+        no_data: "нет данных"
+        active:
+          label: "Активные аккаунты"
+          note: "работают сейчас"
+        trial:
+          label: "На пробном периоде"
+          note_ending: "заканчивается за %{days}: %{count}"
+          note_quiet: "за %{days} не заканчивается ни один"
+        attention:
+          label: "Требуют внимания"
+          note_some: "проблем в списке ниже"
+          note_none: "всё в порядке"
+        recent:
+          label: "Новые за 30 дней"
+          note: "аккаунтов создано"
+        messages:
+          label: "Сообщений за сутки"
+          note: "входящих и исходящих"
+        suspended:
+          label: "Заблокированы"
+          note: "аккаунтов остановлено"
+
+    # «Нужно проверить»: one list, the most serious first; every row says what is wrong, which account, and has one button
+    checklist:
+      title: "Нужно проверить"
+      hint: "Сначала самое срочное. Кнопка в строке ведёт туда, где это исправляется."
+      all_clear: "Всё в порядке"
+      all_clear_hint: "Проверено: пробные периоды, место, ключ OpenRouter, фоновые задачи, каналы, телефония и МедЭлемент."
+      severity:
+        danger: "Срочно"
+        warning: "Важно"
+      platform: "Вся платформа"
+      show_rest: "Показать ещё %{count}"
+      hide_rest: "Свернуть"
+      developer: "Для разработчика"
+      more: "Показаны первые %{shown} из %{count}."
+      more_in_table: "Остальные видны в блоке «Подробно по каналам» ниже."
+      show_all: "Показать все"
+      rows:
+        trials_ending: "Пробный период заканчивается"
+        trials_expired: "Пробный период закончился"
+        storage_critical: "Место почти закончилось"
+        storage_warning: "Место заканчивается"
+        reauthorization: "Канал нужно подключить заново"
+        queues_dead: "Часть фоновых задач не выполнилась: %{count}"
+        telephony_error: "Телефония не настроена"
+        telephony_unbound: "Линия телефонии без номера"
+        medelement_error: "Сбой связи с МедЭлементом"
+        medelement_conflicts: "Конфликты в данных МедЭлемента"
+        failed_messages: "Сообщения не отправились"
+        matrix_incomplete: "Часть данных об аккаунтах не прочиталась"
+        matrix_unavailable: "Состояние аккаунтов не прочиталось"
+      notes:
+        failed_messages: "за %{days}: %{count}"
+      hints:
+        matrix_incomplete: "Не удалось прочитать: %{sources}. Блок «Подробно по каналам» может быть неполным."
+        matrix_unavailable: "Телефония, МедЭлемент и неотправленные сообщения не проверены. Если после повторной проверки так же, это работа разработчика."
+      actions:
+        account: "Открыть аккаунт"
+        trials_ending: "Продлить или назначить тариф"
+        trials_expired: "Назначить тариф"
+        storage: "Посмотреть место"
+        queues: "Открыть очереди"
+        openrouter: "Открыть «Модели ИИ»"
+        incomplete: "Проверить ещё раз"

@@ -1,0 +1,51 @@
+<%#
+# Нужно проверить
+
+ONE short list of what a super admin should look at (SuperAdmin::DashboardChecklist): the alerts and the problems of the
+accounts together, the most serious first. A row says what is wrong, which account it is about, and has one button to the place
+where it is put right. The first rows are shown, the rest are folded under «Показать ещё N», so the list stays short. With
+nothing to report it says «Всё в порядке». The colour of the badge is the colour of the most serious problem. What only a
+developer reads (the names of queues) is folded under «Для разработчика».
+
+## Local variables:
+
+- `checklist`: the list (SuperAdmin::DashboardChecklist::Result: rows, total, severity).
+%>
+<%
+  shown_rows = 8
+  rows = checklist.rows
+  badge = { danger: 'admin-badge--ruby', warning: 'admin-badge--amber' }.fetch(checklist.severity, 'admin-badge--teal')
+%>
+<section class="admin-block scroll-mt-4" id="dashboard-checklist" aria-labelledby="dashboard-checklist-title" data-testid="dashboard-checklist"
+         data-severity="<%= checklist.severity || 'clear' %>">
+  <div class="admin-block__head-row">
+    <div class="admin-block__head">
+      <h2 class="admin-block__title" id="dashboard-checklist-title"><%= t('super_admin.checklist.title') %></h2>
+      <p class="admin-block__hint"><%= t('super_admin.checklist.hint') %></p>
+    </div>
+    <% if checklist.total.positive? %>
+      <span class="admin-badge <%= badge %> tabular-nums" data-testid="dashboard-checklist-count"><%= super_admin_number(checklist.total) %></span>
+    <% end %>
+  </div>
+
+  <% if rows.empty? %>
+    <div class="admin-notice admin-notice--teal" role="status" data-testid="dashboard-checklist-clear">
+      <span class="flex flex-col gap-0.5">
+        <span class="font-medium"><%= t('super_admin.checklist.all_clear') %></span>
+        <span class="text-xs"><%= t('super_admin.checklist.all_clear_hint') %></span>
+      </span>
+    </div>
+  <% else %>
+    <ul class="m-0 flex list-none flex-col p-0" data-testid="dashboard-checklist-rows">
+      <%= render partial: 'super_admin/dashboard/checklist_row', collection: rows.first(shown_rows), as: :row %>
+    </ul>
+    <% if rows.size > shown_rows %>
+      <details class="flex flex-col gap-1" data-testid="dashboard-checklist-rest">
+        <summary class="cursor-pointer text-sm font-medium text-n-slate-11 hover:text-n-slate-12"><%= t('super_admin.checklist.show_rest', count: super_admin_number(rows.size - shown_rows)) %></summary>
+        <ul class="m-0 mt-2 flex list-none flex-col border-t border-n-weak p-0">
+          <%= render partial: 'super_admin/dashboard/checklist_row', collection: rows.drop(shown_rows), as: :row %>
+        </ul>
+      </details>
+    <% end %>
+  <% end %>
+</section>

@@ -2,15 +2,11 @@
 
 class SuperAdmin::DashboardController < SuperAdmin::ApplicationController
   def index
-    @data = begin
-      Conversation.unscoped.group_by_day(:created_at, range: 30.days.ago..2.seconds.ago).count.to_a
-    rescue StandardError
-      []
-    end
-
     force_refresh = params[:refresh].present? || params[:force_refresh].present?
+    # The figures of the tiles and the checks of «Нужно проверить» are kept for a short while, so the page does not run them on every visit
+    @summary = SuperAdmin::DashboardSummary.build(force_refresh: force_refresh)
     @health_accounts, @health_summary = SuperAdmin::HealthMatrixService.build(force_refresh: force_refresh)
-    # «Нужно проверить»: kept for a short while, so the page does not run the checks on every visit
     @alerts = SuperAdmin::DashboardAlerts.build(force_refresh: force_refresh)
+    @checklist = SuperAdmin::DashboardChecklist.build(alerts: @alerts, health_accounts: @health_accounts, health_summary: @health_summary)
   end
 end
