@@ -13,6 +13,8 @@ module Enterprise::Concerns::Account
 
     has_many :captain_assistants, dependent: :destroy_async, class_name: 'Captain::Assistant'
     has_many :captain_assistant_responses, dependent: :destroy_async, class_name: 'Captain::AssistantResponse'
+    has_many :captain_knowledge_nodes, dependent: :destroy_async, class_name: 'Captain::KnowledgeNode'
+    has_many :captain_knowledge_edges, dependent: :destroy_async, class_name: 'Captain::KnowledgeEdge'
     has_many :captain_documents, dependent: :destroy_async, class_name: 'Captain::Document'
     has_many :captain_skills, dependent: :destroy_async, class_name: 'Captain::Skill'
     has_many :captain_custom_tools, dependent: :destroy_async, class_name: 'Captain::CustomTool'
@@ -30,7 +32,6 @@ module Enterprise::Concerns::Account
     has_many :telephony_events, dependent: :destroy_async, class_name: '::Telephony::Event'
     has_many :voice_channels, dependent: :destroy_async, class_name: '::Channel::Voice'
     has_many :calls, dependent: :destroy_async
-
   end
 
   def captain_default_assistant_is_eligible
