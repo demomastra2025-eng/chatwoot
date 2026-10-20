@@ -60,11 +60,17 @@ const handleDelete = () => {
 };
 
 const handleAccept = async () => {
+  const acceptedId = selectedResponse.value.id;
   try {
-    await store.dispatch('captainResponses/update', {
-      id: selectedResponse.value.id,
+    const updated = await store.dispatch('captainResponses/update', {
+      id: acceptedId,
       status: 'approved',
     });
+    if (updated?.id && updated.id !== acceptedId) {
+      await store.dispatch('captainResponses/removeBulkResponses', [
+        acceptedId,
+      ]);
+    }
     useAlert(t(`CAPTAIN.RESPONSES.EDIT.APPROVE_SUCCESS_MESSAGE`));
   } catch (error) {
     const errorMessage =
@@ -217,6 +223,22 @@ const onBulkDeleteSuccess = () => {
   fetchResponseAfterBulkAction();
 };
 
+const handleBulkMerge = async () => {
+  try {
+    await store.dispatch(
+      'captainBulkActions/handleBulkMerge',
+      Array.from(bulkSelectedIds.value)
+    );
+    bulkSelectedIds.value = new Set();
+    store.dispatch('captainResponses/fetchPendingCount');
+    useAlert(t('CAPTAIN.RESPONSES.BULK_MERGE.SUCCESS_MESSAGE'));
+  } catch (error) {
+    useAlert(
+      error?.message || t('CAPTAIN.RESPONSES.BULK_MERGE.ERROR_MESSAGE')
+    );
+  }
+};
+
 const debouncedSearch = debounce(async () => {
   fetchResponses(1);
 }, 500);
@@ -310,6 +332,15 @@ watch(
             icon="i-lucide-check"
             class="!px-1.5"
             @click="handleBulkApprove"
+          />
+          <Button
+            v-if="bulkSelectedIds.size > 1"
+            :label="$t('CAPTAIN.RESPONSES.BULK_MERGE_BUTTON')"
+            sm
+            ghost
+            icon="i-lucide-git-merge"
+            class="!px-1.5"
+            @click="handleBulkMerge"
           />
         </template>
       </BulkSelectBar>

@@ -58,7 +58,7 @@ class Captain::Knowledge::Graph::FaqExtractorService
       next unless full_text.match?(regex)
 
       segment = matching_sentences(answer_body, regex).presence || answer_body
-      attrs = extract_segment_attributes(segment, service_regex: regex)
+      attrs = extract_segment_attributes(answer_body).merge(extract_segment_attributes(segment, service_regex: regex))
       @upserter.upsert_node(
         node_type: :service, canonical_name: canonical, source_key: source_key,
         aliases: aliases, attributes: attrs, response_id: @response.id

@@ -3753,6 +3753,11 @@
           "TITLE": "AI Agent FAQ",
           "NOTE": "AI Agent FAQs detect common customer questions—whether missing from your knowledge base or frequently asked—and generate relevant FAQs to improve support. You can review each suggestion and decide whether to approve or reject it."
         }
+      },
+      "BULK_MERGE_BUTTON": "Merge duplicates",
+      "BULK_MERGE": {
+        "SUCCESS_MESSAGE": "Selected FAQs merged into one canonical entry",
+        "ERROR_MESSAGE": "Failed to merge selected FAQs"
       }
     },
     "INBOXES": {

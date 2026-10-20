@@ -39,8 +39,9 @@ class Api::V1::Accounts::Captain::BulkActionsController < Api::V1::Accounts::Bas
 
     case params[:fields][:status]
     when 'approve'
-      responses.pending.update(status: 'approved')
-      responses
+      Captain::Knowledge::FaqMergerService.approve_and_canonicalize_batch!(responses.pending.order(:id))
+    when 'merge'
+      [Captain::Knowledge::FaqMergerService.merge_records!(responses.order(:id))]
     when 'delete'
       responses.destroy_all
       []

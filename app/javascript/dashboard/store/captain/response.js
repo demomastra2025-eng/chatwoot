@@ -24,20 +24,25 @@ export default createStore({
       );
       commit(mutations.SET, updatedRecords);
     },
-    updateBulkResponses: ({ commit, state }, approvedResponses) => {
-      // Create a map of updated responses for faster lookup
+    updateBulkResponses: ({ commit, state }, payload) => {
+      const isObjectPayload =
+        payload && !Array.isArray(payload) && typeof payload === 'object';
+      const approvedResponses = isObjectPayload
+        ? payload.responses || []
+        : payload || [];
+      const consumedIds = isObjectPayload ? payload.consumedIds || [] : [];
+
       const updatedResponsesMap = approvedResponses.reduce((map, response) => {
         map[response.id] = response;
         return map;
       }, {});
+      const dropIds = new Set(
+        consumedIds.filter(id => !updatedResponsesMap[id])
+      );
 
-      // Update existing records with updated data
-      const updatedRecords = state.records.map(record => {
-        if (updatedResponsesMap[record.id]) {
-          return updatedResponsesMap[record.id]; // Replace with the updated response
-        }
-        return record;
-      });
+      const updatedRecords = state.records
+        .filter(record => !dropIds.has(record.id))
+        .map(record => updatedResponsesMap[record.id] || record);
 
       commit(mutations.SET, updatedRecords);
     },
