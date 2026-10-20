@@ -4,12 +4,12 @@
 The members with their role (Администратор / Оператор), e-mail and last
 sign-in (Astana time), each linking to the user page, and «Убрать из аккаунта»
 (asks first, written to the audit log); below, a collapsed form that adds a
-member.
+member: a user from the list or a new one (see `_add_user`).
 
 ## Local variables:
 
 - `account`: the clinic (Account).
-- `page`: the `Administrate::Page::Show` of the clinic (the add-member form needs it).
+- `page`: the `Administrate::Page::Show` of the clinic.
 %>
 <%
   limit = 50
@@ -23,6 +23,9 @@ member.
     <h2 class="m-0 text-heading-2 text-n-slate-12" id="users-title"><%= t('super_admin.clinic_card.users.title') %></h2>
     <span class="text-xs tabular-nums text-n-slate-11"><%= t('super_admin.clinic_card.users.total', count: total) %></span>
   </div>
+
+  <%# A password just set for a person added here is shown once, in the response that added them (accounts#add_user). %>
+  <%= render 'added_member', member: @added_member if @added_member&.one_time_password.present? %>
 
   <div class="admin-card--table">
     <table aria-labelledby="users-title">
@@ -66,13 +69,5 @@ member.
     <p class="admin-block__note border-t border-n-weak px-5 py-3"><%= t('super_admin.clinic_card.users.more', shown: limit, total: total) %></p>
   <% end %>
 
-  <details class="border-t border-n-weak">
-    <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-3 text-n-slate-12">
-      <span class="font-medium"><%= t('super_admin.shell.add_user_to_account') %></span>
-      <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
-    </summary>
-    <div class="px-5 pb-5 pt-1">
-      <%= render 'super_admin/shared/account_user_form', page: page, namespace: namespace, resource_type: 'account', embedded: true %>
-    </div>
-  </details>
+  <%= render 'add_user', account: account, member: @add_user %>
 </section>

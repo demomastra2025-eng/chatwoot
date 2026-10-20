@@ -1,0 +1,73 @@
+<%#
+# How a new person gets access: an invitation by e-mail, or a password you set
+
+Two choices (the cards of `_choice`) and the state of the mail of the platform next to them. The invitation is a letter with a link
+where the person sets their own password; while the platform has no mail server it is disabled with the reason, and the
+password is the way. The password: a field, «Сгенерировать» and «Скопировать» (they appear when the script runs), and the
+rules with a tick for every one the password already follows (the same rules the server checks, SuperAdmin::PasswordRules).
+The password is shown once more on the page that says «Готово» and is not kept anywhere.
+
+## Local variables:
+
+- `scope`: the name of the group of fields (`admin`, `member`): it sends `<scope>[access]` and `<scope>[password]`.
+- `access`: the chosen way (`invitation` or `password`).
+- `password`: what is in the password field.
+- `access_error`, `password_error`: the problems (text), nil when there is none.
+%>
+<%
+  mail_ok = SuperAdmin::MailState.configured?
+  broken = SuperAdmin::PasswordRules.problems(password)
+  interpolation = SuperAdmin::PasswordRules.interpolation
+  field_id = "#{scope}_password"
+%>
+
+<div class="flex flex-col gap-3" data-choice-group data-testid="access-choice" data-access-choice>
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <h3 class="m-0 text-heading-3 text-n-slate-12"><%= t('super_admin.onboarding.access.title') %></h3>
+    <span class="admin-badge <%= mail_ok ? 'admin-badge--teal' : 'admin-badge--amber' %>" data-testid="mail-state" data-mail="<%= mail_ok ? 'on' : 'off' %>">
+      <%= mail_ok ? t('super_admin.onboarding.access.mail_ok') : t('super_admin.onboarding.access.mail_off') %>
+    </span>
+  </div>
+
+  <%= render layout: 'super_admin/shared/choice',
+             locals: { name: "#{scope}[access]", value: 'invitation', checked: access == 'invitation', disabled: !mail_ok,
+                       title: t('super_admin.onboarding.access.invitation.title'),
+                       hint: mail_ok ? t('super_admin.onboarding.access.invitation.hint') : t('super_admin.onboarding.access.invitation.hint_off') } do %><% end %>
+
+  <%= render layout: 'super_admin/shared/choice',
+             locals: { name: "#{scope}[access]", value: 'password', checked: access == 'password',
+                       title: t('super_admin.onboarding.access.password.title'),
+                       hint: t('super_admin.onboarding.access.password.hint') } do %>
+    <div class="flex flex-col gap-2" data-password-widget data-min-length="<%= interpolation[:min] %>" data-max-length="<%= interpolation[:max] %>"
+         data-specials="<%= SuperAdmin::PasswordRules.special_characters %>">
+      <%= super_admin_with_error({ password: password_error }, :password) do %>
+        <label for="<%= field_id %>" class="text-xs text-n-slate-11"><%= t('super_admin.onboarding.password.label') %></label>
+        <div class="flex flex-wrap items-center gap-2">
+          <%= text_field_tag "#{scope}[password]", password, id: field_id, class: 'min-w-0 flex-1 font-mono', autocomplete: 'off', spellcheck: 'false',
+                             maxlength: interpolation[:max], placeholder: t('super_admin.onboarding.password.placeholder'), data: { password_input: true } %>
+          <button type="button" class="button button--small button--secondary" data-password-generate hidden><%= t('super_admin.onboarding.password.generate') %></button>
+          <button type="button" class="button button--small button--secondary" data-password-copy data-copied="<%= t('super_admin.onboarding.password.copied') %>" hidden><%= t('super_admin.onboarding.password.copy') %></button>
+        </div>
+      <% end %>
+      <%= super_admin_field_error({ password: password_error }, :password) %>
+
+      <div class="flex flex-col gap-1">
+        <span class="text-xs text-n-slate-11"><%= t('super_admin.onboarding.password.requirements') %></span>
+        <ul class="m-0 flex list-none flex-col gap-0.5 p-0 text-xs sm:flex-row sm:flex-wrap sm:gap-x-4" data-password-rules>
+          <% SuperAdmin::PasswordRules::RULES.each do |rule| %>
+            <% ok = broken.exclude?(rule) %>
+            <li class="admin-rule" data-rule="<%= rule %>" data-state="<%= ok ? 'ok' : 'todo' %>">
+              <span class="admin-rule__icon <%= ok ? 'i-lucide-check' : 'i-lucide-circle' %> size-3.5" aria-hidden="true"></span>
+              <%= t("super_admin.onboarding.password.rules.#{rule}", **interpolation) %>
+            </li>
+          <% end %>
+        </ul>
+        <span class="text-xs text-n-slate-10"><%= t('super_admin.onboarding.password.latin_note') %></span>
+      </div>
+    </div>
+  <% end %>
+
+  <%= super_admin_field_error({ access: access_error }, :access) %>
+</div>
+
+<%= render 'super_admin/shared/password_script' %>

@@ -50,9 +50,10 @@ It renders the `_collection` partial to display details about the resources.
         <%= t('super_admin.accounts.export_csv') %>
       <% end %>
     <% end %>
+    <%# A new account is a new client: its own page creates the account, organization, plan and first administrator together. %>
     <%= link_to(
       new_label,
-      [:new, namespace, page.resource_path.to_sym],
+      page.resource_name.to_s == 'account' ? new_super_admin_client_path : [:new, namespace, page.resource_path.to_sym],
       class: "button",
     ) if accessible_action?(new_resource, :new) %>
   </div>

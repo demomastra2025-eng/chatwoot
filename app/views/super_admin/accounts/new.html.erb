@@ -1,7 +1,8 @@
 <%#
-# New clinic
+# New clinic (the old form)
 
-A short form: name (the language is text, Russian: the platform speaks Russian only for now; see
+The entry is «Новый клиент» (SuperAdmin::ClientsController): `accounts#new` leads there. This form is drawn only when a form that was
+posted to `accounts#create` (an old tab, a script) has a problem, so it says where the new page is. A short form: name (the language is text, Russian: the platform speaks Russian only for now; see
 LanguageField), the plan modules (the base is always included
 and is applied right after the clinic is saved, together with the chosen
 modules) and an optional trial. Everything else (limits, single functions,
@@ -17,7 +18,7 @@ channels) is set on the clinic card.
   fields = page.attributes('new').values.flatten
 %>
 
-<% content_for(:title) { t('super_admin.index.account.new') } %>
+<% content_for(:title) { t('super_admin.clinic_card.new.title') } %>
 
 <header class="main-content__header">
   <div class="main-content__heading">
@@ -34,6 +35,12 @@ channels) is set on the clinic card.
 </header>
 
 <section class="main-content__body">
+  <div class="admin-notice mb-4 max-w-3xl" role="status" data-testid="moved-notice">
+    <span class="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span><%= t('super_admin.clinic_card.new.moved') %></span>
+      <%= link_to t('super_admin.clinic_card.new.moved_link'), new_super_admin_client_path, class: 'font-medium text-n-brand hover:underline' %>
+    </span>
+  </div>
   <%= form_for([namespace, page.resource], html: { class: "form flex max-w-3xl flex-col gap-4" }) do |f| %>
     <% if page.resource.errors.any? %>
       <div id="error_explanation" role="alert" class="rounded-xl bg-n-ruby-2 px-4 py-3 text-sm text-n-ruby-11 outline outline-1 -outline-offset-1 outline-n-ruby-4">

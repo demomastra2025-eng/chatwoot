@@ -1,0 +1,92 @@
+<%#
+# Готово: клиент подключён
+
+What was created, in a few lines, and the next steps: the card of the account, «Войти в аккаунт» (as the first administrator, once he
+can sign in) and a new client. When the administrator got a password, it is shown here ONCE with a «Скопировать» button: this is the
+response of the POST that created everything, nothing keeps the password, and the browser is told not to either.
+
+## Local variables:
+
+- `onboarding`: the successful `SuperAdmin::ClientOnboarding`.
+%>
+<%
+  account = onboarding.account
+  member = onboarding.member
+  organization = onboarding.organization
+  organization_line =
+    if organization.nil? then t('super_admin.onboarding.created.organization.none')
+    elsif onboarding.organization_created then t('super_admin.onboarding.created.organization.created', name: organization.name)
+    else t('super_admin.onboarding.created.organization.linked', name: organization.name)
+    end
+  admin_line =
+    case member.access
+    when :invitation
+      if member.delivery == :queued
+        t('super_admin.onboarding.created.admin.invited', email: member.user.email, hours: (Devise.reset_password_within / 1.hour).to_i)
+      else
+        t('super_admin.onboarding.created.admin.invite_failed', email: member.user.email)
+      end
+    when :password then t('super_admin.onboarding.created.admin.password', email: member.user.email)
+    else t('super_admin.onboarding.created.admin.existing', name: member.user.name, email: member.user.email)
+    end
+  can_enter = member.user.confirmed?
+  lines = [
+    t('super_admin.onboarding.created.account', name: account.name, id: account.id, timezone: SuperAdmin::AccountTimezones.label_for(account.reporting_timezone)),
+    organization_line,
+    t('super_admin.onboarding.created.plan', plan: Accounts::Plans.plan_label(onboarding.modules))
+  ]
+  lines << t('super_admin.onboarding.created.trial', date: super_admin_time(onboarding.trial_expires_at)) if onboarding.trial_expires_at.present?
+  lines << admin_line
+  password = member.one_time_password
+%>
+<% content_for(:title) { t('super_admin.onboarding.created.title') } %>
+
+<%= render layout: 'super_admin/shared/page_header', locals: { title: content_for(:title), description: t('super_admin.onboarding.created.description', name: account.name) } do %><% end %>
+
+<section class="main-content__body" data-testid="client-created" data-account-id="<%= account.id %>">
+  <div class="flex max-w-3xl flex-col gap-5">
+    <section class="admin-block" aria-labelledby="created-summary-title">
+      <h2 class="sr-only" id="created-summary-title"><%= t('super_admin.onboarding.created.title') %></h2>
+      <ul class="m-0 flex list-none flex-col gap-2.5 p-0">
+        <% lines.each do |line| %>
+          <li class="flex items-start gap-2.5 text-n-slate-12" data-testid="created-line">
+            <span class="i-lucide-check mt-0.5 size-4 shrink-0 text-n-teal-11" aria-hidden="true"></span>
+            <span><%= line %></span>
+          </li>
+        <% end %>
+      </ul>
+    </section>
+
+    <% if password.present? %>
+      <section class="admin-block" aria-labelledby="created-password-title" data-testid="one-time-password" data-password-widget>
+        <div class="admin-block__head">
+          <h2 class="admin-block__title" id="created-password-title"><%= t('super_admin.onboarding.created.password_title') %></h2>
+          <p class="admin-block__hint"><%= t('super_admin.onboarding.created.password_once') %></p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <input type="text" readonly value="<%= password %>" id="client-one-time-password" class="min-w-0 flex-1 font-mono" autocomplete="off" spellcheck="false"
+                 aria-label="<%= t('super_admin.onboarding.created.password_title') %>" onclick="this.select()">
+          <button type="button" class="button button--small button--secondary" data-password-copy data-copy-from="client-one-time-password"
+                  data-copied="<%= t('super_admin.onboarding.password.copied') %>" hidden><%= t('super_admin.onboarding.password.copy') %></button>
+        </div>
+      </section>
+      <%= render 'super_admin/shared/password_script' %>
+    <% end %>
+
+    <section class="admin-block" aria-labelledby="created-next-title">
+      <h2 class="admin-block__title" id="created-next-title"><%= t('super_admin.onboarding.created.next_title') %></h2>
+      <div class="flex flex-wrap items-center gap-2">
+        <%= link_to t('super_admin.onboarding.created.card'), super_admin_account_path(account), class: 'button', data: { testid: 'created-card-link' } %>
+        <% if can_enter %>
+          <%# POST on purpose: the one-time login token is only created (and audited) when the button is pressed. %>
+          <%= button_to t('super_admin.onboarding.created.enter'), impersonate_super_admin_account_path(account), method: :post, form: { target: '_blank' },
+                        class: 'button button--secondary', form_class: 'inline-block', data: { testid: 'created-enter' } %>
+        <% end %>
+        <%= link_to t('super_admin.onboarding.created.another'), new_super_admin_client_path, class: 'button button--secondary' %>
+      </div>
+      <% unless can_enter %>
+        <p class="admin-block__note m-0" data-testid="created-enter-waits"><%= t('super_admin.onboarding.created.enter_waits') %></p>
+      <% end %>
+    </section>
+  </div>
+</section>

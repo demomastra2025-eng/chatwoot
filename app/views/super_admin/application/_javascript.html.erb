@@ -23,6 +23,21 @@ by providing a `content_for(:javascript)` block.
   });
 </script>
 
+<%# A group of choices (`data-choice-group`, the cards of shared/_choice): only the fields of the chosen card are shown. %>
+<script>
+  document.addEventListener('change', function (event) {
+    var radio = event.target;
+    if (!radio.matches || !radio.matches('input[type="radio"]')) return;
+    var group = radio.closest('[data-choice-group]');
+    if (!group) return;
+    group.querySelectorAll('[data-choice]').forEach(function (choice) {
+      var body = choice.querySelector(':scope > [data-choice-body]');
+      var input = choice.querySelector(':scope > .admin-choice__head input[type="radio"]');
+      if (body && input) body.hidden = !input.checked;
+    });
+  });
+</script>
+
 <%= yield :javascript %>
 
 <% if Rails.env.test? %>

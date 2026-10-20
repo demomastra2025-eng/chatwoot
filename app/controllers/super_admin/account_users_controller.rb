@@ -9,12 +9,14 @@ class SuperAdmin::AccountUsersController < SuperAdmin::ApplicationController
     redirect_to super_admin_user_path(requested_resource.user)
   end
 
+  # Adds an existing user to an account (the «Добавить в аккаунт» form of the user card). A refusal («already in the account»)
+  # is an alert, not a notice: it is not the green banner that says it worked.
   def create
     resource = resource_class.new(resource_params)
     authorize_resource(resource)
 
-    notice =  resource.save ? translate_with_resource('create.success') : resource.errors.full_messages.first
-    redirect_back(fallback_location: [namespace, resource.account], notice: notice)
+    flash_type, text = resource.save ? [:notice, translate_with_resource('create.success')] : [:alert, resource.errors.full_messages.first]
+    redirect_back(fallback_location: [namespace, resource.account], flash_type => text)
   end
 
   # Takes the user out of the clinic (the user and their data stay). Leaves an entry in the audit log of the clinic.

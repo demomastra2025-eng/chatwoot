@@ -27,6 +27,7 @@ Resources that nobody placed in a group land in "Дополнительно".
     channels
     searches
     account_bulk_actions
+    clients
   ]
 
   primary_nav_items = Administrate::Namespace.new(namespace).resources.filter_map do |resource|
@@ -85,7 +86,7 @@ Resources that nobody placed in a group land in "Дополнительно".
         <%= render 'nav_item', icon: 'i-lucide-landmark', url: resource_urls['organizations'], label: t('super_admin.navigation.items.organizations'), active: super_admin_nav_active?(:organizations) %>
       <% end %>
       <% if resource_urls['accounts'] %>
-        <%= render 'nav_item', icon: 'i-lucide-building-2', url: resource_urls['accounts'], label: t('super_admin.navigation.items.accounts'), active: super_admin_nav_active?(:accounts, :account_users, :account_bulk_actions) %>
+        <%= render 'nav_item', icon: 'i-lucide-building-2', url: resource_urls['accounts'], label: t('super_admin.navigation.items.accounts'), active: super_admin_nav_active?(:accounts, :account_users, :account_bulk_actions, :clients) %>
       <% end %>
       <% if resource_urls['users'] %>
         <%= render 'nav_item', icon: 'i-lucide-users', url: resource_urls['users'], label: t('super_admin.navigation.items.users'), active: super_admin_nav_active?(:users) %>

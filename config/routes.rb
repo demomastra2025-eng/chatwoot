@@ -1042,6 +1042,8 @@ Rails.application.routes.draw do
         get :plan_preview, on: :member
         post :channel_overrides, on: :member
         post :link_organization, on: :member
+        # The «Добавить пользователя» form of the card: a user from the list, or a new one with an invitation or a password
+        post :add_user, on: :member
         post :cancel_deletion, on: :member
         post :impersonate, on: :member
         get :export, on: :collection
@@ -1074,6 +1076,8 @@ Rails.application.routes.draw do
 
       # resources that doesn't appear in primary navigation in super admin
       resources :account_users, only: [:new, :create, :show, :destroy]
+      # «Новый клиент»: the account, its organization, its plan and its first administrator on one page
+      resources :clients, only: [:new, :create]
     end
     authenticated :super_admin do
       mount Sidekiq::Web => '/monitoring/sidekiq'

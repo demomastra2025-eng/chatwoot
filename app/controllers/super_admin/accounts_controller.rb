@@ -74,6 +74,13 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     end
   end
 
+  # «Новый аккаунт» is a part of «Новый клиент»: one page for the account, its organization, its plan and its first
+  # administrator (SuperAdmin::ClientsController). The old address leads there. `create` below stays for the form of an old
+  # tab and for scripts; a form with a problem is drawn by the old template, which points to the new page.
+  def new
+    redirect_to new_super_admin_client_path
+  end
+
   # The owner-decision switches of «Служебные» are saved with this update too; a change of one leaves an entry in the
   # audit log of the clinic. The organization and the sections of the edit form that somebody else changed while the form
   # was open are left as they are (see SuperAdmin::AccountFormState and SuperAdmin::OrganizationLinks); the operator is
@@ -100,6 +107,20 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     redirect_to [namespace, requested_resource], notice: notice
   rescue SuperAdmin::OrganizationLinks::Refused => e
     redirect_to [namespace, requested_resource], alert: organization_stale_flash(e.holder)
+  end
+
+  # The «Добавить пользователя» form of the «Пользователи» block: somebody who is on the platform already (picked from the
+  # list) or a new person, who gets an invitation by e-mail or a password (SuperAdmin::AccountMember). A form with a problem
+  # comes back on the card with everything typed (422). A password is in the response of this request only, once.
+  def add_user
+    member = account_member
+    return render_member_errors(member) unless member.valid?
+
+    save_member(member)
+    return render_member_errors(member) unless member.valid?
+
+    member.deliver_invitation
+    announce_member(member)
   end
 
   # Generates demo data where the installation allows it (Seeders::Seeding); the button is hidden elsewhere, and the
@@ -278,6 +299,56 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   end
 
   private
+
+  # The person of the form, checked against this account (nothing is written)
+  def account_member
+    input = SuperAdmin::AccountMember::Input.from_params(
+      params[:member], mode: 'pick', role: 'agent', access: SuperAdmin::MailState.configured? ? 'invitation' : 'password'
+    )
+    SuperAdmin::AccountMember.new(input, actor: current_super_admin, request: request).prepare(account: requested_resource)
+  end
+
+  # The user (when new) and the membership in one transaction, with an entry in the audit log of the account. A problem
+  # the checks could not foresee (the same e-mail taken a moment ago) is shown on the form like the others.
+  def save_member(member)
+    Audited.audit_class.as_user(current_super_admin) do
+      ApplicationRecord.transaction do
+        member.add_to(requested_resource)
+        record_super_admin_audit('add_user', member.audit_changes)
+      end
+    end
+  rescue StandardError => e
+    Rails.logger.warn("[SuperAdmin] User was not added to account #{requested_resource.id}: #{e.class.name}: #{e.message}")
+    member.errors[:base] = I18n.t('super_admin.onboarding.member.errors.failed')
+  end
+
+  def render_member_errors(member)
+    @add_user = member
+    response.headers['Cache-Control'] = 'no-store'
+    flash.now[:alert] = I18n.t('super_admin.onboarding.member.errors_title')
+    render :show, locals: { page: Administrate::Page::Show.new(dashboard, requested_resource) }, status: :unprocessable_content
+  end
+
+  # «Иван добавлен в аккаунт: оператор.» A password the super admin set is shown on the card itself, once (this response is
+  # not a redirect, so nothing keeps it); every other way goes back to the card.
+  def announce_member(member)
+    text = member_notice(member)
+    return redirect_to_account(notice: text) if member.one_time_password.blank?
+
+    @added_member = member
+    response.headers['Cache-Control'] = 'no-store'
+    flash.now[:notice] = text
+    render :show, locals: { page: Administrate::Page::Show.new(dashboard, requested_resource) }
+  end
+
+  def member_notice(member)
+    key = if member.access == :existing then :existing
+          elsif member.access == :password then :password
+          else member.delivery == :queued ? :invited : :invite_failed
+          end
+    I18n.t("super_admin.onboarding.member.added.#{key}", name: member.user.name, email: member.user.email,
+                                                         role: I18n.t("super_admin.account_users.roles.#{member.membership.role}").downcase)
+  end
 
   # The accounts of the list the export button was pressed on
   def export_scope

@@ -1,0 +1,193 @@
+<%#
+# Новый клиент
+
+One page for everything a new client needs, in the order a person thinks of it: the account (name, language, time zone), its
+organization (none, one from the list, or a new one), its plan (the base and the modules, an optional trial; the limits come from
+the plan and are not asked) and its first administrator (an invitation by e-mail or a password you set). One button creates it all
+(SuperAdmin::ClientOnboarding); a form with a problem comes back with everything typed and the problems under their fields.
+
+## Local variables (controller instance variables):
+
+- `@form`: the `SuperAdmin::ClientOnboarding::Form` (what the fields hold).
+- `@errors`: the problems of the last attempt, field => text (empty for a new form).
+- `@conflict`: the user whose e-mail was typed, when somebody has it already (it offers to add that user).
+%>
+<%
+  form = @form
+  errors = @errors
+  administrator = form.admin
+  organizations = SuperAdmin::OrganizationOptions.for_select
+  chosen_modules = Accounts::Plans.module_keys & form.modules
+  trial_modules = Accounts::Plans.trial_modules.map { |key| Accounts::Plans.module_name(key) }.join(', ')
+  adopt_offered = @conflict.present? || administrator.adopt
+%>
+<% content_for(:title) { t('super_admin.onboarding.page.title') } %>
+
+<%= render layout: 'super_admin/shared/page_header', locals: { title: content_for(:title), description: t('super_admin.onboarding.page.description') } do %>
+  <%= link_to(super_admin_accounts_path, class: 'button button--secondary') do %>
+    <span class="i-lucide-arrow-left size-4" aria-hidden="true"></span>
+    <%= t('super_admin.onboarding.page.back') %>
+  <% end %>
+<% end %>
+
+<section class="main-content__body">
+  <%= form_with url: super_admin_clients_path, method: :post, local: true, class: 'form flex max-w-3xl flex-col gap-5', data: { testid: 'client-form' } do %>
+    <% if errors.any? %>
+      <div id="error_explanation" role="alert" class="rounded-xl bg-n-ruby-2 px-4 py-3 text-sm text-n-ruby-11 outline outline-1 -outline-offset-1 outline-n-ruby-4" data-testid="client-errors">
+        <p class="m-0 font-medium"><%= t('super_admin.onboarding.page.errors_title') %></p>
+        <% if errors[:base].present? %>
+          <p class="m-0 mt-1"><%= errors[:base] %></p>
+        <% end %>
+      </div>
+    <% end %>
+
+    <%# 1. The account %>
+    <section class="admin-block" aria-labelledby="client-account-title" data-testid="client-account-block">
+      <div class="admin-block__head">
+        <h2 class="admin-block__title" id="client-account-title"><%= t('super_admin.onboarding.account.title') %></h2>
+        <p class="admin-block__hint"><%= t('super_admin.onboarding.account.hint') %></p>
+      </div>
+
+      <div class="field-unit field-unit--required mb-0">
+        <%= super_admin_with_error(errors, :account_name) do %>
+          <div class="field-unit__label"><%= label_tag 'account_name', t('super_admin.onboarding.account.name') %></div>
+          <div class="field-unit__field"><%= text_field_tag 'account[name]', form.account_name, id: 'account_name', maxlength: SuperAdmin::ClientOnboarding::NAME_LENGTH %></div>
+        <% end %>
+        <%= super_admin_field_error(errors, :account_name) %>
+        <div class="field-unit__hint"><%= t('super_admin.onboarding.account.name_hint') %></div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="field-unit mb-0">
+          <div class="field-unit__label"><span class="font-medium" data-testid="account-language"><%= t('super_admin.onboarding.account.language') %></span></div>
+          <div class="field-unit__hint"><%= t('super_admin.onboarding.account.language_hint') %></div>
+        </div>
+
+        <div class="field-unit mb-0">
+          <%= super_admin_with_error(errors, :timezone) do %>
+            <div class="field-unit__label"><%= label_tag 'account_timezone', t('super_admin.onboarding.account.timezone') %></div>
+            <div class="field-unit__field"><%= select_tag 'account[timezone]', options_for_select(SuperAdmin::AccountTimezones.options, form.timezone), id: 'account_timezone' %></div>
+          <% end %>
+          <%= super_admin_field_error(errors, :timezone) %>
+          <div class="field-unit__hint"><%= t('super_admin.onboarding.account.timezone_hint') %></div>
+        </div>
+      </div>
+    </section>
+
+    <%# 2. The organization %>
+    <section class="admin-block" aria-labelledby="client-organization-title" data-testid="client-organization-block">
+      <div class="admin-block__head">
+        <h2 class="admin-block__title" id="client-organization-title"><%= t('super_admin.onboarding.organization.title') %></h2>
+        <p class="admin-block__hint"><%= t('super_admin.onboarding.organization.hint') %></p>
+      </div>
+
+      <div class="flex flex-col gap-3" data-choice-group>
+        <%= render layout: 'super_admin/shared/choice',
+                   locals: { name: 'organization[mode]', value: 'none', checked: form.organization_mode == 'none',
+                             title: t('super_admin.onboarding.organization.none.title'), hint: t('super_admin.onboarding.organization.none.hint') } do %><% end %>
+
+        <%= render layout: 'super_admin/shared/choice',
+                   locals: { name: 'organization[mode]', value: 'existing', checked: form.organization_mode == 'existing', disabled: organizations.empty?,
+                             title: t('super_admin.onboarding.organization.existing.title'),
+                             hint: organizations.empty? ? t('super_admin.onboarding.organization.existing.hint_empty') : t('super_admin.onboarding.organization.existing.hint') } do %>
+          <div class="field-unit mb-0">
+            <%= super_admin_with_error(errors, :organization_id) do %>
+              <div class="field-unit__label"><%= label_tag 'organization_id', t('super_admin.onboarding.organization.existing.label') %></div>
+              <div class="field-unit__field">
+                <%= select_tag 'organization[id]', options_for_select([[t('super_admin.onboarding.organization.existing.prompt'), '']] + organizations, form.organization_id), id: 'organization_id' %>
+              </div>
+            <% end %>
+            <%= super_admin_field_error(errors, :organization_id) %>
+          </div>
+        <% end %>
+
+        <%= render layout: 'super_admin/shared/choice',
+                   locals: { name: 'organization[mode]', value: 'new', checked: form.organization_mode == 'new',
+                             title: t('super_admin.onboarding.organization.new.title'), hint: t('super_admin.onboarding.organization.new.hint') } do %>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="field-unit field-unit--required mb-0">
+              <%= super_admin_with_error(errors, :organization_name) do %>
+                <div class="field-unit__label"><%= label_tag 'organization_name', t('super_admin.onboarding.organization.new.name') %></div>
+                <div class="field-unit__field"><%= text_field_tag 'organization[name]', form.organization_name, id: 'organization_name', maxlength: SuperAdmin::ClientOnboarding::NAME_LENGTH %></div>
+              <% end %>
+              <%= super_admin_field_error(errors, :organization_name) %>
+            </div>
+            <div class="field-unit mb-0">
+              <%= super_admin_with_error(errors, :organization_bin) do %>
+                <div class="field-unit__label"><%= label_tag 'organization_bin', t('super_admin.onboarding.organization.new.bin') %></div>
+                <div class="field-unit__field"><%= text_field_tag 'organization[bin]', form.organization_bin, id: 'organization_bin', inputmode: 'numeric', maxlength: 14, autocomplete: 'off' %></div>
+              <% end %>
+              <%= super_admin_field_error(errors, :organization_bin) %>
+              <div class="field-unit__hint"><%= t('super_admin.onboarding.organization.new.bin_hint') %></div>
+            </div>
+          </div>
+        <% end %>
+      </div>
+      <%= super_admin_field_error(errors, :organization_mode) %>
+    </section>
+
+    <%# 3. The plan and the trial %>
+    <section class="admin-block" aria-labelledby="client-plan-title" data-testid="new-plan-block">
+      <div class="admin-block__head">
+        <h2 class="admin-block__title" id="client-plan-title"><%= t('super_admin.onboarding.plan.title') %></h2>
+        <p class="admin-block__hint"><%= t('super_admin.onboarding.plan.hint') %></p>
+      </div>
+      <%= render 'super_admin/accounts/plan_cards', chosen: chosen_modules %>
+      <%= super_admin_field_error(errors, :modules) %>
+      <p class="admin-block__note m-0" data-testid="limits-note"><%= t('super_admin.onboarding.plan.limits_note') %></p>
+
+      <div class="flex flex-col gap-2 border-t border-n-weak pt-4" data-testid="new-trial-block">
+        <label class="flex cursor-pointer items-center gap-2.5" for="start-trial">
+          <%= check_box_tag 'start_trial', '1', form.start_trial, id: 'start-trial' %>
+          <span class="text-n-slate-12"><%= t('super_admin.clinic_card.new.start_trial', days: Accounts::Plans.trial_days) %></span>
+        </label>
+        <p class="admin-block__note m-0"><%= t('super_admin.clinic_card.new.trial_hint', days: Accounts::Plans.trial_days, modules: trial_modules) %></p>
+      </div>
+    </section>
+
+    <%# 4. The first administrator %>
+    <section class="admin-block" aria-labelledby="client-admin-title" data-testid="client-admin-block">
+      <div class="admin-block__head">
+        <h2 class="admin-block__title" id="client-admin-title"><%= t('super_admin.onboarding.admin.title') %></h2>
+        <p class="admin-block__hint"><%= t('super_admin.onboarding.admin.hint') %></p>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="field-unit field-unit--required mb-0">
+          <%= super_admin_with_error(errors, :admin_name) do %>
+            <div class="field-unit__label"><%= label_tag 'admin_name', t('super_admin.onboarding.admin.name') %></div>
+            <div class="field-unit__field"><%= text_field_tag 'admin[name]', administrator.name, id: 'admin_name', maxlength: SuperAdmin::AccountMember::NAME_LENGTH, autocomplete: 'off' %></div>
+          <% end %>
+          <%= super_admin_field_error(errors, :admin_name) %>
+        </div>
+        <div class="field-unit field-unit--required mb-0">
+          <%= super_admin_with_error(errors, :admin_email) do %>
+            <div class="field-unit__label"><%= label_tag 'admin_email', t('super_admin.onboarding.admin.email') %></div>
+            <div class="field-unit__field"><%= email_field_tag 'admin[email]', administrator.email, id: 'admin_email', autocomplete: 'off', spellcheck: 'false' %></div>
+          <% end %>
+          <%= super_admin_field_error(errors, :admin_email) %>
+          <div class="field-unit__hint"><%= t('super_admin.onboarding.admin.email_hint') %></div>
+        </div>
+      </div>
+
+      <%# Somebody has this e-mail already: they are added only when the super admin says so; nothing about them changes. %>
+      <% if adopt_offered %>
+        <label class="flex cursor-pointer items-start gap-2.5 rounded-xl bg-n-amber-2 px-4 py-3 text-n-amber-11 outline outline-1 -outline-offset-1 outline-n-amber-4" for="admin_adopt" data-testid="adopt-existing">
+          <%= check_box_tag 'admin[adopt]', '1', administrator.adopt, id: 'admin_adopt', class: 'mt-0.5' %>
+          <span class="flex flex-col gap-0.5">
+            <span class="font-medium"><%= t('super_admin.onboarding.admin.adopt.label') %></span>
+            <span class="text-[13px]"><%= t('super_admin.onboarding.admin.adopt.hint') %></span>
+          </span>
+        </label>
+      <% end %>
+
+      <%= render 'super_admin/shared/access_choice', scope: 'admin', access: administrator.access, password: administrator.password.to_s,
+                                                     access_error: errors[:admin_access], password_error: errors[:admin_password] %>
+    </section>
+
+    <div class="form-actions flex flex-wrap items-center gap-3">
+      <%= submit_tag t('super_admin.onboarding.page.submit'), name: nil, class: 'button' %>
+      <%= link_to t('super_admin.onboarding.page.cancel'), super_admin_accounts_path, class: 'button button--secondary' %>
+    </div>
+  <% end %>
+</section>

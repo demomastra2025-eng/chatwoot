@@ -1,0 +1,122 @@
+<%#
+# «Добавить пользователя» in the «Пользователи» block of the account card
+
+A collapsed form (open when the last attempt had a problem). The person is one of two: somebody who is on the platform already, picked
+from the list (their password and data do not change), or a new person (name and e-mail, then an invitation by e-mail or a password you
+set; the same choice as on «Новый клиент»). The role is chosen from a list, an operator by default. The form posts to `add_user`
+(SuperAdmin::AccountMember); a form with a problem comes back with everything typed and the problems under their fields.
+
+## Local variables:
+
+- `account`: the account (Account).
+- `member`: the `SuperAdmin::AccountMember` of the last attempt, nil when the form was not sent.
+%>
+<%
+  input = member ? member.input : SuperAdmin::AccountMember::Input.new(
+    mode: 'pick', role: 'agent', adopt: false, access: SuperAdmin::MailState.configured? ? 'invitation' : 'password'
+  )
+  errors = member ? member.errors : {}
+  picked = member&.user
+  adopt_offered = member&.conflict.present? || input.adopt
+  roles = AccountUser.roles.keys.map { |role| [t("super_admin.account_users.roles.#{role}"), role] }
+%>
+
+<details class="border-t border-n-weak" id="add-user" data-testid="add-user" <%= 'open' if errors.any? %>>
+  <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-3 text-n-slate-12">
+    <span class="font-medium"><%= t('super_admin.onboarding.member.title') %></span>
+    <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
+  </summary>
+
+  <div class="px-5 pb-5 pt-1">
+    <%= form_with url: add_user_super_admin_account_path(account), method: :post, local: true, class: 'form flex flex-col gap-4' do %>
+      <% if errors.any? %>
+        <div role="alert" class="rounded-xl bg-n-ruby-2 px-4 py-3 text-sm text-n-ruby-11 outline outline-1 -outline-offset-1 outline-n-ruby-4" data-testid="add-user-errors">
+          <p class="m-0 font-medium"><%= t('super_admin.onboarding.member.errors_title') %></p>
+          <% if errors[:base].present? %>
+            <p class="m-0 mt-1"><%= errors[:base] %></p>
+          <% end %>
+        </div>
+      <% end %>
+
+      <p class="admin-block__hint m-0"><%= t('super_admin.onboarding.member.hint') %></p>
+
+      <div class="flex flex-col gap-3" data-choice-group>
+        <%= render layout: 'super_admin/shared/choice',
+                   locals: { name: 'member[mode]', value: 'pick', checked: input.mode == 'pick',
+                             title: t('super_admin.onboarding.member.mode.pick.title'), hint: t('super_admin.onboarding.member.mode.pick.hint') } do %>
+          <div class="field-unit field-unit--belongs-to-search mb-0">
+            <%= super_admin_with_error(errors, :user) do %>
+              <div class="field-unit__label"><%= label_tag 'member_user_id', t('super_admin.onboarding.member.pick.label') %></div>
+              <div class="field-unit__field">
+                <%# The search of the user field of Administrate (selectize, belongs_to_search.js): it asks the list of users as the user types. %>
+                <%= select_tag 'member[user_id]', options_for_select(picked ? [[UserDashboard.new.display_resource(picked), picked.id]] : [], picked&.id),
+                               id: 'member_user_id', data: { url: super_admin_users_path(format: :json) } %>
+              </div>
+            <% end %>
+            <%= super_admin_field_error(errors, :user) %>
+            <div class="field-unit__hint"><%= t('super_admin.onboarding.member.pick.hint') %></div>
+          </div>
+        <% end %>
+
+        <%= render layout: 'super_admin/shared/choice',
+                   locals: { name: 'member[mode]', value: 'create', checked: input.mode == 'create',
+                             title: t('super_admin.onboarding.member.mode.create.title'), hint: t('super_admin.onboarding.member.mode.create.hint') } do %>
+          <div class="flex flex-col gap-4">
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div class="field-unit field-unit--required mb-0">
+                <%= super_admin_with_error(errors, :name) do %>
+                  <div class="field-unit__label"><%= label_tag 'member_name', t('super_admin.onboarding.member.name') %></div>
+                  <div class="field-unit__field"><%= text_field_tag 'member[name]', input.name, id: 'member_name', maxlength: SuperAdmin::AccountMember::NAME_LENGTH, autocomplete: 'off' %></div>
+                <% end %>
+                <%= super_admin_field_error(errors, :name) %>
+              </div>
+              <div class="field-unit field-unit--required mb-0">
+                <%= super_admin_with_error(errors, :email) do %>
+                  <div class="field-unit__label"><%= label_tag 'member_email', t('super_admin.onboarding.member.email') %></div>
+                  <div class="field-unit__field"><%= email_field_tag 'member[email]', input.email, id: 'member_email', autocomplete: 'off', spellcheck: 'false' %></div>
+                <% end %>
+                <%= super_admin_field_error(errors, :email) %>
+              </div>
+            </div>
+
+            <% if adopt_offered %>
+              <label class="flex cursor-pointer items-start gap-2.5 rounded-xl bg-n-amber-2 px-4 py-3 text-n-amber-11 outline outline-1 -outline-offset-1 outline-n-amber-4" for="member_adopt" data-testid="adopt-existing">
+                <%= check_box_tag 'member[adopt]', '1', input.adopt, id: 'member_adopt', class: 'mt-0.5' %>
+                <span class="flex flex-col gap-0.5">
+                  <span class="font-medium"><%= t('super_admin.onboarding.member.adopt.label') %></span>
+                  <span class="text-[13px]"><%= t('super_admin.onboarding.admin.adopt.hint') %></span>
+                </span>
+              </label>
+            <% end %>
+
+            <%= render 'super_admin/shared/access_choice', scope: 'member', access: input.access.to_s, password: input.password.to_s,
+                                                           access_error: errors[:access], password_error: errors[:password] %>
+          </div>
+        <% end %>
+      </div>
+
+      <div class="field-unit mb-0 sm:max-w-xs">
+        <%= super_admin_with_error(errors, :role) do %>
+          <div class="field-unit__label"><%= label_tag 'member_role', t('super_admin.onboarding.member.role.label') %></div>
+          <div class="field-unit__field"><%= select_tag 'member[role]', options_for_select(roles, input.role), id: 'member_role' %></div>
+        <% end %>
+        <%= super_admin_field_error(errors, :role) %>
+        <div class="field-unit__hint"><%= t('super_admin.onboarding.member.role.hint') %></div>
+      </div>
+
+      <div class="form-actions">
+        <%= submit_tag t('super_admin.onboarding.member.submit'), name: nil, class: 'button' %>
+      </div>
+    <% end %>
+  </div>
+</details>
+
+<%# A form that came back with a problem is far down the page: bring it into view. %>
+<% if errors.any? %>
+  <script>
+    (function () {
+      var block = document.getElementById('add-user');
+      if (block && block.scrollIntoView) block.scrollIntoView({ block: 'center' });
+    })();
+  </script>
+<% end %>

@@ -1,7 +1,7 @@
 // Building blocks of the clinic list and the clinic card, drawn with the same
 // `n-*` tokens as the rest of the super admin (so one rule serves both themes):
-// blocks, badges, usage meters, switches, collapsible blocks, plan cards and
-// key/value lists.
+// blocks, badges, usage meters, switches, collapsible blocks, plan cards, choice
+// cards, password rules and key/value lists.
 //
 // They live in `@layer base` for the same reason as `_admin.scss`: a utility
 // class in a view still wins over them. Tailwind keeps them only for class
@@ -204,6 +204,66 @@
 
   .admin-plan-card--base:has(.admin-switch__input:checked) {
     @apply outline-1 outline-n-iris-4;
+  }
+
+  // ----------------------------------------------------------- choice card
+  // A card of a group of radio buttons (`shared/_choice`): the radio, a title and a one-line hint. What the choice asks for
+  // (a select, two fields, a password) sits under them in `.admin-choice__body`, shown while the card is the chosen one
+  // (the body has no `display` of its own, so the `hidden` attribute the script sets still hides it). The chosen card has
+  // the same blue outline as a selected plan card; the card of a choice that cannot be made is dimmed.
+  .admin-choice {
+    @apply min-w-0 rounded-xl bg-n-solid-1 outline outline-1 -outline-offset-1 outline-n-weak;
+  }
+
+  .admin-choice:hover {
+    @apply outline-n-strong;
+  }
+
+  .admin-choice:has(> .admin-choice__head input:checked) {
+    @apply outline-2 outline-n-blue-9;
+  }
+
+  .admin-choice--disabled {
+    @apply opacity-70;
+  }
+
+  // The head is a <label>, which the shell draws in medium weight: the hint is regular
+  .admin-choice__head {
+    @apply flex cursor-pointer items-start gap-3 p-4 font-normal;
+  }
+
+  .admin-choice--disabled .admin-choice__head {
+    @apply cursor-not-allowed;
+  }
+
+  .admin-choice__head input {
+    @apply mt-0.5;
+  }
+
+  .admin-choice__text {
+    @apply flex min-w-0 flex-col gap-0.5;
+  }
+
+  .admin-choice__title {
+    @apply font-medium text-n-slate-12;
+  }
+
+  .admin-choice__hint {
+    @apply text-[13px] text-n-slate-11;
+  }
+
+  .admin-choice__body {
+    @apply border-t border-n-weak p-4;
+  }
+
+  // ------------------------------------------------------- password rules
+  // A rule of the password under its field: a circle while it is not followed, a tick (teal) once it is.
+  .admin-rule {
+    @apply flex items-center gap-1.5 text-n-slate-11;
+  }
+
+  .admin-rule[data-state="ok"] {
+    @apply text-n-teal-11;
   }
 
   // ---------------------------------------------------- key / value lists

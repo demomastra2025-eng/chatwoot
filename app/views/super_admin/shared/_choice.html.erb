@@ -1,0 +1,32 @@
+<%#
+# One choice of a group of radio buttons, with what it asks for under it
+
+A card with a radio button, a title and a one-line hint. What the choice needs (a select, two fields, a password) goes in the block (an
+empty block when it needs nothing) and is shown only while the choice is the chosen one: the script of the shell switches the
+bodies when a radio button changes, for the cards that sit in a container with `data-choice-group`. A disabled choice cannot be
+chosen (and says why in its hint).
+
+## Local variables:
+
+- `name`: the name of the radio buttons (`organization[mode]`).
+- `value`: what this choice sends.
+- `checked`: whether it is the chosen one.
+- `title`, `hint`: the text of the card.
+- `disabled` (optional): the choice cannot be chosen.
+%>
+<% disabled = local_assigns.fetch(:disabled, false) %>
+<% body = yield %>
+<div class="admin-choice<%= ' admin-choice--disabled' if disabled %>" data-choice="<%= value %>">
+  <label class="admin-choice__head">
+    <%= radio_button_tag name, value, checked, disabled: disabled %>
+    <span class="admin-choice__text">
+      <span class="admin-choice__title"><%= title %></span>
+      <span class="admin-choice__hint"><%= hint %></span>
+    </span>
+  </label>
+  <% if body.present? %>
+    <div class="admin-choice__body" data-choice-body <%= 'hidden' unless checked %>>
+      <%= body %>
+    </div>
+  <% end %>
+</div>
