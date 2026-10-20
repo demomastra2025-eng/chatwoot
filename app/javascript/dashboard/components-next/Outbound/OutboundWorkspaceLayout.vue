@@ -4,6 +4,10 @@ defineProps({
     type: String,
     default: '',
   },
+  description: {
+    type: String,
+    default: '',
+  },
 });
 </script>
 
@@ -22,14 +26,25 @@ defineProps({
           >
             {{ title }}
           </h1>
-          <slot name="header-meta" />
+          <div
+            v-if="$slots.meta || $slots['header-meta']"
+            class="inline-flex items-center gap-1.5 rounded-full bg-n-alpha-2 px-2.5 py-0.5 text-xs font-medium text-n-slate-11"
+          >
+            <slot name="meta" />
+            <slot name="header-meta" />
+          </div>
         </div>
         <div
-          v-if="$slots['header-actions']"
+          v-if="$slots.actions || $slots['header-actions']"
           class="flex items-center gap-2 shrink-0"
         >
+          <slot name="actions" />
           <slot name="header-actions" />
         </div>
+      </div>
+
+      <div v-if="$slots.tabs" class="mt-3">
+        <slot name="tabs" />
       </div>
     </header>
 
