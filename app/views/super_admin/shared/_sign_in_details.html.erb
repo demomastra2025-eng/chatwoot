@@ -24,7 +24,7 @@ is the one shown ONCE: this partial is drawn only in the answer to the request t
     <div class="flex flex-col gap-1" data-sign-in="<%= kind %>">
       <label for="<%= field_id %>" class="text-xs text-n-slate-11"><%= label %></label>
       <div class="flex flex-wrap items-center gap-2">
-        <input type="text" readonly value="<%= value %>" id="<%= field_id %>" class="min-w-[10rem] flex-1 font-mono" autocomplete="off" spellcheck="false" onclick="this.select()">
+        <input type="text" readonly value="<%= value %>" id="<%= field_id %>" class="min-w-[15rem] flex-1 font-mono" autocomplete="off" spellcheck="false" onclick="this.select()">
         <button type="button" class="button button--small button--secondary" data-password-copy data-copy-from="<%= field_id %>"
                 data-copied="<%= t('super_admin.onboarding.password.copied') %>" hidden><%= t('super_admin.onboarding.password.copy') %></button>
       </div>
