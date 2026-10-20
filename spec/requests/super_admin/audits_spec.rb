@@ -53,6 +53,30 @@ RSpec.describe 'Super Admin Audits', type: :request do
         expect(response.body).not_to include('translation missing')
       end
 
+      it 'shows the limits a plan wrote in words, never as the number that stands for no limit, and keeps what is stored', :aggregate_failures do
+        limits = { 'conversations' => { 'from' => nil, 'to' => ChatwootApp.max_limit }, 'agents' => { 'from' => 0, 'to' => 5 },
+                   'storage_bytes' => { 'from' => 1.gigabyte, 'to' => ChatwootApp.max_limit * 1.gigabyte } }
+        audit = Audited::Audit.create!(auditable: account, associated: account, action: 'apply_plan', audited_changes: { 'limits' => limits },
+                                       comment: 'super_admin')
+
+        get '/super_admin/audits'
+        details = Nokogiri::HTML(response.body).css('pre').map(&:text).join
+
+        expect(details).to include('"to": "Без ограничений"', '"from": "не задан"', '"to": "5"', '"from": "1 ГБ"')
+        expect(details).not_to include(ChatwootApp.max_limit.to_s)
+        expect(audit.reload.audited_changes['limits']['conversations']['to']).to eq(ChatwootApp.max_limit)
+      end
+
+      it 'shows the words of a change of the limits as they were written' do
+        Audited::Audit.create!(auditable: account, associated: account, action: 'update_limits', comment: 'super_admin',
+                               audited_changes: { 'limits' => { 'agents' => { 'label' => 'Операторы', 'from' => 'как в тарифе (без ограничений)',
+                                                                              'to' => 'своё число (5 операторов)' } } })
+
+        get '/super_admin/audits'
+
+        expect(Nokogiri::HTML(response.body).css('pre').map(&:text).join).to include('своё число (5 операторов)')
+      end
+
       it 'keeps the chosen filters in the form' do
         Audited::Audit.create!(auditable: account, associated: account, action: 'apply_plan', audited_changes: {}, comment: 'super_admin')
         get '/super_admin/audits', params: { auditable_type: 'Account', audit_action: 'update', account_id: account.id }

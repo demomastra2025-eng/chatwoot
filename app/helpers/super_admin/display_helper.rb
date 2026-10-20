@@ -122,9 +122,25 @@ module SuperAdmin::DisplayHelper
   def super_admin_limit_value(key, value, given_back: false)
     return I18n.t('super_admin.clinic_card.preview.general_value') if value.nil? && given_back
     return I18n.t('super_admin.clinic_card.preview.not_set') if value.nil?
-    return I18n.t('super_admin.limits.unlimited') if value.to_i == ChatwootApp.max_limit.to_i
+    return I18n.t('super_admin.limits.unlimited') if Accounts::Plans.unlimited_value?(key, value)
 
     key.to_s == 'storage_bytes' ? super_admin_bytes(value) : super_admin_number(value)
+  end
+
+  # The changes of an entry of the audit log as the page shows them. The limits a plan wrote are shown in words, not as the number
+  # that stands for no limit (100 000 operators): { 'limits' => { 'conversations' => { 'from' => 'не задан', 'to' => 'Без ограничений' } } }.
+  # What is stored is not touched.
+  def super_admin_audit_changes(audit)
+    changes = audit.audited_changes
+    return changes unless audit.action == 'apply_plan' && changes.is_a?(Hash) && changes['limits'].is_a?(Hash)
+
+    readable = changes['limits'].to_h do |key, change|
+      next [key, change] unless change.is_a?(Hash) && Accounts::Plans::LIMIT_KEYS.include?(key)
+
+      given_back = !change['from'].nil?
+      [key, { 'from' => super_admin_limit_value(key, change['from']), 'to' => super_admin_limit_value(key, change['to'], given_back: given_back) }]
+    end
+    changes.merge('limits' => readable)
   end
 
   # "2 минуты"

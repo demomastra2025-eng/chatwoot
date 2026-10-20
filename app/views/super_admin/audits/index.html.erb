@@ -16,7 +16,7 @@ are Astana time.
 <%
   total = @audits.respond_to?(:total_count) ? @audits.total_count : @audits.size
   actions = %w[create update destroy impersonate start_trial extend_trial expire_trial apply_plan update_channel_override
-               update_channel_visibility update_service_flags remove_user cleanup_storage empty_trash link_account unlink_account
+               update_channel_visibility update_service_flags update_limits remove_user cleanup_storage empty_trash link_account unlink_account
                link_organization unlink_organization suspend_account activate_account create_client add_user
                reset_captain_responses_usage reset_captain_tokens_usage reset_email_usage reset_two_factor publish_banner hide_banner
                delete_push_subscriptions delete_avatar] + SuperAdmin::AuditsController::SECURITY_ACTIONS
@@ -109,7 +109,7 @@ are Astana time.
             <td class="min-w-[14rem]">
               <details>
                 <summary class="cursor-pointer text-n-brand hover:underline"><%= t('super_admin.audits.changes_summary', count: (audit.audited_changes || {}).keys.size) %></summary>
-                <pre class="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-n-slate-3 p-2 font-mono text-[11px] text-n-slate-12"><%= JSON.pretty_generate(audit.audited_changes) rescue audit.audited_changes.inspect %></pre>
+                <pre class="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-n-slate-3 p-2 font-mono text-[11px] text-n-slate-12"><%= JSON.pretty_generate(super_admin_audit_changes(audit)) rescue audit.audited_changes.inspect %></pre>
               </details>
             </td>
           </tr>

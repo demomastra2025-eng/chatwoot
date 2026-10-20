@@ -1,7 +1,7 @@
 # rubocop:disable Metrics/ClassLength
 class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
-  STORAGE_GB_IN_BYTES = 1.gigabyte
   OWNER_DECISION_AUDIT_ACTION = 'update_service_flags'.freeze
+  LIMITS_AUDIT_ACTION = 'update_limits'.freeze
   EXPORT_AUDIT_ACTION = 'export_accounts'.freeze
   # What a malformed value (an array or a string where the form sends a map) is parsed as
   MALFORMED = Object.new.freeze
@@ -9,6 +9,8 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   # A request that switches a function the screens never offer (a function no plan enables, one that must stay on, a
   # platform-internal one) is refused with nothing saved; see SuperAdmin::FeatureChangeGuard.
   before_action :reject_forbidden_feature_changes, only: %i[create update]
+  # A limit chosen as «Своё число» without a number, or with one that is no number, is sent back to the form with nothing saved.
+  before_action :reject_invalid_limits, only: %i[create update]
 
   # Overwrite any of the RESTful controller actions to implement custom behavior
   # For example, you may want to send an email after a foo is updated.
@@ -50,8 +52,8 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     # generic save: it would leave an unsigned «update» entry in the audit log next to the signed one.
     permitted_params.delete(:organization_id)
     drop_stale_form_sections!(permitted_params)
-    # A request without `limits` (the «Тонкая настройка» switches of the card) must not wipe the limits of the clinic.
-    permitted_params[:limits] = normalize_limits(permitted_params[:limits]) if permitted_params.key?(:limits)
+    # A request without limits (the «Тонкая настройка» switches of the card) must not wipe the limits of the clinic.
+    merge_limit_choices!(permitted_params)
     merge_selected_feature_flags!(permitted_params)
     merge_limit_counter_user_exclusions!(permitted_params)
     permitted_params
@@ -93,6 +95,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     return unless response.redirect?
 
     record_owner_decision_audit(owner_changes) if owner_changes.any?
+    record_limits_audit
     save_submitted_organization(organization, expected)
     announce_stale_form_sections
   end
@@ -419,7 +422,9 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
 
   def export_limit_gb(account)
     storage_bytes = account.limits&.[]('storage_bytes')
-    storage_bytes.present? ? (storage_bytes.to_f / 1.gigabyte).round(1) : I18n.t('super_admin.accounts.csv.unlimited')
+    return I18n.t('super_admin.accounts.csv.unlimited') if storage_bytes.blank? || Accounts::Plans.unlimited_value?('storage_bytes', storage_bytes)
+
+    (storage_bytes.to_f / 1.gigabyte).round(1)
   end
 
   # The breakdown is cached and refreshed hourly for every account, so the export does not have to scan the disk and run
@@ -538,8 +543,9 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   def drop_stale_form_sections!(permitted_params)
     permitted_params.delete(:name) if stale_form_sections.include?('main')
     permitted_params.delete(:locale) if stale_form_sections.include?('main')
-    permitted_params.delete(:limits) if stale_form_sections.include?('limits')
-    permitted_params.delete(:limit_counter_excluded_user_ids_raw) if stale_form_sections.include?('limits')
+    return unless stale_form_sections.include?('limits')
+
+    %i[limits limit_choices limit_values limit_counter_excluded_user_ids_raw].each { |name| permitted_params.delete(name) }
   end
 
   def announce_stale_form_sections
@@ -683,24 +689,48 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     I18n.t("super_admin.accounts.controller.#{key}", default: super)
   end
 
-  def normalize_limits(raw_limits)
-    raw_limits.to_h.each_with_object({}) do |(key, value), normalized|
-      next if value.blank?
+  # The limits of the form (SuperAdmin::LimitForm): each is «как в тарифе», «без ограничений» or a number of its own. They become the
+  # numbers of Account#limits and the list of the limits chosen by hand (Accounts::LimitSettings) in one save; the words of the
+  # change are kept for the audit log.
+  def limit_form
+    @limit_form ||= SuperAdmin::LimitForm.from_params(params[:account])
+  end
 
-      normalized[key] = normalize_limit_value(key, value)
-    rescue ArgumentError, TypeError
-      normalized[key] = value
+  def merge_limit_choices!(permitted_params)
+    %i[limits limit_choices limit_values].each { |name| permitted_params.delete(name) }
+    return unless limit_form.submitted? && limit_form.valid? && stale_form_sections.exclude?('limits')
+
+    @limit_result = Accounts::LimitSettings.new(limit_account).apply(limit_form.choices)
+    @limit_attributes = limit_account.custom_attributes.to_h.deep_dup.merge(Accounts::LimitSettings::KEY => @limit_result.marks)
+    permitted_params[:limits] = @limit_result.limits
+    permitted_params[:custom_attributes] = @limit_attributes
+  end
+
+  # The account the limits of the request are read against: the one that is saved, or a blank one for a new account
+  def limit_account
+    @limit_account ||= action_name == 'update' ? requested_resource : Account.new
+  end
+
+  # One entry of the audit log with what changed in each limit, in words (from → to)
+  def record_limits_audit
+    return if @limit_result.nil? || @limit_result.changes.empty?
+
+    record_super_admin_audit(LIMITS_AUDIT_ACTION, 'limits' => SuperAdmin::LimitWords.audit_changes(@limit_result.changes))
+    flash[:notice] = [flash[:notice], I18n.t('super_admin.limits.saved', count: @limit_result.changes.size)].compact_blank.join(' ')
+  end
+
+  # Runs before create and update: a problem with the limits sends the form (the page it came from) back, nothing is saved
+  def reject_invalid_limits
+    return if limit_form.valid? || stale_form_sections.include?('limits')
+
+    return render_card_error(limit_form.message) if params[:return_to] == 'card'
+
+    flash.now[:alert] = limit_form.message
+    if action_name == 'create'
+      render :new, locals: { page: Administrate::Page::Form.new(dashboard, new_resource) }, status: :unprocessable_content
+    else
+      render :edit, locals: { page: Administrate::Page::Form.new(dashboard, requested_resource) }, status: :unprocessable_content
     end
-  end
-
-  def normalize_limit_value(key, value)
-    return gb_to_bytes(value) if key.to_s == 'storage_bytes'
-
-    Integer(value, 10)
-  end
-
-  def gb_to_bytes(value)
-    (BigDecimal(value.to_s) * STORAGE_GB_IN_BYTES).round(0).to_i
   end
 
   def merge_limit_counter_user_exclusions!(permitted_params)
@@ -762,7 +792,10 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     end
   end
 
+  # The attributes the list of excluded users goes into: the ones the limits of this request already changed, else those of the
+  # account. (Read from @limit_attributes, not from the params: reading a hash out of them turns it into unpermitted parameters.)
   def limit_counter_exclusion_custom_attributes(permitted_params)
+    return @limit_attributes if @limit_attributes
     return requested_resource.custom_attributes if action_name == 'update'
 
     permitted_params[:custom_attributes]

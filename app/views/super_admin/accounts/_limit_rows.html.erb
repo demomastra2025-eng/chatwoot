@@ -1,0 +1,82 @@
+<%#
+# The limits of an account: one row each, with three choices
+
+For every limit: its name, what is used and a meter, a hint, what applies now in words (the number the code enforces), and three
+choices: «Как в тарифе» (with the number it gives now), «Без ограничений» and «Своё число». The field for the number is shown only
+while «Своё число» is chosen: that is a switch of the radio buttons in the stylesheet, so it works without a script. The storage
+is typed in gigabytes. The rows only draw the fields (`account[limit_choices][key]`, `account[limit_values][key]`); the form around
+them belongs to the page (the card has its own, the edit form of the account is the other).
+
+## Local variables:
+
+- `rows`: a `SuperAdmin::LimitRows`.
+%>
+<div class="admin-limits" data-testid="limit-rows">
+  <% unless rows.plan_assigned? %>
+    <p class="admin-block__note" data-testid="limits-no-plan"><%= t('super_admin.limits.no_plan_note') %></p>
+  <% end %>
+
+  <% rows.rows.each do |row| %>
+    <%
+      id = "limit-#{row.key}"
+      usage = row.usage
+      format_value = ->(number) { row.bytes ? super_admin_bytes(number) : super_admin_number(number) }
+      options = [
+        ['plan', t('super_admin.limits.choices.plan'), t('super_admin.limits.choices.plan_now', value: row.plan_text)],
+        ['unlimited', t('super_admin.limits.choices.unlimited'), nil],
+        ['custom', t('super_admin.limits.choices.custom'), nil]
+      ]
+    %>
+    <div class="admin-limit" data-usage="<%= row.usage_key %>" data-limit="<%= row.key %>" data-choice="<%= row.choice %>"<%= ' data-problem' if row.problem %>>
+      <div class="admin-limit__head">
+        <span class="admin-limit__label" id="<%= id %>-label"><%= row.label %></span>
+        <% if usage %>
+          <span class="admin-limit__usage">
+            <%= format_value.call(usage.consumed) %>
+            <% if usage.unlimited %>
+              <span class="font-normal text-n-slate-11">· <%= t('super_admin.limits.unlimited') %></span>
+            <% else %>
+              <span class="font-normal text-n-slate-11"><%= t('super_admin.limits.of') %> <%= format_value.call(usage.total) %></span>
+            <% end %>
+          </span>
+        <% end %>
+      </div>
+
+      <% if usage&.blocked? %>
+        <span class="admin-badge admin-badge--ruby w-fit"><%= t('super_admin.limits.blocked') %></span>
+      <% elsif usage && !usage.unlimited %>
+        <% fill_class = { good: '', warn: 'admin-meter__fill--warn', bad: 'admin-meter__fill--bad', idle: 'admin-meter__fill--idle' }.fetch(usage.tone) %>
+        <div class="admin-meter" role="img" aria-label="<%= t('super_admin.limits.meter_label', label: row.label, percent: usage.percent) %>">
+          <div class="admin-meter__fill <%= fill_class %>" style="width: <%= [[usage.percent.to_f, 0].max, 100].min %>%"></div>
+        </div>
+      <% end %>
+
+      <span class="admin-limit__hint"><%= row.hint %></span>
+      <span class="admin-limit__now" data-testid="limit-now"><%= row.now %></span>
+      <% if row.drift %>
+        <span class="admin-limit__drift" data-testid="limit-drift"><%= row.drift %></span>
+      <% end %>
+
+      <fieldset class="admin-limit__choices" aria-labelledby="<%= id %>-label">
+        <% options.each do |value, title, detail| %>
+          <label class="admin-limit__option" for="<%= id %>-<%= value %>">
+            <%= radio_button_tag "account[limit_choices][#{row.key}]", value, row.choice == value, id: "#{id}-#{value}" %>
+            <span class="admin-limit__option-text">
+              <span class="admin-limit__option-title"><%= title %></span>
+              <% if detail %><span class="admin-limit__option-sub"><%= detail %></span><% end %>
+            </span>
+          </label>
+        <% end %>
+      </fieldset>
+
+      <div class="admin-limit__value">
+        <label for="account_limit_values_<%= row.key %>">
+          <%= t('super_admin.limits.number_label') %><span class="sr-only"> · <%= row.input_label %></span>
+        </label>
+        <%= number_field_tag "account[limit_values][#{row.key}]", row.input_value, id: "account_limit_values_#{row.key}", min: 0,
+                             step: (row.bytes ? 'any' : 1), class: 'admin-limit__input', placeholder: t('super_admin.limits.number_placeholder') %>
+        <% if row.bytes %><span class="admin-limit__unit"><%= t('super_admin.limits.gigabytes') %></span><% end %>
+      </div>
+    </div>
+  <% end %>
+</div>

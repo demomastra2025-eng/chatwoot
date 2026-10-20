@@ -126,6 +126,28 @@ RSpec.describe 'Super admin account plans', type: :request do
       expect(Account.find(account.id).attributes).to eq(stored)
     end
 
+    it 'names in the card the limits chosen for the account that the plan leaves alone', :aggregate_failures do
+      account.update!(limits: { 'conversations' => 50, 'non_web_inboxes' => 2 })
+      sign_in(super_admin, scope: :super_admin)
+
+      get "/super_admin/accounts/#{account.id}/plan_preview", params: { fragment: 1 }
+
+      fragment = Nokogiri::HTML(response.body)
+      expect(fragment.at_css('[data-testid="preview-kept-limits"]').text.squish)
+        .to eq('Выбранное вручную тариф не меняет: Диалоги за 30 дней, Основные каналы.')
+      expect(fragment.at_css('[data-preview="limits"]')&.text.to_s).not_to include('Диалоги за 30 дней')
+    end
+
+    it 'returns the limits left alone in the JSON too' do
+      account.update!(limits: { 'conversations' => 50 })
+      sign_in(super_admin, scope: :super_admin)
+
+      get "/super_admin/accounts/#{account.id}/plan_preview"
+
+      expect(response.parsed_body).to include('kept_limits' => ['conversations'])
+      expect(response.parsed_body['limits']).not_to include('conversations')
+    end
+
     it 'previews the base alone when no module is given' do
       sign_in(super_admin, scope: :super_admin)
 

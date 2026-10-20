@@ -166,25 +166,27 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
       expect(page.css('select[name="account[status]"]')).to be_empty
     end
 
-    it 'names every limit and explains it' do
-      inputs = page.css('input[name^="account[limits]"]')
+    it 'names every limit, explains it and offers the three choices (see account_limits_spec)' do
+      rows = page.css("[data-testid='limit-rows'] [data-limit]")
       keys = %w[agents inboxes conversations non_web_inboxes storage_bytes captain_responses captain_documents captain_tokens emails]
-      expect(inputs.map { |input| input['name'] }).to eq(keys.map { |key| "account[limits][#{key}]" })
-      labels = inputs.map { |input| text(page.at_css("label[for='#{input['id']}']")) }
-      expect(labels).to eq(
-        ['Операторы', 'Каналы', 'Диалоги за 30 дней', 'Основные каналы', 'Хранилище, ГБ', 'Ответы ИИ', 'Документы ИИ', 'Токены ИИ', 'Письма в день']
+      expect(rows.map { |row| row['data-limit'] }).to eq(keys)
+      expect(rows.map { |row| text(row.at_css('.admin-limit__label')) }).to eq(
+        ['Операторы', 'Каналы', 'Диалоги за 30 дней', 'Основные каналы', 'Хранилище', 'Ответы ИИ', 'Документы ИИ', 'Токены ИИ', 'Письма в день']
       )
-      expect(text(page.at_css('#account_limits_agents').parent)).to include('Сколько пользователей может быть в аккаунте.')
-      expect(response.body).to include('Оставьте поле пустым', 'запрещает действие')
+      expect(text(rows.first.at_css('.admin-limit__hint'))).to eq('Сколько пользователей может быть в аккаунте.')
+      expect(rows.first.css('label.admin-limit__option').map { |option| text(option.at_css('.admin-limit__option-title')) })
+        .to eq(['Как в тарифе', 'Без ограничений', 'Своё число'])
+      expect(page.css('input[name^="account[limits]"]')).to be_empty
     end
 
-    it 'explains that the maximum limit a plan writes means «не ограничено»' do
+    it 'says the number of the no-limit choice in words, never as the number a plan writes' do
       account.update!(limits: { 'conversations' => ChatwootApp.max_limit })
       get "/super_admin/accounts/#{account.id}/edit"
 
-      field = page.at_css('#account_limits_conversations').parent
-      expect(text(field)).to include('означает «не ограничено»')
-      expect(text(page.at_css('#account_limits_agents').parent)).not_to include('означает «не ограничено»')
+      field = page.at_css("[data-limit='conversations']")
+      expect(text(field.at_css('[data-testid="limit-now"]'))).to eq('Сейчас: без ограничений')
+      expect(field.at_css('input[type=radio][checked]')['value']).to eq('plan') # the plan of this account says «без ограничений» too
+      expect(field.to_html).not_to match(/100[  ]?000/)
     end
 
     it 'explains the excluded users in Russian' do
@@ -194,7 +196,7 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
     end
 
     it 'shows the spend with meters and without English' do
-      expect(page.css('.admin-usage-grid [data-usage]').size).to eq(9)
+      expect(page.css("[data-testid='limit-rows'] [data-usage] .admin-limit__usage").size).to eq(9)
       expect(response.body).not_to match(/Unlimited|Usage is read-only|Resettable counters|Leave a field blank|Outbound|Captain responses/)
     end
 
@@ -218,7 +220,10 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
       expect(response).to redirect_to("/super_admin/accounts/#{account.id}")
       account.reload
       expect(account).to have_attributes(name: 'Аккаунт Алатау 2', locale: 'kk', status: 'active')
-      expect(account.limits).to eq('agents' => 12, 'storage_bytes' => 1.5.gigabytes.to_i)
+      # a blank number follows the plan, and the numbers the plan wrote stay (the older form wiped them)
+      expect(account.limits).to eq(
+        'agents' => 12, 'storage_bytes' => 1.5.gigabytes.to_i, 'conversations' => ChatwootApp.max_limit, 'non_web_inboxes' => ChatwootApp.max_limit
+      )
       expect(account.custom_attributes['limit_counter_excluded_user_ids']).to eq([4, 5])
       expect(account.feature_enabled?('sla')).to be(true)
       expect(account.feature_enabled?('crm')).to be(false)

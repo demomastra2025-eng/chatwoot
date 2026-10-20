@@ -56,8 +56,8 @@ class SuperAdmin::AccountUsage
 
     total = summary[:total_count].to_i
     consumed = summary[:consumed].to_i
-    # A plan writes "no limit" as ChatwootApp.max_limit, which the code treats as no limit too
-    unlimited = summary[:unlimited] || (!bytes && total == ChatwootApp.max_limit.to_i) ? true : false
+    # A plan, or the choice «Без ограничений», writes "no limit" as a number the code treats as no limit too (Accounts::Plans.unlimited_value)
+    unlimited = summary[:unlimited] || Accounts::Plans.unlimited_value?(limit_key, total) ? true : false
     percent = percent_of(consumed, total, unlimited)
 
     Row.new(

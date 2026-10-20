@@ -1,10 +1,11 @@
 <%#
 # Limits and spend of a clinic
 
-Every limit with what is used, a meter and a hint (operators, channels,
-conversations, main channels, storage, AI answers, AI documents, AI tokens,
-mail per day); «Не ограничено» when there is no limit, sizes in ГБ/МБ. Below:
-where the storage goes and the buttons that reset the counters that can be reset.
+Every limit (operators, channels, conversations, main channels, storage, AI answers, AI documents, AI tokens, mail per day) as a
+row: what is used with a meter, a hint, what applies now in words and three choices — «Как в тарифе», «Без ограничений», «Своё
+число» (SuperAdmin::LimitRows); sizes in ГБ/МБ. The rows are a form of their own: it saves through the normal update of the clinic,
+leaves an entry in the audit log and does not touch the rest of the clinic. Below: where the storage goes and the buttons that
+reset the counters that can be reset.
 
 ## Local variables:
 
@@ -21,6 +22,8 @@ where the storage goes and the buttons that reset the counters that can be reset
     { key: :tokens, action: :reset_captain_tokens_usage },
     { key: :emails, action: :reset_email_usage }
   ]
+  # What was typed comes back when the save was refused (@limit_form is set by the controller)
+  limit_rows = SuperAdmin::LimitRows.new(account, usage: usage, state: @limit_form&.state, problems: @limit_form&.problems)
 %>
 
 <section class="admin-block" aria-labelledby="usage-title" data-testid="usage-block">
@@ -29,11 +32,15 @@ where the storage goes and the buttons that reset the counters that can be reset
     <p class="admin-block__hint"><%= t('super_admin.clinic_card.usage.hint') %></p>
   </div>
 
-  <div class="admin-usage-grid">
-    <% usage.rows.each do |row| %>
-      <%= render 'super_admin/accounts/usage_row', row: row %>
-    <% end %>
-  </div>
+  <%# The tokens say what the page was drawn from: a limit that somebody changed meanwhile is not overwritten (SuperAdmin::AccountFormState) %>
+  <%= form_with url: super_admin_account_path(account), method: :patch, local: true, id: 'limits-form', class: 'flex flex-col gap-4', data: { testid: 'limits-form' } do %>
+    <%= hidden_field_tag :return_to, 'card', id: nil %>
+    <%= render 'super_admin/accounts/form_state', account: account %>
+    <%= render 'super_admin/accounts/limit_rows', rows: limit_rows %>
+    <div class="admin-block__footer">
+      <%= submit_tag t('super_admin.limits.save'), name: nil %>
+    </div>
+  <% end %>
 
   <p class="admin-block__note"><%= t('super_admin.accounts.storage.informational_notice') %></p>
 

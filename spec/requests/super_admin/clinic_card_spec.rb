@@ -287,7 +287,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       expect(text(fragment.at_css('span.font-medium'))).to eq('Аккаунту будет назначен тариф «База + ИИ-агенты». Что изменится:')
       expect(text(fragment.at_css('[data-preview="enable"]'))).to include('Включится:', 'ИИ-агенты', 'CRM')
       expect(text(fragment.at_css('[data-preview="disable"]'))).to include('Выключится: 1', 'Проверка записи ИИ-агентом')
-      expect(text(fragment.at_css('[data-preview="limits"]'))).to include('Диалоги за 30 дней', 'Не ограничено')
+      expect(text(fragment.at_css('[data-preview="limits"]'))).to include('Диалоги за 30 дней', 'Без ограничений')
     end
 
     it 'writes nothing' do
@@ -485,20 +485,20 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       expect(block('usage-block').css('[data-usage] .admin-meter').size).to eq(9)
     end
 
-    it 'says «Не ограничено» instead of Unlimited when a limit is not set' do
+    it 'says «Без ограничений» instead of Unlimited when a limit is not set' do
       account.update!(limits: {})
       GlobalConfig.clear_cache
 
       open_card
 
-      expect(block('usage-block').text).to include('Не ограничено')
+      expect(block('usage-block').text).to include('Без ограничений')
       expect(response.body).not_to include('Unlimited')
     end
 
     it 'gives every limit a hint' do
       open_card
 
-      hints = block('usage-block').css('[data-usage] .text-xs').map { |hint| text(hint) }
+      hints = block('usage-block').css('[data-usage] .admin-limit__hint').map { |hint| text(hint) }
       expect(hints.size).to eq(9)
       expect(hints).to all(match(/\p{Cyrillic}/))
     end
@@ -523,13 +523,13 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       expect(text(block('usage-block'))).to include('Объём хранилища рассчитывается')
     end
 
-    it 'shows «Не ограничено» for the no-limit value a plan writes (the maximum limit)' do
+    it 'shows «Без ограничений» for the no-limit value a plan writes (the maximum limit)' do
       account.update!(limits: { 'conversations' => ChatwootApp.max_limit })
 
       open_card
 
       row = block('usage-block').at_css('[data-usage="conversations"]')
-      expect(text(row)).to include('Не ограничено')
+      expect(text(row)).to include('Без ограничений')
       expect(row.at_css('.admin-meter')).to be_nil
     end
 

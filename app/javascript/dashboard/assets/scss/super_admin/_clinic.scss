@@ -362,6 +362,94 @@
     }
   }
 
+  // ------------------------------------------------------------ limit rows
+  // One limit of an account: its name and spend, a meter, a hint, what applies now and three choices («Как в тарифе»,
+  // «Без ограничений», «Своё число»). The choices are native radio buttons in cards like `.admin-choice`; the field of the number
+  // is shown only while «Своё число» is chosen, which is a switch of the radio buttons (no script).
+  .admin-limits {
+    @apply flex min-w-0 flex-col;
+  }
+
+  .admin-limit {
+    @apply flex min-w-0 flex-col gap-2 border-t border-n-weak py-4 first:border-t-0 first:pt-0 last:pb-0;
+  }
+
+  .admin-limit[data-problem] {
+    @apply rounded-xl bg-n-ruby-2 px-3 outline outline-1 -outline-offset-1 outline-n-ruby-4;
+  }
+
+  .admin-limit__head {
+    @apply flex flex-wrap items-baseline justify-between gap-x-3;
+  }
+
+  .admin-limit__label {
+    @apply font-medium text-n-slate-12;
+  }
+
+  .admin-limit__usage {
+    @apply font-medium tabular-nums text-n-slate-12;
+  }
+
+  .admin-limit__hint {
+    @apply text-xs text-n-slate-10;
+  }
+
+  .admin-limit__now {
+    @apply text-[13px] font-medium text-n-slate-12;
+  }
+
+  .admin-limit__drift {
+    @apply text-xs text-n-amber-11;
+  }
+
+  .admin-limit__choices {
+    @apply m-0 grid min-w-0 grid-cols-1 gap-2 border-0 p-0 sm:grid-cols-3;
+  }
+
+  .admin-limit__option {
+    @apply flex min-w-0 cursor-pointer items-start gap-2.5 rounded-xl bg-n-solid-1 p-3 font-normal outline outline-1 -outline-offset-1 outline-n-weak;
+  }
+
+  .admin-limit__option:hover {
+    @apply outline-n-strong;
+  }
+
+  .admin-limit__option:has(input:checked) {
+    @apply outline-2 outline-n-blue-9;
+  }
+
+  .admin-limit__option input {
+    @apply mt-0.5 shrink-0;
+  }
+
+  .admin-limit__option-text {
+    @apply flex min-w-0 flex-col gap-0.5;
+  }
+
+  .admin-limit__option-title {
+    @apply font-medium text-n-slate-12;
+  }
+
+  .admin-limit__option-sub {
+    @apply text-xs text-n-slate-11;
+  }
+
+  .admin-limit__value {
+    @apply hidden flex-wrap items-center gap-2 text-[13px] text-n-slate-11;
+  }
+
+  .admin-limit:has(input[value="custom"]:checked) .admin-limit__value {
+    @apply flex;
+  }
+
+  .admin-limit__input {
+    @apply w-40 max-w-full;
+  }
+
+  .admin-limit__unit {
+    @apply text-n-slate-12;
+  }
+
   // Two columns of usage meters
   .admin-usage-grid {
     @apply grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2;

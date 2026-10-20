@@ -123,7 +123,8 @@ class AccountDashboard < Administrate::BaseDashboard
   FORM_ATTRIBUTES_NEW = %i[name locale].freeze
 
   # The edit form in three sections. The keys are the section legends (helpers.label.account.<key>).
-  enterprise_limit_section = ChatwootApp.enterprise? ? %i[limits limit_counter_excluded_user_ids_raw account_usage_overview] : []
+  # The meters sit in the rows of the limits themselves, so the separate overview is not drawn on the form
+  enterprise_limit_section = ChatwootApp.enterprise? ? %i[limits limit_counter_excluded_user_ids_raw] : []
   enterprise_feature_section = if ChatwootApp.enterprise?
                                  ChatwootApp.chatwoot_cloud? ? %i[manually_managed_features all_features] : %i[all_features]
                                else
@@ -206,7 +207,9 @@ class AccountDashboard < Administrate::BaseDashboard
     # The status is not on the new-clinic form, but a request that creates an account with it keeps working. An account is blocked and
     # unblocked only by the button of its card (SuperAdmin::AccountBlocking: it asks first and writes the audit log), so the save of
     # the edit form does not take a status: a page opened long ago or a script cannot change it unseen.
-    attrs = super + [{ limits: {} }]
+    # `limits` is the older form of the limits (numbers only); the forms of the screens send `limit_choices` and `limit_values`
+    # (SuperAdmin::LimitForm). The controller turns them into Account#limits and the list of the limits chosen by hand.
+    attrs = super + [{ limits: {} }, { limit_choices: {} }, { limit_values: {} }]
     attrs << :status unless action.to_s == 'update'
     attrs << :limit_counter_excluded_user_ids_raw if ChatwootApp.enterprise?
 

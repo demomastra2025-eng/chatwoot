@@ -259,6 +259,17 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
         expect(page.at_css("[data-bulk-note='trial_limits_restored']").text).to include('Аккаунтов с отметкой — 1')
       end
 
+      it 'says in the line of an account which of its limits the plan leaves as they were chosen', :aggregate_failures do
+        first.update!(limits: { 'conversations' => 50 })
+
+        confirm('apply_plan', [first, second], chosen: '1', modules: [])
+
+        rows = page.css("[data-testid='bulk-entries'] tbody tr")
+        expect(rows.first.at_css('[data-testid="bulk-limits-kept"]').text.squish)
+          .to eq('Выбранные вручную лимиты останутся: диалоги за 30 дней')
+        expect(rows.last.at_css('[data-testid="bulk-limits-kept"]')).to be_nil
+      end
+
       it 'says it with the general value when the limit was not set before the trial' do
         first.activate_trial!(3)
         first.expire_trial!

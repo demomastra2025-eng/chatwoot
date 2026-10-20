@@ -323,6 +323,16 @@ RSpec.describe 'Super Admin render smoke', type: :request do
         account.disable_features!('crm')
       },
       'with limits' => ->(account) { account.update!(limits: { 'agents' => 3, 'storage_bytes' => 1.gigabyte, 'conversations' => 0 }) },
+      'with limits chosen by hand' => lambda { |account|
+        Accounts::ApplyPlan.new(account: account, modules: []).call
+        result = Accounts::LimitSettings.new(account).apply('agents' => 5, 'storage_bytes' => :unlimited, 'captain_tokens' => :unlimited,
+                                                            'inboxes' => 0, 'emails' => 30)
+        account.update!(limits: result.limits, custom_attributes: account.custom_attributes.merge(Accounts::LimitSettings::KEY => result.marks))
+      },
+      'with an older number of the plan' => lambda { |account|
+        Accounts::ApplyPlan.new(account: account, modules: []).call
+        account.update!(limits: account.limits.merge('conversations' => 50))
+      },
       'suspended' => ->(account) { account.update!(status: :suspended) },
       'being deleted' => ->(account) { account.update!(custom_attributes: { 'marked_for_deletion_at' => 3.days.from_now.iso8601 }) }
     }

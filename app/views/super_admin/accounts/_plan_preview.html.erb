@@ -52,6 +52,13 @@ and off, the limits that would change and the facts the operator should know
     <span class="text-[13px] text-n-slate-11"><%= t('super_admin.clinic_card.preview.no_changes') %></span>
   <% end %>
 
+  <%# The limits somebody chose for this account (a number of its own, «без ограничений»): the plan leaves them as they are %>
+  <% if diff.kept_limits.any? %>
+    <span class="text-[13px] text-n-slate-11" data-testid="preview-kept-limits">
+      <%= t('super_admin.clinic_card.preview.kept_limits', limits: diff.kept_limits.map { |key| t("super_admin.limits.#{key}.label") }.join(', ')) %>
+    </span>
+  <% end %>
+
   <% diff.notes.each do |note| %>
     <span class="text-[13px] text-n-amber-11" data-preview-note="<%= note %>"><%= t("super_admin.plans.notes.#{note}") %></span>
   <% end %>
