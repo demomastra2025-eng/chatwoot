@@ -58,6 +58,7 @@ import {
   resolveRouteConversationAssigneeType,
   selectExclusiveSidebarChildNames,
 } from './sidebarActiveSelection';
+import { preloadSidebarMenuTargets } from './routeChunkPreloader';
 import {
   APPOINTMENT_STATUS_ICON_CLASSES,
   APPOINTMENT_STATUS_ICONS,
@@ -698,6 +699,7 @@ onMounted(async () => {
     store.dispatch('customViews/get', 'contact'),
     loadSidebarCrmPipelines(),
   ]);
+  preloadSidebarMenuTargets(router, primaryMenuItems.value);
 });
 
 const closeMobileSidebar = () => {
@@ -1725,20 +1727,46 @@ const matchesMenuItemRoute = item => {
   return item.activeOn?.includes(route.name);
 };
 
-const selectedDesktopSidebarItem = computed(() => {
-  const selectedItem = menuItems.value.find(
-    item => item.name === expandedItem.value && hasSecondaryColumn(item)
-  );
-
-  if (selectedItem) return selectedItem;
-
+const activeRouteMenuItem = computed(() => {
   return (
     menuItems.value.find(
       item =>
-        hasSecondaryColumn(item) &&
-        (activeChildNamesFor(item).length > 0 || matchesMenuItemRoute(item))
+        activeChildNamesFor(item).length > 0 || matchesMenuItemRoute(item)
     ) || null
   );
+});
+
+watch(
+  () => [route.name, route.path],
+  () => {
+    const matchedItem = activeRouteMenuItem.value;
+    if (!matchedItem) return;
+    expandedItem.value = hasSecondaryColumn(matchedItem)
+      ? matchedItem.name
+      : null;
+  },
+  { immediate: true }
+);
+
+const selectedDesktopSidebarItem = computed(() => {
+  const expandedMenuItem = menuItems.value.find(
+    item => item.name === expandedItem.value && hasSecondaryColumn(item)
+  );
+
+  if (
+    expandedMenuItem &&
+    expandedMenuItem.navigateOnCollapsedClick === false
+  ) {
+    return expandedMenuItem;
+  }
+
+  if (activeRouteMenuItem.value) {
+    return hasSecondaryColumn(activeRouteMenuItem.value)
+      ? activeRouteMenuItem.value
+      : null;
+  }
+
+  return expandedMenuItem || null;
 });
 
 const selectedDesktopSidebarActiveChildNames = computed(() => {

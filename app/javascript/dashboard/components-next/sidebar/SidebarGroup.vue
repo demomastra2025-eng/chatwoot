@@ -15,6 +15,7 @@ import SidebarGroupEmptyLeaf from './SidebarGroupEmptyLeaf.vue';
 import SidebarCollapsedPopover from './SidebarCollapsedPopover.vue';
 import SidebarAssigneeTabs from './SidebarAssigneeTabs.vue';
 import { getSidebarChildDisplayLabel } from './sidebarDisplayLabels';
+import { preloadRouteComponents } from './routeChunkPreloader';
 
 const props = defineProps({
   name: { type: String, required: true },
@@ -95,7 +96,18 @@ const closePopover = () => {
   }
 };
 
+const preloadGroupTarget = () => {
+  const target =
+    collapsedNavigationTarget.value ||
+    props.to ||
+    defaultCollapsedRouteItem.value?.to;
+  if (target) {
+    preloadRouteComponents(router, target);
+  }
+};
+
 const handleMouseEnter = () => {
+  preloadGroupTarget();
   if (!props.showCollapsedPopover || !hasChildren.value) {
     return;
   }
@@ -430,15 +442,11 @@ onUnmounted(() => {
   document.removeEventListener('mouseleave', handleWindowBlur);
 });
 
-watch(
-  hasActiveChild,
-  hasNewActiveChild => {
-    if (hasNewActiveChild && !isExpanded.value) {
-      setExpandedItem(props.name);
-    }
-  },
-  { once: true }
-);
+watch(hasActiveChild, hasNewActiveChild => {
+  if (hasNewActiveChild && !isExpanded.value) {
+    setExpandedItem(props.name);
+  }
+});
 </script>
 
 <!-- eslint-disable-next-line vue/no-root-v-if -->

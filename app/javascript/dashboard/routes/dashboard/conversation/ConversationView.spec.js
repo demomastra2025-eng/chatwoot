@@ -94,4 +94,54 @@ describe('ConversationView', () => {
       );
     });
   });
+
+  describe('route leave lifecycle', () => {
+    it('marks route leave in-flight without blanking out selected chat before unmount', () => {
+      const next = vi.fn();
+      const context = {
+        conversationId: 3889,
+        isLeavingConversationRoute: false,
+        $store: { dispatch: vi.fn() },
+      };
+
+      ConversationView.beforeRouteLeave.call(context, {}, {}, next);
+
+      expect(context.isLeavingConversationRoute).toBe(true);
+      expect(context.$store.dispatch).not.toHaveBeenCalledWith(
+        'clearSelectedState'
+      );
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it('clears selected chat state when ConversationView unmounts', () => {
+      const context = {
+        conversationId: 3889,
+        currentChat: { id: 3889 },
+        isLeavingConversationRoute: false,
+        $store: { dispatch: vi.fn() },
+      };
+
+      ConversationView.beforeUnmount.call(context);
+
+      expect(context.isLeavingConversationRoute).toBe(true);
+      expect(context.$store.dispatch).toHaveBeenCalledWith(
+        'clearSelectedState'
+      );
+    });
+
+    it('does not replace the route while leaving ConversationView', () => {
+      const context = {
+        isLeavingConversationRoute: true,
+        communicationThreadMode: false,
+        conversationId: 3889,
+        currentChat: { id: 3889, inbox_id: 7 },
+        $route: { name: 'inbox_conversation', params: {}, query: {}, hash: '' },
+        $router: { replace: vi.fn() },
+      };
+
+      ConversationView.methods.normalizeConversationRoute.call(context);
+
+      expect(context.$router.replace).not.toHaveBeenCalled();
+    });
+  });
 });

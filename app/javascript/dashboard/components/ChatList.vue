@@ -10,6 +10,7 @@ import {
   watch,
   nextTick,
   onMounted,
+  onBeforeUnmount,
   defineEmits,
   defineAsyncComponent,
 } from 'vue';
@@ -112,7 +113,16 @@ const props = defineProps({
   communicationThreadMode: { type: Boolean, default: false },
   showConversationList: { default: true, type: Boolean },
   isOnExpandedLayout: { default: false, type: Boolean },
+  isLeavingRoute: { default: false, type: Boolean },
 });
+
+let isChatListUnmounted = false;
+onBeforeUnmount(() => {
+  isChatListUnmounted = true;
+});
+
+const canReplaceCurrentConversationRoute = () =>
+  !props.isLeavingRoute && !isChatListUnmounted && Boolean(route.name);
 
 const emit = defineEmits(['conversationLoad']);
 
@@ -1162,7 +1172,7 @@ async function normalizeConversationPipelineRouteContext() {
     activeCrmPipelineId.value,
     activeCrmStageId.value
   );
-  if (selectionIsValid) return;
+  if (selectionIsValid || !canReplaceCurrentConversationRoute()) return;
 
   await router.replace({
     name: route.name,

@@ -760,5 +760,23 @@ describe('Sidebar', () => {
         'i-lucide-settings-2'
       );
     });
+
+    it('keeps the secondary column aligned with the active route while a collapsed rail navigation is still pending', async () => {
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'communication_thread_conversation',
+      });
+
+      expect(secondaryColumn(wrapper).props('label')).toBe(sidebarGroup(wrapper, 'Conversation').props('label'));
+
+      const contactsTrigger = sidebarGroup(wrapper, 'Contacts').find(
+        '[title="Contacts"]'
+      );
+      await contactsTrigger.trigger('click');
+
+      // While the route is still communication_thread_conversation, the
+      // secondary column stays on Conversation instead of desyncing from the screen.
+      expect(secondaryColumn(wrapper).props('label')).toBe(sidebarGroup(wrapper, 'Conversation').props('label'));
+    });
   });
 });
