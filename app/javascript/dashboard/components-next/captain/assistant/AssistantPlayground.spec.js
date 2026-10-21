@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
+import PlaygroundIndex from 'dashboard/routes/dashboard/captain/playground/Index.vue';
 import AssistantPlayground from './AssistantPlayground.vue';
 
 const mocks = vi.hoisted(() => ({
@@ -13,13 +14,31 @@ const mocks = vi.hoisted(() => ({
   getSelectedModelForFeature: vi.fn(),
   uiFlags: { fetchError: false },
   inboxes: [],
+  assistants: [],
+  assistantUIFlags: { fetchingList: false },
+  dispatch: vi.fn(),
+  matrix: null,
+  matrixFetch: vi.fn(),
 }));
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key, te: () => true }),
 }));
+vi.mock('vue-router', async importOriginal => ({
+  ...(await importOriginal()),
+  useRoute: () => ({ params: { accountId: '74' } }),
+}));
+vi.mock('dashboard/composables/usePolicy', () => ({
+  usePolicy: () => ({
+    checkPermissions: () => true,
+    shouldShowPaywall: () => false,
+  }),
+}));
 vi.mock('dashboard/composables/store', () => ({
-  useMapGetter: () => ({
+  useStore: () => ({ dispatch: mocks.dispatch }),
+  useMapGetter: key => ({
     get value() {
+      if (key === 'captainAssistants/getRecords') return mocks.assistants;
+      if (key === 'captainAssistants/getUIFlags') return mocks.assistantUIFlags;
       return mocks.inboxes;
     },
   }),
@@ -27,6 +46,14 @@ vi.mock('dashboard/composables/store', () => ({
 vi.mock('dashboard/api/captain/assistant', () => ({ default: mocks }));
 vi.mock('dashboard/store/captain/preferences', () => ({
   useCaptainConfigStore: () => mocks,
+}));
+vi.mock('dashboard/store/captain/channelMatrix', () => ({
+  useCaptainChannelMatrixStore: () => ({
+    get getMatrix() {
+      return mocks.matrix;
+    },
+    fetch: mocks.matrixFetch,
+  }),
 }));
 const button = {
   name: 'NextButton',
@@ -133,6 +160,9 @@ const isFramed = element => {
 beforeEach(() => {
   Object.values(mocks).forEach(value => value?.mockReset?.());
   mocks.uiFlags.fetchError = false;
+  mocks.assistants = [];
+  mocks.assistantUIFlags = { fetchingList: false };
+  mocks.matrix = null;
   mocks.inboxes = [
     { id: 7, name: 'WhatsApp клиники', channel_type: 'Channel::Whatsapp' },
     { id: 8, name: 'Telegram клиники', channel_type: 'Channel::Telegram' },
@@ -640,6 +670,174 @@ describe('one Playground workspace', () => {
     expect(mocks.playgroundSession).toHaveBeenLastCalledWith(
       expect.objectContaining({ scenario: draft })
     );
+    wrapper.unmount();
+  });
+
+  it('does not show the AI typing indicator during initial load or reset, only during an active turn', async () => {
+    const initialSession = deferred();
+    const initialSettings = deferred();
+    const turn = deferred();
+    mocks.playgroundSession.mockReturnValueOnce(initialSession.promise);
+    mocks.fetch.mockReturnValueOnce(initialSettings.promise);
+    mocks.playground.mockReturnValueOnce(turn.promise);
+
+    const wrapper = mountPlayground({ realMessages: true });
+    await flushPromises();
+
+    expect(wrapper.find('.animate-bounce').exists()).toBe(false);
+
+    initialSession.resolve({
+      data: { playground: payload() },
+    });
+    initialSettings.resolve();
+    await flushPromises();
+
+    expect(wrapper.find('.animate-bounce').exists()).toBe(false);
+
+    await wrapper
+      .get('[data-test="playground-message-input"]')
+      .setValue('Ping');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+
+    expect(wrapper.find('.animate-bounce').exists()).toBe(true);
+
+    turn.resolve({
+      data: { response: 'Pong', playground: payload() },
+    });
+    await flushPromises();
+
+    expect(wrapper.find('.animate-bounce').exists()).toBe(false);
+
+    const resetSession = deferred();
+    mocks.playgroundSession.mockReturnValueOnce(resetSession.promise);
+    const resetPromise = wrapper.vm.resetConversation();
+    await flushPromises();
+    expect(wrapper.find('.animate-bounce').exists()).toBe(false);
+    resetSession.resolve({
+      data: { playground: payload({ session_id: 'reset-1' }) },
+    });
+    await resetPromise;
+    await flushPromises();
+    expect(wrapper.find('.animate-bounce').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('starts session initialization in parallel with settings and enables input before model catalog finishes', async () => {
+    const settingsGate = deferred();
+    const showGate = deferred();
+    mocks.fetch.mockReturnValueOnce(settingsGate.promise);
+    mocks.show.mockReturnValueOnce(showGate.promise);
+    mocks.playgroundSession.mockResolvedValueOnce({
+      data: {
+        playground: payload({
+          message_history: [
+            {
+              role: 'assistant',
+              content: 'Welcome back',
+              agent_id: 4,
+              agent_name: 'assistant_4',
+            },
+          ],
+        }),
+      },
+    });
+
+    const wrapper = mountPlayground({ realMessages: true });
+    expect(mocks.playgroundSession).toHaveBeenCalledTimes(1);
+    expect(mocks.show).toHaveBeenCalledTimes(1);
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+
+    await flushPromises();
+    expect(
+      wrapper.get('[data-test="playground-message-input"]').element.disabled
+    ).toBe(true);
+
+    showGate.resolve({
+      data: {
+        id: 4,
+        name: 'Coordinator Bot',
+        usage_mode: 'external_agent',
+        config: {},
+        playground_model: {
+          id: 'provider/model',
+          supports_temperature: true,
+          reasoning_efforts: ['low', 'high'],
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(
+      wrapper.get('[data-test="playground-message-input"]').element.disabled
+    ).toBe(false);
+    expect(
+      wrapper.get('[data-test="playground-responding-agent"]').text()
+    ).toBe('Coordinator Bot');
+    expect(
+      wrapper.get('[data-test="model-settings"] select').element.disabled
+    ).toBe(true);
+
+    settingsGate.resolve();
+    await flushPromises();
+    expect(
+      wrapper.get('[data-test="model-settings"] select').element.disabled
+    ).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('disables messaging and clears session state when metadata fetch fails', async () => {
+    const delayedSession = deferred();
+    mocks.playgroundSession.mockReturnValueOnce(delayedSession.promise);
+    mocks.uiFlags.fetchError = true;
+    const wrapper = mountPlayground();
+    await flushPromises();
+    delayedSession.resolve({ data: { playground: payload() } });
+    await flushPromises();
+    expect(
+      wrapper.get('[data-test="playground-message-input"]').element.disabled
+    ).toBe(true);
+    expect(
+      wrapper.get('[data-test="playground-real-read"]').element.disabled
+    ).toBe(true);
+    expect(wrapper.get('[role="alert"]').text()).toBe(
+      'CAPTAIN.PLAYGROUND.SESSION_ERROR'
+    );
+    wrapper.unmount();
+  });
+
+  it('pre-warms model metadata on the Sandbox page and resolves the main agent from inbox links before the channel matrix finishes', async () => {
+    mocks.assistants = [
+      { id: 15, name: 'Sub Agent', active: true, main_in_inbox_ids: [] },
+      { id: 4, name: 'Main Agent', active: true, main_in_inbox_ids: [7] },
+    ];
+    mocks.matrix = null;
+    mocks.dispatch.mockResolvedValue();
+    mocks.matrixFetch.mockResolvedValue();
+
+    const wrapper = mount(PlaygroundIndex, {
+      global: {
+        stubs: {
+          PageLayout: {
+            props: ['isFetching'],
+            template: '<div><slot name="body" /></div>',
+          },
+          CaptainPaywall: true,
+          AssistantPlayground: {
+            name: 'AssistantPlayground',
+            props: ['assistantId', 'accountId'],
+            template:
+              '<div data-test="mounted-playground">{{ assistantId }}</div>',
+          },
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(mocks.dispatch).toHaveBeenCalledWith('captainAssistants/get');
+    expect(mocks.fetch).toHaveBeenCalledWith({ clientMetadataOnly: true });
+    expect(mocks.matrixFetch).toHaveBeenCalledTimes(1);
+    expect(wrapper.get('[data-test="mounted-playground"]').text()).toBe('4');
     wrapper.unmount();
   });
 });

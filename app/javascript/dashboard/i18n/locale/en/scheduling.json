@@ -78,6 +78,7 @@
       "RESOURCE_CHANGE_UNSUPPORTED": "Changing the specialist for a MedElement appointment is not supported yet. Change only the date or time.",
       "SUCCESS": "The change was successfully applied in MedElement",
       "RECEPTION_CODE_LABEL": "MedElement reception code: {code}",
+      "RECEPTION_CODE_FIELD_LABEL": "MedElement reception code",
       "SYNC_STATUS": {
         "SYNCED": "Synced with MedElement",
         "PENDING": "Awaiting MedElement sync",

@@ -78,6 +78,7 @@
       "RESOURCE_CHANGE_UNSUPPORTED": "Смена специалиста для записи MedElement пока не поддерживается. Измените только дату или время.",
       "SUCCESS": "Изменение успешно применено в MedElement",
       "RECEPTION_CODE_LABEL": "Код приёма MedElement: {code}",
+      "RECEPTION_CODE_FIELD_LABEL": "Код приёма MedElement",
       "SYNC_STATUS": {
         "SYNCED": "Синхронизировано с MedElement",
         "PENDING": "Ожидает синхронизации с MedElement",

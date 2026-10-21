@@ -85,8 +85,13 @@ const resolvedValue = definition => {
   return value ?? '';
 };
 
+const isDefinitionDisabled = definition =>
+  props.disabled || Boolean(definition.readOnly);
+
 const updateValue = (key, value) => {
   if (props.disabled) return;
+  const definition = props.definitions.find(item => item.key === key);
+  if (definition?.readOnly) return;
 
   const nextValue = { ...(props.modelValue || {}) };
 
@@ -133,7 +138,7 @@ const updateValue = (key, value) => {
           >
             <Checkbox
               :model-value="resolvedValue(definition)"
-              :disabled="disabled"
+              :disabled="isDefinitionDisabled(definition)"
               @update:model-value="updateValue(definition.key, $event)"
             />
           </div>
@@ -155,7 +160,7 @@ const updateValue = (key, value) => {
           </div>
           <TextArea
             :model-value="resolvedValue(definition)"
-            :disabled="disabled"
+            :disabled="isDefinitionDisabled(definition)"
             auto-height
             class="crm-custom-fields-section-control crm-custom-fields-section-textarea-control"
             custom-text-area-wrapper-class="!rounded-md !border-n-weak !bg-n-alpha-black2 !px-2 !py-1 hover:!border-n-slate-6"
@@ -181,7 +186,7 @@ const updateValue = (key, value) => {
           <SchedulingDateTimeField
             class="crm-custom-fields-section-control crm-custom-fields-section-date-control"
             :model-value="resolvedValue(definition)"
-            :disabled="disabled"
+            :disabled="isDefinitionDisabled(definition)"
             type="date"
             @update:model-value="updateValue(definition.key, $event)"
           />
@@ -204,7 +209,7 @@ const updateValue = (key, value) => {
           <SchedulingDateTimeField
             class="crm-custom-fields-section-control crm-custom-fields-section-date-control"
             :model-value="resolvedValue(definition)"
-            :disabled="disabled"
+            :disabled="isDefinitionDisabled(definition)"
             type="datetime"
             @update:model-value="updateValue(definition.key, $event)"
           />
@@ -227,7 +232,7 @@ const updateValue = (key, value) => {
           <SchedulingSelectField
             class="crm-custom-fields-section-control crm-custom-fields-section-select-control"
             :model-value="resolvedValue(definition)"
-            :disabled="disabled"
+            :disabled="isDefinitionDisabled(definition)"
             :options="optionList(definition)"
             :placeholder="definition.label"
             dropdown-placement="auto"
@@ -252,7 +257,7 @@ const updateValue = (key, value) => {
           <TagMultiSelectComboBox
             class="crm-custom-fields-section-control crm-custom-fields-section-multi-control"
             :model-value="resolvedValue(definition)"
-            :disabled="disabled"
+            :disabled="isDefinitionDisabled(definition)"
             :options="optionList(definition)"
             @update:model-value="updateValue(definition.key, $event)"
           />
@@ -271,8 +276,10 @@ const updateValue = (key, value) => {
           </div>
           <Input
             class="crm-custom-fields-section-control crm-custom-fields-section-input-control"
+            :aria-label="definition.label"
+            :data-field-key="definition.key"
             :model-value="resolvedValue(definition)"
-            :disabled="disabled"
+            :disabled="isDefinitionDisabled(definition)"
             :type="
               ['currency', 'number', 'percent'].includes(definition.fieldType)
                 ? 'number'
@@ -293,7 +300,7 @@ const updateValue = (key, value) => {
         >
           <Checkbox
             :model-value="resolvedValue(definition)"
-            :disabled="disabled"
+            :disabled="isDefinitionDisabled(definition)"
             @update:model-value="updateValue(definition.key, $event)"
           />
           <div class="grid gap-1">
@@ -311,7 +318,7 @@ const updateValue = (key, value) => {
           :label="definition.label"
           :message="definition.description"
           :model-value="resolvedValue(definition)"
-          :disabled="disabled"
+          :disabled="isDefinitionDisabled(definition)"
           auto-height
           class="md:col-span-2"
           @update:model-value="updateValue(definition.key, $event)"
@@ -322,7 +329,7 @@ const updateValue = (key, value) => {
           :label="definition.label"
           :message="definition.description"
           :model-value="resolvedValue(definition)"
-          :disabled="disabled"
+          :disabled="isDefinitionDisabled(definition)"
           type="date"
           @update:model-value="updateValue(definition.key, $event)"
         />
@@ -332,7 +339,7 @@ const updateValue = (key, value) => {
           :label="definition.label"
           :message="definition.description"
           :model-value="resolvedValue(definition)"
-          :disabled="disabled"
+          :disabled="isDefinitionDisabled(definition)"
           type="datetime"
           @update:model-value="updateValue(definition.key, $event)"
         />
@@ -342,7 +349,7 @@ const updateValue = (key, value) => {
           :label="definition.label"
           :message="definition.description"
           :model-value="resolvedValue(definition)"
-          :disabled="disabled"
+          :disabled="isDefinitionDisabled(definition)"
           :options="optionList(definition)"
           @update:model-value="updateValue(definition.key, $event)"
         />
@@ -356,7 +363,7 @@ const updateValue = (key, value) => {
           </span>
           <TagMultiSelectComboBox
             :model-value="resolvedValue(definition)"
-            :disabled="disabled"
+            :disabled="isDefinitionDisabled(definition)"
             :options="optionList(definition)"
             @update:model-value="updateValue(definition.key, $event)"
           />
@@ -367,10 +374,11 @@ const updateValue = (key, value) => {
 
         <Input
           v-else
+          :data-field-key="definition.key"
           :label="definition.label"
           :message="definition.description"
           :model-value="resolvedValue(definition)"
-          :disabled="disabled"
+          :disabled="isDefinitionDisabled(definition)"
           :type="
             ['currency', 'number', 'percent'].includes(definition.fieldType)
               ? 'number'

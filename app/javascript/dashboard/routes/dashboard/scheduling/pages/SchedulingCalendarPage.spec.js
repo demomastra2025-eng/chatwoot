@@ -688,10 +688,38 @@ describe('SchedulingCalendarPage pending local booking', () => {
     const medelementMeta = wrapper.get(
       '[data-test="calendar-appointment-medelement-meta"]'
     );
+    expect(medelementMeta.attributes('data-sync-state')).toBe('synced');
+    expect(medelementMeta.find('svg').exists()).toBe(true);
     expect(medelementMeta.text()).toContain(
       'SCHEDULING.MEDELEMENT.SYNC_STATUS.SYNCED'
     );
-    expect(medelementMeta.text()).toContain('me-902');
+    expect(medelementMeta.text()).not.toContain('me-902');
+
+    const customFieldsSections = wrapper.findAllComponents(
+      CrmCustomFieldsSection
+    );
+    expect(customFieldsSections).toHaveLength(1);
+    expect(customFieldsSections[0].props('layout')).toBe('rows');
+    expect(customFieldsSections[0].props('title')).toBe('');
+
+    const receptionCodeInput = wrapper.get(
+      'input[data-field-key="medelement_reception_code"]'
+    );
+    expect(receptionCodeInput.element.value).toBe('me-902');
+    expect(receptionCodeInput.element.disabled).toBe(true);
+    await receptionCodeInput.setValue('tampered-code');
+    expect(
+      store.form.customAttributes.medelement_reception_code
+    ).toBeUndefined();
+
+    const commentTextarea = wrapper.get(
+      'textarea[data-label="SCHEDULING.APPOINTMENT_FORM.COMMENT"]'
+    );
+    expect(
+      receptionCodeInput.element.compareDocumentPosition(
+        commentTextarea.element
+      )
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 
     store.openEdit({
       id: 503,
@@ -712,10 +740,12 @@ describe('SchedulingCalendarPage pending local booking', () => {
     const cancelledMeta = wrapper.get(
       '[data-test="calendar-appointment-medelement-meta"]'
     );
-    expect(cancelledMeta.text()).toContain('me-903');
-    expect(cancelledMeta.text()).not.toContain(
-      'SCHEDULING.APPOINTMENT_STATUS.MEDELEMENT_NOT_CANCELLED'
-    );
+    expect(cancelledMeta.attributes('data-sync-state')).toBe('warning');
+    expect(cancelledMeta.find('svg').exists()).toBe(true);
+    expect(
+      wrapper.get('input[data-field-key="medelement_reception_code"]').element
+        .value
+    ).toBe('me-903');
   });
 
   it('keeps dismiss available during submit and preserves a subsequently opened form', async () => {

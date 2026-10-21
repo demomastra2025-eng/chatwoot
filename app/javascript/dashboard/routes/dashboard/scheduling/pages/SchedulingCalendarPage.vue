@@ -73,10 +73,11 @@ import {
   isMedelementCancellationLocalOnly,
   isMedelementLocalCancellation,
   isMedelementResource,
-  medelementAppointmentCardNote,
   medelementCommandFailureMessage,
   medelementCabinetsForResource,
-  providerBookingNeedsReview,
+  medelementReceptionCode,
+  medelementSyncStatusKey,
+  medelementSyncStatusMessage,
   resolveAppointmentMedelementCabinetCode,
   resolveAppointmentConversationTarget,
   servicesAvailableForResource,
@@ -361,13 +362,49 @@ const selectedFormMedelementCabinets = computed(() =>
 const isSelectedFormResourceMedelement = computed(() =>
   isMedelementResource(selectedFormResource.value)
 );
-const selectedAppointmentMedelementMeta = computed(() => {
+const selectedAppointmentMedelementReceptionCode = computed(() => {
   if (formStore.mode !== 'edit' || !formStore.selectedAppointment) return '';
 
-  return medelementAppointmentCardNote(formStore.selectedAppointment, t, {
-    includeStatus: !isSelectedAppointmentLocallyCancelled.value,
+  return medelementReceptionCode(formStore.selectedAppointment);
+});
+const selectedAppointmentMedelementStatus = computed(() => {
+  if (formStore.mode !== 'edit' || !formStore.selectedAppointment) {
+    return null;
+  }
+
+  const key = medelementSyncStatusKey(formStore.selectedAppointment, {
     isMedelementResource: isSelectedFormResourceMedelement.value,
   });
+  if (!key) return null;
+
+  const label = medelementSyncStatusMessage(formStore.selectedAppointment, t, {
+    isMedelementResource: isSelectedFormResourceMedelement.value,
+  });
+  let state = 'not_synced';
+  if (key === 'SCHEDULING.MEDELEMENT.SYNC_STATUS.SYNCED') {
+    state = 'synced';
+  } else if (
+    [
+      'SCHEDULING.MEDELEMENT.SYNC_STATUS.PENDING',
+      'SCHEDULING.APPOINTMENT_STATUS.MOVE_PENDING',
+      'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_PENDING',
+    ].includes(key)
+  ) {
+    state = 'pending';
+  } else if (key === 'SCHEDULING.APPOINTMENT_STATUS.MEDELEMENT_NOT_CANCELLED') {
+    state = 'warning';
+  } else if (
+    [
+      'SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW',
+      'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW',
+      'SCHEDULING.APPOINTMENT_STATUS.MOVE_REVIEW',
+      'SCHEDULING.APPOINTMENT_STATUS.MOVE_REJECTED',
+    ].includes(key)
+  ) {
+    state = 'error';
+  }
+
+  return { key, label, state };
 });
 const medelementCabinetOptions = computed(() =>
   selectedFormMedelementCabinets.value.map(cabinet => ({
@@ -681,6 +718,46 @@ const generalAppointmentFieldDefinitions = computed(() =>
       !fieldDefinitionHasContext(definition, APPOINTMENT_BOOKING_INTAKE_CONTEXT)
   )
 );
+const unifiedAppointmentFieldDefinitions = computed(() => {
+  const definitions = [
+    ...intakeAppointmentFieldDefinitions.value,
+    ...generalAppointmentFieldDefinitions.value,
+  ];
+  if (selectedAppointmentMedelementReceptionCode.value) {
+    definitions.push({
+      id: 'medelement_reception_code',
+      active: true,
+      key: 'medelement_reception_code',
+      label: t('SCHEDULING.MEDELEMENT.RECEPTION_CODE_FIELD_LABEL'),
+      fieldType: 'text',
+      readOnly: true,
+    });
+  }
+  return definitions;
+});
+const appointmentCustomFieldsModelValue = computed(() => {
+  const baseAttributes = appointmentFormControlValues.value.customAttributes;
+  if (!selectedAppointmentMedelementReceptionCode.value) {
+    return baseAttributes;
+  }
+
+  return readonly({
+    ...baseAttributes,
+    medelement_reception_code: selectedAppointmentMedelementReceptionCode.value,
+  });
+});
+const handleAppointmentCustomFieldsUpdate = nextValue => {
+  if (!nextValue || typeof nextValue !== 'object') {
+    formStore.updateField('customAttributes', {});
+    return;
+  }
+
+  const {
+    medelement_reception_code: _ignoredReceptionCode,
+    ...editableValues
+  } = nextValue;
+  formStore.updateField('customAttributes', editableValues);
+};
 const filterableAppointmentFieldDefinitions = computed(() =>
   appointmentFieldDefinitions.value.filter(isFilterableCustomFieldDefinition)
 );
@@ -2690,6 +2767,50 @@ onMounted(async () => {
                 "
               />
 
+              <span
+                v-if="selectedAppointmentMedelementStatus"
+                v-tooltip.bottom="selectedAppointmentMedelementStatus.label"
+                :title="selectedAppointmentMedelementStatus.label"
+                :aria-label="selectedAppointmentMedelementStatus.label"
+                :data-sync-state="selectedAppointmentMedelementStatus.state"
+                data-test="calendar-appointment-medelement-meta"
+                role="status"
+                class="inline-flex size-7 shrink-0 items-center justify-center rounded-lg border transition-colors"
+                :class="
+                  {
+                    synced: 'border-n-teal-6/50 bg-n-teal-3 text-n-teal-11',
+                    pending: 'border-n-amber-6/50 bg-n-amber-3 text-n-amber-11',
+                    warning: 'border-n-amber-6/50 bg-n-amber-3 text-n-amber-11',
+                    error: 'border-n-ruby-6/50 bg-n-ruby-3 text-n-ruby-11',
+                    not_synced: 'border-n-weak bg-n-alpha-2 text-n-slate-11',
+                  }[selectedAppointmentMedelementStatus.state]
+                "
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="size-4 shrink-0"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M2.25 9.25L4.85 6.75H5.55V8.3C6.35 7.25 7.55 6.55 9.05 6.55C10.7 6.55 11.95 7.25 12.55 8.55C13.45 7.25 14.8 6.55 16.45 6.55C18.95 6.55 20.45 8.2 20.45 11.05V17.25H17.15V11.55C17.15 9.95 16.4 9.15 15.15 9.15C13.85 9.15 13.05 10.05 13.05 11.65V17.25H9.75V11.55C9.75 9.95 9.0 9.15 7.75 9.15C6.45 9.15 5.65 10.05 5.65 11.65V17.25H2.25V9.25Z"
+                    fill="currentColor"
+                  />
+                  <rect
+                    x="21.1"
+                    y="13.85"
+                    width="2.4"
+                    height="3.4"
+                    rx="0.5"
+                    fill="currentColor"
+                  />
+                </svg>
+                <span class="sr-only">
+                  {{ selectedAppointmentMedelementStatus.label }}
+                </span>
+              </span>
+
               <Button
                 v-if="formStore.mode === 'edit' && patientDialogRoute"
                 size="sm"
@@ -2741,18 +2862,6 @@ onMounted(async () => {
                 :inert="formStore.ui.isSaving ? '' : undefined"
                 data-test="appointment-form-controls"
               >
-                <p
-                  v-if="selectedAppointmentMedelementMeta"
-                  class="m-0 text-xs leading-5"
-                  :class="
-                    providerBookingNeedsReview(formStore.selectedAppointment)
-                      ? 'font-medium text-n-ruby-11'
-                      : 'text-n-slate-11'
-                  "
-                  data-test="calendar-appointment-medelement-meta"
-                >
-                  {{ selectedAppointmentMedelementMeta }}
-                </p>
                 <p
                   v-if="
                     appointmentCrmLinkWarningMessage(
@@ -2860,40 +2969,64 @@ onMounted(async () => {
                           )
                         }}
                       </p>
-                      <div v-if="needsProviderPatientPhoneInput" class="pt-1">
-                        <PhoneNumberInput
-                          :model-value="formStore.form.clientPhone"
-                          :disabled="formStore.ui.isSaving"
-                          class="appointment-drawer-phone-control"
-                          default-country="KZ"
-                          :show-country-flag="false"
-                          :max-digits="11"
-                          :label="
+                      <div
+                        v-if="needsProviderPatientPhoneInput"
+                        class="appointment-drawer-row pt-1"
+                      >
+                        <span class="appointment-drawer-label">
+                          {{
                             isSelectedFormResourceMedelement
                               ? requiredContactLabel(
                                   $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
                                 )
                               : $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
-                          "
-                          size="md"
-                          @update:model-value="
-                            formStore.updateField('clientPhone', $event)
-                          "
-                        />
-                        <p
-                          v-if="inlineContactPhoneMessage"
-                          class="mt-1 mb-0 text-xs text-n-ruby-9"
-                        >
-                          {{ inlineContactPhoneMessage }}
-                        </p>
+                          }}
+                        </span>
+                        <div class="appointment-drawer-control">
+                          <PhoneNumberInput
+                            :model-value="formStore.form.clientPhone"
+                            :disabled="formStore.ui.isSaving"
+                            class="appointment-drawer-phone-control"
+                            default-country="KZ"
+                            :show-country-flag="false"
+                            :max-digits="11"
+                            :label="
+                              isSelectedFormResourceMedelement
+                                ? requiredContactLabel(
+                                    $t(
+                                      'SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE'
+                                    )
+                                  )
+                                : $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
+                            "
+                            size="md"
+                            @update:model-value="
+                              formStore.updateField('clientPhone', $event)
+                            "
+                          />
+                          <p
+                            v-if="inlineContactPhoneMessage"
+                            class="mt-1 mb-0 text-xs text-n-ruby-9"
+                          >
+                            {{ inlineContactPhoneMessage }}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                    <div
-                      v-if="isContactEditorOpen"
-                      class="appointment-contact-accordion-summary"
-                    >
-                      <div class="grid min-w-0 flex-1 gap-2 md:grid-cols-3">
+
+                    <div v-if="isContactEditorOpen" class="grid gap-2">
+                      <div class="appointment-drawer-row">
+                        <span class="appointment-drawer-label">
+                          {{
+                            requiredContactLabel(
+                              $t(
+                                'SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME'
+                              )
+                            )
+                          }}
+                        </span>
                         <Input
+                          class="appointment-drawer-control"
                           :model-value="formStore.form.clientFirstName"
                           :disabled="formStore.ui.isSaving"
                           :label="
@@ -2924,7 +3057,24 @@ onMounted(async () => {
                             formStore.updateField('clientFirstName', $event)
                           "
                         />
+                      </div>
+
+                      <div class="appointment-drawer-row">
+                        <span class="appointment-drawer-label">
+                          {{
+                            isInlineContactMedelementContext
+                              ? requiredContactLabel(
+                                  $t(
+                                    'SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME'
+                                  )
+                                )
+                              : $t(
+                                  'SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME'
+                                )
+                          }}
+                        </span>
                         <Input
+                          class="appointment-drawer-control"
                           :model-value="formStore.form.clientLastName"
                           :disabled="formStore.ui.isSaving"
                           :label="
@@ -2946,7 +3096,16 @@ onMounted(async () => {
                             formStore.updateField('clientLastName', $event)
                           "
                         />
+                      </div>
+
+                      <div class="appointment-drawer-row">
+                        <span class="appointment-drawer-label">
+                          {{
+                            $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME')
+                          }}
+                        </span>
                         <Input
+                          class="appointment-drawer-control"
                           :model-value="formStore.form.clientMiddleName"
                           :disabled="formStore.ui.isSaving"
                           :label="
@@ -2957,11 +3116,18 @@ onMounted(async () => {
                           "
                         />
                       </div>
-                    </div>
 
-                    <div v-if="isContactEditorOpen" class="grid gap-4 pt-2">
-                      <div class="grid gap-4 md:grid-cols-2">
-                        <div>
+                      <div class="appointment-drawer-row">
+                        <span class="appointment-drawer-label">
+                          {{
+                            isInlineContactMedelementContext
+                              ? requiredContactLabel(
+                                  $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
+                                )
+                              : $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
+                          }}
+                        </span>
+                        <div class="appointment-drawer-control">
                           <PhoneNumberInput
                             :model-value="formStore.form.clientPhone"
                             :disabled="formStore.ui.isSaving"
@@ -2990,7 +3156,18 @@ onMounted(async () => {
                             {{ inlineContactPhoneMessage }}
                           </p>
                         </div>
+                      </div>
+
+                      <div class="appointment-drawer-row">
+                        <span class="appointment-drawer-label">
+                          {{
+                            isInlineContactMedelementContext
+                              ? `${$t('SCHEDULING.CONTACT.IIN')} *`
+                              : $t('SCHEDULING.CONTACT.IIN')
+                          }}
+                        </span>
                         <Input
+                          class="appointment-drawer-control"
                           :model-value="inlineContactForm.iin"
                           :disabled="formStore.ui.isSaving"
                           inputmode="numeric"
@@ -3010,8 +3187,13 @@ onMounted(async () => {
                           "
                         />
                       </div>
-                      <div class="grid gap-4 md:grid-cols-2">
+
+                      <div class="appointment-drawer-row">
+                        <span class="appointment-drawer-label">
+                          {{ $t('SCHEDULING.CONTACT.BIRTH_DATE') }}
+                        </span>
                         <SchedulingDateTimeField
+                          class="appointment-drawer-control"
                           :model-value="inlineContactForm.birthDate"
                           :disabled="formStore.ui.isSaving"
                           type="date"
@@ -3020,8 +3202,14 @@ onMounted(async () => {
                             updateInlineContactField('birthDate', $event)
                           "
                         />
+                      </div>
+
+                      <div class="appointment-drawer-row">
+                        <span class="appointment-drawer-label">
+                          {{ $t('SCHEDULING.CONTACT.GENDER_LABEL') }}
+                        </span>
                         <SchedulingSelectField
-                          class="appointment-drawer-select-control"
+                          class="appointment-drawer-control appointment-drawer-select-control"
                           :model-value="inlineContactForm.gender"
                           :disabled="formStore.ui.isSaving"
                           :options="genderOptions"
@@ -3033,7 +3221,7 @@ onMounted(async () => {
                         />
                       </div>
 
-                      <div class="flex justify-end gap-2">
+                      <div class="flex justify-end gap-2 pt-1">
                         <Button
                           size="sm"
                           variant="faded"
@@ -3051,10 +3239,6 @@ onMounted(async () => {
                 <SchedulingFormFieldGroup
                   class="appointment-details-section"
                   :framed="false"
-                  :title="$t('SCHEDULING.APPOINTMENT_FORM.APPOINTMENT_TITLE')"
-                  :description="
-                    $t('SCHEDULING.APPOINTMENT_FORM.APPOINTMENT_DESCRIPTION')
-                  "
                 >
                   <AppointmentDealSelector
                     v-if="formStore.mode === 'create'"
@@ -3064,101 +3248,132 @@ onMounted(async () => {
                       formStore.form.conversationDisplayId
                     "
                     :disabled="formStore.ui.isSaving"
-                    class="mb-4"
+                    class="mb-2"
                   />
-                  <div class="grid gap-4 md:grid-cols-2">
-                    <SchedulingSelectField
-                      class="appointment-drawer-select-control"
-                      :model-value="formStore.form.resourceId"
-                      :disabled="formStore.ui.isSaving"
-                      :options="resourceOptions"
-                      :label="$t('SCHEDULING.APPOINTMENT_FORM.RESOURCE')"
-                      :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.RESOURCE')"
-                      :message="
-                        formStore.validationErrors.resourceId
-                          ? validationErrorMessage(
-                              formStore.validationErrors.resourceId
-                            )
-                          : ''
-                      "
-                      :has-error="!!formStore.validationErrors.resourceId"
-                      @update:model-value="
-                        formStore.updateField('resourceId', $event)
-                      "
-                    />
-                    <SchedulingSelectField
+                  <div class="grid gap-2">
+                    <div class="appointment-drawer-row">
+                      <span class="appointment-drawer-label">
+                        {{ $t('SCHEDULING.APPOINTMENT_FORM.RESOURCE') }}
+                      </span>
+                      <SchedulingSelectField
+                        class="appointment-drawer-control appointment-drawer-select-control"
+                        :model-value="formStore.form.resourceId"
+                        :disabled="formStore.ui.isSaving"
+                        :options="resourceOptions"
+                        :label="$t('SCHEDULING.APPOINTMENT_FORM.RESOURCE')"
+                        :placeholder="
+                          $t('SCHEDULING.APPOINTMENT_FORM.RESOURCE')
+                        "
+                        :message="
+                          formStore.validationErrors.resourceId
+                            ? validationErrorMessage(
+                                formStore.validationErrors.resourceId
+                              )
+                            : ''
+                        "
+                        :has-error="!!formStore.validationErrors.resourceId"
+                        @update:model-value="
+                          formStore.updateField('resourceId', $event)
+                        "
+                      />
+                    </div>
+
+                    <div
                       v-if="isSelectedFormResourceMedelement"
-                      class="appointment-drawer-select-control"
-                      :model-value="formStore.form.medelementCabinetCode"
-                      :disabled="formStore.ui.isSaving"
-                      :options="medelementCabinetOptions"
-                      :label="$t('SCHEDULING.MEDELEMENT.CABINET')"
-                      :placeholder="$t('SCHEDULING.MEDELEMENT.CABINET')"
-                      :message="
-                        isMedelementCabinetMissing
-                          ? $t('SCHEDULING.MEDELEMENT.CABINET_REQUIRED')
-                          : ''
-                      "
-                      :has-error="isMedelementCabinetMissing"
-                      @update:model-value="
-                        formStore.updateField('medelementCabinetCode', $event)
-                      "
-                    />
-                    <div class="grid gap-1">
-                      <span class="mb-0.5 text-sm font-medium text-n-slate-12">
+                      class="appointment-drawer-row"
+                    >
+                      <span class="appointment-drawer-label">
+                        {{ $t('SCHEDULING.MEDELEMENT.CABINET') }}
+                      </span>
+                      <SchedulingSelectField
+                        class="appointment-drawer-control appointment-drawer-select-control"
+                        :model-value="formStore.form.medelementCabinetCode"
+                        :disabled="formStore.ui.isSaving"
+                        :options="medelementCabinetOptions"
+                        :label="$t('SCHEDULING.MEDELEMENT.CABINET')"
+                        :placeholder="$t('SCHEDULING.MEDELEMENT.CABINET')"
+                        :message="
+                          isMedelementCabinetMissing
+                            ? $t('SCHEDULING.MEDELEMENT.CABINET_REQUIRED')
+                            : ''
+                        "
+                        :has-error="isMedelementCabinetMissing"
+                        @update:model-value="
+                          formStore.updateField('medelementCabinetCode', $event)
+                        "
+                      />
+                    </div>
+
+                    <div
+                      class="appointment-drawer-row appointment-drawer-row--start"
+                    >
+                      <span class="appointment-drawer-label">
                         {{ $t('SCHEDULING.APPOINTMENT_FORM.SERVICE') }}
                       </span>
-                      <TagMultiSelectComboBox
-                        v-if="hasServiceOptions"
-                        class="appointment-drawer-multi-control"
-                        :model-value="appointmentFormControlValues.serviceIds"
-                        :disabled="formStore.ui.isSaving"
-                        :options="serviceOptions"
-                        wrap-labels
-                        clamp-selected-labels
-                        show-selected-label-preview
-                        :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE')"
-                        :search-placeholder="
-                          $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_SEARCH')
-                        "
-                        :empty-state="
-                          $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_EMPTY')
-                        "
-                        @update:model-value="
-                          formStore.updateField('serviceIds', $event)
-                        "
-                      />
-                      <Input
-                        v-else-if="!isSelectedFormResourceMedelement"
-                        :model-value="formStore.form.serviceNameSnapshot"
-                        :disabled="formStore.ui.isSaving"
-                        :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE')"
-                        @update:model-value="
-                          value => {
-                            formStore.updateField('serviceIds', []);
-                            formStore.updateField('serviceNameSnapshot', value);
-                          }
-                        "
-                      />
-                      <p v-else class="mt-1 mb-0 text-xs text-n-slate-10">
-                        {{ $t('SCHEDULING.MEDELEMENT.NO_SPECIALIST_SERVICES') }}
-                      </p>
-                      <p
-                        v-if="formStore.validationErrors.serviceIds"
-                        class="mt-1 mb-0 text-xs text-n-ruby-9"
-                      >
-                        {{
-                          validationErrorMessage(
-                            formStore.validationErrors.serviceIds
-                          )
-                        }}
-                      </p>
+                      <div class="appointment-drawer-control grid gap-1">
+                        <TagMultiSelectComboBox
+                          v-if="hasServiceOptions"
+                          class="appointment-drawer-multi-control"
+                          :model-value="appointmentFormControlValues.serviceIds"
+                          :disabled="formStore.ui.isSaving"
+                          :options="serviceOptions"
+                          wrap-labels
+                          clamp-selected-labels
+                          show-selected-label-preview
+                          :placeholder="
+                            $t('SCHEDULING.APPOINTMENT_FORM.SERVICE')
+                          "
+                          :search-placeholder="
+                            $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_SEARCH')
+                          "
+                          :empty-state="
+                            $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_EMPTY')
+                          "
+                          @update:model-value="
+                            formStore.updateField('serviceIds', $event)
+                          "
+                        />
+                        <Input
+                          v-else-if="!isSelectedFormResourceMedelement"
+                          :model-value="formStore.form.serviceNameSnapshot"
+                          :disabled="formStore.ui.isSaving"
+                          :placeholder="
+                            $t('SCHEDULING.APPOINTMENT_FORM.SERVICE')
+                          "
+                          @update:model-value="
+                            value => {
+                              formStore.updateField('serviceIds', []);
+                              formStore.updateField(
+                                'serviceNameSnapshot',
+                                value
+                              );
+                            }
+                          "
+                        />
+                        <p v-else class="mt-1 mb-0 text-xs text-n-slate-10">
+                          {{
+                            $t('SCHEDULING.MEDELEMENT.NO_SPECIALIST_SERVICES')
+                          }}
+                        </p>
+                        <p
+                          v-if="formStore.validationErrors.serviceIds"
+                          class="mt-1 mb-0 text-xs text-n-ruby-9"
+                        >
+                          {{
+                            validationErrorMessage(
+                              formStore.validationErrors.serviceIds
+                            )
+                          }}
+                        </p>
+                      </div>
                     </div>
-                    <div
-                      class="appointment-money-grid grid gap-4 md:col-span-2 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)]"
-                    >
+
+                    <div class="appointment-drawer-row">
+                      <span class="appointment-drawer-label">
+                        {{ $t('SCHEDULING.APPOINTMENT_FORM.STATUS') }}
+                      </span>
                       <SchedulingSelectField
-                        class="appointment-drawer-select-control"
+                        class="appointment-drawer-control appointment-drawer-select-control"
                         :model-value="formStore.form.status"
                         :disabled="formStore.ui.isSaving"
                         :options="appointmentStatusOptions"
@@ -3168,10 +3383,16 @@ onMounted(async () => {
                           formStore.updateField('status', $event)
                         "
                       />
+                    </div>
+
+                    <div class="appointment-drawer-row">
+                      <span class="appointment-drawer-label">
+                        {{ $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_AMOUNT') }}
+                      </span>
                       <SchedulingMoneyInput
                         :model-value="formStore.form.serviceAmount"
                         :disabled="formStore.ui.isSaving"
-                        class="appointment-drawer-money-control"
+                        class="appointment-drawer-control appointment-drawer-money-control"
                         min="0"
                         :label="
                           $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_AMOUNT')
@@ -3181,12 +3402,13 @@ onMounted(async () => {
                         "
                       />
                     </div>
+
                     <SchedulingAppointmentTimeFields
                       v-model:starts-at="appointmentStartsAt"
                       v-model:ends-at="appointmentEndsAt"
                       v-model:duration-min="appointmentDurationMin"
                       id-prefix="calendar-appointment"
-                      class="md:col-span-2"
+                      layout="rows"
                       :disabled="formStore.ui.isSaving"
                       :starts-at-message="
                         formStore.validationErrors.startsAt
@@ -3206,7 +3428,7 @@ onMounted(async () => {
                     />
                     <p
                       v-if="formStore.validationErrors.durationMin"
-                      class="m-0 text-xs text-n-ruby-9 md:col-span-2"
+                      class="m-0 text-xs text-n-ruby-9"
                     >
                       {{ $t(formStore.validationErrors.durationMin) }}
                     </p>
@@ -3214,49 +3436,39 @@ onMounted(async () => {
                 </SchedulingFormFieldGroup>
 
                 <CrmCustomFieldsSection
-                  :model-value="appointmentFormControlValues.customAttributes"
+                  class="appointment-custom-fields-section"
+                  :model-value="appointmentCustomFieldsModelValue"
                   :disabled="formStore.ui.isSaving"
-                  :definitions="intakeAppointmentFieldDefinitions"
-                  :title="$t('SCHEDULING.APPOINTMENT_FORM.INTAKE_FIELDS_TITLE')"
-                  :description="
-                    $t('SCHEDULING.APPOINTMENT_FORM.INTAKE_FIELDS_DESCRIPTION')
-                  "
+                  :definitions="unifiedAppointmentFieldDefinitions"
                   :framed="false"
-                  @update:model-value="
-                    formStore.updateField('customAttributes', $event)
-                  "
+                  layout="rows"
+                  @update:model-value="handleAppointmentCustomFieldsUpdate"
                 />
 
-                <SchedulingFormFieldGroup :framed="false">
-                  <TextArea
-                    :model-value="formStore.form.clientComment"
-                    :disabled="formStore.ui.isSaving"
-                    auto-height
-                    custom-text-area-wrapper-class="!rounded-md !border-n-weak !bg-n-alpha-black2 !px-2 !py-1"
-                    :label="$t('SCHEDULING.APPOINTMENT_FORM.COMMENT')"
-                    :placeholder="
-                      $t('SCHEDULING.APPOINTMENT_FORM.COMMENT_PLACEHOLDER')
-                    "
-                    min-height="3rem"
-                    @update:model-value="
-                      formStore.updateField('clientComment', $event)
-                    "
-                  />
-                </SchedulingFormFieldGroup>
-
-                <CrmCustomFieldsSection
-                  :model-value="appointmentFormControlValues.customAttributes"
-                  :disabled="formStore.ui.isSaving"
-                  :definitions="generalAppointmentFieldDefinitions"
-                  :title="$t('SCHEDULING.APPOINTMENT_FORM.CUSTOM_FIELDS_TITLE')"
-                  :description="
-                    $t('SCHEDULING.APPOINTMENT_FORM.CUSTOM_FIELDS_DESCRIPTION')
-                  "
-                  :framed="false"
-                  @update:model-value="
-                    formStore.updateField('customAttributes', $event)
-                  "
-                />
+                <div class="appointment-drawer-section">
+                  <div
+                    class="appointment-drawer-row appointment-drawer-row--start"
+                  >
+                    <span class="appointment-drawer-label">
+                      {{ $t('SCHEDULING.APPOINTMENT_FORM.COMMENT') }}
+                    </span>
+                    <TextArea
+                      class="appointment-drawer-control"
+                      :model-value="formStore.form.clientComment"
+                      :disabled="formStore.ui.isSaving"
+                      auto-height
+                      custom-text-area-wrapper-class="!rounded-md !border-n-weak !bg-n-alpha-black2 !px-2 !py-1 hover:!border-n-slate-6"
+                      :label="$t('SCHEDULING.APPOINTMENT_FORM.COMMENT')"
+                      :placeholder="
+                        $t('SCHEDULING.APPOINTMENT_FORM.COMMENT_PLACEHOLDER')
+                      "
+                      min-height="3rem"
+                      @update:model-value="
+                        formStore.updateField('clientComment', $event)
+                      "
+                    />
+                  </div>
+                </div>
 
                 <div
                   v-if="formStore.mode === 'edit'"
@@ -3550,10 +3762,6 @@ onMounted(async () => {
   @apply grid gap-2;
 }
 
-.appointment-contact-accordion-summary {
-  @apply flex items-start gap-3 rounded-lg px-1 py-1;
-}
-
 .appointment-contact-section {
   @apply grid gap-2;
 }
@@ -3566,8 +3774,26 @@ onMounted(async () => {
   @apply grid gap-3;
 }
 
-.appointment-drawer-form :deep(.grid) {
-  @apply items-start;
+.appointment-drawer-row {
+  display: grid;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.appointment-drawer-label {
+  @apply mb-0 min-w-0 text-[13px] font-medium leading-4 text-n-slate-12;
+}
+
+.appointment-drawer-control,
+.appointment-drawer-form :deep(.appointment-drawer-control) {
+  width: 100%;
+  min-width: 0;
+}
+
+.appointment-drawer-row :deep(> div > label),
+.appointment-drawer-row :deep(> div > span.mb-0\.5),
+.appointment-drawer-row :deep(.appointment-drawer-control label) {
+  @apply sr-only;
 }
 
 .appointment-drawer-form :deep(section:not(.appointment-contact-accordion)),
@@ -3585,6 +3811,15 @@ onMounted(async () => {
   @apply border-t-0 pt-0;
 }
 
+.appointment-drawer-form :deep(section.appointment-custom-fields-section),
+.appointment-drawer-form :deep(section.appointment-custom-fields-section > div),
+.appointment-drawer-form
+  :deep(
+    section.appointment-custom-fields-section .crm-custom-fields-section-rows
+  ) {
+  @apply border-t-0 pt-0;
+}
+
 .appointment-drawer-form
   :deep(section:not(.appointment-contact-accordion) > div:first-child) {
   @apply gap-0;
@@ -3597,7 +3832,7 @@ onMounted(async () => {
 
 .appointment-drawer-form
   :deep(section:not(.appointment-contact-accordion) > div:last-child) {
-  @apply gap-2 pt-1;
+  @apply gap-2 pt-0;
 }
 
 .appointment-drawer-form :deep(label),
@@ -3679,8 +3914,21 @@ onMounted(async () => {
 }
 
 @media (min-width: 768px) {
-  .appointment-money-grid {
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  .appointment-drawer-row {
+    align-items: center;
+    grid-template-columns: minmax(6.5rem, 1fr) minmax(8rem, 14rem);
+  }
+
+  .appointment-drawer-row--start {
+    align-items: start;
+  }
+
+  .appointment-drawer-label {
+    @apply text-left;
+  }
+
+  .appointment-drawer-row--start > .appointment-drawer-label {
+    padding-top: 0.5rem;
   }
 }
 

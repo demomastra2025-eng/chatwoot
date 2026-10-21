@@ -90,10 +90,11 @@ const messageDisabled = computed(
   () =>
     isLoading.value ||
     isLoadingSession.value ||
-    isLoadingSettings.value ||
     isUpdatingPermissions.value ||
     permissionsUnresolved.value ||
+    Boolean(configStore.uiFlags?.fetchError) ||
     !session.value ||
+    !assistant.value ||
     assistant.value?.usage_mode === 'internal_assistant'
 );
 const previews = computed(() =>
@@ -189,6 +190,8 @@ const acceptSession = (payload, { restoreHistory = false } = {}) => {
       sender: item.role,
       content: item.content,
       agentId: item.agent_id,
+      agentDisplayName: item.agent_display_name,
+      rawAgentName: item.agent_name,
       agentName: displayAgentName(item),
       agentTasks: item.agent_tasks || [],
       toolTrace: item.tool_trace,
@@ -454,20 +457,46 @@ watch(
     error.value = '';
     isLoading.value = false;
     isLoadingSession.value = false;
+    isLoadingSettings.value = false;
     isUpdatingPermissions.value = false;
     permissionsUnresolved.value = false;
+    if (!props.assistantId) return;
     isLoadingSettings.value = true;
+    const sessionPromise = loadSession({ restoreHistory: true });
     try {
-      const [, response] = await Promise.all([
+      const showPromise = CaptainAssistant.show(props.assistantId).then(
+        response => {
+          if (current === identity) {
+            assistant.value = response.data;
+            if (messages.value.length && assistant.value?.name) {
+              messages.value = messages.value.map(item => ({
+                ...item,
+                agentName: displayAgentName({
+                  agent_id: item.agentId,
+                  agent_display_name: item.agentDisplayName,
+                  agent_name: item.rawAgentName ?? item.agentName,
+                }),
+              }));
+            }
+          }
+          return response;
+        }
+      );
+      await Promise.all([
         configStore.fetch({ clientMetadataOnly: true }),
-        CaptainAssistant.show(props.assistantId),
+        showPromise,
       ]);
       if (current !== identity) return;
-      assistant.value = response.data;
       if (configStore.uiFlags.fetchError) throw new Error('metadata');
-      await loadSession({ restoreHistory: true });
+      isLoadingSettings.value = false;
+      await sessionPromise;
     } catch (failure) {
-      if (current === identity) showError(failure);
+      if (current === identity) {
+        sessionSequence += 1;
+        session.value = null;
+        isLoadingSession.value = false;
+        showError(failure);
+      }
     } finally {
       if (current === identity) isLoadingSettings.value = false;
     }
@@ -642,11 +671,7 @@ defineExpose({
       >
         {{ error }}
       </p>
-      <MessageList
-        :messages="messages"
-        :is-loading="isLoading || isLoadingSession || isLoadingSettings"
-        class="pt-4"
-      />
+      <MessageList :messages="messages" :is-loading="isLoading" class="pt-4" />
       <section
         v-if="previews.length"
         class="max-h-[min(38vh,24rem)] shrink-0 divide-y divide-n-weak overflow-y-auto border-t border-n-weak bg-n-alpha-1 px-4"

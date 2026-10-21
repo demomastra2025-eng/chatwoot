@@ -62,6 +62,7 @@
       "LOCAL_CANCEL_CONFIRM_DESCRIPTION": "Мәртебе тек OneLink-те өзгереді. МедЭлементтегі қабылдау өшірілмейді — дәрігердің уақытын сонда қолмен босатыңыз.",
       "LOCAL_CANCEL_HINT": "Тек OneLink-те болдырмау — МедЭлементте қабылдау қалады.",
       "RECEPTION_CODE_LABEL": "MedElement қабылдау коды: {code}",
+      "RECEPTION_CODE_FIELD_LABEL": "MedElement қабылдау коды",
       "SYNC_STATUS": {
         "SYNCED": "MedElement-пен синхрондалған",
         "PENDING": "MedElement синхрондауын күтуде",

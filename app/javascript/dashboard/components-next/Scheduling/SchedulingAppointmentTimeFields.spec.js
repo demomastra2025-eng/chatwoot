@@ -72,4 +72,34 @@ describe('SchedulingAppointmentTimeFields', () => {
       expect(wrapper.vm.durationMin).toBe(duration);
     }
   );
+
+  it('renders horizontal label/control rows when layout is set to rows', () => {
+    const wrapper = mount(SchedulingAppointmentTimeFields, {
+      props: {
+        idPrefix: 'row-test',
+        startsAt: '2026-06-27T10:00',
+        endsAt: '2026-06-27T10:30',
+        durationMin: 30,
+        layout: 'rows',
+      },
+      global: {
+        mocks: { $t: key => key },
+        stubs: { SchedulingDateTimeField: true, Input: true },
+      },
+    });
+
+    expect(wrapper.find('.scheduling-appointment-time-rows').exists()).toBe(
+      true
+    );
+    expect(wrapper.findAll('.scheduling-appointment-time-row')).toHaveLength(3);
+    expect(
+      wrapper
+        .findAll('.scheduling-appointment-time-label')
+        .map(node => node.text())
+    ).toEqual([
+      'SCHEDULING.APPOINTMENT_FORM.STARTS_AT',
+      'SCHEDULING.APPOINTMENT_FORM.ENDS_AT',
+      'SCHEDULING.APPOINTMENT_FORM.DURATION_MIN',
+    ]);
+  });
 });

@@ -6,6 +6,7 @@ import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { usePolicy } from 'dashboard/composables/usePolicy';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { useCaptainChannelMatrixStore } from 'dashboard/store/captain/channelMatrix';
+import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import CaptainPaywall from 'dashboard/components-next/captain/pageComponents/Paywall.vue';
@@ -16,6 +17,7 @@ const route = useRoute();
 const store = useStore();
 const { checkPermissions, shouldShowPaywall } = usePolicy();
 const matrixStore = useCaptainChannelMatrixStore();
+const configStore = useCaptainConfigStore();
 
 const hasLoaded = ref(false);
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
@@ -30,14 +32,26 @@ const mainAgentId = computed(() =>
 const activeAgents = computed(() =>
   (assistants.value || []).filter(agent => agent.active !== false)
 );
+const matrixAgents = computed(() =>
+  (matrix.value?.assistants || []).filter(agent => agent.active !== false)
+);
 
 const entryAgentId = computed(() => {
-  const configuredMain = activeAgents.value.find(
+  const pool = activeAgents.value.length
+    ? activeAgents.value
+    : matrixAgents.value;
+  const configuredMain = pool.find(
     agent => Number(agent.id) === mainAgentId.value
   );
   if (configuredMain) return Number(configuredMain.id);
-  if (activeAgents.value.length) return Number(activeAgents.value[0].id);
-  return Number(assistants.value?.[0]?.id || 0);
+  const inboxMain = activeAgents.value.find(
+    agent => agent.main_in_inbox_ids?.length
+  );
+  if (inboxMain) return Number(inboxMain.id);
+  if (pool.length) return Number(pool[0].id);
+  return Number(
+    assistants.value?.[0]?.id || matrix.value?.assistants?.[0]?.id || 0
+  );
 });
 
 const isFetching = computed(
@@ -63,6 +77,7 @@ onMounted(() => {
   }
 
   loadAgents();
+  configStore.fetch({ clientMetadataOnly: true });
   if (isAdmin.value) matrixStore.fetch();
 });
 </script>
