@@ -300,6 +300,15 @@ RSpec.describe SuperAdmin::BulkAccounts do
       expect(audits(following)).to be_empty
     end
 
+    it 'tells «тариф не назначен», not «лимиты уже по тарифу», for an account whose plan was taken off since the confirmation page' do
+      sync = bulk('sync_limits', [following])
+      following.update!(custom_attributes: following.custom_attributes.except('plan', 'plan_modules'))
+
+      expect(sync.strategy.perform(following.reload)).to eq(:no_plan)
+      expect(run(sync)).to have_attributes(done: 0, skipped: { no_plan: 1 })
+      expect(audits(following)).to be_empty
+    end
+
     it 'does not touch the functions or the plan of the account' do
       features = following.reload.enabled_features
       plan = following.custom_attributes.slice('plan', 'plan_modules', 'plan_version', 'plan_applied_at')

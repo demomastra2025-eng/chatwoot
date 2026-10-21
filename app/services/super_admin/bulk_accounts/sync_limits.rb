@@ -15,9 +15,12 @@ class SuperAdmin::BulkAccounts::SyncLimits < SuperAdmin::BulkAccounts::Base
     change(account, diff: diff)
   end
 
-  # nil when the limits were written; :limits_current when the account already was in step by the time its turn came
+  # nil when the limits were written; :no_plan when the account has no plan by the time its turn came (the plan was taken off since
+  # the confirmation page); :limits_current when it already was in step
   def perform(account)
     diff = sync_for(account).call
+    return :no_plan unless diff.plan_assigned
+
     diff.changed? ? nil : :limits_current
   end
 
