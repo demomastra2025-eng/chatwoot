@@ -371,7 +371,7 @@ class TelegramPersonal::ContactSyncService
   def safe_username
     return if self_profile_payload?
 
-    (group_chat? ? params[:chat_username] : params[:username]).presence
+    (group_chat? ? (params[:chat_username].presence || params[:username].presence) : params[:username]).presence
   end
 
   def safe_phone_number

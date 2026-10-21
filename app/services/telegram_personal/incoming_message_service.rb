@@ -336,29 +336,31 @@ class TelegramPersonal::IncomingMessageService
   end
 
   def group_sender_attributes
+    fields = raw_group_sender_fields
+    full_name = fields[:name] || [fields[:first_name], fields[:last_name], fields[:username], fields[:phone_number], fields[:id]].compact.first
+    return if full_name.blank? && fields[:id].blank?
+
+    fields.merge(name: full_name).compact
+  end
+
+  def raw_group_sender_fields
     sender_payload = params[:group_sender].is_a?(Hash) ? params[:group_sender] : {}
-    sender_id = (sender_payload[:id] || params[:sender_id]).to_s.presence
-    first_name = (sender_payload[:first_name] || params[:sender_first_name] || params[:first_name]).to_s.strip.presence
-    last_name = (sender_payload[:last_name] || params[:sender_last_name] || params[:last_name]).to_s.strip.presence
-    username = (sender_payload[:username] || params[:sender_username] || params[:username]).to_s.strip.presence
-    phone_number = (sender_payload[:phone_number] || params[:sender_phone_number] || params[:phone_number]).to_s.strip.presence
-    avatar_url = (sender_payload[:avatar_url] || params[:sender_avatar_url]).to_s.strip.presence
-    full_name = (sender_payload[:name] || params[:sender_name]).to_s.strip.presence ||
-                [first_name, last_name].compact.join(' ').strip.presence ||
-                username ||
-                phone_number ||
-                sender_id
-    return if full_name.blank? && sender_id.blank?
+    first_name = group_sender_field(sender_payload, :first_name)
+    last_name = group_sender_field(sender_payload, :last_name)
 
     {
-      id: sender_id,
-      name: full_name,
+      id: group_sender_field(sender_payload, :id),
+      name: group_sender_field(sender_payload, :name) || [first_name, last_name].compact.join(' ').presence,
       first_name: first_name,
       last_name: last_name,
-      username: username,
-      phone_number: phone_number,
-      avatar_url: avatar_url
-    }.compact
+      username: group_sender_field(sender_payload, :username),
+      phone_number: group_sender_field(sender_payload, :phone_number),
+      avatar_url: group_sender_field(sender_payload, :avatar_url)
+    }
+  end
+
+  def group_sender_field(sender_payload, key)
+    (sender_payload[key] || params[:"sender_#{key}"]).to_s.strip.presence
   end
 
   def group_chat_title

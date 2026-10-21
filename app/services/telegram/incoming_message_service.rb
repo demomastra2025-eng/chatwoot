@@ -59,6 +59,7 @@ class Telegram::IncomingMessageService
 
     @contact_inbox = contact_inbox
     @contact = contact_inbox.contact
+    sync_group_contact_attributes! if group_message?
   end
 
   def process_message_attachments
@@ -94,8 +95,27 @@ class Telegram::IncomingMessageService
                         @contact_inbox.conversations.where.not(status: :resolved).last ||
                           @contact_inbox.latest_closed_automated_conversation
                       end
-      @conversation ||= ::Conversation.create!(conversation_params)
+      if @conversation.present?
+        sync_group_conversation_attributes! if group_message?
+      else
+        @conversation = ::Conversation.create!(conversation_params)
+      end
     end
+  end
+
+  def sync_group_contact_attributes!
+    current_attrs = (@contact.additional_attributes || {}).deep_stringify_keys
+    merged_attrs = current_attrs.merge(additional_attributes.deep_stringify_keys)
+    updates = {}
+    updates[:name] = contact_display_name if telegram_params_chat_title.present? && @contact.name != contact_display_name
+    updates[:additional_attributes] = merged_attrs if merged_attrs != current_attrs
+    @contact.update!(updates) if updates.present?
+  end
+
+  def sync_group_conversation_attributes!
+    current_attrs = (@conversation.additional_attributes || {}).deep_stringify_keys
+    merged_attrs = current_attrs.merge(conversation_additional_attributes.deep_stringify_keys)
+    @conversation.update!(additional_attributes: merged_attrs) if merged_attrs != current_attrs
   end
 
   def contact_attributes

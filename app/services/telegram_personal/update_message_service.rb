@@ -33,11 +33,11 @@ class TelegramPersonal::UpdateMessageService
   end
 
   def scoped_messages
-    chat_id = params[:chat_id].to_s.presence
+    chat_id = (params[:chat_id] || params[:peer_user_id]).to_s.presence
     return inbox.messages if chat_id.blank?
 
     contact_inbox = inbox.contact_inboxes.find_by(source_id: chat_id)
-    return inbox.messages if contact_inbox.blank?
+    return inbox.messages.none if contact_inbox.blank?
 
     inbox.messages.joins(:conversation).where(conversations: { contact_inbox_id: contact_inbox.id })
   end

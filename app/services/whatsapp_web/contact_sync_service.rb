@@ -491,7 +491,9 @@ class WhatsappWeb::ContactSyncService
 
     name = preferred_display_name.to_s.strip
     return attributes if name.blank?
-    return attributes if attributes[LAST_PROVIDER_DISPLAY_NAME_KEY] == name && attributes[LAST_PROVIDER_DISPLAY_NAME_RECORDED_AT_KEY].present?
+    if attributes[LAST_PROVIDER_DISPLAY_NAME_KEY] == name && attributes[LAST_PROVIDER_DISPLAY_NAME_RECORDED_AT_KEY].present?
+      return attributes
+    end
 
     attributes.merge(
       LAST_PROVIDER_DISPLAY_NAME_KEY => name,

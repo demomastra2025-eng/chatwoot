@@ -26,24 +26,33 @@ class WhatsappWeb::ConversationSyncService
   end
 
   def sync_existing_conversation(conversation)
-    return conversation if activity_at.blank? &&
-                           conversation.agent_last_seen_at.present? &&
-                           conversation.assignee_last_seen_at.present?
-
-    updates = {}
-    updates[:last_activity_at] = activity_at if activity_at.present? &&
-                                                (conversation.last_activity_at.blank? || conversation.last_activity_at < activity_at)
-    updates[:agent_last_seen_at] = activity_at if activity_at.present? && conversation.agent_last_seen_at.blank?
-    updates[:assignee_last_seen_at] = activity_at if activity_at.present? && conversation.assignee_last_seen_at.blank?
+    updates = existing_conversation_updates(conversation)
     return conversation if updates.blank?
 
     conversation.update_columns(updates.merge(updated_at: Time.current))
     conversation
   end
 
+  def existing_conversation_updates(conversation)
+    updates = {}
+    sync_existing_group_attributes!(updates, conversation) if group_contact_inbox?
+    return updates if activity_at.blank?
+
+    updates[:last_activity_at] = activity_at if conversation.last_activity_at.blank? || conversation.last_activity_at < activity_at
+    updates[:agent_last_seen_at] = activity_at if conversation.agent_last_seen_at.blank?
+    updates[:assignee_last_seen_at] = activity_at if conversation.assignee_last_seen_at.blank?
+    updates
+  end
+
+  def sync_existing_group_attributes!(updates, conversation)
+    current_attrs = (conversation.additional_attributes || {}).deep_stringify_keys
+    merged_attrs = current_attrs.merge(group_additional_attributes)
+    updates[:additional_attributes] = merged_attrs if merged_attrs != current_attrs
+  end
+
   def create_conversation!
     timestamp = activity_at || Time.current
-    additional_attrs = contact_inbox.source_id.to_s.end_with?('@g.us') ? { 'is_group' => true, 'chat_type' => 'group' } : {}
+    additional_attrs = group_contact_inbox? ? group_additional_attributes : {}
 
     Conversation.new(
       account_id: channel.account_id,
@@ -60,5 +69,13 @@ class WhatsappWeb::ConversationSyncService
       conversation.skip_runtime_events = true
       conversation.save!
     end
+  end
+
+  def group_contact_inbox?
+    contact_inbox.source_id.to_s.end_with?('@g.us')
+  end
+
+  def group_additional_attributes
+    { 'is_group' => true, 'chat_type' => 'group' }
   end
 end

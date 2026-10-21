@@ -71,7 +71,12 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
   end
 
   def direction_payload(remote_identity)
-    outgoing_echo ? { to: remote_identity } : { from: remote_identity }
+    return { to: remote_identity } if outgoing_echo
+
+    {
+      from: remote_identity,
+      from_user_id: (group_participant_jid if group_message?(remote_identity))
+    }.compact
   end
 
   def set_contact_from_echo
@@ -277,7 +282,6 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
     return 'reaction' if message[:reactionMessage].present?
 
     'unsupported'
-
   end
 
   def reaction_payload
