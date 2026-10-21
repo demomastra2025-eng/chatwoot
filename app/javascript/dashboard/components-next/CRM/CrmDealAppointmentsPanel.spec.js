@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
-import { nextTick, reactive, ref } from 'vue';
+import { reactive, ref } from 'vue';
 import CrmDealsAPI from 'dashboard/api/crm/deals';
 import CrmDealAppointmentsPanel from './CrmDealAppointmentsPanel.vue';
 
@@ -12,7 +12,6 @@ vi.mock('vue-i18n', () => ({
 vi.mock('dashboard/api/crm/deals', () => ({
   default: {
     appointments: vi.fn(),
-    appointmentPlan: vi.fn(),
     resumeAppointmentAutomation: vi.fn(),
   },
 }));
@@ -20,18 +19,13 @@ vi.mock('dashboard/api/crm/deals', () => ({
 const deal = () => ({
   id: 8,
   lockVersion: 2,
-  appointmentPlan: Array.from({ length: 8 }, (_, index) => ({
-    id: `visit-${index}`,
-    label: `Visit ${index}`,
-    required: true,
-    appointmentId: index === 0 ? 41 : null,
-  })),
 });
 const rows = [
   {
     id: 41,
     starts_at: '2026-10-10T07:00:00Z',
     patient_contact_name: 'First child',
+    service_name: 'Consultation',
     status: 'completed',
     actual_attended: true,
   },
@@ -51,8 +45,6 @@ const mountPanel = (props = {}) =>
         $t: (key, params) => `${key}${params ? JSON.stringify(params) : ''}`,
       },
       stubs: {
-        Input: true,
-        SchedulingSelectField: true,
         Button: {
           props: ['label', 'disabled'],
           emits: ['click'],
@@ -63,54 +55,54 @@ const mountPanel = (props = {}) =>
     },
   });
 
-describe('deal appointment plan', () => {
+describe('CrmDealAppointmentsPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     state.route = reactive({ params: { accountId: '1' } });
     CrmDealsAPI.appointments.mockResolvedValue({
       data: { payload: rows, meta: { timezone: 'Asia/Almaty' } },
     });
-    CrmDealsAPI.appointmentPlan.mockResolvedValue({
-      data: { payload: { ...deal(), lock_version: 3 } },
-    });
   });
 
-  it('shows both clinical patients and cancellation while one attendance cannot fulfill an eight-visit plan', async () => {
+  it('shows linked appointments without the required appointments plan editor', async () => {
     const wrapper = mountPanel();
     await flushPromises();
 
-    expect(wrapper.text()).toContain('First child');
+    expect(wrapper.text()).toContain('First child · Consultation');
     expect(wrapper.text()).toContain('Second child');
+    expect(wrapper.text()).toContain(
+      'CRM.DEAL_APPOINTMENTS.STATUSES.COMPLETED'
+    );
     expect(wrapper.text()).toContain(
       'CRM.DEAL_APPOINTMENTS.STATUSES.CANCELLED'
     );
-    expect(wrapper.text()).toContain('"completed":1,"total":8');
     expect(wrapper.text()).toContain('12:00');
-    expect(wrapper.text()).not.toContain('Записать заново');
+    expect(wrapper.find('details').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('CRM.DEAL_APPOINTMENTS.PLAN_TITLE');
   });
 
-  it('saves the explicitly selected target and all unfulfilled visits without inferring replacements', async () => {
-    const wrapper = mountPanel();
-    await flushPromises();
-    const target = wrapper.findAllComponents({
-      name: 'SchedulingSelectField',
-    })[0];
-    const save = wrapper
-      .findAll('button')
-      .find(button => button.text() === 'CRM.GENERAL.SAVE');
-    expect(save.element.disabled).toBe(true);
-    target.vm.$emit('update:modelValue', 42);
-    await nextTick();
-    expect(save.element.disabled).toBe(false);
-    await save.trigger('click');
+  it('allows resuming paused stage automation', async () => {
+    CrmDealsAPI.resumeAppointmentAutomation.mockResolvedValue({
+      data: { payload: { ...deal(), lock_version: 3 } },
+    });
+    const wrapper = mountPanel({
+      deal: {
+        ...deal(),
+        appointmentAutomationState: { pausedAt: '2026-10-10T08:00:00Z' },
+      },
+    });
     await flushPromises();
 
-    expect(CrmDealsAPI.appointmentPlan).toHaveBeenCalledTimes(1);
-    const [, payload] = CrmDealsAPI.appointmentPlan.mock.calls[0];
-    expect(payload.selected_appointment_id).toBe(42);
-    expect(payload.appointment_plan).toHaveLength(8);
-    expect(payload.appointment_plan[1].appointment_id).toBeNull();
-    expect(payload.lock_version).toBe(2);
+    const resumeButton = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'CRM.DEAL_APPOINTMENTS.RESUME');
+    expect(resumeButton).toBeTruthy();
+    await resumeButton.trigger('click');
+    await flushPromises();
+
+    expect(CrmDealsAPI.resumeAppointmentAutomation).toHaveBeenCalledWith(8, {
+      lock_version: 2,
+    });
     expect(wrapper.emitted('dealUpdated')).toHaveLength(1);
   });
 
