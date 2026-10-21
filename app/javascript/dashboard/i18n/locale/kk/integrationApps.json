@@ -33,7 +33,8 @@
       "INBOX": "Inbox",
       "DELETE": {
         "BUTTON_TEXT": "Delete"
-      }
+      },
+      "ACTIONS": "Действия"
     },
     "ADD": {
       "FORM": {
@@ -82,7 +83,24 @@
       },
       "RUN_SYNC": {
         "DIRECTION_NOTE": "Жазылуды жасау, ауыстыру және болдырмау, сондай-ақ байланыстырылған пациенттің өзгерістері жоспарлы синхрондауды күтпей One Link жүйесінен MedElement жүйесіне бірден жіберіледі. Жоспарлы синхрондау MedElement өзгерістерін импорттап, күйді салыстырады. Қосылған API жазу операцияларын ұсынбайтындықтан, MedElement қызметтері мен мамандары One Link жүйесінде тек оқуға қолжетімді.",
-        "LAST_PHASE_SYNC": "Соңғы тексеру: {date}"
+        "LAST_PHASE_SYNC": "Соңғы тексеру: {date}",
+        "BUTTON": "Запустить сейчас",
+        "SUCCESS": "Синхронизация Medelement поставлена в очередь. Импортированные данные могут появиться через несколько минут.",
+        "ERROR": "Не удалось запустить синхронизацию Medelement. Попробуйте еще раз позже.",
+        "TITLE": "Диагностика и синхронизация",
+        "STARTED_AT": "Запущено",
+        "STARTED_AT_VALUE": "Запущено: {date}",
+        "RETRY_QUEUED": "Проблемный этап поставлен на повтор.",
+        "CONFLICT_ERROR": "Не удалось изменить состояние конфликта.",
+        "ERROR_LABEL": "Ошибка",
+        "ERROR_WITH_MESSAGE": "Ошибка: {message}",
+        "CONFLICTS": "Конфликты данных",
+        "OPEN_CONFLICTS": "открытых",
+        "OCCURRENCES": "повторений",
+        "CONFLICT_META": "{phase} · повторений: {count}",
+        "RETRY_PHASE": "Повторить этап",
+        "IGNORE": "Игнорировать",
+        "REOPEN": "Вернуть в работу"
       },
       "SYNC_COUNTER": {
         "CONFIGURED_FIELDS": "Өрістер",
@@ -95,12 +113,26 @@
         "DEACTIVATED_COUNT": "Өшірілді",
         "PROVIDER_COUNT": "MedElement қайтарды",
         "NOT_RETURNED_COUNT": "MedElement қайтармады",
-        "LOCAL_UNLINKED_COUNT": "Тек One Link жүйесінде"
+        "LOCAL_UNLINKED_COUNT": "Тек One Link жүйесінде",
+        "UNVERIFIED_COUNT": "Не подтверждено",
+        "REQUEST_COUNT": "Запросов к MedElement"
       },
       "CONFLICT_TYPE": {
         "SPECIALIST_NOT_RETURNED": "Байланыстырылған маманды MedElement қайтармады",
         "PATIENT_CARD_REPAIR_REQUIRED": "Пациент картасын чат контактісінен бөлу қажет",
-        "PATIENT_CHANGED_BY_PROVIDER": "MedElement жазбаны басқа пациентке ауыстырды"
+        "PATIENT_CHANGED_BY_PROVIDER": "MedElement жазбаны басқа пациентке ауыстырды",
+        "INVALID_SPECIALIST": "Некорректные данные специалиста",
+        "CONFLICTING_CABINET_NAME": "У кабинета несколько названий",
+        "INVALID_SERVICE": "Некорректные данные услуги",
+        "INVALID_SPECIALIST_SERVICE": "Некорректная связь специалиста и услуги",
+        "PATIENT_NOT_FOUND": "Пациент не найден в Medelement",
+        "PATIENT_UPDATE_REJECTED": "Данные пациента не удалось применить",
+        "PHONE_OWNED_BY_ANOTHER_CONTACT": "Телефон принадлежит другому контакту",
+        "PHONE_MISMATCH": "Телефон отличается от данных контакта",
+        "INVALID_RECEPTION": "Запись не удалось импортировать",
+        "PATIENT_UNRESOLVED": "Пациент не связан с контактом",
+        "APPOINTMENT_AMOUNT_MISMATCH": "Сумма записи расходится с MedElement",
+        "LOCAL_PAYMENT_PRESERVED": "Локальный платёж сохранён"
       },
       "IMPORT": {
         "TITLE": "Каталогты импорттау",
@@ -199,7 +231,35 @@
           "APPLY": "Қолдану",
           "CLEAR": "Тазарту",
           "EMPTY": "Таңдалған сүзгілер бойынша қақтығыстар жоқ."
-        }
+        },
+        "BIRTH_DATE": "Дата рождения",
+        "PATIENT_CODE": "Код карты"
+      },
+      "NEXT_SYNC": "Следующая синхронизация",
+      "LAST_SYNC": "Последняя плановая синхронизация",
+      "FREQUENCY": {
+        "EVERY_MINUTES": "Раз в {count} мин.",
+        "HOURLY": "Каждый час",
+        "EVERY_HOURS_RU": "Раз в {count} ч.",
+        "DAILY": "Раз в день"
+      },
+      "SYNC_STATUS": {
+        "QUEUED": "В очереди",
+        "RUNNING": "Выполняется",
+        "RETRYING": "Ожидает повтора",
+        "SUCCEEDED": "Завершено",
+        "PARTIAL": "Завершено с конфликтами",
+        "FAILED": "Ошибка",
+        "SKIPPED": "Отключено настройками",
+        "PENDING": "Ожидает запуска"
+      },
+      "SYNC_PHASE": {
+        "SETUP": "Подготовка",
+        "SPECIALISTS": "Специалисты",
+        "SCHEDULES": "Графики MedElement",
+        "SERVICES": "Услуги",
+        "CONTACTS": "Связанные контакты",
+        "RECEPTIONS": "Записи"
       }
     },
     "SIDEBAR_DESCRIPTION": {
@@ -209,6 +269,20 @@
       "NAME": "МойСклад",
       "SHORT_DESCRIPTION": "МойСклад-пен тауарлар каталогын, модификацияларды, бағалар мен қойма қалдықтарын синхрондау.",
       "DESCRIPTION": "МойСклад (JSON API 1.2) интеграциясы «Тауарлар мен қызметтер → Тауарлар» бөліміне тауарларды, бағаларды және қойма қалдықтарын автоматты түрде жүктеуге мүмкіндік береді."
+    },
+    "COUNT": "{n} интеграция | {n} интеграции | {n} интеграций",
+    "SEARCH_PLACEHOLDER": "Поиск...",
+    "NO_RESULTS": "По вашему запросу ничего не найдено",
+    "MACROCRM": {
+      "WEBHOOK": {
+        "DESCRIPTION": "Вставьте этот URL в настройки исходящего вебхука в MacroCRM.",
+        "METHOD": "POST",
+        "EVENT": "Событие: estate.managerChanged",
+        "URL_LABEL": "Адрес вебхука",
+        "KEY_LABEL": "Ключ вебхука",
+        "COPY": "Скопировать адрес",
+        "COPY_SUCCESS": "Адрес вебхука скопирован в буфер"
+      }
     }
   }
 }

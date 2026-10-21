@@ -81,28 +81,19 @@ const darkLogoSource = computed(() =>
   >
     <div>
       <div class="flex items-start justify-between gap-3">
-        <div class="flex items-center gap-3.5 min-w-0">
-          <div
-            class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-n-weak bg-n-solid-1 p-2 shadow-xs"
-          >
-            <img
-              :src="lightLogoSource"
-              :alt="name"
-              class="max-w-full max-h-full rounded-md block dark:hidden"
-            />
-            <img
-              :src="darkLogoSource"
-              :alt="name"
-              class="max-w-full max-h-full rounded-md hidden dark:block"
-            />
-          </div>
-          <div class="min-w-0">
-            <h3
-              class="truncate text-base font-semibold text-n-slate-12 transition-colors group-hover:text-n-brand"
-            >
-              {{ name }}
-            </h3>
-          </div>
+        <div
+          class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-n-weak bg-n-solid-1 p-2 shadow-xs"
+        >
+          <img
+            :src="lightLogoSource"
+            :alt="name"
+            class="max-w-full max-h-full rounded-md block dark:hidden"
+          />
+          <img
+            :src="darkLogoSource"
+            :alt="name"
+            class="max-w-full max-h-full rounded-md hidden dark:block"
+          />
         </div>
         <span
           class="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium"
@@ -113,7 +104,13 @@ const darkLogoSource = computed(() =>
         </span>
       </div>
 
-      <p class="mt-3 line-clamp-2 text-sm leading-relaxed text-n-slate-11">
+      <h3
+        class="mt-3.5 text-base font-semibold text-n-slate-12 transition-colors group-hover:text-n-brand"
+      >
+        {{ name }}
+      </h3>
+
+      <p class="mt-1.5 line-clamp-2 text-sm leading-relaxed text-n-slate-11">
         {{ replaceInstallationName(description) }}
       </p>
     </div>

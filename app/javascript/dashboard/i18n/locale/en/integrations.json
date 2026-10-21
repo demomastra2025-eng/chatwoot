@@ -411,6 +411,10 @@
         "TITLE": "Delete Kaspi Pay integration",
         "MESSAGE": "Are you sure you want to disconnect Kaspi Pay? New Kaspi payments will stop working."
       }
+    },
+    "STATUS": {
+      "ACTIVE": "Active",
+      "INACTIVE": "Inactive"
     }
   },
   "CAPTAIN": {

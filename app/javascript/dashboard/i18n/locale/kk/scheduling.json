@@ -66,7 +66,8 @@
         "SYNCED": "MedElement-пен синхрондалған",
         "PENDING": "MedElement синхрондауын күтуде",
         "NOT_SYNCED": "MedElement-пен синхрондалмаған"
-      }
+      },
+      "PATIENT_CONFLICT": "MedElement пациент картасында қайшылық табылды: пациент деректерін тексеріңіз немесе интеграция баптауларында шешіңіз."
     },
     "APPOINTMENT_FORM": {
       "EDIT_OR_RESCHEDULE": "Өзгерту / ауыстыру",

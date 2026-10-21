@@ -82,7 +82,8 @@
         "SYNCED": "Synced with MedElement",
         "PENDING": "Awaiting MedElement sync",
         "NOT_SYNCED": "Not synced with MedElement"
-      }
+      },
+      "PATIENT_CONFLICT": "MedElement patient conflict detected: please verify patient details or resolve the conflict in MedElement settings."
     },
     "GENERAL": {
       "ACTIVE": "Active",
