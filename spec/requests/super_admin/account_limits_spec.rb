@@ -314,7 +314,8 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       expect(text(row('inboxes').at_css('[data-testid="limit-held"]'))).to eq(format(note, '4 канала'))
     end
 
-    it 'takes the default a limit had before the trial off when the plan gives it back, and keeps a number of its own as «Своё число»' do
+    it 'takes the default a limit had before the trial off when the plan gives it back, and keeps a number of its own as «Своё число»',
+       :aggregate_failures do
       allow(GlobalConfig).to receive(:get).and_call_original
       allow(GlobalConfig).to receive(:get).with('ACCOUNT_AGENTS_LIMIT').and_return('ACCOUNT_AGENTS_LIMIT' => 5)
       account.update!(limits: account.limits.merge('agents' => 5, 'inboxes' => 8))
@@ -398,7 +399,7 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       expect(text(row('conversations').at_css('.admin-limit__choices'))).to include('Как в тарифе по общей настройке: 500 диалогов')
     end
 
-    it 'reads a number equal to the general value of the platform as «своё число», and «Как в тарифе» takes it off, so the base then writes its own' do
+    it 'reads a number equal to the general value of the platform as «своё число»; «Как в тарифе» takes it off and the base writes its own' do
       allow(GlobalConfig).to receive(:get).and_call_original
       allow(GlobalConfig).to receive(:get).with('ACCOUNT_CONVERSATIONS_LIMIT').and_return('ACCOUNT_CONVERSATIONS_LIMIT' => 500)
       account.update!(limits: { 'conversations' => 500 })

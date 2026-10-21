@@ -414,7 +414,7 @@ RSpec.describe Accounts::ApplyPlan do
 
       it 'is written with the number the base gets later, by the next «Применить тариф»' do
         service.call
-        allow(plans).to receive(:limits_for).and_wrap_original { |original, *args| original.call(*args).merge('agents' => 12) }
+        allow(plans).to(receive(:limits_for).and_wrap_original { |original, *args| original.call(*args).merge('agents' => 12) })
 
         expect(service.preview.limits).to include('agents' => { 'from' => nil, 'to' => 12 })
         expect(service.preview.kept_limits).not_to include('agents')
