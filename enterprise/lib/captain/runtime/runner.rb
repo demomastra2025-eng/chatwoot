@@ -256,10 +256,26 @@ class Captain::Runtime::Runner
   # No more transfers in this run (two were made, or the colleague cannot be reached): the agent keeps its own tools and its human
   # handoff, and loses only the transfer and plan tools (see ChatFactory.build_agent_tools).
   def continue_after_transfer_guard(session)
+    previous_chat = session[:chat]
+    extracted_messages = Captain::Runtime::MessageExtractor.extract_messages(previous_chat, session[:current_agent])
     session[:context_wrapper].context[:transfer_guarded] = true
     rebuild_chat!(session)
-    session[:chat].add_message(role: :system, content: TRANSFER_GUARD_NOTE)
+    restore_guarded_chat_messages!(session, previous_chat, extracted_messages)
+    session[:chat].add_message(role: :system, content: transfer_guard_note(session))
     nil
+  end
+
+  def restore_guarded_chat_messages!(session, previous_chat, extracted_messages)
+    return if session[:chat].equal?(previous_chat) || extracted_messages.blank?
+
+    session[:context_wrapper].context[:conversation_history] = extracted_messages
+    session[:chat].messages.clear if session[:chat].respond_to?(:messages) && session[:chat].messages.respond_to?(:clear)
+    Captain::Runtime::HistoryRestorer.restore(session[:chat], extracted_messages)
+  end
+
+  def transfer_guard_note(session)
+    language_line = Captain::PatientLanguage.line(session[:context_wrapper].context[:patient_language])
+    [TRANSFER_GUARD_NOTE, language_line].compact.join(' ')
   end
 
   def continue_unresolved_tasks?(session, response)
@@ -342,6 +358,7 @@ class Captain::Runtime::Runner
     next_agent, target_name = handoff_target(session)
     return missing_agent_result(session, target_name) unless next_agent
     return self_handoff_result(session, next_agent) if self_handoff?(session, next_agent)
+
     context = session[:context_wrapper].context
     if handoff_limit_reached?(context, next_agent)
       record_transfer_guard(session, 'handoff_limit', next_agent)
@@ -398,7 +415,7 @@ class Captain::Runtime::Runner
   def record_transfer_guard(session, reason, target = nil)
     Captain::Runtime::CoordinationEvents.publish(
       'agent.transfer_guard', context: session[:context_wrapper].context, reason: reason,
-      from_agent_id: session[:current_agent].assistant_id, to_agent_id: target&.assistant_id
+                              from_agent_id: session[:current_agent].assistant_id, to_agent_id: target&.assistant_id
     )
   end
 

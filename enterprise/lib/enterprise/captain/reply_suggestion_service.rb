@@ -1,8 +1,10 @@
 require 'monitor'
+require 'timeout'
 
 module Enterprise::Captain::ReplySuggestionService
   FALLBACK_USER_PROMPT = 'Suggest the next reply for the customer based on the conversation and context.'.freeze
   PROGRESS_EVENT = 'captain.reply_suggestion.progress'.freeze
+  SUGGESTION_AGENT_TIMEOUT_SECONDS = 22
   NON_DELIVERABLE_RESPONSES = [
     'conversation_handoff',
     'response_cancelled',
@@ -451,12 +453,16 @@ module Enterprise::Captain::ReplySuggestionService
     trace_collector = TraceCollector.new(assistant: assistant, conversation: conversation, user: user)
     trace_collector.broadcast_initial!
 
-    raw_response = Captain::Assistant::AgentRunnerService.new(
-      assistant: assistant,
-      conversation: conversation,
-      source: 'reply_suggestion',
-      callbacks: trace_collector.callbacks
-    ).generate_response(message_history: suggestion_message_history(assistant))
+    raw_response = Llm::EventBus.with_context(user_id: user&.id) do
+      Timeout.timeout(SUGGESTION_AGENT_TIMEOUT_SECONDS) do
+        Captain::Assistant::AgentRunnerService.new(
+          assistant: assistant,
+          conversation: conversation,
+          source: 'reply_suggestion',
+          callbacks: trace_collector.callbacks
+        ).generate_response(message_history: suggestion_message_history(assistant))
+      end
+    end
 
     build_agent_suggestion_result(raw_response, trace_collector)
   rescue StandardError => e
@@ -469,7 +475,11 @@ module Enterprise::Captain::ReplySuggestionService
     content = payload[:response].to_s.strip
     return if non_deliverable_agent_payload?(payload, content)
 
-    result = { message: content, usage: payload[:usage].presence || DEFAULT_USAGE }
+    result = {
+      message: content,
+      usage: payload[:usage].presence || DEFAULT_USAGE,
+      request_id: payload[:captain_request_id].presence
+    }.compact
     attach_trace_and_meta!(result, payload, trace_collector) if trace_collector
     return result unless build_follow_up_context?
 

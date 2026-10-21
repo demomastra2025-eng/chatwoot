@@ -50,6 +50,7 @@ import {
   getEffectiveChannelType,
 } from 'dashboard/helper/editorHelper';
 import { useCopilotReply } from 'dashboard/composables/useCopilotReply';
+import TasksAPI from 'dashboard/api/captain/tasks';
 import { useKbd } from 'dashboard/composables/utils/useKbd';
 import { isFileTypeAllowedForChannel } from 'shared/helpers/FileHelper';
 import {
@@ -145,6 +146,7 @@ export default {
       newConversationModalActive: false,
       hasRecordedAudio: false,
       copilotAcceptedMessages: {},
+      copilotAcceptedMeta: {},
       selectedReplyConversationId: null,
       selectedDirectReplyAction: COMMUNICATION_CHANNEL_ACTIONS.MESSAGE,
     };
@@ -754,16 +756,30 @@ export default {
       const key = this.getDraftKey(this.conversationIdByRoute, replyType);
       return this.copilotAcceptedMessages[key] || '';
     },
-    setCopilotAcceptedMessage(message, replyType = this.replyType) {
+    getCopilotAcceptedMeta(replyType = this.replyType) {
+      const key = this.getDraftKey(this.conversationIdByRoute, replyType);
+      return this.copilotAcceptedMeta?.[key] || null;
+    },
+    setCopilotAcceptedMessage(
+      message,
+      replyType = this.replyType,
+      meta = null
+    ) {
       const key = this.getDraftKey(this.conversationIdByRoute, replyType);
       this.copilotAcceptedMessages[key] = trimContent(
         message || '',
         this.maxLength
       );
+      if (meta) {
+        this.copilotAcceptedMeta[key] = meta;
+      } else {
+        delete this.copilotAcceptedMeta[key];
+      }
     },
     clearCopilotAcceptedMessage(replyType = this.replyType) {
       const key = this.getDraftKey(this.conversationIdByRoute, replyType);
       delete this.copilotAcceptedMessages[key];
+      delete this.copilotAcceptedMeta[key];
     },
     handleInsert(article) {
       const { url, title } = article;
@@ -986,6 +1002,7 @@ export default {
         }
 
         const copilotAcceptedMessage = this.getCopilotAcceptedMessage();
+        const copilotAcceptedMeta = this.getCopilotAcceptedMeta();
         const isOnWhatsApp =
           this.isATwilioWhatsAppChannel ||
           this.isAWhatsAppCloudChannel ||
@@ -999,14 +1016,16 @@ export default {
         if ((isOnWhatsApp || isOnInstagram || isOnTiktok) && !this.isPrivate) {
           this.sendMessageAsMultipleMessages(
             this.message,
-            copilotAcceptedMessage
+            copilotAcceptedMessage,
+            copilotAcceptedMeta
           );
         } else {
           const messagePayload = this.getMessagePayload(this.message);
           this.sendMessage(
             messagePayload,
             this.message,
-            copilotAcceptedMessage
+            copilotAcceptedMessage,
+            copilotAcceptedMeta
           );
         }
 
@@ -1018,51 +1037,91 @@ export default {
         this.hideEmojiPicker();
       }
     },
-    sendMessageAsMultipleMessages(message, copilotAcceptedMessage = '') {
+    sendMessageAsMultipleMessages(
+      message,
+      copilotAcceptedMessage = '',
+      copilotAcceptedMeta = null
+    ) {
       const messages = this.getMultipleMessagesPayload(message);
       messages.forEach(messagePayload => {
         this.sendMessage(
           messagePayload,
           messagePayload.message || '',
-          copilotAcceptedMessage
+          copilotAcceptedMessage,
+          copilotAcceptedMeta
         );
       });
     },
+    normalizeMessageForCopilotComparison(message, isPrivate = false) {
+      let normalizedMessage = message || '';
+
+      if (this.sendWithSignature && this.messageSignature && !isPrivate) {
+        const effectiveChannelType = getEffectiveChannelType(
+          this.channelType,
+          this.inbox?.medium || ''
+        );
+        normalizedMessage = removeSignature(
+          normalizedMessage,
+          this.messageSignature,
+          effectiveChannelType
+        );
+      }
+
+      return trimContent(normalizedMessage);
+    },
     sendMessageAnalyticsData(
       isPrivate,
-      { editorMessage = '', copilotAcceptedMessage = '' } = {}
+      {
+        editorMessage = '',
+        copilotAcceptedMessage = '',
+        copilotAcceptedMeta = null,
+        sentMessage = null,
+      } = {}
     ) {
-      const normalizeForComparison = message => {
-        let normalizedMessage = message || '';
-
-        if (this.sendWithSignature && this.messageSignature && !isPrivate) {
-          const effectiveChannelType = getEffectiveChannelType(
-            this.channelType,
-            this.inbox?.medium || ''
-          );
-          normalizedMessage = removeSignature(
-            normalizedMessage,
-            this.messageSignature,
-            effectiveChannelType
-          );
-        }
-
-        return trimContent(normalizedMessage);
-      };
-
-      const normalizedAcceptedMessage = normalizeForComparison(
-        copilotAcceptedMessage
+      const normalizedAcceptedMessage =
+        this.normalizeMessageForCopilotComparison(
+          copilotAcceptedMessage,
+          isPrivate
+        );
+      const normalizedEditorMessage = this.normalizeMessageForCopilotComparison(
+        editorMessage,
+        isPrivate
       );
-      const normalizedEditorMessage = normalizeForComparison(editorMessage);
 
       if (normalizedAcceptedMessage && normalizedEditorMessage) {
+        const editedBeforeSend =
+          normalizedAcceptedMessage !== normalizedEditorMessage;
         useTrack(CAPTAIN_EVENTS.AI_ASSISTED_MESSAGE_SENT, {
           conversationId: this.conversationIdByRoute,
           channelType: this.channelType,
-          editedBeforeSend:
-            normalizedAcceptedMessage !== normalizedEditorMessage,
+          editedBeforeSend,
           isPrivate,
         });
+        if (typeof TasksAPI?.feedback === 'function') {
+          try {
+            const feedbackPromise = TasksAPI.feedback({
+              conversationId:
+                copilotAcceptedMeta?.conversationId ||
+                this.conversationIdByRoute,
+              requestId: copilotAcceptedMeta?.requestId || null,
+              copilotAction: copilotAcceptedMeta?.action || 'reply_suggestion',
+              outcome: 'sent',
+              editedBeforeSend,
+              followUpCount: copilotAcceptedMeta?.followUpCount || 0,
+              messageId: sentMessage?.id || null,
+              generatedText: normalizedAcceptedMessage,
+              finalText: normalizedEditorMessage,
+            });
+            if (
+              feedbackPromise &&
+              typeof feedbackPromise.catch === 'function'
+            ) {
+              feedbackPromise.catch(() => {});
+            }
+          } catch {
+            // Non-blocking feedback telemetry
+          }
+        }
       }
 
       // Analytics data for message signature is enabled or not in channels
@@ -1101,17 +1160,45 @@ export default {
     async sendMessage(
       messagePayload,
       editorMessage = '',
-      copilotAcceptedMessage = ''
+      copilotAcceptedMessage = '',
+      copilotAcceptedMeta = null
     ) {
       const payload = this.decorateMessagePayload(messagePayload);
+      const normalizedAcceptedMessage =
+        this.normalizeMessageForCopilotComparison(
+          copilotAcceptedMessage,
+          payload.private
+        );
+      const normalizedEditorMessage = this.normalizeMessageForCopilotComparison(
+        editorMessage,
+        payload.private
+      );
+      if (normalizedAcceptedMessage && normalizedEditorMessage) {
+        payload.contentAttributes = {
+          ...payload.contentAttributes,
+          copilot: {
+            assisted: true,
+            edited_before_send:
+              normalizedAcceptedMessage !== normalizedEditorMessage,
+            action: copilotAcceptedMeta?.action || 'reply_suggestion',
+            request_id: copilotAcceptedMeta?.requestId || null,
+            follow_up_count: copilotAcceptedMeta?.followUpCount || 0,
+          },
+        };
+      }
       try {
-        await this.$store.dispatch('createPendingMessageAndSend', payload);
+        const sentMessage = await this.$store.dispatch(
+          'createPendingMessageAndSend',
+          payload
+        );
         emitter.emit(BUS_EVENTS.MESSAGE_SENT);
         emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE, { force: true });
         this.removeFromDraft();
         this.sendMessageAnalyticsData(payload.private, {
           editorMessage,
           copilotAcceptedMessage,
+          copilotAcceptedMeta,
+          sentMessage,
         });
       } catch (error) {
         const errorMessage =
@@ -1524,8 +1611,13 @@ export default {
     },
     onSubmitCopilotReply() {
       const acceptedMessage = this.copilot.accept();
+      const acceptedMeta = this.copilot.lastAcceptedMeta?.value || null;
       this.message = acceptedMessage;
-      this.setCopilotAcceptedMessage(acceptedMessage);
+      this.setCopilotAcceptedMessage(
+        acceptedMessage,
+        this.replyType,
+        acceptedMeta
+      );
     },
   },
 };

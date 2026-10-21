@@ -77,8 +77,70 @@ RSpec.describe 'Api::V1::Accounts::Captain::Tasks', type: :request do
 
       expect(response).to have_http_status(:success)
       expect(json_response[:message]).to eq('Suggested reply')
+      expect(json_response[:request_id]).to be_present
       expect(json_response.dig(:captain_trace, :reasoning)).to eq('Checked slots')
       expect(json_response.dig(:suggestion_meta, :agent, :name)).to eq('Администратор')
+    end
+
+    it 'returns a graceful error payload instead of 500 when the task service raises Timeout::Error' do
+      service = instance_double(Captain::ReplySuggestionService)
+      allow(Captain::ReplySuggestionService).to receive(:new).and_return(service)
+      allow(service).to receive(:perform).and_raise(Timeout::Error.new('execution expired'))
+
+      post "#{tasks_path}/reply_suggestion",
+           params: { conversation_display_id: 1 },
+           headers: agent.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(json_response[:message]).to be_nil
+      expect(json_response[:error]).to be_present
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/captain/tasks/feedback' do
+    let(:inbox) { create(:inbox, account: account) }
+    let(:conversation) { create(:conversation, account: account, inbox: inbox) }
+
+    before { Llm::EventSubscriber.install! }
+
+    it 'records manager copilot feedback in LlmEvent with user attribution and edit outcome' do
+      expect do
+        post "#{tasks_path}/feedback",
+             params: {
+               conversation_display_id: conversation.display_id,
+               request_id: 'req-copilot-123',
+               copilot_action: 'reply_suggestion',
+               outcome: 'sent',
+               edited_before_send: true,
+               follow_up_count: 1,
+               message_id: 999,
+               generated_text: 'Здравствуйте! Свободное окно в 15:00.',
+               final_text: 'Здравствуйте! Можем записать вас сегодня в 15:00.'
+             },
+             headers: agent.create_new_auth_token,
+             as: :json
+      end.to change { LlmEvent.where(event_name: 'llm.copilot.feedback').count }.by(1)
+
+      expect(response).to have_http_status(:success)
+      expect(json_response[:ok]).to be(true)
+
+      event = LlmEvent.where(event_name: 'llm.copilot.feedback').order(:id).last
+      expect(event).to have_attributes(
+        account_id: account.id,
+        conversation_id: conversation.id,
+        request_id: 'req-copilot-123',
+        source: 'reply_suggestion',
+        status: 'sent'
+      )
+      expect(event.payload).to include(
+        'user_id' => agent.id,
+        'user_name' => agent.name,
+        'suggestion_outcome' => 'sent',
+        'edited_before_send' => true,
+        'follow_up_count' => 1,
+        'message_id' => 999
+      )
     end
   end
 

@@ -17,7 +17,7 @@ class Llm::EventBus
   CONTEXT_KEYS = %w[
     request_id trace_id session_id account_id assistant_id conversation_id
     conversation_display_id copilot_thread_id current_agent channel_type source
-    feature runtime_mode project_case_id
+    feature runtime_mode project_case_id user_id
   ].freeze
 
   class << self

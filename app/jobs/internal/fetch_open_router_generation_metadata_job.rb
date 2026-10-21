@@ -3,22 +3,36 @@
 class Internal::FetchOpenRouterGenerationMetadataJob < ApplicationJob
   queue_as :low
 
-  def perform(llm_event_id, generation_id = nil)
-    event = LlmEvent.find_by(id: llm_event_id)
-    return if event.blank?
+  MAX_NOT_FOUND_RETRIES = 2
+  NOT_FOUND_RETRY_BASE_SECONDS = 3
 
-    resolved_generation_id = generation_id.presence || event.payload.to_h['openrouter_generation_id'].presence
+  def perform(llm_event_id, generation_id = nil, attempt = 1)
+    @attempt = attempt.to_i
+    event = LlmEvent.find_by(id: llm_event_id)
+    resolved_generation_id = resolve_generation_id(event, generation_id)
     return if resolved_generation_id.blank?
 
     metadata = fetch_metadata(event, resolved_generation_id)
     event.update!(event_update_attributes(event, metadata))
     Llm::UsageLedger.record_event!(event.reload)
   rescue StandardError => e
-    record_error(event, resolved_generation_id, e) if event.present? && resolved_generation_id.present?
-    nil
+    handle_fetch_failure(event, resolved_generation_id, e)
   end
 
   private
+
+  def resolve_generation_id(event, generation_id)
+    return if event.blank?
+
+    generation_id.presence || event.payload.to_h['openrouter_generation_id'].presence
+  end
+
+  def handle_fetch_failure(event, generation_id, error)
+    return retry_not_found(event, generation_id) if transient_not_found?(error)
+
+    record_error(event, generation_id, error) if event.present? && generation_id.present?
+    nil
+  end
 
   def fetch_metadata(event, generation_id)
     account = event.account
@@ -28,14 +42,40 @@ class Internal::FetchOpenRouterGenerationMetadataJob < ApplicationJob
         api_key: Llm::Config.api_key('openrouter', account: account),
         api_base: Llm::Config.api_base('openrouter', account: account)
       )
-      event_payload['status'] = 'success'
-      event_payload['error'] = false
-      event_payload['endpoint_provider'] = metadata.provider_name if metadata.provider_name.present?
+      mark_metadata_success!(event_payload, metadata)
       metadata
     rescue StandardError => e
-      Llm::ObservabilityPayload.attach_error!(event_payload, e)
+      mark_metadata_failure!(event_payload, e)
       raise
     end
+  end
+
+  def mark_metadata_success!(event_payload, metadata)
+    event_payload['status'] = 'success'
+    event_payload['error'] = false
+    event_payload['endpoint_provider'] = metadata.provider_name if metadata.provider_name.present?
+  end
+
+  def mark_metadata_failure!(event_payload, error)
+    if transient_not_found?(error)
+      event_payload['status'] = 'retrying'
+      event_payload['error'] = false
+      event_payload['reason'] = 'generation_not_indexed_yet'
+    else
+      Llm::ObservabilityPayload.attach_error!(event_payload, error)
+    end
+  end
+
+  def transient_not_found?(error)
+    @attempt.to_i <= MAX_NOT_FOUND_RETRIES &&
+      error.message.to_s.match?(/404|generation not found|not_found/i)
+  end
+
+  def retry_not_found(event, generation_id)
+    next_attempt = @attempt.to_i + 1
+    self.class.set(wait: (@attempt.to_i * NOT_FOUND_RETRY_BASE_SECONDS).seconds)
+        .perform_later(event.id, generation_id, next_attempt)
+    nil
   end
 
   def metadata_fetch_payload(event, generation_id)

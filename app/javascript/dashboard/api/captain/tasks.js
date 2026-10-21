@@ -102,6 +102,35 @@ class TasksAPI extends ApiClient {
       { signal }
     );
   }
+
+  /**
+   * Records manager feedback on a generated Copilot suggestion (applied, dismissed, sent).
+   * @param {Object} options - Feedback payload.
+   * @returns {Promise}
+   */
+  feedback({
+    conversationId,
+    requestId,
+    copilotAction,
+    outcome,
+    editedBeforeSend,
+    followUpCount,
+    generatedText,
+    finalText,
+    messageId,
+  } = {}) {
+    return axios.post(`${this.url}/feedback`, {
+      conversation_display_id: conversationId,
+      request_id: requestId,
+      copilot_action: copilotAction,
+      outcome,
+      edited_before_send: editedBeforeSend,
+      follow_up_count: followUpCount,
+      generated_text: generatedText,
+      final_text: finalText,
+      message_id: messageId,
+    });
+  }
 }
 
 export default new TasksAPI();

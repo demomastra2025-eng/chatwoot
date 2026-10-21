@@ -245,6 +245,7 @@
       "CUSTOM_FIELDS_DESCRIPTION": "Capture additional appointment-specific details using managed custom fields.",
       "CUSTOM_FIELDS_TITLE": "Custom fields",
       "EDIT_TITLE": "Edit appointment",
+      "EDIT_OR_RESCHEDULE": "Edit / reschedule",
       "ENDS_AT": "Ends at",
       "DURATION_MIN": "Duration, minutes",
       "INTAKE_FIELDS_DESCRIPTION": "Collect the managed fields that should be captured during booking intake.",

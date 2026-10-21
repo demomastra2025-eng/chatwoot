@@ -217,6 +217,16 @@ RSpec.describe Captain::ReplySuggestionService do
         expect(result[:message]).to eq('Sure, I can help!')
       end
 
+      it 'falls back to standard prompt suggestion if AgentRunnerService raises Timeout::Error' do
+        runner_double = instance_double(Captain::Assistant::AgentRunnerService)
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner_double)
+        allow(runner_double).to receive(:generate_response).and_raise(Timeout::Error.new('execution expired'))
+
+        result = service.perform
+
+        expect(result[:message]).to eq('Sure, I can help!')
+      end
+
       def stub_council_runner_execution(entry_assistant, specialist)
         runner_double = instance_double(Captain::Assistant::AgentRunnerService)
         captured_callbacks = nil

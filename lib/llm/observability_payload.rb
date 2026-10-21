@@ -49,6 +49,7 @@ class Llm::ObservabilityPayload
         source: source[:source].presence || metadata[:source],
         session_id: source[:session_id].presence || metadata[:session_id],
         account_id: source[:account_id],
+        user_id: source[:user_id].presence || metadata[:user_id],
         assistant_id: source[:assistant_id].presence || metadata[:assistant_id],
         conversation_id: source[:conversation_record_id].presence || source[:conversation_db_id],
         conversation_display_id: source[:conversation_display_id].presence || metadata[:conversation_display_id].presence || source[:conversation_id],
@@ -130,6 +131,7 @@ class Llm::ObservabilityPayload
       payload['endpoint_provider'] = response.provider
       payload['openrouter_generation_id'] = response.request_id
       payload['output_type'] = 'decision'
+      payload['decision_choice'] = response.choice if response.respond_to?(:choice) && response.choice.present?
       payload.compact!
       payload
     end

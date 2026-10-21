@@ -6,6 +6,7 @@ import {
   CAPTAIN_ERROR_TYPES,
   CAPTAIN_GENERATION_FAILURE_REASONS,
 } from 'dashboard/composables/captain/constants';
+import TasksAPI from 'dashboard/api/captain/tasks';
 import { emitter } from 'shared/helpers/mitt';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 
@@ -22,6 +23,18 @@ const REWRITE_ACTIONS = [
   'make_formal',
   'simplify',
 ];
+
+function recordCopilotFeedback(payload) {
+  if (typeof TasksAPI?.feedback !== 'function') return;
+  try {
+    const promise = TasksAPI.feedback(payload);
+    if (promise && typeof promise.catch === 'function') {
+      promise.catch(() => {});
+    }
+  } catch {
+    // Non-blocking feedback telemetry
+  }
+}
 
 /**
  * Gets the event key suffix based on action type.
@@ -94,6 +107,8 @@ export function useCopilotReply() {
   const suggestionMeta = ref(null);
   const liveProgress = ref(null);
   const abortController = ref(null);
+  const requestId = ref(null);
+  const lastAcceptedMeta = ref(null);
 
   // Tracking state
   const currentAction = ref(null);
@@ -156,6 +171,14 @@ export function useCopilotReply() {
           followUpCount.value
         )
       );
+      recordCopilotFeedback({
+        conversationId: trackedConversationId.value,
+        requestId: requestId.value,
+        copilotAction: currentAction.value,
+        outcome: 'dismissed',
+        followUpCount: followUpCount.value,
+        generatedText: generatedContent.value,
+      });
     }
 
     stopProgressListener();
@@ -171,6 +194,7 @@ export function useCopilotReply() {
     captainTrace.value = null;
     suggestionMeta.value = null;
     liveProgress.value = null;
+    requestId.value = null;
     currentAction.value = null;
     followUpCount.value = 0;
     trackedConversationId.value = null;
@@ -219,6 +243,7 @@ export function useCopilotReply() {
         followUpContext: newContext,
         captainTrace: trace,
         suggestionMeta: meta,
+        requestId: newRequestId,
         errorType,
       } = await processEvent(action, data, {
         signal: requestController.signal,
@@ -236,6 +261,7 @@ export function useCopilotReply() {
       followUpContext.value = newContext;
       captainTrace.value = trace || liveProgress.value?.captain_trace || null;
       suggestionMeta.value = meta || null;
+      requestId.value = newRequestId || newContext?.request_id || null;
       if (content) {
         showEditor.value = true;
         // Track "Used" event on successful generation
@@ -305,6 +331,7 @@ export function useCopilotReply() {
       const {
         message: content,
         followUpContext: updatedContext,
+        requestId: updatedRequestId,
         errorType,
       } = await followUp({
         followUpContext: followUpContext.value,
@@ -323,6 +350,8 @@ export function useCopilotReply() {
       if (content) {
         generatedContent.value = content;
         followUpContext.value = updatedContext;
+        requestId.value =
+          updatedRequestId || updatedContext?.request_id || requestId.value;
         showEditor.value = true;
       } else if (errorType && errorType !== CAPTAIN_ERROR_TYPES.ABORTED) {
         trackGenerationFailure({
@@ -373,6 +402,12 @@ export function useCopilotReply() {
    */
   function accept() {
     const content = generatedContent.value;
+    lastAcceptedMeta.value = {
+      requestId: requestId.value,
+      action: currentAction.value || 'reply_suggestion',
+      followUpCount: followUpCount.value,
+      conversationId: trackedConversationId.value,
+    };
 
     // Track "Applied" event
     if (currentAction.value) {
@@ -385,6 +420,14 @@ export function useCopilotReply() {
           followUpCount.value
         )
       );
+      recordCopilotFeedback({
+        conversationId: trackedConversationId.value,
+        requestId: requestId.value,
+        copilotAction: currentAction.value,
+        outcome: 'applied',
+        followUpCount: followUpCount.value,
+        generatedText: content,
+      });
     }
 
     stopProgressListener();
@@ -395,6 +438,7 @@ export function useCopilotReply() {
     captainTrace.value = null;
     suggestionMeta.value = null;
     liveProgress.value = null;
+    requestId.value = null;
     currentAction.value = null;
     followUpCount.value = 0;
     trackedConversationId.value = null;
@@ -411,6 +455,8 @@ export function useCopilotReply() {
     captainTrace,
     suggestionMeta,
     liveProgress,
+    requestId,
+    lastAcceptedMeta,
 
     isActive,
     isButtonDisabled,

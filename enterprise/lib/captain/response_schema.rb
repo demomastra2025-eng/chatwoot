@@ -5,9 +5,9 @@ class Captain::ResponseSchema < RubyLLM::Schema
   # delivered as it is.
   # response_mode is an enum, so the provider offers the model these two values and nothing else.
   RESPONSE_MODES = %w[reply suppress].freeze
-  RESPONSE_DESCRIPTION = 'Text for the patient, written entirely in the language named in patient_language (matching the ' \
-                         '"Patient language:" line in "# Now" when present, even after tool calls or when earlier turns or tool ' \
-                         'results use another language).'.freeze
+  RESPONSE_DESCRIPTION = 'Text for the patient, written entirely in the language named in patient_language (strictly matching the ' \
+                         '"Patient language:" line in "# Now" when present, even after agent transfers, transfer guards, or tool ' \
+                         'calls, and even when clinic instructions, earlier turns, or tool results are in Russian).'.freeze
   RESPONSE_MODE_DESCRIPTION = "reply - send the reply; suppress - send nothing (the patient wrote only an 'ok', or staff already replied).".freeze
   REASONING_DESCRIPTION = 'One short phrase for the log: what the reply is based on. The patient never sees it.'.freeze
   ARTIFACT_IDS_DESCRIPTION = 'IDs of files from tool results to attach; otherwise an empty list.'.freeze

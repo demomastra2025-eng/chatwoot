@@ -21,6 +21,7 @@ class Captain::Assistant::AgentRunnerService
   CONTACT_INBOX_STATE_ATTRIBUTES = %i[id hmac_verified].freeze
   CAMPAIGN_STATE_ATTRIBUTES = %i[id title message campaign_type description].freeze
   MAX_RUNTIME_TURNS = 24
+  MAX_SUGGESTION_RUNTIME_TURNS = 10
   MAX_GRAPH_RUNTIME_TURNS = (Captain::Runtime::TaskQueue::MAX_TASKS * 2) + 1
   MAX_BLANK_RESPONSE_RETRIES = 1
   MAX_FINALIZATION_ONLY_RETRIES = 1
@@ -222,13 +223,20 @@ class Captain::Assistant::AgentRunnerService
       runner.run(
         message_to_process,
         context: context,
-        max_turns: (Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks]) ? MAX_GRAPH_RUNTIME_TURNS : MAX_RUNTIME_TURNS),
+        max_turns: max_turns_for_run(context),
         runtime_options: {
           llm_context: llm_context_for_run,
           account: @assistant.account
         }.merge(runtime_options)
       )
     end
+  end
+
+  def max_turns_for_run(context)
+    return MAX_GRAPH_RUNTIME_TURNS if Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks])
+    return MAX_SUGGESTION_RUNTIME_TURNS if suggestion_run?
+
+    MAX_RUNTIME_TURNS
   end
 
   def retry_blank_response?(response, result, attempts)
@@ -914,6 +922,7 @@ class Captain::Assistant::AgentRunnerService
       feature: 'assistant',
       runtime_mode: 'captain_runtime',
       account_id: state[:account_id],
+      user_id: Current.user&.id,
       assistant_id: state[:assistant_id],
       conversation_id: conversation[:id],
       conversation_display_id: conversation[:display_id],

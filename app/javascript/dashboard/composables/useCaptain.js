@@ -160,9 +160,22 @@ export function useCaptain() {
         options.signal
       );
       const {
-        data: { message: generatedMessage, follow_up_context: followUpContext },
+        data: {
+          message: generatedMessage,
+          follow_up_context: followUpContext,
+          request_id: requestId,
+          error: backendError,
+        },
       } = result;
-      return { message: generatedMessage, followUpContext };
+      if (!generatedMessage && backendError) {
+        useAlert(backendError);
+        return { message: '', errorType: CAPTAIN_ERROR_TYPES.API_ERROR };
+      }
+      return {
+        message: generatedMessage,
+        followUpContext,
+        ...(requestId ? { requestId } : {}),
+      };
     } catch (error) {
       handleAPIError(error);
       return { message: '', errorType: getErrorType(error) };
@@ -182,9 +195,22 @@ export function useCaptain() {
         options.signal
       );
       const {
-        data: { message: generatedMessage, follow_up_context: followUpContext },
+        data: {
+          message: generatedMessage,
+          follow_up_context: followUpContext,
+          request_id: requestId,
+          error: backendError,
+        },
       } = result;
-      return { message: generatedMessage, followUpContext };
+      if (!generatedMessage && backendError) {
+        useAlert(backendError);
+        return { message: '', errorType: CAPTAIN_ERROR_TYPES.API_ERROR };
+      }
+      return {
+        message: generatedMessage,
+        followUpContext,
+        ...(requestId ? { requestId } : {}),
+      };
     } catch (error) {
       handleAPIError(error);
       return { message: '', errorType: getErrorType(error) };
@@ -209,13 +235,20 @@ export function useCaptain() {
           follow_up_context: followUpContext,
           captain_trace: captainTrace,
           suggestion_meta: suggestionMeta,
+          request_id: requestId,
+          error: backendError,
         },
       } = result;
+      if (!generatedMessage && backendError) {
+        useAlert(backendError);
+        return { message: '', errorType: CAPTAIN_ERROR_TYPES.API_ERROR };
+      }
       return {
         message: generatedMessage,
         followUpContext,
-        captainTrace: captainTrace || null,
-        suggestionMeta: suggestionMeta || null,
+        ...(captainTrace ? { captainTrace } : {}),
+        ...(suggestionMeta ? { suggestionMeta } : {}),
+        ...(requestId ? { requestId } : {}),
       };
     } catch (error) {
       handleAPIError(error);
@@ -238,9 +271,26 @@ export function useCaptain() {
         signal
       );
       const {
-        data: { message: generatedMessage, follow_up_context: updatedContext },
+        data: {
+          message: generatedMessage,
+          follow_up_context: updatedContext,
+          request_id: requestId,
+          error: backendError,
+        },
       } = result;
-      return { message: generatedMessage, followUpContext: updatedContext };
+      if (!generatedMessage && backendError) {
+        useAlert(backendError);
+        return {
+          message: '',
+          followUpContext,
+          errorType: CAPTAIN_ERROR_TYPES.API_ERROR,
+        };
+      }
+      return {
+        message: generatedMessage,
+        followUpContext: updatedContext,
+        ...(requestId ? { requestId } : {}),
+      };
     } catch (error) {
       handleAPIError(error);
       return {

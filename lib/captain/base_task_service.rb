@@ -41,7 +41,8 @@ class Captain::BaseTaskService
     return { error: I18n.t('captain.disabled'), error_code: 403 } unless captain_tasks_enabled?
     return { error: I18n.t('captain.api_key_missing'), error_code: 401 } unless api_key_configured?
 
-    Llm::EventBus.with_context(request_event_context(model)) do
+    request_context = request_event_context(model)
+    Llm::EventBus.with_context(request_context) do
       blocked_response = moderate_task_input(messages)
       return blocked_response if blocked_response
 
@@ -57,6 +58,7 @@ class Captain::BaseTaskService
       blocked_response = moderate_task_output(response[:message], messages)
       return blocked_response if blocked_response
 
+      response = response.merge(request_id: request_context[:request_id])
       return response unless build_follow_up_context? && response[:message].present?
 
       response.merge(follow_up_context: build_follow_up_context(messages, response))
@@ -104,6 +106,7 @@ class Captain::BaseTaskService
       feature: event_name,
       runtime_mode: 'captain_task',
       account_id: account.id,
+      user_id: task_user_id,
       conversation_record_id: conversation&.id,
       conversation_display_id: conversation&.display_id,
       session_id: task_session_id,
@@ -112,12 +115,17 @@ class Captain::BaseTaskService
     }.compact
   end
 
+  def task_user_id
+    actor = respond_to?(:user, true) ? user : Current.user
+    actor&.id
+  end
+
   def request_event_context(model)
     chat_observability_payload(model).merge(request_id: SecureRandom.uuid)
   end
 
   def task_session_id
-    return unless conversation_display_id.present?
+    return if conversation_display_id.blank?
 
     "#{account.id}_#{conversation_display_id}"
   end

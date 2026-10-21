@@ -142,6 +142,7 @@ Rails.application.routes.draw do
               post :reply_suggestion
               post :label_suggestion
               post :follow_up
+              post :feedback
             end
           end
           resources :contact_inboxes, only: [] do

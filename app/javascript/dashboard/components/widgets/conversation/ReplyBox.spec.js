@@ -551,4 +551,72 @@ describe('ReplyBox', () => {
       })
     ).toBe(false);
   });
+
+  it('attaches copilot contentAttributes and reports sent feedback when sending an accepted copilot reply', async () => {
+    const TasksAPI = (await import('dashboard/api/captain/tasks')).default;
+    const feedbackSpy = vi
+      .spyOn(TasksAPI, 'feedback')
+      .mockResolvedValue({ data: { ok: true } });
+    const dispatchSpy = vi.fn().mockResolvedValue({ id: 777 });
+
+    const context = {
+      conversationIdByRoute: 42,
+      channelType: 'Channel::Whatsapp',
+      sendWithSignature: false,
+      messageSignature: '',
+      inReplyTo: {},
+      decorateMessagePayload: payload => ({ ...payload }),
+      normalizeMessageForCopilotComparison:
+        ReplyBox.methods.normalizeMessageForCopilotComparison,
+      removeFromDraft: vi.fn(),
+      sendMessageAnalyticsData: ReplyBox.methods.sendMessageAnalyticsData,
+      $store: {
+        dispatch: dispatchSpy,
+      },
+      $t: key => key,
+    };
+
+    await ReplyBox.methods.sendMessage.call(
+      context,
+      {
+        conversationId: 42,
+        message: 'Здравствуйте! Записали на 15:00.',
+        private: false,
+      },
+      'Здравствуйте! Записали на 15:00.',
+      'Здравствуйте! Свободно в 15:00.',
+      {
+        requestId: 'req-99',
+        action: 'reply_suggestion',
+        followUpCount: 1,
+        conversationId: 42,
+      }
+    );
+
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      'createPendingMessageAndSend',
+      expect.objectContaining({
+        contentAttributes: expect.objectContaining({
+          copilot: {
+            assisted: true,
+            edited_before_send: true,
+            action: 'reply_suggestion',
+            request_id: 'req-99',
+            follow_up_count: 1,
+          },
+        }),
+      })
+    );
+    expect(feedbackSpy).toHaveBeenCalledWith({
+      conversationId: 42,
+      requestId: 'req-99',
+      copilotAction: 'reply_suggestion',
+      outcome: 'sent',
+      editedBeforeSend: true,
+      followUpCount: 1,
+      messageId: 777,
+      generatedText: 'Здравствуйте! Свободно в 15:00.',
+      finalText: 'Здравствуйте! Записали на 15:00.',
+    });
+  });
 });

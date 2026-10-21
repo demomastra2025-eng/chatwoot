@@ -22,7 +22,7 @@ RSpec.describe Captain::PatientLanguageDetector do
     allow(Llm::Runtime).to receive(:decide).and_return(decision.new(value))
   end
 
-  it 'sends one decision with the latest incoming patient message' do
+  it 'sends one decision with the latest incoming patient message and recent context' do
     21.times { |i| patient_says("Fake patient words #{i}") }
     create(:message, account: account, conversation: conversation, inbox: conversation.inbox, message_type: :outgoing,
                      content: 'Fake staff words')
@@ -31,11 +31,30 @@ RSpec.describe Captain::PatientLanguageDetector do
     expect(detector.call).to eq('kk')
     expect(Llm::Runtime).to have_received(:decide).once.with(hash_including(
                                                                feature: :language_detection, model: model,
-                                                               input: { messages: 'Fake patient words 20' },
+                                                               input: {
+                                                                 messages: 'Fake patient words 20',
+                                                                 recent_messages: [
+                                                                   'Fake patient words 17',
+                                                                   'Fake patient words 18',
+                                                                   'Fake patient words 19',
+                                                                   'Fake patient words 20'
+                                                                 ]
+                                                               },
                                                                options: { decision_criteria: described_class::CRITERIA,
                                                                           decision_instructions: described_class::INSTRUCTIONS }
                                                              ))
     expect(conversation.reload.additional_attributes[described_class::ATTRIBUTE]).to eq('kk')
+  end
+
+  it 'includes previous_language in decision input when already persisted on the conversation' do
+    conversation.update!(additional_attributes: { described_class::ATTRIBUTE => 'ru' })
+    patient_says('Это ИИН моего сына')
+    choose('ru')
+
+    expect(detector.call).to eq('ru')
+    expect(Llm::Runtime).to have_received(:decide).with(
+      hash_including(input: { messages: 'Это ИИН моего сына', previous_language: 'ru' })
+    )
   end
 
   it 'uses a voice transcription and skips an attachment without text' do

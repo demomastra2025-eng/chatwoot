@@ -26,6 +26,7 @@ class Llm::Monitoring::EventRecorder
       llm.chat.runtime_complete
       llm.context_transform.applied
       llm.context_transform.failed
+      llm.copilot.feedback
       llm.embedding.complete
       llm.decision.complete
       llm.moderation.complete
@@ -60,9 +61,11 @@ class Llm::Monitoring::EventRecorder
     payload_bytes payload_budget_bytes project_case_id queue_wait_ms retry_count schema_invalid_count status
     snippet_hash thinking_tokens tool_calls_count usage_scope provider_response_count provider_observability_error_count
     cached_tokens cache_creation_tokens actual_model endpoint_provider requested_model
+    user_id user_name decision_choice copilot_action suggestion_outcome edited_before_send follow_up_count
+    generated_reply_preview final_reply_preview message_id
   ].freeze
   CHAT_ACCOUNTING_KEYS = %w[
-    usage_scope request_id parent_request_id trace_id session_id account_id assistant_id conversation_id
+    usage_scope request_id parent_request_id trace_id session_id account_id user_id assistant_id conversation_id
     conversation_display_id copilot_thread_id feature runtime_mode current_agent channel_type source project_case_id
     provider model requested_model actual_model endpoint_provider openrouter_generation_id status error error_class
     error_code reason prompt_tokens completion_tokens total_tokens thinking_tokens cached_tokens cache_creation_tokens

@@ -69,6 +69,7 @@
       }
     },
     "APPOINTMENT_FORM": {
+      "EDIT_OR_RESCHEDULE": "Өзгерту / ауыстыру",
       "STARTS_AT": "Басталуы",
       "ENDS_AT": "Аяқталуы",
       "DURATION_MIN": "Ұзақтығы, минут",
