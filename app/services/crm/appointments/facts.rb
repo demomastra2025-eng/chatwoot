@@ -31,7 +31,7 @@ class Crm::Appointments::Facts
        appointment.attendance_confirmed_at&.iso8601(6), appointment.custom_attributes.to_h.slice(*FINGERPRINT_ATTRIBUTE_KEYS)]
     end
     Digest::SHA256.hexdigest(
-      [values, deal.appointment_plan, deal.selected_appointment_id, configuration, local_today.iso8601, timezone.name, clock_facts].to_json
+      [values, configuration, local_today.iso8601, timezone.name, clock_facts].to_json
     )
   end
 
@@ -44,12 +44,7 @@ class Crm::Appointments::Facts
   end
 
   def success?
-    case configuration['success_mode']
-    when 'any_attended' then appointments.any? { |appointment| self.class.attended?(appointment) }
-    when 'selected_attended' then selected.any? { |appointment| self.class.attended?(appointment) }
-    when 'all_required_attended' then all_required_attended?
-    else false
-    end
+    configuration['success_mode'] == 'any_attended' && appointments.any? { |appointment| self.class.attended?(appointment) }
   end
 
   def next_check_at
@@ -82,27 +77,12 @@ class Crm::Appointments::Facts
     end
   end
 
-  def selected
-    appointments.select { |appointment| appointment.id == deal.selected_appointment_id }
-  end
-
   def scope_for(scope)
     case scope
-    when 'selected' then selected
     when 'nearest'
       upcoming = appointments.select { |appointment| appointment.ends_at >= now }
       [upcoming.min_by(&:starts_at) || appointments.max_by(&:starts_at)].compact
     else appointments
-    end
-  end
-
-  def all_required_attended?
-    required = Array(deal.appointment_plan).select { |entry| entry['required'] != false }
-    return false if required.empty?
-
-    required.all? do |entry|
-      appointment = appointments.find { |record| record.id == entry['appointment_id'].to_i }
-      appointment && self.class.attended?(appointment)
     end
   end
 
