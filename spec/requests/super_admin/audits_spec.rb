@@ -6,6 +6,9 @@ RSpec.describe 'Super Admin Audits', type: :request do
   let(:super_admin) { create(:super_admin) }
   let(:account) { create(:account) }
 
+  # The limits of the entries on the page, one line each
+  def limit_lines = Nokogiri::HTML(response.body).css('[data-testid="audit-limit-lines"] li').map { |node| node.text.squish }
+
   describe 'GET /super_admin/audits' do
     context 'when it is an unauthenticated super admin' do
       it 'redirects to login' do
@@ -60,11 +63,23 @@ RSpec.describe 'Super Admin Audits', type: :request do
                                        comment: 'super_admin')
 
         get '/super_admin/audits'
+
+        expect(limit_lines).to eq(['Операторы: 0 → 5', 'Диалоги за 30 дней: не задан → Без ограничений', 'Хранилище: 1 ГБ → Без ограничений'])
+        expect(limit_lines.join).not_to include(ChatwootApp.max_limit.to_s)
+        expect(audit.reload.audited_changes['limits']['conversations']['to']).to eq(ChatwootApp.max_limit)
+      end
+
+      it 'shows the limits of a plan one line each, and the rest of the entry as it was', :aggregate_failures do
+        Audited::Audit.create!(auditable: account, associated: account, action: 'apply_plan', comment: 'super_admin',
+                               audited_changes: { 'before' => { 'plan' => nil }, 'after' => { 'plan' => 'base' },
+                                                  'limits' => { 'agents' => { 'from' => 0, 'to' => 5 } } })
+
+        get '/super_admin/audits'
         details = Nokogiri::HTML(response.body).css('pre').map(&:text).join
 
-        expect(details).to include('"to": "Без ограничений"', '"from": "не задан"', '"to": "5"', '"from": "1 ГБ"')
-        expect(details).not_to include(ChatwootApp.max_limit.to_s)
-        expect(audit.reload.audited_changes['limits']['conversations']['to']).to eq(ChatwootApp.max_limit)
+        expect(limit_lines).to eq(['Операторы: 0 → 5'])
+        expect(details).to include('"before"', '"after"', '"plan": "base"')
+        expect(details).not_to include('"limits"')
       end
 
       it 'shows the limits of an ordinary save in words, and leaves out the lists the limits keep for themselves', :aggregate_failures do
@@ -95,14 +110,31 @@ RSpec.describe 'Super Admin Audits', type: :request do
         expect(details).to include('"agents": "5"', '"conversations": "Без ограничений"')
       end
 
-      it 'shows the words of a change of the limits as they were written' do
+      it 'shows the words of a change of the limits as they were written, one line per limit', :aggregate_failures do
         Audited::Audit.create!(auditable: account, associated: account, action: 'update_limits', comment: 'super_admin',
                                audited_changes: { 'limits' => { 'agents' => { 'label' => 'Операторы', 'from' => 'как в тарифе (без ограничений)',
                                                                               'to' => 'своё число (5 операторов)' } } })
 
         get '/super_admin/audits'
 
-        expect(Nokogiri::HTML(response.body).css('pre').map(&:text).join).to include('своё число (5 операторов)')
+        expect(limit_lines).to eq(['Операторы: как в тарифе (без ограничений) → своё число (5 операторов)'])
+        expect(Nokogiri::HTML(response.body).css('pre')).to be_empty # nothing but the limits: no JSON to read
+      end
+
+      it 'puts the limits of a change in the order of the screens, whatever order the database gave them', :aggregate_failures do
+        # a jsonb column keeps no order: the shortest key comes first
+        changes = { 'emails' => ['Письма в день', 'как в тарифе (100 писем в день)', 'своё число (50 писем в день)'],
+                    'agents' => ['Операторы', 'своё число (5 операторов)', 'без ограничений'],
+                    'storage_bytes' => ['Хранилище', 'как в тарифе (без ограничений)', 'своё число (0,5 ГБ)'] }
+        limits = changes.transform_values { |label, from, to| { 'to' => to, 'from' => from, 'label' => label } }
+        Audited::Audit.create!(auditable: account, associated: account, action: 'update_limits', comment: 'super_admin',
+                               audited_changes: { 'limits' => limits })
+
+        get '/super_admin/audits'
+
+        expect(limit_lines).to eq(['Операторы: своё число (5 операторов) → без ограничений',
+                                   'Хранилище: как в тарифе (без ограничений) → своё число (0,5 ГБ)',
+                                   'Письма в день: как в тарифе (100 писем в день) → своё число (50 писем в день)'])
       end
 
       it 'keeps the chosen filters in the form' do

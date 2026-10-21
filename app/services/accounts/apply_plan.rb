@@ -16,7 +16,9 @@
 #             this plan wrote last counts as chosen: one a super admin typed, one an account from before the plan holds, one a
 #             partner wrote through the Platform API, one a new account was created with (the plan only fills the blanks). The
 #             numbers written for the limits that follow the plan are kept (custom_attributes['limit_plan_numbers']), so a number of
-#             the plan that changes later is still told from a number somebody typed.
+#             the plan that changes later is still told from a number somebody typed. An account whose plan was applied before they
+#             were kept is read with what the plans of that time wrote (Accounts::LimitSettings::LEGACY_PLAN_NUMBERS): its conversations
+#             and main channels at 100 000 follow the plan, whatever the file says now.
 #             The operator and channel limits that the end of a trial put at 0 are given back (the values from before the
 #             trial, from the snapshot of the trial) without anybody asking: a plan is what the account pays for, so it must not
 #             stay locked out; a number the plan itself sets wins over the restored one.

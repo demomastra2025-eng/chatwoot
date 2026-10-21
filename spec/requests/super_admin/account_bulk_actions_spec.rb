@@ -270,6 +270,18 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
         expect(rows.last.at_css('[data-testid="bulk-limits-kept"]')).to be_nil
       end
 
+      it 'counts a plan applied before the numbers of the plan were kept as following the plan: the new number, not left as chosen', :aggregate_failures do
+        first.update!(limits: { 'conversations' => ChatwootApp.max_limit, 'non_web_inboxes' => ChatwootApp.max_limit },
+                      custom_attributes: { 'plan' => 'base', 'plan_modules' => [], 'plan_version' => 2 })
+        allow(Accounts::Plans).to(receive(:limits_for).and_wrap_original { |original, *args| original.call(*args).merge('conversations' => 2000) })
+
+        confirm('apply_plan', [first, second], chosen: '1', modules: [])
+
+        rows = page.css("[data-testid='bulk-entries'] tbody tr")
+        expect(rows.first.at_css('[data-testid="bulk-limits-kept"]')).to be_nil
+        expect(rows.first.css('td').last.text.squish).to include('Лимиты: 1')
+      end
+
       it 'says it with the general value when the limit was not set before the trial' do
         first.activate_trial!(3)
         first.expire_trial!

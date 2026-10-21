@@ -130,7 +130,12 @@ module SuperAdmin::DisplayHelper
   # The changes of an entry of the audit log as the page shows them: the limits in words (never 100 000 operators), the lists the limits
   # keep for themselves left out. What is stored is not touched (SuperAdmin::AuditChanges).
   def super_admin_audit_changes(audit)
-    SuperAdmin::AuditChanges.new(audit, method(:super_admin_limit_value)).readable
+    super_admin_audit_entry(audit).readable
+  end
+
+  # The same as an object that also tells the limits line by line (see SuperAdmin::AuditChanges#limit_lines)
+  def super_admin_audit_entry(audit)
+    SuperAdmin::AuditChanges.new(audit, method(:super_admin_limit_value))
   end
 
   # "2 минуты"

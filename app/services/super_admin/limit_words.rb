@@ -7,6 +7,7 @@
 #   SuperAdmin::LimitWords.amount('agents', 5)               # => "5 операторов"
 #   SuperAdmin::LimitWords.amount('storage_bytes', 50.gigabytes) # => "50 ГБ"
 #   SuperAdmin::LimitWords.amount('storage_bytes', 5_000_000_000) # => "4,66 ГБ" (the decimals of the field the size is typed in)
+#   SuperAdmin::LimitWords.amount('storage_bytes', 512.megabytes) # => "0,5 ГБ" (a limit is said in the unit of its field, below a gigabyte too)
 #   SuperAdmin::LimitWords.amount('agents', nil)             # => "без ограничений"
 module SuperAdmin::LimitWords
   # The keys of the limits in the order of the screens (operators first)
@@ -18,16 +19,28 @@ module SuperAdmin::LimitWords
   # action is forbidden.
   def amount(key, value)
     return I18n.t('super_admin.limits.unlimited_phrase') if value.nil? || Accounts::Plans.unlimited_value?(key, value)
-    return storage_size(value) if key.to_s == 'storage_bytes'
+    return storage_limit(value) if key.to_s == 'storage_bytes'
 
     I18n.t("super_admin.limits.units.#{key}", count: value.to_i, number: SuperAdmin::DisplayHelper.format_number(value.to_i))
   end
 
-  # A size in gigabytes with the decimals of the field it is typed in (a size of 4,66 ГБ is not said as 4,7), below a gigabyte as the
-  # screens say any size
+  # A size that is used, in gigabytes with the decimals of the field a limit is typed in (a size of 4,66 ГБ is not said as 4,7); below a
+  # gigabyte as the screens say any size («512 МБ»), because what is used is read in the unit that tells it best
   def storage_size(bytes)
     return SuperAdmin::DisplayHelper.format_bytes(bytes) if bytes.to_f < 1.gigabyte
 
+    gigabytes(bytes)
+  end
+
+  # A limit of the storage: in the unit of the field it is typed in, gigabytes, also below one («0,5 ГБ», as the field shows 0,5), so the
+  # words and the field never disagree. A size too small for the decimals of the field (under 5 МБ) keeps its own unit.
+  def storage_limit(bytes)
+    return gigabytes(bytes) if bytes.to_f.zero? || (bytes.to_f / 1.gigabyte).round(Accounts::LimitSettings::GIGABYTE_DECIMALS).positive?
+
+    SuperAdmin::DisplayHelper.format_bytes(bytes)
+  end
+
+  def gigabytes(bytes)
     options = { precision: Accounts::LimitSettings::GIGABYTE_DECIMALS, strip_insignificant_zeros: true }
     number = ActiveSupport::NumberHelper.number_to_rounded(bytes.to_f / 1.gigabyte, **options, **SuperAdmin::DisplayHelper::NUMBER_OPTIONS)
     "#{number} #{I18n.t('super_admin.limits.gigabytes')}"

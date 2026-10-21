@@ -6,13 +6,21 @@
 #   { 'limits' => { 'conversations' => { 'from' => 'не задан', 'to' => 'Без ограничений' } } }, any other entry (the generic save of an
 #   account, the Platform API) shows its numbers as words in the place of the numbers;
 # * an entry that carries its own words (a change of the limits by a super admin, `update_limits`) is shown as it was written;
-# * the lists the limits keep for themselves in the custom attributes (Accounts::LimitSettings) are left out.
+# * the lists the limits keep for themselves in the custom attributes (Accounts::LimitSettings) are left out;
+# * the limits of an entry that changes them (`update_limits`, `apply_plan`) are one line each in the order of the screens, not the
+#   JSON of the database (which keeps no order): «Письма в день: как в тарифе (100 писем в день) → своё число (50 писем в день)».
 #
-#   SuperAdmin::AuditChanges.new(audit, method(:super_admin_limit_value)).readable
+#   changes = SuperAdmin::AuditChanges.new(audit, method(:super_admin_limit_value))
+#   changes.readable    # the changes as a hash, in words
+#   changes.limit_lines # => ['Операторы: как в тарифе (без ограничений) → своё число (5 операторов)'] ([] for an entry without such limits)
+#   changes.rest        # the changes without the limits that limit_lines tells (all of them when there are no lines)
 #
 # `limit_value` says one number of a limit: ->(key, value, given_back: false) { 'Без ограничений' } (SuperAdmin::DisplayHelper).
 class SuperAdmin::AuditChanges
   LIMIT_KEYS = Accounts::Plans::LIMIT_KEYS
+  # The entries whose `limits` are { 'agents' => { 'from' => words, 'to' => words } } once readable
+  LIMIT_ACTIONS = %w[update_limits apply_plan].freeze
+  ARROW = ' → '
 
   def initialize(audit, limit_value)
     @audit = audit
@@ -20,7 +28,31 @@ class SuperAdmin::AuditChanges
   end
 
   def readable
-    changes = @audit.audited_changes
+    return @readable if defined?(@readable)
+
+    @readable = read_changes(@audit.audited_changes)
+  end
+
+  # One line per changed limit, in the order of the screens: «Операторы: не задан → 5 операторов»
+  def limit_lines
+    @limit_lines ||= begin
+      limits = readable.is_a?(Hash) && LIMIT_ACTIONS.include?(@audit.action) ? readable['limits'] : nil
+      limits.is_a?(Hash) ? ordered(limits).filter_map { |key, change| limit_line(key, change) } : []
+    end
+  end
+
+  # The changes without the limits that are told by #limit_lines (a limit that could not be told stays)
+  def rest
+    changes = readable
+    return changes if limit_lines.empty?
+
+    untold = changes['limits'].reject { |key, change| limit_change?(key, change) }
+    changes.except('limits').merge(untold.empty? ? {} : { 'limits' => untold })
+  end
+
+  private
+
+  def read_changes(changes)
     return changes unless changes.is_a?(Hash)
 
     case @audit.action
@@ -30,7 +62,20 @@ class SuperAdmin::AuditChanges
     end
   end
 
-  private
+  def ordered(limits)
+    limits.sort_by { |key, _change| SuperAdmin::LimitWords::SCREEN_ORDER.index(key.to_s) || SuperAdmin::LimitWords::SCREEN_ORDER.size }
+  end
+
+  def limit_change?(key, change)
+    change.is_a?(Hash) && LIMIT_KEYS.include?(key.to_s)
+  end
+
+  def limit_line(key, change)
+    return unless limit_change?(key, change)
+
+    label = change['label'].presence || I18n.t("super_admin.limits.#{key}.label")
+    "#{label}: #{change['from']}#{ARROW}#{change['to']}"
+  end
 
   # The limits a plan wrote: { 'conversations' => { 'from' => nil, 'to' => 100000 } }
   def plan_limits(changes)

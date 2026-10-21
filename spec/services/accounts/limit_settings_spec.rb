@@ -212,6 +212,81 @@ RSpec.describe Accounts::LimitSettings do
       end
     end
 
+    # An account whose plan was applied before the numbers of the plan were kept holds what the plans of that time wrote: 100 000 for
+    # conversations and main channels. The file may get a number for them before anybody applies the plan to the account again.
+    context 'when the plan of the account was applied before the numbers of the plan were kept' do
+      before do
+        account.update!(limits: { 'conversations' => max, 'non_web_inboxes' => max, 'agents' => 7, 'inboxes' => max },
+                        custom_attributes: { 'plan' => 'base', 'plan_modules' => [], 'plan_version' => 2 })
+      end
+
+      it 'has a table of what those plans wrote: the number of no limit, for the two limits they set' do
+        expect(described_class::LEGACY_PLAN_NUMBERS).to eq('conversations' => max, 'non_web_inboxes' => max).and be_frozen
+      end
+
+      it 'follows the plan while the file says unlimited, as before' do
+        expect(settings.source('conversations')).to eq(:plan)
+        expect(settings.source('non_web_inboxes')).to eq(:plan)
+      end
+
+      it 'keeps following the plan when the file gives the limit a number, and says what the plan writes', :aggregate_failures do
+        plan_with('conversations' => 2000)
+
+        expect(settings.source('conversations')).to eq(:plan)
+        expect(settings.choice('conversations')).to eq(:plan)
+        expect(settings.effective('conversations')).to eq(max) # what the code enforces until the plan is applied
+        expect(settings.plan_value('conversations')).to eq(2000)
+        expect(settings.following_plan_numbers).to include('conversations' => 2000, 'non_web_inboxes' => max)
+      end
+
+      it 'reads any other number as «своё число», and the limits the old plans never wrote as well', :aggregate_failures do
+        plan_with('conversations' => 2000, 'inboxes' => 20)
+        account.update!(limits: account.limits.merge('conversations' => 300))
+
+        expect(settings.source('conversations')).to eq(:custom)
+        expect(settings.source('inboxes')).to eq(:unlimited) # 100 000 channels was never written by a plan
+        expect(settings.source('agents')).to eq(:custom)
+      end
+
+      it 'is not read for an account that has no plan, nor for a limit with a number kept beside the list', :aggregate_failures do
+        plan_with('conversations' => 2000)
+        account.update!(custom_attributes: { described_class::PLAN_NUMBERS_KEY => { 'conversations' => 1000 } })
+        expect(settings.source('conversations')).to eq(:unlimited) # no plan, nothing to follow
+
+        account.update!(custom_attributes: { 'plan' => 'base', described_class::PLAN_NUMBERS_KEY => { 'conversations' => 1000 } })
+        expect(settings.source('conversations')).to eq(:unlimited) # the plan wrote 1000 last: 100 000 is not its number
+        expect(settings.source('non_web_inboxes')).to eq(:plan)    # nothing is kept for this one: the table is read
+      end
+
+      it 'does not take a limit chosen by hand for the plan' do
+        plan_with('conversations' => 2000)
+        choose('conversations' => 'unlimited', 'non_web_inboxes' => max)
+
+        expect(settings.source('conversations')).to eq(:unlimited)
+        expect(settings.source('non_web_inboxes')).to eq(:custom)
+      end
+
+      it 'keeps following the plan after another row has been saved, even one that follows the plan and so keeps its number', :aggregate_failures do
+        plan_with('non_web_inboxes' => 50, 'conversations' => 2000)
+        result = settings.apply('non_web_inboxes' => :plan, 'agents' => 3)
+        account.update!(limits: result.limits, custom_attributes: result.custom_attributes(account.custom_attributes))
+
+        expect(account.reload.custom_attributes[described_class::PLAN_NUMBERS_KEY]).to eq('non_web_inboxes' => 50)
+        expect(settings.source('conversations')).to eq(:plan)
+        expect(settings.source('non_web_inboxes')).to eq(:plan)
+        expect(settings.source('agents')).to eq(:custom)
+      end
+
+      it 'writes nothing in #apply for a row that follows the plan and only waits for the plan to be applied' do
+        plan_with('conversations' => 2000)
+
+        result = settings.apply('conversations' => :plan)
+
+        expect(result.changes).to be_empty
+        expect(result.limits).to include('conversations' => max)
+      end
+    end
+
     context 'when a trial ended and put the operator limit at 0' do
       it 'does not take the zero for a choice' do
         account.update!(limits: { 'agents' => 5, 'inboxes' => 3 })

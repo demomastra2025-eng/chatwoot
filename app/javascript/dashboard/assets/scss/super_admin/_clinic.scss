@@ -365,7 +365,8 @@
   // ------------------------------------------------------------ limit rows
   // One limit of an account: its name and spend, a meter, a hint, what applies now and three choices («Как в тарифе»,
   // «Без ограничений», «Своё число»). The choices are native radio buttons in cards like `.admin-choice`; the field of the number
-  // is shown only while «Своё число» is chosen, which is a switch of the radio buttons (no script).
+  // is hidden while another choice is made, which is a switch of the radio buttons (no script). A browser that cannot tell (no :has)
+  // keeps the field shown, so the number can always be typed.
   .admin-limits {
     @apply flex min-w-0 flex-col;
   }
@@ -435,11 +436,11 @@
   }
 
   .admin-limit__value {
-    @apply hidden flex-wrap items-center gap-2 text-[13px] text-n-slate-11;
+    @apply flex flex-wrap items-center gap-2 text-[13px] text-n-slate-11;
   }
 
-  .admin-limit:has(input[value="custom"]:checked) .admin-limit__value {
-    @apply flex;
+  .admin-limit:has(input[type="radio"][value="custom"]:not(:checked)) .admin-limit__value {
+    @apply hidden;
   }
 
   .admin-limit__input {

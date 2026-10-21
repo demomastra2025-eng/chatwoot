@@ -34,6 +34,11 @@
 # follows the plan. Saving a form leaves alone every limit whose choice did not change (#apply), so nothing is written for the limits
 # nobody touched: a zero a trial put on a limit, a number a partner wrote, a number the plan has changed since stay as they are.
 #
+# The plan of such an account was written by the plans of that time, and what they wrote is known: LEGACY_PLAN_NUMBERS. For a limit
+# of an account that has a plan and no number of the plan kept for the limit, that is the number the plan wrote last. So the account
+# keeps following the plan when the numbers of the file change before anybody has applied the plan again (the file said `unlimited`,
+# the account holds 100 000, the file now says 2000: the limit still follows the plan, and the plan writes 2000 when it is applied).
+#
 #   settings = Accounts::LimitSettings.new(account)
 #   settings.source('agents')       # => :plan | :unlimited | :custom
 #   settings.effective('agents')    # => 5 (what the code enforces now); nil = no limit
@@ -47,6 +52,12 @@ class Accounts::LimitSettings # rubocop:disable Metrics/ClassLength
   UNLIMITED = Accounts::Plans::UNLIMITED
   # The storage is typed and shown in gigabytes with this many decimals (1,5 or 4,66); two sizes that differ by less are the same size
   GIGABYTE_DECIMALS = 2
+
+  # What the plans before the lists of this file (plan_version 1 and 2) wrote into the limits of an account: these two numbers, the
+  # number that stands for no limit of a count, and no other. The file with the numbers of the plan has changed since, so this table,
+  # not the file, says what an account whose plan was applied before the lists was written with (see the top of this file). The number is
+  # the value ChatwootApp.max_limit had then; it stays in the accounts whatever the value is later.
+  LEGACY_PLAN_NUMBERS = { 'conversations' => 100_000, 'non_web_inboxes' => 100_000 }.freeze
 
   # The setting of the platform that gives a limit its general value (the same names the enforcement code reads). A limit without
   # a setting has no general value.
@@ -313,7 +324,17 @@ class Accounts::LimitSettings # rubocop:disable Metrics/ClassLength
   # written over when the plan is applied). Where the plan has no number there is nothing to follow.
   def follows_plan_number?(key, value)
     plan = plan_value(key)
-    !plan.nil? && (same_number?(plan, value) || same_number?(plan_numbers[key], value))
+    !plan.nil? && (same_number?(plan, value) || same_number?(written_plan_number(key), value))
+  end
+
+  # The number the plan wrote into the limit the last time: the one kept beside the list, and, where none is kept for an account whose
+  # plan was applied before the lists, the one the plans of that time wrote (LEGACY_PLAN_NUMBERS)
+  def written_plan_number(key)
+    plan_numbers.fetch(key) { legacy_plan_number(key) }
+  end
+
+  def legacy_plan_number(key)
+    LEGACY_PLAN_NUMBERS[key] if attributes[Accounts::ApplyPlan::PLAN_KEY].present?
   end
 
   def same_number?(first, second)

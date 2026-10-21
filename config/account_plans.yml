@@ -18,8 +18,11 @@
 # for one account (a number of its own or «Без ограничений», Accounts::LimitSettings) is not touched when the plan is applied: change a
 # number here, press «Применить тариф» (one account or many), and only the accounts that follow the plan get the new number.
 # A number counts as «как в тарифе» while it is the number of the plan or the number the plan wrote last (kept in the account, see
-# Accounts::LimitSettings); any other number is the account's own and stays. A limit with `null` here has no number to follow: what the
-# account holds there is its own.
+# Accounts::LimitSettings); any other number is the account's own and stays. An account whose plan was applied before that number was
+# kept holds what the plans of that time wrote: 100 000 for conversations and non_web_inboxes (the only limits they set, see
+# Accounts::LimitSettings::LEGACY_PLAN_NUMBERS). So these two limits of such an account follow the plan when you change their numbers
+# here, even before the plan is applied to the account again; any other number there is the account's own. A limit with `null` here has
+# no number to follow: what the account holds there is its own.
 # Version history: 1 = first base + modules, 2 = agent_bots left the base (the Agent Bots were removed from the product).
 # An account keeps the version it was applied with; applying the plan again moves it to the current one.
 version: 2

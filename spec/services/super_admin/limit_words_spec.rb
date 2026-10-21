@@ -34,7 +34,19 @@ RSpec.describe SuperAdmin::LimitWords do
       expect(described_class.amount('storage_bytes', 5_003_636_900)).to eq('4,66 ГБ')
       expect(described_class.amount('storage_bytes', (BigDecimal('4.7') * 1.gigabyte).round(0).to_i)).to eq('4,7 ГБ')
       expect(described_class.amount('storage_bytes', 1024.gigabytes)).to eq('1 024 ГБ')
-      expect(described_class.amount('storage_bytes', 512.megabytes)).to eq('512 МБ')
+    end
+
+    it 'says a limit of the storage in the unit of its field, below one gigabyte too, so the words and the field agree', :aggregate_failures do
+      expect(described_class.amount('storage_bytes', 512.megabytes)).to eq('0,5 ГБ')
+      expect(described_class.amount('storage_bytes', 700.megabytes)).to eq('0,68 ГБ')
+      expect(described_class.amount('storage_bytes', 0)).to eq('0 ГБ')
+      # too small for the two decimals of the field: its own unit, never «0 ГБ»
+      expect(described_class.amount('storage_bytes', 3.megabytes)).to eq('3 МБ')
+    end
+
+    it 'says what is used in the unit that tells it best: megabytes below one gigabyte' do
+      expect(described_class.storage_size(512.megabytes)).to eq('512 МБ')
+      expect(described_class.storage_size(5_000_000_000)).to eq('4,66 ГБ')
     end
 
     it 'says no limit for nothing and for the number that stands for no limit, never the number' do

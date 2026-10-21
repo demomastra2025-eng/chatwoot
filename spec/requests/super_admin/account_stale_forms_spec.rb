@@ -296,14 +296,47 @@ RSpec.describe 'Super Admin forms drawn from an earlier state of an account', ty
       expect(flashes).not_to include('в аккаунте изменилось')
     end
 
-    it 'names every section that changed' do
+    it 'names every section that changed and that the form carried' do
       state = drawn_form_state
       account.update!(limits: { 'agents' => 50 }, name: 'Другое имя')
       account.enable_features!('sla')
 
-      save(state, account_params: { name: 'Новое имя' }, features: { feature_sla: 'false' })
+      save(state, account_params: { name: 'Новое имя', limits: { agents: '12' } }, features: { feature_sla: 'false' })
 
       expect(flashes).to include('в аккаунте изменилось: основное, лимиты, функции.')
+    end
+
+    # The form of the limits on the card posts the tokens of all three sections, and the fields of its own one
+    describe 'the form of the limits on the card' do
+      def save_limits(state)
+        patch "/super_admin/accounts/#{account.id}",
+              params: { account: { limit_choices: { agents: 'custom' }, limit_values: { agents: '12' } }, form_state: state, return_to: 'card' }
+        follow_redirect!
+      end
+
+      it 'names the limits alone when they changed meanwhile, however much the name and the functions changed too' do
+        state = drawn_form_state
+        account.update!(limits: { 'agents' => 50 }, name: 'Другое имя')
+        account.enable_features!('sla')
+
+        save_limits(state)
+
+        expect(account.reload.limits).to eq('agents' => 50)
+        expect(flashes).to include('в аккаунте изменилось: лимиты.')
+        expect(flashes).not_to include('основное', 'функции')
+      end
+
+      it 'says nothing about the name and the functions that changed meanwhile, and saves the limits' do
+        state = drawn_form_state
+        account.update!(name: 'Другое имя')
+        account.enable_features!('sla')
+
+        save_limits(state)
+
+        expect(account.reload).to have_attributes(name: 'Другое имя')
+        expect(account.limits).to include('agents' => 12)
+        expect(flashes).not_to include('в аккаунте изменилось')
+      end
     end
 
     it 'saves nothing from the sections when the tokens cannot be read' do
@@ -313,7 +346,7 @@ RSpec.describe 'Super Admin forms drawn from an earlier state of an account', ty
 
       expect(account.reload).to have_attributes(name: 'Филиал 1')
       expect(account.limits).to eq('agents' => 10)
-      expect(flashes).to include('в аккаунте изменилось: основное, лимиты, функции.')
+      expect(flashes).to include('в аккаунте изменилось: основное, лимиты.')
     end
 
     it 'does not check a request without tokens (a script or a page opened before the update)' do

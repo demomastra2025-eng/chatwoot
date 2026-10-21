@@ -548,12 +548,25 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     %i[limits limit_choices limit_values limit_counter_excluded_user_ids_raw].each { |name| permitted_params.delete(name) }
   end
 
+  # Says which sections were not saved. Only those the request carried fields for: the form of the limits on the card posts the tokens of
+  # all three sections but the fields of its own one, and must not claim that the name or the functions were lost.
   def announce_stale_form_sections
-    return if stale_form_sections.empty?
+    carried = stale_form_sections.select { |section| carries_form_section?(section) }
+    return if carried.empty?
 
-    sections = stale_form_sections.map { |section| I18n.t("super_admin.accounts.form_sections.#{section}") }
+    sections = carried.map { |section| I18n.t("super_admin.accounts.form_sections.#{section}") }
     message = I18n.t('super_admin.accounts.flashes.form_stale', sections: sections.join(', '))
     flash[:alert] = [flash[:alert], message].compact_blank.join(' ')
+  end
+
+  def carries_form_section?(section)
+    fields = params[:account]
+    fields = {} unless fields.respond_to?(:key?)
+    case section
+    when 'main' then %i[name locale].any? { |name| fields.key?(name) }
+    when 'limits' then limit_form.submitted? || fields.key?(:limit_counter_excluded_user_ids_raw)
+    else params[:enabled_features].respond_to?(:to_unsafe_h)
+    end
   end
 
   # The list can be narrowed to the accounts of one organization (`organization_id`, or `none` for the accounts that have

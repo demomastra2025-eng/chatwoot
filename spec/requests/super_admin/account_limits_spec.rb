@@ -111,11 +111,21 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       expect(response.body).not_to include('translation missing')
     end
 
-    it 'names the choices in plain words and says what «как в тарифе» gives now' do
+    it 'names the choices in plain words and says what the plan gives for «как в тарифе»' do
       get card_path
 
-      expect(text(row('conversations').at_css('.admin-limit__choices'))).to eq('Как в тарифе сейчас: без ограничений Без ограничений Своё число')
-      expect(text(row('agents').at_css('.admin-limit__choices'))).to include('Как в тарифе сейчас: без ограничений')
+      expect(text(row('conversations').at_css('.admin-limit__choices'))).to eq('Как в тарифе по тарифу: без ограничений Без ограничений Своё число')
+      expect(text(row('agents').at_css('.admin-limit__choices'))).to include('Как в тарифе по тарифу: без ограничений')
+    end
+
+    it 'never says «сейчас» twice: the row says what applies, the choice says what the plan gives' do
+      account.update!(limits: account.limits.merge('agents' => 5))
+
+      get card_path
+
+      expect(text(row('agents').at_css('[data-testid="limit-now"]'))).to eq('Сейчас: 5 операторов')
+      expect(text(row('agents').at_css('.admin-limit__choices'))).not_to include('сейчас')
+      expect(page.css("[data-testid='limit-rows'] .admin-limit__option-sub").map { |node| text(node) }).to all(start_with('по тарифу:'))
     end
 
     it 'says what applies now in words' do
@@ -155,7 +165,7 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       expect(choice_of('agents')).to eq('custom')
       expect(row('agents').at_css('input[type=number]')['value']).to eq('5')
       expect(choice_of('storage_bytes')).to eq('custom')
-      expect(row('storage_bytes').at_css('input[name="account[limit_values][storage_bytes]"]')['value']).to eq('1.5')
+      expect(row('storage_bytes').at_css('input[name="account[limit_values][storage_bytes]"]')['value']).to eq('1,5')
       expect(text(row('storage_bytes').at_css('.admin-limit__value'))).to include('ГБ')
       expect(choice_of('inboxes')).to eq('unlimited')
       expect(choice_of('conversations')).to eq('plan')
@@ -193,7 +203,7 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
 
       drift = text(row('conversations').at_css('[data-testid="limit-drift"]'))
       expect(drift).to include('Сейчас действует без ограничений, а по тарифу — 1 000 диалогов')
-      expect(text(row('conversations').at_css('.admin-limit__choices'))).to include('Как в тарифе сейчас: 1 000 диалогов')
+      expect(text(row('conversations').at_css('.admin-limit__choices'))).to include('Как в тарифе по тарифу: 1 000 диалогов')
       expect(row('agents').at_css('[data-testid="limit-drift"]')).to be_nil
     end
 
@@ -216,10 +226,22 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
 
       get card_path
 
-      note = 'Пробный период закончился и закрыл этот лимит (0). Он вернётся, когда вы примените тариф.'
-      expect(text(row('agents').at_css('[data-testid="limit-held"]'))).to eq(note)
-      expect(text(row('inboxes').at_css('[data-testid="limit-held"]'))).to eq(note)
+      note = 'Пробный период закончился и закрыл этот лимит (0). Когда вы примените тариф, вернётся: %s.'
+      expect(text(row('agents').at_css('[data-testid="limit-held"]'))).to eq(format(note, '5 операторов'))
+      expect(text(row('inboxes').at_css('[data-testid="limit-held"]'))).to eq(format(note, '3 канала'))
       expect(row('conversations').at_css('[data-testid="limit-held"]')).to be_nil
+    end
+
+    it 'says what a held limit gets back: the number of the plan where it has one, else the number from before the trial, else the general value' do
+      account.update!(limits: account.limits.merge('agents' => 5))
+      account.activate_trial!(3)
+      account.expire_trial!
+      allow(Accounts::Plans).to(receive(:limits_for).and_wrap_original { |original, *args| original.call(*args).merge('agents' => 2) })
+
+      get card_path
+
+      expect(text(row('agents').at_css('[data-testid="limit-held"]'))).to end_with('вернётся: 2 оператора.')
+      expect(text(row('inboxes').at_css('[data-testid="limit-held"]'))).to end_with('вернётся: без ограничений.')
     end
 
     it 'says the storage with the decimals of its field, and takes the comma in a text field made for it' do
@@ -230,10 +252,41 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       field = row('storage_bytes').at_css('input[name="account[limit_values][storage_bytes]"]')
       expect(field['type']).to eq('text')
       expect(field['inputmode']).to eq('decimal')
-      expect(field['value']).to eq('4.66')
+      expect(field['value']).to eq('4,66')
       expect(text(row('storage_bytes').at_css('[data-testid="limit-now"]'))).to eq('Сейчас: 4,66 ГБ')
       expect(text(row('storage_bytes').at_css('.admin-limit__usage'))).to include('из 4,66 ГБ')
       expect(text(row('storage_bytes').at_css('.admin-limit__value'))).to include('ГБ')
+    end
+
+    it 'says a storage under one gigabyte in gigabytes too, as the field shows it, and what is used in the unit that fits' do
+      account.update!(limits: account.limits.merge('storage_bytes' => 512.megabytes))
+
+      get card_path
+
+      field = row('storage_bytes').at_css('input[name="account[limit_values][storage_bytes]"]')
+      expect(field['value']).to eq('0,5')
+      expect(text(row('storage_bytes').at_css('[data-testid="limit-now"]'))).to eq('Сейчас: 0,5 ГБ')
+      expect(text(row('storage_bytes').at_css('.admin-limit__usage'))).to include('из 0,5 ГБ')
+    end
+
+    it 'gives the field the comma the words use, and the form takes it back' do
+      account.update!(limits: account.limits.merge('storage_bytes' => 1.5.gigabytes))
+
+      get card_path
+      field = row('storage_bytes').at_css('input[name="account[limit_values][storage_bytes]"]')
+
+      expect(field['value']).to eq('1,5')
+      expect(text(row('storage_bytes').at_css('[data-testid="limit-now"]'))).to eq('Сейчас: 1,5 ГБ')
+      save_card_as_drawn
+      expect(account.reload.limits['storage_bytes']).to eq(1.5.gigabytes)
+      expect(limit_audits).to be_empty
+    end
+
+    it 'does not hide the field of the number from a browser that cannot tell which choice is made (the rule hides it, it does not show it)' do
+      sheet = Rails.root.join('app/javascript/dashboard/assets/scss/super_admin/_clinic.scss').read
+
+      expect(sheet).to match(/\.admin-limit__value \{\s*@apply flex /)
+      expect(sheet).to include('.admin-limit:has(input[type="radio"][value="custom"]:not(:checked)) .admin-limit__value')
     end
   end
 
@@ -250,7 +303,7 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
 
       get card_path
 
-      expect(text(row('conversations').at_css('.admin-limit__choices'))).to include('Как в тарифе сейчас: 500 диалогов')
+      expect(text(row('conversations').at_css('.admin-limit__choices'))).to include('Как в тарифе по общей настройке: 500 диалогов')
     end
 
     it 'reads the numbers the account holds as «своё число», without writing anything' do
@@ -278,6 +331,38 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       expect(choice_of('non_web_inboxes')).to eq('custom')
       expect(row('non_web_inboxes').at_css('input[type=number]')['value']).to eq('3')
       expect(choice_of('agents')).to eq('custom')
+    end
+  end
+
+  describe 'an account whose plan was applied before the numbers of the plan were kept' do
+    before do
+      apply_plan!
+      account.update!(custom_attributes: account.custom_attributes.except(marks_key, Accounts::LimitSettings::PLAN_NUMBERS_KEY))
+      allow(Accounts::Plans).to(receive(:limits_for).and_wrap_original { |original, *args| original.call(*args).merge('conversations' => 2000) })
+    end
+
+    it 'keeps following the plan when the file gives a limit a number, says so, and takes the new number when the plan is applied', :aggregate_failures do
+      get card_path
+
+      expect(choice_of('conversations')).to eq('plan')
+      expect(text(row('conversations').at_css('[data-testid="limit-drift"]'))).to include('Сейчас действует без ограничений, а по тарифу — 2 000 диалогов')
+      expect(text(row('conversations').at_css('.admin-limit__choices'))).to include('Как в тарифе по тарифу: 2 000 диалогов')
+
+      apply_plan!
+      get card_path
+
+      expect(account.reload.limits['conversations']).to eq(2000)
+      expect(choice_of('conversations')).to eq('plan')
+      expect(row('conversations').at_css('[data-testid="limit-drift"]')).to be_nil
+    end
+
+    it 'saving the form writes nothing for it, and the plan still gets to write the number' do
+      save_card_as_drawn
+
+      expect(limit_audits).to be_empty
+      expect(account.reload.limits['conversations']).to eq(max)
+      apply_plan!
+      expect(account.reload.limits['conversations']).to eq(2000)
     end
   end
 

@@ -20,9 +20,10 @@ them belongs to the page (the card has its own, the edit form of the account is 
     <%
       id = "limit-#{row.key}"
       usage = row.usage
-      format_value = ->(number) { row.bytes ? SuperAdmin::LimitWords.storage_size(number) : super_admin_number(number) }
+      used_text = ->(number) { row.bytes ? SuperAdmin::LimitWords.storage_size(number) : super_admin_number(number) }
+      total_text = ->(number) { row.bytes ? SuperAdmin::LimitWords.storage_limit(number) : super_admin_number(number) }
       options = [
-        ['plan', t('super_admin.limits.choices.plan'), t('super_admin.limits.choices.plan_now', value: row.plan_text)],
+        ['plan', t('super_admin.limits.choices.plan'), row.plan_detail],
         ['unlimited', t('super_admin.limits.choices.unlimited'), nil],
         ['custom', t('super_admin.limits.choices.custom'), nil]
       ]
@@ -32,11 +33,11 @@ them belongs to the page (the card has its own, the edit form of the account is 
         <span class="admin-limit__label" id="<%= id %>-label"><%= row.label %></span>
         <% if usage %>
           <span class="admin-limit__usage">
-            <%= format_value.call(usage.consumed) %>
+            <%= used_text.call(usage.consumed) %>
             <% if usage.unlimited %>
               <span class="font-normal text-n-slate-11">· <%= t('super_admin.limits.unlimited') %></span>
             <% else %>
-              <span class="font-normal text-n-slate-11"><%= t('super_admin.limits.of') %> <%= format_value.call(usage.total) %></span>
+              <span class="font-normal text-n-slate-11"><%= t('super_admin.limits.of') %> <%= total_text.call(usage.total) %></span>
             <% end %>
           </span>
         <% end %>

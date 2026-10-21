@@ -544,6 +544,48 @@ RSpec.describe Accounts::ApplyPlan do
       expect(Accounts::LimitSettings.new(account).source('non_web_inboxes')).to eq(:custom)
     end
 
+    # The plans of the first two versions wrote 100 000 for the conversations and the main channels, and kept no list of what they wrote
+    context 'when the plan was applied before the numbers of the plan were kept' do
+      before do
+        account.update!(limits: { 'conversations' => max, 'non_web_inboxes' => max, 'agents' => 7 },
+                        custom_attributes: { 'plan' => 'base', 'plan_modules' => [], 'plan_version' => 2 })
+      end
+
+      it 'writes the new number of the plan into a limit that follows it, before the plan was applied again', :aggregate_failures do
+        plan_numbers('conversations' => 2000)
+
+        preview = service.preview
+        service.call
+
+        expect(preview.limits).to eq('conversations' => { 'from' => max, 'to' => 2000 })
+        expect(preview.kept_limits).to be_empty
+        expect(account.reload.limits).to eq('conversations' => 2000, 'non_web_inboxes' => max, 'agents' => 7)
+        expect(account.custom_attributes[plan_numbers_key]).to eq('conversations' => 2000, 'non_web_inboxes' => max)
+        expect(Accounts::LimitSettings.new(account).source('conversations')).to eq(:plan)
+      end
+
+      it 'leaves a number somebody typed, and says so', :aggregate_failures do
+        plan_numbers('conversations' => 2000)
+        account.update!(limits: account.limits.merge('conversations' => 300))
+
+        preview = service.preview
+        service.call
+
+        expect(preview.limits).to be_empty
+        expect(preview.kept_limits).to eq(['conversations'])
+        expect(account.reload.limits['conversations']).to eq(300)
+      end
+
+      it 'is the same for many accounts at once' do
+        plan_numbers('conversations' => 2000)
+        bulk = SuperAdmin::BulkAccounts.new(action: 'apply_plan', ids: [account.id], options: { chosen: '1', modules: [] }, actor: actor)
+
+        bulk.apply
+
+        expect(account.reload.limits).to include('conversations' => 2000, 'non_web_inboxes' => max, 'agents' => 7)
+      end
+    end
+
     it 'keeps the numbers it wrote, so that a number of the plan that changes later is told from a number typed by hand' do
       service.call
 
