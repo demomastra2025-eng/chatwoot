@@ -5,6 +5,8 @@ summary: Update an account
 description: |-
   Update an account's attributes. Features go through the same checks as the platform admin screens: a feature that no plan enables, one that must stay on
   and a platform-internal one are refused with 422 and nothing is saved. Every call is recorded in the audit log.
+  The `limits` of the request are merged into the limits of the account: a limit the request does not name stays, a number sets the limit, null takes it off
+  (it then follows the plan again). A limit that a super admin chose for the account is not changed by the request.
 security:
   - platformAppApiKey: []
 requestBody:

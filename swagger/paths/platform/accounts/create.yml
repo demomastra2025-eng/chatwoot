@@ -5,6 +5,7 @@ summary: Create an Account
 description: |-
   Create an Account. Features go through the same checks as the platform admin screens: a feature that no plan enables, one that must stay on
   and a platform-internal one are refused with 422 and nothing is saved. Every call is recorded in the audit log.
+  The account gets the base plan first; the `limits` of the request are applied on top of it (a number sets the limit, null takes it off).
 security:
   - platformAppApiKey: []
 requestBody:

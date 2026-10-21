@@ -6,8 +6,9 @@
 # The limits a super admin chose for an account (a number of its own or «без ограничений», see Accounts::LimitSettings) are not
 # the partner's to change: the numbers a request sends for them are ignored, and the lists the limits keep in `custom_attributes`
 # survive a request that replaces them (a partner cannot write them either). The numbers the partner sends for the other limits are
-# applied on top of what the account has (the limits the request does not name stay). A number that is not the number of the plan
-# is a number of its own for the account from then on: a plan applied later leaves it as it is.
+# applied on top of what the account has: a limit the request does not name stays, a number sets it, and null takes it off (the limit
+# then follows the plan again). A number that is not the number of the plan is a number of its own for the account from then on: a plan
+# applied later leaves it as it is.
 class Platform::Api::V1::AccountsController < PlatformController
   # The settings of an account whose new values are written to the audit log
   AUDITED_ACCOUNT_FIELDS = %w[name locale status limits custom_attributes].freeze
@@ -90,12 +91,15 @@ class Platform::Api::V1::AccountsController < PlatformController
     assign_partner_limits(account, numbers)
   end
 
-  # The numbers of the request go on top of the limits of the account, except for the limits a super admin chose
+  # The numbers of the request go on top of the limits of the account, except for the limits a super admin chose. A limit sent as null
+  # is taken off (it then follows the plan again); a key the request does not name stays.
   def assign_partner_limits(account, numbers)
     return if numbers.blank?
 
     chosen = Accounts::LimitSettings.marks_in(account.custom_attributes).keys
-    account.limits = account.limits.to_h.merge(numbers.to_h.stringify_keys.except(*chosen))
+    sent = numbers.to_h.stringify_keys.except(*chosen)
+    removed = sent.select { |key, number| number.nil? && Accounts::Plans::LIMIT_KEYS.include?(key) }.keys
+    account.limits = account.limits.to_h.except(*removed).merge(sent.except(*removed))
   end
 
   # { 'flag' => true | false } as the partner sent it (the strings 'false' and '0' are off)

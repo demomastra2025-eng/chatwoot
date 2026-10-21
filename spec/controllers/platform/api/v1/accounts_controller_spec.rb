@@ -449,6 +449,28 @@ RSpec.describe 'Platform Accounts API', type: :request do
           expect(own.reload.limits).to include('inboxes' => 9)
         end
 
+        it 'takes a limit off when the request sends null for it, so it follows the plan again, and keeps the ones it does not name' do
+          patch "/platform/api/v1/accounts/#{own.id}", params: { limits: { inboxes: nil, emails: 30 } }, headers: headers, as: :json
+
+          expect(response).to have_http_status(:success)
+          expect(own.reload.limits).to eq('agents' => 8, 'conversations' => ChatwootApp.max_limit, 'emails' => 30)
+          expect(Accounts::LimitSettings.new(own).source('inboxes')).to eq(:plan)
+        end
+
+        it 'does not take off a limit a super admin chose, null or not' do
+          patch "/platform/api/v1/accounts/#{own.id}", params: { limits: { agents: nil, conversations: nil } }, headers: headers, as: :json
+
+          expect(response).to have_http_status(:success)
+          expect(own.reload.limits).to include('agents' => 8, 'conversations' => ChatwootApp.max_limit)
+        end
+
+        it 'refuses null for something that is not a limit, and saves nothing' do
+          patch "/platform/api/v1/accounts/#{own.id}", params: { limits: { ghost: nil, emails: 30 } }, headers: headers, as: :json
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(own.reload.limits).not_to include('emails')
+        end
+
         it 'makes the number of the partner a number of its own for the account, which a plan applied later does not overwrite' do
           Accounts::ApplyPlan.new(account: own, modules: []).call
           patch "/platform/api/v1/accounts/#{own.id}", params: { limits: { non_web_inboxes: 12 } }, headers: headers, as: :json

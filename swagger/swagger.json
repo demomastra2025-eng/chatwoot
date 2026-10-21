@@ -26,7 +26,7 @@
         ],
         "operationId": "create-an-account",
         "summary": "Create an Account",
-        "description": "Create an Account. Features go through the same checks as the platform admin screens: a feature that no plan enables, one that must stay on\nand a platform-internal one are refused with 422 and nothing is saved. Every call is recorded in the audit log.",
+        "description": "Create an Account. Features go through the same checks as the platform admin screens: a feature that no plan enables, one that must stay on\nand a platform-internal one are refused with 422 and nothing is saved. Every call is recorded in the audit log.\nThe account gets the base plan first; the `limits` of the request are applied on top of it (a number sets the limit, null takes it off).",
         "security": [
           {
             "platformAppApiKey": []
@@ -133,7 +133,7 @@
         ],
         "operationId": "update-an-account",
         "summary": "Update an account",
-        "description": "Update an account's attributes. Features go through the same checks as the platform admin screens: a feature that no plan enables, one that must stay on\nand a platform-internal one are refused with 422 and nothing is saved. Every call is recorded in the audit log.",
+        "description": "Update an account's attributes. Features go through the same checks as the platform admin screens: a feature that no plan enables, one that must stay on\nand a platform-internal one are refused with 422 and nothing is saved. Every call is recorded in the audit log.\nThe `limits` of the request are merged into the limits of the account: a limit the request does not name stays, a number sets the limit, null takes it off\n(it then follows the plan again). A limit that a super admin chose for the account is not changed by the request.",
         "security": [
           {
             "platformAppApiKey": []
