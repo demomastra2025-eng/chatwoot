@@ -216,6 +216,14 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
         expect(page.at_css("[data-testid='bulk-setting'] input[type='submit']")['value']).to eq('Показать, что изменится')
       end
 
+      it 'says the base is given to a NEW account by itself, and to an account without a plan by this action' do
+        confirm('apply_plan', [first, second])
+
+        hint = page.at_css("[data-testid='bulk-setting'] .admin-block__hint").text.squish
+        expect(hint).to include('Новому аккаунту база назначается сама', 'аккаунтам без тарифа («Тариф не назначен») её назначит это действие')
+        expect(hint).not_to include('База включена всегда')
+      end
+
       it 'summarises the preview of the plan for every account once the modules are chosen' do
         confirm('apply_plan', [first, second, blocked], chosen: '1', modules: %w[ai_agents])
 

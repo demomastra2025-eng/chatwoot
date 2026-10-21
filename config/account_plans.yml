@@ -1,6 +1,7 @@
 # Account plans: BASE + MODULES. There are no tariffs and no prices here (or anywhere in the code).
 #
-# Every clinic gets the base. Modules are switched on per clinic on top of it.
+# Every NEW account gets the base (an account that existed before plans shows «Тариф не назначен» until a super admin assigns it).
+# Modules are switched on per account on top of it.
 # Accounts::Plans loads this file, validates it and freezes it; Accounts::ApplyPlan writes it into an account.
 #
 # Every flag of config/features.yml sits in exactly ONE of these places:

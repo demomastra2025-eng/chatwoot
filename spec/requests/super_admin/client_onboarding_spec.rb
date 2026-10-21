@@ -98,6 +98,13 @@ RSpec.describe 'Super Admin new client', type: :request do
       expect(page.at_css('[data-testid="client-organization-block"]').text).to include('Организаций пока нет')
     end
 
+    it 'says the base is given to every NEW account, not to every account' do
+      hint = text(page.at_css('[data-testid="new-plan-block"] .admin-block__hint'))
+
+      expect(hint).to start_with('Каждому новому аккаунту назначается база.')
+      expect(hint).not_to include('включена всегда')
+    end
+
     it 'shows the base as always included, the modules unchecked and an optional trial' do
       plan = page.at_css('[data-testid="new-plan-block"]')
 

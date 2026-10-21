@@ -115,6 +115,8 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       it 'says «Тариф не назначен» and offers «Назначить базу»' do
         expect(text(block('plan-label'))).to eq('Не назначен')
         expect(text(block('plan-unassigned'))).to include('Тариф не назначен')
+        # the base is given to new accounts by itself; this one was made before and has to be given it
+        expect(text(block('plan-unassigned'))).to include('база назначается сама только новым аккаунтам')
         expect(text(modules_form.at_css('button[data-plan-submit]'))).to eq('Назначить базу')
         expect(modules_form['data-assigned']).to eq('false')
       end
