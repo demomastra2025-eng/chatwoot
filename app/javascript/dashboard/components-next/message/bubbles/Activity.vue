@@ -23,7 +23,7 @@ const displayContent = computed(() =>
 <template>
   <BaseBubble
     v-tooltip.top="readableTime"
-    class="px-2 py-0.5 !rounded-xl flex min-w-0 items-center gap-1.5 text-xs leading-4"
+    class="px-3 py-1 !rounded-xl flex min-w-0 items-center gap-2"
     data-bubble-name="activity"
   >
     <span class="whitespace-pre-line" :title="displayContent">
