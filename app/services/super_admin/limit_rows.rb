@@ -125,7 +125,7 @@ class SuperAdmin::LimitRows
   # from before the trial; without either the general value of the platform applies again (nil: no limit)
   def restored_number(key)
     plan = plan_assigned? ? @settings.plan_value(key) : Accounts::Plans.limits_for([])[key]
-    plan.nil? ? (held[key].nil? ? @settings.global_value(key) : held[key]) : plan
+    plan.nil? ? (held[key] || @settings.global_value(key)) : plan
   end
 
   def held?(key)

@@ -3,7 +3,14 @@
 require 'rails_helper'
 
 RSpec.describe SuperAdmin::AuditChanges do
-  let(:limit_value) { ->(_key, value, given_back: false) { value.nil? ? (given_back ? 'общее значение' : 'не задан') : value.to_s } }
+  # the words of SuperAdmin::DisplayHelper#super_admin_limit_value, short
+  let(:limit_value) do
+    lambda do |_key, value, given_back: false|
+      next value.to_s unless value.nil?
+
+      given_back ? 'общее значение' : 'не задан'
+    end
+  end
 
   def entry(action, changes)
     described_class.new(Struct.new(:action, :audited_changes).new(action, changes), limit_value)

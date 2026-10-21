@@ -341,11 +341,12 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       allow(Accounts::Plans).to(receive(:limits_for).and_wrap_original { |original, *args| original.call(*args).merge('conversations' => 2000) })
     end
 
-    it 'keeps following the plan when the file gives a limit a number, says so, and takes the new number when the plan is applied', :aggregate_failures do
+    it 'keeps following the plan when the file gives a limit a number, says so, and takes the number when the plan is applied', :aggregate_failures do
       get card_path
 
       expect(choice_of('conversations')).to eq('plan')
-      expect(text(row('conversations').at_css('[data-testid="limit-drift"]'))).to include('Сейчас действует без ограничений, а по тарифу — 2 000 диалогов')
+      expect(text(row('conversations').at_css('[data-testid="limit-drift"]')))
+        .to include('Сейчас действует без ограничений, а по тарифу — 2 000 диалогов')
       expect(text(row('conversations').at_css('.admin-limit__choices'))).to include('Как в тарифе по тарифу: 2 000 диалогов')
 
       apply_plan!
