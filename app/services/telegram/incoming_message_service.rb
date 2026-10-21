@@ -7,9 +7,8 @@ class Telegram::IncomingMessageService
   pattr_initialize [:inbox!, :params!]
 
   def perform
-    # chatwoot doesn't support group conversations at the moment
     transform_business_message!
-    return unless private_message?
+    return unless supported_message_chat?
 
     set_contact
     update_contact_avatar
@@ -60,6 +59,7 @@ class Telegram::IncomingMessageService
 
     @contact_inbox = contact_inbox
     @contact = contact_inbox.contact
+    sync_group_contact_attributes! if group_message?
   end
 
   def process_message_attachments
@@ -69,7 +69,7 @@ class Telegram::IncomingMessageService
   end
 
   def update_contact_avatar
-    return if @contact.avatar.attached?
+    return if group_message? || @contact.avatar.attached?
 
     avatar_url = inbox.channel.get_telegram_profile_image(telegram_params_from_id)
     ::Avatar::AvatarFromUrlJob.perform_later(@contact, avatar_url) if avatar_url
@@ -95,18 +95,54 @@ class Telegram::IncomingMessageService
                         @contact_inbox.conversations.where.not(status: :resolved).last ||
                           @contact_inbox.latest_closed_automated_conversation
                       end
-      @conversation ||= ::Conversation.create!(conversation_params)
+      if @conversation.present?
+        sync_group_conversation_attributes! if group_message?
+      else
+        @conversation = ::Conversation.create!(conversation_params)
+      end
     end
+  end
+
+  def sync_group_contact_attributes!
+    current_attrs = (@contact.additional_attributes || {}).deep_stringify_keys
+    merged_attrs = current_attrs.merge(additional_attributes.deep_stringify_keys)
+    updates = {}
+    updates[:name] = contact_display_name if telegram_params_chat_title.present? && @contact.name != contact_display_name
+    updates[:additional_attributes] = merged_attrs if merged_attrs != current_attrs
+    @contact.update!(updates) if updates.present?
+  end
+
+  def sync_group_conversation_attributes!
+    current_attrs = (@conversation.additional_attributes || {}).deep_stringify_keys
+    merged_attrs = current_attrs.merge(conversation_additional_attributes.deep_stringify_keys)
+    @conversation.update!(additional_attributes: merged_attrs) if merged_attrs != current_attrs
   end
 
   def contact_attributes
     {
-      name: "#{telegram_params_first_name} #{telegram_params_last_name}",
+      name: contact_display_name,
       additional_attributes: additional_attributes
     }
   end
 
+  def contact_display_name
+    return telegram_params_chat_title.presence || "Group #{telegram_params_chat_id}" if group_message?
+
+    "#{telegram_params_first_name} #{telegram_params_last_name}"
+  end
+
   def additional_attributes
+    if group_message?
+      return {
+        is_group: true,
+        chat_type: telegram_params_chat_type,
+        chat_title: telegram_params_chat_title,
+        username: telegram_params_username,
+        social_telegram_user_id: telegram_params_chat_id,
+        social_telegram_user_name: telegram_params_username
+      }.compact
+    end
+
     {
       # TODO: Remove this once we show the social_telegram_user_name in the UI instead of the username
       username: telegram_params_username,
@@ -117,6 +153,15 @@ class Telegram::IncomingMessageService
   end
 
   def conversation_additional_attributes
+    if group_message?
+      return {
+        chat_id: telegram_params_chat_id,
+        chat_type: telegram_params_chat_type,
+        chat_title: telegram_params_chat_title,
+        is_group: true
+      }.compact
+    end
+
     {
       chat_id: telegram_params_chat_id,
       business_connection_id: telegram_params_business_connection_id

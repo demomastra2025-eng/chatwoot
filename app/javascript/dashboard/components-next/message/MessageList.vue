@@ -275,6 +275,24 @@ const fetchReplyMessage = async (messageId, conversationId) => {
   }
 };
 
+const getGroupSenderKey = message => {
+  const groupSender =
+    message?.contentAttributes?.groupSender ||
+    message?.contentAttributes?.group_sender ||
+    message?.content_attributes?.group_sender ||
+    null;
+  if (!groupSender || typeof groupSender !== 'object') return null;
+
+  return (
+    groupSender.id ||
+    groupSender.username ||
+    groupSender.phoneNumber ||
+    groupSender.phone_number ||
+    groupSender.name ||
+    null
+  );
+};
+
 /**
  * Determines if a message should be grouped with the next message
  * @param {Number} index - Index of the current message
@@ -297,6 +315,8 @@ const shouldGroupWithNext = (index, searchList) => {
   const nextSenderId = next.senderId ?? next.sender?.id;
   const currentSenderId = current.senderId ?? current.sender?.id;
   const hasSameSender = nextSenderId === currentSenderId;
+  const hasSameGroupSender =
+    getGroupSenderKey(current) === getGroupSenderKey(next);
 
   const nextMessageType = next.messageType;
   const currentMessageType = current.messageType;
@@ -305,7 +325,7 @@ const shouldGroupWithNext = (index, searchList) => {
     nextMessageType === MESSAGE_TYPES.TEMPLATE &&
     currentMessageType === MESSAGE_TYPES.TEMPLATE;
 
-  if (!hasSameSender || areBothTemplates) return false;
+  if (!hasSameSender || !hasSameGroupSender || areBothTemplates) return false;
 
   if (currentMessageType !== nextMessageType) return false;
   if (current.conversationId !== next.conversationId) return false;

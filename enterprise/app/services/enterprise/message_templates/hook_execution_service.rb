@@ -81,8 +81,8 @@ module Enterprise::MessageTemplates::HookExecutionService
   end
 
   def should_process_captain_response?
-    conversation_accepts_captain_response? && message.incoming? && !message.voice_call? &&
-      !message.ai_voice_transcript_turn? && inbox.captain_assistant.present?
+    !conversation.group_conversation? && conversation_accepts_captain_response? && message.incoming? &&
+      !message.voice_call? && !message.ai_voice_transcript_turn? && inbox.captain_assistant.present?
   end
 
   def conversation_accepts_captain_response?
@@ -93,7 +93,8 @@ module Enterprise::MessageTemplates::HookExecutionService
   # is outside its schedule or out of quota, the inbox greeting, out-of-office and
   # email-collect templates apply as in an inbox without Captain.
   def captain_handling_conversation?
-    conversation_accepts_captain_response? &&
+    !conversation.group_conversation? &&
+      conversation_accepts_captain_response? &&
       inbox.respond_to?(:captain_assistant) &&
       inbox.captain_assistant.present? &&
       inbox.captain_auto_reply_allowed? &&

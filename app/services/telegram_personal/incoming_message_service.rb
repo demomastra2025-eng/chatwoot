@@ -6,9 +6,9 @@ class TelegramPersonal::IncomingMessageService
   pattr_initialize [:inbox!, :params!]
 
   def perform
-    return unless private_chat?
+    return unless supported_chat?
 
-    existing_message = inbox.messages.find_by(source_id: storage_source_id)
+    existing_message = find_existing_message
     return reconcile_incomplete_history_media!(existing_message) if existing_message.present?
     return unless lock_message_source_id!
 
@@ -27,8 +27,27 @@ class TelegramPersonal::IncomingMessageService
 
   private
 
+  def supported_chat?
+    private_chat? || (group_chat? && inbox.channel.respond_to?(:sync_groups?) && inbox.channel.sync_groups?)
+  end
+
   def private_chat?
     params[:chat_type].to_s.in?(%w[private user private_chat]) || params[:chat_type].blank?
+  end
+
+  def group_chat?
+    params[:chat_type].to_s.in?(%w[group supergroup])
+  end
+
+  def find_existing_message
+    return inbox.messages.find_by(source_id: storage_source_id) unless group_chat? && params[:chat_id].present?
+
+    contact_inbox = inbox.contact_inboxes.find_by(source_id: params[:chat_id].to_s)
+    return if contact_inbox.blank?
+
+    inbox.messages.joins(:conversation)
+         .where(conversations: { contact_inbox_id: contact_inbox.id }, source_id: storage_source_id)
+         .first
   end
 
   def set_contact
@@ -273,9 +292,10 @@ class TelegramPersonal::IncomingMessageService
   end
 
   def dedup_source_id
-    return "album:#{params[:grouped_id]}" if params[:grouped_id].present?
+    prefix = group_chat? && params[:chat_id].present? ? "group:#{params[:chat_id]}:" : ''
+    return "#{prefix}album:#{params[:grouped_id]}" if params[:grouped_id].present?
 
-    storage_source_id
+    "#{prefix}#{storage_source_id}"
   end
 
   def telegram_message_ids
@@ -283,6 +303,15 @@ class TelegramPersonal::IncomingMessageService
   end
 
   def conversation_additional_attributes
+    if group_chat?
+      return {
+        chat_id: params[:chat_id],
+        chat_type: params[:chat_type],
+        is_group: true,
+        chat_title: group_chat_title
+      }.compact
+    end
+
     {
       chat_id: params[:chat_id],
       peer_user_id: peer_user_id,
@@ -302,7 +331,40 @@ class TelegramPersonal::IncomingMessageService
       attrs[:grouped_id] = params[:grouped_id].to_s if params[:grouped_id].present?
       attrs[:telegram_reactions] = params[:reactions].to_h if params[:reactions].present?
       attrs[:telegram_forwarded_from] = params[:forwarded_from].to_h if params[:forwarded_from].present?
+      attrs[:group_sender] = group_sender_attributes if group_chat? && !outgoing_echo? && group_sender_attributes.present?
     end
+  end
+
+  def group_sender_attributes
+    fields = raw_group_sender_fields
+    full_name = fields[:name] || [fields[:first_name], fields[:last_name], fields[:username], fields[:phone_number], fields[:id]].compact.first
+    return if full_name.blank? && fields[:id].blank?
+
+    fields.merge(name: full_name).compact
+  end
+
+  def raw_group_sender_fields
+    sender_payload = params[:group_sender].is_a?(Hash) ? params[:group_sender] : {}
+    first_name = group_sender_field(sender_payload, :first_name)
+    last_name = group_sender_field(sender_payload, :last_name)
+
+    {
+      id: group_sender_field(sender_payload, :id),
+      name: group_sender_field(sender_payload, :name) || [first_name, last_name].compact.join(' ').presence,
+      first_name: first_name,
+      last_name: last_name,
+      username: group_sender_field(sender_payload, :username),
+      phone_number: group_sender_field(sender_payload, :phone_number),
+      avatar_url: group_sender_field(sender_payload, :avatar_url)
+    }
+  end
+
+  def group_sender_field(sender_payload, key)
+    (sender_payload[key] || params[:"sender_#{key}"]).to_s.strip.presence
+  end
+
+  def group_chat_title
+    params[:chat_title].presence || params[:title].presence
   end
 
   def history_media_content_attributes
@@ -351,6 +413,8 @@ class TelegramPersonal::IncomingMessageService
   end
 
   def peer_user_id
+    return params[:chat_id] if group_chat?
+
     params[:peer_user_id] || params[:sender_id] || params[:chat_id]
   end
 

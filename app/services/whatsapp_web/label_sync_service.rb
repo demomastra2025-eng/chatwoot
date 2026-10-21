@@ -69,6 +69,6 @@ class WhatsappWeb::LabelSyncService
   end
 
   def ignored_chat?(remote_jid)
-    channel.ignored_remote_jid?(remote_jid.to_s) || remote_jid.to_s.end_with?('@g.us')
+    channel.ignored_remote_jid?(remote_jid.to_s) || (remote_jid.to_s.end_with?('@g.us') && !channel.sync_groups?)
   end
 end

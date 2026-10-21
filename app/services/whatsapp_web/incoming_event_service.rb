@@ -285,7 +285,7 @@ class WhatsappWeb::IncomingEventService
   end
 
   def process_message_upsert
-    return if group_message?
+    return if group_message? && !channel.sync_groups?
     return if ignored_remote_jid?
 
     if outgoing_echo_event?
@@ -342,6 +342,8 @@ class WhatsappWeb::IncomingEventService
 
   def process_message_update
     message_update_records.each do |update|
+      next if ignored_message_update?(update)
+
       mapped_status = WhatsappWeb::ProviderPayloadNormalizer.map_message_status(update.dig(:update, :status))
       next if mapped_status.blank?
 
@@ -401,6 +403,13 @@ class WhatsappWeb::IncomingEventService
 
   def ignored_remote_jid?
     channel.ignored_remote_jid?(event_data.dig(:key, :remoteJid))
+  end
+
+  def ignored_message_update?(update)
+    remote_jid = update.dig(:key, :remoteJid).to_s
+    return false if remote_jid.blank?
+
+    channel.ignored_remote_jid?(remote_jid) || (remote_jid.end_with?('@g.us') && !channel.sync_groups?)
   end
 
   def mark_connected_from_history_events!

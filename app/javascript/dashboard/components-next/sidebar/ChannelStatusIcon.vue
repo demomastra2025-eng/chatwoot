@@ -6,7 +6,10 @@ import {
   hasWhatsappWebConnectionIssue,
   isWhatsappWebReconnecting,
 } from 'dashboard/helper/whatsappWeb';
-import { hasTelegramPersonalConnectionIssue } from 'dashboard/helper/telegramPersonal';
+import {
+  hasTelegramPersonalConnectionIssue,
+  isTelegramPersonalReconnecting,
+} from 'dashboard/helper/telegramPersonal';
 
 const props = defineProps({
   inbox: {
@@ -23,7 +26,10 @@ const hasConnectionIssue = computed(() => {
 });
 
 const isReconnecting = computed(() => {
-  return isWhatsappWebReconnecting(props.inbox);
+  return (
+    isWhatsappWebReconnecting(props.inbox) ||
+    isTelegramPersonalReconnecting(props.inbox)
+  );
 });
 </script>
 

@@ -282,13 +282,27 @@ class Conversation < ApplicationRecord
   end
 
   def ai_pending_handler_present?(fresh_inbox: false)
+    return false if group_conversation?
     return inbox_active_bot? || inbox_captain_assistant_present? unless fresh_inbox
 
     fresh_inbox_record = ::Inbox.find_by(id: inbox_id)
     fresh_inbox_record&.active_bot? || inbox_captain_assistant_present?
   end
 
+  def group_conversation?
+    group_attributes_hash?(additional_attributes) ||
+      group_attributes_hash?(contact&.additional_attributes) ||
+      contact_inbox&.source_id.to_s.end_with?('@g.us')
+  end
+
   private
+
+  def group_attributes_hash?(attrs)
+    return false unless attrs.is_a?(Hash)
+
+    ActiveModel::Type::Boolean.new.cast(attrs['is_group'] || attrs[:is_group]) == true ||
+      (attrs['chat_type'] || attrs[:chat_type]).to_s.in?(%w[group supergroup])
+  end
 
   def ensure_communication_thread
     refresh_communication_thread!
@@ -382,7 +396,7 @@ class Conversation < ApplicationRecord
     return handle_campaign_status if campaign.present?
 
     # TODO: make this an inbox config instead of assuming bot conversations should start as pending
-    self.status = :pending if inbox.active_bot?
+    self.status = :pending if inbox.active_bot? && !group_conversation?
   end
 
   def handle_campaign_status

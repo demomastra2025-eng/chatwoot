@@ -169,5 +169,25 @@ RSpec.describe Channel::TelegramPersonal do
       expect(channel.runtime_state.dig('history_sync_checkpoint', 'next_dialog_index')).to eq(1)
       expect(channel.runtime_state).not_to have_key('contacts_sync_state')
     end
+
+    it 'clears stale last_error when apply_runtime_update! receives nil last_error or transitions to connected' do
+      channel = create(
+        :channel_telegram_personal,
+        connection_state: 'auth_required',
+        lifecycle_state: 'password_required',
+        last_error: 'Invalid Telegram 2FA password.'
+      )
+
+      channel.apply_runtime_update!(
+        connection_state: 'connected',
+        lifecycle_state: 'connected',
+        last_error: nil
+      )
+      channel.reload
+
+      expect(channel.connection_state).to eq('connected')
+      expect(channel.lifecycle_state).to eq('connected')
+      expect(channel.last_error).to be_nil
+    end
   end
 end

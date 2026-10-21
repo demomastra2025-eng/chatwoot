@@ -35,7 +35,7 @@ class Channel::TelegramPersonal < ApplicationRecord
     :api_hash,
     :phone_number,
     :string_session,
-    { runtime_state: [ignored_chat_ids: []] }
+    { runtime_state: [:sync_groups, { ignored_chat_ids: [] }] }
   ].freeze
   CONNECTION_STATES = %w[disconnected connecting connected auth_required failed flood_wait].freeze
   LIFECYCLE_STATES = %w[pending_auth code_sent qr_ready qr_expired password_required connected disconnected failed].freeze
@@ -81,7 +81,8 @@ class Channel::TelegramPersonal < ApplicationRecord
     'contacts_sync_error' => nil,
     'contacts_sync_count' => 0,
     'contacts_synced_until' => nil,
-    'ignored_chat_ids' => []
+    'ignored_chat_ids' => [],
+    'sync_groups' => false
   }.freeze
 
   has_secure_token :webhook_identifier
@@ -140,6 +141,10 @@ class Channel::TelegramPersonal < ApplicationRecord
     normalize_runtime_state(runtime_state)
   end
 
+  def sync_groups?
+    ActiveModel::Type::Boolean.new.cast(runtime_state_payload['sync_groups']) == true
+  end
+
   def history_sync_checkpoint
     runtime_state_payload['history_sync_checkpoint']
   end
@@ -173,9 +178,16 @@ class Channel::TelegramPersonal < ApplicationRecord
 
   def apply_runtime_update!(attrs = {})
     next_attrs = attrs.compact
+    next_attrs[:last_error] = nil if clear_last_error?(attrs, next_attrs)
     next_attrs[:runtime_state] = normalize_runtime_state(next_attrs[:runtime_state]) if next_attrs.key?(:runtime_state)
 
     update!(next_attrs)
+  end
+
+  def clear_last_error?(attrs, next_attrs)
+    return attrs[:last_error].blank? if attrs.key?(:last_error)
+
+    next_attrs[:connection_state] == 'connected' && (next_attrs[:lifecycle_state] || lifecycle_state) == 'connected'
   end
 
   private
@@ -229,8 +241,10 @@ class Channel::TelegramPersonal < ApplicationRecord
              .flat_map { |item| item.to_s.split(/[,\s;]+/) }
              .filter_map(&:presence)
              .uniq
+      sync_groups = ActiveModel::Type::Boolean.new.cast(runtime['sync_groups']) == true
       runtime.compact_blank!
       runtime['ignored_chat_ids'] = ignored_chat_ids
+      runtime['sync_groups'] = sync_groups
     end
   end
 end

@@ -229,15 +229,18 @@ const telegramPersonalLifecycleState = computed(() => {
   );
 });
 
-const telegramPersonalConnectionState = computed(() => {
+const isTelegramPersonalConnected = computed(() => {
   return (
-    currentInbox.value?.connection_state ||
-    telegramPersonalRuntimeState.value.connection_state ||
-    'disconnected'
+    telegramPersonalLifecycleState.value === 'connected' ||
+    telegramPersonalAuthState.value === 'authorized'
   );
 });
 
 const telegramPersonalLastError = computed(() => {
+  if (isTelegramPersonalConnected.value) {
+    return '';
+  }
+
   return (
     currentInbox.value?.last_error ||
     telegramPersonalRuntimeState.value.last_error ||
@@ -245,12 +248,85 @@ const telegramPersonalLastError = computed(() => {
   );
 });
 
-const isTelegramPersonalConnected = computed(() => {
-  return (
-    telegramPersonalLifecycleState.value === 'connected' ||
-    telegramPersonalAuthState.value === 'authorized'
-  );
-});
+function humanizeSetupState(value) {
+  if (!value) {
+    return '—';
+  }
+
+  const normalizedKey = String(value)
+    .trim()
+    .replace(/[\s-]+/g, '_')
+    .toUpperCase();
+  const stateMap = {
+    OPEN: 'CONNECTED',
+    CLOSE: 'DISCONNECTED',
+    WAITING_FOR_QR: 'QR_READY',
+    CREATING: 'CONNECTING',
+    RECONNECTING: 'CONNECTING',
+  };
+  const lookupKey = stateMap[normalizedKey] || normalizedKey;
+  const translationKey = `INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.STATE_LABELS.${lookupKey}`;
+  const translatedValue = t(translationKey);
+
+  if (translatedValue !== translationKey) {
+    return translatedValue;
+  }
+
+  const normalizedValue = String(value).replace(/_/g, ' ');
+  return normalizedValue.charAt(0).toUpperCase() + normalizedValue.slice(1);
+}
+
+function setupStateBadgeClass(value) {
+  const normalizedValue = String(value || '').toLowerCase();
+
+  if (
+    ['connected', 'authorized', 'open', 'completed'].includes(normalizedValue)
+  ) {
+    return 'bg-n-teal-9/10 text-n-teal-11';
+  }
+
+  if (
+    [
+      'pending_auth',
+      'code_sent',
+      'qr_ready',
+      'waiting_for_qr',
+      'creating',
+      'password_required',
+      'connecting',
+      'reconnecting',
+      'scheduled',
+      'running',
+    ].includes(normalizedValue)
+  ) {
+    return 'bg-n-amber-9/10 text-n-amber-11';
+  }
+
+  if (
+    ['failed', 'disconnected', 'close', 'qr_expired', 'flood_wait'].includes(
+      normalizedValue
+    )
+  ) {
+    return 'bg-n-ruby-9/10 text-n-ruby-11';
+  }
+
+  return 'bg-n-alpha-2 text-n-slate-11';
+}
+
+function formatSetupDate(value) {
+  if (!value) return '';
+  const parsedValue = new Date(value);
+  if (Number.isNaN(parsedValue.getTime())) return value;
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      hour12: false,
+    }).format(parsedValue);
+  } catch {
+    return value;
+  }
+}
 
 const isTelegramPersonalPasswordRequired = computed(() => {
   return telegramPersonalLifecycleState.value === 'password_required';
@@ -1524,165 +1600,181 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div v-if="isWhatsappWebSetupFlow" class="mt-8 w-full">
-          <div
-            class="mx-auto flex w-full max-w-[76rem] flex-col gap-6 text-left"
-          >
+          <div class="mx-auto flex w-full max-w-4xl flex-col gap-5 text-left">
             <div
-              class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,20rem)] lg:items-start"
+              class="rounded-2xl border border-n-weak bg-n-solid-1 p-5 shadow-sm"
             >
-              <div class="flex min-h-full flex-col gap-5">
-                <div class="flex items-center gap-4">
+              <div
+                class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
+              >
+                <div class="flex items-start gap-4">
                   <div
-                    class="flex size-14 shrink-0 items-center justify-center rounded-xl bg-n-teal-3 text-n-teal-11"
+                    class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-n-teal-3 text-n-teal-11"
                   >
-                    <i class="i-ri-whatsapp-line text-[1.75rem]" />
+                    <i class="i-ri-whatsapp-line text-2xl" />
                   </div>
                   <div class="min-w-0">
-                    <p class="text-lg font-semibold text-n-slate-12">
+                    <p class="text-base font-semibold text-n-slate-12">
                       {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.TITLE') }}
                     </p>
-                    <p class="mt-1 text-sm leading-6 text-n-slate-10">
+                    <p class="mt-1 text-sm leading-relaxed text-n-slate-11">
                       {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.DESCRIPTION') }}
                     </p>
                   </div>
                 </div>
 
-                <p
-                  v-if="whatsappWebStatusMessage"
-                  class="text-sm leading-6 text-n-slate-10"
-                >
-                  {{ whatsappWebStatusMessage }}
-                </p>
+                <div class="flex flex-wrap items-center gap-2 shrink-0">
+                  <span
+                    v-if="currentInbox?.phone_number || whatsappWebState.number"
+                    class="inline-flex items-center gap-1.5 rounded-full bg-n-alpha-2 px-3 py-1 font-mono text-xs font-medium text-n-slate-12"
+                  >
+                    {{ currentInbox?.phone_number || whatsappWebState.number }}
+                  </span>
+                  <span
+                    class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium"
+                    :class="setupStateBadgeClass(whatsappWebStatus)"
+                  >
+                    {{ humanizeSetupState(whatsappWebStatus) }}
+                  </span>
+                </div>
+              </div>
 
-                <div
-                  v-if="shouldShowWhatsappWebSuccessCard"
-                  class="flex w-full flex-col items-start gap-2 rounded-xl bg-n-teal-3 px-6 py-5 outline outline-1 -outline-offset-1 outline-n-teal-6"
-                >
-                  <div
-                    class="flex size-10 items-center justify-center rounded-full bg-n-teal-9 text-white"
-                  >
-                    <i class="i-ri-check-line text-xl" />
-                  </div>
-                  <p class="text-sm font-semibold text-n-slate-12">
-                    {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTED_SUCCESS') }}
-                  </p>
-                  <p class="text-sm leading-6 text-n-slate-10">
-                    {{ whatsappWebSuccessDescription }}
-                  </p>
+              <p
+                v-if="whatsappWebStatusMessage"
+                class="mt-4 border-t border-n-weak pt-3 text-sm leading-relaxed text-n-slate-11"
+              >
+                {{ whatsappWebStatusMessage }}
+              </p>
+            </div>
+
+            <div
+              v-if="shouldShowWhatsappWebSuccessCard"
+              class="flex w-full flex-col items-start gap-2 rounded-2xl bg-n-teal-3 px-6 py-5 outline outline-1 -outline-offset-1 outline-n-teal-6"
+            >
+              <div
+                class="flex size-10 items-center justify-center rounded-full bg-n-teal-9 text-white"
+              >
+                <i class="i-ri-check-line text-xl" />
+              </div>
+              <p class="text-sm font-semibold text-n-slate-12">
+                {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTED_SUCCESS') }}
+              </p>
+              <p class="text-sm leading-6 text-n-slate-10">
+                {{ whatsappWebSuccessDescription }}
+              </p>
+              <p
+                v-if="isWhatsappWebHistorySyncing"
+                class="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.08em] text-n-slate-10"
+              >
+                <Spinner :size="14" class="text-n-teal-10" />
+                {{
+                  $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTED_SYNCING_HISTORY')
+                }}
+              </p>
+            </div>
+
+            <div
+              v-if="!isWhatsappWebConnected"
+              class="grid grid-cols-1 gap-5 md:grid-cols-2 items-stretch"
+            >
+              <div
+                class="flex flex-col justify-between rounded-2xl border border-n-weak bg-n-solid-1 p-5 shadow-sm"
+              >
+                <div>
                   <p
-                    v-if="isWhatsappWebHistorySyncing"
-                    class="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.08em] text-n-slate-10"
+                    class="text-xs font-semibold uppercase tracking-[0.08em] text-n-slate-10"
                   >
-                    <Spinner :size="14" class="text-n-teal-10" />
-                    {{
-                      $t(
-                        'INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTED_SYNCING_HISTORY'
-                      )
-                    }}
+                    {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_CODE_LABEL') }}
                   </p>
+                  <p class="mt-1.5 text-sm leading-relaxed text-n-slate-11">
+                    {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_DESCRIPTION') }}
+                  </p>
+
+                  <div
+                    v-if="
+                      whatsappWebDisplayQrCode &&
+                      !isWhatsappWebConnected &&
+                      !shouldShowWhatsappWebQrLoader
+                    "
+                    class="mt-4 flex min-h-[16rem] w-full items-center justify-center rounded-xl border border-n-weak bg-white p-4"
+                  >
+                    <img
+                      :src="whatsappWebDisplayQrCode"
+                      :alt="$t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_ALT')"
+                      class="block aspect-square h-auto w-full max-w-[15rem] object-contain"
+                    />
+                  </div>
+                  <div
+                    v-else-if="shouldShowWhatsappWebQrLoader"
+                    class="mt-4 flex min-h-[16rem] w-full flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-n-weak bg-n-alpha-black2 px-6 py-8"
+                  >
+                    <Spinner class="text-n-teal-10" :size="28" />
+                    <p class="text-sm font-medium text-n-slate-11">
+                      {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.LOADING_TITLE') }}
+                    </p>
+                  </div>
+                  <div
+                    v-else
+                    class="mt-4 flex min-h-[16rem] flex-col items-center justify-center rounded-xl border border-dashed border-n-weak bg-n-alpha-black2 px-4 py-6 text-center text-sm text-n-slate-10"
+                  >
+                    {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_EMPTY') }}
+                  </div>
                 </div>
 
-                <div
-                  v-if="!isWhatsappWebConnected"
-                  class="grid gap-5 lg:grid-cols-[minmax(15rem,18rem)_minmax(18rem,22rem)] lg:items-stretch"
-                >
+                <NextButton
+                  class="mt-4 w-full"
+                  type="button"
+                  outline
+                  slate
+                  icon="i-lucide-qr-code"
+                  :is-loading="isRequestingWhatsappWebQr"
+                  :disabled="isWhatsappWebLifecycleBusy"
+                  :label="whatsappWebRequestQrButtonLabel"
+                  @click="refreshWhatsappWebQr({ artifactType: 'qr' })"
+                />
+              </div>
+
+              <div
+                class="flex flex-col justify-between rounded-2xl border border-n-weak bg-n-solid-1 p-5 shadow-sm"
+              >
+                <div>
+                  <p
+                    class="text-xs font-semibold uppercase tracking-[0.08em] text-n-slate-10"
+                  >
+                    {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.PAIR_CODE_LABEL') }}
+                  </p>
+                  <p class="mt-1.5 text-sm leading-relaxed text-n-slate-11">
+                    {{
+                      $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.PAIR_CODE_DESCRIPTION')
+                    }}
+                  </p>
+
                   <div
-                    class="rounded-xl px-6 py-4 outline outline-1 -outline-offset-1 outline-n-weak"
+                    class="mt-4 flex min-h-[16rem] flex-col items-center justify-center rounded-xl border border-dashed border-n-weak bg-n-alpha-black2 px-6 py-8 text-center"
                   >
                     <p
-                      class="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-n-slate-10"
-                    >
-                      {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.PAIR_CODE_LABEL') }}
-                    </p>
-                    <p
                       v-if="formattedWhatsappWebPairingCode"
-                      class="font-mono text-2xl font-semibold tracking-[0.22em] text-n-slate-12"
+                      class="font-mono text-2xl font-bold tracking-[0.22em] text-n-teal-11"
                     >
                       {{ formattedWhatsappWebPairingCode }}
                     </p>
                     <p v-else class="text-sm text-n-slate-10">
                       {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.PAIR_CODE_EMPTY') }}
                     </p>
-                    <p class="mt-2 text-xs text-n-slate-10">
-                      {{
-                        $t(
-                          'INBOX_MGMT.FINISH.WHATSAPP_WEB.PAIR_CODE_DESCRIPTION'
-                        )
-                      }}
-                    </p>
-                    <NextButton
-                      class="mt-4 w-full"
-                      type="button"
-                      outline
-                      slate
-                      :is-loading="isRequestingWhatsappWebCode"
-                      :disabled="isWhatsappWebLifecycleBusy"
-                      :label="whatsappWebRequestCodeButtonLabel"
-                      icon="i-lucide-key-round"
-                      @click="refreshWhatsappWebQr({ artifactType: 'code' })"
-                    />
-                  </div>
-
-                  <div
-                    class="min-w-[18rem] rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
-                  >
-                    <p
-                      class="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-n-slate-10"
-                    >
-                      {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_CODE_LABEL') }}
-                    </p>
-
-                    <div
-                      v-if="
-                        whatsappWebDisplayQrCode &&
-                        !isWhatsappWebConnected &&
-                        !shouldShowWhatsappWebQrLoader
-                      "
-                      class="flex w-full min-w-[16rem] items-center justify-center overflow-visible rounded-lg bg-white p-3"
-                    >
-                      <img
-                        :src="whatsappWebDisplayQrCode"
-                        :alt="$t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_ALT')"
-                        class="block aspect-square h-auto w-full max-w-[18rem] object-contain"
-                      />
-                    </div>
-                    <div
-                      v-else-if="shouldShowWhatsappWebQrLoader"
-                      class="flex min-h-[16rem] w-full flex-col items-center justify-center gap-3 px-6 py-8"
-                    >
-                      <Spinner class="text-n-teal-10" :size="28" />
-                      <p class="text-sm font-medium text-n-slate-11">
-                        {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.LOADING_TITLE') }}
-                      </p>
-                    </div>
-                    <div
-                      v-else
-                      class="px-4 py-6 text-center text-sm text-n-slate-10"
-                    >
-                      {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_EMPTY') }}
-                    </div>
-
-                    <NextButton
-                      class="mt-4 w-full"
-                      type="button"
-                      outline
-                      slate
-                      icon="i-lucide-qr-code"
-                      :is-loading="isRequestingWhatsappWebQr"
-                      :disabled="isWhatsappWebLifecycleBusy"
-                      :label="whatsappWebRequestQrButtonLabel"
-                      @click="refreshWhatsappWebQr({ artifactType: 'qr' })"
-                    />
                   </div>
                 </div>
 
-                <p class="mt-auto text-sm leading-6 text-n-slate-10">
-                  {{
-                    whatsappWebStatus === 'connected'
-                      ? $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTED_REDIRECT')
-                      : $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_DESCRIPTION')
-                  }}
-                </p>
+                <NextButton
+                  class="mt-4 w-full"
+                  type="button"
+                  outline
+                  slate
+                  :is-loading="isRequestingWhatsappWebCode"
+                  :disabled="isWhatsappWebLifecycleBusy"
+                  :label="whatsappWebRequestCodeButtonLabel"
+                  icon="i-lucide-key-round"
+                  @click="refreshWhatsappWebQr({ artifactType: 'code' })"
+                />
               </div>
             </div>
           </div>
@@ -1838,22 +1930,24 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div v-if="isTelegramPersonalSetupFlow" class="mt-8 w-full">
-          <div class="mx-auto flex w-full max-w-5xl flex-col gap-6 text-left">
+          <div class="mx-auto flex w-full max-w-4xl flex-col gap-5 text-left">
             <div
-              class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,20rem)] lg:items-start"
+              class="rounded-2xl border border-n-weak bg-n-solid-1 p-5 shadow-sm"
             >
-              <div class="flex min-h-full flex-col gap-5">
-                <div class="flex items-center gap-4">
+              <div
+                class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
+              >
+                <div class="flex items-start gap-4">
                   <div
-                    class="flex size-14 shrink-0 items-center justify-center rounded-xl bg-n-blue-3 text-n-blue-11"
+                    class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-n-blue-3 text-n-blue-11"
                   >
-                    <i class="i-ri-telegram-line text-[1.75rem]" />
+                    <i class="i-ri-telegram-line text-2xl" />
                   </div>
                   <div class="min-w-0">
-                    <p class="text-lg font-semibold text-n-slate-12">
+                    <p class="text-base font-semibold text-n-slate-12">
                       {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.TITLE') }}
                     </p>
-                    <p class="mt-1 text-sm leading-6 text-n-slate-10">
+                    <p class="mt-1 text-sm leading-relaxed text-n-slate-11">
                       {{
                         $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.DESCRIPTION')
                       }}
@@ -1861,95 +1955,99 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
 
-                <p
-                  v-if="telegramPersonalStatusMessage"
-                  class="text-sm leading-6 text-n-slate-10"
-                >
-                  {{ telegramPersonalStatusMessage }}
-                </p>
-
                 <div
-                  v-if="isTelegramPersonalConnected"
-                  class="flex w-full flex-col items-start gap-2 rounded-xl bg-n-blue-3 px-6 py-5 outline outline-1 -outline-offset-1 outline-n-blue-6"
+                  v-if="currentInbox?.id"
+                  class="flex flex-wrap items-center gap-2 shrink-0"
                 >
-                  <div
-                    class="flex size-10 items-center justify-center rounded-full bg-n-blue-9 text-white"
+                  <span
+                    class="inline-flex items-center rounded-full bg-n-alpha-2 px-3 py-1 font-mono text-xs font-medium text-n-slate-12"
                   >
-                    <i class="i-ri-check-line text-xl" />
-                  </div>
-                  <p class="text-sm font-semibold text-n-slate-12">
-                    {{
-                      $t(
-                        'INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.CONNECTED_SUCCESS'
-                      )
-                    }}
-                  </p>
-                  <p class="text-sm leading-6 text-n-slate-10">
-                    {{
-                      $t(
-                        'INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.CONNECTED_REDIRECT'
-                      )
-                    }}
-                  </p>
+                    {{ currentInbox?.phone_number || '—' }}
+                  </span>
+                  <span
+                    class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium"
+                    :class="
+                      setupStateBadgeClass(telegramPersonalLifecycleState)
+                    "
+                  >
+                    {{ humanizeSetupState(telegramPersonalLifecycleState) }}
+                  </span>
                 </div>
               </div>
 
               <div
-                v-if="currentInbox?.id"
-                class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+                v-if="
+                  telegramPersonalStatusMessage ||
+                  !isTelegramPersonalConnected ||
+                  telegramPersonalLastError
+                "
+                class="mt-4 flex flex-col gap-3 border-t border-n-weak pt-3"
               >
-                <div class="space-y-2 text-sm text-n-slate-11">
-                  <p>
-                    <span class="font-medium text-n-slate-12">
+                <div
+                  class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <p
+                    v-if="telegramPersonalStatusMessage"
+                    class="text-sm leading-relaxed text-n-slate-11"
+                  >
+                    {{ telegramPersonalStatusMessage }}
+                  </p>
+                  <label
+                    v-if="!isTelegramPersonalConnected"
+                    class="inline-flex items-center gap-2.5 cursor-pointer select-none shrink-0"
+                  >
+                    <input
+                      v-model="telegramPersonalImportFullHistory"
+                      type="checkbox"
+                      class="size-4 rounded border-n-strong text-n-brand focus:ring-n-brand"
+                    />
+                    <span class="text-xs font-medium text-n-slate-12">
                       {{
-                        $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.PHONE_NUMBER')
+                        $t(
+                          'INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.FULL_HISTORY_SYNC_LABEL'
+                        )
                       }}
                     </span>
-                    {{ currentInbox?.phone_number || '—' }}
-                  </p>
-                  <p>
-                    <span class="font-medium text-n-slate-12">
-                      {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.STATUS') }}
-                    </span>
-                    {{ telegramPersonalLifecycleState }}
-                  </p>
-                  <p>
-                    <span class="font-medium text-n-slate-12">
-                      {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.CONNECTION') }}
-                    </span>
-                    {{ telegramPersonalConnectionState }}
-                  </p>
-                  <p v-if="telegramPersonalLastError" class="text-n-ruby-11">
-                    <span class="font-medium">
-                      {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.LAST_ERROR') }}
-                    </span>
-                    {{ telegramPersonalLastError }}
-                  </p>
+                  </label>
                 </div>
-                <label
-                  v-if="!isTelegramPersonalConnected"
-                  class="mt-4 flex items-center gap-3 border-t border-n-weak pt-4"
+
+                <div
+                  v-if="telegramPersonalLastError"
+                  class="rounded-xl border border-n-ruby-6/40 bg-n-ruby-3/50 px-3.5 py-2.5 text-xs text-n-ruby-11"
                 >
-                  <input
-                    v-model="telegramPersonalImportFullHistory"
-                    type="checkbox"
-                    class="size-4 rounded border-n-strong text-n-brand focus:ring-n-brand"
-                  />
-                  <span class="text-sm font-medium text-n-slate-12">
-                    {{
-                      $t(
-                        'INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.FULL_HISTORY_SYNC_LABEL'
-                      )
-                    }}
+                  <span class="font-semibold">
+                    {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.LAST_ERROR') }}
                   </span>
-                </label>
+                  {{ telegramPersonalLastError }}
+                </div>
               </div>
+            </div>
+
+            <div
+              v-if="isTelegramPersonalConnected"
+              class="flex w-full flex-col items-start gap-2 rounded-2xl bg-n-blue-3 px-6 py-5 outline outline-1 -outline-offset-1 outline-n-blue-6"
+            >
+              <div
+                class="flex size-10 items-center justify-center rounded-full bg-n-blue-9 text-white"
+              >
+                <i class="i-ri-check-line text-xl" />
+              </div>
+              <p class="text-sm font-semibold text-n-slate-12">
+                {{
+                  $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.CONNECTED_SUCCESS')
+                }}
+              </p>
+              <p class="text-sm leading-6 text-n-slate-10">
+                {{
+                  $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.CONNECTED_REDIRECT')
+                }}
+              </p>
             </div>
 
             <div class="flex w-full flex-col gap-4">
               <div
                 v-if="!currentInbox?.id"
-                class="flex min-h-[22rem] w-full flex-col items-center justify-center gap-3 px-6 py-8"
+                class="flex min-h-[18rem] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-n-weak bg-n-solid-1 px-6 py-8"
               >
                 <Spinner class="text-n-blue-10" :size="28" />
                 <p class="text-sm font-medium text-n-slate-11">
@@ -1959,15 +2057,24 @@ onBeforeUnmount(() => {
 
               <form
                 v-else-if="isTelegramPersonalPasswordRequired"
-                class="max-w-[21rem] space-y-3 rounded-xl p-5 outline outline-1 -outline-offset-1 outline-n-weak"
+                class="mx-auto w-full max-w-lg space-y-4 rounded-2xl border border-n-weak bg-n-solid-1 p-6 shadow-sm"
                 @submit.prevent="verifyTelegramPersonalPassword"
               >
-                <p class="text-sm font-medium text-n-slate-12">
-                  {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.PASSWORD_LABEL') }}
-                </p>
+                <div>
+                  <p class="text-sm font-semibold text-n-slate-12">
+                    {{
+                      $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.PASSWORD_LABEL')
+                    }}
+                  </p>
+                  <p class="mt-1 text-sm leading-relaxed text-n-slate-11">
+                    {{
+                      $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.PASSWORD_HINT')
+                    }}
+                  </p>
+                </div>
                 <input
                   v-model="telegramPersonalPassword"
-                  class="!mb-0 w-full rounded-lg border-0 bg-n-solid-1 px-3 py-2 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] outline-n-weak focus:outline-n-brand"
+                  class="!mb-0 w-full rounded-xl border-0 bg-n-alpha-black2 px-3.5 py-2.5 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] outline-n-weak focus:outline-n-brand"
                   type="password"
                   autocomplete="current-password"
                   :placeholder="
@@ -1976,42 +2083,127 @@ onBeforeUnmount(() => {
                     )
                   "
                 />
-                <p class="text-sm leading-6 text-n-slate-10">
-                  {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.PASSWORD_HINT') }}
-                </p>
-                <NextButton
-                  class="w-full"
-                  solid
-                  blue
-                  type="submit"
-                  :is-loading="isVerifyingTelegramPersonalPassword"
-                  :label="
-                    $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.VERIFY_PASSWORD')
-                  "
-                />
+                <div class="flex flex-col gap-2 sm:flex-row">
+                  <NextButton
+                    class="flex-1"
+                    solid
+                    blue
+                    type="submit"
+                    :is-loading="isVerifyingTelegramPersonalPassword"
+                    :label="
+                      $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.VERIFY_PASSWORD')
+                    "
+                  />
+                  <NextButton
+                    type="button"
+                    outline
+                    slate
+                    :is-loading="isRequestingTelegramPersonalQr"
+                    :label="telegramPersonalQrButtonLabel"
+                    @click="requestTelegramPersonalQr()"
+                  />
+                </div>
               </form>
 
               <template v-else-if="!isTelegramPersonalConnected">
-                <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div
+                  class="grid grid-cols-1 gap-5 md:grid-cols-2 items-stretch"
+                >
                   <div
-                    v-if="shouldShowTelegramPersonalCodeRequest"
-                    class="space-y-3 rounded-xl p-5 outline outline-1 -outline-offset-1 outline-n-weak"
+                    class="flex flex-col justify-between rounded-2xl border border-n-weak bg-n-solid-1 p-5 shadow-sm"
                   >
-                    <p class="text-sm font-medium text-n-slate-12">
-                      {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.CODE_LOGIN') }}
-                    </p>
-                    <p class="text-sm leading-6 text-n-slate-10">
-                      {{
-                        $t(
-                          'INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.REQUEST_CODE_HINT'
-                        )
-                      }}
-                    </p>
+                    <div>
+                      <p class="text-sm font-semibold text-n-slate-12">
+                        {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.QR_LOGIN') }}
+                      </p>
+                      <p class="mt-1.5 text-sm leading-relaxed text-n-slate-11">
+                        {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.QR_HINT') }}
+                      </p>
+
+                      <div
+                        v-if="telegramPersonalQrCode"
+                        class="mt-4 flex min-h-[15rem] items-center justify-center rounded-xl border border-n-weak bg-white p-4"
+                      >
+                        <img
+                          :src="telegramPersonalQrCode"
+                          :alt="
+                            $t(
+                              'INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.QR_IMAGE_ALT'
+                            )
+                          "
+                          class="h-auto w-full max-w-[14rem]"
+                        />
+                      </div>
+                      <div
+                        v-else
+                        class="mt-4 flex min-h-[15rem] items-center justify-center rounded-xl border border-dashed border-n-weak bg-n-alpha-black2 px-4 py-8 text-center text-sm text-n-slate-10"
+                      >
+                        {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.QR_EMPTY') }}
+                      </div>
+
+                      <p
+                        v-if="telegramPersonalQrExpiresAt"
+                        class="mt-3 text-xs text-n-slate-10"
+                      >
+                        {{
+                          $t(
+                            'INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.QR_EXPIRES_AT',
+                            {
+                              value: formatSetupDate(
+                                telegramPersonalQrExpiresAt
+                              ),
+                            }
+                          )
+                        }}
+                      </p>
+                    </div>
+
                     <NextButton
-                      class="w-full"
+                      class="mt-4 w-full"
                       type="button"
                       outline
                       slate
+                      icon="i-lucide-qr-code"
+                      :is-loading="isRequestingTelegramPersonalQr"
+                      :label="telegramPersonalQrButtonLabel"
+                      @click="requestTelegramPersonalQr()"
+                    />
+                  </div>
+
+                  <div
+                    v-if="shouldShowTelegramPersonalCodeRequest"
+                    class="flex flex-col justify-between rounded-2xl border border-n-weak bg-n-solid-1 p-5 shadow-sm"
+                  >
+                    <div>
+                      <p class="text-sm font-semibold text-n-slate-12">
+                        {{
+                          $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.CODE_LOGIN')
+                        }}
+                      </p>
+                      <p class="mt-1.5 text-sm leading-relaxed text-n-slate-11">
+                        {{
+                          $t(
+                            'INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.REQUEST_CODE_HINT'
+                          )
+                        }}
+                      </p>
+                      <div
+                        class="mt-4 flex min-h-[15rem] flex-col items-center justify-center rounded-xl border border-dashed border-n-weak bg-n-alpha-black2 px-6 py-8 text-center"
+                      >
+                        <p class="text-sm text-n-slate-10">
+                          {{
+                            $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.CODE_HINT')
+                          }}
+                        </p>
+                      </div>
+                    </div>
+
+                    <NextButton
+                      class="mt-4 w-full"
+                      type="button"
+                      outline
+                      slate
+                      icon="i-lucide-key-round"
                       :is-loading="isRequestingTelegramPersonalCode"
                       :label="telegramPersonalRequestButtonLabel"
                       @click.prevent="requestTelegramPersonalCode()"
@@ -2020,92 +2212,60 @@ onBeforeUnmount(() => {
 
                   <form
                     v-else-if="shouldShowTelegramPersonalCodeVerify"
-                    class="space-y-3 rounded-xl p-5 outline outline-1 -outline-offset-1 outline-n-weak"
+                    class="flex flex-col justify-between rounded-2xl border border-n-weak bg-n-solid-1 p-5 shadow-sm"
                     @submit.prevent="verifyTelegramPersonalCode"
                   >
-                    <p class="text-sm font-medium text-n-slate-12">
-                      {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.CODE_LOGIN') }}
-                    </p>
-                    <input
-                      v-model="telegramPersonalCode"
-                      class="!mb-0 w-full rounded-lg border-0 bg-n-solid-1 px-3 py-2 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] outline-n-weak focus:outline-n-brand"
-                      type="text"
-                      inputmode="numeric"
-                      autocomplete="one-time-code"
-                      :placeholder="
-                        $t(
-                          'INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.CODE_PLACEHOLDER'
-                        )
-                      "
-                    />
-                    <p class="text-sm leading-6 text-n-slate-10">
-                      {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.CODE_HINT') }}
-                    </p>
-                    <NextButton
-                      class="w-full"
-                      solid
-                      blue
-                      type="submit"
-                      :is-loading="isVerifyingTelegramPersonalCode"
-                      :label="
-                        $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.VERIFY_CODE')
-                      "
-                    />
-                  </form>
-
-                  <div
-                    class="rounded-xl p-5 outline outline-1 -outline-offset-1 outline-n-weak"
-                  >
-                    <p class="text-sm font-medium text-n-slate-12">
-                      {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.QR_LOGIN') }}
-                    </p>
-                    <p class="mt-2 text-sm leading-6 text-n-slate-10">
-                      {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.QR_HINT') }}
-                    </p>
-
-                    <div
-                      v-if="telegramPersonalQrCode"
-                      class="mt-4 flex items-center justify-center rounded-lg bg-white p-4"
-                    >
-                      <img
-                        :src="telegramPersonalQrCode"
-                        :alt="
-                          $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.QR_IMAGE_ALT')
+                    <div class="space-y-3">
+                      <p class="text-sm font-semibold text-n-slate-12">
+                        {{
+                          $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.CODE_LOGIN')
+                        }}
+                      </p>
+                      <p class="text-sm leading-relaxed text-n-slate-11">
+                        {{
+                          $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.CODE_HINT')
+                        }}
+                      </p>
+                      <input
+                        v-model="telegramPersonalCode"
+                        class="!mb-0 w-full rounded-xl border-0 bg-n-alpha-black2 px-4 py-3 text-center font-mono text-lg font-semibold tracking-[0.25em] text-n-slate-12 outline outline-1 outline-offset-[-1px] outline-n-weak focus:outline-n-brand"
+                        type="text"
+                        inputmode="numeric"
+                        autocomplete="one-time-code"
+                        :placeholder="
+                          $t(
+                            'INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.CODE_PLACEHOLDER'
+                          )
                         "
-                        class="h-auto w-full max-w-[15rem]"
                       />
                     </div>
-                    <div
-                      v-else
-                      class="mt-4 px-4 py-8 text-center text-sm text-n-slate-10"
-                    >
-                      {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.QR_EMPTY') }}
+                    <div class="mt-4 flex flex-col gap-2">
+                      <NextButton
+                        class="w-full"
+                        solid
+                        blue
+                        type="submit"
+                        :is-loading="isVerifyingTelegramPersonalCode"
+                        :label="
+                          $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.VERIFY_CODE')
+                        "
+                      />
+                      <NextButton
+                        class="w-full"
+                        type="button"
+                        ghost
+                        slate
+                        xs
+                        :is-loading="isRequestingTelegramPersonalCode"
+                        :label="
+                          $t(
+                            'INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.REQUEST_NEW_CODE'
+                          )
+                        "
+                        @click.prevent="requestTelegramPersonalCode()"
+                      />
                     </div>
-
-                    <p
-                      v-if="telegramPersonalQrExpiresAt"
-                      class="mt-3 text-xs text-n-slate-10"
-                    >
-                      {{
-                        $t(
-                          'INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.QR_EXPIRES_AT',
-                          {
-                            value: telegramPersonalQrExpiresAt,
-                          }
-                        )
-                      }}
-                    </p>
-
-                    <NextButton
-                      class="mt-4 w-full"
-                      type="button"
-                      outline
-                      slate
-                      :is-loading="isRequestingTelegramPersonalQr"
-                      :label="telegramPersonalQrButtonLabel"
-                      @click="requestTelegramPersonalQr()"
-                    />
-                  </div>
+                  </form>
                 </div>
               </template>
             </div>

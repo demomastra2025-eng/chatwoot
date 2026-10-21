@@ -421,4 +421,37 @@ describe('MessageList', () => {
     expect(thirdPassMessageRef).not.toBe(firstPassMessageRef);
     expect(thirdPassMessageRef.contentAttributes.data.status).toBe('completed');
   });
+
+  it('does not group consecutive incoming group messages from different participants', () => {
+    const createdAt = atLocalNoon(2026, 6, 24);
+    const wrapper = createWrapper({
+      messages: [
+        message({
+          id: 1,
+          created_at: createdAt,
+          content_attributes: {
+            group_sender: { id: '101', name: 'Alice' },
+          },
+        }),
+        message({
+          id: 2,
+          created_at: createdAt + 5,
+          content_attributes: {
+            group_sender: { id: '202', name: 'Bob' },
+          },
+        }),
+        message({
+          id: 3,
+          created_at: createdAt + 10,
+          content_attributes: {
+            group_sender: { id: '202', name: 'Bob' },
+          },
+        }),
+      ],
+    });
+
+    const renderedMessages = wrapper.findAllComponents({ name: 'Message' });
+    expect(renderedMessages[0].props('groupWithNext')).toBe(false);
+    expect(renderedMessages[1].props('groupWithNext')).toBe(true);
+  });
 });

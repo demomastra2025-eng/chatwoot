@@ -42,7 +42,7 @@ export default {
           {
             channel: {
               type: 'telegram',
-              bot_token: this.botToken,
+              bot_token: this.botToken.trim(),
             },
           }
         );
@@ -66,41 +66,62 @@ export default {
 </script>
 
 <template>
-  <div class="h-full w-full p-6 col-span-6">
-    <PageHeader
-      :header-title="$t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.TITLE')"
-      :header-content="$t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.DESC')"
-    />
-    <form
-      class="flex flex-wrap flex-col mx-0"
-      @submit.prevent="createChannel()"
-    >
-      <div class="flex-shrink-0 flex-grow-0">
-        <label :class="{ error: v$.botToken.$error }">
-          {{ $t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.BOT_TOKEN.LABEL') }}
-          <input
-            v-model="botToken"
-            type="text"
-            :placeholder="
-              $t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.BOT_TOKEN.PLACEHOLDER')
-            "
-            @blur="v$.botToken.$touch"
-          />
-        </label>
-        <p class="help-text">
-          {{ $t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.BOT_TOKEN.SUBTITLE') }}
-        </p>
-      </div>
+  <div class="w-full max-w-2xl">
+    <div class="rounded-2xl border border-n-weak bg-n-solid-1 p-6 shadow-sm">
+      <PageHeader
+        :header-title="$t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.TITLE')"
+        :header-content="$t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.DESC')"
+      />
 
-      <div class="w-full mt-4">
-        <NextButton
-          :is-loading="uiFlags.isCreating"
-          type="submit"
-          solid
-          blue
-          :label="$t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.SUBMIT_BUTTON')"
-        />
-      </div>
-    </form>
+      <form
+        class="mt-4 flex flex-col gap-5 mx-0"
+        @submit.prevent="createChannel()"
+      >
+        <div class="flex flex-col gap-1.5">
+          <label
+            class="text-sm font-medium text-n-slate-12"
+            :class="{ 'text-n-ruby-11': v$.botToken.$error }"
+          >
+            {{ $t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.BOT_TOKEN.LABEL') }}
+            <div
+              class="mt-1.5 flex items-center rounded-xl border bg-n-alpha-black2 overflow-hidden transition-colors"
+              :class="
+                v$.botToken.$error
+                  ? 'border-n-ruby-8 focus-within:border-n-ruby-9'
+                  : 'border-n-weak focus-within:border-n-brand'
+              "
+            >
+              <span
+                class="inline-flex items-center px-3.5 py-2.5 bg-n-solid-2 border-r border-n-weak text-xs font-mono text-n-slate-11 select-none"
+              >
+                {{ 'TOKEN' }}
+              </span>
+              <input
+                v-model="botToken"
+                type="text"
+                class="!mb-0 !border-0 !bg-transparent !shadow-none flex-1 px-3.5 py-2.5 font-mono text-sm text-n-slate-12 focus:outline-none"
+                :placeholder="
+                  $t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.BOT_TOKEN.PLACEHOLDER')
+                "
+                @blur="v$.botToken.$touch"
+              />
+            </div>
+          </label>
+          <p class="text-xs leading-relaxed text-n-slate-11">
+            {{ $t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.BOT_TOKEN.SUBTITLE') }}
+          </p>
+        </div>
+
+        <div class="flex items-center pt-1">
+          <NextButton
+            :is-loading="uiFlags.isCreating"
+            type="submit"
+            solid
+            blue
+            :label="$t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.SUBMIT_BUTTON')"
+          />
+        </div>
+      </form>
+    </div>
   </div>
 </template>
