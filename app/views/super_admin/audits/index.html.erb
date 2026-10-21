@@ -16,8 +16,8 @@ are Astana time.
 <%
   total = @audits.respond_to?(:total_count) ? @audits.total_count : @audits.size
   actions = %w[create update destroy impersonate start_trial extend_trial expire_trial apply_plan update_channel_override
-               update_channel_visibility update_service_flags update_limits remove_user cleanup_storage empty_trash link_account unlink_account
-               link_organization unlink_organization suspend_account activate_account create_client add_user
+               update_channel_visibility update_service_flags update_limits sync_plan_limits remove_user cleanup_storage empty_trash
+               link_account unlink_account link_organization unlink_organization suspend_account activate_account create_client add_user
                reset_captain_responses_usage reset_captain_tokens_usage reset_email_usage reset_two_factor publish_banner hide_banner
                delete_push_subscriptions delete_avatar] + SuperAdmin::AuditsController::SECURITY_ACTIONS
   action_badges = { 'create' => 'admin-badge--teal', 'update' => 'admin-badge--blue', 'destroy' => 'admin-badge--ruby' }

@@ -157,8 +157,12 @@ class Accounts::LimitSettings # rubocop:disable Metrics/ClassLength
     name = GLOBAL_SETTINGS[key.to_s]
     return unless name
 
+    # Read once for each limit: the settings of the installation do not change while one account is being looked at
+    @global_values ||= {}
+    return @global_values[name] if @global_values.key?(name)
+
     value = GlobalConfig.get(name)[name]
-    value.blank? ? nil : value.to_i
+    @global_values[name] = value.blank? ? nil : value.to_i
   end
 
   # The number the code enforces now: the one in Account#limits, else the general value of the platform; nil is no limit
@@ -246,7 +250,34 @@ class Accounts::LimitSettings # rubocop:disable Metrics/ClassLength
     Result.new(limits: draft.limits, marks: draft.marks, plan_numbers: draft.plan_numbers, changes: changes_between(draft))
   end
 
+  # What Account#limits, the list of the limits chosen by hand and the list of the numbers of the plan become when the numbers of the
+  # plan as it is now are written into the limits that follow it (Accounts::SyncPlanLimits): every limit that follows the plan and has a
+  # number in the plan gets it. A limit chosen by hand («своё число», «без ограничений») stays, so does one the plan has no number for,
+  # so does one that an ended trial holds at 0 (that is given back by applying the plan). Nothing is written.
+  def follow_current_plan
+    draft = Draft.new(stored_limits.dup, marks.dup, plan_numbers.dup, held_keys.dup)
+    keys = Accounts::Plans::LIMIT_KEYS.select { |key| follows_current_plan?(key) }
+    keys.each { |key| follow_plan(draft, key) }
+    # Only the limits that were written can have changed: a bulk run asks this of hundreds of accounts, and the general values of the
+    # platform are read from the settings of the installation, one read for each limit that is looked at
+    Result.new(limits: draft.limits, marks: draft.marks, plan_numbers: draft.plan_numbers, changes: changes_between(draft, keys))
+  end
+
+  # The keys of the limits an ended trial holds at 0 (the number comes back when the plan is applied, not before)
+  def held_limit_keys
+    Accounts::Plans::LIMIT_KEYS.select { |key| held?(key) }
+  end
+
+  # The limits chosen by hand whose number differs from the one the plan has for them: the sync leaves them as they are
+  def kept_keys
+    Accounts::Plans::LIMIT_KEYS.select { |key| !plan_value(key).nil? && manual?(key) && effective(key) != plan_value(key) }
+  end
+
   private
+
+  def follows_current_plan?(key)
+    !plan_value(key).nil? && source(key) == :plan && !held?(key)
+  end
 
   def apply_choice(draft, key, choice)
     draft.held.delete(key)
@@ -282,9 +313,9 @@ class Accounts::LimitSettings # rubocop:disable Metrics/ClassLength
 
   # { 'agents' => { 'from' => Position, 'to' => Position } } for the limits whose source or number differs after the choices
   # (the zero an ended trial holds on a limit nobody touched is still the platform's, not a choice)
-  def changes_between(draft)
+  def changes_between(draft, keys = Accounts::Plans::LIMIT_KEYS)
     after = self.class.new(@account, modules: @modules, draft: draft)
-    Accounts::Plans::LIMIT_KEYS.each_with_object({}) do |key, changes|
+    keys.each_with_object({}) do |key, changes|
       before = Position.new(source: source(key), value: effective(key))
       now = Position.new(source: after.source(key), value: after.effective(key))
       changes[key] = { 'from' => before, 'to' => now } if before != now

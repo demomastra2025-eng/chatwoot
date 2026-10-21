@@ -1044,6 +1044,7 @@ Rails.application.routes.draw do
         post :extend_trial, on: :member
         post :expire_trial, on: :member
         post :apply_plan, on: :member
+        post :sync_limits, on: :member
         get :plan_preview, on: :member
         post :channel_overrides, on: :member
         post :link_organization, on: :member

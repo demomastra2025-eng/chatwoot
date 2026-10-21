@@ -203,6 +203,8 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
 
       drift = text(row('conversations').at_css('[data-testid="limit-drift"]'))
       expect(drift).to include('Сейчас действует без ограничений, а по тарифу — 1 000 диалогов')
+      expect(drift).to include('кнопка «Обновить лимиты по тарифу»')
+      expect(drift).not_to include('Применить тариф')
       expect(text(row('conversations').at_css('.admin-limit__choices'))).to include('Как в тарифе по тарифу: 1 000 диалогов')
       expect(row('agents').at_css('[data-testid="limit-drift"]')).to be_nil
     end
@@ -776,6 +778,146 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
 
       expect(response.body).not_to include((max * 1.gigabyte).to_s)
       expect(response.body).not_to include('107374182400')
+    end
+  end
+
+  # «Обновить лимиты по тарифу»: the numbers of the plan go into the limits that follow it, and nothing else changes
+  describe 'the button «Обновить лимиты по тарифу» of the card' do
+    let(:sync_path) { "/super_admin/accounts/#{account.id}/sync_limits" }
+
+    def sync_block = page.at_css("[data-testid='limit-sync']")
+
+    def with_plan_numbers(numbers)
+      allow(Accounts::Plans).to(receive(:limits_for).and_wrap_original { |original, *args| original.call(*args).merge(numbers) })
+    end
+
+    before do
+      with_plan_numbers('conversations' => 2000, 'agents' => 10)
+      apply_plan!
+      with_plan_numbers('conversations' => 3000, 'agents' => 12, 'emails' => 100)
+    end
+
+    it 'sits in the limits block and says in advance which limits would change and to what' do
+      get card_path
+
+      expect(page.at_css("[data-testid='usage-block']").at_css("[data-testid='limit-sync']")).to be_present
+      expect(sync_block['data-state']).to eq('changes')
+      expect(text(sync_block.at_css('h3'))).to eq('Обновить лимиты по тарифу')
+      expect(sync_block.css('[data-testid="limit-sync-line"]').map { |line| text(line) }).to eq(
+        ['Операторы: 10 операторов → 12 операторов', 'Диалоги за 30 дней: 2 000 диалогов → 3 000 диалогов',
+         'Письма в день: без ограничений → 100 писем в день']
+      )
+      expect(text(sync_block.at_css('[data-testid="limit-sync-state"]'))).to start_with('Изменятся 3 лимита:')
+      expect(text(sync_block)).to include('«Своё число» и «Без ограничений» не меняются, функции и модули тоже')
+      expect(response.body).not_to include('translation missing')
+    end
+
+    it 'asks «точно?» before it posts, and posts to the account' do
+      get card_path
+
+      ask = sync_block.at_css("[data-testid='confirm-sync-limits']")
+      expect(text(ask.at_css('summary'))).to eq('Обновить лимиты по тарифу')
+      expect(text(ask.at_css('.admin-ask__title'))).to eq('Обновить лимиты по тарифу?')
+      expect(text(ask)).to include('Изменятся 3 лимита.', 'Функции, модули, тонкая настройка и лимиты, выбранные вручную, не меняются.',
+                                   'Действие запишется в журнал аудита.')
+      expect(ask.at_css('form')['action']).to eq(sync_path)
+      expect(ask.at_css('form')['method']).to eq('post')
+    end
+
+    it 'writes the numbers of the plan into the limits that follow it, leaves the rest, and tells what it did' do
+      account.update!(limits: account.limits.merge('conversations' => 77),
+                      custom_attributes: account.custom_attributes.merge(marks_key => { 'conversations' => 77 }))
+      features = account.reload.enabled_features
+
+      post sync_path
+
+      expect(response).to redirect_to(card_path)
+      follow_redirect!
+      expect(account.reload.limits).to include('agents' => 12, 'emails' => 100, 'conversations' => 77)
+      expect(account.enabled_features).to eq(features)
+      expect(text(page.at_css('.flashes'))).to include('Лимиты обновлены по тарифу: изменено 2 лимита.')
+    end
+
+    it 'leaves one entry in the audit log, written in words on the audit page' do
+      post sync_path
+
+      entry = Audited::Audit.where(action: 'sync_plan_limits', auditable_id: account.id).sole
+      expect(entry.user).to eq(super_admin)
+
+      get '/super_admin/audits', params: { audit_action: 'sync_plan_limits' }
+      expect(text(page)).to include('Обновление лимитов по тарифу', 'Операторы: 10 → 12', 'Диалоги за 30 дней: 2 000 → 3 000',
+                                    'Письма в день: не задан → 100')
+      expect(response.body).not_to include('translation missing')
+    end
+
+    it 'says there is nothing to do once the limits are in step, and shows no button' do
+      post sync_path
+      get card_path
+
+      expect(sync_block['data-state']).to eq('current')
+      expect(text(sync_block)).to include('Все лимиты «Как в тарифе» уже совпадают с тарифом: менять нечего.')
+      expect(sync_block.at_css("[data-testid='confirm-sync-limits']")).to be_nil
+
+      expect { post sync_path }.not_to(change { Audited::Audit.where(action: 'sync_plan_limits').count })
+      follow_redirect!
+      expect(text(page.at_css('.flashes'))).to include('Лимиты уже совпадают с тарифом: менять нечего.')
+    end
+
+    it 'says that an account without a plan has nothing to follow, and writes nothing for it' do
+      other = create(:account, limits: { 'agents' => 5 })
+
+      get "/super_admin/accounts/#{other.id}"
+      block = sync_block
+      expect(block['data-state']).to eq('no_plan')
+      expect(text(block)).to include('Тариф не назначен: лимитам «Как в тарифе» не с чем сверяться.')
+      expect(block.at_css("[data-testid='confirm-sync-limits']")).to be_nil
+
+      post "/super_admin/accounts/#{other.id}/sync_limits"
+      follow_redirect!
+      expect(text(page.at_css('.flashes'))).to include('Тариф не назначен')
+      expect(other.reload.limits).to eq('agents' => 5)
+      expect(Audited::Audit.where(action: 'sync_plan_limits', auditable_id: other.id)).to be_empty
+    end
+
+    it 'says which limits stay because they were chosen by hand, and which are held by an ended trial' do
+      account.update!(limits: account.limits.merge('agents' => 3), custom_attributes: account.custom_attributes.merge(marks_key => { 'agents' => 3 }))
+      account.reload.activate_trial!(3)
+      account.expire_trial!
+
+      get card_path
+
+      expect(text(sync_block.at_css('[data-testid="limit-sync-kept"]'))).to eq('Останутся как есть, потому что выбраны вручную: Операторы.')
+      expect(text(sync_block.at_css('[data-testid="limit-sync-held"]'))).to eq('Закрыты пробным периодом, вернутся при назначении тарифа: Каналы.')
+    end
+
+    it 'does not save the form of the limits, and the form does not run it' do
+      get card_path
+
+      expect(page.at_css('form#limits-form').at_css("[data-testid='limit-sync']")).to be_nil
+      expect(page.at_css('form#limits-form')['action']).not_to include('sync_limits')
+    end
+
+    it 'is a super admin action: a visitor who is not signed in is sent to the sign-in' do
+      sign_out(:super_admin)
+
+      post sync_path
+
+      expect(response).to redirect_to('/super_admin/sign_in')
+      expect(account.reload.limits).to include('agents' => 10)
+    end
+
+    it 'points the drift note of a limit at the button, and the button writes the number the note promises' do
+      get card_path
+
+      drift = text(row('agents').at_css('[data-testid="limit-drift"]'))
+      expect(drift).to include('Сейчас действует 10 операторов, а по тарифу — 12 операторов', '«Обновить лимиты по тарифу»')
+      expect(drift).not_to include('Применить тариф')
+
+      post sync_path
+      get card_path
+
+      expect(row('agents').at_css('[data-testid="limit-drift"]')).to be_nil
+      expect(text(row('agents').at_css('[data-testid="limit-now"]'))).to eq('Сейчас: 12 операторов')
     end
   end
 end

@@ -42,7 +42,7 @@ RSpec.describe SuperAdmin::BulkAccounts do
     it 'knows its action' do
       expect(bulk('suspend', [1])).to be_action_known
       expect(bulk('delete_everything', [1])).not_to be_action_known
-      expect(described_class::ACTIONS).to eq(%w[apply_plan extend_trial suspend activate link_organization])
+      expect(described_class::ACTIONS).to eq(%w[apply_plan sync_limits extend_trial suspend activate link_organization])
     end
 
     it 'allows up to 200 accounts and refuses more' do
@@ -245,6 +245,69 @@ RSpec.describe SuperAdmin::BulkAccounts do
 
       expect(entry).to be_change
       expect(entry.detail[:diff]).not_to be_changed
+    end
+  end
+
+  describe 'the limits by the plan' do
+    let(:following) { create(:account) }
+    let(:without_plan) { create(:account) }
+
+    def with_plan_numbers(numbers)
+      allow(Accounts::Plans).to(receive(:limits_for).and_wrap_original { |original, *args| original.call(*args).merge(numbers) })
+    end
+
+    before do
+      with_plan_numbers('conversations' => 2000)
+      Accounts::ApplyPlan.new(account: following, modules: []).call
+      with_plan_numbers('conversations' => 3000)
+    end
+
+    it 'needs no setting: it is ready to preview at once' do
+      sync = bulk('sync_limits', [following])
+
+      expect(sync).to be_action_known
+      expect(sync).not_to be_parameter
+      expect(sync).to be_ready
+    end
+
+    it 'previews the limits each account would get, and skips the account without a plan, with the reason' do
+      entries = bulk('sync_limits', [following, without_plan]).preview.entries
+
+      expect(entries.map(&:outcome)).to eq(%i[change skip])
+      expect(entries.first.detail[:diff].limits).to eq('conversations' => { 'from' => 2000, 'to' => 3000 })
+      expect(entries.last.reason).to eq(:no_plan)
+      expect(following.reload.limits['conversations']).to eq(2000)
+    end
+
+    it 'writes the numbers, leaves ONE entry of the audit log for each account, marked as bulk, and nothing for the others' do
+      result = run(bulk('sync_limits', [following, without_plan]))
+
+      expect(result).to have_attributes(done: 1, skipped: { no_plan: 1 })
+      expect(following.reload.limits['conversations']).to eq(3000)
+      expect(audits(following).pluck(:action)).to eq(['sync_plan_limits'])
+      expect(audits(following).first).to have_attributes(user_id: actor.id, comment: 'super_admin')
+      expect(audits(following).first.audited_changes).to include('bulk' => true, 'limits' => { 'conversations' => { 'from' => 2000, 'to' => 3000 } })
+      expect(audits(without_plan)).to be_empty
+    end
+
+    it 'skips an account that is in step by the time its turn comes' do
+      sync = bulk('sync_limits', [following])
+      Accounts::SyncPlanLimits.new(account: following).call
+
+      result = run(sync)
+
+      expect(result).to have_attributes(done: 0, skipped: { limits_current: 1 })
+      expect(audits(following)).to be_empty
+    end
+
+    it 'does not touch the functions or the plan of the account' do
+      features = following.reload.enabled_features
+      plan = following.custom_attributes.slice('plan', 'plan_modules', 'plan_version', 'plan_applied_at')
+
+      run(bulk('sync_limits', [following]))
+
+      expect(following.reload.enabled_features).to eq(features)
+      expect(following.custom_attributes).to include(plan)
     end
   end
 

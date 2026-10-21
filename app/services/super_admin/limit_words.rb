@@ -56,6 +56,23 @@ module SuperAdmin::LimitWords
     end
   end
 
+  # The names of limits for a sentence, in the order of the screens: «Операторы, Каналы»
+  def labels(keys)
+    in_screen_order(keys).map { |key| I18n.t("super_admin.limits.#{key}.label") }.join(', ')
+  end
+
+  # One line for each limit that «Обновить лимиты по тарифу» would change (Accounts::SyncPlanLimits::Diff), in the order of the screens:
+  # «Диалоги за 30 дней: без ограничений → 1 000 диалогов»
+  def sync_lines(diff)
+    in_screen_order(diff.limits.keys).map do |key|
+      "#{I18n.t("super_admin.limits.#{key}.label")}: #{amount(key, diff.before[key])} → #{amount(key, diff.limits[key]['to'])}"
+    end
+  end
+
+  def in_screen_order(keys)
+    keys.sort_by { |key| SCREEN_ORDER.index(key.to_s) || SCREEN_ORDER.size }
+  end
+
   # The changes of Accounts::LimitSettings::Result for the audit log, in words:
   # { 'agents' => { 'label' => 'Операторы', 'from' => 'как в тарифе (без ограничений)', 'to' => 'своё число (5 операторов)' } }
   def audit_changes(changes)

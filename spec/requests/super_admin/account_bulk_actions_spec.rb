@@ -35,16 +35,17 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
       expect(header['name']).to be_nil
     end
 
-    it 'has an action bar with the five actions that opens the confirmation page' do
+    it 'has an action bar with the six actions that opens the confirmation page' do
       get '/super_admin/accounts'
 
       form = page.at_css('form#bulk-accounts-form')
       expect(form['action']).to eq("#{bulk_path}/new")
       expect(form['method']).to eq('get')
       buttons = form.css('button[type="submit"][name="bulk_action"]')
-      expect(buttons.pluck('value')).to eq(%w[apply_plan extend_trial suspend activate link_organization])
+      expect(buttons.pluck('value')).to eq(%w[apply_plan sync_limits extend_trial suspend activate link_organization])
       expect(buttons.map { |button| button.text.squish }).to eq(
-        ['Применить тариф и модули', 'Продлить пробный период', 'Заблокировать', 'Разблокировать', 'Привязать к организации']
+        ['Применить тариф и модули', 'Обновить лимиты по тарифу', 'Продлить пробный период', 'Заблокировать', 'Разблокировать',
+         'Привязать к организации']
       )
     end
 
@@ -300,6 +301,119 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
       end
     end
 
+    # «Обновить лимиты по тарифу»: no setting to choose; the page says at once how many accounts AND how many limits change
+    context 'when the action is the limits by the plan' do
+      let(:max) { ChatwootApp.max_limit }
+
+      def plan_with(numbers)
+        allow(Accounts::Plans).to(receive(:limits_for).and_wrap_original { |original, *args| original.call(*args).merge(numbers) })
+      end
+
+      before do
+        plan_with('conversations' => 2000, 'agents' => 10)
+        [first, second].each { |account| Accounts::ApplyPlan.new(account: account, modules: []).call }
+        plan_with('conversations' => 3000, 'agents' => 12)
+      end
+
+      it 'asks for nothing and says how many accounts and how many limits will change, and what is skipped and why' do
+        confirm('sync_limits', [first, second, blocked])
+
+        expect(page.at_css('main h1').text.squish).to eq('Обновить лимиты по тарифу')
+        expect(page.at_css("[data-testid='bulk-setting']")).to be_nil
+        stats = page.css("[data-testid='stat']").map { |stat| stat.text.squish }
+        expect(stats).to eq(['Изменятся 2 аккаунта', 'Лимитов обновится 4 по числам тарифа', 'Будет пропущен 1 тариф не назначен — 1'])
+      end
+
+      it 'tells each limit with the number of accounts it changes in, and that nothing else changes' do
+        confirm('sync_limits', [first, second])
+
+        limits = page.css("[data-testid='bulk-limits'] [data-bulk-limit]").to_h { |item| [item['data-bulk-limit'], item.text.squish] }
+        expect(limits).to eq('agents' => 'Операторы — 2', 'conversations' => 'Диалоги за 30 дней — 2')
+        expect(page.at_css("[data-testid='bulk-limits']").text.squish)
+          .to include('Функции, модули, тонкая настройка и лимиты, выбранные вручную, не меняются.')
+      end
+
+      it 'shows a line per account: its plan, and each limit from what applies to what it becomes' do
+        confirm('sync_limits', [first, second, blocked])
+
+        rows = page.css("[data-testid='bulk-entries'] tbody tr")
+        expect(rows.map { |row| [row['data-account-id'].to_i, row['data-outcome'], row['data-reason']] }).to eq(
+          [[first.id, 'change', ''], [second.id, 'change', ''], [blocked.id, 'skip', 'no_plan']]
+        )
+        expect(rows.first.css('td').map { |cell| cell.text.squish }).to eq(
+          ["Клиника «Алатау» ##{first.id}", 'База',
+           'Изменится Лимиты: 2 Операторы: 10 операторов → 12 операторов Диалоги за 30 дней: 2 000 диалогов → 3 000 диалогов']
+        )
+        expect(rows.last.css('td').last.text.squish).to eq('Пропустим Тариф не назначен')
+        expect(page.at_css("[data-testid='bulk-submit']")['value']).to eq('Применить к 2 аккаунтам')
+      end
+
+      it 'leaves out the account whose limits are in step or chosen by hand, and says why' do
+        Accounts::SyncPlanLimits.new(account: second).call
+
+        confirm('sync_limits', [first, second])
+
+        expect(page.css("[data-testid='stat']").map { |stat| stat.text.squish }).to eq(
+          ['Изменится 1 аккаунт', 'Лимитов обновится 2 по числам тарифа', 'Будет пропущен 1 лимиты уже по тарифу — 1']
+        )
+        expect(page.css("[data-testid='bulk-entries'] tbody tr").last['data-reason']).to eq('limits_current')
+      end
+
+      it 'says which limits chosen by hand stay (they are not in the list) and which are held by an ended trial', :aggregate_failures do
+        first.update!(limits: first.limits.merge('agents' => 3),
+                      custom_attributes: first.custom_attributes.merge(Accounts::LimitSettings::KEY => { 'agents' => 3 }))
+        first.reload.activate_trial!(3)
+        first.expire_trial!
+
+        confirm('sync_limits', [first, second])
+
+        line = page.css("[data-testid='bulk-entries'] tbody tr").first.css('td').last
+        expect(line.css('[data-testid="bulk-limit-line"]').map { |node| node.text.squish })
+          .to eq(['Диалоги за 30 дней: 2 000 диалогов → 3 000 диалогов'])
+        expect(line.at_css('[data-testid="bulk-limits-held"]').text.squish).to eq('Закрыты пробным периодом, вернутся при назначении тарифа: каналы')
+      end
+
+      it 'says on a skipped account that the limits an ended trial holds wait for the plan', :aggregate_failures do
+        Accounts::SyncPlanLimits.new(account: second).call
+        second.reload.activate_trial!(3)
+        second.expire_trial!
+
+        confirm('sync_limits', [second])
+
+        row = page.css("[data-testid='bulk-entries'] tbody tr").first
+        expect(row['data-reason']).to eq('limits_current')
+        expect(row.at_css('[data-testid="bulk-limits-held"]').text.squish)
+          .to eq('Закрыты пробным периодом, вернутся при назначении тарифа: операторы, каналы')
+      end
+
+      it 'does not touch the functions, and writes nothing by looking' do
+        confirm('sync_limits', [first, second])
+
+        expect(first.reload.limits).to include('agents' => 10, 'conversations' => 2000)
+        expect(audits(first, 'sync_plan_limits')).to be_empty
+      end
+
+      it 'carries the action and the accounts to the button that runs it, with no setting' do
+        confirm('sync_limits', [first, second])
+
+        form = page.at_css("[data-testid='bulk-confirm'] form")
+        expect(form['action']).to eq(bulk_path)
+        expect(form.at_css('input[name="bulk_action"]')['value']).to eq('sync_limits')
+        expect(form.css('input[name="account_ids[]"]').pluck('value')).to eq(ids(first, second).map(&:to_s))
+        expect(form.at_css('input[name="modules[]"]')).to be_nil
+      end
+
+      it 'has no button when nothing would change' do
+        Accounts::SyncPlanLimits.new(account: first).call
+        Accounts::SyncPlanLimits.new(account: second).call
+
+        confirm('sync_limits', [first, second])
+
+        expect(page.at_css("[data-testid='bulk-submit']")).to be_nil
+        expect(page.at_css("[data-testid='bulk-confirm']").text).to include('Менять нечего')
+      end
+    end
+
     context 'when the action is the organization' do
       let!(:organization) { create(:organization, :with_requisites, name: 'Алатау Медикал') }
 
@@ -404,6 +518,68 @@ RSpec.describe 'Super admin actions on many accounts', type: :request do
       [first, second].each do |account|
         expect(account.reload.custom_attributes).to include('plan' => 'base', 'plan_modules' => %w[ai_agents broadcasts])
         expect(audits(account, 'apply_plan').count).to eq(1)
+      end
+    end
+
+    describe 'the limits by the plan' do
+      def plan_with(numbers)
+        allow(Accounts::Plans).to(receive(:limits_for).and_wrap_original { |original, *args| original.call(*args).merge(numbers) })
+      end
+
+      before do
+        plan_with('conversations' => 2000, 'agents' => 10)
+        [first, second].each { |account| Accounts::ApplyPlan.new(account: account, modules: []).call }
+        plan_with('conversations' => 3000, 'agents' => 12)
+      end
+
+      it 'writes the numbers of the plan into the limits that follow it and sums up' do
+        run('sync_limits', [first, second, blocked])
+
+        expect(flash[:notice]).to eq('Обновить лимиты по тарифу: успешно 2, пропущено 1 (тариф не назначен — 1).')
+        [first, second].each do |account|
+          expect(account.reload.limits).to include('agents' => 12, 'conversations' => 3000)
+        end
+        expect(blocked.reload.limits).to be_blank
+      end
+
+      it 'leaves one entry of the audit log for each account it changed, with the numbers written, and none for the others' do
+        run('sync_limits', [first, second, blocked])
+
+        [first, second].each do |account|
+          entry = audits(account, 'sync_plan_limits').sole
+          expect(entry).to have_attributes(user_id: super_admin.id, comment: 'super_admin')
+          expect(entry.audited_changes).to include('bulk' => true, 'limits' => include('agents' => { 'from' => 10, 'to' => 12 }))
+        end
+        expect(audits(blocked, 'sync_plan_limits')).to be_empty
+      end
+
+      it 'leaves the limits chosen by hand, the functions and the modules as they are' do
+        first.update!(limits: first.limits.merge('agents' => 3),
+                      custom_attributes: first.custom_attributes.merge(Accounts::LimitSettings::KEY => { 'agents' => 3 }))
+        features = first.reload.enabled_features
+        modules = first.custom_attributes['plan_modules']
+
+        run('sync_limits', [first])
+
+        expect(first.reload.limits).to include('agents' => 3, 'conversations' => 3000)
+        expect(first.enabled_features).to eq(features)
+        expect(first.custom_attributes['plan_modules']).to eq(modules)
+        expect(audits(first, 'apply_plan').count).to eq(1) # the one of the plan applied in the setup, not a second one
+      end
+
+      it 'looks at every account again when its turn comes: one that is in step by then is counted as skipped' do
+        Accounts::SyncPlanLimits.new(account: second).call
+
+        run('sync_limits', [first, second])
+
+        expect(flash[:notice]).to eq('Обновить лимиты по тарифу: успешно 1, пропущено 1 (лимиты уже по тарифу — 1).')
+        expect(audits(second, 'sync_plan_limits').count).to eq(1)
+      end
+
+      it 'is a warning, not a success, when nothing was changed' do
+        run('sync_limits', [blocked])
+
+        expect(flash[:alert]).to eq('Обновить лимиты по тарифу: успешно 0, пропущено 1 (тариф не назначен — 1).')
       end
     end
 

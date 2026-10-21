@@ -69,6 +69,22 @@ RSpec.describe 'Super Admin Audits', type: :request do
         expect(audit.reload.audited_changes['limits']['conversations']['to']).to eq(ChatwootApp.max_limit)
       end
 
+      it 'tells the limits of «Обновить лимиты по тарифу» one line each, in words, and keeps what is stored', :aggregate_failures do
+        limits = { 'emails' => { 'from' => nil, 'to' => 100 }, 'captain_responses' => { 'from' => 500, 'to' => ChatwootApp.max_limit * 1_000 },
+                   'agents' => { 'from' => 10, 'to' => 12 } }
+        audit = Audited::Audit.create!(auditable: account, associated: account, action: 'sync_plan_limits', comment: 'super_admin',
+                                       audited_changes: { 'limits' => limits, 'bulk' => true })
+
+        get '/super_admin/audits'
+        details = Nokogiri::HTML(response.body).css('pre').map(&:text).join
+
+        expect(limit_lines).to eq(['Операторы: 10 → 12', 'Ответы ИИ: 500 → Без ограничений', 'Письма в день: не задан → 100'])
+        expect(details).to include('"bulk": true')
+        expect(details).not_to include('"limits"', (ChatwootApp.max_limit * 1_000).to_s)
+        expect(Nokogiri::HTML(response.body).text).to include('Обновление лимитов по тарифу')
+        expect(audit.reload.audited_changes['limits']['captain_responses']['to']).to eq(ChatwootApp.max_limit * 1_000)
+      end
+
       it 'shows the limits of a plan one line each, and the rest of the entry as it was', :aggregate_failures do
         Audited::Audit.create!(auditable: account, associated: account, action: 'apply_plan', comment: 'super_admin',
                                audited_changes: { 'before' => { 'plan' => nil }, 'after' => { 'plan' => 'base' },

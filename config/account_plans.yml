@@ -11,12 +11,14 @@
 #                 May name flags that are absent from features.yml (another branch deletes scheduling_finance).
 #   internal      flags a plan never touches: whatever the account has is kept as it is
 #
-# Limits: a number sets the limit, `unlimited` stores the number the code treats as "no limit" (Accounts::Plans.unlimited_value:
-# ChatwootApp.max_limit, and a number nobody reaches for the storage and the AI tokens), null leaves the clinic's own value
-# untouched. A key that is not listed is invalid; base lists every key.
+# Limits: a number sets the limit, `unlimited` stores the number the code treats as "no limit" (Accounts::Plans.unlimited_value),
+# null leaves the account's own value untouched. A key that is not listed is invalid; base lists every key.
 # These numbers go to the limits of an account that FOLLOWS the plan («Как в тарифе» in the super admin). A limit a super admin chose
 # for one account (a number of its own or «Без ограничений», Accounts::LimitSettings) is not touched when the plan is applied: change a
-# number here, press «Применить тариф» (one account or many), and only the accounts that follow the plan get the new number.
+# number here, press «Обновить лимиты по тарифу» (one account or many; it writes the numbers and nothing else, Accounts::SyncPlanLimits)
+# or «Применить тариф» (which also sets the functions and the modules), and only the accounts that follow the plan get the new number.
+# `unlimited` is a number nobody reaches (Accounts::Plans::UNLIMITED_FACTORS): ChatwootApp.max_limit for the counts of operators,
+# channels and dialogs, more for the storage, the AI answers, documents and tokens and the mail per day.
 # A number counts as «как в тарифе» while it is the number of the plan or the number the plan wrote last (kept in the account, see
 # Accounts::LimitSettings); any other number is the account's own and stays. An account whose plan was applied before that number was
 # kept holds what the plans of that time wrote: 100 000 for conversations and non_web_inboxes (the only limits they set, see

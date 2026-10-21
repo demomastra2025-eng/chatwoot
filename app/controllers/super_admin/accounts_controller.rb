@@ -212,6 +212,20 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     redirect_to_account(notice: I18n.t('super_admin.accounts.flashes.plan_applied', plan: Accounts::Plans.plan_label(modules)))
   end
 
+  # «Обновить лимиты по тарифу» of the limits block: the numbers of the plan as they are now go into the limits that follow the plan
+  # (Accounts::SyncPlanLimits). The limits chosen by hand, the functions and the modules stay; the entry of the audit log lists the
+  # numbers written. The block shows what will change before the question is asked; the account is read again under its lock here.
+  def sync_limits
+    diff = Accounts::SyncPlanLimits.new(account: requested_resource, actor: current_super_admin, request: request).call
+    return redirect_to_account(alert: I18n.t('super_admin.limits.sync.flashes.no_plan')) unless diff.plan_assigned
+    return redirect_to_account(notice: I18n.t('super_admin.limits.sync.flashes.current')) unless diff.changed?
+
+    redirect_to_account(notice: I18n.t('super_admin.limits.sync.flashes.done', count: diff.limits.size))
+  rescue StandardError => e
+    Rails.logger.warn("[SuperAdmin] Limits sync failed for account #{requested_resource.id}: #{e.class.name}: #{e.message}")
+    redirect_to_account(alert: I18n.t('super_admin.limits.sync.flashes.failed'))
+  end
+
   # What applying the plan would change, as JSON (nothing is written): flags to switch on and off, limit changes
   # and notes. The clinic card asks for the same thing as an HTML fragment (`fragment=1`) and shows it before the
   # operator confirms.

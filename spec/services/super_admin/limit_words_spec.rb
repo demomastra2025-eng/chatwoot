@@ -71,6 +71,26 @@ RSpec.describe SuperAdmin::LimitWords do
     end
   end
 
+  describe '.sync_lines and .labels' do
+    let(:diff) do
+      Accounts::SyncPlanLimits::Diff.new(
+        plan_assigned: true, kept: [], held: [],
+        limits: { 'emails' => { 'from' => nil, 'to' => 100 }, 'agents' => { 'from' => 10, 'to' => max } },
+        before: { 'emails' => nil, 'agents' => 10 }
+      )
+    end
+
+    it 'tells each limit from what applied to what it becomes, in the order of the screens' do
+      expect(described_class.sync_lines(diff)).to eq(
+        ['Операторы: 10 операторов → без ограничений', 'Письма в день: без ограничений → 100 писем в день']
+      )
+    end
+
+    it 'names limits for a sentence, in the order of the screens' do
+      expect(described_class.labels(%w[emails inboxes agents])).to eq('Операторы, Каналы, Письма в день')
+    end
+  end
+
   describe '.position and .audit_changes' do
     let(:position) { Accounts::LimitSettings::Position }
 

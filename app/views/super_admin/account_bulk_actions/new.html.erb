@@ -2,7 +2,7 @@
 # Action on the chosen accounts: the confirmation page
 
 Opened from the action bar of the account list. It says how many accounts the action is for, asks for the setting the action
-needs (the modules to apply, the organization to link to) and, once that is chosen, shows what would change: the totals,
+needs (the modules to apply, the organization to link to; «Обновить лимиты по тарифу» needs none) and, once that is chosen, shows what would change: the totals,
 what could not be done and why, and a line per account. Nothing is written until the button at the end is pressed (that is
 a POST to `create`, which looks at every account again and leaves one entry in the audit log for each one it changes).
 
@@ -73,12 +73,37 @@ a POST to `create`, which looks at every account again and leaves one entry in t
           t('super_admin.bulk.result.reason_item', reason: t("super_admin.bulk.reasons.#{reason}").downcase, count: count)
         end
       %>
-      <%= render 'super_admin/shared/stat_group', items: [
-        { label: t('super_admin.bulk.summary.changing', count: changing), value: super_admin_number(changing),
-          note: t('super_admin.bulk.summary.changing_note', count: changing) },
-        { label: t('super_admin.bulk.summary.skipping', count: @preview.skipping), value: super_admin_number(@preview.skipping),
-          note: reasons.any? ? reasons.join('; ') : t('super_admin.bulk.summary.skipping_none') }
-      ] %>
+      <%
+        stats = [
+          { label: t('super_admin.bulk.summary.changing', count: changing), value: super_admin_number(changing),
+            note: t('super_admin.bulk.summary.changing_note', count: changing) },
+          { label: t('super_admin.bulk.summary.skipping', count: @preview.skipping), value: super_admin_number(@preview.skipping),
+            note: reasons.any? ? reasons.join('; ') : t('super_admin.bulk.summary.skipping_none') }
+        ]
+        # «Обновить лимиты по тарифу»: how many accounts AND how many limits will change
+        sync_diffs = action == 'sync_limits' ? @preview.entries.select(&:change?).map { |entry| entry.detail[:diff] } : []
+        if action == 'sync_limits'
+          stats.insert(1, { label: t('super_admin.bulk.summary.limits_total'), value: super_admin_number(sync_diffs.sum { |diff| diff.limits.size }),
+                            note: t('super_admin.bulk.summary.limits_total_note') })
+        end
+      %>
+      <%= render 'super_admin/shared/stat_group', items: stats %>
+
+      <% if sync_diffs.any? %>
+        <%# What the sync writes, over all the accounts: each limit with the number of accounts it changes in. %>
+        <% per_limit = sync_diffs.flat_map { |diff| diff.limits.keys }.tally %>
+        <section class="admin-block" aria-labelledby="bulk-limits-title" data-testid="bulk-limits">
+          <div class="admin-block__head">
+            <h2 class="admin-block__title" id="bulk-limits-title"><%= t('super_admin.bulk.summary.limits') %></h2>
+            <p class="admin-block__hint"><%= t('super_admin.bulk.summary.limits_hint') %></p>
+          </div>
+          <ul class="m-0 grid list-none grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] gap-x-4 gap-y-1 p-0 text-[13px] text-n-slate-11">
+            <% SuperAdmin::LimitWords.in_screen_order(per_limit.keys).each do |key| %>
+              <li data-bulk-limit="<%= key %>"><%= t("super_admin.limits.#{key}.label") %> — <span class="tabular-nums text-n-slate-12"><%= super_admin_number(per_limit[key]) %></span></li>
+            <% end %>
+          </ul>
+        </section>
+      <% end %>
 
       <% if action == 'apply_plan' && changing.positive? %>
         <%# What the plan switches, over all the accounts: each function with the number of accounts it is switched in. %>

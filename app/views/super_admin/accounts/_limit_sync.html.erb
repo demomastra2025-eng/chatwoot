@@ -1,0 +1,59 @@
+<%#
+# «Обновить лимиты по тарифу» on the card
+
+Writes the numbers of the plan, as they are now, into the limits that follow the plan («Как в тарифе») and nothing else: a limit
+chosen for this account («Своё число», «Без ограничений»), the functions, the modules and the fine tuning stay (Accounts::SyncPlanLimits).
+The block says what would change before anything is asked (it is drawn from the preview of the service), the button asks «точно?»,
+and the answer reads the account again under its lock. Without a plan there is nothing to follow; when every limit already is what
+the plan says there is nothing to do. The notes under the list say what stays and why.
+
+## Local variables:
+
+- `account`: the account (Account).
+%>
+<%
+  sync = Accounts::SyncPlanLimits.new(account: account).preview
+  state = if !sync.plan_assigned then 'no_plan'
+          elsif sync.changed? then 'changes'
+          else 'current'
+          end
+%>
+<div class="admin-limit-sync" data-testid="limit-sync" data-state="<%= state %>">
+  <div class="flex flex-col gap-1">
+    <h3 class="m-0 text-heading-3 text-n-slate-12"><%= t('super_admin.limits.sync.title') %></h3>
+    <p class="admin-block__note"><%= t('super_admin.limits.sync.hint') %></p>
+  </div>
+
+  <% if state == 'no_plan' %>
+    <p class="admin-limit-sync__note" data-testid="limit-sync-state"><%= t('super_admin.limits.sync.no_plan') %></p>
+  <% elsif state == 'current' %>
+    <p class="admin-limit-sync__note" data-testid="limit-sync-state"><%= t('super_admin.limits.sync.current') %></p>
+  <% else %>
+    <div class="flex flex-col gap-1.5" data-testid="limit-sync-state">
+      <span class="text-[13px] font-medium text-n-slate-12"><%= t('super_admin.limits.sync.changes', count: sync.limits.size) %></span>
+      <ul class="admin-limit-sync__lines">
+        <% SuperAdmin::LimitWords.sync_lines(sync).each do |line| %>
+          <li data-testid="limit-sync-line"><%= line %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <% if sync.kept.any? %>
+    <p class="admin-limit-sync__note" data-testid="limit-sync-kept"><%= t('super_admin.limits.sync.kept', limits: SuperAdmin::LimitWords.labels(sync.kept)) %></p>
+  <% end %>
+  <% if sync.held.any? %>
+    <p class="admin-limit-sync__note" data-testid="limit-sync-held"><%= t('super_admin.limits.sync.held', limits: SuperAdmin::LimitWords.labels(sync.held)) %></p>
+  <% end %>
+
+  <% if state == 'changes' %>
+    <div>
+      <%= render 'super_admin/shared/confirm_action',
+                 key: 'sync-limits', label: t('super_admin.limits.sync.title'), title: "#{t('super_admin.limits.sync.title')}?",
+                 text: [t('super_admin.limits.sync.confirm_changes', count: sync.limits.size),
+                        t('super_admin.limits.sync.confirm_note'), t('super_admin.safety.audited')],
+                 url: polymorphic_path([:sync_limits, :super_admin, account]), submit: t('super_admin.limits.sync.submit'), tone: :primary,
+                 trigger_class: 'button button--small button--secondary' %>
+    </div>
+  <% end %>
+</div>

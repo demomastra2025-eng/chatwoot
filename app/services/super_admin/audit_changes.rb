@@ -7,8 +7,8 @@
 #   account, the Platform API) shows its numbers as words in the place of the numbers;
 # * an entry that carries its own words (a change of the limits by a super admin, `update_limits`) is shown as it was written;
 # * the lists the limits keep for themselves in the custom attributes (Accounts::LimitSettings) are left out;
-# * the limits of an entry that changes them (`update_limits`, `apply_plan`) are one line each in the order of the screens, not the
-#   JSON of the database (which keeps no order): «Письма в день: как в тарифе (100 писем в день) → своё число (50 писем в день)».
+# * the limits of an entry that changes them (`update_limits`, `apply_plan`, `sync_plan_limits`) are one line each in the order of the
+#   screens, not the JSON of the database (which keeps no order): «Письма в день: как в тарифе (100 писем в день) → своё число (50 писем в день)».
 #
 #   changes = SuperAdmin::AuditChanges.new(audit, method(:super_admin_limit_value))
 #   changes.readable    # the changes as a hash, in words
@@ -19,7 +19,7 @@
 class SuperAdmin::AuditChanges
   LIMIT_KEYS = Accounts::Plans::LIMIT_KEYS
   # The entries whose `limits` are { 'agents' => { 'from' => words, 'to' => words } } once readable
-  LIMIT_ACTIONS = %w[update_limits apply_plan].freeze
+  LIMIT_ACTIONS = %w[update_limits apply_plan sync_plan_limits].freeze
   ARROW = ' → '
 
   def initialize(audit, limit_value)
@@ -56,7 +56,7 @@ class SuperAdmin::AuditChanges
     return changes unless changes.is_a?(Hash)
 
     case @audit.action
-    when 'apply_plan' then plan_limits(changes)
+    when 'apply_plan', 'sync_plan_limits' then plan_limits(changes)
     when 'update_limits' then changes
     else account_changes(changes)
     end
@@ -77,7 +77,7 @@ class SuperAdmin::AuditChanges
     "#{label}: #{change['from']}#{ARROW}#{change['to']}"
   end
 
-  # The limits a plan wrote: { 'conversations' => { 'from' => nil, 'to' => 100000 } }
+  # The limits a plan wrote (applied, or only synced into the limits): { 'conversations' => { 'from' => nil, 'to' => 100000 } }
   def plan_limits(changes)
     return changes unless changes['limits'].is_a?(Hash)
 

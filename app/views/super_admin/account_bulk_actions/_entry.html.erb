@@ -24,7 +24,7 @@ is skipped).
 
   <td class="text-n-slate-11">
     <% if account %>
-      <% if action == 'apply_plan' %>
+      <% if %w[apply_plan sync_limits].include?(action) %>
         <%= state.label %>
       <% elsif action == 'extend_trial' %>
         <% if state.trial_state == :active %>
@@ -48,6 +48,10 @@ is skipped).
     <% if entry.skip? %>
       <span class="admin-badge admin-badge--quiet"><%= t('super_admin.bulk.outcome.skip') %></span>
       <span class="ms-1.5 text-xs text-n-slate-11"><%= t("super_admin.bulk.reasons.#{entry.reason}") %></span>
+      <%# «Лимиты уже по тарифу» is true of the limits that follow the plan; the ones an ended trial holds at 0 wait for the plan to be applied %>
+      <% if action == 'sync_limits' && detail[:diff]&.held&.any? %>
+        <span class="block text-xs text-n-amber-11" data-testid="bulk-limits-held"><%= t('super_admin.bulk.detail.limits_held', limits: SuperAdmin::LimitWords.labels(detail[:diff].held).downcase) %></span>
+      <% end %>
     <% else %>
       <span class="admin-badge admin-badge--teal"><%= t('super_admin.bulk.outcome.change') %></span>
       <span class="ms-1.5 text-[13px] text-n-slate-12">
@@ -70,6 +74,16 @@ is skipped).
                  "#{t("super_admin.limits.#{key}.label").downcase} #{super_admin_limit_value(key, change['from'])} → #{super_admin_limit_value(key, change['to'], given_back: !change['from'].nil?)}"
                end %>
             <span class="block text-xs text-n-amber-11" data-testid="bulk-limits-restored"><%= t('super_admin.bulk.detail.limits_restored', limits: restored.join(', ')) %></span>
+          <% end %>
+        <% elsif action == 'sync_limits' %>
+          <%# Only the limits that follow the plan: what is written, line by line, and what stays and why %>
+          <% diff = detail[:diff] %>
+          <%= t('super_admin.bulk.detail.limits', count: diff.limits.size) %>
+          <% SuperAdmin::LimitWords.sync_lines(diff).each do |line| %>
+            <span class="block text-xs tabular-nums text-n-slate-11" data-testid="bulk-limit-line"><%= line %></span>
+          <% end %>
+          <% if diff.held.any? %>
+            <span class="block text-xs text-n-amber-11" data-testid="bulk-limits-held"><%= t('super_admin.bulk.detail.limits_held', limits: SuperAdmin::LimitWords.labels(diff.held).downcase) %></span>
           <% end %>
         <% elsif action == 'extend_trial' %>
           <%= t('super_admin.bulk.detail.trial_active', time: super_admin_time(detail[:to])) %>

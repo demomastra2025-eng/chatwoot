@@ -273,6 +273,7 @@ ru:
         update_channel_override: "Изменение каналов аккаунта"
         update_service_flags: "Изменение служебных настроек аккаунта"
         update_limits: "Изменение лимитов аккаунта"
+        sync_plan_limits: "Обновление лимитов по тарифу"
         remove_user: "Пользователь убран из аккаунта"
         cleanup_storage: "Перемещение в корзину"
         empty_trash: "Очистка корзины"

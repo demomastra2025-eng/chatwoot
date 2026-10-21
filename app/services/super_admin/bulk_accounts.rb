@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-# An action on many accounts at once, from the account list: apply the plan and its modules, extend the trial, block,
-# unblock, link to an organization. It has two steps, and the second does not trust the first:
+# An action on many accounts at once, from the account list: apply the plan and its modules, update the limits by the plan, extend
+# the trial, block, unblock, link to an organization. It has two steps, and the second does not trust the first:
 #
 #   bulk = SuperAdmin::BulkAccounts.new(action: 'suspend', ids: ids, actor: current_super_admin, request: request)
 #   bulk.preview # what would happen to each account: changed or skipped, and why (nothing is written)
@@ -24,7 +24,7 @@ class SuperAdmin::BulkAccounts
   # with an unknown number of changed accounts. LIMIT accounts take 5-7 seconds on a quiet server (measured: 200 accounts, each
   # action), so this is a safety net for a busy one.
   TIME_BUDGET = 9
-  ACTIONS = %w[apply_plan extend_trial suspend activate link_organization].freeze
+  ACTIONS = %w[apply_plan sync_limits extend_trial suspend activate link_organization].freeze
   # Written into the audit entry of every account of a bulk action
   AUDIT_EXTRA = { 'bulk' => true }.freeze
 
@@ -92,7 +92,8 @@ class SuperAdmin::BulkAccounts
 
   def strategy_class
     {
-      'apply_plan' => SuperAdmin::BulkAccounts::ApplyPlan, 'extend_trial' => SuperAdmin::BulkAccounts::ExtendTrial,
+      'apply_plan' => SuperAdmin::BulkAccounts::ApplyPlan, 'sync_limits' => SuperAdmin::BulkAccounts::SyncLimits,
+      'extend_trial' => SuperAdmin::BulkAccounts::ExtendTrial,
       'suspend' => SuperAdmin::BulkAccounts::Suspend, 'activate' => SuperAdmin::BulkAccounts::Activate,
       'link_organization' => SuperAdmin::BulkAccounts::LinkOrganization
     }[@action]

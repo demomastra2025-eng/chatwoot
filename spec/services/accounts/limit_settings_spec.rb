@@ -323,6 +323,70 @@ RSpec.describe Accounts::LimitSettings do
     end
   end
 
+  describe '#follow_current_plan' do
+    before do
+      plan_with('conversations' => 2000, 'agents' => 10)
+      apply_plan!
+      plan_with('conversations' => 3000, 'agents' => 12, 'emails' => 100)
+    end
+
+    it 'writes the number of the plan into every limit that follows it and has a number in the plan, and remembers it' do
+      result = settings.follow_current_plan
+
+      expect(result.limits).to include('conversations' => 3000, 'agents' => 12, 'emails' => 100)
+      expect(result.plan_numbers).to include('conversations' => 3000, 'agents' => 12, 'emails' => 100)
+      expect(result.changes.keys).to match_array(%w[conversations agents emails])
+      expect(result.changes['conversations']).to eq(
+        'from' => described_class::Position.new(source: :plan, value: 2000), 'to' => described_class::Position.new(source: :plan, value: 3000)
+      )
+      expect(result.marks).to eq({})
+    end
+
+    it 'leaves «своё число» and «без ограничений» alone, and so a limit the plan has no number for' do
+      account.update!(limits: account.limits.merge('conversations' => 77, 'agents' => max, 'inboxes' => 9))
+      choose('conversations' => 77, 'agents' => 'unlimited', 'inboxes' => 9)
+
+      result = settings.follow_current_plan
+
+      expect(result.limits).to include('conversations' => 77, 'agents' => max, 'inboxes' => 9, 'emails' => 100)
+      expect(result.marks).to eq('conversations' => 77, 'agents' => 'unlimited', 'inboxes' => 9)
+      expect(result.changes.keys).to eq(['emails'])
+      expect(settings.kept_keys).to match_array(%w[conversations agents])
+    end
+
+    it 'leaves a limit the end of a trial holds at 0 alone' do
+      account.reload.activate_trial!(3)
+      account.expire_trial!
+      account.reload
+
+      result = settings.follow_current_plan
+
+      expect(result.limits).to include('agents' => 0, 'inboxes' => 0, 'conversations' => 3000)
+      expect(result.changes.keys).not_to include('agents', 'inboxes')
+      expect(settings.held_limit_keys).to eq(%w[inboxes agents])
+    end
+
+    it 'has nothing to write for an account without a plan' do
+      other = create(:account)
+
+      result = described_class.new(other).follow_current_plan
+
+      expect(result.changes).to be_empty
+      expect(result.limits).to eq(other.limits.to_h)
+    end
+
+    it 'says nothing changed when every limit already is the number of the plan' do
+      result = settings.follow_current_plan
+      account.update!(limits: result.limits, custom_attributes: result.custom_attributes(account.custom_attributes))
+
+      expect(settings.follow_current_plan.changes).to be_empty
+    end
+
+    it 'writes nothing itself' do
+      expect { settings.follow_current_plan }.not_to(change { account.reload.attributes })
+    end
+  end
+
   describe '#positions' do
     it 'gives every limit its source and the number that applies' do
       apply_plan!
