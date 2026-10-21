@@ -7,6 +7,8 @@
     },
     "PATIENT_CONTEXT": {
       "SELECT_PATIENT": "Client",
+      "SELECTED_BADGE": "Selected",
+      "EDIT_TITLE": "Edit client card",
       "NO_BIRTH_DATE": "Birth date not provided",
       "SELECTION_SCOPE": "Your selection is saved for this conversation.",
       "LOAD_ERROR": "Unable to load clients for this conversation",
@@ -320,6 +322,8 @@
       "QUICK_CREATE_TITLE": "Quick create contact",
       "SAVE_ACTION": "Save",
       "SELECT_ACTION": "Select from list",
+      "SELECTED_BADGE": "Selected",
+      "NEW_ACTION": "+ Create new contact",
       "SUCCESS_CREATE": "Contact created",
       "SUCCESS_UPDATE": "Contact updated",
       "GENDER": {

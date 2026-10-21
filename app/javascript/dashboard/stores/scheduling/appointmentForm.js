@@ -103,10 +103,16 @@ const patientNameParts = appointment => {
     appointment?.clientLastName ||
     appointment?.clientMiddleName
   ) {
+    const normalized = schedulingContactNameParts({
+      firstName: appointment.clientFirstName,
+      lastName: appointment.clientLastName,
+      middleName: appointment.clientMiddleName,
+      fullName: appointment.clientName,
+    });
     return {
-      clientFirstName: appointment.clientFirstName || '',
-      clientLastName: appointment.clientLastName || '',
-      clientMiddleName: appointment.clientMiddleName || '',
+      clientFirstName: normalized.firstName,
+      clientLastName: normalized.lastName,
+      clientMiddleName: normalized.middleName,
       clientNameStructured: true,
     };
   }
@@ -713,15 +719,34 @@ export const useSchedulingAppointmentFormStore = defineStore(
           this.form.contactId === ownerId &&
           this.inlineContactEditVersion === version;
         const values = inlineContactPayload(contact, isPatientCard);
+        const candidateValues = { ...values };
+        if (this.inlineContactSnapshot) {
+          ['last_name', 'middle_name'].forEach(field => {
+            if (
+              !(field in candidateValues) &&
+              this.inlineContactSnapshot[field]
+            ) {
+              candidateValues[field] = '';
+            }
+          });
+        }
         const dirtyValues = this.inlineContactSnapshot
           ? Object.fromEntries(
-              Object.entries(values).filter(
+              Object.entries(candidateValues).filter(
                 ([field, value]) =>
                   field !== 'resource_id' &&
                   value !== this.inlineContactSnapshot[field]
               )
             )
-          : values;
+          : candidateValues;
+        if (
+          ['first_name', 'last_name', 'middle_name', 'full_name'].some(
+            field => field in dirtyValues
+          ) &&
+          values.first_name
+        ) {
+          dirtyValues.first_name = values.first_name;
+        }
         if (!Object.keys(dirtyValues).length) return this.selectedContact;
         const payload = {
           ...dirtyValues,

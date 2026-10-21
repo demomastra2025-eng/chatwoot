@@ -95,16 +95,29 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
 
   def contact_attributes
     attrs = params.permit(:name, :full_name, :first_name, :last_name, :middle_name, :phone, :phone_number, :identifier, :company_id)
-    iin = normalized_iin
-
     {
-      name: attrs[:first_name].presence || attrs[:full_name].presence || attrs[:name].presence,
-      last_name: attrs[:last_name].presence,
-      middle_name: attrs[:middle_name].presence,
+      name: resolved_contact_name(attrs),
+      last_name: attrs[:last_name].to_s.strip.presence,
+      middle_name: attrs[:middle_name].to_s.strip.presence,
       phone_number: normalize_phone(attrs[:phone].presence || attrs[:phone_number].presence),
-      identifier: attrs[:identifier].presence || iin,
+      identifier: attrs[:identifier].presence || normalized_iin,
       company_id: resolve_company_id(attrs[:company_id])
-    }.compact
+    }.compact.merge(cleared_structured_name_attributes(attrs))
+  end
+
+  def cleared_structured_name_attributes(attrs)
+    return {} unless @contact
+
+    %i[last_name middle_name].index_with { nil }.select { |key, _| params.key?(key) && attrs[key].to_s.strip.blank? }
+  end
+
+  def resolved_contact_name(attrs)
+    raw = attrs[:first_name].to_s.strip.presence || (@contact&.name.blank? ? attrs[:full_name].presence || attrs[:name].presence : nil)
+    Contact.strip_structured_name_suffix(
+      raw,
+      params.key?(:middle_name) ? attrs[:middle_name] : @contact&.middle_name,
+      params.key?(:last_name) ? attrs[:last_name] : @contact&.last_name
+    )
   end
 
   def contact_custom_attributes(contact)

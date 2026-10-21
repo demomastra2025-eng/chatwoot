@@ -7,6 +7,8 @@
     },
     "PATIENT_CONTEXT": {
       "SELECT_PATIENT": "Клиент",
+      "SELECTED_BADGE": "Таңдалған",
+      "EDIT_TITLE": "Клиент картасын өңдеу",
       "NO_BIRTH_DATE": "Туған күні көрсетілмеген",
       "SELECTION_SCOPE": "Таңдауыңыз осы диалог үшін сақталған.",
       "LOAD_ERROR": "Осы диалогтың клиенттерін жүктеу мүмкін болмады",
@@ -107,6 +109,8 @@
       "IIN_REQUIRED": "ЖСН көрсетіңіз",
       "SAVE_ACTION": "Сақтау",
       "SELECT_ACTION": "Тізімнен таңдау",
+      "SELECTED_BADGE": "Таңдалған",
+      "NEW_ACTION": "+ Жаңа контакт құру",
       "IIN": "ЖСН",
       "IIN_ERROR_LENGTH": "ЖСН 12 цифрдан тұруы керек"
     },

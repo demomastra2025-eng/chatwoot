@@ -591,10 +591,6 @@ const contactOptions = computed(() => {
     option => Number(option.value) === Number(formStore.form.contactId)
   );
 
-  if (hasSelectedOption) {
-    return options;
-  }
-
   const fallbackLabel = [
     formStore.selectedContact?.fullName || appointmentClientName(),
     formStore.selectedContact?.phone || formStore.form.clientPhone,
@@ -602,16 +598,26 @@ const contactOptions = computed(() => {
     .filter(Boolean)
     .join(' ');
 
-  if (!fallbackLabel) {
-    return options;
-  }
+  const list =
+    hasSelectedOption || !fallbackLabel
+      ? options
+      : [
+          {
+            label: fallbackLabel,
+            value: formStore.form.contactId,
+          },
+          ...options,
+        ];
 
   return [
+    ...list,
     {
-      label: fallbackLabel,
-      value: formStore.form.contactId,
+      value: '__create_new_contact__',
+      label: t('SCHEDULING.CONTACT.NEW_ACTION'),
+      icon: 'i-lucide-plus',
+      iconClass: 'text-n-brand',
+      labelClass: 'font-medium text-n-brand',
     },
-    ...options,
   ];
 });
 
@@ -638,7 +644,11 @@ const hasSelectedResources = computed(
 const isContactEditorOpen = computed(
   () => !!contactEditorMode.value && !formStore.isProviderPatientIdentity
 );
-const isEditingContact = computed(() => contactEditorMode.value === 'edit');
+const isEditingContact = computed(
+  () =>
+    contactEditorMode.value === 'edit' ||
+    Boolean(formStore.form.contactId || formStore.form.patientContactId)
+);
 const appointmentFieldDefinitions = computed(
   () => crmReferencesStore.appointmentFieldDefinitions
 );
@@ -981,8 +991,9 @@ const cloneAppointmentCustomFieldFilters = filters =>
 
 const syncAppointmentFilterDraft = () => {
   appointmentFilterDraft.statusFilters = [...calendarStore.statusFilters];
-  appointmentFilterDraft.hideCancelledAppointments =
-    Boolean(calendarStore.hideCancelledAppointments);
+  appointmentFilterDraft.hideCancelledAppointments = Boolean(
+    calendarStore.hideCancelledAppointments
+  );
   appointmentFilterDraft.customFieldFilters =
     cloneAppointmentCustomFieldFilters(customFieldFilters.value);
 };
@@ -1262,7 +1273,10 @@ const consumeAppointmentPrefillQuery = async () => {
   });
 
   try {
-    if (contactId) await formStore.loadContact(contactId);
+    if (contactId) {
+      await formStore.loadContact(contactId);
+      contactEditorMode.value = 'edit';
+    }
   } catch (error) {
     useAlert(formatErrorMessage(error));
   } finally {
@@ -1463,8 +1477,10 @@ watch(
   }
 );
 
-const handleContactSelect = contactId => {
+const handleContactSelect = rawContactId => {
   if (formStore.ui.isSaving || formStore.form.patientContactId) return;
+  const contactId =
+    rawContactId === '__create_new_contact__' ? '' : rawContactId;
   const previousContactId = Number(formStore.form.contactId);
   const nextContactId = Number(contactId);
   const contactChanged = previousContactId !== nextContactId;
@@ -2348,8 +2364,22 @@ onMounted(async () => {
 
                 <div class="appointment-contact-section">
                   <div class="appointment-contact-section-heading">
-                    <h3 class="mb-0 text-sm font-semibold text-n-slate-12">
-                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_TITLE') }}
+                    <h3
+                      class="mb-0 flex items-center gap-2 text-sm font-semibold text-n-slate-12"
+                    >
+                      <span>{{
+                        $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_TITLE')
+                      }}</span>
+                      <span
+                        v-if="
+                          formStore.form.contactId ||
+                          formStore.form.patientContactId
+                        "
+                        data-test="calendar-selected-contact-badge"
+                        class="inline-flex items-center rounded-md bg-n-teal-3 px-2 py-0.5 text-xs font-medium text-n-teal-11"
+                      >
+                        {{ $t('SCHEDULING.CONTACT.SELECTED_BADGE') }}
+                      </span>
                     </h3>
                     <div class="relative ltr:ml-auto rtl:mr-auto">
                       <Button
@@ -2930,8 +2960,12 @@ onMounted(async () => {
         <label
           class="flex cursor-pointer items-center gap-2 text-sm text-n-slate-12"
         >
-          <Checkbox v-model="appointmentFilterDraft.hideCancelledAppointments" />
-          <span>{{ $t('SCHEDULING.TOOLBAR.HIDE_CANCELLED_APPOINTMENTS') }}</span>
+          <Checkbox
+            v-model="appointmentFilterDraft.hideCancelledAppointments"
+          />
+          <span>{{
+            $t('SCHEDULING.TOOLBAR.HIDE_CANCELLED_APPOINTMENTS')
+          }}</span>
         </label>
 
         <div class="grid gap-4 md:grid-cols-3">

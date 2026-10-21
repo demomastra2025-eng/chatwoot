@@ -43,4 +43,46 @@ describe('schedulingContactNameParts', () => {
       middleName: '',
     });
   });
+
+  it('strips structured lastName and middleName from a full-name payload when firstName is omitted or concatenated', () => {
+    expect(
+      schedulingContactNameParts({
+        name: 'Асет Хамзаулы Серикович',
+        lastName: 'Хамзаулы',
+        middleName: 'Серикович',
+      })
+    ).toEqual({
+      firstName: 'Асет',
+      lastName: 'Хамзаулы',
+      middleName: 'Серикович',
+    });
+
+    expect(
+      schedulingContactNameParts({
+        firstName: 'Асет Хамзаулы',
+        lastName: 'Хамзаулы',
+        middleName: '',
+        fullName: 'Асет Хамзаулы',
+      })
+    ).toEqual({
+      firstName: 'Асет',
+      lastName: 'Хамзаулы',
+      middleName: '',
+    });
+  });
+
+  it('does not move middleName into lastName when lastName is blank on a two-word fullName', () => {
+    expect(
+      schedulingContactNameParts({
+        firstName: 'Асет',
+        lastName: '',
+        middleName: 'Серикович',
+        fullName: 'Асет Серикович',
+      })
+    ).toEqual({
+      firstName: 'Асет',
+      lastName: '',
+      middleName: 'Серикович',
+    });
+  });
 });

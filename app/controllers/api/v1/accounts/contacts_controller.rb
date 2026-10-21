@@ -186,7 +186,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
   def permitted_params
     params.permit(
-      :name, :identifier, :email, :phone_number, :avatar, :blocked, :avatar_url, :owner_id,
+      :name, :last_name, :middle_name, :identifier, :email, :phone_number, :avatar, :blocked, :avatar_url, :owner_id,
       additional_attributes: {}, custom_attributes: {}
     )
   end
@@ -207,7 +207,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
     display_preferences = (merged_attributes[Contact::DISPLAY_PREFERENCES_KEY] || {}).deep_stringify_keys
 
-    if permitted_params[:name].present? && permitted_params[:name] != @contact.name &&
+    if resolved_update_name.present? && resolved_update_name != @contact.name &&
        display_preferences[Contact::PRIMARY_NAME_SOURCE_KEY].blank?
       display_preferences[Contact::PRIMARY_NAME_SOURCE_KEY] = {
         'kind' => Contact::DISPLAY_SOURCE_KIND_MANUAL
@@ -227,9 +227,25 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
   def contact_update_params
     validate_custom_attributes!(current: @contact.custom_attributes)
-    permitted_params.except(:custom_attributes, :avatar_url)
-                    .merge({ custom_attributes: contact_custom_attributes })
-                    .merge({ additional_attributes: contact_additional_attributes })
+    attrs = permitted_params.except(:custom_attributes, :avatar_url)
+    attrs[:name] = resolved_update_name if attrs.key?(:name)
+    attrs.merge({ custom_attributes: contact_custom_attributes })
+         .merge({ additional_attributes: contact_additional_attributes })
+  end
+
+  def resolved_update_name
+    raw_name = permitted_params[:name]
+    return raw_name if raw_name.blank?
+
+    Contact.strip_structured_name_suffix(
+      raw_name,
+      effective_name_part(:middle_name),
+      effective_name_part(:last_name)
+    ) || raw_name
+  end
+
+  def effective_name_part(key)
+    permitted_params.key?(key) ? permitted_params[key].to_s.strip.presence : @contact.public_send(key)
   end
 
   def validate_custom_attributes!(current:)

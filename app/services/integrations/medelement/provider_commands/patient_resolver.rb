@@ -322,7 +322,7 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
   end
 
   def validate_create_payload!
-    missing = %w[name lastname middlename gender iin].select { |key| patient_snapshot.fetch('payload')[key].blank? }
+    missing = required_create_fields
     return if missing.empty?
 
     raise creation_required(missing_fields: missing)
@@ -348,7 +348,7 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
   end
 
   def required_create_fields
-    %w[name lastname middlename gender iin].select { |key| patient_snapshot.fetch('payload')[key].blank? }
+    %w[name lastname gender iin].select { |key| patient_snapshot.fetch('payload')[key].blank? }
   end
 
   def patient_creation_confirmed?

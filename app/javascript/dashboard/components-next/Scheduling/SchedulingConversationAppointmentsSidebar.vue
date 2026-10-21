@@ -352,10 +352,16 @@ const patientNameParts = source => {
     source?.clientLastName ||
     source?.clientMiddleName
   ) {
+    const normalized = schedulingContactNameParts({
+      firstName: source.clientFirstName,
+      lastName: source.clientLastName,
+      middleName: source.clientMiddleName,
+      fullName: source.clientName,
+    });
     return {
-      clientFirstName: source.clientFirstName || '',
-      clientLastName: source.clientLastName || '',
-      clientMiddleName: source.clientMiddleName || '',
+      clientFirstName: normalized.firstName,
+      clientLastName: normalized.lastName,
+      clientMiddleName: normalized.middleName,
       clientNameStructured: true,
     };
   }
