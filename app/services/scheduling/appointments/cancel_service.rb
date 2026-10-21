@@ -14,25 +14,45 @@ class Scheduling::Appointments::CancelService
       Scheduling::Appointments::AppointmentAccessGuard.new(
         appointment: appointment, actor: actor, context: appointment_access
       ).validate!
-      if defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant)
-        Scheduling::Appointments::MutationGuard.ensure_editable!(appointment)
-      end
+      Scheduling::Appointments::MutationGuard.ensure_editable!(appointment) if defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant)
+      cancel_prewrite_create_commands!
       cancellation_mode = cancellation_mode_for_locked_appointment
       return normalize_cancelled_payment! if appointment.status == 'cancelled'
       return cancel_provider_linked_appointment!(cancellation_mode) if provider_cancellation_policy.provider_related?
 
-      Scheduling::Appointments::UpsertService.new(
-        account: appointment.account,
-        appointment: appointment,
-        params: { status: 'cancelled', payment_status: 'cancelled' },
-        actor: actor
-      ).perform
+      cancel_local_appointment!
     end
   end
 
   private
 
   attr_reader :actor, :appointment, :expected_medelement_cancellation_mode, :appointment_access
+
+  def cancel_local_appointment!
+    cancelled_appointment = Scheduling::Appointments::UpsertService.new(
+      account: appointment.account,
+      appointment: appointment,
+      params: { status: 'cancelled', payment_status: 'cancelled' },
+      actor: actor
+    ).perform
+    Integrations::Medelement::AppointmentProviderStatus.clear!(cancelled_appointment)
+    cancelled_appointment
+  end
+
+  def cancel_prewrite_create_commands!
+    return if appointment.status == 'cancelled'
+
+    commands = Integrations::Medelement::ProviderCommand
+               .where(account_id: appointment.account_id, appointment_id: appointment.id, operation: 'create_reception')
+               .unfinished
+    commands.find_each do |command|
+      next if command.provider_write_started? || command.reconciliation_required? || command.provider_status_unknown?
+      next unless Integrations::Medelement::ProviderCommands::CancelService.cancellable?(command)
+
+      Integrations::Medelement::ProviderCommands::CancelService.new(command: command, actor: actor).perform
+    end
+    appointment.reload
+  end
 
   def provider_cancellation_policy
     Scheduling::Appointments::ProviderCancellationPolicy.new(appointment: appointment)
@@ -58,7 +78,8 @@ class Scheduling::Appointments::CancelService
   end
 
   def resolved_medelement_cancellation_mode(current_mode)
-    return current_mode if expected_medelement_cancellation_mode.blank? || current_mode == expected_medelement_cancellation_mode
+    return current_mode if current_mode.blank? || expected_medelement_cancellation_mode.blank? ||
+                           current_mode == expected_medelement_cancellation_mode
 
     raise Scheduling::Error.new(
       code: 'MEDELEMENT_CANCELLATION_MODE_CHANGED',

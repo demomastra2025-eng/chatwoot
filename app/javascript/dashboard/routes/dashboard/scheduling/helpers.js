@@ -1128,3 +1128,28 @@ export const medelementCommandFailureMessage = command => {
     },
   };
 };
+
+const formatMedelementMissingFieldLabel = (field, t) => {
+  const normalized = String(field || '').trim();
+  if (typeof t !== 'function') return normalized;
+  if (normalized === 'name')
+    return t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME');
+  if (normalized === 'lastname')
+    return t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME');
+  if (normalized === 'middlename')
+    return t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME');
+  if (normalized === 'gender')
+    return t('SCHEDULING.APPOINTMENT_FORM.CLIENT_GENDER');
+  if (normalized === 'birthday')
+    return t('SCHEDULING.APPOINTMENT_FORM.CLIENT_BIRTH_DATE');
+  if (normalized === 'iin') return t('SCHEDULING.CONTACT.IIN');
+  if (normalized === 'phone' || normalized === 'patient_phone_2')
+    return t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE');
+  return normalized;
+};
+
+export const formatMedelementMissingFields = (fields, t) =>
+  (fields || [])
+    .map(field => formatMedelementMissingFieldLabel(field, t))
+    .filter(Boolean)
+    .join(', ');

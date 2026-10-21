@@ -748,4 +748,53 @@ describe('SchedulingCalendarPage pending local booking', () => {
     expect(mocks.alert).not.toHaveBeenCalled();
     expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledOnce();
   });
+
+  it('opens an existing appointment in compact read-only view first and mounts the edit form on demand', async () => {
+    await mountPage();
+    const grid = wrapper.findComponent({ name: 'SchedulingCalendarGrid' });
+    // eslint-disable-next-line vue/custom-event-name-casing -- Preserve the existing calendar grid event contract.
+    grid.vm.$emit('select-appointment', {
+      id: 505,
+      accountId: 74,
+      contactId: 42,
+      clientFirstName: 'Client',
+      clientLastName: 'Patient',
+      clientPhone: '+77001234567',
+      clientComment: 'Follow-up check',
+      resourceId: 3,
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+      status: 'confirmed',
+    });
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-test="calendar-appointment-compact-view"]').exists()
+    ).toBe(true);
+    expect(
+      wrapper.get('[data-test="calendar-appointment-compact-view"]').text()
+    ).toContain('Client Patient');
+    expect(
+      wrapper.get('[data-test="calendar-appointment-compact-view"]').text()
+    ).toContain('Follow-up check');
+    expect(
+      wrapper
+        .find('textarea[data-label="SCHEDULING.APPOINTMENT_FORM.COMMENT"]')
+        .exists()
+    ).toBe(false);
+
+    await wrapper
+      .get('[data-test="calendar-appointment-edit-button"]')
+      .trigger('click');
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-test="calendar-appointment-compact-view"]').exists()
+    ).toBe(false);
+    expect(
+      wrapper
+        .find('textarea[data-label="SCHEDULING.APPOINTMENT_FORM.COMMENT"]')
+        .exists()
+    ).toBe(true);
+  });
 });

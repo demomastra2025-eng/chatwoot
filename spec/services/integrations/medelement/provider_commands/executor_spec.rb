@@ -149,9 +149,9 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       command.update!(execution_state: command.execution_state.merge('captain_playground' => captured, 'write_phase' => 'patient_create'))
       expect(executor).not_to receive(:execute_operation!)
       expect(client).not_to receive(:create_patient)
-      allow(client).to receive(:search_patients_by_phone).and_return([
-        { 'PROFILE_CODE' => 'legacy-patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov', 'PATIENT_PHONE_2' => contact.phone_number }
-      ])
+      allow(client).to receive(:search_patients_by_phone).and_return(
+        [{ 'PROFILE_CODE' => 'legacy-patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov', 'PATIENT_PHONE_2' => contact.phone_number }]
+      )
 
       perform
 
@@ -545,8 +545,8 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
 
     it 'allows creating a patient without a middlename (patronymic)' do
       contact.update!(
-        name: 'Асет',
-        last_name: 'Хамзаулы',
+        name: 'Иван',
+        last_name: 'Иванов',
         middle_name: nil,
         custom_attributes: { 'medelement_iin' => '940720300129' }
       )
@@ -558,9 +558,10 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       perform
 
       expect(command.reload).to have_attributes(status: 'succeeded', provider_patient_code: 'patient-no-middlename')
-      expect(client).to have_received(:create_patient).with(
-        params: hash_including('name' => 'Асет', 'lastname' => 'Хамзаулы', 'middlename' => nil)
-      )
+      expect(client).to have_received(:create_patient) do |params:|
+        expect(params).to include('name' => 'Иван', 'lastname' => 'Иванов')
+        expect(params).not_to have_key('middlename')
+      end
     end
 
     it 'links a created patient by the returned code without reading it back' do

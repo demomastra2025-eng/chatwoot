@@ -34,6 +34,18 @@ class Integrations::Medelement::AppointmentProviderStatus
       appointment.update!(custom_attributes: updated)
     end
 
+    def clear!(appointment)
+      return if appointment.blank?
+
+      keys_to_remove = [ATTRIBUTE_KEY, OPERATION_KEY, CANCELLATION_COMMAND_ID_KEY,
+                        Integrations::Medelement::AppointmentMoveState::ATTRIBUTE_KEY, *COMMAND_BINDING_KEYS]
+      attrs = appointment.custom_attributes.to_h
+      return unless keys_to_remove.any? { |key| attrs.key?(key) }
+
+      appointment.mark_medelement_provider_reconciled!
+      appointment.update!(custom_attributes: attrs.except(*keys_to_remove))
+    end
+
     def persist_if_bound!(appointment, status, command:)
       return if appointment.blank?
 

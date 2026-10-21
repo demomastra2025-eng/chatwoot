@@ -10,7 +10,7 @@ class Scheduling::Appointments::ProviderCancellationPolicy
     return true if appointment.source == Scheduling::Appointments::MutationGuard::PROVIDER_SOURCE
 
     attrs = appointment.custom_attributes.to_h
-    attrs[STATUS::ATTRIBUTE_KEY].present? || attrs['medelement_reception_code'].present? ||
+    attrs[STATUS::ATTRIBUTE_KEY].in?([STATUS::SUCCEEDED, STATUS::UNKNOWN]) || attrs['medelement_reception_code'].present? ||
       appointment.external_ref.to_s.start_with?(RECEPTION_PREFIX) || unfinished_create_command? || create_write_started?
   end
 

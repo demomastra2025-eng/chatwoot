@@ -144,19 +144,28 @@ class Integrations::Medelement::OutboundChangeService
     true
   end
 
-  def retire_stale_prewrite_captain_command!(command)
+  def retire_stale_prewrite_captain_command!(command, expected_snapshot = nil)
     retired = command.with_lock do
-      next false unless captain_create_reception?(command)
+      next false unless command.create_reception?
 
       command.appointment.with_lock do
-        guard = Integrations::Medelement::ProviderCommands::ReceptionDiscoveryGuard.new(command: command)
-        next false if guard.current_booking?(allow_completed: true)
+        next false unless stale_prewrite_command?(command, expected_snapshot)
 
         discard_stale_prewrite_captain_command!(command)
       end
     end
     expire_discarded_confirmation!(command) if retired
     retired
+  end
+
+  def stale_prewrite_command?(command, expected_snapshot)
+    guard = Integrations::Medelement::ProviderCommands::ReceptionDiscoveryGuard.new(command: command)
+    if command.logical_status.in?(PREWRITE_PATIENT_ACTION_STATUSES)
+      return !guard.current_booking?(allow_completed: true) ||
+             (expected_snapshot.present? && !same_request_snapshot?(command.request_snapshot, expected_snapshot))
+    end
+
+    captain_create_reception?(command) && !guard.current_booking?(allow_completed: true)
   end
 
   def expire_discarded_confirmation!(command)
@@ -213,12 +222,13 @@ class Integrations::Medelement::OutboundChangeService
 
   def sync_contact
     contact = contact_scope.includes(:account).find(entity_id)
-    operation = contact_operation(contact)
-    return unless operation
-
     @account = contact.account
     @hook = writable_hook
     return unless hook
+
+    refresh_prewrite_contact_appointments!(contact) if normalized_event_name == 'contact_updated'
+    operation = contact_operation(contact)
+    return unless operation
 
     create_and_confirm(
       appointment: nil,
@@ -228,6 +238,85 @@ class Integrations::Medelement::OutboundChangeService
       desired_starts_at: nil,
       desired_ends_at: nil
     )
+  end
+
+  def refresh_prewrite_contact_appointments!(contact)
+    return unless changed_attributes.blank? || changed_attributes.keys.intersect?(CONTACT_UPDATE_KEYS)
+
+    prewrite_contact_commands(contact).find_each do |command|
+      appointment = refreshable_prewrite_appointment(command)
+      next unless appointment
+
+      sync_contact_fields_to_prewrite_appointment!(appointment, contact)
+      dispatch_refreshed_appointment_command!(appointment, command)
+    end
+  end
+
+  def prewrite_contact_commands(contact)
+    statuses = PREWRITE_PATIENT_ACTION_STATUSES.flat_map { |s| Integrations::Medelement::ProviderCommand.execution_statuses(s) }
+    Integrations::Medelement::ProviderCommand
+      .where(account: account, contact: contact, operation: 'create_reception', status: statuses)
+      .includes(:appointment)
+  end
+
+  def refreshable_prewrite_appointment(command)
+    return if command.provider_write_started? || command.appointment.blank?
+
+    appointment = command.appointment
+    return if appointment.status == 'cancelled' ||
+              Integrations::Medelement::AppointmentPatientIdentity.owned?(appointment.custom_attributes)
+
+    appointment
+  end
+
+  def dispatch_refreshed_appointment_command!(appointment, command)
+    self.class.new(
+      entity_type: 'appointment',
+      entity_id: appointment.id,
+      account_id: account.id,
+      event_name: 'appointment_updated',
+      actor_id: actor_id || command.requested_by_id,
+      actor_descriptor: actor_descriptor.presence || command.request_snapshot['actor'],
+      change: { desired_attributes: self.class.appointment_event_snapshot(appointment.reload) }
+    ).perform
+  end
+
+  def sync_contact_fields_to_prewrite_appointment!(appointment, contact)
+    first_name, last_name, middle_name = prewrite_appointment_names(appointment, contact)
+    appointment.mark_medelement_provider_reconciled!
+    appointment.update!(
+      client_first_name: first_name,
+      client_last_name: last_name,
+      client_middle_name: middle_name,
+      client_name: [first_name, last_name, middle_name].compact_blank.join(' ').presence || appointment.client_name,
+      client_phone: contact.phone_number.presence || appointment.client_phone,
+      client_identifier: Integrations::Medelement::AppointmentPatientIdentity.contact_iin(contact).presence || appointment.client_identifier,
+      client_birth_date: prewrite_contact_birth_date(contact) || appointment.client_birth_date,
+      client_gender: prewrite_contact_gender(contact) || appointment.client_gender
+    )
+  end
+
+  def prewrite_appointment_names(appointment, contact)
+    names = Integrations::Medelement::AppointmentPatientIdentity.contact_names(contact)
+    candidate_first = names['first_name'].presence || appointment.client_first_name
+    candidate_last = names['last_name'].presence || appointment.client_last_name
+    structured = candidate_first.present? && candidate_last.present?
+    [
+      structured ? candidate_first : appointment.client_first_name,
+      structured ? candidate_last : appointment.client_last_name,
+      names['middle_name'].presence || appointment.client_middle_name
+    ]
+  end
+
+  def prewrite_contact_birth_date(contact)
+    attrs = contact.custom_attributes.to_h
+    raw = attrs['medelement_birth_date'].presence || attrs['birth_date'].presence
+    Scheduling::InputValidation.parse_date(Scheduling::BirthDate.normalize(raw)) if raw.present?
+  end
+
+  def prewrite_contact_gender(contact)
+    attrs = contact.custom_attributes.to_h
+    attrs['medelement_gender'].presence || attrs['gender'].presence
   end
 
   def appointment_scope
@@ -358,7 +447,7 @@ class Integrations::Medelement::OutboundChangeService
     existing = Integrations::Medelement::ProviderCommand.where(account: account, appointment: appointment).unfinished.first
     return if existing.blank?
     return existing if existing.operation == operation && same_request_snapshot?(existing.request_snapshot, expected_snapshot)
-    return if retire_stale_prewrite_captain_command!(existing)
+    return if retire_stale_prewrite_captain_command!(existing, expected_snapshot)
 
     raise Scheduling::Error.new(
       code: 'MEDELEMENT_COMMAND_IN_PROGRESS',

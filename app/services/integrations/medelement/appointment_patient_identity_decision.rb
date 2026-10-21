@@ -63,7 +63,7 @@ class Integrations::Medelement::AppointmentPatientIdentityDecision
   end
 
   def identifier_differs?(contact_identifier)
-    identifier.present? && identifier != contact_identifier
+    identifier.present? && contact_identifier.present? && identifier != contact_identifier
   end
 
   def provider_linked?
@@ -80,7 +80,11 @@ class Integrations::Medelement::AppointmentPatientIdentityDecision
   def name_changed?
     policy::NAME_KEYS.any? do |key|
       field = "client_#{key}"
-      policy.normalize(field, appointment.public_send(field)) != policy.normalize(field, identity[key.to_sym])
+      current_val = policy.normalize(field, appointment.public_send(field))
+      next_val = policy.normalize(field, identity[key.to_sym])
+      next false if key == 'middle_name' && (current_val.blank? || next_val.blank?)
+
+      current_val != next_val
     end
   end
 

@@ -10,8 +10,11 @@ class AccountAPI extends ApiClient {
     return this.baseUrl();
   }
 
-  get() {
-    return axios.get(this.currentAccountUrl);
+  get(accountId) {
+    const url = accountId
+      ? `${this.apiVersion}/accounts/${accountId}`
+      : this.currentAccountUrl;
+    return axios.get(url);
   }
 
   createAccount(data) {

@@ -280,5 +280,82 @@ RSpec.describe Scheduling::Appointments::CancelService do
       end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION') }
       expect(appointment.reload.status).to eq('scheduled')
     end
+
+    it 'auto-cancels a pre-write create_reception command and cancels the unlinked appointment locally' do
+      create_medelement_hook(remove_reception_on_cancel: false)
+      status = Integrations::Medelement::AppointmentProviderStatus
+      unlinked = create(
+        :scheduling_appointment,
+        account: account,
+        contact: contact,
+        resource: resource,
+        source: 'manual',
+        external_ref: nil,
+        status: 'scheduled',
+        payment_status: 'awaiting_payment',
+        custom_attributes: {
+          'medelement_cabinet_code' => 'cabinet-1',
+          status::ATTRIBUTE_KEY => status::PENDING
+        }
+      )
+      command = Integrations::Medelement::ProviderCommand.create!(
+        account: account,
+        appointment: unlinked,
+        contact: contact,
+        operation: 'create_reception',
+        company_cabinet_code: 'cabinet-1',
+        idempotency_key: SecureRandom.uuid,
+        status: 'awaiting_patient_creation'
+      )
+
+      result = described_class.new(
+        appointment: unlinked,
+        actor: actor,
+        expected_medelement_cancellation_mode: 'local_only'
+      ).perform
+
+      expect(command.reload).to be_cancelled
+      expect(result.reload).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
+      expect(result.custom_attributes).not_to have_key(marker_key)
+      expect(result.custom_attributes).not_to have_key(status::ATTRIBUTE_KEY)
+      expect(Integrations::Medelement::AppointmentProviderStatus.public_status(result)).to eq('cancelled')
+    end
+
+    it 'cancels an unlinked appointment locally after its pre-write create_reception command was already cancelled' do
+      create_medelement_hook(remove_reception_on_cancel: true)
+      status = Integrations::Medelement::AppointmentProviderStatus
+      unlinked = create(
+        :scheduling_appointment,
+        account: account,
+        contact: contact,
+        resource: resource,
+        source: 'manual',
+        external_ref: nil,
+        status: 'scheduled',
+        payment_status: 'awaiting_payment',
+        custom_attributes: {
+          'medelement_cabinet_code' => 'cabinet-1',
+          status::ATTRIBUTE_KEY => status::PENDING
+        }
+      )
+      command = Integrations::Medelement::ProviderCommand.create!(
+        account: account,
+        appointment: unlinked,
+        contact: contact,
+        operation: 'create_reception',
+        company_cabinet_code: 'cabinet-1',
+        idempotency_key: SecureRandom.uuid,
+        status: 'awaiting_patient_creation'
+      )
+
+      Integrations::Medelement::ProviderCommands::CancelService.new(command: command, actor: actor).perform
+      expect(unlinked.reload.custom_attributes[status::ATTRIBUTE_KEY]).to eq(status::FAILED)
+
+      result = described_class.new(appointment: unlinked.reload, actor: actor).perform
+
+      expect(result.reload).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
+      expect(result.custom_attributes).not_to have_key(marker_key)
+      expect(result.custom_attributes).not_to have_key(status::ATTRIBUTE_KEY)
+    end
   end
 end

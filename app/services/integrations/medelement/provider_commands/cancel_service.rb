@@ -13,13 +13,16 @@ class Integrations::Medelement::ProviderCommands::CancelService
   end
 
   def perform
+    cancelled = false
     command.with_lock do
       command.reload
       next if command.cancelled?
 
       validate_cancellable!
       command.update!(cancelled_attributes)
+      cancelled = true
     end
+    Integrations::Medelement::AppointmentProviderStatus.persist_failed_command!(command) if cancelled
 
     command
   end
@@ -49,7 +52,7 @@ class Integrations::Medelement::ProviderCommands::CancelService
                               .except('reconciliation_next_at')
                               .merge(
                                 "#{cancellation_type}_cancelled_at" => now.iso8601,
-                                "#{cancellation_type}_cancelled_by_id" => actor.id
+                                "#{cancellation_type}_cancelled_by_id" => actor&.id
                               )
     }
   end

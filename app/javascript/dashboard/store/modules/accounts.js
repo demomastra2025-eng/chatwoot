@@ -54,15 +54,19 @@ export const getters = {
 };
 
 export const actions = {
-  get: async ({ commit }) => {
+  get: async ({ commit, rootState, rootGetters }, accountId) => {
+    const resolvedAccountId =
+      accountId ||
+      rootState?.route?.params?.accountId ||
+      rootGetters?.getCurrentUser?.account_id;
     commit(types.default.SET_ACCOUNT_UI_FLAG, { isFetchingItem: true });
     try {
-      const response = await AccountAPI.get();
+      if (!resolvedAccountId) return;
+      const response = await AccountAPI.get(resolvedAccountId);
       commit(types.default.ADD_ACCOUNT, response.data);
-      commit(types.default.SET_ACCOUNT_UI_FLAG, {
-        isFetchingItem: false,
-      });
     } catch (error) {
+      // Ignore error
+    } finally {
       commit(types.default.SET_ACCOUNT_UI_FLAG, {
         isFetchingItem: false,
       });

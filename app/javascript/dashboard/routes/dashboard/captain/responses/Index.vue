@@ -6,8 +6,10 @@ import { useRouter, useRoute } from 'vue-router';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { debounce } from '@chatwoot/utils';
 import { useAccount } from 'dashboard/composables/useAccount';
+import { useAlert } from 'dashboard/composables';
 
 import Banner from 'dashboard/components-next/banner/Banner.vue';
+import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import BulkSelectBar from 'dashboard/components-next/captain/assistant/BulkSelectBar.vue';
 import DeleteDialog from 'dashboard/components-next/captain/pageComponents/DeleteDialog.vue';
@@ -189,9 +191,7 @@ const handleBulkMerge = async () => {
     bulkSelectedIds.value = new Set();
     useAlert(t('CAPTAIN.RESPONSES.BULK_MERGE.SUCCESS_MESSAGE'));
   } catch (error) {
-    useAlert(
-      error?.message || t('CAPTAIN.RESPONSES.BULK_MERGE.ERROR_MESSAGE')
-    );
+    useAlert(error?.message || t('CAPTAIN.RESPONSES.BULK_MERGE.ERROR_MESSAGE'));
   }
 };
 

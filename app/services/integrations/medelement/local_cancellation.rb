@@ -29,9 +29,10 @@ module Integrations::Medelement::LocalCancellation
   end
 
   def linked?(appointment)
+    status = Integrations::Medelement::AppointmentProviderStatus
     appointment.source == Scheduling::Appointments::MutationGuard::PROVIDER_SOURCE ||
       reception_code(appointment).present? ||
-      appointment.custom_attributes.to_h[Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY].present?
+      appointment.custom_attributes.to_h[status::ATTRIBUTE_KEY].in?([status::SUCCEEDED, status::UNKNOWN])
   end
 
   def marked?(record_or_attributes)

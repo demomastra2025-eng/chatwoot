@@ -848,4 +848,92 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
     expect(result).to be_nil
     expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty
   end
+
+  it 'retires a stale staff pre-write create_reception command in awaiting_patient_creation when the appointment is updated' do
+    contact.update!(name: 'Алия', last_name: 'Касымова', custom_attributes: {})
+    appointment.update!(
+      external_ref: nil,
+      client_first_name: 'Алия',
+      client_last_name: 'Касымова',
+      custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' }
+    )
+    first_command = described_class.new(
+      entity_type: 'appointment',
+      entity_id: appointment.id,
+      event_name: 'appointment_created',
+      actor_id: actor.id,
+      change: { desired_attributes: described_class.appointment_event_snapshot(appointment) }
+    ).perform
+    first_command.update!(status: 'awaiting_patient_creation')
+    clear_enqueued_jobs
+
+    appointment.update!(client_middle_name: 'Сериковна', client_birth_date: Date.new(1992, 4, 15), client_gender: 'female')
+    refreshed_command = described_class.new(
+      entity_type: 'appointment',
+      entity_id: appointment.id,
+      event_name: 'appointment_updated',
+      actor_id: actor.id,
+      change: {
+        changed_attributes: { 'client_middle_name' => [nil, 'Сериковна'] },
+        desired_attributes: described_class.appointment_event_snapshot(appointment.reload)
+      }
+    ).perform
+
+    expect(first_command.reload).to be_cancelled
+    expect(first_command.last_error_code).to eq('local_booking_changed_before_confirmation')
+    expect(refreshed_command.id).not_to eq(first_command.id)
+    expect(refreshed_command.reload).to be_queued
+    expect(Integrations::Medelement::ProviderCommandJob).to have_been_enqueued.with(refreshed_command.id)
+  end
+
+  it 'syncs contact fields and refreshes a paused pre-write create_reception command when the contact is updated' do
+    contact.update!(name: 'Алия', last_name: 'Касымова', middle_name: nil, identifier: nil, custom_attributes: {})
+    appointment.update!(
+      external_ref: nil,
+      client_first_name: 'Алия',
+      client_last_name: 'Касымова',
+      client_middle_name: nil,
+      client_identifier: nil,
+      client_birth_date: nil,
+      client_gender: nil,
+      custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' }
+    )
+    first_command = described_class.new(
+      entity_type: 'appointment',
+      entity_id: appointment.id,
+      event_name: 'appointment_created',
+      actor_id: actor.id,
+      change: { desired_attributes: described_class.appointment_event_snapshot(appointment) }
+    ).perform
+    first_command.update!(status: 'awaiting_patient_creation')
+    clear_enqueued_jobs
+
+    contact.update!(
+      middle_name: 'Сериковна',
+      identifier: '940720300129',
+      custom_attributes: { 'iin' => '940720300129', 'birth_date' => '1994-07-20', 'gender' => 'female' }
+    )
+    described_class.new(
+      entity_type: 'contact',
+      entity_id: contact.id,
+      event_name: 'contact_updated',
+      actor_id: actor.id,
+      change: {
+        changed_attributes: { 'middle_name' => [nil, 'Сериковна'], 'identifier' => [nil, '940720300129'] },
+        desired_attributes: described_class.contact_event_snapshot(contact.reload)
+      }
+    ).perform
+
+    expect(first_command.reload).to be_cancelled
+    expect(appointment.reload).to have_attributes(
+      client_middle_name: 'Сериковна',
+      client_identifier: '940720300129',
+      client_birth_date: Date.new(1994, 7, 20),
+      client_gender: 'female'
+    )
+    active_command = Integrations::Medelement::ProviderCommand.where(appointment: appointment).unfinished.first
+    expect(active_command).to be_present
+    expect(active_command.id).not_to eq(first_command.id)
+    expect(active_command).to be_queued
+  end
 end

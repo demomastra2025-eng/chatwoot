@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ModuleLength
 module Integrations::Medelement::AppointmentPatientIdentity
   EXPLICIT_IDENTIFIER_KEY = 'medelement_client_identifier_explicit'.freeze
   OWNED_IDENTITY_KEY = 'medelement_appointment_patient_identity'.freeze
@@ -117,7 +118,11 @@ module Integrations::Medelement::AppointmentPatientIdentity
 
   def contact_names(contact)
     attributes = contact&.custom_attributes.to_h
-    return NAME_KEYS.index_with { |key| attributes["medelement_#{key}"] } if NAME_KEYS.any? { |key| attributes["medelement_#{key}"].present? }
+    if NAME_KEYS.any? { |key| attributes["medelement_#{key}"].present? }
+      return NAME_KEYS.index_with do |key|
+        attributes["medelement_#{key}"].presence || (key == 'middle_name' ? contact&.middle_name : nil)
+      end
+    end
 
     { 'first_name' => contact&.name, 'last_name' => contact&.last_name, 'middle_name' => contact&.middle_name }
   end
@@ -126,6 +131,16 @@ module Integrations::Medelement::AppointmentPatientIdentity
     names = contact_names(contact)
     return false if names['first_name'].blank? || names['last_name'].blank?
 
-    NAME_KEYS.all? { |key| normalize("client_#{key}", identity[key.to_sym]) == normalize("client_#{key}", names[key]) }
+    %w[first_name last_name].all? { |key| normalize("client_#{key}", identity[key.to_sym]) == normalize("client_#{key}", names[key]) } &&
+      middle_name_matches?(identity[:middle_name], names['middle_name'])
+  end
+
+  def middle_name_matches?(first, second)
+    norm_first = normalize('client_middle_name', first)
+    norm_second = normalize('client_middle_name', second)
+    return true if norm_first.blank? || norm_second.blank?
+
+    norm_first == norm_second
   end
 end
+# rubocop:enable Metrics/ModuleLength

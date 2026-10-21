@@ -344,18 +344,45 @@ const subtractIntervals = (baseIntervals, blockedIntervals) => {
   });
 };
 
-const buildWorkingIntervalsForColumn = column => {
+const convertedSlotsByResourceId = computed(() => {
+  const byResource = new Map();
+  props.slots.forEach(slot => {
+    const resourceId = Number(slot?.resourceId);
+    if (!Number.isFinite(resourceId)) return;
+    const list = byResource.get(resourceId) || [];
+    list.push({
+      startsAt: toCalendarDate(slot.startsAt),
+      endsAt: toCalendarDate(slot.endsAt),
+    });
+    byResource.set(resourceId, list);
+  });
+  return byResource;
+});
+
+const convertedAppointmentsByResourceId = computed(() => {
+  const byResource = new Map();
+  props.appointments.forEach(appointment => {
+    if (!appointment || appointment.status === 'cancelled') return;
+    const resourceId = Number(appointment.resourceId);
+    if (!Number.isFinite(resourceId)) return;
+    const list = byResource.get(resourceId) || [];
+    list.push({
+      id: Number(appointment.id),
+      startsAt: toCalendarDate(appointment.startsAt),
+      endsAt: toCalendarDate(appointment.endsAt),
+    });
+    byResource.set(resourceId, list);
+  });
+  return byResource;
+});
+
+const computeWorkingIntervalsForColumn = column => {
   if (isProviderColumn(column)) {
+    const resourceSlots =
+      convertedSlotsByResourceId.value.get(Number(column.resourceId)) || [];
     return mergeIntervals(
-      props.slots
-        .filter(slot => Number(slot.resourceId) === Number(column.resourceId))
-        .map(slot =>
-          clipIntervalToDay(
-            toCalendarDate(slot.startsAt),
-            toCalendarDate(slot.endsAt),
-            column.date
-          )
-        )
+      resourceSlots
+        .map(slot => clipIntervalToDay(slot.startsAt, slot.endsAt, column.date))
         .filter(Boolean)
     );
   }
@@ -401,25 +428,32 @@ const buildWorkingIntervalsForColumn = column => {
     .filter(interval => interval.endMinute > interval.startMinute);
 };
 
+const columnCacheKey = column => `${column.resourceId}:${column.dateKey}`;
+
+const workingIntervalsByColumnKey = computed(() => {
+  const map = new Map();
+  columns.value.forEach(column => {
+    map.set(columnCacheKey(column), computeWorkingIntervalsForColumn(column));
+  });
+  return map;
+});
+
+const buildWorkingIntervalsForColumn = column =>
+  workingIntervalsByColumnKey.value.get(columnCacheKey(column)) ??
+  computeWorkingIntervalsForColumn(column);
+
 const buildAppointmentIntervalsForColumn = (
   column,
   { excludeAppointmentId = null } = {}
 ) => {
-  return props.appointments
-    .filter(appointment => {
-      return (
-        Number(appointment.resourceId) === Number(column.resourceId) &&
-        Number(appointment.id) !== Number(excludeAppointmentId) &&
-        appointment.status !== 'cancelled'
-      );
-    })
-    .map(appointment => {
-      return clipIntervalToDay(
-        toCalendarDate(appointment.startsAt),
-        toCalendarDate(appointment.endsAt),
-        column.date
-      );
-    })
+  const resourceAppointments =
+    convertedAppointmentsByResourceId.value.get(Number(column.resourceId)) ||
+    [];
+  return resourceAppointments
+    .filter(appointment => appointment.id !== Number(excludeAppointmentId))
+    .map(appointment =>
+      clipIntervalToDay(appointment.startsAt, appointment.endsAt, column.date)
+    )
     .filter(Boolean);
 };
 

@@ -578,7 +578,7 @@ class Scheduling::Appointments::UpsertService
     {
       first_name: attributes['medelement_first_name'].presence,
       last_name: attributes['medelement_last_name'].presence,
-      middle_name: attributes['medelement_middle_name'].presence
+      middle_name: attributes['medelement_middle_name'].presence || contact&.middle_name
     }
   end
 

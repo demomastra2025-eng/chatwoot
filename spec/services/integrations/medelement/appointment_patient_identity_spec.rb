@@ -438,4 +438,47 @@ RSpec.describe Integrations::Medelement::AppointmentPatientIdentity do
     end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_PATIENT_IDENTITY_CONFLICT') }
     expect(appointment.reload.custom_attributes['medelement_patient_code']).to eq('relative-2')
   end
+
+  it 'allows adding a missing middle name without raising a patient identity conflict or detaching as a separate relative' do
+    contact.update!(
+      middle_name: nil,
+      custom_attributes: {
+        'medelement_first_name' => 'Primary',
+        'medelement_last_name' => 'Patient',
+        'iin' => '940720300119',
+        'birth_date' => '1994-07-20',
+        'gender' => 'male'
+      }
+    )
+    appointment.update!(
+      client_first_name: 'Primary',
+      client_last_name: 'Patient',
+      client_middle_name: nil,
+      client_name: 'Primary Patient',
+      client_identifier: '940720300119',
+      client_birth_date: Date.new(1994, 7, 20),
+      client_gender: 'male',
+      custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' }
+    )
+
+    save_patient(
+      client_first_name: 'Primary',
+      client_last_name: 'Patient',
+      client_middle_name: 'Parent',
+      client_identifier: '940720300119'
+    )
+
+    expect(appointment.reload).to have_attributes(
+      client_first_name: 'Primary',
+      client_last_name: 'Patient',
+      client_middle_name: 'Parent',
+      client_identifier: '940720300119',
+      client_birth_date: Date.new(1994, 7, 20),
+      client_gender: 'male'
+    )
+    expect(appointment.custom_attributes[described_class::OWNED_IDENTITY_KEY]).not_to be(true)
+
+    contact.update!(middle_name: 'Parent')
+    expect(described_class.contact_names(contact)['middle_name']).to eq('Parent')
+  end
 end

@@ -182,6 +182,7 @@ vi.mock('dashboard/api/scheduling/appointments', () => ({
 
 vi.mock('dashboard/api/scheduling/providerCommands', () => ({
   default: {
+    cancel: vi.fn(),
     confirm: vi.fn(),
     list: vi.fn(),
     reconcile: vi.fn(),
@@ -1350,7 +1351,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     }
   );
 
-  it('loads windows only for expanded history cards', async () => {
+  it('loads windows only when editing an expanded history card', async () => {
     const second = {
       ...existingAppointment,
       id: 502,
@@ -1371,6 +1372,10 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
     expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledTimes(0);
     wrapper.vm.toggleAppointment(second);
+    await flushPromises();
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledTimes(0);
+
+    wrapper.vm.startEditAppointment(second);
     await flushPromises();
     expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledTimes(1);
   });
@@ -1574,7 +1579,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     );
   });
 
-  it('keeps existing appointments collapsed by default and opens on toggle', async () => {
+  it('keeps existing appointments collapsed by default, opens compact summary on toggle, and opens edit form on edit action', async () => {
     const wrapper = mountComponent();
     await flushPromises();
 
@@ -1582,11 +1587,22 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     wrapper.vm.toggleAppointment(existingAppointment);
     await flushPromises();
     expect(
+      wrapper.find('[data-testid="appointment-compact-summary-501"]').exists()
+    ).toBe(true);
+    expect(
+      wrapper
+        .find('#scheduling-conversation-appointment-client-first-name-501')
+        .exists()
+    ).toBe(false);
+    expect(wrapper.vm.openAppointmentKeys).toEqual(['appointment-501']);
+
+    await wrapper.find('[data-testid="edit-appointment-501"]').trigger('click');
+    await flushPromises();
+    expect(
       wrapper
         .find('#scheduling-conversation-appointment-client-first-name-501')
         .exists()
     ).toBe(true);
-    expect(wrapper.vm.openAppointmentKeys).toEqual(['appointment-501']);
     expect(wrapper.vm.appointmentForms['appointment-501']).toMatchObject({
       clientFirstName: 'Айша',
       resourceId: 7,
@@ -1720,6 +1736,8 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(
       wrapper.vm.appointmentForms['appointment-501'].medelementCabinetCode
     ).toBe('501');
+    wrapper.vm.startEditAppointment(localMedelementAppointment);
+    await flushPromises();
     expect(
       wrapper
         .find('#scheduling-conversation-appointment-medelement-cabinet-501')
@@ -3188,7 +3206,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(wrapper.vm.createForm.clientIdentifier).toBe('940720300129');
 
     Object.assign(wrapper.vm.createForm, {
-      clientLastName: 'Хамзаулы',
+      clientLastName: 'Иванов',
       clientPhone: ['+7', '700', '000', '0001'].join(''),
       endsAt: '2026-06-27T10:30',
       startsAt: '2026-06-27T10:00',
@@ -3236,9 +3254,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     mocks.services[0].prices = [{ active: true, price: 5000, resourceId: 7 }];
     const appointment = {
       ...existingAppointment,
-      clientFirstName: 'Асет',
+      clientFirstName: 'Иван',
       clientIdentifier: '940720300129',
-      clientLastName: 'Хамзаулы',
+      clientLastName: 'Иванов',
       clientPhone: ['+7', '700', '000', '0001'].join(''),
       customAttributes: { medelementCabinetCode: '501' },
     };
@@ -3248,6 +3266,8 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     const wrapper = mountComponent();
     await flushPromises();
 
+    wrapper.vm.startEditAppointment(appointment);
+    await flushPromises();
     expect(
       wrapper
         .find('#scheduling-conversation-appointment-client-iin-501')
@@ -3260,9 +3280,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(SchedulingAppointmentsAPI.update).toHaveBeenCalledWith(
       501,
       expect.objectContaining({
-        client_first_name: 'Асет',
+        client_first_name: 'Иван',
         client_identifier: '940720300129',
-        client_last_name: 'Хамзаулы',
+        client_last_name: 'Иванов',
       })
     );
   });
@@ -3282,7 +3302,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       .findComponent({ name: 'SidebarActionsHeader' })
       .vm.$emit('click', 'new_appointment');
     Object.assign(wrapper.vm.createForm, {
-      clientLastName: 'Хамзаулы',
+      clientLastName: 'Иванов',
       clientPhone: ['+7', '700', '000', '0001'].join(''),
       endsAt: '2026-06-27T10:30',
       startsAt: '2026-06-27T10:00',
@@ -3447,6 +3467,8 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       clientPhone: ['+7', '700', '000', '0001'].join(''),
       customAttributes: { medelementCabinetCode: '501' },
     });
+    wrapper.vm.startEditAppointment(wrapper.vm.appointments[0]);
+    await flushPromises();
     const field = wrapper.findComponent(
       '#scheduling-conversation-appointment-client-iin-501'
     );
@@ -3558,8 +3580,19 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await flushPromises();
 
     const meta = wrapper.get('[data-testid="appointment-medelement-meta-501"]');
+    expect(meta.classes()).not.toContain('truncate');
     expect(meta.text()).toContain('SCHEDULING.MEDELEMENT.SYNC_STATUS.SYNCED');
     expect(meta.text()).toContain('reception-501');
+
+    wrapper.vm.toggleAppointment(wrapper.vm.appointments[0]);
+    await flushPromises();
+    const expandedMeta = wrapper.get(
+      '[data-testid="appointment-expanded-medelement-meta-501"]'
+    );
+    expect(expandedMeta.text()).toContain(
+      'SCHEDULING.MEDELEMENT.SYNC_STATUS.SYNCED'
+    );
+    expect(expandedMeta.text()).toContain('reception-501');
 
     const cancelledMeta = wrapper.get(
       '[data-testid="appointment-medelement-meta-502"]'
@@ -3567,6 +3600,141 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(cancelledMeta.text()).toContain('reception-502');
     expect(cancelledMeta.text()).not.toContain('Not cancelled in MedElement');
     expect(wrapper.text()).toContain('Not cancelled in MedElement');
+    wrapper.unmount();
+  });
+
+  it('cancels a pending patient action and refreshes the appointment state', async () => {
+    configureMedelementResource();
+    const command = patientActionCommand('awaiting_patient_selection', {
+      id: 77,
+    });
+    SchedulingProviderCommandsAPI.list.mockResolvedValue({
+      data: { payload: [command] },
+    });
+    SchedulingProviderCommandsAPI.patientCandidates.mockResolvedValue({
+      data: { payload: { candidates: [] } },
+    });
+    SchedulingProviderCommandsAPI.cancel.mockResolvedValue({
+      data: { payload: { id: 77, status: 'cancelled' } },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper.vm.checkProviderBooking(wrapper.vm.appointments[0]);
+
+    expect(
+      wrapper
+        .find('[data-testid="cancel-provider-patient-action-501"]')
+        .exists()
+    ).toBe(true);
+    await wrapper
+      .get('[data-testid="cancel-provider-patient-action-501"]')
+      .trigger('click');
+    await flushPromises();
+
+    expect(SchedulingProviderCommandsAPI.cancel).toHaveBeenCalledWith(77, {
+      provider: 'medelement',
+    });
+    expect(wrapper.vm.patientActions['appointment-501']).toBeUndefined();
+    expect(wrapper.vm.appointments[0].providerConfirmationStatus).toBe(
+      'failed'
+    );
+    wrapper.unmount();
+  });
+
+  it('localizes missing patient fields and syncs updated contact fields when rechecking awaiting_patient_creation', async () => {
+    configureMedelementResource();
+    mocks.services[0].customAttributes = {
+      medelement_nomenclature_code: 'service-9',
+    };
+    mocks.services[0].prices = [{ active: true, price: 5000, resourceId: 7 }];
+    const medelementAppointment = {
+      ...existingAppointment,
+      clientLastName: 'Касымова',
+      clientPhone: ['+7', '700', '000', '0001'].join(''),
+      customAttributes: { medelementCabinetCode: '501' },
+      source: 'conversation',
+    };
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: { payload: [medelementAppointment] },
+    });
+    const command = patientActionCommand('awaiting_patient_creation', {
+      id: 88,
+      patient_action: {
+        status: 'awaiting_patient_creation',
+        creation_available: false,
+        can_confirm: false,
+        missing_fields: ['gender', 'birthday', 'middlename'],
+        draft_patient: {
+          name: 'Айша',
+          lastname: 'Касымова',
+          phone_masked: '+7 *** *** 4567',
+        },
+      },
+    });
+    SchedulingProviderCommandsAPI.list
+      .mockResolvedValueOnce({ data: { payload: [command] } })
+      .mockResolvedValueOnce({ data: { payload: [command] } })
+      .mockResolvedValueOnce({
+        data: {
+          payload: [
+            {
+              ...command,
+              patient_action: {
+                ...command.patient_action,
+                creation_available: true,
+                can_confirm: true,
+                missing_fields: [],
+              },
+            },
+          ],
+        },
+      });
+    const chat = defaultCurrentChat();
+    chat.meta.sender.custom_attributes = {
+      birth_date: '1994-07-20',
+      gender: 'female',
+      medelement_middle_name: 'Ерлановна',
+    };
+    const wrapper = mountComponent(chat);
+    await flushPromises();
+
+    await wrapper.vm.refreshPendingPatientAction(wrapper.vm.appointments[0]);
+    expect(mocks.t).toHaveBeenCalledWith(
+      'SCHEDULING.MEDELEMENT.PATIENT_CREATION_INCOMPLETE',
+      {
+        fields: [
+          'SCHEDULING.APPOINTMENT_FORM.CLIENT_GENDER',
+          'SCHEDULING.APPOINTMENT_FORM.CLIENT_BIRTH_DATE',
+          'SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME',
+        ].join(', '),
+      }
+    );
+
+    SchedulingAppointmentsAPI.update.mockResolvedValueOnce({
+      data: {
+        payload: {
+          ...medelementAppointment,
+          client_birth_date: '1994-07-20',
+          client_gender: 'female',
+          client_middle_name: 'Ерлановна',
+          provider_confirmation_status: 'pending',
+        },
+      },
+    });
+    await wrapper.vm.checkProviderBooking(wrapper.vm.appointments[0]);
+
+    expect(SchedulingAppointmentsAPI.update).toHaveBeenCalledWith(
+      501,
+      expect.objectContaining({
+        client_birth_date: '1994-07-20',
+        client_gender: 'female',
+        client_middle_name: 'Ерлановна',
+      })
+    );
+    expect(
+      wrapper.vm.patientActions['appointment-501'].command.patientAction
+        .canConfirm
+    ).toBe(true);
     wrapper.unmount();
   });
 });

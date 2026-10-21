@@ -57,6 +57,7 @@ export default {
   data() {
     return {
       reconnectService: null,
+      hasCompletedInitialLoad: false,
     };
   },
   computed: {
@@ -70,6 +71,15 @@ export default {
     hideOnOnboardingView() {
       return !isOnOnboardingView(this.$route);
     },
+    isInitialBootReady() {
+      return (
+        !this.authUIFlags.isFetching &&
+        !this.accountUIFlags.isFetchingItem &&
+        Boolean(this.$route?.matched?.length) &&
+        (!this.currentAccountId ||
+          Boolean(this.getAccount(this.currentAccountId)?.id))
+      );
+    },
   },
 
   watch: {
@@ -78,6 +88,14 @@ export default {
       handler() {
         if (this.currentAccountId) {
           this.initializeAccount();
+        }
+      },
+    },
+    isInitialBootReady: {
+      immediate: true,
+      handler(ready) {
+        if (ready && !this.hasCompletedInitialLoad) {
+          this.hasCompletedInitialLoad = true;
         }
       },
     },
@@ -114,7 +132,8 @@ export default {
       await ensureAccountLoaded({
         accountId: this.currentAccountId,
         getAccount: this.getAccount,
-        loadAccounts: () => this.$store.dispatch('accounts/get'),
+        loadAccounts: () =>
+          this.$store.dispatch('accounts/get', this.currentAccountId),
       });
       this.$store.dispatch('setActiveAccount', {
         accountId: this.currentAccountId,
@@ -143,7 +162,7 @@ export default {
 
 <template>
   <div
-    v-if="!authUIFlags.isFetching && !accountUIFlags.isFetchingItem"
+    v-if="hasCompletedInitialLoad || isInitialBootReady"
     id="app"
     class="flex flex-col w-full h-full min-h-0 overflow-hidden bg-n-background"
     :dir="isRTL ? 'rtl' : 'ltr'"

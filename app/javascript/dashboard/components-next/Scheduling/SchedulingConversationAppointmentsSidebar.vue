@@ -63,8 +63,10 @@ import {
   addMinutesToDateTimeInputValue,
   appointmentCancellationAlertMessage,
   buildMedelementProviderCommandParams,
+  formatMedelementMissingFields,
   fromDateTimeInputValue,
   getServicePriceForResource,
+  hasMedelementReceptionIdentity,
   isAppointmentProviderOwned,
   isMedelementCancellationLocalOnly,
   providerBookingNeedsReview,
@@ -74,6 +76,7 @@ import {
   isMedelementResource,
   medelementAppointmentCardNote,
   medelementCabinetsForResource,
+  medelementReceptionCode,
   resolveAppointmentMedelementCabinetCode,
   servicesAvailableForResource,
   toDateTimeInputValue,
@@ -123,6 +126,7 @@ const availabilityByForm = reactive({});
 const availabilityRequests = new Map();
 let availabilityRequestId = 0;
 const openAppointmentKeys = ref([]);
+const editingAppointmentKeys = ref([]);
 const scrollContainer = ref(null);
 const isCreating = ref(false);
 const isSavingCreate = ref(false);
@@ -326,6 +330,18 @@ const contactIin = computed(() => {
   return value ? normalizePatientIin(value) : '';
 });
 
+const patientGender = source => {
+  const attributes =
+    source?.custom_attributes || source?.customAttributes || {};
+  return (
+    source?.gender ||
+    attributes.medelement_gender ||
+    attributes.medelementGender ||
+    attributes.gender ||
+    ''
+  );
+};
+
 const fullPatientName = form =>
   [form?.clientFirstName, form?.clientLastName, form?.clientMiddleName]
     .map(value => String(value || '').trim())
@@ -407,7 +423,7 @@ const resetCreateForm = () => {
 
   Object.assign(createForm, {
     clientBirthDate: patientBirthDate(patient.value),
-    clientGender: patient.value?.gender || '',
+    clientGender: patientGender(patient.value),
     clientIdentifier: contactIin.value,
     clientIdentifierInferred: Boolean(contactIin.value),
     clientFirstName: contactNameParts.firstName,
@@ -646,7 +662,15 @@ const appointmentResource = appointment =>
     resource => Number(resource.id) === Number(appointment?.resourceId)
   );
 const isMedelementAppointment = appointment =>
-  isMedelementResource(appointmentResource(appointment));
+  isMedelementResource(appointmentResource(appointment)) ||
+  isAppointmentProviderOwned(appointment) ||
+  hasMedelementReceptionIdentity(appointment) ||
+  Boolean(
+    appointment?.customAttributes?.medelement_cabinet_code ||
+      appointment?.customAttributes?.medelementCabinetCode ||
+      appointment?.custom_attributes?.medelement_cabinet_code ||
+      appointment?.custom_attributes?.medelementCabinetCode
+  );
 const isPatientActionPendingOnAppointment = appointment =>
   appointment?.status !== 'cancelled' &&
   !providerCancellationPending(appointment) &&
@@ -729,7 +753,7 @@ const patientActionDescription = entry => {
     const missingFields = command.patientAction?.missingFields || [];
     return missingFields.length
       ? t('SCHEDULING.MEDELEMENT.PATIENT_CREATION_INCOMPLETE', {
-          fields: missingFields.join(', '),
+          fields: formatMedelementMissingFields(missingFields, t),
         })
       : t('SCHEDULING.MEDELEMENT.PATIENT_CREATION_DESCRIPTION');
   }
@@ -750,6 +774,27 @@ const patientActionButtonLabel = entry => {
     return t('SCHEDULING.MEDELEMENT.PHONE_RETRY_ACTION');
   }
   return '';
+};
+const showCancelPatientAction = entry =>
+  Boolean(
+    entry?.command?.id &&
+      entry.command.patientAction?.cancellable !== false &&
+      (entry.intentMismatch || hasPatientAction(entry.command))
+  );
+const canCancelPatientAction = entry => {
+  const appointment = appointments.value.find(
+    item => Number(item.id) === Number(entry?.context?.appointmentId)
+  );
+  const key = appointment ? appointmentKey(appointment) : '';
+  return Boolean(
+    showCancelPatientAction(entry) &&
+      !patientActionBusyKey.value &&
+      !providerCommandsStore.ui.isExecuting &&
+      appointment &&
+      checkingAppointmentKey.value !== key &&
+      savingAppointmentKey.value !== key &&
+      cancellingAppointmentKey.value !== key
+  );
 };
 const canContinuePatientAction = entry => {
   const appointment = appointments.value.find(
@@ -789,6 +834,8 @@ const isProviderCancellationPending = appointment =>
   providerCancellationPending(appointment);
 const isAppointmentOpen = appointment =>
   openAppointmentKeys.value.includes(appointmentKey(appointment));
+const isAppointmentEditing = appointment =>
+  editingAppointmentKeys.value.includes(appointmentKey(appointment));
 
 const statusIconClass = appointment =>
   providerBookingNeedsReview(appointment)
@@ -1034,6 +1081,14 @@ async function findNearestFormWindows(form, params, request) {
 
 async function loadFormWindows(form) {
   const key = pickerKeyForForm(form);
+  if (key !== NEW_APPOINTMENT_KEY) {
+    if (!openAppointmentKeys.value.includes(key)) {
+      openAppointmentKeys.value = [...openAppointmentKeys.value, key];
+    }
+    if (!editingAppointmentKeys.value.includes(key)) {
+      editingAppointmentKeys.value = [...editingAppointmentKeys.value, key];
+    }
+  }
   cancelFormWindows(key);
   if (form) form.selectedWindowStartsAt = '';
   const context = captureSidebarContext();
@@ -1111,6 +1166,7 @@ const restorePatientDraft = () => {
       appointmentForms[key] = { ...saved.form };
       if (
         isAppointmentOpen(appointment) &&
+        isAppointmentEditing(appointment) &&
         !isAppointmentProviderOwned(appointment)
       ) {
         loadFormWindows(appointmentForms[key]);
@@ -1824,6 +1880,7 @@ const loadAppointments = async () => {
         refreshPendingPatientAction(appointment).catch(() => {});
       });
     openAppointmentKeys.value = [];
+    editingAppointmentKeys.value = [];
   } catch (error) {
     if (!isCurrentRequest()) return false;
     ui.error = error;
@@ -1841,9 +1898,35 @@ const toggleAppointment = appointment => {
   openAppointmentKeys.value = !opening
     ? openAppointmentKeys.value.filter(item => item !== key)
     : [...openAppointmentKeys.value, key];
-  if (opening && !availabilityByForm[key]) {
+  if (!opening) {
+    editingAppointmentKeys.value = editingAppointmentKeys.value.filter(
+      item => item !== key
+    );
+  }
+};
+
+const startEditAppointment = appointment => {
+  if (isAppointmentProviderOwned(appointment)) return;
+
+  const key = appointmentKey(appointment);
+  if (!openAppointmentKeys.value.includes(key)) {
+    openAppointmentKeys.value = [...openAppointmentKeys.value, key];
+  }
+  if (!editingAppointmentKeys.value.includes(key)) {
+    editingAppointmentKeys.value = [...editingAppointmentKeys.value, key];
+  }
+  if (!availabilityByForm[key]) {
     loadFormWindows(appointmentForms[key]);
   }
+};
+
+const cancelEditAppointment = appointment => {
+  const key = appointmentKey(appointment);
+  cancelFormWindows(key);
+  appointmentForms[key] = formFromAppointment(appointment);
+  editingAppointmentKeys.value = editingAppointmentKeys.value.filter(
+    item => item !== key
+  );
 };
 
 const scrollToTop = async () => {
@@ -2181,6 +2264,140 @@ async function continuePatientAction(appointment) {
   }
 }
 
+async function cancelPatientAction(appointment) {
+  const key = appointmentKey(appointment);
+  const entry = patientActions[key];
+  if (
+    !entry ||
+    !isCurrentProviderContext(entry.context) ||
+    !canCancelPatientAction(entry)
+  ) {
+    return;
+  }
+
+  const context = entry.context;
+  patientActionRequestId.value += 1;
+  const requestId = patientActionRequestId.value;
+  beginPatientActionLookup(key);
+  patientActionBusyKey.value = key;
+  entry.error = '';
+  try {
+    const cancelledCommand = await providerCommandsStore.cancel(
+      entry.command,
+      () => isCurrentProviderContext(context)
+    );
+    if (!isCurrentProviderContext(context)) return;
+    delete patientActions[key];
+    if (Number(cancelledCommand?.appointment?.id) === Number(appointment.id)) {
+      upsertAppointment(cancelledCommand.appointment);
+      return;
+    }
+    const currentAppointment = appointments.value.find(
+      item => Number(item.id) === Number(appointment.id)
+    );
+    if (currentAppointment && !medelementReceptionCode(currentAppointment)) {
+      currentAppointment.providerConfirmationStatus = 'failed';
+      currentAppointment.customAttributes = {
+        ...currentAppointment.customAttributes,
+        medelement_provider_sync_status: 'failed',
+      };
+    }
+  } catch (error) {
+    if (isCurrentProviderContext(entry.context)) {
+      entry.error = formatSchedulingErrorMessage(error, t);
+    }
+  } finally {
+    if (
+      patientActionRequestId.value === requestId &&
+      patientActionBusyKey.value === key
+    ) {
+      patientActionBusyKey.value = '';
+    }
+  }
+}
+
+const syncMissingContactFieldsForPatientCreation = (
+  appointment,
+  missingFields = []
+) => {
+  const key = appointmentKey(appointment);
+  const form = appointmentForms[key];
+  if (
+    !form ||
+    !patient.value ||
+    isAppointmentProviderOwned(appointment) ||
+    medelementReceptionCode(appointment) ||
+    appointment?.customAttributes?.medelement_appointment_patient_identity ||
+    appointment?.custom_attributes?.medelement_appointment_patient_identity ||
+    !isAppointmentProviderFormUnchanged(appointment)
+  ) {
+    return false;
+  }
+
+  const contactNameParts = schedulingContactNameParts({
+    firstName: patient.value?.first_name || patient.value?.firstName,
+    fullName: contactName.value,
+    lastName: patient.value?.last_name || patient.value?.lastName,
+    middleName:
+      patient.value?.middle_name ||
+      patient.value?.middleName ||
+      patient.value?.custom_attributes?.medelement_middle_name ||
+      patient.value?.customAttributes?.medelementMiddleName ||
+      patient.value?.customAttributes?.medelement_middle_name,
+  });
+  let changed = false;
+  if (
+    missingFields.includes('iin') &&
+    !form.clientIdentifier &&
+    contactIin.value
+  ) {
+    form.clientIdentifier = contactIin.value;
+    changed = true;
+  }
+  if (
+    missingFields.includes('gender') &&
+    !form.clientGender &&
+    patientGender(patient.value)
+  ) {
+    form.clientGender = patientGender(patient.value);
+    changed = true;
+  }
+  if (
+    missingFields.includes('birthday') &&
+    !form.clientBirthDate &&
+    patientBirthDate(patient.value)
+  ) {
+    form.clientBirthDate = patientBirthDate(patient.value);
+    changed = true;
+  }
+  if (
+    missingFields.includes('middlename') &&
+    !form.clientMiddleName &&
+    contactNameParts.middleName
+  ) {
+    form.clientMiddleName = contactNameParts.middleName;
+    form.clientName = fullPatientName(form);
+    changed = true;
+  }
+  if (
+    missingFields.includes('lastname') &&
+    !form.clientLastName &&
+    contactNameParts.lastName
+  ) {
+    form.clientLastName = contactNameParts.lastName;
+    form.clientName = fullPatientName(form);
+    changed = true;
+  }
+  if (!form.clientBirthDate && patientBirthDate(patient.value) && changed) {
+    form.clientBirthDate = patientBirthDate(patient.value);
+  }
+  if (!form.clientMiddleName && contactNameParts.middleName && changed) {
+    form.clientMiddleName = contactNameParts.middleName;
+    form.clientName = fullPatientName(form);
+  }
+  return changed && !isAppointmentFormInvalid(form);
+};
+
 async function checkProviderBooking(appointment) {
   if (checkingAppointmentKey.value || resolvingCancellationKey.value) return;
 
@@ -2193,21 +2410,49 @@ async function checkProviderBooking(appointment) {
     return;
   }
 
-  const context = captureProviderContext(appointment);
-  const lookupId = beginPatientActionLookup(key);
+  let context = captureProviderContext(appointment);
+  let lookupId = beginPatientActionLookup(key);
 
   checkingAppointmentKey.value = key;
   try {
-    const response = await SchedulingProviderCommandsAPI.list({
+    let response = await SchedulingProviderCommandsAPI.list({
       provider: 'medelement',
       appointmentId: appointment.id,
       activeOnly: true,
     });
-    const commands = normalizePayload(response.data) || [];
+    let commands = normalizePayload(response.data) || [];
     if (!isCurrentPatientActionLookup(key, context, lookupId)) return;
-    const pendingPatientCommand = commands.find(
+    let pendingPatientCommand = commands.find(
       item => item.operation === 'create_reception' && hasPatientAction(item)
     );
+    if (
+      pendingPatientCommand?.status === 'awaiting_patient_creation' &&
+      syncMissingContactFieldsForPatientCreation(
+        appointment,
+        pendingPatientCommand.patientAction?.missingFields || []
+      )
+    ) {
+      const updateResponse = await SchedulingAppointmentsAPI.update(
+        appointment.id,
+        buildAppointmentPayload(appointmentForms[key])
+      );
+      if (!isCurrentSidebarContext(context)) return;
+      const savedAppointment = normalizePayload(updateResponse.data);
+      upsertAppointment(savedAppointment);
+      appointment = savedAppointment;
+      context = captureProviderContext(appointment);
+      lookupId = beginPatientActionLookup(key);
+      response = await SchedulingProviderCommandsAPI.list({
+        provider: 'medelement',
+        appointmentId: appointment.id,
+        activeOnly: true,
+      });
+      commands = normalizePayload(response.data) || [];
+      if (!isCurrentPatientActionLookup(key, context, lookupId)) return;
+      pendingPatientCommand = commands.find(
+        item => item.operation === 'create_reception' && hasPatientAction(item)
+      );
+    }
     if (pendingPatientCommand) {
       await showPatientAction(
         appointment,
@@ -2215,6 +2460,19 @@ async function checkProviderBooking(appointment) {
         context,
         lookupId
       );
+      const missingFields =
+        pendingPatientCommand.patientAction?.missingFields || [];
+      if (
+        pendingPatientCommand.status === 'awaiting_patient_creation' &&
+        pendingPatientCommand.patientAction?.canConfirm !== true &&
+        missingFields.length
+      ) {
+        useAlert(
+          t('SCHEDULING.MEDELEMENT.PATIENT_CREATION_INCOMPLETE', {
+            fields: formatMedelementMissingFields(missingFields, t),
+          })
+        );
+      }
       return;
     }
 
@@ -2392,7 +2650,11 @@ const saveAppointment = async appointment => {
     upsertAppointment(savedAppointment);
     invalidatePatientAction(key);
     refreshPendingPatientAction(savedAppointment).catch(() => {});
-    openAppointmentKeys.value = [appointmentKey(savedAppointment)];
+    const savedKey = appointmentKey(savedAppointment);
+    openAppointmentKeys.value = [savedKey];
+    editingAppointmentKeys.value = editingAppointmentKeys.value.filter(
+      item => item !== key && item !== savedKey
+    );
     refreshSidebarCounters();
     useAlert(appointmentSaveAlertMessage(savedAppointment, t));
     emit('patientBound', savedAppointment);
@@ -2476,6 +2738,33 @@ const appointmentMeta = appointment => {
     .join(' · ');
 };
 
+const appointmentSpecialistLabel = appointment =>
+  appointment.resourceName ||
+  appointmentResource(appointment)?.name ||
+  t('SCHEDULING.GENERAL.NO_DATA');
+
+const appointmentServiceLabel = appointment =>
+  appointment.serviceNameSnapshot ||
+  selectedServiceForForm(appointmentForms[appointmentKey(appointment)])?.name ||
+  t('SCHEDULING.CALENDAR.NO_SERVICE');
+
+const appointmentCabinetLabel = appointment => {
+  const code =
+    appointment?.customAttributes?.medelementCabinetCode ||
+    appointment?.customAttributes?.medelement_cabinet_code ||
+    appointment?.custom_attributes?.medelement_cabinet_code ||
+    appointment?.custom_attributes?.medelementCabinetCode ||
+    '';
+  if (!code) return '';
+  const cabinets = medelementCabinetsForResource(
+    appointmentResource(appointment)
+  );
+  const match = cabinets.find(cabinet => String(cabinet.code) === String(code));
+  return match
+    ? [match.name, match.number].filter(Boolean).join(' · ') || match.code
+    : String(code);
+};
+
 const appointmentMedelementMeta = appointment =>
   medelementAppointmentCardNote(appointment, t, {
     includeStatus: !providerBookingStatusKey(appointment),
@@ -2520,6 +2809,12 @@ watch(
     patient.value?.birth_date,
     patient.value?.birthDate,
     patient.value?.gender,
+    patient.value?.custom_attributes?.gender,
+    patient.value?.custom_attributes?.birth_date,
+    patient.value?.custom_attributes?.iin,
+    patient.value?.customAttributes?.gender,
+    patient.value?.customAttributes?.birthDate,
+    patient.value?.customAttributes?.iin,
     patient.value?.phone,
     patient.value?.phone_number,
     patient.value?.phoneNumber,
@@ -2533,7 +2828,7 @@ watch(
       middleName: patient.value?.middle_name || patient.value?.middleName,
     });
     createForm.clientBirthDate = patientBirthDate(patient.value);
-    createForm.clientGender = patient.value?.gender || '';
+    createForm.clientGender = patientGender(patient.value);
     createForm.clientIdentifier = contactIin.value;
     createForm.clientIdentifierInferred = Boolean(contactIin.value);
     createForm.clientFirstName = contactNameParts.firstName;
@@ -2610,6 +2905,7 @@ watch(
     appointments.value = [];
     setAppointmentForms();
     openAppointmentKeys.value = [];
+    editingAppointmentKeys.value = [];
     resetCreateForm();
     const context = captureSidebarContext();
     await loadReferences();
@@ -3084,7 +3380,7 @@ const isClientFieldsOpen = (form, key) =>
                     {{ appointmentTitle(appointment) }}
                   </span>
                   <span
-                    class="block truncate text-xs leading-5 text-n-slate-11"
+                    class="block break-words text-xs leading-5 text-n-slate-11"
                   >
                     {{ appointmentMeta(appointment) }}
                   </span>
@@ -3101,7 +3397,7 @@ const isClientFieldsOpen = (form, key) =>
                   </span>
                   <span
                     v-if="appointmentMedelementMeta(appointment)"
-                    class="block truncate text-[11px] leading-4 text-n-slate-10"
+                    class="block break-words text-xs leading-4 text-n-slate-11"
                     :data-testid="`appointment-medelement-meta-${appointment.id}`"
                   >
                     {{ appointmentMedelementMeta(appointment) }}
@@ -3235,13 +3531,39 @@ const isClientFieldsOpen = (form, key) =>
             </div>
             <div
               v-if="
+                showCancelPatientAction(
+                  patientActions[appointmentKey(appointment)]
+                ) ||
                 patientActionButtonLabel(
                   patientActions[appointmentKey(appointment)]
                 )
               "
-              class="mt-3 flex justify-end"
+              class="mt-3 flex flex-wrap justify-end gap-2"
             >
               <Button
+                v-if="
+                  showCancelPatientAction(
+                    patientActions[appointmentKey(appointment)]
+                  )
+                "
+                size="sm"
+                slate
+                faded
+                :disabled="
+                  !canCancelPatientAction(
+                    patientActions[appointmentKey(appointment)]
+                  )
+                "
+                :label="$t('SCHEDULING.MEDELEMENT.CANCEL_COMMAND')"
+                :data-testid="`cancel-provider-patient-action-${appointment.id}`"
+                @click="cancelPatientAction(appointment)"
+              />
+              <Button
+                v-if="
+                  patientActionButtonLabel(
+                    patientActions[appointmentKey(appointment)]
+                  )
+                "
                 size="sm"
                 color="blue"
                 :is-loading="
@@ -3367,11 +3689,152 @@ const isClientFieldsOpen = (form, key) =>
           </div>
 
           <div
-            v-show="isAppointmentOpen(appointment)"
+            v-if="isAppointmentOpen(appointment)"
             class="border-t border-n-weak px-4 py-3"
           >
             <div
-              v-if="appointmentForms[appointmentKey(appointment)]"
+              v-if="!isAppointmentEditing(appointment)"
+              class="grid gap-3"
+              :data-testid="`appointment-compact-summary-${appointment.id}`"
+            >
+              <dl class="m-0 grid gap-1.5 text-xs">
+                <div class="flex items-start justify-between gap-2">
+                  <dt class="text-n-slate-11">
+                    {{ $t('SCHEDULING.APPOINTMENT_FORM.STATUS') }}
+                  </dt>
+                  <dd class="m-0 text-right font-medium text-n-slate-12">
+                    {{
+                      appointmentStatusLabels[appointment.status] ||
+                      appointment.status
+                    }}
+                  </dd>
+                </div>
+                <div class="flex items-start justify-between gap-2">
+                  <dt class="text-n-slate-11">
+                    {{ $t('SCHEDULING.DIALOGS.DATE_TIME') }}
+                  </dt>
+                  <dd class="m-0 text-right font-medium text-n-slate-12">
+                    {{ formatDateTimeRange(appointment) }}
+                  </dd>
+                </div>
+                <div class="flex items-start justify-between gap-2">
+                  <dt class="text-n-slate-11">
+                    {{ $t('SCHEDULING.APPOINTMENT_FORM.RESOURCE') }}
+                  </dt>
+                  <dd class="m-0 text-right font-medium text-n-slate-12">
+                    {{ appointmentSpecialistLabel(appointment) }}
+                  </dd>
+                </div>
+                <div
+                  v-if="appointmentCabinetLabel(appointment)"
+                  class="flex items-start justify-between gap-2"
+                >
+                  <dt class="text-n-slate-11">
+                    {{ $t('SCHEDULING.MEDELEMENT.CABINET') }}
+                  </dt>
+                  <dd class="m-0 text-right font-medium text-n-slate-12">
+                    {{ appointmentCabinetLabel(appointment) }}
+                  </dd>
+                </div>
+                <div class="flex items-start justify-between gap-2">
+                  <dt class="text-n-slate-11">
+                    {{ $t('SCHEDULING.APPOINTMENT_FORM.SERVICE') }}
+                  </dt>
+                  <dd class="m-0 text-right font-medium text-n-slate-12">
+                    {{ appointmentServiceLabel(appointment) }}
+                  </dd>
+                </div>
+                <div
+                  v-if="
+                    appointment.serviceAmount !== null &&
+                    appointment.serviceAmount !== undefined &&
+                    String(appointment.serviceAmount) !== ''
+                  "
+                  class="flex items-start justify-between gap-2"
+                >
+                  <dt class="text-n-slate-11">
+                    {{ $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_AMOUNT') }}
+                  </dt>
+                  <dd class="m-0 text-right font-medium text-n-slate-12">
+                    {{ appointment.serviceAmount }}
+                  </dd>
+                </div>
+                <div
+                  v-if="appointment.clientName"
+                  class="flex items-start justify-between gap-2"
+                >
+                  <dt class="text-n-slate-11">
+                    {{ $t('SCHEDULING.DIALOGS.CLIENT') }}
+                  </dt>
+                  <dd class="m-0 text-right font-medium text-n-slate-12">
+                    {{ appointment.clientName }}
+                  </dd>
+                </div>
+                <div
+                  v-if="appointment.clientPhone"
+                  class="flex items-start justify-between gap-2"
+                >
+                  <dt class="text-n-slate-11">
+                    {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE') }}
+                  </dt>
+                  <dd class="m-0 text-right font-medium text-n-slate-12">
+                    {{ appointment.clientPhone }}
+                  </dd>
+                </div>
+                <div
+                  v-if="appointment.clientIdentifier"
+                  class="flex items-start justify-between gap-2"
+                >
+                  <dt class="text-n-slate-11">
+                    {{ $t('SCHEDULING.CONTACT.IIN') }}
+                  </dt>
+                  <dd class="m-0 text-right font-medium text-n-slate-12">
+                    {{ appointment.clientIdentifier }}
+                  </dd>
+                </div>
+              </dl>
+
+              <p
+                v-if="appointmentMedelementMeta(appointment)"
+                class="m-0 break-words rounded-md bg-n-alpha-1 px-2.5 py-1.5 text-xs leading-4 text-n-slate-11"
+                :data-testid="`appointment-expanded-medelement-meta-${appointment.id}`"
+              >
+                {{ appointmentMedelementMeta(appointment) }}
+              </p>
+
+              <div class="flex flex-wrap items-center justify-end gap-2">
+                <Button
+                  v-if="
+                    appointment.status !== 'cancelled' &&
+                    !isProviderCancellationPending(appointment)
+                  "
+                  size="sm"
+                  slate
+                  faded
+                  :is-loading="
+                    cancellingAppointmentKey === appointmentKey(appointment)
+                  "
+                  :disabled="
+                    patientActionBusyKey === appointmentKey(appointment) ||
+                    savingAppointmentKey === appointmentKey(appointment)
+                  "
+                  :label="$t('SCHEDULING.APPOINTMENT_FORM.CANCEL_APPOINTMENT')"
+                  @click="cancelAppointment(appointment)"
+                />
+                <Button
+                  size="sm"
+                  color="blue"
+                  variant="faded"
+                  icon="i-lucide-pencil"
+                  :data-testid="`edit-appointment-${appointment.id}`"
+                  :label="$t('SCHEDULING.APPOINTMENT_FORM.EDIT_OR_RESCHEDULE')"
+                  @click="startEditAppointment(appointment)"
+                />
+              </div>
+            </div>
+
+            <div
+              v-else-if="appointmentForms[appointmentKey(appointment)]"
               class="grid gap-3"
             >
               <div class="scheduling-appointment-drawer-form">
@@ -3864,6 +4327,16 @@ const isClientFieldsOpen = (form, key) =>
               </div>
 
               <div class="flex items-center justify-end gap-2">
+                <Button
+                  size="sm"
+                  color="slate"
+                  variant="faded"
+                  :disabled="
+                    savingAppointmentKey === appointmentKey(appointment)
+                  "
+                  :label="$t('SCHEDULING.GENERAL.CANCEL')"
+                  @click="cancelEditAppointment(appointment)"
+                />
                 <Button
                   size="sm"
                   color="blue"
