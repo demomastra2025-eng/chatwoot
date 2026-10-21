@@ -638,6 +638,7 @@ describe('SchedulingCalendarPage pending local booking', () => {
 
   it('retains the saved linkage warning when reopening a local booking and hides provider fields', async () => {
     const { store } = await mountPage();
+    mocks.route.params.appointmentId = '501';
     store.openEdit({
       id: 501,
       accountId: 74,
@@ -757,6 +758,11 @@ describe('SchedulingCalendarPage pending local booking', () => {
 
   it('opens an existing appointment in the full editable card immediately and navigates to its dedicated appointment page', async () => {
     await mountPage();
+    mocks.router.push.mockImplementationOnce(target => {
+      if (target?.params?.appointmentId) {
+        mocks.route.params.appointmentId = String(target.params.appointmentId);
+      }
+    });
     const grid = wrapper.findComponent({ name: 'SchedulingCalendarGrid' });
     // eslint-disable-next-line vue/custom-event-name-casing -- Preserve the existing calendar grid event contract.
     grid.vm.$emit('select-appointment', {
@@ -777,6 +783,7 @@ describe('SchedulingCalendarPage pending local booking', () => {
     expect(
       wrapper.find('[data-test="calendar-appointment-compact-view"]').exists()
     ).toBe(false);
+    expect(wrapper.find('.modal-mask').exists()).toBe(false);
     expect(
       wrapper.get('textarea[data-label="SCHEDULING.APPOINTMENT_FORM.COMMENT"]')
         .element.value
@@ -854,5 +861,70 @@ describe('SchedulingCalendarPage pending local booking', () => {
       params: { accountId: '74' },
       query: {},
     });
+  });
+
+  it('resets the appointment form on unmount and never renders an existing appointment in the popup modal when returning to the calendar', async () => {
+    mocks.route = reactive({
+      params: { accountId: '74', appointmentId: '505' },
+      query: {},
+    });
+    SchedulingAppointmentsAPI.show.mockResolvedValueOnce({
+      data: {
+        payload: {
+          id: 505,
+          account_id: 74,
+          contact_id: 42,
+          client_first_name: 'Client',
+          client_last_name: 'Patient',
+          client_phone: '+77001234567',
+          resource_id: 3,
+          starts_at: slot.startsAt,
+          ends_at: slot.endsAt,
+          status: 'confirmed',
+        },
+      },
+    });
+
+    const pinia = createPinia();
+    const vuex = createStore({
+      getters: { getCurrentUser: () => ({ id: 9 }) },
+    });
+    setActivePinia(pinia);
+    wrapper = mount(SchedulingCalendarPage, {
+      global: {
+        plugins: [pinia, vuex],
+        stubs,
+        mocks: { $t: key => key },
+      },
+    });
+    await flushPromises();
+
+    const store = useSchedulingAppointmentFormStore();
+    expect(store.isOpen).toBe(true);
+    expect(store.mode).toBe('edit');
+
+    // Simulate navigating away to another section (e.g. Deals) and back to Calendar
+    wrapper.unmount();
+    expect(store.isOpen).toBe(false);
+    expect(store.recordId).toBeNull();
+
+    mocks.route = reactive({
+      params: { accountId: '74' },
+      query: {},
+    });
+    wrapper = mount(SchedulingCalendarPage, {
+      global: {
+        plugins: [pinia, vuex],
+        stubs,
+        mocks: { $t: key => key },
+      },
+    });
+    await flushPromises();
+
+    expect(store.isOpen).toBe(false);
+    expect(wrapper.find('.modal-mask').exists()).toBe(false);
+    expect(
+      wrapper.find('[data-testid="scheduling-appointment-card"]').exists()
+    ).toBe(false);
   });
 });

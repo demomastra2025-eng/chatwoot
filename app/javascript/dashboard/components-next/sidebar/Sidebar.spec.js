@@ -275,9 +275,10 @@ describe('Sidebar', () => {
         'Catalog Products',
         'Catalog Services',
       ]);
-      expect(
-        catalog.props('children').map(child => child.to.name)
-      ).toEqual(['catalog_products', 'catalog_services']);
+      expect(catalog.props('children').map(child => child.to.name)).toEqual([
+        'catalog_products',
+        'catalog_services',
+      ]);
       expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
         { name: 'Catalog Products', active: true },
       ]);
@@ -295,6 +296,17 @@ describe('Sidebar', () => {
       expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
         { name: 'Catalog Services', active: true },
       ]);
+    });
+
+    it('hides the secondary sidebar column on a dedicated appointment page while keeping the Scheduling rail icon active', async () => {
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'scheduling_appointment_show',
+      });
+      const scheduling = sidebarGroup(wrapper, 'Scheduling');
+
+      expect(scheduling.vm.hasActiveChild).toBe(true);
+      expect(secondaryColumn(wrapper).exists()).toBe(false);
     });
   });
 
@@ -767,7 +779,9 @@ describe('Sidebar', () => {
         routeName: 'communication_thread_conversation',
       });
 
-      expect(secondaryColumn(wrapper).props('label')).toBe(sidebarGroup(wrapper, 'Conversation').props('label'));
+      expect(secondaryColumn(wrapper).props('label')).toBe(
+        sidebarGroup(wrapper, 'Conversation').props('label')
+      );
 
       const contactsTrigger = sidebarGroup(wrapper, 'Contacts').find(
         '[title="Contacts"]'
@@ -776,7 +790,9 @@ describe('Sidebar', () => {
 
       // While the route is still communication_thread_conversation, the
       // secondary column stays on Conversation instead of desyncing from the screen.
-      expect(secondaryColumn(wrapper).props('label')).toBe(sidebarGroup(wrapper, 'Conversation').props('label'));
+      expect(secondaryColumn(wrapper).props('label')).toBe(
+        sidebarGroup(wrapper, 'Conversation').props('label')
+      );
     });
   });
 });

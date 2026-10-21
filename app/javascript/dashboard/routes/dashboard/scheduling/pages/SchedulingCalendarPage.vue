@@ -1069,7 +1069,7 @@ const loadPage = async () => {
     referencesStore.loadServices({ include_inactive: true }),
   ]);
   syncSelectedResources();
-  if (!isAppointmentPage.value) {
+  if (!isAppointmentPage.value && !numericQueryValue('appointmentId')) {
     await fetchCalendar();
     isCalendarLoaded.value = true;
   }
@@ -1077,8 +1077,16 @@ const loadPage = async () => {
 
 const resetAppointmentConversationDraft = () => {
   appointmentConversationDraft.contextRequestId += 1;
-  appointmentConversationDraft.contactId = formStore.form.contactId || '';
-  appointmentConversationDraft.contactableInboxes = [];
+  const contactId = Number(formStore.form.contactId);
+  appointmentConversationDraft.contactId =
+    Number.isFinite(contactId) && contactId > 0 ? contactId : '';
+  appointmentConversationDraft.contactableInboxes =
+    (!hasAppointmentConversationTarget.value &&
+      appointmentConversationDraft.contactId &&
+      appointmentContactableInboxesByContactId.value[
+        appointmentConversationDraft.contactId
+      ]) ||
+    [];
   appointmentConversationDraft.isCreating = false;
   appointmentConversationDraft.isLoadingInboxes = false;
 };
@@ -1428,7 +1436,59 @@ function openInlineContactEdit() {
   formStore.beginInlineContactEdit(inlineContactEditPayload());
 }
 
+const syncCalendarContextToAppointment = appointment => {
+  if (!appointment) return;
+
+  const startsAt = new Date(appointment.startsAt);
+  const endsAt = new Date(appointment.endsAt || appointment.startsAt);
+  const currentRange = calendarStore.currentRange;
+  const inCurrentRange =
+    !Number.isNaN(startsAt.getTime()) &&
+    !Number.isNaN(endsAt.getTime()) &&
+    currentRange?.from &&
+    currentRange?.to &&
+    startsAt < currentRange.to &&
+    endsAt > currentRange.from;
+
+  let calendarContextChanged = false;
+  if (
+    !Number.isNaN(startsAt.getTime()) &&
+    (!isCalendarLoaded.value || !inCurrentRange)
+  ) {
+    calendarStore.setAnchorDate(
+      calendarDayAnchor(
+        appointment.startsAt,
+        workspaceTimezone.value
+      ).toISOString()
+    );
+    calendarContextChanged = true;
+  }
+
+  const resourceId = Number(appointment.resourceId);
+  if (
+    Number.isFinite(resourceId) &&
+    resourceId > 0 &&
+    calendarStore.selectedResourceIds.length &&
+    !calendarStore.selectedResourceIds.includes(resourceId) &&
+    filterableResources.value.some(
+      resource => Number(resource.id) === resourceId
+    )
+  ) {
+    calendarStore.setSelectedResources([
+      ...calendarStore.selectedResourceIds,
+      resourceId,
+    ]);
+    calendarContextChanged = true;
+  }
+
+  if (calendarContextChanged) {
+    isCalendarLoaded.value = false;
+    calendarStore.syncAppointment(appointment);
+  }
+};
+
 const openEditAppointment = appointment => {
+  const wasAlreadyOpen = formStore.isOpen;
   formStore.openEdit(appointment);
   appointmentPageTab.value = 'appointment';
   resetAppointmentConversationDraft();
@@ -1438,6 +1498,14 @@ const openEditAppointment = appointment => {
     openInlineContactEdit();
   } else {
     openInlineContactCreate();
+  }
+  if (
+    wasAlreadyOpen &&
+    !hasAppointmentConversationTarget.value &&
+    formStore.form.contactId &&
+    !appointmentConversationDraft.contactableInboxes.length
+  ) {
+    loadAppointmentConversationContext(formStore.form.contactId);
   }
 };
 
@@ -1494,21 +1562,25 @@ const openAppointmentFromRoute = async () => {
     Number(formStore.recordId) === appointmentId &&
     formStore.selectedAppointment
   ) {
+    syncCalendarContextToAppointment(formStore.selectedAppointment);
     isAppointmentLoading.value = false;
     return;
   }
 
   isAppointmentLoading.value = true;
   try {
-    let appointment = calendarStore.appointments.find(
-      record => Number(record.id) === appointmentId
-    );
+    let appointment = isCalendarLoaded.value
+      ? calendarStore.appointments.find(
+          record => Number(record.id) === appointmentId
+        )
+      : null;
     if (!appointment) {
       const { data } = await SchedulingAppointmentsAPI.show(appointmentId);
       if (calendarDisposed || generation !== appointmentOpenGeneration) return;
       appointment = normalizePayload(data);
     }
     if (calendarDisposed || generation !== appointmentOpenGeneration) return;
+    syncCalendarContextToAppointment(appointment);
     openEditAppointment(appointment);
   } catch (error) {
     if (!calendarDisposed && generation === appointmentOpenGeneration) {
@@ -2039,6 +2111,7 @@ const handleAppointmentSubmit = async () => {
       if (!appointment) return;
       useAlert(appointmentSaveAlertMessage(appointment, t));
       if (isAppointmentPage.value) {
+        syncCalendarContextToAppointment(appointment);
         openEditAppointment(appointment);
       } else {
         handleDrawerClose();
@@ -2069,6 +2142,7 @@ const cancelSelectedAppointment = async () => {
       if (!appointment) return;
       useAlert(appointmentCancellationAlertMessage(appointment, t));
       if (isAppointmentPage.value) {
+        syncCalendarContextToAppointment(appointment);
         openEditAppointment(appointment);
       } else {
         handleDrawerClose();
@@ -2277,6 +2351,7 @@ onBeforeUnmount(() => {
   appointmentConversationDisposed = true;
   appointmentConversationDraft.contextRequestId += 1;
   appointmentConversationCreateRequestId += 1;
+  handleDrawerClose();
 });
 
 const handleAppointmentRouteState = async () => {
@@ -2286,7 +2361,22 @@ const handleAppointmentRouteState = async () => {
   }
 
   if (await consumeAppointmentOpenQuery()) return;
+  if (formStore.isOpen && formStore.mode === 'edit') {
+    handleDrawerClose();
+  }
   await consumeAppointmentPrefillQuery();
+};
+
+const retryAppointmentPage = async () => {
+  appointmentPageError.value = null;
+  try {
+    await loadPage();
+    await openAppointmentFromRoute();
+  } catch (error) {
+    if (!calendarDisposed) {
+      appointmentPageError.value = formatErrorMessage(error);
+    }
+  }
 };
 
 watch(
@@ -2326,11 +2416,18 @@ watch(
 );
 
 onMounted(async () => {
+  handleDrawerClose();
   calendarStore.setWorkspaceTimezone(workspaceTimezone.value);
   calendarStore.hydratePreferences();
   currentPresentation.value = 'calendar';
-  await loadPage();
-  await handleAppointmentRouteState();
+  try {
+    await loadPage();
+    await handleAppointmentRouteState();
+  } catch (error) {
+    if (!calendarDisposed && isAppointmentPage.value) {
+      appointmentPageError.value = formatErrorMessage(error);
+    }
+  }
 });
 </script>
 
@@ -2452,7 +2549,6 @@ onMounted(async () => {
                 status: $event.status,
               })
             "
-            @create-appointment="openCreateAppointment($event)"
             @move-appointment="
               updateAppointmentMutation($event.appointment, {
                 ends_at: $event.endsAt,
@@ -2466,6 +2562,7 @@ onMounted(async () => {
                 starts_at: $event.startsAt,
               })
             "
+            @create-appointment="openCreateAppointment($event)"
             @select-appointment="handleSelectAppointment($event)"
           />
         </div>
@@ -2487,13 +2584,13 @@ onMounted(async () => {
         />
       </header>
       <div class="flex min-h-0 flex-1 items-center justify-center p-6">
-        <Spinner v-if="isAppointmentLoading" class="!h-8 !w-8" />
         <SchedulingErrorState
-          v-else-if="appointmentPageError"
+          v-if="appointmentPageError"
           :title="$t('SCHEDULING.GENERAL.ERROR_TITLE')"
           :description="appointmentPageError"
-          @retry="openAppointmentFromRoute"
+          @retry="retryAppointmentPage"
         />
+        <Spinner v-else class="!h-8 !w-8" />
       </div>
     </div>
 
@@ -2506,7 +2603,9 @@ onMounted(async () => {
       leave-to-class="opacity-0"
     >
       <div
-        v-if="formStore.isOpen"
+        v-if="
+          formStore.isOpen && (isAppointmentPage || formStore.mode === 'create')
+        "
         :class="
           isAppointmentPage
             ? 'flex min-h-0 min-w-0 flex-1'

@@ -1659,9 +1659,21 @@ const activeRouteMenuItem = computed(() => {
   );
 });
 
+const FULL_PAGE_WITHOUT_SECONDARY_SIDEBAR_ROUTES = new Set([
+  'scheduling_appointment_show',
+]);
+const isFullPageWithoutSecondarySidebar = computed(() =>
+  FULL_PAGE_WITHOUT_SECONDARY_SIDEBAR_ROUTES.has(route.name)
+);
+
 watch(
   () => [route.name, route.path],
   () => {
+    if (isFullPageWithoutSecondarySidebar.value) {
+      expandedItem.value = null;
+      return;
+    }
+
     const matchedItem = activeRouteMenuItem.value;
     if (!matchedItem) return;
     expandedItem.value = hasSecondaryColumn(matchedItem)
@@ -1672,6 +1684,10 @@ watch(
 );
 
 const selectedDesktopSidebarItem = computed(() => {
+  if (isFullPageWithoutSecondarySidebar.value) {
+    return null;
+  }
+
   const expandedMenuItem = menuItems.value.find(
     item => item.name === expandedItem.value && hasSecondaryColumn(item)
   );
