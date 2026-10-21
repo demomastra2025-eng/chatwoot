@@ -44,6 +44,14 @@ RSpec.describe Accounts::LimitSettings do
       expect(Accounts::Plans.unlimited_value('captain_tokens')).to eq(max * 1_000_000)
     end
 
+    it 'is a number nobody reaches for the AI answers, the AI documents and the mail of a day, which counters do reach' do
+      %w[captain_responses captain_documents emails].each do |key|
+        expect(Accounts::Plans.unlimited_value(key)).to eq(max * 1_000)
+        expect(Accounts::Plans.unlimited_value?(key, max)).to be(false) # 100 000 of them is a quota, not «no limit»
+        expect(Accounts::Plans.unlimited_value?(key, max * 1_000)).to be(true)
+      end
+    end
+
     it 'is recognised for its own limit only' do
       expect(Accounts::Plans.unlimited_value?('agents', max)).to be(true)
       expect(Accounts::Plans.unlimited_value?('storage_bytes', max)).to be(false) # 100 000 bytes is a quota, not «no limit»

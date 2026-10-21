@@ -404,7 +404,7 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       expect(response).to redirect_to(card_path)
       account.reload
       expect(account.name).to eq('Аккаунт Алатау 2')
-      expect(account.limits).to include('agents' => 12, 'storage_bytes' => 1.5.gigabytes.to_i, 'emails' => max)
+      expect(account.limits).to include('agents' => 12, 'storage_bytes' => 1.5.gigabytes.to_i, 'emails' => Accounts::Plans.unlimited_value('emails'))
     end
   end
 
@@ -724,7 +724,7 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
         expect(account.reload.limits['storage_bytes']).to eq(5_000_000_000)
 
         save_card_as_drawn('account[limit_choices][emails]' => 'unlimited')
-        expect(account.reload.limits).to include('storage_bytes' => 5_000_000_000, 'emails' => max)
+        expect(account.reload.limits).to include('storage_bytes' => 5_000_000_000, 'emails' => Accounts::Plans.unlimited_value('emails'))
         expect(limit_audits.map { |audit| audit.audited_changes['limits'].keys }).to eq([['emails']])
       end
 

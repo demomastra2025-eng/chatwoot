@@ -25,6 +25,22 @@ class Accounts::Plans
   LIMIT_KEYS = %w[
     inboxes agents conversations non_web_inboxes storage_bytes captain_responses captain_documents captain_tokens emails
   ].freeze
+  # What a limit is counted in decides whether the bare ChatwootApp.max_limit (100 000) can stand for «no limit» of it:
+  #
+  # * counted in things that are in the account (operators, channels, main channels): 100 000 of them are never reached, and the
+  #   code that enforces the limit of dialogs and main channels reads 100 000 and more as no limit anyway - they keep max_limit;
+  # * counted in bytes (the storage), in tokens (every token the model uses), in answers of the AI or in letters a day: these
+  #   counters go up by themselves (the AI counters are set back by hand only) and 100 000 is a quota that a busy account does
+  #   reach, so max_limit would be a real cap there. They get a number nobody reaches.
+  #
+  # The factor is how many times max_limit the «no limit» number of a limit is.
+  UNLIMITED_FACTORS = {
+    'storage_bytes' => 1.gigabyte,
+    'captain_tokens' => 1_000_000,
+    'captain_responses' => 1_000,
+    'captain_documents' => 1_000,
+    'emails' => 1_000
+  }.freeze
 
   class << self
     def current
@@ -50,15 +66,10 @@ class Accounts::Plans
       I18n.t("super_admin.plans.modules.#{key}.name", default: key.to_s)
     end
 
-    # The number that stands for «no limit» in Account#limits. The code treats it as no limit; the storage is counted in bytes and
-    # the AI tokens one by one (every token the model uses), so a bare ChatwootApp.max_limit (100 000) would be a tiny quota there (100 000
-    # bytes, 100 000 tokens): they get a number nobody reaches.
+    # The number that stands for «no limit» in Account#limits. The code treats it as no limit (Enterprise::Account::PlanUsageAndLimits,
+    # AccountLimits::StorageUsageService ...), and so do the screens (words, meters).
     def unlimited_value(key)
-      case key.to_s
-      when 'storage_bytes' then ChatwootApp.max_limit.to_i * 1.gigabyte
-      when 'captain_tokens' then ChatwootApp.max_limit.to_i * 1_000_000
-      else ChatwootApp.max_limit.to_i
-      end
+      ChatwootApp.max_limit.to_i * UNLIMITED_FACTORS.fetch(key.to_s, 1)
     end
 
     # Whether a stored number is the «no limit» one of that limit

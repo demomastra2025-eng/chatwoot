@@ -40,6 +40,13 @@ RSpec.describe SuperAdmin::LimitForm do
                   limit_values: { storage_bytes: '99999' }).choices['storage_bytes']).to eq(99_999.gigabytes)
     end
 
+    it 'takes 100 000 AI answers, AI documents and letters a day for a quota of that size, and only the bigger number for «без ограничений»' do
+      %w[captain_responses captain_documents emails].each do |key|
+        expect(form(limit_choices: { key => 'custom' }, limit_values: { key => max.to_s }).choices).to eq(key => max)
+        expect(form(limit_choices: { key => 'custom' }, limit_values: { key => (max * 1_000).to_s }).choices).to eq(key => :unlimited)
+      end
+    end
+
     it 'allows 0' do
       expect(form(limit_choices: { inboxes: 'custom' }, limit_values: { inboxes: '0' }).choices).to eq('inboxes' => 0)
     end

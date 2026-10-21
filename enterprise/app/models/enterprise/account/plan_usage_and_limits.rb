@@ -49,7 +49,7 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
     global_value = GlobalConfig.get(config_name)[config_name]
 
     if account_value.present?
-      { value: account_value, unlimited: false }.with_indifferent_access
+      stored_limit_metadata(limit_name, account_value)
     elsif global_value.present?
       { value: global_value, unlimited: false }.with_indifferent_access
     else
@@ -167,7 +167,7 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
 
   def captain_limit_metadata(type)
     account_limit = self[:limits]&.[](captain_limit_key(type))
-    return { value: account_limit, unlimited: false }.with_indifferent_access if account_limit.present?
+    return stored_limit_metadata(captain_limit_key(type), account_limit) if account_limit.present?
 
     plan_quota = InstallationConfig.find_by(name: 'CAPTAIN_CLOUD_PLAN_LIMITS')&.value
 
@@ -196,6 +196,14 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
 
   def plan_name
     custom_attributes['plan_name']
+  end
+
+  # A number the account holds in its limits is a quota that counts down, except the number that stands for «no limit» of that limit
+  # (Accounts::Plans.unlimited_value): «Без ограничений» of a super admin and `unlimited` of a plan write it. It is no quota, whatever the
+  # counter says (the counters of the AI answers and of the AI tokens do not reset by themselves). The number stays as the total, so
+  # a screen that divides by it shows a small share, never a full one.
+  def stored_limit_metadata(limit_name, value)
+    { value: value, unlimited: Accounts::Plans.unlimited_value?(limit_name.to_s, value) }.with_indifferent_access
   end
 
   def captain_limit_key(type)
@@ -251,7 +259,7 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
 
   def email_limit_metadata
     if account_limit.present?
-      { value: account_limit, unlimited: false }.with_indifferent_access
+      stored_limit_metadata(:emails, account_limit)
     elsif plan_email_limit.present?
       { value: plan_email_limit, unlimited: false }.with_indifferent_access
     elsif global_limit.present?

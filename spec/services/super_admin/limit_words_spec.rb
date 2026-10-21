@@ -61,6 +61,16 @@ RSpec.describe SuperAdmin::LimitWords do
     end
   end
 
+  describe 'the no-limit number of a limit that counters reach' do
+    it 'is said as «без ограничений», and 100 000 of them as the quota it is' do
+      %w[captain_responses captain_documents emails].each do |key|
+        expect(described_class.amount(key, Accounts::Plans.unlimited_value(key))).to eq('без ограничений')
+        expect(described_class.amount(key, max)).not_to eq('без ограничений')
+      end
+      expect(described_class.amount('captain_responses', max)).to eq('100 000 ответов ИИ')
+    end
+  end
+
   describe '.position and .audit_changes' do
     let(:position) { Accounts::LimitSettings::Position }
 
