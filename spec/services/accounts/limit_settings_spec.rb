@@ -266,14 +266,16 @@ RSpec.describe Accounts::LimitSettings do
         expect(settings.source('non_web_inboxes')).to eq(:custom)
       end
 
-      it 'keeps following the plan after another row has been saved, even one that follows the plan and so keeps its number', :aggregate_failures do
-        plan_with('non_web_inboxes' => 50, 'conversations' => 2000)
-        result = settings.apply('non_web_inboxes' => :plan, 'agents' => 3)
+      it 'keeps following the plan after another row has been saved, even one that starts to keep its number', :aggregate_failures do
+        plan_with('inboxes' => 20, 'conversations' => 2000)
+        result = settings.apply('inboxes' => :plan, 'agents' => 3)
         account.update!(limits: result.limits, custom_attributes: result.custom_attributes(account.custom_attributes))
 
-        expect(account.reload.custom_attributes[described_class::PLAN_NUMBERS_KEY]).to eq('non_web_inboxes' => 50)
+        # the list now exists, and holds the number of the row that was saved only
+        expect(account.reload.custom_attributes[described_class::PLAN_NUMBERS_KEY]).to eq('inboxes' => 20)
         expect(settings.source('conversations')).to eq(:plan)
         expect(settings.source('non_web_inboxes')).to eq(:plan)
+        expect(settings.source('inboxes')).to eq(:plan)
         expect(settings.source('agents')).to eq(:custom)
       end
 
