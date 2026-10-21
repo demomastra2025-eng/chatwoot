@@ -323,6 +323,88 @@ RSpec.describe Accounts::LimitSettings do
     end
   end
 
+  # A limit that the end of a trial holds at 0 follows the plan; once the plan gives its number back, the limit reads by one rule:
+  # «как в тарифе» when the number is what «как в тарифе» gives now (the number of the plan; where the plan has none, the general value of
+  # the platform, which is the default of an account without a plan), «своё число» for any other number.
+  describe 'a limit given back after a trial' do
+    def end_trial!
+      account.reload.activate_trial!(3)
+      account.expire_trial!
+      account.reload
+    end
+
+    def source_after_restore(key)
+      apply_plan!
+      expect(account.reload.limits[key]).not_to eq(0)
+      settings.source(key)
+    end
+
+    it 'reads «как в тарифе» while it is held, and the held limits are told' do
+      apply_plan!
+      account.update!(limits: account.limits.merge('agents' => 5))
+      end_trial!
+
+      expect(account.limits).to include('agents' => 0)
+      expect(settings.source('agents')).to eq(:plan)
+      expect(settings.held_limit_keys).to eq(%w[inboxes agents])
+    end
+
+    it 'reads «как в тарифе» once the plan has given back the pre-trial default (the limit had no number)' do
+      apply_plan!
+      end_trial!
+
+      expect(source_after_restore('agents')).to eq(:plan)
+      expect(account.limits).not_to have_key('agents')
+      expect(settings.effective('agents')).to be_nil
+    end
+
+    it 'reads «как в тарифе» once the plan has given back the general value of the platform that the account held before the trial' do
+      global('ACCOUNT_AGENTS_LIMIT', 5)
+      account.update!(limits: account.limits.merge('agents' => 5))
+      end_trial!
+
+      expect(source_after_restore('agents')).to eq(:plan)
+      expect(account.limits['agents']).to eq(5)
+      expect(settings.choice('agents')).to eq(:plan)
+    end
+
+    it 'reads «своё число» once the plan has given back a number that is not the default' do
+      global('ACCOUNT_AGENTS_LIMIT', 5)
+      account.update!(limits: account.limits.merge('agents' => 8))
+      end_trial!
+
+      expect(source_after_restore('agents')).to eq(:custom)
+      expect(settings.custom_value('agents')).to eq(8)
+    end
+
+    it 'reads «своё число» for a number before the trial where the platform has no general value either' do
+      account.update!(limits: account.limits.merge('inboxes' => 3))
+      end_trial!
+
+      expect(source_after_restore('inboxes')).to eq(:custom)
+    end
+
+    it 'reads «как в тарифе» when the number of the plan itself has been written over the one from before the trial' do
+      plan_with('agents' => 2)
+      account.update!(limits: account.limits.merge('agents' => 8))
+      end_trial!
+
+      expect(source_after_restore('agents')).to eq(:plan)
+      expect(account.limits['agents']).to eq(2)
+    end
+
+    it 'does not hold, and does not restore, a limit chosen by hand' do
+      apply_plan!
+      choose('agents' => 4)
+      account.update!(limits: account.limits.merge('agents' => 4))
+      end_trial!
+
+      expect(account.limits['agents']).to eq(4)
+      expect(settings.held_limit_keys).to eq(['inboxes'])
+      expect(settings.source('agents')).to eq(:custom)
+    end
+  end
+
   describe '#follow_current_plan' do
     before do
       plan_with('conversations' => 2000, 'agents' => 10)

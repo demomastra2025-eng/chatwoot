@@ -43,22 +43,26 @@ them belongs to the page (the card has its own, the edit form of the account is 
         <% end %>
       </div>
 
-      <% if usage&.blocked? %>
-        <span class="admin-badge admin-badge--ruby w-fit"><%= t('super_admin.limits.blocked') %></span>
-      <% elsif usage && !usage.unlimited %>
-        <% fill_class = { good: '', warn: 'admin-meter__fill--warn', bad: 'admin-meter__fill--bad', idle: 'admin-meter__fill--idle' }.fetch(usage.tone) %>
-        <div class="admin-meter" role="img" aria-label="<%= t('super_admin.limits.meter_label', label: row.label, percent: usage.percent) %>">
-          <div class="admin-meter__fill <%= fill_class %>" style="width: <%= [[usage.percent.to_f, 0].max, 100].min %>%"></div>
-        </div>
+      <%# A limit held at 0 by an ended trial says so in one line below: no «запрещено» badge and no empty meter next to it %>
+      <% unless row.held %>
+        <% if usage&.blocked? %>
+          <span class="admin-badge admin-badge--ruby w-fit"><%= t('super_admin.limits.blocked') %></span>
+        <% elsif usage && !usage.unlimited %>
+          <% fill_class = { good: '', warn: 'admin-meter__fill--warn', bad: 'admin-meter__fill--bad', idle: 'admin-meter__fill--idle' }.fetch(usage.tone) %>
+          <div class="admin-meter" role="img" aria-label="<%= t('super_admin.limits.meter_label', label: row.label, percent: usage.percent) %>">
+            <div class="admin-meter__fill <%= fill_class %>" style="width: <%= [[usage.percent.to_f, 0].max, 100].min %>%"></div>
+          </div>
+        <% end %>
       <% end %>
 
       <span class="admin-limit__hint"><%= row.hint %></span>
-      <span class="admin-limit__now" data-testid="limit-now"><%= row.now %></span>
+      <% if row.held %>
+        <span class="admin-limit__now admin-limit__now--held" data-testid="limit-held"><%= row.held %></span>
+      <% else %>
+        <span class="admin-limit__now" data-testid="limit-now"><%= row.now %></span>
+      <% end %>
       <% if row.drift %>
         <span class="admin-limit__drift" data-testid="limit-drift"><%= row.drift %></span>
-      <% end %>
-      <% if row.held %>
-        <span class="admin-limit__drift" data-testid="limit-held"><%= row.held %></span>
       <% end %>
 
       <fieldset class="admin-limit__choices" aria-labelledby="<%= id %>-label">

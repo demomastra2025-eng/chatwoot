@@ -9,6 +9,9 @@
 # Two numbers are said apart, so they never look like one that contradicts the other: `now` is what applies now («Сейчас: 5 операторов»),
 # `plan_detail` is what «Как в тарифе» gives («по тарифу: без ограничений»).
 #
+# A limit that an ended trial holds at 0 has ONE line instead of `now` («Ограничено после пробного периода: 0. Вернётся 5 операторов после
+# назначения тарифа.»): `held` is that line, `now` is nil, and the row has no «запрещено» badge, no meter and no note about the plan.
+#
 # `state` is what the operator typed when the form comes back with a problem (SuperAdmin::LimitForm#state): the rows are drawn
 # with those choices and numbers instead of the saved ones, and `problems` marks the limits that were not understood.
 class SuperAdmin::LimitRows
@@ -49,7 +52,7 @@ class SuperAdmin::LimitRows
       hint: I18n.t("super_admin.limits.#{key}.hint"),
       choice: typed_choice(key) || source.to_s,
       input_value: typed_value(key) || input_number(key, bytes),
-      now: now_text(key, usage_row),
+      now: held?(key) ? nil : now_text(key, usage_row),
       plan_text: SuperAdmin::LimitWords.amount(key, @settings.plan_following_value(key)),
       plan_detail: plan_detail(key),
       drift: drift_text(key, source, usage_row),
@@ -113,8 +116,8 @@ class SuperAdmin::LimitRows
                                        plan: SuperAdmin::LimitWords.amount(key, plan))
   end
 
-  # The zero the end of a trial put on the limit and still holds there: the limit says «как в тарифе», and without this line nothing
-  # says why it is 0 (applying the plan gives it back, and says what it gives back)
+  # The zero the end of a trial put on the limit and still holds there: the one line of the row (it has no «Сейчас» line). The limit
+  # says «как в тарифе»; applying the plan gives the number back, and this line says which
   def held_text(key)
     return unless held?(key)
 

@@ -216,22 +216,49 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
 
       get card_path
 
-      expect(text(row('agents').at_css('[data-testid="limit-now"]'))).to include('Сейчас: 0 операторов')
       expect(choice_of('agents')).to eq('plan')
       expect(row('agents').at_css('[data-testid="limit-drift"]')).to be_nil
     end
 
-    it 'says why a limit is 0 when the end of a trial put it there, and says nothing for the others' do
+    it 'says ONE thing about a limit that the end of a trial put at 0, and says nothing for the others' do
       account.update!(limits: account.limits.merge('agents' => 5, 'inboxes' => 3))
       account.activate_trial!(3)
       account.expire_trial!
 
       get card_path
 
-      note = 'Пробный период закончился и закрыл этот лимит (0). Когда вы примените тариф, вернётся: %s.'
+      note = 'Ограничено после пробного периода: 0. Вернётся %s после назначения тарифа.'
       expect(text(row('agents').at_css('[data-testid="limit-held"]'))).to eq(format(note, '5 операторов'))
       expect(text(row('inboxes').at_css('[data-testid="limit-held"]'))).to eq(format(note, '3 канала'))
       expect(row('conversations').at_css('[data-testid="limit-held"]')).to be_nil
+      expect(row('conversations').at_css('[data-testid="limit-now"]')).to be_present
+    end
+
+    it 'has no second line, no «запрещено» badge and no meter for a held limit' do
+      account.update!(limits: account.limits.merge('agents' => 5))
+      account.activate_trial!(3)
+      account.expire_trial!
+
+      get card_path
+
+      held = row('agents')
+      expect(held.at_css('[data-testid="limit-now"]')).to be_nil
+      expect(held.at_css('[data-testid="limit-drift"]')).to be_nil
+      expect(held.at_css('.admin-meter')).to be_nil
+      expect(held.at_css('.admin-badge')).to be_nil
+      expect(text(held)).not_to include('запрещено', 'Сейчас:')
+      expect(held.css('.admin-limit__now').size).to eq(1)
+    end
+
+    it 'still says «запрещено» for a zero somebody chose' do
+      account.update!(limits: account.limits.merge('agents' => 0),
+                      custom_attributes: account.custom_attributes.merge(marks_key => { 'agents' => 0 }))
+
+      get card_path
+
+      expect(row('agents').at_css('.admin-badge')&.text&.squish).to eq('Лимит 0: запрещено')
+      expect(text(row('agents').at_css('[data-testid="limit-now"]'))).to include('Сейчас: 0 операторов')
+      expect(row('agents').at_css('[data-testid="limit-held"]')).to be_nil
     end
 
     it 'says what a held limit gets back: the number of the plan where it has one, else the number from before the trial, else the general value' do
@@ -242,8 +269,30 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
 
       get card_path
 
-      expect(text(row('agents').at_css('[data-testid="limit-held"]'))).to end_with('вернётся: 2 оператора.')
-      expect(text(row('inboxes').at_css('[data-testid="limit-held"]'))).to end_with('вернётся: без ограничений.')
+      note = 'Ограничено после пробного периода: 0. Вернётся %s после назначения тарифа.'
+      expect(text(row('agents').at_css('[data-testid="limit-held"]'))).to eq(format(note, '2 оператора'))
+      expect(text(row('inboxes').at_css('[data-testid="limit-held"]'))).to eq(format(note, 'без ограничений'))
+    end
+
+    it 'reads «Как в тарифе» before and after the plan gives back the default the limit had, and «Своё число» for a number of its own' do
+      allow(GlobalConfig).to receive(:get).and_call_original
+      allow(GlobalConfig).to receive(:get).with('ACCOUNT_AGENTS_LIMIT').and_return('ACCOUNT_AGENTS_LIMIT' => 5)
+      account.update!(limits: account.limits.merge('agents' => 5, 'inboxes' => 8))
+      account.activate_trial!(3)
+      account.expire_trial!
+
+      get card_path
+      expect(choice_of('agents')).to eq('plan')
+      expect(choice_of('inboxes')).to eq('plan')
+
+      apply_plan!
+      get card_path
+
+      expect(row('agents').at_css('[data-testid="limit-held"]')).to be_nil
+      expect(choice_of('agents')).to eq('plan')   # 5 is what «как в тарифе» gives an account whose plan has no number
+      expect(text(row('agents').at_css('[data-testid="limit-now"]'))).to eq('Сейчас: 5 операторов')
+      expect(choice_of('inboxes')).to eq('custom') # 8 channels is a number of its own
+      expect(row('inboxes').at_css('input[type=number]')['value']).to eq('8')
     end
 
     it 'says the storage with the decimals of its field, and takes the comma in a text field made for it' do
