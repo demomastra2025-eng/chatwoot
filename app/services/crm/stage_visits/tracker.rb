@@ -52,7 +52,7 @@ class Crm::StageVisits::Tracker
   def self.terminal_attribution(deal)
     {
       owner_id_at_terminal: deal.owner_id,
-      team_id_at_terminal: deal.team_id,
+      team_id_at_terminal: deal.try(:team_id),
       terminal_attribution_version: Crm::StageVisit::TERMINAL_ATTRIBUTION_VERSION
     }
   end

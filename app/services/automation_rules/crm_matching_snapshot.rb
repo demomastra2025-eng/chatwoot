@@ -49,7 +49,7 @@ class AutomationRules::CrmMatchingSnapshot
   def self.standard_value(record, key)
     return AutomationRules::ContactCondition.contact_ids_of(record) if key == AutomationRules::ContactCondition::KEY
 
-    record.public_send(key)
+    record.respond_to?(key) ? record.public_send(key) : nil
   end
   private_class_method :standard_value
 end
