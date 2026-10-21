@@ -7,6 +7,8 @@
     },
     "PATIENT_CONTEXT": {
       "SELECT_PATIENT": "Клиент",
+      "SELECTED_BADGE": "Выбран",
+      "EDIT_TITLE": "Редактирование карточки клиента",
       "NO_BIRTH_DATE": "Дата рождения не указана",
       "SELECTION_SCOPE": "Выбор сохранён для вас в этом диалоге.",
       "LOAD_ERROR": "Не удалось загрузить клиентов этого диалога",
@@ -320,6 +322,8 @@
       "QUICK_CREATE_TITLE": "Создание контакта",
       "SAVE_ACTION": "Сохранить",
       "SELECT_ACTION": "Выбрать из списка",
+      "SELECTED_BADGE": "Выбран",
+      "NEW_ACTION": "+ Создать новый контакт",
       "SUCCESS_CREATE": "Контакт создан",
       "SUCCESS_UPDATE": "Контакт обновлён",
       "GENDER": {

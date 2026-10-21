@@ -1,5 +1,12 @@
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { useI18n } from 'vue-i18n';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -31,6 +38,8 @@ const { t } = useI18n();
 const patientStore = useConversationPatientContextStore();
 const isCreating = ref(false);
 const isEditing = ref(false);
+const isDropdownOpen = ref(false);
+const dropdownRootRef = ref(null);
 const error = ref('');
 const idempotencyKey = ref('');
 let editSnapshot = null;
@@ -68,6 +77,36 @@ const options = computed(() =>
       .join(' · '),
   }))
 );
+const selectedOption = computed(
+  () =>
+    options.value.find(
+      option => Number(option.value) === Number(props.entry?.selectedId)
+    ) ||
+    options.value[0] ||
+    null
+);
+const isOptionSelected = option =>
+  Number(option?.value) === Number(props.entry?.selectedId);
+const closeDropdown = () => {
+  isDropdownOpen.value = false;
+};
+const toggleDropdown = () => {
+  if (!props.entry?.loaded || props.entry?.loading || props.entry?.saving)
+    return;
+  isDropdownOpen.value = !isDropdownOpen.value;
+};
+const handleOutsideClick = event => {
+  if (!isDropdownOpen.value) return;
+  if (dropdownRootRef.value && !dropdownRootRef.value.contains(event.target)) {
+    closeDropdown();
+  }
+};
+onMounted(() => {
+  document.addEventListener('mousedown', handleOutsideClick);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', handleOutsideClick);
+});
 const genderOptions = computed(() =>
   ['unknown', 'male', 'female', 'other'].map(value => ({
     value,
@@ -115,6 +154,7 @@ watch(
 const resetForm = () => {
   isCreating.value = false;
   isEditing.value = false;
+  closeDropdown();
   editSnapshot = null;
   inferredMetadata = null;
   Object.assign(form, {
@@ -241,35 +281,22 @@ const savePatient = async () => {
           for="scheduling-conversation-patient-select"
           class="flex min-w-0 items-center gap-1.5 truncate text-xs font-medium text-n-slate-11"
         >
-          <span
-            v-if="options.length <= 1 && options[0]?.label"
-            class="truncate font-semibold text-n-slate-12"
-            :title="options[0].label"
-          >
-            {{ options[0].label }}
+          <span>
+            {{ t('SCHEDULING.PATIENT_CONTEXT.SELECT_PATIENT') }}
           </span>
           <span
-            :class="{ 'sr-only': options.length <= 1 && options[0]?.label }"
+            v-if="selectedPatient"
+            data-test="selected-patient-badge"
+            class="inline-flex shrink-0 items-center rounded-md bg-n-teal-3 px-1.5 py-0.5 text-[11px] font-medium text-n-teal-11"
           >
-            {{ t('SCHEDULING.PATIENT_CONTEXT.SELECT_PATIENT') }}
+            {{ t('SCHEDULING.PATIENT_CONTEXT.SELECTED_BADGE') }}
           </span>
         </label>
         <div
-          v-if="!isCreating && !isEditing && entry?.loaded"
+          v-if="!isCreating && !isEditing && entry?.loaded && canEditSelected"
           class="flex shrink-0 items-center gap-1"
         >
           <Button
-            size="xs"
-            variant="faded"
-            color="slate"
-            icon="i-lucide-user-plus"
-            data-test="new-patient-button"
-            :title="t('SCHEDULING.PATIENT_CONTEXT.NEW_PATIENT')"
-            :label="t('SCHEDULING.PATIENT_CONTEXT.NEW_PATIENT')"
-            @click="startCreate"
-          />
-          <Button
-            v-if="canEditSelected"
             size="xs"
             variant="ghost"
             color="slate"
@@ -277,19 +304,122 @@ const savePatient = async () => {
             data-test="edit-patient-button"
             :title="t('SCHEDULING.GENERAL.EDIT')"
             :aria-label="t('SCHEDULING.GENERAL.EDIT')"
+            :label="t('SCHEDULING.GENERAL.EDIT')"
             @click="startEdit"
           />
         </div>
       </div>
-      <Select
-        v-show="options.length > 1"
-        id="scheduling-conversation-patient-select"
-        :model-value="entry?.selectedId || ''"
-        :options="options"
-        :disabled="!entry?.loaded || entry?.loading || entry?.saving"
-        class="w-full min-w-0"
-        @update:model-value="selectPatient"
-      />
+
+      <div
+        v-show="!isCreating && !isEditing"
+        ref="dropdownRootRef"
+        class="relative min-w-0"
+      >
+        <button
+          type="button"
+          data-test="patient-dropdown-trigger"
+          :disabled="!entry?.loaded || entry?.loading || entry?.saving"
+          :aria-expanded="isDropdownOpen"
+          aria-haspopup="listbox"
+          class="flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border-0 bg-n-surface-1 px-3 py-2 text-left text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] outline-n-weak transition-all duration-150 hover:outline-n-slate-6 focus:outline-n-brand disabled:cursor-not-allowed disabled:bg-n-slate-2 disabled:opacity-60"
+          @click="toggleDropdown"
+        >
+          <span class="flex min-w-0 flex-1 items-center gap-2">
+            <span
+              class="i-lucide-user-check size-4 shrink-0 text-n-teal-11"
+              aria-hidden="true"
+            />
+            <span
+              class="min-w-0 flex-1 truncate font-medium text-n-slate-12"
+              :title="selectedOption?.label"
+            >
+              {{
+                selectedOption?.label ||
+                t('SCHEDULING.PATIENT_CONTEXT.SELECT_PATIENT')
+              }}
+            </span>
+          </span>
+          <span
+            class="i-lucide-chevron-down size-4 shrink-0 text-n-slate-11 transition-transform duration-150"
+            :class="{ 'rotate-180': isDropdownOpen }"
+            aria-hidden="true"
+          />
+        </button>
+
+        <div
+          v-if="isDropdownOpen"
+          role="listbox"
+          data-test="patient-dropdown-menu"
+          class="absolute left-0 right-0 top-full z-40 mt-1 flex max-h-64 flex-col gap-0.5 overflow-y-auto rounded-lg border border-n-weak bg-n-solid-2 p-1 shadow-lg dark:border-n-strong/50"
+        >
+          <button
+            v-for="option in options"
+            :key="option.value"
+            type="button"
+            role="option"
+            :data-test="`patient-option-${option.value}`"
+            :aria-selected="isOptionSelected(option)"
+            class="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-n-slate-12 transition-colors hover:bg-n-alpha-2"
+            :class="{ 'bg-n-alpha-2 font-medium': isOptionSelected(option) }"
+            @click="selectPatient(option.value)"
+          >
+            <span class="flex min-w-0 flex-1 items-center gap-2">
+              <span
+                class="size-4 shrink-0"
+                :class="
+                  isOptionSelected(option)
+                    ? 'i-lucide-user-check text-n-teal-11'
+                    : 'i-lucide-user text-n-slate-10'
+                "
+                aria-hidden="true"
+              />
+              <span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
+            </span>
+            <span
+              v-if="isOptionSelected(option)"
+              class="flex shrink-0 items-center gap-1 text-xs font-medium text-n-teal-11"
+            >
+              <span>{{ t('SCHEDULING.PATIENT_CONTEXT.SELECTED_BADGE') }}</span>
+              <span class="i-lucide-check size-4 shrink-0" aria-hidden="true" />
+            </span>
+          </button>
+
+          <div
+            v-if="options.length > 0"
+            class="my-0.5 border-t border-n-weak"
+            role="separator"
+          />
+
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            color="blue"
+            icon="i-lucide-plus"
+            class="w-full !justify-start"
+            data-test="new-patient-button"
+            :title="t('SCHEDULING.PATIENT_CONTEXT.NEW_PATIENT')"
+            :label="t('SCHEDULING.PATIENT_CONTEXT.NEW_PATIENT')"
+            @click="startCreate"
+          />
+        </div>
+
+        <select
+          id="scheduling-conversation-patient-select"
+          :value="entry?.selectedId || ''"
+          :disabled="!entry?.loaded || entry?.loading || entry?.saving"
+          class="sr-only"
+          @change="selectPatient($event.target.value)"
+        >
+          <option
+            v-for="option in options"
+            :key="option.value"
+            :value="option.value"
+          >
+            {{ option.label }}
+          </option>
+        </select>
+      </div>
     </div>
     <div
       v-if="entry?.error"
@@ -313,6 +443,13 @@ const savePatient = async () => {
     >
       <p v-if="isCreating" class="m-0 text-xs text-n-slate-11">
         {{ t('SCHEDULING.PATIENT_CONTEXT.CREATE_DESCRIPTION') }}
+      </p>
+      <p
+        v-if="isEditing"
+        data-test="edit-patient-description"
+        class="m-0 text-xs font-medium text-n-slate-12"
+      >
+        {{ t('SCHEDULING.PATIENT_CONTEXT.EDIT_TITLE') }}
       </p>
       <div class="grid min-w-0 grid-cols-2 gap-2">
         <Input

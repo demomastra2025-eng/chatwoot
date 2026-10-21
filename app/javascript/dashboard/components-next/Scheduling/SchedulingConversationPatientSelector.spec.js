@@ -71,7 +71,7 @@ describe('conversation patient selector', () => {
     ['ru', 'Клиент', 'Добавить клиента'],
     ['kk', 'Клиент', 'Клиент қосу'],
   ])(
-    'uses generic client wording for a local appointment in %s',
+    'uses generic client wording for a local appointment in %s and places the add action inside the opened dropdown',
     async (locale, label, addLabel) => {
       const i18n = createI18n({
         legacy: false,
@@ -82,9 +82,35 @@ describe('conversation patient selector', () => {
       mocks.t.mockImplementation(i18n.global.t);
       const wrapper = await mountLoaded();
       expect(wrapper.get('label').text()).toContain(label);
-      expect(wrapper.findComponent({ name: 'Button' }).props('label')).toBe(
-        addLabel
+      expect(
+        wrapper.find('[data-test="selected-patient-badge"]').exists()
+      ).toBe(true);
+      expect(wrapper.find('[data-test="edit-patient-button"]').exists()).toBe(
+        true
       );
+      expect(wrapper.find('[data-test="new-patient-button"]').exists()).toBe(
+        false
+      );
+
+      await wrapper
+        .get('[data-test="patient-dropdown-trigger"]')
+        .trigger('click');
+      expect(wrapper.find('[data-test="patient-dropdown-menu"]').exists()).toBe(
+        true
+      );
+      expect(
+        wrapper
+          .get('[data-test="patient-option-42"]')
+          .attributes('aria-selected')
+      ).toBe('true');
+      expect(
+        wrapper.find('[data-test="new-patient-button"]').attributes('label') ||
+          wrapper
+            .findAllComponents({ name: 'Button' })
+            .find(btn => btn.attributes('data-test') === 'new-patient-button')
+            ?.props('label')
+      ).toBe(addLabel);
+
       wrapper.vm.startCreate();
       await wrapper.vm.$nextTick();
       expect(wrapper.find('form').text()).toContain(
