@@ -158,7 +158,9 @@ class Account < ApplicationRecord
   has_many :scheduling_work_rules, dependent: :destroy_async, class_name: 'Scheduling::WorkRule'
   has_many :scheduling_workday_overrides, dependent: :destroy_async, class_name: 'Scheduling::WorkdayOverride'
   has_many :sms_channels, dependent: :destroy_async, class_name: '::Channel::Sms'
-  has_many :teams, dependent: :destroy_async
+  # rubocop:disable Rails/HasManyOrHasOneDependent
+  has_many :teams
+  # rubocop:enable Rails/HasManyOrHasOneDependent
   has_many :telegram_channels, dependent: :destroy_async, class_name: '::Channel::Telegram'
   has_many :telegram_personal_channels, dependent: :destroy_async, class_name: '::Channel::TelegramPersonal'
   has_many :twilio_sms, dependent: :destroy_async, class_name: '::Channel::TwilioSms'
@@ -589,10 +591,6 @@ class Account < ApplicationRecord
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
 
   def domain
-    nil
-  end
-
-  def support_email
     nil
   end
 
