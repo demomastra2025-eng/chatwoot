@@ -1,5 +1,6 @@
 require 'securerandom'
 
+# rubocop:disable Metrics/ClassLength
 class Captain::BaseTaskService
   include Integrations::LlmInstrumentation
   include Captain::ToolInstrumentation
@@ -30,7 +31,8 @@ class Captain::BaseTaskService
   end
 
   def conversation
-    @conversation ||= account.conversations.find_by(display_id: conversation_display_id)
+    @conversation ||= account.conversations.find_by(display_id: conversation_display_id) ||
+                      account.communication_threads.find_by(display_id: conversation_display_id)&.conversations&.order(id: :desc)&.first
   end
 
   def make_api_call(model:, messages:, schema: nil, tools: [])
@@ -58,11 +60,15 @@ class Captain::BaseTaskService
       blocked_response = moderate_task_output(response[:message], messages)
       return blocked_response if blocked_response
 
-      response = response.merge(request_id: request_context[:request_id])
-      return response unless build_follow_up_context? && response[:message].present?
-
-      response.merge(follow_up_context: build_follow_up_context(messages, response))
+      finalize_task_response(messages, response, request_context[:request_id])
     end
+  end
+
+  def finalize_task_response(messages, response, request_id)
+    response = response.merge(request_id: request_id)
+    return response unless build_follow_up_context? && response[:message].present?
+
+    response.merge(follow_up_context: build_follow_up_context(messages, response))
   end
 
   def execute_ruby_llm_request(model:, messages:, schema: nil, tools: [])
@@ -343,3 +349,4 @@ class Captain::BaseTaskService
   end
 end
 Captain::BaseTaskService.prepend_mod_with('Captain::BaseTaskService')
+# rubocop:enable Metrics/ClassLength

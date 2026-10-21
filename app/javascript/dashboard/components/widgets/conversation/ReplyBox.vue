@@ -1043,12 +1043,16 @@ export default {
       copilotAcceptedMeta = null
     ) {
       const messages = this.getMultipleMessagesPayload(message);
+      let copilotTracked = false;
       messages.forEach(messagePayload => {
+        const hasText = Boolean(messagePayload.message);
+        const includeCopilot = hasText && !copilotTracked;
+        if (includeCopilot) copilotTracked = true;
         this.sendMessage(
           messagePayload,
           messagePayload.message || '',
-          copilotAcceptedMessage,
-          copilotAcceptedMeta
+          includeCopilot ? copilotAcceptedMessage : '',
+          includeCopilot ? copilotAcceptedMeta : null
         );
       });
     },
@@ -1102,6 +1106,7 @@ export default {
             const feedbackPromise = TasksAPI.feedback({
               conversationId:
                 copilotAcceptedMeta?.conversationId ||
+                this.conversationId ||
                 this.conversationIdByRoute,
               requestId: copilotAcceptedMeta?.requestId || null,
               copilotAction: copilotAcceptedMeta?.action || 'reply_suggestion',

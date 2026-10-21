@@ -3822,6 +3822,7 @@ const isClientFieldsOpen = (form, key) =>
                   @click="cancelAppointment(appointment)"
                 />
                 <Button
+                  v-if="!isAppointmentProviderOwned(appointment)"
                   size="sm"
                   color="blue"
                   variant="faded"

@@ -195,7 +195,10 @@ class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseContr
     return @resolved_conversation if defined?(@resolved_conversation)
 
     display_id = params[:conversation_display_id].presence
-    @resolved_conversation = Current.account.conversations.find_by(display_id: display_id) if display_id
+    return @resolved_conversation = nil unless display_id
+
+    @resolved_conversation = Current.account.conversations.find_by(display_id: display_id) ||
+                             Current.account.communication_threads.find_by(display_id: display_id)&.conversations&.order(id: :desc)&.first
   end
 
   def check_authorization

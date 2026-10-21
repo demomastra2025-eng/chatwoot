@@ -1339,7 +1339,7 @@ const actions = {
 
   createPendingMessageAndSend: async ({ dispatch }, data) => {
     const pendingMessage = createPendingMessage(data);
-    dispatch('sendMessageWithData', pendingMessage);
+    return dispatch('sendMessageWithData', pendingMessage);
   },
 
   sendMessageWithData: async (context, pendingMessage) => {
@@ -1383,7 +1383,7 @@ const actions = {
         messageDeletionAuthorityTarget(context.state, threadMessage) &&
         !(await admitMessageDeletionAuthority(context, threadMessage))
       )
-        return;
+        return null;
       if (response.data?.communication_thread) {
         commitCommunicationThreadUpdate(
           commit,
@@ -1398,6 +1398,7 @@ const actions = {
         ...response.data,
         status: MESSAGE_STATUS.SENT,
       });
+      return response.data;
     } catch (error) {
       const errorMessage = error.response
         ? error.response.data.error
