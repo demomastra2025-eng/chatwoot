@@ -940,6 +940,18 @@ describe('scheduling helpers', () => {
       })
     ).toBe('505');
     expect(
+      medelementReceptionCode({
+        providerCommandReceipt: { command: { providerReceptionCode: '506' } },
+      })
+    ).toBe('506');
+    expect(
+      medelementReceptionCode({
+        provider_command_receipt: {
+          command: { provider_reception_code: '507' },
+        },
+      })
+    ).toBe('507');
+    expect(
       medelementReceptionCode({ externalRef: 'medelement:reception:606' })
     ).toBe('606');
     expect(medelementReceptionCode({ externalRef: 'other:606' })).toBe('');
@@ -969,6 +981,34 @@ describe('scheduling helpers', () => {
     expect(
       medelementAppointmentCardNote(synced, t, { includeStatus: false })
     ).toBe('Код приёма MedElement: 777');
+
+    const locallyCancelled = {
+      status: 'cancelled',
+      externalRef: null,
+      providerConfirmationStatus: 'not_requested',
+      customAttributes: {
+        medelement_local_cancellation: { reception_code: '888' },
+      },
+    };
+    expect(medelementSyncStatusKey(locallyCancelled)).toBe(
+      'SCHEDULING.APPOINTMENT_STATUS.MEDELEMENT_NOT_CANCELLED'
+    );
+    expect(
+      medelementAppointmentCardNote(locallyCancelled, t, {
+        includeStatus: false,
+      })
+    ).toBe('Код приёма MedElement: 888');
+
+    const unconfirmedCancelled = {
+      status: 'cancelled',
+      source: 'medelement',
+      providerConfirmationStatus: 'not_confirmed',
+      providerConfirmed: false,
+      customAttributes: { medelement_reception_code: '999' },
+    };
+    expect(medelementSyncStatusKey(unconfirmedCancelled)).toBe(
+      'SCHEDULING.MEDELEMENT.SYNC_STATUS.NOT_SYNCED'
+    );
 
     const pending = {
       status: 'scheduled',

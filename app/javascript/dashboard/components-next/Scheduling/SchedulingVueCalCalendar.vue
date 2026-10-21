@@ -23,6 +23,7 @@ import {
   buildTimeOffIntervals,
   formatDateKey,
   formatTimeLabel,
+  isMedelementResource,
   medelementAppointmentCardNote,
   minuteOfDayFromDate,
   providerBookingNeedsReview,
@@ -1146,6 +1147,7 @@ const appointmentEvents = computed(() => {
         : appointment.statusLabel || '',
       medelementMeta: medelementAppointmentCardNote(appointment, t, {
         includeStatus: !providerBookingStatusKey(appointment),
+        isMedelementResource: isMedelementResource(resource),
       }),
       clientName,
       serviceNameSnapshot: subtitle,

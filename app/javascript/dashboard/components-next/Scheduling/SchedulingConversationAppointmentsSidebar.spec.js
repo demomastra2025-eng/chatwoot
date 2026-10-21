@@ -3539,6 +3539,18 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
             customAttributes: { medelement_reception_code: 'reception-501' },
             providerConfirmationStatus: 'succeeded',
           },
+          {
+            ...existingAppointment,
+            id: 502,
+            status: 'cancelled',
+            externalRef: null,
+            providerConfirmationStatus: 'not_requested',
+            customAttributes: {
+              medelement_local_cancellation: {
+                reception_code: 'reception-502',
+              },
+            },
+          },
         ],
       },
     });
@@ -3548,6 +3560,13 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     const meta = wrapper.get('[data-testid="appointment-medelement-meta-501"]');
     expect(meta.text()).toContain('SCHEDULING.MEDELEMENT.SYNC_STATUS.SYNCED');
     expect(meta.text()).toContain('reception-501');
+
+    const cancelledMeta = wrapper.get(
+      '[data-testid="appointment-medelement-meta-502"]'
+    );
+    expect(cancelledMeta.text()).toContain('reception-502');
+    expect(cancelledMeta.text()).not.toContain('Not cancelled in MedElement');
+    expect(wrapper.text()).toContain('Not cancelled in MedElement');
     wrapper.unmount();
   });
 });

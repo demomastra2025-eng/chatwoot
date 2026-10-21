@@ -641,6 +641,9 @@ const isCurrentProviderContext = context => {
 const appointmentResource = appointment =>
   activeResources.value.find(
     resource => Number(resource.id) === Number(appointment?.resourceId)
+  ) ||
+  (schedulingReferencesStore.resources || []).find(
+    resource => Number(resource.id) === Number(appointment?.resourceId)
   );
 const isMedelementAppointment = appointment =>
   isMedelementResource(appointmentResource(appointment));
@@ -1662,6 +1665,8 @@ async function refreshProviderAppointmentState(
       'medelementProviderSyncStatus',
       'medelement_reception_code',
       'medelementReceptionCode',
+      'medelement_local_cancellation',
+      'medelementLocalCancellation',
     ];
     const updatedAttributes = { ...currentAppointment.customAttributes };
     providerAttributeKeys.forEach(attributeKey => {
@@ -1676,6 +1681,10 @@ async function refreshProviderAppointmentState(
     if (refreshed.medelementReceptionCode) {
       currentAppointment.medelementReceptionCode =
         refreshed.medelementReceptionCode;
+    }
+    if (refreshed.providerCommandReceipt) {
+      currentAppointment.providerCommandReceipt =
+        refreshed.providerCommandReceipt;
     }
     return currentAppointment;
   } catch {

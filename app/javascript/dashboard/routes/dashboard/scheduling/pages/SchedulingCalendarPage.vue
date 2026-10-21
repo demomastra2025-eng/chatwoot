@@ -1584,7 +1584,21 @@ const refreshAfterProviderCommand = action =>
     refresh: () => calendarStore.refresh(),
     isCurrent: () => isCurrentProviderAction(action),
     onCurrent: () => {
-      if (action.closeDrawer) handleDrawerClose();
+      if (action.closeDrawer) {
+        handleDrawerClose();
+        return;
+      }
+      if (
+        formStore.mode === 'edit' &&
+        Number(formStore.recordId) === Number(action.appointment?.id)
+      ) {
+        const refreshed = calendarStore.appointments.find(
+          item => Number(item.id) === Number(action.appointment?.id)
+        );
+        if (refreshed) {
+          formStore.selectedAppointment = refreshed;
+        }
+      }
     },
   });
 

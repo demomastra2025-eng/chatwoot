@@ -53,11 +53,17 @@ module Integrations::Medelement::LocalCancellation
     attributes = appointment.custom_attributes.to_h
     return attributes['medelement_reception_code'].to_s if attributes['medelement_reception_code'].present?
 
-    marker_code = attributes.dig(MARKER_KEY, 'reception_code')
+    marker_code = marker_attributes(attributes)['reception_code']
     return marker_code.to_s if marker_code.present?
     return unless appointment.external_ref.to_s.start_with?(RECEPTION_PREFIX)
 
     appointment.external_ref.delete_prefix(RECEPTION_PREFIX).presence
+  end
+
+  def marker_attributes(record_or_attributes)
+    attributes = record_or_attributes.respond_to?(:custom_attributes) ? record_or_attributes.custom_attributes : record_or_attributes
+    marker = attributes.to_h[MARKER_KEY]
+    marker.is_a?(Hash) ? marker : {}
   end
 
   # Identifiers and times only: no patient data is copied into the marker.
@@ -75,7 +81,7 @@ module Integrations::Medelement::LocalCancellation
 
   # MedElement moved the still-active reception to another start time: the patient was re-booked there.
   def rebooked?(appointment, provider_starts_at)
-    snapshot = appointment.custom_attributes.to_h.dig(MARKER_KEY, 'provider_starts_at')
+    snapshot = marker_attributes(appointment)['provider_starts_at']
     return false if snapshot.blank? || provider_starts_at.blank?
 
     Time.iso8601(snapshot.to_s).to_i != provider_starts_at.to_i
@@ -84,7 +90,7 @@ module Integrations::Medelement::LocalCancellation
   end
 
   def restored_payment_status(appointment)
-    previous = appointment.custom_attributes.to_h.dig(MARKER_KEY, 'previous_payment_status').to_s
+    previous = marker_attributes(appointment)['previous_payment_status'].to_s
     return previous if previous.in?(Scheduling::Constants::PAYMENT_STATUSES) && previous != 'cancelled'
 
     'awaiting_payment'

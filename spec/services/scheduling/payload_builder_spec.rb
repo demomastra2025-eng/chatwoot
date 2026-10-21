@@ -107,18 +107,37 @@ RSpec.describe Scheduling::PayloadBuilder do
     end
   end
 
-  it 'exposes the MedElement reception code from custom attributes, external_ref, or local cancellation marker' do
+  it 'exposes the MedElement reception code from custom attributes, external_ref, local cancellation marker, or command receipt' do
     by_attr = build_stubbed(:scheduling_appointment, custom_attributes: { 'medelement_reception_code' => '501' })
     by_ref = build_stubbed(:scheduling_appointment, external_ref: 'medelement:reception:777')
     by_marker = build_stubbed(
       :scheduling_appointment,
       custom_attributes: { 'medelement_local_cancellation' => { 'reception_code' => '888' } }
     )
+    by_boolean_marker = build_stubbed(
+      :scheduling_appointment,
+      external_ref: 'medelement:reception:999',
+      custom_attributes: { 'medelement_local_cancellation' => true }
+    )
+    by_boolean_marker_without_ref = build_stubbed(
+      :scheduling_appointment,
+      custom_attributes: { 'medelement_local_cancellation' => true }
+    )
+    by_receipt = build_stubbed(:scheduling_appointment)
+    command = instance_double(Integrations::Medelement::ProviderCommand)
+    by_receipt.medelement_provider_command_receipt = command
+    allow(Integrations::Medelement::ProviderCommandReceiptBuilder).to receive(:build).and_call_original
+    allow(Integrations::Medelement::ProviderCommandReceiptBuilder).to receive(:build)
+      .with(command: command)
+      .and_return({ appointment_id: by_receipt.id, command: { provider_reception_code: '606' } })
     plain = build_stubbed(:scheduling_appointment)
 
     expect(described_class.appointment(by_attr)[:medelement_reception_code]).to eq('501')
     expect(described_class.appointment(by_ref)[:medelement_reception_code]).to eq('777')
     expect(described_class.appointment(by_marker)[:medelement_reception_code]).to eq('888')
+    expect(described_class.appointment(by_boolean_marker)[:medelement_reception_code]).to eq('999')
+    expect(described_class.appointment(by_boolean_marker_without_ref)).not_to have_key(:medelement_reception_code)
+    expect(described_class.appointment(by_receipt)[:medelement_reception_code]).to eq('606')
     expect(described_class.appointment(plain)).not_to have_key(:medelement_reception_code)
   end
 

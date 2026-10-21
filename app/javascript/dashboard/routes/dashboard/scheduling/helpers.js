@@ -75,6 +75,7 @@ export const medelementReceptionCode = appointment => {
     appointment?.providerCommandReceipt ||
     appointment?.provider_command_receipt ||
     {};
+  const receiptCommand = receipt.command || {};
   const explicitCode =
     appointment?.medelementReceptionCode ||
     appointment?.medelement_reception_code ||
@@ -82,6 +83,8 @@ export const medelementReceptionCode = appointment => {
     customAttributes.medelementReceptionCode ||
     localCancellation.reception_code ||
     localCancellation.receptionCode ||
+    receiptCommand.providerReceptionCode ||
+    receiptCommand.provider_reception_code ||
     receipt.providerReceptionCode ||
     receipt.provider_reception_code ||
     '';
@@ -144,9 +147,17 @@ export const providerCancellationPending = appointment =>
     'pending';
 
 // Cancelled in OneLink only: the reception is still active in MedElement.
-export const isMedelementLocalCancellation = appointment =>
-  appointment?.status === 'cancelled' &&
-  Boolean(appointment?.customAttributes?.medelement_local_cancellation);
+export const isMedelementLocalCancellation = appointment => {
+  const customAttributes =
+    appointment?.customAttributes || appointment?.custom_attributes || {};
+  return (
+    appointment?.status === 'cancelled' &&
+    Boolean(
+      customAttributes.medelement_local_cancellation ||
+        customAttributes.medelementLocalCancellation
+    )
+  );
+};
 
 // Cancelling will stay in OneLink (hook setting remove_reception_on_cancel is off).
 export const isMedelementCancellationLocalOnly = appointment =>
@@ -243,6 +254,9 @@ export const medelementSyncStatusKey = (
   }
   if (['failed', 'provider_status_unknown'].includes(providerStatus)) {
     return 'SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW';
+  }
+  if (['not_confirmed', 'not_requested'].includes(providerStatus)) {
+    return 'SCHEDULING.MEDELEMENT.SYNC_STATUS.NOT_SYNCED';
   }
   if (
     providerStatus === 'succeeded' ||

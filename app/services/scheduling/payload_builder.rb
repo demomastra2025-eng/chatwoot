@@ -75,8 +75,9 @@ module Scheduling::PayloadBuilder
       payload[:crm_link_result] = crm_link_result if crm_link_result.present?
       cancellation_mode = medelement_cancellation_mode(appointment, medelement_cancellation_modes)
       payload[:medelement_cancellation_mode] = cancellation_mode if cancellation_mode
-      reception_code = Integrations::Medelement::LocalCancellation.reception_code(appointment)
-      payload[:medelement_reception_code] = reception_code if reception_code.present?
+      reception_code = Integrations::Medelement::LocalCancellation.reception_code(appointment) ||
+                       receipt&.dig(:command, :provider_reception_code).presence
+      payload[:medelement_reception_code] = reception_code.to_s if reception_code.present?
     end
   end
 

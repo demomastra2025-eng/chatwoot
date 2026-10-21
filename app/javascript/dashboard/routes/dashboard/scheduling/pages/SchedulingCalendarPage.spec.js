@@ -685,6 +685,30 @@ describe('SchedulingCalendarPage pending local booking', () => {
       'SCHEDULING.MEDELEMENT.SYNC_STATUS.SYNCED'
     );
     expect(medelementMeta.text()).toContain('me-902');
+
+    store.openEdit({
+      id: 503,
+      accountId: 74,
+      contactId: 42,
+      clientFirstName: 'Client',
+      resourceId: 3,
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+      status: 'cancelled',
+      externalRef: null,
+      providerConfirmationStatus: 'not_requested',
+      customAttributes: {
+        medelement_local_cancellation: { reception_code: 'me-903' },
+      },
+    });
+    await flushPromises();
+    const cancelledMeta = wrapper.get(
+      '[data-test="calendar-appointment-medelement-meta"]'
+    );
+    expect(cancelledMeta.text()).toContain('me-903');
+    expect(cancelledMeta.text()).not.toContain(
+      'SCHEDULING.APPOINTMENT_STATUS.MEDELEMENT_NOT_CANCELLED'
+    );
   });
 
   it('keeps dismiss available during submit and preserves a subsequently opened form', async () => {

@@ -1124,11 +1124,27 @@ describe('SchedulingVueCalCalendar', () => {
 
   it('includes MedElement reception code and sync status on regular cards and tooltips', async () => {
     const wrapper = mountCalendar({
+      resources: [
+        {
+          id: 12,
+          name: 'Dr. Sam',
+          color: '#0f766e',
+          slotDurationMin: 30,
+          customAttributes: { medelement_specialist_code: 'spec-12' },
+        },
+      ],
       appointments: [
         visit(1, {
           clientName: 'MedElement patient',
           customAttributes: { medelement_reception_code: 'me-777' },
           providerConfirmationStatus: 'succeeded',
+        }),
+        visit(2, {
+          clientName: 'Unsynced MedElement patient',
+          startsAt: '2026-03-09T11:00:00.000Z',
+          endsAt: '2026-03-09T11:30:00.000Z',
+          source: 'manual',
+          status: 'scheduled',
         }),
       ],
     });
@@ -1141,5 +1157,13 @@ describe('SchedulingVueCalCalendar', () => {
     expect(
       card.find('.scheduling-vue-cal__event-medelement-meta').text()
     ).toContain('me-777');
+
+    const unsyncedCard = cardFor(wrapper, 'Unsynced MedElement patient');
+    expect(unsyncedCard.attributes('title')).toContain(
+      'SCHEDULING.MEDELEMENT.SYNC_STATUS.NOT_SYNCED'
+    );
+    expect(
+      unsyncedCard.find('.scheduling-vue-cal__event-medelement-meta').text()
+    ).toContain('SCHEDULING.MEDELEMENT.SYNC_STATUS.NOT_SYNCED');
   });
 });
