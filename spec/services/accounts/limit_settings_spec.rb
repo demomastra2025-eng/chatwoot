@@ -90,6 +90,46 @@ RSpec.describe Accounts::LimitSettings do
         expect(settings.effective('agents')).to eq(5)
       end
 
+      it 'reads a number equal to the general value of the platform as «своё число», as it always has: only writing tells it from a choice' do
+        global('ACCOUNT_CONVERSATIONS_LIMIT', 500)
+        global('ACCOUNT_NON_WEB_INBOXES_LIMIT', 0)
+        account.update!(limits: { 'conversations' => 500, 'non_web_inboxes' => 0 })
+
+        expect(settings.source('conversations')).to eq(:custom)
+        expect(settings.custom_value('conversations')).to eq(500)
+        expect(settings.source('non_web_inboxes')).to eq(:custom)
+      end
+
+      it 'follows the platform again with «Как в тарифе» (the number is taken off), and the base then writes its number there' do
+        global('ACCOUNT_CONVERSATIONS_LIMIT', 500)
+        account.update!(limits: { 'conversations' => 500 })
+
+        result = settings.apply('conversations' => :plan)
+        account.update!(limits: result.limits, custom_attributes: result.custom_attributes(account.custom_attributes))
+
+        expect(account.reload.limits).not_to have_key('conversations')
+        expect(settings.source('conversations')).to eq(:plan)
+        expect(settings.effective('conversations')).to eq(500)
+
+        apply_plan!
+
+        expect(account.reload.limits['conversations']).to eq(max)
+        expect(settings.source('conversations')).to eq(:plan)
+      end
+
+      it 'keeps it when the base is assigned, and the plan says so: the label and the outcome are one' do
+        global('ACCOUNT_CONVERSATIONS_LIMIT', 500)
+        account.update!(limits: { 'conversations' => 500 })
+
+        preview = Accounts::ApplyPlan.new(account: account, modules: []).preview
+
+        expect(preview.kept_limits).to include('conversations')
+        expect(preview.limits).not_to include('conversations')
+        apply_plan!
+        expect(account.reload.limits['conversations']).to eq(500)
+        expect(settings.source('conversations')).to eq(:custom)
+      end
+
       it 'reads the number of no limit as «без ограничений»' do
         account.update!(limits: { 'agents' => max, 'storage_bytes' => max * 1.gigabyte })
 
@@ -323,9 +363,9 @@ RSpec.describe Accounts::LimitSettings do
     end
   end
 
-  # A limit that the end of a trial holds at 0 follows the plan; once the plan gives its number back, the limit reads by one rule:
-  # «как в тарифе» when the number is what «как в тарифе» gives now (the number of the plan; where the plan has none, the general value of
-  # the platform, which is the default of an account without a plan), «своё число» for any other number.
+  # A limit that the end of a trial holds at 0 follows the plan. The plan gives back what the limit had before the trial: no number
+  # (the limit holds none again), the general value of the platform where the plan has no number (taken off too: it was the default,
+  # not a choice, so the limit follows the plan whatever number the plan gets later), any other number (the account's own again).
   describe 'a limit given back after a trial' do
     def end_trial!
       account.reload.activate_trial!(3)
@@ -358,14 +398,49 @@ RSpec.describe Accounts::LimitSettings do
       expect(settings.effective('agents')).to be_nil
     end
 
-    it 'reads «как в тарифе» once the plan has given back the general value of the platform that the account held before the trial' do
+    it 'takes the general value of the platform off instead of writing it back, so the limit follows the plan' do
       global('ACCOUNT_AGENTS_LIMIT', 5)
       account.update!(limits: account.limits.merge('agents' => 5))
       end_trial!
 
       expect(source_after_restore('agents')).to eq(:plan)
-      expect(account.limits['agents']).to eq(5)
+      expect(account.limits).not_to have_key('agents')
+      expect(settings.effective('agents')).to eq(5) # the general value applies, as before the trial
       expect(settings.choice('agents')).to eq(:plan)
+    end
+
+    context 'when the base gets a number for a limit that was given back as the general value' do
+      before do
+        global('ACCOUNT_AGENTS_LIMIT', 5)
+        account.update!(limits: account.limits.merge('agents' => 5))
+        end_trial!
+        apply_plan!
+        plan_with('agents' => 12)
+      end
+
+      it 'is written by «Обновить лимиты по тарифу»' do
+        expect(settings.source('agents')).to eq(:plan)
+        expect(settings.kept_keys).to eq([])
+
+        diff = Accounts::SyncPlanLimits.new(account: account.reload).call
+
+        expect(diff.limits).to include('agents' => { 'from' => nil, 'to' => 12 })
+        expect(account.reload.limits['agents']).to eq(12)
+        expect(settings.source('agents')).to eq(:plan)
+        expect(settings.plan_numbers).to include('agents' => 12)
+      end
+
+      it 'is written by «Применить тариф»' do
+        diff = Accounts::ApplyPlan.new(account: account.reload, modules: []).preview
+
+        expect(diff.limits).to include('agents' => { 'from' => nil, 'to' => 12 })
+        expect(diff.kept_limits).not_to include('agents')
+
+        apply_plan!
+
+        expect(account.reload.limits['agents']).to eq(12)
+        expect(settings.source('agents')).to eq(:plan)
+      end
     end
 
     it 'reads «своё число» once the plan has given back a number that is not the default' do

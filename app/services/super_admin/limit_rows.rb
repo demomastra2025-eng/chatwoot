@@ -9,8 +9,9 @@
 # Two numbers are said apart, so they never look like one that contradicts the other: `now` is what applies now («Сейчас: 5 операторов»),
 # `plan_detail` is what «Как в тарифе» gives («по тарифу: без ограничений»).
 #
-# A limit that an ended trial holds at 0 has ONE line instead of `now` («Ограничено после пробного периода: 0. Вернётся 5 операторов после
-# назначения тарифа.»): `held` is that line, `now` is nil, and the row has no «запрещено» badge, no meter and no note about the plan.
+# A limit that an ended trial holds at 0 has ONE line instead of `now` («Ограничено после пробного периода: 0. После назначения тарифа
+# будет 5 операторов.»): `held` is that line, `now` is nil, and the row has no «запрещено» badge, no meter, no note about the plan and no
+# «по тарифу: ...» under «Как в тарифе» (the line says what comes back and where it comes from, and there must not be a second answer).
 #
 # `state` is what the operator typed when the form comes back with a problem (SuperAdmin::LimitForm#state): the rows are drawn
 # with those choices and numbers instead of the saved ones, and `problems` marks the limits that were not understood.
@@ -54,7 +55,7 @@ class SuperAdmin::LimitRows
       input_value: typed_value(key) || input_number(key, bytes),
       now: held?(key) ? nil : now_text(key, usage_row),
       plan_text: SuperAdmin::LimitWords.amount(key, @settings.plan_following_value(key)),
-      plan_detail: plan_detail(key),
+      plan_detail: held?(key) ? nil : plan_detail(key),
       drift: drift_text(key, source, usage_row),
       held: held_text(key),
       problem: @problems[key]
@@ -117,18 +118,30 @@ class SuperAdmin::LimitRows
   end
 
   # The zero the end of a trial put on the limit and still holds there: the one line of the row (it has no «Сейчас» line). The limit
-  # says «как в тарифе»; applying the plan gives the number back, and this line says which
+  # says «как в тарифе»; applying the plan gives the number back, and this line says which number and where it comes from
   def held_text(key)
     return unless held?(key)
 
-    I18n.t('super_admin.limits.held', value: SuperAdmin::LimitWords.amount(key, restored_number(key)))
+    source, number = restoration(key)
+    if number.nil? || Accounts::Plans.unlimited_value?(key, number)
+      I18n.t('super_admin.limits.held.unlimited')
+    else
+      I18n.t("super_admin.limits.held.#{source}", value: SuperAdmin::LimitWords.amount(key, number))
+    end
   end
 
-  # The number the limit gets when the plan is applied (Accounts::ApplyPlan): the number of the plan where it has one, else the number
-  # from before the trial; without either the general value of the platform applies again (nil: no limit)
-  def restored_number(key)
+  # What the limit gets when the plan is applied (Accounts::ApplyPlan), as [where it comes from, the number (nil: no limit)]:
+  # * :plan    the number of the plan;
+  # * :before  the number the account had before the trial: it is the account's own number again (the plan has none for the limit);
+  # * :general the general value of the platform: the limit had none before the trial (or only that value) and follows the plan.
+  def restoration(key)
     plan = plan_assigned? ? @settings.plan_value(key) : Accounts::Plans.limits_for([])[key]
-    plan.nil? ? (held[key] || @settings.global_value(key)) : plan
+    return [:plan, plan] unless plan.nil?
+
+    before = held[key]
+    return [:before, before] unless before.nil? || @settings.platform_default?(key, before)
+
+    [:general, @settings.global_value(key)]
   end
 
   def held?(key)

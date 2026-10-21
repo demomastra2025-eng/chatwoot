@@ -19,8 +19,7 @@
 # the screens of the super admin, and it is never lost: a plan, a trial or the Platform API leaves the listed limits as they are.
 #
 # A number that follows the plan is not listed, so it has to be told from a number somebody typed. A limit follows the plan when
-# it holds no number, when the end of a trial holds it at 0, or when its number is what «как в тарифе» gives now: the number of the
-# plan, where the plan has none the general value of the platform (the default of an account without a plan), or the number the plan
+# it holds no number, when the end of a trial holds it at 0, or when its number is the number of the plan now or the number the plan
 # wrote last. The last one is kept beside the list:
 #
 #   account.custom_attributes['limit_plan_numbers'] = { 'conversations' => 1000 }
@@ -274,6 +273,14 @@ class Accounts::LimitSettings # rubocop:disable Metrics/ClassLength
     Accounts::Plans::LIMIT_KEYS.select { |key| !plan_value(key).nil? && manual?(key) && effective(key) != plan_value(key) }
   end
 
+  # Whether `number` is only the general value of the platform for a limit the plan has no number for: the default of an account
+  # without a plan, not a choice. Such a number is not written back into the limit when something gives a number back (the end of a
+  # trial that is undone by applying a plan): the limit holds no number and follows the plan, so a number the plan gets later is
+  # written by the plan and by the sync, and the limit never reads «своё число» for a number nobody chose.
+  def platform_default?(key, number)
+    plan_value(key).nil? && same_number?(global_value(key), number)
+  end
+
   private
 
   def follows_current_plan?(key)
@@ -352,15 +359,13 @@ class Accounts::LimitSettings # rubocop:disable Metrics/ClassLength
     @held_keys ||= @draft ? @draft.held : @account.trial_held_limits.keys
   end
 
-  # The number is what «как в тарифе» gives: the one of the plan, or the one the plan wrote the last time (a number that the plan has
-  # changed since: it is written over when the plan is applied). Where the plan has no number the limit has the default of an account
-  # without a plan, the general value of the platform: a number equal to it is the default too, which is how a limit that a trial held
-  # at 0 reads once the plan has given back the number it had before the trial. Any other number is the account's own.
+  # The number is the one of the plan, or the one the plan wrote the last time (a number that the plan has changed since: it is written
+  # over when the plan is applied). Where the plan has no number there is nothing to follow: a number there is the account's own, and
+  # so is one equal to the general value of the platform. That one is not told from the default by reading (the plan may get a number
+  # of its own later, and the limit would flip from «как в тарифе» to «своё число»); it is told when it is written (#platform_default?).
   def follows_plan_number?(key, value)
     plan = plan_value(key)
-    return same_number?(global_value(key), value) if plan.nil?
-
-    same_number?(plan, value) || same_number?(written_plan_number(key), value)
+    !plan.nil? && (same_number?(plan, value) || same_number?(written_plan_number(key), value))
   end
 
   # The number the plan wrote into the limit the last time: the one kept beside the list, and, where none is kept for an account whose

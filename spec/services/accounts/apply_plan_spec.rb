@@ -383,6 +383,47 @@ RSpec.describe Accounts::ApplyPlan do
       end
     end
 
+    # The number the limit had before the trial was only the general value of the platform (the default of an account without a
+    # plan): it is not written back, the limit holds no number and follows the plan - the number the plan gets later is written to it
+    context 'when the number from before the trial was the general value of the platform' do
+      before do
+        allow(GlobalConfig).to receive(:get).and_call_original
+        allow(GlobalConfig).to receive(:get).with('ACCOUNT_AGENTS_LIMIT').and_return('ACCOUNT_AGENTS_LIMIT' => 5)
+        account.update!(limits: { 'agents' => 5, 'inboxes' => 3 })
+        end_trial!
+      end
+
+      it 'takes the key off instead of writing the number back, and writes back a number that is not the general value' do
+        preview = service.preview
+
+        expect(preview.limits).to include('agents' => { 'from' => 0, 'to' => nil }, 'inboxes' => { 'from' => 0, 'to' => 3 })
+        service.call
+        expect(account.reload.limits).not_to have_key('agents')
+        expect(account.limits['inboxes']).to eq(3)
+        expect(Accounts::LimitSettings.new(account).source('agents')).to eq(:plan)
+      end
+
+      it 'writes the number of the plan when it has one (it wins over the restored one)' do
+        allow(plans).to receive(:limits_for).and_return('agents' => 2)
+
+        expect(service.preview.limits).to include('agents' => { 'from' => 0, 'to' => 2 })
+        service.call
+
+        expect(account.reload.limits['agents']).to eq(2)
+      end
+
+      it 'is written with the number the base gets later, by the next «Применить тариф»' do
+        service.call
+        allow(plans).to receive(:limits_for).and_wrap_original { |original, *args| original.call(*args).merge('agents' => 12) }
+
+        expect(service.preview.limits).to include('agents' => { 'from' => nil, 'to' => 12 })
+        expect(service.preview.kept_limits).not_to include('agents')
+        service.call
+
+        expect(account.reload.limits['agents']).to eq(12)
+      end
+    end
+
     context 'when a limit was changed by hand after the trial ended' do
       it 'gives back only the zero that is still there' do
         account.update!(limits: { 'agents' => 5, 'inboxes' => 3 })

@@ -21,7 +21,9 @@
 #             and main channels at 100 000 follow the plan, whatever the file says now.
 #             The operator and channel limits that the end of a trial put at 0 are given back (the values from before the
 #             trial, from the snapshot of the trial) without anybody asking: a plan is what the account pays for, so it must not
-#             stay locked out; a number the plan itself sets wins over the restored one.
+#             stay locked out; a number the plan itself sets wins over the restored one. A value from before the trial that was only the
+#             general value of the platform, where the plan has no number for the limit, is not written back: the limit holds no number
+#             and follows the plan (a number the plan gets later is written by the plan and by the sync).
 # * custom_attributes: plan = 'base', plan_modules, plan_version, plan_applied_at (ISO 8601, Astana time).
 #   The trial attributes (plan_type 'trial', trial_expires_at, trial_snapshot ...) are left exactly as they are, and the
 #   functions a running trial granted stay switched on (the trial takes them back itself when it ends).
@@ -154,7 +156,15 @@ class Accounts::ApplyPlan
   # The limits the end of a trial put at 0 and left there, as changes back to what they were before the trial. 'to' is nil for
   # a limit that was not set before: the key is taken off (see #write), the platform's general value applies again.
   def trial_limit_restore(current)
-    account.trial_held_limits.to_h { |key, before| [key, { 'from' => current[key], 'to' => before }] }
+    account.trial_held_limits.to_h { |key, before| [key, { 'from' => current[key], 'to' => restored_number(key, before) }] }
+  end
+
+  # The number a held limit gets back. A number that was only the general value of the platform, for a limit the plan has no number
+  # for, was the default and not a choice: it is not written back, the key is taken off, so the limit really follows the plan and the
+  # number the plan gets later is written by the plan and by «Обновить лимиты по тарифу» (Accounts::LimitSettings#platform_default?).
+  # Any other number is the account's own again.
+  def restored_number(key, before)
+    limit_settings.platform_default?(key, before) ? nil : before
   end
 
   def notes

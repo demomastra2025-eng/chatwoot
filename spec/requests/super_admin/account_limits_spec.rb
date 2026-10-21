@@ -227,11 +227,23 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
 
       get card_path
 
-      note = 'Ограничено после пробного периода: 0. Вернётся %s после назначения тарифа.'
+      note = 'Ограничено после пробного периода: 0. После назначения тарифа вернётся своё число, как до пробного периода: %s.'
       expect(text(row('agents').at_css('[data-testid="limit-held"]'))).to eq(format(note, '5 операторов'))
       expect(text(row('inboxes').at_css('[data-testid="limit-held"]'))).to eq(format(note, '3 канала'))
       expect(row('conversations').at_css('[data-testid="limit-held"]')).to be_nil
       expect(row('conversations').at_css('[data-testid="limit-now"]')).to be_present
+    end
+
+    it 'does not say «по тарифу: ...» under «Как в тарифе» of a held limit, which would be a second answer next to the line' do
+      account.update!(limits: account.limits.merge('agents' => 5))
+      account.activate_trial!(3)
+      account.expire_trial!
+
+      get card_path
+
+      expect(text(row('agents').at_css('.admin-limit__choices'))).to eq('Как в тарифе Без ограничений Своё число')
+      expect(row('agents').css('.admin-limit__option-sub')).to be_empty
+      expect(text(row('conversations').at_css('.admin-limit__choices'))).to include('Как в тарифе по тарифу: без ограничений')
     end
 
     it 'has no second line, no «запрещено» badge and no meter for a held limit' do
@@ -262,19 +274,47 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
     end
 
     it 'says what a held limit gets back: the number of the plan where it has one, else the number from before the trial, else the general value' do
-      account.update!(limits: account.limits.merge('agents' => 5))
+      account.update!(limits: account.limits.merge('agents' => 5, 'inboxes' => 3))
       account.activate_trial!(3)
       account.expire_trial!
       allow(Accounts::Plans).to(receive(:limits_for).and_wrap_original { |original, *args| original.call(*args).merge('agents' => 2) })
 
       get card_path
 
-      note = 'Ограничено после пробного периода: 0. Вернётся %s после назначения тарифа.'
-      expect(text(row('agents').at_css('[data-testid="limit-held"]'))).to eq(format(note, '2 оператора'))
-      expect(text(row('inboxes').at_css('[data-testid="limit-held"]'))).to eq(format(note, 'без ограничений'))
+      prefix = 'Ограничено после пробного периода: 0. После назначения тарифа'
+      expect(text(row('agents').at_css('[data-testid="limit-held"]'))).to eq("#{prefix} будет 2 оператора.")
+      expect(text(row('inboxes').at_css('[data-testid="limit-held"]'))).to eq("#{prefix} вернётся своё число, как до пробного периода: 3 канала.")
     end
 
-    it 'reads «Как в тарифе» before and after the plan gives back the default the limit had, and «Своё число» for a number of its own' do
+    it 'says that nothing limits a held limit once the plan is applied, in words that are not «вернётся без ограничений»' do
+      account.update!(limits: account.limits.merge('agents' => 5))
+      account.activate_trial!(3)
+      account.expire_trial!
+
+      get card_path
+
+      # the channels had no number before the trial, and the plan and the platform have none either
+      expect(text(row('inboxes').at_css('[data-testid="limit-held"]')))
+        .to eq('Ограничено после пробного периода: 0. После назначения тарифа ограничений не будет.')
+      expect(response.body).not_to include('вернётся без ограничений', 'Вернётся без ограничений')
+    end
+
+    it 'says the general value of the platform when the limit had none before the trial, or only that value' do
+      allow(GlobalConfig).to receive(:get).and_call_original
+      allow(GlobalConfig).to receive(:get).with('ACCOUNT_AGENTS_LIMIT').and_return('ACCOUNT_AGENTS_LIMIT' => 5)
+      allow(GlobalConfig).to receive(:get).with('ACCOUNT_INBOXES_LIMIT').and_return('ACCOUNT_INBOXES_LIMIT' => 4)
+      account.update!(limits: account.limits.merge('agents' => 5))
+      account.activate_trial!(3)
+      account.expire_trial!
+
+      get card_path
+
+      note = 'Ограничено после пробного периода: 0. После назначения тарифа будет %s, как задано общей настройкой платформы.'
+      expect(text(row('agents').at_css('[data-testid="limit-held"]'))).to eq(format(note, '5 операторов'))
+      expect(text(row('inboxes').at_css('[data-testid="limit-held"]'))).to eq(format(note, '4 канала'))
+    end
+
+    it 'takes the default a limit had before the trial off when the plan gives it back, and keeps a number of its own as «Своё число»' do
       allow(GlobalConfig).to receive(:get).and_call_original
       allow(GlobalConfig).to receive(:get).with('ACCOUNT_AGENTS_LIMIT').and_return('ACCOUNT_AGENTS_LIMIT' => 5)
       account.update!(limits: account.limits.merge('agents' => 5, 'inboxes' => 8))
@@ -289,7 +329,8 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       get card_path
 
       expect(row('agents').at_css('[data-testid="limit-held"]')).to be_nil
-      expect(choice_of('agents')).to eq('plan')   # 5 is what «как в тарифе» gives an account whose plan has no number
+      expect(account.reload.limits).not_to have_key('agents') # the default is not written back: the limit follows the plan
+      expect(choice_of('agents')).to eq('plan')
       expect(text(row('agents').at_css('[data-testid="limit-now"]'))).to eq('Сейчас: 5 операторов')
       expect(choice_of('inboxes')).to eq('custom') # 8 channels is a number of its own
       expect(row('inboxes').at_css('input[type=number]')['value']).to eq('8')
@@ -355,6 +396,25 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       get card_path
 
       expect(text(row('conversations').at_css('.admin-limit__choices'))).to include('Как в тарифе по общей настройке: 500 диалогов')
+    end
+
+    it 'reads a number equal to the general value of the platform as «своё число», and «Как в тарифе» takes it off, so the base then writes its own' do
+      allow(GlobalConfig).to receive(:get).and_call_original
+      allow(GlobalConfig).to receive(:get).with('ACCOUNT_CONVERSATIONS_LIMIT').and_return('ACCOUNT_CONVERSATIONS_LIMIT' => 500)
+      account.update!(limits: { 'conversations' => 500 })
+
+      get card_path
+      expect(choice_of('conversations')).to eq('custom')
+      expect(row('conversations').at_css('input[type=number]')['value']).to eq('500')
+      expect(Accounts::ApplyPlan.new(account: account, modules: []).preview.kept_limits).to include('conversations') # the plan would keep it
+
+      save_from_card(choices(conversations: 'plan'))
+      expect(account.reload.limits).not_to have_key('conversations')
+
+      apply_plan!
+      get card_path
+      expect(choice_of('conversations')).to eq('plan')
+      expect(account.reload.limits['conversations']).to eq(max)
     end
 
     it 'reads the numbers the account holds as «своё число», without writing anything' do
