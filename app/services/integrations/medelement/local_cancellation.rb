@@ -52,6 +52,9 @@ module Integrations::Medelement::LocalCancellation
   def reception_code(appointment)
     attributes = appointment.custom_attributes.to_h
     return attributes['medelement_reception_code'].to_s if attributes['medelement_reception_code'].present?
+
+    marker_code = attributes.dig(MARKER_KEY, 'reception_code')
+    return marker_code.to_s if marker_code.present?
     return unless appointment.external_ref.to_s.start_with?(RECEPTION_PREFIX)
 
     appointment.external_ref.delete_prefix(RECEPTION_PREFIX).presence

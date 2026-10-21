@@ -22,8 +22,13 @@ import {
   appointmentCancellationAlertMessage,
   providerCancellationPending,
   isServiceAvailableForResource,
+  medelementAppointmentCardNote,
   medelementCommandFailureMessage,
   medelementCabinetsForResource,
+  medelementReceptionCode,
+  medelementReceptionCodeMessage,
+  medelementSyncStatusKey,
+  medelementSyncStatusMessage,
   resolveAppointmentMedelementCabinetCode,
   resolveAppointmentConversationTarget,
   servicesAvailableForResource,
@@ -99,6 +104,19 @@ describe.each([
     ];
 
     copy.forEach(text => expect(text).toEqual(expect.any(String)));
+  });
+
+  it('includes MedElement reception code and sync status translations', () => {
+    expect(m.SCHEDULING.MEDELEMENT.RECEPTION_CODE_LABEL).toContain('{code}');
+    expect(m.SCHEDULING.MEDELEMENT.SYNC_STATUS.SYNCED).toEqual(
+      expect.any(String)
+    );
+    expect(m.SCHEDULING.MEDELEMENT.SYNC_STATUS.PENDING).toEqual(
+      expect.any(String)
+    );
+    expect(m.SCHEDULING.MEDELEMENT.SYNC_STATUS.NOT_SYNCED).toEqual(
+      expect.any(String)
+    );
   });
 });
 
@@ -895,5 +913,89 @@ describe('scheduling helpers', () => {
         source: 'manual',
       })
     ).toBe(true);
+  });
+
+  it('extracts MedElement reception code from all supported payload shapes', () => {
+    expect(medelementReceptionCode({ medelementReceptionCode: '101' })).toBe(
+      '101'
+    );
+    expect(medelementReceptionCode({ medelement_reception_code: 202 })).toBe(
+      '202'
+    );
+    expect(
+      medelementReceptionCode({
+        customAttributes: { medelement_reception_code: '303' },
+      })
+    ).toBe('303');
+    expect(
+      medelementReceptionCode({
+        customAttributes: {
+          medelement_local_cancellation: { reception_code: '404' },
+        },
+      })
+    ).toBe('404');
+    expect(
+      medelementReceptionCode({
+        providerCommandReceipt: { providerReceptionCode: '505' },
+      })
+    ).toBe('505');
+    expect(
+      medelementReceptionCode({ externalRef: 'medelement:reception:606' })
+    ).toBe('606');
+    expect(medelementReceptionCode({ externalRef: 'other:606' })).toBe('');
+    expect(medelementReceptionCode({})).toBe('');
+  });
+
+  it('formats MedElement reception code and sync status notes for appointment cards', () => {
+    const t = (key, params = {}) =>
+      key === 'SCHEDULING.MEDELEMENT.RECEPTION_CODE_LABEL'
+        ? `Код приёма MedElement: ${params.code}`
+        : key;
+
+    const synced = {
+      status: 'confirmed',
+      providerConfirmationStatus: 'succeeded',
+      customAttributes: { medelement_reception_code: '777' },
+    };
+    expect(medelementReceptionCodeMessage(synced, t)).toBe(
+      'Код приёма MedElement: 777'
+    );
+    expect(medelementSyncStatusKey(synced)).toBe(
+      'SCHEDULING.MEDELEMENT.SYNC_STATUS.SYNCED'
+    );
+    expect(medelementAppointmentCardNote(synced, t)).toBe(
+      'SCHEDULING.MEDELEMENT.SYNC_STATUS.SYNCED · Код приёма MedElement: 777'
+    );
+    expect(
+      medelementAppointmentCardNote(synced, t, { includeStatus: false })
+    ).toBe('Код приёма MedElement: 777');
+
+    const pending = {
+      status: 'scheduled',
+      providerConfirmationStatus: 'pending',
+    };
+    expect(medelementSyncStatusKey(pending)).toBe(
+      'SCHEDULING.MEDELEMENT.SYNC_STATUS.PENDING'
+    );
+    expect(medelementSyncStatusMessage(pending, t)).toBe(
+      'SCHEDULING.MEDELEMENT.SYNC_STATUS.PENDING'
+    );
+
+    const unsyncedOnMedelementDoctor = {
+      status: 'scheduled',
+      source: 'manual',
+    };
+    expect(
+      medelementSyncStatusKey(unsyncedOnMedelementDoctor, {
+        isMedelementResource: true,
+      })
+    ).toBe('SCHEDULING.MEDELEMENT.SYNC_STATUS.NOT_SYNCED');
+    expect(
+      medelementSyncStatusKey(
+        { ...unsyncedOnMedelementDoctor, status: 'cancelled' },
+        { isMedelementResource: true }
+      )
+    ).toBe('');
+    expect(medelementSyncStatusKey(unsyncedOnMedelementDoctor)).toBe('');
   });
 });

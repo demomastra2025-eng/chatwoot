@@ -8,6 +8,8 @@ import {
   buildDayListForView,
   formatDateKey,
   isAppointmentProviderOwned,
+  isMedelementResource,
+  medelementAppointmentCardNote,
   providerBookingNeedsReview,
   providerBookingStatusKey,
   providerBookingStatusMessage,
@@ -84,7 +86,7 @@ const emit = defineEmits([
   'selectAppointment',
 ]);
 
-const { locale } = useI18n();
+const { locale, t } = useI18n();
 
 const isCalendarView = computed(() => props.presentation === 'calendar');
 const isKanbanView = computed(() => props.presentation === 'kanban');
@@ -180,6 +182,16 @@ const formatAppointmentTimeRange = (appointment, day) => {
 const resourceName = (resourceId, resourceNameFromAppointment) =>
   resourceNameFromAppointment || resourceNamesById.value[resourceId] || '—';
 
+const appointmentMedelementMeta = appointment =>
+  medelementAppointmentCardNote(appointment, t, {
+    includeStatus: !providerBookingStatusKey(appointment),
+    isMedelementResource: isMedelementResource(
+      props.resources.find(
+        resource => Number(resource.id) === Number(appointment?.resourceId)
+      )
+    ),
+  });
+
 const handleStatusChange = payload => {
   if (isAppointmentProviderOwned(payload.appointment)) return;
 
@@ -270,6 +282,13 @@ const handleStatusChange = payload => {
                       aria-hidden="true"
                     />
                     {{ providerBookingStatusMessage(appointment, $t) }}
+                  </span>
+                  <span
+                    v-if="appointmentMedelementMeta(appointment)"
+                    class="text-[11px] leading-4 whitespace-normal break-words text-n-slate-10"
+                    :data-testid="`list-appointment-medelement-meta-${appointment.id}`"
+                  >
+                    {{ appointmentMedelementMeta(appointment) }}
                   </span>
                   <span
                     class="text-xs whitespace-normal break-words text-n-slate-11"

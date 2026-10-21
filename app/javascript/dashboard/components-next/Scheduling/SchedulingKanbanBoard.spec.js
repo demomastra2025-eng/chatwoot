@@ -122,4 +122,27 @@ describe('SchedulingKanbanBoard', () => {
     expect(wrapper.text()).toContain('02:30 AM - 03:00 AM');
     expect(wrapper.text()).toContain('Sun, Mar 29');
   });
+
+  it('renders MedElement sync status and reception code on kanban cards', () => {
+    const wrapper = mountBoard({
+      appointments: [
+        {
+          clientName: 'Alex Doe',
+          customAttributes: { medelement_reception_code: 'me-42' },
+          endsAt: '2026-03-28T22:00:00.000Z',
+          id: 42,
+          providerConfirmationStatus: 'succeeded',
+          resourceId: 12,
+          startsAt: '2026-03-28T21:30:00.000Z',
+          status: 'scheduled',
+        },
+      ],
+    });
+
+    const meta = wrapper.get(
+      '[data-testid="kanban-appointment-medelement-meta-42"]'
+    );
+    expect(meta.text()).toContain('SCHEDULING.MEDELEMENT.SYNC_STATUS.SYNCED');
+    expect(meta.text()).toContain('me-42');
+  });
 });

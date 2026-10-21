@@ -161,4 +161,27 @@ describe('SchedulingCalendarGrid', () => {
     expect(wrapper.findAll('section')).toHaveLength(1);
     expect(wrapper.text()).not.toContain('No appointments for this day');
   });
+
+  it('renders MedElement sync status and reception code in list view', () => {
+    const wrapper = mountGrid({
+      appointments: [
+        {
+          clientName: 'Alex Doe',
+          customAttributes: { medelement_reception_code: 'me-41' },
+          endsAt: '2026-03-29T10:30:00.000Z',
+          id: 41,
+          providerConfirmationStatus: 'succeeded',
+          resourceId: 12,
+          serviceNameSnapshot: 'Consultation',
+          startsAt: '2026-03-29T10:00:00.000Z',
+          status: 'confirmed',
+        },
+      ],
+    });
+
+    const meta = wrapper.get(
+      '[data-testid="list-appointment-medelement-meta-41"]'
+    );
+    expect(meta.text()).toContain('me-41');
+  });
 });

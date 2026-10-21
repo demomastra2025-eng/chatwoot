@@ -23,6 +23,7 @@ import {
   buildTimeOffIntervals,
   formatDateKey,
   formatTimeLabel,
+  medelementAppointmentCardNote,
   minuteOfDayFromDate,
   providerBookingNeedsReview,
   providerBookingStatusKey,
@@ -1143,6 +1144,9 @@ const appointmentEvents = computed(() => {
       statusLabel: providerBookingStatusKey(appointment)
         ? providerBookingStatusMessage(appointment, t)
         : appointment.statusLabel || '',
+      medelementMeta: medelementAppointmentCardNote(appointment, t, {
+        includeStatus: !providerBookingStatusKey(appointment),
+      }),
       clientName,
       serviceNameSnapshot: subtitle,
       accentColor: tone.accent,
@@ -1313,6 +1317,7 @@ const eventTitle = event => {
     event.clientName,
     // Service · specialist: the card may hide this line when it is short.
     event.serviceNameSnapshot || event.resourceName,
+    event.medelementMeta,
     customFieldSummaryTitle(event.appointment),
   ]
     .filter(Boolean)
@@ -1955,6 +1960,17 @@ onMounted(() => {
                   }"
                 >
                   {{ event.serviceNameSnapshot }}
+                </div>
+
+                <div
+                  v-if="event.medelementMeta && event.density === 'regular'"
+                  class="scheduling-vue-cal__event-medelement-meta"
+                  :class="{
+                    'scheduling-vue-cal__event-subtitle--surface':
+                      isSurfaceAppointmentCard(event),
+                  }"
+                >
+                  {{ event.medelementMeta }}
                 </div>
               </div>
             </template>
@@ -2924,6 +2940,19 @@ onMounted(() => {
   padding-left: 1rem;
 }
 
+.scheduling-vue-cal__event-medelement-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--event-fg-soft);
+  font-size: 0.625rem;
+  font-weight: 400;
+  line-height: 0.8125rem;
+  opacity: 0.85;
+  padding-left: 1rem;
+}
+
 .scheduling-vue-cal__event-subtitle--surface {
   color: var(--event-fg-soft);
 }
@@ -2958,14 +2987,16 @@ onMounted(() => {
     display: none;
   }
 
-  .scheduling-vue-cal__event-subtitle {
+  .scheduling-vue-cal__event-subtitle,
+  .scheduling-vue-cal__event-medelement-meta {
     padding-left: 0;
   }
 }
 
 @container (max-width: 2.75rem) {
   .scheduling-vue-cal__event-title,
-  .scheduling-vue-cal__event-subtitle {
+  .scheduling-vue-cal__event-subtitle,
+  .scheduling-vue-cal__event-medelement-meta {
     display: none;
   }
 

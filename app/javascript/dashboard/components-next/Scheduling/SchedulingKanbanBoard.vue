@@ -11,6 +11,8 @@ import {
 } from 'dashboard/routes/dashboard/scheduling/constants';
 import {
   isAppointmentProviderOwned,
+  isMedelementResource,
+  medelementAppointmentCardNote,
   providerBookingNeedsReview,
   providerBookingStatusKey,
   providerBookingStatusMessage,
@@ -79,6 +81,16 @@ const resourceNamesById = computed(() => {
     return result;
   }, {});
 });
+
+const appointmentMedelementMeta = appointment =>
+  medelementAppointmentCardNote(appointment, t, {
+    includeStatus: !providerBookingStatusKey(appointment),
+    isMedelementResource: isMedelementResource(
+      props.resources.find(
+        resource => Number(resource.id) === Number(appointment?.resourceId)
+      )
+    ),
+  });
 
 const createBoardState = () =>
   statusOrder.reduce((result, status) => {
@@ -263,6 +275,13 @@ const canMoveAppointment = event =>
                       "
                     >
                       {{ providerBookingStatusMessage(element, $t) }}
+                    </p>
+                    <p
+                      v-if="appointmentMedelementMeta(element)"
+                      class="mb-0 mt-1 text-[11px] leading-4 text-n-slate-10"
+                      :data-testid="`kanban-appointment-medelement-meta-${element.id}`"
+                    >
+                      {{ appointmentMedelementMeta(element) }}
                     </p>
                   </div>
 

@@ -76,7 +76,13 @@
       "LOCAL_CANCEL_CONFIRM_DESCRIPTION": "The status changes only in OneLink. The reception is not removed from MedElement — free the doctor's time there manually.",
       "LOCAL_CANCEL_HINT": "Cancels only in OneLink — the reception stays in MedElement.",
       "RESOURCE_CHANGE_UNSUPPORTED": "Changing the specialist for a MedElement appointment is not supported yet. Change only the date or time.",
-      "SUCCESS": "The change was successfully applied in MedElement"
+      "SUCCESS": "The change was successfully applied in MedElement",
+      "RECEPTION_CODE_LABEL": "MedElement reception code: {code}",
+      "SYNC_STATUS": {
+        "SYNCED": "Synced with MedElement",
+        "PENDING": "Awaiting MedElement sync",
+        "NOT_SYNCED": "Not synced with MedElement"
+      }
     },
     "GENERAL": {
       "ACTIVE": "Active",

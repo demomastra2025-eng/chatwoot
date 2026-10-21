@@ -107,6 +107,21 @@ RSpec.describe Scheduling::PayloadBuilder do
     end
   end
 
+  it 'exposes the MedElement reception code from custom attributes, external_ref, or local cancellation marker' do
+    by_attr = build_stubbed(:scheduling_appointment, custom_attributes: { 'medelement_reception_code' => '501' })
+    by_ref = build_stubbed(:scheduling_appointment, external_ref: 'medelement:reception:777')
+    by_marker = build_stubbed(
+      :scheduling_appointment,
+      custom_attributes: { 'medelement_local_cancellation' => { 'reception_code' => '888' } }
+    )
+    plain = build_stubbed(:scheduling_appointment)
+
+    expect(described_class.appointment(by_attr)[:medelement_reception_code]).to eq('501')
+    expect(described_class.appointment(by_ref)[:medelement_reception_code]).to eq('777')
+    expect(described_class.appointment(by_marker)[:medelement_reception_code]).to eq('888')
+    expect(described_class.appointment(plain)).not_to have_key(:medelement_reception_code)
+  end
+
   def empty_calendar_payload(resources: [])
     {
       view: 'week',

@@ -1121,4 +1121,25 @@ describe('SchedulingVueCalCalendar', () => {
       )
     ).toBe('#f97316');
   });
+
+  it('includes MedElement reception code and sync status on regular cards and tooltips', async () => {
+    const wrapper = mountCalendar({
+      appointments: [
+        visit(1, {
+          clientName: 'MedElement patient',
+          customAttributes: { medelement_reception_code: 'me-777' },
+          providerConfirmationStatus: 'succeeded',
+        }),
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const card = cardFor(wrapper, 'MedElement patient');
+    expect(card.attributes('title')).toContain('me-777');
+    expect(
+      card.find('.scheduling-vue-cal__event-medelement-meta').text()
+    ).toContain('me-777');
+  });
 });

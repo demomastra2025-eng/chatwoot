@@ -650,6 +650,11 @@ describe('SchedulingCalendarPage pending local booking', () => {
       'SCHEDULING.APPOINTMENT_FORM.SAVED_WITHOUT_DEAL_REQUIRED_FIELDS'
     );
     expect(
+      wrapper
+        .find('[data-test="calendar-appointment-medelement-meta"]')
+        .exists()
+    ).toBe(false);
+    expect(
       wrapper.find('[data-test="calendar-patient-provider-source"]').exists()
     ).toBe(false);
     expect(
@@ -659,6 +664,27 @@ describe('SchedulingCalendarPage pending local booking', () => {
     ).toBe(false);
     expect(SchedulingAppointmentsAPI.create).not.toHaveBeenCalled();
     expect(SchedulingAppointmentsAPI.update).not.toHaveBeenCalled();
+
+    store.openEdit({
+      id: 502,
+      accountId: 74,
+      contactId: 42,
+      clientFirstName: 'Client',
+      resourceId: 3,
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+      source: 'medelement',
+      medelementReceptionCode: 'me-902',
+      providerConfirmationStatus: 'succeeded',
+    });
+    await flushPromises();
+    const medelementMeta = wrapper.get(
+      '[data-test="calendar-appointment-medelement-meta"]'
+    );
+    expect(medelementMeta.text()).toContain(
+      'SCHEDULING.MEDELEMENT.SYNC_STATUS.SYNCED'
+    );
+    expect(medelementMeta.text()).toContain('me-902');
   });
 
   it('keeps dismiss available during submit and preserves a subsequently opened form', async () => {

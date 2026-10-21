@@ -72,6 +72,7 @@ import {
   providerBookingStatusMessage,
   providerCancellationPending,
   isMedelementResource,
+  medelementAppointmentCardNote,
   medelementCabinetsForResource,
   resolveAppointmentMedelementCabinetCode,
   servicesAvailableForResource,
@@ -1672,6 +1673,10 @@ async function refreshProviderAppointmentState(
     if (refreshed.externalRef) {
       currentAppointment.externalRef = refreshed.externalRef;
     }
+    if (refreshed.medelementReceptionCode) {
+      currentAppointment.medelementReceptionCode =
+        refreshed.medelementReceptionCode;
+    }
     return currentAppointment;
   } catch {
     // The provider result remains visible if the local appointment readback fails.
@@ -2462,6 +2467,12 @@ const appointmentMeta = appointment => {
     .join(' · ');
 };
 
+const appointmentMedelementMeta = appointment =>
+  medelementAppointmentCardNote(appointment, t, {
+    includeStatus: !providerBookingStatusKey(appointment),
+    isMedelementResource: isMedelementAppointment(appointment),
+  });
+
 const loadReferences = () => {
   if (!referencesReadyPromise) {
     referencesReadyPromise = Promise.all([
@@ -3078,6 +3089,13 @@ const isClientFieldsOpen = (form, key) =>
                     "
                   >
                     {{ providerBookingStatusMessage(appointment, $t) }}
+                  </span>
+                  <span
+                    v-if="appointmentMedelementMeta(appointment)"
+                    class="block truncate text-[11px] leading-4 text-n-slate-10"
+                    :data-testid="`appointment-medelement-meta-${appointment.id}`"
+                  >
+                    {{ appointmentMedelementMeta(appointment) }}
                   </span>
                 </span>
               </span>

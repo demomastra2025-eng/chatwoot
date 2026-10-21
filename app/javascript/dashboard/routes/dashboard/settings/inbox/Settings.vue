@@ -1105,7 +1105,6 @@ export default {
     },
     fetchSharedData() {
       this.$store.dispatch('agents/get');
-      this.$store.dispatch('teams/get');
       this.$store.dispatch('labels/get');
     },
     syncInboxData() {

@@ -72,8 +72,10 @@ import {
   isMedelementCancellationLocalOnly,
   isMedelementLocalCancellation,
   isMedelementResource,
+  medelementAppointmentCardNote,
   medelementCommandFailureMessage,
   medelementCabinetsForResource,
+  providerBookingNeedsReview,
   resolveAppointmentMedelementCabinetCode,
   resolveAppointmentConversationTarget,
   servicesAvailableForResource,
@@ -351,6 +353,14 @@ const selectedFormMedelementCabinets = computed(() =>
 const isSelectedFormResourceMedelement = computed(() =>
   isMedelementResource(selectedFormResource.value)
 );
+const selectedAppointmentMedelementMeta = computed(() => {
+  if (formStore.mode !== 'edit' || !formStore.selectedAppointment) return '';
+
+  return medelementAppointmentCardNote(formStore.selectedAppointment, t, {
+    includeStatus: !isSelectedAppointmentLocallyCancelled.value,
+    isMedelementResource: isSelectedFormResourceMedelement.value,
+  });
+});
 const medelementCabinetOptions = computed(() =>
   selectedFormMedelementCabinets.value.map(cabinet => ({
     label:
@@ -2337,6 +2347,18 @@ onMounted(async () => {
                 :inert="formStore.ui.isSaving ? '' : undefined"
                 data-test="appointment-form-controls"
               >
+                <p
+                  v-if="selectedAppointmentMedelementMeta"
+                  class="m-0 text-xs leading-5"
+                  :class="
+                    providerBookingNeedsReview(formStore.selectedAppointment)
+                      ? 'font-medium text-n-ruby-11'
+                      : 'text-n-slate-11'
+                  "
+                  data-test="calendar-appointment-medelement-meta"
+                >
+                  {{ selectedAppointmentMedelementMeta }}
+                </p>
                 <p
                   v-if="
                     appointmentCrmLinkWarningMessage(

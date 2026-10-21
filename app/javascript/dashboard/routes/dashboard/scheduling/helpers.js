@@ -50,12 +50,55 @@ export const canCreateAppointmentConversation = appointment =>
   (appointment?.source !== 'medelement' ||
     appointment?.externalConversationCreationSupported === true);
 
+const MEDELEMENT_RECEPTION_REF_PREFIX = 'medelement:reception:';
+const PENDING_MEDELEMENT_SYNC_STATUSES = [
+  'pending',
+  'queued',
+  'processing',
+  'awaiting_confirmation',
+  'awaiting_patient_selection',
+  'awaiting_patient_creation',
+  'awaiting_phone_refresh',
+];
+
 export const isAppointmentProviderOwned = appointment =>
   appointment?.source === 'medelement';
 
+export const medelementReceptionCode = appointment => {
+  const customAttributes =
+    appointment?.customAttributes || appointment?.custom_attributes || {};
+  const localCancellation =
+    customAttributes.medelement_local_cancellation ||
+    customAttributes.medelementLocalCancellation ||
+    {};
+  const receipt =
+    appointment?.providerCommandReceipt ||
+    appointment?.provider_command_receipt ||
+    {};
+  const explicitCode =
+    appointment?.medelementReceptionCode ||
+    appointment?.medelement_reception_code ||
+    customAttributes.medelement_reception_code ||
+    customAttributes.medelementReceptionCode ||
+    localCancellation.reception_code ||
+    localCancellation.receptionCode ||
+    receipt.providerReceptionCode ||
+    receipt.provider_reception_code ||
+    '';
+  if (String(explicitCode).trim()) return String(explicitCode).trim();
+
+  const externalRef = String(
+    appointment?.externalRef || appointment?.external_ref || ''
+  ).trim();
+  if (externalRef.startsWith(MEDELEMENT_RECEPTION_REF_PREFIX)) {
+    return externalRef.slice(MEDELEMENT_RECEPTION_REF_PREFIX.length).trim();
+  }
+
+  return '';
+};
+
 export const hasMedelementReceptionIdentity = appointment =>
-  appointment?.externalRef?.startsWith('medelement:reception:') ||
-  Boolean(appointment?.customAttributes?.medelement_reception_code) ||
+  Boolean(medelementReceptionCode(appointment)) ||
   ['pending', 'succeeded', 'provider_status_unknown'].includes(
     appointment?.providerConfirmationStatus ||
       appointment?.customAttributes?.medelement_provider_sync_status
@@ -159,6 +202,99 @@ export const providerBookingStatusMessage = (appointment, t) => {
     return t('SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_PENDING');
 
   return '';
+};
+
+export const medelementReceptionCodeMessage = (appointment, t) => {
+  const code = medelementReceptionCode(appointment);
+  if (!code) return '';
+
+  const translated = t?.('SCHEDULING.MEDELEMENT.RECEPTION_CODE_LABEL', {
+    code,
+  });
+  if (
+    !translated ||
+    translated === 'SCHEDULING.MEDELEMENT.RECEPTION_CODE_LABEL'
+  ) {
+    return `${translated || 'MedElement'}: ${code}`;
+  }
+
+  return translated.includes(code) ? translated : `${translated}: ${code}`;
+};
+
+export const medelementSyncStatusKey = (
+  appointment,
+  { isMedelementResource: resourceIsMedelement = false } = {}
+) => {
+  const bookingKey = providerBookingStatusKey(appointment);
+  if (bookingKey) return bookingKey;
+
+  const customAttributes =
+    appointment?.customAttributes || appointment?.custom_attributes || {};
+  const providerStatus =
+    appointment?.providerConfirmationStatus ||
+    appointment?.provider_confirmation_status ||
+    customAttributes.medelement_provider_sync_status ||
+    customAttributes.medelementProviderSyncStatus ||
+    '';
+  const receptionCode = medelementReceptionCode(appointment);
+
+  if (PENDING_MEDELEMENT_SYNC_STATUSES.includes(providerStatus)) {
+    return 'SCHEDULING.MEDELEMENT.SYNC_STATUS.PENDING';
+  }
+  if (['failed', 'provider_status_unknown'].includes(providerStatus)) {
+    return 'SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW';
+  }
+  if (
+    providerStatus === 'succeeded' ||
+    appointment?.providerConfirmed === true ||
+    appointment?.provider_confirmed === true ||
+    isAppointmentProviderOwned(appointment) ||
+    Boolean(receptionCode)
+  ) {
+    return 'SCHEDULING.MEDELEMENT.SYNC_STATUS.SYNCED';
+  }
+  if (
+    resourceIsMedelement &&
+    appointment?.status &&
+    appointment.status !== 'cancelled'
+  ) {
+    return 'SCHEDULING.MEDELEMENT.SYNC_STATUS.NOT_SYNCED';
+  }
+
+  return '';
+};
+
+export const medelementSyncStatusMessage = (appointment, t, options = {}) => {
+  const key = medelementSyncStatusKey(appointment, options);
+  if (key === 'SCHEDULING.MEDELEMENT.SYNC_STATUS.SYNCED')
+    return t('SCHEDULING.MEDELEMENT.SYNC_STATUS.SYNCED');
+  if (key === 'SCHEDULING.MEDELEMENT.SYNC_STATUS.PENDING')
+    return t('SCHEDULING.MEDELEMENT.SYNC_STATUS.PENDING');
+  if (key === 'SCHEDULING.MEDELEMENT.SYNC_STATUS.NOT_SYNCED')
+    return t('SCHEDULING.MEDELEMENT.SYNC_STATUS.NOT_SYNCED');
+  if (key === 'SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW')
+    return t('SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW');
+  if (key) return providerBookingStatusMessage(appointment, t);
+
+  return '';
+};
+
+export const medelementAppointmentCardNote = (
+  appointment,
+  t,
+  {
+    includeStatus = true,
+    isMedelementResource: resourceIsMedelement = false,
+  } = {}
+) => {
+  const statusText = includeStatus
+    ? medelementSyncStatusMessage(appointment, t, {
+        isMedelementResource: resourceIsMedelement,
+      })
+    : '';
+  const codeText = medelementReceptionCodeMessage(appointment, t);
+
+  return [statusText, codeText].filter(Boolean).join(' · ');
 };
 
 export const appointmentCancellationAlertKey = appointment => {

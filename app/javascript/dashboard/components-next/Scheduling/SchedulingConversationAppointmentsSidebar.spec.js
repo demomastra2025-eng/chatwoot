@@ -3528,4 +3528,26 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(wrapper.vm.createForm.comment).toBe('Keep draft');
     wrapper.unmount();
   });
+
+  it('displays the MedElement reception code and sync status in small font on the appointment card', async () => {
+    configureMedelementResource();
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: {
+        payload: [
+          {
+            ...existingAppointment,
+            customAttributes: { medelement_reception_code: 'reception-501' },
+            providerConfirmationStatus: 'succeeded',
+          },
+        ],
+      },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    const meta = wrapper.get('[data-testid="appointment-medelement-meta-501"]');
+    expect(meta.text()).toContain('SCHEDULING.MEDELEMENT.SYNC_STATUS.SYNCED');
+    expect(meta.text()).toContain('reception-501');
+    wrapper.unmount();
+  });
 });

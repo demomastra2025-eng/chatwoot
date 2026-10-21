@@ -60,7 +60,13 @@
       "QUEUED": "MedElement пәрмені расталып, кезекке қойылды",
       "LOCAL_CANCEL_CONFIRM_TITLE": "Жазбаны тек OneLink-те болдырмау керек пе?",
       "LOCAL_CANCEL_CONFIRM_DESCRIPTION": "Мәртебе тек OneLink-те өзгереді. МедЭлементтегі қабылдау өшірілмейді — дәрігердің уақытын сонда қолмен босатыңыз.",
-      "LOCAL_CANCEL_HINT": "Тек OneLink-те болдырмау — МедЭлементте қабылдау қалады."
+      "LOCAL_CANCEL_HINT": "Тек OneLink-те болдырмау — МедЭлементте қабылдау қалады.",
+      "RECEPTION_CODE_LABEL": "MedElement қабылдау коды: {code}",
+      "SYNC_STATUS": {
+        "SYNCED": "MedElement-пен синхрондалған",
+        "PENDING": "MedElement синхрондауын күтуде",
+        "NOT_SYNCED": "MedElement-пен синхрондалмаған"
+      }
     },
     "APPOINTMENT_FORM": {
       "STARTS_AT": "Басталуы",
