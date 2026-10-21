@@ -73,7 +73,6 @@ export const defaultRedirectPage = (
     },
     { permissions: CONTACT_ACCESS_PERMISSIONS, path: 'contacts' },
     { permissions: [REPORTS_PERMISSIONS], path: 'reports/overview' },
-    { permissions: [PORTAL_PERMISSIONS], path: 'portals' },
     {
       permissions: CRM_DEAL_VIEW_PERMISSIONS,
       path: 'crm/deals',
@@ -178,7 +177,6 @@ export const isAConversationRoute = (
     'label_conversations',
     'team_conversations',
     'folder_conversations',
-    'conversation_participating',
     'communication_threads_dashboard',
   ];
   const extendedRoutes = [
@@ -189,7 +187,6 @@ export const isAConversationRoute = (
     'conversations_through_label',
     'conversations_through_team',
     'conversations_through_folders',
-    'conversation_through_participating',
     'communication_thread_conversation',
   ];
 
@@ -215,8 +212,6 @@ export const getConversationDashboardRoute = routeName => {
       return 'team_conversations';
     case 'conversations_through_folders':
       return 'folder_conversations';
-    case 'conversation_through_participating':
-      return 'conversation_participating';
     case 'conversation_through_inbox':
       return 'inbox_dashboard';
     case 'communication_thread_conversation':

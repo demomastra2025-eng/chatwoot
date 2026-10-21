@@ -1,12 +1,13 @@
 import { config } from '@vue/test-utils';
 import { createI18n } from 'vue-i18n';
 import i18nMessages from 'dashboard/i18n';
+import en from 'dashboard/i18n/locale/en';
 import FloatingVue from 'floating-vue';
 
 const i18n = createI18n({
   legacy: false,
   locale: 'en',
-  messages: i18nMessages,
+  messages: { en, ...i18nMessages },
 });
 
 config.global.plugins = [i18n, FloatingVue];

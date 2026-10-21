@@ -5,6 +5,7 @@ import Policy from 'dashboard/components/policy.vue';
 import { useSidebarContext } from './provider';
 import { useRouter } from 'vue-router';
 import SidebarUnreadBadge from './SidebarUnreadBadge.vue';
+import { preloadRouteComponents } from './routeChunkPreloader';
 
 const props = defineProps({
   label: { type: String, required: true },
@@ -70,6 +71,12 @@ const componentType = computed(() => {
   return 'router-link';
 });
 
+const handleLeafMouseEnter = () => {
+  if (props.to) {
+    preloadRouteComponents(router, props.to);
+  }
+};
+
 const handleLeafClick = async event => {
   if (!shouldRenderComponent.value) {
     return;
@@ -109,6 +116,7 @@ const handleLeafClick = async event => {
         'gap-1.5': compactIconGap,
         'gap-2': !compactIconGap,
       }"
+      @mouseenter="handleLeafMouseEnter"
       @click="handleLeafClick"
     >
       <component

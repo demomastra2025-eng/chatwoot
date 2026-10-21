@@ -58,6 +58,7 @@ import {
   resolveRouteConversationAssigneeType,
   selectExclusiveSidebarChildNames,
 } from './sidebarActiveSelection';
+import { preloadSidebarMenuTargets } from './routeChunkPreloader';
 import {
   APPOINTMENT_STATUS_ICON_CLASSES,
   APPOINTMENT_STATUS_ICONS,
@@ -698,6 +699,7 @@ onMounted(async () => {
     store.dispatch('customViews/get', 'contact'),
     loadSidebarCrmPipelines(),
   ]);
+  preloadSidebarMenuTargets(router, primaryMenuItems.value);
 });
 
 const closeMobileSidebar = () => {
@@ -1479,58 +1481,6 @@ const menuItems = computed(() => {
           },
         ],
       },
-      {
-        name: 'Portals',
-        label: t('SIDEBAR.HELP_CENTER.TITLE'),
-        icon: 'i-lucide-library-big',
-        defaultChildName: 'Articles',
-        children: [
-          {
-            name: 'Articles',
-            visibilityKey: 'Portals:Articles',
-            label: t('SIDEBAR.HELP_CENTER.ARTICLES'),
-            activeOn: [
-              'portals_articles_index',
-              'portals_articles_new',
-              'portals_articles_edit',
-            ],
-            to: accountScopedRoute('portals_index', {
-              navigationPath: 'portals_articles_index',
-            }),
-          },
-          {
-            name: 'Categories',
-            visibilityKey: 'Portals:Categories',
-            label: t('SIDEBAR.HELP_CENTER.CATEGORIES'),
-            activeOn: [
-              'portals_categories_index',
-              'portals_categories_articles_index',
-              'portals_categories_articles_edit',
-            ],
-            to: accountScopedRoute('portals_index', {
-              navigationPath: 'portals_categories_index',
-            }),
-          },
-          {
-            name: 'Locales',
-            visibilityKey: 'Portals:Locales',
-            label: t('SIDEBAR.HELP_CENTER.LOCALES'),
-            activeOn: ['portals_locales_index'],
-            to: accountScopedRoute('portals_index', {
-              navigationPath: 'portals_locales_index',
-            }),
-          },
-          {
-            name: 'Settings',
-            visibilityKey: 'Portals:Settings',
-            label: t('SIDEBAR.HELP_CENTER.SETTINGS'),
-            activeOn: ['portals_settings_index'],
-            to: accountScopedRoute('portals_index', {
-              navigationPath: 'portals_settings_index',
-            }),
-          },
-        ],
-      },
       ...(hasSettingsAccess.value || hasCrmSettingsAccess.value
         ? [
             {
@@ -1719,20 +1669,46 @@ const matchesMenuItemRoute = item => {
   return item.activeOn?.includes(route.name);
 };
 
-const selectedDesktopSidebarItem = computed(() => {
-  const selectedItem = menuItems.value.find(
-    item => item.name === expandedItem.value && hasSecondaryColumn(item)
-  );
-
-  if (selectedItem) return selectedItem;
-
+const activeRouteMenuItem = computed(() => {
   return (
     menuItems.value.find(
       item =>
-        hasSecondaryColumn(item) &&
-        (activeChildNamesFor(item).length > 0 || matchesMenuItemRoute(item))
+        activeChildNamesFor(item).length > 0 || matchesMenuItemRoute(item)
     ) || null
   );
+});
+
+watch(
+  () => [route.name, route.path],
+  () => {
+    const matchedItem = activeRouteMenuItem.value;
+    if (!matchedItem) return;
+    expandedItem.value = hasSecondaryColumn(matchedItem)
+      ? matchedItem.name
+      : null;
+  },
+  { immediate: true }
+);
+
+const selectedDesktopSidebarItem = computed(() => {
+  const expandedMenuItem = menuItems.value.find(
+    item => item.name === expandedItem.value && hasSecondaryColumn(item)
+  );
+
+  if (
+    expandedMenuItem &&
+    expandedMenuItem.navigateOnCollapsedClick === false
+  ) {
+    return expandedMenuItem;
+  }
+
+  if (activeRouteMenuItem.value) {
+    return hasSecondaryColumn(activeRouteMenuItem.value)
+      ? activeRouteMenuItem.value
+      : null;
+  }
+
+  return expandedMenuItem || null;
 });
 
 const selectedDesktopSidebarActiveChildNames = computed(() => {

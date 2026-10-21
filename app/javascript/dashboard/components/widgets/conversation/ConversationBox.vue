@@ -75,9 +75,26 @@ export default {
     currentChatReplyInboxId: {
       immediate: true,
       handler(inboxId) {
-        if (inboxId) {
-          this.$store.dispatch('inboxAssignableAgents/fetch', [inboxId]);
-        }
+        if (!inboxId) return;
+        const records = this.$store.state?.inboxAssignableAgents?.records || {};
+        const hasCachedInbox = Object.prototype.hasOwnProperty.call(
+          records,
+          inboxId
+        );
+        if (hasCachedInbox) return;
+
+        this.$options._inFlightInboxIds ||= new Set();
+        const key = String(inboxId);
+        if (this.$options._inFlightInboxIds.has(key)) return;
+
+        this.$options._inFlightInboxIds.add(key);
+        Promise.resolve(
+          this.$store.dispatch('inboxAssignableAgents/fetch', [inboxId])
+        )
+          .catch(() => {})
+          .finally(() => {
+            this.$options._inFlightInboxIds?.delete(key);
+          });
       },
     },
     currentChatLabelTarget() {
@@ -87,7 +104,12 @@ export default {
   },
   mounted() {
     this.fetchLabels();
-    this.$store.dispatch('dashboardApps/get');
+    if (
+      !this.dashboardApps?.length &&
+      !this.$store.getters?.['dashboardApps/getUIFlags']?.isFetching
+    ) {
+      this.$store.dispatch('dashboardApps/get');
+    }
   },
   methods: {
     fetchLabels() {

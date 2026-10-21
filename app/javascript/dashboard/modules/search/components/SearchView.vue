@@ -110,11 +110,6 @@ const TABS_CONFIG = {
     permissions: CONVERSATION_ACCESS_PERMISSIONS,
     count: () => mappedMessages.value.length,
   },
-  articles: {
-    permissions: [...ROLES, PORTAL_PERMISSIONS],
-    featureFlag: FEATURE_FLAGS.HELP_CENTER,
-    count: () => mappedArticles.value.length,
-  },
 };
 
 const tabs = computed(() => {
@@ -149,11 +144,6 @@ const totalSearchResultsCount = computed(() => {
     {
       permissions: CONVERSATION_ACCESS_PERMISSIONS,
       count: () => conversations.value.length + messages.value.length,
-    },
-    {
-      permissions: [...ROLES, PORTAL_PERMISSIONS],
-      featureFlag: FEATURE_FLAGS.HELP_CENTER,
-      count: () => articles.value.length,
     },
   ];
 
@@ -458,30 +448,6 @@ onUnmounted(() => {
               />
             </Policy>
 
-            <Policy
-              v-if="isFeatureFlagEnabled(FEATURE_FLAGS.HELP_CENTER)"
-              :permissions="[...ROLES, PORTAL_PERMISSIONS]"
-              :feature-flag="FEATURE_FLAGS.HELP_CENTER"
-              class="flex flex-col justify-center"
-            >
-              <SearchResultArticlesList
-                v-if="filterArticles"
-                :is-fetching="uiFlags.article.isFetching"
-                :articles="articles"
-                :query="query"
-                :show-title="isSelectedTabAll"
-                :class="searchResultSectionClass"
-              />
-              <NextButton
-                v-if="showViewMore.articles"
-                :label="t(`SEARCH.VIEW_MORE`)"
-                icon="i-lucide-eye"
-                slate
-                sm
-                outline
-                @click="selectedTab = 'articles'"
-              />
-            </Policy>
 
             <div v-if="showLoadMore" class="flex justify-center mt-3 mb-6">
               <NextButton

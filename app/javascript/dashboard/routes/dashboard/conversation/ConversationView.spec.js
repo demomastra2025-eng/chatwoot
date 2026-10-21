@@ -94,4 +94,97 @@ describe('ConversationView', () => {
       );
     });
   });
+
+  describe('route leave lifecycle', () => {
+    it('marks route leave in-flight without blanking out selected chat before unmount', () => {
+      const next = vi.fn();
+      const context = {
+        conversationId: 3889,
+        isLeavingConversationRoute: false,
+        $store: { dispatch: vi.fn() },
+      };
+
+      ConversationView.beforeRouteLeave.call(context, {}, {}, next);
+
+      expect(context.isLeavingConversationRoute).toBe(true);
+      expect(context.$store.dispatch).not.toHaveBeenCalledWith(
+        'clearSelectedState'
+      );
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it('clears selected chat state when ConversationView unmounts', () => {
+      const context = {
+        conversationId: 3889,
+        currentChat: { id: 3889 },
+        isLeavingConversationRoute: false,
+        $store: { dispatch: vi.fn() },
+      };
+
+      ConversationView.beforeUnmount.call(context);
+
+      expect(context.isLeavingConversationRoute).toBe(true);
+      expect(context.$store.dispatch).toHaveBeenCalledWith(
+        'clearSelectedState'
+      );
+    });
+
+    it('does not replace the route while leaving ConversationView', () => {
+      const context = {
+        isLeavingConversationRoute: true,
+        communicationThreadMode: false,
+        conversationId: 3889,
+        currentChat: { id: 3889, inbox_id: 7 },
+        $route: { name: 'inbox_conversation', params: {}, query: {}, hash: '' },
+        $router: { replace: vi.fn() },
+      };
+
+      ConversationView.methods.normalizeConversationRoute.call(context);
+
+      expect(context.$router.replace).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('#mounted', () => {
+    it('does not fetch portals on mount and skips agents/get when agents are already loaded', () => {
+      const context = {
+        initialize: vi.fn(),
+        setActiveChat: vi.fn(),
+        $watch: vi.fn(),
+        $store: {
+          getters: {
+            'agents/getAgents': [{ id: 1, name: 'Agent' }],
+            'agents/getUIFlags': { isFetching: false },
+          },
+          dispatch: vi.fn(),
+        },
+      };
+
+      ConversationView.mounted.call(context);
+
+      expect(context.$store.dispatch).not.toHaveBeenCalledWith('agents/get');
+      expect(context.$store.dispatch).not.toHaveBeenCalledWith('portals/index');
+      expect(context.initialize).toHaveBeenCalledTimes(1);
+    });
+
+    it('dispatches agents/get on mount only when agents store is empty and not fetching', () => {
+      const context = {
+        initialize: vi.fn(),
+        setActiveChat: vi.fn(),
+        $watch: vi.fn(),
+        $store: {
+          getters: {
+            'agents/getAgents': [],
+            'agents/getUIFlags': { isFetching: false },
+          },
+          dispatch: vi.fn(),
+        },
+      };
+
+      ConversationView.mounted.call(context);
+
+      expect(context.$store.dispatch).toHaveBeenCalledWith('agents/get');
+      expect(context.$store.dispatch).not.toHaveBeenCalledWith('portals/index');
+    });
+  });
 });

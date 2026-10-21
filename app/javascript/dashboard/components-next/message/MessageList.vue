@@ -76,18 +76,75 @@ const isCommunicationThreadContext = computed(() =>
   isCommunicationThread(currentChat.value)
 );
 
-const allMessages = computed(() => {
-  const visibleMessages = useCamelCase(props.messages, {
+const camelCaseMessageCache = new WeakMap();
+
+const toCamelCaseMessage = rawMessage => {
+  if (!rawMessage || typeof rawMessage !== 'object') return rawMessage;
+  const contentAttrs = rawMessage.content_attributes;
+  const contentAttrsData = contentAttrs?.data;
+  const contentAttrsStatus = contentAttrsData?.status;
+  const contentAttrsTranslations = contentAttrs?.translations;
+  const attachmentsLen = Array.isArray(rawMessage.attachments)
+    ? rawMessage.attachments.length
+    : 0;
+
+  const cached = camelCaseMessageCache.get(rawMessage);
+  if (
+    cached &&
+    cached.status === rawMessage.status &&
+    cached.content === rawMessage.content &&
+    cached.updatedAt === rawMessage.updated_at &&
+    cached.contentAttrs === contentAttrs &&
+    cached.contentAttrsData === contentAttrsData &&
+    cached.contentAttrsStatus === contentAttrsStatus &&
+    cached.contentAttrsTranslations === contentAttrsTranslations &&
+    cached.attachmentsLen === attachmentsLen
+  ) {
+    return cached.transformed;
+  }
+
+  const transformed = useCamelCase(rawMessage, {
     deep: true,
     stopPaths: ['content_attributes.translations'],
-  }).filter(
-    message =>
-      !isHiddenDuplicateMessage(message) && isUsefulTimelineMessage(message)
-  );
+  });
+  camelCaseMessageCache.set(rawMessage, {
+    transformed,
+    status: rawMessage.status,
+    content: rawMessage.content,
+    updatedAt: rawMessage.updated_at,
+    contentAttrs,
+    contentAttrsData,
+    contentAttrsStatus,
+    contentAttrsTranslations,
+    attachmentsLen,
+  });
+  return transformed;
+};
+
+const allMessages = computed(() => {
+  const visibleMessages = (props.messages || [])
+    .map(toCamelCaseMessage)
+    .filter(
+      message =>
+        !isHiddenDuplicateMessage(message) && isUsefulTimelineMessage(message)
+    );
 
   return isCommunicationThreadContext.value
     ? deduplicateThreadActivityMessages(visibleMessages)
     : visibleMessages;
+});
+
+const messagesByIdMap = computed(() => {
+  const map = new Map();
+  (props.messages || []).forEach(msg => {
+    if (msg?.id !== undefined) map.set(msg.id, toCamelCaseMessage(msg));
+  });
+  (currentChat.value?.messages || []).forEach(msg => {
+    if (msg?.id !== undefined && !map.has(msg.id)) {
+      map.set(msg.id, toCamelCaseMessage(msg));
+    }
+  });
+  return map;
 });
 
 const shouldShowDateDivider = (message, index, messages) => {
@@ -172,6 +229,7 @@ const shouldShowChannelDivider = (message, index, messages) => {
 
 // Cache for fetched reply messages to avoid duplicate API calls
 const fetchedReplyMessages = reactive(new Map());
+const inFlightReplyMessages = new Set();
 
 /**
  * Fetches a specific message from the API by trying to get messages around it
@@ -184,6 +242,11 @@ const fetchReplyMessage = async (messageId, conversationId) => {
   if (fetchedReplyMessages.has(messageId)) {
     return fetchedReplyMessages.get(messageId);
   }
+  const requestKey = `${conversationId}:${messageId}`;
+  if (inFlightReplyMessages.has(requestKey)) {
+    return null;
+  }
+  inFlightReplyMessages.add(requestKey);
 
   try {
     const response = await MessageApi.getPreviousMessages({
@@ -196,7 +259,7 @@ const fetchReplyMessage = async (messageId, conversationId) => {
     const targetMessage = messages.find(msg => msg.id === messageId);
 
     if (targetMessage) {
-      const camelCaseMessage = useCamelCase(targetMessage);
+      const camelCaseMessage = toCamelCaseMessage(targetMessage);
       fetchedReplyMessages.set(messageId, camelCaseMessage);
       return camelCaseMessage;
     }
@@ -207,6 +270,8 @@ const fetchReplyMessage = async (messageId, conversationId) => {
   } catch (error) {
     fetchedReplyMessages.set(messageId, null);
     return null;
+  } finally {
+    inFlightReplyMessages.delete(requestKey);
   }
 };
 
@@ -263,15 +328,8 @@ const getInReplyToMessage = parentMessage => {
 
   if (!inReplyToMessageId) return null;
 
-  // Try to find in current messages first
-  let replyMessage = props.messages?.find(msg => msg.id === inReplyToMessageId);
-
-  // Then try store messages
-  if (!replyMessage && currentChat.value?.messages) {
-    replyMessage = currentChat.value.messages.find(
-      msg => msg.id === inReplyToMessageId
-    );
-  }
+  // Lookup in O(1) memoized map (covers props.messages and currentChat.value.messages)
+  let replyMessage = messagesByIdMap.value.get(inReplyToMessageId) || null;
 
   // Then check fetch cache
   if (!replyMessage && fetchedReplyMessages.has(inReplyToMessageId)) {
@@ -286,7 +344,7 @@ const getInReplyToMessage = parentMessage => {
     return null; // Let UI handle loading state
   }
 
-  return replyMessage ? useCamelCase(replyMessage) : null;
+  return replyMessage;
 };
 
 const messageReadStateClass = message =>

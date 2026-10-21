@@ -113,17 +113,15 @@ describe('#actions', () => {
         q: 'test',
       });
       expect(dispatch).toHaveBeenCalledWith('messageSearch', { q: 'test' });
-      expect(dispatch).toHaveBeenCalledWith('articleSearch', { q: 'test' });
     });
 
-    it('should pass filters to all search actions including articleSearch', async () => {
+    it('should pass filters to all search actions', async () => {
       const payload = { q: 'test', since: 1700000000, until: 1732000000 };
       await actions.fullSearch({ commit, dispatch }, payload);
 
       expect(dispatch).toHaveBeenCalledWith('contactSearch', payload);
       expect(dispatch).toHaveBeenCalledWith('conversationSearch', payload);
       expect(dispatch).toHaveBeenCalledWith('messageSearch', payload);
-      expect(dispatch).toHaveBeenCalledWith('articleSearch', payload);
     });
 
     it('passes one abort signal to all requests in the current search', async () => {
@@ -145,7 +143,7 @@ describe('#actions', () => {
 
       await actions.fullSearch({ commit, dispatch }, { q: 'test' });
 
-      expect(signals).toHaveLength(4);
+      expect(signals).toHaveLength(3);
       expect(signals.every(signal => signal instanceof AbortSignal)).toBe(true);
       expect(new Set(signals)).toHaveLength(1);
     });
@@ -181,9 +179,9 @@ describe('#actions', () => {
       );
 
       expect(
-        requests.slice(0, 4).every(request => request.signal.aborted)
+        requests.slice(0, 3).every(request => request.signal.aborted)
       ).toBe(true);
-      requests.slice(4).forEach(request => {
+      requests.slice(3).forEach(request => {
         const path = request.url.split('/').at(-1);
         request.resolve({ data: { payload: payloadByPath[path] } });
       });

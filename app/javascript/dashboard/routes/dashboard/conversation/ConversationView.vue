@@ -26,12 +26,12 @@ export default {
     ConversationSidebar,
   },
   beforeRouteLeave(to, from, next) {
-    // Clear selected state if navigating away from a conversation to a route without a conversationId to prevent stale data issues
-    // and resolves timing issues during navigation with conversation view and other screens
-    if (this.conversationId) {
-      this.$store.dispatch('clearSelectedState');
-    }
-    next(); // Continue with navigation
+    // Mark route leave in-flight so background route normalization does not
+    // cancel the outgoing navigation; actual selected chat cleanup happens in
+    // beforeUnmount so the current conversation pane does not blank out while
+    // lazy route chunks are still loading.
+    this.isLeavingConversationRoute = true;
+    next();
   },
   props: {
     inboxId: {
@@ -76,6 +76,7 @@ export default {
   data() {
     return {
       showSearchModal: false,
+      isLeavingConversationRoute: false,
     };
   },
   computed: {
@@ -126,13 +127,27 @@ export default {
   },
 
   mounted() {
-    this.$store.dispatch('agents/get');
-    this.$store.dispatch('portals/index');
+    if (
+      !this.$store.getters['agents/getAgents']?.length &&
+      !this.$store.getters['agents/getUIFlags']?.isFetching
+    ) {
+      this.$store.dispatch('agents/get');
+    }
     this.initialize();
-    this.$watch('$store.state.route', () => this.initialize());
+    this.$watch('$store.state.route', () => {
+      this.isLeavingConversationRoute = false;
+      this.initialize();
+    });
     this.$watch('chatList.length', () => {
       this.setActiveChat();
     });
+  },
+
+  beforeUnmount() {
+    this.isLeavingConversationRoute = true;
+    if (this.conversationId || this.currentChat?.id) {
+      this.$store.dispatch('clearSelectedState');
+    }
   },
 
   methods: {
@@ -182,6 +197,7 @@ export default {
     },
     normalizeConversationRoute() {
       if (
+        this.isLeavingConversationRoute ||
         this.communicationThreadMode ||
         this.$route.name !== 'inbox_conversation' ||
         !this.conversationId ||
@@ -253,6 +269,7 @@ export default {
       :folders-id="foldersId"
       :communication-thread-mode="communicationThreadMode"
       :is-on-expanded-layout="isOnExpandedLayout"
+      :is-leaving-route="isLeavingConversationRoute"
       @conversation-load="onConversationLoad"
     />
     <ConversationBox

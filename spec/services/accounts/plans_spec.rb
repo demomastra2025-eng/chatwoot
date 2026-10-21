@@ -50,20 +50,19 @@ RSpec.describe Accounts::Plans do
 
     it 'keeps the dangerous and deprecated flags switched off by every plan' do
       expect(plans.never_enabled).to include(
-        'custom_roles', 'saml', 'captain_scheduling_grounding_guard', 'contact_chatwoot_support_team', 'agent_bots'
+        'custom_roles', 'saml', 'captain_scheduling_grounding_guard', 'contact_chatwoot_support_team', 'agent_bots', 'help_center'
       )
       expect(plans.never_enabled).to include(*deprecated_features)
     end
 
     it 'puts chats, CRM and telephony in the base and the four modules where the owner approved them' do
       expect(plans.base_features).to include(
-        'channel_website', 'channel_email', 'inbound_emails', 'channel_facebook', 'channel_instagram', 'channel_tiktok', 'help_center',
+        'channel_website', 'channel_email', 'inbound_emails', 'channel_facebook', 'channel_instagram', 'channel_tiktok',
         'automations', 'integrations', 'reports', 'crm', 'crm_deals', 'crm_tasks', 'scheduling', 'macros', 'canned_responses',
         'channel_voice', 'whatsapp_call', 'voice_recorder'
       )
       expect(plans.module_keys).to eq(%w[ai_agents broadcasts quality extensions])
-      expect(plans.module_features('ai_agents')).to include('captain_integration', 'captain_integration_v2', 'captain_tasks',
-                                                            'help_center_embedding_search')
+      expect(plans.module_features('ai_agents')).to include('captain_integration', 'captain_integration_v2', 'captain_tasks')
       expect(plans.module_features('broadcasts')).to contain_exactly('campaigns', 'whatsapp_campaign')
       expect(plans.module_features('quality')).to contain_exactly('sla', 'audit_logs', 'csat_review_notes')
       expect(plans.module_features('extensions')).to contain_exactly('custom_tools', 'crm_integration', 'conversation_required_attributes',

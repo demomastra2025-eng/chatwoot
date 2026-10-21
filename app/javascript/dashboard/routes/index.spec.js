@@ -235,6 +235,24 @@ describe('#validateAuthenticateRoutePermission', () => {
         expect(store.dispatch).toHaveBeenCalledWith('accounts/get');
         expect(next).toHaveBeenCalledWith();
       });
+
+      it('does not re-fetch accounts/get on route changes when account features are already hydrated', async () => {
+        store.getters['accounts/getAccount'] = vi.fn(() => ({
+          id: 1,
+          features: { [FEATURE_FLAGS.CRM]: true },
+        }));
+
+        const to = {
+          name: 'general_settings_index',
+          params: { accountId: 1 },
+          meta: { permissions: ['administrator'] },
+        };
+
+        await validateAuthenticateRoutePermission(to, next);
+
+        expect(store.dispatch).not.toHaveBeenCalledWith('accounts/get');
+        expect(next).toHaveBeenCalledWith();
+      });
     });
   });
 });

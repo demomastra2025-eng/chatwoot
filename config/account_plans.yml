@@ -32,7 +32,6 @@ base:
     - automations
     - integrations
     - reports
-    - help_center
     # CRM and booking
     - crm
     - companies
@@ -64,7 +63,6 @@ modules:
       - captain_integration
       - captain_integration_v2
       - captain_tasks
-      - help_center_embedding_search
     limits: {}
   broadcasts:
     features:
@@ -108,8 +106,10 @@ never_enabled:
   - report_v4
   - whatsapp_embedded_signup
   - twilio_content_templates
-  # Agent Bots were removed from the product (the flag keeps its bit in Featurable::LEGACY_BITMASK_FEATURE_NAMES)
+  # Agent Bots and Help Center were removed from the product (the flags keep their bits in Featurable::LEGACY_BITMASK_FEATURE_NAMES)
   - agent_bots
+  - help_center
+  - help_center_embedding_search
 
 # Plans never touch these: infrastructure switches, owner decisions that are still open, flags without a product meaning.
 internal:

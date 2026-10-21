@@ -19,7 +19,8 @@ const dismissal = ref(null);
 const clock = ref(Date.now());
 const usageByAccount = new Map();
 let requestGeneration = 0;
-let clockTimer;
+let clockTimer = null;
+let usageRefreshTimer = null;
 
 const usagePercent = computed(() => Number(usage.value?.usage_percent) || 0);
 const level = computed(() => {
@@ -103,16 +104,53 @@ const dismiss = () => {
   }
 };
 
-clockTimer = window.setInterval(() => {
-  clock.value = Date.now();
-}, 60 * 1000);
-const usageRefreshTimer = window.setInterval(() => {
-  if (isAdmin.value && accountId.value) fetchUsage(accountId.value);
-}, USAGE_REFRESH_INTERVAL);
+const stopClockTimer = () => {
+  if (!clockTimer) return;
+  window.clearInterval(clockTimer);
+  clockTimer = null;
+};
+
+const startClockTimer = () => {
+  if (clockTimer) return;
+  clockTimer = window.setInterval(() => {
+    clock.value = Date.now();
+  }, 60 * 1000);
+};
+
+const stopUsageRefreshTimer = () => {
+  if (!usageRefreshTimer) return;
+  window.clearInterval(usageRefreshTimer);
+  usageRefreshTimer = null;
+};
+
+const startUsageRefreshTimer = () => {
+  if (usageRefreshTimer) return;
+  usageRefreshTimer = window.setInterval(() => {
+    if (isAdmin.value && accountId.value) fetchUsage(accountId.value);
+  }, USAGE_REFRESH_INTERVAL);
+};
+
+watch(
+  [accountId, isAdmin, dismissal],
+  ([id, admin, currentDismissal]) => {
+    if (admin && id) {
+      startUsageRefreshTimer();
+    } else {
+      stopUsageRefreshTimer();
+    }
+    if (admin && currentDismissal) {
+      startClockTimer();
+    } else {
+      stopClockTimer();
+    }
+  },
+  { immediate: true, flush: 'sync' }
+);
+
 onBeforeUnmount(() => {
   requestGeneration += 1;
-  window.clearInterval(clockTimer);
-  window.clearInterval(usageRefreshTimer);
+  stopClockTimer();
+  stopUsageRefreshTimer();
 });
 </script>
 

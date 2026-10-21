@@ -164,7 +164,7 @@ export default {
     },
     portalSlug: {
       type: String,
-      required: true,
+      default: '',
     },
     conversationType: {
       type: String,
@@ -512,7 +512,7 @@ export default {
         : this.$t('CONVERSATION.FOOTER.ENABLE_SIGN_TOOLTIP');
     },
     enableInsertArticleInReply() {
-      return this.portalSlug;
+      return false;
     },
     showInsertArticleButton() {
       return this.enableInsertArticleInReply && !this.isCallReplyAction;

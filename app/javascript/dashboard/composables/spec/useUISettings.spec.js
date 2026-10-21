@@ -80,6 +80,22 @@ describe('useUISettings', () => {
     );
   });
 
+  it('filters out removed sidebar items from persisted conversation_sidebar_items_order', () => {
+    getUISettingsMock.value.conversation_sidebar_items_order = [
+      { name: 'conversation_actions' },
+      { name: 'conversation_participants' },
+      { name: 'previous_conversation' },
+      { name: 'linear_issues' },
+      { name: 'shopify_orders' },
+    ];
+    const { conversationSidebarItemsOrder } = useUISettings();
+    expect(conversationSidebarItemsOrder.value).toEqual(
+      DEFAULT_CONVERSATION_SIDEBAR_ITEMS_ORDER
+    );
+    getUISettingsMock.value.conversation_sidebar_items_order =
+      DEFAULT_CONVERSATION_SIDEBAR_ITEMS_ORDER;
+  });
+
   it('returns correct contact sidebar items order', () => {
     const { contactSidebarItemsOrder } = useUISettings();
     expect(contactSidebarItemsOrder.value).toEqual(

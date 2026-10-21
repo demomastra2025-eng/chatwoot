@@ -117,5 +117,9 @@ describe('ContactPanel selected patient details', () => {
     ).toBe(85);
     expect(mocks.dispatch).toHaveBeenCalledWith('contacts/show', { id: 85 });
     expect(chat.meta.sender.id).toBe(42);
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      'integrations/get',
+      'linear'
+    );
   });
 });

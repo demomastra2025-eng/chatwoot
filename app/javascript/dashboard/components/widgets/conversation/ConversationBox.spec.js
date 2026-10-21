@@ -72,4 +72,32 @@ describe('ConversationBox labels', () => {
 
     expect(dispatch).not.toHaveBeenCalled();
   });
+
+  it('skips re-fetching assignable agents and dashboard apps when already cached in store', () => {
+    const dispatch = vi.fn();
+    const context = {
+      dashboardApps: [{ id: 1, title: 'App' }],
+      fetchLabels: vi.fn(),
+      $store: {
+        state: {
+          inboxAssignableAgents: {
+            records: { 9: [{ id: 1, name: 'Agent' }] },
+          },
+        },
+        getters: {
+          'inboxAssignableAgents/getUIFlags': { isFetching: false },
+          'dashboardApps/getUIFlags': { isFetching: false },
+        },
+        dispatch,
+      },
+    };
+
+    ConversationBox.watch.currentChatReplyInboxId.handler.call(context, 9);
+    ConversationBox.mounted.call(context);
+
+    expect(dispatch).not.toHaveBeenCalledWith('inboxAssignableAgents/fetch', [
+      9,
+    ]);
+    expect(dispatch).not.toHaveBeenCalledWith('dashboardApps/get');
+  });
 });

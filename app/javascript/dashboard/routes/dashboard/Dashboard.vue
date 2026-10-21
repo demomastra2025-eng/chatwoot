@@ -4,7 +4,6 @@ import { defineAsyncComponent, ref, computed } from 'vue';
 import NextSidebar from 'next/sidebar/Sidebar.vue';
 import WootKeyShortcutModal from 'dashboard/components/widgets/modal/WootKeyShortcutModal.vue';
 import AddAccountModal from 'dashboard/components/app/AddAccountModal.vue';
-import UpgradePage from 'dashboard/routes/dashboard/upgrade/UpgradePage.vue';
 
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useAccount } from 'dashboard/composables/useAccount';
@@ -41,14 +40,12 @@ export default {
     CommandBar,
     WootKeyShortcutModal,
     AddAccountModal,
-    UpgradePage,
     FloatingCallWidget,
     PhoneWidget,
     WhatsappCallWidget,
     MobileSidebarLauncher,
   },
   setup() {
-    const upgradePageRef = ref(null);
     const { uiSettings, updateUISettings } = useUISettings();
     const { accountId, currentAccount } = useAccount();
     const { shouldShow } = usePolicy();
@@ -71,7 +68,6 @@ export default {
       canChoosePlan: computed(() =>
         shouldShow('', ['administrator'], [INSTALLATION_TYPES.CLOUD])
       ),
-      upgradePageRef,
       windowWidth,
       hasActiveCall: computed(() => callsStore.hasActiveCall),
       hasIncomingCall: computed(() => callsStore.hasIncomingCall),
@@ -97,17 +93,6 @@ export default {
   computed: {
     isSmallScreen() {
       return this.windowWidth < wootConstants.SMALL_SCREEN_BREAKPOINT;
-    },
-    showUpgradePage() {
-      return this.upgradePageRef?.shouldShowUpgradePage;
-    },
-    bypassUpgradePage() {
-      return [
-        'billing_settings_index',
-        'settings_inbox_list',
-        'general_settings_index',
-        'agent_list',
-      ].includes(this.$route.name);
     },
     isTrialPlan() {
       return this.currentAccount?.custom_attributes?.plan_type === 'trial';
@@ -151,30 +136,47 @@ export default {
     isSmallScreen: {
       handler() {
         const { LAYOUT_TYPES } = wootConstants;
-        if (window.innerWidth <= wootConstants.SMALL_SCREEN_BREAKPOINT) {
+        const targetDisplayType =
+          window.innerWidth <= wootConstants.SMALL_SCREEN_BREAKPOINT
+            ? LAYOUT_TYPES.EXPANDED
+            : this.previouslyUsedDisplayType;
+        if (
+          targetDisplayType &&
+          this.uiSettings?.conversation_display_type !== targetDisplayType
+        ) {
           this.updateUISettings({
-            conversation_display_type: LAYOUT_TYPES.EXPANDED,
+            conversation_display_type: targetDisplayType,
           });
+        }
+      },
+    },
+    isTrialPlan: {
+      handler(isTrial) {
+        if (isTrial) {
+          this.startTrialTimer();
         } else {
-          this.updateUISettings({
-            conversation_display_type: this.previouslyUsedDisplayType,
-          });
+          this.stopTrialTimer();
         }
       },
       immediate: true,
     },
   },
-  mounted() {
-    this.trialTimer = setInterval(() => {
-      this.currentTime = Date.now();
-    }, 30000);
-  },
   beforeUnmount() {
-    if (this.trialTimer) {
-      clearInterval(this.trialTimer);
-    }
+    this.stopTrialTimer();
   },
   methods: {
+    startTrialTimer() {
+      if (this.trialTimer) return;
+      this.currentTime = Date.now();
+      this.trialTimer = setInterval(() => {
+        this.currentTime = Date.now();
+      }, 30000);
+    },
+    stopTrialTimer() {
+      if (!this.trialTimer) return;
+      clearInterval(this.trialTimer);
+      this.trialTimer = null;
+    },
     toggleMobileSidebar() {
       this.isMobileSidebarOpen = !this.isMobileSidebarOpen;
     },
@@ -217,69 +219,57 @@ export default {
     <main
       class="flex flex-1 h-full w-full min-h-0 px-0 overflow-hidden bg-n-surface-1"
     >
-      <UpgradePage
-        v-show="showUpgradePage"
-        ref="upgradePageRef"
-        :bypass-upgrade-page="bypassUpgradePage"
+      <!-- Only trial accounts get the banner (and the extra wrapper it needs); every other account keeps the
+           original layout with the routed page as a direct child. -->
+      <div
+        v-if="isTrialPlan"
+        class="flex flex-col flex-1 h-full w-full min-h-0 overflow-hidden"
+        data-testid="trial-banner-layout"
       >
-        <MobileSidebarLauncher
-          :is-mobile-sidebar-open="isMobileSidebarOpen"
-          @toggle="toggleMobileSidebar"
-        />
-      </UpgradePage>
-      <template v-if="!showUpgradePage">
-        <!-- Only trial accounts get the banner (and the extra wrapper it needs); every other account keeps the
-             original layout with the routed page as a direct child. -->
         <div
-          v-if="isTrialPlan"
-          class="flex flex-col flex-1 h-full w-full min-h-0 overflow-hidden"
-          data-testid="trial-banner-layout"
+          v-if="!isTrialExpired"
+          class="flex items-center justify-between px-4 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-100 text-xs sm:text-sm font-medium z-10 flex-shrink-0"
+          data-testid="trial-active-banner"
         >
-          <div
-            v-if="!isTrialExpired"
-            class="flex items-center justify-between px-4 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-100 text-xs sm:text-sm font-medium z-10 flex-shrink-0"
-            data-testid="trial-active-banner"
-          >
-            <div class="flex items-center gap-2 truncate">
-              <span>{{
-                $t('TRIAL_BANNER.ACTIVE', { time: trialTimeText })
-              }}</span>
-            </div>
-            <router-link
-              v-if="canChoosePlan"
-              :to="{ name: 'billing_settings_index', params: { accountId } }"
-              class="ml-3 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-md shadow-xs transition-colors shrink-0"
-            >
-              {{ $t('TRIAL_BANNER.CHOOSE_PLAN') }}
-            </router-link>
+          <div class="flex items-center gap-2 truncate">
+            <span>{{
+              $t('TRIAL_BANNER.ACTIVE', { time: trialTimeText })
+            }}</span>
           </div>
-          <div
-            v-else
-            class="flex items-center justify-between px-4 py-2 bg-red-50 dark:bg-red-950/40 border-b border-red-200 dark:border-red-900/50 text-red-900 dark:text-red-100 text-xs sm:text-sm font-medium z-10 flex-shrink-0"
-            data-testid="trial-expired-banner"
+          <router-link
+            v-if="canChoosePlan"
+            :to="{ name: 'billing_settings_index', params: { accountId } }"
+            class="ml-3 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-md shadow-xs transition-colors shrink-0"
           >
-            <div class="flex items-center gap-2 truncate">
-              <span>{{ $t('TRIAL_BANNER.EXPIRED') }}</span>
-            </div>
-            <router-link
-              v-if="canChoosePlan"
-              :to="{ name: 'billing_settings_index', params: { accountId } }"
-              class="ml-3 px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-md shadow-xs transition-colors shrink-0"
-            >
-              {{ $t('TRIAL_BANNER.CHOOSE_PLAN') }}
-            </router-link>
-          </div>
-          <router-view />
+            {{ $t('TRIAL_BANNER.CHOOSE_PLAN') }}
+          </router-link>
         </div>
-        <router-view v-else />
-        <CommandBar />
-        <MobileSidebarLauncher
-          :is-mobile-sidebar-open="isMobileSidebarOpen"
-          @toggle="toggleMobileSidebar"
-        />
-        <FloatingCallWidget v-if="showStandaloneCallCards" />
-        <PhoneWidget />
-      </template>
+        <div
+          v-else
+          class="flex items-center justify-between px-4 py-2 bg-red-50 dark:bg-red-950/40 border-b border-red-200 dark:border-red-900/50 text-red-900 dark:text-red-100 text-xs sm:text-sm font-medium z-10 flex-shrink-0"
+          data-testid="trial-expired-banner"
+        >
+          <div class="flex items-center gap-2 truncate">
+            <span>{{ $t('TRIAL_BANNER.EXPIRED') }}</span>
+          </div>
+          <router-link
+            v-if="canChoosePlan"
+            :to="{ name: 'billing_settings_index', params: { accountId } }"
+            class="ml-3 px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-md shadow-xs transition-colors shrink-0"
+          >
+            {{ $t('TRIAL_BANNER.CHOOSE_PLAN') }}
+          </router-link>
+        </div>
+        <router-view />
+      </div>
+      <router-view v-else />
+      <CommandBar />
+      <MobileSidebarLauncher
+        :is-mobile-sidebar-open="isMobileSidebarOpen"
+        @toggle="toggleMobileSidebar"
+      />
+      <FloatingCallWidget v-if="showStandaloneCallCards" />
+      <PhoneWidget />
       <AddAccountModal
         :show="showCreateAccountModal"
         @close-account-create-modal="closeCreateAccountModal"

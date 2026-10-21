@@ -519,3 +519,28 @@ it('does not publish an update completion after unmount', async () => {
   expect(state.openDealKeys).toEqual(['deal-1']);
   expect(useAlert).not.toHaveBeenCalled();
 });
+
+it('reuses loaded CRM references and companies when switching between conversations in the same account', async () => {
+  const wrapper = await mountWithDeals([dealFixture()]);
+
+  expect(referencesStore.loadPipelines).toHaveBeenCalledTimes(1);
+  expect(referencesStore.loadTaskStatuses).toHaveBeenCalledTimes(1);
+  expect(referencesStore.loadTaskTypes).toHaveBeenCalledTimes(1);
+  expect(referencesStore.loadFieldDefinitions).toHaveBeenCalledTimes(2);
+  expect(CompanyAPI.get).toHaveBeenCalledTimes(1);
+
+  await wrapper.setProps({
+    currentChat: {
+      id: 11964,
+      display_id: 186,
+      meta: { sender: { id: 78, name: 'Next customer' } },
+    },
+  });
+  await flushPromises();
+
+  expect(referencesStore.loadPipelines).toHaveBeenCalledTimes(1);
+  expect(referencesStore.loadTaskStatuses).toHaveBeenCalledTimes(1);
+  expect(referencesStore.loadTaskTypes).toHaveBeenCalledTimes(1);
+  expect(referencesStore.loadFieldDefinitions).toHaveBeenCalledTimes(2);
+  expect(CompanyAPI.get).toHaveBeenCalledTimes(1);
+});

@@ -40,11 +40,7 @@ const getAccountFeatureSource = async (accountId, requiredFeature = null) => {
     typeof getAccount === 'function' ? getAccount(accountId) : null;
 
   let account = resolveAccount();
-  if (
-    account?.features &&
-    (!requiredFeature ||
-      Object.prototype.hasOwnProperty.call(account.features, requiredFeature))
-  ) {
+  if (account?.features) {
     return account;
   }
 

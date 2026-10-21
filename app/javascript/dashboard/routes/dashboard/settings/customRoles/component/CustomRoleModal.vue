@@ -9,7 +9,6 @@ import {
   AVAILABLE_CUSTOM_ROLE_PERMISSIONS,
   MANAGE_ALL_CONVERSATION_PERMISSIONS,
   CONVERSATION_UNASSIGNED_PERMISSIONS,
-  CONVERSATION_PARTICIPATING_PERMISSIONS,
 } from 'dashboard/constants/permissions.js';
 
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -77,12 +76,11 @@ watch(
 
     if (hasAddedManageAllConversation) {
       // If manage all conversation permission is added,
-      // then add unassigned and participating permissions automatically
+      // then add unassigned permission automatically
       selectedPermissions.value = [
         ...new Set([
           ...selectedPermissions.value,
           CONVERSATION_UNASSIGNED_PERMISSIONS,
-          CONVERSATION_PARTICIPATING_PERMISSIONS,
         ]),
       ];
     } else if (hasRemovedManageAllConversation) {

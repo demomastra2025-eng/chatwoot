@@ -8,7 +8,6 @@ import { routes as inboxRoutes } from './inbox/routes';
 import { routes as crmRoutes } from './crm/routes';
 import { routes as schedulingRoutes } from './scheduling/routes';
 import { frontendURL } from '../../helper/URLHelper';
-import helpcenterRoutes from './helpcenter/helpcenter.routes';
 import campaignsRoutes from './campaigns/campaigns.routes';
 import { routes as captainRoutes } from './captain/captain.routes';
 const AppContainer = () => import('./Dashboard.vue');
@@ -30,7 +29,6 @@ export default {
         ...schedulingRoutes,
         ...searchRoutes,
         ...notificationRoutes,
-        ...helpcenterRoutes.routes,
         ...campaignsRoutes.routes,
       ],
     },

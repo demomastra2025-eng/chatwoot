@@ -99,7 +99,12 @@ export default {
   },
   mounted() {
     this.fetchParticipants();
-    this.$store.dispatch('agents/get');
+    if (
+      !this.agentsList?.length &&
+      !this.$store.getters['agents/getUIFlags']?.isFetching
+    ) {
+      this.$store.dispatch('agents/get');
+    }
   },
   methods: {
     fetchParticipants() {

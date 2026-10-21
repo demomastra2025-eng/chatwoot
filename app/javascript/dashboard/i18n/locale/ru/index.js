@@ -21,7 +21,6 @@ import designSystem from './designSystem.json';
 import emoji from './emoji.json';
 import general from './general.json';
 import generalSettings from './generalSettings.json';
-import helpCenter from './helpCenter.json';
 import inbox from './inbox.json';
 import inboxMgmt from './inboxMgmt.json';
 import integrationApps from './integrationApps.json';
@@ -41,7 +40,6 @@ import sla from './sla.json';
 import teamsSettings from './teamsSettings.json';
 import whatsappTemplates from './whatsappTemplates.json';
 import whatsappUsage from './whatsappUsage.json';
-import yearInReview from './yearInReview.json';
 
 export default {
   ...advancedFilters,
@@ -67,7 +65,6 @@ export default {
   ...emoji,
   ...general,
   ...generalSettings,
-  ...helpCenter,
   ...inbox,
   ...inboxMgmt,
   ...integrationApps,
@@ -87,5 +84,4 @@ export default {
   ...teamsSettings,
   ...whatsappTemplates,
   ...whatsappUsage,
-  ...yearInReview,
 };

@@ -211,6 +211,7 @@ export default {
   watch: {
     'contact.id': {
       handler(id) {
+        if (!id) return;
         this.$store.dispatch('contacts/fetchContactableInbox', id);
         this.$store.dispatch('contactConversations/get', id);
       },
@@ -218,7 +219,10 @@ export default {
     },
   },
   mounted() {
-    if (!this.agents?.length) {
+    if (
+      !this.agents?.length &&
+      !this.$store.getters['agents/getUIFlags']?.isFetching
+    ) {
       this.$store.dispatch('agents/get');
     }
   },

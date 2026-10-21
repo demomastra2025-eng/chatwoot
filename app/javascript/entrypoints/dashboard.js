@@ -11,6 +11,7 @@ import FloatingVue from 'floating-vue';
 import WootUiKit from 'dashboard/components';
 import App from 'dashboard/App.vue';
 import i18nMessages, {
+  loadLocaleMessages,
   registerDashboardI18n,
   setDashboardLocale,
 } from 'dashboard/i18n';
