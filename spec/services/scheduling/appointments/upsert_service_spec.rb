@@ -423,13 +423,18 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     expect(appointment.custom_attributes[status::ATTRIBUTE_KEY]).to eq(status::PENDING)
   end
 
-  it 'rejects generic mutations of imported Medelement appointments' do
+  it 'rejects generic mutations of imported Medelement appointments while allowing local notes and custom fields' do
     appointment.update!(source: 'medelement', external_ref: 'medelement:reception:upsert')
 
-    expect { perform(client_comment: 'Changed') }.to raise_error(Scheduling::Error) do |error|
+    expect { perform(client_name: 'Changed') }.to raise_error(Scheduling::Error) do |error|
       expect(error.code).to eq('APPOINTMENT_READ_ONLY')
     end
-    expect(appointment.reload.client_comment).to be_nil
+    expect(appointment.reload.client_name).not_to eq('Changed')
+
+    updated = perform(client_comment: 'Internal note', custom_attributes: { 'internal_tag' => 'vip' })
+    expect(updated.client_comment).to eq('Internal note')
+    expect(updated.custom_attributes['internal_tag']).to eq('vip')
+    expect(updated.source).to eq('medelement')
   end
 
   it 'rejects direct assignment of appointment provenance' do

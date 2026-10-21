@@ -1155,15 +1155,15 @@ describe('SchedulingVueCalCalendar', () => {
     const card = cardFor(wrapper, 'MedElement patient');
     expect(card.attributes('title')).toContain('me-777');
     expect(
-      card.find('.scheduling-vue-cal__event-medelement-meta').text()
-    ).toContain('me-777');
+      card.find('.scheduling-vue-cal__event-medelement-meta').exists()
+    ).toBe(false);
 
     const unsyncedCard = cardFor(wrapper, 'Unsynced MedElement patient');
     expect(unsyncedCard.attributes('title')).toContain(
       'SCHEDULING.MEDELEMENT.SYNC_STATUS.NOT_SYNCED'
     );
     expect(
-      unsyncedCard.find('.scheduling-vue-cal__event-medelement-meta').text()
-    ).toContain('SCHEDULING.MEDELEMENT.SYNC_STATUS.NOT_SYNCED');
+      unsyncedCard.find('.scheduling-vue-cal__event-medelement-meta').exists()
+    ).toBe(false);
   });
 });

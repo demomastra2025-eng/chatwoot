@@ -99,6 +99,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  showAppointments: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const emit = defineEmits([
@@ -299,6 +303,7 @@ const isConversationReady = computed(() => {
 
 const canOpenAppointments = computed(
   () =>
+    props.showAppointments &&
     appointmentsAvailable.value &&
     isChatDisplayed.value &&
     hasLinkedChat.value &&

@@ -266,50 +266,63 @@ export const useSchedulingAppointmentFormStore = defineStore(
             state.selectedAppointment?.customAttributes ||
             state.selectedAppointment?.custom_attributes,
         }),
-      validationErrors: state => ({
-        durationMin:
-          state.form.durationMin !== '' &&
-          (!Number.isInteger(Number(state.form.durationMin)) ||
-            Number(state.form.durationMin) < 5 ||
-            Number(state.form.durationMin) > 1440)
-            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.INVALID_DURATION'
+      validationErrors(state) {
+        const providerOwned =
+          state.mode === 'edit' &&
+          isAppointmentProviderOwned(state.selectedAppointment);
+
+        return {
+          durationMin:
+            state.form.durationMin !== '' &&
+            (!Number.isInteger(Number(state.form.durationMin)) ||
+              Number(state.form.durationMin) < 5 ||
+              Number(state.form.durationMin) > 1440)
+              ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.INVALID_DURATION'
+              : '',
+          endsAt:
+            state.form.endsAt &&
+            state.form.startsAt &&
+            new Date(state.form.endsAt) <= new Date(state.form.startsAt)
+              ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.END_BEFORE_START'
+              : '',
+          clientName:
+            !providerOwned && !state.form.clientFirstName?.trim()
+              ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.CLIENT_NAME_REQUIRED'
+              : '',
+          clientLastName:
+            !providerOwned &&
+            !this.isProviderPatientIdentity &&
+            state.requirements.medelementIdentityRequired &&
+            !state.form.clientLastName?.trim()
+              ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_LAST_NAME_REQUIRED'
+              : '',
+          contactId:
+            !providerOwned &&
+            state.requirements.contactRequired &&
+            !state.form.contactId
+              ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.CONTACT_REQUIRED'
+              : '',
+          clientPhone:
+            !providerOwned &&
+            state.requirements.medelementPhoneRequired &&
+            !isKazakhstanE164Phone(state.form.clientPhone)
+              ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_PHONE_REQUIRED'
+              : '',
+          resourceId: !state.form.resourceId
+            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.RESOURCE_REQUIRED'
             : '',
-        endsAt:
-          state.form.endsAt &&
-          state.form.startsAt &&
-          new Date(state.form.endsAt) <= new Date(state.form.startsAt)
-            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.END_BEFORE_START'
+          serviceIds:
+            !providerOwned &&
+            state.requirements.medelementServiceRequired &&
+            normalizeIdArray(state.form.serviceIds).length === 0 &&
+            !toNumeric(state.form.serviceId)
+              ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_SERVICE_REQUIRED'
+              : '',
+          startsAt: !state.form.startsAt
+            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.START_REQUIRED'
             : '',
-        clientName: !state.form.clientFirstName?.trim()
-          ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.CLIENT_NAME_REQUIRED'
-          : '',
-        clientLastName:
-          state.requirements.medelementIdentityRequired &&
-          !state.form.clientLastName?.trim()
-            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_LAST_NAME_REQUIRED'
-            : '',
-        contactId:
-          state.requirements.contactRequired && !state.form.contactId
-            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.CONTACT_REQUIRED'
-            : '',
-        clientPhone:
-          state.requirements.medelementPhoneRequired &&
-          !isKazakhstanE164Phone(state.form.clientPhone)
-            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_PHONE_REQUIRED'
-            : '',
-        resourceId: !state.form.resourceId
-          ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.RESOURCE_REQUIRED'
-          : '',
-        serviceIds:
-          state.requirements.medelementServiceRequired &&
-          normalizeIdArray(state.form.serviceIds).length === 0 &&
-          !toNumeric(state.form.serviceId)
-            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_SERVICE_REQUIRED'
-            : '',
-        startsAt: !state.form.startsAt
-          ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.START_REQUIRED'
-          : '',
-      }),
+        };
+      },
       isFormInvalid() {
         return Object.values(this.validationErrors).some(Boolean);
       },
@@ -799,6 +812,17 @@ export const useSchedulingAppointmentFormStore = defineStore(
 
       buildPayload() {
         const normalizedForm = this.form;
+        if (
+          this.mode === 'edit' &&
+          isAppointmentProviderOwned(this.selectedAppointment)
+        ) {
+          return {
+            client_comment: normalizedForm.clientComment || null,
+            custom_attributes: editableCustomAttributes(
+              normalizedForm.customAttributes
+            ),
+          };
+        }
         const serviceIds = normalizeIdArray(normalizedForm.serviceIds);
         const serviceId = toNumeric(normalizedForm.serviceId);
         const hasSelectedService = serviceIds.length || serviceId;
@@ -874,6 +898,10 @@ export const useSchedulingAppointmentFormStore = defineStore(
         ) {
           payload.medelement_cancellation_mode =
             this.selectedAppointment.medelementCancellationMode;
+        }
+
+        if (this.mode === 'edit') {
+          payload.client_comment = normalizedForm.clientComment || null;
         }
 
         if (!hasSelectedService) {

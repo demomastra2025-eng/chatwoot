@@ -2159,20 +2159,17 @@ const selectProviderPatientCandidate = token => {
 };
 
 const handleAppointmentSubmit = async () => {
-  if (
-    isSelectedAppointmentProviderOwned.value ||
-    formStore.ui.isSaving ||
-    formStore.ui.isCreatingContact
-  )
-    return;
+  if (formStore.ui.isSaving || formStore.ui.isCreatingContact) return;
 
-  if (isMedelementCabinetMissing.value) {
-    useAlert(t('SCHEDULING.MEDELEMENT.CABINET_REQUIRED'));
-    return;
-  }
-  if (isMedelementContactMissing.value) {
-    useAlert(t('SCHEDULING.MEDELEMENT.CONTACT_REQUIRED'));
-    return;
+  if (!isSelectedAppointmentProviderOwned.value) {
+    if (isMedelementCabinetMissing.value) {
+      useAlert(t('SCHEDULING.MEDELEMENT.CABINET_REQUIRED'));
+      return;
+    }
+    if (isMedelementContactMissing.value) {
+      useAlert(t('SCHEDULING.MEDELEMENT.CONTACT_REQUIRED'));
+      return;
+    }
   }
 
   const shouldCreateInMedelement =
@@ -2359,7 +2356,7 @@ watch(
 );
 
 watch(
-  () => formStore.form.resourceId,
+  [() => formStore.form.resourceId, selectedFormMedelementCabinets],
   () => {
     if (!isSelectedFormResourceMedelement.value) {
       if (formStore.form.medelementCabinetCode) {
@@ -2380,7 +2377,8 @@ watch(
         ? selectedFormMedelementCabinets.value[0].code
         : ''
     );
-  }
+  },
+  { immediate: true }
 );
 
 watch(
@@ -2812,15 +2810,6 @@ onMounted(async () => {
               </span>
 
               <Button
-                v-if="formStore.mode === 'edit' && patientDialogRoute"
-                size="sm"
-                color="slate"
-                variant="ghost"
-                icon="i-lucide-external-link"
-                :label="$t('SCHEDULING.PATIENT_CONTEXT.OPEN_DIALOG')"
-                @click="openPatientDialog"
-              />
-              <Button
                 v-if="
                   !isAppointmentPage &&
                   canOpenAppointmentConversation &&
@@ -2839,14 +2828,14 @@ onMounted(async () => {
                   formStore.isFormInvalid ||
                   formStore.ui.isSaving ||
                   formStore.ui.isCreatingContact ||
-                  isMedelementCabinetMissing ||
-                  isMedelementContactMissing ||
-                  isSelectedAppointmentProviderOwned
+                  (!isSelectedAppointmentProviderOwned &&
+                    (isMedelementCabinetMissing || isMedelementContactMissing))
                 "
                 :label="drawerConfirmLabel"
                 @click="handleAppointmentSubmit"
               />
               <Button
+                v-if="!isAppointmentPage"
                 size="sm"
                 color="slate"
                 variant="ghost"
@@ -2952,23 +2941,29 @@ onMounted(async () => {
                       class="grid gap-2 text-sm"
                       data-test="calendar-patient-provider-source"
                     >
-                      <p class="m-0 font-medium">
-                        {{ appointmentClientName() }}
-                      </p>
-                      <p
+                      <div class="appointment-drawer-row">
+                        <span class="appointment-drawer-label">
+                          {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_NAME') }}
+                        </span>
+                        <span
+                          class="appointment-drawer-control text-sm font-medium text-n-slate-12"
+                        >
+                          {{ appointmentClientName() }}
+                        </span>
+                      </div>
+                      <div
                         v-if="formStore.form.clientBirthDate"
-                        class="m-0 text-n-slate-11"
+                        class="appointment-drawer-row"
                       >
-                        {{ $t('SCHEDULING.CONTACT.BIRTH_DATE') }}:
-                        {{ formStore.form.clientBirthDate }}
-                      </p>
-                      <p class="m-0 text-xs text-n-slate-10">
-                        {{
-                          $t(
-                            'SCHEDULING.PATIENT_CONTEXT.PROVIDER_IDENTITY_READ_ONLY'
-                          )
-                        }}
-                      </p>
+                        <span class="appointment-drawer-label">
+                          {{ $t('SCHEDULING.CONTACT.BIRTH_DATE') }}
+                        </span>
+                        <span
+                          class="appointment-drawer-control text-sm text-n-slate-11"
+                        >
+                          {{ formStore.form.clientBirthDate }}
+                        </span>
+                      </div>
                       <div
                         v-if="needsProviderPatientPhoneInput"
                         class="appointment-drawer-row pt-1"
@@ -3558,7 +3553,8 @@ onMounted(async () => {
             :is-loading-inboxes="appointmentConversationDraft.isLoadingInboxes"
             load-error-i18n-key="SCHEDULING.CONVERSATION_PLACEHOLDER.LOAD_ERROR"
             placeholder-i18n-prefix="SCHEDULING.CONVERSATION_PLACEHOLDER"
-            :show-open-full-screen="Boolean(patientDialogRoute)"
+            :show-appointments="false"
+            :show-open-full-screen="false"
             :visible="
               formStore.isOpen && shouldShowAppointmentConversationPanel
             "

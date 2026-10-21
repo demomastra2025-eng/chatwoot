@@ -18,9 +18,10 @@ class Scheduling::Appointments::UpsertService
   attr_reader :persisted_appointment
 
   def perform
-    Scheduling::Appointments::MutationGuard.ensure_editable!(appointment)
+    Scheduling::Appointments::MutationGuard.ensure_editable!(appointment, params)
     Scheduling::Appointments::MutationGuard.ensure_assignable!(params)
     return @persisted_appointment = cancel_linked_appointment_locally! if local_only_provider_cancellation?
+    return @persisted_appointment = persist_provider_imported_local_fields! if provider_imported_local_mutation?
 
     with_actor_context { persist_appointment! }
 
@@ -77,6 +78,33 @@ class Scheduling::Appointments::UpsertService
     yield
   ensure
     Current.executed_by = previous_actor
+  end
+
+  def provider_imported_local_mutation?
+    appointment.persisted? &&
+      appointment.source == Scheduling::Appointments::MutationGuard::PROVIDER_SOURCE &&
+      Scheduling::Appointments::MutationGuard.local_provider_appointment_mutation?(params)
+  end
+
+  def persist_provider_imported_local_fields!
+    with_actor_context do
+      ApplicationRecord.transaction do
+        verify_provider_removal_not_pending!
+        Scheduling::Appointments::AppointmentAccessGuard.new(
+          appointment: appointment, actor: actor, context: appointment_access
+        ).validate!
+        Scheduling::Appointments::MutationGuard.ensure_editable!(appointment, params)
+        appointment.client_comment = resolve_optional_text(:client_comment, current: appointment.client_comment)
+        if params.key?(:custom_attributes)
+          appointment.custom_attributes = resolve_custom_attributes(
+            resource: appointment.resource,
+            services: current_services
+          )
+        end
+        appointment.save!
+      end
+    end
+    appointment.reload
   end
 
   def persist_appointment!

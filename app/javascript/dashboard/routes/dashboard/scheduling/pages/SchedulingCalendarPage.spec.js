@@ -720,6 +720,43 @@ describe('SchedulingCalendarPage pending local booking', () => {
         commentTextarea.element
       )
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(
+      wrapper.get('[data-test="calendar-patient-provider-source"]').text()
+    ).not.toContain('SCHEDULING.PATIENT_CONTEXT.PROVIDER_IDENTITY_READ_ONLY');
+    expect(
+      wrapper
+        .find('button[data-label="SCHEDULING.PATIENT_CONTEXT.OPEN_DIALOG"]')
+        .exists()
+    ).toBe(false);
+
+    const saveButton = wrapper.get(
+      'button[data-label="SCHEDULING.GENERAL.UPDATE"]'
+    );
+    expect(saveButton.element.disabled).toBe(false);
+    await commentTextarea.setValue('Внутренняя заметка по приёму');
+    SchedulingAppointmentsAPI.update.mockResolvedValueOnce({
+      data: {
+        payload: {
+          id: 502,
+          account_id: 74,
+          contact_id: 42,
+          client_first_name: 'Client',
+          client_comment: 'Внутренняя заметка по приёму',
+          resource_id: 3,
+          starts_at: slot.startsAt,
+          ends_at: slot.endsAt,
+          source: 'medelement',
+          medelement_reception_code: 'me-902',
+          provider_confirmation_status: 'succeeded',
+        },
+      },
+    });
+    await saveButton.trigger('click');
+    await flushPromises();
+    expect(SchedulingAppointmentsAPI.update).toHaveBeenCalledWith(502, {
+      client_comment: 'Внутренняя заметка по приёму',
+      custom_attributes: {},
+    });
 
     store.openEdit({
       id: 503,

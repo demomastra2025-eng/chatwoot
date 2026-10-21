@@ -1997,17 +1997,6 @@ onMounted(() => {
                 >
                   {{ event.serviceNameSnapshot }}
                 </div>
-
-                <div
-                  v-if="event.medelementMeta && event.density === 'regular'"
-                  class="scheduling-vue-cal__event-medelement-meta"
-                  :class="{
-                    'scheduling-vue-cal__event-subtitle--surface':
-                      isSurfaceAppointmentCard(event),
-                  }"
-                >
-                  {{ event.medelementMeta }}
-                </div>
               </div>
             </template>
 

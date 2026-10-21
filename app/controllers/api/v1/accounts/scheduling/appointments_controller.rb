@@ -68,7 +68,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   def update
     return cancel_and_render if cancellation_requested?
 
-    ensure_editable_appointment!
+    Scheduling::Appointments::MutationGuard.ensure_editable!(@appointment, appointment_params)
     appointment = Scheduling::Appointments::UpsertService.new(
       account: Current.account,
       params: appointment_params,
