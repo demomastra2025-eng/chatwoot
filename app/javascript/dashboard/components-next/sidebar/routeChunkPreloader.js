@@ -22,7 +22,7 @@ export const preloadRouteComponents = (router, to) => {
       Object.values(components).forEach(component => {
         if (
           typeof component === 'function' &&
-          !component.__vccOpts &&
+          !('__vccOpts' in component) &&
           !component.render &&
           !component.setup
         ) {
@@ -62,6 +62,9 @@ export const preloadSidebarMenuTargets = (router, menuItems = []) => {
     const target = resolveDefaultMenuItemTarget(item);
     if (target) {
       preloadRouteComponents(router, target);
+    }
+    if (Array.isArray(item?.children) && item.children.length) {
+      preloadSidebarMenuTargets(router, item.children);
     }
   });
 };

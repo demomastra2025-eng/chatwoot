@@ -26,9 +26,17 @@ describe('routeChunkPreloader', () => {
     expect(contactsChunk).toHaveBeenCalledTimes(1);
   });
 
-  it('preloads default child targets for sidebar menu items', () => {
+  it('preloads default and secondary child targets for sidebar menu items', () => {
     const contactsChunk = vi.fn(() => Promise.resolve({}));
+    const calendarChunk = vi.fn(() => Promise.resolve({}));
+    const resourcesChunk = vi.fn(() => Promise.resolve({}));
     const dealsChunk = vi.fn(() => Promise.resolve({}));
+    const chunksByName = {
+      contacts_dashboard_index: contactsChunk,
+      scheduling_calendar: calendarChunk,
+      scheduling_resources: resourcesChunk,
+      crm_deals_index: dealsChunk,
+    };
     const router = {
       resolve: vi.fn(to => ({
         name: to.name,
@@ -36,10 +44,7 @@ describe('routeChunkPreloader', () => {
         matched: [
           {
             components: {
-              default:
-                to.name === 'contacts_dashboard_index'
-                  ? contactsChunk
-                  : dealsChunk,
+              default: chunksByName[to.name] || dealsChunk,
             },
           },
         ],
@@ -58,12 +63,27 @@ describe('routeChunkPreloader', () => {
         ],
       },
       {
+        name: 'Scheduling',
+        children: [
+          {
+            name: 'Scheduling Calendar',
+            to: { name: 'scheduling_calendar' },
+          },
+          {
+            name: 'Scheduling Resources',
+            to: { name: 'scheduling_resources' },
+          },
+        ],
+      },
+      {
         name: 'CRM',
         to: { name: 'crm_deals_index' },
       },
     ]);
 
     expect(contactsChunk).toHaveBeenCalledTimes(1);
+    expect(calendarChunk).toHaveBeenCalledTimes(1);
+    expect(resourcesChunk).toHaveBeenCalledTimes(1);
     expect(dealsChunk).toHaveBeenCalledTimes(1);
   });
 });

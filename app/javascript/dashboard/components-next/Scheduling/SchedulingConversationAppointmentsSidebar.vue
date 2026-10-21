@@ -11,7 +11,7 @@ import {
   watch,
 } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import SchedulingAvailabilityAPI from 'dashboard/api/scheduling/availability';
@@ -114,6 +114,7 @@ const NEAREST_AVAILABILITY_TIMEOUT_MS = 8000;
 const { t, locale } = useI18n();
 const store = useStore();
 const route = useRoute();
+const router = useRouter?.();
 const crmSourceDeal = inject('crmSourceDealId', null);
 const sourceDealId = computed(() => unref(crmSourceDeal));
 const schedulingReferencesStore = useSchedulingReferencesStore();
@@ -1929,6 +1930,18 @@ const cancelEditAppointment = appointment => {
   );
 };
 
+const openAppointmentPage = appointment => {
+  if (!appointment?.id || !accountId.value) return;
+
+  router?.push({
+    name: 'scheduling_appointment_show',
+    params: {
+      accountId: accountId.value,
+      appointmentId: appointment.id,
+    },
+  });
+};
+
 const scrollToTop = async () => {
   await nextTick();
 
@@ -3659,29 +3672,45 @@ const isClientFieldsOpen = (form, key) =>
           </div>
 
           <div
-            v-if="
-              isAppointmentProviderOwned(appointment) &&
-              appointment.status !== 'cancelled' &&
-              !isProviderCancellationPending(appointment)
-            "
+            v-if="isAppointmentProviderOwned(appointment)"
             class="flex flex-col items-end gap-1 px-3 pb-2.5"
           >
-            <Button
-              size="sm"
-              slate
-              faded
-              :is-loading="
-                cancellingAppointmentKey === appointmentKey(appointment)
-              "
-              :disabled="
-                patientActionBusyKey === appointmentKey(appointment) ||
-                savingAppointmentKey === appointmentKey(appointment)
-              "
-              :label="$t('SCHEDULING.APPOINTMENT_FORM.CANCEL_APPOINTMENT')"
-              @click="cancelAppointment(appointment)"
-            />
+            <div class="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                v-if="appointment.id"
+                size="sm"
+                slate
+                faded
+                icon="i-lucide-external-link"
+                :data-testid="`open-appointment-page-${appointment.id}`"
+                :label="$t('SCHEDULING.APPOINTMENT_PAGE.OPEN_PAGE')"
+                @click="openAppointmentPage(appointment)"
+              />
+              <Button
+                v-if="
+                  appointment.status !== 'cancelled' &&
+                  !isProviderCancellationPending(appointment)
+                "
+                size="sm"
+                slate
+                faded
+                :is-loading="
+                  cancellingAppointmentKey === appointmentKey(appointment)
+                "
+                :disabled="
+                  patientActionBusyKey === appointmentKey(appointment) ||
+                  savingAppointmentKey === appointmentKey(appointment)
+                "
+                :label="$t('SCHEDULING.APPOINTMENT_FORM.CANCEL_APPOINTMENT')"
+                @click="cancelAppointment(appointment)"
+              />
+            </div>
             <span
-              v-if="isMedelementCancellationLocalOnly(appointment)"
+              v-if="
+                appointment.status !== 'cancelled' &&
+                !isProviderCancellationPending(appointment) &&
+                isMedelementCancellationLocalOnly(appointment)
+              "
               class="text-xs leading-5 text-n-slate-11 text-end"
             >
               {{ $t('SCHEDULING.MEDELEMENT.LOCAL_CANCEL_HINT') }}
@@ -3803,6 +3832,16 @@ const isClientFieldsOpen = (form, key) =>
               </p>
 
               <div class="flex flex-wrap items-center justify-end gap-2">
+                <Button
+                  v-if="appointment.id"
+                  size="sm"
+                  slate
+                  faded
+                  icon="i-lucide-external-link"
+                  :data-testid="`open-appointment-page-${appointment.id}`"
+                  :label="$t('SCHEDULING.APPOINTMENT_PAGE.OPEN_PAGE')"
+                  @click="openAppointmentPage(appointment)"
+                />
                 <Button
                   v-if="
                     appointment.status !== 'cancelled' &&

@@ -265,24 +265,11 @@ provideSidebarContext({
 });
 
 const labels = useMapGetter('labels/getLabelsOnSidebar');
-const teams = useMapGetter('teams/getMyTeams');
 const contactCustomViews = useMapGetter('customViews/getContactCustomViews');
 const conversationCustomViews = useMapGetter(
   'customViews/getConversationCustomViews'
 );
-const conversationSidebarUnreadCounts = useMapGetter(
-  'getConversationSidebarUnreadCounts'
-);
 const conversationStats = useMapGetter('conversationStats/getStats');
-
-const getSidebarUnreadCount = (collection, key) => {
-  if (!key) return 0;
-  return Number(
-    conversationSidebarUnreadCounts.value?.[collection]?.[key] || 0
-  );
-};
-
-const teamUnreadCount = teamId => getSidebarUnreadCount('teams', teamId);
 
 const conversationStatuses = ['pending', 'open', 'snoozed', 'resolved', 'all'];
 const conversationAssigneeTypes = [
@@ -517,23 +504,10 @@ const hasRouteLabelsScopeAny = () => {
   );
 };
 
-const hasRouteTeamScopeAny = () => {
-  const teamScope = route.query.team_scope ?? route.query.teamScope;
-  return (
-    String(teamScope || '') === 'any' &&
-    !['team_conversations', 'conversations_through_team'].includes(route.name)
-  );
-};
-
 const withLabelsScopeToggle = () =>
   hasRouteLabelsScopeAny()
     ? withAccountWideConversationScope()
     : withAccountWideConversationScope({ labels_scope: 'any' });
-
-const withTeamScopeToggle = () =>
-  hasRouteTeamScopeAny()
-    ? withAccountWideConversationScope()
-    : withAccountWideConversationScope({ team_scope: 'any' });
 
 const withCurrentConversationScopeCrmStage = (pipelineId, stageId) =>
   withAccountWideConversationScope({
@@ -699,7 +673,6 @@ onMounted(async () => {
     store.dispatch('customViews/get', 'contact'),
     loadSidebarCrmPipelines(),
   ]);
-  preloadSidebarMenuTargets(router, primaryMenuItems.value);
 });
 
 const closeMobileSidebar = () => {
@@ -1357,6 +1330,7 @@ const menuItems = computed(() => {
             visibilityKey: 'Scheduling:Calendar',
             label: t('SIDEBAR.SCHEDULING_CALENDAR'),
             to: accountScopedRoute('scheduling_calendar'),
+            activeOn: ['scheduling_calendar', 'scheduling_appointment_show'],
           },
           ...(hasSettingsAccess.value
             ? [
@@ -1522,6 +1496,14 @@ const primaryMenuItems = computed(() =>
   menuItems.value.filter(item => item.name !== 'Inbox')
 );
 
+watch(
+  primaryMenuItems,
+  items => {
+    preloadSidebarMenuTargets(router, items);
+  },
+  { immediate: true }
+);
+
 const resolvePath = to => {
   if (to) return router.resolve(to)?.path || '/';
   return '/';
@@ -1672,8 +1654,7 @@ const matchesMenuItemRoute = item => {
 const activeRouteMenuItem = computed(() => {
   return (
     menuItems.value.find(
-      item =>
-        activeChildNamesFor(item).length > 0 || matchesMenuItemRoute(item)
+      item => activeChildNamesFor(item).length > 0 || matchesMenuItemRoute(item)
     ) || null
   );
 });
@@ -1695,10 +1676,7 @@ const selectedDesktopSidebarItem = computed(() => {
     item => item.name === expandedItem.value && hasSecondaryColumn(item)
   );
 
-  if (
-    expandedMenuItem &&
-    expandedMenuItem.navigateOnCollapsedClick === false
-  ) {
+  if (expandedMenuItem && expandedMenuItem.navigateOnCollapsedClick === false) {
     return expandedMenuItem;
   }
 

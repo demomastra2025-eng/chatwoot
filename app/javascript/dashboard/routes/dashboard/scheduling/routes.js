@@ -44,6 +44,23 @@ export const routes = [
     meta: schedulingMeta,
   },
   {
+    path: frontendURL(
+      'accounts/:accountId/scheduling/appointments/:appointmentId'
+    ),
+    name: 'scheduling_appointment_show',
+    component: SchedulingCalendarPage,
+    meta: schedulingMeta,
+  },
+  {
+    path: frontendURL('accounts/:accountId/scheduling/calendar/:appointmentId'),
+    redirect: to => ({
+      name: 'scheduling_appointment_show',
+      params: to.params,
+      query: to.query,
+    }),
+    meta: schedulingMeta,
+  },
+  {
     path: frontendURL('accounts/:accountId/scheduling/resources'),
     name: 'scheduling_resources',
     component: SchedulingResourcesPage,

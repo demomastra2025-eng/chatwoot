@@ -106,6 +106,7 @@ const mocks = vi.hoisted(() => ({
     },
   ],
   route: null,
+  routerPush: vi.fn(),
   t: vi.fn(key => key),
 }));
 
@@ -130,7 +131,10 @@ vi.mock('dashboard/composables', () => ({
 vi.mock('vue-router', async () => {
   const { reactive } = await import('vue');
   mocks.route = reactive({ params: { accountId: '1' } });
-  return { useRoute: () => mocks.route };
+  return {
+    useRoute: () => mocks.route,
+    useRouter: () => ({ push: mocks.routerPush }),
+  };
 });
 
 vi.mock('dashboard/composables/store', () => ({
@@ -3735,6 +3739,32 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       wrapper.vm.patientActions['appointment-501'].command.patientAction
         .canConfirm
     ).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('keeps the compact summary in the conversation sidebar and navigates to the dedicated appointment page', async () => {
+    mocks.routerPush.mockReset();
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: { payload: [existingAppointment] },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await wrapper.vm.toggleAppointment(wrapper.vm.appointments[0]);
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-testid="appointment-compact-summary-501"]').exists()
+    ).toBe(true);
+
+    await wrapper
+      .get('[data-testid="open-appointment-page-501"]')
+      .trigger('click');
+
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      name: 'scheduling_appointment_show',
+      params: { accountId: '1', appointmentId: 501 },
+    });
     wrapper.unmount();
   });
 });

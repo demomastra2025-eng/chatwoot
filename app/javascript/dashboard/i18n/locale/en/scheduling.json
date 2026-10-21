@@ -90,6 +90,7 @@
       "ACTIVATE": "Activate",
       "AMOUNT": "Amount",
       "APPLY": "Apply",
+      "BACK": "Back",
       "CANCEL": "Cancel",
       "CLEAR": "Clear",
       "COMMENTS": "Comments",
@@ -732,6 +733,10 @@
         "PRICE": "Price",
         "STOCK": "Stock & Reserve"
       }
+    },
+    "APPOINTMENT_PAGE": {
+      "CHAT_TAB": "Chat",
+      "OPEN_PAGE": "Open appointment"
     }
   }
 }

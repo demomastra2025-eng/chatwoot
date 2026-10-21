@@ -338,6 +338,32 @@ git() {
                 result = subprocess.run([bash, str(script)], env=env, text=True, capture_output=True)
                 self.assertEqual(result.returncode, 64, command)
 
+    def test_preparation_retains_previous_vite_assets_before_seal(self):
+        source = (ROOT / "script/onelink/prepare_dev_assets.sh").read_text(encoding="utf-8")
+        start = source.index('python3 - "${ROOT}" "${BUILD_DIR}" <<\'PY\'\n') + len('python3 - "${ROOT}" "${BUILD_DIR}" <<\'PY\'\n')
+        end = source.index("\nPY\n", start)
+        snippet = source[start:end]
+        self.assertLess(end, source.index('"${ASSET_TOOL}" seal "${BUILD_DIR}" "${SHA}"'))
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            build_dir = root / "build"
+            (build_dir / "public/vite/assets").mkdir(parents=True)
+            (build_dir / "public/vite/assets/new-chunk.js").write_text("new", encoding="utf-8")
+            (build_dir / "public/vite/assets/shared.js").write_text("new-shared", encoding="utf-8")
+            current_assets = root / "current/public/vite/assets"
+            current_assets.mkdir(parents=True)
+            (current_assets / "SchedulingResourcesPage-old1.js").write_text("old1", encoding="utf-8")
+            (current_assets / "shared.js").write_text("old-shared", encoding="utf-8")
+            prior_assets = root / "runtime/built-assets/prev/public/vite/assets"
+            prior_assets.mkdir(parents=True)
+            (prior_assets / "SchedulingRemindersPage-old2.js").write_text("old2", encoding="utf-8")
+            result = subprocess.run([sys.executable, "-c", snippet, str(root), str(build_dir)], text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((build_dir / "public/vite/assets/new-chunk.js").read_text(encoding="utf-8"), "new")
+            self.assertEqual((build_dir / "public/vite/assets/shared.js").read_text(encoding="utf-8"), "new-shared")
+            self.assertEqual((build_dir / "public/vite/assets/SchedulingResourcesPage-old1.js").read_text(encoding="utf-8"), "old1")
+            self.assertEqual((build_dir / "public/vite/assets/SchedulingRemindersPage-old2.js").read_text(encoding="utf-8"), "old2")
+
 
 if __name__ == "__main__":
     unittest.main()

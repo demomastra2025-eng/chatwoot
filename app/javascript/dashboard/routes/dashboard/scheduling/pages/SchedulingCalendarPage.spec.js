@@ -17,6 +17,11 @@ const mocks = vi.hoisted(() => ({
   references: null,
   crm: null,
   route: { params: { accountId: '74' }, query: {} },
+  router: {
+    back: vi.fn(),
+    push: vi.fn(),
+    replace: vi.fn(() => Promise.resolve()),
+  },
 }));
 
 vi.mock('vue-i18n', async importOriginal => ({
@@ -26,7 +31,7 @@ vi.mock('vue-i18n', async importOriginal => ({
 vi.mock('vue-router', async importOriginal => ({
   ...(await importOriginal()),
   useRoute: () => mocks.route,
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(() => Promise.resolve()) }),
+  useRouter: () => mocks.router,
 }));
 vi.mock('dashboard/composables', async importOriginal => ({
   ...(await importOriginal()),
@@ -54,6 +59,7 @@ vi.mock('dashboard/stores/crm/references', () => ({
 }));
 vi.mock('dashboard/api/scheduling/appointments', () => ({
   default: {
+    show: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     cancel: vi.fn(),
@@ -749,7 +755,7 @@ describe('SchedulingCalendarPage pending local booking', () => {
     expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledOnce();
   });
 
-  it('opens an existing appointment in compact read-only view first and mounts the edit form on demand', async () => {
+  it('opens an existing appointment in the full editable card immediately and navigates to its dedicated appointment page', async () => {
     await mountPage();
     const grid = wrapper.findComponent({ name: 'SchedulingCalendarGrid' });
     // eslint-disable-next-line vue/custom-event-name-casing -- Preserve the existing calendar grid event contract.
@@ -770,31 +776,83 @@ describe('SchedulingCalendarPage pending local booking', () => {
 
     expect(
       wrapper.find('[data-test="calendar-appointment-compact-view"]').exists()
-    ).toBe(true);
-    expect(
-      wrapper.get('[data-test="calendar-appointment-compact-view"]').text()
-    ).toContain('Client Patient');
-    expect(
-      wrapper.get('[data-test="calendar-appointment-compact-view"]').text()
-    ).toContain('Follow-up check');
-    expect(
-      wrapper
-        .find('textarea[data-label="SCHEDULING.APPOINTMENT_FORM.COMMENT"]')
-        .exists()
     ).toBe(false);
+    expect(
+      wrapper.get('textarea[data-label="SCHEDULING.APPOINTMENT_FORM.COMMENT"]')
+        .element.value
+    ).toBe('Follow-up check');
+    expect(mocks.router.push).toHaveBeenCalledWith({
+      name: 'scheduling_appointment_show',
+      params: { accountId: '74', appointmentId: 505 },
+      query: {},
+    });
+  });
 
-    await wrapper
-      .get('[data-test="calendar-appointment-edit-button"]')
-      .trigger('click');
+  it('loads a dedicated appointment page by route param with an inline conversation panel and returns to the calendar on close', async () => {
+    mocks.route = reactive({
+      params: { accountId: '74', appointmentId: '505' },
+      query: {},
+    });
+    SchedulingAppointmentsAPI.show.mockResolvedValueOnce({
+      data: {
+        payload: {
+          id: 505,
+          account_id: 74,
+          contact_id: 42,
+          conversation_id: 777,
+          conversation_display_id: 88,
+          client_first_name: 'Client',
+          client_last_name: 'Patient',
+          client_phone: '+77001234567',
+          client_comment: 'Dedicated page comment',
+          resource_id: 3,
+          starts_at: slot.startsAt,
+          ends_at: slot.endsAt,
+          status: 'confirmed',
+        },
+      },
+    });
+
+    const pinia = createPinia();
+    const vuex = createStore({
+      getters: { getCurrentUser: () => ({ id: 9 }) },
+    });
+    setActivePinia(pinia);
+    wrapper = mount(SchedulingCalendarPage, {
+      global: {
+        plugins: [pinia, vuex],
+        stubs,
+        mocks: { $t: key => key },
+      },
+    });
     await flushPromises();
 
+    expect(SchedulingAppointmentsAPI.show).toHaveBeenCalledWith(505);
+    expect(mocks.calendar.fetchCalendar).not.toHaveBeenCalled();
+    expect(wrapper.find('.modal-mask').exists()).toBe(false);
     expect(
-      wrapper.find('[data-test="calendar-appointment-compact-view"]').exists()
-    ).toBe(false);
-    expect(
-      wrapper
-        .find('textarea[data-label="SCHEDULING.APPOINTMENT_FORM.COMMENT"]')
-        .exists()
+      wrapper.find('[data-testid="scheduling-appointment-card"]').exists()
     ).toBe(true);
+    expect(
+      wrapper.get('textarea[data-label="SCHEDULING.APPOINTMENT_FORM.COMMENT"]')
+        .element.value
+    ).toBe('Dedicated page comment');
+
+    const chatPanel = wrapper.findComponent({
+      name: 'CrmDealConversationPanel',
+    });
+    expect(chatPanel.exists()).toBe(true);
+    expect(chatPanel.props('inline')).toBe(true);
+    expect(chatPanel.props('visible')).toBe(true);
+    expect(chatPanel.props('conversationDisplayId')).toBe('88');
+
+    await wrapper
+      .get('button[data-label="SCHEDULING.GENERAL.BACK"]')
+      .trigger('click');
+    expect(mocks.router.push).toHaveBeenCalledWith({
+      name: 'scheduling_calendar',
+      params: { accountId: '74' },
+      query: {},
+    });
   });
 });

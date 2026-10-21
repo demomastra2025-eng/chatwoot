@@ -92,6 +92,38 @@ git -C "${SOURCE_REPO}" archive "${SHA}" | tar -x -C "${BUILD_DIR}"
   env NODE_ENV=production BUILD_MODE=library bin/vite build --mode production --force
 )
 "${TREE_VERIFIER}" --repo "${SOURCE_REPO}" --release "${BUILD_DIR}" --sha "${SHA}"
+python3 - "${ROOT}" "${BUILD_DIR}" <<'PY'
+from pathlib import Path
+import shutil
+import sys
+
+root = Path(sys.argv[1])
+dest_assets = Path(sys.argv[2]) / "public/vite/assets"
+dest_assets.mkdir(parents=True, exist_ok=True)
+sources = []
+current_assets = root / "current/public/vite/assets"
+if current_assets.is_dir():
+    sources.append(current_assets.resolve())
+built_dir = root / "runtime/built-assets"
+if built_dir.is_dir():
+    candidates = sorted(
+        (p / "public/vite/assets" for p in built_dir.iterdir() if (p / "public/vite/assets").is_dir()),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for cand in candidates:
+        resolved = cand.resolve()
+        if resolved not in sources:
+            sources.append(resolved)
+        if len(sources) >= 3:
+            break
+for src_dir in sources[:3]:
+    for item in src_dir.iterdir():
+        if item.is_file() and not item.is_symlink():
+            target = dest_assets / item.name
+            if not target.exists():
+                shutil.copy2(item, target)
+PY
 "${ASSET_TOOL}" seal "${BUILD_DIR}" "${SHA}"
 SEALED="${BUILD_DIR}/sealed"
 mkdir -p "${SEALED}/public/packs/js"
