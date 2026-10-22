@@ -429,7 +429,9 @@ watch(
         v-else
         :title="$t('OUTBOUND_WORKSPACE.TOUCHES.EMPTY_TITLE')"
         :subtitle="$t('OUTBOUND_WORKSPACE.TOUCHES.EMPTY_SUBTITLE')"
+        :button-label="t('OUTBOUND_WORKSPACE.TOUCHES.ACTIONS.CREATE')"
         class="pt-8"
+        @click="openCreateTouch"
       />
       <PaginationFooter
         v-if="paginationSupported && totalItems > touchesMeta.perPage"
@@ -459,7 +461,9 @@ watch(
         v-else
         :title="t('CAMPAIGN.OUTBOUND.EMPTY_STATE.TITLE')"
         :subtitle="t('CAMPAIGN.OUTBOUND.EMPTY_STATE.SUBTITLE')"
+        :button-label="t('CAMPAIGN.OUTBOUND.ACTIONS.MASS_CAMPAIGN')"
         class="pt-8"
+        @click="toggleOutboundCampaignDialog(true)"
       />
     </template>
 

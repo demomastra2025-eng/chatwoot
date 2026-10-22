@@ -81,7 +81,7 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
       primary_contact: @primary_contact
     )
     @creator = resolve_optional_record(:creator_id, account.users, current: deal.creator || actor)
-    @team = resolve_optional_record(:team_id, account.teams, current: deal.team)
+    @team = deal.has_attribute?(:team_id) ? resolve_optional_record(:team_id, account.teams, current: deal.team) : nil
     authorize_assignment! if assignment_authorization_required?
   end
 
@@ -170,7 +170,7 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
 
   def apply_post_save_updates!
     track_stage_visit!(new_record: @new_record, correlation_id: @correlation_id) if @stage_changing
-    sync_incomplete_task_teams! if deal.saved_change_to_team_id?
+    sync_incomplete_task_teams! if deal.respond_to?(:saved_change_to_team_id?) && deal.saved_change_to_team_id?
     reposition_deal!(@requested_position) if @requested_position.present?
   end
 

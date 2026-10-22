@@ -8,7 +8,7 @@ module Crm::Deals::UpsertAttributes
       stage: @stage,
       owner: @owner,
       creator: @creator,
-      team: @team,
+      **(deal.has_attribute?(:team_id) ? { team: @team } : {}),
       company: @company,
       originating_conversation: @conversation,
       originating_communication_thread: @communication_thread

@@ -47,42 +47,24 @@ RSpec.describe Crm::Appointments::Facts do
     expect(facts.next_check_at).to eq(Time.utc(2026, 10, 11, 1))
   end
 
-  it 'distinguishes any, all, selected and nearest appointment aggregation' do
+  it 'distinguishes any, all and nearest appointment aggregation' do
     nearest = appointment(status: 'confirmed')
-    later = appointment(status: 'cancelled', starts_at: now + 2.days, ends_at: now + 2.days + 30.minutes)
-    deal.update!(selected_appointment_id: later.id)
+    appointment(status: 'cancelled', starts_at: now + 2.days, ends_at: now + 2.days + 30.minutes)
 
     expect(facts.rule_matches?('scope' => 'any', 'conditions' => ['patient_confirmed'])).to be true
     expect(facts.rule_matches?('scope' => 'all', 'conditions' => ['patient_confirmed'])).to be false
-    expect(facts.rule_matches?('scope' => 'selected', 'conditions' => ['cancelled'])).to be true
     expect(facts.rule_matches?('scope' => 'nearest', 'conditions' => ['patient_confirmed'])).to be true
     nearest.update!(status: 'no_show')
     expect(facts.rule_matches?('scope' => 'nearest', 'conditions' => ['patient_confirmed'])).to be false
     expect(facts.rule_matches?('scope' => 'nearest', 'conditions' => ['no_show'])).to be true
   end
 
-  it 'cannot close an eight-visit plan after one appointment or a cancelled required visit' do
-    attended = appointment(status: 'completed', attendance_confirmed_at: now)
-    cancelled = appointment(status: 'cancelled')
-    pipeline.update!(appointment_automation: { success_mode: 'all_required_attended' })
-    deal.update!(appointment_plan: Array.new(8) { |index| { id: index.to_s, label: "Visit #{index}", required: true, appointment_id: index.zero? ? attended.id : nil } })
+  it 'marks success when any linked appointment is attended in any_attended mode' do
+    visit = appointment(status: 'scheduled')
+    pipeline.update!(appointment_automation: { success_mode: 'any_attended' })
 
     expect(facts.success?).to be false
-    deal.update!(appointment_plan: [{ id: 'first', label: 'First', required: true, appointment_id: attended.id },
-                                    { id: 'second', label: 'Second', required: true, appointment_id: cancelled.id }])
-    expect(facts.success?).to be false
-    deal.update!(appointment_plan: [{ id: 'first', label: 'First', required: true, appointment_id: attended.id }])
-    expect(facts.success?).to be true
-  end
-
-  it 'requires the selected target when success is configured for that appointment' do
-    appointment(status: 'completed', attendance_confirmed_at: now)
-    target = appointment(status: 'scheduled')
-    pipeline.update!(appointment_automation: { success_mode: 'selected_attended' })
-    deal.update!(selected_appointment_id: target.id)
-
-    expect(facts.success?).to be false
-    target.update!(status: 'completed', attendance_confirmed_at: now)
+    visit.update!(status: 'completed', attendance_confirmed_at: now)
     expect(facts.success?).to be true
   end
 

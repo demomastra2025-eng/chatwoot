@@ -280,7 +280,6 @@ Rails.application.routes.draw do
               end
               member do
                 get :appointments
-                patch :appointment_plan
                 post :resume_appointment_automation
               end
               scope module: :deals do

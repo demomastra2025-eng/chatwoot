@@ -218,8 +218,6 @@ module Crm::PayloadBuilder
       idempotency_key: deal.idempotency_key,
       lock_version: deal.lock_version,
       custom_attributes: deal.custom_attributes,
-      appointment_plan: deal.appointment_plan,
-      selected_appointment_id: deal.selected_appointment_id,
       appointment_automation_state: deal.appointment_automation_state.to_h.except(Crm::Appointments::DeliveryPolicy::KEY),
       archived_at: deal.archived_at&.iso8601,
       company: compact_company(deal.company),

@@ -14,7 +14,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   before_action :set_deal, only: [
     :show, :update, :timeline, :transition_stage, :close_won, :close_lost, :reopen, :reorder, :undo_transition,
     :set_waiting, :clear_waiting, :archive, :unarchive, :destroy,
-    :appointments, :appointment_plan, :resume_appointment_automation
+    :appointments, :resume_appointment_automation
   ]
 
   def index
@@ -70,15 +70,6 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     payload = Scheduling::PayloadBuilder.appointments(@deal.appointments.where(account_id: Current.account.id).includes(:resource, :contact,
                                                                                                                         :patient_contact).ordered)
     render_payload(payload, meta: { timezone: ::Crm::Appointments::Facts.timezone_for(Current.account).tzinfo.name })
-  end
-
-  def appointment_plan
-    authorize @deal, :update?
-    deal = ::Crm::Appointments::PlanService.new(
-      deal: @deal, actor: Current.user,
-      params: params.permit(:lock_version, :selected_appointment_id, appointment_plan: [:id, :label, :required, :appointment_id])
-    ).perform
-    render_payload(::Crm::PayloadBuilder.deal(deal))
   end
 
   def resume_appointment_automation

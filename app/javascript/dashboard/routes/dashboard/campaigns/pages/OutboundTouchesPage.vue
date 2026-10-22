@@ -324,7 +324,9 @@ watch(
       v-else
       :title="$t('OUTBOUND_WORKSPACE.TOUCHES.EMPTY_TITLE')"
       :subtitle="$t('OUTBOUND_WORKSPACE.TOUCHES.EMPTY_SUBTITLE')"
+      :button-label="$t('OUTBOUND_WORKSPACE.TOUCHES.ACTIONS.CREATE')"
       class="pt-8"
+      @click="openCreateTouch"
     />
   </OutboundWorkspaceLayout>
 

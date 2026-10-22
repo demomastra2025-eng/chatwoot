@@ -225,7 +225,7 @@ class Crm::Deal < ApplicationRecord
     validate_account_match(:stage, stage)
     validate_account_match(:owner, owner)
     validate_account_match(:creator, creator)
-    validate_account_match(:team, team)
+    validate_account_match(:team, team) if has_attribute?(:team_id)
     validate_account_match(:company, company)
     validate_account_match(:waiting_set_by, waiting_set_by)
     validate_account_match(:originating_conversation, originating_conversation)

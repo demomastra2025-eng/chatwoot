@@ -18,10 +18,6 @@ class CrmDealsAPI extends ApiClient {
     return axios.get(`${this.url}/${id}/appointments`);
   }
 
-  appointmentPlan(id, data) {
-    return axios.patch(`${this.url}/${id}/appointment_plan`, data);
-  }
-
   resumeAppointmentAutomation(id, data) {
     return axios.post(`${this.url}/${id}/resume_appointment_automation`, data);
   }

@@ -9,9 +9,9 @@ class Crm::Appointments::Configuration
     'success_mode' => 'manual',
     'rules' => []
   }.freeze
-  SCOPES = %w[any all selected nearest].freeze
+  SCOPES = %w[any all nearest].freeze
   CONDITIONS = %w[provider_confirmed patient_confirmed scheduled attended cancelled no_show today tomorrow past future].freeze
-  SUCCESS_MODES = %w[manual any_attended selected_attended all_required_attended].freeze
+  SUCCESS_MODES = %w[manual any_attended].freeze
   SOURCE_KEYS = %w[auto_create_from_calendar auto_create_from_medelement].freeze
 
   def self.for(pipeline)
