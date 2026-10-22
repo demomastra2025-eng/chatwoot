@@ -49,7 +49,8 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
   def ensure_patient_context_employee!
     return if Current.user.is_a?(User) && Current.account.users.exists?(id: Current.user.id)
 
-    raise Scheduling::Error.new(code: 'PATIENT_CONTEXT_EMPLOYEE_REQUIRED', message: 'Patient context requires an account employee', status: :forbidden)
+    raise Scheduling::Error.new(code: 'PATIENT_CONTEXT_EMPLOYEE_REQUIRED', message: 'Patient context requires an account employee',
+                                status: :forbidden)
   end
 
   def patient_payload(card)
@@ -99,10 +100,27 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
       name: resolved_contact_name(attrs),
       last_name: attrs[:last_name].to_s.strip.presence,
       middle_name: attrs[:middle_name].to_s.strip.presence,
-      phone_number: normalize_phone(attrs[:phone].presence || attrs[:phone_number].presence),
-      identifier: attrs[:identifier].presence || normalized_iin,
+      phone_number: resolved_phone_number(attrs),
+      identifier: resolved_identifier(attrs),
       company_id: resolve_company_id(attrs[:company_id])
     }.compact.merge(cleared_structured_name_attributes(attrs))
+  end
+
+  def resolved_phone_number(attrs)
+    phone = normalize_phone(attrs[:phone].presence || attrs[:phone_number].presence)
+    return if phone.blank? || shared_phone_matches_contact?(phone)
+
+    phone
+  end
+
+  def shared_phone_matches_contact?(phone)
+    @contact&.persisted? && @contact.phone_number.blank? && Contacts::SharedPhone.share_of(@contact)&.phone == phone
+  end
+
+  def resolved_identifier(attrs)
+    return attrs[:identifier].presence if attrs[:identifier].present?
+
+    normalized_iin if params.key?(:iin) || @contact&.identifier.blank?
   end
 
   def cleared_structured_name_attributes(attrs)
@@ -131,8 +149,32 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
     merged = CustomAttributes::MutationService.merge(contact.custom_attributes, incoming)
     merged['birth_date'] = birth_date if birth_date.present?
     merged['gender'] = params[:gender] if params[:gender].present?
-    merged['iin'] = normalized_iin if normalized_iin.present?
+    merged['iin'] = normalized_iin if should_assign_custom_iin?(contact, merged)
+    sync_medelement_identity_attributes!(contact, merged, birth_date: birth_date)
     merged
+  end
+
+  def should_assign_custom_iin?(contact, merged)
+    normalized_iin.present? && (params.key?(:iin) || merged['iin'].present? || !contact.persisted?)
+  end
+
+  def sync_medelement_identity_attributes!(contact, merged, birth_date:)
+    sync_medelement_name_attributes!(contact, merged)
+    merged['medelement_birth_date'] = birth_date if birth_date.present? && merged.key?('medelement_birth_date')
+    merged['medelement_gender'] = params[:gender] if params[:gender].present? && merged.key?('medelement_gender')
+    merged['medelement_iin'] = normalized_iin if params.key?(:iin) && normalized_iin.present? && merged.key?('medelement_iin')
+  end
+
+  def sync_medelement_name_attributes!(contact, merged)
+    return if %w[medelement_first_name medelement_last_name medelement_middle_name].none? { |key| merged[key].present? }
+
+    merged['medelement_first_name'] = contact.name if name_param_present? && contact.name.present?
+    merged['medelement_last_name'] = contact.last_name if params.key?(:last_name)
+    merged['medelement_middle_name'] = contact.middle_name if params.key?(:middle_name)
+  end
+
+  def name_param_present?
+    params.key?(:first_name) || params.key?(:name) || params.key?(:full_name)
   end
 
   def limit_param
@@ -158,7 +200,11 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
   end
 
   def validate_required_last_name!
-    last_name = params.key?(:last_name) ? params[:last_name] : @contact&.last_name
+    last_name = if params.key?(:last_name)
+                  params[:last_name]
+                else
+                  @contact&.last_name.presence || @contact&.custom_attributes&.dig('medelement_last_name')
+                end
     return if last_name.present?
 
     raise Scheduling::Error.new(
@@ -188,7 +234,12 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
   end
 
   def required_iin_value
-    params[:iin].presence || @contact&.custom_attributes&.dig('iin') || @contact&.identifier
+    params[:iin].presence || existing_contact_iin
+  end
+
+  def existing_contact_iin
+    attrs = @contact&.custom_attributes || {}
+    attrs['iin'] || attrs['medelement_iin'] || @contact&.identifier
   end
 
   def contact_identity_update?

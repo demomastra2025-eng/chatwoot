@@ -140,14 +140,8 @@ describe('SchedulingPatientDetails', () => {
   };
 
   it.each([42, 84])(
-    'renders provider patient %s readonly without changing the chat owner alias',
+    'allows editing provider patient %s on demand without showing a read-only MedElement notice',
     async id => {
-      const chatOwner = {
-        id: 42,
-        name: 'Chat owner alias',
-        identifier: 'Original identifier',
-      };
-      const before = { ...chatOwner };
       const clinical = {
         ...patient,
         id,
@@ -163,18 +157,13 @@ describe('SchedulingPatientDetails', () => {
       SchedulingContactsAPI.patients.mockResolvedValue(
         response(id === 42 ? [clinical, patient] : [owner, clinical])
       );
-      const { wrapper, store } = await mountSelected(id);
+      const { wrapper } = await mountSelected(id);
       expect(wrapper.text()).toContain('Recorded Clinical Patient');
       expect(
-        wrapper.find('[data-test="patient-provider-source"]').text()
-      ).toContain('MedElement');
-      expect(wrapper.find('button').exists()).toBe(false);
+        wrapper.find('[data-test="patient-provider-source"]').exists()
+      ).toBe(false);
+      expect(wrapper.find('button').exists()).toBe(true);
       expect(wrapper.find('form').exists()).toBe(false);
-      expect(
-        await store.updatePatient(key, id, { birth_date: '2010-02-03' })
-      ).toBeNull();
-      expect(SchedulingContactsAPI.update).not.toHaveBeenCalled();
-      expect(chatOwner).toEqual(before);
       wrapper.unmount();
     }
   );

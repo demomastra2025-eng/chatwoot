@@ -537,7 +537,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
       beginInlineContactEdit(contact) {
         if (this.ui.isSaving) return;
         this.inlineContactEditVersion += 1;
-        this.inlineContactSnapshot = this.isProviderPatientIdentity
+        const isUnboundProviderIdentity =
+          this.isProviderPatientIdentity &&
+          !this.form.patientContactId &&
+          !this.selectedContact;
+        this.inlineContactSnapshot = isUnboundProviderIdentity
           ? null
           : inlineContactPayload(contact, Boolean(this.form.patientContactId));
       },
@@ -710,7 +714,9 @@ export const useSchedulingAppointmentFormStore = defineStore(
       ) {
         if (
           this.ui.isSaving ||
-          this.isProviderPatientIdentity ||
+          (this.isProviderPatientIdentity &&
+            !this.form.patientContactId &&
+            !this.selectedContact) ||
           !isCurrentContext()
         )
           return null;

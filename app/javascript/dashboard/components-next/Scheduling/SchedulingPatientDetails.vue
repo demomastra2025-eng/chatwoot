@@ -8,7 +8,6 @@ import { formatSchedulingErrorMessage } from 'dashboard/stores/scheduling/shared
 import {
   formatPatientBirthDate,
   canEditLocalPatient,
-  hasProviderPatientIdentity,
   normalizePatientGender,
   patientBirthDate,
   patientDisplayName,
@@ -26,9 +25,6 @@ const error = ref('');
 let editSnapshot = null;
 const saving = computed(() =>
   Boolean(patientStore.contexts[props.contextKey]?.saving)
-);
-const providerIdentity = computed(() =>
-  hasProviderPatientIdentity(props.patient)
 );
 const canEdit = computed(
   () => Boolean(props.contextKey) && canEditLocalPatient(props.patient)
@@ -141,13 +137,6 @@ const rows = computed(() => [
         </div>
       </template>
     </dl>
-    <p
-      v-if="providerIdentity"
-      class="mb-0 text-xs text-n-slate-10"
-      data-test="patient-provider-source"
-    >
-      {{ t('SCHEDULING.PATIENT_CONTEXT.PROVIDER_IDENTITY_READ_ONLY') }}
-    </p>
     <Button
       v-if="!isEditing && canEdit"
       size="sm"

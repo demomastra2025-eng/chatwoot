@@ -435,4 +435,41 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
       'middle_name' => nil
     )
   end
+
+  it 'updates MedElement-linked patient card attributes while keeping medelement_patient_code immutable' do
+    contact = create(
+      :contact,
+      account: account,
+      name: 'Алия',
+      last_name: 'Нурланова',
+      phone_number: '+77015556677',
+      custom_attributes: {
+        'medelement_patient_code' => 'me-patient-77',
+        'medelement_first_name' => 'Алия',
+        'medelement_last_name' => 'Нурланова',
+        'medelement_birth_date' => '1990-01-01'
+      }
+    )
+
+    patch "#{path}/#{contact.id}",
+          params: {
+            first_name: 'Алия',
+            last_name: 'Нурланова',
+            middle_name: 'Ержановна',
+            birth_date: '1992-05-15',
+            iin: '940720300129'
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(contact.reload.middle_name).to eq('Ержановна')
+    expect(contact.custom_attributes).to include(
+      'medelement_patient_code' => 'me-patient-77',
+      'medelement_middle_name' => 'Ержановна',
+      'medelement_birth_date' => '1992-05-15',
+      'birth_date' => '1992-05-15',
+      'iin' => '940720300129'
+    )
+  end
 end

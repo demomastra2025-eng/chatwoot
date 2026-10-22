@@ -704,8 +704,15 @@ const genderOptions = computed(() => [
 const hasSelectedResources = computed(
   () => calendarStore.selectedResourceIds.length > 0
 );
-const isContactEditorOpen = computed(
-  () => !!contactEditorMode.value && !formStore.isProviderPatientIdentity
+const isContactEditorOpen = computed(() => Boolean(contactEditorMode.value));
+const canEditInlineContact = computed(
+  () =>
+    Boolean(formStore.form.contactId || formStore.form.patientContactId) &&
+    Boolean(
+      formStore.selectedContact ||
+        formStore.form.patientContactId ||
+        !formStore.isProviderPatientIdentity
+    )
 );
 const isEditingContact = computed(
   () =>
@@ -1032,7 +1039,6 @@ const needsProviderPatientPhoneInput = computed(
 const isInlineContactSaveDisabled = computed(
   () =>
     formStore.ui.isSaving ||
-    formStore.isProviderPatientIdentity ||
     !String(formStore.form.clientFirstName || '').trim() ||
     Boolean(inlineContactLastNameMessage.value) ||
     Boolean(inlineContactPhoneMessage.value) ||
@@ -1505,7 +1511,7 @@ const inlineContactEditPayload = () => ({
 
 function openInlineContactEdit() {
   if (formStore.ui.isSaving) return;
-  if (!formStore.form.contactId || formStore.isProviderPatientIdentity) {
+  if (!canEditInlineContact.value) {
     contactEditorMode.value = null;
     formStore.inlineContactSnapshot = null;
     return;
@@ -1520,6 +1526,12 @@ function openInlineContactEdit() {
   );
   formStore.beginInlineContactEdit(inlineContactEditPayload());
 }
+
+const cancelInlineContactEdit = () => {
+  if (formStore.ui.isSaving) return;
+  contactEditorMode.value = null;
+  formStore.inlineContactSnapshot = null;
+};
 
 const syncCalendarContextToAppointment = appointment => {
   if (!appointment) return;
@@ -1579,11 +1591,8 @@ const openEditAppointment = appointment => {
   resetAppointmentConversationDraft();
   appointmentConversationContactCreateRequested.value = false;
   showAppointmentConversationPanel.value = true;
-  if (formStore.form.contactId) {
-    openInlineContactEdit();
-  } else {
-    openInlineContactCreate();
-  }
+  contactEditorMode.value = null;
+  formStore.inlineContactSnapshot = null;
   if (
     wasAlreadyOpen &&
     !hasAppointmentConversationTarget.value &&
@@ -1701,7 +1710,12 @@ const handleInlineContactSave = async () => {
       );
       if (!isCurrent() || !updated) return;
       useAlert(t('SCHEDULING.CONTACT.SUCCESS_UPDATE'));
-      openInlineContactEdit();
+      if (formStore.mode === 'edit') {
+        contactEditorMode.value = null;
+        formStore.inlineContactSnapshot = null;
+      } else {
+        openInlineContactEdit();
+      }
     } else {
       await formStore.createInlineContact(contactPayload);
       useAlert(t('SCHEDULING.CONTACT.SUCCESS_CREATE'));
@@ -1719,6 +1733,16 @@ const handleInlineContactSave = async () => {
     if (isCurrent()) useAlert(formatErrorMessage(error));
   }
 };
+
+watch(
+  () => [formStore.mode, formStore.recordId],
+  ([mode]) => {
+    if (mode === 'edit') {
+      contactEditorMode.value = null;
+      formStore.inlineContactSnapshot = null;
+    }
+  }
+);
 
 watch(
   appointmentFieldDefinitions,
@@ -1818,7 +1842,12 @@ const handleContactSelect = rawContactId => {
 
   if (selectedContact) {
     formStore.applyContact(selectedContact);
-    openInlineContactEdit();
+    if (formStore.mode === 'create' && !formStore.isProviderPatientIdentity) {
+      openInlineContactEdit();
+    } else {
+      contactEditorMode.value = null;
+      formStore.inlineContactSnapshot = null;
+    }
   }
 };
 
@@ -2972,7 +3001,19 @@ onMounted(async () => {
                         {{ $t('SCHEDULING.CONTACT.SELECTED_BADGE') }}
                       </span>
                     </h3>
-                    <div class="relative ltr:ml-auto rtl:mr-auto">
+                    <div
+                      class="relative flex items-center gap-2 ltr:ml-auto rtl:mr-auto"
+                    >
+                      <Button
+                        v-if="!isContactEditorOpen && canEditInlineContact"
+                        size="sm"
+                        variant="link"
+                        color="blue"
+                        data-test="calendar-edit-contact-button"
+                        :label="$t('SCHEDULING.GENERAL.EDIT')"
+                        :disabled="formStore.ui.isSaving"
+                        @click="openInlineContactEdit"
+                      />
                       <Button
                         v-if="
                           !formStore.form.patientContactId &&
@@ -3018,9 +3059,13 @@ onMounted(async () => {
 
                   <div class="appointment-contact-accordion">
                     <div
-                      v-if="formStore.isProviderPatientIdentity"
+                      v-if="!isContactEditorOpen"
                       class="grid gap-2 text-sm"
-                      data-test="calendar-patient-provider-source"
+                      :data-test="
+                        formStore.isProviderPatientIdentity
+                          ? 'calendar-patient-provider-source'
+                          : 'calendar-patient-summary'
+                      "
                     >
                       <div class="appointment-drawer-row">
                         <span class="appointment-drawer-label">
@@ -3030,6 +3075,35 @@ onMounted(async () => {
                           class="appointment-drawer-control text-sm font-medium text-n-slate-12"
                         >
                           {{ appointmentClientName() }}
+                        </span>
+                      </div>
+                      <div
+                        v-if="
+                          formStore.form.clientPhone &&
+                          !needsProviderPatientPhoneInput
+                        "
+                        class="appointment-drawer-row"
+                      >
+                        <span class="appointment-drawer-label">
+                          {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE') }}
+                        </span>
+                        <span
+                          class="appointment-drawer-control text-sm text-n-slate-11 tabular-nums"
+                        >
+                          {{ formStore.form.clientPhone }}
+                        </span>
+                      </div>
+                      <div
+                        v-if="formStore.form.clientIdentifier"
+                        class="appointment-drawer-row"
+                      >
+                        <span class="appointment-drawer-label">
+                          {{ $t('SCHEDULING.CONTACT.IIN') }}
+                        </span>
+                        <span
+                          class="appointment-drawer-control text-sm text-n-slate-11 tabular-nums"
+                        >
+                          {{ formStore.form.clientIdentifier }}
                         </span>
                       </div>
                       <div
@@ -3298,6 +3372,18 @@ onMounted(async () => {
                       </div>
 
                       <div class="flex justify-end gap-2 pt-1">
+                        <Button
+                          v-if="formStore.mode === 'edit'"
+                          size="sm"
+                          variant="ghost"
+                          color="slate"
+                          :disabled="
+                            formStore.ui.isSaving ||
+                            formStore.ui.isCreatingContact
+                          "
+                          :label="$t('SCHEDULING.GENERAL.CANCEL')"
+                          @click="cancelInlineContactEdit"
+                        />
                         <Button
                           size="sm"
                           variant="faded"

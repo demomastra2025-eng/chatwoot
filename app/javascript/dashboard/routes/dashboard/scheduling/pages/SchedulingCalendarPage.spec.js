@@ -928,6 +928,24 @@ describe('SchedulingCalendarPage pending local booking', () => {
       wrapper.get('textarea[data-label="SCHEDULING.APPOINTMENT_FORM.COMMENT"]')
         .element.value
     ).toBe('Follow-up check');
+    expect(
+      wrapper.find('[data-test="calendar-patient-summary"]').exists()
+    ).toBe(true);
+    expect(
+      wrapper
+        .find('button[data-label="SCHEDULING.CONTACT.SAVE_ACTION"]')
+        .exists()
+    ).toBe(false);
+    const editContactBtn = wrapper.get(
+      '[data-test="calendar-edit-contact-button"]'
+    );
+    await editContactBtn.trigger('click');
+    await flushPromises();
+    expect(
+      wrapper
+        .find('button[data-label="SCHEDULING.CONTACT.SAVE_ACTION"]')
+        .exists()
+    ).toBe(true);
     expect(mocks.router.push).toHaveBeenCalledWith({
       name: 'scheduling_appointment_show',
       params: { accountId: '74', appointmentId: 505 },

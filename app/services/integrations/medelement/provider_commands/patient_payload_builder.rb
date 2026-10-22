@@ -4,7 +4,9 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
     @contact = contact
     @patient_code = patient_code
     @desired_attributes = desired_attributes.to_h.deep_stringify_keys
-    @phone_number = phone_number.presence || contact_attribute('phone_number')
+    @phone_number = phone_number.presence || contact_attribute('phone_number') ||
+                    custom_attributes['medelement_shared_phone_number'].presence ||
+                    Array(custom_attributes['secondary_phones']).first
     @identity = identity.to_h.stringify_keys
     @organization_id = organization_id
   end

@@ -84,9 +84,7 @@ export const hasProviderPatientIdentity = patient => {
 };
 
 export const canEditLocalPatient = patient =>
-  Boolean(patient?.patient_contact_id) &&
-  Number(patient.id) !== Number(patient.communication_contact_id) &&
-  !hasProviderPatientIdentity(patient);
+  Boolean(patient?.patient_contact_id);
 
 export const normalizePatientGender = value =>
   ({

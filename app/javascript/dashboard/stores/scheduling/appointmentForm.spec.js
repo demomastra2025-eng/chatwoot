@@ -498,7 +498,7 @@ describe('useSchedulingAppointmentFormStore', () => {
   });
 
   it.each([42, 84])(
-    'keeps provider patient %s readonly in the calendar contact editor',
+    'updates bound provider patient %s when inline contact edit is requested',
     async patientId => {
       const store = useSchedulingAppointmentFormStore();
       const owner = {
@@ -516,18 +516,47 @@ describe('useSchedulingAppointmentFormStore', () => {
       });
       expect(store.isProviderPatientIdentity).toBe(true);
       store.beginInlineContactEdit(localEditor);
-      expect(store.inlineContactSnapshot).toBeNull();
-      expect(
-        await store.updateInlineContact(patientId, { birthDate: '2010-02-03' })
-      ).toBeNull();
-      expect(SchedulingContactsAPI.update).not.toHaveBeenCalled();
-      expect(store.contacts[0]).toEqual(owner);
-      expect(store.form).toMatchObject({
-        contactId: 42,
-        patientContactId: patientId,
-        clientFirstName: 'Clinical',
-        clientName: 'Clinical Patient',
+      expect(store.inlineContactSnapshot).toBeTruthy();
+      const updatedPayload = {
+        id: patientId,
+        account_id: localAppointment.accountId,
+        patient_contact_id: patientId,
+        communication_contact_id: 42,
+        first_name: 'Clinical',
+        last_name: 'Patient',
+        full_name: 'Clinical Patient',
+        birth_date: '2010-02-03',
+        custom_attributes: {
+          medelement_patient_code: 'verified-profile',
+          birth_date: '2010-02-03',
+        },
+      };
+      SchedulingContactsAPI.update.mockResolvedValueOnce({
+        data: { payload: updatedPayload },
       });
+      SchedulingContactsAPI.patients.mockResolvedValueOnce({
+        data: {
+          payload: {
+            contact_id: 42,
+            patients: [updatedPayload],
+          },
+        },
+      });
+      expect(
+        await store.updateInlineContact(patientId, {
+          firstName: 'Clinical',
+          lastName: 'Patient',
+          birthDate: '2010-02-03',
+        })
+      ).toMatchObject({
+        id: patientId,
+      });
+      expect(SchedulingContactsAPI.update).toHaveBeenCalledWith(
+        patientId,
+        expect.objectContaining({
+          birth_date: '2010-02-03',
+        })
+      );
     }
   );
 

@@ -227,11 +227,28 @@ describe('conversation patient context', () => {
     },
     { ...patient, custom_attributes: { medelement_iin: 'recorded-iin' } },
   ])(
-    'does not patch provider clinical identity or the communication owner',
+    'patches provider-linked patient cards and reloads the patient projection',
     async selected => {
-      SchedulingContactsAPI.patients.mockResolvedValue(
-        response([owner, selected])
-      );
+      const listBefore =
+        selected.id === owner.id ? [selected, patient] : [owner, selected];
+      const updatedItem = { ...selected, birth_date: '2010-02-03' };
+      const listAfter =
+        selected.id === owner.id
+          ? [updatedItem, patient]
+          : [owner, updatedItem];
+      SchedulingContactsAPI.patients
+        .mockResolvedValueOnce(response(listBefore))
+        .mockResolvedValueOnce(response(listAfter));
+      SchedulingContactsAPI.update.mockResolvedValueOnce({
+        data: {
+          payload: {
+            id: selected.id,
+            account_id: selected.account_id,
+            patient_contact_id: selected.patient_contact_id,
+            birth_date: '2010-02-03',
+          },
+        },
+      });
       const store = useConversationPatientContextStore();
       await store.load(key, 42);
       store.select(key, selected.id);
@@ -239,8 +256,13 @@ describe('conversation patient context', () => {
         await store.updatePatient(key, selected.id, {
           birth_date: '2010-02-03',
         })
-      ).toBeNull();
-      expect(SchedulingContactsAPI.update).not.toHaveBeenCalled();
+      ).toMatchObject({
+        id: selected.id,
+        birth_date: '2010-02-03',
+      });
+      expect(SchedulingContactsAPI.update).toHaveBeenCalledWith(selected.id, {
+        birth_date: '2010-02-03',
+      });
     }
   );
 

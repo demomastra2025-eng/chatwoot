@@ -22,7 +22,6 @@ import {
 import {
   canEditLocalPatient,
   formatPatientBirthDate,
-  hasProviderPatientIdentity,
   normalizePatientGender,
   patientBirthDate,
   patientDisplayName,
@@ -64,10 +63,8 @@ const selectedPatient = computed(
       patient => Number(patient.id) === Number(props.entry?.selectedId)
     ) || null
 );
-const canEditSelected = computed(
-  () =>
-    Boolean(props.entry?.loaded && selectedPatient.value?.id) &&
-    !hasProviderPatientIdentity(selectedPatient.value)
+const canEditSelected = computed(() =>
+  Boolean(props.entry?.loaded && selectedPatient.value?.id)
 );
 const options = computed(() =>
   (props.entry?.patients || []).map(patient => ({
