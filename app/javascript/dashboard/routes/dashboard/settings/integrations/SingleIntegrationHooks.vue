@@ -18,6 +18,10 @@ const props = defineProps({
     type: String,
     required: true,
   },
+  showDiagnostics: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 defineEmits(['add', 'delete']);
@@ -83,7 +87,8 @@ const isSyncActive = computed(() =>
   ['queued', 'running', 'retrying'].includes(syncRun.value?.status)
 );
 const showHookSyncPanel = computed(
-  () => isMedelement.value && Boolean(connectedHook.value)
+  () =>
+    props.showDiagnostics && isMedelement.value && Boolean(connectedHook.value)
 );
 const syncPhases = [
   'setup',
@@ -1044,6 +1049,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <NextButton
+          v-if="!isMedelement || showDiagnostics"
           faded
           slate
           size="sm"
@@ -1063,6 +1069,7 @@ onBeforeUnmount(() => {
 
       <div
         v-if="
+          (!isMedelement || showDiagnostics) &&
           !isEditingInline &&
           (hookDetails.length || medelementScheduleDetails.length)
         "
@@ -1094,9 +1101,13 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="isEditingInline" class="mt-4 border-t border-n-weak pt-4">
+      <div
+        v-if="(isMedelement && !showDiagnostics) || isEditingInline"
+        class="mt-4 border-t border-n-weak pt-4"
+      >
         <NewHook
           inline
+          :hide-cancel="isMedelement && !showDiagnostics"
           :integration-id="integrationId"
           :hook="connectedHook"
           @close="isEditingInline = false"

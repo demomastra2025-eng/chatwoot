@@ -497,20 +497,6 @@ medelement:
         'store': 'secret_settings',
       },
       {
-        'label': 'Пароль',
-        'type': 'password',
-        'name': 'password',
-        'validation': 'required',
-        'store': 'secret_settings',
-      },
-      {
-        'label': 'Интеграция включена',
-        'type': 'checkbox',
-        'name': 'enabled',
-        'value': true,
-        'store': 'status',
-      },
-      {
         'label': 'ID организации (филиала)',
         'type': 'text',
         'name': 'organization_id',
@@ -518,8 +504,15 @@ medelement:
         'help': 'Код вашей организации (клиники или филиала) в MedElement.',
       },
       {
+        'label': 'Пароль',
+        'type': 'password',
+        'name': 'password',
+        'validation': 'required',
+        'store': 'secret_settings',
+      },
+      {
         'label': 'Отправлять записи из OneLink в MedElement',
-        'type': 'checkbox',
+        'type': 'switch',
         'name': 'write_enabled',
         'value': false,
         'help': 'Автоматически передаёт новые записи, переносы и данные пациентов из OneLink в расписание MedElement.',

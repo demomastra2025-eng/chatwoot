@@ -115,9 +115,13 @@ const syncStatus = {
   conflict_counts: { open: 1, ignored: 0 },
 };
 
-const mountComponent = () =>
+const mountComponent = (extraProps = {}) =>
   shallowMount(SingleIntegrationHooks, {
-    props: { integrationId: 'medelement' },
+    props: {
+      integrationId: 'medelement',
+      showDiagnostics: true,
+      ...extraProps,
+    },
     global: {
       mocks: { $t: key => key },
       stubs: {
@@ -169,6 +173,27 @@ describe('SingleIntegrationHooks MedElement synchronization', () => {
         return Promise.resolve(syncStatus);
       return Promise.reject(new Error(`Unexpected action: ${action}`));
     });
+  });
+
+  it('renders the MedElement settings form directly on the page without technical diagnostics by default', async () => {
+    const wrapper = mountComponent({ showDiagnostics: false });
+    await flushPromises();
+
+    const newHook = wrapper.findComponent({ name: 'NewHook' });
+    expect(newHook.exists()).toBe(true);
+    expect(newHook.props('inline')).toBe(true);
+    expect(newHook.props('hideCancel')).toBe(true);
+    expect(
+      buttonByLabel(wrapper, 'INTEGRATION_APPS.CONFIGURE')
+    ).toBeUndefined();
+    expect(wrapper.text()).not.toContain(
+      'INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.TITLE'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INTEGRATION_APPS.MEDELEMENT.SCHEDULE.OPERATIONAL_NEXT'
+    );
+
+    wrapper.unmount();
   });
 
   it('renders persisted phase and conflict state without exposing internal reason text', async () => {

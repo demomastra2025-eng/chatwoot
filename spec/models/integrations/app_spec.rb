@@ -24,10 +24,10 @@ RSpec.describe Integrations::App do
   describe 'Medelement settings form' do
     let(:app_name) { 'medelement' }
 
-    it 'exposes confirmed provider writes as an opt-in checkbox' do
+    it 'exposes confirmed provider writes as an opt-in switch' do
       write_enabled_field = app.params.settings_form_schema.find { |field| field.name == 'write_enabled' }
 
-      expect(write_enabled_field.type).to eq('checkbox')
+      expect(write_enabled_field.type).to eq('switch')
       expect(write_enabled_field.value).to be false
       expect(app.params.visible_properties).to include('write_enabled')
     end
@@ -46,9 +46,8 @@ RSpec.describe Integrations::App do
       expect(field_names).to eq(
         %w[
           company_login
-          password
-          enabled
           organization_id
+          password
           write_enabled
           remove_reception_on_cancel
         ]

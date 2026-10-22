@@ -28,6 +28,10 @@ export default {
       type: Boolean,
       default: false,
     },
+    hideCancel: {
+      type: Boolean,
+      default: false,
+    },
   },
   emits: ['close'],
   setup(props) {
@@ -361,6 +365,7 @@ export default {
       />
       <div class="flex flex-row justify-end w-full gap-2 px-0 py-2">
         <NextButton
+          v-if="!hideCancel"
           faded
           slate
           type="reset"
