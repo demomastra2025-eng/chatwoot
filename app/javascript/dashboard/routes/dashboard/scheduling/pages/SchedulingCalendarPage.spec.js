@@ -5,6 +5,7 @@ import { createStore } from 'vuex';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
+import SchedulingProviderCommandsAPI from 'dashboard/api/scheduling/providerCommands';
 import SchedulingResourcesAPI from 'dashboard/api/scheduling/resources';
 import { useSchedulingAppointmentFormStore } from 'dashboard/stores/scheduling/appointmentForm';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
@@ -751,12 +752,84 @@ describe('SchedulingCalendarPage pending local booking', () => {
         },
       },
     });
+    expect(
+      wrapper.get('select[data-label="SCHEDULING.APPOINTMENT_FORM.RESOURCE"]')
+        .element.disabled
+    ).toBe(true);
+    expect(
+      wrapper.get('select[data-label="SCHEDULING.APPOINTMENT_FORM.STATUS"]')
+        .element.disabled
+    ).toBe(true);
+    expect(
+      wrapper.get(
+        'input[data-label="SCHEDULING.APPOINTMENT_FORM.SERVICE_AMOUNT"]'
+      ).element.disabled
+    ).toBe(true);
+
     await saveButton.trigger('click');
     await flushPromises();
     expect(SchedulingAppointmentsAPI.update).toHaveBeenCalledWith(502, {
       client_comment: 'Внутренняя заметка по приёму',
       custom_attributes: {},
     });
+
+    store.openEdit({
+      id: 502,
+      accountId: 74,
+      contactId: 42,
+      clientFirstName: 'Client',
+      resourceId: 3,
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+      source: 'medelement',
+      medelementReceptionCode: 'me-902',
+      providerConfirmationStatus: 'succeeded',
+      customAttributes: { medelement_cabinet_code: 'cab-1' },
+    });
+    await flushPromises();
+    store.updateField('startsAt', '2026-10-10T11:00');
+    await flushPromises();
+    SchedulingAppointmentsAPI.update.mockResolvedValueOnce({
+      data: {
+        payload: {
+          id: 502,
+          account_id: 74,
+          contact_id: 42,
+          client_first_name: 'Client',
+          resource_id: 3,
+          starts_at: slot.startsAt,
+          ends_at: slot.endsAt,
+          source: 'medelement',
+          medelement_reception_code: 'me-902',
+          provider_confirmation_status: 'succeeded',
+          custom_attributes: { medelement_cabinet_code: 'cab-1' },
+        },
+      },
+    });
+    SchedulingProviderCommandsAPI.list.mockResolvedValueOnce({
+      data: { payload: [] },
+    });
+    SchedulingProviderCommandsAPI.create.mockResolvedValueOnce({
+      data: {
+        payload: {
+          id: 901,
+          status: 'succeeded',
+          operation: 'move_reception',
+        },
+      },
+    });
+    await saveButton.trigger('click');
+    await flushPromises();
+    expect(SchedulingProviderCommandsAPI.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appointment_id: 502,
+        company_cabinet_code: 'cab-1',
+        desired_starts_at: '2026-10-10T06:00:00.000Z',
+        desired_ends_at: '2026-10-10T06:30:00.000Z',
+        operation: 'move_reception',
+        provider: 'medelement',
+      })
+    );
 
     store.openEdit({
       id: 503,

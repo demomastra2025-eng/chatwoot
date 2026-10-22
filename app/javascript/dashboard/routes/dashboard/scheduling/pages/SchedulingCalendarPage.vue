@@ -69,7 +69,9 @@ import {
   formatCalendarTitle,
   formatMedelementMissingFields,
   formatSchedulingDateTime,
+  fromDateTimeInputValue,
   isAppointmentProviderOwned,
+  toDateTimeInputValue,
   isMedelementCancellationLocalOnly,
   isMedelementLocalCancellation,
   isMedelementResource,
@@ -320,6 +322,12 @@ const isSelectedAppointmentProviderOwned = computed(
   () =>
     formStore.mode === 'edit' &&
     isAppointmentProviderOwned(formStore.selectedAppointment)
+);
+const isSelectedAppointmentInMedelement = computed(
+  () =>
+    formStore.mode === 'edit' &&
+    (isSelectedAppointmentProviderOwned.value ||
+      hasMedelementReceptionIdentity(formStore.selectedAppointment))
 );
 // MedElement-linked and the integration keeps receptions on cancel: the cancel stays in OneLink.
 const isSelectedAppointmentCancelLocalOnly = computed(
@@ -1869,7 +1877,25 @@ const prepareProviderCommandAction = async (action, command) => {
 
 const refreshAfterProviderCommand = action =>
   refreshCurrentCalendarProviderAction({
-    refresh: () => calendarStore.refresh(),
+    refresh: async () => {
+      await calendarStore.refresh();
+      if (
+        isAppointmentPage.value &&
+        action.appointment?.id &&
+        !calendarStore.appointments.some(
+          item => Number(item.id) === Number(action.appointment?.id)
+        )
+      ) {
+        const { data } = await SchedulingAppointmentsAPI.show(
+          action.appointment.id
+        );
+        const fetched = normalizePayload(data);
+        if (fetched) {
+          syncCalendarContextToAppointment(fetched);
+          calendarStore.syncAppointment(fetched);
+        }
+      }
+    },
     isCurrent: () => isCurrentProviderAction(action),
     onCurrent: () => {
       if (action.closeDrawer) {
@@ -1884,7 +1910,12 @@ const refreshAfterProviderCommand = action =>
           item => Number(item.id) === Number(action.appointment?.id)
         );
         if (refreshed) {
-          formStore.selectedAppointment = refreshed;
+          if (isAppointmentPage.value) {
+            syncCalendarContextToAppointment(refreshed);
+            openEditAppointment(refreshed);
+          } else {
+            formStore.selectedAppointment = refreshed;
+          }
         }
       }
     },
@@ -2172,9 +2203,40 @@ const handleAppointmentSubmit = async () => {
     }
   }
 
+  const desiredStartsAt = fromDateTimeInputValue(
+    formStore.form.startsAt,
+    workspaceTimezone.value
+  );
+  const desiredEndsAt = fromDateTimeInputValue(
+    formStore.form.endsAt,
+    workspaceTimezone.value
+  );
+  const hasProviderOwnedTimeChanged =
+    isSelectedAppointmentProviderOwned.value &&
+    Boolean(desiredStartsAt && desiredEndsAt) &&
+    (toDateTimeInputValue(
+      formStore.selectedAppointment?.startsAt,
+      workspaceTimezone.value
+    ) !== formStore.form.startsAt ||
+      toDateTimeInputValue(
+        formStore.selectedAppointment?.endsAt,
+        workspaceTimezone.value
+      ) !== formStore.form.endsAt);
+  const moveCabinetCode = hasProviderOwnedTimeChanged
+    ? resolveAppointmentMedelementCabinetCode(
+        formStore.selectedAppointment,
+        referencesStore.resources
+      ) || formStore.form.medelementCabinetCode
+    : '';
+  if (hasProviderOwnedTimeChanged && !moveCabinetCode) {
+    useAlert(t('SCHEDULING.MEDELEMENT.CABINET_REQUIRED'));
+    return;
+  }
+
   const shouldCreateInMedelement =
     isSelectedFormResourceMedelement.value &&
-    !isSelectedAppointmentProviderOwned.value;
+    !isSelectedAppointmentProviderOwned.value &&
+    !hasMedelementReceptionIdentity(formStore.selectedAppointment);
   const companyCabinetCode = formStore.form.medelementCabinetCode;
   const isCurrent = captureCalendarFormMutation();
   await runCurrentCalendarProviderAction({
@@ -2183,14 +2245,29 @@ const handleAppointmentSubmit = async () => {
     isCurrent,
     onSuccess: appointment => {
       if (!appointment) return;
-      useAlert(appointmentSaveAlertMessage(appointment, t));
+      if (!hasProviderOwnedTimeChanged) {
+        useAlert(appointmentSaveAlertMessage(appointment, t));
+      }
       if (isAppointmentPage.value) {
         syncCalendarContextToAppointment(appointment);
         openEditAppointment(appointment);
       } else {
         handleDrawerClose();
       }
-      if (shouldCreateInMedelement) {
+      if (hasProviderOwnedTimeChanged) {
+        stageProviderCommand({
+          appointment,
+          params: buildMedelementProviderCommandParams({
+            appointment,
+            companyCabinetCode: moveCabinetCode,
+            operation: 'move_reception',
+            patch: {
+              starts_at: desiredStartsAt,
+              ends_at: desiredEndsAt,
+            },
+          }),
+        });
+      } else if (shouldCreateInMedelement) {
         stageProviderCommand({
           appointment,
           params: buildMedelementProviderCommandParams({
@@ -2897,7 +2974,10 @@ onMounted(async () => {
                     </h3>
                     <div class="relative ltr:ml-auto rtl:mr-auto">
                       <Button
-                        v-if="!formStore.form.patientContactId"
+                        v-if="
+                          !formStore.form.patientContactId &&
+                          !isSelectedAppointmentInMedelement
+                        "
                         size="sm"
                         variant="link"
                         color="blue"
@@ -2914,7 +2994,8 @@ onMounted(async () => {
                         "
                         :disabled="
                           formStore.ui.isSaving ||
-                          Boolean(formStore.form.patientContactId)
+                          Boolean(formStore.form.patientContactId) ||
+                          isSelectedAppointmentInMedelement
                         "
                         :options="contactOptions"
                         use-api-results
@@ -3253,7 +3334,10 @@ onMounted(async () => {
                       <SchedulingSelectField
                         class="appointment-drawer-control appointment-drawer-select-control"
                         :model-value="formStore.form.resourceId"
-                        :disabled="formStore.ui.isSaving"
+                        :disabled="
+                          formStore.ui.isSaving ||
+                          isSelectedAppointmentInMedelement
+                        "
                         :options="resourceOptions"
                         :label="$t('SCHEDULING.APPOINTMENT_FORM.RESOURCE')"
                         :placeholder="
@@ -3283,7 +3367,10 @@ onMounted(async () => {
                       <SchedulingSelectField
                         class="appointment-drawer-control appointment-drawer-select-control"
                         :model-value="formStore.form.medelementCabinetCode"
-                        :disabled="formStore.ui.isSaving"
+                        :disabled="
+                          formStore.ui.isSaving ||
+                          isSelectedAppointmentInMedelement
+                        "
                         :options="medelementCabinetOptions"
                         :label="$t('SCHEDULING.MEDELEMENT.CABINET')"
                         :placeholder="$t('SCHEDULING.MEDELEMENT.CABINET')"
@@ -3310,7 +3397,10 @@ onMounted(async () => {
                           v-if="hasServiceOptions"
                           class="appointment-drawer-multi-control"
                           :model-value="appointmentFormControlValues.serviceIds"
-                          :disabled="formStore.ui.isSaving"
+                          :disabled="
+                            formStore.ui.isSaving ||
+                            isSelectedAppointmentProviderOwned
+                          "
                           :options="serviceOptions"
                           wrap-labels
                           clamp-selected-labels
@@ -3331,7 +3421,10 @@ onMounted(async () => {
                         <Input
                           v-else-if="!isSelectedFormResourceMedelement"
                           :model-value="formStore.form.serviceNameSnapshot"
-                          :disabled="formStore.ui.isSaving"
+                          :disabled="
+                            formStore.ui.isSaving ||
+                            isSelectedAppointmentProviderOwned
+                          "
                           :placeholder="
                             $t('SCHEDULING.APPOINTMENT_FORM.SERVICE')
                           "
@@ -3370,7 +3463,10 @@ onMounted(async () => {
                       <SchedulingSelectField
                         class="appointment-drawer-control appointment-drawer-select-control"
                         :model-value="formStore.form.status"
-                        :disabled="formStore.ui.isSaving"
+                        :disabled="
+                          formStore.ui.isSaving ||
+                          isSelectedAppointmentProviderOwned
+                        "
                         :options="appointmentStatusOptions"
                         :label="$t('SCHEDULING.APPOINTMENT_FORM.STATUS')"
                         :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.STATUS')"
@@ -3386,7 +3482,10 @@ onMounted(async () => {
                       </span>
                       <SchedulingMoneyInput
                         :model-value="formStore.form.serviceAmount"
-                        :disabled="formStore.ui.isSaving"
+                        :disabled="
+                          formStore.ui.isSaving ||
+                          isSelectedAppointmentProviderOwned
+                        "
                         class="appointment-drawer-control appointment-drawer-money-control"
                         min="0"
                         :label="
