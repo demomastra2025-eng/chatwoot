@@ -102,111 +102,117 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="w-full min-w-0">
+  <div class="flex h-full w-full min-w-0 flex-1 flex-col">
     <SidebarActionsHeader
       :title="$t('CONVERSATION.SIDEBAR.CONTACT')"
       @close="closeContactPanel"
     />
-    <slot name="after-header" />
-    <SchedulingPatientDetails
-      v-if="patientContextEnabled && selectedPatient"
-      :key="`${patientContextKey}:${selectedPatient.id}`"
-      :patient="selectedPatient"
-      :context-key="patientContextKey"
-    />
-    <ContactInfo
-      v-else-if="!patientContextEnabled"
-      :contact="contact"
-      :channel-type="channelType"
-    />
-    <div class="px-2 pb-8 list-group">
-      <Draggable
-        :list="conversationSidebarItems"
-        animation="200"
-        ghost-class="ghost"
-        handle=".drag-handle"
-        item-key="name"
-        class="flex flex-col gap-3"
-        @start="dragging = true"
-        @end="onDragEnd"
-      >
-        <template #item="{ element }">
-          <div
-            v-if="element.name === 'conversation_actions'"
-            class="conversation--actions px-2 py-1 text-sm"
-          >
-            <ConversationAction
-              :conversation-id="conversationId"
-              :inbox-id="inboxId"
-            />
-          </div>
-          <div v-else-if="element.name === 'contact_attributes'">
-            <AccordionItem
-              :title="$t('CONVERSATION_SIDEBAR.ACCORDION.CONTACT_ATTRIBUTES')"
-              :is-open="isContactSidebarItemOpen('is_contact_attributes_open')"
-              compact
-              @toggle="
-                value =>
-                  toggleSidebarUIState('is_contact_attributes_open', value)
-              "
+    <div
+      class="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden"
+    >
+      <slot name="after-header" />
+      <SchedulingPatientDetails
+        v-if="patientContextEnabled && selectedPatient"
+        :key="`${patientContextKey}:${selectedPatient.id}`"
+        :patient="selectedPatient"
+        :context-key="patientContextKey"
+      />
+      <ContactInfo
+        v-else-if="!patientContextEnabled"
+        :contact="contact"
+        :channel-type="channelType"
+      />
+      <div class="px-2 pb-8 list-group">
+        <Draggable
+          :list="conversationSidebarItems"
+          animation="200"
+          ghost-class="ghost"
+          handle=".drag-handle"
+          item-key="name"
+          class="flex flex-col gap-3"
+          @start="dragging = true"
+          @end="onDragEnd"
+        >
+          <template #item="{ element }">
+            <div
+              v-if="element.name === 'conversation_actions'"
+              class="conversation--actions px-2 py-1 text-sm"
             >
-              <CustomAttributes
-                v-if="detailsContactId"
-                :key="detailsContactId"
-                attribute-type="contact_attribute"
-                attribute-from="conversation_contact_panel"
-                :contact-id="detailsContactId"
-                :empty-state-message="
-                  $t('CONVERSATION_CUSTOM_ATTRIBUTES.NO_RECORDS_FOUND')
+              <ConversationAction
+                :conversation-id="conversationId"
+                :inbox-id="inboxId"
+              />
+            </div>
+            <div v-else-if="element.name === 'contact_attributes'">
+              <AccordionItem
+                :title="$t('CONVERSATION_SIDEBAR.ACCORDION.CONTACT_ATTRIBUTES')"
+                :is-open="
+                  isContactSidebarItemOpen('is_contact_attributes_open')
                 "
-              />
-            </AccordionItem>
-          </div>
-          <woot-feature-toggle
-            v-else-if="element.name === 'macros'"
-            feature-key="macros"
-          >
-            <AccordionItem
-              :title="$t('CONVERSATION_SIDEBAR.ACCORDION.MACROS')"
-              :is-open="isContactSidebarItemOpen('is_macro_open')"
-              compact
-              @toggle="value => toggleSidebarUIState('is_macro_open', value)"
+                compact
+                @toggle="
+                  value =>
+                    toggleSidebarUIState('is_contact_attributes_open', value)
+                "
+              >
+                <CustomAttributes
+                  v-if="detailsContactId"
+                  :key="detailsContactId"
+                  attribute-type="contact_attribute"
+                  attribute-from="conversation_contact_panel"
+                  :contact-id="detailsContactId"
+                  :empty-state-message="
+                    $t('CONVERSATION_CUSTOM_ATTRIBUTES.NO_RECORDS_FOUND')
+                  "
+                />
+              </AccordionItem>
+            </div>
+            <woot-feature-toggle
+              v-else-if="element.name === 'macros'"
+              feature-key="macros"
             >
-              <MacrosList :conversation-id="conversationId" />
-            </AccordionItem>
-          </woot-feature-toggle>
-          <div v-else-if="element.name === 'contact_notes'">
-            <AccordionItem
-              :title="$t('CONVERSATION_SIDEBAR.ACCORDION.CONTACT_NOTES')"
-              :is-open="isContactSidebarItemOpen('is_contact_notes_open')"
-              compact
-              @toggle="
-                value => toggleSidebarUIState('is_contact_notes_open', value)
-              "
-            >
-              <ContactNotes
-                v-if="detailsContactId"
-                :key="detailsContactId"
-                :contact-id="detailsContactId"
-              />
-            </AccordionItem>
-          </div>
-          <div v-else-if="element.name === 'shared_files'">
-            <AccordionItem
-              :title="$t('CONVERSATION_SIDEBAR.ACCORDION.SHARED_FILES')"
-              :is-open="isContactSidebarItemOpen('is_shared_files_open')"
-              compact
-              @toggle="
-                value => toggleSidebarUIState('is_shared_files_open', value)
-              "
-            >
-              <SharedFiles
-                v-if="isContactSidebarItemOpen('is_shared_files_open')"
-              />
-            </AccordionItem>
-          </div>
-        </template>
-      </Draggable>
+              <AccordionItem
+                :title="$t('CONVERSATION_SIDEBAR.ACCORDION.MACROS')"
+                :is-open="isContactSidebarItemOpen('is_macro_open')"
+                compact
+                @toggle="value => toggleSidebarUIState('is_macro_open', value)"
+              >
+                <MacrosList :conversation-id="conversationId" />
+              </AccordionItem>
+            </woot-feature-toggle>
+            <div v-else-if="element.name === 'contact_notes'">
+              <AccordionItem
+                :title="$t('CONVERSATION_SIDEBAR.ACCORDION.CONTACT_NOTES')"
+                :is-open="isContactSidebarItemOpen('is_contact_notes_open')"
+                compact
+                @toggle="
+                  value => toggleSidebarUIState('is_contact_notes_open', value)
+                "
+              >
+                <ContactNotes
+                  v-if="detailsContactId"
+                  :key="detailsContactId"
+                  :contact-id="detailsContactId"
+                />
+              </AccordionItem>
+            </div>
+            <div v-else-if="element.name === 'shared_files'">
+              <AccordionItem
+                :title="$t('CONVERSATION_SIDEBAR.ACCORDION.SHARED_FILES')"
+                :is-open="isContactSidebarItemOpen('is_shared_files_open')"
+                compact
+                @toggle="
+                  value => toggleSidebarUIState('is_shared_files_open', value)
+                "
+              >
+                <SharedFiles
+                  v-if="isContactSidebarItemOpen('is_shared_files_open')"
+                />
+              </AccordionItem>
+            </div>
+          </template>
+        </Draggable>
+      </div>
     </div>
   </div>
 </template>
