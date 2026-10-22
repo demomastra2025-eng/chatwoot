@@ -4,13 +4,13 @@ import { useStore, useStoreGetters } from 'dashboard/composables/store';
 export const DEFAULT_CONVERSATION_SIDEBAR_ITEMS_ORDER = Object.freeze([
   { name: 'conversation_actions' },
   { name: 'macros' },
-  { name: 'conversation_info' },
   { name: 'contact_attributes' },
   { name: 'contact_notes' },
   { name: 'shared_files' },
 ]);
 
 const REMOVED_CONVERSATION_SIDEBAR_ITEMS = new Set([
+  'conversation_info',
   'previous_conversation',
   'conversation_participants',
   'linear_issues',

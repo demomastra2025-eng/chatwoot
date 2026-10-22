@@ -83,6 +83,7 @@ describe('useUISettings', () => {
   it('filters out removed sidebar items from persisted conversation_sidebar_items_order', () => {
     getUISettingsMock.value.conversation_sidebar_items_order = [
       { name: 'conversation_actions' },
+      { name: 'conversation_info' },
       { name: 'conversation_participants' },
       { name: 'previous_conversation' },
       { name: 'linear_issues' },

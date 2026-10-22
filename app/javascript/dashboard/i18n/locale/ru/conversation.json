@@ -549,10 +549,10 @@
       "CONVERSATION_ACTIONS": "Действия в беседе",
       "CONVERSATION_LABELS": "Теги диалога",
       "CONVERSATION_INFO": "Информация о беседе",
-      "CONTACT_NOTES": "Заметки контактов",
-      "CONTACT_ATTRIBUTES": "Атрибуты контакта",
+      "CONTACT_NOTES": "Заметки",
+      "CONTACT_ATTRIBUTES": "Атрибуты",
       "PREVIOUS_CONVERSATION": "Предыдущие диалоги",
-      "MACROS": "Макросс",
+      "MACROS": "Макросы",
       "LINEAR_ISSUES": "Связанные проблемы",
       "SHOPIFY_ORDERS": "Заказы Shopify",
       "SHARED_FILES": "Вложения"

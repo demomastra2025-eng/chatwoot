@@ -123,7 +123,7 @@ const rows = computed(() => [
 </script>
 
 <template>
-  <section class="border-b border-n-weak px-4 py-3" data-test="patient-details">
+  <section class="px-4 py-3" data-test="patient-details">
     <h3 class="m-0 text-sm font-semibold text-n-slate-12">
       {{ patientDisplayName(patient) }}
     </h3>
