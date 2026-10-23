@@ -1276,6 +1276,7 @@
         "REAUTHORIZE": "Қайта авторизациялау",
         "REAUTHORIZE_SUCCESS": "WhatsApp Web үшін жаңа QR-код жасалды",
         "REAUTHORIZE_ERROR": "WhatsApp Web қайта авторизациясын бастау мүмкін болмады",
+        "RESET_CONFIRM": "Арна жұмыс істеп тұр. Шынымен қайта қосу керек пе? Ағымдағы кіру сеансы жойылады.",
         "RECONNECT": "Reconnect",
         "RECONNECT_STARTED": "WhatsApp Web reconnect started",
         "RECONNECT_ERROR": "Unable to reconnect WhatsApp Web",

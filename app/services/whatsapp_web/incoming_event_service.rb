@@ -11,6 +11,11 @@ class WhatsappWeb::IncomingEventService
   ).freeze
   REMOVED_INSTANCE_MESSAGE = 'Evolution instance was removed. Run repair or reconnect to create a new session.'.freeze
   RUNTIME_STATE_EVENTS = %w[qrcode.updated connection.update status.instance logout.instance remove.instance].freeze
+  # Events that can only come from a live socket; each one proves the session is alive (see Channel::WhatsappWeb#record_provider_activity!).
+  LIVE_ACTIVITY_EVENTS = %w[
+    messages.upsert send.message messages.update messages.edited send.message.update messages.delete
+    messages.set messaging-history.set call
+  ].freeze
 
   pattr_initialize [:channel!, :payload!]
 
@@ -20,6 +25,7 @@ class WhatsappWeb::IncomingEventService
     if RUNTIME_STATE_EVENTS.include?(event_name)
       return unless process_runtime_state_event
     else
+      channel.record_provider_activity! if LIVE_ACTIVITY_EVENTS.include?(event_name)
       process_event
     end
 
@@ -222,21 +228,24 @@ class WhatsappWeb::IncomingEventService
       return
     end
 
+    channel.update!(connection_update_attributes(state, normalized_state))
+    request_history_sync_if_provider_ready! if state.to_s == 'open'
+  end
+
+  def connection_update_attributes(state, normalized_state)
     clear_auth_artifacts = %w[open reconnecting].include?(normalized_state)
+    sync_state_updates = connection_activity_sync_state(normalized_state)
+    sync_state_updates['qr_generated_at'] = nil if clear_auth_artifacts
+
     attributes = {
       connection_state: normalized_state,
       lifecycle_state: lifecycle_state_for(state),
       last_error: connection_update_error_message(normalized_state),
       last_synced_at: Time.current
     }
-
-    if clear_auth_artifacts
-      attributes[:qr_code] = {}
-      attributes[:sync_state] = channel.sync_state_payload.merge('qr_generated_at' => nil)
-    end
-
-    channel.update!(attributes)
-    request_history_sync_if_provider_ready! if state.to_s == 'open'
+    attributes[:qr_code] = {} if clear_auth_artifacts
+    attributes[:sync_state] = channel.sync_state_payload.merge(sync_state_updates) if sync_state_updates.present?
+    attributes
   end
 
   def process_status_instance
@@ -258,7 +267,7 @@ class WhatsappWeb::IncomingEventService
       qr_code: {},
       last_error: status_instance_error_message(normalized_state),
       last_synced_at: Time.current,
-      sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil)
+      sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil).merge(channel.provider_activity_reset_state)
     )
   end
 
@@ -269,7 +278,7 @@ class WhatsappWeb::IncomingEventService
       qr_code: {},
       last_error: nil,
       last_synced_at: Time.current,
-      sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil)
+      sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil).merge(channel.provider_activity_reset_state)
     )
   end
 
@@ -280,7 +289,7 @@ class WhatsappWeb::IncomingEventService
       qr_code: {},
       last_error: REMOVED_INSTANCE_MESSAGE,
       last_synced_at: Time.current,
-      sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil)
+      sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil).merge(channel.provider_activity_reset_state)
     )
   end
 
@@ -448,6 +457,15 @@ class WhatsappWeb::IncomingEventService
       wait: wait,
       expected_provider_history_synced_at: channel.provider_history_synced_at
     )
+  end
+
+  # An open event is proof of life; a close that carries a non-recoverable disconnection reason (logged out, replaced,
+  # bad session) means the login is gone, so earlier activity must not keep the channel looking alive.
+  def connection_activity_sync_state(normalized_state)
+    return { 'last_provider_activity_at' => Time.current.iso8601, 'consecutive_close_observations' => 0 } if normalized_state == 'open'
+    return {} unless normalized_state == 'close' && NON_RECOVERABLE_DISCONNECTION_CODES.include?(event_data[:disconnectionReasonCode].to_i)
+
+    channel.provider_activity_reset_state
   end
 
   def normalize_connection_state(state)

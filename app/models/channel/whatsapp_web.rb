@@ -43,6 +43,13 @@ class Channel::WhatsappWeb < ApplicationRecord
   AUTH_ARTIFACT_TTL = 60.seconds
   SCANNED_AUTH_ARTIFACT_TTL = 2.minutes
   LIFECYCLE_OPERATION_TTL = 10.minutes
+  # A status poll that says "close" is not trusted while the provider showed life (inbound event, accepted outbound
+  # message or an open runtime event) inside this window; webhook connection events still apply immediately.
+  RECENT_PROVIDER_ACTIVITY_WINDOW = 10.minutes
+  PROVIDER_ACTIVITY_WRITE_INTERVAL = 30.seconds
+  # Within this window (or while connected and open) resetting the login needs an explicit confirmation.
+  WORKING_RECENTLY_WINDOW = 5.minutes
+  CLOSE_OBSERVATIONS_REQUIRED = 2
   AUTH_ARTIFACT_TYPES = {
     'qr' => 'qr',
     'code' => 'pairing_code',
@@ -50,6 +57,8 @@ class Channel::WhatsappWeb < ApplicationRecord
   }.freeze
   INSTANCE_BEING_DELETED_MESSAGE =
     'Инстанс WhatsApp Web сейчас удаляется или перезапускается. Подождите минуту и повторите подключение.'.freeze
+  WORKING_CHANNEL_RESET_MESSAGE =
+    'Канал работает. Точно переподключить? Текущий вход будет сброшен.'.freeze
   DEFAULT_SYNC_STATE = {
     'history_synced_at' => nil,
     'history_sync_requested_at' => nil,
@@ -77,6 +86,8 @@ class Channel::WhatsappWeb < ApplicationRecord
     'lifecycle_operation_started_at' => nil,
     'lifecycle_operation_completed_at' => nil,
     'last_runtime_event_sequence' => nil,
+    'last_provider_activity_at' => nil,
+    'consecutive_close_observations' => 0,
     'sync_groups' => false,
     'label_map' => {}
   }.freeze
@@ -154,12 +165,10 @@ class Channel::WhatsappWeb < ApplicationRecord
     with_provider_lifecycle_lock { provider_service.repair! }
   end
 
-  def sync_connection_state!(refresh_qr: false, artifact_type: 'qr')
+  # Read-only status poll: it only observes the provider state and never requests a QR or starts a reauthorization.
+  def sync_connection_state!
     with_provider_lifecycle_lock do
-      service = provider_service
-      service.sync_connection_state!
-      synced_runtime_event_at = sync_state_payload['last_runtime_event_at']
-      refresh_qr_after_connection_sync!(service, artifact_type, synced_runtime_event_at) if refresh_qr
+      provider_service.sync_connection_state!
       self
     end
   end
@@ -193,6 +202,7 @@ class Channel::WhatsappWeb < ApplicationRecord
     case value
     when Hash
       extract_error_message(value['message'] || value[:message]).presence ||
+        extract_error_message(value['response'] || value[:response]).presence ||
         extract_error_message(value['error'] || value[:error]).presence ||
         extract_error_message(value['detail'] || value[:detail]).presence
     when Array
@@ -202,7 +212,6 @@ class Channel::WhatsappWeb < ApplicationRecord
       return if text.blank?
 
       parsed = begin
-        extract_error_message(value['response'] || value[:response]).presence ||
         JSON.parse(text)
       rescue JSON::ParserError
         nil
@@ -395,7 +404,7 @@ class Channel::WhatsappWeb < ApplicationRecord
           'lifecycle_operation_started_at' => started_at.iso8601,
           'lifecycle_operation_completed_at' => nil,
           'last_runtime_event_sequence' => nil
-        )
+        ).merge(provider_activity_reset_state)
       )
       operation_id
     end
@@ -444,6 +453,47 @@ class Channel::WhatsappWeb < ApplicationRecord
       )
       operation_id
     end
+  end
+
+  def last_provider_activity_at
+    parse_auth_artifact_time(sync_state_payload['last_provider_activity_at'])
+  end
+
+  def provider_activity_recent?(window: RECENT_PROVIDER_ACTIVITY_WINDOW, at: Time.current)
+    activity_at = last_provider_activity_at
+    activity_at.present? && activity_at > at - window
+  end
+
+  # True while the session is (or was a moment ago) alive, i.e. while a QR/reauthorize would throw a working login away.
+  def working_recently?(at: Time.current)
+    return false if lifecycle_state == 'deleting'
+
+    (lifecycle_state == 'connected' && connection_state == 'open') ||
+      provider_activity_recent?(window: WORKING_RECENTLY_WINDOW, at: at)
+  end
+
+  # Marks proof of life from the provider (inbound webhook event, accepted outbound message). The write is a single
+  # jsonb_set, so it never clobbers concurrent sync_state writers, and it is throttled to one write per interval.
+  def record_provider_activity!(at: Time.current)
+    previous = last_provider_activity_at
+    return false if previous.present? && previous <= at && at - previous < PROVIDER_ACTIVITY_WRITE_INTERVAL
+
+    stamp = at.utc.iso8601
+    self.class.where(id: id).update_all( # rubocop:disable Rails/SkipsModelValidations
+      ["sync_state = jsonb_set(COALESCE(sync_state, '{}'::jsonb), '{last_provider_activity_at}', to_jsonb(?::text), true)", stamp]
+    )
+    self.sync_state = sync_state_payload.merge('last_provider_activity_at' => stamp)
+    clear_attribute_changes(['sync_state'])
+    true
+  rescue ActiveRecord::ActiveRecordError => e
+    Rails.logger.warn("[WHATSAPP WEB] Failed to record provider activity for channel=#{id}: #{e.class}: #{e.message}")
+    false
+  end
+
+  # Sync state fragment to merge when the login is gone (logout, removal, explicit reauthorization) so that old
+  # activity cannot keep the channel looking alive.
+  def provider_activity_reset_state
+    { 'last_provider_activity_at' => nil, 'consecutive_close_observations' => 0 }
   end
 
   def label_map
@@ -667,7 +717,9 @@ class Channel::WhatsappWeb < ApplicationRecord
       'qr_generated_at' => sync_state_payload['qr_generated_at'],
       'auth_artifact_type' => auth_artifact_type,
       'auth_artifact_expires_at' => auth_artifact_expires_at&.iso8601,
-      'auth_artifact_expired' => auth_artifact_expired?
+      'auth_artifact_expired' => auth_artifact_expired?,
+      'last_provider_activity_at' => last_provider_activity_at&.iso8601,
+      'working_recently' => working_recently?
     }
 
     payload['qrcode'] = qr_code if include_qr_code && qr_code.present?
@@ -687,16 +739,6 @@ class Channel::WhatsappWeb < ApplicationRecord
 
   def with_provider_lifecycle_lock(&)
     WhatsappWeb::LifecycleLock.new(channel_id: id).with_lock(&)
-  end
-
-  def refresh_qr_after_connection_sync!(service, artifact_type, expected_runtime_event_at)
-    with_lock do
-      reload
-      next unless sync_state_payload['last_runtime_event_at'] == expected_runtime_event_at
-      next unless lifecycle_state.in?(%w[waiting_for_qr qr_ready])
-
-      service.refresh_qr!(artifact_type: artifact_type)
-    end
   end
 
   def auth_artifact_payload_present?

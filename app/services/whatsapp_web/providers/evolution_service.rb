@@ -158,7 +158,9 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
       qr_code: {},
       last_error: nil,
       last_synced_at: observed_at,
-      sync_state: channel.cleared_auth_artifact_sync_state.merge('last_runtime_event_at' => observed_at.iso8601)
+      sync_state: channel.cleared_auth_artifact_sync_state
+                         .merge(channel.provider_activity_reset_state)
+                         .merge('last_runtime_event_at' => observed_at.iso8601)
     )
   end
 
@@ -299,7 +301,9 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
                  request(:post, "/message/sendText/#{channel.instance_name}", body: text_payload(message))
                end
 
-    response.dig('key', 'id') || response.dig('data', 'key', 'id')
+    message_id = response.dig('key', 'id') || response.dig('data', 'key', 'id')
+    channel.record_provider_activity! if message_id.present?
+    message_id
   end
 
   def update_message(message:, content:)
@@ -397,12 +401,39 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     normalized_state = normalized_connection_state(state)
     observed_at = Time.current
     operation_id = response.dig('instance', 'lifecycleOperationId').presence
+    return keep_connected_after_close_observation!(state, observed_at) if untrusted_close_observation?(state, normalized_state, observed_at)
+
     channel.update!(runtime_state_attributes(state, normalized_state, observed_at, operation_id))
     normalized_state
   rescue RequestError => e
     raise unless e.status == 404
 
     mark_missing_runtime_instance!
+  end
+
+  # A single "close" (or an unrecognised state) from the status endpoint must not take a working channel offline: the
+  # provider can report a stale state while the socket is open and messages keep flowing. The channel stays connected
+  # while the provider showed recent activity, and otherwise until the observation repeats on consecutive polls.
+  # Webhook connection events (and explicit reauth_required outcomes) are authoritative and apply immediately elsewhere.
+  def untrusted_close_observation?(state, normalized_state, observed_at)
+    return false unless normalized_state.in?(%w[close unknown]) && state.to_s != 'reauth_required'
+    return false unless channel.connection_state == 'open' && channel.lifecycle_state == 'connected'
+
+    observations = channel.sync_state_payload['consecutive_close_observations'].to_i + 1
+    channel.provider_activity_recent?(at: observed_at) || observations < Channel::WhatsappWeb::CLOSE_OBSERVATIONS_REQUIRED
+  end
+
+  def keep_connected_after_close_observation!(state, observed_at)
+    observations = channel.sync_state_payload['consecutive_close_observations'].to_i + 1
+    Rails.logger.warn(
+      "[WHATSAPP WEB] Ignoring provider #{state.presence || 'unknown'} observation for channel=#{channel.id} " \
+      "observations=#{observations} last_activity_at=#{channel.last_provider_activity_at&.iso8601}"
+    )
+    channel.update!(
+      last_synced_at: observed_at,
+      sync_state: channel.sync_state_payload.merge('consecutive_close_observations' => observations)
+    )
+    channel.connection_state
   end
 
   def runtime_state_attributes(state, normalized_state, observed_at, operation_id)
@@ -424,12 +455,19 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
                  else
                    channel.sync_state_payload
                  end
+    base_state = base_state.merge(runtime_activity_sync_state(normalized_state, observed_at))
     return base_state.merge('last_runtime_event_at' => observed_at.iso8601) if operation_id.blank?
 
     base_state.merge(
       runtime_lifecycle_sync_state(base_state, terminal_state, observed_at, operation_id),
       'last_runtime_event_at' => observed_at.iso8601
     )
+  end
+
+  def runtime_activity_sync_state(normalized_state, observed_at)
+    activity = { 'consecutive_close_observations' => 0 }
+    activity['last_provider_activity_at'] = observed_at.iso8601 if normalized_state == 'open'
+    activity
   end
 
   def runtime_lifecycle_sync_state(base_state, terminal_state, observed_at, operation_id)
@@ -512,7 +550,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
       )
     elsif %w[open close refused].include?(attributes[:connection_state])
       attributes[:qr_code] = {}
-      attributes[:sync_state] = completed_runtime_sync_state
+      attributes[:sync_state] = completed_runtime_sync_state.merge(runtime_activity_sync_state(normalized_state, Time.current))
     elsif attributes[:connection_state] == 'reconnecting'
       attributes[:qr_code] = {}
       attributes[:sync_state] = channel.cleared_auth_artifact_sync_state
@@ -644,13 +682,13 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
       default_terminal_state_message(normalized_state)
   end
 
+  # The first routable candidate (not @lid) wins: a conversation can hang on a LID contact inbox while the same contact
+  # also has a phone identity. When nothing is routable the first candidate is returned so callers can report it.
   def message_remote_jid(message)
     candidates = WhatsappWeb::RecipientCandidates.new(conversation: message.conversation).to_a
     candidates.find { |candidate| normalized_remote_jid(candidate).present? } || candidates.first
   end
 
-  # The first routable candidate (not @lid) wins: a conversation can hang on a LID contact inbox while the same contact
-  # also has a phone identity. When nothing is routable the first candidate is returned so callers can report it.
   def default_terminal_state_message(normalized_state)
     case normalized_state
     when 'refused'

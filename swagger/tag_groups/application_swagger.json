@@ -12920,7 +12920,7 @@
         ],
         "operationId": "refreshWhatsappWebQr",
         "summary": "Refresh WhatsApp Web QR or sync status",
-        "description": "Refreshes the QR code for a WhatsApp Web inbox. Pass `status_only=true` to sync runtime state without forcing a new QR refresh.",
+        "description": "Requests a new QR code or pairing code for a WhatsApp Web inbox. Pass `status_only=true` to only read the runtime state (and the stored QR with `include_qr_code=true`); a status read never requests a QR or starts a reauthorization. When the channel is working, an explicit request is refused with 409 until it is repeated with `force=true`, because it replaces the current login.",
         "security": [
           {
             "userApiKey": []
@@ -12947,6 +12947,24 @@
             },
             "description": "Sync the provider status without requesting a new QR code",
             "required": false
+          },
+          {
+            "name": "include_qr_code",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "With status_only, include the QR payload stored for the inbox in the response",
+            "required": false
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Confirm replacing the login of a channel that is currently working",
+            "required": false
           }
         ],
         "responses": {
@@ -12972,6 +12990,16 @@
           },
           "401": {
             "description": "Authentication error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The channel is working and the reset was not confirmed (code whatsapp_web_channel_working), or another WhatsApp Web operation is in progress",
             "content": {
               "application/json": {
                 "schema": {

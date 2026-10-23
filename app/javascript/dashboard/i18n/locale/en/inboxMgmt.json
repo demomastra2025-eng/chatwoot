@@ -1345,6 +1345,7 @@
         "REAUTHORIZE": "Reauthorize",
         "REAUTHORIZE_SUCCESS": "A new WhatsApp Web QR code was created",
         "REAUTHORIZE_ERROR": "Unable to start WhatsApp Web reauthorization",
+        "RESET_CONFIRM": "The channel is working. Reconnect anyway? The current login will be reset.",
         "RECONNECT": "Reconnect",
         "RECONNECT_STARTED": "WhatsApp Web reconnect started",
         "RECONNECT_ERROR": "Unable to reconnect WhatsApp Web",

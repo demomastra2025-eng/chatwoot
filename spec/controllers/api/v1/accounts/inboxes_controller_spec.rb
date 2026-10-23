@@ -985,9 +985,8 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode')).to be_nil
       end
 
-      it 'returns qr payload during status sync when explicitly requested' do
-        expect_any_instance_of(Channel::WhatsappWeb).to receive(:sync_connection_state!)
-          .with(refresh_qr: true, artifact_type: 'qr') do |instance|
+      it 'returns the stored qr payload during status sync when explicitly requested' do
+        expect_any_instance_of(Channel::WhatsappWeb).to receive(:sync_connection_state!) do |instance|
           instance.update!(
             lifecycle_state: 'waiting_for_qr',
             connection_state: 'connecting',
@@ -995,6 +994,7 @@ RSpec.describe 'Inboxes API', type: :request do
             last_synced_at: Time.current
           )
         end
+        expect_any_instance_of(Channel::WhatsappWeb).not_to receive(:refresh_qr!)
 
         post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
              headers: admin.create_new_auth_token,
@@ -1006,8 +1006,7 @@ RSpec.describe 'Inboxes API', type: :request do
       end
 
       it 'does not return or regenerate qr artifacts for a connected runtime' do
-        expect_any_instance_of(Channel::WhatsappWeb).to receive(:sync_connection_state!)
-          .with(refresh_qr: true, artifact_type: 'qr') do |instance|
+        expect_any_instance_of(Channel::WhatsappWeb).to receive(:sync_connection_state!) do |instance|
           instance.update!(
             lifecycle_state: 'connected',
             connection_state: 'open',
@@ -1042,16 +1041,39 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response.parsed_body['error']).to eq('Another WhatsApp Web operation is already in progress')
       end
 
-      it 'recovers a missing QR artifact during setup status polling when QR payload is requested' do
-        expect_any_instance_of(Channel::WhatsappWeb).to receive(:sync_connection_state!)
-          .with(refresh_qr: true, artifact_type: 'qr') do |instance|
-          instance.update!(
-            lifecycle_state: 'qr_ready',
-            connection_state: 'connecting',
-            qr_code: { 'artifact_type' => 'qr', 'base64' => 'recovered-qr', 'code' => 'recovered-code' },
-            last_synced_at: Time.current
-          )
+      it 'never requests a QR or starts a reauthorization while polling the setup status' do
+        channel.update!(lifecycle_state: 'waiting_for_qr', connection_state: 'connecting', qr_code: {})
+        allow_any_instance_of(WhatsappWeb::Providers::EvolutionService).to receive(:request)
+          .with(:get, "/instance/connectionState/#{channel.instance_name}")
+          .and_return({ 'instance' => { 'state' => 'connecting' } })
+        expect_any_instance_of(WhatsappWeb::Providers::EvolutionService).not_to receive(:refresh_qr!)
+        expect_any_instance_of(WhatsappWeb::Providers::EvolutionService).not_to receive(:reauthorize!)
+        expect(HTTParty).not_to receive(:post)
+
+        auth_headers = admin.create_new_auth_token
+        3.times do
+          post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
+               headers: auth_headers,
+               params: { status_only: true, include_qr_code: true, artifact_type: 'qr' },
+               as: :json
+
+          expect(response).to have_http_status(:success)
         end
+
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'status')).to eq('waiting_for_qr')
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode')).to be_nil
+      end
+
+      it 'returns the QR stored by webhooks on a status poll without asking the provider for a new one' do
+        channel.update!(
+          lifecycle_state: 'qr_ready',
+          connection_state: 'connecting',
+          qr_code: { 'artifact_type' => 'qr', 'base64' => 'webhook-qr', 'code' => 'webhook-code' }
+        )
+        allow_any_instance_of(WhatsappWeb::Providers::EvolutionService).to receive(:request)
+          .with(:get, "/instance/connectionState/#{channel.instance_name}")
+          .and_return({ 'instance' => { 'state' => 'connecting' } })
+        expect_any_instance_of(WhatsappWeb::Providers::EvolutionService).not_to receive(:refresh_qr!)
 
         post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
              headers: admin.create_new_auth_token,
@@ -1059,13 +1081,29 @@ RSpec.describe 'Inboxes API', type: :request do
              as: :json
 
         expect(response).to have_http_status(:success)
-        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'status')).to eq('qr_ready')
-        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'base64')).to eq('recovered-qr')
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'base64')).to eq('webhook-qr')
+      end
+
+      it 'keeps a recently active channel connected when a status poll reports a stale close' do
+        channel.update!(lifecycle_state: 'connected', connection_state: 'open')
+        channel.record_provider_activity!
+        allow_any_instance_of(WhatsappWeb::Providers::EvolutionService).to receive(:request)
+          .with(:get, "/instance/connectionState/#{channel.instance_name}")
+          .and_return({ 'instance' => { 'state' => 'close', 'live' => false } })
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
+             headers: admin.create_new_auth_token,
+             params: { status_only: true },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'status')).to eq('connected')
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'connection_state')).to eq('open')
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'working_recently')).to be(true)
       end
 
       it 'does not recover a new QR while a scanned artifact is still connecting' do
-        expect_any_instance_of(Channel::WhatsappWeb).to receive(:sync_connection_state!)
-          .with(refresh_qr: true, artifact_type: 'qr') do |instance|
+        expect_any_instance_of(Channel::WhatsappWeb).to receive(:sync_connection_state!) do |instance|
           instance.update!(
             lifecycle_state: 'qr_scanned',
             connection_state: 'connecting',
@@ -1146,6 +1184,63 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(channel.reload.last_error).to eq('Evolution connection unavailable')
       end
 
+      it 'does not flag a recently active channel as failed when status polling fails' do
+        channel.update!(lifecycle_state: 'connected', connection_state: 'open')
+        channel.record_provider_activity!
+        allow_any_instance_of(Channel::WhatsappWeb).to receive(:sync_connection_state!)
+          .and_raise(StandardError, 'Evolution connection unavailable')
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
+             headers: admin.create_new_auth_token,
+             params: { status_only: true },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'status')).to eq('connected')
+        expect(channel.reload).to have_attributes(lifecycle_state: 'connected', last_error: nil)
+      end
+
+      it 'asks for confirmation before an explicit QR request replaces a working login' do
+        channel.update!(lifecycle_state: 'connected', connection_state: 'open')
+        expect_any_instance_of(Channel::WhatsappWeb).not_to receive(:refresh_qr!)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
+             headers: admin.create_new_auth_token,
+             params: { artifact_type: 'qr' },
+             as: :json
+
+        expect(response).to have_http_status(:conflict)
+        expect(response.parsed_body['error']).to eq(Channel::WhatsappWeb::WORKING_CHANNEL_RESET_MESSAGE)
+        expect(response.parsed_body['code']).to eq('whatsapp_web_channel_working')
+      end
+
+      it 'requests the QR for a working channel once the reset is confirmed with force' do
+        channel.update!(lifecycle_state: 'connected', connection_state: 'open')
+        expect_any_instance_of(Channel::WhatsappWeb).to receive(:refresh_qr!).with(artifact_type: 'qr') do |instance|
+          instance.update!(lifecycle_state: 'qr_ready', connection_state: 'connecting', qr_code: { 'base64' => 'fresh-qr' })
+        end
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
+             headers: admin.create_new_auth_token,
+             params: { artifact_type: 'qr', force: true },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'base64')).to eq('fresh-qr')
+      end
+
+      it 'does not ask for confirmation when the channel stopped working' do
+        channel.update!(lifecycle_state: 'disconnected', connection_state: 'close')
+        expect_any_instance_of(Channel::WhatsappWeb).to receive(:refresh_qr!).with(artifact_type: 'qr')
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
+             headers: admin.create_new_auth_token,
+             params: { artifact_type: 'qr' },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+      end
+
       it 'returns accepted without touching the provider when the inbox is deleting' do
         inbox.mark_pending_deletion!
 
@@ -1220,6 +1315,39 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response).to have_http_status(:success)
         expect(response.parsed_body.dig('additional_attributes', 'evolution', 'status')).to eq('qr_ready')
         expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'base64')).to eq('fresh-reauth-qr')
+      end
+    end
+
+    describe 'POST /api/v1/accounts/:account_id/inboxes/:id/reauthorize_whatsapp_web with a working channel' do
+      before do
+        channel.update!(lifecycle_state: 'connected', connection_state: 'open')
+        channel.record_provider_activity!
+      end
+
+      it 'refuses to reset a working login without confirmation' do
+        expect_any_instance_of(Channel::WhatsappWeb).not_to receive(:reauthorize!)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/reauthorize_whatsapp_web",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:conflict)
+        expect(response.parsed_body['error']).to eq(Channel::WhatsappWeb::WORKING_CHANNEL_RESET_MESSAGE)
+        expect(channel.reload).to have_attributes(lifecycle_state: 'connected', connection_state: 'open')
+      end
+
+      it 'reauthorizes once the operator confirmed with force' do
+        expect_any_instance_of(Channel::WhatsappWeb).to receive(:reauthorize!) do |instance|
+          instance.update!(lifecycle_state: 'waiting_for_qr', connection_state: 'connecting')
+        end
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/reauthorize_whatsapp_web",
+             headers: admin.create_new_auth_token,
+             params: { force: true },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'status')).to eq('waiting_for_qr')
       end
     end
 

@@ -1345,6 +1345,7 @@
         "REAUTHORIZE": "Переавторизовать",
         "REAUTHORIZE_SUCCESS": "Новый QR-код WhatsApp Web создан",
         "REAUTHORIZE_ERROR": "Не удалось запустить переавторизацию WhatsApp Web",
+        "RESET_CONFIRM": "Канал работает. Точно переподключить? Текущий вход будет сброшен.",
         "RECONNECT": "Переподключить",
         "RECONNECT_STARTED": "Переподключение WhatsApp Web запущено",
         "RECONNECT_ERROR": "Не удалось переподключить WhatsApp Web",

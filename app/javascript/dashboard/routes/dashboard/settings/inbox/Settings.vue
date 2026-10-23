@@ -42,6 +42,7 @@ import {
   getWhatsappWebLifecycleState,
   isInboxPendingDeletion,
   isWhatsappWebConnected as hasOpenWhatsappWebSession,
+  isWhatsappWebWorkingRecently,
 } from 'dashboard/helper/whatsappWeb';
 import { getInboxFlowRouteName } from './helpers/inboxFlowRoutes';
 import { getInboxHealthStatus } from './helpers/inboxHealthStatus';
@@ -2163,12 +2164,21 @@ export default {
         return;
       }
 
+      // A working login is only reset after an explicit confirmation.
+      const isConfirmedReset = isWhatsappWebWorkingRecently(this.inbox);
+      if (
+        isConfirmedReset &&
+        !window.confirm(this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.RESET_CONFIRM'))
+      ) {
+        return;
+      }
+
       try {
         this.isRunningWhatsappWebReauthorization = true;
-        await this.$store.dispatch(
-          'inboxes/reauthorizeWhatsappWeb',
-          this.currentInboxId
-        );
+        await this.$store.dispatch('inboxes/reauthorizeWhatsappWeb', {
+          inboxId: this.currentInboxId,
+          force: isConfirmedReset,
+        });
 
         await this.fetchWhatsappWebDiagnostics();
         useAlert(this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.REAUTHORIZE_SUCCESS'));

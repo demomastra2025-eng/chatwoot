@@ -508,6 +508,100 @@ describe('#actions', () => {
       );
     });
 
+    it('sends force only for an explicit, confirmed QR request', async () => {
+      axios.post.mockResolvedValue({ data: inboxList[0] });
+
+      await actions.refreshWhatsappWebQr(
+        { commit, state: { records: [] } },
+        { inboxId: 123, artifactType: 'qr', force: true }
+      );
+
+      expect(axios.post).toHaveBeenLastCalledWith(
+        '/api/v1/inboxes/123/refresh_whatsapp_web_qr',
+        {
+          status_only: false,
+          include_qr_code: false,
+          artifact_type: 'qr',
+          force: true,
+        }
+      );
+
+      await actions.refreshWhatsappWebQr(
+        { commit, state: { records: [] } },
+        { inboxId: 123, statusOnly: true, includeQrCode: true, force: true }
+      );
+
+      expect(axios.post).toHaveBeenLastCalledWith(
+        '/api/v1/inboxes/123/refresh_whatsapp_web_qr',
+        { status_only: true, include_qr_code: true }
+      );
+    });
+
+    it('remembers that the channel is working when the server asks for confirmation', async () => {
+      inboxState.records = [
+        {
+          id: 123,
+          channel_type: 'Channel::WhatsappWeb',
+          additional_attributes: {
+            evolution: { status: 'disconnected', connection_state: 'close' },
+          },
+        },
+      ];
+      axios.post.mockRejectedValue({
+        response: {
+          status: 409,
+          data: {
+            error: 'Канал работает.',
+            code: 'whatsapp_web_channel_working',
+          },
+        },
+      });
+
+      await expect(
+        actions.refreshWhatsappWebQr(
+          { commit },
+          { inboxId: 123, artifactType: 'qr' }
+        )
+      ).rejects.toThrow('Канал работает.');
+
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        expect.objectContaining({
+          id: 123,
+          additional_attributes: {
+            evolution: {
+              status: 'disconnected',
+              connection_state: 'close',
+              working_recently: true,
+            },
+          },
+        })
+      );
+    });
+
+    it('does not treat a lifecycle lock conflict as a working channel', async () => {
+      inboxState.records = [{ id: 123, additional_attributes: {} }];
+      axios.post.mockRejectedValue({
+        response: {
+          status: 409,
+          data: {
+            error: 'Another WhatsApp Web operation is already in progress',
+          },
+        },
+      });
+
+      await expect(
+        actions.refreshWhatsappWebQr(
+          { commit },
+          { inboxId: 123, artifactType: 'qr' }
+        )
+      ).rejects.toThrow(
+        'Another WhatsApp Web operation is already in progress'
+      );
+
+      expect(commit).not.toHaveBeenCalled();
+    });
+
     it('supports silent status sync without forcing a new qr code', async () => {
       const existingInbox = {
         id: 123,
@@ -691,6 +785,61 @@ describe('#actions', () => {
       expect(commit).toHaveBeenCalledWith(
         types.default.EDIT_INBOXES,
         reauthorizedInbox
+      );
+    });
+
+    it('sends force when the operator confirmed resetting a working login', async () => {
+      axios.post.mockResolvedValue({ data: { id: 123 } });
+
+      await actions.reauthorizeWhatsappWeb(
+        { commit },
+        { inboxId: 123, force: true }
+      );
+
+      expect(axios.post).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/reauthorize_whatsapp_web',
+        { force: true }
+      );
+    });
+
+    it('does not send force without an explicit confirmation', async () => {
+      axios.post.mockResolvedValue({ data: { id: 123 } });
+
+      await actions.reauthorizeWhatsappWeb(
+        { commit },
+        { inboxId: 123, force: false }
+      );
+
+      expect(axios.post).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/reauthorize_whatsapp_web'
+      );
+    });
+
+    it('remembers that the channel is working when the server refuses the reset', async () => {
+      inboxState.records = [
+        { id: 123, additional_attributes: { evolution: { status: 'x' } } },
+      ];
+      axios.post.mockRejectedValue({
+        response: {
+          status: 409,
+          data: {
+            error: 'Канал работает.',
+            code: 'whatsapp_web_channel_working',
+          },
+        },
+      });
+
+      await expect(
+        actions.reauthorizeWhatsappWeb({ commit }, 123)
+      ).rejects.toThrow('Канал работает.');
+
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        expect.objectContaining({
+          additional_attributes: {
+            evolution: { status: 'x', working_recently: true },
+          },
+        })
       );
     });
 

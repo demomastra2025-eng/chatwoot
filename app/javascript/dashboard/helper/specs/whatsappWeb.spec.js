@@ -13,6 +13,7 @@ import {
   isWhatsappWebInbox,
   isWhatsappWebReconnecting,
   isWhatsappWebTransientState,
+  isWhatsappWebWorkingRecently,
   getWhatsappWebImportAlertKey,
   shouldRequestWhatsappWebQrAfterReconnect,
   shouldRequestWhatsappWebQrAfterRepair,
@@ -193,6 +194,60 @@ describe('#whatsappWeb helpers', () => {
     expect(shouldRequestWhatsappWebQrAfterReconnect(reconnectingInbox)).toBe(
       true
     );
+  });
+
+  describe('#isWhatsappWebWorkingRecently', () => {
+    const inboxWith = evolution => ({
+      ...whatsappWebInbox,
+      additional_attributes: { evolution },
+    });
+
+    it('is true while the session is connected and open', () => {
+      expect(isWhatsappWebWorkingRecently(whatsappWebInbox)).toBe(true);
+    });
+
+    it('trusts the server marker when a stale status says disconnected', () => {
+      const staleInbox = inboxWith({
+        status: 'disconnected',
+        connection_state: 'close',
+        working_recently: true,
+      });
+
+      expect(isWhatsappWebWorkingRecently(staleInbox)).toBe(true);
+    });
+
+    it('is false for a disconnected session without recent activity', () => {
+      const disconnectedInbox = inboxWith({
+        status: 'disconnected',
+        connection_state: 'close',
+        working_recently: false,
+      });
+
+      expect(isWhatsappWebWorkingRecently(disconnectedInbox)).toBe(false);
+      expect(
+        isWhatsappWebWorkingRecently(
+          inboxWith({
+            status: 'waiting_for_qr',
+            connection_state: 'connecting',
+          })
+        )
+      ).toBe(false);
+    });
+
+    it('is false for other channels and for inboxes pending deletion', () => {
+      expect(
+        isWhatsappWebWorkingRecently({
+          channel_type: 'Channel::Api',
+          additional_attributes: { evolution: { working_recently: true } },
+        })
+      ).toBe(false);
+      expect(
+        isWhatsappWebWorkingRecently({
+          ...whatsappWebInbox,
+          deleting: true,
+        })
+      ).toBe(false);
+    });
   });
 
   it('ignores non-whatsapp inboxes for connection alerts', () => {

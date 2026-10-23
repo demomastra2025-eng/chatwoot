@@ -380,6 +380,33 @@ const mergeWhatsappWebInboxPayload = (
   };
 };
 
+const WHATSAPP_WEB_CHANNEL_WORKING_CODE = 'whatsapp_web_channel_working';
+
+const isWhatsappWebChannelWorkingError = error =>
+  error?.response?.status === 409 &&
+  error.response.data?.code === WHATSAPP_WEB_CHANNEL_WORKING_CODE;
+
+// The server refused to reset a login that is still working: remember it, so the next click asks for confirmation.
+const markWhatsappWebChannelWorking = (commit, inboxId) => {
+  const inbox = state.records.find(
+    record => String(record.id) === String(inboxId)
+  );
+  if (!inbox) {
+    return;
+  }
+
+  commit(types.default.EDIT_INBOXES, {
+    ...inbox,
+    additional_attributes: {
+      ...inbox.additional_attributes,
+      evolution: {
+        ...inbox.additional_attributes?.evolution,
+        working_recently: true,
+      },
+    },
+  });
+};
+
 const visibleInboxRecords = records =>
   records.filter(inbox => !isInboxPendingDeletion(inbox));
 
@@ -907,6 +934,8 @@ export const actions = {
       typeof payload === 'object' && payload?.artifactType
         ? payload.artifactType
         : null;
+    const isConfirmedReset =
+      typeof payload === 'object' && payload?.force === true && !isStatusOnly;
     const requestPayload =
       typeof payload === 'object' && payload !== null
         ? {
@@ -915,6 +944,7 @@ export const actions = {
             ...(artifactType && !isStatusOnly
               ? { artifact_type: artifactType }
               : {}),
+            ...(isConfirmedReset ? { force: true } : {}),
           }
         : {};
     const currentInbox = inboxGetters?.getInbox
@@ -950,6 +980,10 @@ export const actions = {
               return null;
             }
 
+            if (isWhatsappWebChannelWorkingError(error)) {
+              markWhatsappWebChannelWorking(commit, inboxId);
+            }
+
             throw new Error(error?.response?.data?.error || error.message);
           }),
       { reuseExisting: isStatusOnly }
@@ -968,15 +1002,24 @@ export const actions = {
       }
     });
   },
-  reauthorizeWhatsappWeb: async ({ commit }, inboxId) => {
+  reauthorizeWhatsappWeb: async ({ commit }, payload) => {
+    const inboxId = typeof payload === 'object' ? payload.inboxId : payload;
+    const force = typeof payload === 'object' && payload?.force === true;
+
     return runWhatsappWebLifecycleRequest(inboxId, async () => {
       try {
-        const response = await InboxesAPI.reauthorizeWhatsappWeb(inboxId);
+        const response = await InboxesAPI.reauthorizeWhatsappWeb(inboxId, {
+          force,
+        });
         const reauthorizedInbox = response.data;
 
         commit(types.default.EDIT_INBOXES, reauthorizedInbox);
         return reauthorizedInbox;
       } catch (error) {
+        if (isWhatsappWebChannelWorkingError(error)) {
+          markWhatsappWebChannelWorking(commit, inboxId);
+        }
+
         throw new Error(error?.response?.data?.error || error.message);
       }
     });

@@ -24,6 +24,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   before_action :validate_whatsapp_web_channel,
                 only: [:refresh_whatsapp_web_qr, :reconnect_whatsapp_web, :disconnect_whatsapp_web, :repair_whatsapp_web,
                        :reauthorize_whatsapp_web, :whatsapp_web_diagnostics]
+  before_action :ensure_whatsapp_web_reset_confirmed!, only: [:refresh_whatsapp_web_qr, :reauthorize_whatsapp_web]
 
   def index
     scope = Current.account.inboxes.active.order_by_name
@@ -113,6 +114,8 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     render status: :accepted, json: pending_deletion_payload(@inbox)
   end
 
+  # status_only (with or without include_qr_code) only reads: it never requests a QR or starts a reauthorization.
+  # A QR or pairing code is generated only by an explicit request without status_only.
   def refresh_whatsapp_web_qr
     return sync_and_render_whatsapp_web_status! if truthy_param?(:status_only)
 
@@ -123,7 +126,8 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   rescue StandardError => e
     log_whatsapp_web_runtime_error('refresh_whatsapp_web_qr', e)
     if truthy_param?(:status_only)
-      @inbox.channel.mark_failed!(e.message) if @inbox.channel.respond_to?(:mark_failed!)
+      # A failing poll says nothing about a session that showed life a moment ago; do not flag it as failed.
+      mark_whatsapp_web_status_poll_failed!(e) unless @inbox.channel.provider_activity_recent?
       render_whatsapp_web_inbox(status: :ok) and return
     end
 
@@ -635,14 +639,21 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def sync_and_render_whatsapp_web_status!
-    if truthy_param?(:include_qr_code)
-      artifact_type = params[:artifact_type].presence || @inbox.channel.auth_artifact_type || 'qr'
-      @inbox.channel.sync_connection_state!(refresh_qr: true, artifact_type: artifact_type)
-    else
-      @inbox.channel.sync_connection_state!
-    end
+    @inbox.channel.sync_connection_state!
 
     render_whatsapp_web_inbox(include_qr_code: whatsapp_web_qr_payload_requested?)
+  end
+
+  def mark_whatsapp_web_status_poll_failed!(error)
+    @inbox.channel.mark_failed!(error.message) if @inbox.channel.respond_to?(:mark_failed!)
+  end
+
+  # Throwing away a working login needs an explicit confirmation (force=true), not just a click on a stale screen.
+  def ensure_whatsapp_web_reset_confirmed!
+    return if action_name == 'refresh_whatsapp_web_qr' && truthy_param?(:status_only)
+    return if truthy_param?(:force) || !@inbox.channel.working_recently?
+
+    render json: { error: Channel::WhatsappWeb::WORKING_CHANNEL_RESET_MESSAGE, code: 'whatsapp_web_channel_working' }, status: :conflict
   end
 
   def whatsapp_web_qr_payload_requested?

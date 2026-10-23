@@ -1235,4 +1235,90 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       expect(conversation.reload.label_list).to be_empty
     end
   end
+
+  describe 'provider activity tracking' do
+    let(:channel) { create(:channel_whatsapp_web, lifecycle_state: 'connected', connection_state: 'open') }
+
+    def perform_event(event, data = nil)
+      described_class.new(channel: channel, payload: { event: event, data: data }.with_indifferent_access).perform
+    end
+
+    it 'records provider activity for inbound message events' do
+      freeze_time do
+        perform_event(
+          'messages.upsert',
+          { key: { id: 'message-1', remoteJid: '15551234567@s.whatsapp.net', fromMe: false }, message: { conversation: 'Hi' } }
+        )
+
+        expect(channel.reload.last_provider_activity_at).to be_within(1.second).of(Time.current)
+        expect(channel).to be_provider_activity_recent
+      end
+    end
+
+    it 'records provider activity for delivery receipts and outgoing echoes' do
+      freeze_time do
+        perform_event('messages.update', [{ key: { id: 'missing', remoteJid: '15551234567@s.whatsapp.net', fromMe: false } }])
+
+        expect(channel.reload.last_provider_activity_at).to be_within(1.second).of(Time.current)
+      end
+    end
+
+    it 'does not touch the activity marker for non-live events such as label updates' do
+      channel.update!(sync_labels: false)
+
+      perform_event('labels.edit', { id: 'label-1', name: 'VIP' })
+
+      expect(channel.reload.last_provider_activity_at).to be_nil
+    end
+
+    it 'records provider activity and resets stale close observations when the connection opens' do
+      channel.update!(
+        lifecycle_state: 'disconnected',
+        connection_state: 'close',
+        sync_state: channel.sync_state_payload.merge('consecutive_close_observations' => 2)
+      )
+
+      freeze_time do
+        perform_event('connection.update', { state: 'open' })
+
+        channel.reload
+        expect(channel.connection_state).to eq('open')
+        expect(channel.lifecycle_state).to eq('connected')
+        expect(channel.last_provider_activity_at).to be_within(1.second).of(Time.current)
+        expect(channel.sync_state_payload['consecutive_close_observations']).to eq(0)
+      end
+    end
+
+    it 'applies a fresh webhook close immediately even when the provider showed recent activity' do
+      channel.record_provider_activity!
+
+      perform_event('connection.update', { state: 'close', statusReason: 428 })
+
+      channel.reload
+      expect(channel.connection_state).to eq('close')
+      expect(channel.lifecycle_state).to eq('disconnected')
+      expect(channel.last_provider_activity_at).to be_present
+    end
+
+    it 'forgets the activity when the close carries a non-recoverable disconnection reason' do
+      channel.record_provider_activity!
+
+      perform_event('connection.update', { state: 'close', disconnectionReasonCode: 401 })
+
+      channel.reload
+      expect(channel.connection_state).to eq('close')
+      expect(channel.last_provider_activity_at).to be_nil
+      expect(channel).not_to be_working_recently
+    end
+
+    it 'forgets the activity on logout.instance and remove.instance' do
+      channel.record_provider_activity!
+      perform_event('logout.instance')
+      expect(channel.reload.last_provider_activity_at).to be_nil
+
+      channel.record_provider_activity!
+      perform_event('remove.instance')
+      expect(channel.reload.last_provider_activity_at).to be_nil
+    end
+  end
 end

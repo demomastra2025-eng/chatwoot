@@ -394,6 +394,19 @@ describe WhatsappWeb::Providers::EvolutionService do
       expect(channel.sync_state_payload['last_runtime_event_at']).to be_present
     end
 
+    it 'forgets the provider activity once the login is gone' do
+      channel.update!(lifecycle_state: 'connected', connection_state: 'open')
+      channel.record_provider_activity!
+      service = described_class.new(channel: channel)
+      allow(service).to receive(:request)
+        .with(:delete, "/instance/logout/#{channel.instance_name}")
+        .and_return({ 'instance' => { 'state' => 'close' } })
+
+      service.disconnect!
+
+      expect(channel.reload.last_provider_activity_at).to be_nil
+    end
+
     it 'does not report success while Evolution still reports open' do
       service = described_class.new(channel: channel)
       allow(service).to receive(:request)
@@ -570,6 +583,123 @@ describe WhatsappWeb::Providers::EvolutionService do
       channel.reload
       expect(channel.connection_state).to eq('connecting')
       expect(channel.lifecycle_state).to eq('waiting_for_qr')
+    end
+  end
+
+  describe '#sync_connection_state! for a working channel' do
+    let(:service) { described_class.new(channel: channel) }
+
+    def stub_provider_state(*states)
+      responses = states.map { |state| { 'instance' => { 'state' => state } } }
+      allow(service).to receive(:request)
+        .with(:get, "/instance/connectionState/#{channel.instance_name}")
+        .and_return(*responses)
+    end
+
+    before do
+      channel.update!(lifecycle_state: 'connected', connection_state: 'open')
+    end
+
+    it 'keeps the channel connected when a stale close arrives while the provider showed recent activity' do
+      channel.record_provider_activity!(at: 1.minute.ago)
+      stub_provider_state('close')
+
+      expect(service.sync_connection_state!).to eq(channel)
+
+      channel.reload
+      expect(channel).to have_attributes(connection_state: 'open', lifecycle_state: 'connected')
+      expect(channel.sync_state_payload['consecutive_close_observations']).to eq(1)
+      expect(channel.sync_state_payload['last_runtime_event_at']).to be_nil
+      expect(channel.last_synced_at).to be_present
+    end
+
+    it 'keeps ignoring repeated close observations for as long as recent activity lasts' do
+      channel.record_provider_activity!(at: 2.minutes.ago)
+      stub_provider_state('close')
+
+      3.times { service.sync_connection_state! }
+
+      channel.reload
+      expect(channel).to have_attributes(connection_state: 'open', lifecycle_state: 'connected')
+      expect(channel.sync_state_payload['consecutive_close_observations']).to eq(3)
+    end
+
+    it 'does not take an idle channel offline from a single close poll' do
+      stub_provider_state('close')
+
+      service.sync_connection_state!
+
+      expect(channel.reload).to have_attributes(connection_state: 'open', lifecycle_state: 'connected')
+      expect(channel.sync_state_payload['consecutive_close_observations']).to eq(1)
+    end
+
+    it 'does not take a working channel offline from an unrecognised provider state either' do
+      channel.record_provider_activity!(at: 1.minute.ago)
+      allow(service).to receive(:request)
+        .with(:get, "/instance/connectionState/#{channel.instance_name}")
+        .and_return({ 'instance' => {} })
+
+      service.sync_connection_state!
+
+      expect(channel.reload).to have_attributes(connection_state: 'open', lifecycle_state: 'connected')
+      expect(channel.sync_state_payload['consecutive_close_observations']).to eq(1)
+    end
+
+    it 'accepts the close once it repeats on consecutive polls without any recent activity' do
+      channel.record_provider_activity!(at: (Channel::WhatsappWeb::RECENT_PROVIDER_ACTIVITY_WINDOW + 1.minute).ago)
+      stub_provider_state('close')
+
+      service.sync_connection_state!
+      expect(channel.reload.connection_state).to eq('open')
+
+      service.sync_connection_state!
+
+      channel.reload
+      expect(channel).to have_attributes(connection_state: 'close', lifecycle_state: 'disconnected')
+      expect(channel.sync_state_payload['consecutive_close_observations']).to eq(0)
+    end
+
+    it 'resets the close counter and refreshes the activity marker when the provider reports open again' do
+      channel.update!(sync_state: channel.sync_state_payload.merge('consecutive_close_observations' => 1))
+      stub_provider_state('open')
+
+      freeze_time do
+        service.sync_connection_state!
+
+        channel.reload
+        expect(channel.connection_state).to eq('open')
+        expect(channel.sync_state_payload['consecutive_close_observations']).to eq(0)
+        expect(channel.last_provider_activity_at).to be_within(1.second).of(Time.current)
+      end
+    end
+
+    it 'trusts an explicit reauth_required outcome immediately even after recent activity' do
+      channel.record_provider_activity!(at: 30.seconds.ago)
+      stub_provider_state('reauth_required')
+
+      service.sync_connection_state!
+
+      expect(channel.reload).to have_attributes(connection_state: 'close', lifecycle_state: 'disconnected')
+    end
+
+    it 'applies a reconnecting state reported by the provider as before' do
+      channel.record_provider_activity!(at: 30.seconds.ago)
+      stub_provider_state('reconnecting')
+
+      service.sync_connection_state!
+
+      expect(channel.reload).to have_attributes(connection_state: 'reconnecting', lifecycle_state: 'reconnecting')
+    end
+
+    it 'does not hold a channel that is already disconnected' do
+      channel.update!(lifecycle_state: 'disconnected', connection_state: 'close')
+      channel.record_provider_activity!(at: 30.seconds.ago)
+      stub_provider_state('close')
+
+      service.sync_connection_state!
+
+      expect(channel.reload).to have_attributes(connection_state: 'close', lifecycle_state: 'disconnected')
+      expect(channel.sync_state_payload['last_runtime_event_at']).to be_present
     end
   end
 
@@ -890,6 +1020,32 @@ describe WhatsappWeb::Providers::EvolutionService do
         described_class::UnroutableRecipientError,
         /provisional @lid identity/
       )
+    end
+
+    it 'records provider activity once Evolution accepts the message' do
+      service = described_class.new(channel: channel)
+      contact = create(:contact, account: channel.account)
+      contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: '15551234567')
+      conversation = create(:conversation, account: channel.account, inbox: channel.inbox, contact: contact, contact_inbox: contact_inbox)
+      message = create(:message, account: channel.account, inbox: channel.inbox, conversation: conversation, message_type: :outgoing)
+      allow(service).to receive(:request).and_return({ 'key' => { 'id' => 'provider-message-id' } })
+
+      freeze_time do
+        expect(service.send_message(message)).to eq('provider-message-id')
+        expect(channel.reload.last_provider_activity_at).to be_within(1.second).of(Time.current)
+      end
+    end
+
+    it 'does not record provider activity when Evolution returns no message id' do
+      service = described_class.new(channel: channel)
+      contact = create(:contact, account: channel.account)
+      contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: '15551234567')
+      conversation = create(:conversation, account: channel.account, inbox: channel.inbox, contact: contact, contact_inbox: contact_inbox)
+      message = create(:message, account: channel.account, inbox: channel.inbox, conversation: conversation, message_type: :outgoing)
+      allow(service).to receive(:request).and_return({})
+
+      expect(service.send_message(message)).to be_nil
+      expect(channel.reload.last_provider_activity_at).to be_nil
     end
 
     context 'when the conversation hangs on a LID contact inbox but the contact also has a phone identity' do

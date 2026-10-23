@@ -64,6 +64,19 @@ export const isWhatsappWebConnected = inbox => {
   );
 };
 
+// True while a QR or reauthorization would throw a working login away. `working_recently` comes from the server (it
+// also covers a channel that showed life a moment ago while a stale status says otherwise).
+export const isWhatsappWebWorkingRecently = inbox => {
+  if (!isWhatsappWebInbox(inbox) || isInboxPendingDeletion(inbox)) {
+    return false;
+  }
+
+  return (
+    getWhatsappWebState(inbox).working_recently === true ||
+    isWhatsappWebConnected(inbox)
+  );
+};
+
 export const hasWhatsappWebNonOpenState = inbox => {
   return (
     isWhatsappWebInbox(inbox) &&

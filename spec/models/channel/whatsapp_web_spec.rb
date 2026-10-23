@@ -134,7 +134,7 @@ RSpec.describe Channel::WhatsappWeb do
       expect(channel.reconnect!).to eq(channel)
     end
 
-    it 'keeps status sync and QR recovery in the same lifecycle lock' do
+    it 'runs the status sync under the lifecycle lock and never requests a QR' do
       channel = create(:channel_whatsapp_web)
       provider = instance_double(WhatsappWeb::Providers::EvolutionService)
       lifecycle_lock = instance_double(WhatsappWeb::LifecycleLock)
@@ -145,43 +145,28 @@ RSpec.describe Channel::WhatsappWeb do
       expect(provider).to receive(:sync_connection_state!) do
         channel.update!(lifecycle_state: 'waiting_for_qr', connection_state: 'connecting')
       end
-      expect(provider).to receive(:refresh_qr!).with(artifact_type: 'qr')
+      expect(provider).not_to receive(:refresh_qr!)
+      expect(provider).not_to receive(:reauthorize!)
 
-      channel.sync_connection_state!(refresh_qr: true, artifact_type: 'qr')
+      expect(channel.sync_connection_state!).to eq(channel)
     end
 
-    it 'does not refresh QR after an authoritative runtime event supersedes the poll result' do
+    it 'does not accept QR refresh arguments on the status sync' do
       channel = create(:channel_whatsapp_web)
-      provider = instance_double(WhatsappWeb::Providers::EvolutionService)
-      lifecycle_lock = instance_double(WhatsappWeb::LifecycleLock)
-      polled_at = '2026-07-24T20:00:00Z'
-      disconnected_at = '2026-07-24T20:00:01Z'
 
-      allow(channel).to receive(:provider_service).and_return(provider)
-      allow(WhatsappWeb::LifecycleLock).to receive(:new).with(channel_id: channel.id).and_return(lifecycle_lock)
-      allow(lifecycle_lock).to receive(:with_lock).and_yield
-      allow(provider).to receive(:sync_connection_state!) do
-        channel.update!(
-          lifecycle_state: 'waiting_for_qr',
-          connection_state: 'connecting',
-          sync_state: channel.sync_state_payload.merge('last_runtime_event_at' => polled_at)
-        )
-      end
-      allow(channel).to receive(:with_lock) do |&block|
-        described_class.where(id: channel.id).update_all(
-          lifecycle_state: 'disconnected',
-          connection_state: 'close',
-          sync_state: channel.sync_state_payload.merge('last_runtime_event_at' => disconnected_at)
-        )
-        block.call
-      end
+      expect { channel.sync_connection_state!(refresh_qr: true, artifact_type: 'qr') }.to raise_error(ArgumentError)
+    end
 
-      expect(provider).not_to receive(:refresh_qr!)
+    it 'forgets the provider activity when a reauthorization starts' do
+      channel = create(:channel_whatsapp_web, lifecycle_state: 'connected', connection_state: 'open')
+      channel.record_provider_activity!
 
-      channel.sync_connection_state!(refresh_qr: true, artifact_type: 'qr')
+      channel.begin_lifecycle_operation!(kind: :reauthorize, operation_id: 'operation-1')
 
-      expect(channel.reload.lifecycle_state).to eq('disconnected')
-      expect(channel.connection_state).to eq('close')
+      channel.reload
+      expect(channel.last_provider_activity_at).to be_nil
+      expect(channel.sync_state_payload['consecutive_close_observations']).to eq(0)
+      expect(channel).not_to be_working_recently
     end
 
     it 'does not swallow lifecycle lock contention during provider teardown' do
@@ -249,6 +234,73 @@ RSpec.describe Channel::WhatsappWeb do
     end
   end
 
+  describe 'provider activity' do
+    let(:channel) { create(:channel_whatsapp_web, lifecycle_state: 'connected', connection_state: 'open') }
+
+    it 'stores the activity timestamp without touching the rest of the sync state' do
+      channel.update!(sync_state: channel.sync_state_payload.merge('label_map' => { 'a' => { 'title' => 'VIP' } }))
+
+      freeze_time do
+        expect(channel.record_provider_activity!).to be(true)
+
+        channel.reload
+        expect(channel.last_provider_activity_at).to be_within(1.second).of(Time.current)
+        expect(channel.label_map).to eq('a' => { 'title' => 'VIP' })
+        expect(channel).not_to be_changed
+      end
+    end
+
+    it 'throttles writes inside the write interval and writes again after it' do
+      travel_to(Time.zone.parse('2026-10-23 08:00:00')) do
+        expect(channel.record_provider_activity!).to be(true)
+
+        travel(Channel::WhatsappWeb::PROVIDER_ACTIVITY_WRITE_INTERVAL - 1.second)
+        expect(channel.record_provider_activity!).to be(false)
+
+        travel(2.seconds)
+        expect(channel.record_provider_activity!).to be(true)
+        expect(channel.reload.last_provider_activity_at).to eq(Time.current.change(usec: 0))
+      end
+    end
+
+    it 'does not raise when the activity cannot be stored' do
+      persisted_channel = channel
+      allow(described_class).to receive(:where).and_raise(ActiveRecord::StatementInvalid, 'boom')
+
+      expect(persisted_channel.record_provider_activity!).to be(false)
+    end
+
+    it 'treats activity as recent only inside the window' do
+      expect(channel).not_to be_provider_activity_recent
+
+      channel.record_provider_activity!(at: 9.minutes.ago)
+      expect(channel).to be_provider_activity_recent
+
+      channel.update!(sync_state: channel.sync_state_payload.merge('last_provider_activity_at' => 11.minutes.ago.iso8601))
+      expect(channel).not_to be_provider_activity_recent
+    end
+
+    it 'is working recently while connected and open, or shortly after the last activity' do
+      expect(channel).to be_working_recently
+
+      channel.update!(lifecycle_state: 'disconnected', connection_state: 'close')
+      expect(channel).not_to be_working_recently
+
+      channel.record_provider_activity!(at: 2.minutes.ago)
+      expect(channel).to be_working_recently
+
+      channel.update!(sync_state: channel.sync_state_payload.merge('last_provider_activity_at' => 6.minutes.ago.iso8601))
+      expect(channel).not_to be_working_recently
+    end
+
+    it 'is never working while the channel is being deleted' do
+      channel.record_provider_activity!
+      channel.mark_pending_deletion!
+
+      expect(channel).not_to be_working_recently
+    end
+  end
+
   describe '#evolution_state_payload' do
     it 'includes sync state details for diagnostics' do
       channel = create(:channel_whatsapp_web)
@@ -283,6 +335,20 @@ RSpec.describe Channel::WhatsappWeb do
       end
     end
 
+    it 'exposes the working-recently marker used to confirm a login reset' do
+      channel = create(:channel_whatsapp_web)
+
+      expect(channel.evolution_state_payload).to include('working_recently' => false)
+      expect(channel.evolution_state_payload).not_to have_key('last_provider_activity_at')
+
+      channel.update!(lifecycle_state: 'connected', connection_state: 'open')
+      channel.record_provider_activity!
+      payload = channel.reload.evolution_state_payload
+
+      expect(payload['working_recently']).to be(true)
+      expect(payload['last_provider_activity_at']).to be_present
+    end
+
     it 'returns a user-safe error message instead of raw Evolution JSON' do
       channel = create(:channel_whatsapp_web)
       channel.update!(
@@ -302,6 +368,16 @@ RSpec.describe Channel::WhatsappWeb do
   end
 
   describe '.human_readable_error_message' do
+    it 'prefers the nested response message over the bare HTTP reason' do
+      raw_error = {
+        status: 400,
+        error: 'Bad Request',
+        response: { message: ['Error: Connection Closed'] }
+      }
+
+      expect(described_class.human_readable_error_message(raw_error)).to eq('Error: Connection Closed')
+    end
+
     it 'extracts array messages from provider JSON and maps deleting-instance errors' do
       raw_error = {
         status: 400,
@@ -368,16 +444,6 @@ RSpec.describe Channel::WhatsappWeb do
           channel.request_history_sync!(
             'full',
             expected_provider_history_synced_at: newer_snapshot
-    it 'prefers the nested response message over the bare HTTP reason' do
-      raw_error = {
-        status: 400,
-        error: 'Bad Request',
-        response: { message: ['Error: Connection Closed'] }
-      }
-
-      expect(described_class.human_readable_error_message(raw_error)).to eq('Error: Connection Closed')
-    end
-
           )
         end.to have_enqueued_job(Channels::WhatsappWeb::HistorySyncJob).with(
           channel.id,

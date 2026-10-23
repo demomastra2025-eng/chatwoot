@@ -24,6 +24,7 @@ import {
   getWhatsappWebLifecycleState,
   isInboxPendingDeletion,
   isWhatsappWebConnected as hasOpenWhatsappWebSession,
+  isWhatsappWebWorkingRecently,
 } from 'dashboard/helper/whatsappWeb';
 import { getInboxFlowRouteName } from './helpers/inboxFlowRoutes';
 import {
@@ -1093,6 +1094,15 @@ async function refreshWhatsappWebQr({
     return;
   }
 
+  // A QR or pairing code replaces the current login, so a working one is only reset after an explicit confirmation.
+  const isConfirmedReset = isWhatsappWebWorkingRecently(currentInbox.value);
+  if (
+    isConfirmedReset &&
+    !window.confirm(t('INBOX_MGMT.EDIT.WHATSAPP_WEB.RESET_CONFIRM'))
+  ) {
+    return;
+  }
+
   const isRequestingCode = artifactType === 'code';
   const isRequestingQr = artifactType === 'qr';
 
@@ -1117,6 +1127,7 @@ async function refreshWhatsappWebQr({
       inboxId: currentInbox.value.id,
       statusOnly: false,
       artifactType,
+      force: isConfirmedReset,
     });
     if (!silent) {
       let successMessage = t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REFRESH_SUCCESS');
