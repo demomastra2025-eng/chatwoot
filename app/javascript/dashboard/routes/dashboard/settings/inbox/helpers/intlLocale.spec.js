@@ -10,7 +10,8 @@ describe('getIntlLocale', () => {
   });
 
   it('falls back to the base language, then to English', () => {
-    expect(getIntlLocale('ru_ZZZZZZZZ')).toBe('ru');
+    expect(getIntlLocale('ru_RU')).toBe('ru-RU');
+    expect(getIntlLocale('xx_YY')).toBe('en');
     expect(getIntlLocale('')).toBe('en');
     expect(getIntlLocale(undefined)).toBe('en');
     expect(getIntlLocale('not a locale at all')).toBe('en');

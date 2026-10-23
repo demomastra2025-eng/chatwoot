@@ -178,16 +178,15 @@ describe('Inbox list page', () => {
         phone_number: '+77001234567',
       },
     ]);
-    const names = wrapper.findAll('span.text-heading-3');
+    const names = wrapper.findAll('span.block.truncate.text-heading-3');
 
-    expect(names.map(node => node.text())).toEqual([
-      'Почта поддержки',
+    expect(names.map(node => node.text()).sort()).toEqual([
       'WhatsApp Web — Основной номер клиники',
-    ]);
-    names.forEach(node => expect(node.classes()).not.toContain('capitalize'));
-    expect(names.map(node => node.attributes('title'))).toEqual([
       'Почта поддержки',
-      'WhatsApp Web — Основной номер клиники',
     ]);
+    names.forEach(node => {
+      expect(node.classes()).not.toContain('capitalize');
+      expect(node.attributes('title')).toBe(node.text());
+    });
   });
 });

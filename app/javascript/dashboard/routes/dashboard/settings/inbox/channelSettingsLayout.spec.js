@@ -586,8 +586,11 @@ describe('WeChat settings', () => {
     runtime_state: {},
   };
 
+  // The buttons are stubbed, and a stub keeps its label as an attribute.
   const buttonLabels = wrapper =>
-    wrapper.findAllComponents(NextButton).map(button => button.props('label'));
+    wrapper
+      .findAllComponents(NextButton)
+      .map(button => button.attributes('label'));
 
   it('shows one status next to the actions and keeps technical data closed', async () => {
     const wrapper = buildSettings(inbox);

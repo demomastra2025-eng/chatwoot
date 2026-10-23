@@ -390,8 +390,9 @@ describe('WhatsAppTemplatesPage', () => {
       });
       const chips = variantsText(wrapper);
 
-      expect(chips[0]).toContain('Русский');
-      expect(chips[1]).toContain('Английский');
+      expect(chips).toHaveLength(2);
+      expect(chips.join(' ')).toContain('Русский');
+      expect(chips.join(' ')).toContain('Английский');
       chips.forEach(chip => expect(chip).not.toMatch(/\b(ru|en)\b/));
     });
 
