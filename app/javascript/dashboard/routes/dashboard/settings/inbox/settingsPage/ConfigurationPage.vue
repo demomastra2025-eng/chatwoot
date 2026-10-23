@@ -176,6 +176,11 @@ export default {
       // What the form looked like when it was last filled from the server.
       // Comparing against it tells whether there are edits that are not saved.
       virtualPbxSavedFormState: null,
+      // The server version the form was filled from. A save sends it as
+      // `expected_configuration_version`, so the server can tell that the form
+      // is out of date. A status refresh that keeps unsaved edits must not move
+      // it: the edits were made against the old data, not against the new one.
+      virtualPbxFormConfigurationVersion: null,
       virtualPbxForm: {
         channelName: '',
         providerKind: '',
@@ -410,6 +415,17 @@ export default {
     },
     isVirtualPbxRemoteCommitAllowed() {
       return !!this.virtualPbxConfig?.permissions?.remote_commit_allowed;
+    },
+    // Why «Синхронизировать с телефонией» cannot be pressed; empty when it can.
+    // The button's `disabled` and the text next to it both read this, so a
+    // disabled button always explains itself.
+    virtualPbxSyncDisabledReason() {
+      if (!this.isVirtualPbxRemoteCommitAllowed) {
+        return this.$t(
+          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.WAZO_SYNC_UNAVAILABLE'
+        );
+      }
+      return '';
     },
     hasUnsavedVirtualPbxChanges() {
       return (
@@ -1274,6 +1290,29 @@ export default {
     removeVirtualPbxProfile(index) {
       this.virtualPbxForm.profiles.splice(index, 1);
     },
+    // Every row shows the same short «Удалить»; a screen reader needs to know
+    // whose row it is: the employee's name, or the row number when there is
+    // no name yet (a new row, or the AI agent).
+    virtualPbxProfileRemoveLabel(profile, index) {
+      const userId = Number(profile.userId);
+      const member = userId
+        ? this.virtualPbxMemberOptions.find(option => option.value === userId)
+        : null;
+      const memberName =
+        member && member.label !== `#${userId}` ? member.label : '';
+      const name = (memberName || profile.userName || '').trim();
+
+      if (name) {
+        return this.$t(
+          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.REMOVE_NAMED',
+          { name }
+        );
+      }
+      return this.$t(
+        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.REMOVE_ROW',
+        { index: index + 1 }
+      );
+    },
     hasAnotherVirtualPbxVoiceAgentProfile(index) {
       return this.virtualPbxForm.profiles.some(
         (profile, profileIndex) =>
@@ -1427,6 +1466,26 @@ export default {
       );
       this.callRoutingDirty = false;
       this.virtualPbxSavedFormState = this.currentVirtualPbxFormState();
+      this.virtualPbxFormConfigurationVersion =
+        config.configuration_version ?? null;
+    },
+    // The server stores some values itself (the channel probe). They are part
+    // of the saved state, so they must not count as unsaved edits.
+    markVirtualPbxFormFieldsSaved(fields) {
+      if (this.virtualPbxSavedFormState === null) return;
+      if (!Object.keys(fields).length) return;
+
+      try {
+        const [savedForm, savedRouting] = JSON.parse(
+          this.virtualPbxSavedFormState
+        );
+        this.virtualPbxSavedFormState = JSON.stringify([
+          { ...savedForm, ...fields },
+          savedRouting,
+        ]);
+      } catch {
+        // An unreadable snapshot keeps the stricter answer: "unsaved".
+      }
     },
     applyDetectedChannelLimit() {
       const limit = Number(this.virtualPbxForm.detectedChannelLimit);
@@ -1436,6 +1495,10 @@ export default {
     },
     async probeVirtualPbxChannelCapacity() {
       if (!this.isVirtualPbxVoiceInbox || !this.inbox.id) return;
+      // The probe stores the found limits on the server and that moves the
+      // configuration version. Edits made before it would then sit on top of a
+      // version they were not made against, so they have to be saved first.
+      if (this.refuseWhileVirtualPbxFormUnsaved()) return;
 
       this.isProbingVirtualPbxChannels = true;
       try {
@@ -1443,12 +1506,16 @@ export default {
           this.inbox.id
         );
         const payload = response?.payload || {};
+        // Edits typed while the probe was running stay in the form and keep
+        // the version they were made against.
+        const formIsClean = !this.hasUnsavedVirtualPbxChanges;
         if (payload.ui_config) {
           this.virtualPbxStatusPayload = {
             ...(this.virtualPbxStatusPayload || {}),
             ...payload,
             ui_config: payload.ui_config,
           };
+          if (formIsClean) this.prefillVirtualPbxForm();
         }
         const probe = payload.channel_capacity_probe || {};
         const detected = Number(
@@ -1458,16 +1525,20 @@ export default {
             payload.config?.connection?.detected_channel_limit ||
             0
         );
+        // What the probe wrote into the form is already stored on the server.
+        const storedByProbe = {};
         if (detected > 0) {
-          this.virtualPbxForm.detectedChannelLimit = detected;
-          this.virtualPbxForm.maxChannels = detected;
+          storedByProbe.detectedChannelLimit = detected;
+          storedByProbe.maxChannels = detected;
         }
         if (probe.probed_at) {
-          this.virtualPbxForm.lastChannelProbeAt = probe.probed_at;
+          storedByProbe.lastChannelProbeAt = probe.probed_at;
         }
         if (probe.detection_source) {
-          this.virtualPbxForm.channelDetectionSource = probe.detection_source;
+          storedByProbe.channelDetectionSource = probe.detection_source;
         }
+        Object.assign(this.virtualPbxForm, storedByProbe);
+        this.markVirtualPbxFormFieldsSaved(storedByProbe);
         useAlert(
           this.$t(
             'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.PROBE_CHANNELS_SUCCESS',
@@ -1823,6 +1894,7 @@ export default {
       const form = this.virtualPbxForm;
       const payload = {
         expected_configuration_version:
+          this.virtualPbxFormConfigurationVersion ??
           this.virtualPbxConfig?.configuration_version,
         provider_kind: form.providerKind,
         channel_name: form.channelName.trim(),
@@ -2531,13 +2603,16 @@ export default {
                       <button
                         type="button"
                         class="p-0 text-sm text-n-ruby-10"
+                        data-testid="virtual-pbx-remove-profile"
                         :disabled="isVirtualPbxReadOnly"
+                        :aria-label="
+                          virtualPbxProfileRemoveLabel(profile, index)
+                        "
                         @click="removeVirtualPbxProfile(index)"
                       >
                         {{
                           $t(
-                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.REMOVE',
-                            { index: index + 1 }
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.REMOVE'
                           )
                         }}
                       </button>
@@ -4032,7 +4107,13 @@ export default {
                   }}
                 </p>
               </div>
-              <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <!-- Two columns, not three: the carrier and the ring strategy are
+                   selects with long values, and a third of the form is too
+                   narrow for them at laptop width. -->
+              <div
+                data-testid="virtual-pbx-carrier-grid"
+                class="grid grid-cols-1 gap-4 md:grid-cols-2"
+              >
                 <label
                   class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                 >
@@ -4362,13 +4443,26 @@ export default {
               v-if="isVirtualPbxWazo"
               data-testid="virtual-pbx-wazo-apply"
               type="button"
-              :disabled="!isVirtualPbxRemoteCommitAllowed"
+              :disabled="!!virtualPbxSyncDisabledReason"
+              :aria-describedby="
+                virtualPbxSyncDisabledReason
+                  ? 'virtual-pbx-wazo-sync-disabled-reason'
+                  : undefined
+              "
               :is-loading="isProvisioningVirtualPbx"
               @click="provisionVirtualPbxChannel"
             >
               {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVISION_BUTTON') }}
             </NextButton>
           </div>
+          <p
+            v-if="isVirtualPbxWazo && virtualPbxSyncDisabledReason"
+            id="virtual-pbx-wazo-sync-disabled-reason"
+            data-testid="virtual-pbx-wazo-sync-disabled-reason"
+            class="mb-0 text-sm text-n-amber-11"
+          >
+            {{ virtualPbxSyncDisabledReason }}
+          </p>
           <p
             v-if="isVirtualPbxWazo"
             data-testid="virtual-pbx-wazo-sync-hint"

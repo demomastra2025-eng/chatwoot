@@ -463,7 +463,7 @@
             "REQUIRED": "Inbox атауы міндетті"
           },
           "PROVIDER_KIND": {
-            "LABEL": "Virtual PBX провайдері",
+            "LABEL": "Провайдердің SIP-транкі",
             "SIPUNI": "Sipuni / ішкі Asterisk",
             "BINOTEL": "Binotel",
             "ASTERISK_ANALOG": "Asterisk analog",
@@ -481,28 +481,28 @@
             "REQUIRED": "Техникалық нөмір міндетті"
           },
           "CONNECTION_HOST": {
-            "LABEL": "SIP server",
-            "PLACEHOLDER": "PBX host немесе trunk endpoint",
-            "REQUIRED": "SIP host міндетті"
+            "LABEL": "SIP-сервер",
+            "PLACEHOLDER": "АТС немесе SIP-транк мекенжайы",
+            "REQUIRED": "SIP-сервер мекенжайын көрсетіңіз"
           },
           "SIP_DOMAIN": {
-            "LABEL": "SIP domain",
+            "LABEL": "SIP-домен",
             "PLACEHOLDER": "vpbx-company-XXXX.CLOUDPBX.BEELINE.KZ",
-            "REQUIRED": "SIP domain міндетті"
+            "REQUIRED": "SIP-доменді көрсетіңіз"
           },
           "OUTBOUND_PROXY": {
-            "LABEL": "SIP proxy",
+            "LABEL": "SIP-прокси",
             "PLACEHOLDER": "46.227.186.231:6050",
-            "REQUIRED": "SIP proxy міндетті"
+            "REQUIRED": "SIP-проксиді көрсетіңіз"
           },
           "CONNECTION_PORT": {
-            "LABEL": "SIP port",
+            "LABEL": "SIP-порт",
             "PLACEHOLDER": "5060",
-            "REQUIRED": "SIP port міндетті",
-            "INVALID": "SIP port 1 мен 65535 аралығындағы сан болуы керек"
+            "REQUIRED": "SIP-портты көрсетіңіз",
+            "INVALID": "SIP-порт 1 мен 65535 аралығындағы сан болуы керек"
           },
           "TRANSPORT": {
-            "LABEL": "SIP transport"
+            "LABEL": "SIP-транспорт"
           },
           "OUTBOUND_DIAL_FORMAT": {
             "LABEL": "Шығыс қоңырау форматы",
@@ -529,7 +529,9 @@
             "SELECT_PLACEHOLDER": "Қызметкерді таңдаңыз",
             "CURRENT_USER": "Ағымдағы пайдаланушы",
             "ADD": "Қызметкер қосу",
-            "REMOVE": "Қызметкерді өшіру {index}",
+            "REMOVE": "Өшіру",
+            "REMOVE_NAMED": "Қызметкерді өшіру: {name}",
+            "REMOVE_ROW": "Қызметкерді өшіру: {index}-жол",
             "REQUIRED": "Әр жолда қызметкерді таңдап, ішкі нөмірді енгізіңіз",
             "SIP_PAIR_REQUIRED": "Қызметкердің SIP-логині мен SIP-құпиясөзі бірге толтырылуы керек",
             "VOICE_AGENT_LABEL": "ЖИ агенті",
@@ -575,10 +577,10 @@
           "MANAGEMENT_TITLE": "Virtual PBX",
           "MANAGEMENT_SUBTITLE": "OneLink арна баптауларын, қызметкерлерді және SIP қолжетімдерін Janus SIP арқылы басқарады.",
           "CURRENT_USER_REQUIRED": "Қызметкердің SIP профилін құру үшін ағымдағы пайдаланушы қажет",
-          "REQUIRED_FIELDS": "Inbox атауын және көрсетілетін нөмірді толтырыңыз",
-          "BEELINE_REQUIRED_FIELDS": "Beeline үшін SIP server, SIP domain және SIP proxy толтырыңыз",
+          "REQUIRED_FIELDS": "Арна атауын және телефон нөмірін толтырыңыз",
+          "BEELINE_REQUIRED_FIELDS": "Beeline үшін SIP-сервер, SIP-домен және SIP-прокси толтырыңыз",
           "BEELINE_CONFIG_HINT": "Beeline Cloud PBX UDP және G.711 A-law (PCMA) қолданады. SIP аккаунтының Username/Login және құпиясөзін келесі қадамда қызметкерге енгізіңіз.",
-          "READ_ONLY": "Бұл арнада legacy/read-only иелік бар, оны OneLink арқылы өзгертуге болмайды.",
+          "READ_ONLY": "Бұл арна OneLink-тен тыс құрылған және тек оқуға арналған, сондықтан оны осы жерде өзгертуге болмайды.",
           "LOAD_ERROR": "Virtual PBX конфигурациясын жүктеу мүмкін болмады.",
           "CREATE_SUCCESS": "Virtual PBX арнасы құрылды",
           "UPDATE_SUCCESS": "Virtual PBX арнасы сақталды",
@@ -597,6 +599,7 @@
           "PROVISION_BUTTON": "Телефониямен синхрондау",
           "SAVE_FIRST": "Алдымен өзгерістерді сақтаңыз",
           "WAZO_SYNC_HINT": "«Сақтау» баптауларды OneLink-те сақтайды. Қызметкерлер мен ішкі нөмірлер телефон серверінде пайда болуы үшін, одан кейін «Телефониямен синхрондау» түймесін басыңыз.",
+          "WAZO_SYNC_UNAVAILABLE": "Қолжетімсіз: телефон серверінің API қолжетімділігі бапталмаған немесе осы арна үшін синхрондау өшірілген.",
           "WAZO_APPLY_CONFIRM": "Бұл жоспарды телефония серверінде қазір қолдану керек пе? Басқарылатын телефония ресурстары жасалады, жаңартылады немесе жойылады.",
           "PROVISIONING_PLAN_READY": "Синхрондау жоспары дайын",
           "PROVISION_BLOCKED": "Телефониямен синхрондау орындалмады",
@@ -640,7 +643,7 @@
             "CONFIRMATION_REQUIRED": "Жоюды растаңыз.",
             "WAZO_API_NOT_CONFIGURED": "Серверде телефония API қолжетімділігі бапталмаған.",
             "WAZO_SIP_HOST_MISMATCH": "Арнаның SIP сервері бапталған телефония серверіне сәйкес келмейді.",
-            "VIRTUAL_PBX_CONFIGURATION_STALE": "Арна баптаулары басқа жерде өзгертілді. Бетті жаңартып, қайта сақтаңыз.",
+            "VIRTUAL_PBX_CONFIGURATION_STALE": "Баптаулар басқа терезеде өзгертілді. Бетті жаңартып, өзгерістерді қайталаңыз.",
             "NOT_VOICE_CHANNEL": "Бұл арна қоңырау арнасы емес.",
             "UNSUPPORTED_PROVIDER": "Бұл қоңырау провайдерін мұнда баптауға болмайды.",
             "FEATURE_DISABLED": "Бұл аккаунт үшін қоңыраулар қосылмаған."
@@ -669,7 +672,7 @@
             "TITLE": "Оператор связи и линии (SIP-транк в АТС OneLink)",
             "SUBTITLE": "Выберите оператора вашей телефонной линии, количество одновременных каналов и SIP-реквизиты номера для автоматической настройки входящих и исходящих на АТС.",
             "CARRIER_KIND_LABEL": "Оператор связи (носитель номера)",
-            "CARRIER_KIND_PLACEHOLDER": "Не выбран (только внутренние операторы АТС)",
+            "CARRIER_KIND_PLACEHOLDER": "Таңдалмаған (ішкі операторлар)",
             "CARRIERS": {
               "ALTEL": "Altel Business",
               "TELE2": "Tele2 Business",
@@ -683,11 +686,11 @@
             "APPLY_DETECTED_LIMIT": "Применить",
             "DETECTED_LIMIT_HINT": "Операторы связи не передают лимит линий при SIP-регистрации, но OneLink автоматически определяет фактический порог при занятости всех линий (SIP 486/503).",
             "RESERVED_INBOUND_LABEL": "Резерв линий только под входящие",
-            "RING_STRATEGY_LABEL": "Распределение входящих в группе (Ring Group)",
+            "RING_STRATEGY_LABEL": "Кіріс қоңырауларды қоңырау тобында бөлу",
             "RING_STRATEGIES": {
-              "ALL": "Звонить всем свободным одновременно (all)",
-              "LEAST_RECENT": "Сначала тому, кто дольше не отвечал (least_recent)",
-              "MEMORIZED_ROUND_ROBIN": "По очереди по кругу (round_robin)"
+              "ALL": "Барлық бос операторға бірден",
+              "LEAST_RECENT": "Ұзағырақ жауап бермегенге",
+              "MEMORIZED_ROUND_ROBIN": "Кезекпен, айналдыра"
             },
             "GROUP_EXTENSION_LABEL": "Внутренний номер группы (напр. 2001)",
             "TRUNK_USERNAME_LABEL": "SIP-логин транка у оператора",
@@ -696,7 +699,7 @@
             "TRUNK_PASSWORD_PLACEHOLDER": "Пароль от SIP-линии оператора",
             "TRUNK_DOMAIN_LABEL": "SIP-домен оператора",
             "TRUNK_DOMAIN_PLACEHOLDER": "Напр. sip.altel.kz или sip.telecom.kz",
-            "TRUNK_HOST_LABEL": "SIP-сервер (Host / IP) оператора",
+            "TRUNK_HOST_LABEL": "Оператордың SIP-сервері (мекенжай немесе IP)",
             "TRUNK_HOST_PLACEHOLDER": "Напр. sip.altel.kz"
           },
           "CALL_ROUTING": {
@@ -820,7 +823,7 @@
           "LEGACY_VOICE_TITLE": "Legacy voice channel",
           "LEGACY_VOICE_SUBTITLE": "Бұл арна ескі қоңырау конфигурациясын қолданады және Janus SIP-ке ауыстырылуы керек.",
           "JANUS_SIP_TITLE": "Janus SIP байланысы",
-          "JANUS_SIP_SUBTITLE": "Бұл қоңырау арнасы Janus SIP және қызметкерлердің SIP профильдері арқылы жұмыс істейді.",
+          "JANUS_SIP_SUBTITLE": "Бұл қоңырау арнасы Janus SIP-шлюзі және қызметкерлердің SIP профильдері арқылы жұмыс істейді.",
           "JANUS_SIP_ROUTING_TITLE": "Қоңырау маршрутизациясы",
           "JANUS_SIP_ROUTING_SUBTITLE": "Нөмір үшін белсенді маршрутты және негізгі бағыт қолжетімсіз болса қолданылатын fallback таңдаңыз.",
           "JANUS_SIP_READINESS_TITLE": "Janus SIP дайындығы",
@@ -883,7 +886,7 @@
           "BEELINE_API_TOKEN_PLACEHOLDER": "cloudpbx.beeline.kz жеке кабинетіндегі токен",
           "BEELINE_API_TOKEN_CONFIGURED_HINT": "API токені сақталған. Өзгертпеу үшін бос қалдырыңыз.",
           "BEELINE_WEBHOOK_GENERATE": "Токен генерациялау",
-          "BEELINE_WEBHOOK_COPY": "URL көшіру",
+          "BEELINE_WEBHOOK_COPY": "Мекенжайды көшіру",
           "BEELINE_WEBHOOK_COPY_SUCCESS": "Beeline webhook URL көшірілді",
           "BEELINE_WEBHOOK_SAVE": "Beeline баптауларын сақтау",
           "BEELINE_WEBHOOK_SUCCESS": "Beeline баптаулары сақталды",

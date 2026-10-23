@@ -479,7 +479,7 @@
             "REQUIRED": "Название канала обязательно"
           },
           "PROVIDER_KIND": {
-            "LABEL": "Провайдер SIP trunk",
+            "LABEL": "SIP-транк провайдера",
             "PLACEHOLDER": "Выберите провайдера",
             "SIPUNI": "Sipuni",
             "BINOTEL": "Binotel",
@@ -498,28 +498,28 @@
             "REQUIRED": "Технический номер обязателен"
           },
           "CONNECTION_HOST": {
-            "LABEL": "SIP server",
-            "PLACEHOLDER": "PBX host или endpoint транка",
-            "REQUIRED": "SIP host URL обязателен"
+            "LABEL": "SIP-сервер",
+            "PLACEHOLDER": "Адрес АТС или SIP-транка",
+            "REQUIRED": "Укажите адрес SIP-сервера"
           },
           "SIP_DOMAIN": {
-            "LABEL": "SIP domain",
+            "LABEL": "SIP-домен",
             "PLACEHOLDER": "vpbx-company-XXXX.CLOUDPBX.BEELINE.KZ",
-            "REQUIRED": "SIP domain обязателен"
+            "REQUIRED": "Укажите SIP-домен"
           },
           "OUTBOUND_PROXY": {
-            "LABEL": "SIP proxy",
+            "LABEL": "SIP-прокси",
             "PLACEHOLDER": "46.227.186.231:6050",
-            "REQUIRED": "SIP proxy обязателен"
+            "REQUIRED": "Укажите SIP-прокси"
           },
           "CONNECTION_PORT": {
-            "LABEL": "SIP port",
+            "LABEL": "SIP-порт",
             "PLACEHOLDER": "5060",
-            "REQUIRED": "SIP port обязателен",
-            "INVALID": "SIP port должен быть числом от 1 до 65535"
+            "REQUIRED": "Укажите SIP-порт",
+            "INVALID": "SIP-порт должен быть числом от 1 до 65535"
           },
           "TRANSPORT": {
-            "LABEL": "SIP transport"
+            "LABEL": "SIP-транспорт"
           },
           "OUTBOUND_DIAL_FORMAT": {
             "LABEL": "Формат исходящего",
@@ -546,7 +546,9 @@
             "SELECT_PLACEHOLDER": "Выберите сотрудника",
             "CURRENT_USER": "Текущий пользователь",
             "ADD": "Добавить сотрудника",
-            "REMOVE": "Удалить сотрудника {index}",
+            "REMOVE": "Удалить",
+            "REMOVE_NAMED": "Удалить сотрудника {name}",
+            "REMOVE_ROW": "Удалить сотрудника в строке {index}",
             "REQUIRED": "В каждой строке выберите сотрудника и укажите внутренний номер",
             "SIP_PAIR_REQUIRED": "SIP-логин и SIP-пароль сотрудника нужно заполнять вместе",
             "VOICE_AGENT_LABEL": "ИИ-агент",
@@ -592,10 +594,10 @@
           "MANAGEMENT_TITLE": "Виртуальная АТС",
           "MANAGEMENT_SUBTITLE": "OneLink управляет настройками канала, сотрудниками и SIP-доступами через Janus SIP.",
           "CURRENT_USER_REQUIRED": "Текущий пользователь нужен для создания SIP-профиля сотрудника",
-          "REQUIRED_FIELDS": "Заполните название inbox и витринный номер",
-          "BEELINE_REQUIRED_FIELDS": "Для Билайн заполните SIP server, SIP domain и SIP proxy",
+          "REQUIRED_FIELDS": "Заполните название канала и номер телефона",
+          "BEELINE_REQUIRED_FIELDS": "Для Билайн заполните SIP-сервер, SIP-домен и SIP-прокси",
           "BEELINE_CONFIG_HINT": "Билайн: транспорт UDP, кодек G.711 A-law (PCMA). Username/Login и пароль SIP-аккаунта укажите для сотрудника на вкладке «Звонки и сотрудники».",
-          "READ_ONLY": "У этого канала legacy/read-only владение, его нельзя менять из OneLink.",
+          "READ_ONLY": "Этот канал создан вне OneLink и доступен только для чтения, поэтому менять его здесь нельзя.",
           "LOAD_ERROR": "Не удалось загрузить конфигурацию Виртуальной АТС.",
           "CREATE_SUCCESS": "Канал Виртуальной АТС создан",
           "UPDATE_SUCCESS": "Канал Виртуальной АТС сохранён",
@@ -614,6 +616,7 @@
           "PROVISION_BUTTON": "Синхронизировать с телефонией",
           "SAVE_FIRST": "Сначала сохраните изменения",
           "WAZO_SYNC_HINT": "«Сохранить» записывает настройки в OneLink. Чтобы сотрудники и внутренние номера появились на телефонном сервере, затем нажмите «Синхронизировать с телефонией».",
+          "WAZO_SYNC_UNAVAILABLE": "Недоступно: не настроен доступ к API телефонного сервера или синхронизация отключена для этого канала.",
           "WAZO_APPLY_CONFIRM": "Применить этот план на телефонном сервере сейчас? Будут созданы, обновлены или удалены управляемые ресурсы телефонии.",
           "PROVISIONING_PLAN_READY": "План синхронизации готов",
           "PROVISION_BLOCKED": "Не удалось синхронизировать с телефонией",
@@ -657,7 +660,7 @@
             "CONFIRMATION_REQUIRED": "Подтвердите удаление.",
             "WAZO_API_NOT_CONFIGURED": "Доступ к API телефонного сервера не настроен.",
             "WAZO_SIP_HOST_MISMATCH": "SIP-сервер канала не совпадает с настроенным телефонным сервером OneLink.",
-            "VIRTUAL_PBX_CONFIGURATION_STALE": "Настройки канала изменились в другом месте. Обновите страницу и сохраните снова.",
+            "VIRTUAL_PBX_CONFIGURATION_STALE": "Настройки изменились в другом окне. Обновите страницу и повторите изменения.",
             "NOT_VOICE_CHANNEL": "Этот канал не является каналом звонков.",
             "UNSUPPORTED_PROVIDER": "Этого провайдера звонков нельзя настроить здесь.",
             "FEATURE_DISABLED": "Звонки не включены для этого аккаунта."
@@ -686,7 +689,7 @@
             "TITLE": "Оператор связи и линии (SIP-транк в АТС OneLink)",
             "SUBTITLE": "Выберите оператора вашей телефонной линии, количество одновременных каналов и SIP-реквизиты номера для автоматической настройки входящих и исходящих на АТС.",
             "CARRIER_KIND_LABEL": "Оператор связи (носитель номера)",
-            "CARRIER_KIND_PLACEHOLDER": "Не выбран (только внутренние операторы АТС)",
+            "CARRIER_KIND_PLACEHOLDER": "Не выбран (внутренние операторы)",
             "CARRIERS": {
               "ALTEL": "Altel Business",
               "TELE2": "Tele2 Business",
@@ -703,11 +706,11 @@
             "APPLY_DETECTED_LIMIT": "Применить",
             "DETECTED_LIMIT_HINT": "Операторы связи не передают лимит линий при SIP-регистрации, но OneLink автоматически определяет фактический порог при занятости всех линий (SIP 486/503).",
             "RESERVED_INBOUND_LABEL": "Резерв линий только под входящие",
-            "RING_STRATEGY_LABEL": "Распределение входящих в группе (Ring Group)",
+            "RING_STRATEGY_LABEL": "Распределение входящих в группе вызова",
             "RING_STRATEGIES": {
-              "ALL": "Звонить всем свободным одновременно (all)",
-              "LEAST_RECENT": "Сначала тому, кто дольше не отвечал (least_recent)",
-              "MEMORIZED_ROUND_ROBIN": "По очереди по кругу (round_robin)"
+              "ALL": "Всем свободным сразу",
+              "LEAST_RECENT": "Тому, кто дольше не отвечал",
+              "MEMORIZED_ROUND_ROBIN": "По очереди, по кругу"
             },
             "GROUP_EXTENSION_LABEL": "Внутренний номер группы (напр. 2001)",
             "TRUNK_USERNAME_LABEL": "SIP-логин транка у оператора",
@@ -716,7 +719,7 @@
             "TRUNK_PASSWORD_PLACEHOLDER": "Пароль от SIP-линии оператора",
             "TRUNK_DOMAIN_LABEL": "SIP-домен оператора",
             "TRUNK_DOMAIN_PLACEHOLDER": "Напр. sip.altel.kz или sip.telecom.kz",
-            "TRUNK_HOST_LABEL": "SIP-сервер (Host / IP) оператора",
+            "TRUNK_HOST_LABEL": "SIP-сервер оператора (адрес или IP)",
             "TRUNK_HOST_PLACEHOLDER": "Напр. sip.altel.kz"
           },
           "CALL_ROUTING": {
@@ -851,7 +854,7 @@
           "LEGACY_VOICE_TITLE": "Legacy voice channel",
           "LEGACY_VOICE_SUBTITLE": "Этот канал использует старую конфигурацию звонков и должен быть переведен на Janus SIP.",
           "JANUS_SIP_TITLE": "Подключение Janus SIP",
-          "JANUS_SIP_SUBTITLE": "Этот канал звонков работает через Janus SIP и SIP-профили сотрудников.",
+          "JANUS_SIP_SUBTITLE": "Этот канал звонков работает через SIP-шлюз Janus и SIP-профили сотрудников.",
           "JANUS_SIP_ROUTING_TITLE": "Маршрутизация звонков",
           "JANUS_SIP_ROUTING_SUBTITLE": "Выберите активный маршрут для номера и fallback, если основная цель недоступна.",
           "JANUS_SIP_READINESS_TITLE": "Готовность Janus SIP",
@@ -881,12 +884,12 @@
           "NO_WARNINGS": "Блокирующих предупреждений нет.",
           "NO_DATA": "Для этого inbox пока нет данных готовности.",
           "SIPUNI_WEBHOOK_TITLE": "Вебхук Sipuni",
-          "SIPUNI_WEBHOOK_SUBTITLE": "Укажите этот адрес в Sipuni как HTTP-вебхук для событий звонков. Ключ интеграции websocket-сервера Sipuni для этой схемы не нужен.",
+          "SIPUNI_WEBHOOK_SUBTITLE": "Укажите этот адрес в Sipuni как HTTP-вебхук для событий звонков. Ключ интеграции WebSocket-сервера Sipuni для этой схемы не нужен.",
           "SIPUNI_WEBHOOK_EMPTY": "Введите или сгенерируйте токен, чтобы получить адрес вебхука.",
           "SIPUNI_WEBHOOK_TOKEN": "Токен вебхука",
           "SIPUNI_WEBHOOK_TOKEN_PLACEHOLDER": "Например sipuni-7172705175-случайный-токен",
           "SIPUNI_WEBHOOK_GENERATE": "Сгенерировать токен",
-          "SIPUNI_WEBHOOK_COPY": "Скопировать URL",
+          "SIPUNI_WEBHOOK_COPY": "Скопировать адрес",
           "SIPUNI_WEBHOOK_COPY_SUCCESS": "Адрес вебхука Sipuni скопирован",
           "SIPUNI_WEBHOOK_SAVE": "Сохранить вебхук",
           "SIPUNI_WEBHOOK_SUCCESS": "Вебхук Sipuni сохранён",
@@ -897,7 +900,7 @@
           "BINOTEL_WEBHOOK_TOKEN": "Токен вебхука",
           "BINOTEL_WEBHOOK_TOKEN_PLACEHOLDER": "Например binotel-случайный-токен",
           "BINOTEL_WEBHOOK_GENERATE": "Сгенерировать токен",
-          "BINOTEL_WEBHOOK_COPY": "Скопировать URL",
+          "BINOTEL_WEBHOOK_COPY": "Скопировать адрес",
           "BINOTEL_WEBHOOK_COPY_SUCCESS": "Адрес вебхука Binotel скопирован",
           "BINOTEL_WEBHOOK_SAVE": "Сохранить вебхук",
           "BINOTEL_WEBHOOK_SUCCESS": "Вебхук Binotel сохранён",
@@ -927,7 +930,7 @@
           "BEELINE_API_TOKEN_PLACEHOLDER": "Токен из личного кабинета cloudpbx.beeline.kz",
           "BEELINE_API_TOKEN_CONFIGURED_HINT": "Токен API сохранён. Оставьте поле пустым, чтобы не менять его.",
           "BEELINE_WEBHOOK_GENERATE": "Сгенерировать токен",
-          "BEELINE_WEBHOOK_COPY": "Скопировать URL",
+          "BEELINE_WEBHOOK_COPY": "Скопировать адрес",
           "BEELINE_WEBHOOK_COPY_SUCCESS": "Адрес вебхука Beeline скопирован",
           "BEELINE_WEBHOOK_SAVE": "Сохранить настройки Билайн",
           "BEELINE_WEBHOOK_SUCCESS": "Настройки Билайн сохранены",

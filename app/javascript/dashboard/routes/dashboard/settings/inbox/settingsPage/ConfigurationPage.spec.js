@@ -117,9 +117,19 @@ const statusPayload = {
   },
 };
 
+// Real Russian texts with {placeholders} filled in, for the checks that read
+// what a manager sees instead of a translation key.
+const ruT = (key, params = {}) => {
+  const text = key.split('.').reduce((node, part) => node?.[part], ruInboxMgmt);
+  if (typeof text !== 'string') return key;
+
+  return text.replace(/\{(\w+)\}/g, (_, name) => params[name] ?? '');
+};
+
 const buildWrapper = ({
   inbox = baseInbox,
   te,
+  t,
   storeGetters = {},
   section = 'configuration',
 } = {}) =>
@@ -130,7 +140,7 @@ const buildWrapper = ({
     },
     global: {
       mocks: {
-        $t: key => key,
+        $t: t || (key => key),
         ...(te ? { $te: te } : {}),
         $store: {
           dispatch: storeDispatchMock,
@@ -2164,6 +2174,7 @@ const wazoStatus = ({
 
 const wazoInbox = { ...baseInbox, provider: 'wazo' };
 const SYNC_BUTTON = '[data-testid="virtual-pbx-wazo-apply"]';
+const SYNC_REASON = '[data-testid="virtual-pbx-wazo-sync-disabled-reason"]';
 
 describe('ConfigurationPage Wazo sync button', () => {
   beforeEach(() => {
@@ -2224,6 +2235,46 @@ describe('ConfigurationPage Wazo sync button', () => {
     expect(sync.exists()).toBe(true);
     expect(sync.element.closest(DEVELOPER)).toBeNull();
     expect(configuration.findAll(SYNC_BUTTON)).toHaveLength(1);
+  });
+
+  it('says why the button is disabled when the telephony server API is not available', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    getVirtualPbxStatusMock.mockResolvedValue(
+      wazoStatus({ remoteCommitAllowed: false })
+    );
+    const calls = buildWrapper({ inbox: wazoInbox, section: 'calls' });
+    const configuration = buildWrapper({ inbox: wazoInbox });
+    await flushPromises();
+
+    [calls, configuration].forEach(page => {
+      const sync = page.find(SYNC_BUTTON);
+      const reason = page.find(SYNC_REASON);
+
+      expect(sync.element.disabled).toBe(true);
+      expect(reason.text()).toBe(
+        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.WAZO_SYNC_UNAVAILABLE'
+      );
+      expect(sync.attributes('aria-describedby')).toBe(reason.attributes('id'));
+    });
+    await calls.find(SYNC_BUTTON).trigger('click');
+    await configuration.find(SYNC_BUTTON).trigger('click');
+    await flushPromises();
+
+    expect(provisionVirtualPbxChannelMock).not.toHaveBeenCalled();
+    expect(
+      ruT('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.WAZO_SYNC_UNAVAILABLE')
+    ).toMatch(/^Недоступно: .*API телефонного сервера/);
+  });
+
+  it('shows no reason while the button can be pressed', async () => {
+    const calls = buildWrapper({ inbox: wazoInbox, section: 'calls' });
+    await flushPromises();
+
+    const sync = calls.find(SYNC_BUTTON);
+
+    expect(sync.element.disabled).toBe(false);
+    expect(sync.attributes('aria-describedby')).toBeUndefined();
+    expect(calls.find(SYNC_REASON).exists()).toBe(false);
   });
 
   it.each(['sipuni', 'binotel', 'asterisk_analog', 'beeline'])(
@@ -2406,12 +2457,19 @@ describe('ConfigurationPage unsaved voice edits', () => {
     expect(wrapper.vm.hasUnsavedVirtualPbxChanges).toBe(true);
   });
 
-  it('sends the refreshed configuration version when the kept edits are saved', async () => {
-    const wrapper = buildWrapper({ inbox: wazoInbox, section: 'calls' });
+  // The kept edits were made on top of version 7. If the server moved on to 9
+  // meanwhile (another admin saved), the save must still say "7": only then can
+  // the server notice that the form is out of date and refuse the save.
+  const keepEditsAcrossRefreshTo = async version => {
+    const wrapper = buildWrapper({
+      inbox: wazoInbox,
+      section: 'calls',
+      te: ruTe,
+    });
     await flushPromises();
     const finishCheck = holdReconcile();
     getVirtualPbxStatusMock.mockResolvedValue(
-      wazoStatus({ configurationVersion: 9 })
+      wazoStatus({ configurationVersion: version })
     );
     const check = wrapper.vm.reconcileVirtualPbxChannel();
     await flushPromises();
@@ -2420,15 +2478,208 @@ describe('ConfigurationPage unsaved voice edits', () => {
     finishCheck();
     await check;
     await flushPromises();
+    return wrapper;
+  };
+
+  it('keeps sending the version the kept edits were made against, not the refreshed one', async () => {
+    const wrapper = await keepEditsAcrossRefreshTo(9);
+
+    expect(wrapper.vm.virtualPbxConfig.configuration_version).toBe(9);
 
     await wrapper.vm.updateVirtualPbxChannel();
     await flushPromises();
 
     const payload = updateVirtualPbxChannelMock.mock.calls[0][1];
-    expect(payload.expected_configuration_version).toBe(9);
+    expect(payload.expected_configuration_version).toBe(7);
     expect(payload.profiles.map(profile => profile.internal_extension)).toEqual(
       ['100', '105']
     );
+  });
+
+  it('says that the settings changed when the server refuses the kept edits', async () => {
+    const wrapper = await keepEditsAcrossRefreshTo(9);
+    updateVirtualPbxChannelMock.mockRejectedValue({
+      message: 'Request failed with status code 409',
+      response: {
+        status: 409,
+        data: {
+          code: 'VIRTUAL_PBX_CONFIGURATION_STALE',
+          error: 'Virtual PBX configuration changed; reload it before saving',
+        },
+      },
+    });
+    alertMock.mockClear();
+
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    const staleKey =
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ERRORS.VIRTUAL_PBX_CONFIGURATION_STALE';
+    expect(alertMock).toHaveBeenCalledTimes(1);
+    expect(alertMock).toHaveBeenCalledWith(staleKey);
+    expect(ruT(staleKey)).toMatch(
+      /Настройки изменились в другом окне\. Обновите страницу/
+    );
+    // Nothing is lost: the edits are still in the form.
+    expect(wrapper.vm.hasUnsavedVirtualPbxChanges).toBe(true);
+    expect(wrapper.vm.virtualPbxForm.profiles).toHaveLength(2);
+  });
+
+  it('sends the refreshed version when the form was refilled from the server', async () => {
+    const wrapper = buildWrapper({ inbox: wazoInbox, section: 'calls' });
+    await flushPromises();
+    getVirtualPbxStatusMock.mockResolvedValue(
+      wazoStatus({ configurationVersion: 9 })
+    );
+
+    await wrapper.vm.reconcileVirtualPbxChannel();
+    await flushPromises();
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    expect(
+      updateVirtualPbxChannelMock.mock.calls[0][1]
+        .expected_configuration_version
+    ).toBe(9);
+  });
+
+  it('moves to the version the server returns after a successful save', async () => {
+    const wrapper = buildWrapper({ inbox: wazoInbox, section: 'calls' });
+    await flushPromises();
+    await wrapper
+      .find('[data-testid="call-routing-ring-timeout"]')
+      .setValue('45');
+    getVirtualPbxStatusMock.mockResolvedValue(
+      wazoStatus({ configurationVersion: 8 })
+    );
+
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    expect(
+      updateVirtualPbxChannelMock.mock.calls.map(
+        call => call[1].expected_configuration_version
+      )
+    ).toEqual([7, 8]);
+  });
+
+  describe('after «Проверить доступные линии»', () => {
+    // The probe response keeps the old `max_channels` in the config on purpose:
+    // the fresh values reach the form from `channel_capacity_probe` only, which
+    // is exactly the part that has to be remembered as saved.
+    const probeResponse = ({ version = 8 } = {}) => {
+      const base = wazoStatus({ configurationVersion: version });
+      return {
+        payload: {
+          ui_config: {
+            ...base.payload.ui_config,
+            connection: {
+              ...base.payload.ui_config.connection,
+              max_channels: 2,
+            },
+          },
+          channel_capacity_probe: {
+            detected_channel_limit: 4,
+            probed_at: '2026-04-17T12:00:00Z',
+            detection_source: 'active_probe',
+          },
+        },
+      };
+    };
+
+    beforeEach(() => {
+      probeVirtualPbxChannelCapacityMock.mockReset();
+      probeVirtualPbxChannelCapacityMock.mockResolvedValue(probeResponse());
+    });
+
+    it('does not count the probe result as an unsaved edit', async () => {
+      const wrapper = buildWrapper({ inbox: wazoInbox });
+      await flushPromises();
+
+      await wrapper.vm.probeVirtualPbxChannelCapacity();
+      await flushPromises();
+
+      expect(wrapper.vm.virtualPbxForm).toMatchObject({
+        maxChannels: 4,
+        detectedChannelLimit: 4,
+        lastChannelProbeAt: '2026-04-17T12:00:00Z',
+        channelDetectionSource: 'active_probe',
+      });
+      expect(wrapper.vm.hasUnsavedVirtualPbxChanges).toBe(false);
+    });
+
+    it('still lets the check and the sync run right after the probe', async () => {
+      const wrapper = buildWrapper({ inbox: wazoInbox });
+      await flushPromises();
+      await wrapper.vm.probeVirtualPbxChannelCapacity();
+      await flushPromises();
+      alertMock.mockClear();
+
+      await wrapper
+        .find('[data-testid="virtual-pbx-reconcile"]')
+        .trigger('click');
+      await flushPromises();
+      await wrapper.find(SYNC_BUTTON).trigger('click');
+      await flushPromises();
+
+      expect(reconcileVirtualPbxChannelMock).toHaveBeenCalledTimes(1);
+      expect(provisionVirtualPbxChannelMock).toHaveBeenCalledTimes(1);
+      expect(alertMock).not.toHaveBeenCalledWith(
+        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SAVE_FIRST'
+      );
+    });
+
+    it('asks to save the edits first instead of probing on top of them', async () => {
+      const wrapper = buildWrapper({ inbox: wazoInbox, section: 'calls' });
+      await flushPromises();
+      await addUnsavedEmployee(wrapper);
+      alertMock.mockClear();
+
+      await wrapper.vm.probeVirtualPbxChannelCapacity();
+      await flushPromises();
+
+      expect(probeVirtualPbxChannelCapacityMock).not.toHaveBeenCalled();
+      expect(alertMock).toHaveBeenCalledWith(
+        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SAVE_FIRST'
+      );
+      expect(wrapper.vm.virtualPbxForm.profiles).toHaveLength(2);
+    });
+
+    it('keeps an edit typed while the probe runs, together with the version it was made against', async () => {
+      const wrapper = buildWrapper({ inbox: wazoInbox, section: 'calls' });
+      await flushPromises();
+      let finishProbe;
+      probeVirtualPbxChannelCapacityMock.mockReturnValue(
+        new Promise(resolve => {
+          finishProbe = () => resolve(probeResponse({ version: 12 }));
+        })
+      );
+
+      const probe = wrapper.vm.probeVirtualPbxChannelCapacity();
+      await flushPromises();
+      await addUnsavedEmployee(wrapper);
+      finishProbe();
+      await probe;
+      await flushPromises();
+
+      expect(wrapper.vm.virtualPbxForm.profiles).toHaveLength(2);
+      expect(wrapper.vm.virtualPbxForm.profiles[1].internalExtension).toBe(
+        '105'
+      );
+      // The probe's own values are saved, the employee is not.
+      expect(wrapper.vm.virtualPbxForm.detectedChannelLimit).toBe(4);
+      expect(wrapper.vm.hasUnsavedVirtualPbxChanges).toBe(true);
+
+      wrapper.vm.virtualPbxForm.profiles[1].userId = 8;
+      await wrapper.vm.updateVirtualPbxChannel();
+      await flushPromises();
+      expect(
+        updateVirtualPbxChannelMock.mock.calls[0][1]
+          .expected_configuration_version
+      ).toBe(7);
+    });
   });
 });
 
@@ -2598,11 +2849,160 @@ describe('ConfigurationPage Twilio and LINE panels', () => {
   });
 });
 
+describe('ConfigurationPage employee rows', () => {
+  beforeEach(() => {
+    alertMock.mockReset();
+    getVirtualPbxStatusMock.mockReset();
+    getVirtualPbxProvisioningRunsMock.mockReset();
+    storeDispatchMock.mockReset();
+    getVirtualPbxStatusMock.mockResolvedValue(wazoStatus());
+    getVirtualPbxProvisioningRunsMock.mockResolvedValue({
+      payload: { provisioning_runs: [] },
+    });
+    storeDispatchMock.mockResolvedValue({ data: { payload: [] } });
+    window.chatwootConfig = { hostURL: 'https://dev.one-link.kz' };
+  });
+
+  it('shows a short «Удалить» on every row and names the row for a screen reader', async () => {
+    const wrapper = buildWrapper({
+      inbox: wazoInbox,
+      section: 'calls',
+      t: ruT,
+    });
+    await flushPromises();
+    await wrapper
+      .find('[data-testid="virtual-pbx-add-profile"]')
+      .trigger('click');
+
+    const buttons = wrapper.findAll(
+      '[data-testid="virtual-pbx-remove-profile"]'
+    );
+
+    expect(buttons).toHaveLength(2);
+    buttons.forEach(button => expect(button.text()).toBe('Удалить'));
+    // A saved employee is named; a new row has no name yet, so it is numbered.
+    expect(buttons[0].attributes('aria-label')).toBe(
+      'Удалить сотрудника Ada Agent'
+    );
+    expect(buttons[1].attributes('aria-label')).toBe(
+      'Удалить сотрудника в строке 2'
+    );
+
+    await buttons[1].trigger('click');
+
+    expect(wrapper.vm.virtualPbxForm.profiles).toHaveLength(1);
+  });
+
+  it('numbers a row whose employee has no name at all instead of showing #id', async () => {
+    const base = wazoStatus();
+    getVirtualPbxStatusMock.mockResolvedValue({
+      payload: {
+        ...base.payload,
+        ui_config: {
+          ...base.payload.ui_config,
+          employees: [
+            {
+              id: 301,
+              user_id: 99,
+              internal_extension: '300',
+              enabled: true,
+            },
+          ],
+        },
+      },
+    });
+    const wrapper = buildWrapper({
+      inbox: { ...wazoInbox, members: [{ id: 99 }] },
+      section: 'calls',
+      t: ruT,
+    });
+    await flushPromises();
+
+    expect(
+      wrapper
+        .find('[data-testid="virtual-pbx-remove-profile"]')
+        .attributes('aria-label')
+    ).toBe('Удалить сотрудника в строке 1');
+  });
+});
+
 describe('ConfigurationPage texts', () => {
   const pick = (tree, path) =>
     path.split('.').reduce((node, part) => node?.[part], tree);
   const VOICE = 'INBOX_MGMT.ADD.VOICE';
   const POPUP = 'INBOX_MGMT.SETTINGS_POPUP';
+
+  it('writes the Wazo configuration tab and its developer block in plain Russian', () => {
+    const virtualPbx = `${VOICE}.VIRTUAL_PBX`;
+    const configuration = `${VOICE}.CONFIGURATION`;
+    const paths = [
+      `${virtualPbx}.PROVIDER_KIND.LABEL`,
+      `${virtualPbx}.CONNECTION_HOST.LABEL`,
+      `${virtualPbx}.CONNECTION_HOST.PLACEHOLDER`,
+      `${virtualPbx}.CONNECTION_HOST.REQUIRED`,
+      `${virtualPbx}.SIP_DOMAIN.LABEL`,
+      `${virtualPbx}.OUTBOUND_PROXY.LABEL`,
+      `${virtualPbx}.CONNECTION_PORT.LABEL`,
+      `${virtualPbx}.CONNECTION_PORT.INVALID`,
+      `${virtualPbx}.TRANSPORT.LABEL`,
+      `${virtualPbx}.REQUIRED_FIELDS`,
+      `${virtualPbx}.BEELINE_REQUIRED_FIELDS`,
+      `${virtualPbx}.READ_ONLY`,
+      `${virtualPbx}.CARRIER_SETTINGS.CARRIER_KIND_PLACEHOLDER`,
+      `${virtualPbx}.CARRIER_SETTINGS.RING_STRATEGY_LABEL`,
+      `${virtualPbx}.CARRIER_SETTINGS.RING_STRATEGIES.ALL`,
+      `${virtualPbx}.CARRIER_SETTINGS.RING_STRATEGIES.LEAST_RECENT`,
+      `${virtualPbx}.CARRIER_SETTINGS.RING_STRATEGIES.MEMORIZED_ROUND_ROBIN`,
+      `${virtualPbx}.CARRIER_SETTINGS.TRUNK_HOST_LABEL`,
+      `${configuration}.JANUS_SIP_SUBTITLE`,
+      `${configuration}.SIPUNI_WEBHOOK_SUBTITLE`,
+      `${configuration}.SIPUNI_WEBHOOK_COPY`,
+      `${configuration}.BINOTEL_WEBHOOK_COPY`,
+      `${configuration}.BEELINE_WEBHOOK_COPY`,
+    ];
+
+    paths.forEach(path => {
+      expect(pick(ruInboxMgmt, path), path).not.toMatch(
+        /SIP (server|trunk|domain|proxy|port|transport)|Ring Group|Janus SIP|websocket|URL|\b(all|least_recent|round_robin)\b|inbox|legacy|read-only/
+      );
+    });
+    expect(pick(ruInboxMgmt, `${virtualPbx}.PROVIDER_KIND.LABEL`)).toBe(
+      'SIP-транк провайдера'
+    );
+    expect(pick(ruInboxMgmt, `${virtualPbx}.CONNECTION_HOST.LABEL`)).toBe(
+      'SIP-сервер'
+    );
+    expect(
+      pick(ruInboxMgmt, `${virtualPbx}.CARRIER_SETTINGS.RING_STRATEGY_LABEL`)
+    ).toContain('группе вызова');
+    expect(pick(ruInboxMgmt, `${configuration}.JANUS_SIP_SUBTITLE`)).toContain(
+      'SIP-шлюз Janus'
+    );
+    expect(
+      pick(ruInboxMgmt, `${configuration}.SIPUNI_WEBHOOK_SUBTITLE`)
+    ).toContain('WebSocket-сервера');
+    ['SIPUNI', 'BINOTEL', 'BEELINE'].forEach(provider => {
+      expect(
+        pick(ruInboxMgmt, `${configuration}.${provider}_WEBHOOK_COPY`)
+      ).toBe('Скопировать адрес');
+    });
+  });
+
+  it('keeps the values of the carrier selects short enough for a laptop screen', () => {
+    const carrier = `${VOICE}.VIRTUAL_PBX.CARRIER_SETTINGS`;
+
+    [ruInboxMgmt, enInboxMgmt, kkInboxMgmt].forEach(locale => {
+      expect(
+        pick(locale, `${carrier}.CARRIER_KIND_PLACEHOLDER`).length
+      ).toBeLessThanOrEqual(34);
+      ['ALL', 'LEAST_RECENT', 'MEMORIZED_ROUND_ROBIN'].forEach(strategy => {
+        expect(
+          pick(locale, `${carrier}.RING_STRATEGIES.${strategy}`).length,
+          strategy
+        ).toBeLessThanOrEqual(30);
+      });
+    });
+  });
 
   it('names the calls section like the tab, in every language', () => {
     [ruInboxMgmt, enInboxMgmt, kkInboxMgmt].forEach(locale => {
@@ -2711,13 +3111,29 @@ describe('ConfigurationPage texts', () => {
       key => `${base}.WARNINGS.${key}`
     );
 
+    const rowKeys = ['REMOVE', 'REMOVE_NAMED', 'REMOVE_ROW'].map(
+      key => `${base}.EMPLOYEE_PROFILES.${key}`
+    );
+    const reasonKeys = [`${base}.WAZO_SYNC_UNAVAILABLE`];
+
     expect(warningPaths.length).toBeGreaterThan(10);
-    [`${base}.SAVE_FIRST`, `${base}.WAZO_SYNC_HINT`, ...warningPaths].forEach(
-      path => {
-        [ruInboxMgmt, enInboxMgmt, kkInboxMgmt].forEach(locale => {
-          expect(typeof pick(locale, path), path).toBe('string');
-        });
-      }
+    [
+      `${base}.SAVE_FIRST`,
+      `${base}.WAZO_SYNC_HINT`,
+      ...rowKeys,
+      ...reasonKeys,
+      ...warningPaths,
+    ].forEach(path => {
+      [ruInboxMgmt, enInboxMgmt, kkInboxMgmt].forEach(locale => {
+        expect(typeof pick(locale, path), path).toBe('string');
+      });
+    });
+    [...rowKeys, ...reasonKeys].forEach(path => {
+      expect(pick(ruInboxMgmt, path), path).toMatch(/[А-Яа-яЁё]/);
+      expect(pick(kkInboxMgmt, path), path).toMatch(/[А-Яа-яЁё]/);
+    });
+    expect(pick(ruInboxMgmt, `${base}.EMPLOYEE_PROFILES.REMOVE`)).toBe(
+      'Удалить'
     );
     warningPaths.forEach(path => {
       expect(pick(ruInboxMgmt, path), path).toMatch(/[А-Яа-яЁё]/);
@@ -2777,6 +3193,21 @@ describe('ConfigurationPage calls tab layout', () => {
 
     expect(calls.html()).not.toContain('md:grid-cols-3');
     expect(calls.find('[data-testid="call-routing-builder"]').exists()).toBe(
+      true
+    );
+  });
+
+  it('gives the Wazo carrier selects two columns, so their values are not cut off at laptop width', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue(wazoStatus());
+    const configuration = buildWrapper({ inbox: wazoInbox });
+    await flushPromises();
+
+    const grid = configuration.find('[data-testid="virtual-pbx-carrier-grid"]');
+
+    expect(grid.exists()).toBe(true);
+    expect(grid.classes()).toContain('md:grid-cols-2');
+    expect(grid.classes()).not.toContain('md:grid-cols-3');
+    expect(grid.find('[data-testid="virtual-pbx-carrier-kind"]').exists()).toBe(
       true
     );
   });
