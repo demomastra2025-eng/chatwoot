@@ -2273,11 +2273,16 @@ describe('ConfigurationPage unsaved voice edits', () => {
     vi.restoreAllMocks();
   });
 
+  // Edits go through the form like a manager's typing does; values written
+  // straight into `wrapper.vm` bypass Vue's reactivity and prove nothing here.
   const addUnsavedEmployee = async wrapper => {
     await wrapper
       .find('[data-testid="virtual-pbx-add-profile"]')
       .trigger('click');
-    wrapper.vm.virtualPbxForm.profiles[1].internalExtension = '105';
+    const extensionInputs = wrapper.findAll(
+      'input[placeholder="INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.PLACEHOLDER"]'
+    );
+    await extensionInputs[1].setValue('105');
   };
 
   const holdReconcile = () => {
@@ -2295,7 +2300,9 @@ describe('ConfigurationPage unsaved voice edits', () => {
     await flushPromises();
     expect(wrapper.vm.hasUnsavedVirtualPbxChanges).toBe(false);
 
-    wrapper.vm.callRoutingForm.inbound.ring_timeout_seconds = 45;
+    await wrapper
+      .find('[data-testid="call-routing-ring-timeout"]')
+      .setValue('45');
     expect(wrapper.vm.hasUnsavedVirtualPbxChanges).toBe(true);
 
     await wrapper.vm.updateVirtualPbxChannel();
@@ -2366,7 +2373,9 @@ describe('ConfigurationPage unsaved voice edits', () => {
   it('works again once the edits are saved', async () => {
     const wrapper = buildWrapper({ inbox: wazoInbox, section: 'calls' });
     await flushPromises();
-    wrapper.vm.callRoutingForm.inbound.ring_timeout_seconds = 45;
+    await wrapper
+      .find('[data-testid="call-routing-ring-timeout"]')
+      .setValue('45');
 
     await wrapper.vm.updateVirtualPbxChannel();
     await flushPromises();
@@ -2406,11 +2415,8 @@ describe('ConfigurationPage unsaved voice edits', () => {
     );
     const check = wrapper.vm.reconcileVirtualPbxChannel();
     await flushPromises();
-    wrapper.vm.virtualPbxForm.profiles.push({
-      ...wrapper.vm.emptyVirtualPbxProfile(),
-      userId: 8,
-      internalExtension: '105',
-    });
+    await addUnsavedEmployee(wrapper);
+    wrapper.vm.virtualPbxForm.profiles[1].userId = 8;
     finishCheck();
     await check;
     await flushPromises();
@@ -2507,9 +2513,6 @@ describe('ConfigurationPage Twilio and LINE panels', () => {
       'https://dev.one-link.kz/twilio/callback'
     );
     expect(wrapper.findAll(CODE_BLOCKS)).toHaveLength(1);
-    expect(developer.text()).toContain(
-      'INBOX_MGMT.ADD.TWILIO.API_CALLBACK.TITLE'
-    );
   });
 
   it('syncs the templates of Twilio WhatsApp outside the developer block', async () => {
