@@ -2,6 +2,11 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
   include Captain::Tools::Account::SchedulingQueryValidation
   NEXT_AVAILABLE_LOOKAHEAD_DAYS = 7
   NEXT_AVAILABLE_LIMIT = 6
+  # A service with no recorded specialist is searched only for a specialist chosen first; the answer says how to choose one.
+  RESOURCE_REQUIRED_MESSAGE = 'No specialist is recorded for this service, so searching all specialists could offer a doctor who ' \
+                              'does not perform it. Choose the specialist first: call search_scheduling_resources with the ' \
+                              'specialty that performs this service or the doctor name the patient gave, then call ' \
+                              'search_available_slots again with resource_ids of that specialist and the same service_id.'.freeze
 
   def self.name
     'search_available_slots'
@@ -44,6 +49,11 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
     payload = attach_next_available_slots(payload, search_params) if agent_scope?
 
     formatted_payload(prioritize_slot_keys(payload))
+  rescue Scheduling::AvailableSlotSearchService::ResourceSelectionRequiredError
+    scheduling_tool_failure(Scheduling::Error.new(
+                              code: 'RESOURCE_REQUIRED', status: :unprocessable_content, message: RESOURCE_REQUIRED_MESSAGE,
+                              details: { reason: 'resource_required', next_tool: 'search_scheduling_resources' }
+                            ), retryable: true)
   rescue Scheduling::AvailableSlotSearchService::MissingServiceLinkError => e
     scheduling_tool_failure(Scheduling::Error.new(
                               code: 'SERVICE_NOT_AVAILABLE_FOR_RESOURCE', status: :unprocessable_content,

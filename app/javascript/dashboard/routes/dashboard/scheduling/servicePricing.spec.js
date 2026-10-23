@@ -2,10 +2,59 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildServicePricePayload,
+  buildServicePriceRows,
+  buildServicePricesPayload,
   resolveDraftServicePrice,
 } from './servicePricing';
 
 describe('servicePricing', () => {
+  const resources = [
+    { id: 7, name: 'Айгерим' },
+    { id: 8, name: 'Дана' },
+    { id: 9, name: 'Ержан' },
+  ];
+
+  it('starts every specialist of a new service switched off with no price', () => {
+    expect(buildServicePriceRows(resources)).toEqual([
+      { active: false, price: '', resourceId: 7, resourceName: 'Айгерим' },
+      { active: false, price: '', resourceId: 8, resourceName: 'Дана' },
+      { active: false, price: '', resourceId: 9, resourceName: 'Ержан' },
+    ]);
+  });
+
+  it('links a new service to no specialist when no row was touched', () => {
+    expect(
+      buildServicePricesPayload(buildServicePriceRows(resources, []), 18000)
+    ).toEqual([]);
+  });
+
+  it('saves only the specialists switched on or priced by hand', () => {
+    const rows = buildServicePriceRows(resources, []);
+    rows[0].active = true;
+    rows[2].price = 25000;
+
+    expect(buildServicePricesPayload(rows, 18000)).toEqual([
+      { active: true, price: 18000, resource_id: 7 },
+      { active: false, price: 25000, resource_id: 9 },
+    ]);
+  });
+
+  it('keeps the saved price rows of an existing service and adds none', () => {
+    const rows = buildServicePriceRows(resources, [
+      { active: true, price: 21000, resourceId: 8 },
+    ]);
+
+    expect(rows[1]).toEqual({
+      active: true,
+      price: 21000,
+      resourceId: 8,
+      resourceName: 'Дана',
+    });
+    expect(buildServicePricesPayload(rows, 18000)).toEqual([
+      { active: true, price: 21000, resource_id: 8 },
+    ]);
+  });
+
   it('fills an empty active specialist price from the service base price', () => {
     expect(
       resolveDraftServicePrice({

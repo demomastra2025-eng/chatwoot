@@ -23,7 +23,8 @@ import {
 } from 'dashboard/stores/scheduling/shared';
 import { formatCurrency } from '../helpers';
 import {
-  buildServicePricePayload,
+  buildServicePriceRows,
+  buildServicePricesPayload,
   resolveDraftServicePrice,
 } from '../servicePricing';
 import { MAX_DURATION_MINUTES } from '../constants';
@@ -82,20 +83,8 @@ const serviceColumns = computed(() => [
   { key: 'actions', label: '', width: '112px', align: 'end' },
 ]);
 
-const initializePriceRows = prices => {
-  return pricingResources.value.map(resource => {
-    const matchingPrice = prices.find(
-      item => Number(item.resourceId) === Number(resource.id)
-    );
-
-    return {
-      active: matchingPrice?.active ?? false,
-      price: matchingPrice?.price || '',
-      resourceId: resource.id,
-      resourceName: resource.name,
-    };
-  });
-};
+const initializePriceRows = prices =>
+  buildServicePriceRows(pricingResources.value, prices);
 
 const resetForm = () => {
   Object.assign(serviceForm, {
@@ -159,9 +148,10 @@ const saveService = async () => {
         toIntegerNumeric(serviceForm.durationMin, 'duration_min') || 30,
       id: serviceForm.id,
       name: serviceForm.name,
-      prices: serviceForm.prices
-        .filter(price => price.active || price.price)
-        .map(price => buildServicePricePayload(price, serviceForm.basePrice)),
+      prices: buildServicePricesPayload(
+        serviceForm.prices,
+        serviceForm.basePrice
+      ),
       service_type: serviceForm.serviceType,
     });
     useAlert(t('SCHEDULING.SERVICES.SUCCESS_SAVE'));

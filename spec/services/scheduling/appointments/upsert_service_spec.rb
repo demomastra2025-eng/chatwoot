@@ -774,7 +774,7 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       expect(appointment.reload.service_id).to eq(service.id)
     end
 
-    it 'accepts only linked services when the specialist has explicit links' do
+    it 'accepts a mapped service the specialist has no link to even when the specialist is linked to other services' do
       linked_service = create(
         :scheduling_service,
         account: account,
@@ -782,18 +782,13 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       )
       create(:scheduling_service_price, account: account, resource: resource, service: linked_service)
 
-      request = lambda do
-        perform(
-          client_first_name: 'Айжан',
-          client_last_name: 'Касымова',
-          client_phone: ['+7', '700', '000', '0001'].join,
-          service_id: service.id
-        )
-      end
-
-      expect(&request).to raise_error(Scheduling::Error) do |error|
-        expect(error.code).to eq('MEDELEMENT_SERVICE_UNAVAILABLE')
-      end
+      perform(
+        client_first_name: 'Айжан',
+        client_last_name: 'Касымова',
+        client_phone: ['+7', '700', '000', '0001'].join,
+        service_id: service.id
+      )
+      expect(appointment.reload.service_id).to eq(service.id)
 
       perform(
         client_first_name: 'Айжан',
@@ -801,8 +796,21 @@ RSpec.describe Scheduling::Appointments::UpsertService do
         client_phone: ['+7', '700', '000', '0001'].join,
         service_id: linked_service.id
       )
-
       expect(appointment.reload.service_id).to eq(linked_service.id)
+    end
+
+    it 'accepts a mapped service when the account has no service-price links at all' do
+      Scheduling::ServicePrice.where(account_id: account.id).delete_all
+
+      perform(
+        client_first_name: 'Айжан',
+        client_last_name: 'Касымова',
+        client_phone: ['+7', '700', '000', '0001'].join,
+        service_id: service.id
+      )
+
+      expect(appointment.reload.service_id).to eq(service.id)
+      expect(appointment.service_amount).to eq(15_000)
     end
 
     it 'fails closed at the mutation boundary when provider availability is unavailable' do

@@ -30,15 +30,26 @@ RSpec.describe Captain::Tools::Account::SearchAvailableSlotsService do
     JSON.parse(tool.execute(from: from_time.iso8601, to: to_time.iso8601, **arguments))
   end
 
-  it 'explains a missing link with the pinned message plus a plain statement that eligibility is unverified' do
+  it 'searches a requested specialist without a link to the service and labels the match as unverified' do
     resource = create_resource('Local')
     link(resource, active: false)
 
-    result = tool.execute(from: from_time.iso8601, to: to_time.iso8601, resource_ids: [resource.id], service_id: service_record.id)
+    payload = search(resource_ids: [resource.id], service_id: service_record.id, limit: 1)
+
+    expect(payload).to include('total_slots' => 1, 'service_link_status' => 'price_link_unverified',
+                               'candidate_resource_ids' => [resource.id])
+    expect(payload['slots'].first).to include('resource_id' => resource.id, 'service_eligibility_status' => 'price_link_unverified')
+  end
+
+  it 'asks for the specialist first, as a retryable business answer, when no specialist is recorded for the service' do
+    create_resource('Local')
+
+    result = tool.execute(from: from_time.iso8601, to: to_time.iso8601, service_id: service_record.id)
 
     expect(result).to start_with('ERROR:')
-    expect(result).to include('Service is not available for the requested specialists')
-    expect(result).to include('no recorded service-price link', 'eligibility is unverified')
+    expect(result).to include(described_class::RESOURCE_REQUIRED_MESSAGE, 'RESOURCE_REQUIRED', 'resource_required')
+    expect(result).not_to include('Service is not available for the requested specialists')
+    expect(Captain::Runtime::ToolFailure.classify(result)).to eq('business')
   end
 
   it 'reports a confirmed local link with the local source' do

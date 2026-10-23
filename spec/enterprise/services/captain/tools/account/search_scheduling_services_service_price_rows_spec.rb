@@ -45,6 +45,14 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
       expect(prices.pluck('service_eligibility_status')).to eq(['price_link_unverified'])
     end
 
+    it 'finds the service with its base price and no rows when the account has no links at all' do
+      service_record.update!(base_price: 9_000)
+
+      found = search(query: 'УЗИ почек')['services'].first
+
+      expect(found).to include('id' => service_record.id, 'base_price' => 9_000, 'prices' => [])
+    end
+
     it 'returns an empty list for a service whose links are all inactive' do
       create(:scheduling_service_price, account: account, service: service_record, resource: resource, active: false)
 

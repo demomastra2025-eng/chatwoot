@@ -73,11 +73,15 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingResourcesService do
       expect(payload['link_status']).to eq('price_link_unverified')
     end
 
-    it 'reports missing recorded links without claiming that no specialists exist' do
+    it 'does not narrow the list by a service that has no recorded link and says how to choose the specialist' do
       other_service = create(:scheduling_service, account: account, name: 'Other examination')
       payload = JSON.parse(service.execute(service_id: other_service.id))
 
-      expect(payload).to include('total_count' => 0, 'search_status' => 'no_recorded_link', 'link_status' => 'no_recorded_link')
+      expect(payload['resources'].pluck('id')).to contain_exactly(therapist.id, cosmetologist.id)
+      expect(payload).to include('total_count' => 2, 'search_status' => 'candidates', 'link_status' => 'not_applied',
+                                 'instruction' => described_class::SERVICE_FILTER_NOT_APPLIED_INSTRUCTION)
+      expect(JSON.parse(service.execute(service_id: other_service.id, query: 'therapist')))
+        .to include('total_count' => 1, 'link_status' => 'not_applied')
     end
 
     it 'paginates resources without losing the total number of candidates' do

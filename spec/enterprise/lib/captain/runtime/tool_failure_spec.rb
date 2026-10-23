@@ -121,6 +121,7 @@ RSpec.describe Captain::Runtime::ToolFailure do
         'RESOURCE_NOT_FOUND' => [:not_found, 'unknown_resource'],
         'INVALID_RESOURCE_IDS' => [:unprocessable_content, 'invalid_resource_ids'],
         'SERVICE_NOT_AVAILABLE_FOR_RESOURCE' => [:unprocessable_content, 'service_not_linked'],
+        'RESOURCE_REQUIRED' => [:unprocessable_content, 'resource_required'],
         'INVALID_DATE_RANGE' => [:unprocessable_content, 'invalid_date_range'],
         'INVALID_SERVICE_ID' => [:unprocessable_content, 'invalid_service_id']
       }.each do |code, (status, reason)|

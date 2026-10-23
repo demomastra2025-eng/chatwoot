@@ -63,29 +63,23 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     expect(payload[:service][:prices]).to eq([])
   end
 
-  it 'does not use a price row assigned to another account' do
+  it 'does not use a price row assigned to another account and asks for a specialist instead' do
     foreign_service = create(:scheduling_service, account: account, name: 'Unverified service')
     link = create(:scheduling_service_price, account: account, service: foreign_service, resource: other_resource)
     link.update_columns(account_id: other_account.id) # rubocop:disable Rails/SkipsModelValidations
+    expect(Scheduling::ResourceAvailabilityQueryService).not_to receive(:new)
 
-    payload = perform(service_id: foreign_service.id, limit: 1)
-
-    expect(payload[:resources]).to eq([])
-    expect(payload[:slots]).to eq([])
+    expect { perform(service_id: foreign_service.id, limit: 1) }
+      .to raise_error(described_class::ResourceSelectionRequiredError, described_class::RESOURCE_SELECTION_REQUIRED_ERROR)
   end
 
-  it 'marks service availability as unconfirmed when no specialist offers the service' do
+  it 'asks for a specialist instead of searching every specialist when no specialist is recorded for the service' do
     unsupported_service = create(:scheduling_service, account: account, name: 'Unsupported service', duration_min: 30)
     expect(Scheduling::ResourceAvailabilityQueryService).not_to receive(:new)
 
-    payload = perform(service_id: unsupported_service.id, limit: 1)
-
-    expect(payload).to include(
-      availability_scope: 'service_unconfirmed',
-      requested_service_id: unsupported_service.id
-    )
-    expect(payload[:service_match]).to eq(confirmed: false, service_id: nil, resource_id: nil, resource_ids: [])
-    expect(payload[:slots]).to be_empty
+    expect { perform(service_id: unsupported_service.id, limit: 1) }
+      .to raise_error(described_class::ResourceSelectionRequiredError, described_class::RESOURCE_SELECTION_REQUIRED_ERROR)
+    expect(described_class::ResourceSelectionRequiredError.ancestors).to include(ArgumentError)
   end
 
   it 'treats non-positive and blank service ids as an omitted filter' do
@@ -108,13 +102,52 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     end.to raise_error(ActiveRecord::RecordNotFound, "Specialists not found: #{external_resource.id}")
   end
 
-  it 'raises when the requested specialist cannot perform the requested service' do
-    expect(Scheduling::ResourceAvailabilityQueryService).not_to receive(:new)
+  it 'searches a requested specialist with a service that has no link to that specialist, unconfirmed' do
+    payload = perform(resource_ids: [other_resource.id], service_id: service_record.id, limit: 2)
 
-    expect do
-      perform(resource_ids: [other_resource.id],
-              service_id: service_record.id)
-    end.to raise_error(ArgumentError, 'Service is not available for the requested specialists')
+    expect(payload[:resources].pluck(:id)).to eq([other_resource.id])
+    expect(payload[:duration_min]).to eq(30)
+    expect(payload[:slots].first).to include(resource_id: other_resource.id, starts_at: '2026-04-20T09:00:00+05:00',
+                                             ends_at: '2026-04-20T09:30:00+05:00')
+    expect(payload[:slots].pluck(:service_eligibility_status).uniq).to eq(['price_link_unverified'])
+    expect(payload).to include(service_link_status: 'price_link_unverified', availability_scope: 'service_unconfirmed',
+                               candidate_resource_ids: [other_resource.id])
+    expect(payload[:service_match]).to eq(confirmed: false, service_id: nil, resource_id: nil, resource_ids: [])
+  end
+
+  it 'labels each requested specialist by its own link when only some of them are linked' do
+    payload = perform(resource_ids: [resource.id, other_resource.id], service_id: service_record.id)
+
+    statuses = payload[:slots].to_h { |slot| [slot[:resource_id], slot[:service_eligibility_status]] }
+    expect(statuses).to eq(resource.id => 'local_configured', other_resource.id => 'price_link_unverified')
+    expect(payload).to include(service_link_status: 'price_link_unverified', availability_scope: 'service_unconfirmed')
+  end
+
+  describe 'an account with no service-price links at all' do
+    before { Scheduling::ServicePrice.where(account_id: account.id).delete_all }
+
+    it 'searches the requested specialists with the service and its duration' do
+      payload = perform(resource_ids: [resource.id, other_resource.id], service_id: service_record.id, limit: 4)
+
+      expect(payload[:resources].pluck(:id)).to contain_exactly(resource.id, other_resource.id)
+      expect(payload[:duration_min]).to eq(30)
+      expect(payload[:slots].pluck(:resource_id).uniq).to contain_exactly(resource.id, other_resource.id)
+      expect(payload[:slots]).to all(include(service_eligibility_status: 'price_link_unverified'))
+      expect(payload).to include(service_link_status: 'price_link_unverified', availability_scope: 'service_unconfirmed')
+    end
+
+    it 'asks for a specialist when the service is searched without one, and never searches every specialist' do
+      expect(Scheduling::ResourceAvailabilityQueryService).not_to receive(:new)
+
+      expect { perform(service_id: service_record.id) }.to raise_error(described_class::ResourceSelectionRequiredError)
+    end
+
+    it 'still searches every specialist when no service is requested' do
+      payload = perform(limit: 4)
+
+      expect(payload[:resources].pluck(:id)).to contain_exactly(resource.id, other_resource.id)
+      expect(payload).to include(service_link_status: 'not_requested', availability_scope: 'generic')
+    end
   end
 
   it 'rejects reversed ranges and oversized ranges' do

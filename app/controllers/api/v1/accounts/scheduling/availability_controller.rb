@@ -1,8 +1,8 @@
 class Api::V1::Accounts::Scheduling::AvailabilityController < Api::V1::Accounts::Scheduling::BaseController
   def show
     resource = Current.account.scheduling_resources.available_for_scheduling.find(params.require(:resource_id))
+    # A service never requires a recorded service-price link to the specialist: it only sets the visit length.
     service = Current.account.scheduling_services.active.find(params[:service_id]) if params[:service_id].present?
-    validate_service_link!(resource, service) if service
     from, to = requested_range(resource)
     result = Scheduling::ScheduleDayAvailabilityService.new(
       resource: resource, from: from, to: to, service: service,
@@ -46,14 +46,6 @@ class Api::V1::Accounts::Scheduling::AvailabilityController < Api::V1::Accounts:
 
   def duration_min(resource, service)
     parse_duration_min_param!(params[:duration_min]) || service&.duration_min || resource.slot_duration_min
-  end
-
-  def validate_service_link!(resource, service)
-    return if Scheduling::ServicePrice.active.exists?(
-      account_id: Current.account.id, resource_id: resource.id, service_id: service.id
-    )
-
-    raise ArgumentError, 'Service is not available for this resource'
   end
 
   def resource_time_zone(resource)

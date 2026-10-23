@@ -179,7 +179,7 @@ class Scheduling::Appointments::UpsertService
     ensure_resource_available_for_scheduling!(resource)
 
     services = resolve_services(current: current_services)
-    validate_provider_draft!(resource, services)
+    validate_provider_draft!(services)
     starts_at = resolve_datetime(:starts_at, current: appointment.starts_at)
     duration_min = resolve_duration_min(
       starts_at: starts_at, resource: resource,
@@ -214,7 +214,7 @@ class Scheduling::Appointments::UpsertService
   # Deterministic draft errors must not depend on provider availability. These
   # checks only read explicit values and service mappings; clinical selection
   # and binding are still validated again under the transaction locks.
-  def validate_provider_draft!(resource, services)
+  def validate_provider_draft!(services)
     name_keys = %i[client_first_name client_last_name]
     incomplete_medelement_patient! if name_keys.any? { |key| params.key?(key) && params[key].to_s.strip.blank? }
     validate_medelement_phone!(params[:client_phone]) if params.key?(:client_phone)
@@ -222,7 +222,6 @@ class Scheduling::Appointments::UpsertService
     return if service_ids.empty?
 
     validate_medelement_service_mapping!(services, service_ids)
-    validate_medelement_service_availability!(service_ids, resource_id: resource.id)
   end
 
   def provider_interval(resource:, starts_at:, ends_at:, cabinet_code:)
@@ -687,8 +686,9 @@ class Scheduling::Appointments::UpsertService
 
     services = account.scheduling_services.where(id: service_ids)
 
+    # A recorded service-price link to the specialist is never required: the clinic system decides whether the specialist
+    # performs the service.
     validate_medelement_service_mapping!(services, service_ids)
-    validate_medelement_service_availability!(service_ids)
   end
 
   def medelement_service_ids
@@ -705,22 +705,6 @@ class Scheduling::Appointments::UpsertService
     raise Scheduling::Error.new(
       code: 'MEDELEMENT_SERVICE_UNMAPPED',
       message: 'Selected services must be linked to Medelement',
-      status: :unprocessable_content
-    )
-  end
-
-  def validate_medelement_service_availability!(service_ids, resource_id: appointment.resource_id)
-    linked_service_ids = account.scheduling_service_prices.active
-                                .where(resource_id: resource_id)
-                                .joins(:service)
-                                .where("NULLIF(scheduling_services.custom_attributes ->> 'medelement_nomenclature_code', '') IS NOT NULL")
-                                .pluck(:service_id)
-    return if linked_service_ids.empty?
-    return if (service_ids - linked_service_ids).empty?
-
-    raise Scheduling::Error.new(
-      code: 'MEDELEMENT_SERVICE_UNAVAILABLE',
-      message: 'Selected services are not linked to this Medelement specialist',
       status: :unprocessable_content
     )
   end

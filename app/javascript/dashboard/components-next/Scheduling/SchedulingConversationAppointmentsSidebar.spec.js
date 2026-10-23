@@ -3065,7 +3065,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     );
   });
 
-  it('uses explicit service links for the selected MedElement specialist', async () => {
+  it('does not narrow the services of a MedElement specialist to the linked ones', async () => {
     mocks.resources[0].customAttributes = {
       medelement_specialist_code: 'specialist-1',
     };
@@ -3106,6 +3106,8 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
     expect(wrapper.vm.serviceOptionsForForm({ resourceId: 7 })).toEqual([
       { label: 'Консультация', value: 9, wrapLabel: true },
+      { label: 'Другая услуга', value: 10, wrapLabel: true },
+      { label: 'Услуга без персональной цены', value: 11, wrapLabel: true },
     ]);
   });
 

@@ -40,6 +40,16 @@ RSpec.describe Captain::Tools::Account::ListSchedulingResourcesService do
       payload = JSON.parse(service.execute(service_id: service_record.id))
 
       expect(payload['resources'].map { |item| item['id'] }).to eq([resource_b.id])
+      expect(payload['service_filter']).to eq('applied')
+    end
+
+    it 'lists every specialist for a service with no recorded link' do
+      unlinked = create(:scheduling_service, account: account, name: 'Unlinked')
+
+      payload = JSON.parse(service.execute(service_id: unlinked.id))
+
+      expect(payload['resources'].map { |item| item['id'] }).to contain_exactly(resource_a.id, resource_b.id)
+      expect(payload).to include('total_count' => 2, 'service_id' => unlinked.id, 'service_filter' => 'not_applied')
     end
 
     it 'treats non-positive and blank service ids as an omitted filter' do

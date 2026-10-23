@@ -127,14 +127,18 @@ RSpec.describe Scheduling::ResourceSearchService do
       other_resource = create(:scheduling_resource, account: other_account, name: 'Связанный Специалист')
       create(:scheduling_service_price, account: other_account, service: other_service, resource: other_resource, active: true)
 
-      expect(ids(service_id: other_service.id)).to be_empty
+      expect(ids(service_id: other_service.id)).not_to include(other_resource.id)
+      expect(perform(service_id: other_service.id)[:resources].pluck(:account_id).uniq).to eq([account.id])
       expect(perform(service_id: service_record.id)[:resources].pluck(:account_id)).to eq([account.id])
     end
 
-    it 'reports an incomplete import (no links at all) as an empty result, not as an error' do
+    it 'does not narrow the list by a service with no links at all, and says the filter was not applied' do
       lonely_service = create(:scheduling_service, account: account, name: 'Услуга без связей')
 
-      expect(perform(service_id: lonely_service.id)).to include(total_count: 0, resources: [], has_more: false, next_offset: nil)
+      payload = perform(service_id: lonely_service.id)
+
+      expect(payload).to include(total_count: 3, has_more: false, next_offset: nil, service_filter: 'not_applied')
+      expect(payload[:resources].pluck(:id)).to include(linked.id, inactive_link.id)
     end
   end
 

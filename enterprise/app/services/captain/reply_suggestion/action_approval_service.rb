@@ -246,7 +246,7 @@ class Captain::ReplySuggestion::ActionApprovalService
       resource = account.scheduling_resources.find(resource_id)
       ensure_resource_available_for_scheduling!(resource)
       service = validated_service || (account.scheduling_services.find(service_id) if service_id.present?)
-      validate_service_available_for_resource!(account: account, resource: resource, service: service) if service.present?
+      validate_service_available_for_resource!(resource: resource, service: service) if service.present?
       validate_appointment_custom_attributes!(account: account, custom_attributes: custom_attrs, new_record: true)
       validate_slot_availability!(
         account: account, resource: resource, starts_at: starts_at, ends_at: ends_at,
@@ -295,7 +295,7 @@ class Captain::ReplySuggestion::ActionApprovalService
       if arguments[:resource_id].present? && arguments[:resource_id].to_i != appointment.resource_id
         ensure_resource_available_for_scheduling!(resource)
       end
-      validate_service_available_for_resource!(account: account, resource: resource, service: validated_service) if validated_service.present?
+      validate_service_available_for_resource!(resource: resource, service: validated_service) if validated_service.present?
       if params.key?(:custom_attributes)
         validate_appointment_custom_attributes!(
           account: account, custom_attributes: params[:custom_attributes],
@@ -366,7 +366,8 @@ class Captain::ReplySuggestion::ActionApprovalService
       )
     end
 
-    def validate_service_available_for_resource!(account:, resource:, service:)
+    # A recorded service-price link to the specialist is never required; only the price and the MedElement mapping are checked.
+    def validate_service_available_for_resource!(resource:, service:)
       price = service.prices.find_by(resource_id: resource.id)
       resolved_price = price&.active? && price.price.to_i.positive? ? price.price : service.base_price
       if !service.active? || resolved_price.to_i <= 0
@@ -379,24 +380,11 @@ class Captain::ReplySuggestion::ActionApprovalService
 
       return if resource.custom_attributes.to_h['medelement_specialist_code'].blank?
 
-      if service.custom_attributes.to_h['medelement_nomenclature_code'].blank?
-        raise Scheduling::Error.new(
-          code: 'MEDELEMENT_SERVICE_UNMAPPED',
-          message: 'Selected services must be linked to Medelement',
-          status: :unprocessable_content
-        )
-      end
-
-      linked_ids = account.scheduling_service_prices.active
-                          .where(resource_id: resource.id)
-                          .joins(:service)
-                          .where("NULLIF(scheduling_services.custom_attributes ->> 'medelement_nomenclature_code', '') IS NOT NULL")
-                          .pluck(:service_id)
-      return if linked_ids.empty? || linked_ids.include?(service.id)
+      return if service.custom_attributes.to_h['medelement_nomenclature_code'].present?
 
       raise Scheduling::Error.new(
-        code: 'MEDELEMENT_SERVICE_UNAVAILABLE',
-        message: 'Selected services are not linked to this Medelement specialist',
+        code: 'MEDELEMENT_SERVICE_UNMAPPED',
+        message: 'Selected services must be linked to Medelement',
         status: :unprocessable_content
       )
     end

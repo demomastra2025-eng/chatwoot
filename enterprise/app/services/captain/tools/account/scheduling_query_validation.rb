@@ -40,14 +40,15 @@ module Captain::Tools::Account::SchedulingQueryValidation
     Scheduling::InputValidation.service!(account: account, value: service_id)
   end
 
-  def scheduling_tool_failure(error)
+  # retryable: true for an answer that asks the model for a different call (another argument, another tool first).
+  def scheduling_tool_failure(error, retryable: false)
     unless error.is_a?(Scheduling::Error)
       Rails.logger.warn("[CAPTAIN::SCHEDULING_QUERY] tool=#{self.class.name} error=#{error.class.name}")
       error = Scheduling::Error.new(code: 'INTERNAL_FAILURE', message: 'Scheduling could not be read because of an internal failure',
                                     status: :internal_server_error, details: { reason: 'internal_failure' })
     end
     Captain::ToolResult.failure_output(
-      error: error.message, retryable: false,
+      error: error.message, retryable: retryable,
       data: { code: error.code, reason: error.details.to_h[:reason], details: error.details, error_class: scheduling_error_class(error) }.compact
     )
   end
