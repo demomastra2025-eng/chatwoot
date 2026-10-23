@@ -788,7 +788,10 @@ export default {
       // The editor has no manual-time control: a rule touch never keeps the flag, which would freeze a relative
       // touch as a draft without a send time.
       delete cleaned.manual_schedule_override;
-      if (!this.canSkipLateImport && cleaned.metadata?.[LATE_IMPORT_OPT_IN_KEY]) {
+      if (
+        !this.canSkipLateImport &&
+        cleaned.metadata?.[LATE_IMPORT_OPT_IN_KEY]
+      ) {
         cleaned.metadata = clone(cleaned.metadata);
         delete cleaned.metadata[LATE_IMPORT_OPT_IN_KEY];
       }
