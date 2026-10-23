@@ -336,7 +336,15 @@
         "LIVE_HANDOFF": "Handing off to specialist agent…",
         "LIVE_AGENT_TOOLS": "{agent} is checking data with tools…",
         "LIVE_TOOLS": "AI agent is checking data with tools…",
-        "LIVE_AGENT_THINKING": "{agent} is analyzing the conversation…"
+        "LIVE_AGENT_THINKING": "{agent} is analyzing the conversation…",
+        "ACTION_AGENT_WANTS": "Agent {agent} wants to: {action}",
+        "ACTION_DEFAULT_WANTS": "Agent wants to: {action}",
+        "ACTION_ALLOW": "Allow",
+        "ACTION_DENY": "Deny",
+        "ACTION_EXECUTING": "Executing…",
+        "ACTION_APPROVED": "Approved and executed",
+        "ACTION_REJECTED": "Denied",
+        "ACTION_FAILED": "Execution failed"
       }
     },
     "VISIBLE_TO_AGENTS": "Private Note: Only visible to you and your team",

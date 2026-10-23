@@ -45,7 +45,7 @@ class Llm::EventBus
       return yield if context_payload.empty?
 
       pushed = false
-      context_stack.push(context_payload)
+      context_stack.push(current_context.merge(context_payload))
       pushed = true
       yield
     ensure

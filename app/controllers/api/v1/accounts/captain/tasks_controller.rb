@@ -85,7 +85,42 @@ class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseContr
     render json: { ok: true, status: 'ok' }
   end
 
+  def approve_action
+    action = action_approval_service.approve!(
+      action_id: params[:action_id].to_s,
+      digest: params[:digest].presence
+    )
+    render json: { ok: true, status: action['status'], action: action }
+  rescue Captain::ReplySuggestion::ActionApprovalService::NotFoundError => e
+    render json: { error: e.message }, status: :not_found
+  rescue Captain::ReplySuggestion::ActionApprovalService::ForbiddenError => e
+    render json: { error: e.message }, status: :forbidden
+  rescue Captain::ReplySuggestion::ActionApprovalService::ExecutionError => e
+    render json: { error: e.message, action: e.action }.compact, status: :unprocessable_content
+  rescue Captain::ReplySuggestion::ActionApprovalService::Error => e
+    render json: { error: e.message }, status: :unprocessable_content
+  end
+
+  def reject_action
+    action = action_approval_service.reject!(action_id: params[:action_id].to_s)
+    render json: { ok: true, status: action['status'], action: action }
+  rescue Captain::ReplySuggestion::ActionApprovalService::NotFoundError => e
+    render json: { error: e.message }, status: :not_found
+  rescue Captain::ReplySuggestion::ActionApprovalService::ForbiddenError => e
+    render json: { error: e.message }, status: :forbidden
+  rescue Captain::ReplySuggestion::ActionApprovalService::Error => e
+    render json: { error: e.message }, status: :unprocessable_content
+  end
+
   private
+
+  def action_approval_service
+    Captain::ReplySuggestion::ActionApprovalService.new(
+      account: Current.account,
+      user: Current.user,
+      conversation_display_id: params[:conversation_display_id]
+    )
+  end
 
   def safe_execute_task
     yield
@@ -129,7 +164,8 @@ class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseContr
       request_id: request_id,
       follow_up_context: result[:follow_up_context],
       captain_trace: result[:captain_trace].presence,
-      suggestion_meta: result[:suggestion_meta].presence
+      suggestion_meta: result[:suggestion_meta].presence,
+      pending_actions: result[:pending_actions].presence || result.dig(:suggestion_meta, 'pending_actions').presence
     }.compact
   end
 

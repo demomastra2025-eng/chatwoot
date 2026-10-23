@@ -41,9 +41,10 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
   def name = 'plan_request'
 
   # mode is an enum of the valid modes, so the model is offered nothing else (a former mode such as handoff or answer is not one).
+  # When @planning_context is given and fewer than two open parts exist, clarify is hidden from the schema.
   def params_schema
     super.deep_stringify_keys.tap do |schema|
-      schema['properties']['mode']['enum'] = Captain::Runtime::PartRegistry::MODES
+      schema['properties']['mode']['enum'] = allowed_modes
       schema['properties']['parts']['items'] = {
         'type' => 'object', 'additionalProperties' => false,
         'properties' => part_properties.merge(link_properties),
@@ -73,6 +74,12 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
   end
 
   private
+
+  def allowed_modes
+    return Captain::Runtime::PartRegistry::MODES unless @planning_context
+
+    Captain::Runtime::PartRegistry.listed_parts(@planning_context).size >= 2 ? Captain::Runtime::PartRegistry::MODES : ['council']
+  end
 
   def accept_plan(context, mode, parts, clarification)
     parts = with_part_ids(parts, context)

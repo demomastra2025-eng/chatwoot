@@ -187,24 +187,148 @@ RSpec.describe Captain::ReplySuggestionService do
         expect(result.dig(:suggestion_meta, 'working_agents').pluck('name')).to include('Координатор', 'ЛОР-специалист')
       end
 
-      it 'builds read-only agent tools and ephemeral session without mutating conversation additional_attributes' do
+      it 'builds read-only agent tools and suggestion tools with action interception, and uses ephemeral session' do
         runtime_agent = assistant.agent(read_only_tools: true)
         tool_names = runtime_agent.tools.map(&:name)
 
         expect(tool_names).to include('search_available_slots', 'search_scheduling_services', 'faq_lookup')
         expect(tool_names).not_to include('create_appointment', 'handoff', 'resolve_conversation')
 
-        prompt = runtime_agent.get_system_prompt(
+        suggestion_agent = assistant.agent(suggestion_tools: true)
+        suggestion_tool_names = suggestion_agent.tools.map(&:name)
+        expect(suggestion_tool_names).to include('search_available_slots', 'search_scheduling_services', 'create_appointment', 'faq_lookup')
+        expect(suggestion_tool_names).not_to include('handoff', 'resolve_conversation')
+
+        prompt = suggestion_agent.get_system_prompt(
           OpenStruct.new(context: { state: { source: 'reply_suggestion' } })
         )
         expect(prompt).to include('You are drafting a suggested reply for the human clinic operator')
+        expect(prompt).to include('pending_operator_approval')
         expect(prompt).not_to include('Call handoff once')
 
         run_context = Captain::AgentRunContext.new(entry: assistant, conversation: conversation, ephemeral_session: true)
-        session = run_context.prepare(state: {})[:agent_session]
+        session = run_context.prepare(state: { source: 'reply_suggestion' })[:agent_session]
         session.update_routing(actor_id: assistant.id, tasks: [{ 'id' => 't1', 'status' => 'active' }])
 
         expect(conversation.reload.additional_attributes.to_h).not_to have_key(Captain::Conversation::AgentSession::ATTRIBUTE)
+      end
+
+      it 'includes pending_actions from AgentRunnerService in the result and suggestion_meta' do
+        runner_double = instance_double(Captain::Assistant::AgentRunnerService)
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner_double)
+        pending_action = {
+          'action_id' => 'act-77',
+          'tool_name' => 'create_appointment',
+          'agent_name' => 'Координатор',
+          'title' => 'Записать на приём',
+          'status' => 'pending',
+          'details' => [{ 'label' => 'Врач / Ресурс', 'value' => 'Дани' }]
+        }
+        allow(runner_double).to receive(:generate_response).and_return(
+          {
+            'response' => 'Можем записать вас к врачу Дани сегодня на 15:00.',
+            'agent_id' => assistant.id,
+            'agent_display_name' => assistant.name,
+            'pending_actions' => [pending_action]
+          }
+        )
+
+        stored_pending = {
+          'action_id' => 'act-78',
+          'tool_name' => 'create_task',
+          'title' => 'Создать задачу',
+          'status' => 'pending',
+          'digest' => 'dig-78'
+        }
+        allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:pending_for)
+          .with(account_id: account.id, conversation_id: conversation.id)
+          .and_return([stored_pending])
+
+        result = service.perform
+
+        expect(result[:pending_actions]).to eq([pending_action, stored_pending])
+        expect(result.dig(:suggestion_meta, 'pending_actions')).to eq([pending_action, stored_pending])
+      end
+
+      it 'prevents handoff ping-pong back to visited source agents and enforces 1-transfer limit in reply_suggestion' do
+        specialist = create(:captain_assistant, account: account, name: 'ЛОР-специалист', active: true)
+        expect(Captain::Runtime::Runner.max_transfers_for({ state: { source: 'reply_suggestion' } })).to eq(1)
+        expect(Captain::Runtime::Runner.max_transfers_for({ state: { source: 'incoming_message' } })).to eq(2)
+
+        lazy_entry = Captain::Runtime::LazyAgent.new(assistant, options: { suggestion_tools: true })
+        lazy_specialist = Captain::Runtime::LazyAgent.new(specialist, options: { suggestion_tools: true })
+
+        handoff_tool = Captain::Runtime::HandoffTool.new(lazy_entry, source_agent: lazy_specialist)
+        tool_ctx = OpenStruct.new(
+          run_context: OpenStruct.new(
+            context: {
+              state: { source: 'reply_suggestion', assistant_id: specialist.id },
+              handoff_count: 0,
+              visited_handoff_source_ids: [assistant.id]
+            }
+          )
+        )
+
+        ping_pong_result = handoff_tool.perform(tool_ctx)
+        expect(ping_pong_result[:error] || ping_pong_result['error']).to eq(Captain::Runtime::HandoffTool::RETURN_TO_SOURCE)
+
+        limit_ctx = OpenStruct.new(
+          run_context: OpenStruct.new(
+            context: {
+              state: { source: 'reply_suggestion', assistant_id: assistant.id },
+              handoff_count: 1,
+              visited_handoff_source_ids: []
+            }
+          )
+        )
+        handoff_to_specialist = Captain::Runtime::HandoffTool.new(lazy_specialist, source_agent: lazy_entry)
+        handoff_to_specialist.perform(limit_ctx)
+        expect(limit_ctx.run_context.context[:transfer_guard_active]).to be(true)
+      end
+
+      it 'omits visited transfer tools in ExecutorResolver and hides clarify in PartPlanTool when < 2 open parts' do
+        specialist = create(:captain_assistant, account: account, name: 'ЛОР-специалист', active: true)
+        ctx = {
+          state: { source: 'reply_suggestion', assistant_id: specialist.id },
+          agent_graph: [
+            { id: assistant.id, name: assistant.name },
+            { id: specialist.id, name: specialist.name }
+          ],
+          visited_handoff_source_ids: [assistant.id],
+          parts: []
+        }
+
+        resolver = Captain::Runtime::ExecutorResolver.new(ctx)
+        expect do
+          resolver.resolve([{ 'executor' => assistant.name, 'fragment' => 'Уточнить цену' }], mode: 'council')
+        end.to raise_error(
+          Captain::Runtime::ExecutorResolver::RetryableError,
+          /handle the request with your own tools and instructions/
+        )
+
+        plan_tool_no_open = Captain::Runtime::PartPlanTool.new(ctx)
+        expect(plan_tool_no_open.params_schema.dig('properties', 'mode', 'enum')).to eq(['council'])
+
+        ctx_two_open = ctx.merge(
+          parts: [
+            { 'id' => 'p1', 'state' => 'waiting_customer', 'executor_agent_id' => assistant.id, 'fragment' => 'A' },
+            { 'id' => 'p2', 'state' => 'waiting_customer', 'executor_agent_id' => assistant.id, 'fragment' => 'B' }
+          ]
+        )
+        plan_tool_two_open = Captain::Runtime::PartPlanTool.new(ctx_two_open)
+        expect(plan_tool_two_open.params_schema.dig('properties', 'mode', 'enum')).to include('council', 'clarify')
+      end
+
+      it 'preserves outer user_id in Llm::EventBus.with_context across nested contexts' do
+        captured_context = nil
+        Llm::EventBus.with_context(user_id: agent.id, source: 'reply_suggestion') do
+          Llm::EventBus.with_context(assistant_id: assistant.id) do
+            captured_context = Llm::EventBus.snapshot_context
+          end
+        end
+
+        expect(captured_context['user_id']).to eq(agent.id)
+        expect(captured_context['assistant_id']).to eq(assistant.id)
       end
 
       it 'falls back to standard prompt suggestion if AgentRunnerService returns conversation_handoff' do

@@ -4,13 +4,16 @@
 # accepted it, a later run must reconcile the outcome instead of sending again.
 class Captain::Runtime::OperationGuard
   def initialize(context, tool, arguments, scope: nil)
-    @context, @tool, @arguments = context, tool, arguments
+    @context = context
+    @tool = tool
+    @arguments = arguments
     @session = context[:agent_session]
     @scope = scope || Captain::Runtime::TaskQueue.new(context).operation_scope
   end
 
   def reserve
     return unless @session && Llm::ToolRiskPolicy.mutating?(@tool)
+    return if Captain::Runtime::Runner.reply_suggestion?(@context)
     return if @tool.is_a?(Captain::Runtime::HandoffTool) || @tool.is_a?(Captain::Runtime::TaskQueueTool) ||
               @tool.is_a?(Captain::Runtime::PartPlanTool)
     # These tools already atomically change conversation ownership/status. They

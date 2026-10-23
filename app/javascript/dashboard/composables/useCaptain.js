@@ -235,6 +235,7 @@ export function useCaptain() {
           follow_up_context: followUpContext,
           captain_trace: captainTrace,
           suggestion_meta: suggestionMeta,
+          pending_actions: pendingActions,
           request_id: requestId,
           error: backendError,
         },
@@ -243,11 +244,16 @@ export function useCaptain() {
         useAlert(backendError);
         return { message: '', errorType: CAPTAIN_ERROR_TYPES.API_ERROR };
       }
+      const resolvedPendingActions =
+        pendingActions || suggestionMeta?.pending_actions || null;
       return {
         message: generatedMessage,
         followUpContext,
         ...(captainTrace ? { captainTrace } : {}),
         ...(suggestionMeta ? { suggestionMeta } : {}),
+        ...(resolvedPendingActions
+          ? { pendingActions: resolvedPendingActions }
+          : {}),
         ...(requestId ? { requestId } : {}),
       };
     } catch (error) {

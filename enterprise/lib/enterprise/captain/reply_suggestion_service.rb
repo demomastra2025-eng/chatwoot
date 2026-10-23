@@ -231,6 +231,7 @@ module Enterprise::Captain::ReplySuggestionService
       @tool_trace_steps = []
       @sequence = 0
       @handoffs = []
+      @pending_actions = []
       @reasoning = nil
       @phase = 'thinking'
       init_agent_catalog!(assistant)
@@ -268,7 +269,8 @@ module Enterprise::Captain::ReplySuggestionService
           'council_contributors' => resolve_council_contributors(payload).presence,
           'council' => council_snapshot,
           'handoffs' => @handoffs.presence,
-          'agent_tasks' => Array(payload[:agent_tasks]).presence
+          'agent_tasks' => Array(payload[:agent_tasks]).presence,
+          'pending_actions' => resolve_pending_actions(payload).presence
         }.compact
       end
     end
@@ -315,9 +317,30 @@ module Enterprise::Captain::ReplySuggestionService
         normalized = Captain::ToolResult.normalize(result)
         event = Captain::ToolResult.error?(normalized) ? 'failed' : 'finish'
         append_step!(tool_name: tool_name, event: event, output: normalized, current_agent: actor&.dig('name'))
+        capture_pending_actions!(context_wrapper&.context)
         @phase = 'council_running' if tool_name.to_s == 'plan_request' && capture_council_plan!(context_wrapper&.context)
         broadcast_progress!
       end
+    end
+
+    def capture_pending_actions!(context)
+      actions = Array(context&.dig(:captain_suggestion_pending_actions))
+      return if actions.blank?
+
+      @pending_actions = (@pending_actions + actions).uniq { |item| item['action_id'] || item[:action_id] }
+    end
+
+    def resolve_pending_actions(payload)
+      stored_pending = Captain::ReplySuggestion::ActionApprovalService.pending_for(
+        account_id: @conversation&.account_id,
+        conversation_id: @conversation&.id
+      )
+      combined = Array(payload[:pending_actions]) + @pending_actions + Array(stored_pending)
+      items = combined.filter_map do |entry|
+        hash = entry.to_h.deep_stringify_keys
+        hash if hash['action_id'].present?
+      end
+      items.uniq { |item| item['digest'].presence || item['action_id'] }
     end
 
     def handle_agent_handoff(from_name, to_name, reason = nil, context_wrapper = nil)
@@ -415,6 +438,7 @@ module Enterprise::Captain::ReplySuggestionService
         working_agents: @working_agents,
         handoffs: @handoffs.presence,
         council: council_snapshot,
+        pending_actions: @pending_actions.presence,
         captain_trace: Captain::ToolTraceBuilder.payload(
           @tool_trace_steps,
           reasoning: @reasoning.presence || combined_council_reasoning
@@ -490,7 +514,10 @@ module Enterprise::Captain::ReplySuggestionService
     trace = trace_collector.captain_trace(payload)
     meta = trace_collector.suggestion_meta(payload)
     result[:captain_trace] = trace if trace.present?
-    result[:suggestion_meta] = meta if meta.present?
+    return if meta.blank?
+
+    result[:suggestion_meta] = meta
+    result[:pending_actions] = meta['pending_actions'] if meta['pending_actions'].present?
   end
 
   def non_deliverable_agent_payload?(payload, content)

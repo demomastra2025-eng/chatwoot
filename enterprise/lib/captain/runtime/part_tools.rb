@@ -40,5 +40,14 @@ class Captain::Runtime::PartTools
           Llm::ToolRiskPolicy::MUTATING_RISK_LEVELS.include?(definition.risk_level.to_s)
       end.map(&:id)
     end
+
+    # Single source of truth for effective tool ids in normal, council-part and read-only (reply_suggestion) runs.
+    def effective_tool_ids(tool_ids, read_only: false, part: false)
+      ids = Array(tool_ids).map(&:to_s)
+      return ids - read_only_withheld_tool_ids if read_only
+      return ids - withheld_tool_ids if part
+
+      ids
+    end
   end
 end

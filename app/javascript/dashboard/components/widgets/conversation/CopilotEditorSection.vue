@@ -41,6 +41,14 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  pendingActions: {
+    type: Array,
+    default: () => [],
+  },
+  actionLoadingById: {
+    type: Object,
+    default: () => ({}),
+  },
 });
 
 const emit = defineEmits([
@@ -49,6 +57,8 @@ const emit = defineEmits([
   'clearSelection',
   'contentReady',
   'send',
+  'approveAction',
+  'rejectAction',
 ]);
 
 const { t } = useI18n();
@@ -198,6 +208,65 @@ const hasAuthorAttribution = computed(
   () => Boolean(primaryAgent.value) || isCouncilSuggestion.value
 );
 
+// === Operator Action Approval ("Разрешить / Запретить") ===
+const normalizedPendingActions = computed(() => {
+  const rawList =
+    (Array.isArray(props.pendingActions) && props.pendingActions.length
+      ? props.pendingActions
+      : null) ||
+    props.suggestionMeta?.pending_actions ||
+    props.liveProgress?.pending_actions ||
+    [];
+  if (!Array.isArray(rawList)) return [];
+
+  return rawList
+    .filter(item => item && (item.action_id || item.actionId))
+    .map(item => {
+      const actionId = String(item.action_id || item.actionId);
+      const agent =
+        normalizeAgent(item.agent) ||
+        primaryAgent.value ||
+        liveActiveAgent.value;
+      const details = Array.isArray(item.details)
+        ? item.details.filter(d => d && d.label && d.value)
+        : [];
+      return {
+        raw: item,
+        actionId,
+        toolName: String(item.tool_name || item.toolName || ''),
+        status: String(item.status || 'pending'),
+        title: String(item.title || item.tool_name || ''),
+        description: String(item.description || ''),
+        details,
+        agent,
+        digest: item.digest || null,
+        errorMessage: String(item.error_message || item.errorMessage || ''),
+        resultSummary: String(item.result_summary || item.resultSummary || ''),
+        loadingState: props.actionLoadingById?.[actionId] || null,
+      };
+    });
+});
+
+const actionTitleText = action => {
+  if (action.agent?.name) {
+    return t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_AGENT_WANTS', {
+      agent: action.agent.name,
+      action: action.title,
+    });
+  }
+  return t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_DEFAULT_WANTS', {
+    action: action.title,
+  });
+};
+
+const onApproveAction = action => {
+  emit('approveAction', action.raw);
+};
+
+const onRejectAction = action => {
+  emit('rejectAction', action.raw);
+};
+
 const partStatusLabel = status => {
   const labels = {
     planned: t('CONVERSATION.REPLYBOX.COPILOT_TRACE.STATUS_PLANNED'),
@@ -260,12 +329,16 @@ const onSend = () => {
     @after-enter="emit('contentReady')"
   >
     <div
-      v-if="showCopilotEditor && !isGeneratingContent"
+      v-if="
+        (showCopilotEditor || normalizedPendingActions.length) &&
+        !isGeneratingContent
+      "
       key="copilot-editor"
-      class="space-y-1.5"
+      class="space-y-2"
+      :class="{ 'mb-2': !showCopilotEditor }"
     >
       <div
-        v-if="hasAuthorAttribution"
+        v-if="showCopilotEditor && hasAuthorAttribution"
         class="flex items-center gap-2 px-1 py-0.5"
         data-test="copilot-suggestion-attribution"
       >
@@ -297,7 +370,159 @@ const onSend = () => {
         </template>
       </div>
 
+      <div
+        v-if="normalizedPendingActions.length"
+        class="space-y-1.5"
+        data-test="copilot-pending-actions"
+      >
+        <div
+          v-for="action in normalizedPendingActions"
+          :key="action.actionId"
+          class="rounded-lg border border-n-iris-7/50 bg-n-iris-3/30 px-3 py-2.5 text-xs"
+          data-test="copilot-action-card"
+        >
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <div class="flex items-start gap-2 min-w-0 flex-1">
+              <Avatar
+                v-if="action.agent"
+                :name="action.agent.name"
+                :src="action.agent.avatarUrl"
+                :size="20"
+                icon-name="i-woot-captain"
+                rounded-full
+                class="shrink-0 mt-0.5"
+              />
+              <div class="min-w-0 flex-1 space-y-1">
+                <div
+                  class="font-semibold text-n-slate-12 leading-4"
+                  data-test="copilot-action-title"
+                >
+                  {{ actionTitleText(action) }}
+                </div>
+
+                <div
+                  v-if="action.details.length"
+                  class="flex flex-wrap items-center gap-x-3 gap-y-1 text-n-slate-11"
+                  data-test="copilot-action-details"
+                >
+                  <span
+                    v-for="(detail, idx) in action.details"
+                    :key="`${action.actionId}-${idx}`"
+                    class="inline-flex items-center gap-1"
+                  >
+                    <span class="text-n-slate-10">{{ detail.label }}:</span>
+                    <span class="font-medium text-n-slate-12">
+                      {{ detail.value }}
+                    </span>
+                  </span>
+                </div>
+                <div v-else-if="action.description" class="text-n-slate-11">
+                  {{ action.description }}
+                </div>
+
+                <div
+                  v-if="action.status === 'approved' && action.resultSummary"
+                  class="text-n-teal-11 font-medium"
+                  data-test="copilot-action-result-summary"
+                >
+                  {{ action.resultSummary }}
+                </div>
+                <div
+                  v-if="action.status === 'failed' && action.errorMessage"
+                  class="text-n-ruby-11 font-medium"
+                  data-test="copilot-action-error"
+                >
+                  {{ action.errorMessage }}
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-1.5 shrink-0">
+              <template
+                v-if="
+                  action.status === 'pending' ||
+                  action.status === 'failed' ||
+                  action.status === 'executing'
+                "
+              >
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 rounded-md bg-n-teal-9 px-2.5 py-1 text-xs font-medium text-white hover:bg-n-teal-10 disabled:opacity-50"
+                  data-test="copilot-action-approve"
+                  :disabled="
+                    Boolean(action.loadingState) ||
+                    action.status === 'executing'
+                  "
+                  @click="onApproveAction(action)"
+                >
+                  <Icon
+                    :icon="
+                      action.loadingState === 'approving' ||
+                      action.status === 'executing'
+                        ? 'i-lucide-loader-circle'
+                        : 'i-lucide-check'
+                    "
+                    class="size-3.5"
+                    :class="{
+                      'animate-spin':
+                        action.loadingState === 'approving' ||
+                        action.status === 'executing',
+                    }"
+                  />
+                  <span>
+                    {{
+                      action.loadingState === 'approving' ||
+                      action.status === 'executing'
+                        ? t(
+                            'CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_EXECUTING'
+                          )
+                        : t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_ALLOW')
+                    }}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 rounded-md border border-n-weak bg-n-solid-1 px-2.5 py-1 text-xs font-medium text-n-slate-12 hover:bg-n-alpha-2 disabled:opacity-50"
+                  data-test="copilot-action-reject"
+                  :disabled="
+                    Boolean(action.loadingState) ||
+                    action.status === 'executing'
+                  "
+                  @click="onRejectAction(action)"
+                >
+                  <Icon icon="i-lucide-x" class="size-3.5 text-n-ruby-11" />
+                  <span>
+                    {{ t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_DENY') }}
+                  </span>
+                </button>
+              </template>
+              <span
+                v-else-if="action.status === 'approved'"
+                class="inline-flex items-center gap-1 rounded-full border border-n-teal-7 bg-n-teal-3/40 px-2.5 py-0.5 text-xs font-medium text-n-teal-11"
+                data-test="copilot-action-approved-badge"
+              >
+                <Icon icon="i-lucide-check-circle-2" class="size-3.5" />
+                <span>
+                  {{ t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_APPROVED') }}
+                </span>
+              </span>
+              <span
+                v-else-if="action.status === 'rejected'"
+                class="inline-flex items-center gap-1 rounded-full border border-n-weak bg-n-alpha-2 px-2.5 py-0.5 text-xs font-medium text-n-slate-11"
+                data-test="copilot-action-rejected-badge"
+              >
+                <Icon icon="i-lucide-ban" class="size-3.5" />
+                <span>
+                  {{ t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_REJECTED') }}
+                </span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <CopilotEditor
+        v-if="showCopilotEditor"
         v-model="copilotEditorContent"
         class="copilot-editor"
         :generated-content="generatedContent"

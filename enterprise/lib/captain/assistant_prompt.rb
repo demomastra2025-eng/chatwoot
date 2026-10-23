@@ -40,10 +40,10 @@ class Captain::AssistantPrompt
   def bound_tool_ids
     return unless @context.key?(:runtime_tool_ids)
 
-    ids = Array(@context[:runtime_tool_ids]).map(&:to_s)
-    return ids - Captain::Runtime::PartTools.read_only_withheld_tool_ids if @suggestion
-
-    @part ? ids - Captain::Runtime::PartTools.withheld_tool_ids : ids
+    Captain::Runtime::PartTools.effective_tool_ids(
+      @context[:runtime_tool_ids],
+      part: @part || @suggestion
+    )
   end
 
   def time_zone

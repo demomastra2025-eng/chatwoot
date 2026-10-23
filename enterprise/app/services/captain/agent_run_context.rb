@@ -2,8 +2,14 @@
 
 class Captain::AgentRunContext
   def initialize(entry:, conversation: nil, playground: nil, fence: {}, ephemeral_session: false)
-    @entry, @conversation, @playground = entry, conversation, playground
-    @graph = Captain::AgentGraph.new(entry, inbox: conversation&.inbox || playground&.routing_inbox)
+    @entry = entry
+    @conversation = conversation
+    @playground = playground
+    @graph = Captain::AgentGraph.new(
+      entry,
+      inbox: conversation&.inbox || playground&.routing_inbox,
+      standalone: conversation.nil? && playground.nil?
+    )
     session_options = { entry: entry, conversation: conversation, playground: playground, fence: fence }
     session_options[:ephemeral] = true if ephemeral_session
     @session = Captain::Conversation::AgentSession.new(**session_options)
@@ -22,7 +28,7 @@ class Captain::AgentRunContext
     if saved['current_assistant_id'].present? && current.id != saved['current_assistant_id'].to_i
       Captain::Runtime::CoordinationEvents.publish(
         'agent.reset', context: context, reason: 'agent_unavailable',
-        from_agent_id: saved['current_assistant_id'], to_agent_id: current.id
+                       from_agent_id: saved['current_assistant_id'], to_agent_id: current.id
       )
     end
 
@@ -30,7 +36,8 @@ class Captain::AgentRunContext
     # to transfer to or to bring together: the directory stays empty, so no plan, council, transfer or request
     # queue exists for it (the runtime and the prompt build those only from a non-empty directory).
     peers = graph.peers?
-    context[:agent_graph] = peers ? graph.payload_for(current) : []
+    suggestion = Captain::Runtime::Runner.reply_suggestion?(context)
+    context[:agent_graph] = peers ? graph.payload_for(current, suggestion_tools: suggestion) : []
     context[:agent_graph_object] = graph
     context[:agent_run_context_object] = self
     context[:agent_inbox_id] = graph.inbox&.id
@@ -57,7 +64,8 @@ class Captain::AgentRunContext
     state = context[:state] ||= {}
     previous_id = state[:assistant_id]
     state[:assistant_id] = actor.id
-    context[:agent_graph] = graph.payload_for(actor) if graph.peers?
+    suggestion = Captain::Runtime::Runner.reply_suggestion?(context)
+    context[:agent_graph] = graph.payload_for(actor, suggestion_tools: suggestion) if graph.peers?
     state[:mesh_routing] = true
     state[:assistant_config] = actor.config
     prior_runtime = state[:captain_runtime]
@@ -86,7 +94,7 @@ class Captain::AgentRunContext
   end
 
   def runtime_agents(overrides: {})
-    shared_options = overrides.to_h.symbolize_keys.slice(:read_only_tools)
+    shared_options = overrides.to_h.symbolize_keys.slice(:read_only_tools, :suggestion_tools)
     registry = graph.agents.index_with do |actor|
       # Playground model controls affect the selected agent only.
       options = actor.id == @entry.id ? overrides : shared_options

@@ -780,6 +780,7 @@ export default {
       const key = this.getDraftKey(this.conversationIdByRoute, replyType);
       delete this.copilotAcceptedMessages[key];
       delete this.copilotAcceptedMeta[key];
+      this.copilot.pruneResolvedActions?.();
     },
     handleInsert(article) {
       const { url, title } = article;
@@ -1701,13 +1702,18 @@ export default {
           @pause="recordingAudioState = 'paused'"
         />
         <CopilotEditorSection
-          v-if="copilot.isActive.value && !showAudioRecorderEditor"
+          v-if="
+            (copilot.isActive.value || copilot.pendingActions.value.length) &&
+            !showAudioRecorderEditor
+          "
           :show-copilot-editor="copilot.showEditor.value"
           :is-generating-content="copilot.isGenerating.value"
           :generated-content="copilot.generatedContent.value"
           :captain-trace="copilot.captainTrace.value"
           :suggestion-meta="copilot.suggestionMeta.value"
           :live-progress="copilot.liveProgress.value"
+          :pending-actions="copilot.pendingActions.value"
+          :action-loading-by-id="copilot.actionLoadingById.value"
           :placeholder="$t('CONVERSATION.FOOTER.COPILOT_MSG_INPUT')"
           @focus="onFocus"
           @blur="onBlur"
@@ -1715,9 +1721,11 @@ export default {
           @close="copilot.showEditor.value = false"
           @content-ready="copilot.setContentReady"
           @send="copilot.sendFollowUp"
+          @approve-action="copilot.approveAction"
+          @reject-action="copilot.rejectAction"
         />
         <WootMessageEditor
-          v-else-if="!showAudioRecorderEditor"
+          v-if="!copilot.isActive.value && !showAudioRecorderEditor"
           ref="messageEditor"
           v-model="message"
           :conversation-id="conversationId"

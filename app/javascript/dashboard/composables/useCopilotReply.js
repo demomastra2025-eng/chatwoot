@@ -1,6 +1,6 @@
 import { ref, computed, getCurrentInstance, onBeforeUnmount } from 'vue';
 import { useCaptain } from 'dashboard/composables/useCaptain';
-import { useTrack } from 'dashboard/composables';
+import { useAlert, useTrack } from 'dashboard/composables';
 import { CAPTAIN_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
 import {
   CAPTAIN_ERROR_TYPES,
@@ -34,6 +34,30 @@ function recordCopilotFeedback(payload) {
   } catch {
     // Non-blocking feedback telemetry
   }
+}
+
+function normalizePendingActionList(rawList, currentList = []) {
+  if (!Array.isArray(rawList) || !rawList.length) return currentList;
+  const byId = new Map();
+  currentList.forEach(item => {
+    const id = item?.action_id || item?.actionId;
+    if (id) byId.set(String(id), item);
+  });
+  rawList.forEach(item => {
+    if (!item || typeof item !== 'object') return;
+    const id = item.action_id || item.actionId;
+    if (!id) return;
+    const key = String(id);
+    const existing = byId.get(key);
+    if (
+      existing &&
+      (existing.status === 'approved' || existing.status === 'rejected')
+    ) {
+      return;
+    }
+    byId.set(key, { ...existing, ...item, action_id: key });
+  });
+  return Array.from(byId.values());
 }
 
 /**
@@ -105,6 +129,8 @@ export function useCopilotReply() {
   const followUpContext = ref(null);
   const captainTrace = ref(null);
   const suggestionMeta = ref(null);
+  const pendingActionsByConversation = ref({});
+  const actionLoadingById = ref({});
   const liveProgress = ref(null);
   const abortController = ref(null);
   const requestId = ref(null);
@@ -118,6 +144,21 @@ export function useCopilotReply() {
   const conversationId = computed(
     () => captainConversationId?.value ?? currentChat.value?.id
   );
+
+  const activeConversationKey = computed(() =>
+    String(conversationId.value || trackedConversationId.value || 'default')
+  );
+
+  const pendingActions = computed({
+    get: () =>
+      pendingActionsByConversation.value[activeConversationKey.value] || [],
+    set: value => {
+      pendingActionsByConversation.value = {
+        ...pendingActionsByConversation.value,
+        [activeConversationKey.value]: Array.isArray(value) ? value : [],
+      };
+    },
+  });
 
   const isActive = computed(() => showEditor.value || isGenerating.value);
   const isButtonDisabled = computed(
@@ -140,6 +181,12 @@ export function useCopilotReply() {
       return;
     }
     liveProgress.value = data || null;
+    if (Array.isArray(data?.pending_actions) && data.pending_actions.length) {
+      pendingActions.value = normalizePendingActionList(
+        data.pending_actions,
+        pendingActions.value
+      );
+    }
   }
 
   function stopProgressListener() {
@@ -160,6 +207,11 @@ export function useCopilotReply() {
    * @param {boolean} [trackDismiss=true] - Whether to track dismiss event
    */
   function reset(trackDismiss = true) {
+    const isConversationSwitch =
+      trackedConversationId.value &&
+      conversationId.value &&
+      Number(trackedConversationId.value) !== Number(conversationId.value);
+
     // Track dismiss event if there was content and we're not accepting
     if (trackDismiss && generatedContent.value && currentAction.value) {
       const eventKey = `${getEventPrefix(currentAction.value)}_DISMISSED`;
@@ -186,6 +238,16 @@ export function useCopilotReply() {
       abortController.value.abort();
       abortController.value = null;
     }
+    if (isConversationSwitch) {
+      if (showEditor.value || isGenerating.value) {
+        pendingActionsByConversation.value = {
+          ...pendingActionsByConversation.value,
+          [String(trackedConversationId.value)]: [],
+        };
+      }
+    } else {
+      pendingActions.value = [];
+    }
     showEditor.value = false;
     isGenerating.value = false;
     isContentReady.value = false;
@@ -193,11 +255,18 @@ export function useCopilotReply() {
     followUpContext.value = null;
     captainTrace.value = null;
     suggestionMeta.value = null;
+    actionLoadingById.value = {};
     liveProgress.value = null;
     requestId.value = null;
     currentAction.value = null;
     followUpCount.value = 0;
     trackedConversationId.value = null;
+  }
+
+  function pruneResolvedActions() {
+    pendingActions.value = pendingActions.value.filter(
+      item => item.status !== 'approved' && item.status !== 'rejected'
+    );
   }
 
   /**
@@ -243,6 +312,7 @@ export function useCopilotReply() {
         followUpContext: newContext,
         captainTrace: trace,
         suggestionMeta: meta,
+        pendingActions: incomingActions,
         requestId: newRequestId,
         errorType,
       } = await processEvent(action, data, {
@@ -261,6 +331,15 @@ export function useCopilotReply() {
       followUpContext.value = newContext;
       captainTrace.value = trace || liveProgress.value?.captain_trace || null;
       suggestionMeta.value = meta || null;
+      const candidateActions =
+        incomingActions ||
+        meta?.pending_actions ||
+        liveProgress.value?.pending_actions ||
+        [];
+      pendingActions.value = normalizePendingActionList(
+        candidateActions,
+        pendingActions.value
+      );
       requestId.value = newRequestId || newContext?.request_id || null;
       if (content) {
         showEditor.value = true;
@@ -394,6 +473,129 @@ export function useCopilotReply() {
     }
   }
 
+  function updatePendingActionState(actionId, patch, targetConvKey = null) {
+    const key = String(actionId);
+    const convKey = targetConvKey || activeConversationKey.value;
+    const list = pendingActionsByConversation.value[convKey] || [];
+    pendingActionsByConversation.value = {
+      ...pendingActionsByConversation.value,
+      [convKey]: list.map(item => {
+        const id = String(item.action_id || item.actionId || '');
+        if (id !== key) return item;
+        return { ...item, ...patch, action_id: key };
+      }),
+    };
+  }
+
+  /**
+   * Approves and executes a pending action proposed by the agent in reply_suggestion.
+   * @param {Object|string} actionItem - The action object or action_id string
+   */
+  async function approveAction(actionItem) {
+    const actionId =
+      typeof actionItem === 'string'
+        ? actionItem
+        : actionItem?.action_id || actionItem?.actionId;
+    if (!actionId || actionLoadingById.value[actionId]) return null;
+
+    const convKey = activeConversationKey.value;
+    const existing = pendingActions.value.find(
+      item => String(item.action_id || item.actionId) === String(actionId)
+    );
+    const digest = actionItem?.digest || existing?.digest;
+    const targetConvId =
+      actionItem?.conversation_display_id ||
+      existing?.conversation_display_id ||
+      trackedConversationId.value ||
+      conversationId.value;
+
+    actionLoadingById.value = {
+      ...actionLoadingById.value,
+      [actionId]: 'approving',
+    };
+
+    try {
+      const response = await TasksAPI.approveAction({
+        actionId,
+        conversationId: targetConvId,
+        digest,
+      });
+      const updated = response?.data?.action || {
+        ...existing,
+        status: response?.data?.status || 'approved',
+      };
+      updatePendingActionState(actionId, updated, convKey);
+      return updated;
+    } catch (error) {
+      const errorMessage =
+        error?.response?.data?.error ||
+        error?.message ||
+        'Не удалось выполнить действие';
+      const failedAction = error?.response?.data?.action || {
+        status: 'failed',
+        error_message: errorMessage,
+      };
+      updatePendingActionState(actionId, failedAction, convKey);
+      useAlert(errorMessage);
+      return null;
+    } finally {
+      const next = { ...actionLoadingById.value };
+      delete next[actionId];
+      actionLoadingById.value = next;
+    }
+  }
+
+  /**
+   * Rejects a pending action proposed by the agent in reply_suggestion.
+   * @param {Object|string} actionItem - The action object or action_id string
+   */
+  async function rejectAction(actionItem) {
+    const actionId =
+      typeof actionItem === 'string'
+        ? actionItem
+        : actionItem?.action_id || actionItem?.actionId;
+    if (!actionId || actionLoadingById.value[actionId]) return null;
+
+    const convKey = activeConversationKey.value;
+    const existing = pendingActions.value.find(
+      item => String(item.action_id || item.actionId) === String(actionId)
+    );
+    const targetConvId =
+      actionItem?.conversation_display_id ||
+      existing?.conversation_display_id ||
+      trackedConversationId.value ||
+      conversationId.value;
+
+    actionLoadingById.value = {
+      ...actionLoadingById.value,
+      [actionId]: 'rejecting',
+    };
+
+    try {
+      const response = await TasksAPI.rejectAction({
+        actionId,
+        conversationId: targetConvId,
+      });
+      const updated = response?.data?.action || {
+        ...existing,
+        status: response?.data?.status || 'rejected',
+      };
+      updatePendingActionState(actionId, updated, convKey);
+      return updated;
+    } catch (error) {
+      const errorMessage =
+        error?.response?.data?.error ||
+        error?.message ||
+        'Не удалось отклонить действие';
+      useAlert(errorMessage);
+      return null;
+    } finally {
+      const next = { ...actionLoadingById.value };
+      delete next[actionId];
+      actionLoadingById.value = next;
+    }
+  }
+
   /**
    * Accepts the generated content and returns it.
    * Note: Formatting is automatically stripped by the Editor component's
@@ -441,7 +643,6 @@ export function useCopilotReply() {
     requestId.value = null;
     currentAction.value = null;
     followUpCount.value = 0;
-    trackedConversationId.value = null;
 
     return content;
   }
@@ -454,6 +655,8 @@ export function useCopilotReply() {
     followUpContext,
     captainTrace,
     suggestionMeta,
+    pendingActions,
+    actionLoadingById,
     liveProgress,
     requestId,
     lastAcceptedMeta,
@@ -463,10 +666,13 @@ export function useCopilotReply() {
     editorTransitionKey,
 
     reset,
+    pruneResolvedActions,
     toggleEditor,
     setContentReady,
     execute,
     sendFollowUp,
+    approveAction,
+    rejectAction,
     accept,
   };
 }

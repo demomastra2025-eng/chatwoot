@@ -18,4 +18,12 @@ class Captain::TasksPolicy < ApplicationPolicy
   def follow_up?
     true
   end
+
+  def approve_action?
+    true
+  end
+
+  def reject_action?
+    true
+  end
 end

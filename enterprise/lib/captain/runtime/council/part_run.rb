@@ -66,7 +66,12 @@ class Captain::Runtime::Council::PartRun
   # agent: built on the calling thread from the owner's runtime with the tools of PartTools. snapshot: the part's own context.
   # callbacks: the callbacks of the run (already safe to call from several threads).
   def initialize(agent:, snapshot:, account:, llm_context:, callbacks:, max_turns:)
-    @agent, @snapshot, @account, @llm_context, @callbacks, @max_turns = agent, snapshot, account, llm_context, callbacks, max_turns
+    @agent = agent
+    @snapshot = snapshot
+    @account = account
+    @llm_context = llm_context
+    @callbacks = callbacks
+    @max_turns = max_turns
     @tracker = Tracker.new(@agent.tools.select { |tool| Llm::ToolRiskPolicy.mutating?(tool) }.map { |tool| tool.name.to_s })
   end
 
@@ -118,7 +123,10 @@ class Captain::Runtime::Council::PartRun
   def outcome(result, duration_ms)
     context = result.context || {}
     technical = context[:technical_failure].presence
-    technical ||= { 'kind' => Captain::Runtime::ToolFailure::TECHNICAL, 'reason' => 'run_error', 'error_class' => result.error.class.name } if result.error
+    if result.error
+      technical ||= { 'kind' => Captain::Runtime::ToolFailure::TECHNICAL, 'reason' => 'run_error',
+                      'error_class' => result.error.class.name }
+    end
     output = self.class.parse_output(result.output) unless technical
     # A part that did nothing and gave no usable answer (the model or the schema failed) is a technical failure, as the same
     # output of a single agent is a failed turn: the other parts are answered and the conversation goes to staff. A part that
@@ -140,7 +148,8 @@ class Captain::Runtime::Council::PartRun
       completed_actions: Array(context[Captain::Runtime::ToolWrapper::COMPLETED_ACTIONS_KEY]),
       completed_tool_results: Array(context[:captain_v2_completed_tool_results]).map { |record| record.to_h.except(:appointment_evidence) },
       artifact_ids: Array(context[:captain_v2_artifact_ids]),
-      outcome_facts: context[:outcome_facts].to_h
+      outcome_facts: context[:outcome_facts].to_h,
+      pending_actions: Array(context[:captain_suggestion_pending_actions])
     }
   end
 end

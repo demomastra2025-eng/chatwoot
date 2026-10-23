@@ -4,7 +4,10 @@ class Captain::Runtime::Runner
   DEFAULT_MAX_TURNS = 10
   MAX_TASK_FINALIZATION_REPAIRS = 2
   MAX_TRANSFERS = 2
+  MAX_SUGGESTION_TRANSFERS = 1
   TRANSFER_GUARD_NOTE = 'You cannot transfer any more: handle the request with your own tools, or call handoff if only staff can do it.'
+  SUGGESTION_TRANSFER_GUARD_NOTE = 'You cannot transfer any more: draft the suggested reply for the operator using your own tools ' \
+                                   'and instructions.'
 
   class MaxTurnsExceeded < StandardError; end
   class ToolLoopStopped < StandardError; end
@@ -17,6 +20,22 @@ class Captain::Runtime::Runner
 
   def self.with_agents(*agents)
     Captain::Runtime::AgentRunner.new(agents)
+  end
+
+  def self.reply_suggestion?(context)
+    return false unless context.is_a?(Hash)
+
+    (context.dig(:state, :source) || context.dig(:state, 'source')).to_s == 'reply_suggestion'
+  end
+
+  def self.max_transfers_for(context)
+    reply_suggestion?(context) ? MAX_SUGGESTION_TRANSFERS : MAX_TRANSFERS
+  end
+
+  def self.visited_handoff_source_ids(context)
+    return [] unless context.is_a?(Hash)
+
+    (Array(context[:visited_handoff_source_ids]) + [context[:previous_handoff_source_id]]).compact.uniq
   end
 
   # An error ends the run as a result with an error, never as a text for the customer: the caller hands the conversation to staff.
@@ -194,6 +213,7 @@ class Captain::Runtime::Runner
 
   def plan_required_before_reply?(session)
     context = session[:context_wrapper].context
+    return false if self.class.reply_suggestion?(context)
     # A lone agent has no plan_request to call; a council part and a finalization-only continuation cannot call it.
     return false if !Captain::Runtime::PartRegistry.planning_available?(context) || context[:part_plan_accepted]
     return false if Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks])
@@ -253,8 +273,8 @@ class Captain::Runtime::Runner
     request.to_h
   end
 
-  # No more transfers in this run (two were made, or the colleague cannot be reached): the agent keeps its own tools and its human
-  # handoff, and loses only the transfer and plan tools (see ChatFactory.build_agent_tools).
+  # No more transfers in this run (the transfer limit was reached, or the colleague cannot be reached): the agent keeps its own
+  # tools and its human handoff, and loses only the transfer and plan tools (see ChatFactory.build_agent_tools).
   def continue_after_transfer_guard(session)
     previous_chat = session[:chat]
     extracted_messages = Captain::Runtime::MessageExtractor.extract_messages(previous_chat, session[:current_agent])
@@ -274,8 +294,10 @@ class Captain::Runtime::Runner
   end
 
   def transfer_guard_note(session)
-    language_line = Captain::PatientLanguage.line(session[:context_wrapper].context[:patient_language])
-    [TRANSFER_GUARD_NOTE, language_line].compact.join(' ')
+    context = session[:context_wrapper].context
+    note = self.class.reply_suggestion?(context) ? SUGGESTION_TRANSFER_GUARD_NOTE : TRANSFER_GUARD_NOTE
+    language_line = Captain::PatientLanguage.line(context[:patient_language])
+    [note, language_line].compact.join(' ')
   end
 
   def continue_unresolved_tasks?(session, response)
@@ -370,10 +392,10 @@ class Captain::Runtime::Runner
     nil
   end
 
-  # Two transfers per message at most. A return to the agent that just handed over is refused by the transfer tool with a result
-  # the model can act on (HandoffTool), so it is no limit here.
+  # Transfers per message at most (MAX_TRANSFERS, or MAX_SUGGESTION_TRANSFERS in reply_suggestion). A return to an agent that
+  # already handed over in this run is refused by the transfer tool with a result the model can act on (HandoffTool).
   def handoff_limit_reached?(context, _next_agent)
-    context[:handoff_count].to_i >= MAX_TRANSFERS
+    context[:handoff_count].to_i >= self.class.max_transfers_for(context)
   end
 
   def handoff_target(session)
@@ -421,8 +443,11 @@ class Captain::Runtime::Runner
 
   def persist_handoff_state(session, next_agent)
     context = session[:context_wrapper].context
+    source_id = session[:current_agent].assistant_id
     context[:handoff_count] = context[:handoff_count].to_i + 1
-    context[:previous_handoff_source_id] = session[:current_agent].assistant_id
+    context[:previous_handoff_source_id] = source_id
+    context[:visited_handoff_source_ids] = (Array(context[:visited_handoff_source_ids]) + [source_id]).compact.uniq
+    context[:transfer_guarded] = true if self.class.reply_suggestion?(context) && handoff_limit_reached?(context, next_agent)
     save_conversation_state(session[:chat], session[:context_wrapper], session[:current_agent])
     callback_manager(session).emit_agent_complete(session[:current_agent].name, nil, nil, session[:context_wrapper])
     callback_manager(session).emit_agent_handoff(

@@ -10,7 +10,11 @@ class Captain::Runtime::LazyAgent < Captain::Runtime::Agent
     @options = options
     @display_name = actor.name
     @routing_description = actor.routing_description.to_s
-    super(name: actor.agent_name)
+    super(
+      name: actor.agent_name,
+      read_only_tools: options[:read_only_tools],
+      suggestion_tools: options[:suggestion_tools]
+    )
     self.assistant_id = actor.id
   end
 
@@ -21,9 +25,17 @@ class Captain::Runtime::LazyAgent < Captain::Runtime::Agent
   def headers = materialized.headers
   def params = materialized.params
 
-  # The ids of the tools the agent will have, read from the assistant without building them.
+  def configured_tool_ids
+    @configured_tool_ids ||= Array(@actor.selected_agent_tool_ids).map(&:to_s)
+  end
+
+  # The ids of the tools the agent will actually have in this run, read from the assistant without building them.
   def tool_ids
-    @tool_ids ||= Array(@actor.selected_agent_tool_ids).map(&:to_s)
+    @tool_ids ||= Captain::Runtime::PartTools.effective_tool_ids(
+      configured_tool_ids,
+      read_only: read_only_tools?,
+      part: suggestion_tools?
+    )
   end
 
   def get_system_prompt(context)

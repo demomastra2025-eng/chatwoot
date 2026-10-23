@@ -37,6 +37,21 @@ module Captain::Runtime::TransferCapabilities
     WRITE_TOOL_IDS.include?(id) || (id.match?(WRITE_PREFIX) && Captain::ToolRegistry.definition_for(id).present?)
   end
 
+  def read_only_routing?(source, target = nil)
+    suggestion_routing?(source) || suggestion_routing?(target)
+  end
+
+  def suggestion_routing?(agent)
+    (agent.respond_to?(:read_only_tools?) && agent.read_only_tools?) ||
+      (agent.respond_to?(:suggestion_tools?) && agent.suggestion_tools?)
+  end
+
+  def configured_tool_ids_for(agent)
+    return Array(agent.configured_tool_ids).map(&:to_s) if agent.respond_to?(:configured_tool_ids)
+
+    Array(agent.tool_ids).map(&:to_s)
+  end
+
   def distinct_routing_domain?(source, target)
     return false unless source.respond_to?(:routing_description) && target.respond_to?(:routing_description)
 
@@ -45,7 +60,23 @@ module Captain::Runtime::TransferCapabilities
     source_desc.present? && target_desc.present? && source_desc != target_desc
   end
 
+  def specialist_domain?(source, target)
+    return false unless target.respond_to?(:routing_description)
+
+    target_desc = target.routing_description.to_s.strip
+    source_desc = source.respond_to?(:routing_description) ? source.routing_description.to_s.strip : ''
+    target_desc.present? && target_desc != source_desc
+  end
+
   def useful?(source, target)
+    if read_only_routing?(source, target)
+      source_cfg = configured_tool_ids_for(source)
+      target_cfg = configured_tool_ids_for(target)
+      return true if (target_cfg - source_cfg).any? { |id| write_tool?(id) }
+
+      return specialist_domain?(source, target)
+    end
+
     source_ids = Array(source.tool_ids).map(&:to_s)
     target_ids = Array(target.tool_ids).map(&:to_s)
     return true if (target_ids - source_ids).any? { |id| write_tool?(id) }
@@ -60,7 +91,9 @@ module Captain::Runtime::TransferCapabilities
   end
 
   def write_phrases(source, target)
-    ids = (Array(target.tool_ids).map(&:to_s) - Array(source.tool_ids).map(&:to_s)).select { |id| write_tool?(id) }
+    target_ids = read_only_routing?(source, target) ? configured_tool_ids_for(target) : Array(target.tool_ids).map(&:to_s)
+    source_ids = read_only_routing?(source, target) ? configured_tool_ids_for(source) : Array(source.tool_ids).map(&:to_s)
+    ids = (target_ids - source_ids).select { |id| write_tool?(id) }
     appointment_ids = ids & APPOINTMENT_VERBS.keys
     phrases = [line(appointment_ids).delete_prefix('Can: ').delete_suffix('.')].compact_blank
     phrases + (ids - appointment_ids).filter_map { |id| Captain::ToolRegistry.definition_for(id)&.title&.downcase }

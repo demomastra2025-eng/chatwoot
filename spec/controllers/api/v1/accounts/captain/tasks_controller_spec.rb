@@ -66,7 +66,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Tasks', type: :request do
         {
           message: 'Suggested reply',
           captain_trace: { 'version' => 1, 'reasoning' => 'Checked slots', 'tool_calls' => [{ 'tool_name' => 'search_available_slots' }] },
-          suggestion_meta: { 'agent' => { 'id' => 10, 'name' => 'Администратор' } }
+          suggestion_meta: { 'agent' => { 'id' => 10, 'name' => 'Администратор' } },
+          pending_actions: [{ 'id' => 'act-1', 'title' => 'Записать на приём', 'status' => 'pending' }]
         }
       )
 
@@ -80,6 +81,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Tasks', type: :request do
       expect(json_response[:request_id]).to be_present
       expect(json_response.dig(:captain_trace, :reasoning)).to eq('Checked slots')
       expect(json_response.dig(:suggestion_meta, :agent, :name)).to eq('Администратор')
+      expect(json_response[:pending_actions]).to eq([{ id: 'act-1', title: 'Записать на приём', status: 'pending' }])
     end
 
     it 'returns a graceful error payload instead of 500 when the task service raises Timeout::Error' do
@@ -95,6 +97,75 @@ RSpec.describe 'Api::V1::Accounts::Captain::Tasks', type: :request do
       expect(response).to have_http_status(:success)
       expect(json_response[:message]).to be_nil
       expect(json_response[:error]).to be_present
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/captain/tasks/approve_action and reject_action' do
+    let(:inbox) { create(:inbox, account: account) }
+    let(:conversation) { create(:conversation, account: account, inbox: inbox) }
+    let(:approval_service) { instance_double(Captain::ReplySuggestion::ActionApprovalService) }
+
+    before do
+      allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:new).with(
+        account: account,
+        user: agent,
+        conversation_display_id: conversation.display_id
+      ).and_return(approval_service)
+    end
+
+    it 'approves a pending action via Captain::ReplySuggestion::ActionApprovalService' do
+      allow(approval_service).to receive(:approve!).with(
+        action_id: 'act-123',
+        digest: 'dig-abc'
+      ).and_return({ 'action_id' => 'act-123', 'status' => 'approved', 'title' => 'Записать на приём' })
+
+      post "#{tasks_path}/approve_action",
+           params: {
+             conversation_display_id: conversation.display_id,
+             action_id: 'act-123',
+             digest: 'dig-abc'
+           },
+           headers: agent.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(json_response[:ok]).to be(true)
+      expect(json_response.dig(:action, :status)).to eq('approved')
+    end
+
+    it 'rejects a pending action via Captain::ReplySuggestion::ActionApprovalService' do
+      allow(approval_service).to receive(:reject!).with(
+        action_id: 'act-123'
+      ).and_return({ 'action_id' => 'act-123', 'status' => 'rejected', 'title' => 'Записать на приём' })
+
+      post "#{tasks_path}/reject_action",
+           params: {
+             conversation_display_id: conversation.display_id,
+             action_id: 'act-123'
+           },
+           headers: agent.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(json_response[:ok]).to be(true)
+      expect(json_response.dig(:action, :status)).to eq('rejected')
+    end
+
+    it 'returns 404 when action_id is not found' do
+      allow(approval_service).to receive(:approve!).and_raise(
+        Captain::ReplySuggestion::ActionApprovalService::NotFoundError.new('Not found')
+      )
+
+      post "#{tasks_path}/approve_action",
+           params: {
+             conversation_display_id: conversation.display_id,
+             action_id: 'missing-id'
+           },
+           headers: agent.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:not_found)
+      expect(json_response[:error]).to eq('Not found')
     end
   end
 

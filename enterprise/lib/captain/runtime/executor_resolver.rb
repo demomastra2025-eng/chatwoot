@@ -37,7 +37,11 @@ class Captain::Runtime::ExecutorResolver
     @agents = Array(context[:agent_graph])
     @parts = Array(context[:parts])
     @current_id = context.dig(:state, :assistant_id)
+    @bound_tools_known = context.key?(:captain_v2_bound_tool_ids)
     @bound_tool_ids = Array(context[:captain_v2_bound_tool_ids]).map(&:to_s)
+    @visited_source_ids = Captain::Runtime::Runner.visited_handoff_source_ids(context)
+    @transfer_guarded = ActiveModel::Type::Boolean.new.cast(context[:transfer_guarded])
+    @reply_suggestion = Captain::Runtime::Runner.reply_suggestion?(context)
   end
 
   # Returns copies of the parts that carry the registry's integer executor_agent_id instead of the model's executor.
@@ -209,14 +213,23 @@ class Captain::Runtime::ExecutorResolver
       "#{reference} and link_action answer, correction or cancellation (plan_request with mode council and ONLY that part)."
   end
 
-  # The action is the one colleague's, and the message is not an answer to its open part: the conversation goes to that colleague.
+  # The action is the one colleague's, and the message is not an answer to its open part: the conversation goes to that colleague
+  # only when its transfer tool is actually bound and that colleague has not already handed the conversation over in this run.
   def transfer_route(agent_id, name)
     tool = Captain::HandoffNaming.tool_name_for(name, record_id: agent_id)
-    if @bound_tool_ids.empty? || @bound_tool_ids.include?(tool)
+    if transfer_tool_available?(agent_id, tool)
       return "If all actions of the message belong to #{name}, transfer the conversation to #{name} with #{tool} and plan nothing."
     end
+    return "If all actions of the message belong to #{name}, handle the request with your own tools and instructions." if @reply_suggestion
 
     "If all actions of the message belong to #{name}, do them with your own tools, or call handoff for staff."
+  end
+
+  def transfer_tool_available?(agent_id, tool)
+    return false if @transfer_guarded || @visited_source_ids.include?(agent_id)
+    return @bound_tool_ids.include?(tool) if @bound_tools_known
+
+    true
   end
 
   def open_numbers_of(agent_id)

@@ -13,10 +13,17 @@ module Captain::Runtime::CoordinationPrompt
     4. If the message holds actions for two or more different agents, call plan_request once to split it; each agent does its part right away.
     5. Staff are reached through handoff.
   RULES
+  SUGGESTION_WORKING_TOGETHER = <<~RULES.chomp.freeze
+    How to work together:
+    1. Draft the suggested reply yourself whenever your own instructions, the FAQ, the service catalog and your tools are enough.
+    2. Every agent can use the FAQ and the service catalog.
+    3. Transfer the conversation to a colleague only when the patient's message belongs to that colleague's specialist domain or requires tools only that colleague has, so that colleague prepares the action or drafts the suggested reply.
+  RULES
   TRANSFERRED_RULE = 'The conversation was transferred to you: the whole message is yours unless it holds an action for another colleague.'
+  SUGGESTION_TRANSFERRED_RULE = 'The conversation was transferred to you: handle the request and draft the suggested reply for the whole message using your own instructions and tools.'
   OPEN_PARTS_RULE = 'Link a message to an open part, by its number, with plan_request only when the message answers, corrects or cancels ' \
                     'that part (for a part that waits for the patient: when it answers the question shown). Every other message is a new request.'
-  PLAN_ACCEPTED_RULE ='The plan for this message is already accepted: continue only your own parts and do not call plan_request again.'
+  PLAN_ACCEPTED_RULE = 'The plan for this message is already accepted: continue only your own parts and do not call plan_request again.'
   MENTION_IT = 'Mention it in your reply.'
   FRAGMENT_LIMIT = 200
   QUESTION_LIMIT = 600
@@ -49,8 +56,16 @@ module Captain::Runtime::CoordinationPrompt
   def colleagues_block(actor, peers, context)
     name = actor&.dig(:name).to_s.squish.tr('"', "'")
     identity = [(%(You are "#{name}";) if name.present?), 'you and your colleagues answer as one clinic.'].compact.join(' ').upcase_first
-    rules = [WORKING_TOGETHER, (TRANSFERRED_RULE if context[:handoff_count].to_i.positive?)] unless context[:transfer_guarded]
+    rules = working_rules(context) unless context[:transfer_guarded]
     ['# Colleagues on this channel', identity, *peers.map { |peer| peer_line(peer) }, *rules].compact.join("\n")
+  end
+
+  def working_rules(context)
+    if Captain::Runtime::Runner.reply_suggestion?(context)
+      [SUGGESTION_WORKING_TOGETHER, (SUGGESTION_TRANSFERRED_RULE if context[:handoff_count].to_i.positive?)]
+    else
+      [WORKING_TOGETHER, (TRANSFERRED_RULE if context[:handoff_count].to_i.positive?)]
+    end
   end
 
   def peer_line(peer)
@@ -67,7 +82,8 @@ module Captain::Runtime::CoordinationPrompt
     return '' if open_parts.empty?
 
     rows = open_parts.map { |part| "- #{open_part_segments(parts, part, graph).compact_blank.join(' · ')}" }
-    rule = OPEN_PARTS_RULE unless context[:part_plan_accepted] || context[:transfer_guarded]
+    rule = OPEN_PARTS_RULE unless context[:part_plan_accepted] || context[:transfer_guarded] ||
+                                  Captain::Runtime::Runner.reply_suggestion?(context)
     ['# Open parts (data)', *rows, rule].compact.join("\n")
   end
 

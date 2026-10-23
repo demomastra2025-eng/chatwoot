@@ -131,6 +131,36 @@ class TasksAPI extends ApiClient {
       message_id: messageId,
     });
   }
+
+  /**
+   * Approves and executes a pending action proposed during reply_suggestion.
+   * @param {Object} options
+   * @param {string} options.actionId - The pending action ID.
+   * @param {string|number} [options.conversationId] - The conversation display ID.
+   * @param {string} [options.digest] - Optional integrity digest of the proposal.
+   * @returns {Promise}
+   */
+  approveAction({ actionId, conversationId, digest } = {}) {
+    return axios.post(`${this.url}/approve_action`, {
+      action_id: actionId,
+      conversation_display_id: conversationId,
+      ...(digest ? { digest } : {}),
+    });
+  }
+
+  /**
+   * Rejects a pending action proposed during reply_suggestion.
+   * @param {Object} options
+   * @param {string} options.actionId - The pending action ID.
+   * @param {string|number} [options.conversationId] - The conversation display ID.
+   * @returns {Promise}
+   */
+  rejectAction({ actionId, conversationId } = {}) {
+    return axios.post(`${this.url}/reject_action`, {
+      action_id: actionId,
+      conversation_display_id: conversationId,
+    });
+  }
 }
 
 export default new TasksAPI();

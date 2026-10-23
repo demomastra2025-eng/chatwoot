@@ -16,6 +16,8 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
   # The last sentence of every transfer tool: when to use it. Actions of two or more agents are a plan (plan_request).
   WHEN_TO_USE = 'Use it when the patient\'s message holds actions of this colleague only; the colleague also answers the questions ' \
                 'of the message.'
+  SUGGESTION_WHEN_TO_USE = 'Use it when the patient\'s request belongs to this colleague\'s specialist domain or requires tools ' \
+                           'only this colleague has, so this colleague prepares the action or drafts the suggested reply.'
   RETURN_TO_SOURCE = 'The conversation came from that colleague; transfer to the colleague who owns this request, or answer it yourself.'
 
   attr_reader :target_agent
@@ -26,8 +28,9 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
     Captain::HandoffNaming.tool_name_for(target_agent.name, record_id: record_id)
   end
 
-  def initialize(target_agent, source_agent: nil)
+  def initialize(target_agent, source_agent: nil, read_only_routing: false)
     @target_agent = target_agent
+    @read_only_routing = read_only_routing
     @tool_name = self.class.tool_name_for(target_agent)
     display_name = target_agent.respond_to?(:display_name) ? target_agent.display_name : target_agent.name
     responsibility = target_agent.respond_to?(:routing_description) ? target_agent.routing_description.to_s.squish.first(120) : ''
@@ -67,12 +70,13 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
       entry = Captain::Assistant.find_by(id: context.dig(:state, :entry_assistant_id), account_id: context.dig(:state, :account_id))
       inbox = Inbox.find_by(id: context[:agent_inbox_id], account_id: context.dig(:state, :account_id)) if context[:agent_inbox_id]
       graph = Captain::AgentGraph.new(entry, inbox: inbox) if entry
-      unless graph && graph.allows?(graph.find(source_id), graph.find(@target_agent.assistant_id))
+      suggestion = Captain::Runtime::Runner.reply_suggestion?(context)
+      unless graph && graph.allows?(graph.find(source_id), graph.find(@target_agent.assistant_id), suggestion_tools: suggestion)
         record_guard(context, 'routing_changed')
         return Captain::ToolResult.failure(error: 'Agent routing changed; this handoff is no longer available', retryable: false)
       end
     end
-    if context[:handoff_count].to_i >= Captain::Runtime::Runner::MAX_TRANSFERS
+    if context[:handoff_count].to_i >= Captain::Runtime::Runner.max_transfers_for(context)
       record_guard(context, 'handoff_limit')
       context[:transfer_guard_active] = true
       return halt('')
@@ -106,7 +110,8 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
     capabilities = capabilities.to_s.delete_prefix('Can: ')
     text = capabilities.present? ? "#{title}: #{capabilities}" : "#{title}."
     text = "#{text.end_with?('.', '!', '?') ? text : "#{text}."} Note: #{responsibility}" if responsibility.present?
-    "#{text.end_with?('.', '!', '?') ? text : "#{text}."} #{WHEN_TO_USE}"
+    when_to_use = @read_only_routing ? SUGGESTION_WHEN_TO_USE : WHEN_TO_USE
+    "#{text.end_with?('.', '!', '?') ? text : "#{text}."} #{when_to_use}"
   end
 
   # The colleague's tool ids come without building its tools (a LazyAgent reads them from the assistant). The line says what the
@@ -123,13 +128,16 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
   # An agent without an assistant ID has no routing identity, so it is never "the previous source".
   def return_to_previous_source?(context)
     target_id = @target_agent.assistant_id
-    target_id.present? && context[:previous_handoff_source_id] == target_id
+    return false if target_id.blank?
+
+    visited_sources = Array(context[:visited_handoff_source_ids])
+    visited_sources.include?(target_id) || context[:previous_handoff_source_id] == target_id
   end
 
   def record_guard(context, reason)
     Captain::Runtime::CoordinationEvents.publish(
       'agent.transfer_guard', context: context, reason: reason,
-      from_agent_id: context.dig(:state, :assistant_id), to_agent_id: @target_agent.assistant_id
+                              from_agent_id: context.dig(:state, :assistant_id), to_agent_id: @target_agent.assistant_id
     )
   end
 end

@@ -84,7 +84,7 @@ class Captain::Runtime::ChatFactory
       # keeps its own tools and its human handoff, and loses only the transfer and plan tools.
       part = context_wrapper.context[:part_run]
       transfers_open = !part && !context_wrapper.context[:transfer_guarded]
-      handoff_tools = (transfers_open ? eligible_handoffs(agent) : []).map do |target_agent|
+      handoff_tools = (transfers_open ? eligible_handoffs(agent, context_wrapper.context) : []).map do |target_agent|
         Captain::Runtime::ToolWrapper.new(Captain::Runtime::HandoffTool.new(target_agent, source_agent: agent), context_wrapper)
       end
 
@@ -141,9 +141,12 @@ class Captain::Runtime::ChatFactory
     end
 
     # plan_request coordinates agents (a council, the answer to an open part), so a lone agent (no peers) does not get it. It
-    # has no plan to fill and no peers to name. Its transfer tools are the peers' too: with no peer there is none.
+    # has no plan to fill and no peers to name. Its transfer tools are the peers' too: with no peer there is none. In
+    # reply_suggestion mode plan_request is disabled so a single agent drafts the suggested reply directly.
     def plan_request_available?(context)
-      Captain::Runtime::PartRegistry.planning_available?(context) && !context[:part_plan_accepted]
+      !Captain::Runtime::Runner.reply_suggestion?(context) &&
+        Captain::Runtime::PartRegistry.planning_available?(context) &&
+        !context[:part_plan_accepted]
     end
 
     # The coordination block describes peers, their transfer tools and the request plan, or an inherited task queue. A lone
@@ -251,7 +254,7 @@ class Captain::Runtime::ChatFactory
       bound_tool_names = if finalization_only
                            []
                          elsif transfers_open
-                           (handoff_tool_names(agent) + regular_tool_names(agent)).uniq
+                           (handoff_tool_names(agent, context_wrapper.context) + regular_tool_names(agent)).uniq
                          else
                            regular_tool_names(agent)
                          end
@@ -268,12 +271,17 @@ class Captain::Runtime::ChatFactory
       context_wrapper.context[:captain_v2_bound_tool_gate] = true
     end
 
-    def handoff_tool_names(agent)
-      eligible_handoffs(agent).map { |target_agent| Captain::Runtime::HandoffTool.tool_name_for(target_agent) }
+    def handoff_tool_names(agent, context = nil)
+      eligible_handoffs(agent, context).map { |target_agent| Captain::Runtime::HandoffTool.tool_name_for(target_agent) }
     end
 
-    def eligible_handoffs(agent)
-      agent.handoff_agents.select { |target| Captain::Runtime::TransferCapabilities.useful?(agent, target) }
+    def eligible_handoffs(agent, context = nil)
+      visited_ids = Captain::Runtime::Runner.visited_handoff_source_ids(context)
+      agent.handoff_agents.select do |target|
+        target_id = target.respond_to?(:assistant_id) ? target.assistant_id : nil
+        (target_id.blank? || !visited_ids.include?(target_id)) &&
+          Captain::Runtime::TransferCapabilities.useful?(agent, target)
+      end
     end
 
     def regular_tool_names(agent)

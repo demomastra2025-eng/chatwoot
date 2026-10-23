@@ -339,6 +339,8 @@ class Captain::Assistant::AgentRunnerService
     response['agent_name'] = result.context&.dig(:current_agent)
     response['agent_id'] = @acting_assistant_id
     response['agent_tasks'] = @agent_tasks if @agent_tasks.present?
+    pending_actions = Array(result.context&.dig(:captain_suggestion_pending_actions))
+    response['pending_actions'] = pending_actions if pending_actions.any?
     response['council_contributors'] = result.context[:council_contributors] if result.context&.dig(:council_contributors).present?
     # Set by the council only when a part is unresolved or failed technically; the response builder then performs the handoff.
     response['council_handoff'] = result.context[:council_handoff].to_h.deep_stringify_keys if result.context&.dig(:council_handoff).present?
@@ -1002,7 +1004,7 @@ class Captain::Assistant::AgentRunnerService
     agent_options = {
       model_override: @test_overrides[:model],
       temperature_override: @test_overrides[:temperature],
-      read_only_tools: (true if suggestion_run?)
+      suggestion_tools: (true if suggestion_run?)
     }.compact
     return [@assistant.agent(**agent_options)] unless @assistant.persisted?
 

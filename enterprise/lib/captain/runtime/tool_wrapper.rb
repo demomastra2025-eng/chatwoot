@@ -59,6 +59,7 @@ class Captain::Runtime::ToolWrapper
        context_wrapper_context[:pending_response_cancellation] || context_wrapper_context[:technical_failure]
       return RubyLLM::Tool::Halt.new('Control has been transferred; remaining calls in this batch were not executed.')
     end
+
     @operation_scope = Captain::Runtime::TaskQueue.new(context_wrapper_context).operation_scope if context_wrapper_context[:agent_session]
     @operation_target = nil
     normalized_args = normalize_args(args)
@@ -183,9 +184,15 @@ class Captain::Runtime::ToolWrapper
   end
 
   def execute_tool(tool_context, normalized_args)
-    result = Captain::Playground::ExecutionBoundary.execute(@tool, tool_context, normalized_args) do
-      @tool.execute(tool_context, **normalized_args)
-    end
+    result = if mutating_tool? && Captain::Runtime::Runner.reply_suggestion?(tool_context&.context)
+               Captain::ReplySuggestion::ActionApprovalService.intercept(
+                 tool: @tool, tool_context: tool_context, arguments: normalized_args
+               )
+             else
+               Captain::Playground::ExecutionBoundary.execute(@tool, tool_context, normalized_args) do
+                 @tool.execute(tool_context, **normalized_args)
+               end
+             end
     result_error = tool_safety_error_for(:tool_results, safety_checked_result(result))
     final_result = result_error || result
     @operation_guard&.finish(final_result) unless halt_result?(final_result)
@@ -217,6 +224,7 @@ class Captain::Runtime::ToolWrapper
   # The names of the actions this run has performed (a successful write that is not an annotation): staff are told which of them
   # came before a failure.
   def record_completed_action(result)
+    return if Captain::Runtime::Runner.reply_suggestion?(context_wrapper_context)
     return unless domain_mutating_tool? && reportable_failure_tool? && !halt_result?(result)
     return if Captain::Runtime::ToolFailure.annotation_tool?(@tool.name) || Captain::Runtime::ToolFailure.failure?(result)
 
@@ -805,10 +813,10 @@ class Captain::Runtime::ToolWrapper
 
   def tool_result_cache_digest(normalized_args)
     Digest::SHA256.hexdigest(JSON.generate(canonical_json_value({
-      tool_name: @tool.name.to_s, arguments: normalized_args,
-      actor_id: context_wrapper_context.dig(:state, :assistant_id),
-      task_scope: task_operation_scope
-    })))
+                                                                  tool_name: @tool.name.to_s, arguments: normalized_args,
+                                                                  actor_id: context_wrapper_context.dig(:state, :assistant_id),
+                                                                  task_scope: task_operation_scope
+                                                                })))
   end
 
   def mutation_execution_key

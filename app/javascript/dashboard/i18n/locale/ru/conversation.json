@@ -335,7 +335,15 @@
         "LIVE_HANDOFF": "Передача вопроса профильному агенту…",
         "LIVE_AGENT_TOOLS": "{agent} проверяет данные через инструменты…",
         "LIVE_TOOLS": "ИИ-агент проверяет данные через инструменты…",
-        "LIVE_AGENT_THINKING": "{agent} анализирует диалог и готовит ответ…"
+        "LIVE_AGENT_THINKING": "{agent} анализирует диалог и готовит ответ…",
+        "ACTION_AGENT_WANTS": "Агент {agent} хочет: {action}",
+        "ACTION_DEFAULT_WANTS": "Агент хочет: {action}",
+        "ACTION_ALLOW": "Разрешить",
+        "ACTION_DENY": "Запретить",
+        "ACTION_EXECUTING": "Выполняется…",
+        "ACTION_APPROVED": "Разрешено и выполнено",
+        "ACTION_REJECTED": "Отклонено",
+        "ACTION_FAILED": "Ошибка выполнения"
       }
     },
     "VISIBLE_TO_AGENTS": "Приватная заметка: видна только вам и вашей команде",

@@ -9,9 +9,10 @@ class Captain::AgentGraph
   # ask "who may act" treat this as "nobody"; it stays an ArgumentError for the others.
   class EntryDisabledError < ArgumentError; end
 
-  def initialize(entry, inbox: nil)
+  def initialize(entry, inbox: nil, standalone: false)
     @entry = entry
     @inbox = inbox
+    @standalone = standalone
   end
 
   attr_reader :entry, :inbox
@@ -51,9 +52,13 @@ class Captain::AgentGraph
     agents.find { |actor| Captain::HandoffNaming.safe_target_name(actor.name, record_id: actor.id) == key }
   end
 
-  def allows?(source, target)
+  def allows?(source, target, read_only_tools: false, suggestion_tools: false)
+    options = { read_only_tools: read_only_tools, suggestion_tools: suggestion_tools }.compact_blank
     !!(source && target && source.id != target.id && find(source.id) && find(target.id) &&
-      Captain::Runtime::TransferCapabilities.useful?(Captain::Runtime::LazyAgent.new(source), Captain::Runtime::LazyAgent.new(target)))
+      Captain::Runtime::TransferCapabilities.useful?(
+        Captain::Runtime::LazyAgent.new(source, options: options),
+        Captain::Runtime::LazyAgent.new(target, options: options)
+      ))
   end
 
   def payload
@@ -63,14 +68,16 @@ class Captain::AgentGraph
     end
   end
 
-  def payload_for(actor)
-    source = Captain::Runtime::LazyAgent.new(actor)
+  def payload_for(actor, read_only_tools: false, suggestion_tools: false)
+    options = { read_only_tools: read_only_tools, suggestion_tools: suggestion_tools }.compact_blank
+    source = Captain::Runtime::LazyAgent.new(actor, options: options)
     allowed = agents.select do |candidate|
-      candidate.id == actor.id || Captain::Runtime::TransferCapabilities.useful?(source, Captain::Runtime::LazyAgent.new(candidate))
+      candidate.id == actor.id ||
+        Captain::Runtime::TransferCapabilities.useful?(source, Captain::Runtime::LazyAgent.new(candidate, options: options))
     end
     allowed.map do |candidate|
       row = { id: candidate.id, key: "assistant_#{candidate.id}", name: candidate.name }
-      target = Captain::Runtime::LazyAgent.new(candidate)
+      target = Captain::Runtime::LazyAgent.new(candidate, options: options)
       action = candidate.id == actor.id ? '' : Captain::Runtime::TransferCapabilities.actions(source, target)
       note = candidate.routing_description.to_s.squish.first(120).presence
       row[:description] = [action, ("Note: #{note}" if note)].compact_blank.join('. ')
@@ -82,6 +89,7 @@ class Captain::AgentGraph
 
   # For an external agent on a text channel or in the workspace sandbox, every active external agent is a peer.
   def channel_members
+    return [] if @standalone
     return [] unless entry.external_agent?
 
     return [] if inbox&.channel_type == 'Channel::Voice'

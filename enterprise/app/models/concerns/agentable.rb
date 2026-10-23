@@ -1,10 +1,9 @@
 module Concerns::Agentable
   extend ActiveSupport::Concern
 
-  def agent(model_override: nil, temperature_override: nil, read_only_tools: false)
+  def agent(model_override: nil, temperature_override: nil, read_only_tools: false, suggestion_tools: false)
     built_tools = time_agent_phase('agent_tools') do
-      tools = agent_tools
-      read_only_tools ? Captain::Runtime::PartTools.filter_read_only(tools) : tools
+      filter_agent_tools(agent_tools, read_only_tools: read_only_tools, suggestion_tools: suggestion_tools)
     end
     Captain::Runtime::Agent.new(
       name: agent_name,
@@ -12,7 +11,9 @@ module Concerns::Agentable
       tools: built_tools,
       model: time_agent_phase('agent_model') { model_override.presence || agent_model },
       temperature: time_agent_phase('agent_temperature') { temperature_override.nil? ? agent_temperature : temperature_override.to_f },
-      response_schema: time_agent_phase('agent_response_schema') { agent_response_schema }
+      response_schema: time_agent_phase('agent_response_schema') { agent_response_schema },
+      read_only_tools: read_only_tools,
+      suggestion_tools: suggestion_tools
     )
   end
 
@@ -149,6 +150,13 @@ module Concerns::Agentable
 
   def agent_tools
     []  # Default implementation, override if needed
+  end
+
+  def filter_agent_tools(tools, read_only_tools: false, suggestion_tools: false)
+    return Captain::Runtime::PartTools.filter_read_only(tools) if read_only_tools
+    return Captain::Runtime::PartTools.filter(tools) if suggestion_tools
+
+    tools
   end
 
   def agent_temperature

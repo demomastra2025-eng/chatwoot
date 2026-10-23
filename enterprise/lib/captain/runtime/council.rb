@@ -42,9 +42,10 @@ class Captain::Runtime::Council
     :captain_v2_mutating_tool_executions, :captain_v2_current_tool_batch_id, :captain_v2_mutating_tool_calls_by_batch,
     :captain_v2_bound_tool_ids, :captain_v2_bound_tool_ids_by_agent, :captain_v2_bound_tool_gate, :captain_v2_completed_tool_names,
     :captain_v2_completed_tool_results, :captain_v2_completed_actions, :captain_v2_service_specific_scheduling, :captain_faq_outcome,
+    :captain_suggestion_pending_actions,
     :outcome_facts,
     :captain_v2_handoff_tool_called,
-    :pending_handoff, :pending_human_handoff, :pending_response_cancellation, :handoff_count, :previous_handoff_source_id,
+    :pending_handoff, :pending_human_handoff, :pending_response_cancellation, :handoff_count, :previous_handoff_source_id, :visited_handoff_source_ids,
     :part_plan, :part_plan_refused, :part_plan_processed, :transfer_guard, :transfer_guard_active, :transfer_guarded,
     :technical_failure, :council_handoff, :council_note, :council_untold_part_ids, :council_contributors, :council_patient_language,
     :__otel_tracing,
@@ -80,7 +81,11 @@ class Captain::Runtime::Council
   # tool recorded it). It does not discard the other parts: they are answered, and the conversation goes to staff after the reply,
   # as for a part that ends unavailable.
   def initialize(context:, graph:, account:, llm_context: nil, model: nil, callbacks: nil, staff_request: nil)
-    @context, @graph, @account, @llm_context, @model = context, graph, account, llm_context, model
+    @context = context
+    @graph = graph
+    @account = account
+    @llm_context = llm_context
+    @model = model
     @staff_request = staff_request.to_h.with_indifferent_access.presence
     @callbacks = callbacks || {}
     @entries = {}
@@ -101,11 +106,11 @@ class Captain::Runtime::Council
     reply = assemble(parts.map { |part| @entries.fetch(part['id']) })
     @context[:council_contributors] = contributors
     Captain::Runtime::CoordinationEvents.council_finished(context: @context, participant_ids: @participants,
-                                                           part_ids: ids, outcome: 'assembled')
+                                                          part_ids: ids, outcome: 'assembled')
     reply
   rescue StandardError
     Captain::Runtime::CoordinationEvents.council_finished(context: @context, participant_ids: @participants || [],
-                                                           part_ids: ids || [], outcome: 'unavailable')
+                                                          part_ids: ids || [], outcome: 'unavailable')
     raise
   ensure
     merge_tool_tracking
@@ -150,13 +155,13 @@ class Captain::Runtime::Council
   # The owner's own agent, without the tools that change who controls the conversation and without any handoff target: a part
   # never transfers the conversation. It answers with the structured result of a part.
   def part_agent(actor)
-    read_only = (@context.dig(:state, :source) || @context.dig(:state, 'source')).to_s == 'reply_suggestion'
-    runtime = read_only ? actor.agent(read_only_tools: true) : actor.agent
-    tools = read_only ? Captain::Runtime::PartTools.filter_read_only(runtime.tools) : Captain::Runtime::PartTools.filter(runtime.tools)
+    suggestion = (@context.dig(:state, :source) || @context.dig(:state, 'source')).to_s == 'reply_suggestion'
+    runtime = suggestion ? actor.agent(suggestion_tools: true) : actor.agent
+    tools = Captain::Runtime::PartTools.filter(runtime.tools)
     Captain::Runtime::Agent.new(
       name: runtime.name, instructions: runtime.instructions, tools: tools,
       model: runtime.model, temperature: runtime.temperature, headers: runtime.headers, params: runtime.params,
-      response_schema: Captain::Runtime::PartSchema
+      response_schema: Captain::Runtime::PartSchema, suggestion_tools: suggestion
     ).tap { |agent| agent.assistant_id = actor.id }
   end
 
@@ -591,6 +596,10 @@ class Captain::Runtime::Council
           facts[kind] = (Array(facts[kind]) + Array(values)).last(Captain::OutcomeFacts::LIMIT)
         end
         @context[:captain_v2_artifact_ids] = Array(@context[:captain_v2_artifact_ids]) | Array(tracking[:artifact_ids])
+        if tracking[:pending_actions].present?
+          (@context[:captain_suggestion_pending_actions] ||= []).concat(Array(tracking[:pending_actions]))
+          @context[:captain_suggestion_pending_actions].uniq! { |item| item['action_id'] || item[:action_id] }
+        end
       end
       @results = []
     end

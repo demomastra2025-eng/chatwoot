@@ -1,0 +1,1041 @@
+# frozen_string_literal: true
+
+require 'digest'
+require 'json'
+require 'securerandom'
+
+class Captain::ReplySuggestion::ActionApprovalService
+  TTL = 30.minutes.to_i
+  LOCK_TTL = 30
+  REDIS_KEY_PREFIX = 'captain:reply_suggestion:action_approval'
+  CONVERSATION_INDEX_PREFIX = 'captain:reply_suggestion:conversation_actions'
+  LOCK_PREFIX = 'captain:reply_suggestion:action_lock'
+  CONTEXT_KEY = :captain_suggestion_pending_actions
+
+  PENDING_STATUS = 'pending'
+  EXECUTING_STATUS = 'executing'
+  APPROVED_STATUS = 'approved'
+  REJECTED_STATUS = 'rejected'
+  FAILED_STATUS = 'failed'
+
+  APPOINTMENT_TOOLS = %w[create_appointment update_appointment cancel_appointment].freeze
+
+  ACTION_TITLES = {
+    'create_appointment' => 'Записать на приём',
+    'update_appointment' => 'Перенести или изменить запись на приём',
+    'cancel_appointment' => 'Отменить запись на приём',
+    'create_deal' => 'Создать сделку',
+    'update_deal' => 'Обновить сделку',
+    'transition_deal_stage' => 'Сменить этап сделки',
+    'create_task' => 'Создать задачу',
+    'update_task' => 'Обновить задачу',
+    'change_task_status' => 'Изменить статус задачи',
+    'update_contact' => 'Обновить карточку контакта',
+    'update_my_contact' => 'Обновить карточку контакта',
+    'create_company' => 'Создать компанию',
+    'update_company' => 'Обновить компанию',
+    'add_private_note' => 'Добавить приватную заметку',
+    'add_contact_note' => 'Добавить заметку к контакту',
+    'add_label_to_conversation' => 'Добавить метку к диалогу',
+    'update_priority' => 'Изменить приоритет диалога'
+  }.freeze
+
+  class Error < StandardError; end
+  class NotFoundError < Error; end
+  class ForbiddenError < Error; end
+  class InvalidStateError < Error; end
+
+  class ExecutionError < Error
+    attr_reader :action
+
+    def initialize(message, action: nil)
+      @action = action
+      super(message)
+    end
+  end
+
+  class << self
+    def intercept(tool:, tool_context:, arguments:)
+      new_interception(tool: tool, tool_context: tool_context, arguments: arguments)
+    end
+
+    def pending_for(account_id:, conversation_id:)
+      return [] if account_id.blank? || conversation_id.blank?
+
+      raw_ids = Redis::Alfred.get(conversation_index_key(account_id, conversation_id))
+      ids = raw_ids.present? ? Array(JSON.parse(raw_ids)) : []
+      items = ids.filter_map do |action_id|
+        record = fetch_record(action_id)
+        next unless record && record['account_id'].to_i == account_id.to_i && record['conversation_id'].to_i == conversation_id.to_i
+        next unless record['status'] == PENDING_STATUS
+
+        public_payload(record)
+      end
+      items.uniq { |item| item['digest'] || item['action_id'] }
+    rescue StandardError => e
+      Rails.logger.warn("[CAPTAIN][ActionApprovalService] pending_for failed: #{e.class}: #{e.message}")
+      []
+    end
+
+    def fetch_record(action_id)
+      return if action_id.blank?
+
+      raw = Redis::Alfred.get(redis_key(action_id))
+      return if raw.blank?
+
+      parsed = JSON.parse(raw)
+      parsed.is_a?(Hash) ? parsed : nil
+    rescue StandardError
+      nil
+    end
+
+    def store_record!(record)
+      action_id = record['action_id'].to_s
+      return if action_id.blank?
+
+      Redis::Alfred.set(redis_key(action_id), JSON.generate(record), ex: TTL)
+      if record['account_id'].present? && record['conversation_id'].present?
+        idx_key = conversation_index_key(record['account_id'], record['conversation_id'])
+        raw_ids = Redis::Alfred.get(idx_key)
+        existing_ids = begin
+          raw_ids.present? ? Array(JSON.parse(raw_ids)) : []
+        rescue StandardError
+          []
+        end
+        updated_ids = ([action_id] + existing_ids).uniq.first(25)
+        Redis::Alfred.set(idx_key, JSON.generate(updated_ids), ex: TTL)
+      end
+      record
+    end
+
+    def public_payload(record)
+      return {} unless record.is_a?(Hash)
+
+      {
+        'action_id' => record['action_id'],
+        'tool_name' => record['tool_name'],
+        'status' => record['status'],
+        'title' => record['title'],
+        'description' => record['description'],
+        'details' => Array(record['details']),
+        'agent' => record['agent'],
+        'digest' => record['digest'],
+        'conversation_id' => record['conversation_id'],
+        'conversation_display_id' => record['conversation_display_id'],
+        'created_at' => record['created_at'],
+        'approved_at' => record['approved_at'],
+        'rejected_at' => record['rejected_at'],
+        'failed_at' => record['failed_at'],
+        'error_message' => record['error_message'],
+        'result_summary' => record['result_summary']
+      }.compact
+    end
+
+    def canonical_tool_name(name)
+      Captain::Runtime::ToolFailure.canonical_name(name)
+    end
+
+    def redis_key(action_id)
+      "#{REDIS_KEY_PREFIX}:#{action_id}"
+    end
+
+    def conversation_index_key(account_id, conversation_id)
+      "#{CONVERSATION_INDEX_PREFIX}:#{account_id}:#{conversation_id}"
+    end
+
+    def lock_key(action_id)
+      "#{LOCK_PREFIX}:#{action_id}"
+    end
+
+    private
+
+    def new_interception(tool:, tool_context:, arguments:)
+      context = tool_context&.context || {}
+      state = (tool_context&.state || context[:state] || {}).to_h.with_indifferent_access
+      assistant = resolve_assistant(tool, state)
+      account = assistant&.account || Account.find_by(id: state[:account_id])
+      conversation = account&.conversations&.find_by(id: state.dig(:conversation, :id))
+      normalized_args = arguments.to_h.deep_symbolize_keys
+      tool_id = canonical_tool_name(tool.name)
+
+      policy_or_scope_error = verify_policy_and_scope(tool, tool_context, normalized_args)
+      return policy_or_scope_error if policy_or_scope_error
+
+      early_or_invalid = validate_domain_call(
+        tool_id: tool_id, assistant: assistant, account: account, conversation: conversation,
+        state: state, arguments: normalized_args
+      )
+      return early_or_invalid if early_or_invalid
+
+      record = build_or_reuse_proposal(
+        context: context, state: state, assistant: assistant, account: account,
+        conversation: conversation, tool_id: tool_id, arguments: normalized_args
+      )
+      render_interception_result(record)
+    end
+
+    def resolve_assistant(tool, state)
+      actor = tool.send(:assistant) if tool.respond_to?(:assistant, true)
+      actor || Captain::Assistant.find_by(id: state[:assistant_id])
+    end
+
+    def verify_policy_and_scope(tool, tool_context, arguments)
+      return unless tool.is_a?(Captain::Tools::BasePublicTool)
+
+      tool.send(:ensure_tool_execution_allowed!)
+      tool.send(:patient_scope_for, tool_context.state).authorize_public_tool!(tool.name, arguments, tool_context.state)
+      nil
+    rescue Captain::Tools::Agent::PatientScope::Denied
+      if canonical_tool_name(tool.name).in?(APPOINTMENT_TOOLS)
+        JSON.generate(
+          success: false,
+          reason: 'not_found',
+          error_class: Captain::Tools::Agent::AppointmentResult::ERROR_CLASS_BUSINESS
+        )
+      else
+        Captain::Tools::Agent::PatientScope::FAILURE
+      end
+    rescue ArgumentError => e
+      business_failure(e.message, reason: 'validation_error')
+    end
+
+    def validate_domain_call(tool_id:, assistant:, account:, conversation:, state:, arguments:)
+      case tool_id
+      when 'create_appointment'
+        validate_create_appointment(assistant: assistant, account: account, conversation: conversation, arguments: arguments)
+      when 'update_appointment'
+        validate_update_appointment(assistant: assistant, account: account, conversation: conversation, arguments: arguments)
+      when 'cancel_appointment'
+        validate_cancel_appointment(assistant: assistant, account: account, conversation: conversation, arguments: arguments)
+      else
+        validate_generic_domain_call(tool_id: tool_id, account: account, conversation: conversation, state: state, arguments: arguments)
+      end
+    end
+
+    def validate_create_appointment(assistant:, account:, conversation:, arguments:)
+      return business_failure('Scheduling is not available', reason: 'validation_error') unless assistant && account
+
+      operation = Captain::Tools::Operations::AppointmentOperations.new(
+        assistant: assistant, conversation: conversation, actor: assistant
+      )
+      operation.send(:ensure_feature_enabled!, 'scheduling', 'Scheduling is not enabled for this account')
+      resource_id = operation.send(:resolve_agent_resource_id, arguments[:resource_id], arguments[:service_id])
+      starts_at, ends_at = operation.send(
+        :normalize_appointment_times, resource_id: resource_id, starts_at: arguments[:starts_at], ends_at: arguments[:ends_at]
+      )
+      validated_service = operation.send(
+        :validate_booking_inputs!, starts_at: starts_at, ends_at: ends_at,
+                                   duration_min: arguments[:duration_min], service_id: arguments[:service_id]
+      )
+      service_id = validated_service&.id || operation.send(:offered_service_id, resource_id)
+      custom_attrs = if arguments[:custom_attributes].present?
+                       operation.send(:parsed_hash, arguments[:custom_attributes], field_name: 'custom_attributes')
+                     end
+
+      patient_id = conversation&.contact_id
+      if arguments[:patient].present?
+        patient_id = validate_patient_booking_arguments!(assistant: assistant, conversation: conversation, patient: arguments[:patient])
+      end
+
+      existing = operation.send(
+        :existing_booking,
+        { resource_id: resource_id, service_id: service_id, starts_at: starts_at, contact_id: patient_id }
+      )
+      return JSON.generate(Captain::Tools::Agent::AppointmentResult.already_booked(existing, action: 'create_appointment')) if existing.present?
+
+      resource = account.scheduling_resources.find(resource_id)
+      ensure_resource_available_for_scheduling!(resource)
+      service = validated_service || (account.scheduling_services.find(service_id) if service_id.present?)
+      validate_service_available_for_resource!(account: account, resource: resource, service: service) if service.present?
+      validate_appointment_custom_attributes!(account: account, custom_attributes: custom_attrs, new_record: true)
+      validate_slot_availability!(
+        account: account, resource: resource, starts_at: starts_at, ends_at: ends_at,
+        duration_min: arguments[:duration_min], service: service
+      )
+
+      nil
+    rescue StandardError => e
+      Captain::Tools::Agent::AppointmentResult.failure_output(e, account: account)
+    end
+
+    def validate_update_appointment(assistant:, account:, conversation:, arguments:)
+      return business_failure('Scheduling is not available', reason: 'validation_error') unless assistant && account
+
+      operation = Captain::Tools::Operations::AppointmentOperations.new(
+        assistant: assistant, conversation: conversation, actor: assistant
+      )
+      operation.send(:ensure_feature_enabled!, 'scheduling', 'Scheduling is not enabled for this account')
+      appointment = operation.send(
+        :target_appointment,
+        arguments[:appointment_id],
+        appointment_access_token: arguments[:appointment_access_token],
+        patient_confirmed: arguments[:patient_confirmed] == true
+      )
+      Scheduling::Appointments::MutationGuard.ensure_editable!(appointment)
+      Scheduling::Appointments::MutationGuard.ensure_assignable!(arguments)
+
+      starts_at, ends_at = operation.send(
+        :normalize_appointment_times,
+        resource_id: arguments[:resource_id] || appointment.resource_id,
+        starts_at: arguments[:starts_at],
+        ends_at: arguments[:ends_at]
+      )
+      validated_service = operation.send(
+        :validate_booking_inputs!,
+        starts_at: starts_at, ends_at: ends_at, duration_min: arguments[:duration_min],
+        service_id: arguments[:service_id], appointment: appointment
+      )
+      service_id = validated_service ? validated_service.id : arguments[:service_id]
+      params = build_update_comparison_params(arguments, starts_at: starts_at, ends_at: ends_at, service_id: service_id, operation: operation)
+      if operation.send(:appointment_unchanged?, appointment, params)
+        return JSON.generate(Captain::Tools::Agent::AppointmentResult.unchanged(appointment, action: 'update_appointment'))
+      end
+
+      resource = arguments[:resource_id].present? ? account.scheduling_resources.find(arguments[:resource_id]) : appointment.resource
+      if arguments[:resource_id].present? && arguments[:resource_id].to_i != appointment.resource_id
+        ensure_resource_available_for_scheduling!(resource)
+      end
+      validate_service_available_for_resource!(account: account, resource: resource, service: validated_service) if validated_service.present?
+      if params.key?(:custom_attributes)
+        validate_appointment_custom_attributes!(
+          account: account, custom_attributes: params[:custom_attributes],
+          current_attributes: appointment.custom_attributes, new_record: false
+        )
+      end
+
+      interval_or_resource_changed = starts_at.present? || ends_at.present? || arguments[:duration_min].present? ||
+                                     (arguments[:resource_id].present? && arguments[:resource_id].to_i != appointment.resource_id)
+      if interval_or_resource_changed
+        validate_slot_availability!(
+          account: account,
+          resource: resource,
+          starts_at: starts_at || appointment.starts_at,
+          ends_at: ends_at,
+          duration_min: arguments[:duration_min] || (appointment.duration_min unless validated_service),
+          service: validated_service || appointment.service,
+          ignore_appointment_id: appointment.id
+        )
+      end
+
+      nil
+    rescue StandardError => e
+      Captain::Tools::Agent::AppointmentResult.failure_output(e, account: account)
+    end
+
+    def build_update_comparison_params(arguments, starts_at:, ends_at:, service_id:, operation:)
+      params = {}
+      params[:resource_id] = arguments[:resource_id] unless arguments[:resource_id].nil?
+      params[:service_id] = service_id unless service_id.nil?
+      params[:starts_at] = starts_at unless starts_at.nil?
+      params[:ends_at] = ends_at unless ends_at.nil?
+      params[:duration_min] = arguments[:duration_min] unless arguments[:duration_min].nil?
+      params[:appointment_type] = arguments[:appointment_type] unless arguments[:appointment_type].nil?
+      params[:client_comment] = arguments[:client_comment] unless arguments[:client_comment].nil?
+      if arguments[:custom_attributes].present?
+        params[:custom_attributes] = operation.send(:parsed_hash, arguments[:custom_attributes], field_name: 'custom_attributes')
+      end
+      params
+    end
+
+    def validate_cancel_appointment(assistant:, account:, conversation:, arguments:)
+      return business_failure('Scheduling is not available', reason: 'validation_error') unless assistant && account
+
+      operation = Captain::Tools::Operations::AppointmentOperations.new(
+        assistant: assistant, conversation: conversation, actor: assistant
+      )
+      operation.send(:ensure_feature_enabled!, 'scheduling', 'Scheduling is not enabled for this account')
+      appointment = operation.send(
+        :target_appointment,
+        arguments[:appointment_id],
+        appointment_access_token: arguments[:appointment_access_token],
+        patient_confirmed: arguments[:patient_confirmed] == true
+      )
+      Scheduling::Appointments::MutationGuard.ensure_editable!(appointment)
+      nil
+    rescue StandardError => e
+      Captain::Tools::Agent::AppointmentResult.failure_output(e, account: account)
+    end
+
+    def ensure_resource_available_for_scheduling!(resource)
+      return if resource&.active? && !resource.deleted_from_scheduling?
+
+      raise Scheduling::Error.new(
+        code: 'RESOURCE_NOT_AVAILABLE_FOR_SCHEDULING',
+        message: 'Specialist is not available for scheduling',
+        status: :unprocessable_content
+      )
+    end
+
+    def validate_service_available_for_resource!(account:, resource:, service:)
+      price = service.prices.find_by(resource_id: resource.id)
+      resolved_price = price&.active? && price.price.to_i.positive? ? price.price : service.base_price
+      if !service.active? || resolved_price.to_i <= 0
+        raise Scheduling::Error.new(
+          code: 'SERVICE_NOT_AVAILABLE_FOR_RESOURCE',
+          message: 'Service is not available for the selected resource',
+          status: :unprocessable_content
+        )
+      end
+
+      return if resource.custom_attributes.to_h['medelement_specialist_code'].blank?
+
+      if service.custom_attributes.to_h['medelement_nomenclature_code'].blank?
+        raise Scheduling::Error.new(
+          code: 'MEDELEMENT_SERVICE_UNMAPPED',
+          message: 'Selected services must be linked to Medelement',
+          status: :unprocessable_content
+        )
+      end
+
+      linked_ids = account.scheduling_service_prices.active
+                          .where(resource_id: resource.id)
+                          .joins(:service)
+                          .where("NULLIF(scheduling_services.custom_attributes ->> 'medelement_nomenclature_code', '') IS NOT NULL")
+                          .pluck(:service_id)
+      return if linked_ids.empty? || linked_ids.include?(service.id)
+
+      raise Scheduling::Error.new(
+        code: 'MEDELEMENT_SERVICE_UNAVAILABLE',
+        message: 'Selected services are not linked to this Medelement specialist',
+        status: :unprocessable_content
+      )
+    end
+
+    def validate_appointment_custom_attributes!(account:, custom_attributes:, new_record:, current_attributes: {})
+      catalog = Crm::FieldCatalog.new(account: account, entity_kind: 'appointment', context: 'booking_intake')
+      return if catalog.definitions.blank?
+
+      sanitized_current = current_attributes.to_h.deep_stringify_keys.except('service_ids', 'services')
+      sanitized_incoming = custom_attributes&.to_h&.deep_stringify_keys&.except('service_ids', 'services', 'medelement_cabinet_code')
+      catalog.resolve_custom_attributes(
+        current_attributes: sanitized_current,
+        incoming_attributes: sanitized_incoming,
+        apply_defaults: new_record
+      )
+    end
+
+    def validate_slot_availability!(account:, resource:, starts_at:, ends_at: nil, duration_min: nil, service: nil, ignore_appointment_id: nil)
+      return if resource.blank? || starts_at.blank?
+
+      start_time = if starts_at.is_a?(Time) || starts_at.is_a?(ActiveSupport::TimeWithZone)
+                     starts_at
+                   else
+                     Scheduling::InputValidation.datetime(
+                       starts_at.to_s, field_name: 'starts_at'
+                     )
+                   end
+      resolved_duration = if duration_min.present?
+                            Scheduling::IntegerNumericNormalizer.normalize_or_zero(duration_min, field_name: :duration_min)
+                          elsif service&.duration_min.to_i.positive?
+                            service.duration_min.to_i
+                          else
+                            [resource.slot_duration_min.to_i, Scheduling::Constants::MIN_DURATION_MINUTES].max
+                          end
+      end_time = if ends_at.present?
+                   if ends_at.is_a?(Time) || ends_at.is_a?(ActiveSupport::TimeWithZone)
+                     ends_at
+                   else
+                     Scheduling::InputValidation.datetime(ends_at.to_s,
+                                                          field_name: 'ends_at')
+                   end
+                 else
+                   start_time + resolved_duration.minutes
+                 end
+
+      medelement = resource.custom_attributes.to_h['medelement_specialist_code'].present?
+      if !medelement && (resource.work_rules.active.exists? || resource.workday_overrides.exists?)
+        service_check = Scheduling::AvailabilityService.new(
+          resource: resource,
+          from: start_time.beginning_of_day - 1.day,
+          to: end_time.end_of_day + 1.day,
+          holidays: account.scheduling_holidays.ordered.to_a,
+          workday_overrides: resource.workday_overrides.where(date: (start_time.to_date - 2)..(end_time.to_date + 2)).to_a,
+          time_offs: account.scheduling_time_offs.where(resource_id: [nil, resource.id]).where('starts_at < ? AND ends_at > ?', end_time,
+                                                                                               start_time).to_a,
+          appointments: account.scheduling_appointments.where(resource_id: resource.id).where('starts_at < ? AND ends_at > ?', end_time,
+                                                                                              start_time).to_a,
+          ignore_appointment_id: ignore_appointment_id
+        )
+        result = service_check.availability_result(starts_at: start_time, ends_at: end_time)
+        unless result.available?
+          raise Scheduling::Error.new(
+            code: result.code,
+            message: result.message,
+            status: result.code == 'VALIDATION_ERROR' ? :unprocessable_content : :conflict
+          )
+        end
+        return
+      end
+
+      if account.scheduling_time_offs.where(resource_id: [nil, resource.id]).where('starts_at < ? AND ends_at > ?', end_time, start_time).exists?
+        raise Scheduling::Error.new(code: 'BLOCKED_BY_VACATION', message: 'Appointment overlaps blocked time', status: :conflict)
+      end
+
+      overlapping = account.scheduling_appointments
+                           .where(resource_id: resource.id)
+                           .where('starts_at < ? AND ends_at > ?', end_time, start_time)
+                           .to_a
+      conflict = overlapping.any? do |appt|
+        appt.id != ignore_appointment_id &&
+          (appt.status != 'cancelled' || Integrations::Medelement::LocalCancellation.provider_occupied?(appt))
+      end
+      return unless conflict
+
+      raise Scheduling::Error.new(code: 'SLOT_CONFLICT', message: 'Slot is already occupied', status: :conflict)
+    end
+
+    def validate_patient_booking_arguments!(assistant:, conversation:, patient:)
+      context = Captain::Tools::Agent::PatientBookingContext.new(
+        assistant: assistant, conversation: conversation, patient: patient
+      )
+      patient_hash = context.send(:patient)
+      raise ArgumentError, 'Current conversation is not available' unless conversation&.account_id == assistant.account_id
+      raise ArgumentError, 'Patient first and last name are required' if patient_hash[:first_name].blank? || patient_hash[:last_name].blank?
+      raise ArgumentError, 'Invalid patient IIN' if patient_hash[:iin].present? && !Scheduling::IinValidator.valid?(patient_hash[:iin])
+
+      context.send(:validate_birth_date!)
+      existing = context.send(:existing_patient)
+      existing&.id
+    end
+
+    def validate_generic_domain_call(tool_id:, account:, conversation:, state:, arguments:)
+      return business_failure('Account context is not available', reason: 'validation_error') unless account
+
+      case tool_id
+      when 'create_deal', 'update_deal', 'transition_deal_stage', 'create_task', 'update_task', 'change_task_status'
+        return business_failure('CRM is not enabled for this account', reason: 'validation_error') unless account.feature_enabled?('crm')
+      end
+
+      if tool_id.in?(%w[update_deal transition_deal_stage])
+        deal_id = arguments[:deal_id].presence || state.dig(:deal, :id)
+        deal = Captain::ContextFields.deal_for(account: account, conversation: conversation, deal_id: deal_id)
+        return business_failure('Current deal is not available', reason: 'not_found') if deal.blank?
+      elsif tool_id.in?(%w[update_task change_task_status])
+        task_id = arguments[:task_id].presence || state.dig(:task, :id)
+        task = if task_id.present?
+                 account.crm_tasks.find_by(id: task_id)
+               else
+                 Captain::ContextFields.task_for(account: account, conversation: conversation)
+               end
+        return business_failure('Current task is not available', reason: 'not_found') if task.blank?
+      end
+      nil
+    end
+
+    def business_failure(message, reason: 'validation_error')
+      Captain::ToolResult.failure(
+        error: message,
+        retryable: false,
+        data: { error_class: Captain::Runtime::ToolFailure::BUSINESS, reason: reason, mutation_executed: false },
+        audit: { failure_stage: 'tool_arguments', failure_reason: 'invalid_tool_arguments', mutation_executed: false }
+      )
+    end
+
+    def build_or_reuse_proposal(context:, state:, assistant:, account:, conversation:, tool_id:, arguments:)
+      digest = compute_digest(
+        account_id: account&.id,
+        conversation_id: conversation&.id,
+        assistant_id: assistant&.id,
+        tool_name: tool_id,
+        arguments: arguments
+      )
+      existing = Array(context[CONTEXT_KEY]).find { |item| item['digest'] == digest }
+      if existing
+        stored = fetch_record(existing['action_id'])
+        return stored if stored.present?
+      end
+
+      presentation = build_presentation(
+        tool_id: tool_id, assistant: assistant, account: account, conversation: conversation, state: state, arguments: arguments
+      )
+      target_appt = if tool_id.in?(%w[update_appointment cancel_appointment]) && arguments[:appointment_access_token].present?
+                      resolve_target_appointment_quietly(assistant: assistant, conversation: conversation, arguments: arguments)
+                    end
+      entry_assistant_id = state[:entry_assistant_id].presence || assistant&.id
+      record = {
+        'action_id' => SecureRandom.uuid,
+        'account_id' => account&.id,
+        'conversation_id' => conversation&.id,
+        'conversation_display_id' => conversation&.display_id || state.dig(:conversation, :display_id),
+        'assistant_id' => assistant&.id,
+        'entry_assistant_id' => entry_assistant_id,
+        'tool_name' => tool_id,
+        'status' => PENDING_STATUS,
+        'digest' => digest,
+        'title' => presentation[:title],
+        'description' => presentation[:description],
+        'details' => presentation[:details],
+        'agent' => agent_summary(assistant),
+        'arguments' => JSON.parse(JSON.generate(arguments)),
+        'appointment_snapshot' => (appointment_access_snapshot(target_appt) if target_appt),
+        'created_at' => Time.current.iso8601
+      }.compact
+
+      store_record!(record)
+      (context[CONTEXT_KEY] ||= []) << public_payload(record)
+      record
+    end
+
+    def appointment_access_snapshot(appointment)
+      return unless appointment
+
+      {
+        'appointment_id' => appointment.id,
+        'patient_id' => appointment.patient_contact_id || appointment.contact_id,
+        'resource_id' => appointment.resource_id,
+        'starts_at' => appointment.starts_at&.utc&.iso8601(6),
+        'ends_at' => appointment.ends_at&.utc&.iso8601(6),
+        'updated_at' => appointment.updated_at&.utc&.iso8601(6)
+      }
+    end
+
+    def render_interception_result(record)
+      JSON.generate(
+        success: true,
+        status: 'pending_operator_approval',
+        operator_approval_required: true,
+        action_id: record['action_id'],
+        action: record['tool_name'],
+        title: record['title'],
+        summary: record['description'],
+        details: record['details'],
+        message: 'Action prepared and queued for human operator approval (Allow / Deny) in the reply suggestion panel. ' \
+                 'It has NOT been executed in the system yet. ' \
+                 'Draft the reply for the operator without claiming that this action is already completed.'
+      )
+    end
+
+    def agent_summary(assistant)
+      return { 'name' => 'AI' } if assistant.blank?
+
+      {
+        'id' => assistant.id,
+        'name' => assistant.name.to_s.strip.presence || assistant.agent_name,
+        'avatar_url' => (assistant.avatar_url.presence if assistant.respond_to?(:avatar_url))
+      }.compact
+    end
+
+    def build_presentation(tool_id:, assistant:, account:, conversation:, state:, arguments:)
+      title = ACTION_TITLES[tool_id] || Captain::ToolRegistry.definition_for(tool_id)&.title || tool_id.to_s.humanize
+      details = build_details(
+        tool_id: tool_id, assistant: assistant, account: account, conversation: conversation, state: state, arguments: arguments
+      )
+      description = details.map { |item| "#{item['label']}: #{item['value']}" }.join(' • ')
+      { title: title, description: description.presence || title, details: details }
+    end
+
+    def build_details(tool_id:, assistant:, account:, conversation:, state:, arguments:)
+      case tool_id
+      when 'create_appointment', 'update_appointment', 'cancel_appointment'
+        build_appointment_details(tool_id: tool_id, assistant: assistant, account: account, conversation: conversation, arguments: arguments)
+      when 'create_deal', 'update_deal', 'transition_deal_stage'
+        build_deal_details(account: account, arguments: arguments)
+      when 'create_task', 'update_task', 'change_task_status'
+        build_task_details(arguments: arguments)
+      when 'update_contact', 'update_my_contact'
+        build_contact_details(arguments: arguments)
+      when 'add_private_note', 'add_contact_note'
+        build_note_details(arguments: arguments)
+      else
+        build_generic_details(_state: state, arguments: arguments)
+      end
+    end
+
+    def build_appointment_details(tool_id:, assistant:, account:, conversation:, arguments:)
+      details = []
+      unless tool_id == 'create_appointment'
+        appointment = resolve_target_appointment_quietly(assistant: assistant, conversation: conversation, arguments: arguments)
+      end
+      resource_id = arguments[:resource_id].presence || appointment&.resource_id
+      resource = account&.scheduling_resources&.find_by(id: resource_id) if resource_id.present?
+      service_id = arguments[:service_id].presence || appointment&.service_id
+      service = account&.scheduling_services&.find_by(id: service_id) if service_id.present?
+
+      details << { 'label' => 'Специалист', 'value' => resource.name } if resource&.name.present?
+      details << { 'label' => 'Услуга', 'value' => service.name } if service&.name.present?
+
+      formatted_time = format_appointment_slot(
+        starts_at: arguments[:starts_at].presence || appointment&.starts_at,
+        ends_at: arguments[:ends_at].presence || (appointment&.ends_at if arguments[:starts_at].blank?),
+        duration_min: arguments[:duration_min],
+        resource: resource,
+        account: account
+      )
+      details << { 'label' => 'Дата и время', 'value' => formatted_time } if formatted_time.present?
+
+      patient_label = extract_patient_label(arguments[:patient], conversation: conversation, appointment: appointment)
+      details << { 'label' => 'Пациент', 'value' => patient_label } if patient_label.present?
+      details << { 'label' => 'Комментарий', 'value' => arguments[:client_comment].to_s.strip } if arguments[:client_comment].present?
+      details
+    end
+
+    def resolve_target_appointment_quietly(assistant:, conversation:, arguments:)
+      return unless assistant && conversation
+
+      operation = Captain::Tools::Operations::AppointmentOperations.new(
+        assistant: assistant, conversation: conversation, actor: assistant
+      )
+      operation.send(
+        :target_appointment,
+        arguments[:appointment_id],
+        appointment_access_token: arguments[:appointment_access_token],
+        patient_confirmed: arguments[:patient_confirmed] == true
+      )
+    rescue StandardError
+      nil
+    end
+
+    def format_appointment_slot(starts_at:, ends_at:, duration_min:, resource:, account:)
+      return if starts_at.blank?
+
+      zone_name = Captain::Tools::Agent::AppointmentTimeInput.timezone(
+        resource_timezone: resource&.timezone,
+        account_timezone: account&.reporting_timezone
+      )
+      start_time = Captain::Tools::Agent::AppointmentTimeInput.parse(starts_at, timezone: zone_name, field_name: 'starts_at')
+      end_time = if ends_at.present?
+                   Captain::Tools::Agent::AppointmentTimeInput.parse(ends_at, timezone: zone_name, field_name: 'ends_at')
+                 elsif duration_min.present? && duration_min.to_i.positive?
+                   start_time + duration_min.to_i.minutes
+                 end
+
+      date_str = start_time.strftime('%d.%m.%Y')
+      time_str = end_time ? "#{start_time.strftime('%H:%M')}–#{end_time.strftime('%H:%M')}" : start_time.strftime('%H:%M')
+      "#{date_str}, #{time_str}"
+    rescue StandardError
+      starts_at.to_s
+    end
+
+    def extract_patient_label(patient_arg, conversation:, appointment:)
+      if patient_arg.is_a?(Hash)
+        hash = patient_arg.with_indifferent_access
+        full_name = [hash[:last_name], hash[:first_name], hash[:middle_name]].filter_map { |part| part.to_s.strip.presence }.join(' ')
+        phone = hash[:phone].to_s.strip.presence
+        return [full_name.presence, phone].compact.join(', ') if full_name.present? || phone.present?
+      end
+
+      patient_contact = appointment&.patient_contact || appointment&.contact || conversation&.contact
+      return unless patient_contact
+
+      [patient_contact.name.to_s.strip.presence, patient_contact.phone_number.to_s.strip.presence].compact.join(', ').presence
+    end
+
+    def build_deal_details(account:, arguments:)
+      details = []
+      details << { 'label' => 'Название', 'value' => arguments[:title].to_s.strip } if arguments[:title].present?
+      if arguments[:stage_id].present? && account
+        stage = account.crm_stages.find_by(id: arguments[:stage_id])
+        details << { 'label' => 'Этап', 'value' => stage&.name || "##{arguments[:stage_id]}" }
+      end
+      details << { 'label' => 'Сумма', 'value' => arguments[:amount].to_s } if arguments[:amount].present?
+      details << { 'label' => 'Статус', 'value' => arguments[:status].to_s } if arguments[:status].present?
+      details
+    end
+
+    def build_task_details(arguments:)
+      details = []
+      details << { 'label' => 'Задача', 'value' => arguments[:title].to_s.strip } if arguments[:title].present?
+      details << { 'label' => 'Статус', 'value' => arguments[:status].to_s.strip } if arguments[:status].present?
+      details << { 'label' => 'Срок', 'value' => arguments[:due_at].to_s.strip } if arguments[:due_at].present?
+      details
+    end
+
+    def build_contact_details(arguments:)
+      details = []
+      details << { 'label' => 'Имя', 'value' => arguments[:name].to_s.strip } if arguments[:name].present?
+      details << { 'label' => 'Телефон', 'value' => arguments[:phone_number].to_s.strip } if arguments[:phone_number].present?
+      details << { 'label' => 'Email', 'value' => arguments[:email].to_s.strip } if arguments[:email].present?
+      details
+    end
+
+    def build_note_details(arguments:)
+      content = (arguments[:content] || arguments[:note]).to_s.strip
+      return [] if content.blank?
+
+      [{ 'label' => 'Текст', 'value' => content.truncate(160) }]
+    end
+
+    def build_generic_details(_state:, arguments:)
+      arguments.except(:appointment_access_token, :idempotency_key).filter_map do |key, value|
+        next if value.blank?
+
+        formatted = value.is_a?(Hash) || value.is_a?(Array) ? JSON.generate(value) : value.to_s
+        { 'label' => key.to_s.humanize, 'value' => formatted.truncate(140) }
+      end.first(5)
+    end
+
+    def compute_digest(account_id:, conversation_id:, assistant_id:, tool_name:, arguments:)
+      payload = {
+        account_id: account_id.to_i,
+        conversation_id: conversation_id.to_i,
+        assistant_id: assistant_id.to_i,
+        tool_name: tool_name.to_s,
+        arguments: canonical_json(arguments)
+      }
+      Digest::SHA256.hexdigest(JSON.generate(payload))
+    end
+
+    def canonical_json(value)
+      case value
+      when Hash
+        value.to_h.stringify_keys.sort.to_h.transform_values { |nested| canonical_json(nested) }
+      when Array
+        value.map { |nested| canonical_json(nested) }
+      else
+        value
+      end
+    end
+  end
+
+  def initialize(account:, user:, conversation_display_id: nil)
+    @account = account
+    @user = user
+    @conversation_display_id = conversation_display_id
+  end
+
+  def approve!(action_id:, digest: nil)
+    with_action_lock(action_id) do
+      record = load_authorized_record!(action_id)
+      return self.class.public_payload(record) if record['status'] == APPROVED_STATUS
+
+      validate_approvable_state!(record, digest: digest)
+      conversation = find_authorized_conversation!(record)
+      assistant = resolve_execution_assistant!(record, conversation)
+      execute_approved_action!(record: record, conversation: conversation, assistant: assistant)
+    end
+  end
+
+  def reject!(action_id:)
+    with_action_lock(action_id) do
+      record = load_authorized_record!(action_id)
+      return self.class.public_payload(record) if record['status'] == REJECTED_STATUS
+      raise InvalidStateError, 'Action was already approved and executed' if record['status'] == APPROVED_STATUS
+
+      find_authorized_conversation!(record)
+      record['status'] = REJECTED_STATUS
+      record['rejected_at'] = Time.current.iso8601
+      record['rejected_by_id'] = @user&.id
+      record['rejected_by_name'] = @user&.name
+      self.class.store_record!(record)
+      publish_approval_event(record, outcome: REJECTED_STATUS)
+      self.class.public_payload(record)
+    end
+  end
+
+  private
+
+  def load_authorized_record!(action_id)
+    record = self.class.fetch_record(action_id)
+    raise NotFoundError, 'Proposed action not found or expired' if record.blank?
+    raise NotFoundError, 'Proposed action not found' if record['account_id'].to_i != @account.id
+
+    if @conversation_display_id.present? &&
+       record['conversation_display_id'].present? &&
+       record['conversation_display_id'].to_i != @conversation_display_id.to_i
+      raise InvalidStateError, 'Proposed action does not match the current conversation'
+    end
+
+    record
+  end
+
+  def validate_approvable_state!(record, digest: nil)
+    raise InvalidStateError, 'Action was already rejected by the operator' if record['status'] == REJECTED_STATUS
+    raise InvalidStateError, 'Action is currently executing' if record['status'] == EXECUTING_STATUS
+
+    return unless digest.present? && record['digest'].present? && record['digest'] != digest.to_s
+
+    raise InvalidStateError, 'Action parameters do not match the approved proposal'
+  end
+
+  def find_authorized_conversation!(record)
+    accessible_scope = Conversations::PermissionFilterService.new(
+      @account.conversations,
+      @user,
+      @account
+    ).perform
+    conversation = if record['conversation_id'].present?
+                     accessible_scope.find_by(id: record['conversation_id'])
+                   elsif record['conversation_display_id'].present?
+                     accessible_scope.find_by(display_id: record['conversation_display_id'])
+                   end
+    raise ForbiddenError, 'You do not have access to this conversation' if conversation.blank?
+
+    conversation
+  end
+
+  def resolve_execution_assistant!(record, conversation)
+    assistant = @account.captain_assistants.find_by(id: record['assistant_id']) if record['assistant_id'].present?
+    assistant ||= conversation.inbox&.captain_assistant
+    assistant ||= @account.captain_assistants.entry_eligible.order(:id).first
+    raise InvalidStateError, 'Captain assistant is not available' if assistant.blank?
+
+    assistant
+  end
+
+  def execute_approved_action!(record:, conversation:, assistant:)
+    definition = Captain::ToolRegistry.definition_for(record['tool_name'])
+    raise InvalidStateError, "Tool '#{record['tool_name']}' is not available" unless definition&.agent_tool_class
+
+    tool = definition.agent_tool_class.new(assistant)
+    record['status'] = EXECUTING_STATUS
+    record.delete('error_message')
+    self.class.store_record!(record)
+
+    tool_context = build_execution_tool_context(assistant: assistant, conversation: conversation, record: record)
+    arguments = record['arguments'].to_h.deep_symbolize_keys
+    refresh_appointment_access_token!(arguments: arguments, record: record, assistant: assistant, conversation: conversation)
+    previous_actor = Current.executed_by
+    Current.executed_by = @user || assistant
+
+    raw_result = Llm::EventBus.with_context(user_id: @user&.id, account_id: @account.id, conversation_id: conversation.id) do
+      tool.execute(tool_context, **arguments)
+    end
+
+    if Captain::Runtime::ToolFailure.failure?(raw_result)
+      error_message = extract_failure_message(raw_result)
+      record['status'] = FAILED_STATUS
+      record['failed_at'] = Time.current.iso8601
+      record['error_message'] = error_message
+      self.class.store_record!(record)
+      publish_approval_event(record, outcome: FAILED_STATUS, error_message: error_message)
+      raise ExecutionError.new(error_message, action: self.class.public_payload(record))
+    end
+
+    record_done_in_session(record: record, conversation: conversation, assistant: assistant, tool: tool, arguments: arguments, result: raw_result)
+    record['status'] = APPROVED_STATUS
+    record['approved_at'] = Time.current.iso8601
+    record['approved_by_id'] = @user&.id
+    record['approved_by_name'] = @user&.name
+    record['result_summary'] = extract_result_summary(record['tool_name'], raw_result)
+    self.class.store_record!(record)
+    publish_approval_event(record, outcome: APPROVED_STATUS)
+    self.class.public_payload(record)
+  rescue ExecutionError
+    raise
+  rescue StandardError => e
+    record['status'] = FAILED_STATUS
+    record['failed_at'] = Time.current.iso8601
+    record['error_message'] = e.message
+    self.class.store_record!(record)
+    publish_approval_event(record, outcome: FAILED_STATUS, error_message: e.message)
+    raise ExecutionError.new(e.message, action: self.class.public_payload(record))
+  ensure
+    Current.executed_by = previous_actor
+  end
+
+  def refresh_appointment_access_token!(arguments:, record:, assistant:, conversation:)
+    return if arguments[:appointment_access_token].blank?
+
+    snapshot = record['appointment_snapshot'].to_h
+    return if snapshot.blank?
+
+    appointment_id = arguments[:appointment_id].presence || snapshot['appointment_id']
+    appointment = @account.scheduling_appointments.find_by(id: appointment_id)
+    return unless appointment
+
+    current_snapshot = self.class.send(:appointment_access_snapshot, appointment)
+    return unless current_snapshot == snapshot
+
+    arguments[:appointment_access_token] = Captain::Tools::Agent::AppointmentAccess.issue(
+      assistant: assistant,
+      conversation: conversation,
+      appointment: appointment
+    )
+  end
+
+  def build_execution_tool_context(assistant:, conversation:, record:)
+    runner_service = Captain::Assistant::AgentRunnerService.new(
+      assistant: assistant,
+      conversation: conversation,
+      source: 'operator_approved_suggestion'
+    )
+    state = runner_service.send(:build_state)
+    state[:entry_assistant_id] = record['entry_assistant_id'] || assistant.id
+    run_context = Captain::Runtime::RunContext.new(
+      {
+        state: state,
+        current_agent: assistant.agent_name,
+        acting_assistant_id: assistant.id
+      }
+    )
+    Captain::Runtime::ToolContext.new(run_context: run_context)
+  end
+
+  def record_done_in_session(record:, conversation:, assistant:, tool:, arguments:, result:)
+    entry_assistant = @account.captain_assistants.find_by(id: record['entry_assistant_id']) || assistant
+    done = Captain::DoneActions.entry(
+      tool_name: tool.name,
+      arguments: arguments,
+      result: result,
+      request: "operator_approval:#{record['action_id']}"
+    )
+    return if done.blank?
+
+    session = Captain::Conversation::AgentSession.new(entry: entry_assistant, conversation: conversation)
+    session.change do |data|
+      data['done'] = Captain::DoneActions.remember(data['done'], done.deep_stringify_keys)
+    end
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][ActionApprovalService] Failed to record done action in session: #{e.class}: #{e.message}")
+  end
+
+  def extract_failure_message(raw_result)
+    normalized = Captain::ToolResult.normalize(raw_result)
+    return normalized[:error].to_s if normalized[:error].present?
+
+    facts = Captain::Runtime::ToolFailure.facts(raw_result)
+    facts['message'].presence || facts['error'].presence || facts['reason'].presence || 'Failed to execute action'
+  end
+
+  def extract_result_summary(tool_name, raw_result)
+    facts = Captain::Runtime::ToolFailure.facts(raw_result)
+    case tool_name.to_s
+    when 'create_appointment', 'update_appointment'
+      date_time = [facts['local_date'], facts['local_time']].compact_blank.join(', ')
+      specialist = facts['doctor_name'].presence ||
+                   facts['specialist_name'].presence ||
+                   facts.dig('appointment', 'resource_name')
+      [specialist, date_time].compact_blank.join(' — ').presence || 'Выполнено'
+    when 'cancel_appointment'
+      'Запись отменена'
+    else
+      facts['message'].to_s.presence || 'Выполнено'
+    end
+  rescue StandardError
+    'Выполнено'
+  end
+
+  def publish_approval_event(record, outcome:, error_message: nil)
+    Llm::EventBus.publish(
+      'copilot.action_approval',
+      feature: 'reply_suggestion',
+      runtime_mode: 'captain_task',
+      status: outcome,
+      account_id: @account.id,
+      user_id: @user&.id,
+      user_name: @user&.name,
+      assistant_id: record['assistant_id'],
+      conversation_id: record['conversation_id'],
+      conversation_display_id: record['conversation_display_id'],
+      action_id: record['action_id'],
+      tool_name: record['tool_name'],
+      error_message: error_message
+    )
+  rescue StandardError
+    nil
+  end
+
+  def with_action_lock(action_id)
+    key = self.class.lock_key(action_id)
+    token = SecureRandom.uuid
+    acquired = Redis::Alfred.set(key, token, nx: true, ex: LOCK_TTL)
+    raise InvalidStateError, 'Action is currently being processed' unless acquired
+
+    yield
+  ensure
+    if defined?(acquired) && acquired
+      current = Redis::Alfred.get(key)
+      Redis::Alfred.delete(key) if current == token
+    end
+  end
+end
