@@ -118,6 +118,75 @@ const getRejectedVariants = templateGroup =>
     variant => variant.rejected_reason && variant.rejected_reason !== 'NONE'
   );
 
+// vue-i18n answers an unknown key with the key itself, so a label that equals
+// its key means there is no translation and the plain value is shown instead.
+const translateOrFallback = (key, fallback) => {
+  const label = t(key);
+  return label === key ? fallback : label;
+};
+
+const humanize = value => {
+  const text = String(value || '')
+    .replace(/_/g, ' ')
+    .toLowerCase();
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
+
+const CATEGORY_LABEL_KEYS = {
+  UTILITY: 'WHATSAPP_TEMPLATES.MANAGEMENT.CATEGORY_OPTIONS.UTILITY',
+  MARKETING: 'WHATSAPP_TEMPLATES.MANAGEMENT.CATEGORY_OPTIONS.MARKETING',
+  AUTHENTICATION:
+    'WHATSAPP_TEMPLATES.MANAGEMENT.CATEGORY_OPTIONS.AUTHENTICATION',
+};
+
+const STATUS_LABEL_KEYS = {
+  APPROVED: 'WHATSAPP_TEMPLATES.MANAGEMENT.STATUSES.APPROVED',
+  PENDING: 'WHATSAPP_TEMPLATES.MANAGEMENT.STATUSES.PENDING',
+  IN_APPEAL: 'WHATSAPP_TEMPLATES.MANAGEMENT.STATUSES.IN_APPEAL',
+  REJECTED: 'WHATSAPP_TEMPLATES.MANAGEMENT.STATUSES.REJECTED',
+  PAUSED: 'WHATSAPP_TEMPLATES.MANAGEMENT.STATUSES.PAUSED',
+  DISABLED: 'WHATSAPP_TEMPLATES.MANAGEMENT.STATUSES.DISABLED',
+  FLAGGED: 'WHATSAPP_TEMPLATES.MANAGEMENT.STATUSES.FLAGGED',
+  LIMIT_EXCEEDED: 'WHATSAPP_TEMPLATES.MANAGEMENT.STATUSES.LIMIT_EXCEEDED',
+  PENDING_DELETION: 'WHATSAPP_TEMPLATES.MANAGEMENT.STATUSES.PENDING_DELETION',
+  DELETED: 'WHATSAPP_TEMPLATES.MANAGEMENT.STATUSES.DELETED',
+  ARCHIVED: 'WHATSAPP_TEMPLATES.MANAGEMENT.STATUSES.ARCHIVED',
+};
+
+const REJECTION_REASON_KEYS = {
+  ABUSIVE_CONTENT:
+    'WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASONS.ABUSIVE_CONTENT',
+  INCORRECT_CATEGORY:
+    'WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASONS.INCORRECT_CATEGORY',
+  INVALID_FORMAT:
+    'WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASONS.INVALID_FORMAT',
+  SCAM: 'WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASONS.SCAM',
+  TAG_CONTENT_MISMATCH:
+    'WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASONS.TAG_CONTENT_MISMATCH',
+};
+
+const getCategoryLabel = category => {
+  const normalized = String(category || 'UTILITY').toUpperCase();
+  const key = CATEGORY_LABEL_KEYS[normalized];
+  return key
+    ? translateOrFallback(key, humanize(normalized))
+    : humanize(normalized);
+};
+
+const getStatusLabel = status => {
+  const normalized = String(status || 'PENDING').toUpperCase();
+  const key = STATUS_LABEL_KEYS[normalized];
+  return key
+    ? translateOrFallback(key, humanize(normalized))
+    : humanize(normalized);
+};
+
+const getRejectionReasonLabel = reason => {
+  const normalized = String(reason || '').toUpperCase();
+  const key = REJECTION_REASON_KEYS[normalized];
+  return key ? translateOrFallback(key, reason) : reason;
+};
+
 const getStatusClass = templateStatus => {
   const tone = getTemplateStatusTone(templateStatus);
 
@@ -297,7 +366,7 @@ const getTemplateCarouselCards = template => {
                   <span
                     class="rounded-full bg-n-alpha-black2 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
                   >
-                    {{ templateGroup.category || 'UTILITY' }}
+                    {{ getCategoryLabel(templateGroup.category) }}
                   </span>
                   <span
                     v-if="templateGroup.name === csatTemplateName"
@@ -319,7 +388,7 @@ const getTemplateCarouselCards = template => {
                       class="rounded-full px-1.5 py-0.5"
                       :class="getStatusClass(variant.status)"
                     >
-                      {{ variant.status || 'PENDING' }}
+                      {{ getStatusLabel(variant.status) }}
                     </span>
                   </div>
                 </div>
@@ -336,7 +405,11 @@ const getTemplateCarouselCards = template => {
                   v-if="getRejectedVariants(templateGroup).length"
                   class="mb-0 mt-1 line-clamp-1 text-xs text-n-ruby-11"
                 >
-                  {{ getRejectedVariants(templateGroup)[0].rejected_reason }}
+                  {{
+                    getRejectionReasonLabel(
+                      getRejectedVariants(templateGroup)[0].rejected_reason
+                    )
+                  }}
                 </p>
               </div>
 
@@ -400,7 +473,7 @@ const getTemplateCarouselCards = template => {
                       class="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
                       :class="getStatusClass(variant.status)"
                     >
-                      {{ variant.status || 'PENDING' }}
+                      {{ getStatusLabel(variant.status) }}
                     </span>
                   </div>
                   <p
@@ -524,7 +597,7 @@ const getTemplateCarouselCards = template => {
                     <p
                       class="mb-0 whitespace-pre-wrap break-words text-xs text-n-ruby-11"
                     >
-                      {{ variant.rejected_reason }}
+                      {{ getRejectionReasonLabel(variant.rejected_reason) }}
                     </p>
                   </div>
                 </section>

@@ -523,7 +523,7 @@
           "EMPLOYEE_CREDENTIALS_HINT": "SIP username/password в строке сотрудника — это его личные SIP credentials. Если оставить пустыми, будут использованы общие настройки провайдера.",
           "EMPLOYEE_PROFILES": {
             "TITLE": "Сотрудники, внутренние номера и SIP-доступы",
-            "CREATE_HINT": "Сотрудников, внутренние номера и SIP-доступы можно назначить в настройках канала после создания.",
+            "CREATE_HINT": "Сотрудников и внутренние номера можно назначить после создания на вкладке «Звонки и сотрудники» в настройках канала.",
             "HINT": "Привяжите каждого сотрудника OneLink к внутреннему номеру АТС. Провайдерские доступы остаются в диагностике и здесь не показываются.",
             "EMPLOYEE_LABEL": "Сотрудник OneLink",
             "SELECT_PLACEHOLDER": "Текущий пользователь или выберите сотрудника",
@@ -577,7 +577,7 @@
           "CURRENT_USER_REQUIRED": "Текущий пользователь нужен для создания SIP-профиля сотрудника",
           "REQUIRED_FIELDS": "Заполните название inbox и витринный номер",
           "BEELINE_REQUIRED_FIELDS": "Для Билайн заполните SIP server, SIP domain и SIP proxy",
-          "BEELINE_CONFIG_HINT": "Билайн: транспорт UDP, кодек G.711 A-law (PCMA). Username/Login и пароль SIP-аккаунта укажите для сотрудника на следующем шаге.",
+          "BEELINE_CONFIG_HINT": "Билайн: транспорт UDP, кодек G.711 A-law (PCMA). Username/Login и пароль SIP-аккаунта укажите для сотрудника на вкладке «Звонки и сотрудники».",
           "READ_ONLY": "У этого канала legacy/read-only владение, его нельзя менять из OneLink.",
           "LOAD_ERROR": "Не удалось загрузить конфигурацию Виртуальной АТС.",
           "CREATE_SUCCESS": "Канал Виртуальной АТС создан",
@@ -1321,6 +1321,24 @@
     "REAUTH": "Войти заново",
     "VIEW": "Просмотр",
     "EDIT": {
+      "CONNECTION_STATUS": {
+        "CONNECTED": "Подключён",
+        "CONNECTING": "Подключается…",
+        "DISCONNECTED": "Нет связи"
+      },
+      "DEVELOPER_DETAILS": {
+        "TITLE": "Для разработчика",
+        "HINT": "Технические данные канала. Для повседневной работы они не нужны.",
+        "LAST_ERROR": "Последняя ошибка:"
+      },
+      "VOICE_CALLS": {
+        "CONFIG_TITLE": "Канал звонков",
+        "CONFIG_HINT": "Название и номер канала. Параметры подключения к АТС находятся в блоке «Для разработчика».",
+        "CALLS_TITLE": "Сотрудники и звонки",
+        "CALLS_HINT": "Привяжите сотрудников к внутренним номерам и настройте, кому и как поступают звонки.",
+        "PROVIDER": "Провайдер",
+        "NUMBER": "Номер"
+      },
       "API": {
         "SUCCESS_MESSAGE": "Настройки канала сохранены",
         "AUTO_ASSIGNMENT_SUCCESS_MESSAGE": "Автоназначение сохранено",
@@ -1328,7 +1346,7 @@
       },
       "WHATSAPP_WEB": {
         "TITLE": "Управление WhatsApp Web",
-        "SUBTITLE": "Действия оператора и диагностика для уже подключенной сессии WhatsApp Web.",
+        "SUBTITLE": "Подключение номера WhatsApp и настройки обмена сообщениями.",
         "CONNECTION_STATE": "Состояние подключения",
         "STATUS": "Статус:",
         "CONNECTION": "Соединение:",
@@ -1341,7 +1359,7 @@
         "RECOVER_CONNECTION": "Перезапустить",
         "RECOVER_SUCCESS": "Сессия WhatsApp Web перезапущена",
         "RECOVER_ERROR": "Не удалось перезапустить сессию WhatsApp Web",
-        "RECOVER_HINT": "Перезапускает текущую сессию без удаления авторизации. Для нового QR-кода используйте «Переавторизовать».",
+        "RECOVER_HINT": "«Переподключить» восстанавливает связь без потери входа. Если связи нет, войдите заново по QR-коду — «Переавторизовать».",
         "REAUTHORIZE": "Переавторизовать",
         "REAUTHORIZE_SUCCESS": "Новый QR-код WhatsApp Web создан",
         "REAUTHORIZE_ERROR": "Не удалось запустить переавторизацию WhatsApp Web",
@@ -1361,11 +1379,11 @@
         "AUTO_SYNC_HINT": "При открытии этой страницы статус обновляется автоматически.",
         "QR_PREVIEW_TITLE": "Данные для входа",
         "QR_PREVIEW_HINT": "Используйте QR-код или код подключения в Linked Devices, чтобы заново привязать этот канал WhatsApp Web.",
-        "NATIVE_SETTINGS": "Нативные настройки канала",
+        "NATIVE_SETTINGS": "Настройки канала",
         "SETTING_ENABLED": "Включено",
         "SETTING_DISABLED": "Выключено",
-        "CONVERSATION_PENDING": "Начинать новые входящие диалоги со статусом pending",
-        "CONVERSATION_PENDING_HINT": "Если включено, первое живое входящее сообщение от контакта создаст диалог в статусе pending, а не open.",
+        "CONVERSATION_PENDING": "Начинать новые входящие диалоги со статусом «В ожидании»",
+        "CONVERSATION_PENDING_HINT": "Если включено, первое входящее сообщение от клиента создаст диалог в статусе «В ожидании», а не «Открыт».",
         "HISTORY_LOOKBACK_DAYS": "Глубина импорта истории в днях",
         "HISTORY_LOOKBACK_DAYS_HINT": "Укажите 0, чтобы импортировать всю доступную историю. Любое значение больше 0 ограничит первый полный импорт этим количеством дней.",
         "IGNORE_JIDS": "Игнорируемые JID",
@@ -1393,7 +1411,7 @@
       },
       "TELEGRAM_PERSONAL": {
         "TITLE": "Telegram Personal",
-        "SUBTITLE": "Управление подключением, импортом и служебной диагностикой личного Telegram inbox.",
+        "SUBTITLE": "Подключение личного аккаунта Telegram и настройки обмена сообщениями.",
         "OVERVIEW": "Обзор",
         "OVERVIEW_SUBTITLE": "Ключевой статус канала, авторизации и последних импортов в одном месте.",
         "CONNECTION_STATE": "Состояние подключения",
@@ -1450,7 +1468,7 @@
         "DISCONNECT": "Отключить",
         "DISCONNECT_SUCCESS": "Telegram Personal отключен",
         "DISCONNECT_ERROR": "Не удалось отключить Telegram Personal",
-        "AUTO_SYNC_HINT": "Статус и диагностические показатели обновляются автоматически при открытии этой страницы.",
+        "AUTO_SYNC_HINT": "Статус обновляется автоматически, пока эта страница открыта.",
         "CODE_LOGIN": "Войти по коду",
         "CODE_LABEL": "Код входа",
         "CODE_PLACEHOLDER": "12345",
@@ -1645,6 +1663,7 @@
       "BOT_CONFIGURATION": "Подключить AI-агента",
       "WHATSAPP_TEMPLATES": "Шаблоны",
       "ACCOUNT_HEALTH": "Здоровье аккаунта",
+      "VOICE_CALLS": "Звонки и сотрудники",
       "CSAT": "CSAT"
     },
     "ACCOUNT_HEALTH": {
@@ -1657,11 +1676,26 @@
         "CALLBACK": "Регистрация webhook callback",
         "COEXISTENCE_SYNC": "Синхронизация WhatsApp Business",
         "LIFECYCLE": "События Meta lifecycle",
-        "EVENTS": "Событий обработано: {count}"
+        "EVENTS": "Событий обработано: {count}",
+        "STATES": {
+          "PENDING": "Ожидает запуска",
+          "UPDATING": "Обновляется",
+          "RESOLVED": "Исправлено",
+          "REQUESTING": "Запрашиваем данные у Meta",
+          "REQUESTED": "Запрос принят",
+          "SYNCING": "Синхронизация выполняется",
+          "RECONCILING": "Уточняем результат запроса",
+          "COMPLETED": "Завершено",
+          "FAILED": "Ошибка",
+          "HISTORY_FAILED": "Не удалось импортировать историю",
+          "HISTORY_DECLINED": "Передача истории отклонена",
+          "OUTCOME_UNKNOWN": "Результат неизвестен",
+          "MANUAL_RECOVERY_REQUIRED": "Требуется ручное восстановление"
+        }
       },
       "FIELDS": {
         "DISPLAY_PHONE_NUMBER": {
-          "LABEL": "Показать номер телефона",
+          "LABEL": "Номер телефона",
           "TOOLTIP": "Номер телефона, отображаемый покупателям"
         },
         "VERIFIED_NAME": {
@@ -1669,7 +1703,7 @@
           "TOOLTIP": "Название компании, подтвержденные WhatsApp"
         },
         "DISPLAY_NAME_STATUS": {
-          "LABEL": "Отображаемое имя статуса",
+          "LABEL": "Статус названия",
           "TOOLTIP": "Состояние проверки вашего названия компании"
         },
         "QUALITY_RATING": {
@@ -1701,22 +1735,31 @@
           "AVAILABLE_WITHOUT_REVIEW": "Доступно без проверки",
           "REJECTED": "Отклонено",
           "DECLINED": "Отказано",
-          "NON_EXISTS": "Не существует"
+          "NON_EXISTS": "Не существует",
+          "UNKNOWN": "Нет данных"
         },
         "MODES": {
           "SANDBOX": "Песочница",
-          "LIVE": "Онлайн"
-        }
+          "LIVE": "Онлайн",
+          "UNKNOWN": "Нет данных"
+        },
+        "QUALITY": {
+          "GREEN": "Высокое",
+          "YELLOW": "Среднее",
+          "RED": "Низкое",
+          "UNKNOWN": "Нет данных"
+        },
+        "NOT_AVAILABLE": "Нет данных"
       },
       "WEBHOOK": {
-        "TITLE": "Webhook Configuration",
-        "DESCRIPTION": "Webhook URL is required for your WhatsApp Business Account to receive messages from customers",
-        "ACTION_REQUIRED": "Webhook not configured",
-        "REGISTER_BUTTON": "Register Webhook",
-        "REGISTER_SUCCESS": "Webhook registered successfully",
-        "REGISTER_ERROR": "Failed to register webhook. Please try again.",
-        "CONFIGURED_SUCCESS": "Webhook configured successfully",
-        "URL_MISMATCH": "Webhook URL mismatch"
+        "TITLE": "Настройка webhook",
+        "DESCRIPTION": "Адрес webhook нужен, чтобы ваш аккаунт WhatsApp Business получал сообщения клиентов",
+        "ACTION_REQUIRED": "Webhook не настроен",
+        "REGISTER_BUTTON": "Зарегистрировать webhook",
+        "REGISTER_SUCCESS": "Webhook успешно зарегистрирован",
+        "REGISTER_ERROR": "Не удалось зарегистрировать webhook. Попробуйте ещё раз.",
+        "CONFIGURED_SUCCESS": "Webhook настроен",
+        "URL_MISMATCH": "Адрес webhook не совпадает"
       }
     },
     "SETTINGS": "Настройки",
@@ -1740,7 +1783,7 @@
       "INBOX_AGENTS_SUB_TEXT": "Добавляйте или удаляйте сотрудников из этого канала",
       "AGENT_ASSIGNMENT": "Назначения для беседы",
       "AGENT_ASSIGNMENT_SUB_TEXT": "Обновить настройки назначения для бесед",
-      "UPDATE": "Обновить",
+      "UPDATE": "Сохранить",
       "ENABLE_EMAIL_COLLECT_BOX": "Включить ящик сбора почты",
       "ENABLE_EMAIL_COLLECT_BOX_SUB_TEXT": "Включение или отключение ящик для сбора почты в новой беседе",
       "AUTO_ASSIGNMENT": "Включить автоназначение",
@@ -1770,7 +1813,7 @@
       "WHATSAPP_SECTION_TITLE": "Ключ API",
       "WHATSAPP_SECTION_UPDATE_TITLE": "Обновить ключ API",
       "WHATSAPP_SECTION_UPDATE_PLACEHOLDER": "Введите сюда новый ключ API",
-      "WHATSAPP_SECTION_UPDATE_BUTTON": "Обновить",
+      "WHATSAPP_SECTION_UPDATE_BUTTON": "Сохранить",
       "WHATSAPP_EMBEDDED_SIGNUP_TITLE": "Встроенная регистрация WhatsApp",
       "WHATSAPP_EMBEDDED_SIGNUP_SUBHEADER": "Этот почтовый ящик подключён через WhatsApp Embedded Signup.",
       "WHATSAPP_EMBEDDED_SIGNUP_DESCRIPTION": "Вы можете перенастроить этот почтовый ящик для обновления параметров WhatsApp Business.",
@@ -1819,7 +1862,7 @@
       "WHATSAPP_AI_VOICE_TITLE": "WhatsApp Voice Agent",
       "WHATSAPP_AI_VOICE_SUBHEADER": "Разрешить голосовому AI-агенту автоматически отвечать на WhatsApp звонки в pending-диалогах.",
       "WHATSAPP_AI_VOICE_LABEL": "Включить автоответ Voice Agent",
-      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Обновить настройки формы для чата",
+      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Сохранить настройки формы",
       "ALLOW_MOBILE_WEBVIEW": {
         "LABEL": "Включить виджет в мобильных приложениях",
         "SUBTITLE": "Установите флажок, если вы вставьте виджет в приложения iOS или Android. Мобильные приложения не посылают информацию о домене, поэтому они будут заблокированы ограничениями домена, если это не включено."
@@ -1859,9 +1902,26 @@
         "FIELDS": "Поля",
         "LABEL": "Метка",
         "PLACE_HOLDER": "Вариант ввода в поле",
-        "KEY": "Ключ",
+        "KEY": "Поле",
         "TYPE": "Тип",
         "REQUIRED": "Обязательно"
+      },
+      "FIELD_NAMES": {
+        "EMAIL_ADDRESS": "Email",
+        "FULL_NAME": "Имя",
+        "PHONE_NUMBER": "Телефон"
+      },
+      "FIELD_TYPES": {
+        "TEXT": "Текст",
+        "TEL": "Телефон",
+        "EMAIL": "Email",
+        "NUMBER": "Число",
+        "LINK": "Ссылка",
+        "DATE": "Дата",
+        "LIST": "Список",
+        "CHECKBOX": "Флажок",
+        "CURRENCY": "Сумма",
+        "PERCENT": "Процент"
       },
       "ENABLE": {
         "LABEL": "Включить форму сбора предварительной информации",
@@ -1981,7 +2041,7 @@
       "TITLE": "IMAP",
       "SUBTITLE": "Настроить параметры IMAP",
       "NOTE_TEXT": "Для включения SMTP, настройте IMAP.",
-      "UPDATE": "Обновить настройки IMAP",
+      "UPDATE": "Сохранить настройки IMAP",
       "TOGGLE_AVAILABILITY": "Включить конфигурацию IMAP для этого ящика",
       "TOGGLE_HELP": "Включение IMAP поможет пользователю получать электронную почту",
       "EDIT": {
@@ -2014,7 +2074,7 @@
     "SMTP": {
       "TITLE": "SMTP",
       "SUBTITLE": "Настроить параметры SMTP",
-      "UPDATE": "Обновить настройки SMTP",
+      "UPDATE": "Сохранить настройки SMTP",
       "TOGGLE_AVAILABILITY": "Включить SMTP конфигурацию для этого ящика",
       "TOGGLE_HELP": "Включение SMTP поможет пользователю отправлять почту",
       "EDIT": {

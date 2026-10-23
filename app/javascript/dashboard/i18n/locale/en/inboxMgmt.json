@@ -1321,6 +1321,24 @@
     "REAUTH": "Reauthorize",
     "VIEW": "View",
     "EDIT": {
+      "CONNECTION_STATUS": {
+        "CONNECTED": "Connected",
+        "CONNECTING": "Connecting…",
+        "DISCONNECTED": "No connection"
+      },
+      "DEVELOPER_DETAILS": {
+        "TITLE": "For developers",
+        "HINT": "Technical channel data. It is not needed for day-to-day work.",
+        "LAST_ERROR": "Last error:"
+      },
+      "VOICE_CALLS": {
+        "CONFIG_TITLE": "Calls channel",
+        "CONFIG_HINT": "Channel name and number. PBX connection parameters are in the \"For developers\" block.",
+        "CALLS_TITLE": "Employees and calls",
+        "CALLS_HINT": "Link employees to internal numbers and choose who receives calls and how.",
+        "PROVIDER": "Provider",
+        "NUMBER": "Number"
+      },
       "API": {
         "SUCCESS_MESSAGE": "Inbox settings updated successfully",
         "AUTO_ASSIGNMENT_SUCCESS_MESSAGE": "Auto assignment updated successfully",
@@ -1645,6 +1663,7 @@
       "BOT_CONFIGURATION": "Bot Configuration",
       "WHATSAPP_TEMPLATES": "Templates",
       "ACCOUNT_HEALTH": "Account Health",
+      "VOICE_CALLS": "Calls and employees",
       "CSAT": "CSAT"
     },
     "ACCOUNT_HEALTH": {
@@ -1657,7 +1676,22 @@
         "CALLBACK": "Webhook callback registration",
         "COEXISTENCE_SYNC": "WhatsApp Business synchronization",
         "LIFECYCLE": "Meta lifecycle events",
-        "EVENTS": "Events processed: {count}"
+        "EVENTS": "Events processed: {count}",
+        "STATES": {
+          "PENDING": "Waiting to start",
+          "UPDATING": "Updating",
+          "RESOLVED": "Resolved",
+          "REQUESTING": "Requesting data from Meta",
+          "REQUESTED": "Request accepted",
+          "SYNCING": "Syncing",
+          "RECONCILING": "Checking the request result",
+          "COMPLETED": "Completed",
+          "FAILED": "Failed",
+          "HISTORY_FAILED": "History import failed",
+          "HISTORY_DECLINED": "History transfer declined",
+          "OUTCOME_UNKNOWN": "Result unknown",
+          "MANUAL_RECOVERY_REQUIRED": "Manual recovery required"
+        }
       },
       "FIELDS": {
         "DISPLAY_PHONE_NUMBER": {
@@ -1701,12 +1735,21 @@
           "AVAILABLE_WITHOUT_REVIEW": "Available Without Review",
           "REJECTED": "Rejected",
           "DECLINED": "Declined",
-          "NON_EXISTS": "Non exists"
+          "NON_EXISTS": "Non exists",
+          "UNKNOWN": "Not available"
         },
         "MODES": {
           "SANDBOX": "Sandbox",
-          "LIVE": "Live"
-        }
+          "LIVE": "Live",
+          "UNKNOWN": "Not available"
+        },
+        "QUALITY": {
+          "GREEN": "High",
+          "YELLOW": "Medium",
+          "RED": "Low",
+          "UNKNOWN": "Not available"
+        },
+        "NOT_AVAILABLE": "Not available"
       },
       "WEBHOOK": {
         "TITLE": "Webhook Configuration",
@@ -1908,9 +1951,26 @@
         "FIELDS": "Fields",
         "LABEL": "Label",
         "PLACE_HOLDER": "Placeholder",
-        "KEY": "Key",
+        "KEY": "Field",
         "TYPE": "Type",
         "REQUIRED": "Required"
+      },
+      "FIELD_NAMES": {
+        "EMAIL_ADDRESS": "Email",
+        "FULL_NAME": "Name",
+        "PHONE_NUMBER": "Phone"
+      },
+      "FIELD_TYPES": {
+        "TEXT": "Text",
+        "TEL": "Phone",
+        "EMAIL": "Email",
+        "NUMBER": "Number",
+        "LINK": "Link",
+        "DATE": "Date",
+        "LIST": "List",
+        "CHECKBOX": "Checkbox",
+        "CURRENCY": "Amount",
+        "PERCENT": "Percent"
       },
       "ENABLE": {
         "LABEL": "Enable pre chat form",

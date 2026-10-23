@@ -36,6 +36,15 @@ const preChatFieldOptions = computed(() => {
   });
 });
 
+const fieldTitles = computed(() =>
+  Object.fromEntries(
+    (customAttributes.value || []).map(attribute => [
+      attribute.attribute_key,
+      attribute.attribute_display_name,
+    ])
+  )
+);
+
 const tableHeaders = computed(() => [
   '',
   '',
@@ -136,6 +145,7 @@ onMounted(() => {
             </thead>
             <PreChatFields
               :pre-chat-fields="preChatFields"
+              :field-titles="fieldTitles"
               @update="handlePreChatFieldOptions"
               @drag-end="changePreChatFieldFieldsOrder"
             />

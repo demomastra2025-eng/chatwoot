@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 
 import ButtonV4 from 'next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
+import DeveloperDetails from './DeveloperDetails.vue';
 
 const props = defineProps({
   healthData: {
@@ -44,6 +45,13 @@ const MODE_COLORS = {
   SANDBOX: 'text-n-slate-11',
 };
 
+// vue-i18n answers an unknown key with the key itself, so a label that equals
+// its key means there is no translation and the plain value is shown instead.
+const translateOrFallback = (key, fallback) => {
+  const label = t(key);
+  return label === key ? fallback : label;
+};
+
 const healthItems = computed(() => {
   if (!props.healthData) {
     return [];
@@ -62,7 +70,9 @@ const healthItems = computed(() => {
     {
       key: 'displayPhoneNumber',
       label: t('INBOX_MGMT.ACCOUNT_HEALTH.FIELDS.DISPLAY_PHONE_NUMBER.LABEL'),
-      value: displayPhoneNumber || 'N/A',
+      value:
+        displayPhoneNumber ||
+        t('INBOX_MGMT.ACCOUNT_HEALTH.VALUES.NOT_AVAILABLE'),
       tooltip: t(
         'INBOX_MGMT.ACCOUNT_HEALTH.FIELDS.DISPLAY_PHONE_NUMBER.TOOLTIP'
       ),
@@ -71,7 +81,8 @@ const healthItems = computed(() => {
     {
       key: 'verifiedName',
       label: t('INBOX_MGMT.ACCOUNT_HEALTH.FIELDS.VERIFIED_NAME.LABEL'),
-      value: verifiedName || 'N/A',
+      value:
+        verifiedName || t('INBOX_MGMT.ACCOUNT_HEALTH.VALUES.NOT_AVAILABLE'),
       tooltip: t('INBOX_MGMT.ACCOUNT_HEALTH.FIELDS.VERIFIED_NAME.TOOLTIP'),
       show: true,
     },
@@ -132,13 +143,22 @@ const getQualityRatingTextColor = rating =>
   QUALITY_COLORS[rating] || QUALITY_COLORS.UNKNOWN;
 
 const formatTierDisplay = tier =>
-  t(`INBOX_MGMT.ACCOUNT_HEALTH.VALUES.TIERS.${tier}`) || tier;
+  translateOrFallback(`INBOX_MGMT.ACCOUNT_HEALTH.VALUES.TIERS.${tier}`, tier);
 
 const formatStatusDisplay = status =>
-  t(`INBOX_MGMT.ACCOUNT_HEALTH.VALUES.STATUSES.${status}`) || status;
+  translateOrFallback(
+    `INBOX_MGMT.ACCOUNT_HEALTH.VALUES.STATUSES.${status}`,
+    status
+  );
 
 const formatModeDisplay = mode =>
-  t(`INBOX_MGMT.ACCOUNT_HEALTH.VALUES.MODES.${mode}`) || mode;
+  translateOrFallback(`INBOX_MGMT.ACCOUNT_HEALTH.VALUES.MODES.${mode}`, mode);
+
+const formatQualityDisplay = rating =>
+  translateOrFallback(
+    `INBOX_MGMT.ACCOUNT_HEALTH.VALUES.QUALITY.${rating}`,
+    rating
+  );
 
 const getModeStatusTextColor = mode => MODE_COLORS[mode] || 'text-n-slate-12';
 
@@ -162,6 +182,33 @@ const webhookUrlMismatch = computed(
     webhookUrl.value !== props.healthData?.expected_webhook_url
 );
 
+const RECOVERY_STATE_KEYS = {
+  pending: 'INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.STATES.PENDING',
+  updating: 'INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.STATES.UPDATING',
+  resolved: 'INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.STATES.RESOLVED',
+  requesting: 'INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.STATES.REQUESTING',
+  requested: 'INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.STATES.REQUESTED',
+  syncing: 'INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.STATES.SYNCING',
+  reconciling: 'INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.STATES.RECONCILING',
+  completed: 'INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.STATES.COMPLETED',
+  failed: 'INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.STATES.FAILED',
+  history_failed: 'INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.STATES.HISTORY_FAILED',
+  history_declined:
+    'INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.STATES.HISTORY_DECLINED',
+  request_outcome_unknown:
+    'INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.STATES.OUTCOME_UNKNOWN',
+  outcome_unknown: 'INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.STATES.OUTCOME_UNKNOWN',
+  manual_recovery_required:
+    'INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.STATES.MANUAL_RECOVERY_REQUIRED',
+};
+
+const formatRecoveryState = state => {
+  const rawState = String(state || 'unknown');
+  const fallback = rawState.replaceAll('_', ' ');
+  const key = RECOVERY_STATE_KEYS[rawState];
+  return key ? translateOrFallback(key, fallback) : fallback;
+};
+
 const recoveryItems = computed(() => {
   const data = props.recoveryData || {};
   const callback = data.webhook_callback_recovery;
@@ -177,27 +224,27 @@ const recoveryItems = computed(() => {
       key: 'callback',
       label: t('INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.CALLBACK'),
       value: callback.state,
+      display: formatRecoveryState(callback.state),
       detail: callback.last_error,
     },
     sync && {
       key: 'sync',
       label: t('INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.COEXISTENCE_SYNC'),
       value: sync.state,
+      display: formatRecoveryState(sync.state),
       detail: sync.last_error,
     },
     lifecycle && {
       key: 'lifecycle',
       label: t('INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.LIFECYCLE'),
-      value: t('INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.EVENTS', {
+      value: '',
+      display: t('INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.EVENTS', {
         count: lifecycleEventCount,
       }),
       detail: lifecycle.last_event_at,
     },
   ].filter(Boolean);
 });
-
-const formatRecoveryState = state =>
-  String(state || 'unknown').replaceAll('_', ' ');
 
 const recoveryToneClass = state => {
   const normalizedState = String(state || '');
@@ -270,7 +317,7 @@ const handleRegisterWebhook = () => {
               class="inline-flex items-center px-2 py-0.5 min-h-6 text-label-small rounded-md bg-n-alpha-2"
               :class="getQualityRatingTextColor(item.value)"
             >
-              {{ item.value }}
+              {{ formatQualityDisplay(item.value) }}
             </span>
             <span
               v-else-if="item.type === 'status'"
@@ -297,7 +344,22 @@ const handleRegisterWebhook = () => {
             }}</span>
           </div>
         </div>
+      </div>
 
+      <div v-else class="pt-8">
+        <div
+          class="flex justify-center items-center p-8 text-center text-n-slate-11"
+        >
+          <div>
+            <Icon icon="i-lucide-activity" class="mb-2 w-8 h-8" />
+            <p class="text-body-main text-n-slate-11">
+              {{ t('INBOX_MGMT.ACCOUNT_HEALTH.NO_DATA') }}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <DeveloperDetails v-if="showWebhookSection || recoveryItems.length">
         <!-- Webhook configuration card -->
         <div
           v-if="showWebhookSection"
@@ -346,47 +408,37 @@ const handleRegisterWebhook = () => {
             </ButtonV4>
           </div>
         </div>
-      </div>
 
-      <div v-else class="pt-8">
-        <div
-          class="flex justify-center items-center p-8 text-center text-n-slate-11"
-        >
-          <div>
-            <Icon icon="i-lucide-activity" class="mb-2 w-8 h-8" />
-            <p class="text-body-main text-n-slate-11">
-              {{ t('INBOX_MGMT.ACCOUNT_HEALTH.NO_DATA') }}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="recoveryItems.length" class="pt-6 space-y-3">
-        <h3 class="text-heading-4 text-n-slate-12">
-          {{ t('INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.TITLE') }}
-        </h3>
-        <div class="grid grid-cols-1 gap-4 xs:grid-cols-2">
-          <div
-            v-for="item in recoveryItems"
-            :key="item.key"
-            data-testid="whatsapp-recovery-status"
-            class="flex flex-col gap-2 px-4 py-3 rounded-xl outline outline-1 -outline-offset-1 outline-n-weak bg-n-solid-1"
-          >
-            <span class="text-body-main font-medium text-n-slate-11">
-              {{ item.label }}
-            </span>
-            <span
-              class="inline-flex self-start px-2 py-0.5 min-h-6 text-label-small capitalize rounded-md bg-n-alpha-2"
-              :class="recoveryToneClass(item.value)"
+        <div v-if="recoveryItems.length" class="space-y-3">
+          <h3 class="text-heading-4 text-n-slate-12">
+            {{ t('INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.TITLE') }}
+          </h3>
+          <div class="grid grid-cols-1 gap-4 xs:grid-cols-2">
+            <div
+              v-for="item in recoveryItems"
+              :key="item.key"
+              data-testid="whatsapp-recovery-status"
+              class="flex flex-col gap-2 px-4 py-3 rounded-xl outline outline-1 -outline-offset-1 outline-n-weak bg-n-solid-1"
             >
-              {{ formatRecoveryState(item.value) }}
-            </span>
-            <p v-if="item.detail" class="mb-0 text-body-small text-n-slate-10">
-              {{ item.detail }}
-            </p>
+              <span class="text-body-main font-medium text-n-slate-11">
+                {{ item.label }}
+              </span>
+              <span
+                class="inline-flex self-start px-2 py-0.5 min-h-6 text-label-small rounded-md bg-n-alpha-2"
+                :class="recoveryToneClass(item.value)"
+              >
+                {{ item.display }}
+              </span>
+              <p
+                v-if="item.detail"
+                class="mb-0 text-body-small text-n-slate-10"
+              >
+                {{ item.detail }}
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      </DeveloperDetails>
     </div>
   </div>
 </template>

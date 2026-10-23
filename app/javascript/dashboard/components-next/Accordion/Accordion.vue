@@ -23,7 +23,9 @@ watch(
 <template>
   <div class="border rounded-lg border-n-slate-4">
     <button
+      type="button"
       class="flex items-center justify-between w-full p-4 text-left"
+      :aria-expanded="isExpanded"
       @click="toggleAccordion"
     >
       <span class="text-sm font-medium text-n-slate-12">{{ title }}</span>
