@@ -16,7 +16,7 @@
       "REAUTHORIZATION_REQUIRED_DESCRIPTION": "Переподключите канал, чтобы восстановить доставку сообщений.",
       "TOKEN_EXPIRING": "Авторизация WhatsApp скоро истечёт",
       "TOKEN_EXPIRING_DESCRIPTION": "Переподключите канал через Meta до истечения срока, чтобы доставка сообщений не прерывалась.",
-      "PHONE_REGISTRATION_REQUIRED": "Нужно завершить регистрацию WhatsApp",
+      "PHONE_REGISTRATION_REQUIRED": "Завершите регистрацию WhatsApp",
       "PHONE_REGISTRATION_REQUIRED_DESCRIPTION": "Авторизация активна, но регистрацию номера нужно завершить с текущим PIN двухэтапной проверки Meta.",
       "WEBHOOK_SIGNATURE_INVALID": "Некорректная подпись webhook",
       "WEBHOOK_SIGNATURE_INVALID_DESCRIPTION": "Проверьте секрет webhook или callback URL у провайдера перед повторной попыткой.",
@@ -37,7 +37,20 @@
         "NEEDS_AUTH": "Нужна авторизация",
         "DELETING": "Удаляется",
         "DELETION_RECOVERY": "Проверьте WhatsApp",
-        "CHANNEL_MISSING": "Канал повреждён"
+        "CHANNEL_MISSING": "Канал повреждён",
+        "CONNECTED": "Подключён",
+        "NO_CONNECTION": "Нет связи"
+      },
+      "HINT": {
+        "RECONNECT": "Канал не работает — подключите заново",
+        "CONNECTING": "Идёт подключение — подождите минуту",
+        "FINISH_LOGIN": "Завершите подключение в настройках канала",
+        "TEMPORARY": "Временный сбой связи — проверьте позже",
+        "REGISTRATION": "Завершите регистрацию номера в WhatsApp",
+        "PROBLEM": "Есть проблема с подключением — откройте настройки",
+        "EXPIRING": "Скоро потребуется переподключение",
+        "CHANNEL_MISSING": "Канал повреждён — удалите его и подключите заново",
+        "DELETION_RECOVERY": "Отключение WhatsApp не подтверждено — откройте настройки"
       },
       "DELETION_RECOVERY_DESCRIPTION": "Отключение WhatsApp не подтверждено. Канал и история диалогов сохранены. Откройте настройки, чтобы подключить этот канал через Meta или повторить удаление.",
       "CHANNEL_MISSING_DESCRIPTION": "Запись канала для этого входящего больше не существует, поэтому он не может ничего принимать и отправлять. Удалите его в настройках и подключите канал заново.",
@@ -71,7 +84,7 @@
         "ERROR": "Ошибка"
       },
       "CHIPS": {
-        "CAPTAIN": "AI: {name}",
+        "CAPTAIN": "ИИ: {name}",
         "AUTO_ASSIGNMENT": "Автораспределение",
         "WORKING_HOURS": "Рабочие часы",
         "GREETING": "Приветствие",
@@ -212,7 +225,7 @@
       },
       "TWILIO": {
         "TITLE": "Twilio SMS/WhatsApp канал",
-        "DESC": "Интегрируйте Twilio и начните поддерживать ваших клиентов через SMS или Whatsapp.",
+        "DESC": "Интегрируйте Twilio и начните поддерживать ваших клиентов через SMS или WhatsApp.",
         "ACCOUNT_SID": {
           "LABEL": "SID аккаунта",
           "PLACEHOLDER": "Пожалуйста, введите SID вашего аккаунта Twilio",
@@ -989,20 +1002,20 @@
         }
       },
       "TELEGRAM_CHANNEL": {
-        "TITLE": "Telegram Bot канал",
-        "DESC": "Интегрируйте Telegram Bot и начните общаться с вашими клиентами.",
+        "TITLE": "Канал Telegram-бот",
+        "DESC": "Интегрируйте Telegram-бот и начните общаться с вашими клиентами.",
         "BOT_TOKEN": {
           "LABEL": "Bot Token",
           "SUBTITLE": "Настройте токен бота, который вы получили в Telegram BotFather.",
           "PLACEHOLDER": "Bot Token"
         },
-        "SUBMIT_BUTTON": "Создать канал Telegram Bot",
+        "SUBMIT_BUTTON": "Создать канал Telegram-бот",
         "API": {
           "ERROR_MESSAGE": "Не удалось добавить канал Телеграм"
         }
       },
       "TELEGRAM_PERSONAL_CHANNEL": {
-        "TITLE": "Telegram Personal канал",
+        "TITLE": "Канал Telegram (личный)",
         "DESC": "Подключите личный аккаунт Telegram в OneLink.",
         "API_ID": {
           "LABEL": "API ID",
@@ -1019,9 +1032,9 @@
           "PLACEHOLDER": "+77001234567",
           "SUBTITLE": "Используйте номер личного Telegram-аккаунта в формате E.164."
         },
-        "SUBMIT_BUTTON": "Создать канал Telegram Personal",
+        "SUBMIT_BUTTON": "Создать канал Telegram (личный)",
         "API": {
-          "ERROR_MESSAGE": "Не удалось сохранить канал Telegram Personal"
+          "ERROR_MESSAGE": "Не удалось сохранить канал Telegram (личный)"
         }
       },
       "VK_COMMUNITY_CHANNEL": {
@@ -1067,7 +1080,7 @@
       },
       "AUTH": {
         "TITLE": "Выберите канал",
-        "DESC": "OneLink поддерживает виджет чата, страницу Facebook, профиль Twitter, Whatsapp, Email и т. д., как канал связи с пользователями. Если вы хотите настроить пользовательский канал, вы можете создать его с помощью канала API. Выберите один канал из списка ниже, чтобы продолжить.",
+        "DESC": "OneLink поддерживает виджет чата, страницу Facebook, профиль Twitter, WhatsApp, Email и т. д., как канал связи с пользователями. Если вы хотите настроить пользовательский канал, вы можете создать его с помощью канала API. Выберите один канал из списка ниже, чтобы продолжить.",
         "TITLE_NEXT": "Завершить установку",
         "TITLE_FINISH": "Финиш!",
         "CHANNEL": {
@@ -1100,7 +1113,7 @@
             "DESCRIPTION": "Интегрировать SMS канала с Twilio или другим провайдером"
           },
           "API": {
-            "TITLE": "API",
+            "TITLE": "API (для разработчиков)",
             "DESCRIPTION": "Сделать кастомный канал, используя свой API"
           },
           "TELEGRAM": {
@@ -1108,11 +1121,11 @@
             "DESCRIPTION": "Подключить Telegram и выбрать, использовать бота или личный аккаунт"
           },
           "TELEGRAM_BOT": {
-            "TITLE": "Telegram Bot",
-            "DESCRIPTION": "Настроить Telegram Bot через токен BotFather"
+            "TITLE": "Telegram-бот",
+            "DESCRIPTION": "Настроить Telegram-бот через токен BotFather"
           },
           "TELEGRAM_PERSONAL": {
-            "TITLE": "Telegram Personal",
+            "TITLE": "Telegram (личный)",
             "DESCRIPTION": "Подключить личный Telegram-аккаунт для приватных чатов"
           },
           "VK": {
@@ -1240,9 +1253,9 @@
       "TELEGRAM_QR_INSTRUCTION": "Отсканируйте QR-код выше, чтобы быстро протестировать ваш почтовый ящик Telegram",
       "TELEGRAM_QR_ALT": "QR-код Telegram",
       "TELEGRAM_PERSONAL": {
-        "TITLE": "Подключение Telegram Personal",
+        "TITLE": "Подключение Telegram (личный)",
         "DESCRIPTION": "Авторизуйте личный аккаунт Telegram. OneLink привязывает этот inbox к одной приватной Telegram-сессии.",
-        "LOADING": "Подготавливаем авторизацию Telegram Personal.",
+        "LOADING": "Подготавливаем авторизацию Telegram (личный).",
         "REQUESTING_CODE": "Запрашиваем код входа в Telegram.",
         "REQUESTING_QR": "Подготавливаем QR-вход Telegram.",
         "REQUESTING_FULL_HISTORY": "Планируем полный импорт истории Telegram.",
@@ -1272,7 +1285,7 @@
         "QR_LOGIN": "Войти по QR-коду",
         "QR_HINT": "Откройте Telegram на устройстве, где этот аккаунт уже вошёл, и отсканируйте этот QR-код.",
         "QR_EMPTY": "Сгенерируйте QR-код Telegram, чтобы начать QR-вход.",
-        "QR_IMAGE_ALT": "QR-код Telegram Personal",
+        "QR_IMAGE_ALT": "QR-код Telegram (личный)",
         "QR_EXPIRES_AT": "QR истекает: {value}",
         "PASSWORD_REQUIRED": "Для этого аккаунта включена 2FA. Введите пароль ниже.",
         "PASSWORD_LABEL": "Пароль 2FA",
@@ -1281,10 +1294,10 @@
         "PASSWORD_REQUIRED_ERROR": "Введите пароль 2FA Telegram",
         "VERIFY_PASSWORD": "Подтвердить пароль",
         "VERIFY_PASSWORD_ERROR": "Не удалось подтвердить пароль Telegram",
-        "CONNECTED": "Telegram Personal подключен.",
-        "CONNECTED_SUCCESS": "Telegram Personal успешно подключен.",
+        "CONNECTED": "Telegram (личный) подключен.",
+        "CONNECTED_SUCCESS": "Telegram (личный) успешно подключен.",
         "CONNECTED_REDIRECT": "Авторизация завершена. Переходим в настройки inbox...",
-        "FAILED": "Авторизация Telegram Personal завершилась ошибкой.",
+        "FAILED": "Авторизация Telegram (личный) завершилась ошибкой.",
         "PHONE_NUMBER": "Номер телефона:",
         "STATUS": "Статус:",
         "CONNECTION": "Соединение:",
@@ -2149,17 +2162,17 @@
       "MESSENGER": "Messenger",
       "WEB_WIDGET": "Сайт",
       "TWITTER_PROFILE": "Twitter",
-      "TWILIO_SMS": "Twilio SMS",
+      "TWILIO_SMS": "SMS",
       "WHATSAPP": "WhatsApp",
       "WHATSAPP_WEB": "WhatsApp Web",
       "SMS": "SMS",
       "EMAIL": "Email",
       "TELEGRAM": "Telegram",
-      "TELEGRAM_BOT": "Telegram Bot",
-      "TELEGRAM_PERSONAL": "Telegram Personal",
+      "TELEGRAM_BOT": "Telegram-бот",
+      "TELEGRAM_PERSONAL": "Telegram (личный)",
       "VK": "VK",
       "LINE": "Line",
-      "API": "Источник API",
+      "API": "API (для разработчиков)",
       "INSTAGRAM": "Instagram",
       "TIKTOK": "TikTok",
       "VOICE": "Звонки",

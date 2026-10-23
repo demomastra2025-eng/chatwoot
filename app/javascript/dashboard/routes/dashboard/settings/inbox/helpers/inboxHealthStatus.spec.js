@@ -35,6 +35,23 @@ describe('#getInboxHealthStatus', () => {
     ).toMatchObject({ id: 'pending', tone: 'amber' });
   });
 
+  it('marks a WhatsApp Web session with a closed connection as disconnected even when the lifecycle still says connected', () => {
+    expect(
+      getInboxHealthStatus({
+        channel_type: 'Channel::WhatsappWeb',
+        lifecycle_state: 'connected',
+        connection_state: 'close',
+        additional_attributes: {
+          evolution: { status: 'connected', connection_state: 'close' },
+        },
+      })
+    ).toMatchObject({
+      id: 'disconnected',
+      tone: 'ruby',
+      labelKey: 'INBOX_MGMT.HEALTH_STATUS.DISCONNECTED',
+    });
+  });
+
   it('shows WhatsApp Web QR/auth states as pending instead of connected', () => {
     expect(
       getInboxHealthStatus({

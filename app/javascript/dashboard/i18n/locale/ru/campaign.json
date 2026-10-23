@@ -240,7 +240,7 @@
       },
       "EMPTY_STATE": {
         "TITLE": "Нет доступных кампаний",
-        "SUBTITLE": "Запустите кампанию из inbox'ов SMS, WhatsApp, Email, Telegram Personal, VK, LINE, Facebook, Instagram или WhatsApp Web. Нажмите 'Создать кампанию', чтобы начать."
+        "SUBTITLE": "Запустите кампанию из inbox'ов SMS, WhatsApp, Email, Telegram (личный), VK, LINE, Facebook, Instagram или WhatsApp Web. Нажмите 'Создать кампанию', чтобы начать."
       },
       "CARD": {
         "RESUME_CAMPAIGN": "Продолжить кампанию",

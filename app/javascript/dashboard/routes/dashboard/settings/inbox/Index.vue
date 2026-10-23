@@ -10,7 +10,21 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import ChannelName from './components/ChannelName.vue';
 import ChannelIcon from 'next/icon/ChannelIcon.vue';
+import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { isInboxPendingDeletion } from 'dashboard/helper/whatsappWeb';
+import { getInboxListStatus } from './helpers/inboxListStatus';
+import { getInboxListSubtitle } from './helpers/inboxListSubtitle';
+
+const STATUS_BADGE_CLASSES = {
+  teal: 'bg-n-teal-3 text-n-teal-11 border-n-teal-5',
+  amber: 'bg-n-amber-3 text-n-amber-11 border-n-amber-5',
+  ruby: 'bg-n-ruby-3 text-n-ruby-11 border-n-ruby-5',
+};
+
+const STATUS_HINT_CLASSES = {
+  amber: 'text-n-amber-11',
+  ruby: 'text-n-ruby-11',
+};
 
 const getters = useStoreGetters();
 const { accountScopedRoute } = useAccount();
@@ -19,343 +33,6 @@ const { t } = useI18n();
 const searchQuery = ref('');
 
 const inboxes = useMapGetter('inboxes/getInboxes');
-
-const normalizeValue = value => {
-  return value ? String(value).trim() : '';
-};
-
-const pickFirstValue = values => {
-  return values.map(normalizeValue).find(Boolean) || '';
-};
-
-const getChannelType = inbox =>
-  normalizeValue(inbox.channel_type).toLowerCase();
-
-const getConnectionState = inbox => {
-  return pickFirstValue([
-    inbox.connection_state,
-    inbox.lifecycle_state,
-    inbox.runtime_state,
-  ]);
-};
-
-const capitalizeWords = value => {
-  return normalizeValue(value)
-    .replaceAll('_', ' ')
-    .split(' ')
-    .filter(Boolean)
-    .map(word => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
-    .join(' ');
-};
-
-const formatProvider = provider => {
-  const normalizedProvider = normalizeValue(provider).toLowerCase();
-
-  if (!normalizedProvider) return '';
-  if (normalizedProvider === 'whatsapp_cloud') return 'WhatsApp Cloud';
-  if (normalizedProvider === 'telegram_personal') return 'Telegram Personal';
-  if (normalizedProvider === 'sipuni') return 'Sipuni';
-  if (normalizedProvider === 'binotel') return 'Binotel';
-  if (normalizedProvider === 'wazo')
-    return t('INBOX_MGMT.ADD.VOICE.PROVIDERS.WAZO');
-  if (normalizedProvider === 'twilio') return 'Twilio';
-  if (normalizedProvider === 'google') return 'Google';
-  if (normalizedProvider === 'microsoft') return 'Microsoft';
-
-  return normalizeValue(provider);
-};
-
-const formatUrl = value => {
-  const rawValue = normalizeValue(value);
-  if (!rawValue) return '';
-
-  try {
-    const url = new URL(rawValue);
-    return `${url.hostname}${url.pathname === '/' ? '' : url.pathname}`;
-  } catch {
-    return rawValue.replace(/^https?:\/\//, '').split(/[?#]/)[0];
-  }
-};
-
-const formatDateTime = value => {
-  if (!value) return '';
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date);
-};
-
-const getConnectionStateLabel = state => {
-  const normalizedState = normalizeValue(state).toLowerCase();
-
-  if (!normalizedState) return '';
-  if (
-    ['connected', 'ready', 'running', 'logged_in'].includes(normalizedState)
-  ) {
-    return t('INBOX_MGMT.LIST.CONNECTION_STATES.CONNECTED');
-  }
-  if (normalizedState === 'disconnected') {
-    return t('INBOX_MGMT.LIST.CONNECTION_STATES.DISCONNECTED');
-  }
-  if (normalizedState === 'qr_required') {
-    return t('INBOX_MGMT.LIST.CONNECTION_STATES.QR_REQUIRED');
-  }
-  if (['syncing', 'sync_in_progress'].includes(normalizedState)) {
-    return t('INBOX_MGMT.LIST.CONNECTION_STATES.SYNCING');
-  }
-  if (['connecting', 'initializing', 'pending'].includes(normalizedState)) {
-    return t('INBOX_MGMT.LIST.CONNECTION_STATES.CONNECTING');
-  }
-  if (['unauthorized', 'auth_failed'].includes(normalizedState)) {
-    return t('INBOX_MGMT.LIST.CONNECTION_STATES.UNAUTHORIZED');
-  }
-  if (['failed', 'error'].includes(normalizedState)) {
-    return t('INBOX_MGMT.LIST.CONNECTION_STATES.ERROR');
-  }
-
-  return capitalizeWords(state);
-};
-
-const getPrimaryPhone = inbox => {
-  return pickFirstValue([
-    inbox.phone_number,
-    inbox.display_phone_number,
-    inbox.telephony?.phone_number,
-  ]);
-};
-
-const getPrimaryAccountName = inbox => {
-  return pickFirstValue([
-    inbox.display_name,
-    inbox.bot_name,
-    inbox.business_name,
-    inbox.email,
-  ]);
-};
-
-const getProvider = inbox => {
-  const baseProvider = pickFirstValue([
-    inbox.provider,
-    inbox.telephony?.provider,
-  ]);
-  const carrierKind = pickFirstValue([
-    inbox.provider_config?.carrier_kind,
-    inbox.telephony?.carrier_kind,
-  ]).toLowerCase();
-  if (baseProvider.toLowerCase() === 'wazo') {
-    if (carrierKind) {
-      const carrierLabels = {
-        altel: 'Altel Business',
-        tele2: 'Tele2 Business',
-        kazakhtelecom: 'Kazakhtelecom',
-        kcell: 'Kcell / Activ',
-        beeline_trunk: 'Beeline',
-        custom: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.WAZO'),
-      };
-      return carrierLabels[carrierKind] || capitalizeWords(carrierKind);
-    }
-    return t('INBOX_MGMT.ADD.VOICE.PROVIDERS.WAZO');
-  }
-  return capitalizeWords(baseProvider);
-};
-
-const addDetail = (details, { icon, label, value, title }) => {
-  const normalizedValue = normalizeValue(value);
-
-  if (!normalizedValue) return;
-
-  details.push({
-    icon,
-    label,
-    value: normalizedValue,
-    title: title || normalizedValue,
-  });
-};
-
-const addConnectionDetails = (details, inbox) => {
-  const connectionLabel = getConnectionStateLabel(getConnectionState(inbox));
-  addDetail(details, {
-    icon: 'i-lucide-wifi',
-    label: t('INBOX_MGMT.LIST.DETAILS.CONNECTION'),
-    value: connectionLabel,
-  });
-
-  const lastSync = formatDateTime(
-    pickFirstValue([
-      inbox.last_synced_at,
-      inbox.message_templates_last_updated,
-      inbox.telephony?.last_synced_at,
-    ])
-  );
-  addDetail(details, {
-    icon: 'i-lucide-clock-3',
-    label: t('INBOX_MGMT.LIST.DETAILS.SYNCED_AT'),
-    value: lastSync,
-  });
-};
-
-const addProviderDetail = (details, inbox) => {
-  addDetail(details, {
-    icon: 'i-lucide-plug',
-    label: t('INBOX_MGMT.LIST.DETAILS.PROVIDER'),
-    value: formatProvider(getProvider(inbox)),
-  });
-};
-
-const getVoiceRoutingLabel = inbox => {
-  const routingPolicy = inbox.telephony?.routing_policy || {};
-  const mode = normalizeValue(routingPolicy.mode).toLowerCase();
-
-  if (routingPolicy.ai_enabled || mode === 'ai') {
-    return t('INBOX_MGMT.LIST.DETAILS.ROUTING_AI');
-  }
-
-  if (mode === 'operator') {
-    return t('INBOX_MGMT.LIST.DETAILS.ROUTING_OPERATOR');
-  }
-
-  return capitalizeWords(mode);
-};
-
-const addOperationalDetails = (details, inbox) => {
-  const type = getChannelType(inbox);
-
-  if (type.includes('voice')) {
-    addDetail(details, {
-      icon: 'i-lucide-phone',
-      label: t('INBOX_MGMT.LIST.DETAILS.PHONE'),
-      value: getPrimaryPhone(inbox),
-    });
-    addProviderDetail(details, inbox);
-    addDetail(details, {
-      icon: 'i-lucide-route',
-      label: t('INBOX_MGMT.LIST.DETAILS.ROUTING'),
-      value: getVoiceRoutingLabel(inbox),
-    });
-    addConnectionDetails(details, inbox);
-    return;
-  }
-
-  if (type.includes('webwidget')) {
-    addDetail(details, {
-      icon: 'i-lucide-globe',
-      label: t('INBOX_MGMT.LIST.DETAILS.SITE'),
-      value: formatUrl(inbox.website_url),
-      title: inbox.website_url,
-    });
-    addDetail(details, {
-      icon: 'i-lucide-mail-check',
-      label: t('INBOX_MGMT.LIST.DETAILS.EMAIL_CONTINUITY'),
-      value: inbox.continuity_via_email
-        ? t('INBOX_MGMT.LIST.DETAILS.ENABLED')
-        : '',
-    });
-    return;
-  }
-
-  if (type.includes('email')) {
-    addDetail(details, {
-      icon: 'i-lucide-mail',
-      label: t('INBOX_MGMT.LIST.DETAILS.EMAIL'),
-      value: inbox.email,
-    });
-    addDetail(details, {
-      icon: 'i-lucide-forward',
-      label: t('INBOX_MGMT.LIST.DETAILS.FORWARD_TO'),
-      value: inbox.forward_to_email,
-    });
-    return;
-  }
-
-  if (type.includes('api')) {
-    addDetail(details, {
-      icon: 'i-lucide-webhook',
-      label: t('INBOX_MGMT.LIST.DETAILS.WEBHOOK'),
-      value: formatUrl(inbox.webhook_url || inbox.callback_webhook_url),
-      title: inbox.webhook_url || inbox.callback_webhook_url,
-    });
-    return;
-  }
-
-  if (
-    type.includes('whatsapp') ||
-    type.includes('twilio') ||
-    type.includes('sms') ||
-    type.includes('telegram_personal')
-  ) {
-    addDetail(details, {
-      icon: 'i-lucide-phone',
-      label: t('INBOX_MGMT.LIST.DETAILS.PHONE'),
-      value: getPrimaryPhone(inbox),
-    });
-    addProviderDetail(details, inbox);
-    addConnectionDetails(details, inbox);
-    return;
-  }
-
-  if (type.includes('telegram')) {
-    addDetail(details, {
-      icon: 'i-lucide-bot',
-      label: t('INBOX_MGMT.LIST.DETAILS.BOT'),
-      value: inbox.bot_name,
-    });
-    return;
-  }
-
-  if (type.includes('weixin')) {
-    addDetail(details, {
-      icon: 'i-lucide-user-round',
-      label: t('INBOX_MGMT.LIST.DETAILS.PROFILE'),
-      value: getPrimaryAccountName(inbox),
-    });
-    addConnectionDetails(details, inbox);
-    return;
-  }
-
-  if (
-    type.includes('facebook') ||
-    type.includes('instagram') ||
-    type.includes('tiktok') ||
-    type.includes('twitter') ||
-    type.includes('vk')
-  ) {
-    addDetail(details, {
-      icon: 'i-lucide-at-sign',
-      label: t('INBOX_MGMT.LIST.DETAILS.ACCOUNT'),
-      value: getPrimaryAccountName(inbox),
-    });
-    addDetail(details, {
-      icon: 'i-lucide-circle-check',
-      label: t('INBOX_MGMT.LIST.DETAILS.CONNECTION'),
-      value: inbox.reauthorization_required
-        ? t('INBOX_MGMT.LIST.STATUS.NEEDS_AUTH')
-        : t('INBOX_MGMT.LIST.DETAILS.CONNECTED_ACCOUNT'),
-    });
-  }
-};
-
-const getCardDetails = inbox => {
-  const details = [];
-  addOperationalDetails(details, inbox);
-
-  if (!details.length) {
-    addDetail(details, {
-      icon: 'i-lucide-badge-check',
-      label: t('INBOX_MGMT.LIST.DETAILS.IDENTITY'),
-      value: pickFirstValue([
-        getPrimaryPhone(inbox),
-        getPrimaryAccountName(inbox),
-        formatUrl(inbox.website_url),
-      ]),
-    });
-  }
-
-  return details.slice(0, 4);
-};
 
 const getCapabilityChips = inbox => {
   const chips = [];
@@ -368,96 +45,26 @@ const getCapabilityChips = inbox => {
     );
   }
 
-  if (inbox.greeting_enabled && !['channel::voice', 'channel::email'].includes(getChannelType(inbox))) {
+  if (
+    inbox.greeting_enabled &&
+    ![INBOX_TYPES.VOICE, INBOX_TYPES.EMAIL].includes(inbox.channel_type)
+  ) {
     chips.push(t('INBOX_MGMT.LIST.CHIPS.GREETING'));
   }
 
-  if (inbox.pre_chat_form_enabled) {
-    chips.push(t('INBOX_MGMT.LIST.CHIPS.PRE_CHAT_FORM'));
-  }
-
-  if (inbox.imap_enabled) {
-    chips.push(t('INBOX_MGMT.LIST.CHIPS.IMAP'));
-  }
-
-  if (inbox.smtp_enabled) {
-    chips.push(t('INBOX_MGMT.LIST.CHIPS.SMTP'));
-  }
-
-  if (inbox.calling_enabled || inbox.telephony) {
+  // A voice channel is all about calls, so the tag would say nothing new.
+  if (inbox.calling_enabled && inbox.channel_type !== INBOX_TYPES.VOICE) {
     chips.push(t('INBOX_MGMT.LIST.CHIPS.CALLS'));
   }
 
-  return chips.slice(0, 5);
+  return chips;
 };
 
-const getStatus = inbox => {
-  const state = getConnectionState(inbox).toLowerCase();
-
-  if (isInboxPendingDeletion(inbox)) {
-    return {
-      label: t('INBOX_MGMT.LIST.STATUS.DELETING'),
-      class: 'bg-n-amber-3 text-n-amber-11 border-n-amber-5',
-    };
-  }
-
-  if (inbox.channel_missing) {
-    return {
-      label: t('INBOX_MGMT.LIST.STATUS.CHANNEL_MISSING'),
-      class: 'bg-n-ruby-3 text-n-ruby-11 border-n-ruby-5',
-    };
-  }
-
-  if (inbox.deletion_recovery?.status === 'failed') {
-    return {
-      label: t('INBOX_MGMT.LIST.STATUS.DELETION_RECOVERY'),
-      class: 'bg-n-amber-3 text-n-amber-11 border-n-amber-5',
-    };
-  }
-
-  if (inbox.reauthorization_required || inbox.requires_reauthorization) {
-    return {
-      label: t('INBOX_MGMT.LIST.STATUS.NEEDS_AUTH'),
-      class: 'bg-n-ruby-3 text-n-ruby-11 border-n-ruby-5',
-    };
-  }
-
-  if (
-    [
-      'disconnected',
-      'unauthorized',
-      'auth_failed',
-      'qr_required',
-      'failed',
-      'error',
-    ].includes(state)
-  ) {
-    return {
-      label: t('INBOX_MGMT.LIST.STATUS.CHECK'),
-      class: 'bg-n-amber-3 text-n-amber-11 border-n-amber-5',
-    };
-  }
-
-  if (inbox.enabled === false || inbox.status === 'disabled') {
-    return {
-      label: t('INBOX_MGMT.LIST.STATUS.INACTIVE'),
-      class: 'bg-n-slate-3 text-n-slate-11 border-n-slate-5',
-    };
-  }
-
-  const tokenExpiring =
-    inbox.provider_config?.token_health?.status === 'expiring';
-
-  return tokenExpiring
-    ? {
-        label: t('INBOX_MGMT.HEALTH_STATUS.TOKEN_EXPIRING'),
-        class: 'bg-n-amber-3 text-n-amber-11 border-n-amber-5',
-      }
-    : {
-        label: t('INBOX_MGMT.LIST.STATUS.ACTIVE'),
-        class: 'bg-n-teal-3 text-n-teal-11 border-n-teal-5',
-      };
-};
+const buildCard = inbox => ({
+  status: getInboxListStatus(inbox),
+  subtitle: getInboxListSubtitle(inbox, t),
+  chips: getCapabilityChips(inbox),
+});
 
 const inboxesList = computed(() => {
   return (inboxes.value || [])
@@ -466,16 +73,23 @@ const inboxesList = computed(() => {
 });
 
 const searchableInboxes = computed(() => {
-  return inboxesList.value.map(inbox => ({
-    ...inbox,
-    search_text: [
-      getCardDetails(inbox)
-        .map(detail => `${detail.label} ${detail.value}`)
+  return inboxesList.value.map(inbox => {
+    const card = buildCard(inbox);
+    const { status } = card;
+
+    return {
+      ...inbox,
+      card,
+      search_text: [
+        card.subtitle?.text,
+        card.chips.join(' '),
+        t(status.labelKey),
+        status.hintKey ? t(status.hintKey) : '',
+      ]
+        .filter(Boolean)
         .join(' '),
-      getCapabilityChips(inbox).join(' '),
-      getStatus(inbox).label,
-    ].join(' '),
-  }));
+    };
+  });
 });
 
 const filteredInboxesList = computed(() => {
@@ -562,37 +176,34 @@ const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
             </div>
             <span
               class="shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium"
-              :class="getStatus(inbox).class"
+              :class="STATUS_BADGE_CLASSES[inbox.card.status.tone]"
+              data-test-id="inbox-status-badge"
             >
-              {{ getStatus(inbox).label }}
+              {{ $t(inbox.card.status.labelKey) }}
             </span>
           </div>
 
           <div class="mt-4 flex flex-col gap-2 text-sm text-n-slate-11">
             <div
-              v-for="detail in getCardDetails(inbox)"
-              :key="`${detail.label}-${detail.value}`"
-              class="flex min-w-0 items-start gap-2"
+              v-if="inbox.card.subtitle"
+              class="flex min-w-0 items-center gap-2"
+              data-test-id="inbox-subtitle"
             >
               <Icon
-                :icon="detail.icon"
-                class="mt-0.5 size-4 shrink-0 text-n-slate-9"
+                :icon="inbox.card.subtitle.icon"
+                class="size-4 shrink-0 text-n-slate-9"
               />
-              <span class="shrink-0 text-n-slate-10">{{ detail.label }}</span>
               <span
                 class="min-w-0 truncate text-n-slate-12"
-                :title="detail.title"
+                :title="inbox.card.subtitle.text"
               >
-                {{ detail.value }}
+                {{ inbox.card.subtitle.text }}
               </span>
             </div>
 
-            <div
-              v-if="getCapabilityChips(inbox).length"
-              class="flex flex-wrap gap-1.5 pt-1"
-            >
+            <div v-if="inbox.card.chips.length" class="flex flex-wrap gap-1.5">
               <span
-                v-for="chip in getCapabilityChips(inbox)"
+                v-for="chip in inbox.card.chips"
                 :key="chip"
                 class="rounded-md bg-n-alpha-2 px-2 py-1 text-xs text-n-slate-11"
               >
@@ -601,25 +212,12 @@ const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
             </div>
 
             <p
-              v-if="inbox.channel_missing"
-              class="mb-0 text-xs text-n-ruby-11"
-              data-test-id="inbox-channel-missing"
+              v-if="inbox.card.status.hintKey"
+              class="mb-0 text-xs"
+              :class="STATUS_HINT_CLASSES[inbox.card.status.hintTone]"
+              data-test-id="inbox-status-hint"
             >
-              {{ $t('INBOX_MGMT.LIST.CHANNEL_MISSING_DESCRIPTION') }}
-            </p>
-            <p
-              v-if="inbox.deletion_recovery?.status === 'failed'"
-              class="mb-0 text-xs text-n-amber-11"
-              data-test-id="inbox-deletion-recovery"
-            >
-              {{ $t('INBOX_MGMT.LIST.DELETION_RECOVERY_DESCRIPTION') }}
-            </p>
-            <p
-              v-if="inbox.last_error"
-              class="mb-0 line-clamp-2 text-xs text-n-ruby-11"
-              :title="inbox.last_error"
-            >
-              {{ inbox.last_error }}
+              {{ $t(inbox.card.status.hintKey) }}
             </p>
           </div>
 

@@ -290,12 +290,7 @@
     "LIST": {
       "LOADING_MESSAGE": "Загрузка уведомлений...",
       "404": "Уведомления отсутствуют",
-      "TABLE_HEADER": [
-        "Имя",
-        "Номер телефона",
-        "Диалоги",
-        "Последний Контакт"
-      ]
+      "TABLE_HEADER": ["Имя", "Номер телефона", "Диалоги", "Последний Контакт"]
     },
     "TYPE_LABEL": {
       "conversation_creation": "Новая беседа",
@@ -317,11 +312,11 @@
       "WHATSAPP_WEB_DISCONNECTED": "WhatsApp Web не подключен: {inbox}",
       "WHATSAPP_WEB_RECONNECTING": "WhatsApp Web переподключается: {inbox}",
       "WHATSAPP_WEB_NOT_OPEN": "WhatsApp Web не в статусе open: {inbox}",
-      "TELEGRAM_PERSONAL_DISCONNECTED": "Telegram Personal не подключен: {inbox}",
-      "TELEGRAM_PERSONAL_RECONNECTING": "Telegram Personal переподключается: {inbox}",
-      "TELEGRAM_PERSONAL_NOT_CONNECTED": "Telegram Personal не подключен: {inbox}",
+      "TELEGRAM_PERSONAL_DISCONNECTED": "Telegram (личный) не подключен: {inbox}",
+      "TELEGRAM_PERSONAL_RECONNECTING": "Telegram (личный) переподключается: {inbox}",
+      "TELEGRAM_PERSONAL_NOT_CONNECTED": "Telegram (личный) не подключен: {inbox}",
       "WHATSAPP_WEB_IMPORT_IN_PROGRESS": "Идет импорт WhatsApp Web: {inbox}",
-      "TELEGRAM_PERSONAL_IMPORT_IN_PROGRESS": "Идет импорт Telegram Personal: {inbox}"
+      "TELEGRAM_PERSONAL_IMPORT_IN_PROGRESS": "Идет импорт Telegram (личный): {inbox}"
     },
     "BUTTON": {
       "REFRESH": "Обновить"

@@ -37,7 +37,20 @@
         "NEEDS_AUTH": "Needs auth",
         "DELETING": "Deleting",
         "DELETION_RECOVERY": "Check WhatsApp connection",
-        "CHANNEL_MISSING": "Channel broken"
+        "CHANNEL_MISSING": "Channel broken",
+        "CONNECTED": "Connected",
+        "NO_CONNECTION": "No connection"
+      },
+      "HINT": {
+        "RECONNECT": "The channel is not working — connect it again",
+        "CONNECTING": "Connecting — please wait a minute",
+        "FINISH_LOGIN": "Finish connecting in the channel settings",
+        "TEMPORARY": "Temporary connection problem — check again later",
+        "REGISTRATION": "Finish registering the number in WhatsApp",
+        "PROBLEM": "There is a connection problem — open the settings",
+        "EXPIRING": "You will need to reconnect soon",
+        "CHANNEL_MISSING": "The channel is broken — delete it and connect it again",
+        "DELETION_RECOVERY": "WhatsApp disconnection is not confirmed — open the settings"
       },
       "DELETION_RECOVERY_DESCRIPTION": "WhatsApp disconnection could not be confirmed. The inbox and conversation history are preserved. Open settings to reconnect this channel through Meta or try deletion again.",
       "CHANNEL_MISSING_DESCRIPTION": "The channel record of this inbox no longer exists, so it cannot send or receive anything. Delete this inbox in its settings and connect the channel again.",
