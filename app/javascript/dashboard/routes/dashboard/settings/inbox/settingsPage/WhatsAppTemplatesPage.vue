@@ -54,17 +54,6 @@ const templateGroups = computed(() =>
   )
 );
 
-const filteredTemplates = computed(() =>
-  templateGroups.value.filter(templateGroup =>
-    matchesWhatsAppTemplateSearch(templateGroup, searchQuery.value, variant => [
-      getLanguageLabel(variant.language),
-      getCategoryLabel(variant.category),
-      getStatusLabel(variant.status),
-      variant.rejected_reason && getRejectionReasonLabel(variant.rejected_reason),
-    ])
-  )
-);
-
 const csatTemplateName = computed(
   () => props.inbox?.csat_config?.template?.name || ''
 );
@@ -202,6 +191,24 @@ const getRejectionReasonLabel = reason => {
   const key = REJECTION_REASON_KEYS[normalized] || REJECTION_REASON_KEYS.OTHER;
   return translateOrFallback(key, humanize(normalized));
 };
+
+// Search also finds what the page shows: «Русский», «Одобрен», the reason text.
+const describeTemplateVariant = variant => [
+  getLanguageLabel(variant.language),
+  getCategoryLabel(variant.category),
+  getStatusLabel(variant.status),
+  variant.rejected_reason && getRejectionReasonLabel(variant.rejected_reason),
+];
+
+const filteredTemplates = computed(() =>
+  templateGroups.value.filter(templateGroup =>
+    matchesWhatsAppTemplateSearch(
+      templateGroup,
+      searchQuery.value,
+      describeTemplateVariant
+    )
+  )
+);
 
 const getStatusClass = templateStatus => {
   const tone = getTemplateStatusTone(templateStatus);
