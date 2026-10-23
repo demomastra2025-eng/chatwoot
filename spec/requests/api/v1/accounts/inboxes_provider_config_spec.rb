@@ -101,6 +101,31 @@ RSpec.describe 'WhatsApp inbox provider config', type: :request do
     )
   end
 
+  it 'passes on only the "token expires soon" warning from the stored token health' do
+    channel.update!(provider_config: channel.provider_config.merge(
+      'token_health' => {
+        'status' => 'expiring', 'expires_at' => '2026-11-01T00:00:00Z', 'expires_in_days' => 9,
+        'app_id' => 'private-app-id', 'user_id' => 'private-user-id', 'scopes' => ['whatsapp_business_messaging']
+      }
+    ))
+
+    get "/api/v1/accounts/#{account.id}/inboxes", headers: admin.create_new_auth_token, as: :json
+
+    provider_config = JSON.parse(response.body, symbolize_names: true)[:payload]
+                          .find { |item| item[:id] == channel.inbox.id }[:provider_config]
+    expect(provider_config[:token_health]).to eq(status: 'expiring', expires_at: '2026-11-01T00:00:00Z', expires_in_days: 9)
+  end
+
+  it 'hides the stored token health when the token is not about to expire' do
+    channel.update!(provider_config: channel.provider_config.merge('token_health' => { 'status' => 'valid', 'app_id' => 'private-app-id' }))
+
+    get "/api/v1/accounts/#{account.id}/inboxes", headers: admin.create_new_auth_token, as: :json
+
+    provider_config = JSON.parse(response.body, symbolize_names: true)[:payload]
+                          .find { |item| item[:id] == channel.inbox.id }[:provider_config]
+    expect(provider_config).not_to have_key(:token_health)
+  end
+
   it 'returns the registered channel-bound webhook URL for a manual Cloud inbox without exposing its token' do
     channel.update!(
       provider_config: channel.provider_config.merge(

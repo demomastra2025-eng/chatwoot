@@ -186,7 +186,7 @@ const channelLabel = inbox => {
   if (inbox.channel_type === INBOX_TYPES.TWILIO) {
     return inbox.medium === TWILIO_CHANNEL_MEDIUM.WHATSAPP
       ? 'Twilio WhatsApp'
-      : 'Twilio SMS';
+      : t('INBOX_MGMT.CHANNELS.TWILIO_SMS');
   }
 
   switch (inbox.channel_type) {
@@ -201,7 +201,7 @@ const channelLabel = inbox => {
     case INBOX_TYPES.EMAIL:
       return 'Email';
     case INBOX_TYPES.TELEGRAM_PERSONAL:
-      return 'Telegram Personal';
+      return t('INBOX_MGMT.CHANNELS.TELEGRAM_PERSONAL');
     case INBOX_TYPES.VK:
       return 'VK';
     case INBOX_TYPES.LINE:

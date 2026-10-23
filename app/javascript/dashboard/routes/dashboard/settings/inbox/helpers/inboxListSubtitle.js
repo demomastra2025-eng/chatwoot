@@ -93,12 +93,6 @@ const withHandlePrefix = value => {
   return handle ? `@${handle}` : '';
 };
 
-const getInstagramHandle = inbox => {
-  // The inbox is named after the Instagram account when it is connected.
-  const name = normalizeValue(inbox.name);
-  return /^@?[\w.]{1,30}$/.test(name) ? withHandlePrefix(name) : '';
-};
-
 const getSubtitleText = (inbox, t) => {
   switch (inbox.channel_type) {
     case INBOX_TYPES.WHATSAPP:
@@ -120,8 +114,6 @@ const getSubtitleText = (inbox, t) => {
       return { icon: 'i-lucide-globe', text: getDomain(inbox.website_url) };
     case INBOX_TYPES.EMAIL:
       return { icon: 'i-lucide-mail', text: normalizeValue(inbox.email) };
-    case INBOX_TYPES.INSTAGRAM:
-      return { icon: 'i-lucide-at-sign', text: getInstagramHandle(inbox) };
     case INBOX_TYPES.WEIXIN:
       return {
         icon: 'i-lucide-user-round',

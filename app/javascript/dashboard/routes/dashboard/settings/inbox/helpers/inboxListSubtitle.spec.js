@@ -106,13 +106,10 @@ describe('#getInboxListSubtitle', () => {
     ).toBe('info@example.com');
   });
 
-  it('shows the Instagram account name when the inbox is named after it', () => {
-    expect(
-      subtitleText({ channel_type: 'Channel::Instagram', name: 'my.shop' })
-    ).toBe('@my.shop');
+  it('shows no Instagram handle, because the list has no real account name', () => {
     expect(
       getInboxListSubtitle(
-        { channel_type: 'Channel::Instagram', name: 'Main shop account' },
+        { channel_type: 'Channel::Instagram', name: 'my.shop' },
         t
       )
     ).toBeNull();
