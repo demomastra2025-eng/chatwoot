@@ -5,6 +5,9 @@ class Captain::Tools::Account::SearchSchedulingResourcesService < Captain::Tools
   SAME_NAME_INSTRUCTION = 'Several resources have exactly this name. Ask the patient which one is meant.'.freeze
   SINGLE_MATCH_INSTRUCTION = 'Exactly one specialist or room matches; you may book it when the patient asked to book, and name ' \
                              'this exact specialist or room in your booking confirmation.'.freeze
+  SERVICE_FILTER_NOT_APPLIED_INSTRUCTION = 'No specialist is recorded for this service, so the list is not narrowed by it. ' \
+                                           'Choose the specialist whose specialty performs the service, or the one the patient ' \
+                                           'named, and pass that ID as resource_ids to search_available_slots.'.freeze
 
   def self.name
     'search_scheduling_resources'
@@ -17,7 +20,9 @@ class Captain::Tools::Account::SearchSchedulingResourcesService < Captain::Tools
                       'case of the customer\'s sentence: "Асланова", not "Аслановой"; "хирург", not "хирургу"',
                 required: false
   param :search_by, type: :string, desc: 'Search mode: name, specialty, or all', required: false
-  param :service_id, type: :number, desc: 'Optional service ID to filter recorded active price links (not clinical eligibility)', required: false
+  param :service_id, type: :number,
+                     desc: 'Optional service ID to filter recorded active price links (not clinical eligibility); ' \
+                           'a service with no link filters nothing', required: false
   param :include_inactive, type: :boolean, desc: 'Whether to include inactive resources', required: false
   param :limit, type: :number, desc: 'Maximum number of specialists to return', required: false
   param :offset, type: :number, desc: 'Pagination offset for matching resources; pass next_offset of the previous answer', required: false
@@ -89,8 +94,8 @@ class Captain::Tools::Account::SearchSchedulingResourcesService < Captain::Tools
     # the instruction only (the link label named no action and gave the model a reason to doubt the filter and to hand the
     # conversation over; the flag next to the instruction "choose the best match" told it to ask the patient to confirm a name).
     payload.delete(:ambiguous) if agent_scope?
-    payload[:link_status] = link_status(status, filters[:service_id]) unless agent_scope?
-    instruction = instruction_for(status, result, sole)
+    payload[:link_status] = link_status(status, filters[:service_id], result) unless agent_scope?
+    instruction = instruction_for(status, result, sole) || service_filter_instruction(filters, result)
     payload[:instruction] = instruction if instruction
     formatted_payload(payload)
   end
@@ -98,8 +103,8 @@ class Captain::Tools::Account::SearchSchedulingResourcesService < Captain::Tools
   def search_status(result, filters, sole)
     total_count = result[:total_count]
     return matched_status(result, filters, sole) if total_count.positive?
-    return 'no_recorded_link' if filters[:service_id].present? && filters[:query].blank?
-    return 'no_match_with_recorded_link_filter' if filters[:service_id].present?
+    return 'no_recorded_link' if service_filter_applied?(result) && filters[:query].blank?
+    return 'no_match_with_recorded_link_filter' if service_filter_applied?(result)
     return 'catalog_empty' if filters[:query].blank?
 
     'no_name_or_specialty_match'
@@ -135,10 +140,22 @@ class Captain::Tools::Account::SearchSchedulingResourcesService < Captain::Tools
     result[:exact_name_matches].to_i > 1 ? SAME_NAME_INSTRUCTION : NAME_DIFFERS_INSTRUCTION
   end
 
-  def link_status(status, service_id)
+  # A service with no recorded link at all does not narrow the list (Scheduling::ResourceSearchService): not_applied.
+  def link_status(status, service_id, result)
     return 'not_checked' if service_id.blank?
+    return 'not_applied' unless service_filter_applied?(result)
     return 'no_recorded_link' if status == 'no_recorded_link'
 
     'price_link_unverified'
+  end
+
+  def service_filter_applied?(result)
+    result[:service_filter] == 'applied'
+  end
+
+  def service_filter_instruction(filters, result)
+    return if filters[:service_id].blank? || service_filter_applied?(result) || result[:total_count].to_i.zero?
+
+    SERVICE_FILTER_NOT_APPLIED_INSTRUCTION
   end
 end

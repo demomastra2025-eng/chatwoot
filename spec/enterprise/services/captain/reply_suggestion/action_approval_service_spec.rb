@@ -124,6 +124,17 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
       expect(run_context.context[described_class::CONTEXT_KEY].size).to eq(1)
     end
 
+    it 'stores the proposal for a service with no specialist link when the account has no links at all' do
+      Scheduling::ServicePrice.where(account_id: account.id).delete_all
+      args = { resource_id: resource.id, service_id: service_item.id, starts_at: starts_at, ends_at: ends_at }
+
+      result = JSON.parse(described_class.intercept(tool: create_tool, tool_context: tool_context, arguments: args))
+
+      expect(result['status']).to eq('pending_operator_approval')
+      expect(result['details']).to include(hash_including('label' => 'Услуга', 'value' => 'Консультация терапевта'))
+      expect(described_class.pending_for(account_id: account.id, conversation_id: conversation.id).size).to eq(1)
+    end
+
     it 'deduplicates identical tool calls within the same reply_suggestion run' do
       args = {
         resource_id: resource.id,

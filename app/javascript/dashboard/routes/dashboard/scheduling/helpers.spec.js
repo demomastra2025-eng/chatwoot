@@ -800,7 +800,7 @@ describe('scheduling helpers', () => {
     ).toEqual([linkedService, otherSpecialistService, mappedWithoutPrices]);
   });
 
-  it('uses only explicit links when the Medelement specialist has them', () => {
+  it('does not narrow the Medelement catalog to the services linked to the specialist', () => {
     const resource = {
       id: 15,
       customAttributes: { medelement_specialist_code: 'specialist-1' },
@@ -817,9 +817,32 @@ describe('scheduling helpers', () => {
     };
 
     expect(isServiceAvailableForResource(linkedService, 15)).toBe(true);
+    expect(isServiceAvailableForResource(unlinkedService, 15)).toBe(false);
     expect(
       servicesAvailableForResource([linkedService, unlinkedService], resource)
-    ).toEqual([linkedService]);
+    ).toEqual([linkedService, unlinkedService]);
+  });
+
+  it('offers every service to a specialist when no service has any link', () => {
+    const medelementResource = {
+      id: 15,
+      customAttributes: { medelement_specialist_code: 'specialist-1' },
+    };
+    const mappedServices = [
+      { id: 1, customAttributes: { medelement_nomenclature_code: 'a' } },
+      { id: 2, customAttributes: { medelement_nomenclature_code: 'b' } },
+    ];
+    const localServices = [
+      { id: 3, prices: [] },
+      { id: 4, prices: [] },
+    ];
+
+    expect(
+      servicesAvailableForResource(mappedServices, medelementResource)
+    ).toEqual(mappedServices);
+    expect(servicesAvailableForResource(localServices, { id: 16 })).toEqual(
+      localServices
+    );
   });
 
   it('keeps the full service list for a non-Medelement specialist', () => {

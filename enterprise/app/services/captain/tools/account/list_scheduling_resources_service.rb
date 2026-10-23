@@ -5,7 +5,8 @@ class Captain::Tools::Account::ListSchedulingResourcesService < Captain::Tools::
 
   description 'List scheduling resources (specialists and diagnostic rooms); the service filter uses recorded price links, ' \
               'which are not clinical proof'
-  param :service_id, type: :number, desc: 'Optional service ID to keep only resources with an active recorded price link (not clinical proof)',
+  param :service_id, type: :number, desc: 'Optional service ID to keep only resources with an active recorded price link (not clinical ' \
+                                          'proof); a service with no link filters nothing',
                      required: false
   param :include_inactive, type: :boolean, desc: 'Whether to include inactive resources', required: false
   param :limit, type: :number, desc: 'Maximum number of specialists to return', required: false
@@ -19,12 +20,11 @@ class Captain::Tools::Account::ListSchedulingResourcesService < Captain::Tools::
       limit: parse_limit(limit)
     ).perform
 
-    formatted_payload(
-      service_id: service_id,
-      include_inactive: cast_boolean(include_inactive),
-      total_count: result[:total_count],
-      resources: result[:resources]
-    )
+    payload = { service_id: service_id, include_inactive: cast_boolean(include_inactive), total_count: result[:total_count],
+                resources: result[:resources] }
+    # service_filter 'not_applied': the service has no recorded link, so the list is not narrowed by it.
+    payload[:service_filter] = result[:service_filter] if service_id.present?
+    formatted_payload(payload)
   rescue StandardError => e
     tool_failure(e)
   end

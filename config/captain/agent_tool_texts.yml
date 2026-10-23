@@ -50,7 +50,7 @@ tools:
     hidden_params: []
 
   list_scheduling_resources:
-    description: "Plain list of the clinic's specialists and rooms; with service_id, only those who offer that service. To find one by name or specialty use search_scheduling_resources."
+    description: "Plain list of the clinic's specialists and rooms; with service_id, only those recorded for that service (all when none is recorded). To find one by name or specialty use search_scheduling_resources."
     params:
       service_id: "Service ID from search_scheduling_services."
       limit: "Max results, up to 50."
@@ -58,7 +58,7 @@ tools:
       - include_inactive
 
   search_scheduling_resources:
-    description: "Find a specialist or room by name words (any order) or specialty; an empty query lists all. Call it to get the specialist ID before checking slots or booking. With service_id it keeps only those who offer that service."
+    description: "Find a specialist or room by name words (any order) or specialty; an empty query lists all. Call it to get the specialist ID before checking slots or booking. With service_id it keeps only those recorded for that service; when none is recorded it lists all, so choose by specialty."
     params:
       query: "One specialty word or name in dictionary form, as the catalog writes it (do not combine synonyms)."
       service_id: "Service ID from search_scheduling_services."
@@ -85,7 +85,7 @@ tools:
       resource_id: "Specialist ID from search_scheduling_resources."
       from: "Range start, YYYY-MM-DD or YYYY-MM-DDTHH:MM (clinic time)."
       to: "Range end after from, at most 31 days later."
-      service_id: "Service ID this specialist offers; sets the duration."
+      service_id: "Service ID from search_scheduling_services; sets the duration."
       duration_min: "Minutes, when no service_id is given."
       limit: "Max slots, up to 50."
     hidden_params: []
@@ -100,7 +100,7 @@ tools:
       - include_inactive
 
   search_available_slots:
-    description: "List free slots in a date range, earliest first. Call it to offer the patient free slots; the start the patient chooses goes to create_appointment or update_appointment. With service_id all specialists who offer the service are searched; resource_ids narrows the search. Offer 2-3 slots spread over the period, not neighbouring starts."
+    description: "List free slots in a date range, earliest first. Call it to offer the patient free slots; the start the patient chooses goes to create_appointment or update_appointment. Pass resource_ids of the chosen specialist; with service_id alone the specialists recorded for the service are searched, and the tool asks for resource_ids when none is recorded. Offer 2-3 slots spread over the period, not neighbouring starts."
     params:
       from: "Range start, YYYY-MM-DD or YYYY-MM-DDTHH:MM (clinic time). To check one time pass from = that time."
       to: "Range end, same format as from, within 31 days; slots start before it. For one whole day pass the next day's date."

@@ -1,10 +1,17 @@
 class Scheduling::AvailableSlotSearchService
   MAX_LIMIT = 100
   MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
-  # Kept identical to the message pinned by the MedElement contract specs; the tool adds the explanation.
+  # Raised only for the Playground snapshot catalog, which still names the services of each specialist; the clinic catalog
+  # never requires a service-price link.
   MISSING_LINK_ERROR = 'Service is not available for the requested specialists'.freeze
 
   class MissingServiceLinkError < ArgumentError; end
+
+  # A search for a service with no specialist named, when no available specialist is recorded for that service. Searching every
+  # specialist instead would offer the slot of a doctor who does not perform the service, so the caller must choose the
+  # specialist first (search_scheduling_resources) and search again with resource_ids.
+  class ResourceSelectionRequiredError < ArgumentError; end
+  RESOURCE_SELECTION_REQUIRED_ERROR = 'No specialist is recorded for this service, so the search needs resource_ids'.freeze
 
   def self.provider_related?(resource)
     attrs = resource.custom_attributes.to_h
@@ -77,6 +84,7 @@ class Scheduling::AvailableSlotSearchService
     return @resources ||= snapshot_resources if @snapshots
 
     @resources ||= begin
+      # Requested specialists are searched with the service whether or not a price link records it: a link is never required.
       scope = @account.scheduling_resources.available_for_scheduling
       scope = scope.where(id: @resource_ids) if @resource_ids.present?
       scope = scope.where(id: active_price_links.select(:resource_id)) if service.present? && @resource_ids.blank?
@@ -86,8 +94,7 @@ class Scheduling::AvailableSlotSearchService
         missing_ids = @resource_ids - resolved.map(&:id)
         raise ActiveRecord::RecordNotFound, "Specialists not found: #{missing_ids.join(', ')}" if missing_ids.present?
       end
-
-      verify_requested_links!(resolved) if service.present? && @resource_ids.present?
+      ensure_resource_selected!(resolved)
 
       resolved
     end
@@ -113,26 +120,24 @@ class Scheduling::AvailableSlotSearchService
     Scheduling::ServicePrice.active.where(account_id: @account.id, service_id: service.id)
   end
 
-  def verify_requested_links!(resolved)
-    linked_ids = active_price_links.where(resource_id: resolved.map(&:id)).distinct.pluck(:resource_id)
-    return if (resolved.map(&:id) - linked_ids).empty?
-    return if unlinked_service_allowed_for_resources?(resolved)
+  # With a service and no specialist named, the specialists are the ones recorded for the service. When none of them can be
+  # booked (the service has no link at all), the search stops instead of searching every specialist.
+  def ensure_resource_selected!(resolved)
+    return if service.blank? || @resource_ids.present? || resolved.present?
 
-    raise MissingServiceLinkError, MISSING_LINK_ERROR
+    raise ResourceSelectionRequiredError, RESOURCE_SELECTION_REQUIRED_ERROR
   end
 
-  def unlinked_service_allowed_for_resources?(resolved)
-    return false if service.blank? || resolved.blank?
-    return false if active_price_links.exists?
-    return false if Scheduling::ServicePrice.where(service_id: service.id, resource_id: resolved.map(&:id)).exists?
+  def linked_resource_ids
+    return [] if service.blank?
 
-    resolved.all? do |resource|
-      provider_related?(resource) || !resource.service_prices.active.where(account_id: @account.id).exists?
-    end
+    @linked_resource_ids ||= active_price_links.where(resource_id: resources.map(&:id)).distinct.pluck(:resource_id)
   end
 
+  # True when the service was requested and a searched specialist has no recorded link to it: the slots are still offered,
+  # only the match of the service and the specialist is not confirmed by a link.
   def unlinked_service_fallback?
-    @service_id.present? && service.present? && resources.present? && !active_price_links.exists?
+    @service_id.present? && service.present? && resources.present? && (resources.map(&:id) - linked_resource_ids).any?
   end
 
   def normalized_slots
@@ -173,7 +178,7 @@ class Scheduling::AvailableSlotSearchService
 
     unless medelement_resource?(resource)
       record_availability(resource_id: resource.id, status: 'local_only')
-      eligibility = unlinked_service_fallback? ? 'price_link_unverified' : 'local_configured'
+      eligibility = linked_resource_ids.include?(resource.id) ? 'local_configured' : 'price_link_unverified'
       return label_service_eligibility(starting_in_window(local_slots(resource)), eligibility)
     end
 

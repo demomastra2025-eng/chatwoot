@@ -134,6 +134,15 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     expect(entry.description).to include('Offer 2-3 slots spread over the period')
   end
 
+  it 'sends the free-slot search to the chosen specialist and never claims that a service link is required' do
+    slots = described_class.for_tool('search_available_slots').description
+
+    expect(slots).to include('Pass resource_ids of the chosen specialist', 'asks for resource_ids when none is recorded')
+    expect(slots).not_to include('all specialists who offer the service')
+    expect(described_class.for_tool('get_scheduling_resource_availability').params['service_id']).not_to include('offers')
+    expect(described_class.for_tool('search_scheduling_resources').description).to include('when none is recorded it lists all')
+  end
+
   it 'tells the agent that handoff is for a person or for what only staff can do or answer, after one message for the details staff need' do
     description = described_class.for_tool('handoff').description
 

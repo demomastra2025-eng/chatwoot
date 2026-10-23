@@ -49,13 +49,22 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingResourcesService do
     expect(payload).to include('link_status' => 'price_link_unverified', 'search_status' => 'candidates')
   end
 
-  it 'reports a service without any link (incomplete import) separately from a missing text match' do
+  it 'does not narrow the search by a service without any link and keeps a missing text match a text miss' do
     service_record = create(:scheduling_service, account: account, name: 'Услуга без связей')
+
+    expect(search(service_id: service_record.id)).to include('search_status' => 'candidates', 'link_status' => 'not_applied',
+                                                             'total_count' => 2)
+    expect(search(service_id: service_record.id, query: 'несуществующий')).to include('search_status' => 'no_name_or_specialty_match',
+                                                                                      'total_count' => 0)
+  end
+
+  it 'still reports a service whose only links point to inactive resources as having no recorded link' do
+    service_record = create(:scheduling_service, account: account, name: 'Услуга неактивного')
+    inactive = create(:scheduling_resource, account: account, name: 'Неактивный', active: false)
+    create(:scheduling_service_price, account: account, service: service_record, resource: inactive, active: true)
 
     expect(search(service_id: service_record.id)).to include('search_status' => 'no_recorded_link', 'link_status' => 'no_recorded_link',
                                                              'total_count' => 0)
-    expect(search(service_id: service_record.id, query: 'мурад')).to include('search_status' => 'no_match_with_recorded_link_filter',
-                                                                             'total_count' => 0)
   end
 
   it 'pages through resources and keeps the total' do

@@ -22,7 +22,7 @@ class Captain::Tools::Account::GetSchedulingResourceAvailabilityService < Captai
     scheduling_range!(range_from, range_to)
 
     resource = find_resource!(resource_id)
-    service_record = resolve_service_for_resource(resource: resource, service_id: service_id)
+    service_record = scheduling_service!(service_id)
     payload = availability_payload(resource, service_record, service_id, range_from, range_to, duration_min, limit)
 
     formatted_payload(with_provider_note(resource, range_from, range_to, payload.merge(availability_metadata(resource, service_record))))
@@ -66,6 +66,8 @@ class Captain::Tools::Account::GetSchedulingResourceAvailabilityService < Captai
     Integrations::Medelement::ProviderScheduleNote.for(resource: resource, date: from_date)
   end
 
+  # The service only sets the visit length: a recorded service-price link to the resource is never required, and
+  # service_link_status only says whether one exists.
   def availability_metadata(resource, service_record)
     provider_required = Scheduling::AvailableSlotSearchService.provider_related?(resource)
     has_active_link = service_record.present? &&
@@ -89,28 +91,5 @@ class Captain::Tools::Account::GetSchedulingResourceAvailabilityService < Captai
                                     details: { reason: 'unknown_resource' })
       end
     end
-  end
-
-  def resolve_service_for_resource(resource:, service_id:)
-    return nil if service_id.blank?
-
-    service_record = scheduling_service!(service_id)
-
-    active_price = resource.service_prices.active.find_by(account_id: account.id, service_id: service_record.id)
-    if active_price.blank? && !unlinked_service_allowed_for_resource?(resource, service_record)
-      raise Scheduling::Error.new(code: 'SERVICE_NOT_AVAILABLE_FOR_RESOURCE',
-                                  message: 'No recorded service-price link for this resource; provider eligibility is unverified',
-                                  status: :unprocessable_content, details: { reason: 'service_not_linked' })
-    end
-
-    service_record
-  end
-
-  def unlinked_service_allowed_for_resource?(resource, service_record)
-    return false if Scheduling::ServicePrice.active.where(account_id: account.id, service_id: service_record.id).exists?
-    return false if Scheduling::ServicePrice.where(service_id: service_record.id, resource_id: resource.id).exists?
-
-    Scheduling::AvailableSlotSearchService.provider_related?(resource) ||
-      !resource.service_prices.active.where(account_id: account.id).exists?
   end
 end

@@ -138,16 +138,54 @@ RSpec.describe Captain::Tools::Account::SearchAvailableSlotsService do
       expect(payload['slots'].last['ends_at']).to eq('2026-04-20T13:40:00+05:00')
     end
 
-    it 'returns an error when a requested specialist cannot perform the service' do
-      result = service.execute(
-        from: from_time.iso8601,
-        to: to_time.iso8601,
-        resource_ids: [other_resource.id],
-        service_id: consultation.id
-      )
+    it 'searches a requested specialist with a service that is not linked to them, with the service duration' do
+      payload = JSON.parse(service.execute(from: from_time.iso8601, to: to_time.iso8601, resource_ids: [other_resource.id],
+                                           service_id: consultation.id, limit: 1))
+
+      expect(payload['slots'].first).to include('resource_id' => other_resource.id, 'starts_at' => '2026-04-20T09:00:00+05:00',
+                                                'ends_at' => '2026-04-20T09:45:00+05:00')
+      expect(payload).to include('service_link_status' => 'price_link_unverified', 'availability_scope' => 'service_unconfirmed')
+    end
+  end
+
+  describe 'with no service-price links in the account' do
+    let(:conversation) { create(:conversation, account: account) }
+
+    before { Scheduling::ServicePrice.where(account_id: account.id).delete_all }
+
+    def execute(**arguments)
+      service.execute(from: from_time.iso8601, to: to_time.iso8601, **arguments)
+    end
+
+    it 'searches the requested specialist with the service' do
+      payload = JSON.parse(execute(resource_ids: [resource.id], service_id: consultation.id, limit: 2))
+
+      expect(payload['total_slots']).to eq(2)
+      expect(payload['duration_min']).to eq(45)
+      expect(payload['candidate_resource_ids']).to eq([resource.id])
+      expect(payload['service_link_status']).to eq('price_link_unverified')
+    end
+
+    it 'asks to choose the specialist first instead of searching every specialist for the service' do
+      result = execute(service_id: consultation.id)
 
       expect(result).to start_with('ERROR:')
-      expect(result).to include('Service is not available for the requested specialists')
+      expect(result).to include('Choose the specialist first', 'search_scheduling_resources', 'resource_ids', 'RESOURCE_REQUIRED')
+      expect(result).not_to match(/\p{Cyrillic}/)
+      expect(Captain::Runtime::ToolFailure.describe(result)).to include(retryable: true, code: 'resource_required')
+      expect(Captain::Runtime::ToolFailure.classify(result)).to eq('business')
+    end
+
+    it 'gives the agent the same answer and infers no service from links when only specialists are given' do
+      service.patient_scope = Captain::Tools::Agent::PatientScope.new(assistant: assistant, conversation: conversation)
+      travel_to(Time.zone.parse('2026-04-19 12:00:00 +0500')) do
+        expect(execute(service_id: consultation.id)).to include('RESOURCE_REQUIRED')
+
+        payload = JSON.parse(execute(resource_ids: [resource.id], limit: 1))
+        expect(payload['service']).to be_nil
+        expect(payload['duration_min']).to be_nil
+        expect(payload['slots'].first).to include('starts_at' => '2026-04-20T09:00:00+05:00', 'ends_at' => '2026-04-20T09:30:00+05:00')
+      end
     end
   end
 end

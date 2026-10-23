@@ -1091,16 +1091,13 @@ const isMedelementService = service => {
   );
 };
 
+// A MedElement specialist is offered every MedElement service: a per-specialist
+// price row never narrows the list, because a service never requires a link.
 export const servicesAvailableForResource = (services, resource) => {
   const availableServices = services || [];
   if (!isMedelementResource(resource)) return availableServices;
 
-  const medelementServices = availableServices.filter(isMedelementService);
-  const linkedServices = medelementServices.filter(service =>
-    isServiceAvailableForResource(service, resource?.id)
-  );
-
-  return linkedServices.length > 0 ? linkedServices : medelementServices;
+  return availableServices.filter(isMedelementService);
 };
 
 export const medelementCommandFailureMessage = command => {

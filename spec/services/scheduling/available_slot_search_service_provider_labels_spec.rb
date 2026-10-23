@@ -179,11 +179,12 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
   end
 
   describe 'missing, inactive and foreign links' do
-    it 'reports an incomplete import (a service with no links at all) as unconfirmed with no candidates' do
-      payload = perform(service_id: service_record.id)
+    it 'asks for a specialist for a service with no links at all instead of searching every specialist' do
+      local_resource
+      provider_resource
 
-      expect(payload).to include(resources: [], slots: [], total_slots: 0, service_link_status: 'no_recorded_link',
-                                 availability_scope: 'service_unconfirmed', candidate_resource_ids: [])
+      expect { perform(service_id: service_record.id) }
+        .to raise_error(described_class::ResourceSelectionRequiredError, described_class::RESOURCE_SELECTION_REQUIRED_ERROR)
     end
 
     it 'allows searching an explicitly requested MedElement specialist with an unlinked service using the service duration' do
@@ -197,12 +198,23 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       expect(payload[:availability_scope]).to eq('service_unconfirmed')
     end
 
-    it 'rejects an explicitly requested resource whose link is inactive with the pinned message and a dedicated error class' do
+    it 'searches an explicitly requested resource whose link is inactive, labelled as unverified' do
       link(local_resource, active: false)
 
-      expect { perform(resource_ids: [local_resource.id], service_id: service_record.id) }
-        .to raise_error(described_class::MissingServiceLinkError, 'Service is not available for the requested specialists')
-      expect(described_class::MissingServiceLinkError.ancestors).to include(ArgumentError)
+      payload = perform(resource_ids: [local_resource.id], service_id: service_record.id, limit: 1)
+
+      expect(payload[:total_slots]).to eq(1)
+      expect(payload[:slots].first).to include(resource_id: local_resource.id, service_eligibility_status: 'price_link_unverified')
+      expect(payload).to include(service_link_status: 'price_link_unverified', availability_scope: 'service_unconfirmed')
+    end
+
+    it 'searches an explicitly requested local resource with a service that is linked only to another resource' do
+      link(provider_resource)
+
+      payload = perform(resource_ids: [local_resource.id], service_id: service_record.id, limit: 1)
+
+      expect(payload[:total_slots]).to eq(1)
+      expect(payload).to include(service_link_status: 'price_link_unverified', candidate_resource_ids: [local_resource.id])
     end
 
     it 'does not see resources or services of another account even when the names are identical' do
@@ -213,11 +225,11 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       expect { perform(service_id: foreign_service.id) }.to raise_error(ActiveRecord::RecordNotFound)
     end
 
-    it 'does not offer slots of an inactive resource that still has a price link' do
+    it 'does not offer slots of an inactive resource that still has a price link and asks for a specialist' do
       link(local_resource)
       local_resource.update!(active: false)
 
-      expect(perform(service_id: service_record.id)).to include(resources: [], slots: [], service_link_status: 'no_recorded_link')
+      expect { perform(service_id: service_record.id) }.to raise_error(described_class::ResourceSelectionRequiredError)
     end
   end
 end

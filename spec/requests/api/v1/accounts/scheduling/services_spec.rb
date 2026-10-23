@@ -42,6 +42,36 @@ RSpec.describe 'Scheduling Services API', type: :request do
     expect(service.reload.prices.find_by!(resource_id: resource.id).price).to eq(18_000)
   end
 
+  describe 'creating a service' do
+    let(:collection_path) { "/api/v1/accounts/#{account.id}/scheduling/services" }
+
+    before { create_list(:scheduling_resource, 3, account: account) }
+
+    it 'links the new service to no specialist when no prices are sent' do
+      post collection_path, params: { name: 'Новая услуга', base_price: 12_000, duration_min: 30 }, headers: headers, as: :json
+
+      expect(response).to have_http_status(:created)
+      expect(response_body.dig('payload', 'prices')).to eq([])
+      expect(Scheduling::ServicePrice.where(service_id: response_body.dig('payload', 'id'))).to be_empty
+    end
+
+    it 'links the new service to no specialist when an empty price list is sent' do
+      post collection_path, params: { name: 'Новая услуга', base_price: 12_000, prices: [] }, headers: headers, as: :json
+
+      expect(response).to have_http_status(:created)
+      expect(Scheduling::ServicePrice.where(service_id: response_body.dig('payload', 'id'))).to be_empty
+    end
+
+    it 'creates only the specialist price rows that were sent' do
+      post collection_path, params: { name: 'Новая услуга', base_price: 12_000, prices: [{ resource_id: resource.id, active: true }] },
+                            headers: headers, as: :json
+
+      expect(response).to have_http_status(:created)
+      expect(Scheduling::ServicePrice.where(service_id: response_body.dig('payload', 'id')).pluck(:resource_id, :price))
+        .to eq([[resource.id, 12_000]])
+    end
+  end
+
   it 'normalizes decimal zero service and price amounts' do
     put path,
         params: {

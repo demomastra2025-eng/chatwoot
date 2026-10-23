@@ -129,6 +129,33 @@ RSpec.describe 'Scheduling Availability API', type: :request do
     expect(request_day(service_id: service.id, duration_min: 75)['windows']).to be_empty
   end
 
+  it 'returns the windows for a service that has no link to the specialist, with the service duration' do
+    service = create(:scheduling_service, account: account, duration_min: 45)
+    other_resource = create(:scheduling_resource, account: account)
+    create(:scheduling_service_price, account: account, resource: other_resource, service: service)
+    create_day
+
+    payload = request_day(service_id: service.id)
+
+    expect(response).to have_http_status(:ok)
+    first = payload.fetch('windows').first
+    expect(Time.iso8601(first.fetch('ends_at')) - Time.iso8601(first.fetch('starts_at'))).to eq(45.minutes)
+  end
+
+  it 'returns the windows for a service when the account has no service-price links at all' do
+    service = create(:scheduling_service, account: account, duration_min: 30)
+    local = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
+    create(:scheduling_work_rule, account: account, resource: local, weekday: 1, start_minute: 10 * 60, end_minute: 11 * 60)
+    create_day
+    expect(Scheduling::ServicePrice.where(account_id: account.id)).to be_empty
+
+    expect(request_day(service_id: service.id)).to include('state' => 'ok')
+    expect(response).to have_http_status(:ok)
+    payload = request_day('2026-04-20', resource_id: local.id, service_id: service.id)
+    expect(response).to have_http_status(:ok)
+    expect(payload['windows']).to be_present
+  end
+
   it 'rejects ranges longer than 31 days' do
     get path, params: { resource_id: resource.id, date_from: '2026-04-20', date_to: '2026-05-21' },
               headers: headers, as: :json

@@ -2,6 +2,11 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
   include Captain::Tools::Account::SchedulingQueryValidation
   NEXT_AVAILABLE_LOOKAHEAD_DAYS = 7
   NEXT_AVAILABLE_LIMIT = 6
+  # A service with no recorded specialist is searched only for a specialist chosen first; the answer says how to choose one.
+  RESOURCE_REQUIRED_MESSAGE = 'No specialist is recorded for this service, so searching all specialists could offer a doctor who ' \
+                              'does not perform it. Choose the specialist first: call search_scheduling_resources with the ' \
+                              'specialty that performs this service or the doctor name the patient gave, then call ' \
+                              'search_available_slots again with resource_ids of that specialist and the same service_id.'.freeze
 
   def self.name
     'search_available_slots'
@@ -13,7 +18,9 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
   param :from, type: :string, desc: 'Range start datetime in ISO 8601 format', required: true
   param :to, type: :string, desc: 'Range end datetime in ISO 8601 format', required: true
   param :resource_ids, type: :array, desc: 'Optional list of scheduling resource IDs', required: false
-  param :service_id, type: :number, desc: 'Optional service ID to filter price links and derive duration', required: false
+  param :service_id, type: :number,
+                     desc: 'Optional service ID that sets the duration; without resource_ids only specialists with a recorded price ' \
+                           'link are searched', required: false
   param :duration_min, type: :number, desc: 'Optional appointment duration in minutes when no service is provided', required: false
   param :limit, type: :number, desc: 'Maximum number of slots to return', required: false
 
@@ -44,12 +51,8 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
     payload = attach_next_available_slots(payload, search_params) if agent_scope?
 
     formatted_payload(prioritize_slot_keys(payload))
-  rescue Scheduling::AvailableSlotSearchService::MissingServiceLinkError => e
-    scheduling_tool_failure(Scheduling::Error.new(
-                              code: 'SERVICE_NOT_AVAILABLE_FOR_RESOURCE', status: :unprocessable_content,
-                              message: "#{e.message}: no recorded service-price link for these resources; provider eligibility is unverified",
-                              details: { reason: 'service_not_linked' }
-                            ))
+  rescue Scheduling::AvailableSlotSearchService::ResourceSelectionRequiredError
+    resource_required_failure
   rescue ActiveRecord::RecordNotFound => e
     scheduling_tool_failure(Scheduling::Error.new(code: 'RESOURCE_NOT_FOUND', message: e.message, status: :not_found,
                                                   details: { reason: 'unknown_resource' }))
@@ -62,6 +65,14 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
   end
 
   private
+
+  # Retryable: the same search with resource_ids of a chosen specialist answers it.
+  def resource_required_failure
+    scheduling_tool_failure(Scheduling::Error.new(
+                              code: 'RESOURCE_REQUIRED', status: :unprocessable_content, message: RESOURCE_REQUIRED_MESSAGE,
+                              details: { reason: 'resource_required', next_tool: 'search_scheduling_resources' }
+                            ), retryable: true)
+  end
 
   def inferred_agent_service_id(resource_ids)
     return unless agent_scope?

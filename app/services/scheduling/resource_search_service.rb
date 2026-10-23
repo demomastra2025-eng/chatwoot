@@ -31,15 +31,27 @@ class Scheduling::ResourceSearchService
 
     { total_count: total_count, resources: resources, returned_count: resources.length, offset: @offset,
       has_more: has_more, next_offset: has_more ? next_offset : nil,
-      exact_name_matches: equal[:ids].size, exact_name_truncated: equal[:truncated] }
+      exact_name_matches: equal[:ids].size, exact_name_truncated: equal[:truncated], service_filter: service_filter }
   end
 
   private
 
+  # The service filter keeps the resources with an active price link to the service. A service that has no such link at all
+  # filters nothing (service_filter 'not_applied'): a link is never required, and an empty list would hide every specialist.
   def filter_by_service(scope)
     return scope if @service_id.blank?
 
-    scope.where(id: Scheduling::ServicePrice.active.where(account_id: @account.id, service_id: @service_id).select(:resource_id))
+    links = Scheduling::ServicePrice.active.where(account_id: @account.id, service_id: @service_id)
+    return scope unless links.exists?
+
+    @service_filter = 'applied'
+    scope.where(id: links.select(:resource_id))
+  end
+
+  def service_filter
+    return 'not_requested' if @service_id.blank?
+
+    @service_filter || 'not_applied'
   end
 
   # Every query word must appear in the name (and specialty, for the "all" mode) in any order;

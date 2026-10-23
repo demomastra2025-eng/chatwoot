@@ -84,13 +84,14 @@ RSpec.describe Captain::Tools::Account::GetSchedulingResourceAvailabilityService
     expect(payload).to include('availability_source' => 'medelement', 'provider_checked' => false)
   end
 
-  it 'marks no service as not requested and an inactive link as an explicit error' do
+  it 'marks no service as not requested and an inactive link as unverified, still returning the windows' do
     resource = create_resource('Local')
     link(resource, active: false)
 
     expect(windows(resource)).to include('service_link_status' => 'not_requested')
-    expect(tool.execute(resource_id: resource.id, from: from_time.iso8601, to: to_time.iso8601, service_id: service_record.id))
-      .to start_with('ERROR:').and(include('No recorded service-price link'))
+    payload = windows(resource, service_id: service_record.id, limit: 1)
+    expect(payload).to include('service_link_status' => 'price_link_unverified', 'duration_min' => 30)
+    expect(payload['slots']).to be_present
   end
 
   it 'does not return a resource of another account' do
@@ -99,12 +100,10 @@ RSpec.describe Captain::Tools::Account::GetSchedulingResourceAvailabilityService
     expect(tool.execute(resource_id: foreign.id, from: from_time.iso8601, to: to_time.iso8601)).to start_with('ERROR:')
   end
 
-  it 'rejects a recorded link whose price row belongs to another account' do
+  it 'does not count a price row of another account as a link' do
     resource = create_resource('Local')
     link(resource).update_columns(account_id: create(:account).id) # rubocop:disable Rails/SkipsModelValidations
 
-    result = tool.execute(resource_id: resource.id, from: from_time.iso8601, to: to_time.iso8601,
-                          service_id: service_record.id)
-    expect(result).to start_with('ERROR:')
+    expect(windows(resource, service_id: service_record.id)).to include('service_link_status' => 'price_link_unverified')
   end
 end

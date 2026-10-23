@@ -33,6 +33,16 @@ RSpec.describe Captain::Tools::Operations::AppointmentOperations, type: :model d
       expect(operations.already_booked_appointment).to be_nil
     end
 
+    it 'books with a named service and without one when the account has no service-price links' do
+      Scheduling::ServicePrice.where(account_id: account.id).delete_all
+      service = account.scheduling_services.first
+
+      expect(operations.create_appointment(**booking).service_id).to be_nil
+
+      with_service = operations.create_appointment(**booking, starts_at: '2026-04-20T10:00:00+05:00', service_id: service.id)
+      expect(with_service).to have_attributes(service_id: service.id, service_amount: service.base_price)
+    end
+
     it 'reports the appointment it found instead of booking again, and forgets it on the next booking' do
       first = operations.create_appointment(**booking)
 

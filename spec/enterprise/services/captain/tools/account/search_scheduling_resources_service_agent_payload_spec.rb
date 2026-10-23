@@ -38,8 +38,10 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingResourcesService do
     expect(payload).not_to have_key('link_status')
     expect(payload).to include('search_status' => 'candidates', 'total_count' => 1)
     expect(payload['resources'].pluck('id')).to eq([specialist.id])
-    expect(search(service_id: create(:scheduling_service, account: account, name: 'Без связей').id))
-      .to include('search_status' => 'no_recorded_link', 'total_count' => 0)
+    unlinked = search(service_id: create(:scheduling_service, account: account, name: 'Без связей').id)
+    expect(unlinked).to include('search_status' => 'candidates', 'total_count' => 1,
+                                'instruction' => described_class::SERVICE_FILTER_NOT_APPLIED_INSTRUCTION)
+    expect(unlinked).not_to have_key('link_status')
   end
 
   describe 'the ambiguous flag' do

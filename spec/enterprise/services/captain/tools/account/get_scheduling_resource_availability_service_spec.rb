@@ -87,13 +87,26 @@ RSpec.describe Captain::Tools::Account::GetSchedulingResourceAvailabilityService
       end
     end
 
-    it 'returns an error when the service is not available for the specialist' do
+    it 'returns the windows for a service with no link to the specialist, with the service duration' do
       other_service = create(:scheduling_service, account: account, name: 'Other', duration_min: 60)
 
-      result = service.execute(resource_id: resource.id, from: from_time.iso8601, to: to_time.iso8601, service_id: other_service.id)
+      payload = JSON.parse(service.execute(resource_id: resource.id, from: from_time.iso8601, to: to_time.iso8601,
+                                           service_id: other_service.id, limit: 1))
 
-      expect(result).to start_with('ERROR:')
-      expect(result).to include('No recorded service-price link for this resource')
+      expect(payload['duration_min']).to eq(60)
+      expect(payload['slots'].first['ends_at']).to eq('2026-04-20T10:00:00+05:00')
+      expect(payload).to include('service_link_status' => 'price_link_unverified', 'provider_required' => false)
+    end
+
+    it 'returns the windows with the service when the account has no service-price links at all' do
+      Scheduling::ServicePrice.where(account_id: account.id).delete_all
+
+      payload = JSON.parse(service.execute(resource_id: resource.id, from: from_time.iso8601, to: to_time.iso8601,
+                                           service_id: consultation.id, limit: 1))
+
+      expect(payload['service']).to include('id' => consultation.id)
+      expect(payload['slots']).to be_present
+      expect(payload['service_link_status']).to eq('price_link_unverified')
     end
   end
 end

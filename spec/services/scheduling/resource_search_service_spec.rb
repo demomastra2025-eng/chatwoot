@@ -68,6 +68,21 @@ RSpec.describe Scheduling::ResourceSearchService do
 
     expect(payload[:total_count]).to eq(1)
     expect(payload[:resources].pluck(:id)).to eq([therapist.id])
+    expect(payload[:service_filter]).to eq('applied')
+  end
+
+  it 'ignores the service filter for a service with no active link instead of returning an empty list' do
+    service = create(:scheduling_service, account: account, name: 'Consultation')
+    create(:scheduling_service_price, account: account, service: service, resource: cosmetologist, active: false)
+    foreign = create(:scheduling_service_price, account: account, service: service, resource: therapist, active: true)
+    foreign.update_columns(account_id: other_account.id) # rubocop:disable Rails/SkipsModelValidations
+
+    payload = perform(service_id: service.id)
+
+    expect(payload[:total_count]).to eq(2)
+    expect(payload[:resources].pluck(:id)).to contain_exactly(therapist.id, cosmetologist.id)
+    expect(payload[:service_filter]).to eq('not_applied')
+    expect(perform(service_id: service.id, query: 'cosmet', search_by: 'specialty')[:resources].pluck(:id)).to eq([cosmetologist.id])
   end
 
   it 'treats non-positive and blank service ids as an omitted filter' do
@@ -76,6 +91,7 @@ RSpec.describe Scheduling::ResourceSearchService do
 
       expect(payload[:total_count]).to eq(2)
       expect(payload[:resources].pluck(:id)).to contain_exactly(therapist.id, cosmetologist.id)
+      expect(payload[:service_filter]).to eq('not_requested')
     end
   end
 
