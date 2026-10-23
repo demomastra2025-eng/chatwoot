@@ -491,6 +491,7 @@ describe('PhoneWidget', () => {
       sipProfileId: 83,
       sessionKey: 'sip_profile:83',
       claimOwnership: true,
+      takeover: true,
     });
   });
 
@@ -525,7 +526,7 @@ describe('PhoneWidget', () => {
     await flushPromises();
   });
 
-  describe('when the line is open on another computer', () => {
+  describe('when the line is open on another tab or computer', () => {
     const lineElsewhere = (overrides = {}) =>
       sipSession({
         registered: false,
@@ -534,24 +535,24 @@ describe('PhoneWidget', () => {
         ...overrides,
       });
 
-    it('says so and offers to move the line here', async () => {
+    it('says so and keeps the ordinary refresh button usable', async () => {
       webphoneClient.sessions['sip_profile:83'] = lineElsewhere();
       const wrapper = mountComponent();
       await flushPromises();
 
       expect(wrapper.get('[role="status"]').attributes('aria-label')).toBe(
-        'Иван Иванов · SIDEBAR.SIP_TELEPHONY.STATUS.OPEN_ON_ANOTHER_COMPUTER'
+        'Иван Иванов · SIDEBAR.SIP_TELEPHONY.STATUS.ACTIVE_IN_ANOTHER_TAB'
       );
       const action = wrapper.get('[data-testid="phone-widget-reconnect"]');
       expect(action.attributes('disabled')).toBeUndefined();
       expect(action.attributes('aria-label')).toBe(
-        'PHONE_WIDGET.MOVE_LINE_HERE'
+        'PHONE_WIDGET.REFRESH_CONNECTION'
       );
-      expect(action.find('.i-lucide-monitor-down').exists()).toBe(true);
+      expect(action.find('.i-lucide-refresh-cw').exists()).toBe(true);
       expect(usePhoneWidgetStore().status).toBe('standby');
     });
 
-    it('takes the line over only from the explicit click', async () => {
+    it('takes the line over when refresh is pressed, and only then', async () => {
       webphoneClient.sessions['sip_profile:83'] = lineElsewhere();
       const wrapper = mountComponent();
       await flushPromises();
@@ -561,6 +562,7 @@ describe('PhoneWidget', () => {
         .get('[data-testid="phone-widget-reconnect"]')
         .trigger('click');
 
+      expect(webphoneClient.initializeDevice).toHaveBeenCalledOnce();
       expect(webphoneClient.initializeDevice).toHaveBeenCalledWith(43, {
         native: true,
         provider: 'sipuni',
@@ -571,7 +573,7 @@ describe('PhoneWidget', () => {
       });
     });
 
-    it('offers the move in the list of lines too', async () => {
+    it('takes the line over from the refresh button of the list of lines too', async () => {
       webphoneClient.sessions['sip_profile:83'] = lineElsewhere();
       const wrapper = mountComponent();
       await flushPromises();
@@ -583,12 +585,30 @@ describe('PhoneWidget', () => {
         '[data-testid="phone-widget-line-reconnect"]'
       );
       expect(lineAction.attributes('title')).toBe(
-        'PHONE_WIDGET.MOVE_LINE_HERE'
+        'PHONE_WIDGET.REFRESH_CONNECTION'
       );
-      expect(
-        wrapper.get('[data-testid="phone-widget-line-status"]').text()
-      ).toBe('На другом компьютере');
       await lineAction.trigger('click');
+
+      expect(webphoneClient.initializeDevice).toHaveBeenCalledWith(
+        43,
+        expect.objectContaining({ claimOwnership: true, takeover: true })
+      );
+    });
+
+    it('takes the line over every time refresh is pressed, whatever state the line is in', async () => {
+      webphoneClient.sessions['sip_profile:83'] = sipSession({
+        registered: false,
+        callingSupported: true,
+        reason: 'sip_unregistered',
+      });
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      await wrapper
+        .get('[data-testid="phone-widget-reconnect"]')
+        .trigger('click');
+      await flushPromises();
+
       expect(webphoneClient.initializeDevice).toHaveBeenCalledWith(
         43,
         expect.objectContaining({ takeover: true })
@@ -611,35 +631,6 @@ describe('PhoneWidget', () => {
       expect(alertMock).toHaveBeenCalledWith(
         'PHONE_WIDGET.LINE_BUSY_ELSEWHERE'
       );
-    });
-
-    it('shows the phone and points to the button when a call could not start', async () => {
-      settingsState.settings.value = {
-        phone_widget_hidden_accounts: { 1: true },
-      };
-      webphoneClient.sessions['sip_profile:83'] = lineElsewhere();
-      const wrapper = mountComponent();
-      await flushPromises();
-      const action = () =>
-        wrapper.get('[data-testid="phone-widget-reconnect"]');
-      expect(action().attributes('data-highlighted')).toBe('false');
-      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-      try {
-        usePhoneWidgetStore().requestLineTakeover();
-        await wrapper.vm.$nextTick();
-
-        expect(settingsState.update).toHaveBeenCalledWith({
-          phone_widget_hidden_accounts: {},
-        });
-        expect(action().attributes('data-highlighted')).toBe('true');
-        expect(action().classes()).toContain('animate-pulse');
-
-        vi.advanceTimersByTime(10_000);
-        await wrapper.vm.$nextTick();
-        expect(action().attributes('data-highlighted')).toBe('false');
-      } finally {
-        vi.useRealTimers();
-      }
     });
   });
 
@@ -776,6 +767,7 @@ describe('PhoneWidget', () => {
       sipProfileId: 84,
       sessionKey: 'sip_profile:84',
       claimOwnership: true,
+      takeover: true,
     });
   });
 
@@ -858,6 +850,7 @@ describe('PhoneWidget', () => {
         sipProfileId: 83,
         sessionKey: 'sip_profile:83',
         claimOwnership: true,
+        takeover: true,
       });
       const action = wrapper.get('[data-testid="phone-widget-reconnect"]');
       expect(action.attributes('disabled')).toBeDefined();
@@ -1902,6 +1895,7 @@ describe('PhoneWidget', () => {
         sipProfileId: 84,
         sessionKey: 'sip_profile:84',
         claimOwnership: true,
+        takeover: true,
       });
     });
 

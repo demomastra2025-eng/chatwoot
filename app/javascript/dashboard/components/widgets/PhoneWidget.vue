@@ -36,17 +36,15 @@ const SIP_PROVIDERS = new Set([
   'beeline',
   'wazo',
 ]);
-// The line is open on another computer (or another browser) of this employee.
 const STANDBY_REASON = WEBPHONE_LINE_ELSEWHERE_REASON;
 const OWNER_TAB_BUSY_REASON = 'webphone_owner_tab_busy';
 // Moving the phone between tabs removes its SIP session in both tabs until the
 // new owner registers; keep the line on screen as "connecting" meanwhile
 // instead of hiding the whole phone.
 const HANDOVER_GRACE_MS = 15_000;
+// A line held by the employee's other tab or computer ('standby') is
+// refreshed too: the refresh takes the line over.
 const ACTIONABLE_STATUSES = ['disconnected', 'error', 'ownerTab', 'standby'];
-// How long the "move the line here" button stays highlighted after a call
-// could not start because the line is open on another computer.
-const TAKEOVER_HIGHLIGHT_MS = 10_000;
 const dialKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
 const { t } = useI18n();
@@ -60,7 +58,7 @@ const whatsappCallsStore = useWhatsappCallsStore();
 // call list stay mounted, so the SIP sessions keep running, browser SIP
 // INVITEs are still reported and put in the calls store, and a new incoming
 // call brings the phone back and rings.
-const { hasCallActivity, isVisible, ownIncomingCalls, hide, show } =
+const { hasCallActivity, isVisible, ownIncomingCalls, hide } =
   usePhoneWidgetVisibility();
 const phone = ref('');
 const selectedInboxId = ref(phoneWidgetStore.selectedInboxId || null);
@@ -75,8 +73,6 @@ const widgetRef = ref(null);
 const { position, positionStyle, isDragging, startDrag, scheduleClamp } =
   usePhoneWidgetPosition(widgetRef);
 let handoverTimer = null;
-const isTakeoverHighlighted = ref(false);
-let takeoverHighlightTimer = null;
 
 const voiceInboxes = computed(() =>
   (inboxes.value || []).filter(
@@ -309,9 +305,8 @@ const lineStatusLabel = value => {
     case 'ready':
       return 'Активен';
     case 'ownerTab':
-      return 'В другой вкладке';
     case 'standby':
-      return 'На другом компьютере';
+      return 'В другой вкладке';
     case 'connecting':
       return 'Подключение...';
     case 'error':
@@ -340,7 +335,6 @@ const allPhoneLines = computed(() => {
       canReconnect: ACTIONABLE_STATUSES.includes(lineStatus),
       movesHere:
         ACTIONABLE_STATUSES.includes(lineStatus) && session?.mirrored === true,
-      takesLineHere: lineStatus === 'standby',
     };
   });
 
@@ -364,7 +358,6 @@ const allPhoneLines = computed(() => {
       statusLabel: lineStatusLabel('ready'),
       canReconnect: false,
       movesHere: false,
-      takesLineHere: false,
     };
   });
 
@@ -405,7 +398,7 @@ const statusText = value => {
     case 'connecting':
       return t('SIDEBAR.SIP_TELEPHONY.STATUS.CONNECTING');
     case 'standby':
-      return t('SIDEBAR.SIP_TELEPHONY.STATUS.OPEN_ON_ANOTHER_COMPUTER');
+      return t('SIDEBAR.SIP_TELEPHONY.STATUS.ACTIVE_IN_ANOTHER_TAB');
     case 'error':
       return t('SIDEBAR.SIP_TELEPHONY.STATUS.ERROR');
     default:
@@ -449,33 +442,15 @@ const movesPhoneHere = computed(
       (actionableSessions.value.length > 0 &&
         actionableSessions.value.every(session => session?.mirrored === true)))
 );
-// The line is open on another computer: the action takes it over here.
-const takesLineHere = computed(
-  () =>
-    canUseConnectionAction.value &&
-    (status.value === 'standby' ||
-      (actionableSessions.value.length > 0 &&
-        actionableSessions.value.every(
-          session => sessionStatus(session) === 'standby'
-        )))
-);
 const connectionActionIcon = computed(() =>
-  takesLineHere.value || movesPhoneHere.value
-    ? 'i-lucide-monitor-down'
-    : 'i-lucide-refresh-cw'
+  movesPhoneHere.value ? 'i-lucide-monitor-down' : 'i-lucide-refresh-cw'
 );
 const connectionActionLabel = computed(() => {
-  if (takesLineHere.value) return t('PHONE_WIDGET.MOVE_LINE_HERE');
   if (movesPhoneHere.value) return t('PHONE_WIDGET.MOVE_HERE');
   if (canUseConnectionAction.value) return t('PHONE_WIDGET.REFRESH_CONNECTION');
   return connectionLabel.value;
 });
 const statusColor = computed(() => phoneWidgetStatusColor(status.value));
-const lineActionLabel = line => {
-  if (line.takesLineHere) return t('PHONE_WIDGET.MOVE_LINE_HERE');
-  if (line.movesHere) return t('PHONE_WIDGET.MOVE_HERE');
-  return t('PHONE_WIDGET.REFRESH_CONNECTION');
-};
 // Incoming calls the employee has not seen yet: each new one shows the phone
 // again even if it was hidden during an earlier call. Calls a colleague took
 // do not count.
@@ -502,22 +477,19 @@ const bootstrap = async () => {
   }
 };
 const reconnect = async session => {
-  const currentStatus = sessionStatus(session);
-  if (!session || !ACTIONABLE_STATUSES.includes(currentStatus)) return;
-  // The line is open on another computer: this click is the employee's
-  // explicit "move the line here", the only request that takes it over.
-  const takeover = currentStatus === 'standby';
+  if (!session || !ACTIONABLE_STATUSES.includes(sessionStatus(session))) return;
   connectingKeys.value = new Set([...connectingKeys.value, session.sessionKey]);
   try {
     // An explicit connect means "use the phone in this tab": a tab that only
-    // mirrors the owner takes the phone over (the owner refuses mid-call).
+    // mirrors the owner takes the phone over (the owner refuses mid-call), and
+    // the line is taken from the employee's other tab or computer at once.
     const result = await WebphoneClient.initializeDevice(session.inboxId, {
       native: true,
       provider: session.provider,
       sipProfileId: session.sipProfileId,
       sessionKey: session.sessionKey,
       claimOwnership: true,
-      ...(takeover ? { takeover: true } : {}),
+      takeover: true,
     });
     if (result?.takeoverRefused === WEBPHONE_TAKEOVER_REFUSED_CALL) {
       useAlert(t('PHONE_WIDGET.LINE_BUSY_ELSEWHERE'));
@@ -534,13 +506,7 @@ const reconnect = async session => {
     syncSessions();
   }
 };
-const clearTakeoverHighlight = () => {
-  if (takeoverHighlightTimer) clearTimeout(takeoverHighlightTimer);
-  takeoverHighlightTimer = null;
-  isTakeoverHighlighted.value = false;
-};
 const reconnectAllLines = async () => {
-  clearTakeoverHighlight();
   const targets = actionableSessions.value.length
     ? actionableSessions.value
     : [selectedSession.value].filter(Boolean);
@@ -636,21 +602,6 @@ watch(
 watch(hasCallActivity, active => {
   if (!active) phoneWidgetStore.setCallDismissed(false);
 });
-// A call could not start because the line is open on another computer: show
-// the phone and point to the button that moves the line here.
-watch(
-  () => phoneWidgetStore.lineTakeoverRequestedAt,
-  requestedAt => {
-    if (!requestedAt) return;
-    show();
-    clearTakeoverHighlight();
-    isTakeoverHighlighted.value = true;
-    takeoverHighlightTimer = setTimeout(
-      clearTakeoverHighlight,
-      TAKEOVER_HIGHLIGHT_MS
-    );
-  }
-);
 watch(incomingCallKeys, (keys, previousKeys = []) => {
   if (keys.some(key => !previousKeys.includes(key))) {
     phoneWidgetStore.setCallDismissed(false);
@@ -711,7 +662,6 @@ onMounted(() => {
 onUnmounted(() => {
   WebphoneClient.removeEventListener('call:sessions-changed', syncSessions);
   clearHandoverTimer();
-  clearTakeoverHighlight();
   phoneWidgetStore.publishSipState({ available: false });
 });
 </script>
@@ -804,14 +754,9 @@ onUnmounted(() => {
           size="sm"
           :icon="connectionActionIcon"
           class="shrink-0"
-          :class="{
-            'animate-pulse ring-2 ring-n-teal-9':
-              isTakeoverHighlighted && takesLineHere,
-          }"
           :disabled="!canUseConnectionAction"
           :aria-label="connectionActionLabel"
           :title="connectionActionLabel"
-          :data-highlighted="String(isTakeoverHighlighted && takesLineHere)"
           data-testid="phone-widget-reconnect"
           @click="reconnectAllLines"
         />
@@ -1041,15 +986,23 @@ onUnmounted(() => {
                     v-if="line.canReconnect"
                     type="button"
                     class="inline-flex size-5 shrink-0 items-center justify-center rounded bg-n-alpha-2 text-n-teal-11 hover:bg-n-teal-3 transition-colors"
-                    :title="lineActionLabel(line)"
-                    :aria-label="lineActionLabel(line)"
+                    :title="
+                      line.movesHere
+                        ? t('PHONE_WIDGET.MOVE_HERE')
+                        : t('PHONE_WIDGET.REFRESH_CONNECTION')
+                    "
+                    :aria-label="
+                      line.movesHere
+                        ? t('PHONE_WIDGET.MOVE_HERE')
+                        : t('PHONE_WIDGET.REFRESH_CONNECTION')
+                    "
                     data-testid="phone-widget-line-reconnect"
                     @click.stop="reconnect(line.session)"
                   >
                     <i
                       class="text-[11px]"
                       :class="
-                        line.takesLineHere || line.movesHere
+                        line.movesHere
                           ? 'i-lucide-monitor-down'
                           : 'i-lucide-refresh-cw'
                       "

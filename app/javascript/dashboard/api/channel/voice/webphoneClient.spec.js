@@ -2317,14 +2317,14 @@ describe('webphoneClient', () => {
       });
     });
 
-    it('makes the tab that lost the line check its registration at once', () => {
+    it('makes the tab that lost the line release it and unregister at once', () => {
       const lostLine = {
         registrationInstanceId: 'registration-old',
-        refreshPresenceRegistration: vi.fn(() => Promise.resolve()),
+        releaseTakenOverLine: vi.fn(() => true),
       };
       const otherLine = {
         registrationInstanceId: 'registration-other-line',
-        refreshPresenceRegistration: vi.fn(() => Promise.resolve()),
+        releaseTakenOverLine: vi.fn(() => true),
       };
       WebphoneClient.nativeSipClients['sip_profile:83'] = lostLine;
       WebphoneClient.nativeSipClients['sip_profile:84'] = otherLine;
@@ -2335,8 +2335,27 @@ describe('webphoneClient', () => {
         registration_instance_id: 'registration-old',
       });
 
-      expect(lostLine.refreshPresenceRegistration).toHaveBeenCalledOnce();
-      expect(otherLine.refreshPresenceRegistration).not.toHaveBeenCalled();
+      // The tab then waits for the line in standby instead of an error.
+      expect(lostLine.releaseTakenOverLine).toHaveBeenCalledOnce();
+      expect(lostLine.releaseTakenOverLine).toHaveBeenCalledWith(
+        'sip_profile_registration_lease_owned_by_another_tab'
+      );
+      expect(otherLine.releaseTakenOverLine).not.toHaveBeenCalled();
+    });
+
+    it('ignores a notice without a registration to release', () => {
+      const line = {
+        registrationInstanceId: 'registration-old',
+        releaseTakenOverLine: vi.fn(),
+      };
+      WebphoneClient.nativeSipClients['sip_profile:83'] = line;
+
+      emitter.emit(BUS_EVENTS.TELEPHONY_WEBPHONE_LEASE_TAKEN_OVER, {
+        account_id: 530,
+        sip_profile_id: 83,
+      });
+
+      expect(line.releaseTakenOverLine).not.toHaveBeenCalled();
     });
   });
 });

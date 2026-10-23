@@ -318,9 +318,8 @@ const startCall = async inbox => {
     const contactId = props.contactId || (await resolveDialContactId());
     const webphonePreparation = await prepareBrowserSipWebphone(inbox);
     if (!webphonePreparation.ready && webphonePreparation.lineElsewhere) {
-      // Say where the line is and point to the button that moves it here.
+      // Say where the line is and point to the refresh button, which moves it here.
       useAlert(t('CONVERSATION.VOICE_WIDGET.BROWSER_LINE_OPEN_ELSEWHERE'));
-      phoneWidgetStore.requestLineTakeover();
       return;
     }
     if (!webphonePreparation.ready) {

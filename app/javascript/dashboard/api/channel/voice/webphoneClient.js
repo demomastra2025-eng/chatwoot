@@ -172,9 +172,9 @@ class WebphoneClient extends EventTarget {
     );
   }
 
-  // The employee moved the line to another computer. The tab that held it
-  // checks its presence now; the server refuses it, so this tab unregisters
-  // at once instead of at its next heartbeat and waits in standby.
+  // The employee moved the line to another browser or tab. The tab that held
+  // it releases the line and unregisters at once (it needs no session for
+  // that, and does not wait for its next heartbeat), then waits in standby.
   handleRegistrationLeaseTakenOver(data = {}) {
     const registrationInstanceId =
       data.registration_instance_id || data.registrationInstanceId;
@@ -183,7 +183,7 @@ class WebphoneClient extends EventTarget {
     Object.values(this.nativeSipClients).forEach(client => {
       if (client?.registrationInstanceId !== registrationInstanceId) return;
 
-      Promise.resolve(client.refreshPresenceRegistration?.()).catch(() => null);
+      client.releaseTakenOverLine?.(WEBPHONE_LINE_ELSEWHERE_REASON);
     });
   }
 

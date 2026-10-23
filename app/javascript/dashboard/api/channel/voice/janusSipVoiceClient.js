@@ -3297,13 +3297,7 @@ export class JanusSipVoiceClient extends EventTarget {
     // A page may be frozen immediately after pagehide. Start the keepalive
     // request now; the backend sequence fence prevents an older in-flight
     // heartbeat from reviving this registration afterwards.
-    if (keepalive) {
-      // The beacon frees the line even when the session is already revoked
-      // (signed out by a sign-in on another computer), which the keepalive
-      // presence below cannot do.
-      if (!registered) this.releaseLeaseOnUnload();
-      return report();
-    }
+    if (keepalive) return report();
 
     const reportPromise = this.presenceReportPromise
       ? this.presenceReportPromise.then(report)
@@ -3319,6 +3313,9 @@ export class JanusSipVoiceClient extends EventTarget {
     return reportPromise;
   }
 
+  // A closing tab frees the line at once with its signed release key. Unlike
+  // the presence request this needs no session (a sign-in on another computer
+  // may have revoked it) and works for a phone that never got registered.
   releaseLeaseOnUnload() {
     if (typeof VoiceAPI.releaseWebphoneLeaseOnUnload !== 'function') return;
 
@@ -3465,6 +3462,26 @@ export class JanusSipVoiceClient extends EventTarget {
     return refreshPromise;
   }
 
+  // The employee moved the line to another computer: this tab unregisters at
+  // once. It does not wait for its next heartbeat, which a tab signed out by a
+  // sign-in on the other computer could not even send. A call in progress is
+  // never cut: the heartbeat finds out afterwards.
+  releaseTakenOverLine(reason = 'sip_line_taken_over') {
+    if (!this.registered) return false;
+    if (this.pendingIncomingCall || this.hasActiveCall || this.currentCallRef) {
+      return false;
+    }
+
+    this.transitionToUnregistered(reason);
+    try {
+      this.sipHandle?.send?.({ message: { request: 'unregister' } });
+    } catch {
+      // The transport is retired right after; Janus drops the handle anyway.
+    }
+    this.retireRegistrationTransport();
+    return true;
+  }
+
   refreshSipRegistration() {
     if (!this.registered) return Promise.resolve();
     if (this.sipRegistrationRefreshPromise) {
@@ -3538,6 +3555,7 @@ export class JanusSipVoiceClient extends EventTarget {
     this.registered = false;
     this.presenceHeartbeatFailureCount = 0;
     let presenceRelease = null;
+    if (keepalivePresence) this.releaseLeaseOnUnload();
     if (shouldReportOffline) {
       presenceRelease = this.reportPresence(false, {
         context: offlinePresenceContext,

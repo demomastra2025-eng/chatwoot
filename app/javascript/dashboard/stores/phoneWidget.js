@@ -11,7 +11,8 @@ const PHONE_WIDGET_STATUS_COLORS = {
   error: 'bg-n-ruby-9',
 };
 
-export const SELECTED_INBOX_STORAGE_KEY = 'onelink:phone-widget-selected-inbox';
+export const SELECTED_INBOX_STORAGE_KEY =
+  'onelink:phone-widget-selected-inbox';
 
 const CARRIER_LABELS = {
   altel: 'Altel',
@@ -87,9 +88,6 @@ export const usePhoneWidgetStore = defineStore('phoneWidget', {
     selectedInboxId: readStoredSelectedInboxId(),
     // Live status of each phone line by inboxId: { [inboxId]: 'ready' | 'disconnected' | ... }
     linesStatusById: {},
-    // When a call could not start because the line is open on another
-    // computer: the phone shows itself and points to "move the line here".
-    lineTakeoverRequestedAt: 0,
   }),
 
   actions: {
@@ -138,9 +136,6 @@ export const usePhoneWidgetStore = defineStore('phoneWidget', {
         0
       );
     },
-
-    requestLineTakeover() {
-      this.lineTakeoverRequestedAt = Date.now();
-    },
   },
 });
+

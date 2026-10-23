@@ -4,6 +4,9 @@ import { createPinia, setActivePinia } from 'pinia';
 
 import { useCallsStore } from 'dashboard/stores/calls';
 import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
+import enConversation from 'dashboard/i18n/locale/en/conversation.json';
+import kkConversation from 'dashboard/i18n/locale/kk/conversation.json';
+import ruConversation from 'dashboard/i18n/locale/ru/conversation.json';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import VoiceCallButton from './VoiceCallButton.vue';
 
@@ -475,9 +478,8 @@ describe('VoiceCallButton', () => {
     );
   });
 
-  it('says the line is open on another computer and points to the move button', async () => {
+  it('says the phone is open elsewhere and points to the refresh button', async () => {
     const { dispatchMock, wrapper } = mountComponent();
-    const phoneWidgetStore = usePhoneWidgetStore();
     initializeDeviceMock.mockResolvedValue({
       provider: 'sipuni',
       callingSupported: false,
@@ -489,7 +491,7 @@ describe('VoiceCallButton', () => {
     await flushPromises();
 
     expect(dispatchMock).not.toHaveBeenCalled();
-    // A call never takes the line over by itself: only the explicit button does.
+    // A call never takes the line over by itself: only the refresh button does.
     expect(initializeDeviceMock).toHaveBeenCalledWith(4593, {
       native: true,
       claimOwnership: true,
@@ -500,7 +502,26 @@ describe('VoiceCallButton', () => {
     expect(alertMock).not.toHaveBeenCalledWith(
       'CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE'
     );
-    expect(phoneWidgetStore.lineTakeoverRequestedAt).toBeGreaterThan(0);
+  });
+
+  it('has the toast for a phone open elsewhere in every language', () => {
+    const voiceWidget = locale => locale.CONVERSATION.VOICE_WIDGET;
+
+    expect(voiceWidget(ruConversation).BROWSER_LINE_OPEN_ELSEWHERE).toBe(
+      'Телефон открыт на другой вкладке или компьютере — нажмите ⟳, чтобы перенести его сюда'
+    );
+    [enConversation, kkConversation].forEach(locale => {
+      expect(voiceWidget(locale).BROWSER_LINE_OPEN_ELSEWHERE).toContain('⟳');
+    });
+    [ruConversation, enConversation, kkConversation].forEach(locale => {
+      expect(voiceWidget(locale).BROWSER_LINE_OPEN_ELSEWHERE).not.toBe(
+        voiceWidget(locale).BROWSER_CALLING_UNAVAILABLE
+      );
+    });
+    // The generic text stays for every other reason the phone is not ready.
+    expect(voiceWidget(ruConversation).BROWSER_CALLING_UNAVAILABLE).toBe(
+      'Телефон в браузере не готов. Проверьте подключение и повторите звонок.'
+    );
   });
 
   it('does not initiate a Janus SIP outbound call when the microphone is unavailable', async () => {
