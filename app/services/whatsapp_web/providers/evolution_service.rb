@@ -645,43 +645,12 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   def message_remote_jid(message)
-    contact = message.conversation.contact
-    contact_inbox = message.conversation.contact_inbox
-    contact_attributes = (contact&.additional_attributes || {}).with_indifferent_access
-    whatsapp_profile = whatsapp_channel_profile(contact_attributes, contact_inbox, contact)
-
-    [
-      whatsapp_profile&.[](:canonical_jid),
-      whatsapp_profile&.[](:raw_jid),
-      contact_attributes[:canonical_jid],
-      contact_attributes[:raw_jid],
-      contact_inbox&.source_id
-    ].find(&:present?)
+    candidates = WhatsappWeb::RecipientCandidates.new(conversation: message.conversation).to_a
+    candidates.find { |candidate| normalized_remote_jid(candidate).present? } || candidates.first
   end
 
-  def whatsapp_channel_profile(contact_attributes, contact_inbox, contact)
-    profiles = contact_attributes[:channel_profiles].to_h.with_indifferent_access[:whatsapp_web].to_h.with_indifferent_access
-    source_id = contact_inbox&.source_id.to_s.strip
-    identifier = contact&.identifier.to_s.strip
-
-    profiles.values.find do |profile|
-      attributes = profile.to_h.with_indifferent_access
-      [
-        attributes[:source_id].to_s.strip,
-        attributes[:identifier].to_s.strip,
-        attributes[:canonical_jid].to_s.strip,
-        attributes[:raw_jid].to_s.strip,
-        attributes[:lid_jid].to_s.strip
-      ].any?(&:present?) && [
-        attributes[:source_id].to_s.strip,
-        attributes[:identifier].to_s.strip,
-        attributes[:canonical_jid].to_s.strip,
-        attributes[:raw_jid].to_s.strip,
-        attributes[:lid_jid].to_s.strip
-      ].include?(source_id.presence || identifier)
-    end || profiles.values.first&.with_indifferent_access
-  end
-
+  # The first routable candidate (not @lid) wins: a conversation can hang on a LID contact inbox while the same contact
+  # also has a phone identity. When nothing is routable the first candidate is returned so callers can report it.
   def default_terminal_state_message(normalized_state)
     case normalized_state
     when 'refused'

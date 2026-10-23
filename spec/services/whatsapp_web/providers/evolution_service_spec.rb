@@ -891,5 +891,111 @@ describe WhatsappWeb::Providers::EvolutionService do
         /provisional @lid identity/
       )
     end
+
+    context 'when the conversation hangs on a LID contact inbox but the contact also has a phone identity' do
+      let(:phone_digits) { '77012345678' }
+      let(:lid_jid) { '143907392331785@lid' }
+      let(:contact) do
+        create(
+          :contact,
+          account: channel.account,
+          name: 'Mom',
+          phone_number: "+#{phone_digits}",
+          additional_attributes: {
+            'raw_jid' => lid_jid,
+            'lid_jid' => lid_jid,
+            'channel_profiles' => {
+              'whatsapp_web' => {
+                "whatsapp_web:#{lid_jid}" => {
+                  'identifier' => "whatsapp_web:#{lid_jid}",
+                  'source_id' => lid_jid,
+                  'raw_jid' => lid_jid,
+                  'lid_jid' => lid_jid,
+                  'provider' => 'whatsapp_web',
+                  'provisional_whatsapp_identity' => true
+                }
+              }
+            }
+          }
+        )
+      end
+      let!(:phone_contact_inbox) do
+        create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: phone_digits).tap do |contact_inbox|
+          create(
+            :contact_channel_profile,
+            contact_inbox: contact_inbox,
+            profile_data: { 'canonical_jid' => "#{phone_digits}@s.whatsapp.net", 'lid_jid' => lid_jid }
+          )
+        end
+      end
+      let(:lid_contact_inbox) do
+        create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: lid_jid).tap do |contact_inbox|
+          create(:contact_channel_profile, contact_inbox: contact_inbox, profile_data: { 'raw_jid' => lid_jid, 'lid_jid' => lid_jid })
+        end
+      end
+      let(:conversation) do
+        create(:conversation, account: channel.account, inbox: channel.inbox, contact: contact, contact_inbox: lid_contact_inbox)
+      end
+      let(:message) do
+        create(:message, account: channel.account, inbox: channel.inbox, conversation: conversation, message_type: :outgoing)
+      end
+      let(:service) { described_class.new(channel: channel) }
+
+      it 'sends to the phone number instead of failing as an unroutable LID' do
+        expect(service).to receive(:request)
+          .with(:post, "/message/sendText/#{channel.instance_name}", body: hash_including(number: phone_digits))
+          .and_return({ 'key' => { 'id' => 'provider-message-id' } })
+
+        expect(service.send_message(message)).to eq('provider-message-id')
+      end
+
+      it 'uses the phone JID for quoted replies, edits and deletes' do
+        expect(service.send(:resolved_remote_jid_for, message)).to eq("#{phone_digits}@s.whatsapp.net")
+
+        message.update!(source_id: 'provider-message-id')
+        expect(service).to receive(:request)
+          .with(
+            :delete,
+            "/chat/deleteMessageForEveryone/#{channel.instance_name}",
+            body: hash_including(remoteJid: "#{phone_digits}@s.whatsapp.net")
+          ).and_return({})
+
+        service.delete_message(message: message)
+      end
+
+      it 'prefers the phone identity tied to this LID over other phone identities of the contact' do
+        other_contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: '77055555555')
+        create(:contact_channel_profile, contact_inbox: other_contact_inbox, profile_data: { 'canonical_jid' => '77055555555@s.whatsapp.net' })
+        conversation
+
+        expect(service).to receive(:request)
+          .with(:post, "/message/sendText/#{channel.instance_name}", body: hash_including(number: phone_digits))
+          .and_return({ 'key' => { 'id' => 'provider-message-id' } })
+
+        service.send_message(message)
+      end
+
+      it 'falls back to the contact phone number when no other phone identity exists' do
+        phone_contact_inbox.channel_profile.destroy!
+        phone_contact_inbox.destroy!
+        conversation
+
+        expect(service).to receive(:request)
+          .with(:post, "/message/sendText/#{channel.instance_name}", body: hash_including(number: phone_digits))
+          .and_return({ 'key' => { 'id' => 'provider-message-id' } })
+
+        service.send_message(message)
+      end
+
+      it 'still reports an unroutable recipient when the contact has no phone identity at all' do
+        phone_contact_inbox.channel_profile.destroy!
+        phone_contact_inbox.destroy!
+        contact.update!(phone_number: nil)
+        conversation
+
+        expect(service).not_to receive(:request)
+        expect { service.send_message(message) }.to raise_error(described_class::UnroutableRecipientError)
+      end
+    end
   end
 end
