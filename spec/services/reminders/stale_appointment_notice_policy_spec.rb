@@ -46,7 +46,7 @@ RSpec.describe Reminders::StaleAppointmentNoticePolicy do
 
     expect(stale_reason).to eq(described_class::STARTED_REASON)
 
-    update_metadata(Reminder::AUTOMATION_EVENT_NAME_KEY => 'appointment_rescheduled')
+    update_metadata({ Reminder::AUTOMATION_EVENT_NAME_KEY => 'appointment_rescheduled' })
     reminder.assign_attributes(timing_mode: 'absolute', relative_anchor: nil, scheduled_at: now)
     expect(stale_reason).to eq(described_class::STARTED_REASON)
   end
@@ -71,7 +71,7 @@ RSpec.describe Reminders::StaleAppointmentNoticePolicy do
     appointment.external_ref = 'medelement:reception:42'
     expect(stale_reason).to eq(described_class::LATE_IMPORT_REASON)
 
-    update_metadata(Reminder::AUTOMATION_EVENT_NAME_KEY => 'appointment_rescheduled')
+    update_metadata({ Reminder::AUTOMATION_EVENT_NAME_KEY => 'appointment_rescheduled' })
     expect(stale_reason).to be_nil
   end
 
@@ -84,13 +84,13 @@ RSpec.describe Reminders::StaleAppointmentNoticePolicy do
     reminder.relative_anchor = 'appointment.created_at'
     expect(stale_reason).to eq(described_class::STARTED_REASON)
 
-    update_metadata(Reminder::AUTOMATION_EVENT_NAME_KEY => 'appointment_cancelled')
+    update_metadata({ Reminder::AUTOMATION_EVENT_NAME_KEY => 'appointment_cancelled' })
     expect(stale_reason).to be_nil
 
     update_metadata({ Reminder::AUTOMATION_EVENT_NAME_KEY => 'appointment_created' }, without: ['touch_source'])
     expect(stale_reason).to be_nil
 
-    update_metadata('touch_source' => 'automation', Reminder::DELIVERY_MATERIALIZED_MESSAGE_ID_KEY => 123)
+    update_metadata({ 'touch_source' => 'automation', Reminder::DELIVERY_MATERIALIZED_MESSAGE_ID_KEY => 123 })
     reminder.status = 'processing'
     expect(stale_reason).to be_nil
   end
