@@ -56,7 +56,12 @@ const templateGroups = computed(() =>
 
 const filteredTemplates = computed(() =>
   templateGroups.value.filter(templateGroup =>
-    matchesWhatsAppTemplateSearch(templateGroup, searchQuery.value)
+    matchesWhatsAppTemplateSearch(templateGroup, searchQuery.value, variant => [
+      getLanguageLabel(variant.language),
+      getCategoryLabel(variant.category),
+      getStatusLabel(variant.status),
+      variant.rejected_reason && getRejectionReasonLabel(variant.rejected_reason),
+    ])
   )
 );
 

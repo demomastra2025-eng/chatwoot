@@ -332,7 +332,12 @@ export const getTemplateHeaderPreview = template => {
   return headerComponent.format || '';
 };
 
-export const matchesWhatsAppTemplateSearch = (template, query) => {
+// describeVariant adds the texts a page shows for a variant (e.g. «Русский» for 'ru'), so people can search by what they see.
+export const matchesWhatsAppTemplateSearch = (
+  template,
+  query,
+  describeVariant = () => []
+) => {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return true;
 
@@ -350,6 +355,7 @@ export const matchesWhatsAppTemplateSearch = (template, query) => {
       getTemplateBodyPreview(variant),
       getTemplateHeaderPreview(variant),
       getTemplateFooterPreview(variant),
+      ...describeVariant(variant),
     ]),
   ]
     .filter(Boolean)

@@ -337,6 +337,19 @@ describe('whatsappTemplateLibrary', () => {
       expect(matchesWhatsAppTemplateSearch(template, 'ready')).toBe(true);
       expect(matchesWhatsAppTemplateSearch(template, 'invoice')).toBe(false);
     });
+
+    it('matches by the texts the page shows for a variant', () => {
+      const describeVariant = variant =>
+        variant.language === 'en' ? ['Английский', 'Одобрен'] : [];
+
+      expect(
+        matchesWhatsAppTemplateSearch(template, 'английский', describeVariant)
+      ).toBe(true);
+      expect(
+        matchesWhatsAppTemplateSearch(template, 'одобрен', describeVariant)
+      ).toBe(true);
+      expect(matchesWhatsAppTemplateSearch(template, 'английский')).toBe(false);
+    });
   });
 
   describe('#sortWhatsAppTemplates', () => {

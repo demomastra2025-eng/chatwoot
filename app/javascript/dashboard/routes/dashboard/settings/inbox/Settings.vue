@@ -2316,7 +2316,7 @@ export default {
   </div>
   <div
     v-else
-    class="grid grid-rows-[auto_1fr] h-full flex-grow flex-shrink pr-0 pl-0 w-full min-w-0 settings"
+    class="grid grid-rows-[auto_1fr] grid-cols-[minmax(0,1fr)] h-full flex-grow flex-shrink pr-0 pl-0 w-full min-w-0 settings"
   >
     <SettingIntroBanner :header-title="inboxName">
       <div
@@ -2344,7 +2344,7 @@ export default {
         <span>{{ whatsappTokenExpiryNote }}</span>
       </p>
       <woot-tabs
-        class="[&_ul]:p-0 [&_ul]:min-w-0 top-px relative min-w-0 max-w-full"
+        class="[&_ul]:p-0 top-px relative max-w-full overflow-x-auto"
         :index="selectedTabIndex"
         :border="false"
         @change="onTabChange"
