@@ -401,6 +401,32 @@ RSpec.describe Llm::OpenRouterRuntime do
     )
   end
 
+  it 'puts the prompt and temperature of a transcription request into the HTTP body OpenRouter receives', :aggregate_failures do
+    audio_path = Rails.root.join('tmp/openrouter-runtime-transcription-test.wav').to_s
+    File.binwrite(audio_path, "RIFF\x24\x00\x00\x00WAVEfmt ")
+    sent = nil
+    stub_request(:post, 'https://openrouter.example/api/v1/audio/transcriptions')
+      .with(headers: { 'Authorization' => 'Bearer openrouter-key' }) { |http_request| (sent = JSON.parse(http_request.body)) && true }
+      .to_return(status: 200, body: { text: 'Сәлеметсіз бе' }.to_json, headers: { 'Content-Type' => 'application/json' })
+    request = Llm::FeatureRequest.new(
+      feature: :audio_transcription,
+      account: account,
+      model: 'openai/gpt-4o-mini-transcribe',
+      input: audio_path,
+      options: { temperature: 0, prompt: 'Біздің ұлттық мәдениетіміз.' }
+    )
+
+    expect(runtime.transcribe(request).text).to eq('Сәлеметсіз бе')
+
+    expect(sent).to include('model' => 'openai/gpt-4o-mini-transcribe', 'temperature' => 0)
+    expect(sent).not_to have_key('prompt')
+    expect(sent).not_to have_key('language')
+    expect(sent.dig('provider', 'options')).to eq('openai' => { 'prompt' => 'Біздің ұлттық мәдениетіміз.' })
+    expect(sent['provider']).to include('data_collection' => 'deny')
+  ensure
+    FileUtils.rm_f(audio_path)
+  end
+
   it 'retries transient native OpenRouter provider errors once and records a retry event' do
     request = Llm::FeatureRequest.new(
       feature: :audio_transcription,

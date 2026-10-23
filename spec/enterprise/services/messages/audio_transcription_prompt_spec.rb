@@ -2,9 +2,21 @@ require 'rails_helper'
 
 RSpec.describe Messages::AudioTranscriptionPrompt do
   let(:context_sample) { described_class::CONTEXT_SAMPLE }
+  let(:kazakh_sentence) { described_class::SAMPLE_SENTENCES.first }
+  let(:russian_sentence) { described_class::SAMPLE_SENTENCES.last }
 
   it 'gives a transcription model a context sample written in Kazakh and Russian Cyrillic' do
-    expect(context_sample).to include('Сәлеметсіз бе', 'Қабылдауға', 'Здравствуйте')
+    expect(context_sample).to eq("#{kazakh_sentence} #{russian_sentence}")
+    expect(kazakh_sentence).to include('Біздің', 'ғылымымыз', 'әлемге')
+    expect(russian_sentence).to include('казахском', 'русском')
+  end
+
+  it 'uses the letters that tell Kazakh spelling from Kyrgyz spelling' do
+    expect(%w[ә ғ қ ұ і].reject { |letter| kazakh_sentence.include?(letter) }).to be_empty
+  end
+
+  it 'says nothing a customer would say, so an echo is never taken for a customer message' do
+    expect(context_sample).not_to match(/здравствуйте|сәлеметсіз|записаться|жазыл|баға|цена|врач|дәрігер|\?/i)
   end
 
   context 'when the workspace has no transcription prompt' do
@@ -24,8 +36,24 @@ RSpec.describe Messages::AudioTranscriptionPrompt do
       expect(prompt.without_echoed_context(context_sample)).to eq('')
     end
 
+    it 'removes a part of the context sample that the model repeats on its own' do
+      expect(prompt.without_echoed_context(russian_sentence)).to eq('')
+      expect(prompt.without_echoed_context(kazakh_sentence)).to eq('')
+      expect(prompt.without_echoed_context("#{russian_sentence}\n")).to eq('')
+    end
+
+    it 'removes a repeated sentence that comes before or after the words of the customer' do
+      expect(prompt.without_echoed_context("#{russian_sentence} Ертеңге жазылуға бола ма?")).to eq('Ертеңге жазылуға бола ма?')
+      expect(prompt.without_echoed_context("Ертеңге жазылуға бола ма? #{kazakh_sentence}")).to eq('Ертеңге жазылуға бола ма?')
+    end
+
     it 'keeps a transcript that only shares words with the sample' do
+      expect(prompt.without_echoed_context('Мы говорим на казахском, а вы?')).to eq('Мы говорим на казахском, а вы?')
       expect(prompt.without_echoed_context('Сәлеметсіз бе! Бағасы қанша?')).to eq('Сәлеметсіз бе! Бағасы қанша?')
+    end
+
+    it 'returns an empty string for a missing transcript' do
+      expect(prompt.without_echoed_context(nil)).to eq('')
     end
   end
 

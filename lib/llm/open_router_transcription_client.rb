@@ -40,13 +40,31 @@ class Llm::OpenRouterTranscriptionClient
               data: Base64.strict_encode64(File.binread(file_path)),
               format: Llm::OpenRouterAudioInput.format_for(file_path)
             },
-            prompt: options[:prompt].presence,
             language: options[:language].presence,
             temperature: options[:temperature],
-            provider: options[:provider].presence
+            provider: provider_payload(options)
           }.compact
         )
       end
+    end
+
+    # OpenRouter's JSON transcription body has no top-level `prompt`: a field it does not know is dropped without an error.
+    # The prompt is a provider option, forwarded under the slug of the provider that serves the model, in that provider's
+    # own field name: provider.options.openai.prompt. `language` and `temperature` are normalized and stay top-level.
+    # https://openrouter.ai/docs/guides/overview/multimodal/stt.md (Provider-Specific Options)
+    def provider_payload(options)
+      provider = options[:provider].to_h.deep_symbolize_keys
+      prompt = options[:prompt].presence
+      slug = provider_slug(options[:model])
+      provider[:options] = provider[:options].to_h.deep_merge(slug.to_sym => { prompt: prompt }) if prompt && slug
+      provider.presence
+    end
+
+    # The vendor part of the model id (openai/gpt-4o-transcribe -> openai). It is the slug of the endpoint for the OpenAI
+    # transcription models. A model that is served by other providers needs the slug of the provider that serves it.
+    def provider_slug(model)
+      vendor, name = model.to_s.split('/', 2)
+      vendor.presence if name.present?
     end
 
     def perform_request(uri, request)
