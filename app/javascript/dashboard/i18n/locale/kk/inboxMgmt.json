@@ -11,7 +11,7 @@
       "CONNECTED_VOICE_DESCRIPTION": "Арна қоңырауларды қабылдауға дайын.",
       "PENDING": "Күтуде",
       "PENDING_DESCRIPTION": "Арна QR сканерлеуді, кіруді растауды немесе провайдер байланысының ашылуын күтіп тұр.",
-      "DISCONNECTED": "Ажыратылған",
+      "DISCONNECTED": "Байланыс жоқ",
       "DISCONNECTED_DESCRIPTION": "Арна қосылмаған. Жаңа хабарламаларды күтер алдында қайта қосыңыз.",
       "REAUTHORIZATION_REQUIRED": "Қайта авторизация қажет",
       "REAUTHORIZATION_REQUIRED_DESCRIPTION": "Хабарлама жеткізуді қалпына келтіру үшін арнаны қайта қосыңыз.",
@@ -1346,7 +1346,9 @@
         "SYNC_LABELS": "Sync WhatsApp tags",
         "SIGN_MESSAGES": "Sign outgoing messages",
         "SIGN_DELIMITER": "Signature delimiter",
-        "SIGN_DELIMITER_PLACEHOLDER": "\\n"
+        "SIGN_DELIMITER_PLACEHOLDER": "\\n",
+        "SYNC_GROUPS": "Топтық чаттарды синхрондау",
+        "SYNC_GROUPS_HINT": "Әдепкі бойынша өшірулі: үлкен жұмыс және жеке топтар диалогтар тізімін толтырмауы үшін."
       },
       "TELEGRAM_PERSONAL": {
         "TITLE": "Telegram Personal lifecycle",
@@ -1410,7 +1412,11 @@
         "CONTACTS_SYNC_COUNT": "Contacts synced",
         "FLOOD_WAIT": "Flood wait, sec",
         "LAST_INBOUND_AT": "Last inbound",
-        "NOT_AVAILABLE": "Not available"
+        "NOT_AVAILABLE": "Not available",
+        "SYNC_GROUPS": "Топтық чаттарды синхрондау",
+        "SYNC_GROUPS_HINT": "Әдепкі бойынша өшірулі: үлкен Telegram-топтар диалогтар тізімін толтырмауы үшін. Әр топ бір диалогқа жиналады, әр хабарламаның авторы көрсетіледі.",
+        "SYNC_GROUPS_SUCCESS": "Telegram топтық чаттар баптауы сақталды",
+        "SYNC_GROUPS_ERROR": "Telegram топтық чаттар баптауын сақтау мүмкін болмады"
       },
       "VK_COMMUNITY": {
         "TITLE": "VK Community callback",

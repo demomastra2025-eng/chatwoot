@@ -2344,7 +2344,7 @@ export default {
         <span>{{ whatsappTokenExpiryNote }}</span>
       </p>
       <woot-tabs
-        class="[&_ul]:p-0 top-px relative"
+        class="[&_ul]:p-0 [&_ul]:min-w-0 top-px relative min-w-0 max-w-full"
         :index="selectedTabIndex"
         :border="false"
         @change="onTabChange"

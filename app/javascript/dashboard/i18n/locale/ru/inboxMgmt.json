@@ -11,7 +11,7 @@
       "CONNECTED_VOICE_DESCRIPTION": "Канал готов принимать звонки.",
       "PENDING": "В ожидании",
       "PENDING_DESCRIPTION": "Канал ожидает сканирования QR, подтверждения входа или открытия соединения провайдера.",
-      "DISCONNECTED": "Отключено",
+      "DISCONNECTED": "Нет связи",
       "DISCONNECTED_DESCRIPTION": "Канал не подключен. Переподключите его перед ожиданием новых сообщений.",
       "REAUTHORIZATION_REQUIRED": "Нужна повторная авторизация",
       "REAUTHORIZATION_REQUIRED_DESCRIPTION": "Переподключите канал, чтобы восстановить доставку сообщений.",
