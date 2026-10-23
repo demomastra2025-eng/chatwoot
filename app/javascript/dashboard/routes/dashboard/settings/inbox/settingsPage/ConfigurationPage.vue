@@ -16,6 +16,7 @@ import {
   virtualPbxErrorText,
   virtualPbxErrorsText,
   virtualPbxRequestErrorText,
+  virtualPbxWarningText,
 } from 'dashboard/api/channel/voice/virtualPbxErrors';
 import { sanitizeAllowedDomains } from 'dashboard/helper/URLHelper';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
@@ -172,6 +173,9 @@ export default {
       callRoutingDirty: false,
       isSavingWhatsAppCallRouting: false,
       callRoutingForm: defaultCallRoutingConfig(),
+      // What the form looked like when it was last filled from the server.
+      // Comparing against it tells whether there are edits that are not saved.
+      virtualPbxSavedFormState: null,
       virtualPbxForm: {
         channelName: '',
         providerKind: '',
@@ -396,6 +400,12 @@ export default {
     isVirtualPbxRemoteCommitAllowed() {
       return !!this.virtualPbxConfig?.permissions?.remote_commit_allowed;
     },
+    hasUnsavedVirtualPbxChanges() {
+      return (
+        this.virtualPbxSavedFormState !== null &&
+        this.virtualPbxSavedFormState !== this.currentVirtualPbxFormState()
+      );
+    },
     isVirtualPbxReadOnly() {
       return !!(
         this.virtualPbxConfig?.status?.read_only ||
@@ -433,6 +443,13 @@ export default {
       return this.isCallsSection
         ? this.$t('INBOX_MGMT.EDIT.VOICE_CALLS.CALLS_TITLE')
         : this.$t('INBOX_MGMT.EDIT.VOICE_CALLS.CONFIG_TITLE');
+    },
+    // The calls tab is a wide form: its title goes on top and the form takes the
+    // whole width, so the selects are not squeezed and cut off.
+    virtualPbxSectionClass() {
+      return this.isCallsSection
+        ? 'min-w-0 lg:[&>div:first-child]:!flex lg:[&>div:first-child]:!flex-col lg:[&>div:first-child]:!items-stretch lg:[&>div:first-child]:!gap-2'
+        : 'min-w-0';
     },
     virtualPbxSectionHelpText() {
       return this.isCallsSection
@@ -1004,6 +1021,20 @@ export default {
     virtualPbxErrorLabel(error) {
       return virtualPbxErrorText(error, this.virtualPbxI18n());
     },
+    virtualPbxWarningLabel(warning) {
+      return virtualPbxWarningText(warning, this.virtualPbxI18n());
+    },
+    currentVirtualPbxFormState() {
+      return JSON.stringify([this.virtualPbxForm, this.callRoutingForm]);
+    },
+    // Reloading the status refills the form from the server, which would throw
+    // away edits that were made on the other tab. Ask to save them first.
+    refuseWhileVirtualPbxFormUnsaved() {
+      if (!this.hasUnsavedVirtualPbxChanges) return false;
+
+      useAlert(this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SAVE_FIRST'));
+      return true;
+    },
     isValidVirtualPbxPort(value) {
       const port = String(value || '').trim();
       if (!/^\d+$/.test(port)) return false;
@@ -1024,7 +1055,9 @@ export default {
         )
       );
     },
-    async loadVirtualPbxStatus() {
+    // `keepUnsavedForm` refreshes the status only: edits that are not saved yet
+    // stay in the form instead of being replaced by what the server has.
+    async loadVirtualPbxStatus({ keepUnsavedForm = false } = {}) {
       if (!this.isVirtualPbxVoiceInbox || !this.inbox.id) {
         this.virtualPbxStatusPayload = null;
         this.virtualPbxLoadError = '';
@@ -1038,7 +1071,9 @@ export default {
         this.virtualPbxStatusPayload = response?.payload || null;
         this.virtualPbxProvisioningPlan =
           this.virtualPbxStatusPayload?.provisioning_plan || null;
-        this.prefillVirtualPbxForm();
+        if (!keepUnsavedForm || !this.hasUnsavedVirtualPbxChanges) {
+          this.prefillVirtualPbxForm();
+        }
         await this.loadVirtualPbxProvisioningRuns();
       } catch (error) {
         this.virtualPbxStatusPayload = null;
@@ -1109,6 +1144,7 @@ export default {
     },
     async provisionVirtualPbxChannel() {
       if (!this.isVirtualPbxVoiceInbox || !this.inbox.id) return;
+      if (this.refuseWhileVirtualPbxFormUnsaved()) return;
       if (
         this.isVirtualPbxWazo &&
         // Explicit safety gate for a remote Wazo control-plane mutation.
@@ -1142,7 +1178,7 @@ export default {
         }
 
         useAlert(this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVISION_SUCCESS'));
-        await this.loadVirtualPbxStatus();
+        await this.loadVirtualPbxStatus({ keepUnsavedForm: true });
       } catch (error) {
         this.handleVirtualPbxError(error);
       } finally {
@@ -1151,6 +1187,7 @@ export default {
     },
     async reconcileVirtualPbxChannel() {
       if (!this.isVirtualPbxVoiceInbox || !this.inbox.id) return;
+      if (this.refuseWhileVirtualPbxFormUnsaved()) return;
 
       this.isReconcilingVirtualPbx = true;
       try {
@@ -1159,7 +1196,7 @@ export default {
           { includeDiagnostics: false }
         );
         this.virtualPbxReconcileResult = response?.payload || null;
-        await this.loadVirtualPbxStatus();
+        await this.loadVirtualPbxStatus({ keepUnsavedForm: true });
         useAlert(
           this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.RECONCILE_COMPLETE')
         );
@@ -1377,6 +1414,7 @@ export default {
         routing.call_routing
       );
       this.callRoutingDirty = false;
+      this.virtualPbxSavedFormState = this.currentVirtualPbxFormState();
     },
     applyDetectedChannelLimit() {
       const limit = Number(this.virtualPbxForm.detectedChannelLimit);
@@ -2225,13 +2263,21 @@ export default {
 
       <form
         v-if="isVirtualPbxVoiceInbox"
-        class="flex flex-col gap-4"
+        class="flex min-w-0 flex-col gap-4 pb-20 md:pb-0"
         @submit.prevent="updateVirtualPbxChannel"
       >
         <SettingsFieldSection
           :label="virtualPbxSectionLabel"
-          :help-text="virtualPbxSectionHelpText"
+          :help-text="isCallsSection ? '' : virtualPbxSectionHelpText"
+          :class="virtualPbxSectionClass"
         >
+          <p
+            v-if="isCallsSection"
+            data-testid="virtual-pbx-calls-hint"
+            class="mb-3 mt-0 text-sm text-n-slate-11"
+          >
+            {{ virtualPbxSectionHelpText }}
+          </p>
           <div v-if="isLoadingVirtualPbxStatus" class="text-sm text-n-slate-11">
             {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.LOADING') }}
           </div>
@@ -2249,19 +2295,6 @@ export default {
               {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.READ_ONLY') }}
             </div>
             <div
-              v-if="virtualPbxWarnings.length"
-              class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
-            >
-              <div class="mb-1 font-medium">
-                {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.WARNINGS_TITLE') }}
-              </div>
-              <ul class="list-disc pl-5">
-                <li v-for="warning in virtualPbxWarnings" :key="warning.code">
-                  {{ warning.message || warning.code }}
-                </li>
-              </ul>
-            </div>
-            <div
               v-if="virtualPbxErrors.length"
               class="rounded-xl border border-n-ruby-4 bg-n-ruby-2/40 p-4 text-sm text-n-ruby-11"
             >
@@ -2277,7 +2310,7 @@ export default {
                 v-if="showVirtualPbxTechnicalSettings"
                 class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
               >
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OPERATOR_DISTRIBUTION.LABEL'
@@ -2350,7 +2383,7 @@ export default {
                   >
                     <label
                       v-if="profile.profileKind !== 'voice_agent'"
-                      class="flex flex-col gap-1 text-sm text-n-slate-12"
+                      class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                     >
                       {{
                         $t(
@@ -2379,7 +2412,7 @@ export default {
                       </select>
                     </label>
 
-                    <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                    <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                       {{
                         $t(
                           'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.LABEL'
@@ -2400,7 +2433,7 @@ export default {
 
                     <label
                       v-if="isVirtualPbxSipCredentialsVisible"
-                      class="flex flex-col gap-1 text-sm text-n-slate-12"
+                      class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                     >
                       {{
                         $t(
@@ -2422,7 +2455,7 @@ export default {
 
                     <label
                       v-if="isVirtualPbxSipCredentialsVisible"
-                      class="flex flex-col gap-1 text-sm text-n-slate-12"
+                      class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                     >
                       {{
                         $t(
@@ -2674,9 +2707,9 @@ export default {
                         )
                       }}
                     </div>
-                    <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <label
-                        class="flex flex-col gap-1 text-sm text-n-slate-12"
+                        class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                       >
                         {{
                           $t(
@@ -2711,7 +2744,7 @@ export default {
                           callRoutingForm.inbound.schedule_mode ===
                           'business_hours'
                         "
-                        class="flex flex-col gap-1 text-sm text-n-slate-12"
+                        class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                       >
                         {{
                           $t(
@@ -2740,7 +2773,7 @@ export default {
                             'business_hours' &&
                           callRoutingForm.inbound.off_hours_action === 'forward'
                         "
-                        class="flex flex-col gap-1 text-sm text-n-slate-12"
+                        class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                       >
                         {{
                           $t(
@@ -2775,9 +2808,9 @@ export default {
                         )
                       }}
                     </div>
-                    <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <label
-                        class="flex flex-col gap-1 text-sm text-n-slate-12"
+                        class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                       >
                         {{
                           $t(
@@ -2798,7 +2831,7 @@ export default {
                         />
                       </label>
                       <label
-                        class="flex flex-col gap-1 text-sm text-n-slate-12"
+                        class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                       >
                         {{
                           $t(
@@ -2822,7 +2855,7 @@ export default {
                         </select>
                       </label>
                       <label
-                        class="flex items-center gap-2 pt-6 text-sm text-n-slate-12"
+                        class="flex items-center gap-2 text-sm text-n-slate-12 md:col-span-2"
                       >
                         <input
                           v-model="callRoutingForm.inbound.skip_busy_operators"
@@ -2903,9 +2936,9 @@ export default {
                             }}
                           </button>
                         </div>
-                        <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+                        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                           <label
-                            class="flex flex-col gap-1 text-sm text-n-slate-12"
+                            class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                           >
                             {{
                               $t(
@@ -2926,7 +2959,7 @@ export default {
                             />
                           </label>
                           <label
-                            class="flex flex-col gap-1 text-sm text-n-slate-12"
+                            class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                           >
                             {{
                               $t(
@@ -2949,7 +2982,7 @@ export default {
                             </select>
                           </label>
                           <label
-                            class="flex flex-col gap-1 text-sm text-n-slate-12"
+                            class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                           >
                             {{
                               $t(
@@ -3012,7 +3045,7 @@ export default {
                     </div>
                     <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <label
-                        class="flex flex-col gap-1 text-sm text-n-slate-12"
+                        class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                       >
                         {{
                           $t(
@@ -3039,7 +3072,7 @@ export default {
                         v-if="
                           callRoutingForm.inbound.fallback_action === 'forward'
                         "
-                        class="flex flex-col gap-1 text-sm text-n-slate-12"
+                        class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                       >
                         {{
                           $t(
@@ -3089,7 +3122,7 @@ export default {
                         class="grid grid-cols-1 gap-3 md:grid-cols-2"
                       >
                         <label
-                          class="flex flex-col gap-1 text-sm text-n-slate-12"
+                          class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                         >
                           {{
                             $t(
@@ -3123,7 +3156,7 @@ export default {
                         </label>
 
                         <label
-                          class="flex flex-col gap-1 text-sm text-n-slate-12"
+                          class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                         >
                           {{
                             $t(
@@ -3150,7 +3183,7 @@ export default {
                             selectedWhatsappFollowupInbox &&
                             isSelectedWhatsappFollowupOfficial
                           "
-                          class="flex flex-col gap-1 text-sm text-n-slate-12 md:col-span-2"
+                          class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12 md:col-span-2"
                         >
                           {{
                             $t(
@@ -3186,7 +3219,7 @@ export default {
 
                         <label
                           v-else-if="selectedWhatsappFollowupInbox"
-                          class="flex flex-col gap-1 text-sm text-n-slate-12 md:col-span-2"
+                          class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12 md:col-span-2"
                         >
                           {{
                             $t(
@@ -3242,7 +3275,7 @@ export default {
                   class="flex flex-col gap-4"
                 >
                   <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                    <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                       {{
                         $t(
                           'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.ACCESS_MODE_LABEL'
@@ -3271,7 +3304,7 @@ export default {
                         </option>
                       </select>
                     </label>
-                    <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                    <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                       {{
                         $t(
                           'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.CALLER_ID_LABEL'
@@ -3331,7 +3364,7 @@ export default {
                 v-if="isVirtualPbxAsteriskAnalog"
                 class="grid grid-cols-1 gap-4 md:grid-cols-2"
               >
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                   {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.ROUTING_MODE') }}
                   <select
                     v-model="virtualPbxForm.routingMode"
@@ -3352,7 +3385,7 @@ export default {
 
             <template v-else>
               <template v-if="showVirtualPbxTechnicalSettings">
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                   {{
                     $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CHANNEL_NAME.LABEL')
                   }}
@@ -3365,7 +3398,7 @@ export default {
                 </label>
 
                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                     <span class="flex items-center gap-2">
                       <img
                         v-if="virtualPbxCarrierBadgeUrl"
@@ -3402,7 +3435,7 @@ export default {
                       </option>
                     </select>
                   </label>
-                  <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                     {{ $t('INBOX_MGMT.ADD.VOICE.PHONE_NUMBER.LABEL') }}
                     <input
                       v-model="virtualPbxForm.displayPhoneNumber"
@@ -3442,6 +3475,20 @@ export default {
         </SettingsFieldSection>
 
         <DeveloperDetails v-if="!isCallsSection">
+          <div
+            v-if="virtualPbxWarnings.length"
+            data-testid="virtual-pbx-warnings"
+            class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
+          >
+            <div class="mb-1 font-medium">
+              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.WARNINGS_TITLE') }}
+            </div>
+            <ul class="mb-0 list-disc pl-5">
+              <li v-for="warning in virtualPbxWarnings" :key="warning.code">
+                {{ virtualPbxWarningLabel(warning) }}
+              </li>
+            </ul>
+          </div>
           <SettingsFieldSection
             v-if="isSipuniVoiceInbox"
             :label="
@@ -3466,7 +3513,7 @@ export default {
                 }}
               </div>
 
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                 {{
                   $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_TOKEN')
                 }}
@@ -3539,7 +3586,7 @@ export default {
                 }}
               </div>
 
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                 {{
                   $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_TOKEN')
                 }}
@@ -3559,7 +3606,7 @@ export default {
                 />
               </label>
 
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                 {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_KEY') }}
                 <input
                   v-model="binotelApiKey"
@@ -3578,7 +3625,7 @@ export default {
                 />
               </label>
 
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                 {{
                   $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_SECRET')
                 }}
@@ -3669,7 +3716,7 @@ export default {
                 }}
               </div>
 
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                 {{
                   $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TOKEN')
                 }}
@@ -3690,7 +3737,7 @@ export default {
                 />
               </label>
 
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                 {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_API_TOKEN') }}
                 <input
                   v-model="beelineApiToken"
@@ -3780,7 +3827,7 @@ export default {
                 </p>
               </div>
               <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                   {{
                     $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL')
                   }}
@@ -3799,7 +3846,7 @@ export default {
                 </label>
                 <label
                   v-if="isVirtualPbxBeeline"
-                  class="flex flex-col gap-1 text-sm text-n-slate-12"
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                 >
                   {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SIP_DOMAIN.LABEL') }}
                   <input
@@ -3816,7 +3863,7 @@ export default {
                 </label>
                 <label
                   v-if="isVirtualPbxBeeline"
-                  class="flex flex-col gap-1 text-sm text-n-slate-12"
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                 >
                   {{
                     $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_PROXY.LABEL')
@@ -3835,7 +3882,7 @@ export default {
                 </label>
                 <label
                   v-if="isVirtualPbxAsteriskAnalog"
-                  class="flex flex-col gap-1 text-sm text-n-slate-12"
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                 >
                   {{
                     $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.LABEL')
@@ -3856,7 +3903,7 @@ export default {
                 </label>
                 <label
                   v-if="isVirtualPbxAsteriskAnalog"
-                  class="flex flex-col gap-1 text-sm text-n-slate-12"
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                 >
                   {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.TRANSPORT.LABEL') }}
                   <select
@@ -3875,7 +3922,7 @@ export default {
                 </label>
                 <label
                   v-if="isVirtualPbxDialFormatEditable"
-                  class="flex flex-col gap-1 text-sm text-n-slate-12"
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
                 >
                   {{
                     $t(
@@ -3927,7 +3974,7 @@ export default {
                 </p>
               </div>
               <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIER_KIND_LABEL'
@@ -3958,7 +4005,7 @@ export default {
                     </option>
                   </select>
                 </label>
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.MAX_CHANNELS_LABEL'
@@ -4042,7 +4089,7 @@ export default {
                     }}
                   </span>
                 </label>
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.RESERVED_INBOUND_LABEL'
@@ -4057,7 +4104,7 @@ export default {
                     max="50"
                   />
                 </label>
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.RING_STRATEGY_LABEL'
@@ -4077,7 +4124,7 @@ export default {
                     </option>
                   </select>
                 </label>
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.GROUP_EXTENSION_LABEL'
@@ -4091,7 +4138,7 @@ export default {
                     :placeholder="String(2001)"
                   />
                 </label>
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_USERNAME_LABEL'
@@ -4109,7 +4156,7 @@ export default {
                     "
                   />
                 </label>
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_PASSWORD_LABEL'
@@ -4130,7 +4177,7 @@ export default {
                     "
                   />
                 </label>
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_DOMAIN_LABEL'
@@ -4151,7 +4198,7 @@ export default {
                     "
                   />
                 </label>
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_HOST_LABEL'
@@ -4192,16 +4239,6 @@ export default {
               >
                 {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.RECONCILE_BUTTON') }}
               </NextButton>
-              <NextButton
-                v-if="isVirtualPbxWazo"
-                data-testid="virtual-pbx-wazo-apply"
-                type="button"
-                :disabled="!isVirtualPbxRemoteCommitAllowed"
-                :is-loading="isProvisioningVirtualPbx"
-                @click="provisionVirtualPbxChannel"
-              >
-                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVISION_BUTTON') }}
-              </NextButton>
             </div>
 
             <div
@@ -4231,18 +4268,71 @@ export default {
 
         <div
           v-if="isVirtualPbxStatusLoaded && showVirtualPbxSaveButton"
-          class="flex flex-wrap gap-3"
+          class="flex flex-col gap-2"
         >
-          <NextButton
-            :disabled="isVirtualPbxReadOnly"
-            :is-loading="isUpdatingVirtualPbx"
-            type="submit"
+          <div class="flex flex-wrap gap-3">
+            <NextButton
+              :disabled="isVirtualPbxReadOnly"
+              :is-loading="isUpdatingVirtualPbx"
+              type="submit"
+            >
+              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.UPDATE_BUTTON') }}
+            </NextButton>
+            <!-- Wazo only receives employees and extensions from this button:
+                 saving changes OneLink alone. It stays next to «Сохранить»,
+                 not inside the collapsed developer block. -->
+            <NextButton
+              v-if="isVirtualPbxWazo"
+              data-testid="virtual-pbx-wazo-apply"
+              type="button"
+              :disabled="!isVirtualPbxRemoteCommitAllowed"
+              :is-loading="isProvisioningVirtualPbx"
+              @click="provisionVirtualPbxChannel"
+            >
+              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVISION_BUTTON') }}
+            </NextButton>
+          </div>
+          <p
+            v-if="isVirtualPbxWazo"
+            data-testid="virtual-pbx-wazo-sync-hint"
+            class="mb-0 text-sm text-n-slate-11"
           >
-            {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.UPDATE_BUTTON') }}
-          </NextButton>
+            {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.WAZO_SYNC_HINT') }}
+          </p>
         </div>
       </form>
     </template>
+  </div>
+  <div v-else-if="isATwilioChannel" class="space-y-4">
+    <SettingsFieldSection
+      v-if="isATwilioWhatsAppChannel"
+      :label="$t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_TITLE')"
+      :help-text="
+        $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_SUBHEADER')
+      "
+    >
+      <NextButton :disabled="isSyncingTemplates" @click="syncTemplates">
+        {{ $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_BUTTON') }}
+      </NextButton>
+    </SettingsFieldSection>
+    <DeveloperDetails>
+      <SettingsFieldSection
+        :label="$t('INBOX_MGMT.ADD.TWILIO.API_CALLBACK.TITLE')"
+        :help-text="$t('INBOX_MGMT.ADD.TWILIO.API_CALLBACK.SUBTITLE')"
+      >
+        <woot-code :script="inbox.callback_webhook_url" lang="html" />
+      </SettingsFieldSection>
+    </DeveloperDetails>
+  </div>
+  <div v-else-if="isALineChannel">
+    <DeveloperDetails>
+      <SettingsFieldSection
+        :label="$t('INBOX_MGMT.ADD.LINE_CHANNEL.API_CALLBACK.TITLE')"
+        :help-text="$t('INBOX_MGMT.ADD.LINE_CHANNEL.API_CALLBACK.SUBTITLE')"
+      >
+        <woot-code :script="inbox.callback_webhook_url" lang="html" />
+      </SettingsFieldSection>
+    </DeveloperDetails>
   </div>
   <div v-else-if="isAWebWidgetInbox">
     <div class="space-y-4">
@@ -4514,8 +4604,8 @@ export default {
           </div>
 
           <div v-if="callRoutingTab === 'inbound'" class="flex flex-col gap-4">
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                 {{
                   $t(
                     'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.MODE_LABEL'
@@ -4542,7 +4632,7 @@ export default {
                   </option>
                 </select>
               </label>
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                 {{
                   $t(
                     'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WAITING.RING_TIMEOUT_LABEL'
@@ -4557,7 +4647,7 @@ export default {
                   @input="markCallRoutingDirty"
                 />
               </label>
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                 {{
                   $t(
                     'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.FALLBACK.ACTION_LABEL'
@@ -4611,7 +4701,7 @@ export default {
                   class="rounded-lg border border-n-weak bg-n-solid-2 p-3"
                 >
                   <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                    <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                       {{
                         $t(
                           'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.STRATEGY_LABEL'
@@ -4631,7 +4721,7 @@ export default {
                         </option>
                       </select>
                     </label>
-                    <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                    <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                       {{
                         $t(
                           'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.RING_SECONDS_LABEL'
@@ -4710,7 +4800,7 @@ export default {
 
           <div v-else class="flex flex-col gap-3">
             <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
                 {{
                   $t(
                     'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.ACCESS_MODE_LABEL'

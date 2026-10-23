@@ -537,20 +537,20 @@
           "EMPLOYEE_PROFILES": {
             "TITLE": "Employees, extensions, and SIP access",
             "CREATE_HINT": "Employees, extensions and SIP access are assigned in the channel settings after the channel is created.",
-            "HINT": "Bind each OneLink employee to an internal PBX extension. Provider credentials stay in diagnostics and are not shown here.",
+            "HINT": "Bind each OneLink employee to an internal PBX extension. Fill in an employee's SIP login and SIP password together.",
             "EMPLOYEE_LABEL": "OneLink employee",
             "SELECT_PLACEHOLDER": "Use current user or select employee",
             "CURRENT_USER": "Current user",
             "ADD": "Add employee extension",
             "REMOVE": "Remove employee {index}",
             "REQUIRED": "Select an employee and enter an internal extension for each row",
-            "SIP_PAIR_REQUIRED": "Employee SIP username/password must be filled together",
+            "SIP_PAIR_REQUIRED": "Employee SIP login and password must be filled together",
             "VOICE_AGENT_LABEL": "AI agent",
             "VOICE_AGENT_UNIQUE": "Only one voice AI agent SIP profile is allowed per channel"
           },
           "EMPLOYEE_SIP_USERNAME": {
-            "LABEL": "Employee SIP username",
-            "PLACEHOLDER": "Optional employee SIP username"
+            "LABEL": "Employee SIP login",
+            "PLACEHOLDER": "Optional employee SIP login"
           },
           "EMPLOYEE_SIP_PASSWORD": {
             "LABEL": "Employee SIP password",
@@ -606,13 +606,15 @@
           "LAST_RUN": "Last run",
           "RECONCILE_STATUS": "Reconcile status",
           "PLAN_BUTTON": "Preview sync plan",
-          "RECONCILE_BUTTON": "Check remote state",
+          "RECONCILE_BUTTON": "Check PBX state",
           "PROVISION_BUTTON": "Sync with telephony",
+          "SAVE_FIRST": "Save your changes first",
+          "WAZO_SYNC_HINT": "\"Save\" stores the settings in OneLink. To make employees and extensions appear on the telephony server, then click \"Sync with telephony\".",
           "WAZO_APPLY_CONFIRM": "Apply this plan to the telephony server now? This creates, updates, or removes managed telephony resources.",
           "PROVISIONING_PLAN_READY": "Provisioning plan is ready",
           "PROVISION_BLOCKED": "Remote provisioning could not be completed",
           "PROVISION_SUCCESS": "Remote provisioning has completed",
-          "RECONCILE_COMPLETE": "Remote state check has completed",
+          "RECONCILE_COMPLETE": "PBX state check has completed",
           "ADVANCED_FIELDS": {
             "SHOW": "Show advanced provider fields",
             "HIDE": "Hide advanced provider fields"
@@ -640,8 +642,8 @@
             "PROFILE_USER_REQUIRED": "Choose an employee.",
             "PROFILE_VOICE_AGENT_USER_FORBIDDEN": "The AI agent profile cannot be linked to an employee.",
             "PROFILE_INTERNAL_EXTENSION_REQUIRED": "Enter the internal extension.",
-            "PROFILE_VOICE_AGENT_SIP_USERNAME_REQUIRED": "Enter the SIP username for the AI agent.",
-            "PROFILE_SIP_CREDENTIALS_PAIR_REQUIRED": "Fill in SIP username and SIP password together.",
+            "PROFILE_VOICE_AGENT_SIP_USERNAME_REQUIRED": "Enter the SIP login for the AI agent.",
+            "PROFILE_SIP_CREDENTIALS_PAIR_REQUIRED": "Fill in SIP login and SIP password together.",
             "PROFILE_AVAILABILITY_MODE_INVALID": "Unknown availability mode for the SIP profile.",
             "PROFILE_USER_NOT_IN_ACCOUNT": "This employee is not a member of this account.",
             "PROFILE_USER_NOT_IN_INBOX": "Add the employee to the channel collaborators before assigning SIP access.",
@@ -655,6 +657,26 @@
             "NOT_VOICE_CHANNEL": "This inbox is not a call channel.",
             "UNSUPPORTED_PROVIDER": "This call provider cannot be managed here.",
             "FEATURE_DISABLED": "Calls are not enabled for this account."
+          },
+          "WARNINGS": {
+            "MISSING_NUMBER_BINDING": "The telephony number binding has not been created.",
+            "MISSING_PROVIDER_KIND": "The telephony provider is not set.",
+            "MISSING_ROUTING_POLICY": "The call routing policy is not set.",
+            "MISSING_NUMBER_REF": "The number binding has no number reference.",
+            "MISSING_INGRESS_NUMBER": "The technical number the provider sends calls to is not set.",
+            "MISSING_DISPLAY_PHONE_NUMBER": "The channel phone number is not set.",
+            "PHONE_SPLIT_CONFIGURED": "The channel number and the technical number for incoming calls are intentionally different.",
+            "PHONE_NUMBER_MISMATCH": "The number in the telephony binding does not match the channel number.",
+            "MISSING_PROVIDER_SIP_DEVICE_CREDENTIALS": "The SIP login and SIP password of the OneLink device are not set. Enter them before SIP registration.",
+            "MISSING_WAZO_PROFILES": "Add at least one enabled employee on the \"Calls and employees\" tab.",
+            "WAZO_REMOTE_PROVISIONING_REQUIRED": "Click \"Sync with telephony\" before using this channel.",
+            "WAZO_ENDPOINT_MISSING": "Some employees have no lines on the telephony server yet. Click \"Sync with telephony\".",
+            "WAZO_OPERATORS_OFFLINE": "No employee phone is connected to the telephony server right now.",
+            "WAZO_INBOUND_ROUTE_UNVERIFIED": "The incoming call route has not been verified yet.",
+            "WAZO_OUTBOUND_ROUTE_UNVERIFIED": "The outgoing call route has not been verified yet.",
+            "WAZO_EVENT_INGRESS_UNVERIFIED": "Receiving call events has not been verified yet.",
+            "WAZO_RECORDING_UNVERIFIED": "Saving call recordings has not been verified yet.",
+            "LEGACY_REFERENCE_RESOURCE": "This resource was created outside OneLink, so it is read-only."
           },
           "CARRIER_SETTINGS": {
             "TITLE": "Telecom Carrier & Lines (OneLink PBX SIP Trunk)",
@@ -1346,8 +1368,8 @@
       },
       "VOICE_CALLS": {
         "CONFIG_TITLE": "Calls channel",
-        "CONFIG_HINT": "Channel name and number. PBX connection parameters are in the \"For developers\" block.",
-        "CALLS_TITLE": "Employees and calls",
+        "CONFIG_HINT": "Channel name and number. Addresses, tokens and other technical details for connecting to the PBX are in the \"For developers\" block.",
+        "CALLS_TITLE": "Calls and employees",
         "CALLS_HINT": "Link employees to internal numbers and choose who receives calls and how.",
         "PROVIDER": "Provider",
         "NUMBER": "Number"
@@ -1865,7 +1887,7 @@
       "WHATSAPP_WEBHOOK_SUBHEADER": "This token is used to verify the authenticity of the webhook endpoint.",
       "WHATSAPP_WEBHOOK_CALLBACK_TITLE": "Webhook Callback URL",
       "WHATSAPP_WEBHOOK_REDACTED_SUBHEADER": "For security, the verification token is shown only during initial setup and is never returned by the API.",
-      "WHATSAPP_TEMPLATES_SYNC_TITLE": "Sync Templates",
+      "WHATSAPP_TEMPLATES_SYNC_TITLE": "Message templates",
       "WHATSAPP_TEMPLATES_SYNC_SUBHEADER": "Manually sync message templates from WhatsApp to update your available templates.",
       "WHATSAPP_TEMPLATES_SYNC_BUTTON": "Sync Templates",
       "WHATSAPP_TEMPLATES_SYNC_SUCCESS": "Templates sync initiated successfully. It may take a couple of minutes to update.",

@@ -1,6 +1,7 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
 import enInboxMgmt from 'dashboard/i18n/locale/en/inboxMgmt.json';
 import ruInboxMgmt from 'dashboard/i18n/locale/ru/inboxMgmt.json';
+import kkInboxMgmt from 'dashboard/i18n/locale/kk/inboxMgmt.json';
 
 import ConfigurationPage from './ConfigurationPage.vue';
 
@@ -2136,5 +2137,552 @@ describe('ConfigurationPage developer blocks on other channels', () => {
       'INBOX_MGMT.SETTINGS_POPUP.ALLOWED_DOMAINS.TITLE',
       'INBOX_MGMT.SETTINGS_POPUP.ALLOW_MOBILE_WEBVIEW.LABEL',
     ]);
+  });
+});
+
+const wazoStatus = ({
+  remoteCommitAllowed = true,
+  configurationVersion = 7,
+  warnings = [],
+} = {}) => {
+  const base = statusFor('wazo');
+  return {
+    payload: {
+      ...base.payload,
+      warnings,
+      ui_config: {
+        ...base.payload.ui_config,
+        configuration_version: configurationVersion,
+        permissions: {
+          ...base.payload.ui_config.permissions,
+          remote_commit_allowed: remoteCommitAllowed,
+        },
+      },
+    },
+  };
+};
+
+const wazoInbox = { ...baseInbox, provider: 'wazo' };
+const SYNC_BUTTON = '[data-testid="virtual-pbx-wazo-apply"]';
+
+describe('ConfigurationPage Wazo sync button', () => {
+  beforeEach(() => {
+    alertMock.mockReset();
+    getVirtualPbxStatusMock.mockReset();
+    getVirtualPbxProvisioningRunsMock.mockReset();
+    provisionVirtualPbxChannelMock.mockReset();
+    storeDispatchMock.mockReset();
+    getVirtualPbxStatusMock.mockResolvedValue(wazoStatus());
+    getVirtualPbxProvisioningRunsMock.mockResolvedValue({
+      payload: { provisioning_runs: [] },
+    });
+    provisionVirtualPbxChannelMock.mockResolvedValue({
+      payload: { status: 'succeeded', remote_commit: true, errors: [] },
+    });
+    storeDispatchMock.mockResolvedValue({ data: { payload: [] } });
+    window.chatwootConfig = { hostURL: 'https://dev.one-link.kz' };
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('puts «Синхронизировать с телефонией» next to «Сохранить» on the calls tab', async () => {
+    const confirmMock = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const calls = buildWrapper({ inbox: wazoInbox, section: 'calls' });
+    await flushPromises();
+
+    const sync = calls.find(SYNC_BUTTON);
+    const save = calls.find('button[type="submit"]');
+
+    expect(sync.exists()).toBe(true);
+    expect(calls.find(DEVELOPER).exists()).toBe(false);
+    expect(sync.element.parentElement).toBe(save.element.parentElement);
+    expect(sync.text()).toBe(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVISION_BUTTON'
+    );
+    expect(
+      calls.find('[data-testid="virtual-pbx-wazo-sync-hint"]').exists()
+    ).toBe(true);
+
+    await sync.trigger('click');
+    await flushPromises();
+
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+    expect(provisionVirtualPbxChannelMock).toHaveBeenCalledWith(42, {
+      remoteCommit: true,
+      includeDiagnostics: false,
+    });
+  });
+
+  it('keeps the button outside the collapsed developer block on the configuration tab too', async () => {
+    const configuration = buildWrapper({ inbox: wazoInbox });
+    await flushPromises();
+
+    const sync = configuration.find(SYNC_BUTTON);
+
+    expect(sync.exists()).toBe(true);
+    expect(sync.element.closest(DEVELOPER)).toBeNull();
+    expect(configuration.findAll(SYNC_BUTTON)).toHaveLength(1);
+  });
+
+  it.each(['sipuni', 'binotel', 'asterisk_analog', 'beeline'])(
+    'does not offer Wazo sync for %s',
+    async provider => {
+      getVirtualPbxStatusMock.mockResolvedValue(statusFor(provider));
+      const calls = buildWrapper({
+        inbox: { ...baseInbox, provider },
+        section: 'calls',
+      });
+      await flushPromises();
+
+      expect(calls.find(SYNC_BUTTON).exists()).toBe(false);
+      expect(
+        calls.find('[data-testid="virtual-pbx-wazo-sync-hint"]').exists()
+      ).toBe(false);
+    }
+  );
+});
+
+describe('ConfigurationPage unsaved voice edits', () => {
+  beforeEach(() => {
+    alertMock.mockReset();
+    getVirtualPbxStatusMock.mockReset();
+    getVirtualPbxProvisioningRunsMock.mockReset();
+    provisionVirtualPbxChannelMock.mockReset();
+    reconcileVirtualPbxChannelMock.mockReset();
+    updateVirtualPbxChannelMock.mockReset();
+    storeDispatchMock.mockReset();
+    getVirtualPbxStatusMock.mockResolvedValue(wazoStatus());
+    getVirtualPbxProvisioningRunsMock.mockResolvedValue({
+      payload: { provisioning_runs: [] },
+    });
+    provisionVirtualPbxChannelMock.mockResolvedValue({
+      payload: { status: 'succeeded', remote_commit: true, errors: [] },
+    });
+    reconcileVirtualPbxChannelMock.mockResolvedValue({
+      payload: { status: 'in_sync', drift: [] },
+    });
+    updateVirtualPbxChannelMock.mockResolvedValue({ payload: { errors: [] } });
+    storeDispatchMock.mockResolvedValue({ data: { payload: [] } });
+    window.chatwootConfig = { hostURL: 'https://dev.one-link.kz' };
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const addUnsavedEmployee = async wrapper => {
+    await wrapper
+      .find('[data-testid="virtual-pbx-add-profile"]')
+      .trigger('click');
+    wrapper.vm.virtualPbxForm.profiles[1].internalExtension = '105';
+  };
+
+  const holdReconcile = () => {
+    let finish;
+    reconcileVirtualPbxChannelMock.mockReturnValue(
+      new Promise(resolve => {
+        finish = () => resolve({ payload: { status: 'in_sync', drift: [] } });
+      })
+    );
+    return () => finish();
+  };
+
+  it('is clean after loading and after a save, dirty after an edit', async () => {
+    const wrapper = buildWrapper({ inbox: wazoInbox, section: 'calls' });
+    await flushPromises();
+    expect(wrapper.vm.hasUnsavedVirtualPbxChanges).toBe(false);
+
+    wrapper.vm.callRoutingForm.inbound.ring_timeout_seconds = 45;
+    expect(wrapper.vm.hasUnsavedVirtualPbxChanges).toBe(true);
+
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    expect(updateVirtualPbxChannelMock).toHaveBeenCalledTimes(1);
+    expect(wrapper.vm.hasUnsavedVirtualPbxChanges).toBe(false);
+  });
+
+  it('does not run the PBX check over employees that are not saved yet', async () => {
+    const wrapper = buildWrapper({ inbox: wazoInbox, section: 'calls' });
+    await flushPromises();
+    await addUnsavedEmployee(wrapper);
+    getVirtualPbxStatusMock.mockClear();
+    alertMock.mockClear();
+
+    await wrapper.vm.reconcileVirtualPbxChannel();
+    await flushPromises();
+
+    expect(reconcileVirtualPbxChannelMock).not.toHaveBeenCalled();
+    expect(getVirtualPbxStatusMock).not.toHaveBeenCalled();
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SAVE_FIRST'
+    );
+    expect(wrapper.vm.virtualPbxForm.profiles).toHaveLength(2);
+    expect(wrapper.vm.virtualPbxForm.profiles[1].internalExtension).toBe('105');
+  });
+
+  it('does not sync the PBX while employees are not saved, and does not even ask to confirm', async () => {
+    const wrapper = buildWrapper({ inbox: wazoInbox, section: 'calls' });
+    await flushPromises();
+    await addUnsavedEmployee(wrapper);
+    alertMock.mockClear();
+
+    await wrapper.find(SYNC_BUTTON).trigger('click');
+    await flushPromises();
+
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(provisionVirtualPbxChannelMock).not.toHaveBeenCalled();
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SAVE_FIRST'
+    );
+    expect(wrapper.vm.virtualPbxForm.profiles).toHaveLength(2);
+  });
+
+  it('shares the check between tabs: edits made on the calls tab block the button of the configuration tab', async () => {
+    // Settings.vue renders both tabs with one component instance, so one
+    // wrapper stands for "edit on one tab, click on the other".
+    const wrapper = buildWrapper({ inbox: wazoInbox, section: 'calls' });
+    await flushPromises();
+    await addUnsavedEmployee(wrapper);
+    await wrapper.setProps({ section: 'configuration' });
+    alertMock.mockClear();
+
+    await wrapper
+      .find('[data-testid="virtual-pbx-reconcile"]')
+      .trigger('click');
+    await flushPromises();
+
+    expect(reconcileVirtualPbxChannelMock).not.toHaveBeenCalled();
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SAVE_FIRST'
+    );
+    await wrapper.setProps({ section: 'calls' });
+    expect(wrapper.vm.virtualPbxForm.profiles).toHaveLength(2);
+  });
+
+  it('works again once the edits are saved', async () => {
+    const wrapper = buildWrapper({ inbox: wazoInbox, section: 'calls' });
+    await flushPromises();
+    wrapper.vm.callRoutingForm.inbound.ring_timeout_seconds = 45;
+
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+    await wrapper.vm.reconcileVirtualPbxChannel();
+    await flushPromises();
+
+    expect(reconcileVirtualPbxChannelMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes the status but keeps edits made while the check is running', async () => {
+    const wrapper = buildWrapper({ inbox: wazoInbox, section: 'calls' });
+    await flushPromises();
+    const finishCheck = holdReconcile();
+    getVirtualPbxStatusMock.mockResolvedValue(
+      wazoStatus({ configurationVersion: 8 })
+    );
+
+    const check = wrapper.vm.reconcileVirtualPbxChannel();
+    await flushPromises();
+    await addUnsavedEmployee(wrapper);
+    finishCheck();
+    await check;
+    await flushPromises();
+
+    expect(wrapper.vm.virtualPbxConfig.configuration_version).toBe(8);
+    expect(wrapper.vm.virtualPbxForm.profiles).toHaveLength(2);
+    expect(wrapper.vm.virtualPbxForm.profiles[1].internalExtension).toBe('105');
+    expect(wrapper.vm.hasUnsavedVirtualPbxChanges).toBe(true);
+  });
+
+  it('sends the refreshed configuration version when the kept edits are saved', async () => {
+    const wrapper = buildWrapper({ inbox: wazoInbox, section: 'calls' });
+    await flushPromises();
+    const finishCheck = holdReconcile();
+    getVirtualPbxStatusMock.mockResolvedValue(
+      wazoStatus({ configurationVersion: 9 })
+    );
+    const check = wrapper.vm.reconcileVirtualPbxChannel();
+    await flushPromises();
+    wrapper.vm.virtualPbxForm.profiles.push({
+      ...wrapper.vm.emptyVirtualPbxProfile(),
+      userId: 8,
+      internalExtension: '105',
+    });
+    finishCheck();
+    await check;
+    await flushPromises();
+
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    const payload = updateVirtualPbxChannelMock.mock.calls[0][1];
+    expect(payload.expected_configuration_version).toBe(9);
+    expect(payload.profiles.map(profile => profile.internal_extension)).toEqual(
+      ['100', '105']
+    );
+  });
+});
+
+describe('ConfigurationPage PBX warnings', () => {
+  const rawMessage =
+    'Display phone and technical ingress number are intentionally different';
+  const warnings = [
+    { code: 'phone_split_configured', severity: 'info', message: rawMessage },
+    { code: 'future_code', severity: 'warning', message: 'Something new' },
+  ];
+
+  beforeEach(() => {
+    alertMock.mockReset();
+    getVirtualPbxStatusMock.mockReset();
+    getVirtualPbxProvisioningRunsMock.mockReset();
+    storeDispatchMock.mockReset();
+    getVirtualPbxStatusMock.mockResolvedValue({
+      payload: { ...statusPayload.payload, warnings },
+    });
+    getVirtualPbxProvisioningRunsMock.mockResolvedValue({
+      payload: { provisioning_runs: [] },
+    });
+    storeDispatchMock.mockResolvedValue({ data: { payload: [] } });
+    window.chatwootConfig = { hostURL: 'https://dev.one-link.kz' };
+  });
+
+  it('keeps warnings off the calls tab and inside the developer block of the configuration tab', async () => {
+    const calls = buildWrapper({ section: 'calls', te: ruTe });
+    const configuration = buildWrapper({ te: ruTe });
+    await flushPromises();
+
+    expect(calls.find('[data-testid="virtual-pbx-warnings"]').exists()).toBe(
+      false
+    );
+    expect(calls.text()).not.toContain(rawMessage);
+    expect(calls.text()).not.toContain('WARNINGS_TITLE');
+
+    const box = configuration.find('[data-testid="virtual-pbx-warnings"]');
+    expect(box.exists()).toBe(true);
+    expect(box.element.closest(DEVELOPER)).not.toBeNull();
+    expect(box.text()).toContain('WARNINGS_TITLE');
+  });
+
+  it('shows a known warning by its code and keeps the server text for an unknown code', async () => {
+    const configuration = buildWrapper({ te: ruTe });
+    await flushPromises();
+
+    const items = configuration
+      .find('[data-testid="virtual-pbx-warnings"]')
+      .findAll('li')
+      .map(item => item.text());
+
+    expect(items).toEqual([
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.WARNINGS.PHONE_SPLIT_CONFIGURED',
+      'Something new',
+    ]);
+  });
+});
+
+describe('ConfigurationPage Twilio and LINE panels', () => {
+  beforeEach(() => {
+    storeDispatchMock.mockReset();
+    storeDispatchMock.mockResolvedValue({ data: { payload: [] } });
+    alertMock.mockReset();
+  });
+
+  const twilioInbox = medium => ({
+    id: 61,
+    name: 'Twilio',
+    channel_type: 'Channel::TwilioSms',
+    medium,
+    callback_webhook_url: 'https://dev.one-link.kz/twilio/callback',
+    provider_config: {},
+    members: [],
+  });
+
+  it('shows the Twilio callback address in the developer block', () => {
+    const wrapper = buildWrapper({ inbox: twilioInbox('whatsapp') });
+    const developer = wrapper.find(DEVELOPER);
+
+    expect(developer.find(CODE_BLOCKS).attributes('script')).toBe(
+      'https://dev.one-link.kz/twilio/callback'
+    );
+    expect(wrapper.findAll(CODE_BLOCKS)).toHaveLength(1);
+    expect(developer.text()).toContain(
+      'INBOX_MGMT.ADD.TWILIO.API_CALLBACK.TITLE'
+    );
+  });
+
+  it('syncs the templates of Twilio WhatsApp outside the developer block', async () => {
+    const wrapper = buildWrapper({ inbox: twilioInbox('whatsapp') });
+    const button = wrapper
+      .findAll('button')
+      .find(item =>
+        item
+          .text()
+          .includes('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_BUTTON')
+      );
+
+    expect(wrapper.find(DEVELOPER).findAll('button')).toHaveLength(0);
+    expect(button).toBeTruthy();
+
+    await button.trigger('click');
+    await flushPromises();
+
+    expect(storeDispatchMock).toHaveBeenCalledWith('inboxes/syncTemplates', 61);
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_SUCCESS'
+    );
+  });
+
+  it('offers no template sync for Twilio SMS', () => {
+    const wrapper = buildWrapper({ inbox: twilioInbox('sms') });
+
+    expect(wrapper.findAll('button')).toHaveLength(0);
+    expect(wrapper.find(DEVELOPER).find(CODE_BLOCKS).exists()).toBe(true);
+  });
+
+  it('shows the LINE callback address in the developer block', () => {
+    const wrapper = buildWrapper({
+      inbox: {
+        id: 62,
+        name: 'LINE',
+        channel_type: 'Channel::Line',
+        callback_webhook_url: 'https://dev.one-link.kz/line/callback',
+        members: [],
+      },
+    });
+
+    expect(
+      wrapper.find(DEVELOPER).find(CODE_BLOCKS).attributes('script')
+    ).toBe('https://dev.one-link.kz/line/callback');
+    expect(wrapper.findAll(CODE_BLOCKS)).toHaveLength(1);
+  });
+});
+
+describe('ConfigurationPage texts', () => {
+  const pick = (tree, path) =>
+    path.split('.').reduce((node, part) => node?.[part], tree);
+  const VOICE = 'INBOX_MGMT.ADD.VOICE';
+  const POPUP = 'INBOX_MGMT.SETTINGS_POPUP';
+
+  it('names the calls section like the tab, in every language', () => {
+    [ruInboxMgmt, enInboxMgmt, kkInboxMgmt].forEach(locale => {
+      expect(pick(locale, 'INBOX_MGMT.EDIT.VOICE_CALLS.CALLS_TITLE')).toBe(
+        pick(locale, 'INBOX_MGMT.TABS.VOICE_CALLS')
+      );
+    });
+    expect(pick(ruInboxMgmt, 'INBOX_MGMT.TABS.VOICE_CALLS')).toBe(
+      'Звонки и сотрудники'
+    );
+  });
+
+  it('describes the technical block without promising fields that Sipuni does not have', () => {
+    const hint = pick(ruInboxMgmt, 'INBOX_MGMT.EDIT.VOICE_CALLS.CONFIG_HINT');
+
+    expect(hint).toContain('Для разработчика');
+    expect(hint).not.toMatch(/Параметры подключения|порт|логин/i);
+  });
+
+  it('has no English words left in the voice developer block', () => {
+    [
+      `${VOICE}.CONFIGURATION.SIPUNI_WEBHOOK_TITLE`,
+      `${VOICE}.CONFIGURATION.SIPUNI_WEBHOOK_SUBTITLE`,
+      `${VOICE}.CONFIGURATION.SIPUNI_WEBHOOK_EMPTY`,
+      `${VOICE}.CONFIGURATION.SIPUNI_WEBHOOK_TOKEN`,
+      `${VOICE}.CONFIGURATION.SIPUNI_WEBHOOK_TOKEN_PLACEHOLDER`,
+      `${VOICE}.CONFIGURATION.SIPUNI_WEBHOOK_GENERATE`,
+      `${VOICE}.CONFIGURATION.SIPUNI_WEBHOOK_SAVE`,
+      `${VOICE}.CONFIGURATION.BINOTEL_WEBHOOK_TOKEN`,
+      `${VOICE}.CONFIGURATION.BINOTEL_WEBHOOK_GENERATE`,
+      `${VOICE}.CONFIGURATION.BEELINE_WEBHOOK_TOKEN`,
+      `${VOICE}.CONFIGURATION.BEELINE_WEBHOOK_GENERATE`,
+      `${VOICE}.VIRTUAL_PBX.RECONCILE_BUTTON`,
+      `${VOICE}.VIRTUAL_PBX.PROVISION_SUCCESS`,
+      `${VOICE}.VIRTUAL_PBX.PROVISION_BLOCKED`,
+    ].forEach(path => {
+      expect(pick(ruInboxMgmt, path), path).not.toMatch(
+        /webhook|token|remote|provisioning/
+      );
+    });
+    expect(
+      pick(ruInboxMgmt, `${VOICE}.CONFIGURATION.SIPUNI_WEBHOOK_TITLE`)
+    ).toBe('Вебхук Sipuni');
+    expect(
+      pick(ruInboxMgmt, `${VOICE}.CONFIGURATION.SIPUNI_WEBHOOK_TOKEN`)
+    ).toBe('Токен вебхука');
+    expect(
+      pick(ruInboxMgmt, `${VOICE}.CONFIGURATION.SIPUNI_WEBHOOK_GENERATE`)
+    ).toBe('Сгенерировать токен');
+    expect(pick(ruInboxMgmt, `${VOICE}.VIRTUAL_PBX.RECONCILE_BUTTON`)).toBe(
+      'Проверить состояние в АТС'
+    );
+  });
+
+  it('uses «SIP-логин», «SIP-пароль» and «ИИ-агент» on the employees form', () => {
+    const base = `${VOICE}.VIRTUAL_PBX`;
+
+    expect(pick(ruInboxMgmt, `${base}.EMPLOYEE_SIP_USERNAME.LABEL`)).toBe(
+      'SIP-логин'
+    );
+    expect(pick(ruInboxMgmt, `${base}.EMPLOYEE_SIP_PASSWORD.LABEL`)).toBe(
+      'SIP-пароль'
+    );
+    expect(
+      pick(ruInboxMgmt, `${base}.EMPLOYEE_PROFILES.VOICE_AGENT_LABEL`)
+    ).toBe('ИИ-агент');
+    expect(pick(ruInboxMgmt, `${base}.EMPLOYEE_PROFILES.HINT`)).not.toMatch(
+      /диагностик/i
+    );
+    ['EMPLOYEE_SIP_USERNAME', 'EMPLOYEE_SIP_PASSWORD'].forEach(key => {
+      expect(JSON.stringify(pick(ruInboxMgmt, `${base}.${key}`))).not.toMatch(
+        /username|password/i
+      );
+    });
+  });
+
+  it('writes WhatsApp calling in Russian and tells the templates title from its button', () => {
+    expect(pick(ruInboxMgmt, `${POPUP}.WHATSAPP_CALLING_TITLE`)).toBe(
+      'Звонки в WhatsApp'
+    );
+    expect(pick(ruInboxMgmt, `${POPUP}.WHATSAPP_CALLING_LABEL`)).toBe(
+      'Включить звонки в WhatsApp'
+    );
+    expect(pick(ruInboxMgmt, `${POPUP}.WHATSAPP_AI_VOICE_TITLE`)).toBe(
+      'Голосовой ИИ-агент'
+    );
+    expect(pick(ruInboxMgmt, `${POPUP}.WHATSAPP_AI_VOICE_LABEL`)).toBe(
+      'Включить автоответ голосового ИИ-агента'
+    );
+    expect(pick(ruInboxMgmt, `${POPUP}.WHATSAPP_AI_VOICE_SUBHEADER`)).toMatch(
+      /ИИ-агенту.*ожидающих диалогах/
+    );
+    [ruInboxMgmt, enInboxMgmt].forEach(locale => {
+      expect(pick(locale, `${POPUP}.WHATSAPP_TEMPLATES_SYNC_TITLE`)).not.toBe(
+        pick(locale, `${POPUP}.WHATSAPP_TEMPLATES_SYNC_BUTTON`)
+      );
+    });
+    expect(pick(ruInboxMgmt, `${POPUP}.WHATSAPP_TEMPLATES_SYNC_TITLE`)).toBe(
+      'Шаблоны сообщений'
+    );
+  });
+
+  it('has every new key in Russian, English and Kazakh', () => {
+    const base = `${VOICE}.VIRTUAL_PBX`;
+    const warningPaths = Object.keys(pick(ruInboxMgmt, `${base}.WARNINGS`)).map(
+      key => `${base}.WARNINGS.${key}`
+    );
+
+    expect(warningPaths.length).toBeGreaterThan(10);
+    [`${base}.SAVE_FIRST`, `${base}.WAZO_SYNC_HINT`, ...warningPaths].forEach(
+      path => {
+        [ruInboxMgmt, enInboxMgmt, kkInboxMgmt].forEach(locale => {
+          expect(typeof pick(locale, path), path).toBe('string');
+        });
+      }
+    );
+    warningPaths.forEach(path => {
+      expect(pick(ruInboxMgmt, path), path).toMatch(/[А-Яа-яЁё]/);
+      expect(pick(kkInboxMgmt, path), path).toMatch(/[А-Яа-яЁё]/);
+    });
   });
 });

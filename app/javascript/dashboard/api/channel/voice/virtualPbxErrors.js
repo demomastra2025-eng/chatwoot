@@ -3,6 +3,7 @@
 // and `{ code, error }` bodies for request-level failures (HTTP 4xx).
 
 const ERROR_KEY_PREFIX = 'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ERRORS';
+const WARNING_KEY_PREFIX = 'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.WARNINGS';
 const NUMBER_CONFLICT_CODES = [
   'number_ref_taken',
   'display_phone_number_taken',
@@ -75,6 +76,21 @@ export const virtualPbxErrorText = (error, i18n) => {
       message: text,
     }) || text
   );
+};
+
+// The status payload lists readiness warnings as `{ code, severity, message }`
+// with an English `message`. Known codes get a translated text; an unknown code
+// keeps the server message, so nothing is hidden.
+export const virtualPbxWarningText = (warning, i18n) => {
+  if (!warning) return '';
+  if (typeof warning === 'string') return warning;
+
+  const code = String(warning.code || '').trim();
+  const text = code
+    ? translate(i18n, `${WARNING_KEY_PREFIX}.${code.toUpperCase()}`)
+    : '';
+
+  return text || warning.message || code;
 };
 
 export const virtualPbxErrorsText = (errors, i18n) => {
