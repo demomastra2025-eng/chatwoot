@@ -8,7 +8,12 @@ import { useAccount } from 'dashboard/composables/useAccount';
 import { useConfig } from 'dashboard/composables/useConfig';
 import { useI18n } from 'vue-i18n';
 import TasksAPI from 'dashboard/api/captain/tasks';
+import { useAlert } from 'dashboard/composables';
 
+vi.mock('dashboard/composables', () => ({
+  useAlert: vi.fn(),
+  useTrack: vi.fn(),
+}));
 vi.mock('dashboard/composables/store');
 vi.mock('dashboard/composables/useAccount');
 vi.mock('dashboard/composables/useConfig');
@@ -196,18 +201,163 @@ describe('useCaptain', () => {
     });
   });
 
-  it('gets reply suggestion', async () => {
-    TasksAPI.replySuggestion.mockResolvedValue({
-      data: { message: 'Reply suggestion', follow_up_context: { id: 'ctx3' } },
+  describe('reply suggestion background run', () => {
+    const queuedState = {
+      suggestion_request_id: 'sr-1',
+      status: 'queued',
+      reused: false,
+      engine: 'agent',
+      conversation_id: 123,
+      created_at: '2026-10-24T09:12:03Z',
+      budget_seconds: 60,
+      stale: false,
+      progress: null,
+      result: null,
+    };
+
+    it('starts a run and returns the 202 state without waiting for a draft', async () => {
+      TasksAPI.replySuggestion.mockResolvedValue({
+        status: 202,
+        data: queuedState,
+      });
+
+      const { startReplySuggestion } = useCaptain();
+      const result = await startReplySuggestion({});
+
+      expect(TasksAPI.replySuggestion).toHaveBeenCalledWith('123', undefined);
+      expect(result).toEqual({ state: queuedState });
     });
 
-    const { getReplySuggestion } = useCaptain();
-    const result = await getReplySuggestion({});
+    it('starts the run for the conversation it is given', async () => {
+      TasksAPI.replySuggestion.mockResolvedValue({ data: queuedState });
 
-    expect(TasksAPI.replySuggestion).toHaveBeenCalledWith('123', undefined);
-    expect(result).toEqual({
-      message: 'Reply suggestion',
-      followUpContext: { id: 'ctx3' },
+      const { startReplySuggestion } = useCaptain();
+      await startReplySuggestion({ conversationId: 456 });
+
+      expect(TasksAPI.replySuggestion).toHaveBeenCalledWith(456, undefined);
+    });
+
+    it('returns the error code and text of a refused request and shows no alert', async () => {
+      TasksAPI.replySuggestion.mockRejectedValue({
+        response: {
+          status: 422,
+          data: {
+            error: 'В звонке нельзя отправить текст.',
+            error_code: 'voice_channel_unsupported',
+          },
+        },
+      });
+
+      const { startReplySuggestion } = useCaptain();
+      const result = await startReplySuggestion({});
+
+      expect(result).toEqual({
+        errorCode: 'voice_channel_unsupported',
+        error: 'В звонке нельзя отправить текст.',
+        errorType: 'http_422',
+      });
+      expect(useAlert).not.toHaveBeenCalled();
+    });
+
+    it('returns an error for a transport failure and for a body without a request id', async () => {
+      const { startReplySuggestion } = useCaptain();
+
+      TasksAPI.replySuggestion.mockRejectedValueOnce(new Error('Network'));
+      expect(await startReplySuggestion({})).toEqual({
+        errorCode: null,
+        error: null,
+        errorType: 'api_error',
+      });
+
+      TasksAPI.replySuggestion.mockResolvedValueOnce({
+        data: { message: 'old synchronous body' },
+      });
+      expect(await startReplySuggestion({})).toEqual({
+        errorCode: null,
+        error: null,
+        errorType: 'api_error',
+      });
+      expect(useAlert).not.toHaveBeenCalled();
+    });
+
+    it('reads the latest state of the open conversation', async () => {
+      TasksAPI.replySuggestionStatus.mockResolvedValue({
+        data: { suggestion: { ...queuedState, status: 'running' } },
+      });
+
+      const { getReplySuggestionStatus } = useCaptain();
+      const result = await getReplySuggestionStatus();
+
+      expect(TasksAPI.replySuggestionStatus).toHaveBeenCalledWith(
+        { conversationId: '123', suggestionRequestId: undefined },
+        undefined
+      );
+      expect(result.suggestion.status).toBe('running');
+    });
+
+    it('reads a specific run of a given conversation', async () => {
+      TasksAPI.replySuggestionStatus.mockResolvedValue({
+        data: { suggestion: queuedState },
+      });
+
+      const { getReplySuggestionStatus } = useCaptain();
+      await getReplySuggestionStatus({
+        conversationId: 456,
+        suggestionRequestId: 'sr-1',
+      });
+
+      expect(TasksAPI.replySuggestionStatus).toHaveBeenCalledWith(
+        { conversationId: 456, suggestionRequestId: 'sr-1' },
+        undefined
+      );
+    });
+
+    it('returns null for an empty answer and flags failures and unknown runs', async () => {
+      const { getReplySuggestionStatus } = useCaptain();
+
+      TasksAPI.replySuggestionStatus.mockResolvedValueOnce({
+        data: { suggestion: null },
+      });
+      expect(await getReplySuggestionStatus()).toEqual({ suggestion: null });
+
+      TasksAPI.replySuggestionStatus.mockRejectedValueOnce({
+        response: { status: 404 },
+      });
+      expect(await getReplySuggestionStatus()).toEqual({
+        suggestion: null,
+        failed: true,
+        notFound: true,
+      });
+
+      TasksAPI.replySuggestionStatus.mockRejectedValueOnce(new Error('x'));
+      expect(await getReplySuggestionStatus()).toEqual({
+        suggestion: null,
+        failed: true,
+        notFound: false,
+      });
+    });
+
+    it('cancels a run and never throws', async () => {
+      const { cancelReplySuggestion } = useCaptain();
+
+      TasksAPI.cancelReplySuggestion.mockResolvedValueOnce({
+        data: { suggestion_request_id: 'sr-1', status: 'cancelling' },
+      });
+      expect(
+        await cancelReplySuggestion({ suggestionRequestId: 'sr-1' })
+      ).toEqual({ ok: true, status: 'cancelling' });
+      expect(TasksAPI.cancelReplySuggestion).toHaveBeenCalledWith({
+        conversationId: '123',
+        suggestionRequestId: 'sr-1',
+      });
+
+      TasksAPI.cancelReplySuggestion.mockRejectedValueOnce(new Error('x'));
+      expect(
+        await cancelReplySuggestion({
+          conversationId: 7,
+          suggestionRequestId: 'sr-2',
+        })
+      ).toEqual({ ok: false });
     });
   });
 
@@ -244,7 +394,7 @@ describe('useCaptain', () => {
       data: { message: 'Summary' },
     });
     TasksAPI.replySuggestion.mockResolvedValue({
-      data: { message: 'Reply' },
+      data: { suggestion_request_id: 'sr-1', status: 'queued' },
     });
     TasksAPI.rewrite.mockResolvedValue({
       data: { message: 'Rewritten' },

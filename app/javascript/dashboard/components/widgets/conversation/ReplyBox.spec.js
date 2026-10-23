@@ -587,6 +587,7 @@ describe('ReplyBox', () => {
       'Здравствуйте! Свободно в 15:00.',
       {
         requestId: 'req-99',
+        suggestionRequestId: 'sr-99',
         action: 'reply_suggestion',
         followUpCount: 1,
         conversationId: 42,
@@ -610,6 +611,7 @@ describe('ReplyBox', () => {
     expect(feedbackSpy).toHaveBeenCalledWith({
       conversationId: 42,
       requestId: 'req-99',
+      suggestionRequestId: 'sr-99',
       copilotAction: 'reply_suggestion',
       outcome: 'sent',
       editedBeforeSend: true,
