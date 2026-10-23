@@ -56,7 +56,7 @@ const RECORDING_URL =
 
 let wrapper;
 
-const mountChip = (attachmentOverrides = {}) => {
+const mountChip = (attachmentOverrides = {}, props = {}) => {
   wrapper = mount(AudioChip, {
     props: {
       attachment: {
@@ -66,6 +66,7 @@ const mountChip = (attachmentOverrides = {}) => {
         dataUrl: RECORDING_URL,
         ...attachmentOverrides,
       },
+      ...props,
     },
     global: { stubs: { Icon: true } },
   });
@@ -73,6 +74,19 @@ const mountChip = (attachmentOverrides = {}) => {
 };
 
 const playButton = chipWrapper => chipWrapper.findAll('button')[0];
+const transcriptToggle = chipWrapper =>
+  chipWrapper.find('[data-testid="audio-transcript-toggle"]');
+const transcriptBody = chipWrapper =>
+  chipWrapper.find('[data-testid="audio-transcript"]');
+// The transcript toggle is the last button in the chip, so the download action
+// is the last button that is not the toggle.
+const downloadButton = chipWrapper =>
+  chipWrapper
+    .findAll('button')
+    .filter(
+      button => button.attributes('data-testid') !== 'audio-transcript-toggle'
+    )
+    .at(-1);
 
 describe('Audio chip playback', () => {
   let playSpy;
@@ -298,10 +312,10 @@ describe('Audio chip playback', () => {
     });
     await flushPromises();
 
+    await transcriptToggle(chip).trigger('click');
     expect(chip.text()).toContain('The caller asked for a callback.');
 
-    const downloadButton = chip.findAll('button').at(-1);
-    await downloadButton.trigger('click');
+    await downloadButton(chip).trigger('click');
     await flushPromises();
 
     expect(downloadFile).toHaveBeenCalledWith({
@@ -315,6 +329,8 @@ describe('Audio chip playback', () => {
     withContainerWidth(0);
     const chip = mountChip({ transcribedText: 'Previous transcript' });
     await flushPromises();
+    await transcriptToggle(chip).trigger('click');
+    expect(chip.text()).toContain('Previous transcript');
 
     const replacementUrl =
       '/api/v1/accounts/77/telephony/calls/recording?recording_token=refreshed';
@@ -331,11 +347,98 @@ describe('Audio chip playback', () => {
     expect(chip.text()).toContain('Updated transcript');
     expect(chip.text()).not.toContain('Previous transcript');
 
-    await chip.findAll('button').at(-1).trigger('click');
+    await downloadButton(chip).trigger('click');
     await flushPromises();
 
     expect(downloadFile).toHaveBeenCalledWith(
       expect.objectContaining({ url: expect.stringContaining('refreshed') })
     );
+  });
+
+  describe('transcript', () => {
+    const TRANSCRIPT = 'The caller asked for a callback.';
+
+    it('is collapsed by default and only offers a toggle', async () => {
+      withContainerWidth(0);
+      const chip = mountChip({ transcribedText: TRANSCRIPT });
+      await flushPromises();
+
+      const toggle = transcriptToggle(chip);
+      expect(toggle.exists()).toBe(true);
+      expect(toggle.text()).toBe('CONVERSATION.SHOW_TRANSCRIPT');
+      expect(toggle.attributes('aria-expanded')).toBe('false');
+      expect(transcriptBody(chip).exists()).toBe(false);
+      expect(chip.text()).not.toContain(TRANSCRIPT);
+    });
+
+    it('shows the transcript after the toggle is clicked and hides it again', async () => {
+      withContainerWidth(0);
+      const chip = mountChip({ transcribedText: TRANSCRIPT });
+      await flushPromises();
+
+      await transcriptToggle(chip).trigger('click');
+
+      expect(transcriptBody(chip).text()).toBe(TRANSCRIPT);
+      expect(transcriptToggle(chip).text()).toBe(
+        'CONVERSATION.HIDE_TRANSCRIPT'
+      );
+      expect(transcriptToggle(chip).attributes('aria-expanded')).toBe('true');
+      expect(transcriptToggle(chip).attributes('aria-controls')).toBe(
+        transcriptBody(chip).attributes('id')
+      );
+
+      await transcriptToggle(chip).trigger('click');
+
+      expect(transcriptBody(chip).exists()).toBe(false);
+      expect(chip.text()).not.toContain(TRANSCRIPT);
+      expect(transcriptToggle(chip).text()).toBe(
+        'CONVERSATION.SHOW_TRANSCRIPT'
+      );
+    });
+
+    it('does not start playback when the toggle is used', async () => {
+      withContainerWidth(0);
+      const chip = mountChip({ transcribedText: TRANSCRIPT });
+      await flushPromises();
+
+      await transcriptToggle(chip).trigger('click');
+      await flushPromises();
+
+      expect(playSpy).not.toHaveBeenCalled();
+    });
+
+    it('renders neither toggle nor transcript without transcribed text', async () => {
+      withContainerWidth(0);
+      const chip = mountChip();
+      await flushPromises();
+
+      expect(transcriptToggle(chip).exists()).toBe(false);
+      expect(transcriptBody(chip).exists()).toBe(false);
+    });
+
+    it('renders neither toggle nor transcript when the host hides transcripts', async () => {
+      withContainerWidth(0);
+      const chip = mountChip(
+        { transcribedText: TRANSCRIPT },
+        { showTranscribedText: false }
+      );
+      await flushPromises();
+
+      expect(transcriptToggle(chip).exists()).toBe(false);
+      expect(transcriptBody(chip).exists()).toBe(false);
+      expect(chip.text()).not.toContain(TRANSCRIPT);
+    });
+
+    it('shows the transcript right away, without a toggle, when the host owns the collapsing', async () => {
+      withContainerWidth(0);
+      const chip = mountChip(
+        { transcribedText: TRANSCRIPT },
+        { collapseTranscript: false }
+      );
+      await flushPromises();
+
+      expect(transcriptToggle(chip).exists()).toBe(false);
+      expect(transcriptBody(chip).text()).toBe(TRANSCRIPT);
+    });
   });
 });

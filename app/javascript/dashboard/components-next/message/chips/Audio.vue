@@ -37,6 +37,13 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  // Keep the transcript behind a «show / hide» toggle until the agent opens it.
+  // Hosts that already put the chip inside their own collapsed section (the
+  // voice call accordion) turn this off to avoid a second toggle.
+  collapseTranscript: {
+    type: Boolean,
+    default: true,
+  },
 });
 const attachmentRef = computed(() => props.attachment);
 const { isPurged, refreshAfterMediaFailure } =
@@ -120,6 +127,19 @@ const hasNativeAudioFailed = ref(false);
 const waveformInitFrameId = ref(0);
 
 const { uid } = getCurrentInstance();
+
+// Per-message UI state only: not persisted, a remounted chip starts collapsed.
+const isTranscriptOpen = ref(false);
+const transcriptId = `audio-transcript-${uid}`;
+const hasTranscript = computed(
+  () => !!attachmentRef.value.transcribedText && props.showTranscribedText
+);
+const isTranscriptVisible = computed(
+  () => !props.collapseTranscript || isTranscriptOpen.value
+);
+const toggleTranscript = () => {
+  isTranscriptOpen.value = !isTranscriptOpen.value;
+};
 
 const playbackSpeedLabel = computed(() => `${playbackSpeed.value}x`);
 
@@ -619,11 +639,35 @@ watchEffect(() => {
       @error="onNativeAudioError"
     />
 
-    <div
-      v-if="attachmentRef.transcribedText && showTranscribedText"
-      class="text-n-slate-12 p-3 text-sm rounded-lg w-full break-words"
-    >
-      {{ attachmentRef.transcribedText }}
-    </div>
+    <template v-if="hasTranscript">
+      <button
+        v-if="collapseTranscript"
+        type="button"
+        class="flex items-center gap-1 self-start p-0 border-0 bg-transparent cursor-pointer text-xs font-medium text-n-slate-11 hover:text-n-slate-12"
+        data-testid="audio-transcript-toggle"
+        :aria-expanded="isTranscriptOpen"
+        :aria-controls="transcriptId"
+        @click="toggleTranscript"
+      >
+        <Icon
+          class="size-3.5 transition-transform duration-200"
+          :class="{ 'rotate-180': isTranscriptOpen }"
+          icon="i-lucide-chevron-down"
+        />
+        {{
+          isTranscriptOpen
+            ? t('CONVERSATION.HIDE_TRANSCRIPT')
+            : t('CONVERSATION.SHOW_TRANSCRIPT')
+        }}
+      </button>
+      <div
+        v-if="isTranscriptVisible"
+        :id="transcriptId"
+        class="text-n-slate-12 p-3 text-sm rounded-lg w-full break-words"
+        data-testid="audio-transcript"
+      >
+        {{ attachmentRef.transcribedText }}
+      </div>
+    </template>
   </div>
 </template>

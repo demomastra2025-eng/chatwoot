@@ -24,9 +24,10 @@ vi.mock('next/message/chips/Audio.vue', () => ({
     props: {
       attachment: { type: Object, required: true },
       showTranscribedText: { type: Boolean, default: false },
+      collapseTranscript: { type: Boolean, default: true },
     },
     template:
-      '<div data-testid="voice-call-recording" :data-url="attachment.dataUrl" :data-extension="attachment.extension" :data-transcribed-text="attachment.transcribedText" :data-show-transcribed-text="String(showTranscribedText)" />',
+      '<div data-testid="voice-call-recording" :data-url="attachment.dataUrl" :data-extension="attachment.extension" :data-transcribed-text="attachment.transcribedText" :data-show-transcribed-text="String(showTranscribedText)" :data-collapse-transcript="String(collapseTranscript)" />',
   },
 }));
 
@@ -485,6 +486,8 @@ describe('VoiceCall bubble', () => {
     );
     expect(recording.attributes('data-extension')).toBe('wav');
     expect(recording.attributes('data-show-transcribed-text')).toBe('true');
+    // The accordion is already collapsed: no second toggle inside it.
+    expect(recording.attributes('data-collapse-transcript')).toBe('false');
   });
 
   it('renders call transcript through the shared audio chip like audio messages', () => {
