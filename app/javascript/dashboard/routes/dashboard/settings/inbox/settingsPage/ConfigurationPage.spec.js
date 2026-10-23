@@ -2555,9 +2555,9 @@ describe('ConfigurationPage Twilio and LINE panels', () => {
       },
     });
 
-    expect(
-      wrapper.find(DEVELOPER).find(CODE_BLOCKS).attributes('script')
-    ).toBe('https://dev.one-link.kz/line/callback');
+    expect(wrapper.find(DEVELOPER).find(CODE_BLOCKS).attributes('script')).toBe(
+      'https://dev.one-link.kz/line/callback'
+    );
     expect(wrapper.findAll(CODE_BLOCKS)).toHaveLength(1);
   });
 });

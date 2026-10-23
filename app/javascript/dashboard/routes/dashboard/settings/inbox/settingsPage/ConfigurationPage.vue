@@ -2310,7 +2310,9 @@ export default {
                 v-if="showVirtualPbxTechnicalSettings"
                 class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
               >
-                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                <label
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                >
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OPERATOR_DISTRIBUTION.LABEL'
@@ -2412,7 +2414,9 @@ export default {
                       </select>
                     </label>
 
-                    <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                    <label
+                      class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                    >
                       {{
                         $t(
                           'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.LABEL'
@@ -3275,7 +3279,9 @@ export default {
                   class="flex flex-col gap-4"
                 >
                   <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                    <label
+                      class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                    >
                       {{
                         $t(
                           'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.ACCESS_MODE_LABEL'
@@ -3304,7 +3310,9 @@ export default {
                         </option>
                       </select>
                     </label>
-                    <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                    <label
+                      class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                    >
                       {{
                         $t(
                           'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.CALLER_ID_LABEL'
@@ -3364,7 +3372,9 @@ export default {
                 v-if="isVirtualPbxAsteriskAnalog"
                 class="grid grid-cols-1 gap-4 md:grid-cols-2"
               >
-                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                <label
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                >
                   {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.ROUTING_MODE') }}
                   <select
                     v-model="virtualPbxForm.routingMode"
@@ -3385,7 +3395,9 @@ export default {
 
             <template v-else>
               <template v-if="showVirtualPbxTechnicalSettings">
-                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                <label
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                >
                   {{
                     $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CHANNEL_NAME.LABEL')
                   }}
@@ -3398,7 +3410,9 @@ export default {
                 </label>
 
                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                  <label
+                    class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                  >
                     <span class="flex items-center gap-2">
                       <img
                         v-if="virtualPbxCarrierBadgeUrl"
@@ -3435,7 +3449,9 @@ export default {
                       </option>
                     </select>
                   </label>
-                  <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                  <label
+                    class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                  >
                     {{ $t('INBOX_MGMT.ADD.VOICE.PHONE_NUMBER.LABEL') }}
                     <input
                       v-model="virtualPbxForm.displayPhoneNumber"
@@ -3513,7 +3529,9 @@ export default {
                 }}
               </div>
 
-              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+              <label
+                class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+              >
                 {{
                   $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_TOKEN')
                 }}
@@ -3586,7 +3604,9 @@ export default {
                 }}
               </div>
 
-              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+              <label
+                class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+              >
                 {{
                   $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_TOKEN')
                 }}
@@ -3606,7 +3626,9 @@ export default {
                 />
               </label>
 
-              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+              <label
+                class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+              >
                 {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_KEY') }}
                 <input
                   v-model="binotelApiKey"
@@ -3625,7 +3647,9 @@ export default {
                 />
               </label>
 
-              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+              <label
+                class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+              >
                 {{
                   $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_SECRET')
                 }}
@@ -3716,7 +3740,9 @@ export default {
                 }}
               </div>
 
-              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+              <label
+                class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+              >
                 {{
                   $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TOKEN')
                 }}
@@ -3737,7 +3763,9 @@ export default {
                 />
               </label>
 
-              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+              <label
+                class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+              >
                 {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_API_TOKEN') }}
                 <input
                   v-model="beelineApiToken"
@@ -3827,7 +3855,9 @@ export default {
                 </p>
               </div>
               <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
-                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                <label
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                >
                   {{
                     $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL')
                   }}
@@ -3974,7 +4004,9 @@ export default {
                 </p>
               </div>
               <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                <label
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                >
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIER_KIND_LABEL'
@@ -4005,7 +4037,9 @@ export default {
                     </option>
                   </select>
                 </label>
-                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                <label
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                >
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.MAX_CHANNELS_LABEL'
@@ -4089,7 +4123,9 @@ export default {
                     }}
                   </span>
                 </label>
-                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                <label
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                >
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.RESERVED_INBOUND_LABEL'
@@ -4104,7 +4140,9 @@ export default {
                     max="50"
                   />
                 </label>
-                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                <label
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                >
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.RING_STRATEGY_LABEL'
@@ -4124,7 +4162,9 @@ export default {
                     </option>
                   </select>
                 </label>
-                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                <label
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                >
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.GROUP_EXTENSION_LABEL'
@@ -4138,7 +4178,9 @@ export default {
                     :placeholder="String(2001)"
                   />
                 </label>
-                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                <label
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                >
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_USERNAME_LABEL'
@@ -4156,7 +4198,9 @@ export default {
                     "
                   />
                 </label>
-                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                <label
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                >
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_PASSWORD_LABEL'
@@ -4177,7 +4221,9 @@ export default {
                     "
                   />
                 </label>
-                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                <label
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                >
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_DOMAIN_LABEL'
@@ -4198,7 +4244,9 @@ export default {
                     "
                   />
                 </label>
-                <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                <label
+                  class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                >
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_HOST_LABEL'
@@ -4605,7 +4653,9 @@ export default {
 
           <div v-if="callRoutingTab === 'inbound'" class="flex flex-col gap-4">
             <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+              <label
+                class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+              >
                 {{
                   $t(
                     'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.MODE_LABEL'
@@ -4632,7 +4682,9 @@ export default {
                   </option>
                 </select>
               </label>
-              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+              <label
+                class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+              >
                 {{
                   $t(
                     'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WAITING.RING_TIMEOUT_LABEL'
@@ -4647,7 +4699,9 @@ export default {
                   @input="markCallRoutingDirty"
                 />
               </label>
-              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+              <label
+                class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+              >
                 {{
                   $t(
                     'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.FALLBACK.ACTION_LABEL'
@@ -4701,7 +4755,9 @@ export default {
                   class="rounded-lg border border-n-weak bg-n-solid-2 p-3"
                 >
                   <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                    <label
+                      class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                    >
                       {{
                         $t(
                           'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.STRATEGY_LABEL'
@@ -4721,7 +4777,9 @@ export default {
                         </option>
                       </select>
                     </label>
-                    <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+                    <label
+                      class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+                    >
                       {{
                         $t(
                           'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.RING_SECONDS_LABEL'
@@ -4800,7 +4858,9 @@ export default {
 
           <div v-else class="flex flex-col gap-3">
             <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+              <label
+                class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12"
+              >
                 {{
                   $t(
                     'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.ACCESS_MODE_LABEL'

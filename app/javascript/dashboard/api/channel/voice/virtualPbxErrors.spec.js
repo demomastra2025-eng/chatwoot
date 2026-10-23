@@ -26,9 +26,9 @@ const warningKeys = locale =>
 // Every code the Virtual PBX config builder can put into `warnings`.
 const backendWarningCodes = () => [
   ...new Set(
-    [...configBuilderSource.matchAll(/(?:warning\(\s*|=> \[\s*)'([a-z_]+)'/g)].map(
-      match => match[1].toUpperCase()
-    )
+    [
+      ...configBuilderSource.matchAll(/(?:warning\(\s*|=> \[\s*)'([a-z_]+)'/g),
+    ].map(match => match[1].toUpperCase())
   ),
 ];
 
