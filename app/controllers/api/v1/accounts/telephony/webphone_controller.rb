@@ -22,7 +22,7 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
     outcome = webphone_service.release_registration_lease!(release_key: params[Telephony::WebphoneLeaseReleaseKey::PARAM])
     return render_error(code: 'WEBPHONE_RELEASE_KEY_INVALID', error: 'Release key is invalid', status: :forbidden) if outcome == :invalid
 
-    render_payload(released: outcome == :released)
+    render_payload({ released: outcome == :released })
   end
 
   def presence
