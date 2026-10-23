@@ -444,12 +444,13 @@ export default {
         ? this.$t('INBOX_MGMT.EDIT.VOICE_CALLS.CALLS_TITLE')
         : this.$t('INBOX_MGMT.EDIT.VOICE_CALLS.CONFIG_TITLE');
     },
-    // The calls tab is a wide form: its title goes on top and the form takes the
+    // The title of a tall form must not float in the middle of its own column.
+    // The calls tab is also wide: its title goes on top and the form takes the
     // whole width, so the selects are not squeezed and cut off.
     virtualPbxSectionClass() {
       return this.isCallsSection
         ? 'min-w-0 lg:[&>div:first-child]:!flex lg:[&>div:first-child]:!flex-col lg:[&>div:first-child]:!items-stretch lg:[&>div:first-child]:!gap-2'
-        : 'min-w-0';
+        : 'min-w-0 lg:[&>div:first-child]:!items-start';
     },
     virtualPbxSectionHelpText() {
       return this.isCallsSection

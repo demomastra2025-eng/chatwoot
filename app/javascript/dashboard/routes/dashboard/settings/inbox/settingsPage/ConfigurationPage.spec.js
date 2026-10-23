@@ -2689,3 +2689,57 @@ describe('ConfigurationPage texts', () => {
     });
   });
 });
+
+describe('ConfigurationPage calls tab layout', () => {
+  beforeEach(() => {
+    getVirtualPbxStatusMock.mockReset();
+    getVirtualPbxProvisioningRunsMock.mockReset();
+    storeDispatchMock.mockReset();
+    getVirtualPbxStatusMock.mockResolvedValue(statusPayload);
+    getVirtualPbxProvisioningRunsMock.mockResolvedValue({
+      payload: { provisioning_runs: [] },
+    });
+    storeDispatchMock.mockResolvedValue({ data: { payload: [] } });
+    window.chatwootConfig = { hostURL: 'https://dev.one-link.kz' };
+  });
+
+  it('puts the title above a full-width form and the hint right under it', async () => {
+    const calls = buildWrapper({ section: 'calls' });
+    const configuration = buildWrapper();
+    await flushPromises();
+
+    const callsSection = calls.find('form > section');
+    const hint = callsSection.find('[data-testid="virtual-pbx-calls-hint"]');
+
+    expect(callsSection.classes()).toContain('lg:[&>div:first-child]:!flex-col');
+    expect(hint.text()).toBe('INBOX_MGMT.EDIT.VOICE_CALLS.CALLS_HINT');
+    expect(
+      configuration.find('[data-testid="virtual-pbx-calls-hint"]').exists()
+    ).toBe(false);
+    expect(configuration.find('form > section').classes()).not.toContain(
+      'lg:[&>div:first-child]:!flex-col'
+    );
+    expect(configuration.find('form > section').classes()).toContain(
+      'lg:[&>div:first-child]:!items-start'
+    );
+  });
+
+  it('lets the form shrink and leaves room for the floating menu button on a phone', async () => {
+    const calls = buildWrapper({ section: 'calls' });
+    await flushPromises();
+
+    expect(calls.find('form').classes()).toEqual(
+      expect.arrayContaining(['min-w-0', 'pb-20', 'md:pb-0'])
+    );
+  });
+
+  it('never squeezes three selects into one row of the calls builder', async () => {
+    const calls = buildWrapper({ section: 'calls' });
+    await flushPromises();
+
+    expect(calls.html()).not.toContain('md:grid-cols-3');
+    expect(calls.find('[data-testid="call-routing-builder"]').exists()).toBe(
+      true
+    );
+  });
+});
