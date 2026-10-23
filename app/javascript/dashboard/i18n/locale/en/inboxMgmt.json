@@ -546,7 +546,9 @@
             "SELECT_PLACEHOLDER": "Select an employee",
             "CURRENT_USER": "Current user",
             "ADD": "Add employee extension",
-            "REMOVE": "Remove employee {index}",
+            "REMOVE": "Remove",
+            "REMOVE_NAMED": "Remove employee {name}",
+            "REMOVE_ROW": "Remove employee in row {index}",
             "REQUIRED": "Select an employee and enter an internal extension for each row",
             "SIP_PAIR_REQUIRED": "Employee SIP login and password must be filled together",
             "VOICE_AGENT_LABEL": "AI agent",
@@ -614,6 +616,7 @@
           "PROVISION_BUTTON": "Sync with telephony",
           "SAVE_FIRST": "Save your changes first",
           "WAZO_SYNC_HINT": "\"Save\" stores the settings in OneLink. To make employees and extensions appear on the telephony server, then click \"Sync with telephony\".",
+          "WAZO_SYNC_UNAVAILABLE": "Unavailable: access to the telephony server API is not configured, or syncing is turned off for this channel.",
           "WAZO_APPLY_CONFIRM": "Apply this plan to the telephony server now? This creates, updates, or removes managed telephony resources.",
           "PROVISIONING_PLAN_READY": "Provisioning plan is ready",
           "PROVISION_BLOCKED": "Remote provisioning could not be completed",
@@ -657,7 +660,7 @@
             "CONFIRMATION_REQUIRED": "Confirm the deletion.",
             "WAZO_API_NOT_CONFIGURED": "Telephony server API access is not configured on the server.",
             "WAZO_SIP_HOST_MISMATCH": "The channel SIP server does not match the configured telephony server.",
-            "VIRTUAL_PBX_CONFIGURATION_STALE": "The channel settings were changed elsewhere. Reload the page and save again.",
+            "VIRTUAL_PBX_CONFIGURATION_STALE": "The settings were changed in another window. Reload the page and repeat your changes.",
             "NOT_VOICE_CHANNEL": "This inbox is not a call channel.",
             "UNSUPPORTED_PROVIDER": "This call provider cannot be managed here.",
             "FEATURE_DISABLED": "Calls are not enabled for this account."
@@ -686,7 +689,7 @@
             "TITLE": "Telecom Carrier & Lines (OneLink PBX SIP Trunk)",
             "SUBTITLE": "Select your telecom operator, channel capacity, and carrier SIP credentials for automatic inbound/outbound trunk setup on OneLink PBX.",
             "CARRIER_KIND_LABEL": "Telecom Carrier",
-            "CARRIER_KIND_PLACEHOLDER": "None selected (internal PBX operators only)",
+            "CARRIER_KIND_PLACEHOLDER": "None (internal operators)",
             "CARRIERS": {
               "ALTEL": "Altel Business",
               "TELE2": "Tele2 Business",
@@ -705,9 +708,9 @@
             "RESERVED_INBOUND_LABEL": "Reserved Inbound-Only Channels",
             "RING_STRATEGY_LABEL": "Inbound Ring Group Strategy",
             "RING_STRATEGIES": {
-              "ALL": "Ring all available operators simultaneously (all)",
-              "LEAST_RECENT": "Ring least recently called operator first (least_recent)",
-              "MEMORIZED_ROUND_ROBIN": "Memorized round robin (memorized_round_robin)"
+              "ALL": "All free operators at once",
+              "LEAST_RECENT": "Longest without a call first",
+              "MEMORIZED_ROUND_ROBIN": "Round robin"
             },
             "GROUP_EXTENSION_LABEL": "Ring Group Extension (e.g. 2001)",
             "TRUNK_USERNAME_LABEL": "Carrier Trunk SIP Username",
