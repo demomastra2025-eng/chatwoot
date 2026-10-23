@@ -236,7 +236,8 @@ class AutomationRules::TouchActionService
     action_id.present? && Reminders::DeferredAutomationActionPolicy.new(
       account: account,
       remindable: record,
-      definition: params
+      definition: params,
+      event_name: rule.event_name
     ).eligible?
   end
 
@@ -391,10 +392,18 @@ class AutomationRules::TouchActionService
     raise ArgumentError, 'create_touch content is required' unless touch_content_present?(params)
     raise ArgumentError, 'create_touch timing is invalid' unless touch_timing_supported?(params)
 
+    validate_schedule_override!(params)
     validate_post_delivery_action!(params)
     validate_response_action!(params)
 
     params
+  end
+
+  # A rule saved before the flag was dropped on save is refused loudly instead of leaving a draft that never sends.
+  def validate_schedule_override!(params)
+    return unless AutomationRules::TouchScheduleOverride.relative_with_override?(params)
+
+    raise ArgumentError, AutomationRules::TouchScheduleOverride::RUNTIME_ERROR
   end
 
   def validate_post_delivery_action!(params)

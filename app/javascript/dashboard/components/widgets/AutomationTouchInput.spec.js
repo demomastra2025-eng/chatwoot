@@ -507,4 +507,64 @@ describe('AutomationTouchInput', () => {
       wrapper.vm.relativeAnchorOptions.map(option => option.value)
     ).not.toContain('appointment.starts_at');
   });
+
+  it('drops a leftover manual-time flag of a legacy action once the touch is edited', () => {
+    const wrapper = mountComponent({
+      eventName: 'appointment_rescheduled',
+      modelValue: [
+        {
+          body: 'Запись перенесена',
+          delay_minutes: 0,
+          manual_schedule_override: true,
+        },
+      ],
+    });
+
+    wrapper.vm.body = 'Ваша запись перенесена';
+
+    const payload = wrapper.emitted('update:modelValue').at(-1)[0];
+    expect(payload).toMatchObject({
+      timing_mode: 'relative',
+      relative_anchor: 'touch.created_at',
+      relative_offset_seconds: 60,
+    });
+    expect(payload).not.toHaveProperty('manual_schedule_override');
+    expect(payload).not.toHaveProperty('delay_minutes');
+  });
+
+  it('keeps the late-import skip in the touch metadata of booking notices only', async () => {
+    const wrapper = mountComponent({
+      eventName: 'appointment_created',
+      modelValue: { body: 'Вы записаны', metadata: { note: 'keep' } },
+    });
+
+    expect(wrapper.vm.canSkipLateImport).toBe(true);
+    expect(wrapper.vm.skipIfImportedLate).toBe(false);
+
+    wrapper.vm.skipIfImportedLate = true;
+    let payload = await applyLastPayload(wrapper);
+    expect(payload.metadata).toEqual({
+      note: 'keep',
+      skip_if_imported_late: true,
+    });
+    expect(wrapper.vm.skipIfImportedLate).toBe(true);
+
+    wrapper.vm.skipIfImportedLate = false;
+    payload = await applyLastPayload(wrapper);
+    expect(payload.metadata).toEqual({ note: 'keep' });
+
+    const rescheduleWrapper = mountComponent({
+      eventName: 'appointment_rescheduled',
+      modelValue: {
+        body: 'Запись перенесена',
+        metadata: { skip_if_imported_late: true },
+      },
+    });
+
+    expect(rescheduleWrapper.vm.canSkipLateImport).toBe(false);
+    rescheduleWrapper.vm.body = 'Ваша запись перенесена';
+    expect(
+      rescheduleWrapper.emitted('update:modelValue').at(-1)[0].metadata
+    ).toEqual({});
+  });
 });

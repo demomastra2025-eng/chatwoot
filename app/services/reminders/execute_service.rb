@@ -61,9 +61,12 @@ class Reminders::ExecuteService
     reminder.persisted? && (!reminder.processing? || !current_execution_claim?)
   end
 
-  # An automation touch that missed its schedule, or whose contact its rule now excludes, is cancelled instead of sent.
+  # An automation touch that missed its schedule, a «запись создана/перенесена» notice that went stale, or a touch whose
+  # contact its rule now excludes, is cancelled instead of sent.
   def automation_touch_cancelled?
-    Reminders::MissedAutomationTouchPolicy.new(reminder: reminder).cancel_if_missed! || excluded_contact_cancelled?
+    Reminders::MissedAutomationTouchPolicy.new(reminder: reminder).cancel_if_missed! ||
+      Reminders::StaleAppointmentNoticePolicy.new(reminder: reminder).cancel_if_stale! ||
+      excluded_contact_cancelled?
   end
 
   # An automation touch goes only to contacts its rule still lets through: the "Contact is not" list is read again here

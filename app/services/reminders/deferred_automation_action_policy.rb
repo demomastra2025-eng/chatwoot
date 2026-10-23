@@ -1,31 +1,48 @@
 class Reminders::DeferredAutomationActionPolicy
   SUPPORTED_REMINDABLE_TYPES = Reminders::DeferredMaterializationPolicy::ENTITY_ANCHORS.keys.freeze
+  # An enrollment is kept once per rule action and record. On an event that repeats for the same record, a timing
+  # counted from the event itself (a legacy delay, touch.created_at or the record's creation) would then notify only
+  # the first time: the second reschedule of an appointment finds the completed enrollment. Such an action makes its
+  # touch at once instead; a timing anchored on the visit or the deal close date still follows the record.
+  REPEATING_EVENT_NAMES = %w[appointment_updated appointment_rescheduled].freeze
+  EVENT_TIME_ANCHORS = %w[touch.created_at appointment.created_at deal.created_at].freeze
 
-  attr_reader :account, :definition, :remindable
+  attr_reader :account, :definition, :event_name, :remindable
 
-  def initialize(account:, remindable:, definition:)
+  def initialize(account:, remindable:, definition:, event_name: nil)
     @account = account
     @remindable = remindable
     @definition = Reminders::DefinitionNormalizer.call(definition).with_indifferent_access
+    @event_name = event_name.to_s
   end
 
   def eligible?
     account.feature_enabled?(Reminders::DeferredMaterializationPolicy::FEATURE_NAME) &&
       SUPPORTED_REMINDABLE_TYPES.include?(remindable.class.name) &&
       supported_timing? &&
-      (definition[:repeat_mode].presence || 'once') == 'once' &&
-      definition[:post_delivery_action].blank? &&
-      definition[:response_action].blank? &&
+      single_delivery? &&
       !Reminders::BooleanParam.truthy?(definition[:manual_schedule_override])
   end
 
   private
 
   def supported_timing?
+    return false if repeating_event_timing?
     return legacy_delay_supported? if legacy_delay?
     return false unless (definition[:timing_mode].presence || 'absolute') == 'relative'
 
     supported_anchors.include?(definition[:relative_anchor].to_s) && definition[:relative_offset_seconds].present?
+  end
+
+  def repeating_event_timing?
+    REPEATING_EVENT_NAMES.include?(event_name) &&
+      (legacy_delay? || EVENT_TIME_ANCHORS.include?(definition[:relative_anchor].to_s))
+  end
+
+  def single_delivery?
+    (definition[:repeat_mode].presence || 'once') == 'once' &&
+      definition[:post_delivery_action].blank? &&
+      definition[:response_action].blank?
   end
 
   def legacy_delay?
