@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, useTemplateRef } from 'vue';
+import { useI18n } from 'vue-i18n';
 
 import {
   buildMessageSchema,
@@ -18,10 +19,7 @@ import NextButton from 'dashboard/components-next/button/Button.vue';
 const props = defineProps({
   modelValue: { type: String, default: '' },
   editorId: { type: String, default: '' },
-  placeholder: {
-    type: String,
-    default: 'Give copilot additional prompts, or ask anything else...',
-  },
+  placeholder: { type: String, default: '' },
   generatedContent: { type: String, default: '' },
   autofocus: {
     type: Boolean,
@@ -39,12 +37,16 @@ const emit = defineEmits([
   'send',
 ]);
 
+const { t } = useI18n();
 const { formatMessage } = useMessageFormatter();
 
 // Minimal schema with no marks or nodes for copilot input
 const copilotSchema = buildMessageSchema([], []);
 
 const handleSubmit = () => emit('send');
+
+// An empty refinement has nothing to send
+const canSubmit = computed(() => props.modelValue.trim().length > 0);
 
 const createState = (
   content,
@@ -207,20 +209,26 @@ onMounted(() => {
     <div class="overflow-y-auto max-h-56">
       <p
         v-dompurify-html="formatMessage(generatedContent, false)"
-        class="text-n-iris-12 text-sm prose-sm font-normal !mb-4"
+        class="text-n-iris-12 text-sm prose-sm font-normal !mb-0"
       />
     </div>
+    <p class="text-xs text-n-slate-11 !mb-0" data-test="copilot-edit-hint">
+      {{ t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.EDIT_HINT') }}
+    </p>
     <div class="editor-root relative editor--copilot space-x-2">
       <div ref="editor" />
-      <div class="flex items-center justify-end absolute right-2 bottom-2">
-        <NextButton
-          class="bg-n-iris-9 text-white !rounded-full"
-          icon="i-lucide-arrow-up"
-          solid
-          sm
-          @click="handleSubmit"
-        />
-      </div>
+    </div>
+    <div class="flex items-center justify-end">
+      <NextButton
+        :label="t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.REFINE_BUTTON')"
+        icon="i-lucide-wand-sparkles"
+        class="bg-n-iris-9 text-white"
+        solid
+        sm
+        :disabled="!canSubmit"
+        data-test="copilot-refine-submit"
+        @click="handleSubmit"
+      />
     </div>
   </div>
 </template>

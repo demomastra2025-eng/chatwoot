@@ -54,7 +54,6 @@ const executeCopilotAction = (action, data) => {
           :show-copilot-editor="copilot.showEditor.value"
           :is-generating-content="copilot.isGenerating.value"
           :generated-content="copilot.generatedContent.value"
-          :captain-trace="copilot.captainTrace.value"
           :suggestion-meta="copilot.suggestionMeta.value"
           :live-progress="copilot.liveProgress.value"
           class="!mb-0"

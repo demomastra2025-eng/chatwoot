@@ -1,10 +1,14 @@
-import { ref, computed, getCurrentInstance, onBeforeUnmount } from 'vue';
+import { ref, computed, getCurrentScope, onScopeDispose } from 'vue';
 import { useCaptain } from 'dashboard/composables/useCaptain';
 import { useAlert, useTrack } from 'dashboard/composables';
 import { CAPTAIN_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
 import {
   CAPTAIN_ERROR_TYPES,
   CAPTAIN_GENERATION_FAILURE_REASONS,
+  REPLY_SUGGESTION_STATUS,
+  REPLY_SUGGESTION_PHASE,
+  REPLY_SUGGESTION_NOTICE_KIND,
+  REPLY_SUGGESTION_POST_ERRORS,
 } from 'dashboard/composables/captain/constants';
 import TasksAPI from 'dashboard/api/captain/tasks';
 import { emitter } from 'shared/helpers/mitt';
@@ -23,6 +27,22 @@ const REWRITE_ACTIONS = [
   'make_formal',
   'simplify',
 ];
+
+const REPLY_SUGGESTION_ACTION = 'reply_suggestion';
+const DEFAULT_BUDGET_SECONDS = 60;
+// No cable event for this long (or until the run deadline plus the grace
+// period, whichever is later) means the socket probably dropped: ask the API.
+const WATCHDOG_MIN_MS = 15000;
+const WATCHDOG_GRACE_MS = 20000;
+const TICK_INTERVAL_MS = 1000;
+
+const PHASE = REPLY_SUGGESTION_PHASE;
+const STATUS = REPLY_SUGGESTION_STATUS;
+const NOTICE_KIND = REPLY_SUGGESTION_NOTICE_KIND;
+
+const IN_FLIGHT_PHASES = [PHASE.REQUESTING, PHASE.QUEUED, PHASE.GENERATING];
+const WAITING_PHASES = [PHASE.QUEUED, PHASE.GENERATING];
+const SETTLED_PHASES = [PHASE.DRAFT, PHASE.NOTICE];
 
 function recordCopilotFeedback(payload) {
   if (typeof TasksAPI?.feedback !== 'function') return;
@@ -60,6 +80,29 @@ function normalizePendingActionList(rawList, currentList = []) {
   return Array.from(byId.values());
 }
 
+function toEpochMs(value) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sameConversation(left, right) {
+  if (left === null || left === undefined) return false;
+  if (right === null || right === undefined) return false;
+  return Number(left) === Number(right);
+}
+
+function normalizeAgentInfo(agent) {
+  if (!agent || typeof agent !== 'object') return null;
+  const name = String(agent.name || '').trim();
+  if (!name) return null;
+  return {
+    id: agent.id ?? null,
+    name,
+    avatarUrl: agent.avatar_url || agent.avatarUrl || '',
+  };
+}
+
 /**
  * Gets the event key suffix based on action type.
  * @param {string} action - The action type
@@ -67,7 +110,7 @@ function normalizePendingActionList(rawList, currentList = []) {
  */
 function getEventPrefix(action) {
   if (action === 'summarize') return 'SUMMARIZE';
-  if (action === 'reply_suggestion') return 'REPLY_SUGGESTION';
+  if (action === REPLY_SUGGESTION_ACTION) return 'REPLY_SUGGESTION';
   return 'REWRITE';
 }
 
@@ -112,14 +155,30 @@ function trackGenerationFailure({
  * Composable for managing Copilot reply generation state and actions.
  * Extracts copilot-related logic from ReplyBox for cleaner code organization.
  *
+ * «Предложить ответ» (reply_suggestion) is a background run on the server:
+ *   idle -> requesting -> queued -> generating -> draft | notice | idle
+ * The result is delivered by cable events (progress, result), survives
+ * navigation (restoreForConversation) and is bound to one conversation:
+ * events and fetched states of any other conversation are dropped.
+ * Rewrite, summarize and follow-up stay synchronous requests.
+ *
+ * @param {Object} [options]
+ * @param {boolean} [options.syncSuggestions=false] - Restore the server-side
+ *   suggestion on conversation open and adopt results started from another
+ *   tab. Only the conversation ReplyBox sets it, other hosts of the composable
+ *   (new conversation form) must not pick up suggestions of the open chat.
  * @returns {Object} Copilot reply state and methods
  */
-export function useCopilotReply() {
+export function useCopilotReply({ syncSuggestions = false } = {}) {
   const {
     processEvent,
     followUp,
     currentChat,
     conversationId: captainConversationId,
+    captainTextImprovementEnabled,
+    startReplySuggestion: requestReplySuggestion,
+    getReplySuggestionStatus: requestReplySuggestionStatus,
+    cancelReplySuggestion: requestCancelReplySuggestion,
   } = useCaptain();
 
   const showEditor = ref(false);
@@ -136,10 +195,34 @@ export function useCopilotReply() {
   const requestId = ref(null);
   const lastAcceptedMeta = ref(null);
 
+  // Reply suggestion (background run) state
+  const suggestionPhase = ref(PHASE.IDLE);
+  const suggestionRequestId = ref(null);
+  const suggestionNotice = ref(null);
+  const suggestionStale = ref(false);
+  const suggestionEngine = ref(null);
+  const suggestionTiming = ref({
+    startedAt: null,
+    deadlineAt: null,
+    budgetSeconds: DEFAULT_BUDGET_SECONDS,
+  });
+  const localStartedAt = ref(null);
+  const nowMs = ref(Date.now());
+
   // Tracking state
   const currentAction = ref(null);
   const followUpCount = ref(0);
   const trackedConversationId = ref(null);
+
+  // Runs the manager cancelled, dismissed, applied or replaced. Late events
+  // for them are dropped, so a finished suggestion never comes back.
+  const ignoredRequestIds = new Set();
+  // Bumped whenever local state is cleared; async continuations compare it to
+  // know that the conversation or the user's intent changed while they waited.
+  let epoch = 0;
+  let startToken = null;
+  let tickTimer = null;
+  let watchdogTimer = null;
 
   const conversationId = computed(
     () => captainConversationId?.value ?? currentChat.value?.id
@@ -168,85 +251,455 @@ export function useCopilotReply() {
     isActive.value ? 'copilot' : 'rich'
   );
 
-  function handleProgressEvent(data) {
-    if (!isGenerating.value || currentAction.value !== 'reply_suggestion') {
-      return;
+  const isSuggestionInFlight = computed(() =>
+    IN_FLIGHT_PHASES.includes(suggestionPhase.value)
+  );
+  const isQueued = computed(() => suggestionPhase.value === PHASE.QUEUED);
+  // «Отменить» works for a background run and for any synchronous request
+  const canCancel = computed(
+    () =>
+      isSuggestionInFlight.value ||
+      (isGenerating.value && Boolean(abortController.value))
+  );
+  const canAccept = computed(
+    () =>
+      showEditor.value && !isGenerating.value && Boolean(generatedContent.value)
+  );
+  const elapsedSeconds = computed(() => {
+    if (suggestionPhase.value !== PHASE.GENERATING) return null;
+    const startedAt = suggestionTiming.value.startedAt ?? localStartedAt.value;
+    if (!startedAt) return null;
+    return Math.max(0, Math.floor((nowMs.value - startedAt) / 1000));
+  });
+
+  const isFullyIdle = () =>
+    suggestionPhase.value === PHASE.IDLE &&
+    !isGenerating.value &&
+    !showEditor.value;
+
+  // ---------------------------------------------------------------------
+  // Timers: elapsed counter and the "no events" watchdog
+  // ---------------------------------------------------------------------
+  function startTicker() {
+    if (tickTimer) return;
+    nowMs.value = Date.now();
+    tickTimer = setInterval(() => {
+      nowMs.value = Date.now();
+    }, TICK_INTERVAL_MS);
+  }
+
+  function stopTicker() {
+    if (!tickTimer) return;
+    clearInterval(tickTimer);
+    tickTimer = null;
+  }
+
+  function stopWatchdog() {
+    if (!watchdogTimer) return;
+    clearTimeout(watchdogTimer);
+    watchdogTimer = null;
+  }
+
+  function stopTimers() {
+    stopTicker();
+    stopWatchdog();
+  }
+
+  function isWaiting() {
+    return WAITING_PHASES.includes(suggestionPhase.value);
+  }
+
+  function pendingKeyFor(conversation) {
+    return String(conversation || 'default');
+  }
+
+  function clearPendingFor(conversation) {
+    pendingActionsByConversation.value = {
+      ...pendingActionsByConversation.value,
+      [pendingKeyFor(conversation)]: [],
+    };
+  }
+
+  function mergePendingActions(rawList) {
+    if (!Array.isArray(rawList) || !rawList.length) return;
+    pendingActions.value = normalizePendingActionList(
+      rawList,
+      pendingActions.value
+    );
+  }
+
+  async function runWatchdog() {
+    watchdogTimer = null;
+    const id = suggestionRequestId.value;
+    if (!id || !isWaiting()) return;
+    const myEpoch = epoch;
+    const answer = await requestReplySuggestionStatus({
+      conversationId: trackedConversationId.value,
+      suggestionRequestId: id,
+    });
+    if (myEpoch !== epoch || suggestionRequestId.value !== id) return;
+
+    if (answer?.suggestion) {
+      // eslint-disable-next-line no-use-before-define
+      applySuggestionState(answer.suggestion);
+    } else if (answer?.notFound || !answer?.failed) {
+      // The server does not know this run any more: do not wait forever.
+      // eslint-disable-next-line no-use-before-define
+      applyFailed({
+        suggestion_request_id: id,
+        result: { reason_code: 'interrupted' },
+      });
     }
+    if (isWaiting()) {
+      // eslint-disable-next-line no-use-before-define
+      armWatchdog();
+    }
+  }
+
+  function armWatchdog() {
+    stopWatchdog();
+    if (!isWaiting()) return;
+    const { deadlineAt } = suggestionTiming.value;
+    const untilDeadline = deadlineAt
+      ? deadlineAt + WATCHDOG_GRACE_MS - Date.now()
+      : 0;
+    watchdogTimer = setTimeout(
+      runWatchdog,
+      Math.max(WATCHDOG_MIN_MS, untilDeadline)
+    );
+  }
+
+  function setPhase(next) {
+    suggestionPhase.value = next;
+    isGenerating.value = IN_FLIGHT_PHASES.includes(next);
+    if (WAITING_PHASES.includes(next)) {
+      startTicker();
+      armWatchdog();
+    } else {
+      stopTimers();
+    }
+  }
+
+  function resetSuggestionState() {
+    stopTimers();
+    suggestionPhase.value = PHASE.IDLE;
+    suggestionRequestId.value = null;
+    suggestionNotice.value = null;
+    suggestionStale.value = false;
+    suggestionEngine.value = null;
+    suggestionTiming.value = {
+      startedAt: null,
+      deadlineAt: null,
+      budgetSeconds: DEFAULT_BUDGET_SECONDS,
+    };
+    localStartedAt.value = null;
+  }
+
+  function updateTiming(source) {
+    const current = suggestionTiming.value;
+    suggestionTiming.value = {
+      startedAt: toEpochMs(source?.started_at) ?? current.startedAt,
+      deadlineAt: toEpochMs(source?.deadline_at) ?? current.deadlineAt,
+      budgetSeconds:
+        Number(source?.budget_seconds) ||
+        current.budgetSeconds ||
+        DEFAULT_BUDGET_SECONDS,
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // Applying a server state (POST 202, cable progress/result, GET status)
+  // ---------------------------------------------------------------------
+  // The conversation a state must belong to: the tracked run's conversation,
+  // or the open one when nothing is tracked yet.
+  function ownerConversation() {
+    const isTracking =
+      Boolean(suggestionRequestId.value) ||
+      suggestionPhase.value === PHASE.REQUESTING;
+    return isTracking ? trackedConversationId.value : conversationId.value;
+  }
+
+  function adoptRequest(state) {
+    // The owner is read first: once the id is set the run is "tracked" and the
+    // owner would be the (still empty) tracked conversation.
+    const owner = ownerConversation();
+    suggestionRequestId.value = state.suggestion_request_id;
+    trackedConversationId.value = owner;
+    currentAction.value = REPLY_SUGGESTION_ACTION;
+    if (state.engine) suggestionEngine.value = state.engine;
+    if (!localStartedAt.value) localStartedAt.value = Date.now();
+  }
+
+  function applyProgress(state) {
+    const id = state.suggestion_request_id;
+    const sameRun = suggestionRequestId.value === id;
+    if (sameRun && SETTLED_PHASES.includes(suggestionPhase.value)) return;
+    const isQueuedState = state.status === STATUS.QUEUED;
     if (
-      data?.conversation_id &&
-      trackedConversationId.value &&
-      Number(data.conversation_id) !== Number(trackedConversationId.value) &&
-      Number(data.conversation_id) !== Number(currentChat.value?.id)
+      sameRun &&
+      isQueuedState &&
+      suggestionPhase.value === PHASE.GENERATING
     ) {
       return;
     }
-    liveProgress.value = data || null;
-    if (Array.isArray(data?.pending_actions) && data.pending_actions.length) {
-      pendingActions.value = normalizePendingActionList(
-        data.pending_actions,
-        pendingActions.value
+    adoptRequest(state);
+    updateTiming(state);
+    isContentReady.value = false;
+    if (state.progress && typeof state.progress === 'object') {
+      liveProgress.value = state.progress;
+      mergePendingActions(state.progress.pending_actions);
+    }
+    setPhase(isQueuedState ? PHASE.QUEUED : PHASE.GENERATING);
+  }
+
+  function showNotice(notice, state) {
+    suggestionNotice.value = {
+      kind: notice.kind,
+      reason: notice.reason ?? null,
+      reasonCode: notice.reasonCode ?? null,
+      reasonSource: notice.reasonSource ?? null,
+      agent: notice.agent ?? null,
+      canRetry: Boolean(notice.canRetry),
+      stale: Boolean(state?.stale),
+    };
+    suggestionStale.value = Boolean(state?.stale);
+    showEditor.value = false;
+    generatedContent.value = '';
+    followUpContext.value = null;
+    captainTrace.value = null;
+    suggestionMeta.value = null;
+    liveProgress.value = null;
+    setPhase(PHASE.NOTICE);
+  }
+
+  function applyFailed(state, restored = false) {
+    const reasonCode = state.result?.reason_code ?? null;
+    adoptRequest(state);
+    clearPendingFor(trackedConversationId.value);
+    showNotice({ kind: NOTICE_KIND.FAILED, reasonCode, canRetry: true }, state);
+    if (!restored) {
+      trackGenerationFailure({
+        action: REPLY_SUGGESTION_ACTION,
+        conversationId: trackedConversationId.value,
+        stage: 'initial',
+        reason: reasonCode || CAPTAIN_GENERATION_FAILURE_REASONS.EXCEPTION,
+      });
+    }
+  }
+
+  function applyDraft(state, restored) {
+    const result = state.result || {};
+    const message = typeof result.message === 'string' ? result.message : '';
+    if (!message.trim()) {
+      // A draft without text is a failure, never an empty editor.
+      applyFailed(
+        { ...state, result: { reason_code: 'empty_output' } },
+        restored
+      );
+      return;
+    }
+    const cameFromGenerating = isGenerating.value;
+    adoptRequest(state);
+    generatedContent.value = message;
+    followUpContext.value = result.follow_up_context ?? null;
+    // The final trace only: the live progress trace is a partial view.
+    captainTrace.value = result.captain_trace ?? null;
+    suggestionMeta.value = result.suggestion_meta ?? null;
+    mergePendingActions(
+      result.pending_actions?.length
+        ? result.pending_actions
+        : result.suggestion_meta?.pending_actions
+    );
+    requestId.value = state.suggestion_request_id;
+    liveProgress.value = null;
+    suggestionNotice.value = null;
+    suggestionStale.value = Boolean(state.stale);
+    showEditor.value = true;
+    // The editor transition marks content ready after a live run; a draft
+    // that appears without a generating state has no transition to wait for.
+    isContentReady.value = !cameFromGenerating;
+    setPhase(PHASE.DRAFT);
+    if (!restored) {
+      useTrack(
+        CAPTAIN_EVENTS[`${getEventPrefix(REPLY_SUGGESTION_ACTION)}_USED`],
+        buildPayload(REPLY_SUGGESTION_ACTION, trackedConversationId.value)
       );
     }
   }
 
-  function stopProgressListener() {
+  function applyOutcomeNotice(state) {
+    const result = state.result || {};
+    adoptRequest(state);
+    mergePendingActions(result.pending_actions);
+    showNotice(
+      {
+        kind:
+          state.status === STATUS.NO_REPLY
+            ? NOTICE_KIND.NO_REPLY
+            : NOTICE_KIND.HUMAN_NEEDED,
+        reason: typeof result.reason === 'string' ? result.reason.trim() : '',
+        reasonSource: result.reason_source ?? null,
+        agent: normalizeAgentInfo(result.agent),
+        canRetry: false,
+      },
+      state
+    );
+  }
+
+  function applyCancelled(id) {
+    ignoredRequestIds.add(id);
+    // eslint-disable-next-line no-use-before-define
+    reset(false);
+  }
+
+  /**
+   * Applies a SuggestionState to the UI.
+   * @returns {boolean} Whether the state was used.
+   */
+  function applySuggestionState(state, { restored = false } = {}) {
+    const id = state?.suggestion_request_id;
+    if (!id || ignoredRequestIds.has(id)) return false;
+    // Never show a state of another conversation.
+    if (
+      state.conversation_id !== null &&
+      state.conversation_id !== undefined &&
+      !sameConversation(state.conversation_id, ownerConversation())
+    ) {
+      return false;
+    }
+    // A settled suggestion is never replaced by a repeat of the same run
+    // (event + fetch, or a late 202 after the result): it would drop edits.
+    if (
+      suggestionRequestId.value === id &&
+      SETTLED_PHASES.includes(suggestionPhase.value)
+    ) {
+      return false;
+    }
+
+    switch (state.status) {
+      case STATUS.QUEUED:
+      case STATUS.RUNNING:
+        applyProgress(state);
+        return true;
+      case STATUS.DRAFT:
+        applyDraft(state, restored);
+        return true;
+      case STATUS.NO_REPLY:
+      case STATUS.HUMAN_NEEDED:
+        applyOutcomeNotice(state);
+        return true;
+      case STATUS.FAILED:
+        applyFailed(state, restored);
+        return true;
+      case STATUS.CANCELLED:
+        applyCancelled(id);
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  function applyStartError({ errorCode, error, errorType }) {
+    // A refused request (voice, quota, switched off...) is "unavailable" and a
+    // retry cannot help. Busy and unknown transport errors can be retried.
+    const isUnavailable =
+      Boolean(errorCode) && errorCode !== REPLY_SUGGESTION_POST_ERRORS.BUSY;
+    showNotice(
+      {
+        kind: isUnavailable ? NOTICE_KIND.UNAVAILABLE : NOTICE_KIND.FAILED,
+        reason: error || null,
+        reasonCode: errorCode || errorType || null,
+        canRetry: !isUnavailable,
+      },
+      null
+    );
+    trackGenerationFailure({
+      action: REPLY_SUGGESTION_ACTION,
+      conversationId: trackedConversationId.value,
+      stage: 'initial',
+      reason:
+        errorCode || errorType || CAPTAIN_GENERATION_FAILURE_REASONS.EXCEPTION,
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Cable events
+  // ---------------------------------------------------------------------
+  function shouldAcceptEvent(data) {
+    const id = data?.suggestion_request_id;
+    if (!id || ignoredRequestIds.has(id)) return false;
+
+    // (a) the run this composable follows
+    if (suggestionRequestId.value) {
+      return (
+        id === suggestionRequestId.value &&
+        (data.conversation_id === null ||
+          data.conversation_id === undefined ||
+          sameConversation(data.conversation_id, trackedConversationId.value))
+      );
+    }
+
+    // (b) our own POST is in flight and the first event beat the 202, or the
+    // run was started from another tab of this user in this conversation.
+    const requesting = suggestionPhase.value === PHASE.REQUESTING;
+    if (!requesting && !(syncSuggestions && isFullyIdle())) return false;
+    return sameConversation(
+      data.conversation_id,
+      requesting ? trackedConversationId.value : conversationId.value
+    );
+  }
+
+  function handleProgressEvent(data) {
+    if (!shouldAcceptEvent(data)) return;
+    const canFollow =
+      isSuggestionInFlight.value || suggestionPhase.value === PHASE.IDLE;
+    if (!canFollow) return;
+    applySuggestionState({
+      ...data,
+      status: data.status === STATUS.QUEUED ? STATUS.QUEUED : STATUS.RUNNING,
+      progress: data,
+    });
+  }
+
+  function handleResultEvent(state) {
+    if (!shouldAcceptEvent(state)) return;
+    applySuggestionState(state);
+  }
+
+  function handleReconnect() {
+    if (suggestionRequestId.value && isWaiting()) {
+      runWatchdog();
+    }
+  }
+
+  function stopListening() {
     emitter.off(
       BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_PROGRESS,
       handleProgressEvent
     );
+    emitter.off(BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_RESULT, handleResultEvent);
+    emitter.off(BUS_EVENTS.WEBSOCKET_RECONNECT_COMPLETED, handleReconnect);
+    stopTimers();
   }
 
-  if (getCurrentInstance()) {
-    onBeforeUnmount(() => {
-      stopProgressListener();
-    });
+  // Listen from creation until the owner goes away: a result can arrive while
+  // nothing is generating locally (second tab, returning to the chat).
+  emitter.on(BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_PROGRESS, handleProgressEvent);
+  emitter.on(BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_RESULT, handleResultEvent);
+  emitter.on(BUS_EVENTS.WEBSOCKET_RECONNECT_COMPLETED, handleReconnect);
+  if (getCurrentScope()) {
+    onScopeDispose(stopListening);
   }
 
-  /**
-   * Resets all copilot editor state and cancels any ongoing generation.
-   * @param {boolean} [trackDismiss=true] - Whether to track dismiss event
-   */
-  function reset(trackDismiss = true) {
-    const isConversationSwitch =
-      trackedConversationId.value &&
-      conversationId.value &&
-      Number(trackedConversationId.value) !== Number(conversationId.value);
-
-    // Track dismiss event if there was content and we're not accepting
-    if (trackDismiss && generatedContent.value && currentAction.value) {
-      const eventKey = `${getEventPrefix(currentAction.value)}_DISMISSED`;
-      useTrack(
-        CAPTAIN_EVENTS[eventKey],
-        buildPayload(
-          currentAction.value,
-          trackedConversationId.value,
-          followUpCount.value
-        )
-      );
-      recordCopilotFeedback({
-        conversationId: trackedConversationId.value,
-        requestId: requestId.value,
-        copilotAction: currentAction.value,
-        outcome: 'dismissed',
-        followUpCount: followUpCount.value,
-        generatedText: generatedContent.value,
-      });
-    }
-
-    stopProgressListener();
+  // ---------------------------------------------------------------------
+  // Reset / detach
+  // ---------------------------------------------------------------------
+  function clearLocalState() {
+    epoch += 1;
+    startToken = null;
     if (abortController.value) {
       abortController.value.abort();
       abortController.value = null;
-    }
-    if (isConversationSwitch) {
-      if (showEditor.value || isGenerating.value) {
-        pendingActionsByConversation.value = {
-          ...pendingActionsByConversation.value,
-          [String(trackedConversationId.value)]: [],
-        };
-      }
-    } else {
-      pendingActions.value = [];
     }
     showEditor.value = false;
     isGenerating.value = false;
@@ -261,6 +714,73 @@ export function useCopilotReply() {
     currentAction.value = null;
     followUpCount.value = 0;
     trackedConversationId.value = null;
+    resetSuggestionState();
+  }
+
+  function trackDismissal() {
+    if (!generatedContent.value || !currentAction.value) return;
+    const eventKey = `${getEventPrefix(currentAction.value)}_DISMISSED`;
+    useTrack(
+      CAPTAIN_EVENTS[eventKey],
+      buildPayload(
+        currentAction.value,
+        trackedConversationId.value,
+        followUpCount.value
+      )
+    );
+    recordCopilotFeedback({
+      conversationId: trackedConversationId.value,
+      requestId: requestId.value,
+      suggestionRequestId: suggestionRequestId.value || undefined,
+      copilotAction: currentAction.value,
+      outcome: 'dismissed',
+      followUpCount: followUpCount.value,
+      generatedText: generatedContent.value,
+    });
+  }
+
+  /**
+   * Resets all copilot editor state and aborts any synchronous request.
+   * A background reply suggestion is only forgotten locally here: use
+   * cancelGeneration() to stop it on the server and dismiss() to reject it.
+   * @param {boolean} [trackDismiss=true] - Whether to track dismiss event
+   *   (rewrite and summarize only; a reply suggestion is dismissed by dismiss())
+   */
+  function reset(trackDismiss = true) {
+    const isConversationSwitch =
+      trackedConversationId.value &&
+      conversationId.value &&
+      Number(trackedConversationId.value) !== Number(conversationId.value);
+
+    if (trackDismiss && currentAction.value !== REPLY_SUGGESTION_ACTION) {
+      trackDismissal();
+    }
+
+    if (isConversationSwitch) {
+      if (showEditor.value || isGenerating.value) {
+        clearPendingFor(trackedConversationId.value);
+      }
+    } else {
+      pendingActions.value = [];
+    }
+    clearLocalState();
+  }
+
+  /**
+   * Forgets the local state when the open conversation changes. The server
+   * run is NOT cancelled and no feedback is sent: the manager may return and
+   * restoreForConversation() brings the result back.
+   */
+  function detach() {
+    const tracked = trackedConversationId.value;
+    const hadLiveState =
+      showEditor.value ||
+      isGenerating.value ||
+      suggestionPhase.value !== PHASE.IDLE;
+    if (tracked && hadLiveState) {
+      clearPendingFor(tracked);
+    }
+    clearLocalState();
   }
 
   function pruneResolvedActions() {
@@ -283,12 +803,171 @@ export function useCopilotReply() {
     isContentReady.value = true;
   }
 
+  // ---------------------------------------------------------------------
+  // Reply suggestion actions
+  // ---------------------------------------------------------------------
+  function sendCancel(id, conversation) {
+    try {
+      const promise = requestCancelReplySuggestion({
+        conversationId: conversation,
+        suggestionRequestId: id,
+      });
+      if (promise && typeof promise.catch === 'function') {
+        promise.catch(() => {});
+      }
+    } catch {
+      // The run ends on its own at the deadline
+    }
+  }
+
+  /**
+   * Starts a background reply suggestion for the open conversation.
+   * Does nothing while one is already running.
+   */
+  async function startReplySuggestion() {
+    if (isSuggestionInFlight.value) return;
+    const targetConversation = conversationId.value;
+    if (!targetConversation) return;
+
+    // Replaces a previous draft or notice
+    reset(false);
+    const token = { cancelled: false };
+    startToken = token;
+    const myEpoch = epoch;
+    currentAction.value = REPLY_SUGGESTION_ACTION;
+    followUpCount.value = 0;
+    trackedConversationId.value = targetConversation;
+    isContentReady.value = false;
+    localStartedAt.value = Date.now();
+    setPhase(PHASE.REQUESTING);
+
+    const answer = await requestReplySuggestion({
+      conversationId: targetConversation,
+    });
+
+    if (myEpoch !== epoch) {
+      // Cancelled, or the manager left the conversation while the request was
+      // in flight. A cancel needs the id that only this answer carries.
+      const lateId = answer?.state?.suggestion_request_id;
+      if (token.cancelled && lateId) {
+        ignoredRequestIds.add(lateId);
+        sendCancel(lateId, targetConversation);
+      }
+      return;
+    }
+
+    if (!answer?.state) {
+      applyStartError(answer || {});
+      return;
+    }
+    applySuggestionState(answer.state);
+    if (suggestionPhase.value === PHASE.REQUESTING) {
+      // The state was refused (foreign conversation): do not hang
+      applyStartError({});
+    }
+  }
+
+  /**
+   * Stops the current generation.
+   * Reply suggestion: asks the server to cancel and closes the panel at once.
+   * Synchronous request (rewrite, summarize, follow-up): aborts the HTTP call.
+   */
+  function cancelGeneration() {
+    if (isSuggestionInFlight.value) {
+      const id = suggestionRequestId.value;
+      if (startToken) startToken.cancelled = true;
+      if (id) {
+        ignoredRequestIds.add(id);
+        sendCancel(id, trackedConversationId.value);
+      }
+      reset(false);
+      return;
+    }
+    if (!abortController.value) return;
+    abortController.value.abort();
+    abortController.value = null;
+    if (generatedContent.value) {
+      // A follow-up was cancelled: the previous draft stays
+      isGenerating.value = false;
+      return;
+    }
+    reset(false);
+  }
+
+  /**
+   * «Отклонить»: drops the generated content and tells the server.
+   */
+  function dismiss() {
+    const id = suggestionRequestId.value;
+    trackDismissal();
+    if (id) ignoredRequestIds.add(id);
+    reset(false);
+  }
+
+  /**
+   * Closes the notice card. The server marks the run consumed so the notice
+   * does not come back when the manager returns to the conversation.
+   */
+  function dismissNotice() {
+    const id = suggestionRequestId.value;
+    if (id) {
+      ignoredRequestIds.add(id);
+      recordCopilotFeedback({
+        conversationId: trackedConversationId.value,
+        requestId: id,
+        suggestionRequestId: id,
+        copilotAction: REPLY_SUGGESTION_ACTION,
+        outcome: 'notice_dismissed',
+      });
+    }
+    suggestionNotice.value = null;
+    suggestionStale.value = false;
+    currentAction.value = null;
+    resetSuggestionState();
+  }
+
+  function retrySuggestion() {
+    return startReplySuggestion();
+  }
+
+  /**
+   * Brings back the suggestion of the open conversation after navigation:
+   * a running one keeps its live progress, a finished one shows its draft or
+   * notice. A result is applied only if it belongs to this conversation.
+   */
+  async function restoreForConversation() {
+    if (!syncSuggestions) return;
+    if (captainTextImprovementEnabled?.value === false) return;
+    const targetConversation = conversationId.value;
+    if (!targetConversation || !isFullyIdle()) return;
+
+    const myEpoch = epoch;
+    const answer = await requestReplySuggestionStatus({
+      conversationId: targetConversation,
+    });
+
+    if (myEpoch !== epoch) return;
+    if (!sameConversation(conversationId.value, targetConversation)) return;
+    if (!isFullyIdle() || !answer?.suggestion) return;
+    applySuggestionState(answer.suggestion, { restored: true });
+  }
+
+  // ---------------------------------------------------------------------
+  // Synchronous actions (rewrite, summarize, follow-up)
+  // ---------------------------------------------------------------------
+
   /**
    * Executes a copilot action (e.g., improve, fix grammar).
    * @param {string} action - The action type
    * @param {string} data - The content to process
    */
   async function execute(action, data) {
+    if (action === REPLY_SUGGESTION_ACTION) {
+      await startReplySuggestion();
+      return;
+    }
+    // Another AI action replaces a running suggestion: stop it on the server
+    if (isSuggestionInFlight.value) cancelGeneration();
     // Reset without tracking dismiss (starting new action)
     reset(false);
     const requestController = new AbortController();
@@ -298,13 +977,6 @@ export function useCopilotReply() {
     currentAction.value = action;
     followUpCount.value = 0;
     trackedConversationId.value = conversationId.value;
-
-    if (action === 'reply_suggestion') {
-      emitter.on(
-        BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_PROGRESS,
-        handleProgressEvent
-      );
-    }
 
     try {
       const {
@@ -329,13 +1001,9 @@ export function useCopilotReply() {
 
       generatedContent.value = content;
       followUpContext.value = newContext;
-      captainTrace.value = trace || liveProgress.value?.captain_trace || null;
+      captainTrace.value = trace || null;
       suggestionMeta.value = meta || null;
-      const candidateActions =
-        incomingActions ||
-        meta?.pending_actions ||
-        liveProgress.value?.pending_actions ||
-        [];
+      const candidateActions = incomingActions || meta?.pending_actions || [];
       pendingActions.value = normalizePendingActionList(
         candidateActions,
         pendingActions.value
@@ -381,7 +1049,6 @@ export function useCopilotReply() {
       });
       isGenerating.value = false;
     } finally {
-      stopProgressListener();
       if (abortController.value === requestController) {
         abortController.value = null;
       }
@@ -604,9 +1271,11 @@ export function useCopilotReply() {
    */
   function accept() {
     const content = generatedContent.value;
+    const acceptedRunId = suggestionRequestId.value;
     lastAcceptedMeta.value = {
       requestId: requestId.value,
-      action: currentAction.value || 'reply_suggestion',
+      suggestionRequestId: acceptedRunId,
+      action: currentAction.value || REPLY_SUGGESTION_ACTION,
       followUpCount: followUpCount.value,
       conversationId: trackedConversationId.value,
     };
@@ -625,6 +1294,7 @@ export function useCopilotReply() {
       recordCopilotFeedback({
         conversationId: trackedConversationId.value,
         requestId: requestId.value,
+        suggestionRequestId: acceptedRunId || undefined,
         copilotAction: currentAction.value,
         outcome: 'applied',
         followUpCount: followUpCount.value,
@@ -632,7 +1302,7 @@ export function useCopilotReply() {
       });
     }
 
-    stopProgressListener();
+    if (acceptedRunId) ignoredRequestIds.add(acceptedRunId);
     // Reset state without tracking dismiss
     showEditor.value = false;
     generatedContent.value = '';
@@ -643,6 +1313,7 @@ export function useCopilotReply() {
     requestId.value = null;
     currentAction.value = null;
     followUpCount.value = 0;
+    resetSuggestionState();
 
     return content;
   }
@@ -661,15 +1332,33 @@ export function useCopilotReply() {
     requestId,
     lastAcceptedMeta,
 
+    suggestionPhase,
+    suggestionRequestId,
+    suggestionNotice,
+    suggestionStale,
+    suggestionEngine,
+    suggestionTiming,
+    elapsedSeconds,
+
     isActive,
     isButtonDisabled,
+    isQueued,
+    canCancel,
+    canAccept,
     editorTransitionKey,
 
     reset,
+    detach,
     pruneResolvedActions,
     toggleEditor,
     setContentReady,
     execute,
+    startReplySuggestion,
+    cancelGeneration,
+    dismiss,
+    dismissNotice,
+    retrySuggestion,
+    restoreForConversation,
     sendFollowUp,
     approveAction,
     rejectAction,

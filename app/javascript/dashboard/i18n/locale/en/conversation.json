@@ -280,6 +280,31 @@
       "START_AUDIO_RECORDING": "Start audio recording",
       "STOP_AUDIO_RECORDING": "Stop audio recording",
       "COPILOT_THINKING": "Assistant is thinking",
+      "COPILOT_SUGGESTION": {
+        "INSERT_AND_EDIT": "Insert and edit",
+        "CANCEL": "Cancel",
+        "REJECT": "Reject",
+        "REFINE_PLACEHOLDER": "What should be fixed? For example: shorter, offer a time for tomorrow",
+        "REFINE_BUTTON": "Refine with AI",
+        "EDIT_HINT": "After inserting, you can edit the text like a regular message",
+        "QUEUED": "Queued…",
+        "ELAPSED": "{elapsed} s of ~{budget} s",
+        "STALE_WARNING": "New customer messages arrived after this request. Check that the reply is still relevant.",
+        "LEGACY_ENGINE": "Prepared without an AI agent: no schedule and no knowledge base",
+        "NOTICE": {
+          "NO_REPLY_TITLE": "AI thinks no reply is needed:",
+          "HUMAN_NEEDED_TITLE": "A staff member is needed:",
+          "NO_REASON": "no reason given",
+          "FAILED_TITLE": "AI could not prepare a reply",
+          "UNAVAILABLE_TITLE": "AI suggestion is unavailable",
+          "RETRY": "Retry",
+          "DISMISS": "Dismiss",
+          "AGENT_LABEL": "Decision by agent {agent}",
+          "UNAVAILABLE_REASONS": {
+            "VOICE_CHANNEL_UNSUPPORTED": "Text cannot be sent during a call. Open the customer's messenger chat to get a suggestion."
+          }
+        }
+      },
       "EMAIL_HEAD": {
         "TO": "TO",
         "ADD_BCC": "Add bcc",

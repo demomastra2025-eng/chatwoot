@@ -14,6 +14,7 @@ import ReplyEmailHead from './ReplyEmailHead.vue';
 import ReplyBottomPanel from 'dashboard/components/widgets/WootWriter/ReplyBottomPanel.vue';
 import CopilotReplyBottomPanel from 'dashboard/components/widgets/WootWriter/CopilotReplyBottomPanel.vue';
 import CopilotEditorSection from './CopilotEditorSection.vue';
+import CopilotSuggestionNotice from './copilot/CopilotSuggestionNotice.vue';
 import MessageSignatureMissingAlert from './MessageSignatureMissingAlert.vue';
 import ReplyBoxBanner from './ReplyBoxBanner.vue';
 import QuotedEmailPreview from './QuotedEmailPreview.vue';
@@ -50,6 +51,7 @@ import {
   getEffectiveChannelType,
 } from 'dashboard/helper/editorHelper';
 import { useCopilotReply } from 'dashboard/composables/useCopilotReply';
+import { REPLY_SUGGESTION_PHASE } from 'dashboard/composables/captain/constants';
 import TasksAPI from 'dashboard/api/captain/tasks';
 import { useKbd } from 'dashboard/composables/utils/useKbd';
 import { isFileTypeAllowedForChannel } from 'shared/helpers/FileHelper';
@@ -89,6 +91,7 @@ export default {
     QuotedEmailPreview,
     CopilotEditorSection,
     CopilotReplyBottomPanel,
+    CopilotSuggestionNotice,
   },
   mixins: [inboxMixin, fileUploadMixin, keyboardEventListenerMixins],
   emits: ['toggleEditorSize', 'update:popOutReplyBox'],
@@ -103,7 +106,9 @@ export default {
 
     const replyEditor = useTemplateRef('replyEditor');
     const messageEditor = useTemplateRef('messageEditor');
-    const copilot = useCopilotReply();
+    // The reply box restores a running or finished suggestion when a
+    // conversation opens, so it opts in to syncing with the server.
+    const copilot = useCopilotReply({ syncSuggestions: true });
     const shortcutKey = useKbd(['$mod', '+', 'enter']);
 
     return {
@@ -569,6 +574,14 @@ export default {
     isDefaultEditorMode() {
       return !this.showAudioRecorderEditor && !this.copilot.isActive.value;
     },
+    // «ИИ считает, что ответ не нужен» / «Нужен сотрудник» / «ИИ не смог…»:
+    // information above the reply box, never text for the editor.
+    showSuggestionNotice() {
+      return (
+        this.copilot.suggestionPhase.value === REPLY_SUGGESTION_PHASE.NOTICE &&
+        Boolean(this.copilot.suggestionNotice.value)
+      );
+    },
     isEditorDisabled() {
       if (this.isCommunicationCallReplyAction) return false;
 
@@ -589,8 +602,9 @@ export default {
         // This prevents overwriting user input (e.g., CC/BCC fields) when performing actions
         // like self-assign or other updates that do not actually change the conversation context
         this.setCCAndToEmailsFromLastChat();
-        // Reset Copilot editor state (includes cancelling ongoing generation)
-        this.copilot.reset();
+        // Forget the previous chat's suggestion locally (a running server
+        // suggestion is not cancelled) and bring back this chat's one.
+        this.syncCopilotSuggestion();
       }
 
       if (this.isOnPrivateNote) {
@@ -651,6 +665,7 @@ export default {
 
   mounted() {
     this.syncSelectedReplyChannel();
+    this.syncCopilotSuggestion();
     this.getFromDraft();
     // Don't use the keyboard listener mixin here as the events here are supposed to be
     // working even if the editor is focussed.
@@ -700,6 +715,10 @@ export default {
     emitter.off(CMD_AI_ASSIST, this.executeCopilotAction);
   },
   methods: {
+    syncCopilotSuggestion() {
+      this.copilot.detach();
+      this.copilot.restoreForConversation();
+    },
     syncSelectedReplyChannel(conversation = this.currentChat) {
       if (!isCommunicationThread(conversation)) {
         this.selectedReplyConversationId = null;
@@ -917,7 +936,8 @@ export default {
         '$mod+Enter': {
           action: () => {
             if (this.copilot.isActive.value && this.isFocused) {
-              this.onSubmitCopilotReply();
+              // Nothing to insert while a suggestion is still generating
+              if (this.copilot.canAccept.value) this.onSubmitCopilotReply();
             } else if (this.isAValidEvent('cmd_enter')) {
               this.onSendReply();
             }
@@ -1110,6 +1130,8 @@ export default {
                 this.conversationId ||
                 this.conversationIdByRoute,
               requestId: copilotAcceptedMeta?.requestId || null,
+              suggestionRequestId:
+                copilotAcceptedMeta?.suggestionRequestId || undefined,
               copilotAction: copilotAcceptedMeta?.action || 'reply_suggestion',
               outcome: 'sent',
               editedBeforeSend,
@@ -1616,6 +1638,7 @@ export default {
       this.$nextTick(() => this.messageEditor?.focusEditorInputField());
     },
     onSubmitCopilotReply() {
+      if (!this.copilot.canAccept.value) return;
       const acceptedMessage = this.copilot.accept();
       const acceptedMeta = this.copilot.lastAcceptedMeta?.value || null;
       this.message = acceptedMessage;
@@ -1631,6 +1654,13 @@ export default {
 
 <template>
   <ReplyBoxBanner :message="message" :is-on-private-note="isOnPrivateNote" />
+  <CopilotSuggestionNotice
+    v-if="showSuggestionNotice"
+    :notice="copilot.suggestionNotice.value"
+    :stale="copilot.suggestionStale.value"
+    @dismiss="copilot.dismissNotice"
+    @retry="copilot.retrySuggestion"
+  />
   <div ref="replyEditor" class="reply-box" :class="replyBoxClass">
     <ReplyTopPanel
       :mode="replyType"
@@ -1709,12 +1739,16 @@ export default {
           :show-copilot-editor="copilot.showEditor.value"
           :is-generating-content="copilot.isGenerating.value"
           :generated-content="copilot.generatedContent.value"
-          :captain-trace="copilot.captainTrace.value"
           :suggestion-meta="copilot.suggestionMeta.value"
           :live-progress="copilot.liveProgress.value"
           :pending-actions="copilot.pendingActions.value"
           :action-loading-by-id="copilot.actionLoadingById.value"
-          :placeholder="$t('CONVERSATION.FOOTER.COPILOT_MSG_INPUT')"
+          :stale="copilot.suggestionStale.value"
+          :engine="copilot.suggestionEngine.value"
+          :is-queued="copilot.isQueued.value"
+          :placeholder="
+            $t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.REFINE_PLACEHOLDER')
+          "
           @focus="onFocus"
           @blur="onBlur"
           @clear-selection="clearEditorSelection"
@@ -1798,8 +1832,14 @@ export default {
         v-if="copilot.isActive.value"
         key="copilot-bottom-panel"
         :is-generating-content="copilot.isButtonDisabled.value"
+        :is-generating="copilot.isGenerating.value"
+        :can-cancel="copilot.canCancel.value"
+        :is-queued="copilot.isQueued.value"
+        :elapsed-seconds="copilot.elapsedSeconds.value"
+        :budget-seconds="copilot.suggestionTiming.value.budgetSeconds"
         @submit="onSubmitCopilotReply"
-        @cancel="copilot.reset"
+        @cancel="copilot.cancelGeneration"
+        @reject="copilot.dismiss"
       />
       <ReplyBottomPanel
         v-else

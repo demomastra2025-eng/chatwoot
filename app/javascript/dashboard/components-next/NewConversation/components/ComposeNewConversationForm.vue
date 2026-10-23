@@ -448,9 +448,12 @@ useKeyboardEvents({
     <CopilotReplyBottomPanel
       v-if="isCopilotActive && !inboxTypes.isVoice"
       :is-generating-content="copilot.isButtonDisabled.value"
+      :is-generating="copilot.isGenerating.value"
+      :can-cancel="copilot.canCancel.value"
       class="h-[3.25rem] !px-4 !py-2"
       @submit="onSubmitCopilotReply"
-      @cancel="copilot.reset"
+      @cancel="copilot.cancelGeneration"
+      @reject="copilot.dismiss"
     />
     <ActionButtons
       v-else

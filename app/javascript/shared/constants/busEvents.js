@@ -18,4 +18,5 @@ export const BUS_EVENTS = {
   CRM_DEAL_REALTIME_EVENT: 'crmDealRealtimeEvent',
   CRM_TASK_REALTIME_EVENT: 'crmTaskRealtimeEvent',
   CAPTAIN_REPLY_SUGGESTION_PROGRESS: 'captainReplySuggestionProgress',
+  CAPTAIN_REPLY_SUGGESTION_RESULT: 'captainReplySuggestionResult',
 };

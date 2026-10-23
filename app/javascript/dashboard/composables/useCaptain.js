@@ -218,47 +218,87 @@ export function useCaptain() {
   };
 
   /**
-   * Gets a reply suggestion for the current conversation.
+   * Starts a background reply suggestion run for the conversation.
+   * The backend answers 202 with a SuggestionState (queued or running); the
+   * draft is delivered later by the cable `result` event or the status GET.
+   * No alert is shown: the caller renders a notice card from the error.
    * @param {Object} [options={}] - Additional options.
+   * @param {string|number} [options.conversationId] - Conversation to run for. Defaults to the current one.
    * @param {AbortSignal} [options.signal] - AbortSignal to cancel the request.
-   * @returns {Promise<{message: string, followUpContext?: Object, captainTrace?: Object|null, suggestionMeta?: Object|null}>} The reply suggestion, optional follow-up context, and work trace metadata.
+   * @returns {Promise<{state: Object}|{errorCode: string|null, error: string|null, errorType: string}>}
    */
-  const getReplySuggestion = async (options = {}) => {
+  const startReplySuggestion = async (options = {}) => {
     try {
       const result = await TasksAPI.replySuggestion(
-        conversationId.value,
+        options.conversationId ?? conversationId.value,
         options.signal
       );
-      const {
-        data: {
-          message: generatedMessage,
-          follow_up_context: followUpContext,
-          captain_trace: captainTrace,
-          suggestion_meta: suggestionMeta,
-          pending_actions: pendingActions,
-          request_id: requestId,
-          error: backendError,
-        },
-      } = result;
-      if (!generatedMessage && backendError) {
-        useAlert(backendError);
-        return { message: '', errorType: CAPTAIN_ERROR_TYPES.API_ERROR };
+      const state = result?.data;
+      if (!state?.suggestion_request_id) {
+        return {
+          errorCode: null,
+          error: null,
+          errorType: CAPTAIN_ERROR_TYPES.API_ERROR,
+        };
       }
-      const resolvedPendingActions =
-        pendingActions || suggestionMeta?.pending_actions || null;
-      return {
-        message: generatedMessage,
-        followUpContext,
-        ...(captainTrace ? { captainTrace } : {}),
-        ...(suggestionMeta ? { suggestionMeta } : {}),
-        ...(resolvedPendingActions
-          ? { pendingActions: resolvedPendingActions }
-          : {}),
-        ...(requestId ? { requestId } : {}),
-      };
+      return { state };
     } catch (error) {
-      handleAPIError(error);
-      return { message: '', errorType: getErrorType(error) };
+      return {
+        errorCode: error.response?.data?.error_code || null,
+        error: error.response?.data?.error || null,
+        errorType: getErrorType(error),
+      };
+    }
+  };
+
+  /**
+   * Reads the reply suggestion state of the current user from the backend.
+   * Without `suggestionRequestId` it returns the newest unconsumed state of the
+   * conversation, with it that exact run.
+   * @param {Object} [options={}]
+   * @param {string|number} [options.conversationId] - Defaults to the current conversation.
+   * @param {string} [options.suggestionRequestId] - A specific run to read.
+   * @param {AbortSignal} [options.signal]
+   * @returns {Promise<{suggestion: Object|null, failed?: boolean, notFound?: boolean}>}
+   */
+  const getReplySuggestionStatus = async (options = {}) => {
+    try {
+      const result = await TasksAPI.replySuggestionStatus(
+        {
+          conversationId: options.conversationId ?? conversationId.value,
+          suggestionRequestId: options.suggestionRequestId,
+        },
+        options.signal
+      );
+      return { suggestion: result?.data?.suggestion || null };
+    } catch (error) {
+      return {
+        suggestion: null,
+        failed: true,
+        notFound: error.response?.status === 404,
+      };
+    }
+  };
+
+  /**
+   * Asks the backend to stop a queued or running reply suggestion.
+   * @param {Object} options
+   * @param {string|number} [options.conversationId] - Defaults to the current conversation.
+   * @param {string} options.suggestionRequestId - The run to cancel.
+   * @returns {Promise<{ok: boolean, status?: string}>}
+   */
+  const cancelReplySuggestion = async ({
+    conversationId: targetConversationId,
+    suggestionRequestId,
+  } = {}) => {
+    try {
+      const result = await TasksAPI.cancelReplySuggestion({
+        conversationId: targetConversationId ?? conversationId.value,
+        suggestionRequestId,
+      });
+      return { ok: true, status: result?.data?.status };
+    } catch {
+      return { ok: false };
     }
   };
 
@@ -320,7 +360,7 @@ export function useCaptain() {
       return summarizeConversation(options);
     }
     if (type === 'reply_suggestion') {
-      return getReplySuggestion(options);
+      return startReplySuggestion(options);
     }
     // All other types are rewrite operations
     return rewriteContent(content, type, options);
@@ -348,7 +388,9 @@ export function useCaptain() {
     // Task methods
     rewriteContent,
     summarizeConversation,
-    getReplySuggestion,
+    startReplySuggestion,
+    getReplySuggestionStatus,
+    cancelReplySuggestion,
     followUp,
     processEvent,
   };
