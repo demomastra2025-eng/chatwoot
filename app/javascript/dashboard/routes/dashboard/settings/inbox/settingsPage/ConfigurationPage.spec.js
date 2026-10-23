@@ -2711,7 +2711,9 @@ describe('ConfigurationPage calls tab layout', () => {
     const callsSection = calls.find('form > section');
     const hint = callsSection.find('[data-testid="virtual-pbx-calls-hint"]');
 
-    expect(callsSection.classes()).toContain('lg:[&>div:first-child]:!flex-col');
+    expect(callsSection.classes()).toContain(
+      'lg:[&>div:first-child]:!flex-col'
+    );
     expect(hint.text()).toBe('INBOX_MGMT.EDIT.VOICE_CALLS.CALLS_HINT');
     expect(
       configuration.find('[data-testid="virtual-pbx-calls-hint"]').exists()

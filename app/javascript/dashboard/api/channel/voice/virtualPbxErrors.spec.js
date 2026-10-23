@@ -237,7 +237,7 @@ describe('virtualPbxWarningText', () => {
     });
     warningKeys(ruLocale).forEach(code => {
       expect(
-        ru.t(`INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.WARNINGS.${code}`),
+        ruLocale.INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.WARNINGS[code],
         code
       ).toMatch(/[А-Яа-яЁё]/);
     });
