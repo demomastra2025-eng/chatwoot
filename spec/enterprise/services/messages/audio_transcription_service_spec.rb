@@ -183,7 +183,7 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
           account: service.account,
           model: 'gpt-4o-transcribe',
           input: instance_of(String),
-          options: { temperature: 0.4, prompt: 'Transcribe Kazakh and Russian accurately.' }
+          options: { temperature: 0, prompt: 'Transcribe Kazakh and Russian accurately.' }
         )
         expect(kwargs[:observability]).to include(
           runtime_mode: 'audio_transcription',
@@ -206,7 +206,7 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
       expect(service.send(:transcribe_audio)).to eq('Existing transcription')
     end
 
-    it 'uses OpenRouter chat audio input when an OpenRouter audio model is selected' do
+    it 'uses OpenRouter chat audio input when an OpenRouter audio model is selected', :aggregate_failures do
       response = instance_double(RubyLLM::Message, content: 'OpenRouter transcription')
 
       allow(service).to receive(:model).and_return('openai/gpt-audio-mini')
@@ -225,7 +225,8 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
         )
         content = kwargs.dig(:messages, 0, :content)
         expect(content).to be_a(RubyLLM::Content)
-        expect(content.text).to include('Transcribe the attached audio accurately')
+        expect(content.text).to include('Transcribe the attached audio accurately', 'Transcribe Kazakh and Russian accurately.')
+        expect(content.text).not_to include(Messages::AudioTranscriptionPrompt::CHAT_LANGUAGE_HINT)
         expect(content.attachments.first.type).to eq(:audio)
         expect(kwargs[:observability]).to include(runtime_mode: 'audio_transcription', provider: 'openrouter')
         response
@@ -235,7 +236,7 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
       expect(attachment.reload.meta).to eq({ 'transcribed_text' => 'OpenRouter transcription' })
     end
 
-    it 'normalizes Ogg Opus audio to WAV before sending it to OpenRouter audio input models' do
+    it 'normalizes Ogg Opus audio to WAV before sending it to OpenRouter audio input models', :aggregate_failures do
       response = instance_double(RubyLLM::Message, content: 'OpenRouter Opus transcription')
 
       attachment.file.detach
@@ -285,7 +286,7 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
           account: service.account,
           model: 'openai/gpt-4o-mini-transcribe',
           input: instance_of(String),
-          options: { temperature: 0.4, prompt: 'Transcribe Kazakh and Russian accurately.' }
+          options: { temperature: 0, prompt: 'Transcribe Kazakh and Russian accurately.' }
         )
         expect(kwargs[:observability]).to include(runtime_mode: 'audio_transcription', provider: 'openrouter')
         transcription
@@ -293,6 +294,62 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
 
       expect(service.send(:transcribe_audio)).to eq('OpenRouter STT transcription')
       expect(attachment.reload.meta).to eq({ 'transcribed_text' => 'OpenRouter STT transcription' })
+    end
+
+    context 'when the workspace has no transcription prompt' do
+      let(:context_sample) { Messages::AudioTranscriptionPrompt::CONTEXT_SAMPLE }
+
+      before do
+        account.update!(captain_runtime: {})
+        allow(Llm::Models).to receive(:type_for).and_call_original
+      end
+
+      def stub_transcription_endpoint(text)
+        allow(service).to receive(:model).and_return('openai/gpt-4o-mini-transcribe')
+        allow(Llm::Config).to receive(:provider_for_model).with('openai/gpt-4o-mini-transcribe', account: account).and_return('openrouter')
+        allow(Llm::Models).to receive(:type_for).with('openai/gpt-4o-mini-transcribe', account: account).and_return('transcription')
+        allow(Llm::Runtime).to receive(:transcribe).and_return(RubyLLM::Transcription.new(text: text, model: 'openai/gpt-4o-mini-transcribe'))
+      end
+
+      it 'sends the built-in Kazakh and Russian context at temperature 0 and leaves the language to the model' do
+        stub_transcription_endpoint('Сәлеметсіз бе, ертеңге жазылуға бола ма?')
+
+        expect(service.send(:transcribe_audio)).to eq('Сәлеметсіз бе, ертеңге жазылуға бола ма?')
+        expect(Llm::Runtime).to have_received(:transcribe).with(
+          hash_including(options: { temperature: 0, prompt: context_sample })
+        )
+      end
+
+      it 'drops the built-in context when the model returns it with the transcript' do
+        stub_transcription_endpoint("#{context_sample} Ертеңге жазылуға бола ма?")
+
+        expect(service.send(:transcribe_audio)).to eq('Ертеңге жазылуға бола ма?')
+        expect(attachment.reload.meta).to eq({ 'transcribed_text' => 'Ертеңге жазылуға бола ма?' })
+      end
+
+      it 'stores nothing when the model returns only the built-in context' do
+        stub_transcription_endpoint(context_sample)
+
+        expect(service.send(:transcribe_audio)).to eq('')
+        expect(attachment.reload.meta).to be_blank
+      end
+
+      it 'tells a chat audio model the same in words' do
+        allow(service).to receive(:model).and_return('openai/gpt-audio-mini')
+        allow(Llm::Config).to receive(:provider_for_model).with('openai/gpt-audio-mini', account: account).and_return('openrouter')
+        allow(Llm::Models).to receive(:type_for).with('openai/gpt-audio-mini', account: account).and_return('chat')
+        allow(Llm::Models).to receive(:supports_audio_input?).with('openai/gpt-audio-mini', account: account).and_return(true)
+        allow(Llm::Runtime).to receive(:chat).and_return(instance_double(RubyLLM::Message, content: 'Сәлеметсіз бе'))
+
+        expect(service.send(:transcribe_audio)).to eq('Сәлеметсіз бе')
+        expect(Llm::Runtime).to have_received(:chat) do |**kwargs|
+          expect(kwargs[:options]).to eq({ temperature: 0 })
+          expect(kwargs.dig(:messages, 0, :content).text).to eq(
+            "#{Messages::AudioTranscriptionPrompt::CHAT_INSTRUCTION}
+#{Messages::AudioTranscriptionPrompt::CHAT_LANGUAGE_HINT}"
+          )
+        end
+      end
     end
   end
 end

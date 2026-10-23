@@ -1,18 +1,9 @@
 class Messages::AudioTranscriptionService < Llm::BaseAiService
   include Integrations::LlmInstrumentation
-  SUPPORTED_AUDIO_EXTENSIONS = %w[
-    aac
-    flac
-    m4a
-    mp3
-    mp4
-    mpeg
-    mpga
-    oga
-    ogg
-    wav
-    webm
-  ].freeze
+
+  # Transcription is reading, not writing: the most likely text, the same on every run. A higher temperature made
+  # gpt-4o-mini-transcribe drift between Kazakh and Kyrgyz spelling on short Kazakh clips.
+  TRANSCRIPTION_TEMPERATURE = 0
 
   attr_reader :attachment, :message, :account
 
@@ -48,44 +39,41 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     account.captain_quota_available?
   end
 
+  def audio_file
+    @audio_file ||= Messages::AudioTranscriptionFile.new(attachment)
+  end
+
   def fetch_audio_file
-    blob = attachment.file.blob
-    temp_dir = Rails.root.join('tmp/uploads/audio-transcriptions')
-    FileUtils.mkdir_p(temp_dir)
-    temp_file_name = transcription_temp_file_name(blob)
-
-    temp_file_path = File.join(temp_dir, temp_file_name)
-
-    File.open(temp_file_path, 'wb') do |file|
-      blob.open do |blob_file|
-        IO.copy_stream(blob_file, file)
-      end
-    end
-
-    temp_file_path
+    audio_file.copy_to_temp_file
   end
 
   def transcribe_audio
-    transcribed_text = cached_transcription || ''
-    return transcribed_text if transcribed_text.present?
+    return cached_transcription if cached_transcription.present?
 
     temp_file_path = fetch_audio_file
     provider_file_path = audio_file_path_for_provider(temp_file_path)
     observability = instrumentation_params(provider_file_path)
-    response = instrument_audio_transcription(observability) do
-      if openrouter_chat_transcription?
-        transcribe_with_openrouter_chat(provider_file_path, observability)
-      else
-        transcribe_with_transcription_endpoint(provider_file_path, observability)
-      end
-    end
-    transcribed_text = response.respond_to?(:text) ? response.text.to_s : response.to_s
+    response = instrument_audio_transcription(observability) { request_transcription(provider_file_path, observability) }
+    transcribed_text = transcription_prompt.without_echoed_context(response_text(response))
 
     update_transcription(transcribed_text)
     transcribed_text
   ensure
-    FileUtils.rm_f(temp_file_path) if temp_file_path.present?
-    FileUtils.rm_f(provider_file_path) if provider_file_path.present? && provider_file_path != temp_file_path
+    remove_temp_files(temp_file_path, provider_file_path)
+  end
+
+  def request_transcription(provider_file_path, observability)
+    return transcribe_with_openrouter_chat(provider_file_path, observability) if openrouter_chat_transcription?
+
+    transcribe_with_transcription_endpoint(provider_file_path, observability)
+  end
+
+  def response_text(response)
+    response.respond_to?(:text) ? response.text.to_s : response.to_s
+  end
+
+  def remove_temp_files(*paths)
+    paths.compact_blank.uniq.each { |path| FileUtils.rm_f(path) }
   end
 
   def instrumentation_params(file_path)
@@ -108,7 +96,7 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
   end
 
   def transcription_prompt
-    account.captain_audio_transcription_prompt
+    @transcription_prompt ||= Messages::AudioTranscriptionPrompt.new(account.captain_audio_transcription_prompt)
   end
 
   def openrouter_chat_transcription?
@@ -140,6 +128,7 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     temp_file_path
   end
 
+  # No `language`: it stays detected per message, because many voice messages are in Russian
   def transcribe_with_transcription_endpoint(temp_file_path, observability)
     Llm::Runtime.transcribe(
       feature: :audio_transcription,
@@ -147,7 +136,7 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
       model: model,
       input: temp_file_path,
       observability: observability.merge(runtime_mode: 'audio_transcription', provider: 'openrouter'),
-      options: { temperature: 0.4, prompt: transcription_prompt }
+      options: { temperature: TRANSCRIPTION_TEMPERATURE, prompt: transcription_prompt.for_transcription_endpoint }
     )
   end
 
@@ -159,21 +148,14 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
       messages: [
         {
           role: 'user',
-          content: RubyLLM::Content.new(openrouter_transcription_prompt, [temp_file_path])
+          content: RubyLLM::Content.new(transcription_prompt.for_chat, [temp_file_path])
         }
       ],
       observability: observability.merge(runtime_mode: 'audio_transcription', provider: 'openrouter'),
-      options: { temperature: 0 }
+      options: { temperature: TRANSCRIPTION_TEMPERATURE }
     )
 
     response&.content.to_s
-  end
-
-  def openrouter_transcription_prompt
-    [
-      'Transcribe the attached audio accurately. Return only the transcript text, without markdown or commentary.',
-      transcription_prompt.presence
-    ].compact.join("\n")
   end
 
   def update_transcription(transcribed_text)
@@ -188,47 +170,8 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     message.reindex
   end
 
-  def extension_from_content_type(content_type)
-    subtype = content_type.to_s.downcase.split(';').first.to_s.split('/').last.to_s
-    return if subtype.blank?
-
-    {
-      'x-m4a' => 'm4a',
-      'x-wav' => 'wav',
-      'x-mp3' => 'mp3',
-      'opus' => 'ogg'
-    }.fetch(subtype, subtype)
-  end
-
-  def transcription_temp_file_name(blob)
-    original_filename = blob.filename
-    filename_extension = original_filename.extension_without_delimiter.to_s.downcase
-    extension = supported_audio_extension || extension_from_content_type(blob.content_type)
-
-    return "#{blob.key}-#{original_filename}" if extension.blank? || filename_extension == extension
-
-    filename_base = original_filename.base.presence || original_filename.to_s
-    "#{blob.key}-#{filename_base}.#{extension}"
-  end
-
   def supported_attachment_format?
-    supported_audio_extension.present?
-  end
-
-  def supported_audio_extension
-    return @supported_audio_extension if defined?(@supported_audio_extension)
-
-    @supported_audio_extension = supported_audio_extensions.find { |extension| extension.in?(SUPPORTED_AUDIO_EXTENSIONS) }
-  end
-
-  def supported_audio_extensions
-    return [] unless attachment.file.attached?
-
-    blob = attachment.file.blob
-    [
-      extension_from_content_type(blob.content_type),
-      blob.filename.extension_without_delimiter
-    ].filter_map { |extension| extension.to_s.downcase.presence }
+    audio_file.supported?
   end
 
   def unsupported_audio_format_result
