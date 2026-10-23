@@ -138,9 +138,9 @@ describe('getWeixinConnectionStatus', () => {
     ['qr_scanned', 'disconnected'],
     ['connected', 'connecting'],
   ])('is connecting for %s / %s', (lifecycleState, connectionState) => {
-    expect(
-      getWeixinConnectionStatus({ lifecycleState, connectionState })
-    ).toBe(CONNECTION_STATUS.CONNECTING);
+    expect(getWeixinConnectionStatus({ lifecycleState, connectionState })).toBe(
+      CONNECTION_STATUS.CONNECTING
+    );
   });
 
   it.each([
@@ -151,9 +151,9 @@ describe('getWeixinConnectionStatus', () => {
     ['disconnected', 'connected'],
     ['', ''],
   ])('has no connection for %s / %s', (lifecycleState, connectionState) => {
-    expect(
-      getWeixinConnectionStatus({ lifecycleState, connectionState })
-    ).toBe(CONNECTION_STATUS.DISCONNECTED);
+    expect(getWeixinConnectionStatus({ lifecycleState, connectionState })).toBe(
+      CONNECTION_STATUS.DISCONNECTED
+    );
   });
 
   it('agrees with the channels list about a connected account', () => {

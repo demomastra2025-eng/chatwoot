@@ -116,7 +116,10 @@ describe('channel settings texts in Russian', () => {
 
 describe('one wording for the state of a channel', () => {
   it('calls a working channel «Подключён» in the header, the list and the badges', () => {
-    const wording = pick(ruInbox, 'INBOX_MGMT.EDIT.CONNECTION_STATUS.CONNECTED');
+    const wording = pick(
+      ruInbox,
+      'INBOX_MGMT.EDIT.CONNECTION_STATUS.CONNECTED'
+    );
 
     expect(wording).toBe('Подключён');
     expect(pick(ruInbox, 'INBOX_MGMT.HEALTH_STATUS.CONNECTED')).toBe(wording);
@@ -197,16 +200,18 @@ describe('WhatsApp Web developer block texts', () => {
     ['ru', ruInbox],
     ['en', enInbox],
     ['kk', kkInbox],
-  ])('writes the captions of the WeChat grid without a colon in %s', (_, tree) => {
-    ['PROVIDER_ACCOUNT_ID', 'STATUS', 'CONNECTION', 'LAST_SYNCED'].forEach(
-      key => {
-        expect(
-          pick(tree, `INBOX_MGMT.EDIT.WEIXIN.${key}`),
-          key
-        ).not.toMatch(/:\s*$/);
-      }
-    );
-  });
+  ])(
+    'writes the captions of the WeChat grid without a colon in %s',
+    (_, tree) => {
+      ['PROVIDER_ACCOUNT_ID', 'STATUS', 'CONNECTION', 'LAST_SYNCED'].forEach(
+        key => {
+          expect(pick(tree, `INBOX_MGMT.EDIT.WEIXIN.${key}`), key).not.toMatch(
+            /:\s*$/
+          );
+        }
+      );
+    }
+  );
 });
 
 describe('WhatsApp template rejection reasons', () => {
@@ -224,14 +229,20 @@ describe('WhatsApp template rejection reasons', () => {
     ['ru', ruTemplates],
     ['en', enTemplates],
     ['kk', kkTemplates],
-  ])('has a text for every reason in %s, including the generic one', (_, tree) => {
-    reasons.forEach(reason => {
-      expect(
-        pick(tree, `WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASONS.${reason}`),
-        reason
-      ).toEqual(expect.any(String));
-    });
-  });
+  ])(
+    'has a text for every reason in %s, including the generic one',
+    (_, tree) => {
+      reasons.forEach(reason => {
+        expect(
+          pick(
+            tree,
+            `WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASONS.${reason}`
+          ),
+          reason
+        ).toEqual(expect.any(String));
+      });
+    }
+  );
 
   it('explains the promotional reason and the generic one in Russian', () => {
     expect(

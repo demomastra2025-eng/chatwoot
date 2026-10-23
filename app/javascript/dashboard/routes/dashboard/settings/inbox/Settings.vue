@@ -3467,9 +3467,7 @@ export default {
                     />
                     <div class="min-w-0 flex-1 break-words text-xs">
                       <span class="font-semibold">
-                        {{
-                          $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.LAST_ERROR')
-                        }}
+                        {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.LAST_ERROR') }}
                       </span>
                       {{ telegramPersonalLastError }}
                     </div>
@@ -3986,7 +3984,9 @@ export default {
                       slate
                       xs
                       icon="i-lucide-bug"
-                      :label="$t('INBOX_MGMT.EDIT.WEIXIN.RAW_DIAGNOSTICS_TOGGLE')"
+                      :label="
+                        $t('INBOX_MGMT.EDIT.WEIXIN.RAW_DIAGNOSTICS_TOGGLE')
+                      "
                       @click="
                         isWeixinRawDiagnosticsVisible =
                           !isWeixinRawDiagnosticsVisible

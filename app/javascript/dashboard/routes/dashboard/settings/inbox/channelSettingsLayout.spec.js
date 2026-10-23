@@ -164,7 +164,11 @@ describe('Channel settings title', () => {
     expect(
       nameFor({
         isATwilioSMSChannel: true,
-        inbox: { name: 'Clinic', messaging_service_sid: null, phone_number: null },
+        inbox: {
+          name: 'Clinic',
+          messaging_service_sid: null,
+          phone_number: null,
+        },
       })
     ).toBe('Clinic');
   });

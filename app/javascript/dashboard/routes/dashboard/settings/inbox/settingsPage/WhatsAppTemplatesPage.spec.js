@@ -441,12 +441,12 @@ describe('WhatsAppTemplatesPage', () => {
   });
 
   describe('toolbar', () => {
-    const toolbarFor = (inbox = {}) =>
+    const toolbarFor = (overrides = {}) =>
       mountComponent({
         id: 7,
         csat_config: {},
         message_templates: [template('agent_reply')],
-        ...inbox,
+        ...overrides,
       }).find('[data-test="whatsapp-templates-toolbar"]');
 
     beforeEach(() => {

@@ -19,10 +19,7 @@ import {
   getTemplateStatusTone,
   matchesWhatsAppTemplateSearch,
 } from 'dashboard/helper/whatsappTemplateLibrary';
-import {
-  getIntlLocale,
-  getLanguageName,
-} from '../helpers/intlLocale';
+import { getIntlLocale, getLanguageName } from '../helpers/intlLocale';
 
 const props = defineProps({
   embedded: {
