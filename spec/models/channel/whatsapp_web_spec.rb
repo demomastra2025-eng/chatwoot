@@ -368,6 +368,16 @@ RSpec.describe Channel::WhatsappWeb do
           channel.request_history_sync!(
             'full',
             expected_provider_history_synced_at: newer_snapshot
+    it 'prefers the nested response message over the bare HTTP reason' do
+      raw_error = {
+        status: 400,
+        error: 'Bad Request',
+        response: { message: ['Error: Connection Closed'] }
+      }
+
+      expect(described_class.human_readable_error_message(raw_error)).to eq('Error: Connection Closed')
+    end
+
           )
         end.to have_enqueued_job(Channels::WhatsappWeb::HistorySyncJob).with(
           channel.id,

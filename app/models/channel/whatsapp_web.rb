@@ -202,6 +202,7 @@ class Channel::WhatsappWeb < ApplicationRecord
       return if text.blank?
 
       parsed = begin
+        extract_error_message(value['response'] || value[:response]).presence ||
         JSON.parse(text)
       rescue JSON::ParserError
         nil

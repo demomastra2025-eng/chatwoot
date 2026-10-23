@@ -1,6 +1,5 @@
 class WhatsappWeb::RetryFailedProvisionalMessagesService
   RETRY_WINDOW = 5.minutes
-  PROVISIONAL_LID_ERROR_FRAGMENT = 'provisional @lid identity'.freeze
   RETRY_ATTEMPTED_AT_KEY = 'whatsapp_web_provisional_lid_retry_attempted_at'.freeze
 
   pattr_initialize [:channel!, :contact!]
@@ -38,7 +37,7 @@ class WhatsappWeb::RetryFailedProvisionalMessagesService
   end
 
   def provisional_lid_failure?(message)
-    message.external_error.to_s.include?(PROVISIONAL_LID_ERROR_FRAGMENT)
+    WhatsappWeb::DeliveryFailureReason.unroutable_recipient?(message.external_error)
   end
 
   def superseded_message?(message)

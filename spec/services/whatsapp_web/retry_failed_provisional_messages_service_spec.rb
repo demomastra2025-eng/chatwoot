@@ -71,6 +71,23 @@ RSpec.describe WhatsappWeb::RetryFailedProvisionalMessagesService do
     expect(stale_message.reload.status).to eq('failed')
   end
 
+  it 'also retries failures stored with the Russian unroutable-recipient reason' do
+    retryable_message = create(
+      :message,
+      account: channel.account,
+      inbox: channel.inbox,
+      conversation: conversation,
+      message_type: :outgoing,
+      status: :failed,
+      content_attributes: { external_error: 'Не удалось определить номер получателя' }
+    )
+
+    clear_enqueued_jobs
+
+    expect { service.perform }.to have_enqueued_job(SendReplyJob).with(retryable_message.id)
+    expect(retryable_message.reload.status).to eq('sent')
+  end
+
   it 'does not retry the same message twice' do
     retryable_message = create(
       :message,
