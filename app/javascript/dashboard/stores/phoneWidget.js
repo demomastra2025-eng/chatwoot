@@ -11,8 +11,7 @@ const PHONE_WIDGET_STATUS_COLORS = {
   error: 'bg-n-ruby-9',
 };
 
-export const SELECTED_INBOX_STORAGE_KEY =
-  'onelink:phone-widget-selected-inbox';
+export const SELECTED_INBOX_STORAGE_KEY = 'onelink:phone-widget-selected-inbox';
 
 const CARRIER_LABELS = {
   altel: 'Altel',
@@ -145,4 +144,3 @@ export const usePhoneWidgetStore = defineStore('phoneWidget', {
     },
   },
 });
-

@@ -183,9 +183,7 @@ class WebphoneClient extends EventTarget {
     Object.values(this.nativeSipClients).forEach(client => {
       if (client?.registrationInstanceId !== registrationInstanceId) return;
 
-      Promise.resolve(client.refreshPresenceRegistration?.()).catch(
-        () => null
-      );
+      Promise.resolve(client.refreshPresenceRegistration?.()).catch(() => null);
     });
   }
 

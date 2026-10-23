@@ -608,7 +608,9 @@ describe('PhoneWidget', () => {
         .trigger('click');
       await flushPromises();
 
-      expect(alertMock).toHaveBeenCalledWith('PHONE_WIDGET.LINE_BUSY_ELSEWHERE');
+      expect(alertMock).toHaveBeenCalledWith(
+        'PHONE_WIDGET.LINE_BUSY_ELSEWHERE'
+      );
     });
 
     it('shows the phone and points to the button when a call could not start', async () => {
@@ -1810,7 +1812,9 @@ describe('PhoneWidget', () => {
         wrapper.find('[data-testid="phone-widget-lines-summary"]').exists()
       ).toBe(false);
 
-      const linesToggle = wrapper.get('[data-testid="phone-widget-lines-toggle"]');
+      const linesToggle = wrapper.get(
+        '[data-testid="phone-widget-lines-toggle"]'
+      );
       const linesList = wrapper.get('[data-testid="phone-widget-lines-list"]');
       expect(linesToggle.attributes('aria-expanded')).toBe('false');
       expect(linesList.element.style.display).toBe('none');

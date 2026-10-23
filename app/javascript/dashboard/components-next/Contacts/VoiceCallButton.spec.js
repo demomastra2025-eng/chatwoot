@@ -986,15 +986,15 @@ describe('VoiceCallButton', () => {
       },
     });
 
-    const options = wrapper.findAll('[data-testid="voice-inbox-picker-option"]');
+    const options = wrapper.findAll(
+      '[data-testid="voice-inbox-picker-option"]'
+    );
     expect(options).toHaveLength(2);
     expect(options[0].attributes('data-inbox-id')).toBe('4674');
     expect(options[0].attributes('data-selected')).toBe('true');
     expect(options[0].attributes('data-line-status')).toBe('ready');
     expect(
-      options[0]
-        .get('[data-testid="voice-inbox-picker-status-dot"]')
-        .classes()
+      options[0].get('[data-testid="voice-inbox-picker-status-dot"]').classes()
     ).toContain('bg-n-teal-9');
     expect(
       options[0].get('[data-testid="voice-inbox-picker-provider"]').text()
@@ -1009,9 +1009,7 @@ describe('VoiceCallButton', () => {
     expect(options[1].attributes('data-selected')).toBe('false');
     expect(options[1].attributes('data-line-status')).toBe('error');
     expect(
-      options[1]
-        .get('[data-testid="voice-inbox-picker-status-dot"]')
-        .classes()
+      options[1].get('[data-testid="voice-inbox-picker-status-dot"]').classes()
     ).toContain('bg-n-ruby-9');
     expect(
       options[1].get('[data-testid="voice-inbox-picker-provider"]').text()

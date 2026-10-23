@@ -551,7 +551,9 @@ defineExpose({ onClick });
               data-testid="voice-inbox-picker-selected-badge"
             >
               <i class="i-lucide-check text-[10px]" aria-hidden="true" />
-              <span class="sr-only">{{ t('PHONE_WIDGET.SELECTED_FOR_CALL') }}</span>
+              <span class="sr-only">{{
+                t('PHONE_WIDGET.SELECTED_FOR_CALL')
+              }}</span>
             </span>
           </div>
         </button>
