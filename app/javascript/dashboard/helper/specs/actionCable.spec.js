@@ -870,6 +870,25 @@ describe('ActionCableConnector', () => {
       );
     });
 
+    it('tells the phone when its line was moved to another computer', () => {
+      const data = {
+        account_id: 1,
+        sip_profile_id: 48,
+        inbox_id: 4776,
+        registration_instance_id: 'registration-old',
+      };
+
+      actionCable.onReceived({
+        event: 'telephony.webphone_lease_taken_over',
+        data,
+      });
+
+      expect(emitter.emit).toHaveBeenCalledWith(
+        BUS_EVENTS.TELEPHONY_WEBPHONE_LEASE_TAKEN_OVER,
+        data
+      );
+    });
+
     it('keeps communication thread ids from native voice status updates', () => {
       const callsStore = useCallsStore();
 

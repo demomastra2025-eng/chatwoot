@@ -16,6 +16,7 @@ const {
   uploadRecordingMock,
   updatePresenceMock,
   updatePresenceOnUnloadMock,
+  releaseLeaseOnUnloadMock,
   getNativeWebphoneTokenMock,
 } = vi.hoisted(() => ({
   attachMock: vi.fn(),
@@ -40,6 +41,7 @@ const {
     })
   ),
   updatePresenceOnUnloadMock: vi.fn(() => Promise.resolve(null)),
+  releaseLeaseOnUnloadMock: vi.fn(() => true),
   getNativeWebphoneTokenMock: vi.fn(),
 }));
 
@@ -113,6 +115,7 @@ vi.mock('./voiceAPIClient', () => ({
     uploadWebphoneRecording: uploadRecordingMock,
     updateWebphonePresence: updatePresenceMock,
     updateWebphonePresenceOnUnload: updatePresenceOnUnloadMock,
+    releaseWebphoneLeaseOnUnload: releaseLeaseOnUnloadMock,
     getNativeWebphoneToken: getNativeWebphoneTokenMock,
   },
 }));
@@ -375,6 +378,7 @@ describe('janusSipVoiceClient', () => {
     uploadRecordingMock.mockClear();
     updatePresenceMock.mockClear();
     updatePresenceOnUnloadMock.mockClear();
+    releaseLeaseOnUnloadMock.mockClear();
     getNativeWebphoneTokenMock.mockReset();
     getNativeWebphoneTokenMock.mockResolvedValue({
       ...sipuniSession,
@@ -573,6 +577,32 @@ describe('janusSipVoiceClient', () => {
       );
     });
     expect(updatePresenceMock).not.toHaveBeenCalled();
+  });
+
+  it('also frees the line with its release key, which works without a session', async () => {
+    await JanusSipVoiceClient.initializeDevice(
+      { ...sipuniSession, registration_release_key: 'signed-release-key' },
+      { inboxId: 4769 }
+    );
+
+    await JanusSipVoiceClient.destroyDevice({ keepalivePresence: true });
+
+    expect(releaseLeaseOnUnloadMock).toHaveBeenCalledWith('signed-release-key');
+    expect(updatePresenceOnUnloadMock).toHaveBeenCalledWith(
+      false,
+      expect.objectContaining({ inboxId: 4769 })
+    );
+  });
+
+  it('does not send the release beacon for an ordinary teardown', async () => {
+    await JanusSipVoiceClient.initializeDevice(
+      { ...sipuniSession, registration_release_key: 'signed-release-key' },
+      { inboxId: 4769 }
+    );
+
+    await JanusSipVoiceClient.destroyDevice();
+
+    expect(releaseLeaseOnUnloadMock).not.toHaveBeenCalled();
   });
 
   it('can wait until the offline presence reached the server before the session ends', async () => {

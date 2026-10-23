@@ -91,6 +91,8 @@ vi.mock('dashboard/api/channel/voice/janusSipVoiceClient', () => ({
   createJanusSipVoiceClient: janusClientFactoryMock,
 }));
 
+import { BUS_EVENTS } from 'shared/constants/busEvents';
+import { emitter } from 'shared/helpers/mitt';
 import WebphoneClient from './webphoneClient';
 
 describe('webphoneClient', () => {
@@ -2261,6 +2263,80 @@ describe('webphoneClient', () => {
 
       expect(getNativeWebphoneTokenMock).not.toHaveBeenCalled();
       expect(janusDestroyMock).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('when the line is open on another computer', () => {
+    const lineElsewhereResponse = (overrides = {}) => ({
+      provider: 'sipuni',
+      calling_supported: false,
+      reason: 'sip_profile_registration_lease_owned_by_another_tab',
+      sip_profile_id: 83,
+      session_key: 'sip_profile:83',
+      inbox_id: 42,
+      ...overrides,
+    });
+
+    afterEach(() => {
+      // A line in standby keeps retrying in the background.
+      Object.values(WebphoneClient.nativeSessionRetryTimers).forEach(timer =>
+        window.clearTimeout(timer)
+      );
+      WebphoneClient.nativeSessionRetryTimers = {};
+    });
+
+    it('asks the server to take the line over only for the explicit move', async () => {
+      getNativeWebphoneTokenMock.mockResolvedValue(lineElsewhereResponse());
+
+      await WebphoneClient.initializeDevice(42, { native: true });
+      await WebphoneClient.initializeDevice(42, {
+        native: true,
+        takeover: true,
+      });
+
+      expect(getNativeWebphoneTokenMock.mock.calls).toEqual([
+        [42],
+        [42, { takeover: true }],
+      ]);
+    });
+
+    it('reports why the line stayed on the other computer', async () => {
+      getNativeWebphoneTokenMock.mockResolvedValue(
+        lineElsewhereResponse({ takeover_refused: 'call_in_progress' })
+      );
+
+      const session = await WebphoneClient.initializeDevice(42, {
+        native: true,
+        takeover: true,
+      });
+
+      expect(session).toMatchObject({
+        registered: false,
+        reason: 'sip_profile_registration_lease_owned_by_another_tab',
+        takeoverRefused: 'call_in_progress',
+      });
+    });
+
+    it('makes the tab that lost the line check its registration at once', () => {
+      const lostLine = {
+        registrationInstanceId: 'registration-old',
+        refreshPresenceRegistration: vi.fn(() => Promise.resolve()),
+      };
+      const otherLine = {
+        registrationInstanceId: 'registration-other-line',
+        refreshPresenceRegistration: vi.fn(() => Promise.resolve()),
+      };
+      WebphoneClient.nativeSipClients['sip_profile:83'] = lostLine;
+      WebphoneClient.nativeSipClients['sip_profile:84'] = otherLine;
+
+      emitter.emit(BUS_EVENTS.TELEPHONY_WEBPHONE_LEASE_TAKEN_OVER, {
+        account_id: 530,
+        sip_profile_id: 83,
+        registration_instance_id: 'registration-old',
+      });
+
+      expect(lostLine.refreshPresenceRegistration).toHaveBeenCalledOnce();
+      expect(otherLine.refreshPresenceRegistration).not.toHaveBeenCalled();
     });
   });
 });

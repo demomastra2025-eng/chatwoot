@@ -1,4 +1,8 @@
 class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Telephony::BaseController
+  # navigator.sendBeacon from a closing or signed-out tab carries no auth
+  # headers; the signed release key is the credential.
+  skip_before_action :authenticate_user!, :ensure_active_auth_session!, only: [:release], raise: false
+
   def create
     inbox = Current.account.inboxes.find_by(id: params[:inbox_id]) if params[:inbox_id].present?
     authorize inbox, :show? if inbox.present?
@@ -9,9 +13,17 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
         inbox: inbox,
         client_instance_id: params[:client_instance_id],
         browser_instance_id: params[:browser_instance_id],
-        lease_mode: params[:lease_mode]
+        lease_mode: params[:lease_mode],
+        takeover: params[:takeover]
       )
     )
+  end
+
+  def release
+    outcome = webphone_service.release_registration_lease!(release_key: params[Telephony::WebphoneLeaseReleaseKey::PARAM])
+    return render_error(code: 'WEBPHONE_RELEASE_KEY_INVALID', error: 'Release key is invalid', status: :forbidden) if outcome == :invalid
+
+    render_payload(released: outcome == :released)
   end
 
   def presence

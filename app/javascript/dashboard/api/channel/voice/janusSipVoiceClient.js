@@ -341,6 +341,10 @@ export class JanusSipVoiceClient extends EventTarget {
         sessionConfig.registrationInstanceId ||
         sessionConfig.registration_instance_id ||
         null,
+      registrationReleaseKey:
+        sessionConfig.registrationReleaseKey ||
+        sessionConfig.registration_release_key ||
+        null,
       accountId: sessionConfig.accountId || sessionConfig.account_id || null,
       inboxId: sessionConfig.inboxId || sessionConfig.inbox_id || null,
       recordingStrategy:
@@ -3293,7 +3297,13 @@ export class JanusSipVoiceClient extends EventTarget {
     // A page may be frozen immediately after pagehide. Start the keepalive
     // request now; the backend sequence fence prevents an older in-flight
     // heartbeat from reviving this registration afterwards.
-    if (keepalive) return report();
+    if (keepalive) {
+      // The beacon frees the line even when the session is already revoked
+      // (signed out by a sign-in on another computer), which the keepalive
+      // presence below cannot do.
+      if (!registered) this.releaseLeaseOnUnload();
+      return report();
+    }
 
     const reportPromise = this.presenceReportPromise
       ? this.presenceReportPromise.then(report)
@@ -3307,6 +3317,14 @@ export class JanusSipVoiceClient extends EventTarget {
     });
 
     return reportPromise;
+  }
+
+  releaseLeaseOnUnload() {
+    if (typeof VoiceAPI.releaseWebphoneLeaseOnUnload !== 'function') return;
+
+    VoiceAPI.releaseWebphoneLeaseOnUnload(
+      this.sessionConfig?.registrationReleaseKey
+    );
   }
 
   presenceContext() {

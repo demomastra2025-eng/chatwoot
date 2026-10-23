@@ -525,25 +525,120 @@ describe('PhoneWidget', () => {
     await flushPromises();
   });
 
-  it('shows the translated other-tab state and disables refresh', async () => {
-    webphoneClient.sessions['sip_profile:83'] = sipSession({
-      registered: false,
-      callingSupported: false,
-      reason: 'sip_profile_registration_lease_owned_by_another_tab',
-    });
-    const wrapper = mountComponent();
-    await flushPromises();
+  describe('when the line is open on another computer', () => {
+    const lineElsewhere = (overrides = {}) =>
+      sipSession({
+        registered: false,
+        callingSupported: false,
+        reason: 'sip_profile_registration_lease_owned_by_another_tab',
+        ...overrides,
+      });
 
-    expect(wrapper.get('[role="status"]').attributes('aria-label')).toContain(
-      'ACTIVE_IN_ANOTHER_TAB'
-    );
-    const refresh = wrapper.get('[data-testid="phone-widget-reconnect"]');
-    expect(refresh.attributes('disabled')).toBeDefined();
-    expect(refresh.attributes('aria-label')).toBe('PHONE_WIDGET.OTHER_TAB');
-    await wrapper.get('[data-testid="phone-widget-expand"]').trigger('click');
-    expect(refresh.attributes('disabled')).toBeDefined();
-    refresh.element.click();
-    expect(webphoneClient.initializeDevice).not.toHaveBeenCalled();
+    it('says so and offers to move the line here', async () => {
+      webphoneClient.sessions['sip_profile:83'] = lineElsewhere();
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      expect(wrapper.get('[role="status"]').attributes('aria-label')).toBe(
+        'Иван Иванов · SIDEBAR.SIP_TELEPHONY.STATUS.OPEN_ON_ANOTHER_COMPUTER'
+      );
+      const action = wrapper.get('[data-testid="phone-widget-reconnect"]');
+      expect(action.attributes('disabled')).toBeUndefined();
+      expect(action.attributes('aria-label')).toBe(
+        'PHONE_WIDGET.MOVE_LINE_HERE'
+      );
+      expect(action.find('.i-lucide-monitor-down').exists()).toBe(true);
+      expect(usePhoneWidgetStore().status).toBe('standby');
+    });
+
+    it('takes the line over only from the explicit click', async () => {
+      webphoneClient.sessions['sip_profile:83'] = lineElsewhere();
+      const wrapper = mountComponent();
+      await flushPromises();
+      expect(webphoneClient.initializeDevice).not.toHaveBeenCalled();
+
+      await wrapper
+        .get('[data-testid="phone-widget-reconnect"]')
+        .trigger('click');
+
+      expect(webphoneClient.initializeDevice).toHaveBeenCalledWith(43, {
+        native: true,
+        provider: 'sipuni',
+        sipProfileId: 83,
+        sessionKey: 'sip_profile:83',
+        claimOwnership: true,
+        takeover: true,
+      });
+    });
+
+    it('offers the move in the list of lines too', async () => {
+      webphoneClient.sessions['sip_profile:83'] = lineElsewhere();
+      const wrapper = mountComponent();
+      await flushPromises();
+      await wrapper
+        .get('[data-testid="phone-widget-lines-toggle"]')
+        .trigger('click');
+
+      const lineAction = wrapper.get(
+        '[data-testid="phone-widget-line-reconnect"]'
+      );
+      expect(lineAction.attributes('title')).toBe(
+        'PHONE_WIDGET.MOVE_LINE_HERE'
+      );
+      expect(
+        wrapper.get('[data-testid="phone-widget-line-status"]').text()
+      ).toBe('На другом компьютере');
+      await lineAction.trigger('click');
+      expect(webphoneClient.initializeDevice).toHaveBeenCalledWith(
+        43,
+        expect.objectContaining({ takeover: true })
+      );
+    });
+
+    it('explains when the other computer keeps the line for a call', async () => {
+      webphoneClient.sessions['sip_profile:83'] = lineElsewhere();
+      webphoneClient.initializeDevice.mockResolvedValueOnce(
+        lineElsewhere({ takeoverRefused: 'call_in_progress' })
+      );
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      await wrapper
+        .get('[data-testid="phone-widget-reconnect"]')
+        .trigger('click');
+      await flushPromises();
+
+      expect(alertMock).toHaveBeenCalledWith('PHONE_WIDGET.LINE_BUSY_ELSEWHERE');
+    });
+
+    it('shows the phone and points to the button when a call could not start', async () => {
+      settingsState.settings.value = {
+        phone_widget_hidden_accounts: { 1: true },
+      };
+      webphoneClient.sessions['sip_profile:83'] = lineElsewhere();
+      const wrapper = mountComponent();
+      await flushPromises();
+      const action = () =>
+        wrapper.get('[data-testid="phone-widget-reconnect"]');
+      expect(action().attributes('data-highlighted')).toBe('false');
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        usePhoneWidgetStore().requestLineTakeover();
+        await wrapper.vm.$nextTick();
+
+        expect(settingsState.update).toHaveBeenCalledWith({
+          phone_widget_hidden_accounts: {},
+        });
+        expect(action().attributes('data-highlighted')).toBe('true');
+        expect(action().classes()).toContain('animate-pulse');
+
+        vi.advanceTimersByTime(10_000);
+        await wrapper.vm.$nextTick();
+        expect(action().attributes('data-highlighted')).toBe('false');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it('shows only digits and separate plus and delete keys in the keypad', async () => {

@@ -453,6 +453,7 @@
       "NOT_ANSWERED_YET": "Not answered yet",
       "HANDLED_IN_ANOTHER_TAB": "Being handled in another tab",
       "BROWSER_CALLING_UNAVAILABLE": "Browser calling isn't available for this line. Opening the conversation instead.",
+      "BROWSER_LINE_OPEN_ELSEWHERE": "The line is open on another computer — click “Move the line here”",
       "BROWSER_MICROPHONE_UNAVAILABLE": "No access to the microphone. Allow the microphone for this site in the browser settings and try again.",
       "BROWSER_INCOMING_CALL_RINGING": "An incoming call is ringing right now. Answer or reject it, then call back.",
       "OUTGOING_START_FAILED": "The call could not be started. The phone is reconnecting — try again in a few seconds.",

@@ -605,5 +605,93 @@ RSpec.describe Telephony::SipProfile do
         expect(asel.reload.metadata).not_to have_key('last_browser_release')
       end
     end
+
+    describe 'moving the line to another computer of the same user' do
+      let(:profile) { create(:telephony_sip_profile, availability_mode: 'browser_webphone') }
+
+      def take_over(profile, takeover: true)
+        profile.acquire_browser_registration_lease!(
+          client_instance_id: 'tab-pc-2', browser_instance_id: 'browser-2', user_id: profile.user_id, takeover: takeover
+        )
+      end
+
+      it 'keeps the line on the first computer until the user asks to move it' do
+        register_browser_phone(profile, browser_instance_id: 'browser-1')
+
+        expect(take_over(profile, takeover: false)).to include(acquired: false)
+        expect(profile.reload).to be_registered_for_routing
+      end
+
+      it 'takes the line over at once on an explicit request and refuses the old tab' do
+        freeze_time do
+          old_context = register_browser_phone(profile, browser_instance_id: 'browser-1')
+
+          result = take_over(profile)
+
+          expect(result).to include(acquired: true, taken_over_registration_instance_id: old_context[:registration_instance_id])
+          expect(result[:registration_instance_id]).not_to eq(old_context[:registration_instance_id])
+          expect(profile.reload).not_to be_registered_for_routing
+          expect(profile.metadata.dig('browser_registration_lease', 'browser_instance_id')).to eq('browser-2')
+          expect(profile.metadata['last_browser_takeover']).to include(
+            'browser_instance_id' => 'browser-1', 'by_browser_instance_id' => 'browser-2', 'by_client_instance_id' => 'tab-pc-2'
+          )
+          expect(profile.update_browser_registration!(registered: true, registration_context: old_context)).to eq(:conflict)
+          expect(
+            profile.acquire_browser_registration_lease!(
+              client_instance_id: "tab-#{profile.id}", browser_instance_id: 'browser-1', user_id: profile.user_id
+            )
+          ).to include(acquired: false)
+        end
+      end
+
+      it 'does not take the line while the user is on a call' do
+        register_browser_phone(profile, browser_instance_id: 'browser-1')
+        create(
+          :telephony_call_session,
+          account: profile.account,
+          status: 'in_progress',
+          metadata: { 'operator_claim' => { 'user_id' => profile.user_id, 'sip_profile_id' => profile.id } }
+        )
+
+        expect(take_over(profile)).to include(acquired: false, takeover_refused: 'call_in_progress')
+        expect(profile.reload).to be_registered_for_routing
+      end
+
+      it 'does not take a line that another user holds' do
+        profile.acquire_browser_registration_lease!(
+          client_instance_id: 'tab-other-user', browser_instance_id: 'browser-1', user_id: create(:user).id
+        )
+
+        result = profile.acquire_browser_registration_lease!(
+          client_instance_id: 'tab-pc-2', browser_instance_id: 'browser-2', user_id: profile.user_id, takeover: true
+        )
+
+        expect(result).to include(acquired: false)
+        expect(result).not_to have_key(:takeover_refused)
+        expect(profile.reload.metadata.dig('browser_registration_lease', 'client_instance_id')).to eq('tab-other-user')
+      end
+    end
+
+    describe 'releasing the line when its tab goes away' do
+      let(:profile) { create(:telephony_sip_profile, availability_mode: 'browser_webphone') }
+
+      it 'frees the line for another computer at once' do
+        context = register_browser_phone(profile, browser_instance_id: 'browser-1')
+
+        expect(profile.release_browser_registration_lease!(registration_instance_id: context[:registration_instance_id])).to be(true)
+
+        expect(profile.reload).not_to be_registered_for_routing
+        expect(profile.metadata).not_to have_key('browser_registration_lease')
+        expect(profile.update_browser_registration!(registered: true, registration_context: context)).to eq(:conflict)
+        expect(acquire_for_user(profile, browser_instance_id: 'browser-2')).to include(acquired: true)
+      end
+
+      it 'leaves a newer lease alone' do
+        register_browser_phone(profile, browser_instance_id: 'browser-1')
+
+        expect(profile.release_browser_registration_lease!(registration_instance_id: 'older-registration')).to be(false)
+        expect(profile.reload).to be_registered_for_routing
+      end
+    end
   end
 end

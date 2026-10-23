@@ -16,14 +16,18 @@ class Telephony::WebphoneService
     registration_failure_code registrationFailureCode registration_failure_reason registrationFailureReason
   ].freeze
   REGISTRATION_FAILURE_REASON_LIMIT = 120
+  LINE_ELSEWHERE_REASON = 'sip_profile_registration_lease_owned_by_another_tab'.freeze
+  LEASE_TAKEN_OVER_EVENT = 'telephony.webphone_lease_taken_over'.freeze
 
   def initialize(account:)
     @account = account
   end
 
-  def token_for(user:, inbox: nil, client_instance_id: nil, browser_instance_id: nil, lease_mode: nil)
+  # `takeover` comes only from the explicit "move the line here" action.
+  def token_for(user:, inbox: nil, client_instance_id: nil, browser_instance_id: nil, lease_mode: nil, takeover: false)
     @browser_instance_id = browser_instance_id.presence
     @observe_registration_lease = lease_mode.to_s == 'observe'
+    @lease_takeover = ActiveModel::Type::Boolean.new.cast(takeover) == true && !observe_registration_lease
     bootstrap_payload = webphone_bootstrap_payload_for(user, inbox, client_instance_id)
     return bootstrap_payload if bootstrap_payload.present?
 
@@ -57,6 +61,19 @@ class Telephony::WebphoneService
 
     outcome = update_browser_registration(operator_identity.record, registered, registration_context, registration_failure)
     presence_update_payload(inbox, operator_identity, outcome)
+  end
+
+  # The beacon of a closing (or signed-out) tab: no user session, only the
+  # signed release key of its own lease.
+  def release_registration_lease!(release_key:)
+    release = Telephony::WebphoneLeaseReleaseKey.resolve(release_key)
+    return :invalid if release.blank? || release.account_id != account.id
+
+    profile = account.telephony_sip_profiles.find_by(id: release.sip_profile_id)
+    return :stale unless profile&.release_browser_registration_lease!(registration_instance_id: release.registration_instance_id)
+
+    Rails.logger.info("TELEPHONY_WEBPHONE_LEASE_RELEASED account_id=#{account.id} sip_profile_id=#{profile.id}")
+    :released
   end
 
   def report_browser_sip_incoming!(user:, inbox:, params:)
@@ -97,7 +114,7 @@ class Telephony::WebphoneService
 
   private
 
-  attr_reader :account, :browser_instance_id, :observe_registration_lease
+  attr_reader :account, :browser_instance_id, :observe_registration_lease, :lease_takeover
 
   def webphone_bootstrap_payload_for(user, inbox, client_instance_id)
     return if inbox.present?
@@ -163,16 +180,8 @@ class Telephony::WebphoneService
     provider = janus_sip_provider_for(inbox, profile)
     raw_janus_server = janus_sip_server_url(provider)
     credentials = lease[:acquired] ? janus_sip_credentials_for(profile) : nil
-    support = if lease[:acquired]
-                janus_sip_support_state(provider, operator_identity, credentials, raw_janus_server)
-              else
-                reason = if client_instance_id.present?
-                           'sip_profile_registration_lease_owned_by_another_tab'
-                         else
-                           'webphone_client_instance_id_required'
-                         end
-                { supported: false, reason: reason }
-              end
+    support = janus_sip_lease_refusal_state(lease, client_instance_id) ||
+              janus_sip_support_state(provider, operator_identity, credentials, raw_janus_server)
     janus_server = if lease[:acquired]
                      authorized_janus_server_url(
                        raw_janus_server,
@@ -184,7 +193,7 @@ class Telephony::WebphoneService
     sip = janus_sip_contract(credentials, profile) if lease[:acquired]
 
     payload = janus_sip_base_payload(provider, operator_identity, profile, janus_server, support).merge(
-      janus_sip_session_payload(profile, lease[:acquired] ? lease : {})
+      janus_sip_session_payload(profile, lease)
     ).merge(
       external_number: inbox&.channel&.phone_number,
       externalNumber: inbox&.channel&.phone_number,
@@ -195,16 +204,53 @@ class Telephony::WebphoneService
     payload.merge(janus_sip_flat_contract(sip))
   end
 
+  def janus_sip_lease_refusal_state(lease, client_instance_id)
+    return if lease[:acquired]
+
+    { supported: false, reason: client_instance_id.present? ? LINE_ELSEWHERE_REASON : 'webphone_client_instance_id_required' }
+  end
+
   # A follower tab mirrors the Web Lock owner of its browser: it gets the
   # standby status but never takes or renews the registration lease.
   def janus_sip_registration_lease(profile, user, client_instance_id)
     return { acquired: false, registration_instance_id: nil } if observe_registration_lease
 
-    profile.acquire_browser_registration_lease!(
+    lease = profile.acquire_browser_registration_lease!(
       client_instance_id: client_instance_id,
       browser_instance_id: browser_instance_id,
-      user_id: user.id
+      user_id: user.id,
+      takeover: lease_takeover
     )
+    log_registration_lease_takeover(profile, user, lease) if lease_takeover
+    announce_registration_lease_takeover(profile, user, lease) if lease[:taken_over_registration_instance_id].present?
+    lease
+  end
+
+  def log_registration_lease_takeover(profile, user, lease)
+    outcome = if lease[:taken_over_registration_instance_id].present?
+                'taken_over'
+              elsif lease[:acquired]
+                'acquired'
+              else
+                lease[:takeover_refused] || 'refused'
+              end
+    Rails.logger.info(
+      "TELEPHONY_WEBPHONE_LEASE_TAKEOVER account_id=#{account.id} sip_profile_id=#{profile.id} user_id=#{user.id} outcome=#{outcome}"
+    )
+  end
+
+  # The tab that held the line until now unregisters at once: it checks its
+  # presence, which the server now refuses, instead of waiting for its next heartbeat.
+  def announce_registration_lease_takeover(profile, user, lease)
+    return if user.pubsub_token.blank?
+
+    data = {
+      account_id: account.id, sip_profile_id: profile.id, inbox_id: profile.inbox_id,
+      registration_instance_id: lease[:taken_over_registration_instance_id]
+    }
+    ActionCable.server.broadcast(user.pubsub_token, { event: LEASE_TAKEN_OVER_EVENT, data: data })
+  rescue StandardError => e
+    Rails.logger.warn("TELEPHONY_WEBPHONE_LEASE_TAKEOVER_BROADCAST_FAILED account_id=#{account.id} error=#{e.class.name}")
   end
 
   def janus_sip_support_state(provider, operator_identity, credentials, janus_server)
@@ -357,6 +403,7 @@ class Telephony::WebphoneService
 
   def janus_sip_session_payload(profile, lease)
     session_key = janus_sip_session_key(profile)
+    granted = lease[:acquired] ? lease : {}
 
     {
       session_key: session_key,
@@ -365,10 +412,10 @@ class Telephony::WebphoneService
       sipProfileId: profile.id,
       registration_config_version: profile.registration_config_version,
       registrationConfigVersion: profile.registration_config_version,
-      registration_instance_id: lease[:registration_instance_id],
-      registrationInstanceId: lease[:registration_instance_id],
-      registration_lease_expires_at: lease[:expires_at],
-      registrationLeaseExpiresAt: lease[:expires_at],
+      registration_instance_id: granted[:registration_instance_id],
+      registrationInstanceId: granted[:registration_instance_id],
+      registration_lease_expires_at: granted[:expires_at],
+      registrationLeaseExpiresAt: granted[:expires_at],
       account_id: account.id,
       accountId: account.id,
       inbox_id: profile.inbox_id,
@@ -377,6 +424,20 @@ class Telephony::WebphoneService
       providerConnectionId: profile.provider_connection_id,
       internal_extension: profile.internal_extension,
       internalExtension: profile.internal_extension
+    }.merge(janus_sip_lease_contract(profile, lease))
+  end
+
+  # The release key lets the tab give the line up from pagehide; a refused
+  # takeover says why the line stayed on the other computer.
+  def janus_sip_lease_contract(profile, lease)
+    release_key = if lease[:acquired]
+                    Telephony::WebphoneLeaseReleaseKey.generate(profile: profile, registration_instance_id: lease[:registration_instance_id])
+                  end
+    {
+      registration_release_key: release_key,
+      registrationReleaseKey: release_key,
+      takeover_refused: lease[:takeover_refused],
+      takeoverRefused: lease[:takeover_refused]
     }
   end
 

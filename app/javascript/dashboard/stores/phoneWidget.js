@@ -88,6 +88,9 @@ export const usePhoneWidgetStore = defineStore('phoneWidget', {
     selectedInboxId: readStoredSelectedInboxId(),
     // Live status of each phone line by inboxId: { [inboxId]: 'ready' | 'disconnected' | ... }
     linesStatusById: {},
+    // When a call could not start because the line is open on another
+    // computer: the phone shows itself and points to "move the line here".
+    lineTakeoverRequestedAt: 0,
   }),
 
   actions: {
@@ -135,6 +138,10 @@ export const usePhoneWidgetStore = defineStore('phoneWidget', {
         this.preparingOutboundCalls - 1,
         0
       );
+    },
+
+    requestLineTakeover() {
+      this.lineTakeoverRequestedAt = Date.now();
     },
   },
 });

@@ -475,6 +475,34 @@ describe('VoiceCallButton', () => {
     );
   });
 
+  it('says the line is open on another computer and points to the move button', async () => {
+    const { dispatchMock, wrapper } = mountComponent();
+    const phoneWidgetStore = usePhoneWidgetStore();
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'sipuni',
+      callingSupported: false,
+      registered: false,
+      reason: 'sip_profile_registration_lease_owned_by_another_tab',
+    });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(dispatchMock).not.toHaveBeenCalled();
+    // A call never takes the line over by itself: only the explicit button does.
+    expect(initializeDeviceMock).toHaveBeenCalledWith(4593, {
+      native: true,
+      claimOwnership: true,
+    });
+    expect(alertMock).toHaveBeenCalledWith(
+      'CONVERSATION.VOICE_WIDGET.BROWSER_LINE_OPEN_ELSEWHERE'
+    );
+    expect(alertMock).not.toHaveBeenCalledWith(
+      'CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE'
+    );
+    expect(phoneWidgetStore.lineTakeoverRequestedAt).toBeGreaterThan(0);
+  });
+
   it('does not initiate a Janus SIP outbound call when the microphone is unavailable', async () => {
     const { dispatchMock, wrapper } = mountComponent();
     prewarmMicrophoneMock.mockResolvedValue({
