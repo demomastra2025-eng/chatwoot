@@ -18,7 +18,9 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
   param :from, type: :string, desc: 'Range start datetime in ISO 8601 format', required: true
   param :to, type: :string, desc: 'Range end datetime in ISO 8601 format', required: true
   param :resource_ids, type: :array, desc: 'Optional list of scheduling resource IDs', required: false
-  param :service_id, type: :number, desc: 'Optional service ID to filter price links and derive duration', required: false
+  param :service_id, type: :number,
+                     desc: 'Optional service ID that sets the duration; without resource_ids only specialists with a recorded price ' \
+                           'link are searched', required: false
   param :duration_min, type: :number, desc: 'Optional appointment duration in minutes when no service is provided', required: false
   param :limit, type: :number, desc: 'Maximum number of slots to return', required: false
 
@@ -51,12 +53,6 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
     formatted_payload(prioritize_slot_keys(payload))
   rescue Scheduling::AvailableSlotSearchService::ResourceSelectionRequiredError
     resource_required_failure
-  rescue Scheduling::AvailableSlotSearchService::MissingServiceLinkError => e
-    scheduling_tool_failure(Scheduling::Error.new(
-                              code: 'SERVICE_NOT_AVAILABLE_FOR_RESOURCE', status: :unprocessable_content,
-                              message: "#{e.message}: no recorded service-price link for these resources; provider eligibility is unverified",
-                              details: { reason: 'service_not_linked' }
-                            ))
   rescue ActiveRecord::RecordNotFound => e
     scheduling_tool_failure(Scheduling::Error.new(code: 'RESOURCE_NOT_FOUND', message: e.message, status: :not_found,
                                                   details: { reason: 'unknown_resource' }))

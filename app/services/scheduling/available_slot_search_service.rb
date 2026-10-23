@@ -1,10 +1,10 @@
 class Scheduling::AvailableSlotSearchService
   MAX_LIMIT = 100
   MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
-  # Kept identical to the message pinned by the MedElement contract specs; the tool adds the explanation.
+  # Raised only for the Playground snapshot catalog, which still names the services of each specialist; the clinic catalog
+  # never requires a service-price link.
   MISSING_LINK_ERROR = 'Service is not available for the requested specialists'.freeze
 
-  # The Playground catalog still names the services of each specialist; the clinic catalog never requires such a link.
   class MissingServiceLinkError < ArgumentError; end
 
   # A search for a service with no specialist named, when no available specialist is recorded for that service. Searching every
