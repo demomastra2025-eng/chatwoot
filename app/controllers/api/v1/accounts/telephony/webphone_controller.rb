@@ -13,8 +13,7 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
         inbox: inbox,
         client_instance_id: params[:client_instance_id],
         browser_instance_id: params[:browser_instance_id],
-        lease_mode: params[:lease_mode],
-        takeover: params[:takeover]
+        lease_mode: params[:lease_mode]
       )
     )
   end

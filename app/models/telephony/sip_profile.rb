@@ -487,19 +487,19 @@ class Telephony::SipProfile < ApplicationRecord
     end
   end
 
-  def released_browser_tab_still_displaced?(request)
-    return false if request.browser_instance_id.blank?
+  def released_browser_tab_still_displaced?(client_instance_id, browser_instance_id, user_id, occurred_at)
+    return false if browser_instance_id.blank?
 
     release = metadata.to_h['last_browser_release'].to_h
-    return false unless release['client_instance_id'].to_s == request.client_instance_id.to_s &&
-                        release['browser_instance_id'].to_s == request.browser_instance_id.to_s
+    return false unless release['client_instance_id'].to_s == client_instance_id.to_s &&
+                        release['browser_instance_id'].to_s == browser_instance_id.to_s
 
-    self.class.where.not(user_id: request.user_id)
-        .where("metadata -> 'browser_registration_lease' ->> 'browser_instance_id' = ?", request.browser_instance_id.to_s)
+    self.class.where.not(user_id: user_id)
+        .where("metadata -> 'browser_registration_lease' ->> 'browser_instance_id' = ?", browser_instance_id.to_s)
         .select(:id, :metadata)
         .find_each.any? do |profile|
       lease = profile.metadata.to_h[BROWSER_REGISTRATION_LEASE_KEY].to_h
-      profile.browser_registration_lease_valid?(lease['registration_instance_id'], occurred_at: request.occurred_at)
+      profile.browser_registration_lease_valid?(lease['registration_instance_id'], occurred_at: occurred_at)
     end
   end
 
@@ -615,7 +615,10 @@ class Telephony::SipProfile < ApplicationRecord
   end
 
   def blank_browser_registration_lease_refusal(request)
-    return { acquired: false, registration_instance_id: nil } if released_browser_tab_still_displaced?(request)
+    displaced = released_browser_tab_still_displaced?(
+      request.client_instance_id, request.browser_instance_id, request.user_id, request.occurred_at
+    )
+    return { acquired: false, registration_instance_id: nil } if displaced
     return unless browser_registered?
 
     { acquired: false, registration_instance_id: metadata.to_h.dig('registration_context', 'registration_instance_id') }

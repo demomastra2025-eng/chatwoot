@@ -23,11 +23,12 @@ class Telephony::WebphoneService
     @account = account
   end
 
-  # `takeover` comes only from the explicit "move the line here" action.
-  def token_for(user:, inbox: nil, client_instance_id: nil, browser_instance_id: nil, lease_mode: nil, takeover: false)
+  # lease_mode 'observe': a follower tab, never takes the lease. 'takeover': the
+  # explicit "move the line here", takes it from the user's other computer.
+  def token_for(user:, inbox: nil, client_instance_id: nil, browser_instance_id: nil, lease_mode: nil)
     @browser_instance_id = browser_instance_id.presence
     @observe_registration_lease = lease_mode.to_s == 'observe'
-    @lease_takeover = ActiveModel::Type::Boolean.new.cast(takeover) == true && !observe_registration_lease
+    @lease_takeover = lease_mode.to_s == 'takeover'
     bootstrap_payload = webphone_bootstrap_payload_for(user, inbox, client_instance_id)
     return bootstrap_payload if bootstrap_payload.present?
 

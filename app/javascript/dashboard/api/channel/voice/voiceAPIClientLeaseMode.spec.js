@@ -56,14 +56,22 @@ describe('#VoiceAPI webphone registration lease mode', () => {
     expect(axiosMock.post).toHaveBeenCalledTimes(2);
   });
 
-  it('asks to take the line over only when told to', async () => {
+  it('asks to take the line over only when told to, and only as the owner tab', async () => {
     await voiceAPIClient.getNativeWebphoneToken(42, { takeover: true });
     await voiceAPIClient.getNativeWebphoneToken(42);
+    tabLeadership.owner = false;
+    await voiceAPIClient.getNativeWebphoneToken(42, { takeover: true });
 
     const [, takeoverBody] = axiosMock.post.mock.calls[0];
     const [, retryBody] = axiosMock.post.mock.calls[1];
-    expect(takeoverBody).toMatchObject({ inbox_id: 42, takeover: true });
-    expect(retryBody).not.toHaveProperty('takeover');
+    const [, followerBody] = axiosMock.post.mock.calls[2];
+    expect(takeoverBody).toMatchObject({
+      inbox_id: 42,
+      browser_instance_id: 'browser-instance-1',
+      lease_mode: 'takeover',
+    });
+    expect(retryBody).not.toHaveProperty('lease_mode');
+    expect(followerBody.lease_mode).toBe('observe');
   });
 
   describe('releasing the line when the tab goes away', () => {

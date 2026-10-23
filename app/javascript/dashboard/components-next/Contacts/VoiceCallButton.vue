@@ -547,11 +547,11 @@ defineExpose({ onClick });
             <span
               v-if="isPreferredInbox(inbox)"
               class="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-n-teal-3 text-n-teal-11"
-              title="Выбрана для звонка"
+              :title="t('PHONE_WIDGET.SELECTED_FOR_CALL')"
               data-testid="voice-inbox-picker-selected-badge"
             >
               <i class="i-lucide-check text-[10px]" aria-hidden="true" />
-              <span class="sr-only">Выбрана для звонка</span>
+              <span class="sr-only">{{ t('PHONE_WIDGET.SELECTED_FOR_CALL') }}</span>
             </span>
           </div>
         </button>

@@ -42,7 +42,7 @@ RSpec.describe 'Telephony webphone line takeover', type: :request do
 
   def request_token(client_instance_id:, browser_instance_id:, takeover: nil)
     params = { inbox_id: profile.inbox_id, client_instance_id: client_instance_id, browser_instance_id: browser_instance_id }
-    params[:takeover] = takeover unless takeover.nil?
+    params[:lease_mode] = 'takeover' if takeover
     post token_path, params: params, headers: headers, as: :json
     response.parsed_body.fetch('payload')
   end
@@ -107,11 +107,11 @@ RSpec.describe 'Telephony webphone line takeover', type: :request do
       expect(profile.reload).to be_registered_for_routing
     end
 
-    it 'never takes the line for a follower tab' do
+    it 'never takes the line for a follower tab that only observes' do
       register!(request_token(client_instance_id: 'tab-pc-1', browser_instance_id: 'browser-pc-1'))
 
       post token_path,
-           params: { inbox_id: profile.inbox_id, client_instance_id: 'tab-follower', lease_mode: 'observe', takeover: true },
+           params: { inbox_id: profile.inbox_id, client_instance_id: 'tab-follower', lease_mode: 'observe' },
            headers: headers,
            as: :json
 

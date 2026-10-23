@@ -71,13 +71,14 @@ class VoiceAPI extends ApiClient {
   }
 
   // `takeover` is only for the explicit "move the line here": it takes the
-  // line from the same user's other computer. Retries never send it.
+  // line from the same user's other computer. Retries never send it, and a
+  // follower tab keeps observing.
   getNativeWebphoneToken(inboxId = null, { takeover = false } = {}) {
     return axios
       .post(`${this.baseUrl()}/telephony/webphone/token`, {
         ...webphoneInstanceParams(),
         ...(inboxId ? { inbox_id: inboxId } : {}),
-        ...(takeover ? { takeover: true } : {}),
+        ...(takeover && isWebphoneTabOwner() ? { lease_mode: 'takeover' } : {}),
       })
       .then(r => r.data.payload || r.data);
   }

@@ -17,6 +17,7 @@
     "REFRESH_CONNECTION": "Refresh connection",
     "MOVE_HERE": "Move the phone to this tab",
     "MOVE_LINE_HERE": "Move the line here",
+    "SELECTED_FOR_CALL": "Selected for calls",
     "LINE_BUSY_ELSEWHERE": "The line is busy with a call on another computer. Move it after the call.",
     "ACTIVE": "Active",
     "OWNER_TAB_BUSY": "The phone is busy with a call in another tab",
