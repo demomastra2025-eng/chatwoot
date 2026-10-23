@@ -1020,12 +1020,12 @@
         "API_ID": {
           "LABEL": "API ID",
           "PLACEHOLDER": "Telegram API ID",
-          "SUBTITLE": "Необязательно. Оставьте пустым, чтобы использовать общие Telegram Personal credentials из server env."
+          "SUBTITLE": "Необязательно. Оставьте пустым, чтобы использовать общие ключи Telegram, настроенные на сервере."
         },
         "API_HASH": {
           "LABEL": "API Hash",
           "PLACEHOLDER": "Telegram API Hash",
-          "SUBTITLE": "Необязательно. Оставьте пустым, чтобы использовать общие Telegram Personal credentials из server env."
+          "SUBTITLE": "Необязательно. Оставьте пустым, чтобы использовать общие ключи Telegram, настроенные на сервере."
         },
         "PHONE_NUMBER": {
           "LABEL": "Номер телефона",
@@ -1423,7 +1423,7 @@
         "IDENTIFIER": "identifier:"
       },
       "TELEGRAM_PERSONAL": {
-        "TITLE": "Telegram Personal",
+        "TITLE": "Telegram (личный)",
         "SUBTITLE": "Подключение личного аккаунта Telegram и настройки обмена сообщениями.",
         "OVERVIEW": "Обзор",
         "OVERVIEW_SUBTITLE": "Ключевой статус канала, авторизации и последних импортов в одном месте.",
@@ -1467,20 +1467,20 @@
         "REQUEST_QR_SUCCESS": "QR-вход Telegram готов",
         "REQUEST_QR_ERROR": "Не удалось подготовить QR-вход Telegram",
         "RECONNECT": "Переподключить",
-        "RECONNECT_SUCCESS": "Переподключение Telegram Personal запущено",
-        "RECONNECT_ERROR": "Не удалось переподключить Telegram Personal",
+        "RECONNECT_SUCCESS": "Переподключение Telegram (личный) запущено",
+        "RECONNECT_ERROR": "Не удалось переподключить Telegram (личный)",
         "HISTORY_SYNC": "Импортировать недавнюю историю",
-        "HISTORY_SYNC_SUCCESS": "Импорт недавней истории Telegram Personal запущен",
-        "HISTORY_SYNC_ERROR": "Не удалось запустить импорт недавней истории Telegram Personal",
+        "HISTORY_SYNC_SUCCESS": "Импорт недавней истории Telegram (личный) запущен",
+        "HISTORY_SYNC_ERROR": "Не удалось запустить импорт недавней истории Telegram (личный)",
         "FULL_HISTORY_SYNC": "Импортировать всю историю заново",
-        "FULL_HISTORY_SYNC_SUCCESS": "Полный импорт истории Telegram Personal запущен",
-        "FULL_HISTORY_SYNC_ERROR": "Не удалось запустить полный импорт истории Telegram Personal",
+        "FULL_HISTORY_SYNC_SUCCESS": "Полный импорт истории Telegram (личный) запущен",
+        "FULL_HISTORY_SYNC_ERROR": "Не удалось запустить полный импорт истории Telegram (личный)",
         "CONTACTS_SYNC": "Импортировать контакты",
-        "CONTACTS_SYNC_SUCCESS": "Импорт контактов Telegram Personal запущен",
-        "CONTACTS_SYNC_ERROR": "Не удалось запустить импорт контактов Telegram Personal",
+        "CONTACTS_SYNC_SUCCESS": "Импорт контактов Telegram (личный) запущен",
+        "CONTACTS_SYNC_ERROR": "Не удалось запустить импорт контактов Telegram (личный)",
         "DISCONNECT": "Отключить",
-        "DISCONNECT_SUCCESS": "Telegram Personal отключен",
-        "DISCONNECT_ERROR": "Не удалось отключить Telegram Personal",
+        "DISCONNECT_SUCCESS": "Telegram (личный) отключён",
+        "DISCONNECT_ERROR": "Не удалось отключить Telegram (личный)",
         "AUTO_SYNC_HINT": "Статус обновляется автоматически, пока эта страница открыта.",
         "CODE_LOGIN": "Войти по коду",
         "CODE_LABEL": "Код входа",
@@ -1492,7 +1492,7 @@
         "QR_LOGIN": "Войти по QR-коду",
         "QR_HINT": "Откройте Telegram на устройстве, где этот аккаунт уже вошёл, и отсканируйте этот QR-код.",
         "QR_EMPTY": "Сгенерируйте QR-код Telegram, чтобы начать QR-вход.",
-        "QR_IMAGE_ALT": "QR-код Telegram Personal",
+        "QR_IMAGE_ALT": "QR-код Telegram (личный)",
         "QR_EXPIRES_AT": "QR истекает: {value}",
         "PASSWORD_LABEL": "Пароль 2FA",
         "PASSWORD_PLACEHOLDER": "Пароль Telegram",
