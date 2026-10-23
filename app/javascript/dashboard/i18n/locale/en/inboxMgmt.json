@@ -539,7 +539,7 @@
             "CREATE_HINT": "Employees, extensions and SIP access are assigned in the channel settings after the channel is created.",
             "HINT": "Bind each OneLink employee to an internal PBX extension. Fill in an employee's SIP login and SIP password together.",
             "EMPLOYEE_LABEL": "OneLink employee",
-            "SELECT_PLACEHOLDER": "Use current user or select employee",
+            "SELECT_PLACEHOLDER": "Select an employee",
             "CURRENT_USER": "Current user",
             "ADD": "Add employee extension",
             "REMOVE": "Remove employee {index}",
@@ -774,7 +774,7 @@
               "FORWARD_NUMBER_LABEL": "Fallback forwarding number"
             },
             "ACTIONS": {
-              "REJECT": "End call (log missed call)",
+              "REJECT": "End the call as missed",
               "AI": "Route to Voice AI agent",
               "FORWARD": "Forward to external number"
             },
