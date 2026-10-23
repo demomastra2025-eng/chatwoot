@@ -1496,6 +1496,24 @@
           "CONNECTING": "Қосылуда",
           "FAILED": "Қате"
         }
+      },
+      "CONNECTION_STATUS": {
+        "CONNECTED": "Қосылған",
+        "CONNECTING": "Қосылуда…",
+        "DISCONNECTED": "Байланыс жоқ"
+      },
+      "DEVELOPER_DETAILS": {
+        "TITLE": "Әзірлеушіге арналған",
+        "HINT": "Арнаның техникалық деректері. Күнделікті жұмысқа олар қажет емес.",
+        "LAST_ERROR": "Соңғы қате:"
+      },
+      "VOICE_CALLS": {
+        "CONFIG_TITLE": "Қоңыраулар арнасы",
+        "CONFIG_HINT": "Арнаның атауы мен нөмірі. АТС-қа қосылу параметрлері «Әзірлеушіге арналған» блогында.",
+        "CALLS_TITLE": "Қызметкерлер және қоңыраулар",
+        "CALLS_HINT": "Қызметкерлерді ішкі нөмірлерге байлап, қоңыраулар кімге және қалай түсетінін баптаңыз.",
+        "PROVIDER": "Провайдер",
+        "NUMBER": "Нөмір"
       }
     },
     "DELETE": {
@@ -1528,7 +1546,8 @@
       "BOT_CONFIGURATION": "Bot Configuration",
       "WHATSAPP_TEMPLATES": "Templates",
       "ACCOUNT_HEALTH": "Account Health",
-      "CSAT": "CSAT"
+      "CSAT": "CSAT",
+      "VOICE_CALLS": "Қоңыраулар және қызметкерлер"
     },
     "ACCOUNT_HEALTH": {
       "TITLE": "Manage your WhatsApp account",
@@ -1589,7 +1608,8 @@
         "MODES": {
           "SANDBOX": "Sandbox",
           "LIVE": "Live"
-        }
+        },
+        "NOT_AVAILABLE": "Деректер жоқ"
       }
     },
     "SETTINGS": "Settings",
