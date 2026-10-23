@@ -3,7 +3,7 @@ import { useAlert } from 'dashboard/composables';
 import inboxMixin from 'shared/mixins/inboxMixin';
 import SettingsFieldSection from 'dashboard/components-next/Settings/SettingsFieldSection.vue';
 import SettingsToggleSection from 'dashboard/components-next/Settings/SettingsToggleSection.vue';
-import SettingsAccordion from 'dashboard/components-next/Settings/SettingsAccordion.vue';
+import DeveloperDetails from '../components/DeveloperDetails.vue';
 import ImapSettings from '../ImapSettings.vue';
 import SmtpSettings from '../SmtpSettings.vue';
 import { useVuelidate } from '@vuelidate/core';
@@ -19,10 +19,12 @@ import {
 } from 'dashboard/api/channel/voice/virtualPbxErrors';
 import { sanitizeAllowedDomains } from 'dashboard/helper/URLHelper';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
+import { isVirtualPbxVoiceInbox } from '../helpers/virtualPbx';
 
 // Beeline Cloud PBX connects outbound calls dialed as +7XXXXXXXXXX.
 const BEELINE_OUTBOUND_DIAL_FORMAT = 'e164_plus';
 const DEFAULT_WAZO_SIP_HOST = '188.241.217.162';
+const PHONE_NUMBER_EXAMPLE = '+77000000000';
 
 const defaultWazoSipHost = () =>
   window.chatwootConfig?.wazoSipHost || DEFAULT_WAZO_SIP_HOST;
@@ -55,6 +57,12 @@ const CARRIER_BADGES = {
   sipuni: '/integrations/channels/badges/sipuni.svg',
   binotel: '/integrations/channels/badges/binotel.svg',
   wazo: '/integrations/channels/badges/custom-sip.svg',
+};
+
+// Wazo is always routed by OneLink; other providers may keep their own PBX.
+const resolveRoutingAuthority = (isWazo, authority) => {
+  if (isWazo) return 'onelink';
+  return authority === 'external_pbx' ? 'external_pbx' : 'onelink';
 };
 
 const defaultCallRoutingConfig = () => ({
@@ -96,9 +104,9 @@ const defaultCallRoutingConfig = () => ({
 
 export default {
   components: {
+    DeveloperDetails,
     SettingsFieldSection,
     SettingsToggleSection,
-    SettingsAccordion,
     ImapSettings,
     SmtpSettings,
     NextButton,
@@ -110,6 +118,14 @@ export default {
     inbox: {
       type: Object,
       default: () => ({}),
+    },
+    // «configuration» is the technical tab, «calls» is the manager tab with
+    // employees and call routing. Both share one form so a save sends the same
+    // payload whichever tab it is made from.
+    section: {
+      type: String,
+      default: 'configuration',
+      validator: value => ['configuration', 'calls'].includes(value),
     },
   },
   setup() {
@@ -276,19 +292,31 @@ export default {
     whatsappAppId() {
       return window.chatwootConfig?.whatsappAppId;
     },
+    // Webhook URL and API key are only shown for a manual setup, and a failed
+    // coexistence sync keeps its raw provider error here.
+    whatsappDeveloperDetailsVisible() {
+      return (
+        !this.isEmbeddedSignupWhatsApp ||
+        Boolean(this.isCoexistenceWhatsApp && this.coexistenceSync?.last_error)
+      );
+    },
     isForwardingEnabled() {
       return !!this.inbox.forwarding_enabled;
     },
     isAWhatsAppWebInbox() {
       return this.inbox.channel_type === 'Channel::WhatsappWeb';
     },
+    isCallsSection() {
+      return this.section === 'calls';
+    },
+    phoneNumberExample() {
+      return PHONE_NUMBER_EXAMPLE;
+    },
     isVirtualPbxVoiceInbox() {
-      return (
-        this.inbox.channel_type === 'Channel::Voice' &&
-        ['asterisk_analog', 'sipuni', 'binotel', 'beeline', 'wazo'].includes(
-          this.inbox.provider
-        )
-      );
+      return isVirtualPbxVoiceInbox(this.inbox);
+    },
+    isVirtualPbxStatusLoaded() {
+      return !this.isLoadingVirtualPbxStatus && !this.virtualPbxLoadError;
     },
     isSipuniVoiceInbox() {
       return (
@@ -401,23 +429,26 @@ export default {
     showVirtualPbxTechnicalSettings() {
       return !this.isVirtualPbxProviderOwnedSip;
     },
-    virtualPbxManagementLabel() {
-      if (this.isVirtualPbxProviderOwnedSip) {
-        return this.$t(
-          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE'
-        );
-      }
-
-      return this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.MANAGEMENT_TITLE');
+    virtualPbxSectionLabel() {
+      return this.isCallsSection
+        ? this.$t('INBOX_MGMT.EDIT.VOICE_CALLS.CALLS_TITLE')
+        : this.$t('INBOX_MGMT.EDIT.VOICE_CALLS.CONFIG_TITLE');
     },
-    virtualPbxManagementHelpText() {
-      if (this.isVirtualPbxProviderOwnedSip) {
-        return this.$t(
-          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.HINT'
-        );
-      }
-
-      return this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.MANAGEMENT_SUBTITLE');
+    virtualPbxSectionHelpText() {
+      return this.isCallsSection
+        ? this.$t('INBOX_MGMT.EDIT.VOICE_CALLS.CALLS_HINT')
+        : this.$t('INBOX_MGMT.EDIT.VOICE_CALLS.CONFIG_HINT');
+    },
+    // The configuration tab has nothing to save for providers that own their
+    // SIP details (Sipuni, Binotel): their tokens have their own buttons.
+    showVirtualPbxSaveButton() {
+      return this.isCallsSection || this.showVirtualPbxTechnicalSettings;
+    },
+    virtualPbxProviderLabel() {
+      const option = this.virtualPbxProviderOptions.find(
+        item => item.value === this.virtualPbxProviderKind
+      );
+      return option?.label || this.virtualPbxProviderKind;
     },
     isVirtualPbxAsteriskAnalog() {
       return this.virtualPbxProviderKind === 'asterisk_analog';
@@ -751,9 +782,7 @@ export default {
     isSelectedWhatsappFollowupOfficial() {
       const inbox = this.selectedWhatsappFollowupInbox;
       if (!inbox) return false;
-      const channelType = String(
-        inbox.channel_type || inbox.channelType || ''
-      );
+      const channelType = String(inbox.channel_type || inbox.channelType || '');
       const provider = String(inbox.provider || '').toLowerCase();
       if (
         channelType === 'Channel::WhatsappWeb' ||
@@ -840,7 +869,7 @@ export default {
         ? !!this.inbox.provider_config.calling_enabled
         : !!this.inbox.provider_config?.calling_capable;
       this.aiVoiceEnabled = !!this.inbox.provider_config?.ai_voice_enabled;
-      if (this.isAWhatsAppChannel && !this.isATwilioChannel) {
+      if (this.isAWhatsAppCloudChannel) {
         this.callRoutingForm = this.normalizeCallRoutingConfig(
           this.inbox.provider_config?.call_routing
         );
@@ -854,8 +883,7 @@ export default {
         this.inbox.provider_config?.binotel_events_webhook_token ||
         this.inbox.provider_config?.binotel_webhook_token ||
         '';
-      this.binotelApiKey =
-        this.inbox.provider_config?.binotel_api_key || '';
+      this.binotelApiKey = this.inbox.provider_config?.binotel_api_key || '';
       this.binotelApiSecret = '';
       this.binotelApiSecretConfigured = Boolean(
         this.inbox.provider_config?.binotel_api_secret_configured ||
@@ -1434,11 +1462,10 @@ export default {
         : defaults.inbound.groups;
       const isWazo =
         this.isVirtualPbxWazo || this.virtualPbxForm?.providerKind === 'wazo';
-      const routingAuthority = isWazo
-        ? 'onelink'
-        : inbound.routing_authority === 'external_pbx'
-          ? 'external_pbx'
-          : 'onelink';
+      const routingAuthority = resolveRoutingAuthority(
+        isWazo,
+        inbound.routing_authority
+      );
 
       return {
         show_extended_call_card:
@@ -1491,11 +1518,10 @@ export default {
       const followup = inbound.whatsapp_followup || {};
       const isWazo =
         this.isVirtualPbxWazo || this.virtualPbxForm?.providerKind === 'wazo';
-      const routingAuthority = isWazo
-        ? 'onelink'
-        : inbound.routing_authority === 'external_pbx'
-          ? 'external_pbx'
-          : 'onelink';
+      const routingAuthority = resolveRoutingAuthority(
+        isWazo,
+        inbound.routing_authority
+      );
 
       return {
         show_extended_call_card:
@@ -2131,967 +2157,139 @@ export default {
 </script>
 
 <template>
-  <div v-if="isATwilioChannel">
-    <SettingsFieldSection
-      :label="$t('INBOX_MGMT.ADD.TWILIO.API_CALLBACK.TITLE')"
-      :help-text="$t('INBOX_MGMT.ADD.TWILIO.API_CALLBACK.SUBTITLE')"
-    >
-      <woot-code :script="inbox.callback_webhook_url" lang="html" />
-    </SettingsFieldSection>
-    <SettingsFieldSection
-      v-if="isATwilioWhatsAppChannel"
-      :label="$t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_TITLE')"
-      :help-text="
-        $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_SUBHEADER')
-      "
-    >
-      <NextButton :disabled="isSyncingTemplates" @click="syncTemplates">
-        {{ $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_BUTTON') }}
-      </NextButton>
-    </SettingsFieldSection>
-  </div>
-  <div v-else-if="isAVoiceChannel" class="space-y-4">
+  <div v-if="isAVoiceChannel" class="space-y-4">
     <template v-if="inbox.provider === 'twilio'">
-      <SettingsFieldSection
-        :label="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TWILIO_VOICE_URL_TITLE')"
-        :help-text="
-          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TWILIO_VOICE_URL_SUBTITLE')
-        "
-      >
-        <woot-code :script="inbox.voice_call_webhook_url" lang="html" />
-      </SettingsFieldSection>
-      <SettingsFieldSection
-        :label="
-          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TWILIO_STATUS_URL_TITLE')
-        "
-        :help-text="
-          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TWILIO_STATUS_URL_SUBTITLE')
-        "
-      >
-        <woot-code :script="inbox.voice_status_webhook_url" lang="html" />
-      </SettingsFieldSection>
+      <DeveloperDetails v-if="!isCallsSection">
+        <SettingsFieldSection
+          :label="
+            $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TWILIO_VOICE_URL_TITLE')
+          "
+          :help-text="
+            $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TWILIO_VOICE_URL_SUBTITLE')
+          "
+        >
+          <woot-code :script="inbox.voice_call_webhook_url" lang="html" />
+        </SettingsFieldSection>
+        <SettingsFieldSection
+          :label="
+            $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TWILIO_STATUS_URL_TITLE')
+          "
+          :help-text="
+            $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TWILIO_STATUS_URL_SUBTITLE')
+          "
+        >
+          <woot-code :script="inbox.voice_status_webhook_url" lang="html" />
+        </SettingsFieldSection>
+      </DeveloperDetails>
     </template>
     <template v-else>
-      <SettingsFieldSection
-        v-if="!isVirtualPbxVoiceInbox"
-        :label="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.LEGACY_VOICE_TITLE')"
-        :help-text="
-          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.LEGACY_VOICE_SUBTITLE')
-        "
-      >
-        <div class="flex flex-col gap-4">
-          <woot-code :script="inbox.telephony?.number_ref || ''" lang="text" />
-          <div class="text-sm text-n-slate-11">
-            <span class="after:content-[':']">
-              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.ROUTING_MODE') }}
-            </span>
-            {{ routingModeLabel(inbox.telephony?.routing_policy?.mode) }}
-          </div>
-          <div v-if="inbox.telephony?.app_ref" class="text-sm text-n-slate-11">
-            <span class="after:content-[':']">
-              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.PRIMARY_APP_REF') }}
-            </span>
-            {{ inbox.telephony.app_ref }}
-          </div>
-          <div
-            v-if="inbox.telephony?.routing_policy?.ai_app_ref"
-            class="text-sm text-n-slate-11"
-          >
-            <span class="after:content-[':']">
-              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.AI_APP_REF') }}
-            </span>
-            {{ inbox.telephony.routing_policy.ai_app_ref }}
-          </div>
-        </div>
-      </SettingsFieldSection>
-      <SettingsFieldSection
-        v-if="isSipuniVoiceInbox"
-        :label="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_TITLE')"
-        :help-text="
-          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_SUBTITLE')
-        "
-      >
-        <div class="flex flex-col gap-4">
-          <woot-code
-            v-if="sipuniWebhookUrl"
-            :script="sipuniWebhookUrl"
-            lang="html"
-          />
-          <div
-            v-else
-            class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
-          >
-            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_EMPTY') }}
-          </div>
-
-          <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_TOKEN') }}
-            <input
-              v-model="sipuniWebhookToken"
-              class="rounded-lg border border-n-weak py-2 font-mono text-sm"
-              type="text"
-              autocomplete="off"
-              autocapitalize="off"
-              spellcheck="false"
-              :placeholder="
-                $t(
-                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_TOKEN_PLACEHOLDER'
-                )
-              "
-            />
-          </label>
-
-          <div class="flex flex-wrap gap-3">
-            <NextButton type="button" @click="generateSipuniWebhookToken">
-              {{
-                $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_GENERATE')
-              }}
-            </NextButton>
-            <NextButton
-              type="button"
-              :disabled="!sipuniWebhookUrl"
-              @click="copySipuniWebhookUrl"
-            >
-              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_COPY') }}
-            </NextButton>
-            <NextButton
-              type="button"
-              :is-loading="isUpdatingSipuniWebhook"
-              @click="updateSipuniWebhookToken"
-            >
-              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_SAVE') }}
-            </NextButton>
-          </div>
-        </div>
-      </SettingsFieldSection>
-      <SettingsFieldSection
-        v-if="isBinotelVoiceInbox"
-        :label="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_TITLE')"
-        :help-text="
-          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_SUBTITLE')
-        "
-      >
-        <div class="flex flex-col gap-4">
-          <woot-code
-            v-if="binotelWebhookUrl"
-            :script="binotelWebhookUrl"
-            lang="html"
-          />
-          <div
-            v-else
-            class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
-          >
-            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_EMPTY') }}
-          </div>
-
-          <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_TOKEN') }}
-            <input
-              v-model="binotelWebhookToken"
-              class="rounded-lg border border-n-weak py-2 font-mono text-sm"
-              type="text"
-              autocomplete="off"
-              autocapitalize="off"
-              spellcheck="false"
-              :placeholder="
-                $t(
-                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_TOKEN_PLACEHOLDER'
-                )
-              "
-            />
-          </label>
-
-          <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_KEY') }}
-            <input
-              v-model="binotelApiKey"
-              data-testid="binotel-api-key-input"
-              class="rounded-lg border border-n-weak py-2 font-mono text-sm"
-              type="text"
-              autocomplete="off"
-              autocapitalize="off"
-              spellcheck="false"
-              :placeholder="
-                $t(
-                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_KEY_PLACEHOLDER'
-                )
-              "
-            />
-          </label>
-
-          <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_SECRET') }}
-            <input
-              v-model="binotelApiSecret"
-              data-testid="binotel-api-secret-input"
-              class="rounded-lg border border-n-weak py-2 font-mono text-sm"
-              type="password"
-              autocomplete="new-password"
-              autocapitalize="off"
-              spellcheck="false"
-              :placeholder="
-                binotelApiSecretConfigured
-                  ? '********'
-                  : $t(
-                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_SECRET_PLACEHOLDER'
-                    )
-              "
-            />
-            <span
-              v-if="binotelApiSecretConfigured"
-              data-testid="binotel-api-secret-configured-hint"
-              class="text-xs text-n-teal-11"
-            >
-              {{
-                $t(
-                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_SECRET_CONFIGURED_HINT'
-                )
-              }}
-            </span>
-          </label>
-
-          <div class="flex flex-wrap gap-3">
-            <NextButton type="button" @click="generateBinotelWebhookToken">
-              {{
-                $t(
-                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_GENERATE'
-                )
-              }}
-            </NextButton>
-            <NextButton
-              type="button"
-              :disabled="!binotelWebhookUrl"
-              @click="copyBinotelWebhookUrl"
-            >
-              {{
-                $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_COPY')
-              }}
-            </NextButton>
-            <NextButton
-              type="button"
-              :is-loading="isUpdatingBinotelWebhook"
-              @click="updateBinotelWebhookToken"
-            >
-              {{
-                $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_SAVE')
-              }}
-            </NextButton>
-          </div>
-        </div>
-      </SettingsFieldSection>
-      <SettingsFieldSection
-        v-if="isBeelineVoiceInbox"
-        :label="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TITLE')"
-        :help-text="
-          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_SUBTITLE')
-        "
-      >
-        <div class="flex flex-col gap-4">
-          <woot-code
-            v-if="beelineWebhookUrl"
-            :script="beelineWebhookUrl"
-            lang="html"
-          />
-          <div
-            v-else
-            class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
-          >
-            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_EMPTY') }}
-          </div>
-
-          <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TOKEN') }}
-            <input
-              v-model="beelineWebhookToken"
-              data-testid="beeline-webhook-token-input"
-              class="rounded-lg border border-n-weak py-2 font-mono text-sm"
-              type="text"
-              autocomplete="off"
-              autocapitalize="off"
-              spellcheck="false"
-              :placeholder="
-                $t(
-                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TOKEN_PLACEHOLDER'
-                )
-              "
-            />
-          </label>
-
-          <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_API_TOKEN') }}
-            <input
-              v-model="beelineApiToken"
-              data-testid="beeline-api-token-input"
-              class="rounded-lg border border-n-weak py-2 font-mono text-sm"
-              type="password"
-              autocomplete="new-password"
-              autocapitalize="off"
-              spellcheck="false"
-              :placeholder="
-                beelineApiTokenConfigured
-                  ? '********'
-                  : $t(
-                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_API_TOKEN_PLACEHOLDER'
-                    )
-              "
-            />
-            <span
-              v-if="beelineApiTokenConfigured"
-              data-testid="beeline-api-token-configured-hint"
-              class="text-xs text-n-teal-11"
-            >
-              {{
-                $t(
-                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_API_TOKEN_CONFIGURED_HINT'
-                )
-              }}
-            </span>
-          </label>
-
-          <div class="flex flex-wrap gap-3">
-            <NextButton
-              type="button"
-              data-testid="beeline-webhook-generate"
-              @click="generateBeelineWebhookToken"
-            >
-              {{
-                $t(
-                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_GENERATE'
-                )
-              }}
-            </NextButton>
-            <NextButton
-              type="button"
-              data-testid="beeline-webhook-copy"
-              :disabled="!beelineWebhookUrl"
-              @click="copyBeelineWebhookUrl"
-            >
-              {{
-                $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_COPY')
-              }}
-            </NextButton>
-            <NextButton
-              type="button"
-              data-testid="beeline-webhook-save"
-              :is-loading="isUpdatingBeelineWebhook"
-              @click="updateBeelineWebhookToken"
-            >
-              {{
-                $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_SAVE')
-              }}
-            </NextButton>
-          </div>
-        </div>
-      </SettingsFieldSection>
-      <SettingsFieldSection
-        :label="virtualPbxManagementLabel"
-        :help-text="virtualPbxManagementHelpText"
-      >
-        <div v-if="isLoadingVirtualPbxStatus" class="text-sm text-n-slate-11">
-          {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.LOADING') }}
-        </div>
-        <div
-          v-else-if="virtualPbxLoadError"
-          class="rounded-xl border border-n-ruby-4 bg-n-ruby-2/40 p-4 text-sm text-n-ruby-11"
+      <DeveloperDetails v-if="!isVirtualPbxVoiceInbox && !isCallsSection">
+        <SettingsFieldSection
+          :label="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.LEGACY_VOICE_TITLE')"
+          :help-text="
+            $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.LEGACY_VOICE_SUBTITLE')
+          "
         >
-          {{ virtualPbxLoadError }}
-        </div>
-        <form
-          v-else
-          class="flex flex-col gap-4"
-          @submit.prevent="updateVirtualPbxChannel"
-        >
-          <div
-            v-if="isVirtualPbxReadOnly"
-            class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
-          >
-            {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.READ_ONLY') }}
-          </div>
-          <div
-            v-if="virtualPbxWarnings.length"
-            class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
-          >
-            <div class="mb-1 font-medium">
-              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.WARNINGS_TITLE') }}
+          <div class="flex flex-col gap-4">
+            <woot-code
+              :script="inbox.telephony?.number_ref || ''"
+              lang="text"
+            />
+            <div class="text-sm text-n-slate-11">
+              <span class="after:content-[':']">
+                {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.ROUTING_MODE') }}
+              </span>
+              {{ routingModeLabel(inbox.telephony?.routing_policy?.mode) }}
             </div>
-            <ul class="list-disc pl-5">
-              <li v-for="warning in virtualPbxWarnings" :key="warning.code">
-                {{ warning.message || warning.code }}
-              </li>
-            </ul>
+            <div
+              v-if="inbox.telephony?.app_ref"
+              class="text-sm text-n-slate-11"
+            >
+              <span class="after:content-[':']">
+                {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.PRIMARY_APP_REF') }}
+              </span>
+              {{ inbox.telephony.app_ref }}
+            </div>
+            <div
+              v-if="inbox.telephony?.routing_policy?.ai_app_ref"
+              class="text-sm text-n-slate-11"
+            >
+              <span class="after:content-[':']">
+                {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.AI_APP_REF') }}
+              </span>
+              {{ inbox.telephony.routing_policy.ai_app_ref }}
+            </div>
+          </div>
+        </SettingsFieldSection>
+      </DeveloperDetails>
+
+      <form
+        v-if="isVirtualPbxVoiceInbox"
+        class="flex flex-col gap-4"
+        @submit.prevent="updateVirtualPbxChannel"
+      >
+        <SettingsFieldSection
+          :label="virtualPbxSectionLabel"
+          :help-text="virtualPbxSectionHelpText"
+        >
+          <div v-if="isLoadingVirtualPbxStatus" class="text-sm text-n-slate-11">
+            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.LOADING') }}
           </div>
           <div
-            v-if="virtualPbxErrors.length"
+            v-else-if="virtualPbxLoadError"
             class="rounded-xl border border-n-ruby-4 bg-n-ruby-2/40 p-4 text-sm text-n-ruby-11"
           >
-            <ul class="list-disc pl-5">
-              <li v-for="error in virtualPbxErrors" :key="error.code">
-                {{ virtualPbxErrorLabel(error) }}
-              </li>
-            </ul>
+            {{ virtualPbxLoadError }}
           </div>
-
-          <label
-            v-if="showVirtualPbxTechnicalSettings"
-            class="flex flex-col gap-1 text-sm text-n-slate-12"
-          >
-            {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CHANNEL_NAME.LABEL') }}
-            <input
-              v-model="virtualPbxForm.channelName"
-              class="rounded-lg border border-n-weak py-2 text-sm"
-              :disabled="isVirtualPbxReadOnly"
-              type="text"
-            />
-          </label>
-
-          <div
-            v-if="showVirtualPbxTechnicalSettings"
-            class="grid grid-cols-1 gap-4 md:grid-cols-2"
-          >
-            <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-              <span class="flex items-center gap-2">
-                <img
-                  v-if="virtualPbxCarrierBadgeUrl"
-                  :src="virtualPbxCarrierBadgeUrl"
-                  alt=""
-                  class="h-5 w-5 rounded object-contain"
-                  data-testid="virtual-pbx-carrier-badge"
-                />
-                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.LABEL') }}
-              </span>
-              <select
-                v-model="virtualPbxForm.providerKind"
-                data-testid="virtual-pbx-provider-kind"
-                class="rounded-lg border border-n-weak py-2 text-sm disabled:bg-n-alpha-1 disabled:text-n-slate-11"
-                :disabled="true"
-              >
-                <option value="" disabled>
-                  {{
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.PLACEHOLDER'
-                    )
-                  }}
-                </option>
-                <option
-                  v-for="option in virtualPbxProviderOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </option>
-              </select>
-            </label>
-            <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-              {{ $t('INBOX_MGMT.ADD.VOICE.PHONE_NUMBER.LABEL') }}
-              <input
-                v-model="virtualPbxForm.displayPhoneNumber"
-                class="rounded-lg border border-n-weak py-2 text-sm"
-                :disabled="isVirtualPbxReadOnly"
-                type="text"
-              />
-            </label>
-          </div>
-
-          <div
-            v-if="showVirtualPbxTechnicalSettings"
-            class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
-          >
-            <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-              {{
-                $t(
-                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OPERATOR_DISTRIBUTION.LABEL'
-                )
-              }}
-              <select
-                v-model="virtualPbxForm.operatorDistributionMode"
-                class="rounded-lg border border-n-weak py-2 text-sm"
-                :disabled="isVirtualPbxReadOnly"
-              >
-                <option
-                  v-for="option in virtualPbxOperatorDistributionOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </option>
-              </select>
-            </label>
-            <label class="mt-4 flex flex-col gap-1 text-sm text-n-slate-12">
-              {{
-                $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.MAX_CALL_DURATION.LABEL')
-              }}
-              <input
-                v-model.number="virtualPbxForm.maxCallDurationMinutes"
-                class="rounded-lg border border-n-weak py-2 text-sm"
-                :disabled="isVirtualPbxReadOnly"
-                type="number"
-                min="5"
-                max="240"
-                step="5"
-              />
-              <span class="text-label-small text-n-slate-11">
-                {{
-                  $t(
-                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.MAX_CALL_DURATION.DESCRIPTION'
-                  )
-                }}
-              </span>
-            </label>
-          </div>
-
-          <div
-            v-if="showVirtualPbxTechnicalSettings"
-            class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
-          >
-            <div class="mb-3 space-y-1">
-              <h3 class="text-sm font-medium text-n-slate-12">
-                {{
-                  $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.PROVIDER_CONNECTION')
-                }}
-              </h3>
-              <p class="mb-0 text-sm text-n-slate-11">
-                {{
-                  $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.JANUS_SIP_SUBTITLE')
-                }}
-              </p>
-            </div>
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                {{
-                  $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL')
-                }}
-                <input
-                  v-model="virtualPbxForm.connectionHost"
-                  data-testid="virtual-pbx-connection-host"
-                  class="rounded-lg border border-n-weak py-2 text-sm disabled:bg-n-alpha-1 disabled:text-n-slate-11"
-                  :disabled="isVirtualPbxReadOnly || isVirtualPbxWazo"
-                  type="text"
-                  :placeholder="
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.PLACEHOLDER'
-                    )
-                  "
-                />
-              </label>
-              <label
-                v-if="isVirtualPbxBeeline"
-                class="flex flex-col gap-1 text-sm text-n-slate-12"
-              >
-                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SIP_DOMAIN.LABEL') }}
-                <input
-                  v-model="virtualPbxForm.connectionSipDomain"
-                  class="rounded-lg border border-n-weak py-2 text-sm"
-                  :disabled="isVirtualPbxReadOnly"
-                  type="text"
-                  :placeholder="
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SIP_DOMAIN.PLACEHOLDER'
-                    )
-                  "
-                />
-              </label>
-              <label
-                v-if="isVirtualPbxBeeline"
-                class="flex flex-col gap-1 text-sm text-n-slate-12"
-              >
-                {{
-                  $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_PROXY.LABEL')
-                }}
-                <input
-                  v-model="virtualPbxForm.connectionOutboundProxy"
-                  class="rounded-lg border border-n-weak py-2 text-sm"
-                  :disabled="isVirtualPbxReadOnly"
-                  type="text"
-                  :placeholder="
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_PROXY.PLACEHOLDER'
-                    )
-                  "
-                />
-              </label>
-              <label
-                v-if="isVirtualPbxAsteriskAnalog"
-                class="flex flex-col gap-1 text-sm text-n-slate-12"
-              >
-                {{
-                  $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.LABEL')
-                }}
-                <input
-                  v-model="virtualPbxForm.connectionPort"
-                  class="rounded-lg border border-n-weak py-2 text-sm"
-                  :disabled="isVirtualPbxReadOnly"
-                  type="number"
-                  min="1"
-                  max="65535"
-                  :placeholder="
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.PLACEHOLDER'
-                    )
-                  "
-                />
-              </label>
-              <label
-                v-if="isVirtualPbxAsteriskAnalog"
-                class="flex flex-col gap-1 text-sm text-n-slate-12"
-              >
-                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.TRANSPORT.LABEL') }}
-                <select
-                  v-model="virtualPbxForm.connectionTransport"
-                  class="rounded-lg border border-n-weak py-2 text-sm"
-                  :disabled="isVirtualPbxReadOnly"
-                >
-                  <option
-                    v-for="option in virtualPbxTransportOptions"
-                    :key="option"
-                    :value="option"
-                  >
-                    {{ option.toUpperCase() }}
-                  </option>
-                </select>
-              </label>
-              <label
-                v-if="isVirtualPbxDialFormatEditable"
-                class="flex flex-col gap-1 text-sm text-n-slate-12"
-              >
-                {{
-                  $t(
-                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.LABEL'
-                  )
-                }}
-                <select
-                  v-model="virtualPbxForm.outboundDialFormat"
-                  class="rounded-lg border border-n-weak py-2 text-sm"
-                  :disabled="isVirtualPbxReadOnly"
-                >
-                  <option
-                    v-for="option in virtualPbxOutboundDialFormatOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </option>
-                </select>
-              </label>
-            </div>
-            <p
-              v-if="isVirtualPbxBeeline"
-              class="mb-0 mt-4 border-t border-n-weak pt-4 text-sm text-n-slate-11"
+          <div v-else class="flex flex-col gap-4">
+            <div
+              v-if="isVirtualPbxReadOnly"
+              class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
             >
-              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.BEELINE_CONFIG_HINT') }}
-            </p>
-          </div>
-
-          <div
-            v-if="showVirtualPbxTechnicalSettings && isVirtualPbxWazo"
-            data-testid="virtual-pbx-wazo-carrier-settings"
-            class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
-          >
-            <div class="mb-3 space-y-1">
-              <h3 class="text-sm font-medium text-n-slate-12">
-                {{
-                  $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TITLE')
-                }}
-              </h3>
-              <p class="mb-0 text-sm text-n-slate-11">
-                {{
-                  $t(
-                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.SUBTITLE'
-                  )
-                }}
-              </p>
+              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.READ_ONLY') }}
             </div>
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                {{
-                  $t(
-                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIER_KIND_LABEL'
-                  )
-                }}
-                <select
-                  v-model="virtualPbxForm.carrierKind"
-                  data-testid="virtual-pbx-carrier-kind"
-                  class="rounded-lg border border-n-weak py-2 text-sm disabled:bg-n-alpha-1 disabled:text-n-slate-11"
-                  :disabled="isVirtualPbxReadOnly || isVirtualPbxCarrierLocked"
-                  @change="onVirtualPbxCarrierChange"
-                >
-                  <option value="">
-                    {{
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIER_KIND_PLACEHOLDER'
-                      )
-                    }}
-                  </option>
-                  <option
-                    v-for="option in virtualPbxCarrierOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </option>
-                </select>
-              </label>
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                {{
-                  $t(
-                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.MAX_CHANNELS_LABEL'
-                  )
-                }}
-                <div class="flex items-center gap-2">
-                  <input
-                    v-model.number="virtualPbxForm.maxChannels"
-                    class="flex-1 rounded-lg border border-n-weak py-2 text-sm"
-                    :disabled="isVirtualPbxReadOnly"
-                    type="number"
-                    min="1"
-                    max="100"
-                  />
-                  <NextButton
-                    type="button"
-                    data-testid="virtual-pbx-probe-channels-btn"
-                    outline
-                    slate
-                    xs
-                    :is-loading="isProbingVirtualPbxChannels"
-                    :disabled="
-                      isVirtualPbxReadOnly || isProbingVirtualPbxChannels
-                    "
-                    @click="probeVirtualPbxChannelCapacity"
-                  >
-                    {{
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.PROBE_CHANNELS_BUTTON'
-                      )
-                    }}
-                  </NextButton>
-                </div>
-                <div
-                  v-if="virtualPbxForm.detectedChannelLimit"
-                  data-testid="virtual-pbx-detected-channel-limit"
-                  class="mt-1 flex items-center justify-between gap-2 rounded-lg bg-n-amber-2/50 px-2.5 py-1.5 text-xs text-n-amber-11"
-                >
-                  <span>
-                    {{
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.DETECTED_LIMIT_BADGE',
-                        { count: virtualPbxForm.detectedChannelLimit }
-                      )
-                    }}
-                  </span>
-                  <button
-                    v-if="
-                      virtualPbxForm.maxChannels !==
-                      virtualPbxForm.detectedChannelLimit
-                    "
-                    type="button"
-                    data-testid="virtual-pbx-apply-detected-limit"
-                    class="font-medium underline"
-                    :disabled="isVirtualPbxReadOnly"
-                    @click="applyDetectedChannelLimit"
-                  >
-                    {{
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.APPLY_DETECTED_LIMIT'
-                      )
-                    }}
-                  </button>
-                </div>
-                <div
-                  data-testid="virtual-pbx-ai-concurrency-badge"
-                  class="mt-1 rounded-lg bg-n-brand/10 px-2.5 py-1.5 text-xs text-n-brand"
-                >
-                  {{
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.AI_CONCURRENCY_BADGE',
-                      { count: effectiveAiMaxConcurrentCalls }
-                    )
-                  }}
-                </div>
-                <span class="text-label-small text-n-slate-11">
-                  {{
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.DETECTED_LIMIT_HINT'
-                    )
-                  }}
-                </span>
-              </label>
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                {{
-                  $t(
-                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.RESERVED_INBOUND_LABEL'
-                  )
-                }}
-                <input
-                  v-model.number="virtualPbxForm.reservedInboundChannels"
-                  class="rounded-lg border border-n-weak py-2 text-sm"
-                  :disabled="isVirtualPbxReadOnly"
-                  type="number"
-                  min="0"
-                  max="50"
-                />
-              </label>
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                {{
-                  $t(
-                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.RING_STRATEGY_LABEL'
-                  )
-                }}
-                <select
-                  v-model="virtualPbxForm.ringStrategy"
-                  class="rounded-lg border border-n-weak py-2 text-sm"
-                  :disabled="isVirtualPbxReadOnly"
-                >
-                  <option
-                    v-for="option in virtualPbxRingStrategyOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </option>
-                </select>
-              </label>
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                {{
-                  $t(
-                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.GROUP_EXTENSION_LABEL'
-                  )
-                }}
-                <input
-                  v-model="virtualPbxForm.groupExtension"
-                  class="rounded-lg border border-n-weak py-2 text-sm"
-                  :disabled="isVirtualPbxReadOnly"
-                  type="text"
-                  :placeholder="String(2001)"
-                />
-              </label>
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                {{
-                  $t(
-                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_USERNAME_LABEL'
-                  )
-                }}
-                <input
-                  v-model="virtualPbxForm.trunkUsername"
-                  class="rounded-lg border border-n-weak py-2 text-sm"
-                  :disabled="isVirtualPbxReadOnly"
-                  type="text"
-                  :placeholder="
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_USERNAME_PLACEHOLDER'
-                    )
-                  "
-                />
-              </label>
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                {{
-                  $t(
-                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_PASSWORD_LABEL'
-                  )
-                }}
-                <input
-                  v-model="virtualPbxForm.trunkPassword"
-                  class="rounded-lg border border-n-weak py-2 text-sm"
-                  :disabled="isVirtualPbxReadOnly"
-                  type="password"
-                  autocomplete="new-password"
-                  :placeholder="
-                    virtualPbxForm.trunkPasswordConfigured
-                      ? '********'
-                      : $t(
-                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_PASSWORD_PLACEHOLDER'
-                        )
-                  "
-                />
-              </label>
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                {{
-                  $t(
-                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_DOMAIN_LABEL'
-                  )
-                }}
-                <input
-                  v-model="virtualPbxForm.trunkDomain"
-                  data-testid="virtual-pbx-trunk-domain"
-                  class="rounded-lg border border-n-weak py-2 text-sm disabled:bg-n-alpha-1 disabled:text-n-slate-11"
-                  :disabled="
-                    isVirtualPbxReadOnly || isVirtualPbxKnownCarrierPreset
-                  "
-                  type="text"
-                  :placeholder="
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_DOMAIN_PLACEHOLDER'
-                    )
-                  "
-                />
-              </label>
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                {{
-                  $t(
-                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_HOST_LABEL'
-                  )
-                }}
-                <input
-                  v-model="virtualPbxForm.trunkHost"
-                  data-testid="virtual-pbx-trunk-host"
-                  class="rounded-lg border border-n-weak py-2 text-sm disabled:bg-n-alpha-1 disabled:text-n-slate-11"
-                  :disabled="
-                    isVirtualPbxReadOnly || isVirtualPbxKnownCarrierPreset
-                  "
-                  type="text"
-                  :placeholder="
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_HOST_PLACEHOLDER'
-                    )
-                  "
-                />
-              </label>
+            <div
+              v-if="virtualPbxWarnings.length"
+              class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
+            >
+              <div class="mb-1 font-medium">
+                {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.WARNINGS_TITLE') }}
+              </div>
+              <ul class="list-disc pl-5">
+                <li v-for="warning in virtualPbxWarnings" :key="warning.code">
+                  {{ warning.message || warning.code }}
+                </li>
+              </ul>
             </div>
-          </div>
-
-          <div
-            class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
-          >
-            <div class="mb-3 space-y-1">
-              <h3 class="text-sm font-medium text-n-slate-12">
-                {{
-                  $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE')
-                }}
-              </h3>
-              <p class="mb-0 text-sm text-n-slate-11">
-                {{
-                  $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.HINT')
-                }}
-              </p>
+            <div
+              v-if="virtualPbxErrors.length"
+              class="rounded-xl border border-n-ruby-4 bg-n-ruby-2/40 p-4 text-sm text-n-ruby-11"
+            >
+              <ul class="list-disc pl-5">
+                <li v-for="error in virtualPbxErrors" :key="error.code">
+                  {{ virtualPbxErrorLabel(error) }}
+                </li>
+              </ul>
             </div>
 
-            <div class="flex flex-col divide-y divide-n-weak">
+            <template v-if="isCallsSection">
               <div
-                v-for="(profile, index) in virtualPbxForm.profiles"
-                :key="profile.clientId"
-                class="grid grid-cols-1 gap-3 py-4 first:pt-0 last:pb-0 md:grid-cols-2"
+                v-if="showVirtualPbxTechnicalSettings"
+                class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
               >
-                <label
-                  v-if="profile.profileKind !== 'voice_agent'"
-                  class="flex flex-col gap-1 text-sm text-n-slate-12"
-                >
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
                   {{
                     $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.EMPLOYEE_LABEL'
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OPERATOR_DISTRIBUTION.LABEL'
                     )
                   }}
                   <select
-                    v-model.number="profile.userId"
+                    v-model="virtualPbxForm.operatorDistributionMode"
                     class="rounded-lg border border-n-weak py-2 text-sm"
                     :disabled="isVirtualPbxReadOnly"
                   >
-                    <option disabled value="">
-                      {{
-                        $t(
-                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.SELECT_PLACEHOLDER'
-                        )
-                      }}
-                    </option>
                     <option
-                      v-for="option in virtualPbxMemberOptions"
+                      v-for="option in virtualPbxOperatorDistributionOptions"
                       :key="option.value"
                       :value="option.value"
                     >
@@ -3099,534 +2297,436 @@ export default {
                     </option>
                   </select>
                 </label>
-
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <label class="mt-4 flex flex-col gap-1 text-sm text-n-slate-12">
                   {{
                     $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.LABEL'
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.MAX_CALL_DURATION.LABEL'
                     )
                   }}
                   <input
-                    v-model="profile.internalExtension"
+                    v-model.number="virtualPbxForm.maxCallDurationMinutes"
                     class="rounded-lg border border-n-weak py-2 text-sm"
                     :disabled="isVirtualPbxReadOnly"
-                    type="text"
-                    :placeholder="
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.PLACEHOLDER'
-                      )
-                    "
+                    type="number"
+                    min="5"
+                    max="240"
+                    step="5"
                   />
-                </label>
-
-                <label
-                  v-if="isVirtualPbxSipCredentialsVisible"
-                  class="flex flex-col gap-1 text-sm text-n-slate-12"
-                >
-                  {{
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
-                    )
-                  }}
-                  <input
-                    v-model="profile.sipUsername"
-                    class="rounded-lg border border-n-weak py-2 text-sm"
-                    :disabled="isVirtualPbxReadOnly"
-                    type="text"
-                    :placeholder="
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.PLACEHOLDER'
-                      )
-                    "
-                  />
-                </label>
-
-                <label
-                  v-if="isVirtualPbxSipCredentialsVisible"
-                  class="flex flex-col gap-1 text-sm text-n-slate-12"
-                >
-                  {{
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
-                    )
-                  }}
-                  <input
-                    v-model="profile.sipPassword"
-                    class="rounded-lg border border-n-weak py-2 text-sm"
-                    :disabled="isVirtualPbxReadOnly"
-                    type="password"
-                    autocomplete="new-password"
-                    :placeholder="virtualPbxSipPasswordPlaceholder(profile)"
-                  />
-                </label>
-
-                <label
-                  class="flex items-center gap-2 text-sm text-n-slate-12 md:col-span-2"
-                >
-                  <input
-                    v-model="profile.profileKind"
-                    :disabled="
-                      isVirtualPbxVoiceAgentToggleDisabled(profile, index)
-                    "
-                    type="checkbox"
-                    true-value="voice_agent"
-                    false-value="human_operator"
-                    @change="onVirtualPbxProfileKindChange(profile)"
-                  />
-                  <span class="font-medium">
+                  <span class="text-label-small text-n-slate-11">
                     {{
                       $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.VOICE_AGENT_LABEL'
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.MAX_CALL_DURATION.DESCRIPTION'
                       )
                     }}
                   </span>
                 </label>
-
-                <div class="md:col-span-2">
-                  <button
-                    type="button"
-                    class="p-0 text-sm text-n-ruby-10"
-                    :disabled="isVirtualPbxReadOnly"
-                    @click="removeVirtualPbxProfile(index)"
-                  >
-                    {{
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.REMOVE',
-                        { index: index + 1 }
-                      )
-                    }}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <NextButton
-              type="button"
-              class="mt-3"
-              outline
-              slate
-              sm
-              :disabled="isVirtualPbxReadOnly"
-              @click="addVirtualPbxProfile"
-            >
-              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.ADD') }}
-            </NextButton>
-          </div>
-
-          <div
-            data-testid="call-routing-builder"
-            class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
-          >
-            <div
-              class="mb-4 flex flex-col gap-3 border-b border-n-weak pb-3 md:flex-row md:items-center md:justify-between"
-            >
-              <div class="space-y-1">
-                <h3 class="text-sm font-medium text-n-slate-12">
-                  {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.TITLE') }}
-                </h3>
-                <p class="mb-0 text-sm text-n-slate-11">
-                  {{
-                    $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SUBTITLE')
-                  }}
-                </p>
-              </div>
-              <div
-                class="inline-flex rounded-lg bg-n-alpha-1 p-1"
-                role="tablist"
-              >
-                <button
-                  type="button"
-                  data-testid="call-routing-tab-inbound"
-                  class="rounded-md px-3 py-1.5 text-xs font-medium transition"
-                  :class="
-                    callRoutingTab === 'inbound'
-                      ? 'bg-n-solid-2 text-n-slate-12 shadow-sm'
-                      : 'text-n-slate-11'
-                  "
-                  @click="callRoutingTab = 'inbound'"
-                >
-                  {{
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.INBOUND_TAB'
-                    )
-                  }}
-                </button>
-                <button
-                  type="button"
-                  data-testid="call-routing-tab-outbound"
-                  class="rounded-md px-3 py-1.5 text-xs font-medium transition"
-                  :class="
-                    callRoutingTab === 'outbound'
-                      ? 'bg-n-solid-2 text-n-slate-12 shadow-sm'
-                      : 'text-n-slate-11'
-                  "
-                  @click="callRoutingTab = 'outbound'"
-                >
-                  {{
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND_TAB'
-                    )
-                  }}
-                </button>
-              </div>
-            </div>
-
-            <div
-              v-if="callRoutingTab === 'inbound'"
-              data-testid="call-routing-inbound-panel"
-              class="flex flex-col gap-4"
-            >
-              <div
-                v-if="isVirtualPbxVoiceInbox && !isVirtualPbxWazo"
-                data-testid="call-routing-authority-selector"
-                class="rounded-lg bg-n-alpha-1 p-3"
-              >
-                <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-n-slate-11">
-                  {{
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.TITLE'
-                    )
-                  }}
-                </div>
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <button
-                    type="button"
-                    data-testid="call-routing-authority-external-pbx"
-                    class="flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition"
-                    :class="
-                      callRoutingForm.inbound.routing_authority ===
-                      'external_pbx'
-                        ? 'border-n-brand bg-n-brand/10 text-n-slate-12'
-                        : 'border-n-weak bg-n-solid-2 text-n-slate-11'
-                    "
-                    :disabled="isVirtualPbxReadOnly"
-                    @click="setCallRoutingAuthority('external_pbx')"
-                  >
-                    <span class="text-sm font-medium text-n-slate-12">
-                      {{
-                        $t(
-                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.EXTERNAL_PBX'
-                        )
-                      }}
-                    </span>
-                    <span class="text-xs text-n-slate-11">
-                      {{
-                        $t(
-                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.EXTERNAL_PBX_DESC'
-                        )
-                      }}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="call-routing-authority-onelink"
-                    class="flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition"
-                    :class="
-                      callRoutingForm.inbound.routing_authority !==
-                      'external_pbx'
-                        ? 'border-n-brand bg-n-brand/10 text-n-slate-12'
-                        : 'border-n-weak bg-n-solid-2 text-n-slate-11'
-                    "
-                    :disabled="isVirtualPbxReadOnly"
-                    @click="setCallRoutingAuthority('onelink')"
-                  >
-                    <span class="text-sm font-medium text-n-slate-12">
-                      {{
-                        $t(
-                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.ONELINK'
-                        )
-                      }}
-                    </span>
-                    <span class="text-xs text-n-slate-11">
-                      {{
-                        $t(
-                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.ONELINK_DESC'
-                        )
-                      }}
-                    </span>
-                  </button>
-                </div>
               </div>
 
               <div
-                v-if="isVirtualPbxWazo"
-                data-testid="call-routing-wazo-onelink-badge"
-                class="flex flex-col gap-1 rounded-lg border border-n-brand/30 bg-n-brand/10 p-3 text-xs text-n-slate-12"
+                class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
               >
-                <span class="font-medium text-n-brand">
-                  {{
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.WAZO_ALWAYS_ONELINK_HINT'
-                    )
-                  }}
-                </span>
-                <span class="text-n-slate-11">
-                  {{
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.AI_CONCURRENCY_BADGE',
-                      { count: effectiveAiMaxConcurrentCalls }
-                    )
-                  }}
-                </span>
-              </div>
+                <div class="mb-3 space-y-1">
+                  <h3 class="text-sm font-medium text-n-slate-12">
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE'
+                      )
+                    }}
+                  </h3>
+                  <p class="mb-0 text-sm text-n-slate-11">
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.HINT'
+                      )
+                    }}
+                  </p>
+                </div>
 
-              <div
-                v-if="!isExternalPbxRoutingAuthority"
-                class="rounded-lg bg-n-alpha-1 p-3"
-              >
-                <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-n-slate-11">
-                  1.
-                  {{
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.TITLE'
-                    )
-                  }}
-                </div>
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                    {{
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.MODE_LABEL'
-                      )
-                    }}
-                    <select
-                      v-model="callRoutingForm.inbound.schedule_mode"
-                      data-testid="call-routing-schedule-mode"
-                      class="rounded-lg border border-n-weak py-2 text-sm"
-                      :disabled="isVirtualPbxReadOnly"
-                      @change="markCallRoutingDirty"
-                    >
-                      <option value="always">
-                        {{
-                          $t(
-                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.ALWAYS'
-                          )
-                        }}
-                      </option>
-                      <option value="business_hours">
-                        {{
-                          $t(
-                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.BUSINESS_HOURS'
-                          )
-                        }}
-                      </option>
-                    </select>
-                  </label>
-                  <label
-                    v-if="
-                      callRoutingForm.inbound.schedule_mode === 'business_hours'
-                    "
-                    class="flex flex-col gap-1 text-sm text-n-slate-12"
-                  >
-                    {{
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.OFF_HOURS_ACTION_LABEL'
-                      )
-                    }}
-                    <select
-                      v-model="callRoutingForm.inbound.off_hours_action"
-                      data-testid="call-routing-off-hours-action"
-                      class="rounded-lg border border-n-weak py-2 text-sm"
-                      :disabled="isVirtualPbxReadOnly"
-                      @change="markCallRoutingDirty"
-                    >
-                      <option
-                        v-for="option in callRoutingActionOptions"
-                        :key="option.value"
-                        :value="option.value"
-                      >
-                        {{ option.label }}
-                      </option>
-                    </select>
-                  </label>
-                  <label
-                    v-if="
-                      callRoutingForm.inbound.schedule_mode ===
-                        'business_hours' &&
-                      callRoutingForm.inbound.off_hours_action === 'forward'
-                    "
-                    class="flex flex-col gap-1 text-sm text-n-slate-12"
-                  >
-                    {{
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.FORWARD_NUMBER_LABEL'
-                      )
-                    }}
-                    <input
-                      v-model="callRoutingForm.inbound.off_hours_forward_number"
-                      class="rounded-lg border border-n-weak py-2 text-sm"
-                      :disabled="isVirtualPbxReadOnly"
-                      type="text"
-                      placeholder="+77000000000"
-                      @input="markCallRoutingDirty"
-                    />
-                  </label>
-                </div>
-              </div>
-
-              <div
-                v-if="!isExternalPbxRoutingAuthority"
-                class="rounded-lg bg-n-alpha-1 p-3"
-              >
-                <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-n-slate-11">
-                  2.
-                  {{
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WAITING.TITLE'
-                    )
-                  }}
-                </div>
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                    {{
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WAITING.RING_TIMEOUT_LABEL'
-                      )
-                    }}
-                    <input
-                      v-model.number="callRoutingForm.inbound.ring_timeout_seconds"
-                      data-testid="call-routing-ring-timeout"
-                      class="rounded-lg border border-n-weak py-2 text-sm"
-                      :disabled="isVirtualPbxReadOnly"
-                      type="number"
-                      min="5"
-                      max="180"
-                      @input="markCallRoutingDirty"
-                    />
-                  </label>
-                  <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                    {{
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WAITING.RINGTONE_LABEL'
-                      )
-                    }}
-                    <select
-                      v-model="callRoutingForm.inbound.ringtone"
-                      data-testid="call-routing-ringtone"
-                      class="rounded-lg border border-n-weak py-2 text-sm"
-                      :disabled="isVirtualPbxReadOnly"
-                      @change="markCallRoutingDirty"
-                    >
-                      <option
-                        v-for="option in callRoutingRingtoneOptions"
-                        :key="option.value"
-                        :value="option.value"
-                      >
-                        {{ option.label }}
-                      </option>
-                    </select>
-                  </label>
-                  <label class="flex items-center gap-2 pt-6 text-sm text-n-slate-12">
-                    <input
-                      v-model="callRoutingForm.inbound.skip_busy_operators"
-                      type="checkbox"
-                      :disabled="isVirtualPbxReadOnly"
-                      @change="markCallRoutingDirty"
-                    />
-                    <span>
-                      {{
-                        $t(
-                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WAITING.SKIP_BUSY_LABEL'
-                        )
-                      }}
-                    </span>
-                  </label>
-                </div>
-              </div>
-
-              <div
-                v-if="!isExternalPbxRoutingAuthority"
-                class="rounded-lg bg-n-alpha-1 p-3"
-              >
-                <div class="mb-2 flex items-center justify-between">
-                  <div class="text-xs font-semibold uppercase tracking-wide text-n-slate-11">
-                    3.
-                    {{
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.TITLE'
-                      )
-                    }}
-                  </div>
-                  <NextButton
-                    type="button"
-                    data-testid="call-routing-add-group"
-                    outline
-                    slate
-                    xs
-                    :disabled="isVirtualPbxReadOnly"
-                    @click="addCallRoutingGroup"
-                  >
-                    {{
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.ADD_GROUP'
-                      )
-                    }}
-                  </NextButton>
-                </div>
-                <div class="flex flex-col gap-3">
+                <div class="flex flex-col divide-y divide-n-weak">
                   <div
-                    v-for="(group, groupIndex) in callRoutingForm.inbound.groups"
-                    :key="group.id"
-                    data-testid="call-routing-group-card"
-                    class="rounded-lg border border-n-weak bg-n-solid-2 p-3"
+                    v-for="(profile, index) in virtualPbxForm.profiles"
+                    :key="profile.clientId"
+                    class="grid grid-cols-1 gap-3 py-4 first:pt-0 last:pb-0 md:grid-cols-2"
                   >
-                    <div class="mb-2 flex items-center justify-between">
-                      <span class="text-xs font-medium text-n-slate-11">
+                    <label
+                      v-if="profile.profileKind !== 'voice_agent'"
+                      class="flex flex-col gap-1 text-sm text-n-slate-12"
+                    >
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.EMPLOYEE_LABEL'
+                        )
+                      }}
+                      <select
+                        v-model.number="profile.userId"
+                        class="rounded-lg border border-n-weak py-2 text-sm"
+                        :disabled="isVirtualPbxReadOnly"
+                      >
+                        <option disabled value="">
+                          {{
+                            $t(
+                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.SELECT_PLACEHOLDER'
+                            )
+                          }}
+                        </option>
+                        <option
+                          v-for="option in virtualPbxMemberOptions"
+                          :key="option.value"
+                          :value="option.value"
+                        >
+                          {{ option.label }}
+                        </option>
+                      </select>
+                    </label>
+
+                    <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.LABEL'
+                        )
+                      }}
+                      <input
+                        v-model="profile.internalExtension"
+                        class="rounded-lg border border-n-weak py-2 text-sm"
+                        :disabled="isVirtualPbxReadOnly"
+                        type="text"
+                        :placeholder="
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.PLACEHOLDER'
+                          )
+                        "
+                      />
+                    </label>
+
+                    <label
+                      v-if="isVirtualPbxSipCredentialsVisible"
+                      class="flex flex-col gap-1 text-sm text-n-slate-12"
+                    >
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
+                        )
+                      }}
+                      <input
+                        v-model="profile.sipUsername"
+                        class="rounded-lg border border-n-weak py-2 text-sm"
+                        :disabled="isVirtualPbxReadOnly"
+                        type="text"
+                        :placeholder="
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.PLACEHOLDER'
+                          )
+                        "
+                      />
+                    </label>
+
+                    <label
+                      v-if="isVirtualPbxSipCredentialsVisible"
+                      class="flex flex-col gap-1 text-sm text-n-slate-12"
+                    >
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
+                        )
+                      }}
+                      <input
+                        v-model="profile.sipPassword"
+                        class="rounded-lg border border-n-weak py-2 text-sm"
+                        :disabled="isVirtualPbxReadOnly"
+                        type="password"
+                        autocomplete="new-password"
+                        :placeholder="virtualPbxSipPasswordPlaceholder(profile)"
+                      />
+                    </label>
+
+                    <label
+                      class="flex items-center gap-2 text-sm text-n-slate-12 md:col-span-2"
+                    >
+                      <input
+                        v-model="profile.profileKind"
+                        :disabled="
+                          isVirtualPbxVoiceAgentToggleDisabled(profile, index)
+                        "
+                        type="checkbox"
+                        true-value="voice_agent"
+                        false-value="human_operator"
+                        @change="onVirtualPbxProfileKindChange(profile)"
+                      />
+                      <span class="font-medium">
                         {{
                           $t(
-                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.STEP_LABEL',
-                            { index: groupIndex + 1 }
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.VOICE_AGENT_LABEL'
                           )
                         }}
                       </span>
+                    </label>
+
+                    <div class="md:col-span-2">
                       <button
-                        v-if="callRoutingForm.inbound.groups.length > 1"
                         type="button"
-                        class="text-xs text-n-ruby-10"
+                        class="p-0 text-sm text-n-ruby-10"
                         :disabled="isVirtualPbxReadOnly"
-                        @click="removeCallRoutingGroup(groupIndex)"
+                        @click="removeVirtualPbxProfile(index)"
                       >
                         {{
                           $t(
-                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.REMOVE_GROUP'
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.REMOVE',
+                            { index: index + 1 }
                           )
                         }}
                       </button>
                     </div>
-                    <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-                      <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                        {{
-                          $t(
-                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.NAME_LABEL'
-                          )
-                        }}
-                        <input
-                          v-model="group.name"
-                          class="rounded-lg border border-n-weak py-1.5 text-sm"
-                          :disabled="isVirtualPbxReadOnly"
-                          type="text"
-                          :placeholder="
+                  </div>
+                </div>
+
+                <NextButton
+                  type="button"
+                  data-testid="virtual-pbx-add-profile"
+                  class="mt-3"
+                  outline
+                  slate
+                  sm
+                  :disabled="isVirtualPbxReadOnly"
+                  @click="addVirtualPbxProfile"
+                >
+                  {{
+                    $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.ADD')
+                  }}
+                </NextButton>
+              </div>
+
+              <div
+                data-testid="call-routing-builder"
+                class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+              >
+                <div
+                  class="mb-4 flex flex-col gap-3 border-b border-n-weak pb-3 md:flex-row md:items-center md:justify-between"
+                >
+                  <div class="space-y-1">
+                    <h3 class="text-sm font-medium text-n-slate-12">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.TITLE'
+                        )
+                      }}
+                    </h3>
+                    <p class="mb-0 text-sm text-n-slate-11">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SUBTITLE'
+                        )
+                      }}
+                    </p>
+                  </div>
+                  <div
+                    class="inline-flex rounded-lg bg-n-alpha-1 p-1"
+                    role="tablist"
+                  >
+                    <button
+                      type="button"
+                      data-testid="call-routing-tab-inbound"
+                      class="rounded-md px-3 py-1.5 text-xs font-medium transition"
+                      :class="
+                        callRoutingTab === 'inbound'
+                          ? 'bg-n-solid-2 text-n-slate-12 shadow-sm'
+                          : 'text-n-slate-11'
+                      "
+                      @click="callRoutingTab = 'inbound'"
+                    >
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.INBOUND_TAB'
+                        )
+                      }}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="call-routing-tab-outbound"
+                      class="rounded-md px-3 py-1.5 text-xs font-medium transition"
+                      :class="
+                        callRoutingTab === 'outbound'
+                          ? 'bg-n-solid-2 text-n-slate-12 shadow-sm'
+                          : 'text-n-slate-11'
+                      "
+                      @click="callRoutingTab = 'outbound'"
+                    >
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND_TAB'
+                        )
+                      }}
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  v-if="callRoutingTab === 'inbound'"
+                  data-testid="call-routing-inbound-panel"
+                  class="flex flex-col gap-4"
+                >
+                  <div
+                    v-if="isVirtualPbxVoiceInbox && !isVirtualPbxWazo"
+                    data-testid="call-routing-authority-selector"
+                    class="rounded-lg bg-n-alpha-1 p-3"
+                  >
+                    <div
+                      class="mb-2 text-xs font-semibold uppercase tracking-wide text-n-slate-11"
+                    >
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.TITLE'
+                        )
+                      }}
+                    </div>
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <button
+                        type="button"
+                        data-testid="call-routing-authority-external-pbx"
+                        class="flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition"
+                        :class="
+                          callRoutingForm.inbound.routing_authority ===
+                          'external_pbx'
+                            ? 'border-n-brand bg-n-brand/10 text-n-slate-12'
+                            : 'border-n-weak bg-n-solid-2 text-n-slate-11'
+                        "
+                        :disabled="isVirtualPbxReadOnly"
+                        @click="setCallRoutingAuthority('external_pbx')"
+                      >
+                        <span class="text-sm font-medium text-n-slate-12">
+                          {{
                             $t(
-                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.NAME_PLACEHOLDER'
+                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.EXTERNAL_PBX'
                             )
-                          "
-                          @input="markCallRoutingDirty"
-                        />
-                      </label>
-                      <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                          }}
+                        </span>
+                        <span class="text-xs text-n-slate-11">
+                          {{
+                            $t(
+                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.EXTERNAL_PBX_DESC'
+                            )
+                          }}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="call-routing-authority-onelink"
+                        class="flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition"
+                        :class="
+                          callRoutingForm.inbound.routing_authority !==
+                          'external_pbx'
+                            ? 'border-n-brand bg-n-brand/10 text-n-slate-12'
+                            : 'border-n-weak bg-n-solid-2 text-n-slate-11'
+                        "
+                        :disabled="isVirtualPbxReadOnly"
+                        @click="setCallRoutingAuthority('onelink')"
+                      >
+                        <span class="text-sm font-medium text-n-slate-12">
+                          {{
+                            $t(
+                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.ONELINK'
+                            )
+                          }}
+                        </span>
+                        <span class="text-xs text-n-slate-11">
+                          {{
+                            $t(
+                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.ONELINK_DESC'
+                            )
+                          }}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="isVirtualPbxWazo"
+                    data-testid="call-routing-wazo-onelink-badge"
+                    class="flex flex-col gap-1 rounded-lg border border-n-brand/30 bg-n-brand/10 p-3 text-xs text-n-slate-12"
+                  >
+                    <span class="font-medium text-n-brand">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.ROUTING_AUTHORITY.WAZO_ALWAYS_ONELINK_HINT'
+                        )
+                      }}
+                    </span>
+                    <span class="text-n-slate-11">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.AI_CONCURRENCY_BADGE',
+                          { count: effectiveAiMaxConcurrentCalls }
+                        )
+                      }}
+                    </span>
+                  </div>
+
+                  <div
+                    v-if="!isExternalPbxRoutingAuthority"
+                    class="rounded-lg bg-n-alpha-1 p-3"
+                  >
+                    <div
+                      class="mb-2 text-xs font-semibold uppercase tracking-wide text-n-slate-11"
+                    >
+                      {{ '1.' }}
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.TITLE'
+                        )
+                      }}
+                    </div>
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+                      <label
+                        class="flex flex-col gap-1 text-sm text-n-slate-12"
+                      >
                         {{
                           $t(
-                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.STRATEGY_LABEL'
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.MODE_LABEL'
                           )
                         }}
                         <select
-                          v-model="group.strategy"
-                          class="rounded-lg border border-n-weak py-1.5 text-sm"
+                          v-model="callRoutingForm.inbound.schedule_mode"
+                          data-testid="call-routing-schedule-mode"
+                          class="rounded-lg border border-n-weak py-2 text-sm"
+                          :disabled="isVirtualPbxReadOnly"
+                          @change="markCallRoutingDirty"
+                        >
+                          <option value="always">
+                            {{
+                              $t(
+                                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.ALWAYS'
+                              )
+                            }}
+                          </option>
+                          <option value="business_hours">
+                            {{
+                              $t(
+                                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.BUSINESS_HOURS'
+                              )
+                            }}
+                          </option>
+                        </select>
+                      </label>
+                      <label
+                        v-if="
+                          callRoutingForm.inbound.schedule_mode ===
+                          'business_hours'
+                        "
+                        class="flex flex-col gap-1 text-sm text-n-slate-12"
+                      >
+                        {{
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.OFF_HOURS_ACTION_LABEL'
+                          )
+                        }}
+                        <select
+                          v-model="callRoutingForm.inbound.off_hours_action"
+                          data-testid="call-routing-off-hours-action"
+                          class="rounded-lg border border-n-weak py-2 text-sm"
                           :disabled="isVirtualPbxReadOnly"
                           @change="markCallRoutingDirty"
                         >
                           <option
-                            v-for="option in callRoutingGroupStrategyOptions"
+                            v-for="option in callRoutingActionOptions"
                             :key="option.value"
                             :value="option.value"
                           >
@@ -3634,78 +2734,667 @@ export default {
                           </option>
                         </select>
                       </label>
-                      <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                      <label
+                        v-if="
+                          callRoutingForm.inbound.schedule_mode ===
+                            'business_hours' &&
+                          callRoutingForm.inbound.off_hours_action === 'forward'
+                        "
+                        class="flex flex-col gap-1 text-sm text-n-slate-12"
+                      >
                         {{
                           $t(
-                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.RING_SECONDS_LABEL'
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SCHEDULE.FORWARD_NUMBER_LABEL'
                           )
                         }}
                         <input
-                          v-model.number="group.ring_seconds"
-                          class="rounded-lg border border-n-weak py-1.5 text-sm"
+                          v-model="
+                            callRoutingForm.inbound.off_hours_forward_number
+                          "
+                          class="rounded-lg border border-n-weak py-2 text-sm"
                           :disabled="isVirtualPbxReadOnly"
-                          type="number"
-                          min="5"
-                          max="120"
+                          type="text"
+                          :placeholder="phoneNumberExample"
                           @input="markCallRoutingDirty"
                         />
                       </label>
                     </div>
-                    <div class="mt-3">
-                      <div class="mb-1.5 text-xs text-n-slate-11">
+                  </div>
+
+                  <div
+                    v-if="!isExternalPbxRoutingAuthority"
+                    class="rounded-lg bg-n-alpha-1 p-3"
+                  >
+                    <div
+                      class="mb-2 text-xs font-semibold uppercase tracking-wide text-n-slate-11"
+                    >
+                      {{ '2.' }}
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WAITING.TITLE'
+                        )
+                      }}
+                    </div>
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+                      <label
+                        class="flex flex-col gap-1 text-sm text-n-slate-12"
+                      >
                         {{
                           $t(
-                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.OPERATORS_LABEL'
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WAITING.RING_TIMEOUT_LABEL'
+                          )
+                        }}
+                        <input
+                          v-model.number="
+                            callRoutingForm.inbound.ring_timeout_seconds
+                          "
+                          data-testid="call-routing-ring-timeout"
+                          class="rounded-lg border border-n-weak py-2 text-sm"
+                          :disabled="isVirtualPbxReadOnly"
+                          type="number"
+                          min="5"
+                          max="180"
+                          @input="markCallRoutingDirty"
+                        />
+                      </label>
+                      <label
+                        class="flex flex-col gap-1 text-sm text-n-slate-12"
+                      >
+                        {{
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WAITING.RINGTONE_LABEL'
+                          )
+                        }}
+                        <select
+                          v-model="callRoutingForm.inbound.ringtone"
+                          data-testid="call-routing-ringtone"
+                          class="rounded-lg border border-n-weak py-2 text-sm"
+                          :disabled="isVirtualPbxReadOnly"
+                          @change="markCallRoutingDirty"
+                        >
+                          <option
+                            v-for="option in callRoutingRingtoneOptions"
+                            :key="option.value"
+                            :value="option.value"
+                          >
+                            {{ option.label }}
+                          </option>
+                        </select>
+                      </label>
+                      <label
+                        class="flex items-center gap-2 pt-6 text-sm text-n-slate-12"
+                      >
+                        <input
+                          v-model="callRoutingForm.inbound.skip_busy_operators"
+                          type="checkbox"
+                          :disabled="isVirtualPbxReadOnly"
+                          @change="markCallRoutingDirty"
+                        />
+                        <span>
+                          {{
+                            $t(
+                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WAITING.SKIP_BUSY_LABEL'
+                            )
+                          }}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="!isExternalPbxRoutingAuthority"
+                    class="rounded-lg bg-n-alpha-1 p-3"
+                  >
+                    <div class="mb-2 flex items-center justify-between">
+                      <div
+                        class="text-xs font-semibold uppercase tracking-wide text-n-slate-11"
+                      >
+                        {{ '3.' }}
+                        {{
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.TITLE'
                           )
                         }}
                       </div>
-                      <div class="flex flex-wrap gap-2">
-                        <button
-                          v-for="member in virtualPbxMemberOptions"
-                          :key="member.value"
-                          type="button"
-                          class="rounded-full border px-2.5 py-1 text-xs transition"
-                          :class="
-                            (group.user_ids || []).includes(member.value)
-                              ? 'border-n-brand bg-n-brand/10 font-medium text-n-brand'
-                              : 'border-n-weak text-n-slate-11'
-                          "
-                          :disabled="isVirtualPbxReadOnly"
-                          @click="toggleCallRoutingGroupUser(group, member.value)"
-                        >
-                          {{ member.label }}
-                        </button>
+                      <NextButton
+                        type="button"
+                        data-testid="call-routing-add-group"
+                        outline
+                        slate
+                        xs
+                        :disabled="isVirtualPbxReadOnly"
+                        @click="addCallRoutingGroup"
+                      >
+                        {{
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.ADD_GROUP'
+                          )
+                        }}
+                      </NextButton>
+                    </div>
+                    <div class="flex flex-col gap-3">
+                      <div
+                        v-for="(group, groupIndex) in callRoutingForm.inbound
+                          .groups"
+                        :key="group.id"
+                        data-testid="call-routing-group-card"
+                        class="rounded-lg border border-n-weak bg-n-solid-2 p-3"
+                      >
+                        <div class="mb-2 flex items-center justify-between">
+                          <span class="text-xs font-medium text-n-slate-11">
+                            {{
+                              $t(
+                                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.STEP_LABEL',
+                                { index: groupIndex + 1 }
+                              )
+                            }}
+                          </span>
+                          <button
+                            v-if="callRoutingForm.inbound.groups.length > 1"
+                            type="button"
+                            class="text-xs text-n-ruby-10"
+                            :disabled="isVirtualPbxReadOnly"
+                            @click="removeCallRoutingGroup(groupIndex)"
+                          >
+                            {{
+                              $t(
+                                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.REMOVE_GROUP'
+                              )
+                            }}
+                          </button>
+                        </div>
+                        <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+                          <label
+                            class="flex flex-col gap-1 text-sm text-n-slate-12"
+                          >
+                            {{
+                              $t(
+                                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.NAME_LABEL'
+                              )
+                            }}
+                            <input
+                              v-model="group.name"
+                              class="rounded-lg border border-n-weak py-1.5 text-sm"
+                              :disabled="isVirtualPbxReadOnly"
+                              type="text"
+                              :placeholder="
+                                $t(
+                                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.NAME_PLACEHOLDER'
+                                )
+                              "
+                              @input="markCallRoutingDirty"
+                            />
+                          </label>
+                          <label
+                            class="flex flex-col gap-1 text-sm text-n-slate-12"
+                          >
+                            {{
+                              $t(
+                                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.STRATEGY_LABEL'
+                              )
+                            }}
+                            <select
+                              v-model="group.strategy"
+                              class="rounded-lg border border-n-weak py-1.5 text-sm"
+                              :disabled="isVirtualPbxReadOnly"
+                              @change="markCallRoutingDirty"
+                            >
+                              <option
+                                v-for="option in callRoutingGroupStrategyOptions"
+                                :key="option.value"
+                                :value="option.value"
+                              >
+                                {{ option.label }}
+                              </option>
+                            </select>
+                          </label>
+                          <label
+                            class="flex flex-col gap-1 text-sm text-n-slate-12"
+                          >
+                            {{
+                              $t(
+                                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.RING_SECONDS_LABEL'
+                              )
+                            }}
+                            <input
+                              v-model.number="group.ring_seconds"
+                              class="rounded-lg border border-n-weak py-1.5 text-sm"
+                              :disabled="isVirtualPbxReadOnly"
+                              type="number"
+                              min="5"
+                              max="120"
+                              @input="markCallRoutingDirty"
+                            />
+                          </label>
+                        </div>
+                        <div class="mt-3">
+                          <div class="mb-1.5 text-xs text-n-slate-11">
+                            {{
+                              $t(
+                                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.OPERATORS_LABEL'
+                              )
+                            }}
+                          </div>
+                          <div class="flex flex-wrap gap-2">
+                            <button
+                              v-for="member in virtualPbxMemberOptions"
+                              :key="member.value"
+                              type="button"
+                              class="rounded-full border px-2.5 py-1 text-xs transition"
+                              :class="
+                                (group.user_ids || []).includes(member.value)
+                                  ? 'border-n-brand bg-n-brand/10 font-medium text-n-brand'
+                                  : 'border-n-weak text-n-slate-11'
+                              "
+                              :disabled="isVirtualPbxReadOnly"
+                              @click="
+                                toggleCallRoutingGroupUser(group, member.value)
+                              "
+                            >
+                              {{ member.label }}
+                            </button>
+                          </div>
+                        </div>
                       </div>
+                    </div>
+                  </div>
+
+                  <div class="rounded-lg bg-n-alpha-1 p-3">
+                    <div
+                      class="mb-2 text-xs font-semibold uppercase tracking-wide text-n-slate-11"
+                    >
+                      {{ '4.' }}
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.FALLBACK.TITLE'
+                        )
+                      }}
+                    </div>
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label
+                        class="flex flex-col gap-1 text-sm text-n-slate-12"
+                      >
+                        {{
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.FALLBACK.ACTION_LABEL'
+                          )
+                        }}
+                        <select
+                          v-model="callRoutingForm.inbound.fallback_action"
+                          data-testid="call-routing-fallback-action"
+                          class="rounded-lg border border-n-weak py-2 text-sm"
+                          :disabled="isVirtualPbxReadOnly"
+                          @change="markCallRoutingDirty"
+                        >
+                          <option
+                            v-for="option in callRoutingActionOptions"
+                            :key="option.value"
+                            :value="option.value"
+                          >
+                            {{ option.label }}
+                          </option>
+                        </select>
+                      </label>
+                      <label
+                        v-if="
+                          callRoutingForm.inbound.fallback_action === 'forward'
+                        "
+                        class="flex flex-col gap-1 text-sm text-n-slate-12"
+                      >
+                        {{
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.FALLBACK.FORWARD_NUMBER_LABEL'
+                          )
+                        }}
+                        <input
+                          v-model="
+                            callRoutingForm.inbound.fallback_forward_number
+                          "
+                          class="rounded-lg border border-n-weak py-2 text-sm"
+                          :disabled="isVirtualPbxReadOnly"
+                          type="text"
+                          :placeholder="phoneNumberExample"
+                          @input="markCallRoutingDirty"
+                        />
+                      </label>
+                    </div>
+
+                    <div
+                      class="mt-3 border-t border-n-weak pt-3 flex flex-col gap-3"
+                    >
+                      <label
+                        class="flex items-center gap-2 text-sm text-n-slate-12"
+                      >
+                        <input
+                          v-model="
+                            callRoutingForm.inbound.whatsapp_followup.enabled
+                          "
+                          data-testid="call-routing-whatsapp-followup-enabled"
+                          type="checkbox"
+                          :disabled="isVirtualPbxReadOnly"
+                          @change="markCallRoutingDirty"
+                        />
+                        <span>
+                          {{
+                            $t(
+                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.ENABLED_LABEL'
+                            )
+                          }}
+                        </span>
+                      </label>
+
+                      <div
+                        v-if="callRoutingForm.inbound.whatsapp_followup.enabled"
+                        data-testid="call-routing-whatsapp-followup-panel"
+                        class="grid grid-cols-1 gap-3 md:grid-cols-2"
+                      >
+                        <label
+                          class="flex flex-col gap-1 text-sm text-n-slate-12"
+                        >
+                          {{
+                            $t(
+                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.INBOX_LABEL'
+                            )
+                          }}
+                          <select
+                            v-model="
+                              callRoutingForm.inbound.whatsapp_followup.inbox_id
+                            "
+                            data-testid="call-routing-whatsapp-inbox"
+                            class="rounded-lg border border-n-weak py-2 text-sm"
+                            :disabled="isVirtualPbxReadOnly"
+                            @change="markCallRoutingDirty"
+                          >
+                            <option value="">
+                              {{
+                                $t(
+                                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.INBOX_PLACEHOLDER'
+                                )
+                              }}
+                            </option>
+                            <option
+                              v-for="waInbox in whatsappInboxOptions"
+                              :key="waInbox.id"
+                              :value="waInbox.id"
+                            >
+                              {{ waInbox.name }}
+                            </option>
+                          </select>
+                        </label>
+
+                        <label
+                          class="flex flex-col gap-1 text-sm text-n-slate-12"
+                        >
+                          {{
+                            $t(
+                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.COOLDOWN_LABEL'
+                            )
+                          }}
+                          <input
+                            v-model.number="
+                              callRoutingForm.inbound.whatsapp_followup
+                                .cooldown_minutes
+                            "
+                            data-testid="call-routing-whatsapp-cooldown"
+                            class="rounded-lg border border-n-weak py-2 text-sm"
+                            :disabled="isVirtualPbxReadOnly"
+                            type="number"
+                            min="5"
+                            max="1440"
+                            @input="markCallRoutingDirty"
+                          />
+                        </label>
+
+                        <label
+                          v-if="
+                            selectedWhatsappFollowupInbox &&
+                            isSelectedWhatsappFollowupOfficial
+                          "
+                          class="flex flex-col gap-1 text-sm text-n-slate-12 md:col-span-2"
+                        >
+                          {{
+                            $t(
+                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.TEMPLATE_LABEL'
+                            )
+                          }}
+                          <select
+                            v-model="
+                              callRoutingForm.inbound.whatsapp_followup
+                                .template_name
+                            "
+                            data-testid="call-routing-whatsapp-template"
+                            class="rounded-lg border border-n-weak py-2 text-sm"
+                            :disabled="isVirtualPbxReadOnly"
+                            @change="markCallRoutingDirty"
+                          >
+                            <option value="">
+                              {{
+                                $t(
+                                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.TEMPLATE_PLACEHOLDER'
+                                )
+                              }}
+                            </option>
+                            <option
+                              v-for="tpl in selectedWhatsappFollowupTemplates"
+                              :key="`${tpl.name}:${tpl.language || 'ru'}`"
+                              :value="tpl.name"
+                            >
+                              {{ tpl.name }} ({{ tpl.language || 'ru' }})
+                            </option>
+                          </select>
+                        </label>
+
+                        <label
+                          v-else-if="selectedWhatsappFollowupInbox"
+                          class="flex flex-col gap-1 text-sm text-n-slate-12 md:col-span-2"
+                        >
+                          {{
+                            $t(
+                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.CUSTOM_MESSAGE_LABEL'
+                            )
+                          }}
+                          <input
+                            v-model="
+                              callRoutingForm.inbound.whatsapp_followup
+                                .custom_message
+                            "
+                            data-testid="call-routing-whatsapp-custom-message"
+                            class="rounded-lg border border-n-weak py-2 text-sm"
+                            :disabled="isVirtualPbxReadOnly"
+                            type="text"
+                            :placeholder="
+                              $t(
+                                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.CUSTOM_MESSAGE_PLACEHOLDER'
+                              )
+                            "
+                            @input="markCallRoutingDirty"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="rounded-lg bg-n-alpha-1 p-3">
+                    <label
+                      class="flex items-center gap-2 text-sm text-n-slate-12"
+                    >
+                      <input
+                        v-model="callRoutingForm.show_extended_call_card"
+                        data-testid="call-routing-show-extended-call-card"
+                        type="checkbox"
+                        :disabled="isVirtualPbxReadOnly"
+                        @change="markCallRoutingDirty"
+                      />
+                      <span>
+                        {{
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.CALL_CARD.SHOW_EXTENDED_LABEL'
+                          )
+                        }}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                <div
+                  v-else
+                  data-testid="call-routing-outbound-panel"
+                  class="flex flex-col gap-4"
+                >
+                  <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.ACCESS_MODE_LABEL'
+                        )
+                      }}
+                      <select
+                        v-model="callRoutingForm.outbound.access_mode"
+                        data-testid="call-routing-outbound-access-mode"
+                        class="rounded-lg border border-n-weak py-2 text-sm"
+                        :disabled="isVirtualPbxReadOnly"
+                        @change="markCallRoutingDirty"
+                      >
+                        <option value="all_members">
+                          {{
+                            $t(
+                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.ALL_MEMBERS'
+                            )
+                          }}
+                        </option>
+                        <option value="selected_operators">
+                          {{
+                            $t(
+                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.SELECTED_OPERATORS'
+                            )
+                          }}
+                        </option>
+                      </select>
+                    </label>
+                    <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.CALLER_ID_LABEL'
+                        )
+                      }}
+                      <input
+                        v-model="callRoutingForm.outbound.caller_id_number"
+                        data-testid="call-routing-outbound-caller-id"
+                        class="rounded-lg border border-n-weak py-2 text-sm"
+                        :disabled="isVirtualPbxReadOnly"
+                        type="text"
+                        :placeholder="
+                          virtualPbxForm.displayPhoneNumber || '+77000000000'
+                        "
+                        @input="markCallRoutingDirty"
+                      />
+                    </label>
+                  </div>
+                  <div
+                    v-if="
+                      callRoutingForm.outbound.access_mode ===
+                      'selected_operators'
+                    "
+                    class="rounded-lg bg-n-alpha-1 p-3"
+                  >
+                    <div class="mb-1.5 text-xs text-n-slate-11">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.ALLOWED_OPERATORS_LABEL'
+                        )
+                      }}
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                      <button
+                        v-for="member in virtualPbxMemberOptions"
+                        :key="member.value"
+                        type="button"
+                        class="rounded-full border px-2.5 py-1 text-xs transition"
+                        :class="
+                          callRoutingForm.outbound.allowed_user_ids.includes(
+                            member.value
+                          )
+                            ? 'border-n-brand bg-n-brand/10 font-medium text-n-brand'
+                            : 'border-n-weak text-n-slate-11'
+                        "
+                        :disabled="isVirtualPbxReadOnly"
+                        @click="toggleCallRoutingOutboundUser(member.value)"
+                      >
+                        {{ member.label }}
+                      </button>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div class="rounded-lg bg-n-alpha-1 p-3">
-                <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-n-slate-11">
-                  4.
-                  {{
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.FALLBACK.TITLE'
-                    )
-                  }}
-                </div>
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                    {{
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.FALLBACK.ACTION_LABEL'
-                      )
-                    }}
-                    <select
-                      v-model="callRoutingForm.inbound.fallback_action"
-                      data-testid="call-routing-fallback-action"
-                      class="rounded-lg border border-n-weak py-2 text-sm"
-                      :disabled="isVirtualPbxReadOnly"
-                      @change="markCallRoutingDirty"
+              <div
+                v-if="isVirtualPbxAsteriskAnalog"
+                class="grid grid-cols-1 gap-4 md:grid-cols-2"
+              >
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.ROUTING_MODE') }}
+                  <select
+                    v-model="virtualPbxForm.routingMode"
+                    class="rounded-lg border border-n-weak py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                  >
+                    <option
+                      v-for="option in virtualPbxRoutingOptions"
+                      :key="option.value"
+                      :value="option.value"
                     >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+            </template>
+
+            <template v-else>
+              <template v-if="showVirtualPbxTechnicalSettings">
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CHANNEL_NAME.LABEL')
+                  }}
+                  <input
+                    v-model="virtualPbxForm.channelName"
+                    class="rounded-lg border border-n-weak py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                    type="text"
+                  />
+                </label>
+
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                    <span class="flex items-center gap-2">
+                      <img
+                        v-if="virtualPbxCarrierBadgeUrl"
+                        :src="virtualPbxCarrierBadgeUrl"
+                        alt=""
+                        class="h-5 w-5 rounded object-contain"
+                        data-testid="virtual-pbx-carrier-badge"
+                      />
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.LABEL'
+                        )
+                      }}
+                    </span>
+                    <select
+                      v-model="virtualPbxForm.providerKind"
+                      data-testid="virtual-pbx-provider-kind"
+                      class="rounded-lg border border-n-weak py-2 text-sm disabled:bg-n-alpha-1 disabled:text-n-slate-11"
+                      :disabled="true"
+                    >
+                      <option value="" disabled>
+                        {{
+                          $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.PLACEHOLDER'
+                          )
+                        }}
+                      </option>
                       <option
-                        v-for="option in callRoutingActionOptions"
+                        v-for="option in virtualPbxProviderOptions"
                         :key="option.value"
                         :value="option.value"
                       >
@@ -3713,368 +3402,847 @@ export default {
                       </option>
                     </select>
                   </label>
-                  <label
-                    v-if="callRoutingForm.inbound.fallback_action === 'forward'"
-                    class="flex flex-col gap-1 text-sm text-n-slate-12"
-                  >
-                    {{
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.FALLBACK.FORWARD_NUMBER_LABEL'
-                      )
-                    }}
+                  <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                    {{ $t('INBOX_MGMT.ADD.VOICE.PHONE_NUMBER.LABEL') }}
                     <input
-                      v-model="callRoutingForm.inbound.fallback_forward_number"
+                      v-model="virtualPbxForm.displayPhoneNumber"
                       class="rounded-lg border border-n-weak py-2 text-sm"
                       :disabled="isVirtualPbxReadOnly"
                       type="text"
-                      placeholder="+77000000000"
-                      @input="markCallRoutingDirty"
                     />
                   </label>
                 </div>
-
-                <div class="mt-3 border-t border-n-weak pt-3 flex flex-col gap-3">
-                  <label class="flex items-center gap-2 text-sm text-n-slate-12">
-                    <input
-                      v-model="callRoutingForm.inbound.whatsapp_followup.enabled"
-                      data-testid="call-routing-whatsapp-followup-enabled"
-                      type="checkbox"
-                      :disabled="isVirtualPbxReadOnly"
-                      @change="markCallRoutingDirty"
-                    />
-                    <span>
-                      {{
-                        $t(
-                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.ENABLED_LABEL'
-                        )
-                      }}
-                    </span>
-                  </label>
-
-                  <div
-                    v-if="callRoutingForm.inbound.whatsapp_followup.enabled"
-                    data-testid="call-routing-whatsapp-followup-panel"
-                    class="grid grid-cols-1 gap-3 md:grid-cols-2"
-                  >
-                    <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                      {{
-                        $t(
-                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.INBOX_LABEL'
-                        )
-                      }}
-                      <select
-                        v-model="callRoutingForm.inbound.whatsapp_followup.inbox_id"
-                        data-testid="call-routing-whatsapp-inbox"
-                        class="rounded-lg border border-n-weak py-2 text-sm"
-                        :disabled="isVirtualPbxReadOnly"
-                        @change="markCallRoutingDirty"
-                      >
-                        <option value="">
-                          {{
-                            $t(
-                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.INBOX_PLACEHOLDER'
-                            )
-                          }}
-                        </option>
-                        <option
-                          v-for="waInbox in whatsappInboxOptions"
-                          :key="waInbox.id"
-                          :value="waInbox.id"
-                        >
-                          {{ waInbox.name }}
-                        </option>
-                      </select>
-                    </label>
-
-                    <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-                      {{
-                        $t(
-                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.COOLDOWN_LABEL'
-                        )
-                      }}
-                      <input
-                        v-model.number="
-                          callRoutingForm.inbound.whatsapp_followup.cooldown_minutes
-                        "
-                        data-testid="call-routing-whatsapp-cooldown"
-                        class="rounded-lg border border-n-weak py-2 text-sm"
-                        :disabled="isVirtualPbxReadOnly"
-                        type="number"
-                        min="5"
-                        max="1440"
-                        @input="markCallRoutingDirty"
-                      />
-                    </label>
-
-                    <label
-                      v-if="
-                        selectedWhatsappFollowupInbox &&
-                        isSelectedWhatsappFollowupOfficial
-                      "
-                      class="flex flex-col gap-1 text-sm text-n-slate-12 md:col-span-2"
-                    >
-                      {{
-                        $t(
-                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.TEMPLATE_LABEL'
-                        )
-                      }}
-                      <select
-                        v-model="
-                          callRoutingForm.inbound.whatsapp_followup.template_name
-                        "
-                        data-testid="call-routing-whatsapp-template"
-                        class="rounded-lg border border-n-weak py-2 text-sm"
-                        :disabled="isVirtualPbxReadOnly"
-                        @change="markCallRoutingDirty"
-                      >
-                        <option value="">
-                          {{
-                            $t(
-                              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.TEMPLATE_PLACEHOLDER'
-                            )
-                          }}
-                        </option>
-                        <option
-                          v-for="tpl in selectedWhatsappFollowupTemplates"
-                          :key="`${tpl.name}:${tpl.language || 'ru'}`"
-                          :value="tpl.name"
-                        >
-                          {{ tpl.name }} ({{ tpl.language || 'ru' }})
-                        </option>
-                      </select>
-                    </label>
-
-                    <label
-                      v-else-if="selectedWhatsappFollowupInbox"
-                      class="flex flex-col gap-1 text-sm text-n-slate-12 md:col-span-2"
-                    >
-                      {{
-                        $t(
-                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.CUSTOM_MESSAGE_LABEL'
-                        )
-                      }}
-                      <input
-                        v-model="
-                          callRoutingForm.inbound.whatsapp_followup.custom_message
-                        "
-                        data-testid="call-routing-whatsapp-custom-message"
-                        class="rounded-lg border border-n-weak py-2 text-sm"
-                        :disabled="isVirtualPbxReadOnly"
-                        type="text"
-                        :placeholder="
-                          $t(
-                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.WHATSAPP_FOLLOWUP.CUSTOM_MESSAGE_PLACEHOLDER'
-                          )
-                        "
-                        @input="markCallRoutingDirty"
-                      />
-                    </label>
-                  </div>
+              </template>
+              <dl
+                v-else
+                data-testid="virtual-pbx-summary"
+                class="mb-0 grid grid-cols-1 gap-3 text-sm md:grid-cols-2"
+              >
+                <div class="flex flex-col gap-1">
+                  <dt class="text-n-slate-11">
+                    {{ $t('INBOX_MGMT.EDIT.VOICE_CALLS.PROVIDER') }}
+                  </dt>
+                  <dd class="m-0 font-medium text-n-slate-12">
+                    {{ virtualPbxProviderLabel }}
+                  </dd>
                 </div>
-              </div>
-
-              <div class="rounded-lg bg-n-alpha-1 p-3">
-                <label class="flex items-center gap-2 text-sm text-n-slate-12">
-                  <input
-                    v-model="callRoutingForm.show_extended_call_card"
-                    data-testid="call-routing-show-extended-call-card"
-                    type="checkbox"
-                    :disabled="isVirtualPbxReadOnly"
-                    @change="markCallRoutingDirty"
-                  />
-                  <span>
+                <div class="flex flex-col gap-1">
+                  <dt class="text-n-slate-11">
+                    {{ $t('INBOX_MGMT.EDIT.VOICE_CALLS.NUMBER') }}
+                  </dt>
+                  <dd class="m-0 font-medium text-n-slate-12">
                     {{
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.CALL_CARD.SHOW_EXTENDED_LABEL'
-                      )
+                      virtualPbxForm.displayPhoneNumber || inbox.phone_number
                     }}
-                  </span>
-                </label>
-              </div>
-            </div>
+                  </dd>
+                </div>
+              </dl>
+            </template>
+          </div>
+        </SettingsFieldSection>
 
-            <div
-              v-else
-              data-testid="call-routing-outbound-panel"
-              class="flex flex-col gap-4"
-            >
-              <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+        <DeveloperDetails v-if="!isCallsSection">
+          <SettingsFieldSection
+            v-if="isSipuniVoiceInbox"
+            :label="
+              $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_TITLE')
+            "
+            :help-text="
+              $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_SUBTITLE')
+            "
+          >
+            <div class="flex flex-col gap-4">
+              <woot-code
+                v-if="sipuniWebhookUrl"
+                :script="sipuniWebhookUrl"
+                lang="html"
+              />
+              <div
+                v-else
+                class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
+              >
+                {{
+                  $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_EMPTY')
+                }}
+              </div>
+
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_TOKEN')
+                }}
+                <input
+                  v-model="sipuniWebhookToken"
+                  class="rounded-lg border border-n-weak py-2 font-mono text-sm"
+                  type="text"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  :placeholder="
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_TOKEN_PLACEHOLDER'
+                    )
+                  "
+                  @keydown.enter.prevent
+                />
+              </label>
+
+              <div class="flex flex-wrap gap-3">
+                <NextButton type="button" @click="generateSipuniWebhookToken">
                   {{
                     $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.ACCESS_MODE_LABEL'
+                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_GENERATE'
+                    )
+                  }}
+                </NextButton>
+                <NextButton
+                  type="button"
+                  :disabled="!sipuniWebhookUrl"
+                  @click="copySipuniWebhookUrl"
+                >
+                  {{
+                    $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_COPY')
+                  }}
+                </NextButton>
+                <NextButton
+                  type="button"
+                  :is-loading="isUpdatingSipuniWebhook"
+                  @click="updateSipuniWebhookToken"
+                >
+                  {{
+                    $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_SAVE')
+                  }}
+                </NextButton>
+              </div>
+            </div>
+          </SettingsFieldSection>
+          <SettingsFieldSection
+            v-if="isBinotelVoiceInbox"
+            :label="
+              $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_TITLE')
+            "
+            :help-text="
+              $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_SUBTITLE')
+            "
+          >
+            <div class="flex flex-col gap-4">
+              <woot-code
+                v-if="binotelWebhookUrl"
+                :script="binotelWebhookUrl"
+                lang="html"
+              />
+              <div
+                v-else
+                class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
+              >
+                {{
+                  $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_EMPTY')
+                }}
+              </div>
+
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_TOKEN')
+                }}
+                <input
+                  v-model="binotelWebhookToken"
+                  class="rounded-lg border border-n-weak py-2 font-mono text-sm"
+                  type="text"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  :placeholder="
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_TOKEN_PLACEHOLDER'
+                    )
+                  "
+                  @keydown.enter.prevent
+                />
+              </label>
+
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_KEY') }}
+                <input
+                  v-model="binotelApiKey"
+                  data-testid="binotel-api-key-input"
+                  class="rounded-lg border border-n-weak py-2 font-mono text-sm"
+                  type="text"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  :placeholder="
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_KEY_PLACEHOLDER'
+                    )
+                  "
+                  @keydown.enter.prevent
+                />
+              </label>
+
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_SECRET')
+                }}
+                <input
+                  v-model="binotelApiSecret"
+                  data-testid="binotel-api-secret-input"
+                  class="rounded-lg border border-n-weak py-2 font-mono text-sm"
+                  type="password"
+                  autocomplete="new-password"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  :placeholder="
+                    binotelApiSecretConfigured
+                      ? '********'
+                      : $t(
+                          'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_SECRET_PLACEHOLDER'
+                        )
+                  "
+                  @keydown.enter.prevent
+                />
+                <span
+                  v-if="binotelApiSecretConfigured"
+                  data-testid="binotel-api-secret-configured-hint"
+                  class="text-xs text-n-teal-11"
+                >
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_API_SECRET_CONFIGURED_HINT'
+                    )
+                  }}
+                </span>
+              </label>
+
+              <div class="flex flex-wrap gap-3">
+                <NextButton type="button" @click="generateBinotelWebhookToken">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_GENERATE'
+                    )
+                  }}
+                </NextButton>
+                <NextButton
+                  type="button"
+                  :disabled="!binotelWebhookUrl"
+                  @click="copyBinotelWebhookUrl"
+                >
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_COPY'
+                    )
+                  }}
+                </NextButton>
+                <NextButton
+                  type="button"
+                  :is-loading="isUpdatingBinotelWebhook"
+                  @click="updateBinotelWebhookToken"
+                >
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_SAVE'
+                    )
+                  }}
+                </NextButton>
+              </div>
+            </div>
+          </SettingsFieldSection>
+          <SettingsFieldSection
+            v-if="isBeelineVoiceInbox"
+            :label="
+              $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TITLE')
+            "
+            :help-text="
+              $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_SUBTITLE')
+            "
+          >
+            <div class="flex flex-col gap-4">
+              <woot-code
+                v-if="beelineWebhookUrl"
+                :script="beelineWebhookUrl"
+                lang="html"
+              />
+              <div
+                v-else
+                class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
+              >
+                {{
+                  $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_EMPTY')
+                }}
+              </div>
+
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TOKEN')
+                }}
+                <input
+                  v-model="beelineWebhookToken"
+                  data-testid="beeline-webhook-token-input"
+                  class="rounded-lg border border-n-weak py-2 font-mono text-sm"
+                  type="text"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  :placeholder="
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TOKEN_PLACEHOLDER'
+                    )
+                  "
+                  @keydown.enter.prevent
+                />
+              </label>
+
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_API_TOKEN') }}
+                <input
+                  v-model="beelineApiToken"
+                  data-testid="beeline-api-token-input"
+                  class="rounded-lg border border-n-weak py-2 font-mono text-sm"
+                  type="password"
+                  autocomplete="new-password"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  :placeholder="
+                    beelineApiTokenConfigured
+                      ? '********'
+                      : $t(
+                          'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_API_TOKEN_PLACEHOLDER'
+                        )
+                  "
+                  @keydown.enter.prevent
+                />
+                <span
+                  v-if="beelineApiTokenConfigured"
+                  data-testid="beeline-api-token-configured-hint"
+                  class="text-xs text-n-teal-11"
+                >
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_API_TOKEN_CONFIGURED_HINT'
+                    )
+                  }}
+                </span>
+              </label>
+
+              <div class="flex flex-wrap gap-3">
+                <NextButton
+                  type="button"
+                  data-testid="beeline-webhook-generate"
+                  @click="generateBeelineWebhookToken"
+                >
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_GENERATE'
+                    )
+                  }}
+                </NextButton>
+                <NextButton
+                  type="button"
+                  data-testid="beeline-webhook-copy"
+                  :disabled="!beelineWebhookUrl"
+                  @click="copyBeelineWebhookUrl"
+                >
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_COPY'
+                    )
+                  }}
+                </NextButton>
+                <NextButton
+                  type="button"
+                  data-testid="beeline-webhook-save"
+                  :is-loading="isUpdatingBeelineWebhook"
+                  @click="updateBeelineWebhookToken"
+                >
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_SAVE'
+                    )
+                  }}
+                </NextButton>
+              </div>
+            </div>
+          </SettingsFieldSection>
+
+          <template v-if="isVirtualPbxStatusLoaded">
+            <div
+              v-if="showVirtualPbxTechnicalSettings"
+              class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+            >
+              <div class="mb-3 space-y-1">
+                <h3 class="text-sm font-medium text-n-slate-12">
+                  {{
+                    $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.PROVIDER_CONNECTION')
+                  }}
+                </h3>
+                <p class="mb-0 text-sm text-n-slate-11">
+                  {{
+                    $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.JANUS_SIP_SUBTITLE')
+                  }}
+                </p>
+              </div>
+              <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL')
+                  }}
+                  <input
+                    v-model="virtualPbxForm.connectionHost"
+                    data-testid="virtual-pbx-connection-host"
+                    class="rounded-lg border border-n-weak py-2 text-sm disabled:bg-n-alpha-1 disabled:text-n-slate-11"
+                    :disabled="isVirtualPbxReadOnly || isVirtualPbxWazo"
+                    type="text"
+                    :placeholder="
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.PLACEHOLDER'
+                      )
+                    "
+                  />
+                </label>
+                <label
+                  v-if="isVirtualPbxBeeline"
+                  class="flex flex-col gap-1 text-sm text-n-slate-12"
+                >
+                  {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SIP_DOMAIN.LABEL') }}
+                  <input
+                    v-model="virtualPbxForm.connectionSipDomain"
+                    class="rounded-lg border border-n-weak py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                    type="text"
+                    :placeholder="
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SIP_DOMAIN.PLACEHOLDER'
+                      )
+                    "
+                  />
+                </label>
+                <label
+                  v-if="isVirtualPbxBeeline"
+                  class="flex flex-col gap-1 text-sm text-n-slate-12"
+                >
+                  {{
+                    $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_PROXY.LABEL')
+                  }}
+                  <input
+                    v-model="virtualPbxForm.connectionOutboundProxy"
+                    class="rounded-lg border border-n-weak py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                    type="text"
+                    :placeholder="
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_PROXY.PLACEHOLDER'
+                      )
+                    "
+                  />
+                </label>
+                <label
+                  v-if="isVirtualPbxAsteriskAnalog"
+                  class="flex flex-col gap-1 text-sm text-n-slate-12"
+                >
+                  {{
+                    $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.LABEL')
+                  }}
+                  <input
+                    v-model="virtualPbxForm.connectionPort"
+                    class="rounded-lg border border-n-weak py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                    type="number"
+                    min="1"
+                    max="65535"
+                    :placeholder="
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.PLACEHOLDER'
+                      )
+                    "
+                  />
+                </label>
+                <label
+                  v-if="isVirtualPbxAsteriskAnalog"
+                  class="flex flex-col gap-1 text-sm text-n-slate-12"
+                >
+                  {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.TRANSPORT.LABEL') }}
+                  <select
+                    v-model="virtualPbxForm.connectionTransport"
+                    class="rounded-lg border border-n-weak py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                  >
+                    <option
+                      v-for="option in virtualPbxTransportOptions"
+                      :key="option"
+                      :value="option"
+                    >
+                      {{ option.toUpperCase() }}
+                    </option>
+                  </select>
+                </label>
+                <label
+                  v-if="isVirtualPbxDialFormatEditable"
+                  class="flex flex-col gap-1 text-sm text-n-slate-12"
+                >
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.LABEL'
                     )
                   }}
                   <select
-                    v-model="callRoutingForm.outbound.access_mode"
-                    data-testid="call-routing-outbound-access-mode"
+                    v-model="virtualPbxForm.outboundDialFormat"
                     class="rounded-lg border border-n-weak py-2 text-sm"
                     :disabled="isVirtualPbxReadOnly"
-                    @change="markCallRoutingDirty"
                   >
-                    <option value="all_members">
+                    <option
+                      v-for="option in virtualPbxOutboundDialFormatOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+              <p
+                v-if="isVirtualPbxBeeline"
+                class="mb-0 mt-4 border-t border-n-weak pt-4 text-sm text-n-slate-11"
+              >
+                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.BEELINE_CONFIG_HINT') }}
+              </p>
+            </div>
+
+            <div
+              v-if="showVirtualPbxTechnicalSettings && isVirtualPbxWazo"
+              data-testid="virtual-pbx-wazo-carrier-settings"
+              class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+            >
+              <div class="mb-3 space-y-1">
+                <h3 class="text-sm font-medium text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TITLE'
+                    )
+                  }}
+                </h3>
+                <p class="mb-0 text-sm text-n-slate-11">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.SUBTITLE'
+                    )
+                  }}
+                </p>
+              </div>
+              <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIER_KIND_LABEL'
+                    )
+                  }}
+                  <select
+                    v-model="virtualPbxForm.carrierKind"
+                    data-testid="virtual-pbx-carrier-kind"
+                    class="rounded-lg border border-n-weak py-2 text-sm disabled:bg-n-alpha-1 disabled:text-n-slate-11"
+                    :disabled="
+                      isVirtualPbxReadOnly || isVirtualPbxCarrierLocked
+                    "
+                    @change="onVirtualPbxCarrierChange"
+                  >
+                    <option value="">
                       {{
                         $t(
-                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.ALL_MEMBERS'
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIER_KIND_PLACEHOLDER'
                         )
                       }}
                     </option>
-                    <option value="selected_operators">
-                      {{
-                        $t(
-                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.SELECTED_OPERATORS'
-                        )
-                      }}
+                    <option
+                      v-for="option in virtualPbxCarrierOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
                     </option>
                   </select>
                 </label>
                 <label class="flex flex-col gap-1 text-sm text-n-slate-12">
                   {{
                     $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.CALLER_ID_LABEL'
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.MAX_CHANNELS_LABEL'
+                    )
+                  }}
+                  <div class="flex items-center gap-2">
+                    <input
+                      v-model.number="virtualPbxForm.maxChannels"
+                      class="flex-1 rounded-lg border border-n-weak py-2 text-sm"
+                      :disabled="isVirtualPbxReadOnly"
+                      type="number"
+                      min="1"
+                      max="100"
+                    />
+                    <NextButton
+                      type="button"
+                      data-testid="virtual-pbx-probe-channels-btn"
+                      outline
+                      slate
+                      xs
+                      :is-loading="isProbingVirtualPbxChannels"
+                      :disabled="
+                        isVirtualPbxReadOnly || isProbingVirtualPbxChannels
+                      "
+                      @click="probeVirtualPbxChannelCapacity"
+                    >
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.PROBE_CHANNELS_BUTTON'
+                        )
+                      }}
+                    </NextButton>
+                  </div>
+                  <div
+                    v-if="virtualPbxForm.detectedChannelLimit"
+                    data-testid="virtual-pbx-detected-channel-limit"
+                    class="mt-1 flex items-center justify-between gap-2 rounded-lg bg-n-amber-2/50 px-2.5 py-1.5 text-xs text-n-amber-11"
+                  >
+                    <span>
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.DETECTED_LIMIT_BADGE',
+                          { count: virtualPbxForm.detectedChannelLimit }
+                        )
+                      }}
+                    </span>
+                    <button
+                      v-if="
+                        virtualPbxForm.maxChannels !==
+                        virtualPbxForm.detectedChannelLimit
+                      "
+                      type="button"
+                      data-testid="virtual-pbx-apply-detected-limit"
+                      class="font-medium underline"
+                      :disabled="isVirtualPbxReadOnly"
+                      @click="applyDetectedChannelLimit"
+                    >
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.APPLY_DETECTED_LIMIT'
+                        )
+                      }}
+                    </button>
+                  </div>
+                  <div
+                    data-testid="virtual-pbx-ai-concurrency-badge"
+                    class="mt-1 rounded-lg bg-n-brand/10 px-2.5 py-1.5 text-xs text-n-brand"
+                  >
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.AI_CONCURRENCY_BADGE',
+                        { count: effectiveAiMaxConcurrentCalls }
+                      )
+                    }}
+                  </div>
+                  <span class="text-label-small text-n-slate-11">
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.DETECTED_LIMIT_HINT'
+                      )
+                    }}
+                  </span>
+                </label>
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.RESERVED_INBOUND_LABEL'
                     )
                   }}
                   <input
-                    v-model="callRoutingForm.outbound.caller_id_number"
-                    data-testid="call-routing-outbound-caller-id"
+                    v-model.number="virtualPbxForm.reservedInboundChannels"
+                    class="rounded-lg border border-n-weak py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                    type="number"
+                    min="0"
+                    max="50"
+                  />
+                </label>
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.RING_STRATEGY_LABEL'
+                    )
+                  }}
+                  <select
+                    v-model="virtualPbxForm.ringStrategy"
+                    class="rounded-lg border border-n-weak py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                  >
+                    <option
+                      v-for="option in virtualPbxRingStrategyOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.GROUP_EXTENSION_LABEL'
+                    )
+                  }}
+                  <input
+                    v-model="virtualPbxForm.groupExtension"
+                    class="rounded-lg border border-n-weak py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                    type="text"
+                    :placeholder="String(2001)"
+                  />
+                </label>
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_USERNAME_LABEL'
+                    )
+                  }}
+                  <input
+                    v-model="virtualPbxForm.trunkUsername"
                     class="rounded-lg border border-n-weak py-2 text-sm"
                     :disabled="isVirtualPbxReadOnly"
                     type="text"
                     :placeholder="
-                      virtualPbxForm.displayPhoneNumber || '+77000000000'
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_USERNAME_PLACEHOLDER'
+                      )
                     "
-                    @input="markCallRoutingDirty"
+                  />
+                </label>
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_PASSWORD_LABEL'
+                    )
+                  }}
+                  <input
+                    v-model="virtualPbxForm.trunkPassword"
+                    class="rounded-lg border border-n-weak py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                    type="password"
+                    autocomplete="new-password"
+                    :placeholder="
+                      virtualPbxForm.trunkPasswordConfigured
+                        ? '********'
+                        : $t(
+                            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_PASSWORD_PLACEHOLDER'
+                          )
+                    "
+                  />
+                </label>
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_DOMAIN_LABEL'
+                    )
+                  }}
+                  <input
+                    v-model="virtualPbxForm.trunkDomain"
+                    data-testid="virtual-pbx-trunk-domain"
+                    class="rounded-lg border border-n-weak py-2 text-sm disabled:bg-n-alpha-1 disabled:text-n-slate-11"
+                    :disabled="
+                      isVirtualPbxReadOnly || isVirtualPbxKnownCarrierPreset
+                    "
+                    type="text"
+                    :placeholder="
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_DOMAIN_PLACEHOLDER'
+                      )
+                    "
+                  />
+                </label>
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_HOST_LABEL'
+                    )
+                  }}
+                  <input
+                    v-model="virtualPbxForm.trunkHost"
+                    data-testid="virtual-pbx-trunk-host"
+                    class="rounded-lg border border-n-weak py-2 text-sm disabled:bg-n-alpha-1 disabled:text-n-slate-11"
+                    :disabled="
+                      isVirtualPbxReadOnly || isVirtualPbxKnownCarrierPreset
+                    "
+                    type="text"
+                    :placeholder="
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_HOST_PLACEHOLDER'
+                      )
+                    "
                   />
                 </label>
               </div>
-              <div
-                v-if="
-                  callRoutingForm.outbound.access_mode === 'selected_operators'
-                "
-                class="rounded-lg bg-n-alpha-1 p-3"
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+              <NextButton
+                data-testid="virtual-pbx-plan"
+                type="button"
+                :is-loading="isLoadingVirtualPbxPlan"
+                @click="loadVirtualPbxProvisioningPlan"
               >
-                <div class="mb-1.5 text-xs text-n-slate-11">
-                  {{
-                    $t(
-                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.OUTBOUND.ALLOWED_OPERATORS_LABEL'
-                    )
-                  }}
-                </div>
-                <div class="flex flex-wrap gap-2">
-                  <button
-                    v-for="member in virtualPbxMemberOptions"
-                    :key="member.value"
-                    type="button"
-                    class="rounded-full border px-2.5 py-1 text-xs transition"
-                    :class="
-                      callRoutingForm.outbound.allowed_user_ids.includes(
-                        member.value
-                      )
-                        ? 'border-n-brand bg-n-brand/10 font-medium text-n-brand'
-                        : 'border-n-weak text-n-slate-11'
-                    "
-                    :disabled="isVirtualPbxReadOnly"
-                    @click="toggleCallRoutingOutboundUser(member.value)"
-                  >
-                    {{ member.label }}
-                  </button>
-                </div>
+                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PLAN_BUTTON') }}
+              </NextButton>
+              <NextButton
+                data-testid="virtual-pbx-reconcile"
+                type="button"
+                :is-loading="isReconcilingVirtualPbx"
+                @click="reconcileVirtualPbxChannel"
+              >
+                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.RECONCILE_BUTTON') }}
+              </NextButton>
+              <NextButton
+                v-if="isVirtualPbxWazo"
+                data-testid="virtual-pbx-wazo-apply"
+                type="button"
+                :disabled="!isVirtualPbxRemoteCommitAllowed"
+                :is-loading="isProvisioningVirtualPbx"
+                @click="provisionVirtualPbxChannel"
+              >
+                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVISION_BUTTON') }}
+              </NextButton>
+            </div>
+
+            <div
+              v-if="virtualPbxPlanOperations.length"
+              class="rounded-xl p-4 text-sm text-n-slate-11 outline outline-1 -outline-offset-1 outline-n-weak"
+            >
+              <div class="mb-2 font-medium text-n-slate-12">
+                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PLAN_OPERATIONS') }}
               </div>
-            </div>
-          </div>
-
-          <div
-            v-if="isVirtualPbxAsteriskAnalog"
-            class="grid grid-cols-1 gap-4 md:grid-cols-2"
-          >
-            <label class="flex flex-col gap-1 text-sm text-n-slate-12">
-              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.ROUTING_MODE') }}
-              <select
-                v-model="virtualPbxForm.routingMode"
-                class="rounded-lg border border-n-weak py-2 text-sm"
-                :disabled="isVirtualPbxReadOnly"
-              >
-                <option
-                  v-for="option in virtualPbxRoutingOptions"
-                  :key="option.value"
-                  :value="option.value"
+              <ul class="list-disc pl-5">
+                <li
+                  v-for="operation in virtualPbxPlanOperations"
+                  :key="`${operation.action || operation.key || operation.code}-${operation.ref || operation.description}`"
                 >
-                  {{ option.label }}
-                </option>
-              </select>
-            </label>
-          </div>
-
-          <div class="flex flex-wrap gap-3">
-            <NextButton
-              :disabled="isVirtualPbxReadOnly"
-              :is-loading="isUpdatingVirtualPbx"
-              type="submit"
-            >
-              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.UPDATE_BUTTON') }}
-            </NextButton>
-            <NextButton
-              data-testid="virtual-pbx-plan"
-              type="button"
-              :is-loading="isLoadingVirtualPbxPlan"
-              @click="loadVirtualPbxProvisioningPlan"
-            >
-              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PLAN_BUTTON') }}
-            </NextButton>
-            <NextButton
-              data-testid="virtual-pbx-reconcile"
-              type="button"
-              :is-loading="isReconcilingVirtualPbx"
-              @click="reconcileVirtualPbxChannel"
-            >
-              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.RECONCILE_BUTTON') }}
-            </NextButton>
-            <NextButton
-              v-if="isVirtualPbxWazo"
-              data-testid="virtual-pbx-wazo-apply"
-              type="button"
-              :disabled="!isVirtualPbxRemoteCommitAllowed"
-              :is-loading="isProvisioningVirtualPbx"
-              @click="provisionVirtualPbxChannel"
-            >
-              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVISION_BUTTON') }}
-            </NextButton>
-          </div>
-
-          <div
-            v-if="virtualPbxPlanOperations.length"
-            class="rounded-xl p-4 text-sm text-n-slate-11 outline outline-1 -outline-offset-1 outline-n-weak"
-          >
-            <div class="mb-2 font-medium text-n-slate-12">
-              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PLAN_OPERATIONS') }}
+                  {{
+                    operation.description ||
+                    operation.action ||
+                    operation.key ||
+                    operation.code ||
+                    operation.id
+                  }}
+                </li>
+              </ul>
             </div>
-            <ul class="list-disc pl-5">
-              <li
-                v-for="operation in virtualPbxPlanOperations"
-                :key="`${operation.action || operation.key || operation.code}-${operation.ref || operation.description}`"
-              >
-                {{
-                  operation.description ||
-                  operation.action ||
-                  operation.key ||
-                  operation.code ||
-                  operation.id
-                }}
-              </li>
-            </ul>
-          </div>
-        </form>
-      </SettingsFieldSection>
-    </template>
-  </div>
+          </template>
+        </DeveloperDetails>
 
-  <div v-else-if="isALineChannel">
-    <SettingsFieldSection
-      :label="$t('INBOX_MGMT.ADD.LINE_CHANNEL.API_CALLBACK.TITLE')"
-      :help-text="$t('INBOX_MGMT.ADD.LINE_CHANNEL.API_CALLBACK.SUBTITLE')"
-    >
-      <woot-code :script="inbox.callback_webhook_url" lang="html" />
-    </SettingsFieldSection>
+        <div
+          v-if="isVirtualPbxStatusLoaded && showVirtualPbxSaveButton"
+          class="flex flex-wrap gap-3"
+        >
+          <NextButton
+            :disabled="isVirtualPbxReadOnly"
+            :is-loading="isUpdatingVirtualPbx"
+            type="submit"
+          >
+            {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.UPDATE_BUTTON') }}
+          </NextButton>
+        </div>
+      </form>
+    </template>
   </div>
   <div v-else-if="isAWebWidgetInbox">
     <div class="space-y-4">
@@ -4113,10 +4281,7 @@ export default {
       />
     </div>
 
-    <SettingsAccordion
-      :title="$t('INBOX_MGMT.SETTINGS_POPUP.IDENTITY_VALIDATION.TITLE')"
-      class="mt-6"
-    >
+    <DeveloperDetails>
       <SettingsToggleSection
         :header="$t('INBOX_MGMT.SETTINGS_POPUP.IDENTITY_VALIDATION.TITLE')"
         :description="
@@ -4146,7 +4311,7 @@ export default {
           )
         "
       />
-    </SettingsAccordion>
+    </DeveloperDetails>
   </div>
   <div v-else-if="isAPIInbox && !isAWhatsAppWebInbox">
     <SettingsFieldSection
@@ -4206,7 +4371,7 @@ export default {
     <ImapSettings :inbox="inbox" />
     <SmtpSettings v-if="inbox.imap_enabled" :inbox="inbox" />
   </div>
-  <div v-else-if="isAWhatsAppChannel && !isATwilioChannel">
+  <div v-else-if="isAWhatsAppCloudChannel">
     <div v-if="inbox.provider_config">
       <SettingsFieldSection
         v-if="isCoexistenceWhatsApp && coexistenceSync"
@@ -4248,12 +4413,6 @@ export default {
               )
             }}
           </p>
-          <p
-            v-if="coexistenceSync.last_error"
-            class="mb-0 text-sm text-n-ruby-11"
-          >
-            {{ coexistenceSync.last_error }}
-          </p>
           <NextButton
             v-if="coexistenceRecoveryRequired"
             data-testid="whatsapp-coexistence-sync-recover"
@@ -4280,50 +4439,6 @@ export default {
           <div class="flex flex-col gap-1 items-start">
             <NextButton @click="handleReconfigure">
               {{ $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_RECONFIGURE_BUTTON') }}
-            </NextButton>
-          </div>
-        </SettingsFieldSection>
-      </template>
-
-      <!-- Manual Setup Section -->
-      <template v-else>
-        <SettingsFieldSection
-          :label="
-            $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_WEBHOOK_CALLBACK_TITLE')
-          "
-          :help-text="
-            $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_WEBHOOK_REDACTED_SUBHEADER')
-          "
-        >
-          <woot-code :script="inbox.callback_webhook_url" />
-        </SettingsFieldSection>
-        <SettingsFieldSection
-          :label="$t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_SECTION_UPDATE_TITLE')"
-          :help-text="
-            $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_SECTION_UPDATE_SUBHEADER')
-          "
-        >
-          <div
-            class="flex flex-1 justify-between items-center whatsapp-settings--content"
-          >
-            <woot-input
-              v-model="whatsAppInboxAPIKey"
-              type="password"
-              autocomplete="off"
-              class="flex-1 mr-2 [&>input]:!mb-0"
-              :placeholder="
-                $t(
-                  'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_SECTION_UPDATE_PLACEHOLDER'
-                )
-              "
-            />
-            <NextButton
-              :disabled="v$.whatsAppInboxAPIKey.$invalid"
-              @click="updateWhatsAppInboxAPIKey"
-            >
-              {{
-                $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_SECTION_UPDATE_BUTTON')
-              }}
             </NextButton>
           </div>
         </SettingsFieldSection>
@@ -4398,10 +4513,7 @@ export default {
             </button>
           </div>
 
-          <div
-            v-if="callRoutingTab === 'inbound'"
-            class="flex flex-col gap-4"
-          >
+          <div v-if="callRoutingTab === 'inbound'" class="flex flex-col gap-4">
             <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
               <label class="flex flex-col gap-1 text-sm text-n-slate-12">
                 {{
@@ -4469,7 +4581,9 @@ export default {
 
             <div class="rounded-lg bg-n-alpha-1 p-3">
               <div class="mb-2 flex items-center justify-between">
-                <div class="text-xs font-semibold uppercase tracking-wide text-n-slate-11">
+                <div
+                  class="text-xs font-semibold uppercase tracking-wide text-n-slate-11"
+                >
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.GROUPS.TITLE'
@@ -4666,9 +4780,7 @@ export default {
               @click="saveWhatsAppCallRouting"
             >
               {{
-                $t(
-                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SAVE_BUTTON'
-                )
+                $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CALL_ROUTING.SAVE_BUTTON')
               }}
             </NextButton>
           </div>
@@ -4690,6 +4802,64 @@ export default {
           </label>
         </div>
       </SettingsFieldSection>
+      <DeveloperDetails v-if="whatsappDeveloperDetailsVisible">
+        <div
+          v-if="isCoexistenceWhatsApp && coexistenceSync?.last_error"
+          data-testid="whatsapp-coexistence-sync-error"
+          class="rounded-lg border border-n-ruby-6/40 bg-n-ruby-3/40 px-3.5 py-2.5 text-sm text-n-ruby-11"
+        >
+          <span class="font-medium">
+            {{ $t('INBOX_MGMT.EDIT.DEVELOPER_DETAILS.LAST_ERROR') }}
+          </span>
+          {{ coexistenceSync.last_error }}
+        </div>
+        <template v-if="!isEmbeddedSignupWhatsApp">
+          <SettingsFieldSection
+            :label="
+              $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_WEBHOOK_CALLBACK_TITLE')
+            "
+            :help-text="
+              $t(
+                'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_WEBHOOK_REDACTED_SUBHEADER'
+              )
+            "
+          >
+            <woot-code :script="inbox.callback_webhook_url" />
+          </SettingsFieldSection>
+          <SettingsFieldSection
+            :label="
+              $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_SECTION_UPDATE_TITLE')
+            "
+            :help-text="
+              $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_SECTION_UPDATE_SUBHEADER')
+            "
+          >
+            <div
+              class="flex flex-1 justify-between items-center whatsapp-settings--content"
+            >
+              <woot-input
+                v-model="whatsAppInboxAPIKey"
+                type="password"
+                autocomplete="off"
+                class="flex-1 mr-2 [&>input]:!mb-0"
+                :placeholder="
+                  $t(
+                    'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_SECTION_UPDATE_PLACEHOLDER'
+                  )
+                "
+              />
+              <NextButton
+                :disabled="v$.whatsAppInboxAPIKey.$invalid"
+                @click="updateWhatsAppInboxAPIKey"
+              >
+                {{
+                  $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_SECTION_UPDATE_BUTTON')
+                }}
+              </NextButton>
+            </div>
+          </SettingsFieldSection>
+        </template>
+      </DeveloperDetails>
     </div>
     <WhatsappReauthorize
       v-if="isEmbeddedSignupWhatsApp"

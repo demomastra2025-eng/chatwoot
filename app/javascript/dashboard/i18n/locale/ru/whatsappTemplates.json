@@ -83,6 +83,26 @@
       "DELETE_ACTION": "Удалить шаблон",
       "DELETE_SUCCESS": "Шаблон успешно удален.",
       "CSAT_BADGE": "Управляется через CSAT",
+      "STATUSES": {
+        "APPROVED": "Одобрен",
+        "PENDING": "На проверке",
+        "IN_APPEAL": "Апелляция",
+        "REJECTED": "Отклонён",
+        "PAUSED": "Приостановлен",
+        "DISABLED": "Отключён",
+        "FLAGGED": "Есть замечания",
+        "LIMIT_EXCEEDED": "Лимит превышен",
+        "PENDING_DELETION": "Удаляется",
+        "DELETED": "Удалён",
+        "ARCHIVED": "В архиве"
+      },
+      "REJECTION_REASONS": {
+        "ABUSIVE_CONTENT": "Недопустимое содержание",
+        "INCORRECT_CATEGORY": "Неверная категория шаблона",
+        "INVALID_FORMAT": "Неверный формат шаблона",
+        "SCAM": "Похоже на мошенничество",
+        "TAG_CONTENT_MISMATCH": "Текст не соответствует категории"
+      },
       "SHOW_IN_CONVERSATIONS": "Показывать в диалогах",
       "VISIBILITY_ERROR": "Не удалось изменить видимость шаблона.",
       "VIEW_FULL_TEMPLATE": "Показать шаблон полностью",
@@ -124,8 +144,8 @@
       },
       "CATEGORY_OPTIONS": {
         "UTILITY": "Сервисный",
-        "MARKETING": "Маркетинговый",
-        "AUTHENTICATION": "Аутентификация"
+        "MARKETING": "Маркетинг",
+        "AUTHENTICATION": "Код подтверждения"
       },
       "HEADER_OPTIONS": {
         "NONE": "Без заголовка",

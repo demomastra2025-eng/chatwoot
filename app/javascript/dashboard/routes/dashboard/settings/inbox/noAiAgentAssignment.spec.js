@@ -32,8 +32,6 @@ const settingsTabKeys = (overrides = {}) =>
       isFeatureEnabledonAccount: () => true,
       isAVoiceChannel: false,
       isAWebWidgetInbox: false,
-      isATwilioChannel: false,
-      isALineChannel: false,
       isAPIInbox: false,
       isAWhatsAppWebInbox: false,
       isAnEmailChannel: false,
@@ -46,8 +44,6 @@ describe('channel settings: no AI agent assignment', () => {
   it.each([
     ['a plain text channel', {}],
     ['a website widget', { isAWebWidgetInbox: true }],
-    ['a Twilio channel', { isATwilioChannel: true }],
-    ['a Line channel', { isALineChannel: true }],
     ['an API channel', { isAPIInbox: true }],
     ['an email channel', { isAnEmailChannel: true }],
     ['a WhatsApp Cloud channel', { shouldShowWhatsAppConfiguration: true }],

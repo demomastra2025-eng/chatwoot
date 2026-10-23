@@ -3,13 +3,15 @@ import { flushPromises, shallowMount } from '@vue/test-utils';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import WhatsAppTemplatesPage from './WhatsAppTemplatesPage.vue';
 
-const { dispatch, useAlertMock } = vi.hoisted(() => ({
+const { dispatch, useAlertMock, translations } = vi.hoisted(() => ({
   dispatch: vi.fn(),
   useAlertMock: vi.fn(),
+  translations: {},
 }));
 
+// Unknown keys come back as the key itself, like vue-i18n does.
 vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: key => key }),
+  useI18n: () => ({ t: key => translations[key] ?? key }),
 }));
 
 vi.mock('dashboard/composables', () => ({
@@ -208,6 +210,67 @@ describe('WhatsAppTemplatesPage', () => {
     expect(flatDetails.text()).toContain('image');
     expect(flatDetails.text()).toContain('Flat draft card body.');
     expect(flatDetails.text()).toContain('Draft button');
+  });
+
+  it('shows the category and the status of every language in Russian', () => {
+    Object.assign(translations, {
+      'WHATSAPP_TEMPLATES.MANAGEMENT.CATEGORY_OPTIONS.MARKETING': 'Маркетинг',
+      'WHATSAPP_TEMPLATES.MANAGEMENT.CATEGORY_OPTIONS.AUTHENTICATION':
+        'Код подтверждения',
+      'WHATSAPP_TEMPLATES.MANAGEMENT.STATUSES.APPROVED': 'Одобрен',
+      'WHATSAPP_TEMPLATES.MANAGEMENT.STATUSES.PENDING': 'На проверке',
+      'WHATSAPP_TEMPLATES.MANAGEMENT.STATUSES.PAUSED': 'Приостановлен',
+      'WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASONS.INVALID_FORMAT':
+        'Неверный формат шаблона',
+    });
+    const wrapper = mountComponent({
+      id: 7,
+      csat_config: {},
+      message_templates: [
+        template('promo', { category: 'MARKETING', status: 'PAUSED' }),
+        template('promo', { language: 'ru', status: 'PENDING' }),
+        template('login_code', { category: 'AUTHENTICATION' }),
+        template('broken', {
+          status: 'REJECTED',
+          rejected_reason: 'INVALID_FORMAT',
+        }),
+      ],
+    });
+    const card = name =>
+      wrapper
+        .findAll('[data-test="whatsapp-template-card"]')
+        .find(node => node.text().includes(name));
+
+    expect(card('promo').text()).toContain('Маркетинг');
+    expect(card('promo').text()).toContain('Приостановлен');
+    expect(card('promo').text()).toContain('На проверке');
+    expect(card('login_code').text()).toContain('Код подтверждения');
+    expect(card('login_code').text()).toContain('Одобрен');
+    expect(card('broken').text()).toContain('Неверный формат шаблона');
+
+    [
+      'UTILITY',
+      'MARKETING',
+      'AUTHENTICATION',
+      'APPROVED',
+      'PENDING',
+      'PAUSED',
+    ].forEach(code => expect(wrapper.text()).not.toContain(code));
+  });
+
+  it('falls back to a readable word for a status without a translation', () => {
+    const wrapper = mountComponent({
+      id: 7,
+      csat_config: {},
+      message_templates: [
+        template('odd', { status: 'LIMIT_EXCEEDED', category: 'SERVICE' }),
+      ],
+    });
+    const text = wrapper.find('[data-test="whatsapp-template-card"]').text();
+
+    expect(text).toContain('Limit exceeded');
+    expect(text).toContain('Service');
+    expect(text).not.toContain('LIMIT_EXCEEDED');
   });
 
   it('hides a template from the conversation picker', async () => {

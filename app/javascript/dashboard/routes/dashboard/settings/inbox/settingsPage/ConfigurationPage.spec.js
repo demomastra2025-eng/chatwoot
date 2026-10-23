@@ -116,10 +116,16 @@ const statusPayload = {
   },
 };
 
-const buildWrapper = ({ inbox = baseInbox, te, storeGetters = {} } = {}) =>
+const buildWrapper = ({
+  inbox = baseInbox,
+  te,
+  storeGetters = {},
+  section = 'configuration',
+} = {}) =>
   shallowMount(ConfigurationPage, {
     props: {
       inbox,
+      section,
     },
     global: {
       mocks: {
@@ -141,7 +147,11 @@ const buildWrapper = ({ inbox = baseInbox, te, storeGetters = {} } = {}) =>
           template: '<section><slot /></section>',
         },
         SettingsToggleSection: true,
-        SettingsAccordion: true,
+        // The real block is collapsed; the stub keeps its content visible so
+        // the developer fields can be checked.
+        DeveloperDetails: {
+          template: '<div data-testid="developer-details"><slot /></div>',
+        },
         ImapSettings: true,
         SmtpSettings: true,
         WhatsappReauthorize: true,
@@ -543,7 +553,11 @@ describe('ConfigurationPage Virtual PBX management', () => {
     });
     await flushPromises();
 
-    expect(wrapper.find('[data-testid="binotel-api-secret-configured-hint"]').exists()).toBe(true);
+    expect(
+      wrapper
+        .find('[data-testid="binotel-api-secret-configured-hint"]')
+        .exists()
+    ).toBe(true);
 
     wrapper.vm.binotelApiKey = 'updated@example.com';
     await wrapper.vm.updateBinotelWebhookToken();
@@ -602,12 +616,12 @@ describe('ConfigurationPage Virtual PBX management', () => {
     expect(wrapper.vm.beelineWebhookUrl).toBe(
       'https://dev.one-link.kz/beeline/events/old-beeline-token'
     );
-    expect(enTe('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TITLE')).toBe(
-      true
-    );
-    expect(ruTe('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TITLE')).toBe(
-      true
-    );
+    expect(
+      enTe('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TITLE')
+    ).toBe(true);
+    expect(
+      ruTe('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_WEBHOOK_TITLE')
+    ).toBe(true);
     expect(enTe('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BEELINE_API_TOKEN')).toBe(
       true
     );
@@ -697,7 +711,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
   });
 
   it('renders Sipuni settings as employee SIP assignments without technical provider fields', async () => {
-    const wrapper = buildWrapper();
+    const wrapper = buildWrapper({ section: 'calls' });
     await flushPromises();
 
     expect(wrapper.text()).toContain(
@@ -742,6 +756,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
 
   it('treats a native Sipuni voice inbox as Virtual PBX settings', async () => {
     const wrapper = buildWrapper({
+      section: 'calls',
       inbox: {
         ...baseInbox,
         provider: 'sipuni',
@@ -778,6 +793,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
       },
     });
     const wrapper = buildWrapper({
+      section: 'calls',
       inbox: {
         ...baseInbox,
         provider: 'binotel',
@@ -832,13 +848,14 @@ describe('ConfigurationPage Virtual PBX management', () => {
       },
     });
     const wrapper = buildWrapper();
+    const callsWrapper = buildWrapper({ section: 'calls' });
     await flushPromises();
     updateVirtualPbxChannelMock.mockClear();
 
     await wrapper.vm.updateVirtualPbxChannel();
     await flushPromises();
 
-    expect(wrapper.text()).toContain(
+    expect(callsWrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.LABEL'
     );
     expect(wrapper.text()).toContain(
@@ -847,10 +864,10 @@ describe('ConfigurationPage Virtual PBX management', () => {
     expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.LABEL'
     );
-    expect(wrapper.text()).toContain(
+    expect(callsWrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
     );
-    expect(wrapper.text()).toContain(
+    expect(callsWrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
     );
     expect(updateVirtualPbxChannelMock).toHaveBeenCalledWith(
@@ -940,7 +957,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
   });
 
   it('shows a masked placeholder for already configured employee SIP passwords', async () => {
-    const wrapper = buildWrapper();
+    const wrapper = buildWrapper({ section: 'calls' });
     await flushPromises();
 
     const passwordInput = wrapper.find('input[type="password"]');
@@ -1423,11 +1440,15 @@ describe('ConfigurationPage Virtual PBX save feedback and Beeline dialing', () =
         .attributes('disabled')
     ).toBeDefined();
     expect(
-      wrapper.find('[data-testid="virtual-pbx-carrier-badge"]').attributes('src')
+      wrapper
+        .find('[data-testid="virtual-pbx-carrier-badge"]')
+        .attributes('src')
     ).toBe('/integrations/channels/badges/altel.svg');
 
     expect(
-      wrapper.find('[data-testid="virtual-pbx-detected-channel-limit"]').exists()
+      wrapper
+        .find('[data-testid="virtual-pbx-detected-channel-limit"]')
+        .exists()
     ).toBe(true);
     await wrapper
       .find('[data-testid="virtual-pbx-apply-detected-limit"]')
@@ -1436,7 +1457,7 @@ describe('ConfigurationPage Virtual PBX save feedback and Beeline dialing', () =
   });
 
   it('renders and saves the Visual Inbound & Outbound Call Routing Builder across Virtual PBX channels', async () => {
-    const wrapper = buildWrapper();
+    const wrapper = buildWrapper({ section: 'calls' });
     await flushPromises();
 
     expect(wrapper.find('[data-testid="call-routing-builder"]').exists()).toBe(
@@ -1560,6 +1581,7 @@ describe('ConfigurationPage Virtual PBX save feedback and Beeline dialing', () =
     };
 
     const wrapper = buildWrapper({
+      section: 'calls',
       storeGetters: {
         'inboxes/getInboxes': [whatsappCloudInbox, whatsappPersonalInbox],
       },
@@ -1570,7 +1592,9 @@ describe('ConfigurationPage Virtual PBX save feedback and Beeline dialing', () =
       .find('[data-testid="call-routing-whatsapp-followup-enabled"]')
       .setValue(true);
     expect(
-      wrapper.find('[data-testid="call-routing-whatsapp-followup-panel"]').exists()
+      wrapper
+        .find('[data-testid="call-routing-whatsapp-followup-panel"]')
+        .exists()
     ).toBe(true);
 
     // Select official WABA channel -> template selector appears, custom message hidden
@@ -1694,6 +1718,10 @@ describe('ConfigurationPage Virtual PBX save feedback and Beeline dialing', () =
     const wrapper = buildWrapper({
       inbox: { ...baseInbox, provider: 'wazo' },
     });
+    const callsWrapper = buildWrapper({
+      section: 'calls',
+      inbox: { ...baseInbox, provider: 'wazo' },
+    });
     await flushPromises();
 
     expect(
@@ -1701,10 +1729,14 @@ describe('ConfigurationPage Virtual PBX save feedback and Beeline dialing', () =
     ).toBe(true);
     expect(wrapper.vm.effectiveAiMaxConcurrentCalls).toBe(2);
     expect(
-      wrapper.find('[data-testid="call-routing-wazo-onelink-badge"]').exists()
+      callsWrapper
+        .find('[data-testid="call-routing-wazo-onelink-badge"]')
+        .exists()
     ).toBe(true);
     expect(
-      wrapper.find('[data-testid="call-routing-authority-selector"]').exists()
+      callsWrapper
+        .find('[data-testid="call-routing-authority-selector"]')
+        .exists()
     ).toBe(false);
 
     await wrapper.vm.probeVirtualPbxChannelCapacity();
@@ -1752,6 +1784,7 @@ describe('ConfigurationPage Virtual PBX save feedback and Beeline dialing', () =
     });
 
     const wrapper = buildWrapper({
+      section: 'calls',
       inbox: { ...baseInbox, provider: 'sipuni' },
     });
     await flushPromises();
@@ -1794,3 +1827,314 @@ describe('ConfigurationPage Virtual PBX save feedback and Beeline dialing', () =
   });
 });
 
+const PBX_PROVIDERS = [
+  'sipuni',
+  'binotel',
+  'asterisk_analog',
+  'beeline',
+  'wazo',
+];
+
+const statusFor = provider => ({
+  payload: {
+    ...statusPayload.payload,
+    ui_config: {
+      ...statusPayload.payload.ui_config,
+      channel: {
+        ...statusPayload.payload.ui_config.channel,
+        provider_kind: provider,
+      },
+      connection: {
+        ...statusPayload.payload.ui_config.connection,
+        provider_kind: provider,
+        ...(provider === 'beeline'
+          ? {
+              sip_domain: 'vpbx-company-test.cloudpbx.beeline.kz',
+              outbound_proxy: '46.227.186.231:6050',
+            }
+          : {}),
+      },
+    },
+  },
+});
+
+const CODE_BLOCKS = 'woot-code-stub, woot-code';
+const INPUTS = 'woot-input-stub, woot-input';
+const DEVELOPER = '[data-testid="developer-details"]';
+
+describe('ConfigurationPage voice tabs: calls and employees vs configuration', () => {
+  beforeEach(() => {
+    alertMock.mockReset();
+    getVirtualPbxStatusMock.mockReset();
+    getVirtualPbxProvisioningRunsMock.mockReset();
+    updateVirtualPbxChannelMock.mockReset();
+    storeDispatchMock.mockReset();
+    getVirtualPbxStatusMock.mockResolvedValue(statusPayload);
+    getVirtualPbxProvisioningRunsMock.mockResolvedValue({
+      payload: { provisioning_runs: [] },
+    });
+    updateVirtualPbxChannelMock.mockResolvedValue({ payload: { errors: [] } });
+    storeDispatchMock.mockResolvedValue({ data: { payload: [] } });
+    window.chatwootConfig = { hostURL: 'https://dev.one-link.kz' };
+  });
+
+  it('shows employees and call routing only on the calls tab', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue(statusFor('asterisk_analog'));
+    const inbox = { ...baseInbox, provider: 'asterisk_analog' };
+    const calls = buildWrapper({ inbox, section: 'calls' });
+    const configuration = buildWrapper({ inbox });
+    await flushPromises();
+
+    expect(calls.find('[data-testid="virtual-pbx-add-profile"]').exists()).toBe(
+      true
+    );
+    expect(calls.find('[data-testid="call-routing-builder"]').exists()).toBe(
+      true
+    );
+    expect(calls.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OPERATOR_DISTRIBUTION.LABEL'
+    );
+    expect(
+      calls.find('[data-testid="virtual-pbx-connection-host"]').exists()
+    ).toBe(false);
+    expect(calls.find(DEVELOPER).exists()).toBe(false);
+
+    expect(
+      configuration.find('[data-testid="virtual-pbx-add-profile"]').exists()
+    ).toBe(false);
+    expect(
+      configuration.find('[data-testid="call-routing-builder"]').exists()
+    ).toBe(false);
+  });
+
+  it('keeps the SIP server fields inside the developer block of the configuration tab', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue(statusFor('asterisk_analog'));
+    const configuration = buildWrapper({
+      inbox: { ...baseInbox, provider: 'asterisk_analog' },
+    });
+    await flushPromises();
+
+    const developer = configuration.find(DEVELOPER);
+
+    expect(developer.exists()).toBe(true);
+    expect(
+      developer.find('[data-testid="virtual-pbx-connection-host"]').exists()
+    ).toBe(true);
+    expect(developer.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.LABEL'
+    );
+    expect(developer.find('[data-testid="virtual-pbx-plan"]').exists()).toBe(
+      true
+    );
+    expect(
+      developer.find('[data-testid="virtual-pbx-reconcile"]').exists()
+    ).toBe(true);
+    expect(
+      configuration.find('[data-testid="virtual-pbx-provider-kind"]').exists()
+    ).toBe(true);
+    expect(
+      configuration
+        .find('[data-testid="virtual-pbx-provider-kind"]')
+        .element.closest(DEVELOPER)
+    ).toBeNull();
+  });
+
+  it('keeps the webhook address and tokens of a Sipuni channel in the developer block', async () => {
+    const configuration = buildWrapper({
+      inbox: {
+        ...baseInbox,
+        provider: 'sipuni',
+        provider_config: { sipuni_events_webhook_token: 'saved-token' },
+      },
+    });
+    await flushPromises();
+
+    const developer = configuration.find(DEVELOPER);
+
+    expect(developer.find(CODE_BLOCKS).attributes('script')).toBe(
+      'https://dev.one-link.kz/sipuni/events/saved-token'
+    );
+    expect(configuration.findAll(CODE_BLOCKS)).toHaveLength(
+      developer.findAll(CODE_BLOCKS).length
+    );
+  });
+
+  it('shows the provider and number of a Sipuni channel read only and has nothing to save', async () => {
+    const configuration = buildWrapper();
+    await flushPromises();
+
+    const summary = configuration.find('[data-testid="virtual-pbx-summary"]');
+
+    expect(summary.exists()).toBe(true);
+    expect(summary.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.SIPUNI'
+    );
+    expect(summary.text()).toContain(virtualPbxDisplayNumber);
+    expect(configuration.find('button[type="submit"]').exists()).toBe(false);
+  });
+
+  it('lets a manager save from the calls tab even for Sipuni', async () => {
+    const calls = buildWrapper({ section: 'calls' });
+    await flushPromises();
+
+    expect(calls.find('button[type="submit"]').exists()).toBe(true);
+  });
+
+  it('sends exactly the same payload from the configuration tab and the calls tab', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue(statusFor('beeline'));
+    const inbox = { ...baseInbox, provider: 'beeline' };
+    const configuration = buildWrapper({ inbox });
+    const calls = buildWrapper({ inbox, section: 'calls' });
+    await flushPromises();
+
+    await configuration.vm.updateVirtualPbxChannel();
+    await calls.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    expect(updateVirtualPbxChannelMock).toHaveBeenCalledTimes(2);
+    expect(updateVirtualPbxChannelMock.mock.calls[1]).toEqual(
+      updateVirtualPbxChannelMock.mock.calls[0]
+    );
+  });
+
+  it.each(PBX_PROVIDERS)(
+    'lets a manager add an employee extension on the calls tab for %s',
+    async provider => {
+      getVirtualPbxStatusMock.mockResolvedValue({
+        payload: {
+          ...statusFor(provider).payload,
+          ui_config: {
+            ...statusFor(provider).payload.ui_config,
+            employees: [],
+          },
+        },
+      });
+      const calls = buildWrapper({
+        section: 'calls',
+        inbox: { ...baseInbox, provider },
+      });
+      await flushPromises();
+      updateVirtualPbxChannelMock.mockClear();
+
+      await calls
+        .find('[data-testid="virtual-pbx-add-profile"]')
+        .trigger('click');
+      const extensionInput = calls.find(
+        'input[placeholder="INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.PLACEHOLDER"]'
+      );
+      expect(extensionInput.exists()).toBe(true);
+      await extensionInput.setValue('777');
+      calls.vm.virtualPbxForm.profiles[0].userId = 8;
+
+      await calls.find('form').trigger('submit');
+      await flushPromises();
+
+      expect(updateVirtualPbxChannelMock).toHaveBeenCalledTimes(1);
+      expect(updateVirtualPbxChannelMock.mock.calls[0][1].profiles).toEqual([
+        {
+          profile_kind: 'human_operator',
+          user_id: 8,
+          internal_extension: '777',
+          enabled: true,
+        },
+      ]);
+    }
+  );
+});
+
+describe('ConfigurationPage developer blocks on other channels', () => {
+  beforeEach(() => {
+    storeDispatchMock.mockReset();
+    storeDispatchMock.mockResolvedValue({ data: { payload: [] } });
+  });
+
+  const manualCloudInbox = {
+    id: 55,
+    name: 'WhatsApp Cloud',
+    channel_type: 'Channel::Whatsapp',
+    provider: 'whatsapp_cloud',
+    provider_config: { calling_enabled: false },
+    callback_webhook_url: 'https://dev.one-link.kz/webhooks/whatsapp/+7000',
+    members: [],
+  };
+
+  it('keeps the manual WhatsApp Cloud webhook address and API key in the developer block', () => {
+    const wrapper = buildWrapper({ inbox: manualCloudInbox });
+    const developer = wrapper.find(DEVELOPER);
+
+    expect(developer.find(CODE_BLOCKS).attributes('script')).toBe(
+      'https://dev.one-link.kz/webhooks/whatsapp/+7000'
+    );
+    expect(developer.find(INPUTS).exists()).toBe(true);
+    expect(wrapper.findAll(CODE_BLOCKS)).toHaveLength(1);
+    expect(wrapper.findAll(INPUTS)).toHaveLength(1);
+  });
+
+  it('shows no developer block for an embedded WhatsApp Cloud channel without errors', () => {
+    const wrapper = buildWrapper({
+      inbox: {
+        ...manualCloudInbox,
+        provider_config: { source: 'embedded_signup', calling_enabled: false },
+      },
+    });
+
+    expect(wrapper.find(DEVELOPER).exists()).toBe(false);
+  });
+
+  it('moves a raw coexistence error into the developer block', () => {
+    const wrapper = buildWrapper({
+      inbox: {
+        ...manualCloudInbox,
+        provider_config: {
+          source: 'embedded_signup',
+          embedded_signup_flow: 'coexistence',
+          coexistence_sync: {
+            state: 'failed',
+            last_error: 'raw provider text',
+          },
+        },
+      },
+    });
+
+    expect(
+      wrapper
+        .find(DEVELOPER)
+        .find('[data-testid="whatsapp-coexistence-sync-error"]')
+        .text()
+    ).toContain('raw provider text');
+    expect(
+      wrapper.find('[data-testid="whatsapp-coexistence-sync-status"]').text()
+    ).not.toContain('raw provider text');
+  });
+
+  it('keeps the website widget identity validation secret in the developer block', () => {
+    const wrapper = buildWrapper({
+      inbox: {
+        id: 12,
+        name: 'Website',
+        channel_type: 'Channel::WebWidget',
+        hmac_token: 'secret-hmac-token',
+        members: [],
+      },
+    });
+    const toggles = wrapper.findAllComponents({
+      name: 'SettingsToggleSection',
+    });
+    const headers = inDeveloper =>
+      toggles
+        .filter(
+          component =>
+            Boolean(component.element.closest(DEVELOPER)) === inDeveloper
+        )
+        .map(component => component.props('header'));
+
+    expect(headers(true)).toEqual([
+      'INBOX_MGMT.SETTINGS_POPUP.IDENTITY_VALIDATION.TITLE',
+      'INBOX_MGMT.SETTINGS_POPUP.IDENTITY_VALIDATION.REQUIRE_LABEL',
+    ]);
+    expect(headers(false)).toEqual([
+      'INBOX_MGMT.SETTINGS_POPUP.ALLOWED_DOMAINS.TITLE',
+      'INBOX_MGMT.SETTINGS_POPUP.ALLOW_MOBILE_WEBVIEW.LABEL',
+    ]);
+  });
+});

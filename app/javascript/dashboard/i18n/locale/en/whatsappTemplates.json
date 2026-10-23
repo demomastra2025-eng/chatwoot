@@ -83,6 +83,26 @@
       "DELETE_ACTION": "Delete template",
       "DELETE_SUCCESS": "Template deleted successfully.",
       "CSAT_BADGE": "Managed by CSAT",
+      "STATUSES": {
+        "APPROVED": "Approved",
+        "PENDING": "In review",
+        "IN_APPEAL": "In appeal",
+        "REJECTED": "Rejected",
+        "PAUSED": "Paused",
+        "DISABLED": "Disabled",
+        "FLAGGED": "Flagged",
+        "LIMIT_EXCEEDED": "Limit exceeded",
+        "PENDING_DELETION": "Being deleted",
+        "DELETED": "Deleted",
+        "ARCHIVED": "Archived"
+      },
+      "REJECTION_REASONS": {
+        "ABUSIVE_CONTENT": "Content is not allowed",
+        "INCORRECT_CATEGORY": "Wrong template category",
+        "INVALID_FORMAT": "Invalid template format",
+        "SCAM": "Looks like a scam",
+        "TAG_CONTENT_MISMATCH": "Text does not match the category"
+      },
       "SHOW_IN_CONVERSATIONS": "Show in conversations",
       "VISIBILITY_ERROR": "Could not update template visibility.",
       "VIEW_FULL_TEMPLATE": "View full template",
