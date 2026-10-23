@@ -381,6 +381,17 @@ export default {
     virtualPbxWarnings() {
       return this.virtualPbxStatusPayload?.warnings || [];
     },
+    // A blocking warning means calls do not work yet, so it stays visible on both voice tabs.
+    virtualPbxBlockingWarnings() {
+      return this.virtualPbxWarnings.filter(
+        warning => warning.severity === 'blocking'
+      );
+    },
+    virtualPbxInfoWarnings() {
+      return this.virtualPbxWarnings.filter(
+        warning => warning.severity !== 'blocking'
+      );
+    },
     virtualPbxErrors() {
       return this.virtualPbxStatusPayload?.errors || [];
     },
@@ -2279,6 +2290,23 @@ export default {
           >
             {{ virtualPbxSectionHelpText }}
           </p>
+          <div
+            v-if="virtualPbxBlockingWarnings.length"
+            data-testid="virtual-pbx-blocking-warnings"
+            class="mb-3 rounded-xl border border-n-ruby-4 bg-n-ruby-2/40 p-4 text-sm text-n-ruby-11"
+          >
+            <div class="mb-1 font-medium">
+              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.WARNINGS_TITLE') }}
+            </div>
+            <ul class="mb-0 list-disc pl-5">
+              <li
+                v-for="warning in virtualPbxBlockingWarnings"
+                :key="warning.code"
+              >
+                {{ virtualPbxWarningLabel(warning) }}
+              </li>
+            </ul>
+          </div>
           <div v-if="isLoadingVirtualPbxStatus" class="text-sm text-n-slate-11">
             {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.LOADING') }}
           </div>
@@ -3493,7 +3521,7 @@ export default {
 
         <DeveloperDetails v-if="!isCallsSection">
           <div
-            v-if="virtualPbxWarnings.length"
+            v-if="virtualPbxInfoWarnings.length"
             data-testid="virtual-pbx-warnings"
             class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
           >
@@ -3501,7 +3529,7 @@ export default {
               {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.WARNINGS_TITLE') }}
             </div>
             <ul class="mb-0 list-disc pl-5">
-              <li v-for="warning in virtualPbxWarnings" :key="warning.code">
+              <li v-for="warning in virtualPbxInfoWarnings" :key="warning.code">
                 {{ virtualPbxWarningLabel(warning) }}
               </li>
             </ul>

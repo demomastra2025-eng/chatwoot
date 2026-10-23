@@ -2486,6 +2486,42 @@ describe('ConfigurationPage PBX warnings', () => {
       'Something new',
     ]);
   });
+
+  it('shows a blocking warning outside the developer block on both voice tabs', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue({
+      payload: {
+        ...statusPayload.payload,
+        warnings: [
+          ...warnings,
+          {
+            code: 'wazo_remote_provisioning_required',
+            severity: 'blocking',
+            message: 'Apply Wazo provisioning before using this channel',
+          },
+        ],
+      },
+    });
+    const calls = buildWrapper({ section: 'calls', te: ruTe });
+    const configuration = buildWrapper({ te: ruTe });
+    await flushPromises();
+
+    [calls, configuration].forEach(wrapper => {
+      const box = wrapper.find('[data-testid="virtual-pbx-blocking-warnings"]');
+      expect(box.exists()).toBe(true);
+      expect(box.element.closest(DEVELOPER)).toBeNull();
+      expect(box.findAll('li').map(item => item.text())).toEqual([
+        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.WARNINGS.WAZO_REMOTE_PROVISIONING_REQUIRED',
+      ]);
+    });
+    expect(
+      configuration
+        .find('[data-testid="virtual-pbx-warnings"]')
+        .findAll('li')
+        .map(item => item.text())
+    ).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.WARNINGS.WAZO_REMOTE_PROVISIONING_REQUIRED'
+    );
+  });
 });
 
 describe('ConfigurationPage Twilio and LINE panels', () => {
