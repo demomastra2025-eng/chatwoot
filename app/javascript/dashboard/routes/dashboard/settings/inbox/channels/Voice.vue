@@ -582,7 +582,7 @@ async function createKazakhstanChannel() {
 
     useAlert(t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CREATE_SUCCESS'));
     router.replace({
-      name: getInboxFlowRouteName(route, 'agents'),
+      name: getInboxFlowRouteName(route, 'finish'),
       params: agentsRouteParams(inboxId),
       query: { provider: selectedVirtualPbxProviderKind.value },
     });

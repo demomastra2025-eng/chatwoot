@@ -290,7 +290,7 @@ const handleSignupSuccess = inboxData => {
   if (inboxData && inboxData.id) {
     useAlert(t('INBOX_MGMT.FINISH.MESSAGE'));
     router.replace({
-      name: getInboxFlowRouteName(route, 'agents'),
+      name: getInboxFlowRouteName(route, 'finish'),
       params: {
         page: 'new',
         inbox_id: inboxData.id,

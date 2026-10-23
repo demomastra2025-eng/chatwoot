@@ -57,7 +57,7 @@ export default {
         );
 
         router.replace({
-          name: getInboxFlowRouteName(this.$route, 'agents'),
+          name: getInboxFlowRouteName(this.$route, 'finish'),
           params: {
             page: 'new',
             inbox_id: lineChannel.id,

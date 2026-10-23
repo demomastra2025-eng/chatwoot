@@ -1,5 +1,9 @@
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { frontendURL } from '../../../../helper/URLHelper';
+import {
+  INBOX_FLOW_ROUTE_NAMES,
+  redirectLegacyAgentsStep,
+} from './helpers/inboxFlowRoutes';
 const ChannelFactory = () => import('./ChannelFactory.vue');
 const SettingsContent = () => import('../Wrapper.vue');
 const SettingsWrapper = () => import('../SettingsWrapper.vue');
@@ -7,7 +11,6 @@ const InboxHome = () => import('./Index.vue');
 const Settings = () => import('./Settings.vue');
 const InboxChannel = () => import('./InboxChannels.vue');
 const ChannelList = () => import('./ChannelList.vue');
-const AddAgents = () => import('./AddAgents.vue');
 const FinishSetup = () => import('./FinishSetup.vue');
 export default {
   routes: [
@@ -81,13 +84,12 @@ export default {
               },
             },
             {
+              // Legacy agents step: redirect only, it never renders a screen.
               path: ':inbox_id/agents',
-              name: 'settings_inboxes_add_agents',
-              meta: {
-                featureFlag: FEATURE_FLAGS.INBOX_MANAGEMENT,
-                permissions: ['administrator'],
-              },
-              component: AddAgents,
+              name: INBOX_FLOW_ROUTE_NAMES.settings.agents,
+              redirect: redirectLegacyAgentsStep(
+                INBOX_FLOW_ROUTE_NAMES.settings
+              ),
             },
           ],
         },

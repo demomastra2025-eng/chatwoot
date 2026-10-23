@@ -5,9 +5,11 @@ const SettingsContent = () => import('../SettingsWrapper.vue');
 const Settings = () => import('./Settings.vue');
 const InboxChannel = () => import('./InboxChannels.vue');
 const ChannelList = () => import('./ChannelList.vue');
-const AddAgents = () => import('./AddAgents.vue');
 const FinishSetup = () => import('./FinishSetup.vue');
-import { INBOX_FLOW_ROUTE_NAMES } from './helpers/inboxFlowRoutes';
+import {
+  INBOX_FLOW_ROUTE_NAMES,
+  redirectLegacyAgentsStep,
+} from './helpers/inboxFlowRoutes';
 
 export default {
   routes: [
@@ -77,14 +79,10 @@ export default {
               },
             },
             {
+              // Legacy agents step: redirect only, it never renders a screen.
               path: ':inbox_id/agents',
               name: INBOX_FLOW_ROUTE_NAMES.dialog.agents,
-              meta: {
-                featureFlag: FEATURE_FLAGS.INBOX_MANAGEMENT,
-                permissions: ['administrator'],
-                inboxFlow: 'dialogs',
-              },
-              component: AddAgents,
+              redirect: redirectLegacyAgentsStep(INBOX_FLOW_ROUTE_NAMES.dialog),
             },
           ],
         },

@@ -221,7 +221,7 @@ export default {
           .dispatch('inboxes/createFBChannel', this.channelParams())
           .then(data => {
             router.replace({
-              name: getInboxFlowRouteName(this.$route, 'agents'),
+              name: getInboxFlowRouteName(this.$route, 'finish'),
               params: { page: 'new', inbox_id: data.id },
             });
           })

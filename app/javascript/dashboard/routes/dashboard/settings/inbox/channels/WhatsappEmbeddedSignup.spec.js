@@ -235,7 +235,7 @@ describe('WhatsApp Embedded Signup', () => {
       ],
     ]);
     expect(routerReplaceMock).toHaveBeenCalledWith({
-      name: 'inbox_agents',
+      name: 'inbox_finish',
       params: { page: 'new', inbox_id: 99 },
     });
     expect(window.localStorage.getItem(PENDING_KEY)).toBeNull();
@@ -260,7 +260,7 @@ describe('WhatsApp Embedded Signup', () => {
     });
     expect(params).not.toHaveProperty('waba_id');
     expect(routerReplaceMock).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'inbox_agents' })
+      expect.objectContaining({ name: 'inbox_finish' })
     );
     wrapper.unmount();
   });
@@ -376,7 +376,7 @@ describe('WhatsApp Embedded Signup', () => {
     ).toHaveBeenCalledWith({ signupNonce: NONCE });
     expect(dispatchMock).toHaveBeenCalledWith('inboxes/get');
     expect(routerReplaceMock).toHaveBeenCalledWith({
-      name: 'inbox_agents',
+      name: 'inbox_finish',
       params: { page: 'new', inbox_id: 42 },
     });
     expect(window.localStorage.getItem(PENDING_KEY)).toBeNull();

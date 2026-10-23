@@ -3,6 +3,7 @@ export const INBOX_FLOW_ROUTE_NAMES = {
     list: 'settings_inbox_list',
     new: 'settings_inbox_new',
     page: 'settings_inboxes_page_channel',
+    // Legacy step: only a redirect to `finish` for old links and OAuth returns.
     agents: 'settings_inboxes_add_agents',
     finish: 'settings_inbox_finish',
     show: 'settings_inbox_show',
@@ -11,6 +12,7 @@ export const INBOX_FLOW_ROUTE_NAMES = {
     list: 'dialog_inbox_new',
     new: 'dialog_inbox_new',
     page: 'dialog_inboxes_page_channel',
+    // Legacy step: only a redirect to `finish` for old links and OAuth returns.
     agents: 'dialog_inboxes_add_agents',
     finish: 'dialog_inbox_finish',
     show: 'dialog_inbox_show',
@@ -43,3 +45,17 @@ export const getInboxFlowRouteName = (route, key) => {
   const flowRoutes = getInboxFlowRouteNames(route);
   return flowRoutes?.[key];
 };
+
+// OneLink does not ask to choose agents for a new channel, so the old
+// `:inbox_id/agents` step has no screen. Old links, bookmarks and OAuth
+// callbacks that still land on it are redirected to the finish step before
+// anything is rendered, so the agents form never flashes on screen.
+export const redirectLegacyAgentsStep = flowRoutes => to => ({
+  name: flowRoutes.finish,
+  params: {
+    accountId: to.params.accountId,
+    inbox_id: to.params.inbox_id,
+  },
+  query: to.query,
+  hash: to.hash,
+});

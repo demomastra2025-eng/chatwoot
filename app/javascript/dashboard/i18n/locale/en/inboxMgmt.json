@@ -523,7 +523,7 @@
           "EMPLOYEE_CREDENTIALS_HINT": "The SIP username/password in an employee row are that employee's own SIP credentials. Leave them blank to use the shared provider settings.",
           "EMPLOYEE_PROFILES": {
             "TITLE": "Employees, extensions, and SIP access",
-            "CREATE_HINT": "After selecting employees, you can fill personal SIP username/password immediately. Empty fields keep the employee as an inbox member without SIP access; access can be added later in settings.",
+            "CREATE_HINT": "Employees, extensions and SIP access are assigned in the channel settings after the channel is created.",
             "HINT": "Bind each OneLink employee to an internal PBX extension. Provider credentials stay in diagnostics and are not shown here.",
             "EMPLOYEE_LABEL": "OneLink employee",
             "SELECT_PLACEHOLDER": "Use current user or select employee",

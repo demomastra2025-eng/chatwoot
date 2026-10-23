@@ -14,7 +14,6 @@ const wizardSources = import.meta.glob(
     './ChannelList.vue',
     './ChannelFactory.vue',
     './InboxChannels.vue',
-    './AddAgents.vue',
     './FinishSetup.vue',
     './channels/**/*.vue',
     './inbox.routes.js',
@@ -76,7 +75,6 @@ describe('channel creation flow: no AI agent assignment', () => {
       expect.arrayContaining([
         './ChannelList.vue',
         './ChannelFactory.vue',
-        './AddAgents.vue',
         './FinishSetup.vue',
         './inbox.routes.js',
         './inboxDialog.routes.js',

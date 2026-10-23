@@ -200,7 +200,7 @@ describe('Voice channel setup', () => {
     expect(payload.connection).not.toHaveProperty('password');
     expect(payload.routing).not.toHaveProperty('operator_agent_aor');
     expect(routerReplaceMock).toHaveBeenCalledWith({
-      name: 'settings_inboxes_add_agents',
+      name: 'settings_inbox_finish',
       params: {
         accountId: 530,
         inbox_id: 202,
@@ -237,7 +237,7 @@ describe('Voice channel setup', () => {
       },
     });
     expect(routerReplaceMock).toHaveBeenCalledWith({
-      name: 'settings_inboxes_add_agents',
+      name: 'settings_inbox_finish',
       params: {
         accountId: 530,
         inbox_id: 4769,
@@ -278,7 +278,7 @@ describe('Voice channel setup', () => {
       },
     });
     expect(routerReplaceMock).toHaveBeenCalledWith({
-      name: 'settings_inboxes_add_agents',
+      name: 'settings_inbox_finish',
       params: {
         accountId: 530,
         inbox_id: 7001,
@@ -356,7 +356,7 @@ describe('Voice channel setup', () => {
       },
     });
     expect(routerReplaceMock).toHaveBeenCalledWith({
-      name: 'settings_inboxes_add_agents',
+      name: 'settings_inbox_finish',
       params: {
         accountId: 530,
         inbox_id: 7701,
@@ -455,7 +455,7 @@ describe('Voice channel setup', () => {
       },
     });
     expect(routerReplaceMock).toHaveBeenCalledWith({
-      name: 'settings_inboxes_add_agents',
+      name: 'settings_inbox_finish',
       params: {
         accountId: 530,
         inbox_id: 9098,

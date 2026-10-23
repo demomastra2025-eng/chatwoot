@@ -735,7 +735,6 @@ const settingsInboxRouteNames = [
   'settings_inbox_list',
   'settings_inbox_new',
   'settings_inboxes_page_channel',
-  'settings_inboxes_add_agents',
   'settings_inbox_finish',
   'settings_inbox_show',
 ];
