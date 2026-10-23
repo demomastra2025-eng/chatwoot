@@ -50,10 +50,7 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
 
     formatted_payload(prioritize_slot_keys(payload))
   rescue Scheduling::AvailableSlotSearchService::ResourceSelectionRequiredError
-    scheduling_tool_failure(Scheduling::Error.new(
-                              code: 'RESOURCE_REQUIRED', status: :unprocessable_content, message: RESOURCE_REQUIRED_MESSAGE,
-                              details: { reason: 'resource_required', next_tool: 'search_scheduling_resources' }
-                            ), retryable: true)
+    resource_required_failure
   rescue Scheduling::AvailableSlotSearchService::MissingServiceLinkError => e
     scheduling_tool_failure(Scheduling::Error.new(
                               code: 'SERVICE_NOT_AVAILABLE_FOR_RESOURCE', status: :unprocessable_content,
@@ -72,6 +69,14 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
   end
 
   private
+
+  # Retryable: the same search with resource_ids of a chosen specialist answers it.
+  def resource_required_failure
+    scheduling_tool_failure(Scheduling::Error.new(
+                              code: 'RESOURCE_REQUIRED', status: :unprocessable_content, message: RESOURCE_REQUIRED_MESSAGE,
+                              details: { reason: 'resource_required', next_tool: 'search_scheduling_resources' }
+                            ), retryable: true)
+  end
 
   def inferred_agent_service_id(resource_ids)
     return unless agent_scope?
