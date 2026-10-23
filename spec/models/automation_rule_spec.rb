@@ -33,6 +33,14 @@ RSpec.describe AutomationRule do
       expect(rule.reload.actions.first['action_params']).to include('manual_schedule_override' => 'false')
       expect(rule.actions.second['action_params'].first).to include('manual_schedule_override' => true, 'delay_minutes' => 0)
     end
+
+    it 'keeps the flag of a relative touch that carries a send time of its own' do
+      timed = { body: 'Запись перенесена', timing_mode: 'relative', relative_anchor: 'touch.created_at',
+                relative_offset_seconds: 60, scheduled_at: '2026-10-25T10:00:00Z', manual_schedule_override: true }
+      rule = create(:automation_rule, actions: [{ action_name: 'create_touch', action_params: [timed] }])
+
+      expect(rule.reload.actions.first['action_params'].first).to include('manual_schedule_override' => true)
+    end
   end
 
   describe 'concerns' do
