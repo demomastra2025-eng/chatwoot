@@ -65,7 +65,7 @@ class Reminders::ExecuteService
   # contact its rule now excludes, is cancelled instead of sent.
   def automation_touch_cancelled?
     Reminders::MissedAutomationTouchPolicy.new(reminder: reminder).cancel_if_missed! ||
-      Reminders::StaleAppointmentNoticePolicy.new(reminder: reminder).cancel_if_stale! ||
+      Reminders::StaleAppointmentNoticePolicy.new(reminder: reminder, processing_claim: @processing_claim).cancel_if_stale! ||
       excluded_contact_cancelled?
   end
 

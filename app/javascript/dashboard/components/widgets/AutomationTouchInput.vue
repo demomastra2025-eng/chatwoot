@@ -92,6 +92,12 @@ const normalizeLegacyParams = raw => {
 
 const clone = value => JSON.parse(JSON.stringify(value || {}));
 const LATE_IMPORT_OPT_IN_KEY = 'skip_if_imported_late';
+const VISIT_ANCHORS = ['appointment.starts_at', 'appointment.ends_at'];
+// The late-import skip applies to a booking notice counted from the event; a touch timed from the visit ignores it.
+const allowsLateImportSkip = (eventName, params) =>
+  eventName === 'appointment_created' &&
+  params.timing_mode !== 'absolute' &&
+  !VISIT_ANCHORS.includes(params.relative_anchor);
 const normalizeArray = value => (Array.isArray(value) ? value : []);
 const normalizeAttachmentId = attachment => {
   if (typeof attachment === 'string') return attachment;
@@ -424,7 +430,7 @@ export default {
       },
     },
     canSkipLateImport() {
-      return this.eventName === 'appointment_created';
+      return allowsLateImportSkip(this.eventName, this.normalizedValue);
     },
     skipIfImportedLate: {
       get() {
@@ -788,13 +794,6 @@ export default {
       // The editor has no manual-time control: a rule touch never keeps the flag, which would freeze a relative
       // touch as a draft without a send time.
       delete cleaned.manual_schedule_override;
-      if (
-        !this.canSkipLateImport &&
-        cleaned.metadata?.[LATE_IMPORT_OPT_IN_KEY]
-      ) {
-        cleaned.metadata = clone(cleaned.metadata);
-        delete cleaned.metadata[LATE_IMPORT_OPT_IN_KEY];
-      }
 
       if (cleaned.action_type !== 'send_message') {
         cleaned.content_kind = 'free_text';
@@ -843,6 +842,14 @@ export default {
 
       if (cleaned.repeat_mode === 'once') {
         cleaned.repeat_until_at = '';
+      }
+
+      if (
+        !allowsLateImportSkip(this.eventName, cleaned) &&
+        cleaned.metadata?.[LATE_IMPORT_OPT_IN_KEY]
+      ) {
+        cleaned.metadata = clone(cleaned.metadata);
+        delete cleaned.metadata[LATE_IMPORT_OPT_IN_KEY];
       }
 
       if (

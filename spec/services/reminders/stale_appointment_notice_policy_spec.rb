@@ -32,8 +32,8 @@ RSpec.describe Reminders::StaleAppointmentNoticePolicy do
     )
   end
 
-  def stale_reason
-    described_class.new(reminder: reminder, now: now).stale_reason
+  def stale_reason(**options)
+    described_class.new(reminder: reminder, now: now, **options).stale_reason
   end
 
   def update_metadata(changes, without: [])
@@ -93,5 +93,56 @@ RSpec.describe Reminders::StaleAppointmentNoticePolicy do
     update_metadata({ 'touch_source' => 'automation', Reminder::DELIVERY_MATERIALIZED_MESSAGE_ID_KEY => 123 })
     reminder.status = 'processing'
     expect(stale_reason).to be_nil
+  end
+
+  describe 'a touch that is not a prompt text notice' do
+    before { appointment.starts_at = now - 1.minute }
+
+    it 'keeps a follow-up planned later than an hour after the event' do
+      expect(stale_reason).to eq(described_class::STARTED_REASON)
+
+      reminder.assign_attributes(relative_offset_seconds: 3.days.to_i, scheduled_at: now + 3.days)
+      expect(stale_reason).to be_nil
+
+      reminder.assign_attributes(timing_mode: 'absolute', relative_anchor: nil, relative_offset_seconds: 0, scheduled_at: now + 30.minutes)
+      expect(stale_reason).to eq(described_class::STARTED_REASON)
+    end
+
+    it 'keeps a touch counted from the touch itself when it was planned days ahead' do
+      reminder.assign_attributes(timing_mode: 'absolute', relative_anchor: nil, created_at: now, scheduled_at: now + 2.days)
+
+      expect(stale_reason).to be_nil
+    end
+
+    it 'keeps AI wake-ups and repeating series' do
+      reminder.action_type = 'ai_agent_wakeup'
+      expect(stale_reason).to be_nil
+
+      reminder.action_type = 'send_message'
+      reminder.repeat_mode = 'daily'
+      expect(stale_reason).to be_nil
+    end
+  end
+
+  describe 'with the claim of the executing run' do
+    before do
+      appointment.starts_at = now - 1.minute
+      reminder.status = 'processing'
+      update_metadata(Reminder::PROCESSING_CLAIM_KEY => 'claim-1')
+    end
+
+    it 'cancels only the touch that run holds' do
+      expect(stale_reason(processing_claim: 'claim-1')).to eq(described_class::STARTED_REASON)
+      expect(stale_reason(processing_claim: 'claim-2')).to be_nil
+
+      reminder.status = 'pending'
+      expect(stale_reason(processing_claim: 'claim-1')).to be_nil
+    end
+
+    it 'cancels any open touch when no claim is given' do
+      reminder.status = 'pending'
+
+      expect(stale_reason).to eq(described_class::STARTED_REASON)
+    end
   end
 end

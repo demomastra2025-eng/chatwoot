@@ -1,11 +1,11 @@
 class Reminders::DeferredAutomationActionPolicy
   SUPPORTED_REMINDABLE_TYPES = Reminders::DeferredMaterializationPolicy::ENTITY_ANCHORS.keys.freeze
-  # An enrollment is kept once per rule action and record. On an event that repeats for the same record, a timing
-  # counted from the event itself (a legacy delay, touch.created_at or the record's creation) would then notify only
-  # the first time: the second reschedule of an appointment finds the completed enrollment. Such an action makes its
-  # touch at once instead; a timing anchored on the visit or the deal close date still follows the record.
-  REPEATING_EVENT_NAMES = %w[appointment_updated appointment_rescheduled].freeze
-  EVENT_TIME_ANCHORS = %w[touch.created_at appointment.created_at deal.created_at].freeze
+  # An enrollment is kept once per rule action and record. A reschedule fires again for the same appointment, so a touch
+  # timed from the event itself (a legacy delay or touch.created_at) would notify only the first time: the second
+  # reschedule finds the completed enrollment. Such an action makes its touch at once instead. A timing anchored on the
+  # visit still follows the appointment, and the other events keep their deferral.
+  REPEATING_EVENT_NAMES = %w[appointment_rescheduled].freeze
+  EVENT_TIME_ANCHORS = %w[touch.created_at].freeze
 
   attr_reader :account, :definition, :event_name, :remindable
 

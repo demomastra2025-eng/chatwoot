@@ -5,22 +5,29 @@
 #   - the visit has already started (a MedElement sync miss imported the reception late, or the notice waited too long);
 #   - the action opted in with metadata.skip_if_imported_late and the MedElement reception reached OneLink more than an
 #     hour after it was created there (appointment_created only).
-# Touches timed from the visit itself (appointment.starts_at / ends_at, e.g. «за 2 часа») are not notices; a late one is
-# handled by Reminders::MissedAutomationTouchPolicy.
+# Only a text message sent once and soon after the event is a notice. Touches timed from the visit itself
+# (appointment.starts_at / ends_at, e.g. «за 2 часа»), follow-ups planned later than an hour after the event, repeating
+# series and AI wake-ups are not; a late visit-timed touch is handled by Reminders::MissedAutomationTouchPolicy.
 class Reminders::StaleAppointmentNoticePolicy
   NOTICE_EVENT_NAMES = %w[appointment_created appointment_rescheduled].freeze
   VISIT_ANCHORS = Reminders::MissedAutomationTouchPolicy::APPOINTMENT_ANCHORS
   LATE_IMPORT_OPT_IN_KEY = 'skip_if_imported_late'
   MAX_IMPORT_LAG = 1.hour
+  MAX_NOTICE_DELAY = 1.hour
   STARTED_REASON = 'appointment_notice_after_start'
   LATE_IMPORT_REASON = 'appointment_notice_late_import'
   CANCELLED_VIA = 'stale_appointment_notice'
+  UNSCOPED_PROCESSING_CLAIM = Object.new.freeze
 
-  attr_reader :now, :reminder
+  attr_reader :now, :processing_claim, :reminder
 
-  def initialize(reminder:, now: Time.current)
+  # processing_claim: pass the claim of the execution that is about to send the touch, then only that execution's
+  # processing touch can be cancelled; without it any open touch can.
+  def initialize(reminder:, now: Time.current, processing_claim: UNSCOPED_PROCESSING_CLAIM)
     @reminder = reminder
     @now = now
+    @execution_scoped = !processing_claim.equal?(UNSCOPED_PROCESSING_CLAIM)
+    @processing_claim = @execution_scoped ? processing_claim : nil
   end
 
   def cancel_if_stale!
@@ -38,7 +45,7 @@ class Reminders::StaleAppointmentNoticePolicy
 
   def stale_reason
     return unless notice?
-    return STARTED_REASON if appointment.starts_at.present? && appointment.starts_at <= now
+    return STARTED_REASON if appointment.starts_at.present? && appointment.starts_at <= now && prompt_notice?
 
     LATE_IMPORT_REASON if late_import?
   end
@@ -46,15 +53,19 @@ class Reminders::StaleAppointmentNoticePolicy
   private
 
   def notice?
-    open_undelivered? && automation_notice? && appointment.present? && !visit_timed?
+    cancellable_state? && automation_notice? && appointment.present? && !visit_timed?
   end
 
-  def open_undelivered?
-    Reminder::OPEN_STATUSES.include?(reminder.status) && !reminder.delivery_materialized?
+  def cancellable_state?
+    return false if reminder.delivery_materialized?
+    return Reminder::OPEN_STATUSES.include?(reminder.status) unless @execution_scoped
+
+    reminder.processing? && reminder.processing_claim_token == processing_claim
   end
 
   def automation_notice?
-    automation_touch? && NOTICE_EVENT_NAMES.include?(metadata[Reminder::AUTOMATION_EVENT_NAME_KEY].to_s)
+    reminder.send_message? && reminder.once? && automation_touch? &&
+      NOTICE_EVENT_NAMES.include?(metadata[Reminder::AUTOMATION_EVENT_NAME_KEY].to_s)
   end
 
   def automation_touch?
@@ -63,6 +74,16 @@ class Reminders::StaleAppointmentNoticePolicy
 
   def visit_timed?
     reminder.relative? && VISIT_ANCHORS.include?(reminder.relative_anchor.to_s)
+  end
+
+  # A notice goes out right after the event; a message planned for days later is a follow-up, not a notice.
+  def prompt_notice?
+    reminder.scheduled_at.blank? || reminder.scheduled_at - event_time <= MAX_NOTICE_DELAY
+  end
+
+  def event_time
+    anchor = reminder.relative_anchor.to_s == 'appointment.created_at' ? appointment.created_at : reminder.created_at
+    anchor || now
   end
 
   def late_import?

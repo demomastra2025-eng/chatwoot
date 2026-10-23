@@ -16,16 +16,22 @@ RSpec.describe Reminders::DeferredAutomationActionPolicy do
     expect(eligible?(after_event)).to be(true)
   end
 
-  it 'makes a touch timed from a repeating event at once so every reschedule notifies' do
+  it 'makes a touch timed from a reschedule at once so every reschedule notifies' do
     expect(eligible?(after_event, event_name: 'appointment_rescheduled')).to be(false)
-    expect(eligible?(after_event.merge(relative_anchor: 'appointment.created_at'), event_name: 'appointment_updated')).to be(false)
     expect(eligible?({ body: 'Запись перенесена', delay_minutes: 0 }, event_name: 'appointment_rescheduled')).to be(false)
+  end
+
+  it 'keeps deferring the touches of every other event' do
+    expect(eligible?(after_event, event_name: 'appointment_updated')).to be(true)
+    expect(eligible?(after_event, event_name: 'appointment_cancelled')).to be(true)
+    expect(eligible?({ body: 'Запись отменена', delay_minutes: 0 }, event_name: 'appointment_updated')).to be(true)
   end
 
   it 'keeps deferring a visit-timed touch of a repeating event, which follows the appointment' do
     visit_timed = after_event.merge(relative_anchor: 'appointment.starts_at', relative_offset_seconds: -2.hours.to_i)
 
     expect(eligible?(visit_timed, event_name: 'appointment_rescheduled')).to be(true)
+    expect(eligible?(after_event.merge(relative_anchor: 'appointment.created_at'), event_name: 'appointment_rescheduled')).to be(true)
   end
 
   it 'never defers a touch that still carries the manual-time flag' do
