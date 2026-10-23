@@ -92,6 +92,35 @@ RSpec.describe 'Telephony webphone line takeover', type: :request do
       )
     end
 
+    it 'tells the old tab when the line moves between two tabs of the same browser' do
+      old_payload = request_token(client_instance_id: 'tab-1', browser_instance_id: 'browser-pc-1')
+      register!(old_payload)
+      allow(ActionCable.server).to receive(:broadcast)
+
+      new_payload = request_token(client_instance_id: 'tab-2', browser_instance_id: 'browser-pc-1', takeover: true)
+
+      expect(new_payload).to include('calling_supported' => true)
+      expect(ActionCable.server).to have_received(:broadcast).with(
+        operator.pubsub_token,
+        hash_including(
+          event: 'telephony.webphone_lease_taken_over',
+          data: hash_including(registration_instance_id: old_payload['registration_instance_id'])
+        )
+      )
+    end
+
+    it 'tells nobody when the tab that holds the line asks again' do
+      register!(request_token(client_instance_id: 'tab-pc-1', browser_instance_id: 'browser-pc-1'))
+      allow(ActionCable.server).to receive(:broadcast)
+
+      payload = request_token(client_instance_id: 'tab-pc-1', browser_instance_id: 'browser-pc-1', takeover: true)
+
+      expect(payload).to include('calling_supported' => true)
+      expect(ActionCable.server).not_to have_received(:broadcast).with(
+        operator.pubsub_token, hash_including(event: 'telephony.webphone_lease_taken_over')
+      )
+    end
+
     it 'says why the line stays on the other computer during a call' do
       register!(request_token(client_instance_id: 'tab-pc-1', browser_instance_id: 'browser-pc-1'))
       create(

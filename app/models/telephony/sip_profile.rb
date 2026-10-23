@@ -636,9 +636,17 @@ class Telephony::SipProfile < ApplicationRecord
     request.takeover && lease['user_id'].present? && lease['user_id'].to_s == request.user_id.to_s
   end
 
+  # The active lease of another tab ends when the same user explicitly moves the
+  # line here, whether that tab is in this browser or in another one.
+  def explicit_browser_lease_displacement?(lease, request)
+    browser_registration_lease_active?(lease, request.occurred_at) &&
+      lease['client_instance_id'].to_s != request.client_instance_id.to_s &&
+      explicit_browser_lease_takeover?(lease, request)
+  end
+
   def grant_browser_registration_lease!(request)
     previous = browser_registration_lease
-    takeover = browser_registration_lease_held_elsewhere?(previous, request) && explicit_browser_lease_takeover?(previous, request)
+    takeover = explicit_browser_lease_displacement?(previous, request)
     lease = next_browser_registration_lease(previous, request)
     store_browser_registration_lease!(
       lease,

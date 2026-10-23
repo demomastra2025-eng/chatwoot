@@ -644,6 +644,27 @@ RSpec.describe Telephony::SipProfile do
         end
       end
 
+      it 'names the tab it took the line from when that tab is in the same browser' do
+        old_context = register_browser_phone(profile, browser_instance_id: 'browser-1')
+
+        result = profile.acquire_browser_registration_lease!(
+          client_instance_id: 'tab-2-of-browser-1', browser_instance_id: 'browser-1', user_id: profile.user_id, takeover: true
+        )
+
+        expect(result).to include(acquired: true, taken_over_registration_instance_id: old_context[:registration_instance_id])
+      end
+
+      it 'names nobody when the tab only renews its own lease' do
+        register_browser_phone(profile, browser_instance_id: 'browser-1')
+
+        result = profile.acquire_browser_registration_lease!(
+          client_instance_id: "tab-#{profile.id}", browser_instance_id: 'browser-1', user_id: profile.user_id, takeover: true
+        )
+
+        expect(result).to include(acquired: true)
+        expect(result).not_to have_key(:taken_over_registration_instance_id)
+      end
+
       it 'does not take the line while the user is on a call' do
         register_browser_phone(profile, browser_instance_id: 'browser-1')
         create(
