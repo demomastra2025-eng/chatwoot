@@ -78,6 +78,15 @@
       "DELETE_ACTION": "Delete template",
       "DELETE_SUCCESS": "Template deleted successfully.",
       "CSAT_BADGE": "Managed by CSAT",
+      "REJECTION_REASONS": {
+        "ABUSIVE_CONTENT": "Мазмұнға рұқсат етілмейді",
+        "INCORRECT_CATEGORY": "Үлгі санаты дұрыс емес",
+        "INVALID_FORMAT": "Үлгі пішімі жарамсыз",
+        "SCAM": "Алаяқтыққа ұқсайды",
+        "TAG_CONTENT_MISMATCH": "Мәтін санатқа сәйкес келмейді",
+        "PROMOTIONAL": "Жарнамалық мәтін бұл санатқа жарамайды",
+        "OTHER": "Басқа себеп"
+      },
       "SHOW_IN_CONVERSATIONS": "Диалогтарда көрсету",
       "VISIBILITY_ERROR": "Үлгінің көрінуін өзгерту мүмкін болмады.",
       "VIEW_FULL_TEMPLATE": "Үлгіні толық көрсету",

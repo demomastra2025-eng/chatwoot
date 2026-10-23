@@ -51,6 +51,7 @@ const buildWrapper = ({
   requiresReauthorization = false,
   providerConfig = { embedded_signup_flow: 'coexistence' },
   whatsappRegistrationIncomplete = false,
+  statusExplainsRegistration = false,
 } = {}) =>
   shallowMount(Reauthorize, {
     props: {
@@ -64,6 +65,7 @@ const buildWrapper = ({
         },
       },
       whatsappRegistrationIncomplete,
+      statusExplainsRegistration,
     },
     global: {
       mocks: { $t: key => key },
@@ -275,5 +277,51 @@ describe('WhatsApp reauthorization', () => {
 
     expect(wrapper.findComponent(Input).props('disabled')).toBe(true);
     expect(dispatchMock).toHaveBeenCalledTimes(1);
+  });
+
+  describe('registration box intro', () => {
+    const registrationBox = (status, statusExplainsRegistration) =>
+      buildWrapper({
+        whatsappRegistrationIncomplete: true,
+        statusExplainsRegistration,
+        providerConfig: {
+          embedded_signup_flow: 'standard',
+          phone_registration: status ? { status } : {},
+        },
+      });
+
+    it('explains the PIN when nothing else on the page does', () => {
+      const wrapper = registrationBox('incomplete', false);
+
+      expect(wrapper.find('p').text()).toBe(
+        'INBOX.REAUTHORIZE.PHONE_REGISTRATION.INCOMPLETE'
+      );
+    });
+
+    it.each(['incomplete', 'registration_incomplete', undefined])(
+      'does not repeat the header status for the plain %s state',
+      status => {
+        const wrapper = registrationBox(status, true);
+
+        expect(wrapper.find('p').exists()).toBe(false);
+        expect(wrapper.findComponent(Input).exists()).toBe(true);
+        expect(wrapper.findAllComponents(NextButton)).toHaveLength(1);
+      }
+    );
+
+    it.each([
+      ['pin_incorrect', 'PIN_INCORRECT'],
+      ['rate_limited', 'RATE_LIMITED'],
+      ['outcome_unknown', 'OUTCOME_UNKNOWN'],
+    ])(
+      'still explains a %s state, which the header cannot know',
+      (status, key) => {
+        const wrapper = registrationBox(status, true);
+
+        expect(wrapper.find('p').text()).toBe(
+          `INBOX.REAUTHORIZE.PHONE_REGISTRATION.${key}`
+        );
+      }
+    );
   });
 });

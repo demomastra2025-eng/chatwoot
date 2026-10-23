@@ -36,6 +36,14 @@ const WHATSAPP_WEB_WAITING_STATES = [
 
 const ERROR_STATES = ['degraded', 'error', 'failed', 'failure'];
 
+// A WhatsApp Web session in one of these lifecycle states is gone or broken. It
+// wins over a connection state that still says "connecting": the list and the
+// channel settings page both read it from here, so they never disagree.
+export const WHATSAPP_WEB_BROKEN_LIFECYCLE_STATES = [
+  ...DISCONNECTED_STATES,
+  ...ERROR_STATES,
+];
+
 const SENSITIVE_KEY_NAMES =
   'access[_-]?token|refresh[_-]?token|auth[_-]?token|token|secret|password|api[_-]?key|private[_-]?key|authorization|signature|x[-_]?hub[-_]?signature(?:[-_]?256)?|cookie|session(?:[_-]?id|[_-]?key)?|cw[_-]?session';
 

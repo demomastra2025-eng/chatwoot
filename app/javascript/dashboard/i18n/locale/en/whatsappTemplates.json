@@ -101,7 +101,9 @@
         "INCORRECT_CATEGORY": "Wrong template category",
         "INVALID_FORMAT": "Invalid template format",
         "SCAM": "Looks like a scam",
-        "TAG_CONTENT_MISMATCH": "Text does not match the category"
+        "TAG_CONTENT_MISMATCH": "Text does not match the category",
+        "PROMOTIONAL": "Promotional text does not fit this category",
+        "OTHER": "Other reason"
       },
       "SHOW_IN_CONVERSATIONS": "Show in conversations",
       "VISIBILITY_ERROR": "Could not update template visibility.",

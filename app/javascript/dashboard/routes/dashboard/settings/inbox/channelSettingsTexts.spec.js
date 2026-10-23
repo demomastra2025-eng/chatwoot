@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import enInbox from 'dashboard/i18n/locale/en/inboxMgmt.json';
 import ruInbox from 'dashboard/i18n/locale/ru/inboxMgmt.json';
+import kkInbox from 'dashboard/i18n/locale/kk/inboxMgmt.json';
 import enTemplates from 'dashboard/i18n/locale/en/whatsappTemplates.json';
+import kkTemplates from 'dashboard/i18n/locale/kk/whatsappTemplates.json';
 import ruTemplates from 'dashboard/i18n/locale/ru/whatsappTemplates.json';
 
 const pick = (tree, path) =>
@@ -109,6 +111,140 @@ describe('channel settings texts in Russian', () => {
     expect(
       pick(ruInbox, 'INBOX_MGMT.PRE_CHAT_FORM.SET_FIELDS_HEADER.KEY')
     ).not.toBe('Ключ');
+  });
+});
+
+describe('one wording for the state of a channel', () => {
+  it('calls a working channel «Подключён» in the header, the list and the badges', () => {
+    const wording = pick(ruInbox, 'INBOX_MGMT.EDIT.CONNECTION_STATUS.CONNECTED');
+
+    expect(wording).toBe('Подключён');
+    expect(pick(ruInbox, 'INBOX_MGMT.HEALTH_STATUS.CONNECTED')).toBe(wording);
+    expect(pick(ruInbox, 'INBOX_MGMT.LIST.STATUS.CONNECTED')).toBe(wording);
+  });
+
+  it('says a voice channel is ready for calls', () => {
+    expect(
+      pick(ruInbox, 'INBOX_MGMT.HEALTH_STATUS.CONNECTED_VOICE_DESCRIPTION')
+    ).toBe('Канал готов принимать звонки.');
+    expect(
+      pick(ruInbox, 'INBOX_MGMT.HEALTH_STATUS.CONNECTED_DESCRIPTION')
+    ).toBe('Канал готов принимать сообщения.');
+  });
+
+  it('writes «Подключён» and «Отключён» with «ё» in the technical states too', () => {
+    expect(
+      pick(ruInbox, 'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.STATE_LABELS.CONNECTED')
+    ).toBe('Подключён');
+    expect(
+      pick(
+        ruInbox,
+        'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.STATE_LABELS.DISCONNECTED'
+      )
+    ).toBe('Отключён');
+  });
+
+  it('says «канал», not «inbox», when asking for the Telegram login code', () => {
+    const hint = pick(
+      ruInbox,
+      'INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.REQUEST_CODE_HINT'
+    );
+
+    expect(hint).toContain('канал');
+    expect(hint).not.toMatch(/inbox/i);
+  });
+});
+
+describe('WhatsApp Web developer block texts', () => {
+  const captions = [
+    'INSTANCE',
+    'SERVICE_USER',
+    'CONNECTION',
+    'STATUS',
+    'LAST_SYNCED',
+    'MISSING_PROVIDER_MESSAGE_ID',
+    'MISSING_PROVIDER_CONVERSATION_ID',
+    'PROVISIONAL_CONTACTS',
+  ];
+
+  it('names the missing ids in Russian', () => {
+    expect(
+      pick(ruInbox, 'INBOX_MGMT.EDIT.WHATSAPP_WEB.MISSING_PROVIDER_MESSAGE_ID')
+    ).toBe('Нет ID сообщения у провайдера');
+    expect(
+      pick(
+        ruInbox,
+        'INBOX_MGMT.EDIT.WHATSAPP_WEB.MISSING_PROVIDER_CONVERSATION_ID'
+      )
+    ).toBe('Нет ID диалога у провайдера');
+  });
+
+  it.each([
+    ['ru', ruInbox],
+    ['en', enInbox],
+    ['kk', kkInbox],
+  ])('writes every caption of the grid without a colon in %s', (_, tree) => {
+    captions.forEach(key => {
+      const text = pick(tree, `INBOX_MGMT.EDIT.WHATSAPP_WEB.${key}`);
+
+      if (text !== undefined) {
+        expect(text, key).not.toMatch(/:\s*$/);
+      }
+    });
+  });
+
+  it.each([
+    ['ru', ruInbox],
+    ['en', enInbox],
+    ['kk', kkInbox],
+  ])('writes the captions of the WeChat grid without a colon in %s', (_, tree) => {
+    ['PROVIDER_ACCOUNT_ID', 'STATUS', 'CONNECTION', 'LAST_SYNCED'].forEach(
+      key => {
+        expect(
+          pick(tree, `INBOX_MGMT.EDIT.WEIXIN.${key}`),
+          key
+        ).not.toMatch(/:\s*$/);
+      }
+    );
+  });
+});
+
+describe('WhatsApp template rejection reasons', () => {
+  const reasons = [
+    'ABUSIVE_CONTENT',
+    'INCORRECT_CATEGORY',
+    'INVALID_FORMAT',
+    'SCAM',
+    'TAG_CONTENT_MISMATCH',
+    'PROMOTIONAL',
+    'OTHER',
+  ];
+
+  it.each([
+    ['ru', ruTemplates],
+    ['en', enTemplates],
+    ['kk', kkTemplates],
+  ])('has a text for every reason in %s, including the generic one', (_, tree) => {
+    reasons.forEach(reason => {
+      expect(
+        pick(tree, `WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASONS.${reason}`),
+        reason
+      ).toEqual(expect.any(String));
+    });
+  });
+
+  it('explains the promotional reason and the generic one in Russian', () => {
+    expect(
+      pick(ruTemplates, 'WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASONS.OTHER')
+    ).toBe('Другая причина');
+    expect(
+      hasCyrillic(
+        pick(
+          ruTemplates,
+          'WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASONS.PROMOTIONAL'
+        )
+      )
+    ).toBe(true);
   });
 });
 

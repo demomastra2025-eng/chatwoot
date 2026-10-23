@@ -163,7 +163,8 @@ const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
               </div>
               <div class="min-w-0">
                 <span
-                  class="block truncate text-heading-3 text-n-slate-12 capitalize"
+                  class="block truncate text-heading-3 text-n-slate-12"
+                  :title="inbox.name"
                 >
                   {{ inbox.name }}
                 </span>

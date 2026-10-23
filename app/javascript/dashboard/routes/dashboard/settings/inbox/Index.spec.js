@@ -162,4 +162,32 @@ describe('Inbox list page', () => {
     expect(text).not.toContain('Вебхук');
     expect(text).not.toContain('hooks.example.com');
   });
+
+  it('keeps the channel name as it was typed and shows the full name on hover', () => {
+    const wrapper = mountList([
+      {
+        id: 1,
+        name: 'Почта поддержки',
+        channel_type: 'Channel::Email',
+        email: 'info@example.com',
+      },
+      {
+        id: 2,
+        name: 'WhatsApp Web — Основной номер клиники',
+        channel_type: 'Channel::WhatsappWeb',
+        phone_number: '+77001234567',
+      },
+    ]);
+    const names = wrapper.findAll('span.text-heading-3');
+
+    expect(names.map(node => node.text())).toEqual([
+      'Почта поддержки',
+      'WhatsApp Web — Основной номер клиники',
+    ]);
+    names.forEach(node => expect(node.classes()).not.toContain('capitalize'));
+    expect(names.map(node => node.attributes('title'))).toEqual([
+      'Почта поддержки',
+      'WhatsApp Web — Основной номер клиники',
+    ]);
+  });
 });

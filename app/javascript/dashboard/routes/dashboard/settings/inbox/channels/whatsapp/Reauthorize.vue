@@ -34,6 +34,12 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  // The header status of the channel already says "finish the registration",
+  // so the box does not say it a second time.
+  statusExplainsRegistration: {
+    type: Boolean,
+    default: false,
+  },
 });
 const emit = defineEmits(['registered']);
 
@@ -118,6 +124,19 @@ const registrationDescription = computed(() => {
   // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
   return t(descriptionKey);
 });
+
+// «incomplete» is the plain "registration is not finished" state. Every other
+// state (wrong PIN, rate limit, unknown outcome) is news the header does not
+// carry, so its sentence stays.
+const GENERIC_REGISTRATION_STATUSES = ['incomplete', 'registration_incomplete'];
+const isGenericRegistrationState = computed(
+  () =>
+    !effectiveRegistrationErrorCode.value ||
+    GENERIC_REGISTRATION_STATUSES.includes(effectiveRegistrationErrorCode.value)
+);
+const showRegistrationDescription = computed(
+  () => !(props.statusExplainsRegistration && isGenericRegistrationState.value)
+);
 
 const tokenExpiresSoon = computed(
   () =>
@@ -423,7 +442,9 @@ defineExpose({
     v-if="whatsappRegistrationIncomplete"
     class="mx-6 flex flex-col gap-3 rounded-xl border border-n-amber-4 bg-n-amber-3 p-4 text-n-amber-11"
   >
-    <p class="text-sm">{{ registrationDescription }}</p>
+    <p v-if="showRegistrationDescription" class="text-sm">
+      {{ registrationDescription }}
+    </p>
     <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
       <Input
         v-model="verificationPin"
