@@ -32,8 +32,8 @@ RSpec.describe Reminders::StaleAppointmentNoticePolicy do
     )
   end
 
-  def stale_reason(**options)
-    described_class.new(reminder: reminder, now: now, **options).stale_reason
+  def stale_reason(**)
+    described_class.new(reminder: reminder, now: now, **).stale_reason
   end
 
   def update_metadata(changes, without: [])
@@ -96,7 +96,10 @@ RSpec.describe Reminders::StaleAppointmentNoticePolicy do
   end
 
   describe 'a touch that is not a prompt text notice' do
-    before { appointment.starts_at = now - 1.minute }
+    before do
+      appointment.starts_at = now - 1.minute
+      update_metadata({}, without: [described_class::LATE_IMPORT_OPT_IN_KEY])
+    end
 
     it 'keeps a follow-up planned later than an hour after the event' do
       expect(stale_reason).to eq(described_class::STARTED_REASON)
@@ -128,7 +131,7 @@ RSpec.describe Reminders::StaleAppointmentNoticePolicy do
     before do
       appointment.starts_at = now - 1.minute
       reminder.status = 'processing'
-      update_metadata(Reminder::PROCESSING_CLAIM_KEY => 'claim-1')
+      update_metadata({ Reminder::PROCESSING_CLAIM_KEY => 'claim-1' }, without: [described_class::LATE_IMPORT_OPT_IN_KEY])
     end
 
     it 'cancels only the touch that run holds' do
