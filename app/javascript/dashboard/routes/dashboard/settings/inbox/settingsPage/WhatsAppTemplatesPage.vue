@@ -19,6 +19,7 @@ import {
   getTemplateStatusTone,
   matchesWhatsAppTemplateSearch,
 } from 'dashboard/helper/whatsappTemplateLibrary';
+import { getIntlLocale, getLanguageName } from '../helpers/intlLocale';
 
 const props = defineProps({
   embedded: {
@@ -31,8 +32,11 @@ const props = defineProps({
   },
 });
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const store = useStore();
+
+// Dates and language names follow the interface language, not the browser's.
+const uiLocale = computed(() => locale?.value || 'en');
 
 const searchQuery = ref('');
 const isSyncingTemplates = ref(false);
@@ -65,11 +69,14 @@ const lastUpdatedText = computed(() => {
     return t('WHATSAPP_TEMPLATES.MANAGEMENT.NOT_SYNCED_YET');
   }
 
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(getIntlLocale(uiLocale.value), {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(props.inbox.message_templates_last_updated));
 });
+
+// «ru» -> «Русский»; a code Intl does not know stays as it is.
+const getLanguageLabel = code => getLanguageName(code || 'en', uiLocale.value);
 
 const syncTemplates = async () => {
   try {
@@ -163,6 +170,8 @@ const REJECTION_REASON_KEYS = {
   SCAM: 'WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASONS.SCAM',
   TAG_CONTENT_MISMATCH:
     'WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASONS.TAG_CONTENT_MISMATCH',
+  PROMOTIONAL: 'WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASONS.PROMOTIONAL',
+  OTHER: 'WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASONS.OTHER',
 };
 
 const getCategoryLabel = category => {
@@ -181,10 +190,12 @@ const getStatusLabel = status => {
     : humanize(normalized);
 };
 
+// Meta can send a reason this page has no text for. It is never shown as a raw
+// code: the generic «Другая причина» stands in for it.
 const getRejectionReasonLabel = reason => {
   const normalized = String(reason || '').toUpperCase();
-  const key = REJECTION_REASON_KEYS[normalized];
-  return key ? translateOrFallback(key, reason) : reason;
+  const key = REJECTION_REASON_KEYS[normalized] || REJECTION_REASON_KEYS.OTHER;
+  return translateOrFallback(key, humanize(normalized));
 };
 
 const getStatusClass = templateStatus => {
@@ -290,8 +301,10 @@ const getTemplateCarouselCards = template => {
           class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
           data-test="whatsapp-templates-toolbar"
         >
-          <div class="flex min-w-0 flex-1 items-center gap-2.5">
-            <div class="w-full max-w-xs">
+          <div
+            class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1"
+          >
+            <div class="w-full max-w-md shrink-0">
               <Input
                 v-model="searchQuery"
                 size="sm"
@@ -301,7 +314,7 @@ const getTemplateCarouselCards = template => {
                 "
               />
             </div>
-            <span class="hidden truncate text-xs text-n-slate-10 lg:inline">
+            <span class="min-w-0 text-xs text-n-slate-10">
               {{
                 t('WHATSAPP_TEMPLATES.MANAGEMENT.LAST_SYNC', {
                   timestamp: lastUpdatedText,
@@ -383,7 +396,7 @@ const getTemplateCarouselCards = template => {
                     class="inline-flex items-center gap-1 rounded-full bg-n-alpha-black2 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
                     data-test="template-variant"
                   >
-                    <span>{{ variant.language || 'en' }}</span>
+                    <span>{{ getLanguageLabel(variant.language) }}</span>
                     <span
                       class="rounded-full px-1.5 py-0.5"
                       :class="getStatusClass(variant.status)"
@@ -467,7 +480,7 @@ const getTemplateCarouselCards = template => {
                 >
                   <div class="flex flex-wrap items-center gap-1.5">
                     <span class="text-xs font-medium text-n-slate-12">
-                      {{ variant.language || 'en' }}
+                      {{ getLanguageLabel(variant.language) }}
                     </span>
                     <span
                       class="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
@@ -590,7 +603,7 @@ const getTemplateCarouselCards = template => {
                     <p class="mb-0 text-xs font-medium text-n-ruby-11">
                       {{
                         t('WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASON', {
-                          language: variant.language || 'en',
+                          language: getLanguageLabel(variant.language),
                         })
                       }}
                     </p>
