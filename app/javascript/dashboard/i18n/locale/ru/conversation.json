@@ -77,6 +77,8 @@
     "UPLOADING_ATTACHMENTS": "Загрузка вложений...",
     "REPLIED_TO_STORY": "Ответил на вашу историю",
     "ATTACHMENT_FILE_PURGED": "Файл удалён администратором",
+    "SHOW_TRANSCRIPT": "Показать расшифровку",
+    "HIDE_TRANSCRIPT": "Скрыть расшифровку",
     "UNSUPPORTED_MESSAGE": "Это сообщение не поддерживается. Чтобы просмотреть его, откройте исходную платформу.",
     "UNSUPPORTED_MESSAGE_WHATSAPP": "Это сообщение WhatsApp недоступно. Вы можете открыть его в WhatsApp.",
     "UNSUPPORTED_MESSAGE_FACEBOOK": "Это сообщение не поддерживается. Вы можете просмотреть это сообщение в приложении Facebook Messenger.",
