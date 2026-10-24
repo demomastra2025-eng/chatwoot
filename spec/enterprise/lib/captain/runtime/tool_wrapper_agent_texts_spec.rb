@@ -76,7 +76,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
 
       expect(properties.dig('service_id', 'type')).to contain_exactly('number', 'null')
       expect(properties.dig('service_id', 'minimum')).to eq(1)
-      expect(properties.dig('service_id', 'description')).to eq('Service ID from search_scheduling_services.')
+      expect(properties.dig('service_id', 'description')).to eq(texts('create_appointment').params.fetch('service_id'))
       expect(properties.dig('resource_id', 'type')).to eq('number')
       expect(properties.dig('resource_id', 'minimum')).to eq(1)
       expect(properties.dig('resource_id', 'description')).to eq('Specialist ID from search_scheduling_resources.')

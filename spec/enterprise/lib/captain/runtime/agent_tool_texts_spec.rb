@@ -140,7 +140,26 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     expect(slots).to include('Pass resource_ids of the chosen specialist', 'asks for resource_ids when none is recorded')
     expect(slots).not_to include('all specialists who offer the service')
     expect(described_class.for_tool('get_scheduling_resource_availability').params['service_id']).not_to include('offers')
-    expect(described_class.for_tool('search_scheduling_resources').description).to include('when none is recorded it lists all')
+  end
+
+  it 'starts a booking from the specialist: find the specialist, then the slots; a service only for a price or to pass a service_id' do
+    resources = described_class.for_tool('search_scheduling_resources')
+    services = described_class.for_tool('search_scheduling_services')
+    slots = described_class.for_tool('search_available_slots')
+
+    expect(resources.description).to include('Start here for any booking or slot question', 'then use the ID with search_available_slots',
+                                             'A service link is never needed to find or book a specialist')
+    expect(resources.params['service_id']).to include('Optional', 'leave it out')
+    expect(services.description).to include('Call it for a price question, or to get a service_id to pass on',
+                                            'To book, find the specialist first with search_scheduling_resources')
+    expect(services.description).not_to include('before searching slots or booking a named service')
+    expect(slots.description).to include('find the specialist first with search_scheduling_resources',
+                                         'service_id is optional and only sets the visit length')
+    expect(slots.params['service_id']).to include('Optional')
+  end
+
+  it 'never lets a missing service link block a booking' do
+    expect(described_class.for_tool('create_appointment').params['service_id']).to include('a missing service link never blocks booking')
   end
 
   it 'tells the agent that handoff is for a person or for what only staff can do or answer, after one message for the details staff need' do
