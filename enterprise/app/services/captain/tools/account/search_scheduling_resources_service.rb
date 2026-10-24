@@ -13,8 +13,9 @@ class Captain::Tools::Account::SearchSchedulingResourcesService < Captain::Tools
     'search_scheduling_resources'
   end
 
-  description 'Search scheduling resources (specialists and diagnostic rooms) by name words in any order or by stored specialty; ' \
-              'a service_id filter uses recorded price links, which are not clinical proof; page through results with offset'
+  description 'Search scheduling resources (specialists and diagnostic rooms) by name words in any order or by stored specialty. ' \
+              'Call it first to choose the specialist before searching slots or booking; a service link is never required. ' \
+              'A service_id filter uses recorded price links, which are not clinical proof; page through results with offset'
   param :query, type: :string,
                 desc: 'Resource name or stored specialty query. Write a surname and a specialty as a staff list does, not in the ' \
                       'case of the customer\'s sentence: "Асланова", not "Аслановой"; "хирург", not "хирургу"',

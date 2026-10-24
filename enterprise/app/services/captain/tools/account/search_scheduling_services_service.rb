@@ -12,8 +12,10 @@ class Captain::Tools::Account::SearchSchedulingServicesService < Captain::Tools:
     'search_scheduling_services'
   end
 
-  description 'Find catalog service candidates by text (word forms, aliases, category, direction), best name matches first; ' \
-              'a text match does not confirm clinical eligibility or a MedElement route; page through results with offset'
+  description 'Find catalog service candidates by text (word forms, aliases, category, direction), best name matches first. ' \
+              'Use it for price questions or to get a service_id; to book, choose the specialist first with ' \
+              'search_scheduling_resources. A text match does not confirm clinical eligibility or a MedElement route; ' \
+              'page through results with offset'
   param :query, type: :string,
                 desc: 'Service name, category, or direction query. Write the words as a catalog title does, not in the case of the ' \
                       'customer\'s sentence: "консультация терапевта", not "консультацию терапевта"',

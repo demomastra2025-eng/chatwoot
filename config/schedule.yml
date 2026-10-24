@@ -59,6 +59,15 @@ medelement_stale_status_reconciliation_job:
   queue: scheduled_jobs
   active_job: true
 
+# executed nightly at 04:30 Almaty time (23:30 UTC), after the stale status reconciliation above
+# rebuilds the specialist-service pairs and the real visit lengths from the last 180 days of MedElement visits; this entry only
+# queues one run per account with an enabled MedElement integration, the runs themselves go to the low queue
+medelement_resource_service_stats_job:
+  cron: '30 4 * * * Asia/Almaty'
+  class: 'Scheduling::ResourceServiceStatsJob'
+  queue: scheduled_jobs
+  active_job: true
+
 # executed every minute to keep Weixin Personal gateway pollers synced after gateway restarts
 weixin_sync_channels_job:
   cron: '*/1 * * * *'

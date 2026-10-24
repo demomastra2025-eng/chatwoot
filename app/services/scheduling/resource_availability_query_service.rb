@@ -2,12 +2,10 @@ class Scheduling::ResourceAvailabilityQueryService
   MAX_LIMIT = 50
   MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
 
-  # The length of one visit: the requested minutes, else the service's, else the resource's own default.
-  def self.duration_for(resource:, service:, duration_min:)
-    numeric = duration_min.to_i
-    return service&.duration_min || resource.slot_duration_min if numeric <= 0
-
-    numeric
+  # The length of one visit: the requested minutes, else the service's (for a MedElement service the median length of the
+  # specialist's visits with it), else the resource's own slot. See Scheduling::VisitDuration.
+  def self.duration_for(resource:, service:, duration_min:, stats: nil)
+    Scheduling::VisitDuration.minutes(resource: resource, service: service, requested: duration_min, stats: stats)
   end
 
   def initialize(resource:, from:, to:, **options)
@@ -31,7 +29,7 @@ class Scheduling::ResourceAvailabilityQueryService
 
     {
       resource: Scheduling::PayloadBuilder.resource(@resource),
-      service: @service.present? ? Scheduling::PayloadBuilder.service(@service, prices: []) : nil,
+      service: @service.present? ? Scheduling::VisitDuration.service_payload(@service, duration_min: @duration_min) : nil,
       timezone: time_zone.tzinfo.name,
       range: {
         from: @from.iso8601,

@@ -105,6 +105,17 @@ FactoryBot.define do
     active { true }
   end
 
+  factory :scheduling_resource_service_stat, class: 'Scheduling::ResourceServiceStat' do
+    account
+    resource { association :scheduling_resource, account: account }
+    service { association :scheduling_service, account: account }
+    receptions_count { 10 }
+    median_duration_min { 15 }
+    last_seen_at { 2.days.ago }
+    source { 'history' }
+    status { 'auto' }
+  end
+
   factory :scheduling_appointment, class: 'Scheduling::Appointment' do
     account
     resource { association :scheduling_resource, account: account }

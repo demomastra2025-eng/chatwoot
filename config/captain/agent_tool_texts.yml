@@ -58,10 +58,10 @@ tools:
       - include_inactive
 
   search_scheduling_resources:
-    description: "Find a specialist or room by name words (any order) or specialty; an empty query lists all. Call it to get the specialist ID before checking slots or booking. With service_id it keeps only those recorded for that service; when none is recorded it lists all, so choose by specialty."
+    description: "Find a specialist or room by name words (any order) or specialty; an empty query lists all. Start here for any booking or slot question: find the specialist by the specialty or name the patient gave, then use the ID with search_available_slots. A service link is never needed to find or book a specialist."
     params:
       query: "One specialty word or name in dictionary form, as the catalog writes it (do not combine synonyms)."
-      service_id: "Service ID from search_scheduling_services."
+      service_id: "Optional, only to narrow by a recorded service link; leave it out to find a specialist by specialty or name."
       limit: "Max results, up to 50."
       offset: "next_offset from the previous result."
     hidden_params:
@@ -91,7 +91,7 @@ tools:
     hidden_params: []
 
   search_scheduling_services:
-    description: "Find a service and its prices in the clinic catalog. Each entry has the service id, name, base price, duration and its specialists as id plus name (a specialist's own price in brackets only when it differs from the base price). Search here for a price before saying it is unavailable, and before searching slots or booking a named service. It needs a query: without one nothing is listed."
+    description: "Find a service and its prices in the clinic catalog. Call it for a price question, or to get a service_id to pass on. To book, find the specialist first with search_scheduling_resources. Each entry has the service id, name, base price, and its specialists as id plus name when recorded (a specialist's own price in brackets only when it differs from the base price). Search here for a price before saying it is unavailable. It needs a query: without one nothing is listed."
     params:
       query: "Service words in dictionary form, as the catalog writes them."
       limit: "Max services, up to 10."
@@ -100,12 +100,12 @@ tools:
       - include_inactive
 
   search_available_slots:
-    description: "List free slots in a date range, earliest first. Call it to offer the patient free slots; the start the patient chooses goes to create_appointment or update_appointment. Pass resource_ids of the chosen specialist; with service_id alone the specialists recorded for the service are searched, and the tool asks for resource_ids when none is recorded. Offer 2-3 slots spread over the period, not neighbouring starts."
+    description: "List free slots in a date range, earliest first. Call it to offer the patient free slots; the start the patient chooses goes to create_appointment or update_appointment. Pass resource_ids of the chosen specialist (find the specialist first with search_scheduling_resources); service_id is optional and only sets the visit length. A service_id alone searches the specialists recorded for it, and the tool asks for resource_ids when none is recorded. Offer 2-3 slots spread over the period, not neighbouring starts."
     params:
       from: "Range start, YYYY-MM-DD or YYYY-MM-DDTHH:MM (clinic time). To check one time pass from = that time."
       to: "Range end, same format as from, within 31 days; slots start before it. For one whole day pass the next day's date."
       resource_ids: "Specialist IDs from search_scheduling_resources; omit for all."
-      service_id: "Service ID from search_scheduling_services; once used, keep it in later searches."
+      service_id: "Optional service ID from search_scheduling_services, when the patient named a service; once used, keep it in later searches."
       duration_min: "Minutes, when no service_id is given."
       limit: "Max slots, earliest starts first; 20 is enough to offer times. For a later hour start the range at that hour."
     hidden_params: []
@@ -117,7 +117,7 @@ tools:
       starts_at: "The start the patient named or chose from the free slots you offered: a slot start copied unchanged, or YYYY-MM-DDTHH:MM clinic time."
       ends_at: "End, same format as starts_at; usually omit."
       duration_min: "Minutes; omit to use the service's or slot length."
-      service_id: "Service ID from search_scheduling_services."
+      service_id: "Service ID from search_scheduling_services, when the patient named a service; a missing service link never blocks booking."
       appointment_type: "primary, secondary or other."
       client_comment: "Patient's own comment for the appointment."
       patient: "The patient the appointment is for when it is not the person in this conversation (a child, a relative): first and last name, birth date YYYY-MM-DD; middle name, IIN, gender, phone if known."
