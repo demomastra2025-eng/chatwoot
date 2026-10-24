@@ -63,6 +63,21 @@ describe('#actions', () => {
       });
     });
 
+    it('sends only the change when add or remove is given', async () => {
+      const dispatch = vi.fn();
+      axios.post.mockClear();
+      axios.post.mockResolvedValue({ data: { payload: ['on-hold', 'vip'] } });
+
+      await actions.update(
+        { commit, dispatch },
+        { contactId: '1', add: ['vip'] }
+      );
+
+      expect(axios.post).toHaveBeenCalledTimes(1);
+      const [, body] = axios.post.mock.calls[0];
+      expect(body).toEqual({ add: ['vip'], remove: [] });
+    });
+
     it('sends correct actions if API is error', async () => {
       axios.post.mockRejectedValue({ message: 'Incorrect header' });
       await expect(

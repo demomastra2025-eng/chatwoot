@@ -11,6 +11,7 @@ describe('#ConversationApi', () => {
     expect(conversationsAPI).toHaveProperty('delete');
     expect(conversationsAPI).toHaveProperty('getLabels');
     expect(conversationsAPI).toHaveProperty('updateLabels');
+    expect(conversationsAPI).toHaveProperty('changeLabels');
   });
 
   describe('API calls', () => {

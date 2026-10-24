@@ -81,8 +81,20 @@ describe('useConversationLabels', () => {
     expect(store.dispatch).toHaveBeenCalledWith('conversationLabels/update', {
       conversationId: 1,
       isCommunicationThread: false,
-      labels: ['Label 1', 'Label 2'],
+      add: ['Label 2'],
     });
+  });
+
+  it('sends only the added label, never the whole list that may be out of date', () => {
+    store.getters['conversationLabels/getConversationLabels'].mockReturnValue(
+      []
+    );
+    const { addLabelToConversation } = useConversationLabels();
+
+    addLabelToConversation({ title: 'Label 3' });
+
+    const [, payload] = store.dispatch.mock.calls[0];
+    expect(payload).not.toHaveProperty('labels');
   });
 
   it('should remove a label from the conversation', () => {
@@ -97,7 +109,20 @@ describe('useConversationLabels', () => {
     expect(store.dispatch).toHaveBeenCalledWith('conversationLabels/update', {
       conversationId: 1,
       isCommunicationThread: false,
-      labels: ['Label 1'],
+      remove: ['Label 2'],
+    });
+  });
+
+  it('removes a label of a communication thread as a change', () => {
+    getters.getSelectedChat.value = { id: 2, is_communication_thread: true };
+    const { removeLabelFromConversation } = useConversationLabels();
+
+    removeLabelFromConversation('vip');
+
+    expect(store.dispatch).toHaveBeenCalledWith('conversationLabels/update', {
+      conversationId: 2,
+      isCommunicationThread: true,
+      remove: ['vip'],
     });
   });
 });

@@ -65,6 +65,14 @@ describe('#ContactsAPI', () => {
       expect(axiosMock.get).toHaveBeenCalledWith('/api/v1/contacts/1/labels');
     });
 
+    it('#changeContactLabels sends only what changed', () => {
+      contactAPI.changeContactLabels(1, { add: ['vip'] });
+      expect(axiosMock.post).toHaveBeenCalledWith('/api/v1/contacts/1/labels', {
+        add: ['vip'],
+        remove: [],
+      });
+    });
+
     it('#updateContactLabels', () => {
       const labels = ['support-query'];
       contactAPI.updateContactLabels(1, labels);

@@ -1688,14 +1688,10 @@ function normalizeContextConversationId(conversationId) {
   return Array.isArray(conversationId) ? conversationId[0] : conversationId;
 }
 
-function currentLabelsForContextConversation(conversationId) {
-  return getConversationById.value(conversationId)?.labels || [];
-}
-
-async function updateCommunicationThreadLabels(conversationId, labelList) {
+async function changeCommunicationThreadLabels(conversationId, change) {
   await store.dispatch('updateCommunicationThreadLabels', {
     conversationId,
-    labels: labelList,
+    ...change,
   });
 }
 
@@ -1749,13 +1745,9 @@ async function handleAssignLabels(newLabels, conversationId = null) {
   const targetConversationId = normalizeContextConversationId(conversationId);
   if (props.communicationThreadMode && targetConversationId) {
     try {
-      const nextLabels = Array.from(
-        new Set([
-          ...currentLabelsForContextConversation(targetConversationId),
-          ...newLabels,
-        ])
-      );
-      await updateCommunicationThreadLabels(targetConversationId, nextLabels);
+      await changeCommunicationThreadLabels(targetConversationId, {
+        add: newLabels,
+      });
       useAlert(
         t('CONVERSATION.CARD_CONTEXT_MENU.API.LABEL_ASSIGNMENT.SUCCESFUL', {
           labelName: newLabels[0],
@@ -1779,11 +1771,9 @@ async function handleRemoveLabels(labelsToRemove, conversationId = null) {
   const targetConversationId = normalizeContextConversationId(conversationId);
   if (props.communicationThreadMode && targetConversationId) {
     try {
-      const labelsToRemoveSet = new Set(labelsToRemove);
-      const nextLabels = currentLabelsForContextConversation(
-        targetConversationId
-      ).filter(label => !labelsToRemoveSet.has(label));
-      await updateCommunicationThreadLabels(targetConversationId, nextLabels);
+      await changeCommunicationThreadLabels(targetConversationId, {
+        remove: labelsToRemove,
+      });
       useAlert(
         t('CONVERSATION.CARD_CONTEXT_MENU.API.LABEL_REMOVAL.SUCCESFUL', {
           labelName: labelsToRemove[0],

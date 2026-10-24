@@ -10,6 +10,31 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
+describe('#CommunicationThreadAPI.changeLabels', () => {
+  const originalAxios = window.axios;
+  const axiosMock = { post: vi.fn() };
+
+  beforeEach(() => {
+    window.axios = axiosMock;
+    axiosMock.post.mockReset();
+    window.history.pushState({}, '', '/app/accounts/43/conversations');
+  });
+
+  afterEach(() => {
+    window.axios = originalAxios;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('posts only what changed, with both lists always present', () => {
+    communicationThreadAPI.changeLabels(7, { remove: ['vip'] });
+
+    expect(axiosMock.post).toHaveBeenCalledWith(
+      '/api/v1/accounts/43/communication_threads/7/labels',
+      { add: [], remove: ['vip'] }
+    );
+  });
+});
+
 describe('#CommunicationThreadAPI.meta', () => {
   const originalAxios = window.axios;
   const axiosMock = {
