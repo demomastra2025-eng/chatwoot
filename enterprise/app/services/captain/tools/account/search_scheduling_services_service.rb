@@ -26,9 +26,10 @@ class Captain::Tools::Account::SearchSchedulingServicesService < Captain::Tools:
   def execute(query: nil, include_inactive: false, limit: nil, offset: nil)
     offset = parse_offset(offset)
     include_inactive = cast_boolean(include_inactive)
-    limit = parse_limit(limit)
+    return refine_query_payload(include_inactive) if agent_scope? && query.blank?
+
     services, search = search_scope(query, include_inactive)
-    page = result_page(services, offset, limit)
+    page = result_page(services, offset, page_limit(limit))
     formatted_search_payload(page, search, query: query, include_inactive: include_inactive, offset: offset)
   rescue StandardError => e
     tool_failure(e)
@@ -39,6 +40,13 @@ class Captain::Tools::Account::SearchSchedulingServicesService < Captain::Tools:
   end
 
   private
+
+  # The patient agent reads at most SERVICE_LIMIT services per answer, whatever limit it asks for.
+  def page_limit(limit)
+    return parse_limit(limit) unless agent_scope?
+
+    parse_limit(limit, default: Captain::Tools::Agent::CatalogPayload::SERVICE_LIMIT, max: Captain::Tools::Agent::CatalogPayload::SERVICE_LIMIT)
+  end
 
   def search_scope(query, include_inactive)
     services = account.scheduling_services
@@ -64,16 +72,18 @@ class Captain::Tools::Account::SearchSchedulingServicesService < Captain::Tools:
 
   # A price row is a recorded link between a service and a resource, never proof that the resource may perform the
   # service. Only the active rows of the service's own account are listed. Staff and Copilot see each row labelled as
-  # unverified; the patient agent gets the rows without that label (a label that names no action gave the model a reason to
-  # doubt the price and to hand the conversation over).
+  # unverified; the patient agent gets a compact entry without that label (a label that names no action gave the model a reason
+  # to doubt the price and to hand the conversation over).
   def service_payload(service, prices)
-    payload = Scheduling::PayloadBuilder.service(service, prices: []).merge(prices: prices)
-    return payload unless agent_scope? && service.name.to_s.include?('+')
+    return agent_service_payload(service, prices) if agent_scope?
 
-    components = package_component_services(service)
-    return payload if components.size < 2
+    Scheduling::PayloadBuilder.service(service, prices: []).merge(prices: prices)
+  end
 
-    payload.merge(component_services: components, components_total_price: components.sum { |item| item[:base_price].to_i })
+  # The patient agent reads a compact entry (see Captain::Tools::Agent::CatalogPayload), not the admin payload of the service.
+  def agent_service_payload(service, links)
+    components = service.name.to_s.include?('+') ? package_component_services(service) : []
+    Captain::Tools::Agent::CatalogPayload.service(service, links, components: components.size < 2 ? [] : components)
   end
 
   def package_component_services(service)
@@ -88,7 +98,7 @@ class Captain::Tools::Account::SearchSchedulingServicesService < Captain::Tools:
               candidates.find { |item| !item.name.to_s.include?('+') }
       next unless match
 
-      { id: match.id, name: match.name, base_price: match.base_price.to_f }
+      { id: match.id, name: match.name, price: match.base_price }
     end.uniq { |item| item[:id] }
   rescue StandardError
     []
@@ -97,15 +107,23 @@ class Captain::Tools::Account::SearchSchedulingServicesService < Captain::Tools:
   def price_rows_by_service(services)
     return {} if services.empty?
 
-    Scheduling::ServicePrice.active.joins(:resource)
-                            .where(account_id: account.id, service_id: services.map(&:id))
-                            .where(scheduling_resources: { account_id: account.id, active: true })
-                            .order(:id).group_by(&:service_id).transform_values do |prices|
-      prices.map do |price|
-        row = Scheduling::PayloadBuilder.service_price(price)
-        agent_scope? ? row : row.merge(service_eligibility_status: 'price_link_unverified')
-      end
+    linked_prices(services).group_by(&:service_id).transform_values do |prices|
+      next agent_price_links(prices) if agent_scope?
+
+      prices.map { |price| Scheduling::PayloadBuilder.service_price(price).merge(service_eligibility_status: 'price_link_unverified') }
     end
+  end
+
+  def linked_prices(services)
+    scope = Scheduling::ServicePrice.active.joins(:resource)
+                                    .where(account_id: account.id, service_id: services.map(&:id))
+                                    .where(scheduling_resources: { account_id: account.id, active: true })
+    scope = scope.select('scheduling_service_prices.*, scheduling_resources.name AS resource_name') if agent_scope?
+    scope.order(:id)
+  end
+
+  def agent_price_links(prices)
+    prices.map { |price| { resource_id: price.resource_id, resource_name: price.resource_name, price: price.price } }
   end
 
   # The loop guard lets one run call this tool a fixed number of times. A next_offset that needs a call beyond that budget
@@ -152,9 +170,34 @@ class Captain::Tools::Account::SearchSchedulingServicesService < Captain::Tools:
     exact_name_matches > 1 ? SAME_NAME_INSTRUCTION : NAME_DIFFERS_INSTRUCTION
   end
 
+  # An empty query of the patient agent never lists the catalog: the answer says so and names the categories to search by.
+  def refine_query_payload(include_inactive)
+    services = include_inactive ? account.scheduling_services : account.scheduling_services.active
+    categories = services.where.not(category: [nil, '']).distinct.order(:category)
+                         .limit(Captain::Tools::Agent::CatalogPayload::CATEGORY_HINT_LIMIT).pluck(:category)
+    compact_payload({ match_status: 'query_required', total_count: services.count, categories: categories.presence,
+                      instruction: Captain::Tools::Agent::CatalogPayload::REFINE_QUERY_INSTRUCTION }.compact)
+  end
+
+  def agent_search_payload(page, status, exact_name_matches, instruction)
+    payload = Captain::Tools::Agent::CatalogPayload.search_envelope(
+      total_count: page[:total_count], has_more: page[:has_more], next_offset: page[:next_offset],
+      page_status: page[:page_status], exact_name_matches: exact_name_matches
+    ).merge(match_status: status, services: page[:records])
+    payload[:instruction] = instruction if instruction
+    payload[:paging_instruction] = PAGING_INSTRUCTION if page[:paging_unreachable]
+    compact_payload(payload)
+  end
+
+  # Staff and Copilot get the admin payload with the verification labels. The patient agent chooses the best entry itself (see
+  # NAME_DIFFERS_INSTRUCTION): a flag that says "ambiguous" next to that instruction told it to ask the patient to confirm a name, and
+  # the labels name no action for it, so its compact answer has neither (see agent_search_payload).
   def formatted_search_payload(page, search, query:, include_inactive:, offset:)
     exact_name_matches = search&.exact_name_count.to_i
     status = match_status(search, page, exact_name_matches)
+    instruction = instruction_for(status, exact_name_matches, page, search)
+    return agent_search_payload(page, status, exact_name_matches, instruction) if agent_scope?
+
     payload = {
       filters: { query: query, include_inactive: include_inactive, offset: offset },
       total_count: page[:total_count],
@@ -167,12 +210,7 @@ class Captain::Tools::Account::SearchSchedulingServicesService < Captain::Tools:
       exact_name_matches: exact_name_matches,
       services: page[:records]
     }
-    # The patient agent chooses the best entry itself (see NAME_DIFFERS_INSTRUCTION): a flag that says "ambiguous" next to that
-    # instruction told it to ask the patient to confirm a name. It keeps match_status and the instruction; staff and Copilot
-    # keep the flag.
-    payload.delete(:ambiguous) if agent_scope?
-    payload[:eligibility_status] = 'unverified' unless agent_scope?
-    instruction = instruction_for(status, exact_name_matches, page, search)
+    payload[:eligibility_status] = 'unverified'
     payload[:instruction] = instruction if instruction
     payload[:paging_instruction] = PAGING_INSTRUCTION if page[:paging_unreachable]
     formatted_payload(payload)

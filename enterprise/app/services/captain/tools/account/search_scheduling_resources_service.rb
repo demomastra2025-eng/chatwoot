@@ -70,29 +70,44 @@ class Captain::Tools::Account::SearchSchedulingResourcesService < Captain::Tools
     [result, query]
   end
 
+  # Staff and Copilot get the admin payload of the specialists with the search filters, the ambiguous flag and the link label. The
+  # patient agent gets a compact answer (see agent_search_payload): the label named no action and gave the model a reason to doubt
+  # the filter and to hand the conversation over, and the flag next to the instruction "choose the best match" told it to ask the
+  # patient to confirm a name.
   def formatted_search_payload(result, filters)
     sole = sole_match?(result, filters)
     status = search_status(result, filters, sole)
+    instruction = instruction_for(status, result, sole)
+    return agent_search_payload(result, status, instruction) if agent_scope?
+
     payload = {
       filters: filters,
       total_count: result[:total_count],
       returned_count: result[:returned_count],
       has_more: result[:has_more],
       next_offset: result[:next_offset],
-      page_status: result[:resources].empty? && result[:total_count].positive? ? 'offset_out_of_range' : 'returned',
+      page_status: page_status(result),
       search_status: status,
       ambiguous: status == 'ambiguous',
       exact_name_matches: result[:exact_name_matches].to_i,
       resources: result[:resources]
     }
-    # Staff and Copilot see how the service filter was applied and the ambiguous flag; the patient agent gets the search status and
-    # the instruction only (the link label named no action and gave the model a reason to doubt the filter and to hand the
-    # conversation over; the flag next to the instruction "choose the best match" told it to ask the patient to confirm a name).
-    payload.delete(:ambiguous) if agent_scope?
-    payload[:link_status] = link_status(status, filters[:service_id]) unless agent_scope?
-    instruction = instruction_for(status, result, sole)
+    payload[:link_status] = link_status(status, filters[:service_id])
     payload[:instruction] = instruction if instruction
     formatted_payload(payload)
+  end
+
+  def agent_search_payload(result, status, instruction)
+    payload = Captain::Tools::Agent::CatalogPayload.search_envelope(
+      total_count: result[:total_count], has_more: result[:has_more], next_offset: result[:next_offset],
+      page_status: page_status(result), exact_name_matches: result[:exact_name_matches]
+    ).merge(search_status: status, resources: result[:resources].map { |row| Captain::Tools::Agent::CatalogPayload.resource(row) })
+    payload[:instruction] = instruction if instruction
+    compact_payload(payload)
+  end
+
+  def page_status(result)
+    result[:resources].empty? && result[:total_count].positive? ? 'offset_out_of_range' : 'returned'
   end
 
   def search_status(result, filters, sole)

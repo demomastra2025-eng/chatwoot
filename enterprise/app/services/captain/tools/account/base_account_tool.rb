@@ -78,6 +78,11 @@ class Captain::Tools::Account::BaseAccountTool < Captain::Tools::BaseTool
     JSON.pretty_generate(payload.as_json)
   end
 
+  # The result the patient-facing agent re-reads on every later step: one line of JSON, no indentation.
+  def compact_payload(payload)
+    JSON.generate(payload.as_json)
+  end
+
   def cast_boolean(value, default: false)
     return default if value.nil?
 

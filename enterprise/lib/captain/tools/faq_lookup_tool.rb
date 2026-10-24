@@ -9,42 +9,58 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   SEMANTIC_DISTANCE_THRESHOLD = 0.3
   SEMANTIC_SIMILARITY_THRESHOLD = 1.0 - SEMANTIC_DISTANCE_THRESHOLD
 
+  UNAVAILABLE_REASONS = %w[lookup_timeout semantic_timeout semantic_unavailable semantic_not_configured].freeze
+
   class TotalLookupTimeout < Timeout::Error; end
 
   description 'Search FAQ responses using semantic similarity to find relevant answers'
   param :query, type: 'string', desc: 'The question or topic to search for in the FAQ database'
 
+  # The text agent reads a compact answer (result, message and, for each match, question, answer and score) on one line. The retrieval
+  # trace and the knowledge-graph block are debugging data, not answers: they stay in lookup_payload (specs and the answer cache read
+  # them) and their one decision-relevant fact, whether the lookup ran degraded, goes to the run context. The realtime voice agent is
+  # another runtime with its own contract and keeps the full answer.
   def perform(tool_context, query:, semantic: true, voice_realtime: false)
-    result = lookup_result(query: query, semantic: semantic, voice_realtime: voice_realtime)
-    payload = JSON.parse(result)
-    fallback_reason = payload.dig('retrieval_trace', 'fallback_reason')
-    tool_context.context[:captain_faq_outcome] = {
-      assistant_id: assistant.id,
-      result: payload['result'],
-      unavailable: fallback_reason.to_s.in?(%w[lookup_timeout semantic_timeout semantic_unavailable semantic_not_configured])
-    } if tool_context.respond_to?(:context) && tool_context.context.respond_to?(:[]=)
-    result
+    payload = lookup_payload(query: query, semantic: semantic, voice_realtime: voice_realtime)
+    record_outcome(tool_context, payload)
+    voice_realtime ? JSON.pretty_generate(payload) : JSON.generate(compact_output(payload))
   end
 
   private
 
-  def lookup_result(query:, semantic: true, voice_realtime: false)
+  def record_outcome(tool_context, payload)
+    return unless tool_context.respond_to?(:context) && tool_context.context.respond_to?(:[]=)
+
+    fallback_reason = payload.dig('retrieval_trace', 'fallback_reason')
+    tool_context.context[:captain_faq_outcome] = {
+      assistant_id: assistant.id,
+      result: payload['result'],
+      unavailable: fallback_reason.to_s.in?(UNAVAILABLE_REASONS)
+    }
+  end
+
+  def compact_output(payload)
+    matches = Array(payload['matches']).map { |match| match.slice('question', 'answer', 'score') }
+    { result: payload['result'], message: payload['message'], matches: matches.presence }.compact
+  end
+
+  def lookup_payload(query:, semantic: true, voice_realtime: false)
     log_tool_usage('searching', { query: query })
-    return JSON.pretty_generate(voice_realtime_payload(query)) if voice_realtime
+    return voice_realtime_payload(query).as_json if voice_realtime
 
     Timeout.timeout(TOTAL_LOOKUP_TIMEOUT_SECONDS, TotalLookupTimeout) do
       exact_payload = exact_faq_payload(query)
-      return JSON.pretty_generate(exact_payload) if exact_payload.present?
+      return exact_payload.as_json if exact_payload.present?
 
       cache = answer_cache(query: query, semantic: semantic)
       cached_payload = bounded_cache_fetch(cache, query: query)
-      return JSON.pretty_generate(cached_payload) if cached_payload.present?
+      return cached_payload.as_json if cached_payload.present?
 
-      JSON.pretty_generate(cache.write(semantic_payload(query: query, semantic: semantic)))
+      cache.write(semantic_payload(query: query, semantic: semantic)).as_json
     end
   rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError, Timeout::Error => e
     Rails.logger.warn "Captain::Tools::FaqLookupTool semantic lookup unavailable: #{e.class}: #{e.message}"
-    JSON.pretty_generate(semantic_unavailable_payload(query, error: e))
+    semantic_unavailable_payload(query, error: e).as_json
   end
 
   def exact_faq_payload(query)

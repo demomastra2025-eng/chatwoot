@@ -47,7 +47,7 @@ class Captain::OutcomeFacts
   def self.record_tool(context, tool_name, result)
     facts = context[:outcome_facts] ||= { 'faq_lookups' => [], 'tool_failures' => [], 'safety_blocks' => [] }
     name = Captain::Runtime::ToolFailure.canonical_name(tool_name)
-    record_faq(facts, result) if name == 'faq_lookup'
+    record_faq(facts, result, context) if name == 'faq_lookup'
     record_failure(facts, result)
     facts.each_value { |items| items.replace(items.last(LIMIT)) }
   rescue StandardError
@@ -55,16 +55,25 @@ class Captain::OutcomeFacts
     nil
   end
 
-  def self.record_faq(facts, result)
+  def self.record_faq(facts, result, context)
     details = Captain::Runtime::ToolFailure.facts(result)
-    fallback = details.dig('retrieval_trace', 'fallback_reason').to_s
-    return if fallback.in?(%w[lookup_timeout semantic_timeout semantic_unavailable semantic_not_configured]) &&
-              details['result'] == 'not_found'
+    return if faq_unavailable?(details, context) && details['result'] == 'not_found'
 
     answer = details['result'].to_s
     facts['faq_lookups'] << answer if answer.in?(%w[found not_found])
   end
   private_class_method :record_faq
+
+  # A lookup that ran degraded (the semantic search was not available) found nothing for lack of a search, not for lack of an answer.
+  # The answer the model reads has no retrieval trace, so the tool leaves the fact in the run context (captain_faq_outcome); a result
+  # that still carries a trace (a simulated Playground lookup) is read as before.
+  def self.faq_unavailable?(details, context)
+    return true if details.dig('retrieval_trace', 'fallback_reason').to_s.in?(Captain::Tools::FaqLookupTool::UNAVAILABLE_REASONS)
+
+    outcome = context.to_h[:captain_faq_outcome].to_h
+    outcome[:unavailable] == true && outcome[:result] == details['result']
+  end
+  private_class_method :faq_unavailable?
 
   def self.record_failure(facts, result)
     info = Captain::Runtime::ToolFailure.describe(result)

@@ -37,7 +37,7 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingResourcesService do
 
     expect(payload).not_to have_key('link_status')
     expect(payload).to include('search_status' => 'candidates', 'total_count' => 1)
-    expect(payload['resources'].pluck('id')).to eq([specialist.id])
+    expect(payload['resources']).to eq([{ 'id' => specialist.id, 'name' => 'Асланов Мурад Тестович', 'specialty' => 'Хирург' }])
     expect(search(service_id: create(:scheduling_service, account: account, name: 'Без связей').id))
       .to include('search_status' => 'no_recorded_link', 'total_count' => 0)
   end
@@ -54,8 +54,9 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingResourcesService do
 
       payload = search(query: 'Асланов Мурад')
 
-      expect(payload).to include('search_status' => 'ambiguous', 'exact_name_matches' => 0)
+      expect(payload).to include('search_status' => 'ambiguous')
       expect(payload).not_to have_key('ambiguous')
+      expect(payload).not_to have_key('exact_name_matches')
       expect(payload['instruction']).to eq(described_class::NAME_DIFFERS_INSTRUCTION)
     end
   end

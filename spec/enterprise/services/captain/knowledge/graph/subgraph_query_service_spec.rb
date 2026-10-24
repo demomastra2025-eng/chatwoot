@@ -8,7 +8,6 @@ RSpec.describe Captain::Knowledge::Graph::SubgraphQueryService do
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:tool) { Captain::Tools::FaqLookupTool.new(assistant) }
   let(:service) { Captain::Tools::Account::FaqLookupService.new(assistant, user: user) }
-  let(:tool_context) { Struct.new(:state).new({}) }
 
   before do
     allow(Captain::Llm::UpdateEmbeddingJob).to receive(:perform_later)
@@ -93,7 +92,8 @@ RSpec.describe Captain::Knowledge::Graph::SubgraphQueryService do
       scored = Captain::AssistantResponse.select('captain_assistant_responses.*, 0.48 AS neighbor_distance').where(id: surgeon_faq.id)
       allow(Captain::AssistantResponse).to receive(:search).and_return(scored)
 
-      payload = JSON.parse(tool.perform(tool_context, query: 'Сколько стоит приём у Кудлая и принимает ли он детей?'))
+      # The full lookup payload with the knowledge graph; the model reads only the compact answer of #perform (question, answer, score).
+      payload = tool.send(:lookup_payload, query: 'Сколько стоит приём у Кудлая и принимает ли он детей?')
 
       expect(payload).to include(
         'result' => 'found',
