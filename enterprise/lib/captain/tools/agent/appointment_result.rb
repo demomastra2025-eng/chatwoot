@@ -18,8 +18,8 @@ class Captain::Tools::Agent::AppointmentResult
   SERVICE_LIST_PARTIAL = 'The list is partial: search_scheduling_services finds the others.'.freeze
   # A start that is not on the grid of the specialist's cells (see Scheduling::SlotGrid): the answer carries the starts next to it.
   OFF_GRID_CODE = 'START_OFF_GRID'.freeze
-  OFF_GRID_GUIDANCE = 'That start is not on the specialist\'s schedule grid. Offer the patient one of nearest_starts, or call ' \
-                      'search_available_slots for the specialist, and book a returned time exactly.'.freeze
+  OFF_GRID_GUIDANCE = 'That start is not on the specialist\'s schedule grid. Offer the patient one of nearest_starts once ' \
+                      'search_available_slots (from = that start) shows it is free, and book that start exactly.'.freeze
   # The two answers of "nothing was changed" (the statuses of Captain::ToolResult::NO_CHANGE_STATUSES) and their result line.
   STATUS_UNCHANGED = 'unchanged'.freeze
   STATUS_ALREADY_BOOKED = 'already_booked'.freeze

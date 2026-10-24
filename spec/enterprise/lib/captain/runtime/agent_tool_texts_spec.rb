@@ -126,12 +126,50 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     expect(entry.description).to include('For a child or another person pass patient')
   end
 
-  it 'explains the range of the free-slot search: one time is from = that time, limit takes the earliest starts, spread slots are offered' do
+  it 'explains the range of the free-slot search: one time is from = that time, limit takes the earliest days, spread slots are offered' do
     entry = described_class.for_tool('search_available_slots')
 
     expect(entry.params['from']).to include('To check one time pass from = that time.')
-    expect(entry.params['limit']).to include('earliest starts first').and include('For a later hour start the range at that hour.')
+    expect(entry.params['limit']).to include('earliest days first').and include('For a later hour start the range at that hour.')
     expect(entry.description).to include('Offer 2-3 slots spread over the period')
+  end
+
+  it 'describes the compact answer of the free-slot search: specialist-days, how many were left out, and how to book a listed start' do
+    payload = Captain::Tools::Agent::SlotsPayload
+    slots = described_class.for_tool('search_available_slots')
+
+    expect(slots.description).to include('{resource_id, name, date, times, more}', 'more counts the other free starts of that day',
+                                         'more_days says how many further specialist-days were left out',
+                                         "up to #{payload::TIMES_PER_DAY} spread over the day")
+    expect(slots.description).to include('To book a start pass date + "T" + time', 'or an exact ISO start from a tool result',
+                                         'there is no starts_at field to copy')
+    expect(slots.params['limit']).to include('Max specialist-days listed', "default #{payload::DEFAULT_DAYS}, max #{payload::MAX_DAYS}",
+                                             'more_days says how many were left out', "up to #{payload::TIMES_PER_DAY} times")
+    expect(slots.params['limit']).not_to include('Max slots')
+  end
+
+  it 'makes the start of a booking or a move date + T + time of a listed slot, or an exact ISO start, and never a field to copy' do
+    %w[create_appointment update_appointment].each do |tool_id|
+      starts_at = described_class.for_tool(tool_id).params['starts_at']
+
+      expect(starts_at).to include('as YYYY-MM-DDTHH:MM clinic time', 'its date + "T" + time (2026-04-20T11:00)',
+                                   'an exact ISO start from a tool result such as nearest_starts',
+                                   'The slot list has no starts_at field to copy.')
+      expect(starts_at).not_to include('copied unchanged')
+    end
+  end
+
+  it 'sends a start off the specialist grid back to its nearest starts, offered once the slot search shows them free' do
+    code = Captain::Tools::Agent::AppointmentResult::OFF_GRID_CODE
+
+    %w[create_appointment update_appointment].each do |tool_id|
+      description = described_class.for_tool(tool_id).description
+
+      expect(description).to include("the tool fails with #{code} and nearest_starts", 'search_available_slots (from = that start) shows it is free')
+    end
+    expect(described_class.for_tool('update_appointment').description)
+      .to include('keep the existing appointment unchanged and offer the patient one of them')
+    expect(described_class.for_tool('create_appointment').description).to include('and book that start')
   end
 
   it 'sends the free-slot search to the chosen specialist and never claims that a service link is required' do
