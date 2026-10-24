@@ -341,6 +341,75 @@ RSpec.describe AutomationRules::ActionService do
           Reminders::IncomingReplyCancellationService::CANCELLED_BY_MESSAGE_ID_KEY => newer_message.id
         )
       end
+
+      context 'when the person has another channel' do
+        let(:contact) { conversation.contact }
+        let(:other_inbox) { create(:inbox, account: account) }
+        let(:other_conversation) do
+          create(:conversation, account: account, inbox: other_inbox, contact: contact,
+                                contact_inbox: create(:contact_inbox, contact: contact, inbox: other_inbox))
+        end
+
+        def message_in_other_channel(**attributes)
+          create(:message, { account: account, inbox: other_inbox, conversation: other_conversation, sender: contact,
+                             message_type: :incoming, private: false }.merge(attributes))
+        end
+
+        def run_rule
+          described_class.new(rule.reload, account, conversation, trigger_message: trigger_message).perform
+          account.reminders.find_by!(remindable: conversation)
+        end
+
+        it 'cancels a stale touch when the person already answered in the other channel' do
+          trigger_message
+          answer = message_in_other_channel
+
+          touch = run_rule
+
+          expect(touch).to be_cancelled
+          expect(touch.metadata).to include(
+            Reminders::IncomingReplyCancellationService::CANCELLED_BY_MESSAGE_ID_KEY => answer.id
+          )
+        end
+
+        it 'keeps the touch when the other channel was written before the trigger' do
+          message_in_other_channel
+          trigger_message
+
+          expect(run_rule).to be_pending
+        end
+
+        it 'keeps the touch when only a clinic message or a note is newer in the other channel' do
+          trigger_message
+          message_in_other_channel(message_type: :outgoing, sender: agent)
+          message_in_other_channel(private: true, message_type: :outgoing, sender: agent)
+
+          expect(run_rule).to be_pending
+        end
+
+        it 'keeps the touch when somebody else writes in the other channel' do
+          trigger_message
+          message_in_other_channel(sender: create(:contact, account: account))
+
+          expect(run_rule).to be_pending
+        end
+
+        it 'does not look at the conversations of another person' do
+          trigger_message
+          stranger = create(:contact, account: account)
+          create(:message, account: account, inbox: other_inbox, sender: stranger, message_type: :incoming, private: false,
+                           conversation: create(:conversation, account: account, inbox: other_inbox, contact: stranger))
+
+          expect(run_rule).to be_pending
+        end
+
+        it 'does not take history imported into the other channel for an answer' do
+          trigger_message
+          message_in_other_channel(content_attributes: { imported_history: true })
+
+          expect(run_rule).to be_pending
+        end
+      end
     end
 
     describe '#perform with send_email_to_team action' do
