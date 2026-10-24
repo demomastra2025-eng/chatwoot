@@ -146,6 +146,23 @@ describe('#actions', () => {
         [types.SET_CONTACT_UI_FLAG, { isUpdating: false }],
       ]);
     });
+
+    it('keeps the text of a refusal that names the rule in `error`', async () => {
+      const refusal = 'custom_attributes.medelement_patient_code is managed';
+      axios.patch.mockRejectedValue({
+        response: {
+          status: 422,
+          data: { code: 'VALIDATION_ERROR', error: refusal },
+        },
+      });
+      await expect(
+        actions.update({ commit }, { id: contactList[0].id })
+      ).rejects.toMatchObject({
+        name: 'DuplicateContactException',
+        message: refusal,
+        contactErrorDetail: refusal,
+      });
+    });
   });
 
   describe('#create', () => {
@@ -305,6 +322,18 @@ describe('#actions', () => {
           { id: 1, customAttributes: ['cloud-customer'] }
         )
       ).rejects.toThrow(Error);
+    });
+    it('keeps the text of the server refusal', async () => {
+      const refusal = 'custom_attributes.address is managed by the system';
+      axios.post.mockRejectedValue({
+        response: { status: 422, data: { error: refusal } },
+      });
+      await expect(
+        actions.deleteCustomAttributes(
+          { commit },
+          { id: 1, customAttributes: ['address'] }
+        )
+      ).rejects.toMatchObject({ message: refusal });
     });
   });
 

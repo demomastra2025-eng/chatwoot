@@ -466,8 +466,19 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
     steps[@step_index]
   end
 
+  # The person answers a follow-up in any of their channels, not only in the one the follow-up waits on.
   def customer_replied?
-    @conversation.messages.incoming.exists?(['id > ?', @anchor_message.id])
+    @conversation.messages.incoming.exists?(['id > ?', @anchor_message.id]) || customer_replied_in_other_channel?
+  end
+
+  def customer_replied_in_other_channel?
+    return false if @conversation.contact_id.blank?
+
+    other_conversations = Conversation.where(account_id: @conversation.account_id, contact_id: @conversation.contact_id)
+                                      .where.not(id: @conversation.id)
+    Message.without_imported_history.reorder(nil).incoming
+           .where(account_id: @conversation.account_id, conversation_id: other_conversations.select(:id))
+           .exists?(['messages.id > ?', @anchor_message.id])
   end
 
   def human_intervened?

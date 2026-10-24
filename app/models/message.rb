@@ -63,6 +63,39 @@ class Message < ApplicationRecord
     format(NOT_IMPORTED_HISTORY_SQL_TEMPLATE, table: connection.quote_table_name(table_alias))
   end
 
+  # What the system puts on the messages it sends on its own (see #automated_outbound_message?); a confirmation request
+  # is delivered by the system too.
+  AUTOMATED_CONTENT_ATTRIBUTE_KEYS = %w[touch_id automation_rule_id confirmation_request_id].freeze
+  AUTOMATED_ADDITIONAL_ATTRIBUTE_KEYS = %w[touch_id campaign_id].freeze
+
+  # An attributes column as a jsonb object: the column holds the object itself or a JSON string of it.
+  def self.attributes_object_sql(column, table_alias)
+    reference = "#{connection.quote_table_name(table_alias)}.#{column}"
+    "(CASE WHEN (#{reference} #>> '{}') IS JSON OBJECT THEN (#{reference} #>> '{}')::jsonb ELSE '{}'::jsonb END)"
+  end
+
+  # SQL for a public message that is the person's own activity in the chat: a message from the person, or a reply of a
+  # human (a user, or an echo of the native app). What the system sends on its own is not: touches (reminders and
+  # follow-ups), automation actions, campaigns and confirmation requests, even when a user stands as their sender, nor
+  # what a bot or Captain writes (the closing notice, the handoff text), nor surveys and templates. The same markers as
+  # #automated_outbound_message? and #human_response?.
+  def self.person_activity_sql(table_alias = table_name)
+    quoted_alias = connection.quote_table_name(table_alias)
+    content = attributes_object_sql('content_attributes', table_alias)
+    additional = attributes_object_sql('additional_attributes', table_alias)
+    automated = AUTOMATED_CONTENT_ATTRIBUTE_KEYS.map { |key| "COALESCE(#{content} ->> '#{key}', '') <> ''" } +
+                AUTOMATED_ADDITIONAL_ATTRIBUTE_KEYS.map { |key| "COALESCE(#{additional} ->> '#{key}', '') <> ''" }
+
+    <<~SQL.squish
+      (#{quoted_alias}.private = FALSE AND (
+        #{quoted_alias}.message_type = #{message_types[:incoming]}
+        OR (#{quoted_alias}.message_type = #{message_types[:outgoing]}
+            AND (#{quoted_alias}.sender_type = 'User' OR #{content} ->> 'external_echo' = 'true')
+            AND NOT (#{automated.join(' OR ')}))
+      ))
+    SQL
+  end
+
   searchkick callbacks: false if ChatwootApp.advanced_search_allowed?
 
   include MessageFilterHelpers

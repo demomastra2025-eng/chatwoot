@@ -457,6 +457,9 @@
     },
     "VOICE_WIDGET": {
       "BUSY_ON_CALL": "You are on a call: another one cannot be taken yet",
+      "QUICK_NOTE_SAVED": "Note saved on the contact",
+      "QUICK_NOTE_SAVED_IN_CONVERSATION": "Note saved in the conversation card",
+      "QUICK_NOTE_SAVE_FAILED": "Could not save the note",
       "CALL_ALREADY_TAKEN": "The call has already been taken by another operator",
       "INCOMING_CALL": "Incoming call",
       "OUTGOING_CALL": "Outgoing call",

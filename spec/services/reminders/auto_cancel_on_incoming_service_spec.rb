@@ -91,6 +91,75 @@ RSpec.describe Reminders::AutoCancelOnIncomingService do
     end
   end
 
+  context 'when the person answers in another channel' do
+    let(:other_inbox) { create(:inbox, account: account) }
+    let(:other_conversation) do
+      create(:conversation, account: account, inbox: other_inbox, contact: contact,
+                            contact_inbox: create(:contact_inbox, contact: contact, inbox: other_inbox))
+    end
+
+    def reminder_in(conversation_record, metadata: { 'auto_cancel_on_incoming_explicit' => true })
+      create(:reminder, account: account, conversation: conversation_record, remindable: conversation_record,
+                        status: :pending, auto_cancel_on_incoming: true, metadata: metadata)
+    end
+
+    def reply_in(conversation_record, sender: contact)
+      create(:message, account: account, inbox: conversation_record.inbox, conversation: conversation_record,
+                       sender: sender, message_type: :incoming, private: false)
+    end
+
+    it 'cancels a reminder that waits on the first channel' do
+      touch = reminder_in(conversation)
+      reply = reply_in(other_conversation)
+
+      expect(described_class.new(message: reply).perform).to eq(1)
+      expect(touch.reload).to be_cancelled
+      expect(touch.metadata).to include(Reminders::IncomingReplyCancellationService::CANCELLED_BY_MESSAGE_ID_KEY => reply.id)
+    end
+
+    it 'cancels reminders of every channel of the person with one reply' do
+      first = reminder_in(conversation)
+      second = reminder_in(other_conversation)
+
+      expect(described_class.new(message: reply_in(other_conversation)).perform).to eq(2)
+      expect([first, second].map { |touch| touch.reload.status }).to all(eq('cancelled'))
+    end
+
+    it 'keeps a reminder without the explicit auto-cancel opt-in' do
+      touch = reminder_in(conversation, metadata: {})
+
+      expect(described_class.new(message: reply_in(other_conversation)).perform).to eq(0)
+      expect(touch.reload).to be_pending
+    end
+
+    it 'keeps the reminders of another person' do
+      stranger = create(:contact, account: account)
+      stranger_conversation = create(:conversation, account: account, inbox: inbox, contact: stranger,
+                                                    contact_inbox: create(:contact_inbox, contact: stranger, inbox: inbox))
+      touch = reminder_in(stranger_conversation)
+
+      expect(described_class.new(message: reply_in(other_conversation)).perform).to eq(0)
+      expect(touch.reload).to be_pending
+    end
+
+    it 'keeps the reminder when somebody else writes into the conversation of the person' do
+      touch = reminder_in(conversation)
+      relative = create(:contact, account: account)
+
+      expect(described_class.new(message: reply_in(other_conversation, sender: relative)).perform).to eq(0)
+      expect(touch.reload).to be_pending
+    end
+
+    it 'keeps the reminder after an outgoing message in the other channel' do
+      touch = reminder_in(conversation)
+      agent_message = create(:message, account: account, inbox: other_inbox, conversation: other_conversation,
+                                       sender: create(:user, account: account), message_type: :outgoing, private: false)
+
+      expect(described_class.new(message: agent_message).perform).to eq(0)
+      expect(touch.reload).to be_pending
+    end
+  end
+
   it 'cancels open auto-cancel touches after an incoming customer reply' do
     touch = create(
       :reminder,

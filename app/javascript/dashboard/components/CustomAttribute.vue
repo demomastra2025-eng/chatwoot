@@ -35,6 +35,10 @@ export default {
     regexCue: { type: String, default: null },
     attributeKey: { type: String, required: true },
     contactId: { type: Number, default: null },
+    // A value another system owns (for example MedElement): shown, copyable,
+    // but never offered for editing or deleting; the hint says why.
+    readOnly: { type: Boolean, default: false },
+    readOnlyHint: { type: String, default: '' },
   },
   emits: ['update', 'delete', 'copy'],
   setup() {
@@ -87,6 +91,11 @@ export default {
     },
     hasValue() {
       return this.value !== null && this.value !== '';
+    },
+    valueHoverClass() {
+      return this.readOnly
+        ? ''
+        : 'group-hover:bg-n-slate-3 group-hover:dark:bg-n-solid-3';
     },
     urlValue() {
       return isValidURL(this.value) ? this.value : '---';
@@ -166,6 +175,7 @@ export default {
       this.isEditing = false;
     },
     onEdit() {
+      if (this.readOnly) return;
       this.isEditing = true;
       this.$nextTick(() => {
         this.focusInput();
@@ -178,6 +188,7 @@ export default {
       }
     },
     onUpdate() {
+      if (this.readOnly) return;
       const updatedValue =
         this.attributeType === 'date'
           ? parseISO(this.editedValue)
@@ -190,6 +201,7 @@ export default {
       this.$emit('update', this.attributeKey, updatedValue);
     },
     onDelete() {
+      if (this.readOnly) return;
       this.isEditing = false;
       this.v$.$reset();
       this.$emit('delete', this.attributeKey);
@@ -205,7 +217,10 @@ export default {
   <div class="px-4 py-3">
     <div class="flex items-center mb-1">
       <h4 class="flex items-center w-full m-0 text-sm error">
-        <div v-if="isAttributeTypeCheckbox" class="flex items-center">
+        <div
+          v-if="isAttributeTypeCheckbox && !readOnly"
+          class="flex items-center"
+        >
           <Checkbox
             v-model="editedValue"
             class="!my-0 ltr:mr-2 ltr:ml-0 rtl:mr-0 rtl:ml-2"
@@ -227,7 +242,7 @@ export default {
             />
           </span>
           <NextButton
-            v-if="showActions && hasValue"
+            v-if="showActions && hasValue && !readOnly"
             v-tooltip.left="$t('CUSTOM_ATTRIBUTES.ACTIONS.DELETE')"
             slate
             sm
@@ -238,7 +253,7 @@ export default {
         </div>
       </h4>
     </div>
-    <div v-if="notAttributeTypeCheckboxAndList">
+    <div v-if="notAttributeTypeCheckboxAndList || readOnly">
       <div v-if="isEditing" v-on-clickaway="onClickAway">
         <div class="flex items-center w-full mb-2">
           <input
@@ -277,13 +292,15 @@ export default {
           :href="hrefURL"
           target="_blank"
           rel="noopener noreferrer"
-          class="group-hover:bg-n-slate-3 group-hover:dark:bg-n-solid-3 inline-block rounded-sm mb-0 break-all py-0.5 px-1"
+          class="inline-block rounded-sm mb-0 break-all py-0.5 px-1"
+          :class="valueHoverClass"
         >
           {{ urlValue }}
         </a>
         <p
           v-else
-          class="group-hover:bg-n-slate-3 group-hover:dark:bg-n-solid-3 inline-block rounded-sm mb-0 break-all py-0.5 px-1"
+          class="inline-block rounded-sm mb-0 break-all py-0.5 px-1"
+          :class="valueHoverClass"
         >
           {{ displayValue }}
         </p>
@@ -301,7 +318,7 @@ export default {
             @click="onCopy"
           />
           <NextButton
-            v-if="showActions"
+            v-if="showActions && !readOnly"
             v-tooltip.right="$t('CUSTOM_ATTRIBUTES.ACTIONS.EDIT')"
             xs
             slate
@@ -312,8 +329,16 @@ export default {
           />
         </div>
       </div>
+      <p
+        v-if="readOnly && readOnlyHint"
+        class="flex items-center gap-1 px-1 mt-0.5 mb-0 text-xs text-n-slate-11"
+        data-testid="custom-attribute-read-only-hint"
+      >
+        <span class="i-lucide-lock size-3 shrink-0" aria-hidden="true" />
+        {{ readOnlyHint }}
+      </p>
     </div>
-    <div v-if="isAttributeTypeList">
+    <div v-if="isAttributeTypeList && !readOnly">
       <MultiselectDropdown
         :options="listOptions"
         :selected-item="selectedItem"

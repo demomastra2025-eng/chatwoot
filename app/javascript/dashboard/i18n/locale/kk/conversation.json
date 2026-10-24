@@ -378,6 +378,9 @@
     },
     "VOICE_WIDGET": {
       "BUSY_ON_CALL": "Сіз қоңыраудасыз: басқасын әзірге қабылдау мүмкін емес",
+      "QUICK_NOTE_SAVED": "Жазба адамның карточкасында сақталды",
+      "QUICK_NOTE_SAVED_IN_CONVERSATION": "Жазба өтініш карточкасында сақталды",
+      "QUICK_NOTE_SAVE_FAILED": "Жазбаны сақтау мүмкін болмады",
       "CALL_ALREADY_TAKEN": "Қоңырауды басқа оператор қабылдап алды",
       "INCOMING_CALL": "Кіріс қоңырау",
       "OUTGOING_CALL": "Шығыс қоңырау",

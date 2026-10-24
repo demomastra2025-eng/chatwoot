@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useUISettings } from 'dashboard/composables/useUISettings';
+import { isProviderOwnedAttribute } from 'dashboard/helper/providerOwnedAttributes';
 
 import ContactCustomAttributeItem from 'dashboard/components-next/Contacts/ContactsSidebar/ContactCustomAttributeItem.vue';
 
@@ -102,6 +103,12 @@ const filteredUnusedAttributes = computed(() => {
   );
 });
 
+const isReadOnly = attribute =>
+  isProviderOwnedAttribute(
+    attribute.attributeKey,
+    props.selectedContact?.customAttributes
+  );
+
 const unusedAttributesCount = computed(() => unusedAttributes.value?.length);
 const hasNoUnusedAttributes = computed(() => unusedAttributesCount.value === 0);
 const hasNoUsedAttributes = computed(() => usedAttributes.value.length === 0);
@@ -115,6 +122,7 @@ const hasNoUsedAttributes = computed(() => usedAttributes.value.length === 0);
         :key="attribute.id"
         is-editing-view
         :attribute="attribute"
+        :read-only="isReadOnly(attribute)"
       />
     </div>
     <div v-if="!hasNoUnusedAttributes" class="flex items-center gap-3">
@@ -153,6 +161,7 @@ const hasNoUsedAttributes = computed(() => usedAttributes.value.length === 0);
           v-for="attribute in filteredUnusedAttributes"
           :key="attribute.id"
           :attribute="attribute"
+          :read-only="isReadOnly(attribute)"
         />
       </div>
     </div>

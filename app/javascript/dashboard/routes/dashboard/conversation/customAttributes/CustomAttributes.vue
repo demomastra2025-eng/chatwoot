@@ -8,6 +8,10 @@ import { useAlert } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
+import {
+  isProviderOwnedAttribute,
+  serverErrorMessage,
+} from 'dashboard/helper/providerOwnedAttributes';
 import CustomAttribute from 'dashboard/components/CustomAttribute.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 
@@ -84,10 +88,17 @@ const toggleButtonText = computed(() =>
     : t('CUSTOM_ATTRIBUTES.SHOW_LESS')
 );
 
+// MedElement writes these fields and the server refuses a change from here, so
+// they are shown read-only (with the reason) instead of looking editable.
+const isReadOnlyAttribute = key =>
+  props.attributeType === 'contact_attribute' &&
+  isProviderOwnedAttribute(key, customAttributes.value);
+
 const filteredCustomAttributes = computed(() =>
   attributes.value.map(attribute => {
     // Check if the attribute key exists in customAttributes
     const hasValue = attribute.attribute_key in customAttributes.value;
+    const readOnly = isReadOnlyAttribute(attribute.attribute_key);
 
     return {
       ...attribute,
@@ -95,6 +106,10 @@ const filteredCustomAttributes = computed(() =>
       key: attribute.attribute_key,
       // Set value from customAttributes if it exists, otherwise use ''
       value: hasValue ? customAttributes.value[attribute.attribute_key] : '',
+      readOnly,
+      readOnlyHint: readOnly
+        ? t('CUSTOM_ATTRIBUTES.READ_ONLY.PROVIDER_OWNED')
+        : '',
     };
   })
 );
@@ -211,25 +226,28 @@ const onClickToggle = () => {
 const onUpdate = async (key, value) => {
   const context = mutationContext();
   const isCurrent = () => !disposed && context === mutationContext();
-  const updatedAttributes = { ...customAttributes.value, [key]: value };
   try {
     if (props.attributeType === 'conversation_attribute') {
       await store.dispatch('updateCustomAttributes', {
         conversationId: conversationId.value,
-        customAttributes: updatedAttributes,
+        customAttributes: { ...customAttributes.value, [key]: value },
       });
     } else {
+      // Only the changed key: the server merges it into the card. Sending the
+      // whole object would also push back the other values this panel loaded
+      // earlier, and a field MedElement has updated since (last sync time)
+      // would make an unrelated edit fail.
       await store.dispatch('contacts/update', {
         id: props.contactId,
-        customAttributes: updatedAttributes,
+        customAttributes: { [key]: value },
       });
     }
     if (isCurrent()) useAlert(t('CUSTOM_ATTRIBUTES.FORM.UPDATE.SUCCESS'));
   } catch (error) {
     if (!isCurrent()) return;
-    const errorMessage =
-      error?.response?.message || t('CUSTOM_ATTRIBUTES.FORM.UPDATE.ERROR');
-    useAlert(errorMessage);
+    useAlert(
+      serverErrorMessage(error) || t('CUSTOM_ATTRIBUTES.FORM.UPDATE.ERROR')
+    );
   }
 };
 
@@ -251,9 +269,9 @@ const onDelete = async key => {
     if (isCurrent()) useAlert(t('CUSTOM_ATTRIBUTES.FORM.DELETE.SUCCESS'));
   } catch (error) {
     if (!isCurrent()) return;
-    const errorMessage =
-      error?.response?.message || t('CUSTOM_ATTRIBUTES.FORM.DELETE.ERROR');
-    useAlert(errorMessage);
+    useAlert(
+      serverErrorMessage(error) || t('CUSTOM_ATTRIBUTES.FORM.DELETE.ERROR')
+    );
   }
 };
 
@@ -312,6 +330,8 @@ const evenClass = [
               :attribute-regex="element.regex_pattern"
               :regex-cue="element.regex_cue"
               :contact-id="contactId"
+              :read-only="element.readOnly"
+              :read-only-hint="element.readOnlyHint"
               @update="onUpdate"
               @delete="onDelete"
               @copy="onCopy"

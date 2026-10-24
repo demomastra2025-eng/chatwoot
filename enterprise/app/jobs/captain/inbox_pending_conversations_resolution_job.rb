@@ -81,13 +81,15 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
   end
 
   # Oldest activity first, so a batch never keeps skipping the conversations
-  # that have waited longest.
+  # that have waited longest. Inactivity is measured on the person: a
+  # conversation stays while its contact is talking in another channel.
   def resolvable_pending_conversations(inbox)
     cutoff_time = auto_resolve_cutoff_time(inbox.account)
     return Conversation.none unless cutoff_time
 
     inbox.conversations.pending
          .where('last_activity_at < ?', cutoff_time)
+         .without_recent_messages_in_other_conversations_of_contact(cutoff_time)
          .reorder(last_activity_at: :asc, id: :asc)
          .limit(Limits::BULK_ACTIONS_LIMIT)
   end
@@ -97,7 +99,8 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     return false unless cutoff_time
 
     conversation.reload
-    conversation.pending? && conversation.last_activity_at < cutoff_time
+    conversation.pending? && conversation.last_activity_at < cutoff_time &&
+      Conversation.where(id: conversation.id).without_recent_messages_in_other_conversations_of_contact(cutoff_time).exists?
   rescue ActiveRecord::RecordNotFound
     false
   end

@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { ref as makeRef } from 'vue';
+import { reactive as makeReactive, ref as makeRef } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const microphoneState = vi.hoisted(() => ({
@@ -28,9 +28,12 @@ const storeGetters = vi.hoisted(() => ({
   getConversationById: vi.fn(),
   getInbox: vi.fn(),
   getAgentById: vi.fn(),
+  getContactNotes: vi.fn(),
   getSelectedChat: null,
   getCurrentUser: null,
 }));
+
+const storeDispatch = vi.hoisted(() => vi.fn());
 
 const routerMock = vi.hoisted(() => ({
   currentRoute: null,
@@ -107,10 +110,12 @@ vi.mock('vue-router', async () => {
 
 vi.mock('vuex', () => ({
   useStore: () => ({
+    dispatch: storeDispatch,
     getters: {
       getConversationById: storeGetters.getConversationById,
       'inboxes/getInbox': storeGetters.getInbox,
       'agents/getAgentById': storeGetters.getAgentById,
+      'contactNotes/getAllNotesByContact': storeGetters.getContactNotes,
       getSelectedChat: storeGetters.getSelectedChat,
       getCurrentUser: storeGetters.getCurrentUser,
     },
@@ -224,6 +229,9 @@ describe('FloatingCallWidget', () => {
     storeGetters.getConversationById.mockReset();
     storeGetters.getInbox.mockReset();
     storeGetters.getAgentById.mockReset();
+    storeGetters.getContactNotes.mockReset().mockReturnValue([]);
+    storeDispatch.mockReset().mockResolvedValue(undefined);
+    useAlert.mockReset();
     storeGetters.getSelectedChat = null;
     storeGetters.getCurrentUser = null;
     ringtoneState.sourceId = null;
@@ -1608,14 +1616,217 @@ describe('FloatingCallWidget', () => {
         .trigger('click');
       await flushPromises();
 
-      expect(postSpy).toHaveBeenCalledWith(
-        '/api/v1/accounts/1/conversations/724/messages',
-        {
-          content: 'Перезвонить после 16:00 с КП',
-          private: true,
-        }
+      // The note lands on the person, not on the voice conversation.
+      expect(storeDispatch).toHaveBeenCalledWith('contactNotes/create', {
+        contactId: 55,
+        content: 'Перезвонить после 16:00 с КП',
+      });
+      expect(postSpy).not.toHaveBeenCalled();
+      expect(useAlert).toHaveBeenCalledWith(
+        'CONVERSATION.VOICE_WIDGET.QUICK_NOTE_SAVED'
       );
+      expect(
+        wrapper.find('[data-testid="floating-call-quick-note-panel"]').exists()
+      ).toBe(false);
       wrapper.unmount();
+    });
+
+    describe('notes of the person', () => {
+      const conversationOf = (overrides = {}) => ({
+        id: 724,
+        inbox_id: 4769,
+        meta: { sender: { id: 55, name: 'Айгерим' } },
+        ...overrides,
+      });
+
+      beforeEach(() => {
+        window.localStorage?.removeItem('chatwoot_call_card_expanded');
+        mockSession.hasActiveCall = true;
+        mockSession.activeCall = activeCall;
+      });
+
+      it('shows the latest contact note on the call card and loads the notes of the caller once', async () => {
+        storeGetters.getConversationById.mockReturnValue(conversationOf());
+        storeGetters.getContactNotes.mockImplementation(id =>
+          id === 55
+            ? [
+                { id: 12, content: 'Не звонить после 18:00', created_at: 200 },
+                { id: 11, content: 'Аллергия на пенициллин', created_at: 100 },
+              ]
+            : []
+        );
+
+        const wrapper = mountComponent({ embedded: true });
+        await flushPromises();
+
+        expect(
+          wrapper.get('[data-testid="floating-call-context-note"]').text()
+        ).toContain('Не звонить после 18:00');
+        expect(storeDispatch).toHaveBeenCalledWith('contactNotes/get', {
+          contactId: '55',
+        });
+        expect(
+          storeDispatch.mock.calls.filter(
+            ([name]) => name === 'contactNotes/get'
+          )
+        ).toHaveLength(1);
+        wrapper.unmount();
+      });
+
+      describe('when the call card of the person appears', () => {
+        const incomingCall = {
+          callSid: 'sipuni:notes-1',
+          callDirection: 'inbound',
+          status: 'ringing',
+          conversationId: 724,
+          inboxId: 4769,
+        };
+        const notesRequests = () =>
+          storeDispatch.mock.calls.filter(
+            ([name]) => name === 'contactNotes/get'
+          );
+        let calls;
+        let storeVersion;
+
+        // Reading storeVersion in the getter makes every bump behave like a
+        // change somewhere in the conversation store.
+        beforeEach(() => {
+          calls = makeReactive([incomingCall]);
+          storeVersion = makeRef(0);
+          storeGetters.getConversationById.mockImplementation(() =>
+            storeVersion.value >= 0 ? conversationOf() : null
+          );
+          mockSession.hasActiveCall = false;
+          mockSession.activeCall = null;
+          mockSession.incomingCalls = calls;
+        });
+
+        it('loads the notes again for the next card, not on every change of the store', async () => {
+          const wrapper = mountComponent({ embedded: true });
+          await flushPromises();
+          expect(notesRequests()).toHaveLength(1);
+
+          storeVersion.value += 1;
+          await flushPromises();
+          expect(notesRequests()).toHaveLength(1);
+
+          // The call ends and the same person calls again later: the notes
+          // a colleague wrote in between are on the new card.
+          calls.splice(0, calls.length);
+          await flushPromises();
+          calls.push(incomingCall);
+          await flushPromises();
+          expect(notesRequests()).toHaveLength(2);
+          expect(notesRequests()[1]).toEqual([
+            'contactNotes/get',
+            { contactId: '55' },
+          ]);
+          wrapper.unmount();
+        });
+
+        it('does not retry a failed load on later changes of the store', async () => {
+          storeDispatch.mockImplementation(name =>
+            name === 'contactNotes/get'
+              ? Promise.reject(new Error('forbidden'))
+              : Promise.resolve()
+          );
+          const wrapper = mountComponent({ embedded: true });
+          await flushPromises();
+          expect(notesRequests()).toHaveLength(1);
+
+          storeVersion.value += 1;
+          await flushPromises();
+          storeVersion.value += 1;
+          await flushPromises();
+
+          expect(notesRequests()).toHaveLength(1);
+          wrapper.unmount();
+        });
+      });
+
+      it('prefers a newer private message of the call conversation over an older contact note', () => {
+        storeGetters.getConversationById.mockReturnValue(
+          conversationOf({
+            messages: [
+              { id: 1, private: true, content: 'Просит счёт', created_at: 300 },
+            ],
+          })
+        );
+        storeGetters.getContactNotes.mockReturnValue([
+          { id: 12, content: 'Старая заметка', created_at: 200 },
+        ]);
+
+        const wrapper = mountComponent({ embedded: true });
+
+        expect(
+          wrapper.get('[data-testid="floating-call-context-note"]').text()
+        ).toContain('Просит счёт');
+        wrapper.unmount();
+      });
+
+      it('keeps the note as a private message of the call conversation when the person cannot be told', async () => {
+        const postSpy = vi.fn().mockResolvedValue({ data: { id: 902 } });
+        window.axios = { post: postSpy, get: vi.fn() };
+        storeGetters.getConversationById.mockReturnValue({
+          id: 724,
+          inbox_id: 4769,
+        });
+
+        const wrapper = mountComponent({ embedded: true });
+        await wrapper
+          .get('[data-testid="floating-call-quick-note-toggle"]')
+          .trigger('click');
+        await wrapper
+          .get('[data-testid="floating-call-quick-note-input"]')
+          .setValue('Перезвонить завтра');
+        await wrapper
+          .get('[data-testid="floating-call-quick-note-submit"]')
+          .trigger('click');
+        await flushPromises();
+
+        expect(postSpy).toHaveBeenCalledWith(
+          '/api/v1/accounts/1/conversations/724/messages',
+          { content: 'Перезвонить завтра', private: true }
+        );
+        expect(storeDispatch).not.toHaveBeenCalledWith(
+          'contactNotes/create',
+          expect.anything()
+        );
+        expect(useAlert).toHaveBeenCalledWith(
+          'CONVERSATION.VOICE_WIDGET.QUICK_NOTE_SAVED_IN_CONVERSATION'
+        );
+        wrapper.unmount();
+      });
+
+      it('keeps the typed note and says so when saving on the person fails', async () => {
+        storeGetters.getConversationById.mockReturnValue(conversationOf());
+        storeDispatch.mockImplementation(name =>
+          name === 'contactNotes/create'
+            ? Promise.reject(new Error('boom'))
+            : Promise.resolve()
+        );
+
+        const wrapper = mountComponent({ embedded: true });
+        await wrapper
+          .get('[data-testid="floating-call-quick-note-toggle"]')
+          .trigger('click');
+        await wrapper
+          .get('[data-testid="floating-call-quick-note-input"]')
+          .setValue('Не потерять');
+        await wrapper
+          .get('[data-testid="floating-call-quick-note-submit"]')
+          .trigger('click');
+        await flushPromises();
+
+        expect(useAlert).toHaveBeenCalledWith(
+          'CONVERSATION.VOICE_WIDGET.QUICK_NOTE_SAVE_FAILED'
+        );
+        expect(
+          wrapper.get('[data-testid="floating-call-quick-note-input"]').element
+            .value
+        ).toBe('Не потерять');
+        wrapper.unmount();
+      });
     });
   });
 });

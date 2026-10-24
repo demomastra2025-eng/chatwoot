@@ -73,6 +73,171 @@ RSpec.describe Conversations::ResolutionJob do
     expect(conversation.reload.label_list).to include('auto-resolved')
   end
 
+  context 'when the same person writes in several channels' do
+    let(:contact) { create(:contact, account: account) }
+    let(:quiet_inbox) { create(:inbox, account: account) }
+    let(:live_inbox) { create(:inbox, account: account) }
+    let!(:quiet_conversation) do
+      create(:conversation, account: account, inbox: quiet_inbox, contact: contact,
+                            contact_inbox: create(:contact_inbox, contact: contact, inbox: quiet_inbox),
+                            last_activity_at: 13.days.ago)
+    end
+    let!(:other_conversation) do
+      create(:conversation, account: account, inbox: live_inbox, contact: contact,
+                            contact_inbox: create(:contact_inbox, contact: contact, inbox: live_inbox),
+                            last_activity_at: 12.days.ago)
+    end
+
+    def create_message(conversation, created_at: 1.hour.ago, **attributes)
+      create(:message, { account: account, inbox: conversation.inbox, conversation: conversation, sender: contact,
+                         message_type: :incoming, private: false, created_at: created_at }.merge(attributes))
+    end
+
+    # The factory gives every outgoing message a user as its sender; a message of a bot or of the system has none.
+    def create_message_without_sender(conversation, **attributes)
+      message = create_message(conversation, **attributes)
+      Message.where(id: message.id).update_all(sender_type: nil, sender_id: nil) # rubocop:disable Rails/SkipsModelValidations
+      message
+    end
+
+    before { account.update(auto_resolve_after: 14_400, auto_resolve_ignore_waiting: false) } # 10 days in minutes
+
+    it 'does not close a quiet channel while the person writes in another one' do
+      create_message(other_conversation)
+
+      described_class.perform_now(account: account)
+
+      expect(quiet_conversation.reload.status).to eq('open')
+      expect(other_conversation.reload.status).to eq('open')
+    end
+
+    it 'does not close a quiet channel while the person is answered in another one' do
+      create_message(other_conversation, message_type: :outgoing, sender: create(:user, account: account))
+
+      described_class.perform_now(account: account)
+
+      expect(quiet_conversation.reload.status).to eq('open')
+    end
+
+    it 'closes the quiet channel once the person is quiet everywhere' do
+      create_message(other_conversation, created_at: 11.days.ago)
+      # The incoming message also triggers automatic template replies, which touch the conversation.
+      other_conversation.update!(last_activity_at: 11.days.ago)
+
+      described_class.perform_now(account: account)
+
+      expect(quiet_conversation.reload.status).to eq('resolved')
+      expect(other_conversation.reload.status).to eq('resolved')
+    end
+
+    it 'ignores private notes, activity lines and templates of the other channel' do
+      create_message(other_conversation, private: true, message_type: :outgoing, sender: create(:user, account: account))
+      create_message(other_conversation, message_type: :activity, sender: nil, content: 'Assigned to somebody')
+      create_message(other_conversation, message_type: :template, sender: nil, content: 'Auto message')
+
+      described_class.perform_now(account: account)
+
+      expect(quiet_conversation.reload.status).to eq('resolved')
+    end
+
+    it 'counts the echo of a reply written in the native app of the clinic' do
+      create_message_without_sender(other_conversation, message_type: :outgoing, content_attributes: { external_echo: true })
+
+      described_class.perform_now(account: account)
+
+      expect(quiet_conversation.reload.status).to eq('open')
+    end
+
+    # What the system sends on its own is not the person being live: the quiet channel must not wait another period
+    # after every reminder, follow-up, campaign or closing notice that went out in a sibling channel.
+    {
+      'a reminder or an AI follow-up' => { sender: :user, content_attributes: { touch_id: 7, touch_source: 'touch' } },
+      'a reminder that only carries its touch in the additional attributes' => { sender: :user, additional_attributes: { touch_id: 7 } },
+      'a campaign message' => { sender: :user, additional_attributes: { campaign_id: 3 } },
+      'a message of an automation rule' => { sender: nil, content_attributes: { automation_rule_id: 5 } },
+      'a confirmation request' => { sender: :user, content_attributes: { confirmation_request_id: 9 } },
+      'a message of a bot' => { sender: nil },
+      'a survey' => { sender: nil, content_type: :input_csat }
+    }.each do |description, attributes|
+      it "does not take #{description} in the other channel for the person being live" do
+        if attributes[:sender] == :user
+          create_message(other_conversation, **attributes.except(:sender), message_type: :outgoing, sender: create(:user, account: account))
+        else
+          create_message_without_sender(other_conversation, **attributes.except(:sender), message_type: :outgoing)
+        end
+
+        described_class.perform_now(account: account)
+
+        expect(quiet_conversation.reload.status).to eq('resolved')
+      end
+    end
+
+    it 'does not take a reminder whose attributes are stored as a JSON string for the person being live' do
+      message = create_message(other_conversation, message_type: :outgoing, sender: create(:user, account: account))
+      # rubocop:disable Rails/SkipsModelValidations
+      Message.where(id: message.id).update_all(['content_attributes = to_json(?::text)', { touch_id: 7 }.to_json])
+      # rubocop:enable Rails/SkipsModelValidations
+
+      described_class.perform_now(account: account)
+
+      expect(quiet_conversation.reload.status).to eq('resolved')
+    end
+
+    it 'does not take a message of Captain in the other channel for the person being live' do
+      assistant = create(:captain_assistant, account: account)
+      create_message(other_conversation, message_type: :outgoing, sender: assistant)
+
+      described_class.perform_now(account: account)
+
+      expect(quiet_conversation.reload.status).to eq('resolved')
+    end
+
+    it 'does not look at the messages of another person' do
+      stranger = create(:contact, account: account)
+      create_message(create(:conversation, account: account, contact: stranger), sender: stranger)
+
+      described_class.perform_now(account: account)
+
+      expect(quiet_conversation.reload.status).to eq('resolved')
+    end
+
+    context 'when the account has an auto resolve message' do
+      before { account.update(auto_resolve_message: 'Closed because of inactivity') }
+
+      def auto_resolve_messages(conversation)
+        conversation.messages.template.where(content: 'Closed because of inactivity')
+      end
+
+      it 'sends it once, in the channel of the latest activity' do
+        described_class.perform_now(account: account)
+
+        expect(quiet_conversation.reload.status).to eq('resolved')
+        expect(other_conversation.reload.status).to eq('resolved')
+        expect(auto_resolve_messages(other_conversation).count).to eq(1)
+        expect(auto_resolve_messages(quiet_conversation).count).to eq(0)
+      end
+
+      it 'falls back to the next channel when the latest one cannot be written to' do
+        allow(Conversations::MessageWindowService).to receive(:new) do |conversation|
+          instance_double(Conversations::MessageWindowService, can_reply?: conversation.id != other_conversation.id)
+        end
+
+        described_class.perform_now(account: account)
+
+        expect(auto_resolve_messages(quiet_conversation).count).to eq(1)
+        expect(auto_resolve_messages(other_conversation).count).to eq(0)
+      end
+
+      it 'still sends it for a person with a single channel' do
+        other_conversation.update!(status: :resolved)
+
+        described_class.perform_now(account: account)
+
+        expect(auto_resolve_messages(quiet_conversation).count).to eq(1)
+      end
+    end
+  end
+
   it 'resolves only a limited number of conversations in a single execution' do
     stub_const('Limits::BULK_ACTIONS_LIMIT', 2)
     account.update(auto_resolve_after: 14_400, auto_resolve_ignore_waiting: false) # 10 days in minutes

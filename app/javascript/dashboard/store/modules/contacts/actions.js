@@ -52,7 +52,12 @@ export const handleContactOperationErrors = error => {
     const exception = new DuplicateContactException(
       error.response.data.attributes
     );
-    exception.message = error.response.data.message || exception.message;
+    // A refused request answers with `message` (duplicate card) or with
+    // `error` (rule violations such as a field the integration owns).
+    exception.message =
+      error.response.data.message ||
+      error.response.data.error ||
+      exception.message;
     throw exception;
   } else if (error.response?.data?.message) {
     throw new ExceptionWithMessage(error.response.data.message);
@@ -225,7 +230,7 @@ export const actions = {
       );
       commit(types.EDIT_CONTACT, response.data.payload);
     } catch (error) {
-      throw new Error(error);
+      handleContactOperationErrors(error);
     }
   },
 

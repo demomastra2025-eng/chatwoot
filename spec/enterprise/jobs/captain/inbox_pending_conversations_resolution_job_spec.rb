@@ -56,6 +56,36 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
 
       expect(Captain::ConversationCompletionService).not_to have_received(:new)
     end
+
+    context 'when the same person writes in another channel' do
+      let(:contact) { resolvable_pending_conversation.contact }
+      let(:other_inbox) { create(:inbox, account: inbox.account) }
+      let(:other_conversation) do
+        create(:conversation, account: inbox.account, inbox: other_inbox, contact: contact,
+                              contact_inbox: create(:contact_inbox, contact: contact, inbox: other_inbox))
+      end
+
+      def write_in_other_channel(created_at:)
+        create(:message, account: inbox.account, inbox: other_inbox, conversation: other_conversation, sender: contact,
+                         message_type: :incoming, private: false, created_at: created_at)
+      end
+
+      it 'keeps the quiet pending conversation while the person is live elsewhere' do
+        write_in_other_channel(created_at: 5.minutes.ago)
+
+        described_class.perform_now(inbox)
+
+        expect(resolvable_pending_conversation.reload.status).to eq('pending')
+      end
+
+      it 'resolves it once the person has been quiet everywhere' do
+        write_in_other_channel(created_at: 3.hours.ago)
+
+        described_class.perform_now(inbox)
+
+        expect(resolvable_pending_conversation.reload.status).to eq('resolved')
+      end
+    end
   end
 
   context 'when captain_tasks is enabled' do
@@ -128,6 +158,24 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
 
       private_note = resolvable_pending_conversation.messages.where(private: true).last
       expect(private_note.content).to eq('Auto-resolved: Customer question was answered')
+    end
+
+    context 'when the person has another quiet pending conversation in the same inbox' do
+      let!(:earlier_pending_conversation) do
+        create(:conversation, account: inbox.account, inbox: inbox, contact: resolvable_pending_conversation.contact,
+                              contact_inbox: resolvable_pending_conversation.contact_inbox, last_activity_at: 3.hours.ago, status: :pending)
+      end
+
+      it 'resolves both in one run, the closing notice of the first one is not the person being live' do
+        configure_account_message('resolution_message', enabled: true, mode: 'fixed', text: 'Closed because of inactivity.')
+
+        described_class.perform_now(inbox)
+
+        expect(earlier_pending_conversation.reload.status).to eq('resolved')
+        expect(resolvable_pending_conversation.reload.status).to eq('resolved')
+        expect(earlier_pending_conversation.messages.outgoing.where(content: 'Closed because of inactivity.')).to exist
+        expect(resolvable_pending_conversation.messages.outgoing.where(content: 'Closed because of inactivity.')).to exist
+      end
     end
 
     it 'creates resolution message with configured static content' do

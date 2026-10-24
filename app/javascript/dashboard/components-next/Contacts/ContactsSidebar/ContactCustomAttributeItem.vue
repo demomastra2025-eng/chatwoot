@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
 import { useStore } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
+import { serverErrorMessage } from 'dashboard/helper/providerOwnedAttributes';
 
 import ListAttribute from 'dashboard/components-next/CustomAttributes/ListAttribute.vue';
 import CheckboxAttribute from 'dashboard/components-next/CustomAttributes/CheckboxAttribute.vue';
@@ -16,6 +17,12 @@ const props = defineProps({
     required: true,
   },
   isEditingView: {
+    type: Boolean,
+    default: false,
+  },
+  // A value another system owns (MedElement): shown with the reason instead
+  // of an editor that the server would refuse.
+  readOnly: {
     type: Boolean,
     default: false,
   },
@@ -36,7 +43,7 @@ const handleDelete = async () => {
     );
   } catch (error) {
     useAlert(
-      error?.response?.message ||
+      serverErrorMessage(error) ||
         t('CONTACTS_LAYOUT.SIDEBAR.ATTRIBUTES.API.DELETE_ERROR')
     );
   }
@@ -53,7 +60,7 @@ const handleUpdate = async value => {
     useAlert(t('CONTACTS_LAYOUT.SIDEBAR.ATTRIBUTES.API.SUCCESS_MESSAGE'));
   } catch (error) {
     useAlert(
-      error?.response?.message ||
+      serverErrorMessage(error) ||
         t('CONTACTS_LAYOUT.SIDEBAR.ATTRIBUTES.API.UPDATE_ERROR')
     );
   }
@@ -65,6 +72,14 @@ const componentMap = {
   date: DateAttribute,
   default: OtherAttribute,
 };
+
+const readOnlyValue = computed(() => {
+  const { value, attributeDisplayType } = props.attribute;
+  if (value === null || value === undefined || value === '') return '---';
+  return attributeDisplayType === 'date'
+    ? new Date(value).toLocaleDateString()
+    : String(value);
+});
 
 const CurrentAttributeComponent = computed(() => {
   return (
@@ -84,8 +99,22 @@ const CurrentAttributeComponent = computed(() => {
       </span>
     </div>
 
+    <div
+      v-if="readOnly"
+      class="flex flex-col min-w-0 gap-0.5"
+      data-testid="contact-attribute-read-only"
+    >
+      <span class="text-sm break-words text-n-slate-12">
+        {{ readOnlyValue }}
+      </span>
+      <span class="flex items-center gap-1 text-xs text-n-slate-11">
+        <span class="i-lucide-lock size-3 shrink-0" aria-hidden="true" />
+        {{ t('CUSTOM_ATTRIBUTES.READ_ONLY.PROVIDER_OWNED') }}
+      </span>
+    </div>
     <component
       :is="CurrentAttributeComponent"
+      v-else
       :attribute="attribute"
       :is-editing-view="isEditingView"
       @update="handleUpdate"
