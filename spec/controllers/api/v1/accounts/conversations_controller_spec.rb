@@ -517,6 +517,33 @@ RSpec.describe 'Conversations API', type: :request do
         expect(JSON.parse(response.body, symbolize_names: true)[:id]).to eq(conversation.display_id)
       end
 
+      it 'returns no dialog id for a conversation when the account does not use communication threads' do
+        create(:inbox_member, user: agent, inbox: conversation.inbox)
+
+        get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['meta']).to include('communication_thread_id' => nil)
+        expect(response.parsed_body).not_to have_key('communication_thread_id')
+      end
+
+      it 'returns the dialog id of the person in the conversation meta when the account uses communication threads' do
+        account.enable_features!('communication_threads')
+        create(:inbox_member, user: agent, inbox: conversation.inbox)
+        thread = conversation.reload.communication_thread
+
+        get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(thread).to be_present
+        expect(response.parsed_body['meta']).to include('communication_thread_id' => thread.display_id)
+        expect(response.parsed_body).not_to have_key('communication_thread_id')
+      end
+
       it 'returns CRM deal stage accents on the conversation detail payload' do
         account.enable_features!('crm_deals')
         create(:inbox_member, user: agent, inbox: conversation.inbox)
@@ -1818,6 +1845,29 @@ RSpec.describe 'Conversations API', type: :request do
         expect(response).to have_http_status(:success)
         response_body = response.parsed_body
         expect(response_body['payload'].length).to eq(1)
+      end
+
+      it 'pages through every attachment without repeating or losing any', :aggregate_failures do
+        stub_const('Api::V1::Accounts::ConversationsController::ATTACHMENT_RESULTS_PER_PAGE', 2)
+        # One timestamp for all rows: only the id tiebreaker keeps the page boundaries stable.
+        freeze_time do
+          4.times do
+            create(:message, :with_attachment, conversation: conversation, account: account,
+                                               inbox: conversation.inbox, message_type: 'incoming')
+          end
+        end
+        attachment_ids = conversation.attachments.pluck(:id)
+        headers = administrator.create_new_auth_token
+
+        paged_ids = (1..4).flat_map do |page|
+          get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/attachments",
+              params: { page: page }, headers: headers, as: :json
+          expect(response.parsed_body.dig('meta', 'total_count')).to eq(5)
+          response.parsed_body['payload'].pluck('id')
+        end
+
+        expect(attachment_ids.size).to eq(5)
+        expect(paged_ids).to match_array(attachment_ids)
       end
     end
   end

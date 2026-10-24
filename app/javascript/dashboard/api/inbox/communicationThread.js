@@ -206,8 +206,11 @@ class CommunicationThreadApi extends ApiClient {
     return axios.get(`${this.url}/${id}/channels`);
   }
 
-  attachments(id) {
-    return axios.get(`${this.url}/${id}/attachments`);
+  // The first page needs no parameter; further pages ask for it explicitly.
+  attachments(id, { page } = {}) {
+    return page > 1
+      ? axios.get(`${this.url}/${id}/attachments`, { params: { page } })
+      : axios.get(`${this.url}/${id}/attachments`);
   }
 
   labels(id) {

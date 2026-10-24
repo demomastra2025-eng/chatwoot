@@ -38,7 +38,7 @@ class Notification::TelegramNotificationService
   def push_url
     case notification.primary_actor
     when Conversation
-      app_account_conversation_url(account_id: notification.account_id, id: notification.conversation_display_id)
+      Conversations::DashboardLink.for_notification(notification).url(self)
     when Crm::Task
       frontend_url("/app/accounts/#{notification.account_id}/crm/tasks?taskId=#{notification.primary_actor.id}")
     when Crm::Deal

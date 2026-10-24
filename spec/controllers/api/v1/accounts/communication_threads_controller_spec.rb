@@ -1006,6 +1006,34 @@ RSpec.describe 'Communication Threads API', type: :request do
   end
 
   describe 'GET /api/v1/accounts/:account_id/communication_threads/:id' do
+    it 'returns the earliest snooze time among the snoozed channels' do
+      contact = create(:contact, account: account)
+      first = create(:conversation, account: account, contact: contact)
+      second = create(:conversation, account: account, contact: contact)
+      [first, second].each { |conversation| create(:inbox_member, user: agent, inbox: conversation.inbox) }
+      woken_first = 1.day.from_now.change(usec: 0)
+      first.update!(status: :snoozed, snoozed_until: 3.days.from_now.change(usec: 0))
+      second.update!(status: :snoozed, snoozed_until: woken_first)
+      thread = first.reload.communication_thread
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}", headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(Time.zone.parse(response.parsed_body['snoozed_until'])).to eq(woken_first)
+    end
+
+    it 'returns no snooze time for a thread without snoozed channels' do
+      conversation = create(:conversation, account: account)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      thread = conversation.reload.communication_thread
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}", headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body).to have_key('snoozed_until')
+      expect(response.parsed_body['snoozed_until']).to be_nil
+    end
+
     it 'returns CRM deal stage accents on the communication thread detail payload' do
       account.enable_features!('crm_deals')
       contact = create(:contact, account: account)
@@ -1524,6 +1552,27 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(conversation.messages.outgoing).to be_empty
     end
 
+    it 'saves a private note on official WhatsApp outside the reply window without a template', :aggregate_failures do
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_inbox = whatsapp_channel.inbox
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      conversation = create(:conversation, account: account, contact: contact, inbox: whatsapp_inbox, contact_inbox: contact_inbox)
+      create(:message, account: account, inbox: whatsapp_inbox, conversation: conversation, message_type: 'incoming', created_at: 25.hours.ago)
+      create(:inbox_member, user: agent, inbox: whatsapp_inbox)
+      thread = conversation.reload.communication_thread
+
+      expect do
+        post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
+             params: { content: 'Call after 18:00', conversation_id: conversation.display_id, private: true },
+             headers: headers,
+             as: :json
+      end.to change { conversation.messages.outgoing.count }.by(1)
+
+      expect(response).to have_http_status(:success)
+      expect(conversation.messages.outgoing.last).to have_attributes(content: 'Call after 18:00', private: true)
+    end
+
     it 'allows official WhatsApp templates outside the reply window when template params are present' do
       whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
       whatsapp_inbox = whatsapp_channel.inbox
@@ -1841,6 +1890,32 @@ RSpec.describe 'Communication Threads API', type: :request do
       body = JSON.parse(response.body, symbolize_names: true)
       expect(body.dig(:meta, :total_count)).to eq(1)
       expect(body[:payload].pluck(:id)).to eq([attachment.id])
+    end
+
+    it 'pages through every attachment of the thread without repeating or losing any', :aggregate_failures do
+      stub_const('Api::V1::Accounts::CommunicationThreadsController::ATTACHMENT_RESULTS_PER_PAGE', 2)
+      conversation = create(:conversation, account: account)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      thread = conversation.reload.communication_thread
+      # One timestamp for all rows: only the id tiebreaker keeps the page boundaries stable.
+      attachment_ids = []
+      freeze_time do
+        5.times do
+          message = create(:message, :with_attachment, conversation: conversation, account: account,
+                                                       inbox: conversation.inbox, message_type: 'incoming')
+          attachment_ids << message.attachments.first.id
+        end
+      end
+
+      paged_ids = (1..4).flat_map do |page|
+        get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/attachments",
+            params: { page: page }, headers: headers, as: :json
+        body = JSON.parse(response.body, symbolize_names: true)
+        expect(body.dig(:meta, :total_count)).to eq(5)
+        body[:payload].pluck(:id)
+      end
+
+      expect(paged_ids).to eq(attachment_ids.sort.reverse)
     end
   end
 

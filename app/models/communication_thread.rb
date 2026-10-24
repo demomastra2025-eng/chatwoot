@@ -51,6 +51,11 @@ class CommunicationThread < ApplicationRecord
   validates :contact_id, presence: true
   validates :display_id, presence: true, uniqueness: { scope: :account_id }
 
+  # Earliest wake-up time among the snoozed channels of a person. Channels snoozed "until the next reply" have no time.
+  def self.snoozed_until_for(conversations)
+    Array(conversations).filter_map { |conversation| conversation.snoozed_until if conversation&.snoozed? }.min
+  end
+
   private
 
   def ensure_display_id

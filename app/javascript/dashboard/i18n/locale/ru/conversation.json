@@ -134,10 +134,10 @@
       "DETAILS": "подробности",
       "PIPELINE": "Воронка",
       "APPOINTMENT": "Запись",
-      "SNOOZED_UNTIL": "Отложить до",
+      "SNOOZED_UNTIL": "Отложено до",
       "SNOOZED_UNTIL_TOMORROW": "Отложено до завтра",
       "SNOOZED_UNTIL_NEXT_WEEK": "Отложено до следующей недели",
-      "SNOOZED_UNTIL_NEXT_REPLY": "Отложить до следующего ответа",
+      "SNOOZED_UNTIL_NEXT_REPLY": "Отложено до следующего ответа",
       "SLA_STATUS": {
         "FRT": "FRT {status}",
         "NRT": "NRT {status}",
@@ -200,6 +200,7 @@
       "ALL_SELECTED_WARNING": "Выбраны все каналы. После удаления тред исчезнет из списка."
     },
     "CARD_CONTEXT_MENU": {
+      "SNOOZED_UNTIL_BADGE": "Отложено до {time}",
       "PENDING": "Передать AI-агенту",
       "RESOLVED": "Закрыть",
       "MARK_AS_UNREAD": "Отметить как непрочитанное",
@@ -594,6 +595,8 @@
       "SHARED_FILES": "Вложения"
     },
     "SHARED_FILES": {
+      "PARTIAL": "Показано {loaded} из {total} вложений",
+      "SHOW_MORE": "Показать ещё",
       "EMPTY": "Вложений пока нет",
       "DOWNLOAD": "Скачать файл",
       "DOWNLOAD_ERROR": "Не удалось скачать файл. Попробуйте ещё раз.",

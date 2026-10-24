@@ -7,6 +7,9 @@ json.meta do
     json.partial! 'api/v1/models/contact', formats: [:json], resource: conversation.contact
   end
   json.channel conversation.inbox.try(:channel_type)
+  # Display id of the person's dialog, so a link to this conversation can open the dialog instead of one channel.
+  # It lives in meta on purpose: a top-level communication_thread_id marks a chat as a thread for the dashboard.
+  json.communication_thread_id Conversations::DashboardLink.thread_display_id_for(conversation)
   if conversation.assigned_entity&.account
     json.assignee do
       json.partial! 'api/v1/models/agent', formats: [:json], resource: conversation.assigned_entity

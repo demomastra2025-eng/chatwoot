@@ -19,6 +19,8 @@ import {
   isCommunicationThread,
 } from 'dashboard/helper/communicationThreadHelper';
 import { resolveOutgoingDeliveryStatus } from 'dashboard/helper/messageDeliveryStatus';
+import { snoozedReopenTime } from 'dashboard/helper/snoozeHelpers';
+import wootConstants from 'dashboard/constants/globals';
 import { useI18n } from 'vue-i18n';
 import Avatar from 'next/avatar/Avatar.vue';
 import ChannelIcon from 'dashboard/components-next/icon/ChannelIcon.vue';
@@ -428,6 +430,14 @@ const messageStatusClass = computed(() =>
 );
 
 const isPinned = computed(() => Boolean(props.chat?.custom_attributes?.pinned));
+const snoozedUntilLabel = computed(() => {
+  const { status, snoozed_until: snoozedUntil } = props.chat || {};
+  if (status !== wootConstants.STATUS_TYPE.SNOOZED || !snoozedUntil) return '';
+
+  return t('CONVERSATION.CARD_CONTEXT_MENU.SNOOZED_UNTIL_BADGE', {
+    time: snoozedReopenTime(snoozedUntil),
+  });
+});
 const isWaitingForCallback = computed(() =>
   Boolean(
     props.chat?.custom_attributes?.waiting_for_callback ||
@@ -884,6 +894,14 @@ const togglePinnedConversation = async nextPinnedState => {
         >
           {{ unreadBadgeLabel }}
         </span>
+      </div>
+      <div
+        v-if="snoozedUntilLabel"
+        data-test-id="conversation-snoozed-until"
+        class="mx-2 mt-0.5 flex min-w-0 items-center gap-1 text-[11px] font-medium leading-4 text-n-amber-11"
+      >
+        <i class="i-lucide-alarm-clock size-3 flex-shrink-0 text-n-amber-10" />
+        <span class="min-w-0 truncate">{{ snoozedUntilLabel }}</span>
       </div>
       <CardLabels
         v-if="showLabelsSection"

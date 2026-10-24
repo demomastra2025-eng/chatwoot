@@ -33,7 +33,17 @@ const route = useRoute();
 
 const allAttachments = useMapGetter('getSelectedChatAttachments');
 const attachmentsLoaded = useMapGetter('getSelectedChatAttachmentsLoaded');
+const attachmentsTotal = useMapGetter('getSelectedChatAttachmentsTotal');
 const selectedChat = useMapGetter('getSelectedChat');
+
+// The store loads every page of the list. When a later page failed, the list is shorter than the real total: the
+// panel then says how many files are loaded and offers to load them again.
+const isLoadingAttachments = ref(false);
+const loadedCount = computed(() => allAttachments.value.length);
+const isPartialList = computed(
+  () =>
+    attachmentsLoaded.value && (attachmentsTotal.value || 0) > loadedCount.value
+);
 
 // The panel is mounted only while the «Файлы» accordion is open, so the
 // attachments of a chat are requested only when someone looks at them, and
@@ -49,23 +59,34 @@ const attachmentTarget = computed(() => {
   return `${type}:${conversationId}`;
 });
 
+const loadAttachments = async () => {
+  const chat = selectedChat.value;
+  const target = attachmentTarget.value;
+  isLoadingAttachments.value = true;
+  try {
+    // The load names the chat and the account, not the route: the list filters of the chat list rewrite the route
+    // query while the pages are still loading, and that must not throw the load away.
+    await store.dispatch('fetchAllAttachments', {
+      conversationId: chat.id,
+      isCommunicationThread: Boolean(chat.is_communication_thread),
+      expectedAccountId: route.params?.accountId,
+      expectedSelectedChatId: chat.id,
+      expectedSelectedChatType: chat.is_communication_thread
+        ? 'communication_thread'
+        : 'conversation',
+    });
+  } finally {
+    // Another chat may have been opened meanwhile and started its own load.
+    if (attachmentTarget.value === target) isLoadingAttachments.value = false;
+  }
+};
+
 watch(
   attachmentTarget,
   target => {
     if (!target) return;
 
-    store.dispatch('fetchAllAttachments', {
-      conversationId: selectedChat.value.id,
-      isCommunicationThread: Boolean(
-        selectedChat.value.is_communication_thread
-      ),
-      expectedRouteFullPath: route.fullPath,
-      expectedAccountId: route.params?.accountId,
-      expectedSelectedChatId: selectedChat.value.id,
-      expectedSelectedChatType: selectedChat.value.is_communication_thread
-        ? 'communication_thread'
-        : 'conversation',
-    });
+    loadAttachments();
   },
   { immediate: true }
 );
@@ -473,6 +494,30 @@ const displayFileMeta = attachment => {
         </li>
       </ul>
     </section>
+
+    <div
+      v-if="isPartialList"
+      data-test-id="shared-files-partial"
+      class="flex items-center justify-between gap-2 px-0.5 text-xs text-n-slate-11"
+    >
+      <span>
+        {{
+          t('CONVERSATION_SIDEBAR.SHARED_FILES.PARTIAL', {
+            loaded: loadedCount,
+            total: attachmentsTotal,
+          })
+        }}
+      </span>
+      <Spinner v-if="isLoadingAttachments" class="size-4 shrink-0" />
+      <NextButton
+        v-else
+        ghost
+        slate
+        xs
+        :label="t('CONVERSATION_SIDEBAR.SHARED_FILES.SHOW_MORE')"
+        @click="loadAttachments"
+      />
+    </div>
 
     <GalleryView
       v-if="showGallery && selectedAttachment"

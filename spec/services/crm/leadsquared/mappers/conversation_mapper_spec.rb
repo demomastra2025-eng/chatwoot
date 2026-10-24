@@ -49,6 +49,15 @@ RSpec.describe Crm::Leadsquared::Mappers::ConversationMapper, locale: :en do
       end
     end
 
+    it 'links to the dialog of the person when the account uses communication threads' do
+      account.enable_features!('communication_threads')
+      thread = conversation.reload.communication_thread
+
+      result = described_class.map_conversation_activity(hook, conversation)
+
+      expect(result).to include("/app/accounts/#{account.id}/communication_threads/#{thread.display_id}")
+    end
+
     it 'formats time according to hook timezone setting' do
       travel_to(Time.zone.parse('2024-01-01 18:00:00 UTC')) do
         result = described_class.map_conversation_activity(hook_with_pst, conversation)

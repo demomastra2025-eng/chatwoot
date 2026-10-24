@@ -111,6 +111,11 @@ const getters = {
     fullyLoadedAttachments = {},
   }) =>
     selectedChatId !== null && Boolean(fullyLoadedAttachments[selectedChatId]),
+  // Real number of attachments of the open chat, 0 while it is not known.
+  getSelectedChatAttachmentsTotal: ({
+    selectedChatId,
+    attachmentTotals = {},
+  }) => attachmentTotals[selectedChatId] || 0,
   getChatListFilters: ({ conversationFilters }) => conversationFilters,
   getLastEmailInSelectedChat: (stage, _getters) => {
     const selectedChat = _getters.getSelectedChat;

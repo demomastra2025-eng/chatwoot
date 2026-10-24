@@ -493,6 +493,318 @@ describe('conversation actions', () => {
       });
     });
 
+    describe('when the person has more attachments than one page', () => {
+      const conversationState = {
+        allConversations: [{ id: 7 }],
+        attachments: {},
+        selectedChatId: 7,
+        selectedChatType: 'conversation',
+      };
+      const page = (ids, total) => ({
+        data: {
+          payload: ids.map(id => ({ id, file_type: 'file' })),
+          meta: { total_count: total },
+        },
+      });
+
+      it('loads every page of a conversation and commits the whole list with its real total', async () => {
+        const commit = vi.fn();
+        const request = vi
+          .spyOn(ConversationApi, 'getAllAttachments')
+          .mockResolvedValueOnce(page([1, 2], 5))
+          .mockResolvedValueOnce(page([3, 4], 5))
+          .mockResolvedValueOnce(page([5], 5));
+
+        const result = await actions.fetchAllAttachments(
+          { commit, state: conversationState },
+          7
+        );
+
+        expect(request).toHaveBeenNthCalledWith(1, 7);
+        expect(request).toHaveBeenNthCalledWith(2, 7, { page: 2 });
+        expect(request).toHaveBeenNthCalledWith(3, 7, { page: 3 });
+        expect(request).toHaveBeenCalledTimes(3);
+        expect(result.map(item => item.id)).toEqual([1, 2, 3, 4, 5]);
+        expect(commit).toHaveBeenLastCalledWith(types.SET_ALL_ATTACHMENTS, {
+          id: 7,
+          data: result,
+          total: 5,
+        });
+      });
+
+      it('shows each page as soon as it is loaded', async () => {
+        const commit = vi.fn();
+        const state = { ...conversationState, attachments: {} };
+        let finishSecondPage;
+        vi.spyOn(ConversationApi, 'getAllAttachments')
+          .mockResolvedValueOnce(page([1, 2], 4))
+          .mockReturnValueOnce(
+            new Promise(resolve => {
+              finishSecondPage = () => resolve(page([3, 4], 4));
+            })
+          );
+
+        const request = actions.fetchAllAttachments({ commit, state }, 7);
+        await vi.waitFor(() => expect(finishSecondPage).toBeDefined());
+
+        expect(commit).toHaveBeenCalledTimes(1);
+        expect(commit).toHaveBeenCalledWith(types.SET_ALL_ATTACHMENTS, {
+          id: 7,
+          data: [
+            { id: 1, file_type: 'file' },
+            { id: 2, file_type: 'file' },
+          ],
+          total: 4,
+        });
+
+        finishSecondPage();
+        await request;
+        expect(commit).toHaveBeenLastCalledWith(
+          types.SET_ALL_ATTACHMENTS,
+          expect.objectContaining({ total: 4 })
+        );
+        expect(commit.mock.calls.at(-1)[1].data).toHaveLength(4);
+      });
+
+      describe('while the pages are loading', () => {
+        const buildContext = (fullPath = '/app/accounts/3/conversations/7') => {
+          const state = {
+            allConversations: [{ id: 7 }],
+            attachments: {},
+            attachmentTotals: {},
+            fullyLoadedAttachments: {},
+            selectedChatId: 7,
+            selectedChatType: 'conversation',
+          };
+          const rootState = {
+            route: { fullPath, params: { accountId: '3' } },
+          };
+          const commit = vi.fn((type, payload) =>
+            mutations[type](state, payload)
+          );
+          return { state, rootState, commit };
+        };
+        const identity = {
+          conversationId: 7,
+          isCommunicationThread: false,
+          expectedAccountId: '3',
+          expectedSelectedChatId: 7,
+          expectedSelectedChatType: 'conversation',
+        };
+
+        it('keeps loading when only the route query changes', async () => {
+          const { state, rootState, commit } = buildContext(
+            '/app/accounts/3/conversations/7?status=open'
+          );
+          const request = vi
+            .spyOn(ConversationApi, 'getAllAttachments')
+            .mockResolvedValueOnce(page([1, 2], 4))
+            .mockImplementationOnce(async () => {
+              // The agent switches a list filter while the next page is on its way.
+              rootState.route.fullPath =
+                '/app/accounts/3/conversations/7?status=pending';
+              return page([3, 4], 4);
+            });
+
+          // The shared files panel names the chat and the account, but not the route.
+          await actions.fetchAllAttachments(
+            { commit, state, rootState },
+            identity
+          );
+
+          expect(request).toHaveBeenCalledTimes(2);
+          expect(state.attachments[7].map(item => item.id)).toEqual([
+            1, 2, 3, 4,
+          ]);
+          expect(state.fullyLoadedAttachments[7]).toBe(true);
+        });
+
+        it('stops loading and keeps the loaded pages when another chat is opened', async () => {
+          const { state, rootState, commit } = buildContext();
+          const request = vi
+            .spyOn(ConversationApi, 'getAllAttachments')
+            .mockResolvedValueOnce(page([1, 2], 6))
+            .mockImplementationOnce(async () => {
+              state.selectedChatId = 8;
+              return page([3, 4], 6);
+            });
+
+          await actions.fetchAllAttachments(
+            { commit, state, rootState },
+            identity
+          );
+
+          expect(request).toHaveBeenCalledTimes(2);
+          expect(state.attachments[7].map(item => item.id)).toEqual([1, 2]);
+        });
+
+        it('keeps an attachment that the realtime feed added and counts it in the total', async () => {
+          const { state, rootState, commit } = buildContext();
+          vi.spyOn(ConversationApi, 'getAllAttachments')
+            .mockResolvedValueOnce(page([4, 3], 4))
+            .mockImplementationOnce(async () => {
+              // A new file arrives: it is first in the list, so the later pages shift by one.
+              state.attachments[7] = [...state.attachments[7], { id: 9 }];
+              state.attachmentTotals = { 7: 5 };
+              return page([3, 2], 4);
+            })
+            .mockResolvedValueOnce(page([1], 4));
+
+          await actions.fetchAllAttachments(
+            { commit, state, rootState },
+            identity
+          );
+
+          expect(state.attachments[7].map(item => item.id).sort()).toEqual([
+            1, 2, 3, 4, 9,
+          ]);
+          expect(state.attachmentTotals[7]).toBe(5);
+        });
+
+        it('drops an attachment that is gone from the server once every page is loaded', async () => {
+          const { state, rootState, commit } = buildContext();
+          state.attachments[7] = [{ id: 1 }, { id: 2 }, { id: 50 }];
+          vi.spyOn(ConversationApi, 'getAllAttachments')
+            .mockResolvedValueOnce(page([1, 2], 3))
+            .mockResolvedValueOnce(page([3], 3));
+
+          await actions.fetchAllAttachments(
+            { commit, state, rootState },
+            identity
+          );
+
+          expect(state.attachments[7].map(item => item.id)).toEqual([1, 2, 3]);
+        });
+
+        it('keeps what the store already had when a later page fails', async () => {
+          const { state, rootState, commit } = buildContext();
+          state.attachments[7] = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }];
+          vi.spyOn(ConversationApi, 'getAllAttachments')
+            .mockResolvedValueOnce(page([1, 2], 4))
+            .mockRejectedValueOnce(new Error('timeout'));
+
+          await actions.fetchAllAttachments(
+            { commit, state, rootState },
+            identity
+          );
+
+          expect(state.attachments[7].map(item => item.id).sort()).toEqual([
+            1, 2, 3, 4,
+          ]);
+          expect(state.attachmentTotals[7]).toBe(4);
+        });
+      });
+
+      it('loads every page of a communication thread', async () => {
+        const commit = vi.fn();
+        const request = vi
+          .spyOn(CommunicationThreadApi, 'attachments')
+          .mockResolvedValueOnce(page([1, 2], 3))
+          .mockResolvedValueOnce(page([3], 3));
+
+        const result = await actions.fetchAllAttachments(
+          { commit, state: conversationState },
+          { conversationId: 7, isCommunicationThread: true }
+        );
+
+        expect(request).toHaveBeenNthCalledWith(1, 7);
+        expect(request).toHaveBeenNthCalledWith(2, 7, { page: 2 });
+        expect(result.map(item => item.id)).toEqual([1, 2, 3]);
+      });
+
+      it('does not list an attachment twice when a new one shifted the pages', async () => {
+        const commit = vi.fn();
+        vi.spyOn(ConversationApi, 'getAllAttachments')
+          .mockResolvedValueOnce(page([3, 2], 4))
+          .mockResolvedValueOnce(page([2, 1], 4));
+
+        const result = await actions.fetchAllAttachments(
+          { commit, state: conversationState },
+          7
+        );
+
+        expect(result.map(item => item.id)).toEqual([3, 2, 1]);
+      });
+
+      it('keeps the pages loaded so far when a later page fails', async () => {
+        const commit = vi.fn();
+        vi.spyOn(ConversationApi, 'getAllAttachments')
+          .mockResolvedValueOnce(page([1, 2], 5))
+          .mockRejectedValueOnce(new Error('timeout'));
+
+        const result = await actions.fetchAllAttachments(
+          { commit, state: conversationState },
+          7
+        );
+
+        expect(result.map(item => item.id)).toEqual([1, 2]);
+        expect(commit).toHaveBeenCalledWith(types.SET_ALL_ATTACHMENTS, {
+          id: 7,
+          data: result,
+          total: 5,
+        });
+      });
+
+      it('stops on an empty page instead of looping on a total that is too high', async () => {
+        const commit = vi.fn();
+        const request = vi
+          .spyOn(ConversationApi, 'getAllAttachments')
+          .mockResolvedValueOnce(page([1, 2], 9))
+          .mockResolvedValueOnce(page([], 9));
+
+        const result = await actions.fetchAllAttachments(
+          { commit, state: conversationState },
+          7
+        );
+
+        expect(request).toHaveBeenCalledTimes(2);
+        expect(result.map(item => item.id)).toEqual([1, 2]);
+      });
+
+      it('requests one page when the response has no total', async () => {
+        const commit = vi.fn();
+        const request = vi
+          .spyOn(ConversationApi, 'getAllAttachments')
+          .mockResolvedValue({ data: { payload: [{ id: 1 }] } });
+
+        await actions.fetchAllAttachments(
+          { commit, state: conversationState },
+          7
+        );
+
+        expect(request).toHaveBeenCalledTimes(1);
+        expect(commit).toHaveBeenCalledWith(types.SET_ALL_ATTACHMENTS, {
+          id: 7,
+          data: [{ id: 1 }],
+        });
+      });
+
+      it('keeps the known total when the first page fails', async () => {
+        const commit = vi.fn();
+        vi.spyOn(ConversationApi, 'getAllAttachments').mockRejectedValue(
+          new Error('offline')
+        );
+
+        await actions.fetchAllAttachments(
+          {
+            commit,
+            state: {
+              ...conversationState,
+              attachments: { 7: [{ id: 1 }] },
+              attachmentTotals: { 7: 4 },
+            },
+          },
+          7
+        );
+
+        expect(commit).toHaveBeenCalledWith(types.SET_ALL_ATTACHMENTS, {
+          id: 7,
+          data: [{ id: 1 }],
+          total: 4,
+        });
+      });
+    });
+
     it('returns the permission-scoped attachment payload for failure recovery', async () => {
       const commit = vi.fn();
       const attachments = [{ id: 44, file_purged: true, data_url: '' }];

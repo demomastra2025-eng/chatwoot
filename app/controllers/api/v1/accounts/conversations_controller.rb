@@ -66,7 +66,7 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
                                     { conversation: { contact_inbox: :channel_profile } }
                                   ]
                                 )
-                                .order(created_at: :desc)
+                                .order(created_at: :desc, id: :desc)
                                 .page(attachment_params[:page])
                                 .per(ATTACHMENT_RESULTS_PER_PAGE)
   end

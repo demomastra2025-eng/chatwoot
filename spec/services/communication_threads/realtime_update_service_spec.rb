@@ -95,6 +95,33 @@ RSpec.describe CommunicationThreads::RealtimeUpdateService do
       end
     end
 
+    it 'broadcasts the earliest snooze time among the snoozed channels' do
+      account = create(:account).tap { |record| record.enable_features!('communication_threads') }
+      contact = create(:contact, account: account)
+      first_inbox = create(:inbox, account: account)
+      second_inbox = create(:inbox, account: account)
+      user = create(:user, account: account, role: :agent)
+      [first_inbox, second_inbox].each { |inbox| create(:inbox_member, inbox: inbox, user: user) }
+      woken_first = 1.day.from_now.change(usec: 0)
+      first = create(:conversation, account: account, contact: contact, inbox: first_inbox)
+      second = create(:conversation, account: account, contact: contact, inbox: second_inbox)
+      first.update!(status: :snoozed, snoozed_until: 3.days.from_now.change(usec: 0))
+      second.update!(status: :snoozed, snoozed_until: woken_first)
+      broadcasts = []
+      allow(ActionCableBroadcastJob).to receive(:perform_later) { |members, event, payload| broadcasts << [members, event, payload] }
+
+      described_class.new(
+        communication_thread_id: first.reload.communication_thread.id,
+        source_conversation_id: first.id,
+        source_event: 'conversation.updated'
+      ).perform
+
+      _members, _event, payload = broadcasts.find do |members, event, _payload|
+        event == 'communication_thread.updated' && members.include?(user.pubsub_token)
+      end
+      expect(payload[:snoozed_until]).to eq(woken_first)
+    end
+
     it 'does not broadcast a source conversation hidden by a custom role' do
       account = create(:account).tap { |record| record.enable_features!('communication_threads') }
       inbox = create(:inbox, account: account)

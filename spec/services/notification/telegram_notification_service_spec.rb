@@ -27,4 +27,25 @@ RSpec.describe Notification::TelegramNotificationService do
       text: a_string_including(notification.push_message_title)
     )
   end
+
+  it 'links to the conversation when the account does not use communication threads' do
+    described_class.new(notification: notification).perform
+
+    expect(TelegramNotification::BotClient).to have_received(:send_message).with(
+      chat_id: '12345',
+      text: a_string_including("/app/accounts/#{account.id}/conversations/#{conversation.display_id}")
+    )
+  end
+
+  it 'links to the dialog of the person when the account uses communication threads' do
+    account.enable_features!('communication_threads')
+    thread = conversation.reload.communication_thread
+
+    described_class.new(notification: notification).perform
+
+    expect(TelegramNotification::BotClient).to have_received(:send_message).with(
+      chat_id: '12345',
+      text: a_string_including("/app/accounts/#{account.id}/communication_threads/#{thread.display_id}")
+    )
+  end
 end

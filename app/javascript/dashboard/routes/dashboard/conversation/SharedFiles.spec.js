@@ -9,14 +9,23 @@ vi.mock('vue-router', () => ({
   }),
 }));
 
-const buildStore = chat => {
+const attachmentsOf = count =>
+  Array.from({ length: count }, (_, index) => ({
+    id: index + 1,
+    file_type: 'file',
+    data_url: `https://files.test/${index + 1}.pdf`,
+    created_at: index + 1,
+  }));
+
+const buildStore = (chat, { attachments = [], total = 0 } = {}) => {
   const fetchAllAttachments = vi.fn();
   const store = createStore({
     state: { chat },
     getters: {
       getSelectedChat: state => state.chat,
-      getSelectedChatAttachments: () => [],
+      getSelectedChatAttachments: () => attachments,
       getSelectedChatAttachmentsLoaded: () => true,
+      getSelectedChatAttachmentsTotal: () => total,
     },
     mutations: {
       setChat(state, nextChat) {
@@ -31,7 +40,7 @@ const buildStore = chat => {
   return { store, fetchAllAttachments };
 };
 
-const mountSharedFiles = store =>
+const mountSharedFiles = (store, stubs = {}) =>
   mount(SharedFiles, {
     global: {
       plugins: [store],
@@ -41,6 +50,7 @@ const mountSharedFiles = store =>
         FileIcon: true,
         NextButton: true,
         Spinner: true,
+        ...stubs,
       },
     },
   });
@@ -60,6 +70,26 @@ describe('SharedFiles', () => {
         conversationId: 7,
         isCommunicationThread: true,
       })
+    );
+  });
+
+  it('names the chat and the account but not the route, so a list filter change cannot cancel the load', () => {
+    const { store, fetchAllAttachments } = buildStore({
+      id: 7,
+      is_communication_thread: true,
+    });
+
+    mountSharedFiles(store);
+
+    expect(fetchAllAttachments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedAccountId: '3',
+        expectedSelectedChatId: 7,
+        expectedSelectedChatType: 'communication_thread',
+      })
+    );
+    expect(fetchAllAttachments.mock.calls[0][0]).not.toHaveProperty(
+      'expectedRouteFullPath'
     );
   });
 
@@ -90,6 +120,58 @@ describe('SharedFiles', () => {
     await flushPromises();
 
     expect(fetchAllAttachments).toHaveBeenCalledTimes(1);
+  });
+
+  it('says how many files are loaded when the list is shorter than the real total', () => {
+    const { store } = buildStore(
+      { id: 7, is_communication_thread: true },
+      { attachments: attachmentsOf(100), total: 340 }
+    );
+
+    const wrapper = mountSharedFiles(store);
+
+    expect(
+      wrapper.find('[data-test-id="shared-files-partial"]').text()
+    ).toMatch(/100.*340|340.*100/);
+  });
+
+  it('shows no shortfall note when every attachment is loaded', () => {
+    const { store } = buildStore(
+      { id: 7, is_communication_thread: true },
+      { attachments: attachmentsOf(100), total: 100 }
+    );
+
+    const wrapper = mountSharedFiles(store);
+
+    expect(wrapper.find('[data-test-id="shared-files-partial"]').exists()).toBe(
+      false
+    );
+  });
+
+  it('loads the rest again from the shortfall note', async () => {
+    const { store, fetchAllAttachments } = buildStore(
+      { id: 7, is_communication_thread: true },
+      { attachments: attachmentsOf(100), total: 340 }
+    );
+    const wrapper = mountSharedFiles(store, {
+      NextButton: { template: '<button><slot/></button>' },
+    });
+    // The first load is still running right after mount and shows a spinner instead of the button.
+    await flushPromises();
+    fetchAllAttachments.mockClear();
+
+    await wrapper
+      .find('[data-test-id="shared-files-partial"] button')
+      .trigger('click');
+    await flushPromises();
+
+    expect(fetchAllAttachments).toHaveBeenCalledTimes(1);
+    expect(fetchAllAttachments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 7,
+        isCommunicationThread: true,
+      })
+    );
   });
 
   it('does not request anything without an open chat', () => {

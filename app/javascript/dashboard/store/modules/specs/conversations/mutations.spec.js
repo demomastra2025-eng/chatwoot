@@ -775,6 +775,64 @@ describe('#mutations', () => {
     });
   });
 
+  describe('attachment totals', () => {
+    it('stores the real total reported with the full list', () => {
+      const state = { attachments: {}, attachmentTotals: {} };
+
+      mutations[types.SET_ALL_ATTACHMENTS](state, {
+        id: 1,
+        data: [{ id: 1 }],
+        total: 120,
+      });
+
+      expect(state.attachmentTotals).toEqual({ 1: 120 });
+    });
+
+    it('forgets a stale total when the list is loaded without one', () => {
+      const state = { attachments: {}, attachmentTotals: { 1: 120, 2: 5 } };
+
+      mutations[types.SET_ALL_ATTACHMENTS](state, { id: 1, data: [] });
+
+      expect(state.attachmentTotals).toEqual({ 2: 5 });
+    });
+
+    it('moves the total with attachments that arrive or are deleted later', () => {
+      const state = {
+        attachments: { 1: [{ id: 1, message_id: 10 }] },
+        attachmentTotals: { 1: 1 },
+      };
+
+      mutations[types.ADD_CONVERSATION_ATTACHMENTS](state, {
+        conversation_id: 1,
+        status: 'sent',
+        attachments: [
+          { id: 1, message_id: 10 },
+          { id: 2, message_id: 11 },
+        ],
+      });
+      expect(state.attachmentTotals[1]).toBe(2);
+
+      mutations[types.DELETE_CONVERSATION_ATTACHMENTS](state, {
+        conversation_id: 1,
+        status: 'sent',
+        id: 11,
+      });
+      expect(state.attachmentTotals[1]).toBe(1);
+    });
+
+    it('does not invent a total for a list whose total is unknown', () => {
+      const state = { attachments: {}, attachmentTotals: {} };
+
+      mutations[types.ADD_CONVERSATION_ATTACHMENTS](state, {
+        conversation_id: 1,
+        status: 'sent',
+        attachments: [{ id: 2, message_id: 11 }],
+      });
+
+      expect(state.attachmentTotals).toEqual({});
+    });
+  });
+
   describe('#ADD_CONVERSATION_ATTACHMENTS', () => {
     it('add conversation attachments', () => {
       const state = {

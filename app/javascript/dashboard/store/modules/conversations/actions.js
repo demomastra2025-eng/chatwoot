@@ -481,6 +481,27 @@ export const hasMessageFailedWithExternalError = pendingMessage => {
   return status === MESSAGE_STATUS.FAILED && externalError !== '';
 };
 
+// The attachments endpoint returns 100 rows a page. The cap only stops a runaway loop on a broken total.
+const MAX_ATTACHMENT_PAGES = 500;
+
+const toCount = value => {
+  if (value === undefined || value === null || value === '') return undefined;
+  const count = Number(value);
+  return Number.isFinite(count) ? count : undefined;
+};
+
+const optionalTotal = total => (total === undefined ? {} : { total });
+
+// A later page extends the list; an attachment that is already known is replaced by its fresher copy.
+const mergeAttachmentPage = (attachments, pageAttachments) => {
+  const pageById = new Map(pageAttachments.map(item => [item.id, item]));
+  const known = new Set(attachments.map(item => item.id));
+  return [
+    ...attachments.map(item => pageById.get(item.id) || item),
+    ...pageAttachments.filter(item => !known.has(item.id)),
+  ];
+};
+
 // actions
 const actions = {
   invalidateConversationListRequests({ commit }) {
@@ -949,14 +970,68 @@ const actions = {
     };
 
     if (!isExpectedContextCurrent()) return attachments;
-    const attachmentsApi = isThreadAttachmentTarget
-      ? CommunicationThreadApi.attachments(conversationId)
-      : ConversationApi.getAllAttachments(conversationId);
+    const fetchPage = page => {
+      // The first page is the default one, so only later pages name the page.
+      const pageOptions = page > 1 ? [{ page }] : [];
+      return isThreadAttachmentTarget
+        ? CommunicationThreadApi.attachments(conversationId, ...pageOptions)
+        : ConversationApi.getAllAttachments(conversationId, ...pageOptions);
+    };
+    let totalCount;
+    let isComplete = false;
+
+    // The realtime feed adds new attachments to the store while the pages load. They are the newest ones, so they come
+    // before every page that is fetched later and are never on one: they are kept. What the store held before is
+    // replaced only when every page is loaded.
+    const idsAtStart = new Set(
+      (state.attachments?.[conversationId] || []).map(({ id }) => id)
+    );
+    const commitLoaded = () => {
+      if (!isExpectedContextCurrent()) return;
+
+      const fetchedIds = new Set(attachments.map(({ id }) => id));
+      const kept = (state.attachments?.[conversationId] || []).filter(
+        ({ id }) => !fetchedIds.has(id) && !(isComplete && idsAtStart.has(id))
+      );
+      const data = [...attachments, ...kept];
+      commit(types.SET_ALL_ATTACHMENTS, {
+        id: conversationId,
+        data,
+        ...optionalTotal(
+          totalCount === undefined
+            ? undefined
+            : Math.max(totalCount, data.length)
+        ),
+      });
+    };
 
     try {
-      const { data } = await attachmentsApi;
+      const { data } = await fetchPage(1);
       attachments = data.payload;
+      totalCount = toCount(data.meta?.total_count);
       requestSucceeded = true;
+
+      // The endpoint is paged, so a person with a long history has more than the first page. Keep loading until
+      // every attachment is here, and show each page as soon as it is loaded. A failing later page leaves the pages
+      // loaded so far; the panel reports the shortfall. Only the chat itself ends the loop: a change of the route
+      // query (a list filter) must not throw away a load that is half done.
+      let page = 1;
+      while (
+        totalCount !== undefined &&
+        attachments.length < totalCount &&
+        page < MAX_ATTACHMENT_PAGES &&
+        isExpectedContextCurrent()
+      ) {
+        commitLoaded();
+        page += 1;
+        // eslint-disable-next-line no-await-in-loop
+        const { data: pageData } = await fetchPage(page);
+        const pageAttachments = pageData.payload || [];
+        if (!pageAttachments.length) break;
+
+        attachments = mergeAttachmentPage(attachments, pageAttachments);
+      }
+      isComplete = true;
     } catch (error) {
       // in case of error, log the error and continue
       Sentry.setContext('Conversation', {
@@ -969,12 +1044,13 @@ const actions = {
     } finally {
       // A delayed request must not replace the current chat's attachments after
       // the account, route, or selected chat changes.
-      if (isExpectedContextCurrent()) {
+      if (requestSucceeded) {
+        commitLoaded();
+      } else if (isExpectedContextCurrent()) {
         commit(types.SET_ALL_ATTACHMENTS, {
           id: conversationId,
-          data: requestSucceeded
-            ? attachments
-            : state.attachments?.[conversationId] || [],
+          data: state.attachments?.[conversationId] || [],
+          ...optionalTotal(state.attachmentTotals?.[conversationId]),
         });
       }
     }

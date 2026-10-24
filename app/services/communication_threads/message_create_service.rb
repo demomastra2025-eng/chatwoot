@@ -147,6 +147,8 @@ class CommunicationThreads::MessageCreateService
   end
 
   def validate_template_requirement!(capability)
+    # A private note never reaches the customer, so the WhatsApp Cloud 24-hour template rule does not apply to it.
+    return if private_message?
     return unless capability[:requires_template] && params[:template_params].blank?
 
     raise Error, 'Selected channel requires a template message'

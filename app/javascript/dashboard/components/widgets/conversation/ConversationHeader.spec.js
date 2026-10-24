@@ -6,6 +6,11 @@ import conversationRu from 'dashboard/i18n/locale/ru/conversation.json';
 import schedulingRu from 'dashboard/i18n/locale/ru/scheduling.json';
 import ConversationHeader from './ConversationHeader.vue';
 import { rememberConversationListReturnPath } from 'dashboard/helper/conversationListReturnContext';
+import { snoozedReopenTime } from 'dashboard/helper/snoozeHelpers';
+
+const storeState = vi.hoisted(() => ({
+  selectedChat: { id: 7, status: 'open' },
+}));
 
 const translationMessages = {
   ...chatlistRu,
@@ -56,7 +61,9 @@ vi.mock('vuex', () => ({
   createStore: () => ({}),
   useStore: () => ({
     getters: {
-      getSelectedChat: { id: 7, status: 'open' },
+      get getSelectedChat() {
+        return storeState.selectedChat;
+      },
       getCurrentAccountId: 530,
       'contacts/getContact': () => ({
         id: 1,
@@ -123,6 +130,7 @@ const mountComponent = props =>
 
 describe('ConversationHeader', () => {
   afterEach(() => {
+    storeState.selectedChat = { id: 7, status: 'open' };
     window.sessionStorage.clear();
     window.history.replaceState({}, '', '/');
   });
@@ -163,6 +171,41 @@ describe('ConversationHeader', () => {
     expect(
       wrapper.findComponent({ name: 'BackButton' }).attributes('back-url')
     ).toBe('/app/accounts/530/communication_threads');
+  });
+
+  it('shows when a snoozed person wakes up', () => {
+    storeState.selectedChat = {
+      id: 7,
+      status: 'snoozed',
+      snoozed_until: '2026-10-30T10:00:00.000Z',
+    };
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.text()).toContain(
+      `Отложено до ${snoozedReopenTime('2026-10-30T10:00:00.000Z')}`
+    );
+    expect(wrapper.text()).not.toContain('до следующего ответа');
+  });
+
+  it('says the person is snoozed until the next reply when there is no date', () => {
+    storeState.selectedChat = { id: 7, status: 'snoozed', snoozed_until: null };
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.text()).toContain('Отложено до следующего ответа');
+  });
+
+  it('does not show a snooze date for a person who is not snoozed', () => {
+    storeState.selectedChat = {
+      id: 7,
+      status: 'open',
+      snoozed_until: '2026-10-30T10:00:00.000Z',
+    };
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.text()).not.toContain('Отложено до');
   });
 
   it('shows communication thread contact identities instead of target inbox names', () => {
@@ -269,7 +312,9 @@ describe('ConversationHeader', () => {
     );
 
     expect(contextRow.exists()).toBe(true);
-    expect(titleRow.find('[data-test-id="conversation-header-context-row"]').exists()).toBe(true);
+    expect(
+      titleRow.find('[data-test-id="conversation-header-context-row"]').exists()
+    ).toBe(true);
     expect(contextRow.text()).not.toContain('CONVERSATION.HEADER');
     expect(stages.text()).not.toContain('Сделка:');
     expect(stages.text()).toContain('Консультация');
@@ -277,7 +322,7 @@ describe('ConversationHeader', () => {
     expect(stageDot.exists()).toBe(true);
     expect(stageDot.classes()).toContain('rounded-full');
     expect(stageDot.classes()).not.toContain('w-0.5');
-    expect( stages.html()).toContain('background-color: rgb(34, 197, 94)');
+    expect(stages.html()).toContain('background-color: rgb(34, 197, 94)');
     expect(statuses.text()).not.toContain('Запись:');
     expect(statuses.text()).toContain('Назначен');
     expect(statuses.text()).toContain('+3');

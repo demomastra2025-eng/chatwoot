@@ -3,7 +3,7 @@ class Api::V1::Accounts::Companies::ConversationsController < Api::V1::Accounts:
 
   def index
     conversations = Current.account.conversations.includes(
-      :assignee, :contact, :inbox, :taggings
+      :assignee, :contact, :inbox, :taggings, :communication_thread
     ).where(contact_id: effective_company_contact_ids)
 
     @conversations = Conversations::PermissionFilterService.new(

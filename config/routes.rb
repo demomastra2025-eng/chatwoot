@@ -906,6 +906,7 @@ Rails.application.routes.draw do
   resource :app, only: [:index] do
     resources :accounts do
       resources :conversations, only: [:show]
+      resources :communication_threads, only: [:show]
     end
   end
 

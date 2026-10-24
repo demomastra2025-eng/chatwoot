@@ -78,12 +78,13 @@ class Api::V1::Accounts::Integrations::LinearController < Api::V1::Accounts::Bas
   end
 
   def linked_issues
-    issues = linear_processor_service.linked_issues(conversation_link)
+    results = linked_issue_links.map { |link| linear_processor_service.linked_issues(link) }
+    failed = results.find { |result| result[:error] }
 
-    if issues[:error]
-      render json: { error: issues[:error] }, status: :unprocessable_content
+    if failed
+      render json: { error: failed[:error] }, status: :unprocessable_content
     else
-      render json: issues[:data], status: :ok
+      render json: results.flat_map { |result| result[:data] }.uniq { |issue| issue['id'] }, status: :ok
     end
   end
 
@@ -102,7 +103,14 @@ class Api::V1::Accounts::Integrations::LinearController < Api::V1::Accounts::Bas
   private
 
   def conversation_link
-    "#{ENV.fetch('FRONTEND_URL', nil)}/app/accounts/#{Current.account.id}/conversations/#{@conversation.display_id}"
+    "#{ENV.fetch('FRONTEND_URL', nil)}#{Conversations::DashboardLink.for(@conversation).path}"
+  end
+
+  # Linear finds an issue by the exact URL it was linked under. Issues linked before the account used communication
+  # threads sit under the conversation URL, newer ones under the dialog URL: look under both.
+  def linked_issue_links
+    conversation_only = Conversations::DashboardLink.new(account_id: @conversation.account_id, conversation_display_id: @conversation.display_id)
+    [Conversations::DashboardLink.for(@conversation), conversation_only].map { |link| "#{ENV.fetch('FRONTEND_URL', nil)}#{link.path}" }.uniq
   end
 
   def fetch_conversation

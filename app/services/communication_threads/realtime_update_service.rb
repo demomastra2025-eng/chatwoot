@@ -110,7 +110,8 @@ class CommunicationThreads::RealtimeUpdateService
     {
       status: communication_thread.status, priority: communication_thread.priority,
       assignee_id: communication_thread.assignee_id, team_id: communication_thread.team_id,
-      labels: label_list(communication_thread, links), scheduling_appointment_statuses: scheduling_appointment_statuses(communication_thread)
+      labels: label_list(communication_thread, links), scheduling_appointment_statuses: scheduling_appointment_statuses(communication_thread),
+      snoozed_until: CommunicationThread.snoozed_until_for(links.filter_map(&:conversation))
     }
   end
 

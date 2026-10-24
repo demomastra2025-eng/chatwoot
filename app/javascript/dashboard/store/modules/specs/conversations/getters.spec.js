@@ -520,6 +520,25 @@ describe('#getters', () => {
     });
   });
 
+  describe('#getSelectedChatAttachmentsTotal', () => {
+    it('returns the real total of the selected chat', () => {
+      const state = { selectedChatId: 1, attachmentTotals: { 1: 240, 2: 3 } };
+      expect(getters.getSelectedChatAttachmentsTotal(state)).toBe(240);
+    });
+
+    it('returns 0 while the total is not known', () => {
+      expect(
+        getters.getSelectedChatAttachmentsTotal({
+          selectedChatId: 1,
+          attachmentTotals: {},
+        })
+      ).toBe(0);
+      expect(
+        getters.getSelectedChatAttachmentsTotal({ selectedChatId: 1 })
+      ).toBe(0);
+    });
+  });
+
   describe('#getSelectedChatAttachmentsLoaded', () => {
     it('returns true when attachments have been fetched for the selected chat', () => {
       const state = {
