@@ -325,6 +325,98 @@ RSpec.describe CommunicationThreads::SingleOpenDialogService do
     end
   end
 
+  # The refresh of a thread holds the contact advisory lock until its transaction ends, and every other caller takes the row of
+  # a conversation first and that lock second. A merge that locked the rows of the open conversations under that lock would be
+  # the reverse order, and deadlocks with a message of the same person (the intake of a call runs inside transactions).
+  describe 'inside a transaction of the caller' do
+    let(:whatsapp) { open_dialog(whatsapp_inbox, minutes_ago: 10) }
+    let(:voice) { open_dialog(voice_inbox, minutes_ago: 1) }
+
+    def refresh(conversation)
+      Conversations::CommunicationThreadResolver.new(conversation: conversation).perform
+    end
+
+    def capture_sql
+      statements = []
+      subscription = ActiveSupport::Notifications.subscribe('sql.active_record') { |*, payload| statements << payload[:sql] }
+      yield statements
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscription)
+    end
+
+    it 'waits for the commit and takes no row lock after the advisory lock of the refresh', :aggregate_failures do
+      whatsapp
+      voice
+      inside = nil
+      locks_after_advisory = nil
+
+      capture_sql do |statements|
+        ActiveRecord::Base.transaction do
+          refresh(voice)
+          advisory = statements.index { |sql| sql.include?('pg_advisory_xact_lock') }
+          locks_after_advisory = statements[advisory..].grep(/FOR UPDATE/i)
+          inside = statuses(whatsapp, voice)
+        end
+      end
+
+      expect(locks_after_advisory).to be_empty
+      expect(inside).to eq(%w[open open])
+      expect(statuses(whatsapp, voice)).to eq(%w[open resolved])
+    end
+
+    it 'waits for the outermost commit when the refresh runs in a savepoint, as the steps of a call intake do', :aggregate_failures do
+      whatsapp
+      voice
+      in_savepoint = nil
+
+      ActiveRecord::Base.transaction do
+        ActiveRecord::Base.transaction(requires_new: true) { refresh(voice) }
+        in_savepoint = statuses(whatsapp, voice)
+      end
+
+      expect(in_savepoint).to eq(%w[open open])
+      expect(statuses(whatsapp, voice)).to eq(%w[open resolved])
+    end
+
+    it 'merges nothing when the transaction of the caller is rolled back', :aggregate_failures do
+      whatsapp
+      voice
+      clear_enqueued_jobs
+
+      ActiveRecord::Base.transaction do
+        refresh(voice)
+        raise ActiveRecord::Rollback
+      end
+
+      expect(statuses(whatsapp, voice)).to eq(%w[open open])
+      expect(enqueued_jobs).to be_empty
+    end
+
+    it 'decides on the committed state: a dialog that was resolved meanwhile is left alone', :aggregate_failures do
+      whatsapp
+      voice
+
+      ActiveRecord::Base.transaction do
+        refresh(voice)
+        whatsapp.update_columns(status: Conversation.statuses.fetch('resolved')) # rubocop:disable Rails/SkipsModelValidations
+      end
+
+      expect(statuses(whatsapp, voice)).to eq(%w[resolved open])
+    end
+
+    it 'never breaks the transaction of the caller when the merge fails', :aggregate_failures do
+      whatsapp
+      voice
+      allow_any_instance_of(described_class).to receive(:perform).and_raise(ActiveRecord::StatementInvalid, 'boom') # rubocop:disable RSpec/AnyInstance
+      allow(Rails.logger).to receive(:warn)
+
+      expect { ActiveRecord::Base.transaction { refresh(voice) } }.not_to raise_error
+
+      expect(Rails.logger).to have_received(:warn).with(/single open dialog skipped/).at_least(:once)
+      expect(statuses(whatsapp, voice)).to eq(%w[open open])
+    end
+  end
+
   describe 'dry run' do
     it 'returns the plan and writes nothing', :aggregate_failures do
       open_dialog(whatsapp_inbox, minutes_ago: 10)

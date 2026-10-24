@@ -25,17 +25,30 @@ class CommunicationThreads::SingleOpenDialogService
   end
 
   # Called by the thread resolver after every refresh, so it costs nothing unless two or more of the given conversations
-  # are open. A failure must never break the message or status change that triggered the refresh: it is logged and the
-  # thread is returned as it was. Returns the thread.
+  # are open. The merge locks the rows of the open conversations, while the refresh before it holds the contact advisory lock
+  # until the end of its transaction. Every other caller takes a conversation row first and that lock second, so when the
+  # caller is itself inside a transaction (a call intake, a savepoint) the merge waits for the outermost commit instead of
+  # locking rows under the advisory lock; a rollback of that transaction drops it together with the refresh. Outside a
+  # transaction it runs at once. Returns the thread (not yet merged when the merge is waiting for a commit).
   def self.enforce(thread, conversations, preferred_conversation_id = nil)
     return thread if conversations.count { |conversation| OPEN_STATUSES.include?(conversation.status) } < 2
 
+    enforced_thread = thread
+    ActiveRecord.after_all_transactions_commit { enforced_thread = consolidate(thread, preferred_conversation_id) }
+    enforced_thread
+  end
+
+  # A failure must never break the message or status change that triggered the refresh: it is logged and the thread is
+  # returned as it was. The conversations are read again under lock by #perform, so a merge that waited for a commit
+  # decides on the committed state.
+  def self.consolidate(thread, preferred_conversation_id)
     new(thread: thread, preferred_conversation_id: preferred_conversation_id).perform
     thread.reload
   rescue StandardError => e
     Rails.logger.warn("[CommunicationThreads] single open dialog skipped thread=#{thread&.id}: #{e.class}: #{e.message}")
     thread
   end
+  private_class_method :consolidate
 
   def initialize(thread:, preferred_conversation_id: nil, dry_run: false)
     @thread = thread
@@ -67,7 +80,8 @@ class CommunicationThreads::SingleOpenDialogService
                         .includes(:inbox)
                         .order(:id)
     # Rows are locked in id order, and only rows: the thread resolver takes a conversation row and then the contact
-    # advisory lock, so taking the advisory lock after row locks here would invert that order.
+    # advisory lock, so taking the advisory lock after row locks here would invert that order. Nothing here may run while
+    # that advisory lock is held, which is why .enforce waits for the commit of an open transaction.
     lock ? scope.lock.to_a : scope.to_a
   end
 
