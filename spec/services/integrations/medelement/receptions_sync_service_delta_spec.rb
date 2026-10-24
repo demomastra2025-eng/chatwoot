@@ -51,6 +51,48 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
     expect(importer).not_to have_received(:upsert!)
   end
 
+  describe '#preview_reported_status' do
+    let(:detail) do
+      {
+        'RECEPTION_CODE' => 'reception-1', 'PROFILE_CODE' => 'patient-1',
+        'SPECIALIST_CODE' => 'doctor-1', 'COMPANY_CABINET_CODE' => 'cabinet-1',
+        'STARTTIME' => '2026-10-07 10:00:00', 'ENDTIME' => '2026-10-07 10:20:00', 'SERVICES' => [], 'ACTIVE' => 0
+      }
+    end
+    let(:service) { described_class.new(account: account, client: client, configuration: configuration) }
+
+    before { allow(importer).to receive(:provider_status_for).and_return('completed') }
+
+    it 'is absent when OneLink has no appointment for the reception' do
+      expect(service.preview_reported_status(detail)).to eq(:absent)
+    end
+
+    context 'with an appointment' do
+      let!(:appointment) do
+        create(:scheduling_appointment, account: account, external_ref: 'medelement:reception:reception-1')
+      end
+
+      it 'gives the importer status for the reported reception and imports nothing' do
+        expect(service.preview_reported_status(detail)).to eq('completed')
+
+        expect(importer).to have_received(:provider_status_for).with(
+          appointment, hash_including('RECEPTION_CODE' => 'reception-1', 'PATIENT_CODE' => 'patient-1')
+        )
+        expect(importer).not_to have_received(:upsert!)
+      end
+
+      it 'says cancelled for a removed reception, as the import does' do
+        expect(service.preview_reported_status(detail.merge('REMOVED' => 1))).to eq('cancelled')
+      end
+
+      it 'says out of scope when the specialist or cabinet is not mapped' do
+        expect(service.preview_reported_status(detail.merge('SPECIALIST_CODE' => 'unknown'))).to eq(:out_of_scope)
+        expect(service.preview_reported_status(detail.merge('COMPANY_CABINET_CODE' => 'unknown'))).to eq(:out_of_scope)
+        expect(importer).not_to have_received(:provider_status_for)
+      end
+    end
+  end
+
   it 'does not audit a full sweep detail refresh that changed only sync metadata' do
     hook.update!(settings: hook.settings.merge('incremental_receptions_enabled' => true))
     Integrations::Medelement::SyncCursor.create!(

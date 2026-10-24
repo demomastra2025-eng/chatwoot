@@ -7,6 +7,7 @@ module Current
   thread_mattr_accessor :contact
   thread_mattr_accessor :suppress_runtime_events
   thread_mattr_accessor :playground_run_policy
+  thread_mattr_accessor :medelement_reconciliation
 
   def self.with_runtime_events_suppressed
     previous_value = Current.suppress_runtime_events
@@ -14,6 +15,18 @@ module Current
     yield
   ensure
     Current.suppress_runtime_events = previous_value
+  end
+
+  # A past MedElement visit whose status is being corrected from the provider (StaleStatusReconciler). While it is set,
+  # Dispatcher holds back appointment events and Reminders::SyncEnrollmentService only closes touches, never refreshes
+  # them: no automation rule, CRM re-evaluation or reminder reacts. It only holds inside the block, so a normal sync is
+  # never affected.
+  def self.with_medelement_reconciliation
+    previous_value = Current.medelement_reconciliation
+    Current.medelement_reconciliation = true
+    yield
+  ensure
+    Current.medelement_reconciliation = previous_value
   end
 
   def self.reset
@@ -25,6 +38,7 @@ module Current
     Current.contact = nil
     Current.suppress_runtime_events = nil
     Current.playground_run_policy = nil
+    Current.medelement_reconciliation = nil
   end
 
   # A rule can finish while the same event is still executing other rules and listeners.

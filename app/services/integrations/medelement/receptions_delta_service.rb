@@ -25,6 +25,25 @@ class Integrations::Medelement::ReceptionsDeltaService
     counts.merge(changed_codes: changes.size)
   end
 
+  # The two steps that turn a fetched reception detail into an appointment change. The stale status reconciliation uses
+  # them too, so that an old reception goes through exactly the checks and the import path of a polled change.
+  def validate_detail!(detail, code)
+    valid = detail.is_a?(Hash) && detail['RECEPTION_CODE'].to_s == code &&
+            (detail['REMOVED'].to_i == 1 || (detail['SERVICES'].is_a?(Array) &&
+              (detail['PROFILE_CODE'].presence || detail['PATIENT_CODE'].presence)))
+    raise Integrations::Medelement::Client::ApiError, 'Medelement delta reception detail is incomplete' unless valid
+
+    Integrations::Medelement::ProviderScope.validate_write!(detail, organization_id: configuration.organization_id)
+  end
+
+  def apply_detail!(detail)
+    Integrations::Medelement::ReceptionsSyncService.new(
+      account: hook.account, client: client, configuration: configuration
+    ).import_reported_reception!(detail)
+  rescue Integrations::Medelement::ReceptionsSyncService::OutOfScopeReception
+    :out_of_scope
+  end
+
   private
 
   attr_reader :hook, :client, :configuration
@@ -133,22 +152,5 @@ class Integrations::Medelement::ReceptionsDeltaService
     raise Integrations::Medelement::Client::ApiError, 'Medelement delta entry has no reception code' if code.blank?
 
     code.to_s
-  end
-
-  def validate_detail!(detail, code)
-    valid = detail.is_a?(Hash) && detail['RECEPTION_CODE'].to_s == code &&
-            (detail['REMOVED'].to_i == 1 || (detail['SERVICES'].is_a?(Array) &&
-              (detail['PROFILE_CODE'].presence || detail['PATIENT_CODE'].presence)))
-    raise Integrations::Medelement::Client::ApiError, 'Medelement delta reception detail is incomplete' unless valid
-
-    Integrations::Medelement::ProviderScope.validate_write!(detail, organization_id: configuration.organization_id)
-  end
-
-  def apply_detail!(detail)
-    Integrations::Medelement::ReceptionsSyncService.new(
-      account: hook.account, client: client, configuration: configuration
-    ).import_reported_reception!(detail)
-  rescue Integrations::Medelement::ReceptionsSyncService::OutOfScopeReception
-    :out_of_scope
   end
 end

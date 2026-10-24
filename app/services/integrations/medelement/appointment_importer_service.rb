@@ -46,16 +46,17 @@ class Integrations::Medelement::AppointmentImporterService
     end
   end
 
+  # The status upsert! would give this appointment for the reception, from the same mapping and without saving anything.
+  def provider_status_for(appointment, reception, starts_at = nil)
+    provider_status_resolution(appointment, reception, starts_at)[:status]
+  end
+
   private
 
   attr_reader :account, :conflict_tracker
 
   def persist_appointment!(appointment, resource:, contact:, reception:, import_context:)
-    Integrations::Medelement::AppointmentSnapshotGuard.new(
-      appointment: appointment,
-      snapshot_version: import_context[:snapshot_version], reception_code: reception['RECEPTION_CODE']
-    ).validate!
-    provider_binding(appointment, reception).validate!
+    validate_import!(appointment, reception, import_context)
     return appointment if stale_after_acknowledged_move?(appointment, import_context)
 
     subject = import_subject(appointment, contact, reception)
@@ -73,6 +74,14 @@ class Integrations::Medelement::AppointmentImporterService
     assign_import_subject!(appointment, subject)
     persist_imported_appointment!(appointment, restore_paid_local_cancellation_expense)
     appointment
+  end
+
+  def validate_import!(appointment, reception, import_context)
+    Integrations::Medelement::AppointmentSnapshotGuard.new(
+      appointment: appointment,
+      snapshot_version: import_context[:snapshot_version], reception_code: reception['RECEPTION_CODE']
+    ).validate!
+    provider_binding(appointment, reception).validate!
   end
 
   # The provider answered OK to a move a moment ago; a slower cached read server may still show the old interval.
@@ -326,26 +335,7 @@ class Integrations::Medelement::AppointmentImporterService
     unresolved_service_codes = service_data.fetch(:unresolved_service_codes)
     service_binding = service_data.fetch(:service_binding)
     status_resolution = service_data.fetch(:status_resolution)
-    materialization = Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService.materialization_attributes(appointment, reception)
-    attributes = appointment.custom_attributes.except(*RECONCILIATION_ATTRIBUTE_KEYS).merge(materialization).merge(
-      'medelement_cabinet_code' => reception['COMPANY_CABINET_CODE'].to_s.presence,
-      'medelement_reception_code' => reception['RECEPTION_CODE'].to_s,
-      'medelement_source_created_at' => reception['CREATED_AT'].to_s.presence,
-      'medelement_source_timezone' => import_context[:source_timezone].presence || appointment.resource&.timezone || Scheduling::Constants::DEFAULT_TIMEZONE,
-      'medelement_specialist_code' => import_context[:specialist_code].to_s,
-      'medelement_list_fingerprint' => import_context[:list_fingerprint],
-      'medelement_detail_synced_at' => import_context[:detail_synced_at],
-      'medelement_patient_unresolved' => contact.blank?,
-      'source_mode' => provider_binding(appointment, reception).source_mode,
-      'provider_status_audit' => {
-        'source' => 'medelement_reception_sync',
-        'previous_status' => appointment.status,
-        'status' => status_resolution[:status],
-        'reason' => status_resolution[:reason],
-        'raw_status' => status_resolution[:raw_status],
-        'observed_at' => import_context[:detail_synced_at] || Time.current.iso8601
-      }.compact
-    ).compact
+    attributes = provider_attributes(appointment, reception, import_context, contact, status_resolution)
     # The marker lives only while the local cancellation is preserved against an active reception.
     attributes = attributes.except(local_cancellation::MARKER_KEY) unless status_resolution[:reason] == local_cancellation::PRESERVED_REASON
     attributes = Integrations::Medelement::AppointmentMoveState.after_provider_import(
@@ -357,6 +347,41 @@ class Integrations::Medelement::AppointmentImporterService
       services: services,
       unresolved_service_codes: unresolved_service_codes
     )
+  end
+
+  def provider_attributes(appointment, reception, import_context, contact, status_resolution)
+    materialization = Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService
+                      .materialization_attributes(appointment, reception)
+    appointment.custom_attributes.except(*RECONCILIATION_ATTRIBUTE_KEYS).merge(materialization)
+               .merge(reception_attributes(appointment, reception, import_context)).merge(
+                 'medelement_patient_unresolved' => contact.blank?,
+                 'source_mode' => provider_binding(appointment, reception).source_mode,
+                 'provider_status_audit' => provider_status_audit(appointment, status_resolution, import_context)
+               ).compact
+  end
+
+  def reception_attributes(appointment, reception, import_context)
+    {
+      'medelement_cabinet_code' => reception['COMPANY_CABINET_CODE'].to_s.presence,
+      'medelement_reception_code' => reception['RECEPTION_CODE'].to_s,
+      'medelement_source_created_at' => reception['CREATED_AT'].to_s.presence,
+      'medelement_source_timezone' => import_context[:source_timezone].presence || appointment.resource&.timezone ||
+        Scheduling::Constants::DEFAULT_TIMEZONE,
+      'medelement_specialist_code' => import_context[:specialist_code].to_s,
+      'medelement_list_fingerprint' => import_context[:list_fingerprint],
+      'medelement_detail_synced_at' => import_context[:detail_synced_at]
+    }
+  end
+
+  def provider_status_audit(appointment, status_resolution, import_context)
+    {
+      'source' => 'medelement_reception_sync',
+      'previous_status' => appointment.status,
+      'status' => status_resolution[:status],
+      'reason' => status_resolution[:reason],
+      'raw_status' => status_resolution[:raw_status],
+      'observed_at' => import_context[:detail_synced_at] || Time.current.iso8601
+    }.compact
   end
 
   def resolved_services(reception)

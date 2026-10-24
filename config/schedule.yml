@@ -37,6 +37,25 @@ medelement_sync_run_retention_job:
   class: 'Integrations::Medelement::SyncRunRetentionJob'
   queue: scheduled_jobs
 
+# executed twice a day, at 07:00 and 19:00 Almaty time (02:00 and 14:00 UTC)
+# probes the MedElement fast-sync endpoint of every hook and switches incremental_receptions_enabled to match;
+# it is a light job, so it stays on scheduled_jobs with the other cron fan-outs
+medelement_delta_probe_job:
+  cron: '0 7,19 * * * Asia/Almaty'
+  class: 'Integrations::Medelement::DeltaProbeJob'
+  queue: scheduled_jobs
+  active_job: true
+
+# executed nightly at 03:00 Almaty time (22:00 UTC)
+# re-reads the MedElement appointments of the last 30 days that are still scheduled or confirmed a day after their start
+# and applies the status MedElement gives them; this entry only queues one run per hook, the runs themselves go to the
+# low queue (the job's own queue) so that they never hold up the sync queues
+medelement_stale_status_reconciliation_job:
+  cron: '0 3 * * * Asia/Almaty'
+  class: 'Integrations::Medelement::StaleStatusReconciliationJob'
+  queue: scheduled_jobs
+  active_job: true
+
 # executed every minute to keep Weixin Personal gateway pollers synced after gateway restarts
 weixin_sync_channels_job:
   cron: '*/1 * * * *'

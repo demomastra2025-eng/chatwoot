@@ -82,6 +82,13 @@ RSpec.describe Integrations::Medelement::Configuration do
       expect(configuration.incremental_receptions_enabled?).to be(false)
     end
 
+    it 'lets the daily probe run unless it is switched off for the clinic' do
+      expect(configuration.delta_probe_enabled?).to be(true)
+
+      allow(hook).to receive(:settings).and_return('delta_probe_enabled' => false)
+      expect(configuration.delta_probe_enabled?).to be(false)
+    end
+
     it 'accepts only the supported intervals and uses minute cron when appropriate' do
       allow(hook).to receive(:settings).and_return(
         'incremental_receptions_enabled' => true,

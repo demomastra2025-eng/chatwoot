@@ -185,4 +185,94 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
     expect(Sidekiq::Cron::Job).to have_received(:destroy).with('integrations_medelement_dispatch_job')
     expect(Sidekiq::Cron::Job).to have_received(:destroy).with('integrations_medelement_hook_999')
   end
+
+  # The medelement worker runs with ENABLE_SIDEKIQ_CRON=false (it does not poll cron) but is where the full-sweep
+  # backoff changes the schedule, so writing a schedule must not depend on that flag.
+  describe 'in a process where ENABLE_SIDEKIQ_CRON is false' do
+    let(:hook) do
+      create(:integrations_hook, :medelement, account: account).tap do |record|
+        record.update!(settings: record.settings.merge('incremental_receptions_enabled' => true))
+      end
+    end
+    let(:backoff_name) { Integrations::Medelement::Configuration::FULL_SWEEP_BACKOFF_CURSOR_NAME }
+
+    around { |example| ClimateControl.modify(ENABLE_SIDEKIQ_CRON: 'false') { example.run } }
+
+    before do
+      hook
+      allow(described_class).to receive(:cron_enabled?).and_call_original
+      allow(Rails.env).to receive(:test?).and_return(false)
+    end
+
+    it 'still creates the delta job and the full sweep job' do
+      expect(Sidekiq::Cron::Job).to receive(:create).with(
+        hash_including(name: "integrations_medelement_hook_#{hook.id}_receptions_delta",
+                       klass: 'Integrations::Medelement::ReceptionsDeltaJob', args: [hook.id])
+      ).and_return(true)
+      expect(Sidekiq::Cron::Job).to receive(:create).with(
+        hash_including(name: "integrations_medelement_hook_#{hook.id}_realtime", cron: '*/2 * * * * Asia/Almaty')
+      ).and_return(true)
+
+      expect(described_class.new(hook: hook).sync!).to be(true)
+    end
+
+    it 'removes the delta job when fast sync is off' do
+      hook.update!(settings: hook.settings.merge('incremental_receptions_enabled' => false))
+
+      described_class.new(hook: hook).sync!
+
+      expect(Sidekiq::Cron::Job).to have_received(:destroy).with("integrations_medelement_hook_#{hook.id}_receptions_delta").at_least(:once)
+    end
+
+    it 'lets the full-sweep backoff step change the schedule' do
+      Integrations::Medelement::SyncCursor.create!(
+        hook: hook, name: backoff_name, current_interval_seconds: 120, last_success_at: Time.current
+      )
+      Integrations::Medelement::SyncCursor.create!(
+        hook: hook, name: 'receptions_delta', value: 1.minute.ago, last_poll_at: 30.seconds.ago, last_success_at: 30.seconds.ago
+      )
+      expect(Sidekiq::Cron::Job).to receive(:create).with(
+        hash_including(name: "integrations_medelement_hook_#{hook.id}_realtime", cron: '*/4 * * * * Asia/Almaty')
+      ).and_return(true)
+
+      Integrations::Medelement::DeltaMissAudit.new(hook: hook).record_full_sweep_result!
+    end
+
+    it 'lets the backoff reset change the schedule back' do
+      Integrations::Medelement::SyncCursor.create!(hook: hook, name: backoff_name, current_interval_seconds: 900)
+      expect(Sidekiq::Cron::Job).to receive(:create).with(
+        hash_including(name: "integrations_medelement_hook_#{hook.id}_realtime", cron: '*/2 * * * * Asia/Almaty')
+      ).and_return(true)
+
+      Integrations::Medelement::DeltaMissAudit.new(hook: hook).reset_full_sweep_backoff!(reason: 'delta_miss')
+    end
+
+    it 'writes the jobs to Redis, where the poller of another process finds them' do
+      allow(Sidekiq::Cron::Job).to receive(:create).and_call_original
+      allow(Sidekiq::Cron::Job).to receive(:destroy).and_call_original
+      allow(Sidekiq::Cron::Job).to receive(:find).and_call_original
+
+      described_class.new(hook: hook).sync!
+
+      job = Sidekiq::Cron::Job.find("integrations_medelement_hook_#{hook.id}_receptions_delta")
+      expect(job).to have_attributes(klass: 'Integrations::Medelement::ReceptionsDeltaJob', cron: '*/1 * * * * Asia/Almaty')
+    ensure
+      described_class.new(hook: hook).destroy!
+    end
+
+    it 'can still be switched off for a process that must not touch the schedules' do
+      ClimateControl.modify(DISABLE_MEDELEMENT_CRON_SYNC: 'true') do
+        expect(Sidekiq::Cron::Job).not_to receive(:create)
+
+        expect(described_class.cron_enabled?).to be(false)
+        described_class.new(hook: hook).sync!
+      end
+    end
+  end
+
+  it 'never writes schedules in the test environment' do
+    allow(described_class).to receive(:cron_enabled?).and_call_original
+
+    expect(described_class.cron_enabled?).to be(false)
+  end
 end

@@ -110,4 +110,25 @@ RSpec.describe Reminders::SyncEnrollmentService do
     appointment.update!(status: 'completed')
     expect(enrollment.reload).to be_cancelled
   end
+
+  describe 'inside a MedElement reconciliation' do
+    it 'does not move the next trigger of a running touch', :aggregate_failures do
+      original_due_at = enrollment.next_due_at
+
+      Current.with_medelement_reconciliation do
+        appointment.update!(starts_at: appointment.starts_at + 2.hours, ends_at: appointment.ends_at + 2.hours)
+      end
+
+      expect(enrollment.reload).to be_active
+      expect(enrollment.next_due_at).to be_within(2.seconds).of(original_due_at)
+    end
+
+    it 'still closes the touches of a visit that is over' do
+      enrollment
+
+      Current.with_medelement_reconciliation { appointment.update!(status: 'completed') }
+
+      expect(enrollment.reload).to be_cancelled
+    end
+  end
 end

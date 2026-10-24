@@ -221,4 +221,43 @@ RSpec.describe Scheduling::Appointment do
       expect(captured_events.map(&:first)).to include(Events::Types::APPOINTMENT_UPDATED, Events::Types::APPOINTMENT_COMPLETED)
     end
   end
+
+  describe 'inside a MedElement reconciliation' do
+    let(:appointment) { create(:scheduling_appointment) }
+    let(:event_names) { [] }
+
+    before do
+      appointment
+      allow(Rails.configuration.dispatcher.sync_dispatcher).to receive(:dispatch)
+      allow(Rails.configuration.dispatcher.async_dispatcher).to receive(:dispatch) { |event_name, *| event_names << event_name }
+    end
+
+    it 'dispatches no appointment event, not even for a status change', :aggregate_failures do
+      Current.with_medelement_reconciliation { appointment.update!(status: 'completed') }
+      Current.with_medelement_reconciliation { appointment.update!(status: 'cancelled') }
+      Current.with_medelement_reconciliation { appointment.update!(client_name: 'Corrected') }
+
+      expect(event_names).to be_empty
+      expect(appointment.reload).to have_attributes(status: 'cancelled', client_name: 'Corrected')
+    end
+
+    it 'does not leak into the next update, which dispatches as usual', :aggregate_failures do
+      Current.with_medelement_reconciliation { appointment.update!(status: 'completed') }
+      appointment.update!(client_name: 'Edited by staff')
+
+      expect(Current.medelement_reconciliation).to be_nil
+      expect(event_names).to eq([Events::Types::APPOINTMENT_UPDATED])
+    end
+
+    it 'puts the flag back when the block fails, and Current.reset clears it', :aggregate_failures do
+      expect { Current.with_medelement_reconciliation { raise 'boom' } }.to raise_error('boom')
+      expect(Current.medelement_reconciliation).to be_nil
+
+      Current.with_medelement_reconciliation do
+        expect(Current.medelement_reconciliation).to be(true)
+        Current.reset
+        expect(Current.medelement_reconciliation).to be_nil
+      end
+    end
+  end
 end

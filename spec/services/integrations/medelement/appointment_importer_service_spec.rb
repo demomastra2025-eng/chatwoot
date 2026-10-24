@@ -437,6 +437,29 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     end
   end
 
+  describe '#provider_status_for' do
+    let(:appointment) do
+      create(:scheduling_appointment, account: account, resource: resource, status: 'scheduled', source: 'medelement',
+                                      external_ref: service.external_ref_for(reception['RECEPTION_CODE']))
+    end
+
+    it 'gives the status upsert! would save and saves nothing' do
+      expected = { 'завершена' => 'completed', 'неявка' => 'no_show', 'отменена' => 'cancelled' }
+      expected.each do |provider_status, status|
+        expect(service.provider_status_for(appointment, reception.merge('VISIT_STATUS_NAME' => provider_status))).to eq(status)
+      end
+      expect(service.provider_status_for(appointment, reception.merge('ACTIVE' => 0))).to eq('completed')
+      expect(service.provider_status_for(appointment, reception.merge('REMOVED' => 1))).to eq('cancelled')
+      expect(appointment.reload).to have_attributes(status: 'scheduled', custom_attributes: {})
+    end
+
+    it 'keeps an active reception as it is, including a local confirmation' do
+      expect(service.provider_status_for(appointment, reception)).to eq('scheduled')
+      appointment.update!(status: 'confirmed')
+      expect(service.provider_status_for(appointment, reception)).to eq('confirmed')
+    end
+  end
+
   it 'reimports a trusted outbound appointment without changing its local origin' do
     contact = create(:contact, account: account)
     appointment = create(
@@ -547,22 +570,27 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     )
   end
 
-  it 'keeps the native pending resolver bound to the known written ID when another identical reception appears' do
+  it 'keeps the native pending resolver bound to the known written ID when another identical reception appears', :aggregate_failures do
     account.enable_features!('scheduling')
     zone = ActiveSupport::TimeZone['Asia/Almaty']
     starts_at = zone.local(2026, 3, 21, 9)
     ends_at = starts_at + 20.minutes
     contact = create(:contact, account: account, phone_number: '+77000000002',
                                custom_attributes: { 'medelement_patient_code' => reception['PATIENT_CODE'] })
-    resource.update!(custom_attributes: {
-      'medelement_specialist_code' => import_context[:specialist_code],
-      'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
-    })
-    appointment = create(:scheduling_appointment, account: account, contact: contact, resource: resource, source: 'manual',
-                                                starts_at: starts_at, ends_at: ends_at, custom_attributes: {
-                                                  'medelement_cabinet_code' => 'cabinet-1',
-                                                  'medelement_provider_sync_status' => 'provider_status_unknown'
-                                                })
+    resource.update!(
+      custom_attributes: {
+        'medelement_specialist_code' => import_context[:specialist_code],
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
+    appointment = create(
+      :scheduling_appointment,
+      account: account, contact: contact, resource: resource, source: 'manual', starts_at: starts_at, ends_at: ends_at,
+      custom_attributes: {
+        'medelement_cabinet_code' => 'cabinet-1',
+        'medelement_provider_sync_status' => 'provider_status_unknown'
+      }
+    )
     command = create_unknown_outbound_command(appointment: appointment, contact: contact, starts_at: starts_at, ends_at: ends_at)
     verification = Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService
     command.update!(provider_reception_code: 'created-A', execution_state: command.execution_state.merge(

@@ -38,6 +38,30 @@ describe Integrations::Medelement::SyncStatusPresenter do
     expect(delta[:cursor_age_seconds]).to be_between(100, 140)
   end
 
+  describe 'the fast-sync probe' do
+    let(:probe) { { 'checked_at' => '2026-10-24T02:00:00Z', 'outcome' => 'unavailable', 'error_code' => 'http_403' } }
+
+    it 'shows the last probe result while fast sync is on' do
+      hook.update!(settings: hook.settings.merge('incremental_receptions_enabled' => true, 'delta_probe' => probe))
+
+      delta = described_class.new(hook: hook).payload[:delta]
+
+      expect(delta).to include(enabled: true, probe: { checked_at: '2026-10-24T02:00:00Z', outcome: 'unavailable', error_code: 'http_403' })
+    end
+
+    it 'shows it while fast sync is off, which is when it is needed' do
+      hook.update!(settings: hook.settings.merge('incremental_receptions_enabled' => false, 'delta_probe' => probe))
+
+      expect(described_class.new(hook: hook).payload[:delta]).to eq(
+        enabled: false, probe: { checked_at: '2026-10-24T02:00:00Z', outcome: 'unavailable', error_code: 'http_403' }
+      )
+    end
+
+    it 'has no probe before the first one ran' do
+      expect(described_class.new(hook: hook).payload[:delta][:probe]).to be_nil
+    end
+  end
+
   def create_specialist_conflict(sequence)
     resource = create(
       :scheduling_resource,
