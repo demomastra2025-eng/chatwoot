@@ -39,6 +39,34 @@ RSpec.describe Conversations::EventDataPresenter do
       }
     end
 
+    describe 'labels' do
+      let(:other_conversation) { create(:conversation, account: conversation.account, contact: conversation.contact) }
+
+      before do
+        conversation.contact.update_labels(%w[card_only])
+        conversation.update_labels(%w[own])
+        other_conversation.update_labels(%w[other_channel])
+      end
+
+      it 'carries the labels of the person: the contact card and every conversation of it' do
+        expect(presenter.push_data[:labels]).to eq(%w[card_only own other_channel])
+      end
+
+      it 'carries the same labels in the webhook payload' do
+        expect(presenter.webhook_data[:labels]).to eq(%w[card_only own other_channel])
+      end
+
+      it 'does not take the labels of another person' do
+        create(:conversation, account: conversation.account).update_labels(%w[stranger])
+
+        expect(presenter.push_data[:labels]).not_to include('stranger')
+      end
+
+      it 'keeps the customer-facing payload to the labels of the conversation' do
+        expect(presenter.external_push_data[:labels]).to eq(%w[own])
+      end
+    end
+
     it 'returns push event payload' do
       # the exceptions are the values that would be added in enterprise edition.
       expect(presenter.push_data.except(:applied_sla, :sla_events)).to include(expected_data)

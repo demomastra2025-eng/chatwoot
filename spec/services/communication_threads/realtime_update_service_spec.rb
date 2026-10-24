@@ -56,6 +56,41 @@ RSpec.describe CommunicationThreads::RealtimeUpdateService do
       expect(payload.fetch(:channels).first).to include(unread_count: 1)
     end
 
+    describe 'labels' do
+      let(:account) { create(:account).tap { |record| record.enable_features!('communication_threads') } }
+      let(:contact) { create(:contact, account: account) }
+      let(:user) { create(:user, account: account, role: :agent) }
+      let(:inbox) { create(:inbox, account: account) }
+      let!(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact) }
+      let!(:hidden_conversation) { create(:conversation, account: account, contact: contact) }
+      let(:broadcasts) { [] }
+
+      before do
+        create(:inbox_member, inbox: inbox, user: user)
+        contact.update_labels(%w[card_only shared])
+        conversation.update_labels(%w[shared channel])
+        hidden_conversation.update_labels(%w[hidden_channel])
+        allow(ActionCableBroadcastJob).to receive(:perform_later) { |members, event, payload| broadcasts << [members, event, payload] }
+      end
+
+      def thread_payload
+        described_class.new(
+          communication_thread_id: conversation.reload.communication_thread.id,
+          source_conversation_id: conversation.id,
+          source_event: 'conversation.updated'
+        ).perform
+        broadcasts.find { |_members, event, _payload| event == 'communication_thread.updated' }.last
+      end
+
+      it 'carries the labels of the contact card as well as those of the channels, so a live update never drops a card label' do
+        expect(thread_payload[:labels]).to eq(%w[card_only shared channel])
+      end
+
+      it 'leaves out the labels of channels the recipient cannot open' do
+        expect(thread_payload[:labels]).not_to include('hidden_channel')
+      end
+    end
+
     it 'does not broadcast a source conversation hidden by a custom role' do
       account = create(:account).tap { |record| record.enable_features!('communication_threads') }
       inbox = create(:inbox, account: account)
