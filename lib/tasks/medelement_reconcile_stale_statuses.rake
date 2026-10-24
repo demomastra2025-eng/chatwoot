@@ -35,7 +35,8 @@ namespace :medelement do
     puts 'old status -> status at MedElement: appointments'
     puts report.summary_lines
     puts "examined #{report.examined}: #{dry_run ? 'would change' : 'changed'} #{report.changed}, unchanged #{report.unchanged}, " \
-         "not found #{report.not_found}, out of scope #{report.out_of_scope}, skipped #{report.skipped}, errors #{report.errors}; " \
+         "not found #{report.not_found}, unmapped specialist #{report.unmapped_specialist}, skipped #{report.skipped}, " \
+         "errors #{report.errors}; " \
          "#{report.remaining} candidates not examined"
     next unless report.aborted
 

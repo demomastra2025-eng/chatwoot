@@ -460,6 +460,239 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     end
   end
 
+  describe 'a reception that does not say whether it is active' do
+    # ACTIVE nil, blank or missing is unknown, never "not active".
+    let(:unknown) { [{ 'ACTIVE' => nil }, { 'ACTIVE' => '' }, { 'ACTIVE' => ' ' }, {}] }
+    let(:external_ref) { service.external_ref_for(reception['RECEPTION_CODE']) }
+    let(:marker) { { 'at' => '2026-03-22T05:00:00Z', 'provider_starts_at' => import_context[:starts_at].utc.iso8601 } }
+    let(:preserved_audit) do
+      { 'source' => 'medelement_reception_sync', 'previous_status' => 'scheduled', 'status' => 'cancelled',
+        'reason' => 'preserved_local_cancellation', 'observed_at' => '2026-03-22T05:10:00Z' }
+    end
+
+    def unknown_reception(variant, code = reception['RECEPTION_CODE'])
+      (variant.empty? ? reception.except('ACTIVE') : reception.merge(variant)).merge('RECEPTION_CODE' => code)
+    end
+
+    def import(received)
+      service.upsert!(resource: resource, contact: nil, reception: received, import_context: import_context)
+    end
+
+    def appointment_with(status, code = reception['RECEPTION_CODE'], **attributes)
+      create(:scheduling_appointment, account: account, resource: resource, source: 'medelement', status: status,
+                                      external_ref: service.external_ref_for(code), **attributes)
+    end
+
+    it 'imports a new appointment as scheduled, not as completed' do
+      unknown.each_with_index do |variant, index|
+        appointment = import(unknown_reception(variant, "new-#{index}"))
+
+        expect(appointment).to have_attributes(status: 'scheduled')
+        expect(appointment.custom_attributes['provider_status_audit']).to include('status' => 'scheduled', 'reason' => 'provider_activity_unknown')
+      end
+    end
+
+    it 'keeps the status of an appointment it already has, whatever it is' do
+      %w[scheduled confirmed completed no_show cancelled].each_with_index do |status, index|
+        appointment = appointment_with(status, "status-#{index}")
+
+        unknown.each { |variant| import(unknown_reception(variant, "status-#{index}")) }
+
+        expect(appointment.reload.status).to eq(status)
+      end
+    end
+
+    it 'keeps a local cancellation: its status, its marker and the audit that is stored' do
+      appointment = appointment_with(
+        'cancelled', payment_status: 'cancelled',
+                     custom_attributes: { 'medelement_local_cancellation' => marker, 'provider_status_audit' => preserved_audit }
+      )
+
+      unknown.each do |variant|
+        import(unknown_reception(variant))
+
+        expect(appointment.reload).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
+        expect(appointment.custom_attributes['medelement_local_cancellation']).to eq(marker)
+        expect(appointment.custom_attributes['provider_status_audit']).to eq(preserved_audit)
+      end
+    end
+
+    it 'writes an audit when the appointment has none yet, so that the reason is on record' do
+      appointment = appointment_with('scheduled')
+
+      import(unknown_reception({ 'ACTIVE' => nil }))
+
+      expect(appointment.reload.custom_attributes['provider_status_audit']).to include(
+        'status' => 'scheduled', 'previous_status' => 'scheduled', 'reason' => 'provider_activity_unknown'
+      )
+    end
+
+    it 'is the same for a reception that was read alone, and for the status preview' do
+      appointment = appointment_with('confirmed')
+
+      unknown.each do |variant|
+        received = unknown_reception(variant).merge(described_class::DETAIL_ONLY_KEY => true)
+
+        expect(service.provider_status_for(appointment, received)).to eq('confirmed')
+        expect(service.provider_status_for(appointment, unknown_reception(variant))).to eq('confirmed')
+      end
+    end
+
+    it 'still imports everything else the reception says' do
+      appointment = appointment_with('cancelled', custom_attributes: { 'medelement_local_cancellation' => marker })
+      later = import_context.merge(starts_at: import_context[:starts_at] + 2.hours, ends_at: import_context[:ends_at] + 2.hours)
+
+      service.upsert!(resource: resource, contact: nil, reception: unknown_reception({ 'ACTIVE' => nil }), import_context: later)
+
+      expect(appointment.reload).to have_attributes(status: 'cancelled', starts_at: later[:starts_at])
+      expect(appointment.custom_attributes['medelement_local_cancellation']).to eq(marker)
+    end
+
+    it 'completes only a reception that says it is not active' do
+      closed = appointment_with('scheduled', 'closed-1')
+      numeric_string = appointment_with('scheduled', 'closed-2')
+
+      import(reception.merge('RECEPTION_CODE' => 'closed-1', 'ACTIVE' => 0))
+      import(reception.merge('RECEPTION_CODE' => 'closed-2', 'ACTIVE' => '0'))
+
+      expect([closed, numeric_string].map { |appointment| appointment.reload.status }).to eq(%w[completed completed])
+    end
+
+    it 'still lets an explicit provider status or a removal decide' do
+      explicit = appointment_with('scheduled', 'explicit-1')
+      removed = appointment_with('scheduled', 'removed-1')
+
+      import(reception.merge('RECEPTION_CODE' => 'explicit-1', 'ACTIVE' => nil, 'VISIT_STATUS_NAME' => 'неявка'))
+      import(reception.merge('RECEPTION_CODE' => 'removed-1', 'ACTIVE' => nil, 'REMOVED' => 1))
+
+      expect([explicit, removed].map { |appointment| appointment.reload.status }).to eq(%w[no_show cancelled])
+    end
+  end
+
+  describe '#apply_provider_status!' do
+    let(:external_ref) { service.external_ref_for(reception['RECEPTION_CODE']) }
+    let(:reconciliation_keys) { described_class::RECONCILIATION_ATTRIBUTE_KEYS }
+    let!(:appointment) do
+      create(:scheduling_appointment, account: account, resource: resource, source: 'medelement', status: 'confirmed',
+                                      external_ref: external_ref, service_amount: 12_000, prepaid_amount: 2000,
+                                      payment_status: 'prepaid', client_first_name: 'Local', client_last_name: 'Patient',
+                                      custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1', 'medelement_missing_since' => '2026-03-20',
+                                                           'medelement_missing_syncs' => 1, 'medelement_removed_at' => '2026-03-20',
+                                                           'medelement_detail_retry_at' => '2026-03-20T10:00:00Z' })
+    end
+
+    def apply(received = reception.merge('ACTIVE' => 0), **)
+      service.apply_provider_status!(appointment.reload, received, **)
+    end
+
+    it 'writes the status with its audit and the reconciliation marks, and nothing else' do
+      before = appointment.reload.attributes.except('status', 'custom_attributes', 'updated_at')
+
+      apply
+
+      expect(appointment.reload.attributes.except('status', 'custom_attributes', 'updated_at')).to eq(before)
+      expect(appointment.status).to eq('completed')
+      expect(appointment.custom_attributes.keys).to contain_exactly('medelement_cabinet_code', 'provider_status_audit')
+      expect(appointment.custom_attributes['provider_status_audit']).to include(
+        'source' => 'medelement_reception_sync', 'previous_status' => 'confirmed', 'status' => 'completed', 'reason' => 'provider_inactive'
+      )
+    end
+
+    it 'records the provider status that gave the status' do
+      apply(reception.merge('VISIT_STATUS_NAME' => 'неявка'))
+
+      expect(appointment.reload.status).to eq('no_show')
+      expect(appointment.custom_attributes['provider_status_audit']).to include('reason' => 'provider_explicit_no_show', 'raw_status' => 'неявка')
+    end
+
+    it 'gives the status that provider_status_for gives, from the same mapping' do
+      [reception.merge('ACTIVE' => 0), reception.merge('VISIT_STATUS_NAME' => 'отменена'),
+       reception.merge('VISIT_STATUS_NAME' => 'завершена'), reception].each do |received|
+        appointment.update_columns(status: 'confirmed') # rubocop:disable Rails/SkipsModelValidations
+        expected = service.provider_status_for(appointment.reload, received)
+
+        apply(received)
+
+        expect(appointment.reload.status).to eq(expected)
+      end
+    end
+
+    it 'does not write an appointment whose status does not change' do
+      updated_at = appointment.updated_at
+
+      result = apply(reception)
+
+      expect(result).to eq(appointment)
+      expect(appointment.reload).to have_attributes(status: 'confirmed', updated_at: updated_at)
+      expect(appointment.custom_attributes.keys).to include(*reconciliation_keys)
+    end
+
+    it 'does not complete the appointment for a reception that does not say whether it is active' do
+      [{ 'ACTIVE' => nil }, { 'ACTIVE' => '' }].each do |variant|
+        expect(apply(reception.merge(variant))).to eq(appointment)
+      end
+      expect(apply(reception.except('ACTIVE'))).to eq(appointment)
+      expect(appointment.reload.status).to eq('confirmed')
+    end
+
+    it 'keeps an explicit outcome from earlier for a reception read alone without a visit status name' do
+      audit = { 'source' => 'medelement_reception_sync', 'status' => 'confirmed', 'reason' => 'provider_explicit_completed' }
+      appointment.update!(custom_attributes: appointment.custom_attributes.merge('provider_status_audit' => audit))
+
+      apply(reception.merge(described_class::DETAIL_ONLY_KEY => true))
+
+      expect(appointment.reload.status).to eq('confirmed')
+      expect(appointment.custom_attributes['provider_status_audit']).to eq(audit)
+    end
+
+    it 'gives :no_longer_open, and writes nothing, when the locked appointment has another status than asked for' do
+      appointment.update!(status: 'cancelled')
+
+      result = apply(only_from: %w[scheduled confirmed])
+
+      expect(result).to eq(:no_longer_open)
+      expect(appointment.reload.status).to eq('cancelled')
+    end
+
+    it 'judges the status of the locked appointment, as it is by then' do
+      stale = Scheduling::Appointment.find(appointment.id)
+      appointment.update!(status: 'scheduled')
+
+      service.apply_provider_status!(stale, reception.merge('ACTIVE' => 0), only_from: %w[scheduled confirmed])
+
+      expect(appointment.reload.custom_attributes['provider_status_audit']).to include('previous_status' => 'scheduled', 'status' => 'completed')
+    end
+
+    it 'refuses what the import refuses: a cancellation the provider still has to remove, and the appointment of another source' do
+      appointment.update!(status: 'cancelled',
+                          custom_attributes: appointment.custom_attributes.merge('medelement_local_cancelled_at' => '2026-03-22T05:00:00Z'))
+      expect { apply }.to raise_error(Integrations::Medelement::AppointmentSnapshotGuard::StaleSnapshotError)
+
+      appointment.update_columns(status: 'confirmed', source: 'manual') # rubocop:disable Rails/SkipsModelValidations
+      expect { apply }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('DUPLICATE_EXTERNAL_REF') }
+      expect(appointment.reload.status).to eq('confirmed')
+    end
+
+    it 'refuses an appointment that cannot be saved, and leaves its status' do
+      appointment.update_columns(client_name: '') # rubocop:disable Rails/SkipsModelValidations
+
+      expect { apply }.to raise_error(ActiveRecord::RecordInvalid)
+      expect(appointment.reload.status).to eq('confirmed')
+    end
+
+    it 'does not send the change back to MedElement' do
+      Current.executed_by = create(:user, account: account)
+      events = []
+      allow(Rails.configuration.dispatcher).to receive(:dispatch) { |event_name, _, data| events << [event_name, data] }
+
+      apply
+
+      expect(events.assoc(Events::Types::APPOINTMENT_UPDATED).last).to include(medelement_provider_reconciled: true)
+    ensure
+      Current.reset
+    end
+  end
+
   it 'reimports a trusted outbound appointment without changing its local origin' do
     contact = create(:contact, account: account)
     appointment = create(

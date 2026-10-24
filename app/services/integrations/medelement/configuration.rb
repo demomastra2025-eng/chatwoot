@@ -1,4 +1,4 @@
-class Integrations::Medelement::Configuration
+class Integrations::Medelement::Configuration # rubocop:disable Metrics/ClassLength
   INTEGRATOR_KEY_ENV = 'MEDELEMENT_INTEGRATOR_KEY'.freeze
   DEFAULT_DAYS_BACK = 3
   DEFAULT_DAYS_FORWARD = 89
@@ -145,6 +145,12 @@ class Integrations::Medelement::Configuration
 
   def write_enabled?
     boolean_setting('write_enabled', false)
+  end
+
+  # Off by default: until the owner has reviewed a dry run, the nightly stale status reconciliation only reads MedElement and
+  # logs what it would change. A run started with an explicit dry_run: false (the rake task) applies whatever this says.
+  def stale_status_apply_enabled?
+    boolean_setting('stale_status_apply_enabled', false)
   end
 
   # Off by default: a OneLink cancellation keeps the MedElement reception (owner decision 01.10.2026).

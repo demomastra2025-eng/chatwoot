@@ -52,6 +52,12 @@ RSpec.describe Rake::Task do
         .with(hook: hook, days: 30, dry_run: true, max_per_run: nil).twice
     end
 
+    it 'prints how many details named a specialist that OneLink does not map' do
+      report.unmapped_specialist!
+
+      expect { task.invoke(account.id) }.to output(/not found 0, unmapped specialist 1, skipped 0/).to_stdout
+    end
+
     it 'reads the whole history with "all" and applies only with an explicit false' do
       expect { task.invoke(account.id, 'all', 'false') }.to output(/whole history, APPLYING/).to_stdout
 

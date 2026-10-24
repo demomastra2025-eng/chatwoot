@@ -119,7 +119,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
   end
 
   describe 'applying the provider status' do
-    it 'completes a scheduled appointment through the importer and records where the status came from' do
+    it 'completes a scheduled appointment with the status of the importer mapping and records where it came from' do
       appointment = stale_appointment('reception-1')
       provider_says(appointment, 'VISIT_STATUS_NAME' => 'завершена')
 
@@ -237,27 +237,36 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
     end
   end
 
-  describe 'receptions the import refuses' do
-    it 'counts a reception of an unmapped specialist as out of scope and does not change the appointment' do
+  describe 'receptions the status does not depend on' do
+    it 'applies the status of an appointment whose detail names a specialist OneLink does not know, and counts the detail' do
       appointment = stale_appointment('reception-1')
       provider_says(appointment, 'SPECIALIST_CODE' => 'left-the-clinic', 'ACTIVE' => 0)
 
-      report = reconciler.perform
+      dry = reconciler(dry_run: true).perform
+      real = reconciler.perform
 
-      expect(report).to have_attributes(out_of_scope: 1, changed: 0)
-      expect(appointment.reload.status).to eq('scheduled')
+      expect(dry).to have_attributes(unmapped_specialist: 1, changed: 1)
+      expect(real).to have_attributes(unmapped_specialist: 1, changed: 1, skipped: 0)
+      expect(appointment.reload).to have_attributes(status: 'completed', resource_id: resource.id)
     end
 
-    it 'skips a reception whose rows the importer refuses and goes on' do
+    it 'counts nothing for a specialist OneLink knows' do
+      provider_says(stale_appointment('reception-1'), 'ACTIVE' => 0)
+
+      expect(reconciler.perform).to have_attributes(unmapped_specialist: 0, changed: 1)
+    end
+
+    it 'skips an appointment that cannot be saved, and goes on' do
       broken = stale_appointment('broken-1')
       fine = stale_appointment('fine-1')
-      provider_says(broken, 'SERVICES' => ['not a row'], 'ACTIVE' => 0)
+      broken.update_columns(client_name: '') # rubocop:disable Rails/SkipsModelValidations
+      provider_says(broken, 'ACTIVE' => 0)
       provider_says(fine, 'ACTIVE' => 0)
 
       report = reconciler.perform
 
       expect(report).to have_attributes(skipped: 1, changed: 1)
-      expect(report.skipped_reasons).to eq('InvalidSnapshotError' => 1)
+      expect(report.skipped_reasons).to eq('RecordInvalid' => 1)
       expect([broken, fine].map { |appointment| appointment.reload.status }).to eq(%w[scheduled completed])
     end
 
@@ -276,6 +285,213 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
     end
   end
 
+  describe 'a detail that does not say whether the reception is active' do
+    # nil, blank and a missing ACTIVE are unknown, never "not active": the appointment is not completed, and nothing is written.
+    let!(:appointments) do
+      { nil: stale_appointment('nil-1'), blank: stale_appointment('blank-1', status: 'confirmed'), missing: stale_appointment('missing-1') }
+    end
+
+    before do
+      provider_says(appointments[:nil], 'ACTIVE' => nil)
+      provider_says(appointments[:blank], 'ACTIVE' => ' ')
+      provider['missing-1'] = detail_for(appointments[:missing]).except('ACTIVE')
+    end
+
+    it 'does not complete the appointment, in a dry run or in a real run, and writes nothing' do
+      updated = Scheduling::Appointment.order(:id).pluck(:id, :status, :updated_at, :custom_attributes)
+      dry = reconciler(dry_run: true).perform
+      real = nil
+      writes = database_writes { real = reconciler.perform }
+
+      expect(dry.transitions).to eq('scheduled' => { 'scheduled' => 2 }, 'confirmed' => { 'confirmed' => 1 })
+      expect(real.transitions).to eq(dry.transitions)
+      expect(real).to have_attributes(examined: 3, changed: 0, unchanged: 3, skipped: 0)
+      expect(writes).to be_empty
+      expect(Scheduling::Appointment.order(:id).pluck(:id, :status, :updated_at, :custom_attributes)).to eq(updated)
+    end
+
+    it 'still completes an appointment whose detail says it is not active' do
+      closed = stale_appointment('closed-1')
+      numeric_string = stale_appointment('closed-2')
+      provider_says(closed, 'ACTIVE' => 0)
+      provider_says(numeric_string, 'ACTIVE' => '0')
+
+      reconciler.perform
+
+      expect([closed, numeric_string].map { |appointment| appointment.reload.status }).to eq(%w[completed completed])
+      expect(appointments.values.map { |appointment| appointment.reload.status }).to eq(%w[scheduled confirmed scheduled])
+    end
+  end
+
+  describe 'details without a cabinet, as MedElement gives them' do
+    # single: the doctor with one cabinet. bare: the same, with no cabinet stored. multi: a doctor with two cabinets. stray: an
+    # appointment of the first doctor that MedElement now gives to the second. foreign: an unmapped doctor. wrong: an appointment
+    # of the first doctor that MedElement gives to the second, with a cabinet the second doctor does not have. renamed: the doctor's
+    # own appointment, for which the detail names another cabinet (the cabinet of a created reception never changes).
+    let!(:appointments) do
+      two_cabinets = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty',
+                                                  custom_attributes: { 'medelement_specialist_code' => 'doctor-2',
+                                                                       'medelement_cabinets' => [{ 'company_cabinet_code' => 'cabinet-2' },
+                                                                                                 { 'company_cabinet_code' => 'cabinet-3' }] })
+      {
+        single: stale_appointment('single-1', custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' }),
+        bare: stale_appointment('bare-1'),
+        multi: stale_appointment('multi-1', resource: two_cabinets, status: 'confirmed',
+                                            custom_attributes: { 'medelement_cabinet_code' => 'cabinet-3' }, service_amount: 12_000,
+                                            prepaid_amount: 2000, payment_status: 'prepaid'),
+        stray: stale_appointment('stray-1', custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' }),
+        foreign: stale_appointment('foreign-1'),
+        wrong: stale_appointment('wrong-1', custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' }),
+        renamed: stale_appointment('renamed-1', custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' })
+      }
+    end
+
+    before do
+      provider_says(appointments[:single], 'COMPANY_CABINET_CODE' => nil, 'ACTIVE' => 0)
+      provider_says(appointments[:bare], 'COMPANY_CABINET_CODE' => nil, 'VISIT_STATUS_NAME' => 'неявка')
+      provider_says(appointments[:multi], 'COMPANY_CABINET_CODE' => nil, 'SPECIALIST_CODE' => 'doctor-2', 'ACTIVE' => 0)
+      provider_says(appointments[:stray], 'COMPANY_CABINET_CODE' => nil, 'SPECIALIST_CODE' => 'doctor-2', 'ACTIVE' => 0)
+      provider_says(appointments[:foreign], 'COMPANY_CABINET_CODE' => nil, 'SPECIALIST_CODE' => 'left-the-clinic', 'ACTIVE' => 0)
+      provider_says(appointments[:wrong], 'SPECIALIST_CODE' => 'doctor-2', 'COMPANY_CABINET_CODE' => 'cabinet-1', 'ACTIVE' => 0)
+      provider_says(appointments[:renamed], 'COMPANY_CABINET_CODE' => 'cabinet-3', 'ACTIVE' => 0)
+    end
+
+    it 'applies the status of each of them, and a dry run and the real run follow the same rule' do
+      dry = reconciler(dry_run: true).perform
+      real = reconciler.perform
+
+      expect(dry.transitions).to eq('scheduled' => { 'completed' => 5, 'no_show' => 1 }, 'confirmed' => { 'completed' => 1 })
+      expect(real.transitions).to eq(dry.transitions)
+      expect([real.changed, real.unchanged, real.skipped]).to eq([dry.changed, dry.unchanged, dry.skipped]).and eq([7, 0, 0])
+      expect([real.unmapped_specialist, dry.unmapped_specialist]).to eq([1, 1])
+      expect(appointments.values.map { |appointment| appointment.reload.status })
+        .to eq(%w[completed no_show completed completed completed completed completed])
+    end
+
+    it 'keeps the resource, the payment and the cabinet of an appointment it closes' do
+      reconciler.perform
+
+      multi = appointments[:multi].reload
+      expect(multi).to have_attributes(status: 'completed', service_amount: 12_000, prepaid_amount: 2000, payment_status: 'prepaid')
+      expect(multi.custom_attributes).to include('medelement_cabinet_code' => 'cabinet-3')
+      expect(appointments[:single].reload.custom_attributes).to include('medelement_cabinet_code' => 'cabinet-1')
+      expect(appointments[:bare].reload.custom_attributes).not_to have_key('medelement_cabinet_code')
+      expect(appointments[:renamed].reload.custom_attributes).to include('medelement_cabinet_code' => 'cabinet-1')
+      # MedElement names another specialist for these two, and the status is all that is taken from it.
+      expect([appointments[:stray], appointments[:wrong]].map { |appointment| appointment.reload.resource_id }).to eq([resource.id] * 2)
+      expect([appointments[:stray], appointments[:wrong]].map { |appointment| appointment.custom_attributes['medelement_cabinet_code'] })
+        .to eq(%w[cabinet-1 cabinet-1])
+    end
+
+    it 'reports the detail of the unmapped specialist in the summary' do
+      lines = reconciler(dry_run: true).perform.summary_lines
+
+      expect(lines).to include(a_string_matching(/not mapped in OneLink.*all the same\): 1\z/))
+    end
+  end
+
+  describe 'what a status change leaves alone, with patient sync on' do
+    let(:hook) do
+      create(:integrations_hook, :medelement, account: account).tap do |record|
+        record.update!(settings: record.settings.merge('sync_patients' => true))
+      end
+    end
+    let!(:appointment) do
+      patient = create(:contact, account: account, name: 'Local', last_name: 'Patient', phone_number: '+77015235543',
+                                 identifier: '720914402646', custom_attributes: { 'medelement_patient_code' => 'patient-1' })
+      consultation = create(:scheduling_service, account: account, name: 'Consultation', base_price: 15_000,
+                                                 custom_attributes: { 'medelement_nomenclature_code' => 'nomenclature-1' })
+      stale_appointment(
+        'rich-1', contact: patient, patient_contact: patient, service: consultation, status: 'confirmed',
+                  client_first_name: 'Local', client_last_name: 'Patient', client_name: 'Local Patient', client_phone: '+77015235543',
+                  client_identifier: '720914402646', client_birth_date: Date.new(1990, 5, 17), client_gender: 'female',
+                  service_amount: 15_000, prepaid_amount: 5000, payment_status: 'prepaid',
+                  custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1', 'medelement_reception_code' => 'rich-1',
+                                       'medelement_patient_code' => 'patient-1', 'medelement_specialist_code' => 'doctor-1',
+                                       'medelement_list_fingerprint' => 'fingerprint', 'medelement_detail_synced_at' => '2026-09-01T10:00:00Z',
+                                       'medelement_missing_since' => '2026-09-02T10:00:00Z', 'medelement_missing_syncs' => 1,
+                                       'provider_status_audit' => { 'source' => 'medelement_reception_sync', 'status' => 'confirmed',
+                                                                    'reason' => 'preserved_local_confirmation' } }
+      )
+    end
+    # Everything a full import of this detail would rewrite: the patient, services, times, specialist and amounts.
+    let(:detail) do
+      detail_for(
+        appointment, 'ACTIVE' => 0, 'COMPANY_CABINET_CODE' => nil, 'SPECIALIST_CODE' => 'doctor-2', 'PATIENT_FULLNAME' => 'Renamed Provider Patient',
+                     'STARTTIME' => '2026-09-01 14:00:00', 'ENDTIME' => '2026-09-01 14:45:00',
+                     'SERVICES' => [{ 'NOMENCLATURE_CODE' => 'nomenclature-1', 'PRICE' => 99_000, 'QUANTITY' => 2 }]
+      )
+    end
+
+    def reconciliation_keys
+      Integrations::Medelement::AppointmentImporterService::RECONCILIATION_ATTRIBUTE_KEYS
+    end
+
+    def everything_but_the_status
+      record = Scheduling::Appointment.find(appointment.id)
+      {
+        columns: record.attributes.except('status', 'custom_attributes', 'updated_at'),
+        custom_attributes: record.custom_attributes.except('provider_status_audit', *reconciliation_keys),
+        payments: record.payments.map(&:attributes),
+        contacts: account.contacts.order(:id).map(&:attributes),
+        services: account.scheduling_services.order(:id).map(&:attributes),
+        resources: account.scheduling_resources.order(:id).map(&:attributes)
+      }
+    end
+
+    before do
+      create(:scheduling_resource, account: account, timezone: 'Asia/Almaty',
+                                   custom_attributes: { 'medelement_specialist_code' => 'doctor-2',
+                                                        'medelement_cabinets' => [{ 'company_cabinet_code' => 'cabinet-2' }] })
+      create(:scheduling_payment, appointment: appointment, amount: 5000, payment_method: 'cash')
+      appointment.reload
+      provider_patient = { 'PROFILE_CODE' => 'patient-1', 'COMPANY_CODE' => hook.settings['organization_id'],
+                           'FULLNAME' => 'Renamed Provider Patient', 'LASTNAME' => 'Provider', 'IIN' => '720914402646',
+                           'PATIENT_PHONE_2_STR' => '+7 777 1112233' }
+      allow(client).to receive_messages(get_patient: provider_patient, search_patients_by_codes: [provider_patient])
+      provider[appointment.external_ref.delete_prefix('medelement:reception:')] = detail
+    end
+
+    it 'changes the status and the audit of the status, and nothing else of the appointment, the patient or the payments' do
+      before = everything_but_the_status
+
+      report = reconciler.perform
+
+      expect(report).to have_attributes(changed: 1, skipped: 0, unmapped_specialist: 0)
+      expect(appointment.reload.status).to eq('completed')
+      expect(appointment.custom_attributes['provider_status_audit']).to include(
+        'source' => 'medelement_reception_sync', 'previous_status' => 'confirmed', 'status' => 'completed', 'reason' => 'provider_inactive'
+      )
+      expect(appointment.custom_attributes.keys).not_to include(*reconciliation_keys)
+      expect(everything_but_the_status).to eq(before)
+    end
+
+    it 'does not read the patient or write anything to MedElement' do
+      reconciler.perform
+
+      expect(client).not_to have_received(:get_patient)
+      expect(client).not_to have_received(:search_patients_by_codes)
+      expect(client).to have_received(:get_reception).once
+    end
+
+    it 'writes the appointment once, and its status is what changed' do
+      writes = database_writes { reconciler.perform }
+
+      expect(writes.grep(/\A\s*UPDATE "scheduling_appointments"/).size).to eq(1)
+      expect(writes.grep(/\A\s*(INSERT|UPDATE|DELETE)/).grep_v(/scheduling_appointments/)).to be_empty
+    end
+
+    it 'leaves the appointment untouched in a dry run' do
+      before = Scheduling::Appointment.find(appointment.id).attributes
+
+      writes = database_writes { reconciler(dry_run: true).perform }
+
+      expect(writes).to be_empty
+      expect(Scheduling::Appointment.find(appointment.id).attributes).to eq(before)
+      expect(client).not_to have_received(:get_patient)
+    end
+  end
+
   describe 'a dry run' do
     let!(:completed) { stale_appointment('done-1') }
     let!(:still_open) { stale_appointment('open-1', status: 'confirmed') }
@@ -291,8 +507,8 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
     it 'reports the old and the provider status of each appointment' do
       report = reconciler(dry_run: true).perform
 
-      expect(report).to have_attributes(dry_run: true, examined: 4, changed: 1, unchanged: 1, not_found: 1, out_of_scope: 1)
-      expect(report.transitions).to eq('scheduled' => { 'completed' => 1 }, 'confirmed' => { 'confirmed' => 1 })
+      expect(report).to have_attributes(dry_run: true, examined: 4, changed: 1, unchanged: 2, not_found: 1, unmapped_specialist: 1)
+      expect(report.transitions).to eq('scheduled' => { 'completed' => 1, 'scheduled' => 1 }, 'confirmed' => { 'confirmed' => 1 })
       expect(report.not_found_appointment_ids).to eq([gone.id])
     end
 
@@ -311,9 +527,9 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
     it 'prints one line per transition and the outcomes without one' do
       lines = reconciler(dry_run: true).perform.summary_lines
 
-      expect(lines).to include('  scheduled -> completed: 1', '  confirmed -> confirmed: 1')
+      expect(lines).to include('  scheduled -> completed: 1', '  confirmed -> confirmed: 1', '  scheduled -> scheduled: 1')
       expect(lines).to include(a_string_matching(/not found at MedElement.*#{gone.id}/))
-      expect(lines).to include(a_string_matching(/out of scope.*: 1/))
+      expect(lines).to include(a_string_matching(/specialist that is not mapped in OneLink.*: 1\z/))
     end
   end
 
@@ -366,9 +582,10 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
       expect(EventDispatcherJob).not_to have_been_enqueued
     end
 
-    it 'leaves the flag off after a run, also when an import is refused', :aggregate_failures do
+    it 'leaves the flag off after a run, also when a status is refused', :aggregate_failures do
       broken = stale_appointment('broken-1')
-      provider_says(broken, 'SERVICES' => ['not a row'])
+      broken.update_columns(client_name: '') # rubocop:disable Rails/SkipsModelValidations
+      provider_says(broken, 'ACTIVE' => 0)
 
       expect(reconciler.perform.skipped).to eq(1)
       expect(Current.medelement_reconciliation).to be_nil

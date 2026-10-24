@@ -12,6 +12,11 @@ class Integrations::Medelement::AppointmentImporterService
     medelement_removed_at
     medelement_detail_retry_at
   ].freeze
+  # Set on a reception that was read through the single-reception detail alone. The detail has no cabinet, visit status name
+  # or creation time (the list has), so what it does not say is unknown and the stored value stays.
+  DETAIL_ONLY_KEY = '_MEDELEMENT_DETAIL_ONLY'.freeze
+  RETAINED_OUTCOME_REASONS = %w[provider_explicit_no_show provider_explicit_cancelled provider_explicit_completed].freeze
+  ACTIVITY_UNKNOWN_REASON = 'provider_activity_unknown'.freeze
   ImportSubject = Data.define(:patient_contact, :contact, :preserve_identity)
 
   def initialize(account:, conflict_tracker: nil)
@@ -49,6 +54,24 @@ class Integrations::Medelement::AppointmentImporterService
   # The status upsert! would give this appointment for the reception, from the same mapping and without saving anything.
   def provider_status_for(appointment, reception, starts_at = nil)
     provider_status_resolution(appointment, reception, starts_at)[:status]
+  end
+
+  # Gives the appointment the status provider_status_for says, and writes nothing else of the reception: not the contact or
+  # client fields, services, times, resource, cabinet or payments. A status that does not change is not written at all. A status
+  # that does change is written with what the import writes with it: the audit of the status and the reconciliation marks of
+  # a reception that MedElement has again, and only if the import would take the reception for this appointment (it is not a
+  # cancellation that the provider still has to remove, and not another source's appointment). only_from: the statuses the
+  # appointment must still have when its row is locked; :no_longer_open when it has another one.
+  def apply_provider_status!(appointment, reception, starts_at: nil, only_from: nil)
+    appointment.with_lock do
+      next :no_longer_open if only_from && !appointment.status.in?(only_from)
+
+      resolution = provider_status_resolution(appointment, reception, starts_at)
+      next appointment if resolution[:status] == appointment.status
+
+      validate_import!(appointment, reception, {})
+      write_provider_status!(appointment, resolution, reception)
+    end
   end
 
   private
@@ -258,9 +281,39 @@ class Integrations::Medelement::AppointmentImporterService
       return { status: 'completed', reason: 'provider_explicit_completed', raw_status: provider_status }
     end
     return { status: 'cancelled', reason: 'provider_removed' } if reception['REMOVED'].to_i == 1
+
+    retained_outcome_resolution(appointment, reception, provider_status) ||
+      reported_activity_resolution(appointment, reception, provider_starts_at)
+  end
+
+  def reported_activity_resolution(appointment, reception, provider_starts_at)
+    return unknown_activity_resolution(appointment) if reception['ACTIVE'].blank?
     return { status: 'completed', reason: 'provider_inactive' } unless reception['ACTIVE'].to_i == 1
 
     local_cancellation_resolution(appointment, provider_starts_at) || active_reception_resolution(appointment)
+  end
+
+  # ACTIVE nil, blank or absent does not say whether the reception is still open: it is unknown, never "inactive". A new
+  # reception is open. An appointment keeps what it has (its status, its local cancellation marker and its audit): retained.
+  def unknown_activity_resolution(appointment)
+    return { status: 'scheduled', reason: ACTIVITY_UNKNOWN_REASON } unless appointment.persisted?
+
+    { status: appointment.status, reason: ACTIVITY_UNKNOWN_REASON, retained: true }
+  end
+
+  # A detail without a visit status name does not say the outcome is gone: the explicit outcome that MedElement gave
+  # earlier (and that nobody changed locally since) stays.
+  def retained_outcome_resolution(appointment, reception, provider_status)
+    return unless provider_status.nil? && reception[DETAIL_ONLY_KEY] && appointment.persisted?
+
+    audit = stored_provider_status_audit(appointment)
+    return unless audit['reason'].in?(RETAINED_OUTCOME_REASONS) && audit['status'] == appointment.status
+
+    { status: appointment.status, reason: audit['reason'], raw_status: audit['raw_status'], retained: true }.compact
+  end
+
+  def stored_provider_status_audit(appointment)
+    appointment.custom_attributes.to_h['provider_status_audit'].to_h
   end
 
   def local_cancellation_resolution(appointment, provider_starts_at)
@@ -336,8 +389,9 @@ class Integrations::Medelement::AppointmentImporterService
     service_binding = service_data.fetch(:service_binding)
     status_resolution = service_data.fetch(:status_resolution)
     attributes = provider_attributes(appointment, reception, import_context, contact, status_resolution)
-    # The marker lives only while the local cancellation is preserved against an active reception.
-    attributes = attributes.except(local_cancellation::MARKER_KEY) unless status_resolution[:reason] == local_cancellation::PRESERVED_REASON
+    # The marker lives only while the local cancellation is preserved against an active reception, or while a reception of
+    # unknown activity leaves the appointment as it is.
+    attributes = attributes.except(local_cancellation::MARKER_KEY) unless marker_survives?(status_resolution)
     attributes = Integrations::Medelement::AppointmentMoveState.after_provider_import(
       attributes, starts_at: import_context[:starts_at], ends_at: import_context[:ends_at]
     )
@@ -347,6 +401,10 @@ class Integrations::Medelement::AppointmentImporterService
       services: services,
       unresolved_service_codes: unresolved_service_codes
     )
+  end
+
+  def marker_survives?(status_resolution)
+    status_resolution[:reason] == local_cancellation::PRESERVED_REASON || status_resolution[:retained]
   end
 
   def provider_attributes(appointment, reception, import_context, contact, status_resolution)
@@ -362,9 +420,10 @@ class Integrations::Medelement::AppointmentImporterService
 
   def reception_attributes(appointment, reception, import_context)
     {
-      'medelement_cabinet_code' => reception['COMPANY_CABINET_CODE'].to_s.presence,
+      'medelement_cabinet_code' => reception['COMPANY_CABINET_CODE'].to_s.presence || stored_attribute(appointment, 'medelement_cabinet_code'),
       'medelement_reception_code' => reception['RECEPTION_CODE'].to_s,
-      'medelement_source_created_at' => reception['CREATED_AT'].to_s.presence,
+      'medelement_source_created_at' => reception['CREATED_AT'].to_s.presence ||
+        stored_attribute(appointment, 'medelement_source_created_at'),
       'medelement_source_timezone' => import_context[:source_timezone].presence || appointment.resource&.timezone ||
         Scheduling::Constants::DEFAULT_TIMEZONE,
       'medelement_specialist_code' => import_context[:specialist_code].to_s,
@@ -373,7 +432,16 @@ class Integrations::Medelement::AppointmentImporterService
     }
   end
 
+  # A reception that does not carry a field says nothing about it: the stored value stays.
+  def stored_attribute(appointment, key)
+    appointment.custom_attributes.to_h[key]
+  end
+
+  # A status that was retained as it is has no new audit: the stored one, with its reason, stays.
   def provider_status_audit(appointment, status_resolution, import_context)
+    stored = stored_provider_status_audit(appointment)
+    return stored if status_resolution[:retained] && stored.present?
+
     {
       'source' => 'medelement_reception_sync',
       'previous_status' => appointment.status,
@@ -382,6 +450,17 @@ class Integrations::Medelement::AppointmentImporterService
       'raw_status' => status_resolution[:raw_status],
       'observed_at' => import_context[:detail_synced_at] || Time.current.iso8601
     }.compact
+  end
+
+  def write_provider_status!(appointment, resolution, reception)
+    audit = provider_status_audit(appointment, resolution, detail_synced_at: reception['_MEDELEMENT_DETAIL_SYNCED_AT'])
+    # The reception is there again, and a local cancellation no longer applies to a status that MedElement changed.
+    attributes = appointment.custom_attributes.to_h.except(*RECONCILIATION_ATTRIBUTE_KEYS, local_cancellation::MARKER_KEY)
+    appointment.assign_attributes(status: resolution[:status], custom_attributes: attributes.merge('provider_status_audit' => audit))
+    # A correction that comes from the provider is never sent back to it.
+    appointment.mark_medelement_provider_reconciled!
+    appointment.save!
+    appointment
   end
 
   def resolved_services(reception)

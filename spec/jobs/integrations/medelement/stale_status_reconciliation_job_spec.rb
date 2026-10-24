@@ -22,8 +22,71 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciliationJob do
     described_class.perform_now(hook.id)
 
     expect(Integrations::Medelement::StaleStatusReconciler).to have_received(:new)
-      .with(hook: hook, days: 30, dry_run: false, max_per_run: 1000)
+      .with(hook: hook, days: 30, dry_run: true, max_per_run: 1000)
     expect(reconciler).to have_received(:perform)
+  end
+
+  describe 'applying statuses' do
+    def enable_apply(value)
+      hook.update!(settings: hook.settings.merge('stale_status_apply_enabled' => value))
+    end
+
+    it 'is only a dry run for a hook that has not been switched on, so the nightly run writes nothing until the owner agrees' do
+      expect(Integrations::Medelement::Configuration.new(hook: hook).stale_status_apply_enabled?).to be(false)
+
+      described_class.perform_now(hook.id)
+
+      expect(Integrations::Medelement::StaleStatusReconciler).to have_received(:new).with(hash_including(dry_run: true))
+    end
+
+    it 'applies the statuses for a hook that has been switched on' do
+      enable_apply(true)
+
+      described_class.perform_now(hook.id)
+
+      expect(Integrations::Medelement::StaleStatusReconciler).to have_received(:new).with(hash_including(dry_run: false))
+    end
+
+    it 'is a dry run again for a hook that has been switched off' do
+      enable_apply(true)
+      enable_apply(false)
+
+      described_class.perform_now(hook.id)
+
+      expect(Integrations::Medelement::StaleStatusReconciler).to have_received(:new).with(hash_including(dry_run: true))
+    end
+
+    it 'does what the caller says when it says dry_run, whatever the hook has' do
+      described_class.perform_now(hook.id, dry_run: false)
+      expect(Integrations::Medelement::StaleStatusReconciler).to have_received(:new).with(hash_including(dry_run: false))
+
+      enable_apply(true)
+      described_class.perform_now(hook.id, dry_run: true)
+      expect(Integrations::Medelement::StaleStatusReconciler).to have_received(:new).with(hash_including(dry_run: true))
+    end
+
+    it 'writes nothing when the nightly entry runs on a fresh deploy, from the cron call to the reconciler' do
+      hook
+      medelement_hook
+
+      perform_enqueued_jobs { described_class.perform_now }
+
+      expect(Integrations::Medelement::StaleStatusReconciler).to have_received(:new).twice
+      expect(Integrations::Medelement::StaleStatusReconciler).to have_received(:new).with(hash_including(dry_run: true)).twice
+      expect(Integrations::Medelement::StaleStatusReconciler).not_to have_received(:new).with(hash_including(dry_run: false))
+    end
+
+    it 'decides for each hook on its own when the nightly entry queued the runs' do
+      switched_on = medelement_hook(settings: hook.settings.merge('stale_status_apply_enabled' => true))
+      switched_off = medelement_hook
+
+      [switched_on, switched_off].each { |record| described_class.perform_now(record.id, dry_run: nil) }
+
+      expect(Integrations::Medelement::StaleStatusReconciler).to have_received(:new)
+        .with(hash_including(hook: switched_on, dry_run: false))
+      expect(Integrations::Medelement::StaleStatusReconciler).to have_received(:new)
+        .with(hash_including(hook: switched_off, dry_run: true))
+    end
   end
 
   it 'can be run once for the whole history, as a dry run, without a cap' do
@@ -33,11 +96,11 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciliationJob do
       .with(hook: hook, days: nil, dry_run: true, max_per_run: nil)
   end
 
-  it 'queues one run for every enabled MedElement hook when called without a hook, with the same options' do
+  it 'queues one run for every enabled MedElement hook when called without a hook, leaving dry_run to each hook' do
     first = medelement_hook
     second = medelement_hook
     disabled = medelement_hook(status: 'disabled')
-    options = { days: 30, dry_run: false, max_per_run: 1000 }
+    options = { days: 30, dry_run: nil, max_per_run: 1000 }
 
     expect { described_class.perform_now }
       .to have_enqueued_job(described_class).with(first.id, **options)
@@ -49,7 +112,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciliationJob do
   it 'spreads the queued runs over time' do
     first = medelement_hook
     second = medelement_hook
-    options = { days: 30, dry_run: false, max_per_run: 1000 }
+    options = { days: 30, dry_run: nil, max_per_run: 1000 }
 
     freeze_time do
       expect { described_class.perform_now }
