@@ -142,7 +142,7 @@ class Integrations::Medelement::StaleStatusReconciler
   def preview(appointment, detail)
     status = sync_service.preview_reported_status(detail)
     case status
-    when :out_of_scope then report.out_of_scope!
+    when Integrations::Medelement::ReceptionsSyncService::OutOfScope then report.out_of_scope!(status.reason)
     when :absent then report.skipped!('absent')
     else record_transition(appointment.status, status)
     end
@@ -163,7 +163,7 @@ class Integrations::Medelement::StaleStatusReconciler
   end
 
   def record_applied(before, appointment, result)
-    return report.out_of_scope! if result == :out_of_scope
+    return report.out_of_scope!(result.reason) if result.is_a?(Integrations::Medelement::ReceptionsSyncService::OutOfScope)
     # The import refused the reception on its own grounds (for example a newer local change), and said why.
     return report.skipped!(result.to_s) if result.is_a?(Symbol)
 

@@ -36,13 +36,44 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
     )
   end
 
+  it 'marks the detail as read without the list and gives the importer the cabinet it resolved' do
+    detail = {
+      'RECEPTION_CODE' => 'reception-1', 'PROFILE_CODE' => 'patient-1', 'SPECIALIST_CODE' => 'doctor-1',
+      'STARTTIME' => '2026-10-07 10:00:00', 'ENDTIME' => '2026-10-07 10:20:00', 'SERVICES' => []
+    }
+    service = described_class.new(account: account, client: client, configuration: configuration)
+
+    service.import_reported_reception!(detail)
+
+    expect(importer).to have_received(:upsert!).with(
+      hash_including(reception: hash_including('COMPANY_CABINET_CODE' => 'cabinet-1', '_MEDELEMENT_DETAIL_ONLY' => true))
+    )
+  end
+
+  it 'hands the importer no cabinet for a reception OneLink already has on the specialist resource' do
+    doctor = account.scheduling_resources.find_by!("custom_attributes ->> 'medelement_specialist_code' = 'doctor-1'")
+    create(:scheduling_appointment, account: account, external_ref: 'medelement:reception:reception-1', resource: doctor)
+    detail = {
+      'RECEPTION_CODE' => 'reception-1', 'PROFILE_CODE' => 'patient-1', 'SPECIALIST_CODE' => 'doctor-1',
+      'COMPANY_CABINET_CODE' => 'another-cabinet', 'STARTTIME' => '2026-10-07 10:00:00', 'ENDTIME' => '2026-10-07 10:20:00',
+      'SERVICES' => []
+    }
+    service = described_class.new(account: account, client: client, configuration: configuration)
+
+    service.import_reported_reception!(detail)
+
+    expect(importer).to have_received(:upsert!).with(
+      hash_including(reception: satisfy { |reception| !reception.key?('COMPANY_CABINET_CODE') })
+    )
+  end
+
   it 'uses the existing reconciler only for an explicitly removed reception' do
     appointment = create(:scheduling_appointment, account: account, external_ref: 'medelement:reception:reception-1')
     reconciler = instance_double(Integrations::Medelement::MissingAppointmentReconciler, perform: true)
     allow(Integrations::Medelement::MissingAppointmentReconciler).to receive(:new).and_return(reconciler)
     service = described_class.new(account: account, client: client, configuration: configuration)
 
-    service.import_reported_reception!('RECEPTION_CODE' => 'reception-1', 'REMOVED' => 1)
+    service.import_reported_reception!({ 'RECEPTION_CODE' => 'reception-1', 'REMOVED' => 1 })
 
     expect(Integrations::Medelement::MissingAppointmentReconciler).to have_received(:new).with(
       appointment: appointment, snapshot_version: appointment.updated_at, provider_removal_confirmed: true
@@ -85,10 +116,29 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
         expect(service.preview_reported_status(detail.merge('REMOVED' => 1))).to eq('cancelled')
       end
 
-      it 'says out of scope when the specialist or cabinet is not mapped' do
-        expect(service.preview_reported_status(detail.merge('SPECIALIST_CODE' => 'unknown'))).to eq(:out_of_scope)
-        expect(service.preview_reported_status(detail.merge('COMPANY_CABINET_CODE' => 'unknown'))).to eq(:out_of_scope)
+      it 'says out of scope, and why, when the specialist or cabinet is not mapped' do
+        out_of_scope = described_class::OutOfScope
+        expect(service.preview_reported_status(detail.merge('SPECIALIST_CODE' => 'unknown')))
+          .to eq(out_of_scope.new(reason: :specialist_not_mapped))
+        expect(service.preview_reported_status(detail.merge('COMPANY_CABINET_CODE' => 'unknown')))
+          .to eq(out_of_scope.new(reason: :cabinet_mismatch))
         expect(importer).not_to have_received(:provider_status_for)
+      end
+
+      it 'resolves a detail without cabinet like the import does and hands the importer the cabinet' do
+        service.preview_reported_status(detail.except('COMPANY_CABINET_CODE'))
+
+        expect(importer).to have_received(:provider_status_for).with(
+          appointment, hash_including('COMPANY_CABINET_CODE' => 'cabinet-1', '_MEDELEMENT_DETAIL_ONLY' => true)
+        )
+      end
+
+      it 'hands the importer no cabinet for the specialist own appointment, so that the stored cabinet stays' do
+        appointment.update!(resource: account.scheduling_resources.find_by!("custom_attributes ->> 'medelement_specialist_code' = 'doctor-1'"))
+
+        service.preview_reported_status(detail.merge('COMPANY_CABINET_CODE' => 'another-cabinet'), entry_cabinet_code: 'cabinet-1')
+
+        expect(importer).to have_received(:provider_status_for).with(appointment, satisfy { |reception| !reception.key?('COMPANY_CABINET_CODE') })
       end
     end
   end

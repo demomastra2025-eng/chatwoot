@@ -33,7 +33,61 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaService do
     expect(result).to include(changed_codes: 1, applied: 1, complete: true)
     expect(cursor.value).to be_present
     expect(client).to have_received(:get_reception).with(reception_code: 'reception-1', version: :v2)
-    expect(importer).to have_received(:import_reported_reception!).with(hash_including('RECEPTION_CODE' => 'reception-1'))
+    expect(importer).to have_received(:import_reported_reception!)
+      .with(hash_including('RECEPTION_CODE' => 'reception-1'), entry_cabinet_code: nil)
+  end
+
+  describe 'the cabinet of the update list' do
+    def import_with_entries(entries)
+      allow(client).to receive(:receptions_by_update_date).and_return(entries)
+      service.perform
+    end
+
+    it 'passes the cabinet the entry of the code reports, in any of its spellings' do
+      import_with_entries(
+        [{ 'RECEPTION_CODE' => 'reception-1', 'COMPANY_CABINET_CODE' => 'cabinet-2' },
+         { 'receptionCode' => 'reception-2', 'companyCabinetCode' => 'cabinet-3' }]
+      )
+
+      expect(importer).to have_received(:import_reported_reception!)
+        .with(hash_including('RECEPTION_CODE' => 'reception-1'), entry_cabinet_code: 'cabinet-2')
+      expect(importer).to have_received(:import_reported_reception!)
+        .with(hash_including('RECEPTION_CODE' => 'reception-2'), entry_cabinet_code: 'cabinet-3')
+    end
+
+    it 'passes the cabinet that several entries of one code agree on, and none when they disagree or give none' do
+      import_with_entries(
+        [{ 'RECEPTION_CODE' => 'reception-1', 'COMPANY_CABINET_CODE' => 'cabinet-2' },
+         { 'RECEPTION_CODE' => 'reception-1' },
+         { 'RECEPTION_CODE' => 'reception-1', 'COMPANY_CABINET_CODE' => 'cabinet-2' },
+         { 'RECEPTION_CODE' => 'reception-2', 'COMPANY_CABINET_CODE' => 'cabinet-2' },
+         { 'RECEPTION_CODE' => 'reception-2', 'COMPANY_CABINET_CODE' => 'cabinet-3' },
+         { 'RECEPTION_CODE' => 'reception-3', 'COMPANY_CABINET_CODE' => '' }]
+      )
+
+      expect(importer).to have_received(:import_reported_reception!)
+        .with(hash_including('RECEPTION_CODE' => 'reception-1'), entry_cabinet_code: 'cabinet-2')
+      expect(importer).to have_received(:import_reported_reception!)
+        .with(hash_including('RECEPTION_CODE' => 'reception-2'), entry_cabinet_code: nil)
+      expect(importer).to have_received(:import_reported_reception!)
+        .with(hash_including('RECEPTION_CODE' => 'reception-3'), entry_cabinet_code: nil)
+    end
+
+    it 'imports a reception of a multi-cabinet specialist with the cabinet of its entry, through the real import' do
+      create(:scheduling_resource, account: account, timezone: 'Asia/Almaty',
+                                   custom_attributes: { 'medelement_specialist_code' => 'doctor-1',
+                                                        'medelement_cabinets' => [{ 'company_cabinet_code' => 'cabinet-1' },
+                                                                                  { 'company_cabinet_code' => 'cabinet-2' }] })
+      hook.update!(settings: hook.settings.merge('sync_patients' => false))
+      allow(Integrations::Medelement::ReceptionsSyncService).to receive(:new).and_call_original
+      allow(client).to receive(:get_reception) { |reception_code:, **| detail_for(reception_code).except('COMPANY_CABINET_CODE') }
+
+      import_with_entries([{ 'RECEPTION_CODE' => 'reception-1' }, { 'RECEPTION_CODE' => 'reception-2', 'COMPANY_CABINET_CODE' => 'cabinet-2' }])
+
+      expect(Scheduling::Appointment.find_by(external_ref: 'medelement:reception:reception-1')).to be_nil
+      expect(Scheduling::Appointment.find_by!(external_ref: 'medelement:reception:reception-2').custom_attributes)
+        .to include('medelement_cabinet_code' => 'cabinet-2')
+    end
   end
 
   it 'retains the cursor when applying a detail fails' do

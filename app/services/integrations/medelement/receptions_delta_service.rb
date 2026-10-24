@@ -36,12 +36,14 @@ class Integrations::Medelement::ReceptionsDeltaService
     Integrations::Medelement::ProviderScope.validate_write!(detail, organization_id: configuration.organization_id)
   end
 
-  def apply_detail!(detail)
+  # The detail has no cabinet. entry_cabinet_code is the cabinet the update list reported for the code, if it did.
+  # An OutOfScope (with its reason) is returned for a reception the import refuses because its specialist or cabinet is not mapped.
+  def apply_detail!(detail, entry_cabinet_code: nil)
     Integrations::Medelement::ReceptionsSyncService.new(
       account: hook.account, client: client, configuration: configuration
-    ).import_reported_reception!(detail)
-  rescue Integrations::Medelement::ReceptionsSyncService::OutOfScopeReception
-    :out_of_scope
+    ).import_reported_reception!(detail, entry_cabinet_code: entry_cabinet_code)
+  rescue Integrations::Medelement::ReceptionsSyncService::OutOfScopeReception => e
+    Integrations::Medelement::ReceptionsSyncService::OutOfScope.new(reason: e.reason)
   end
 
   private
@@ -81,7 +83,7 @@ class Integrations::Medelement::ReceptionsDeltaService
         break
       end
 
-      outcome == :out_of_scope ? skipped += 1 : applied += 1
+      outcome.is_a?(Integrations::Medelement::ReceptionsSyncService::OutOfScope) ? skipped += 1 : applied += 1
       processed += 1
     end
 
@@ -96,9 +98,15 @@ class Integrations::Medelement::ReceptionsDeltaService
     detail, marker = fetch_detail(code)
     return :seen if seen?(code, marker)
 
-    result = apply_detail!(detail)
+    result = apply_detail!(detail, entry_cabinet_code: entry_cabinet_code(entries))
     mark_seen!(code, marker)
     result
+  end
+
+  # The cabinet that the update list gives for a code; nil when it gives none or entries disagree.
+  def entry_cabinet_code(entries)
+    codes = entries.filter_map { |entry| Integrations::Medelement::CabinetAttributes.code(entry) }.uniq
+    codes.first if codes.one?
   end
 
   def update_marker(entry)

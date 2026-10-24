@@ -244,7 +244,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
 
       report = reconciler.perform
 
-      expect(report).to have_attributes(out_of_scope: 1, changed: 0)
+      expect(report).to have_attributes(out_of_scope: 1, changed: 0, out_of_scope_reasons: { specialist_not_mapped: 1 })
       expect(appointment.reload.status).to eq('scheduled')
     end
 
@@ -273,6 +273,75 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
 
       expect(report).to have_attributes(skipped: 1, changed: 0)
       expect(report.skipped_reasons).to eq('no_longer_open' => 1)
+    end
+  end
+
+  describe 'details without a cabinet, as MedElement gives them' do
+    # single: the doctor with one cabinet. bare: the same, with no cabinet stored. multi: a doctor with two cabinets. stray: an
+    # appointment of the first doctor that MedElement now gives to the second. foreign: an unmapped doctor. wrong: an appointment
+    # of the first doctor that MedElement gives to the second, with a cabinet the second doctor does not have. renamed: the doctor's
+    # own appointment, for which the detail names another cabinet (the cabinet of a created reception never changes).
+    let!(:appointments) do
+      two_cabinets = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty',
+                                                  custom_attributes: { 'medelement_specialist_code' => 'doctor-2',
+                                                                       'medelement_cabinets' => [{ 'company_cabinet_code' => 'cabinet-2' },
+                                                                                                 { 'company_cabinet_code' => 'cabinet-3' }] })
+      {
+        single: stale_appointment('single-1', custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' }),
+        bare: stale_appointment('bare-1'),
+        multi: stale_appointment('multi-1', resource: two_cabinets, status: 'confirmed',
+                                            custom_attributes: { 'medelement_cabinet_code' => 'cabinet-3' }, service_amount: 12_000,
+                                            prepaid_amount: 2000, payment_status: 'prepaid'),
+        stray: stale_appointment('stray-1'),
+        foreign: stale_appointment('foreign-1'),
+        wrong: stale_appointment('wrong-1'),
+        renamed: stale_appointment('renamed-1', custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' })
+      }
+    end
+
+    before do
+      provider_says(appointments[:single], 'COMPANY_CABINET_CODE' => nil, 'ACTIVE' => 0)
+      provider_says(appointments[:bare], 'COMPANY_CABINET_CODE' => nil, 'VISIT_STATUS_NAME' => 'неявка')
+      provider_says(appointments[:multi], 'COMPANY_CABINET_CODE' => nil, 'SPECIALIST_CODE' => 'doctor-2', 'ACTIVE' => 0)
+      provider_says(appointments[:stray], 'COMPANY_CABINET_CODE' => nil, 'SPECIALIST_CODE' => 'doctor-2')
+      provider_says(appointments[:foreign], 'COMPANY_CABINET_CODE' => nil, 'SPECIALIST_CODE' => 'left-the-clinic')
+      provider_says(appointments[:wrong], 'SPECIALIST_CODE' => 'doctor-2', 'COMPANY_CABINET_CODE' => 'cabinet-1')
+      provider_says(appointments[:renamed], 'COMPANY_CABINET_CODE' => 'cabinet-3', 'ACTIVE' => 0)
+    end
+
+    it 'imports them, and a dry run and the real run follow the same rule' do
+      dry = reconciler(dry_run: true).perform
+      real = reconciler.perform
+
+      expect(dry.transitions).to eq('scheduled' => { 'completed' => 2, 'no_show' => 1 }, 'confirmed' => { 'completed' => 1 })
+      expect(real.transitions).to eq(dry.transitions)
+      expect([real.changed, real.unchanged, real.out_of_scope]).to eq([dry.changed, dry.unchanged, dry.out_of_scope])
+      expect(real.out_of_scope_reasons).to eq(dry.out_of_scope_reasons).and include(cabinet_unknown: 1)
+      expect(appointments.values.map { |appointment| appointment.reload.status })
+        .to eq(%w[completed no_show completed scheduled scheduled scheduled completed])
+    end
+
+    it 'breaks out of scope down by reason in the report' do
+      report = reconciler(dry_run: true).perform
+
+      reasons = { cabinet_mismatch: 1, cabinet_unknown: 1, specialist_not_mapped: 1 }
+      expect(report).to have_attributes(out_of_scope: 3, out_of_scope_reasons: reasons)
+      expect(report.to_h).to include(out_of_scope_reasons: reasons)
+      expect(report.summary_lines).to include(
+        '  out of scope (refused by the import): 3 (cabinet mismatch: 1, cabinet unknown: 1, specialist not mapped: 1)'
+      )
+      expect(report.log_line).to match(/out_of_scope_reasons=\{(\w+: 1(, )?){3}\}/)
+    end
+
+    it 'keeps the payment and the cabinet of an appointment it closes' do
+      reconciler.perform
+
+      multi = appointments[:multi].reload
+      expect(multi).to have_attributes(status: 'completed', service_amount: 12_000, prepaid_amount: 2000, payment_status: 'prepaid')
+      expect(multi.custom_attributes).to include('medelement_cabinet_code' => 'cabinet-3')
+      expect(appointments[:single].reload.custom_attributes).to include('medelement_cabinet_code' => 'cabinet-1')
+      expect(appointments[:bare].reload.custom_attributes).not_to have_key('medelement_cabinet_code')
+      expect(appointments[:renamed].reload.custom_attributes).to include('medelement_cabinet_code' => 'cabinet-1')
     end
   end
 

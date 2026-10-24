@@ -12,6 +12,10 @@ class Integrations::Medelement::AppointmentImporterService
     medelement_removed_at
     medelement_detail_retry_at
   ].freeze
+  # Set on a reception that was read through the single-reception detail alone. The detail has no cabinet, visit status name
+  # or creation time (the list has), so what it does not say is unknown and the stored value stays.
+  DETAIL_ONLY_KEY = '_MEDELEMENT_DETAIL_ONLY'.freeze
+  RETAINED_OUTCOME_REASONS = %w[provider_explicit_no_show provider_explicit_cancelled provider_explicit_completed].freeze
   ImportSubject = Data.define(:patient_contact, :contact, :preserve_identity)
 
   def initialize(account:, conflict_tracker: nil)
@@ -258,9 +262,28 @@ class Integrations::Medelement::AppointmentImporterService
       return { status: 'completed', reason: 'provider_explicit_completed', raw_status: provider_status }
     end
     return { status: 'cancelled', reason: 'provider_removed' } if reception['REMOVED'].to_i == 1
+
+    retained_resolution(appointment, reception, provider_status) ||
+      reported_activity_resolution(appointment, reception, provider_starts_at)
+  end
+
+  def reported_activity_resolution(appointment, reception, provider_starts_at)
     return { status: 'completed', reason: 'provider_inactive' } unless reception['ACTIVE'].to_i == 1
 
     local_cancellation_resolution(appointment, provider_starts_at) || active_reception_resolution(appointment)
+  end
+
+  # A detail without a visit status name does not say the outcome is gone: the explicit outcome that MedElement gave
+  # earlier (and that nobody changed locally since) stays. Nor does a detail without ACTIVE say the reception is closed.
+  def retained_resolution(appointment, reception, provider_status)
+    return unless reception[DETAIL_ONLY_KEY] && appointment.persisted?
+
+    audit = appointment.custom_attributes.to_h['provider_status_audit'].to_h
+    if provider_status.nil? && audit['reason'].in?(RETAINED_OUTCOME_REASONS) && audit['status'] == appointment.status
+      return { status: appointment.status, reason: audit['reason'], raw_status: audit['raw_status'] }.compact
+    end
+
+    { status: appointment.status, reason: 'provider_activity_unknown' } unless reception.key?('ACTIVE')
   end
 
   def local_cancellation_resolution(appointment, provider_starts_at)
@@ -362,15 +385,21 @@ class Integrations::Medelement::AppointmentImporterService
 
   def reception_attributes(appointment, reception, import_context)
     {
-      'medelement_cabinet_code' => reception['COMPANY_CABINET_CODE'].to_s.presence,
+      'medelement_cabinet_code' => reception['COMPANY_CABINET_CODE'].to_s.presence || stored_attribute(appointment, 'medelement_cabinet_code'),
       'medelement_reception_code' => reception['RECEPTION_CODE'].to_s,
-      'medelement_source_created_at' => reception['CREATED_AT'].to_s.presence,
+      'medelement_source_created_at' => reception['CREATED_AT'].to_s.presence ||
+        stored_attribute(appointment, 'medelement_source_created_at'),
       'medelement_source_timezone' => import_context[:source_timezone].presence || appointment.resource&.timezone ||
         Scheduling::Constants::DEFAULT_TIMEZONE,
       'medelement_specialist_code' => import_context[:specialist_code].to_s,
       'medelement_list_fingerprint' => import_context[:list_fingerprint],
       'medelement_detail_synced_at' => import_context[:detail_synced_at]
     }
+  end
+
+  # A reception that does not carry a field says nothing about it: the stored value stays.
+  def stored_attribute(appointment, key)
+    appointment.custom_attributes.to_h[key]
   end
 
   def provider_status_audit(appointment, status_resolution, import_context)

@@ -1,7 +1,17 @@
 # rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::ReceptionsSyncService
   InvalidReceptionError = Class.new(StandardError)
-  OutOfScopeReception = Class.new(StandardError)
+  # The reason is one of OUT_OF_SCOPE_REASONS, so that a dry run can say why a reception was refused.
+  OutOfScopeReception = Class.new(StandardError) do
+    attr_reader :reason
+
+    def initialize(message = nil, reason: nil)
+      super(message)
+      @reason = reason
+    end
+  end
+  OutOfScope = Data.define(:reason)
+  OUT_OF_SCOPE_REASONS = %i[specialist_not_mapped cabinet_unknown cabinet_mismatch].freeze
   IncompleteSnapshotError = Class.new(StandardError)
   MAX_RECEPTIONS_PER_REQUEST = 1000
   LIST_FINGERPRINT_KEY = 'medelement_list_fingerprint'.freeze
@@ -48,32 +58,35 @@ class Integrations::Medelement::ReceptionsSyncService
     finalize_sync_result(sync_result)
   end
 
-  # A reported delta code does not authorize absence reconciliation for any other reception.
-  def import_reported_reception!(detail)
+  # A reported delta code does not authorize absence reconciliation for any other reception. The single-reception detail has
+  # no cabinet (the list has), so a cabinet that the update list reported for the code can be passed in; it is used only for a
+  # reception that is new to OneLink.
+  def import_reported_reception!(detail, entry_cabinet_code: nil)
     code = detail.fetch('RECEPTION_CODE').to_s
     external_ref = importer.external_ref_for(code)
     appointment = account.scheduling_appointments.find_by(external_ref: external_ref)
     return reconcile_reported_removal(appointment) if detail['REMOVED'].to_i == 1
 
-    resource = delta_resource!(detail)
-    reception = delta_reception(detail)
+    resource, cabinet_code = delta_scope!(detail, appointment, entry_cabinet_code)
+    reception = delta_reception(detail, cabinet_code)
     @appointment_snapshot_versions = { external_ref => appointment&.updated_at }.compact
     contacts = synced_contacts([reception.merge(DETAIL_STATE_KEY => 'fetched')])
     sync_reception(reception, resource, contacts)
   end
 
   # The status import_reported_reception! would give the appointment of this reception, from the importer's own status
-  # mapping and without saving anything. :absent when OneLink has no such appointment, :out_of_scope when the import would
-  # refuse the reception because its specialist or cabinet is not mapped.
-  def preview_reported_status(detail)
+  # mapping and without saving anything. :absent when OneLink has no such appointment, an OutOfScope (with its reason) when
+  # the import would refuse the reception because its specialist is not mapped or the appointment is not the specialist's and
+  # its cabinet is not usable.
+  def preview_reported_status(detail, entry_cabinet_code: nil)
     appointment = account.scheduling_appointments.find_by(external_ref: importer.external_ref_for(detail.fetch('RECEPTION_CODE').to_s))
     return :absent unless appointment
     return 'cancelled' if detail['REMOVED'].to_i == 1
 
-    delta_resource!(detail)
-    importer.provider_status_for(appointment, delta_reception(detail))
-  rescue OutOfScopeReception
-    :out_of_scope
+    _resource, cabinet_code = delta_scope!(detail, appointment, entry_cabinet_code)
+    importer.provider_status_for(appointment, delta_reception(detail, cabinet_code))
+  rescue OutOfScopeReception => e
+    OutOfScope.new(reason: e.reason)
   end
 
   private
@@ -88,25 +101,51 @@ class Integrations::Medelement::ReceptionsSyncService
     ).perform
   end
 
-  def delta_resource!(detail)
+  # The resource of the specialist and the cabinet the reception is imported with. The cabinet of a reception never changes
+  # once it is created, so a reception that OneLink already has on the specialist's resource keeps its stored cabinet: nil here,
+  # and the cabinet is neither looked up nor compared.
+  def delta_scope!(detail, appointment, entry_cabinet_code)
     specialist_code = (detail['SPECIALIST_CODE'] || detail['specialistCode']).to_s
     resource = medelement_resource_map[specialist_code]
-    raise OutOfScopeReception, 'Medelement delta specialist is not mapped' unless resource
+    raise OutOfScopeReception.new('Medelement delta specialist is not mapped', reason: :specialist_not_mapped) unless resource
+    return [resource, nil] if appointment&.resource_id == resource.id
 
-    cabinets = Array(resource.custom_attributes['medelement_cabinets'])
-    code = detail['COMPANY_CABINET_CODE'].to_s
-    return resource if cabinets.any? { |cabinet| Integrations::Medelement::CabinetAttributes.code(cabinet).to_s == code }
-
-    raise OutOfScopeReception, 'Medelement delta cabinet is not mapped'
+    [resource, new_reception_cabinet_code!(detail, resource, entry_cabinet_code)]
   end
 
-  def delta_reception(detail)
-    detail.merge(
+  # A reception that is new to OneLink needs a cabinet, and the v2 single-reception detail carries none. A cabinet that is
+  # reported (by the detail, else by the update list) must be one of the specialist cabinets. Without one, the only cabinet of
+  # the specialist is used; a specialist with several cabinets leaves the reception out of scope.
+  def new_reception_cabinet_code!(detail, resource, entry_cabinet_code)
+    mapped = mapped_cabinet_codes(resource)
+    reported = detail['COMPANY_CABINET_CODE'].to_s.presence || entry_cabinet_code.to_s.presence
+    return reported_cabinet_code!(reported, mapped) if reported
+    return mapped.first if mapped.one?
+
+    raise OutOfScopeReception.new('Medelement delta cabinet is unknown', reason: :cabinet_unknown)
+  end
+
+  def reported_cabinet_code!(reported, mapped)
+    return reported if mapped.include?(reported)
+
+    raise OutOfScopeReception.new('Medelement delta cabinet is not mapped', reason: :cabinet_mismatch)
+  end
+
+  def mapped_cabinet_codes(resource)
+    Array(resource.custom_attributes['medelement_cabinets']).filter_map do |cabinet|
+      Integrations::Medelement::CabinetAttributes.code(cabinet)&.to_s
+    end.uniq
+  end
+
+  # cabinet_code nil: the appointment keeps its stored cabinet, whatever cabinet the detail names.
+  def delta_reception(detail, cabinet_code)
+    detail.except('COMPANY_CABINET_CODE').merge(
       'PATIENT_CODE' => detail['PATIENT_CODE'].presence || detail['PROFILE_CODE'],
       'specialistCode' => detail['SPECIALIST_CODE'] || detail['specialistCode'],
       '_MEDELEMENT_LIST_FINGERPRINT' => list_fingerprint(detail),
-      '_MEDELEMENT_DETAIL_SYNCED_AT' => Time.current.iso8601
-    )
+      '_MEDELEMENT_DETAIL_SYNCED_AT' => Time.current.iso8601,
+      Integrations::Medelement::AppointmentImporterService::DETAIL_ONLY_KEY => true
+    ).merge(cabinet_code.present? ? { 'COMPANY_CABINET_CODE' => cabinet_code } : {})
   end
 
   def load_appointment_snapshot_versions
