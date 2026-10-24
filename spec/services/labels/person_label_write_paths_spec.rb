@@ -2,7 +2,8 @@ require 'rails_helper'
 
 # Labels belong to a person. Every path that adds or removes one writes the contact and every conversation of the person
 # through Labels::UnifiedAssignmentService, and the change is reported once, however many channels the person has.
-RSpec.describe 'Person label write paths', type: :service do
+# This spec crosses many classes on purpose: it is the list of paths that must go through the one write point.
+RSpec.describe 'Person label write paths' do # rubocop:disable RSpec/DescribeClass
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:contact) { create(:contact, account: account) }
