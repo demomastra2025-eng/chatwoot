@@ -74,19 +74,34 @@ class Integrations::Medelement::ReceptionsSyncService
     sync_reception(reception, resource, contacts)
   end
 
-  # The status import_reported_reception! would give the appointment of this reception, from the importer's own status
-  # mapping and without saving anything. :absent when OneLink has no such appointment, an OutOfScope (with its reason) when
-  # the import would refuse the reception because its specialist is not mapped or the appointment is not the specialist's and
-  # its cabinet is not usable.
-  def preview_reported_status(detail, entry_cabinet_code: nil)
-    appointment = account.scheduling_appointments.find_by(external_ref: importer.external_ref_for(detail.fetch('RECEPTION_CODE').to_s))
+  # The status apply_reported_status! would give the appointment of this reception, from the importer's own status mapping
+  # and without saving anything. :absent when OneLink has no such appointment.
+  def preview_reported_status(detail)
+    appointment = reported_appointment(detail)
     return :absent unless appointment
     return 'cancelled' if detail['REMOVED'].to_i == 1
 
-    _resource, cabinet_code = delta_scope!(detail, appointment, entry_cabinet_code)
-    importer.provider_status_for(appointment, delta_reception(detail, cabinet_code))
-  rescue OutOfScopeReception => e
-    OutOfScope.new(reason: e.reason)
+    importer.provider_status_for(appointment, status_reception(detail), reported_starts_at(detail))
+  end
+
+  # Gives an appointment that OneLink already has the status the single-reception detail says, and nothing else of the detail:
+  # no contact, client fields, services, times, resource, cabinet or payments (see AppointmentImporterService#apply_provider_status!).
+  # The appointment is OneLink's already, so neither its specialist nor its cabinet is asked for. A removed reception takes the
+  # way import_reported_reception! takes it. only_from: the statuses the appointment must still have when its row is locked.
+  # Gives :absent when OneLink has no such appointment, and :no_longer_open when it has another status than only_from.
+  def apply_reported_status!(detail, only_from: nil)
+    appointment = reported_appointment(detail)
+    return :absent unless appointment
+    return reconcile_reported_removal(appointment) if detail['REMOVED'].to_i == 1
+
+    importer.apply_provider_status!(appointment, status_reception(detail), starts_at: reported_starts_at(detail), only_from: only_from)
+  end
+
+  # Whether the specialist of the detail is one of OneLink's. Only worth reporting for an appointment OneLink already has:
+  # applying its status does not depend on it.
+  def specialist_mapped?(detail)
+    @mapped_specialist_codes ||= medelement_resource_map.keys.to_set
+    @mapped_specialist_codes.include?(reported_specialist_code(detail))
   end
 
   private
@@ -102,15 +117,33 @@ class Integrations::Medelement::ReceptionsSyncService
   end
 
   # The resource of the specialist and the cabinet the reception is imported with. The cabinet of a reception never changes
-  # once it is created, so a reception that OneLink already has on the specialist's resource keeps its stored cabinet: nil here,
-  # and the cabinet is neither looked up nor compared.
+  # once it is created, so a reception that OneLink already has keeps its stored cabinet, also when MedElement now gives it to
+  # another specialist: nil here, and the cabinet is neither looked up, compared nor guessed.
   def delta_scope!(detail, appointment, entry_cabinet_code)
-    specialist_code = (detail['SPECIALIST_CODE'] || detail['specialistCode']).to_s
-    resource = medelement_resource_map[specialist_code]
+    resource = medelement_resource_map[reported_specialist_code(detail)]
     raise OutOfScopeReception.new('Medelement delta specialist is not mapped', reason: :specialist_not_mapped) unless resource
-    return [resource, nil] if appointment&.resource_id == resource.id
+    return [resource, nil] if appointment
 
     [resource, new_reception_cabinet_code!(detail, resource, entry_cabinet_code)]
+  end
+
+  def reported_specialist_code(detail)
+    (detail['SPECIALIST_CODE'] || detail['specialistCode']).to_s
+  end
+
+  def reported_appointment(detail)
+    account.scheduling_appointments.find_by(external_ref: importer.external_ref_for(detail.fetch('RECEPTION_CODE').to_s))
+  end
+
+  # What the importer reads to give a status: the detail alone, and marked as such so that what it does not say stays.
+  def status_reception(detail)
+    detail.merge(Integrations::Medelement::AppointmentImporterService::DETAIL_ONLY_KEY => true)
+  end
+
+  def reported_starts_at(detail)
+    parse_time(detail['STARTTIME'])
+  rescue ArgumentError
+    nil
   end
 
   # A reception that is new to OneLink needs a cabinet, and the v2 single-reception detail carries none. A cabinet that is

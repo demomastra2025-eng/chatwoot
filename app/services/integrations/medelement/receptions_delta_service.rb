@@ -2,6 +2,17 @@ class Integrations::Medelement::ReceptionsDeltaService
   OVERLAP = 3.minutes
   MAX_CHANGED = 200
   CURSOR_NAME = 'receptions_delta'.freeze
+  # The refusals of the importer for a single reception. The regular sync skips such a reception, the stale status
+  # reconciliation too, and so does this poll: one bad reception must not stall the others.
+  SKIPPED_ERRORS = [
+    Integrations::Medelement::AppointmentSnapshotGuard::StaleSnapshotError,
+    Integrations::Medelement::ReceptionsSyncService::InvalidReceptionError,
+    Integrations::Medelement::ReceptionServiceRows::InvalidSnapshotError,
+    ActiveRecord::RecordInvalid,
+    Scheduling::Error
+  ].freeze
+  # What process_code gives back for a reception that the importer refused with one of SKIPPED_ERRORS.
+  Skipped = Data.define(:reason)
 
   def initialize(hook:, client: nil, configuration: nil, renew_locks: nil)
     @hook = hook
@@ -83,7 +94,7 @@ class Integrations::Medelement::ReceptionsDeltaService
         break
       end
 
-      outcome.is_a?(Integrations::Medelement::ReceptionsSyncService::OutOfScope) ? skipped += 1 : applied += 1
+      refused?(outcome) ? skipped += 1 : applied += 1
       processed += 1
     end
 
@@ -98,9 +109,25 @@ class Integrations::Medelement::ReceptionsDeltaService
     detail, marker = fetch_detail(code)
     return :seen if seen?(code, marker)
 
-    result = apply_detail!(detail, entry_cabinet_code: entry_cabinet_code(entries))
+    result = apply_or_skip(code, detail, entries)
     mark_seen!(code, marker)
     result
+  end
+
+  def refused?(outcome)
+    outcome.is_a?(Skipped) || outcome.is_a?(Integrations::Medelement::ReceptionsSyncService::OutOfScope)
+  end
+
+  # A reception that the importer refuses is logged and counted as skipped, and the poll goes on with the next code. It is marked
+  # as handled for this change marker like any other: it is read again only when MedElement changes the reception.
+  def apply_or_skip(code, detail, entries)
+    apply_detail!(detail, entry_cabinet_code: entry_cabinet_code(entries))
+  rescue *SKIPPED_ERRORS => e
+    Rails.logger.warn(
+      "[MEDELEMENT::DELTA] Skipping reception for hook=#{hook.id} " \
+      "entity_digest=#{Integrations::Medelement::ErrorSanitizer.digest(code)} reason=#{e.class}"
+    )
+    Skipped.new(reason: e.class.name.demodulize.underscore.to_sym)
   end
 
   # The cabinet that the update list gives for a code; nil when it gives none or entries disagree.

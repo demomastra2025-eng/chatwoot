@@ -1,21 +1,20 @@
 # What one stale status reconciliation run did, or in a dry run would do. Counts and appointment ids only: no patient data.
 class Integrations::Medelement::StaleStatusReport
   NOT_FOUND_SAMPLE_LIMIT = 200
-  LOG_KEYS = %i[dry_run days examined changed unchanged automation_matches not_found out_of_scope out_of_scope_reasons skipped
-                errors remaining aborted].freeze
+  LOG_KEYS = %i[dry_run days examined changed unchanged automation_matches not_found unmapped_specialist skipped errors
+                remaining aborted].freeze
 
-  attr_reader :dry_run, :days, :examined, :changed, :unchanged, :not_found, :out_of_scope, :skipped, :errors,
-              :transitions, :not_found_appointment_ids, :skipped_reasons, :error_codes, :automation_matches, :out_of_scope_reasons
+  attr_reader :dry_run, :days, :examined, :changed, :unchanged, :not_found, :unmapped_specialist, :skipped, :errors,
+              :transitions, :not_found_appointment_ids, :skipped_reasons, :error_codes, :automation_matches
   attr_accessor :aborted, :last_id, :remaining, :automation_rules
 
   def initialize(dry_run:, days:)
     @dry_run = dry_run
     @days = days
-    @examined = @changed = @unchanged = @not_found = @out_of_scope = @skipped = @errors = @automation_matches = 0
+    @examined = @changed = @unchanged = @not_found = @unmapped_specialist = @skipped = @errors = @automation_matches = 0
     @transitions = Hash.new { |hash, status| hash[status] = Hash.new(0) }
     @not_found_appointment_ids = []
     @skipped_reasons = Hash.new(0)
-    @out_of_scope_reasons = Hash.new(0)
     @error_codes = Hash.new(0)
     @automation_rules = {}
   end
@@ -41,10 +40,10 @@ class Integrations::Medelement::StaleStatusReport
     @not_found_appointment_ids << appointment_id if @not_found_appointment_ids.size < NOT_FOUND_SAMPLE_LIMIT
   end
 
-  # reason: why the import refuses the reception (see ReceptionsSyncService::OUT_OF_SCOPE_REASONS).
-  def out_of_scope!(reason = nil)
-    @out_of_scope += 1
-    @out_of_scope_reasons[reason || :unspecified] += 1
+  # The detail names a specialist that OneLink has no resource for. Only counted: the appointment is OneLink's already, and its
+  # status is applied (or, in a dry run, reported) all the same.
+  def unmapped_specialist!
+    @unmapped_specialist += 1
   end
 
   def skipped!(reason)
@@ -60,8 +59,7 @@ class Integrations::Medelement::StaleStatusReport
   def to_h
     {
       dry_run: dry_run, days: days, examined: examined, changed: changed, unchanged: unchanged, not_found: not_found,
-      out_of_scope: out_of_scope, out_of_scope_reasons: out_of_scope_reasons.to_h, skipped: skipped, errors: errors,
-      transitions: transitions.transform_values(&:to_h),
+      unmapped_specialist: unmapped_specialist, skipped: skipped, errors: errors, transitions: transitions.transform_values(&:to_h),
       automation_matches: automation_matches, automation_rules: automation_rules,
       not_found_appointment_ids: not_found_appointment_ids, skipped_reasons: skipped_reasons.to_h,
       error_codes: error_codes.to_h, last_id: last_id, remaining: remaining, aborted: aborted
@@ -94,16 +92,13 @@ class Integrations::Medelement::StaleStatusReport
   def outcome_lines
     lines = []
     lines << "  not found at MedElement (kept, not deleted): #{not_found} appointment ids #{not_found_appointment_ids.inspect}" if not_found.positive?
-    lines << out_of_scope_line if out_of_scope.positive?
+    lines << unmapped_specialist_line if unmapped_specialist.positive?
     lines << "  skipped: #{skipped_reasons.to_h.inspect}" if skipped.positive?
     lines << "  provider errors: #{error_codes.to_h.inspect}" if errors.positive?
     lines
   end
 
-  # Receptions that the import refuses, by reason: the specialist is not mapped, the cabinet is unknown (the detail has none
-  # and it cannot be taken from the appointment or from a single-cabinet specialist), or the reported cabinet is not the specialist's.
-  def out_of_scope_line
-    reasons = out_of_scope_reasons.sort_by { |reason, _count| reason.to_s }.map { |reason, count| "#{reason.to_s.tr('_', ' ')}: #{count}" }
-    "  out of scope (refused by the import): #{out_of_scope} (#{reasons.join(', ')})"
+  def unmapped_specialist_line
+    "  details naming a specialist that is not mapped in OneLink (their appointments are read all the same): #{unmapped_specialist}"
   end
 end

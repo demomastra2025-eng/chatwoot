@@ -185,6 +185,120 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaService do
     expect(Integrations::Medelement::DeltaSeenReception.where(hook: hook).count).to eq(1)
   end
 
+  describe 'a reception the importer refuses' do
+    let(:refusals) do
+      {
+        'StaleSnapshotError' => Integrations::Medelement::AppointmentSnapshotGuard::StaleSnapshotError.new('newer local change'),
+        'InvalidReceptionError' => Integrations::Medelement::ReceptionsSyncService::InvalidReceptionError.new('missing end time'),
+        'InvalidSnapshotError' => Integrations::Medelement::ReceptionServiceRows::InvalidSnapshotError.new('not a row'),
+        'RecordInvalid' => ActiveRecord::RecordInvalid.new(Scheduling::Appointment.new),
+        'Error' => Scheduling::Error.new(code: 'DUPLICATE_EXTERNAL_REF', message: 'external_ref is taken', status: :conflict)
+      }
+    end
+
+    def refuse(code, error)
+      allow(importer).to receive(:import_reported_reception!) do |detail, **|
+        raise error if detail['RECEPTION_CODE'] == code
+
+        true
+      end
+    end
+
+    it 'is skipped, logged and marked as handled, and the poll goes on with the next reception' do
+      refusals.each_with_index do |(name, error), index|
+        allow(client).to receive(:receptions_by_update_date).and_return(
+          [{ 'RECEPTION_CODE' => "bad-#{index}" }, { 'RECEPTION_CODE' => "good-#{index}" }]
+        )
+        refuse("bad-#{index}", error)
+        allow(Rails.logger).to receive(:warn)
+
+        result = service.perform
+
+        expect(result).to include(changed_codes: 2, applied: 1, skipped: 1, complete: true), name
+        expect(Rails.logger).to have_received(:warn).with(a_string_matching(/\[MEDELEMENT::DELTA\] Skipping reception.*reason=.*#{name}/))
+        seen = Integrations::Medelement::DeltaSeenReception.where(hook: hook, reception_code: ["bad-#{index}", "good-#{index}"])
+        expect(seen.count).to eq(2)
+      end
+    end
+
+    it 'does not stall the poll: the cursor advances, and the reception is not read again until MedElement changes it' do
+      allow(client).to receive(:receptions_by_update_date).and_return([{ 'RECEPTION_CODE' => 'bad-1' }, { 'RECEPTION_CODE' => 'good-1' }])
+      refuse('bad-1', Scheduling::Error.new(code: 'DUPLICATE_EXTERNAL_REF', message: 'external_ref is taken', status: :conflict))
+
+      first = service.perform
+      second = service.perform
+
+      cursor = Integrations::Medelement::SyncCursor.find_by!(hook: hook, name: 'receptions_delta')
+      expect(first).to include(applied: 1, skipped: 1, complete: true)
+      expect(second).to include(applied: 0, skipped: 2, complete: true)
+      expect(cursor.last_success_at).to be_present
+      expect(importer).to have_received(:import_reported_reception!).twice
+    end
+
+    it 'reads it again when MedElement changes the reception, which is a new change marker' do
+      allow(client).to receive(:receptions_by_update_date).and_return([{ 'RECEPTION_CODE' => 'bad-1' }])
+      refuse('bad-1', Integrations::Medelement::ReceptionsSyncService::InvalidReceptionError.new('missing end time'))
+      service.perform
+
+      allow(client).to receive(:get_reception) { |reception_code:, **| detail_for(reception_code).merge('ENDTIME' => '2026-10-07 10:40:00') }
+      result = service.perform
+
+      expect(result).to include(applied: 0, skipped: 1, complete: true)
+      expect(importer).to have_received(:import_reported_reception!).twice
+    end
+
+    it 'logs no reception code or message: only a digest of the code and the class of the refusal' do
+      allow(client).to receive(:receptions_by_update_date).and_return([{ 'RECEPTION_CODE' => 'bad-1' }])
+      refuse('bad-1', Integrations::Medelement::ReceptionsSyncService::InvalidReceptionError.new('patient-secret-name'))
+      lines = []
+      allow(Rails.logger).to receive(:warn) { |line| lines << line }
+
+      service.perform
+
+      expect(lines.join).to include('hook=', 'entity_digest=', 'InvalidReceptionError')
+      expect(lines.join).not_to include('bad-1')
+      expect(lines.join).not_to include('patient-secret-name')
+    end
+
+    it 'still stops on an error that is not a refusal of one reception, and keeps the cursor' do
+      allow(client).to receive(:receptions_by_update_date).and_return([{ 'RECEPTION_CODE' => 'bad-1' }, { 'RECEPTION_CODE' => 'good-1' }])
+      refuse('bad-1', StandardError.new('database is gone'))
+
+      expect { service.perform }.to raise_error(StandardError, 'database is gone')
+      expect(Integrations::Medelement::SyncCursor.find_by!(hook: hook, name: 'receptions_delta').last_success_at).to be_nil
+    end
+
+    it 'is the same list of refusals the stale status reconciliation skips' do
+      expect(Integrations::Medelement::StaleStatusReconciler::SKIPPED_ERRORS).to equal(described_class::SKIPPED_ERRORS)
+    end
+  end
+
+  describe 'through the real import' do
+    let!(:doctor) do
+      create(:scheduling_resource, account: account, timezone: 'Asia/Almaty',
+                                   custom_attributes: { 'medelement_specialist_code' => 'doctor-1',
+                                                        'medelement_cabinets' => [{ 'company_cabinet_code' => 'cabinet-1' }] })
+    end
+
+    before do
+      hook.update!(settings: hook.settings.merge('sync_patients' => false))
+      allow(Integrations::Medelement::ReceptionsSyncService).to receive(:new).and_call_original
+      allow(client).to receive(:get_reception) do |reception_code:, **|
+        detail_for(reception_code).except('COMPANY_CABINET_CODE').merge('ENDTIME' => reception_code == 'bad-1' ? '2026-10-07 09:00:00' : '2026-10-07 10:20:00')
+      end
+    end
+
+    it 'imports the receptions after one whose time range is invalid, and counts the invalid one as skipped' do
+      allow(client).to receive(:receptions_by_update_date).and_return([{ 'RECEPTION_CODE' => 'bad-1' }, { 'RECEPTION_CODE' => 'good-1' }])
+
+      result = service.perform
+
+      expect(result).to include(changed_codes: 2, applied: 1, skipped: 1, complete: true)
+      expect(Scheduling::Appointment.where(external_ref: 'medelement:reception:bad-1')).to be_empty
+      expect(Scheduling::Appointment.find_by!(external_ref: 'medelement:reception:good-1')).to have_attributes(resource_id: doctor.id)
+    end
+  end
+
   it 'does not call MedElement or reconcile absences when the flag is off' do
     hook.update!(settings: hook.settings.merge('incremental_receptions_enabled' => false))
 

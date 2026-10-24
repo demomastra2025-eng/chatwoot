@@ -1,7 +1,12 @@
 # MedElement sets the final status of a reception (completed, cancelled, no-show) after the visit, but the regular sync
 # only re-reads receptions of the last few days. This re-reads the older appointments that are still scheduled or
-# confirmed, one reception at a time, and applies what MedElement says through the import path of a polled change
-# (ReceptionsDeltaService#apply_detail!), so the status mapping is the importer's own and nothing new decides a status.
+# confirmed, one reception at a time, and applies the status MedElement gives, and nothing else of the reception: the
+# contact, client fields, services, times, resource, cabinet and payments of an old appointment stay as they are
+# (ReceptionsSyncService#apply_reported_status!). The status mapping is the importer's own and nothing new decides a status.
+# A reception that MedElement reports as removed goes the way a polled removal goes.
+#
+# An appointment that OneLink has is OneLink's whatever specialist the detail names, so the specialist and the cabinet are
+# not asked for: an appointment whose detail names a specialist that is not mapped is reported, and its status applied.
 #
 # A dry run reads the same receptions and reports what would change, per old status and provider status, and writes
 # nothing. An appointment that MedElement no longer has is never deleted or changed: it is only reported.
@@ -23,14 +28,8 @@ class Integrations::Medelement::StaleStatusReconciler
     Integrations::Medelement::Client::ApiError,
     Integrations::Medelement::ProviderScope::MismatchError
   ].freeze
-  # The refusals of the importer for a single reception; the regular sync skips such a reception the same way.
-  SKIPPED_ERRORS = [
-    Integrations::Medelement::AppointmentSnapshotGuard::StaleSnapshotError,
-    Integrations::Medelement::ReceptionsSyncService::InvalidReceptionError,
-    Integrations::Medelement::ReceptionServiceRows::InvalidSnapshotError,
-    ActiveRecord::RecordInvalid,
-    Scheduling::Error
-  ].freeze
+  # The refusals for a single reception; the regular sync and the polled changes skip such a reception the same way.
+  SKIPPED_ERRORS = Integrations::Medelement::ReceptionsDeltaService::SKIPPED_ERRORS
 
   # days: how far back to look, nil for the whole history. max_per_run: nil for no cap.
   def initialize(hook:, client: nil, configuration: nil, **options)
@@ -112,6 +111,7 @@ class Integrations::Medelement::StaleStatusReconciler
     if detail.nil?
       report.not_found!(appointment.id)
     else
+      report.unmapped_specialist! unless sync_service.specialist_mapped?(detail)
       dry_run ? preview(appointment, detail) : apply(appointment, detail)
     end
     @consecutive_errors = 0
@@ -141,21 +141,19 @@ class Integrations::Medelement::StaleStatusReconciler
 
   def preview(appointment, detail)
     status = sync_service.preview_reported_status(detail)
-    case status
-    when Integrations::Medelement::ReceptionsSyncService::OutOfScope then report.out_of_scope!(status.reason)
-    when :absent then report.skipped!('absent')
-    else record_transition(appointment.status, status)
-    end
+    status == :absent ? report.skipped!('absent') : record_transition(appointment.status, status)
   end
 
   # The visit is long over, so the status is applied as a data correction: no automation rule, CRM re-evaluation or
-  # touch scheduling reacts to it (see Current.with_medelement_reconciliation). Only this import runs inside the flag.
+  # touch scheduling reacts to it (see Current.with_medelement_reconciliation). Only this status change runs inside the flag.
   def apply(appointment, detail)
     locks.hold_sync do
       before = current_status(appointment)
       next report.skipped!('no_longer_open') unless OPEN_STATUSES.include?(before)
 
-      result = Current.with_medelement_reconciliation { delta.apply_detail!(detail) }
+      result = Current.with_medelement_reconciliation do
+        sync_service.apply_reported_status!(detail, only_from: OPEN_STATUSES)
+      end
       record_applied(before, appointment, result)
     end
   rescue *SKIPPED_ERRORS => e
@@ -163,8 +161,7 @@ class Integrations::Medelement::StaleStatusReconciler
   end
 
   def record_applied(before, appointment, result)
-    return report.out_of_scope!(result.reason) if result.is_a?(Integrations::Medelement::ReceptionsSyncService::OutOfScope)
-    # The import refused the reception on its own grounds (for example a newer local change), and said why.
+    # The status was not applied, and the reason is given (the appointment is gone, or no longer open, or changed locally).
     return report.skipped!(result.to_s) if result.is_a?(Symbol)
 
     record_transition(before, current_status(appointment))
