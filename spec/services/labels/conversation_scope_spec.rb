@@ -95,6 +95,48 @@ RSpec.describe Labels::ConversationScope do
     end
   end
 
+  describe '.match_sql' do
+    it 'looks the labels up once per query, not once per conversation' do
+      sql = described_class.match_sql([1, 2])
+
+      expect(sql).not_to include('EXISTS')
+      expect(sql.scan('= ANY (ARRAY(SELECT').size).to eq(2)
+      expect(sql).to include('label_taggings.tag_id IN (1, 2)')
+      expect(sql).not_to include('label_taggings.taggable_id =')
+    end
+
+    it 'is never NULL, so NOT finds a conversation without a contact and without a label' do
+      labeled_contact = create(:contact, account: account)
+      labeled_contact.update_labels('Семья')
+      labeled = create_conversation(contact: labeled_contact)
+      unlabeled = create_conversation
+      contactless = create_conversation.tap { |conversation| conversation.update_column(:contact_id, nil) }
+
+      by_name = described_class.match_sql(described_class.tag_ids_for(['Семья']))
+
+      expect(scope.where("NOT #{by_name}").pluck(:id)).to contain_exactly(unlabeled.id, contactless.id)
+      expect(scope.where("NOT #{described_class.match_sql}").pluck(:id)).to contain_exactly(unlabeled.id, contactless.id)
+      expect(scope.where(by_name).pluck(:id)).to contain_exactly(labeled.id)
+    end
+  end
+
+  describe '.match_tags_sql' do
+    it 'takes the tag ids as a subquery' do
+      wife = create(:contact, account: account)
+      wife.update_labels('Семья')
+      by_contact = create_conversation(contact: wife)
+      other = create(:contact, account: account)
+      other.update_labels('vip')
+      create_conversation(contact: other)
+      by_conversation = create_conversation
+      by_conversation.update_labels('Семья')
+
+      sql = described_class.match_tags_sql("SELECT tags.id FROM tags WHERE tags.name IN ('Семья')")
+
+      expect(scope.where(sql).pluck(:id)).to contain_exactly(by_contact.id, by_conversation.id)
+    end
+  end
+
   describe '.with_any_label' do
     it 'matches conversations that have a label on the contact or on the conversation, once each' do
       labeled_contact = create(:contact, account: account)

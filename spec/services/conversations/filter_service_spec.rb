@@ -734,6 +734,16 @@ describe Conversations::FilterService do
       expect(listed_ids([labels_condition('is_not_present', [])])).to contain_exactly(unlabeled.id)
     end
 
+    it 'keeps a conversation without a contact in the negative conditions and out of the positive ones' do
+      unlabeled_id = unlabeled.id
+      contactless = create(:conversation, account: account, inbox: inbox).tap { |conversation| conversation.update_column(:contact_id, nil) }
+
+      expect(listed_ids([labels_condition('equal_to')])).not_to include(contactless.id)
+      expect(listed_ids([labels_condition('not_equal_to')])).to contain_exactly(unlabeled_id, contactless.id)
+      expect(listed_ids([labels_condition('is_not_present', [])])).to contain_exactly(unlabeled_id, contactless.id)
+      expect(counted([labels_condition('not_equal_to')])).to eq(2)
+    end
+
     it 'combines the label with the other conditions of the filter' do
       payload = [
         { attribute_key: 'status', filter_operator: 'equal_to', values: ['pending'], query_operator: 'AND' }.with_indifferent_access,

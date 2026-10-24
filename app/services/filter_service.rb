@@ -118,45 +118,37 @@ class FilterService
   end
 
   def tag_filter_query(query_hash, current_index)
-    model_name = filter_config[:entity]
-    table_name = filter_config[:table_name]
     query_operator = query_hash[:query_operator]
     @filter_values["value_#{current_index}"] = filter_values(query_hash)
 
-    tag_model_relation_query =
-      "SELECT * FROM taggings WHERE taggings.taggable_id = #{table_name}.id AND taggings.taggable_type = '#{model_name}'"
-    tag_query =
-      "AND taggings.tag_id IN (SELECT tags.id FROM tags WHERE tags.name IN (:value_#{current_index}))"
+    tag_ids_sql = "SELECT tags.id FROM tags WHERE tags.name IN (:value_#{current_index})"
 
     case query_hash[:filter_operator]
     when 'equal_to'
-      "#{labels_exist_sql(tag_model_relation_query, tag_query)} #{query_operator}"
+      "#{labels_exist_sql(tag_ids_sql)} #{query_operator}"
     when 'not_equal_to'
-      "NOT #{labels_exist_sql(tag_model_relation_query, tag_query)} #{query_operator}"
+      "NOT #{labels_exist_sql(tag_ids_sql)} #{query_operator}"
     when 'is_present'
-      "#{labels_exist_sql(tag_model_relation_query)} #{query_operator}"
+      "#{labels_exist_sql} #{query_operator}"
     when 'is_not_present'
-      "NOT #{labels_exist_sql(tag_model_relation_query)} #{query_operator}"
+      "NOT #{labels_exist_sql} #{query_operator}"
     end
   end
 
   private
 
   # EXISTS over the taggings of the record itself. A list whose rows carry the labels of their contact too
-  # (match_contact_labels?) also counts the labels of the contact: labels belong to the person.
-  def labels_exist_sql(tag_model_relation_query, tag_query = nil)
-    record_labels = "EXISTS (#{tag_model_relation_query} #{tag_query})"
-    return record_labels unless match_contact_labels?
+  # (match_contact_labels?) also counts the labels of the contact, because labels belong to the person. That match
+  # comes from Labels::ConversationScope, which explains why it is not a pair of EXISTS.
+  def labels_exist_sql(tag_ids_sql = nil)
+    return Labels::ConversationScope.match_tags_sql(tag_ids_sql) if match_contact_labels?
 
-    contact_labels = "EXISTS (#{contact_tag_relation_query} #{tag_query})"
-    "(#{record_labels} OR #{contact_labels})"
+    tag_query = tag_ids_sql && "AND taggings.tag_id IN (#{tag_ids_sql})"
+    "EXISTS (SELECT * FROM taggings WHERE taggings.taggable_id = #{filter_config[:table_name]}.id " \
+      "AND taggings.taggable_type = '#{filter_config[:entity]}' #{tag_query})"
   end
 
-  def contact_tag_relation_query
-    "SELECT * FROM taggings WHERE taggings.taggable_id = #{filter_config[:table_name]}.contact_id " \
-      "AND taggings.taggable_type = 'Contact' AND taggings.context = 'labels'"
-  end
-
+  # True only for lists of conversations: the match above is written for the conversations table.
   def match_contact_labels?
     false
   end
