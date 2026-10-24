@@ -59,8 +59,9 @@ class Integrations::Medelement::AppointmentImporterService
   # Gives the appointment the status provider_status_for says, and writes nothing else of the reception: not the contact or
   # client fields, services, times, resource, cabinet or payments. A status that does not change is not written at all. A status
   # that does change is written with what the import writes with it: the audit of the status and the reconciliation marks of
-  # a reception that MedElement has again. only_from: the statuses the appointment must still have when its row is locked;
-  # :no_longer_open when it has another one.
+  # a reception that MedElement has again, and only if the import would take the reception for this appointment (it is not a
+  # cancellation that the provider still has to remove, and not another source's appointment). only_from: the statuses the
+  # appointment must still have when its row is locked; :no_longer_open when it has another one.
   def apply_provider_status!(appointment, reception, starts_at: nil, only_from: nil)
     appointment.with_lock do
       next :no_longer_open if only_from && !appointment.status.in?(only_from)
@@ -68,6 +69,7 @@ class Integrations::Medelement::AppointmentImporterService
       resolution = provider_status_resolution(appointment, reception, starts_at)
       next appointment if resolution[:status] == appointment.status
 
+      validate_import!(appointment, reception, {})
       write_provider_status!(appointment, resolution, reception)
     end
   end

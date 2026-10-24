@@ -445,10 +445,10 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
                                                         'medelement_cabinets' => [{ 'company_cabinet_code' => 'cabinet-2' }] })
       create(:scheduling_payment, appointment: appointment, amount: 5000, payment_method: 'cash')
       appointment.reload
-      allow(client).to receive(:get_patient).and_return(
-        'PROFILE_CODE' => 'patient-1', 'COMPANY_CODE' => hook.settings['organization_id'], 'FULLNAME' => 'Renamed Provider Patient',
-        'LASTNAME' => 'Provider', 'IIN' => '720914402646', 'PATIENT_PHONE_2_STR' => '+7 777 1112233'
-      )
+      provider_patient = { 'PROFILE_CODE' => 'patient-1', 'COMPANY_CODE' => hook.settings['organization_id'],
+                           'FULLNAME' => 'Renamed Provider Patient', 'LASTNAME' => 'Provider', 'IIN' => '720914402646',
+                           'PATIENT_PHONE_2_STR' => '+7 777 1112233' }
+      allow(client).to receive_messages(get_patient: provider_patient, search_patients_by_codes: [provider_patient])
       provider[appointment.external_ref.delete_prefix('medelement:reception:')] = detail
     end
 
@@ -470,6 +470,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
       reconciler.perform
 
       expect(client).not_to have_received(:get_patient)
+      expect(client).not_to have_received(:search_patients_by_codes)
       expect(client).to have_received(:get_reception).once
     end
 

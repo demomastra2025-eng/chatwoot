@@ -663,6 +663,16 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
       expect(appointment.reload.custom_attributes['provider_status_audit']).to include('previous_status' => 'scheduled', 'status' => 'completed')
     end
 
+    it 'refuses what the import refuses: a cancellation the provider still has to remove, and the appointment of another source' do
+      appointment.update!(status: 'cancelled',
+                          custom_attributes: appointment.custom_attributes.merge('medelement_local_cancelled_at' => '2026-03-22T05:00:00Z'))
+      expect { apply }.to raise_error(Integrations::Medelement::AppointmentSnapshotGuard::StaleSnapshotError)
+
+      appointment.update_columns(status: 'confirmed', source: 'manual') # rubocop:disable Rails/SkipsModelValidations
+      expect { apply }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('DUPLICATE_EXTERNAL_REF') }
+      expect(appointment.reload.status).to eq('confirmed')
+    end
+
     it 'refuses an appointment that cannot be saved, and leaves its status' do
       appointment.update_columns(client_name: '') # rubocop:disable Rails/SkipsModelValidations
 

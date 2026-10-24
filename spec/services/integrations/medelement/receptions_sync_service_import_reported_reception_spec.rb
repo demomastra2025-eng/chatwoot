@@ -345,10 +345,10 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService, '#import_reporte
 
       before do
         hook.update!(settings: hook.settings.merge('sync_patients' => true))
-        allow(client).to receive(:get_patient).with(patient_code: 'patient-1').and_return(
-          'PROFILE_CODE' => 'patient-1', 'COMPANY_CODE' => hook.settings['organization_id'], 'FULLNAME' => 'Provider Patient',
-          'LASTNAME' => 'Patient', 'IIN' => '720914402646'
-        )
+        patient = { 'PROFILE_CODE' => 'patient-1', 'COMPANY_CODE' => hook.settings['organization_id'], 'FULLNAME' => 'Provider Patient',
+                    'LASTNAME' => 'Patient', 'IIN' => '720914402646' }
+        allow(client).to receive(:get_patient).with(patient_code: 'patient-1').and_return(patient)
+        allow(client).to receive(:search_patients_by_codes).with(patient_codes: ['patient-1']).and_return([patient])
       end
 
       it 'keeps the cancellation marker, the status and the stored audit when ACTIVE is unknown' do

@@ -210,12 +210,13 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaService do
           [{ 'RECEPTION_CODE' => "bad-#{index}" }, { 'RECEPTION_CODE' => "good-#{index}" }]
         )
         refuse("bad-#{index}", error)
-        allow(Rails.logger).to receive(:warn)
+        lines = []
+        allow(Rails.logger).to receive(:warn) { |line| lines << line }
 
         result = service.perform
 
         expect(result).to include(changed_codes: 2, applied: 1, skipped: 1, complete: true), name
-        expect(Rails.logger).to have_received(:warn).with(a_string_matching(/\[MEDELEMENT::DELTA\] Skipping reception.*reason=.*#{name}/))
+        expect(lines.grep(/MEDELEMENT::DELTA/)).to contain_exactly(a_string_matching(/\[MEDELEMENT::DELTA\] Skipping reception.*reason=\S*#{name}\z/))
         seen = Integrations::Medelement::DeltaSeenReception.where(hook: hook, reception_code: ["bad-#{index}", "good-#{index}"])
         expect(seen.count).to eq(2)
       end
