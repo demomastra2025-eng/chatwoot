@@ -53,6 +53,7 @@ describe Integrations::Slack::SendOnSlackService do
 
       it 'links to the dialog of the person when the account uses communication threads' do
         account.enable_features!('communication_threads')
+        conversation.refresh_communication_thread!
         thread = conversation.reload.communication_thread
         inbox = conversation.inbox
         dialog_link = "<#{ENV.fetch('FRONTEND_URL', nil)}/app/accounts/#{account.id}/communication_threads/#{thread.display_id}|Click here>"
