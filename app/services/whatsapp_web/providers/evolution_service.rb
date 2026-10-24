@@ -66,6 +66,10 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
 
   class UnroutableRecipientError < StandardError; end
 
+  # A request refused by the gateway while the recipient was a bare hidden @lid id (no phone identity is known yet). It keeps
+  # the status and body of the refusal; the caller decides by status whether the refusal is permanent.
+  class LidRecipientRequestError < RequestError; end
+
   def provision!
     existing_instance = instance_exists?
 
@@ -292,19 +296,12 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   def send_message(message)
-    attachment = message.attachments.first
+    recipient = recipient_for(message)
+    deliver_message(message, recipient)
+  rescue RequestError => e
+    raise unless lid_remote_jid(recipient)
 
-    response = if attachment&.location?
-                 request(:post, "/message/sendLocation/#{channel.instance_name}", body: location_payload(message, attachment))
-               elsif attachment.present?
-                 request(:post, "/message/sendMedia/#{channel.instance_name}", body: media_payload(message, attachment))
-               else
-                 request(:post, "/message/sendText/#{channel.instance_name}", body: text_payload(message))
-               end
-
-    message_id = response.dig('key', 'id') || response.dig('data', 'key', 'id')
-    channel.record_provider_activity! if message_id.present?
-    message_id
+    raise LidRecipientRequestError.new(e.message, status: e.status, body: e.body)
   end
 
   def update_message(message:, content:)
@@ -381,6 +378,22 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   private
+
+  def deliver_message(message, recipient)
+    attachment = message.attachments.first
+
+    response = if attachment&.location?
+                 request(:post, "/message/sendLocation/#{channel.instance_name}", body: location_payload(message, attachment, recipient))
+               elsif attachment.present?
+                 request(:post, "/message/sendMedia/#{channel.instance_name}", body: media_payload(message, attachment, recipient))
+               else
+                 request(:post, "/message/sendText/#{channel.instance_name}", body: text_payload(message, recipient))
+               end
+
+    message_id = response.dig('key', 'id') || response.dig('data', 'key', 'id')
+    channel.record_provider_activity! if message_id.present?
+    message_id
+  end
 
   def synchronize_reauthorization_acceptance!(response, requested_operation_id)
     return sync_from_runtime_response!(response) unless response['accepted'] == true
@@ -806,17 +819,17 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     }
   end
 
-  def text_payload(message)
+  def text_payload(message, recipient)
     {
-      number: recipient_for(message),
+      number: recipient,
       text: formatted_message_content(message),
       quoted: quoted_payload(message)
     }.compact
   end
 
-  def media_payload(message, attachment)
+  def media_payload(message, attachment, recipient)
     {
-      number: recipient_for(message),
+      number: recipient,
       mediatype: media_type_for(attachment),
       media: attachment_media_url(attachment),
       caption: formatted_message_content(message).presence,
@@ -826,9 +839,9 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     }.compact
   end
 
-  def location_payload(message, attachment)
+  def location_payload(message, attachment, recipient)
     {
-      number: recipient_for(message),
+      number: recipient,
       latitude: attachment.coordinates_lat,
       longitude: attachment.coordinates_long,
       name: formatted_message_content(message).presence || attachment.fallback_title,

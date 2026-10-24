@@ -16,6 +16,51 @@ RSpec.describe WhatsappWeb::DeliveryFailureReason do
       expect(described_class.reason_for(error)).to eq('Не удалось определить номер получателя')
     end
 
+    context 'when the gateway refused a send to a hidden @lid id' do
+      let(:lid_error_class) { WhatsappWeb::Providers::EvolutionService::LidRecipientRequestError }
+      let(:refusal_body) do
+        { 'status' => 400, 'error' => 'Bad Request', 'response' => { 'message' => [{ 'jid' => '1@lid', 'exists' => false }] } }
+      end
+
+      it 'reports an unroutable recipient so that the retry service picks the message up' do
+        error = lid_error_class.new('Evolution request failed with status 400', status: 400, body: refusal_body)
+
+        reason = described_class.reason_for(error)
+
+        expect(reason).to eq('Не удалось определить номер получателя')
+        expect(described_class.unroutable_recipient?(reason)).to be(true)
+      end
+
+      it 'reports an unroutable recipient for every permanent refusal status while the channel is open' do
+        channel = instance_double(Channel::WhatsappWeb, connection_state: 'open')
+
+        [400, 404, 410, 422].each do |status|
+          error = lid_error_class.new('Bad Request', status: status, body: {})
+
+          expect(described_class.reason_for(error, channel: channel)).to eq(described_class::UNROUTABLE_RECIPIENT)
+        end
+      end
+
+      it 'blames the lost session instead when the refusal says so or the channel is disconnected' do
+        closed_channel = instance_double(Channel::WhatsappWeb, connection_state: 'close')
+        closed_error = lid_error_class.new(
+          'Error: Connection Closed',
+          status: 400,
+          body: { 'status' => 400, 'error' => 'Bad Request', 'response' => { 'message' => ['Error: Connection Closed'] } }
+        )
+        bare_error = lid_error_class.new('Bad Request', status: 400, body: {})
+
+        expect(described_class.reason_for(closed_error)).to eq(described_class::DISCONNECTED)
+        expect(described_class.reason_for(bare_error, channel: closed_channel)).to eq(described_class::DISCONNECTED)
+      end
+
+      it 'keeps the generic reason for the same refusal of a phone or group recipient' do
+        error = error_with(message: 'Bad Request', body: refusal_body)
+
+        expect(described_class.reason_for(error)).to eq(described_class::GENERIC)
+      end
+    end
+
     it 'maps a closed gateway connection to the reconnect hint' do
       error = error_with(
         message: 'Error: Connection Closed',

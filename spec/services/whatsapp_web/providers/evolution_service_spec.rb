@@ -1121,6 +1121,14 @@ describe WhatsappWeb::Providers::EvolutionService do
         service.send_message(message)
       end
 
+      it 'leaves a refused send to the phone number as a plain RequestError' do
+        allow(service).to receive(:request)
+          .with(:post, "/message/sendText/#{channel.instance_name}", body: hash_including(number: phone_digits))
+          .and_raise(described_class::RequestError.new('Bad Request', status: 400, body: {}))
+
+        expect { service.send_message(message) }.to raise_error(an_instance_of(described_class::RequestError))
+      end
+
       it 'addresses the @lid JID itself when the contact has no phone identity at all' do
         phone_contact_inbox.channel_profile.destroy!
         phone_contact_inbox.destroy!
@@ -1238,6 +1246,52 @@ describe WhatsappWeb::Providers::EvolutionService do
         service.send_reaction(message: message, emoji: 'ok')
       end
 
+      context 'when the gateway refuses the @lid' do
+        let(:refusal_body) do
+          { 'status' => 400, 'error' => 'Bad Request', 'response' => { 'message' => [{ 'jid' => lid_jid, 'exists' => false }] } }
+        end
+
+        def gateway_error(status)
+          described_class::RequestError.new('Bad Request', status: status, body: refusal_body)
+        end
+
+        it 'raises a LidRecipientRequestError that keeps the status and the body of the refusal' do
+          allow(service).to receive(:request).with(:post, send_text_path, body: hash_including(number: lid_jid)).and_raise(gateway_error(400))
+
+          expect { service.send_message(message) }.to raise_error(described_class::LidRecipientRequestError) do |error|
+            expect(error).to be_a(described_class::RequestError)
+            expect([error.status, error.body, error.message]).to eq([400, refusal_body, 'Bad Request'])
+          end
+        end
+
+        it 'tags a refused media message the same way' do
+          attachment = message.attachments.new(account_id: message.account_id, file_type: :image)
+          attachment.file.attach(io: Rails.root.join('spec/assets/avatar.png').open, filename: 'avatar.png', content_type: 'image/png')
+          attachment.save!
+          allow(service).to receive(:request).with(:post, "/message/sendMedia/#{channel.instance_name}", body: hash_including(number: lid_jid))
+                                             .and_raise(gateway_error(404))
+
+          expect { service.send_message(message) }.to raise_error(described_class::LidRecipientRequestError) do |error|
+            expect(error.status).to eq(404)
+          end
+        end
+
+        it 'does not change what a transient failure means: it stays retryable and keeps its status' do
+          allow(service).to receive(:request).and_raise(gateway_error(503))
+
+          expect { service.send_message(message) }.to raise_error(described_class::RequestError) do |error|
+            expect([error.status, error.retryable?]).to eq([503, true])
+          end
+        end
+
+        it 'does not record provider activity for a refused message' do
+          allow(service).to receive(:request).and_raise(gateway_error(400))
+
+          expect { service.send_message(message) }.to raise_error(described_class::RequestError)
+          expect(channel.reload.last_provider_activity_at).to be_nil
+        end
+      end
+
       it 'still reports an unroutable recipient when there is no candidate at all' do
         quoted_message
         message.update!(content_attributes: { 'in_reply_to_external_id' => 'quoted-wa-id' })
@@ -1280,6 +1334,14 @@ describe WhatsappWeb::Providers::EvolutionService do
           .and_return({ 'key' => { 'id' => 'provider-message-id' } })
 
         service.send_message(message_for(group_jid, in_reply_to: 'quoted-wa-id'))
+      end
+
+      it 'leaves a refused send to a group or a phone chat as a plain RequestError' do
+        allow(service).to receive(:request).and_raise(described_class::RequestError.new('Bad Request', status: 400, body: {}))
+
+        %w[120363025246125486@g.us 15551234567].each do |source_id|
+          expect { service.send_message(message_for(source_id)) }.to raise_error(an_instance_of(described_class::RequestError))
+        end
       end
 
       it 'addresses a phone chat by digits and quotes it under the phone JID' do

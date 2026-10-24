@@ -30,6 +30,7 @@ module WhatsappWeb::DeliveryFailureReason
 
     details = error.respond_to?(:error_details) ? error.error_details : error.message.to_s
     return DISCONNECTED if details.match?(DISCONNECTED_PATTERN)
+    return lid_refusal_reason(channel) if error.is_a?(WhatsappWeb::Providers::EvolutionService::LidRecipientRequestError)
 
     ambiguous_reason(details, error.message, channel) || error.message.to_s.presence || GENERIC
   end
@@ -37,6 +38,12 @@ module WhatsappWeb::DeliveryFailureReason
   def unroutable_recipient?(external_error)
     text = external_error.to_s
     text.include?(UNROUTABLE_RECIPIENT) || text.include?(LEGACY_UNROUTABLE_FRAGMENT)
+  end
+
+  # The gateway refused a send to a hidden @lid id: no phone number is known for the contact yet, and the retry service
+  # resends the message when one appears. A closed session explains the refusal better, and a resend cannot help then.
+  def lid_refusal_reason(channel)
+    channel_disconnected?(channel) ? DISCONNECTED : UNROUTABLE_RECIPIENT
   end
 
   def ambiguous_reason(details, message, channel)
