@@ -66,6 +66,7 @@ RSpec.describe Labels::UnifiedAssignmentService do
 
     it 'lets the next conversation report when the source already has the label' do
       first_conversation.update_labels(%w[vip])
+      dispatched.clear
 
       expect { described_class.add(contact: contact, labels: %w[vip], conversation: first_conversation) }
         .to have_enqueued_job(Conversations::ActivityMessageJob).once
@@ -155,9 +156,9 @@ RSpec.describe Labels::UnifiedAssignmentService do
       expect(dispatched).not_to include(Events::Types::CONVERSATION_UPDATED)
     end
 
-    it 'does not queue a thread update when a conversation reports the change' do
+    it 'leaves the thread update to the conversation event when a conversation reports the change' do
       expect { described_class.add(contact: contact, labels: %w[vip], conversation: first_conversation) }
-        .not_to have_enqueued_job(CommunicationThreads::RealtimeUpdateJob)
+        .to have_enqueued_job(CommunicationThreads::RealtimeUpdateJob).once
     end
   end
 
