@@ -379,6 +379,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
 
       before do
         provider_says(no_show, 'VISIT_STATUS_NAME' => 'неявка')
+        clear_enqueued_jobs
       end
 
       it 'tells in a dry run how many changes active rules would have reacted to, and fires nothing', :aggregate_failures do

@@ -44,7 +44,9 @@ RSpec.describe Rake::Task do
     it 'is a dry run for the last 30 days unless told otherwise, and prints the counts per status' do
       expect { task.invoke(account.id) }.to output(/last 30 days, DRY RUN, nothing is written/).to_stdout
       task.reenable
-      expect { task.invoke(account.id) }.to output(/scheduled -> completed: 1\nexamined 1: would change 1/).to_stdout
+      expect { task.invoke(account.id) }.to output(
+        /scheduled -> completed: 1\n  automation rules that would have triggered: 0 of 1 status changes.*\nexamined 1: would change 1/
+      ).to_stdout
 
       expect(Integrations::Medelement::StaleStatusReconciler).to have_received(:new)
         .with(hook: hook, days: 30, dry_run: true, max_per_run: nil).twice

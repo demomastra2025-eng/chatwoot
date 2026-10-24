@@ -251,7 +251,7 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
       described_class.new(hook: hook).sync!
 
       job = Sidekiq::Cron::Job.find("integrations_medelement_hook_#{hook.id}_receptions_delta")
-      expect(job).to have_attributes(klass: 'Integrations::Medelement::ReceptionsDeltaJob', cron: '* * * * * Asia/Almaty')
+      expect(job).to have_attributes(klass: 'Integrations::Medelement::ReceptionsDeltaJob', cron: '*/1 * * * * Asia/Almaty')
     ensure
       described_class.new(hook: hook).destroy!
     end
