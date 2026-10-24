@@ -284,7 +284,8 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaService do
       hook.update!(settings: hook.settings.merge('sync_patients' => false))
       allow(Integrations::Medelement::ReceptionsSyncService).to receive(:new).and_call_original
       allow(client).to receive(:get_reception) do |reception_code:, **|
-        detail_for(reception_code).except('COMPANY_CABINET_CODE').merge('ENDTIME' => reception_code == 'bad-1' ? '2026-10-07 09:00:00' : '2026-10-07 10:20:00')
+        ends_at = reception_code == 'bad-1' ? '2026-10-07 09:00:00' : '2026-10-07 10:20:00'
+        detail_for(reception_code).except('COMPANY_CABINET_CODE').merge('ENDTIME' => ends_at)
       end
     end
 

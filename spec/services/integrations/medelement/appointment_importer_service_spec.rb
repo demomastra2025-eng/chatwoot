@@ -581,8 +581,8 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
                                                            'medelement_detail_retry_at' => '2026-03-20T10:00:00Z' })
     end
 
-    def apply(received = reception.merge('ACTIVE' => 0), **options)
-      service.apply_provider_status!(appointment.reload, received, **options)
+    def apply(received = reception.merge('ACTIVE' => 0), **)
+      service.apply_provider_status!(appointment.reload, received, **)
     end
 
     it 'writes the status with its audit and the reconciliation marks, and nothing else' do

@@ -396,24 +396,11 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
         record.update!(settings: record.settings.merge('sync_patients' => true))
       end
     end
-    let(:patient) do
-      create(:contact, account: account, name: 'Local', last_name: 'Patient', phone_number: '+77015235543', identifier: '720914402646',
-                       custom_attributes: { 'medelement_patient_code' => 'patient-1' })
-    end
-    let(:consultation) do
-      create(:scheduling_service, account: account, name: 'Consultation', base_price: 15_000,
-                                  custom_attributes: { 'medelement_nomenclature_code' => 'nomenclature-1' })
-    end
-    let(:provider_patient) do
-      { 'PROFILE_CODE' => 'patient-1', 'COMPANY_CODE' => hook.settings['organization_id'], 'FULLNAME' => 'Renamed Provider Patient',
-        'LASTNAME' => 'Provider', 'IIN' => '720914402646', 'PATIENT_PHONE_2_STR' => '+7 777 1112233' }
-    end
-    let!(:other_doctor) do
-      create(:scheduling_resource, account: account, timezone: 'Asia/Almaty',
-                                   custom_attributes: { 'medelement_specialist_code' => 'doctor-2',
-                                                        'medelement_cabinets' => [{ 'company_cabinet_code' => 'cabinet-2' }] })
-    end
     let!(:appointment) do
+      patient = create(:contact, account: account, name: 'Local', last_name: 'Patient', phone_number: '+77015235543',
+                                 identifier: '720914402646', custom_attributes: { 'medelement_patient_code' => 'patient-1' })
+      consultation = create(:scheduling_service, account: account, name: 'Consultation', base_price: 15_000,
+                                                 custom_attributes: { 'medelement_nomenclature_code' => 'nomenclature-1' })
       stale_appointment(
         'rich-1', contact: patient, patient_contact: patient, service: consultation, status: 'confirmed',
                   client_first_name: 'Local', client_last_name: 'Patient', client_name: 'Local Patient', client_phone: '+77015235543',
@@ -436,11 +423,15 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
       )
     end
 
+    def reconciliation_keys
+      Integrations::Medelement::AppointmentImporterService::RECONCILIATION_ATTRIBUTE_KEYS
+    end
+
     def everything_but_the_status
       record = Scheduling::Appointment.find(appointment.id)
       {
         columns: record.attributes.except('status', 'custom_attributes', 'updated_at'),
-        custom_attributes: record.custom_attributes.except('provider_status_audit', *Integrations::Medelement::AppointmentImporterService::RECONCILIATION_ATTRIBUTE_KEYS),
+        custom_attributes: record.custom_attributes.except('provider_status_audit', *reconciliation_keys),
         payments: record.payments.map(&:attributes),
         contacts: account.contacts.order(:id).map(&:attributes),
         services: account.scheduling_services.order(:id).map(&:attributes),
@@ -449,9 +440,15 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
     end
 
     before do
+      create(:scheduling_resource, account: account, timezone: 'Asia/Almaty',
+                                   custom_attributes: { 'medelement_specialist_code' => 'doctor-2',
+                                                        'medelement_cabinets' => [{ 'company_cabinet_code' => 'cabinet-2' }] })
       create(:scheduling_payment, appointment: appointment, amount: 5000, payment_method: 'cash')
       appointment.reload
-      allow(client).to receive(:get_patient).and_return(provider_patient)
+      allow(client).to receive(:get_patient).and_return(
+        'PROFILE_CODE' => 'patient-1', 'COMPANY_CODE' => hook.settings['organization_id'], 'FULLNAME' => 'Renamed Provider Patient',
+        'LASTNAME' => 'Provider', 'IIN' => '720914402646', 'PATIENT_PHONE_2_STR' => '+7 777 1112233'
+      )
       provider[appointment.external_ref.delete_prefix('medelement:reception:')] = detail
     end
 
@@ -465,7 +462,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
       expect(appointment.custom_attributes['provider_status_audit']).to include(
         'source' => 'medelement_reception_sync', 'previous_status' => 'confirmed', 'status' => 'completed', 'reason' => 'provider_inactive'
       )
-      expect(appointment.custom_attributes.keys).not_to include(*Integrations::Medelement::AppointmentImporterService::RECONCILIATION_ATTRIBUTE_KEYS)
+      expect(appointment.custom_attributes.keys).not_to include(*reconciliation_keys)
       expect(everything_but_the_status).to eq(before)
     end
 
