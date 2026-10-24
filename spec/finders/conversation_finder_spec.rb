@@ -409,6 +409,97 @@ describe ConversationFinder do
       end
     end
 
+    context 'with labels that belong to the person' do
+      let(:params) { { labels: ['Семья'] } }
+      let!(:wife) { create(:contact, account: account).tap { |contact| contact.update_labels('Семья') } }
+      let!(:wife_telegram) { create(:conversation, account: account, inbox: inbox, contact: wife, status: :open) }
+      let!(:wife_whatsapp) { create(:conversation, account: account, inbox: inbox, contact: wife, status: :pending) }
+      let!(:mother_conversation) do
+        mother = create(:contact, account: account).tap { |contact| contact.update_labels('Семья') }
+        create(:conversation, account: account, inbox: inbox, contact: mother).tap { |conversation| conversation.update_labels('Семья') }
+      end
+      let!(:conversation_only) do
+        create(:conversation, account: account, inbox: inbox).tap { |conversation| conversation.update_labels('Семья') }
+      end
+      let!(:other_label) do
+        create(:conversation, account: account, inbox: inbox).tap { |conversation| conversation.update_labels('vip') }
+      end
+
+      it 'lists a conversation whose contact carries the label while the conversation does not' do
+        expect(wife_telegram.reload.label_list).to be_empty
+
+        ids = conversation_finder.perform[:conversations].map(&:id)
+
+        expect(ids).to contain_exactly(wife_telegram.id, mother_conversation.id, conversation_only.id)
+      end
+
+      it 'does not list conversations of people without the label' do
+        labeled_ids = [wife_telegram, wife_whatsapp, mother_conversation, conversation_only].map(&:id)
+        unlabeled_ids = inbox.conversations.where.not(id: labeled_ids).pluck(:id)
+
+        ids = conversation_finder.perform[:conversations].map(&:id)
+
+        expect(unlabeled_ids).to include(other_label.id)
+        expect(ids & unlabeled_ids).to be_empty
+      end
+
+      it 'counts exactly what the list returns' do
+        result = conversation_finder.perform
+        meta = described_class.new(user_1, params).perform_meta_only
+
+        expect(result[:conversations].to_a.size).to eq(3)
+        expect(result[:count]).to include(all_count: 3, unassigned_count: 3, mine_count: 0)
+        expect(meta[:count]).to include(result[:count].slice(:all_count, :mine_count, :unassigned_count, :assigned_count))
+      end
+
+      it 'keeps the status filter: a person is listed through a conversation that passes it' do
+        pending_ids = described_class.new(user_1, params.merge(status: 'pending')).perform[:conversations].map(&:id)
+        resolved_ids = described_class.new(user_1, params.merge(status: 'resolved')).perform[:conversations].map(&:id)
+
+        expect(pending_ids).to contain_exactly(wife_whatsapp.id)
+        expect(resolved_ids).to be_empty
+      end
+
+      it 'keeps the permission filter of the inbox' do
+        hidden = create(:conversation, account: account, inbox: restricted_inbox, contact: wife)
+        all_statuses = params.merge(status: 'all')
+
+        agent_result = described_class.new(user_1, all_statuses).perform
+        admin_result = described_class.new(admin, all_statuses).perform
+
+        expect(agent_result[:conversations].map(&:id)).not_to include(hidden.id)
+        expect(agent_result[:count][:all_count]).to eq(agent_result[:conversations].to_a.size)
+        expect(admin_result[:conversations].map(&:id)).to include(hidden.id)
+        expect(admin_result[:count][:all_count]).to eq(admin_result[:conversations].to_a.size)
+      end
+
+      it 'keeps the assignee filter' do
+        wife_telegram.update!(assignee: user_1)
+
+        mine = described_class.new(user_1, params.merge(assignee_type: 'me')).perform[:conversations].map(&:id)
+
+        expect(mine).to contain_exactly(wife_telegram.id)
+      end
+
+      it 'lists the same people for the any-label scope' do
+        any_label = described_class.new(user_1, { labels_scope: 'any' })
+
+        result = any_label.perform
+
+        expect(result[:conversations].map(&:id)).to contain_exactly(
+          wife_telegram.id, mother_conversation.id, conversation_only.id, other_label.id
+        )
+        expect(result[:count][:all_count]).to eq(4)
+      end
+
+      it 'matches nothing for a label that nobody carries' do
+        result = described_class.new(user_1, { labels: ['nobody'] }).perform
+
+        expect(result[:conversations]).to be_empty
+        expect(result[:count][:all_count]).to eq(0)
+      end
+    end
+
     context 'with CRM deal context' do
       let(:pipeline) { create(:crm_pipeline, account: account) }
       let(:stage) { create(:crm_stage, account: account, pipeline: pipeline) }

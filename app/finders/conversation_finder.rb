@@ -188,7 +188,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
 
   def filter_by_labels
     if params[:labels].present?
-      @conversations = @conversations.tagged_with(params[:labels], any: true)
+      @conversations = Labels::ConversationScope.with_labels(@conversations, params[:labels])
       return
     end
 
@@ -336,7 +336,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
   end
 
   def apply_labels_filter(scope)
-    return scope.tagged_with(params[:labels], any: true) if params[:labels].present?
+    return Labels::ConversationScope.with_labels(scope, params[:labels]) if params[:labels].present?
     return conversations_with_any_label(scope) if labels_scope_any?
 
     scope
@@ -413,13 +413,9 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     )
   end
 
+  # The label is on the conversation or on its contact (labels belong to the person).
   def conversations_with_any_label(scope)
-    scope.joins(
-      'INNER JOIN taggings conversation_any_label_taggings ' \
-      'ON conversation_any_label_taggings.taggable_id = conversations.id ' \
-      "AND conversation_any_label_taggings.taggable_type = 'Conversation' " \
-      "AND conversation_any_label_taggings.context = 'labels'"
-    ).distinct
+    Labels::ConversationScope.with_any_label(scope)
   end
 
   def current_crm_deal_dialog_scope

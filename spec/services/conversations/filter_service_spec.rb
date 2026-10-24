@@ -684,6 +684,82 @@ describe Conversations::FilterService do
     end
   end
 
+  describe '#perform with labels that belong to the person' do
+    let(:params) { { payload: [], page: 1 } }
+    let(:contact_only) { en_conversation_1 }
+    let(:conversation_only) { en_conversation_2 }
+    let(:contact_and_conversation) { user_2_assigned_conversation }
+    let(:unlabeled) do
+      account.conversations.where.not(id: [contact_only, conversation_only, contact_and_conversation].map(&:id)).first
+    end
+
+    def labels_condition(filter_operator, values = ['Семья'], query_operator: nil)
+      { attribute_key: 'labels', filter_operator: filter_operator, values: values, query_operator: query_operator }.with_indifferent_access
+    end
+
+    def listed_ids(payload, extra_params = {})
+      filter_service.new(params.merge(payload: payload).merge(extra_params), user_1, account).perform[:conversations].map(&:id)
+    end
+
+    def counted(payload, extra_params = {})
+      filter_service.new(params.merge(payload: payload).merge(extra_params), user_1, account).perform[:count][:all_count]
+    end
+
+    before do
+      contact_only.contact.update_labels('Семья')
+      conversation_only.update_labels('Семья')
+      contact_and_conversation.contact.update_labels('Семья')
+      contact_and_conversation.update_labels('Семья')
+    end
+
+    it 'matches a label on the conversation or on its contact with equal_to' do
+      payload = [labels_condition('equal_to')]
+
+      expect(contact_only.reload.label_list).to be_empty
+      expect(listed_ids(payload)).to contain_exactly(contact_only.id, conversation_only.id, contact_and_conversation.id)
+      expect(counted(payload)).to eq(3)
+    end
+
+    it 'excludes both kinds of label with not_equal_to' do
+      payload = [labels_condition('not_equal_to')]
+
+      expect(listed_ids(payload)).to contain_exactly(unlabeled.id)
+      expect(counted(payload)).to eq(1)
+    end
+
+    it 'treats a label on the contact as present' do
+      expect(listed_ids([labels_condition('is_present', [])])).to contain_exactly(
+        contact_only.id, conversation_only.id, contact_and_conversation.id
+      )
+      expect(listed_ids([labels_condition('is_not_present', [])])).to contain_exactly(unlabeled.id)
+    end
+
+    it 'combines the label with the other conditions of the filter' do
+      payload = [
+        { attribute_key: 'status', filter_operator: 'equal_to', values: ['pending'], query_operator: 'AND' }.with_indifferent_access,
+        labels_condition('equal_to')
+      ]
+
+      expect(listed_ids(payload)).to contain_exactly(contact_only.id, conversation_only.id)
+      expect(counted(payload)).to eq(2)
+    end
+
+    it 'keeps the permission filter of the inbox' do
+      hidden_inbox = create(:inbox, account: account).tap { |target_inbox| target_inbox.inbox_members.where(user: user_1).destroy_all }
+      hidden = create(:conversation, account: account, inbox: hidden_inbox, contact: contact_only.contact)
+
+      expect(listed_ids([labels_condition('equal_to')])).not_to include(hidden.id)
+      admin = create(:user, account: account, role: :administrator)
+      admin_ids = filter_service.new(params.merge(payload: [labels_condition('equal_to')]), admin, account).perform[:conversations].map(&:id)
+      expect(admin_ids).to include(hidden.id)
+    end
+
+    it 'lists the same conversations for the any-label scope' do
+      expect(listed_ids([], labels_scope: 'any')).to contain_exactly(contact_only.id, conversation_only.id, contact_and_conversation.id)
+      expect(counted([], labels_scope: 'any')).to eq(3)
+    end
+  end
+
   describe '#base_relation' do
     let!(:account) { create(:account) }
     let!(:user_1) { create(:user, account: account, role: :agent) }

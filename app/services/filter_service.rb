@@ -130,17 +130,36 @@ class FilterService
 
     case query_hash[:filter_operator]
     when 'equal_to'
-      "EXISTS (#{tag_model_relation_query} #{tag_query}) #{query_operator}"
+      "#{labels_exist_sql(tag_model_relation_query, tag_query)} #{query_operator}"
     when 'not_equal_to'
-      "NOT EXISTS (#{tag_model_relation_query} #{tag_query}) #{query_operator}"
+      "NOT #{labels_exist_sql(tag_model_relation_query, tag_query)} #{query_operator}"
     when 'is_present'
-      "EXISTS (#{tag_model_relation_query}) #{query_operator}"
+      "#{labels_exist_sql(tag_model_relation_query)} #{query_operator}"
     when 'is_not_present'
-      "NOT EXISTS (#{tag_model_relation_query}) #{query_operator}"
+      "NOT #{labels_exist_sql(tag_model_relation_query)} #{query_operator}"
     end
   end
 
   private
+
+  # EXISTS over the taggings of the record itself. A list whose rows carry the labels of their contact too
+  # (match_contact_labels?) also counts the labels of the contact: labels belong to the person.
+  def labels_exist_sql(tag_model_relation_query, tag_query = nil)
+    record_labels = "EXISTS (#{tag_model_relation_query} #{tag_query})"
+    return record_labels unless match_contact_labels?
+
+    contact_labels = "EXISTS (#{contact_tag_relation_query} #{tag_query})"
+    "(#{record_labels} OR #{contact_labels})"
+  end
+
+  def contact_tag_relation_query
+    "SELECT * FROM taggings WHERE taggings.taggable_id = #{filter_config[:table_name]}.contact_id " \
+      "AND taggings.taggable_type = 'Contact' AND taggings.context = 'labels'"
+  end
+
+  def match_contact_labels?
+    false
+  end
 
   def standard_attribute_data_type(attribute_key)
     @filters.each_value do |section|
