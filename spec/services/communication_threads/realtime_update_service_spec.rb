@@ -77,7 +77,9 @@ RSpec.describe CommunicationThreads::RealtimeUpdateService do
         source_event: 'conversation.updated'
       ).perform
 
-      _members, _event, payload = broadcasts.find { |members, event, _payload| event == 'communication_thread.updated' && members.include?(user.pubsub_token) }
+      _members, _event, payload = broadcasts.find do |members, event, _payload|
+        event == 'communication_thread.updated' && members.include?(user.pubsub_token)
+      end
       expect(payload[:snoozed_until]).to eq(woken_first)
     end
 

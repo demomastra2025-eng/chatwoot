@@ -52,16 +52,12 @@ describe Integrations::Slack::SendOnSlackService do
       end
 
       context 'when the account uses communication threads' do
-        let(:thread_account) { create(:account).tap { |record| record.enable_features!('communication_threads') } }
-        let(:thread_inbox) { create(:channel_email, account: thread_account).inbox }
-        let(:thread_conversation) { create(:conversation, account: thread_account, inbox: thread_inbox, identifier: nil) }
-        let(:thread_hook) { create(:integrations_hook, account: thread_account) }
-        let(:thread_message) do
-          create(:message, account: thread_account, inbox: thread_inbox, conversation: thread_conversation)
-        end
-        let(:thread_builder) { described_class.new(message: thread_message, hook: thread_hook) }
-
         it 'links to the dialog of the person' do
+          thread_account = create(:account).tap { |record| record.enable_features!('communication_threads') }
+          thread_inbox = create(:channel_email, account: thread_account).inbox
+          thread_conversation = create(:conversation, account: thread_account, inbox: thread_inbox, identifier: nil)
+          thread_message = create(:message, account: thread_account, inbox: thread_inbox, conversation: thread_conversation)
+          thread_builder = described_class.new(message: thread_message, hook: create(:integrations_hook, account: thread_account))
           thread = thread_conversation.reload.communication_thread
           dialog_link = "<#{ENV.fetch('FRONTEND_URL', nil)}/app/accounts/#{thread_account.id}/communication_threads/#{thread.display_id}|Click here>"
           allow(thread_builder).to receive(:slack_client).and_return(slack_client)

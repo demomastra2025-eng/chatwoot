@@ -40,7 +40,7 @@ const buildStore = (chat, { attachments = [], total = 0 } = {}) => {
   return { store, fetchAllAttachments };
 };
 
-const mountSharedFiles = store =>
+const mountSharedFiles = (store, stubs = {}) =>
   mount(SharedFiles, {
     global: {
       plugins: [store],
@@ -50,6 +50,7 @@ const mountSharedFiles = store =>
         FileIcon: true,
         NextButton: true,
         Spinner: true,
+        ...stubs,
       },
     },
   });
@@ -109,9 +110,9 @@ describe('SharedFiles', () => {
 
     const wrapper = mountSharedFiles(store);
 
-    expect(wrapper.find('[data-test-id="shared-files-partial"]').text()).toMatch(
-      /100.*340|340.*100/
-    );
+    expect(
+      wrapper.find('[data-test-id="shared-files-partial"]').text()
+    ).toMatch(/100.*340|340.*100/);
   });
 
   it('shows no shortfall note when every attachment is loaded', () => {
@@ -132,18 +133,22 @@ describe('SharedFiles', () => {
       { id: 7, is_communication_thread: true },
       { attachments: attachmentsOf(100), total: 340 }
     );
-    const wrapper = mountSharedFiles(store);
+    const wrapper = mountSharedFiles(store, {
+      NextButton: { template: '<button><slot/></button>' },
+    });
     fetchAllAttachments.mockClear();
 
-    wrapper
-      .find('[data-test-id="shared-files-partial"]')
-      .findComponent({ name: 'NextButton' })
-      .vm.$emit('click');
+    await wrapper
+      .find('[data-test-id="shared-files-partial"] button')
+      .trigger('click');
     await flushPromises();
 
     expect(fetchAllAttachments).toHaveBeenCalledTimes(1);
     expect(fetchAllAttachments).toHaveBeenCalledWith(
-      expect.objectContaining({ conversationId: 7, isCommunicationThread: true })
+      expect.objectContaining({
+        conversationId: 7,
+        isCommunicationThread: true,
+      })
     );
   });
 

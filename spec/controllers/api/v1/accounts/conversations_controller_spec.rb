@@ -1831,10 +1831,11 @@ RSpec.describe 'Conversations API', type: :request do
           end
         end
         attachment_ids = conversation.attachments.pluck(:id)
+        headers = administrator.create_new_auth_token
 
         paged_ids = (1..4).flat_map do |page|
           get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/attachments",
-              params: { page: page }, headers: administrator.create_new_auth_token, as: :json
+              params: { page: page }, headers: headers, as: :json
           expect(response.parsed_body.dig('meta', 'total_count')).to eq(5)
           response.parsed_body['payload'].pluck('id')
         end
