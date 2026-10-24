@@ -185,8 +185,8 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
 
       reconciler.perform
 
-      expect(lock).to have_received(:lock).with(run_key, described_class::RUN_LOCK_LEASE).once
-      expect(lock).to have_received(:lock).with(sync_key, described_class::SYNC_LOCK_LEASE).twice
+      expect(lock).to have_received(:lock).with(run_key, Integrations::Medelement::StaleStatusLocks::RUN_LEASE).once
+      expect(lock).to have_received(:lock).with(sync_key, Integrations::Medelement::StaleStatusLocks::SYNC_LEASE).twice
       expect(lock).to have_received(:unlock).with(sync_key).twice
       expect(lock).to have_received(:unlock).with(run_key).once
     end
@@ -333,7 +333,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
       report = reconciler(batch_size: 2).perform
 
       expect(report.examined).to eq(5)
-      expect(lock).to have_received(:renew).with(run_key, described_class::RUN_LOCK_LEASE).exactly(3).times
+      expect(lock).to have_received(:renew).with(run_key, Integrations::Medelement::StaleStatusLocks::RUN_LEASE).exactly(3).times
     end
 
     it 'stops at the cap of one run, says what is left, and the next run continues' do
@@ -396,7 +396,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
       report = reconciler.perform
 
       expect(report).to have_attributes(aborted: 'sync_busy', changed: 0)
-      expect(sleeps.size).to eq(described_class::SYNC_LOCK_ATTEMPTS - 1)
+      expect(sleeps.size).to eq(Integrations::Medelement::StaleStatusLocks::SYNC_ATTEMPTS - 1)
       expect(appointment.reload.status).to eq('scheduled')
       expect(lock).to have_received(:unlock).with(run_key)
     end

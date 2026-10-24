@@ -6,7 +6,8 @@
 # A dry run reads the same receptions and reports what would change, per old status and provider status, and writes
 # nothing. An appointment that MedElement no longer has is never deleted or changed: it is only reported.
 class Integrations::Medelement::StaleStatusReconciler
-  Abort = Class.new(StandardError)
+  # A reason to end the run (the message). The locks raise it too.
+  Abort = Integrations::Medelement::StaleStatusLocks::Unavailable
 
   OPEN_STATUSES = %w[scheduled confirmed].freeze
   STALE_AFTER = 1.day
@@ -17,10 +18,6 @@ class Integrations::Medelement::StaleStatusReconciler
   DEFAULT_MAX_PER_RUN = 1000
   MAX_CONSECUTIVE_PROVIDER_ERRORS = 5
   PROVIDER_ERROR_PAUSE_SECONDS = 5
-  RUN_LOCK_LEASE = 30.minutes
-  SYNC_LOCK_LEASE = 2.minutes
-  SYNC_LOCK_ATTEMPTS = 24
-  SYNC_LOCK_PAUSE_SECONDS = 5
   PROVIDER_ERRORS = [
     Integrations::Medelement::Client::ApiError,
     Integrations::Medelement::ProviderScope::MismatchError
@@ -47,6 +44,7 @@ class Integrations::Medelement::StaleStatusReconciler
     @max_per_run = options.fetch(:max_per_run, DEFAULT_MAX_PER_RUN) || Float::INFINITY
     @sleeper = options.fetch(:sleeper) { ->(seconds) { Kernel.sleep(seconds) } }
     @report = Integrations::Medelement::StaleStatusReport.new(dry_run: @dry_run, days: @days)
+    @locks = Integrations::Medelement::StaleStatusLocks.new(hook: hook, sleeper: @sleeper)
     @cursor = nil
     @consecutive_errors = 0
     @provider_read_made = false
@@ -55,7 +53,7 @@ class Integrations::Medelement::StaleStatusReconciler
   def perform
     if eligible?
       # A dry run only reads, so it takes no lock and cannot hold a real run back.
-      dry_run ? run : with_run_lock { run }
+      dry_run ? run : locks.hold_run { run }
     else
       report.aborted = 'not_eligible'
     end
@@ -69,7 +67,7 @@ class Integrations::Medelement::StaleStatusReconciler
 
   private
 
-  attr_reader :hook, :client, :configuration, :days, :dry_run, :batch_size, :max_per_run, :sleeper, :report
+  attr_reader :hook, :client, :configuration, :days, :dry_run, :batch_size, :max_per_run, :sleeper, :report, :locks
 
   def eligible?
     hook.enabled? && hook.feature_allowed? && configuration.sync_receptions?
@@ -91,7 +89,7 @@ class Integrations::Medelement::StaleStatusReconciler
       break if batch.empty?
 
       batch.each { |appointment| process(appointment) }
-      renew_run_lock!
+      locks.renew_run! unless dry_run
     end
   end
 
@@ -149,7 +147,7 @@ class Integrations::Medelement::StaleStatusReconciler
   end
 
   def apply(appointment, detail)
-    with_sync_lock do
+    locks.hold_sync do
       before = current_status(appointment)
       next report.skipped!('no_longer_open') unless OPEN_STATUSES.include?(before)
 
@@ -187,46 +185,6 @@ class Integrations::Medelement::StaleStatusReconciler
     @sync_service ||= Integrations::Medelement::ReceptionsSyncService.new(
       account: hook.account, client: client, configuration: configuration
     )
-  end
-
-  # One run per hook at a time.
-  def with_run_lock
-    @run_lock_key = format(::Redis::Alfred::MEDELEMENT_STALE_STATUS_MUTEX, hook_id: hook.id)
-    @run_lock = ::Redis::LockManager.new
-    raise Abort, 'already_running' unless @run_lock.lock(@run_lock_key, RUN_LOCK_LEASE)
-
-    begin
-      yield
-    ensure
-      @run_lock.unlock(@run_lock_key)
-    end
-  end
-
-  def renew_run_lock!
-    return if dry_run
-    return if @run_lock.renew(@run_lock_key, RUN_LOCK_LEASE)
-
-    raise Abort, 'lock_lost'
-  end
-
-  # The account's sync mutex, held for one import at a time only, so the regular sync and the delta poll are never kept
-  # waiting for more than a moment. A sync that holds it for longer ends the run; the next run continues.
-  def with_sync_lock
-    key = format(::Redis::Alfred::MEDELEMENT_SYNC_MUTEX, account_id: hook.account_id)
-    lock = ::Redis::LockManager.new
-    attempts = 0
-    until lock.lock(key, SYNC_LOCK_LEASE)
-      attempts += 1
-      raise Abort, 'sync_busy' if attempts >= SYNC_LOCK_ATTEMPTS
-
-      sleeper.call(SYNC_LOCK_PAUSE_SECONDS)
-    end
-
-    begin
-      yield
-    ensure
-      lock.unlock(key)
-    end
   end
 
   def log_result
