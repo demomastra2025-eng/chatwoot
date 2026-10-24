@@ -75,6 +75,7 @@ class Labels::UnifiedAssignmentService
 
   def initialize(contact:, conversation: nil, add: nil, remove: nil, silent: false)
     @contact = contact
+    @source = conversation
     @source_id = conversation&.id
     @add = self.class.normalize(add).uniq(&:downcase)
     @remove_keys = self.class.normalize(remove).map(&:downcase)
@@ -96,6 +97,7 @@ class Labels::UnifiedAssignmentService
       @conversations.each { |conversation| write_conversation(conversation) }
     end
     refresh_thread_realtime
+    forget_cached_labels
     person_labels
   end
 
@@ -148,6 +150,16 @@ class Labels::UnifiedAssignmentService
     present = kept.map(&:downcase)
     updated = kept + @add.reject { |label| present.include?(label.downcase) }
     updated == current ? nil : updated
+  end
+
+  # The contact and the conversation the caller holds may have read their label list before this change. Saved later, that
+  # copy would be written back over it (ActsAsTaggable keeps it until the record is reloaded), so drop it the same way.
+  def forget_cached_labels
+    [contact, @source].compact.each do |record|
+      %i[@label_list @all_label_list].each do |name|
+        record.remove_instance_variable(name) if record.instance_variable_defined?(name)
+      end
+    end
   end
 
   # A label that lives only on the contact card changes the person's labels without saving any conversation, so no

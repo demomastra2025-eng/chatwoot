@@ -79,7 +79,10 @@ RSpec.describe CommunicationThreads::RealtimeUpdateService do
           source_conversation_id: conversation.id,
           source_event: 'conversation.updated'
         ).perform
-        broadcasts.find { |_members, event, _payload| event == 'communication_thread.updated' }.last
+        agent_broadcast = broadcasts.find do |members, event, _payload|
+          event == 'communication_thread.updated' && members.include?(user.pubsub_token)
+        end
+        agent_broadcast.last
       end
 
       it 'carries the labels of the contact card as well as those of the channels, so a live update never drops a card label' do

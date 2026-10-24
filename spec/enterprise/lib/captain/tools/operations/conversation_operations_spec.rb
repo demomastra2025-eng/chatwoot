@@ -31,7 +31,10 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
   describe 'labels of the person' do
     let!(:other_conversation) { create(:conversation, account: account, contact: contact) }
 
-    before { create(:label, account: account, title: 'vip') }
+    before do
+      conversation
+      create(:label, account: account, title: 'vip')
+    end
 
     it 'adds a label to the contact and to every conversation of the person' do
       operations.add_label(label_name: 'VIP', conversation_id: conversation.id)
