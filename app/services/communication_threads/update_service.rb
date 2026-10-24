@@ -1,6 +1,20 @@
 # frozen_string_literal: true
 
+# Writes the fields of a person (status, priority, assignee, team, custom attributes) to the conversations of the thread the
+# actor can reach, then refreshes the thread, which holds the one status of the person (the most urgent status of its
+# conversations, see Conversations::CommunicationThreadResolver).
+#
+# The status is not written to every conversation:
+# - resolve resolves every conversation, as before;
+# - open, pending and snooze touch only the conversations that are not resolved, so the old channels of a person (resolved
+#   long ago) are not reopened or snoozed and their status events, automation rules and webhooks do not fire;
+# - when every conversation is resolved, a request to open (or to move to pending or snooze) the person brings back ONE
+#   conversation, the one a person is reached in (the latest activity, see CommunicationThreads::SingleOpenDialogPlanner).
 class CommunicationThreads::UpdateService
+  # Statuses that apply to the conversations that are not resolved. Any other status (resolved, or a blank one that toggles)
+  # is written to every conversation.
+  ACTIVE_STATUS_TARGETS = %w[open pending snoozed].freeze
+
   def initialize(communication_thread:, params:, accessible_links:, actor: Current.user, source: 'communication_thread')
     @communication_thread = communication_thread
     @current_account = communication_thread.account
@@ -11,7 +25,7 @@ class CommunicationThreads::UpdateService
   end
 
   def perform
-    source_conversation = accessible_links.first&.conversation
+    source_conversation = ordered_links.first&.conversation
     updated_thread = CommunicationThread.transaction do
       sync_accessible_conversations!
       refresh_communication_thread!
@@ -27,8 +41,17 @@ class CommunicationThreads::UpdateService
   attr_reader :communication_thread, :current_account, :params, :accessible_links, :actor, :source
 
   def sync_accessible_conversations!
-    accessible_links.each_with_index do |link, index|
+    ordered_links.each_with_index do |link, index|
       sync_conversation!(link.conversation, skip_activity: index.positive?)
+    end
+  end
+
+  # The links in the order they are written. The conversation whose status changes goes first, so the one activity note of the
+  # change ("agent X marked the dialog pending") lands in the conversation that really changed.
+  def ordered_links
+    @ordered_links ||= begin
+      links = accessible_links.to_a.sort_by(&:id)
+      links.partition { |link| status_target_ids.include?(link.conversation_id) }.flatten
     end
   end
 
@@ -41,16 +64,32 @@ class CommunicationThreads::UpdateService
     assign_agent!(conversation)
     assign_team!(conversation)
     assign_custom_attributes!(conversation)
-    if params.key?(:status)
+    if status_target_ids.include?(conversation.id)
       assign_status!(conversation)
     elsif conversation.changed?
       conversation.save!
     end
   end
 
-  def assign_status!(conversation)
-    return unless params.key?(:status)
+  # Ids of the conversations that get the requested status; empty when the request carries no status.
+  def status_target_ids
+    @status_target_ids ||= params.key?(:status) ? status_target_conversations.map(&:id) : []
+  end
 
+  def status_target_conversations
+    conversations = accessible_links.to_a.map(&:conversation)
+    return conversations unless ACTIVE_STATUS_TARGETS.include?(params[:status].to_s)
+
+    active = conversations.reject(&:resolved?)
+    active.presence || Array(reopened_conversation(conversations))
+  end
+
+  # Every channel is resolved: the person comes back in one of them, not in all.
+  def reopened_conversation(conversations)
+    CommunicationThreads::SingleOpenDialogPlanner.new(thread: communication_thread, conversations: conversations).conversation_to_keep
+  end
+
+  def assign_status!(conversation)
     Conversations::StatusTransitionService.new(
       conversation: conversation,
       params: status_transition_params,
@@ -133,7 +172,7 @@ class CommunicationThreads::UpdateService
   end
 
   def refresh_communication_thread!
-    seed_conversation = accessible_links.first&.conversation
+    seed_conversation = ordered_links.first&.conversation
     return unless seed_conversation
 
     # Resolver#lock! reloads its record. Use a separate instance so the saved

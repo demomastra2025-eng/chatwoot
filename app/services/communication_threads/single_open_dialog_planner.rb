@@ -32,8 +32,15 @@ class CommunicationThreads::SingleOpenDialogPlanner
     return if @conversations.size < 2
     return Plan.new(thread: @thread, kept: nil, closed: [], deferred: :live_call) if @conversations.any? { |c| live_call?(c) }
 
-    kept = preferred_conversation || messenger_close_to_latest_call || latest_conversation
+    kept = conversation_to_keep
     Plan.new(thread: @thread, kept: kept, closed: @conversations - [kept])
+  end
+
+  # The conversation that stays when several are open. It is also the one conversation a person gets back when every
+  # channel is resolved and the dialog is reopened (see CommunicationThreads::UpdateService): the one with the latest
+  # activity, a messenger before a call that is only slightly newer, or the preferred one.
+  def conversation_to_keep
+    preferred_conversation || messenger_close_to_latest_call || latest_conversation
   end
 
   private
