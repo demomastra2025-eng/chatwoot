@@ -224,6 +224,116 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
     end
   end
 
+  # The proposal is checked against the same visit length that slot search offers and the booking writes (Scheduling::VisitDuration).
+  # For a MedElement service that is the history median in whole slots of the specialist, never the 30 minutes column default.
+  describe '.intercept for a MedElement service' do
+    let(:ultrasound) do
+      create(:scheduling_service, account: account, name: 'УЗИ малого таза', duration_min: 30,
+                                  custom_attributes: { 'medelement_nomenclature_code' => 'U1' })
+    end
+    let(:doctor) do
+      create(:scheduling_resource, account: account, name: 'Д-р Анар', timezone: 'Asia/Almaty', slot_duration_min: 15,
+                                   custom_attributes: { 'medelement_specialist_code' => 'D1' })
+    end
+
+    def create_tool
+      Captain::Tools::CreateAppointmentTool.new(assistant)
+    end
+
+    # Monday of the coming week, in the time zone of the specialists
+    def day
+      Date.current.next_occurring(:monday)
+    end
+
+    def at(hour, minute)
+      ActiveSupport::TimeZone['Asia/Almaty'].local(day.year, day.month, day.day, hour, minute)
+    end
+
+    def pair(resource, median:)
+      create(:scheduling_resource_service_stat, account: account, resource: resource, service: ultrasound, median_duration_min: median)
+    end
+
+    def book(resource, from, to, **attributes)
+      create(:scheduling_appointment, account: account, resource: resource, service: service_item, starts_at: from, ends_at: to,
+                                      duration_min: ((to - from) / 60).to_i, **attributes)
+    end
+
+    def propose(resource, starts_at)
+      arguments = { resource_id: resource.id, service_id: ultrasound.id, starts_at: starts_at.iso8601 }
+      JSON.parse(described_class.intercept(tool: create_tool, tool_context: tool_context, arguments: arguments))
+    end
+
+    def pending_count
+      described_class.pending_for(account_id: account.id, conversation_id: conversation.id).size
+    end
+
+    it 'sizes the booking by the median of the pair, so a slot just before another visit can be proposed' do
+      pair(doctor, median: 10)
+      book(doctor, at(9, 15), at(9, 30))
+
+      result = propose(doctor, at(9, 0))
+
+      expect(result['status']).to eq('pending_operator_approval')
+      expect(pending_count).to eq(1)
+    end
+
+    it 'sizes the booking by the slot of the specialist when the pair is unknown' do
+      book(doctor, at(9, 15), at(9, 30))
+
+      expect(propose(doctor, at(9, 0))['status']).to eq('pending_operator_approval')
+    end
+
+    it 'refuses a start whose real length runs into the next visit, though the default 30 minutes would fit' do
+      pair(doctor, median: 60)
+      book(doctor, at(9, 45), at(10, 0))
+
+      result = propose(doctor, at(9, 0))
+
+      expect(result).to include('success' => false, 'reason' => 'time_taken')
+      expect(pending_count).to eq(0)
+    end
+
+    it 'accepts every slot that slot search offers on a specialist with work hours, the last one before closing included' do
+      plain_doctor = create(:scheduling_resource, account: account, name: 'Д-р Берик', timezone: 'Asia/Almaty', slot_duration_min: 15)
+      create(:scheduling_work_rule, account: account, resource: plain_doctor, weekday: day.wday, start_minute: 9 * 60, end_minute: 10 * 60)
+      pair(plain_doctor, median: 10)
+      book(plain_doctor, at(9, 15), at(9, 30))
+
+      slots = Scheduling::AvailableSlotSearchService.new(
+        account: account, from: at(9, 0), to: at(10, 0), service_id: ultrasound.id, resource_ids: [plain_doctor.id], limit: 50
+      ).perform[:slots]
+      starts = slots.map { |slot| slot[:starts_at] }
+
+      expect(starts).to include(at(9, 0).iso8601, at(9, 45).iso8601)
+      starts.each do |starts_at|
+        result = JSON.parse(
+          described_class.intercept(
+            tool: create_tool, tool_context: tool_context,
+            arguments: { resource_id: plain_doctor.id, service_id: ultrasound.id, starts_at: starts_at }
+          )
+        )
+        expect(result['status']).to eq('pending_operator_approval'), "slot #{starts_at} was offered but refused: #{result}"
+      end
+    end
+
+    it 'sizes a change of the service by the same length' do
+      pair(doctor, median: 10)
+      appointment = book(doctor, at(11, 0), at(11, 30), contact: contact)
+      book(doctor, at(10, 15), at(10, 30))
+      token = Captain::Tools::Agent::AppointmentAccess.issue(assistant: assistant, conversation: conversation, appointment: appointment)
+
+      raw = described_class.intercept(
+        tool: Captain::Tools::UpdateAppointmentTool.new(assistant), tool_context: tool_context,
+        arguments: {
+          appointment_id: appointment.id, appointment_access_token: token, patient_confirmed: true,
+          service_id: ultrasound.id, starts_at: at(10, 0).iso8601
+        }
+      )
+
+      expect(JSON.parse(raw)['status']).to eq('pending_operator_approval')
+    end
+  end
+
   describe '#approve!' do
     subject(:approval_service) do
       described_class.new(account: account, user: user, conversation_display_id: conversation.display_id)
