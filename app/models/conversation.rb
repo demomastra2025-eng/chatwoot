@@ -90,9 +90,9 @@ class Conversation < ApplicationRecord
   scope :assigned_to, ->(agent) { where(assignee_id: agent.id) }
   scope :unattended, -> { where(first_reply_created_at: nil).or(where.not(waiting_since: nil)) }
   # Inactivity belongs to the person, not to one channel: a conversation is not quiet while the same contact wrote or
-  # was answered in another conversation since the cutoff. Only public incoming and outgoing messages count; activity
-  # lines, private notes and templates (the auto-resolve message itself) do not, so resolving one channel never keeps
-  # the next one alive.
+  # was answered by a human in another conversation since the cutoff (Message.person_activity_sql). What the system
+  # sends on its own does not count (the closing notice, AI follow-ups, reminders, campaigns, surveys), nor do activity
+  # lines, private notes and templates, so resolving one channel never keeps the next one alive.
   scope :without_recent_messages_in_other_conversations_of_contact, lambda { |since|
     where(
       <<~SQL.squish,
@@ -104,12 +104,11 @@ class Conversation < ApplicationRecord
           WHERE sibling_conversations.account_id = conversations.account_id
             AND sibling_conversations.contact_id = conversations.contact_id
             AND sibling_conversations.id <> conversations.id
-            AND sibling_messages.private = FALSE
-            AND sibling_messages.message_type IN (:message_types)
             AND sibling_messages.created_at >= :since
+            AND #{Message.person_activity_sql('sibling_messages')}
         )
       SQL
-      message_types: Message.message_types.values_at('incoming', 'outgoing'), since: since
+      since: since
     )
   }
   scope :resolvable_not_waiting, lambda { |auto_resolve_after|

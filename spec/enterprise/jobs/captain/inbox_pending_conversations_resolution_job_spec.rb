@@ -160,6 +160,24 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       expect(private_note.content).to eq('Auto-resolved: Customer question was answered')
     end
 
+    context 'when the person has another quiet pending conversation in the same inbox' do
+      let!(:earlier_pending_conversation) do
+        create(:conversation, account: inbox.account, inbox: inbox, contact: resolvable_pending_conversation.contact,
+                              contact_inbox: resolvable_pending_conversation.contact_inbox, last_activity_at: 3.hours.ago, status: :pending)
+      end
+
+      it 'resolves both in one run, the closing notice of the first one is not the person being live' do
+        configure_account_message('resolution_message', enabled: true, mode: 'fixed', text: 'Closed because of inactivity.')
+
+        described_class.perform_now(inbox)
+
+        expect(earlier_pending_conversation.reload.status).to eq('resolved')
+        expect(resolvable_pending_conversation.reload.status).to eq('resolved')
+        expect(earlier_pending_conversation.messages.outgoing.where(content: 'Closed because of inactivity.')).to exist
+        expect(resolvable_pending_conversation.messages.outgoing.where(content: 'Closed because of inactivity.')).to exist
+      end
+    end
+
     it 'creates resolution message with configured static content' do
       custom_message = 'This is a custom resolution message.'
       configure_account_message('resolution_message', enabled: true, mode: 'fixed', text: custom_message)

@@ -93,6 +93,13 @@ RSpec.describe Conversations::ResolutionJob do
                          message_type: :incoming, private: false, created_at: created_at }.merge(attributes))
     end
 
+    # The factory gives every outgoing message a user as its sender; a message of a bot or of the system has none.
+    def create_message_without_sender(conversation, **attributes)
+      message = create_message(conversation, **attributes)
+      Message.where(id: message.id).update_all(sender_type: nil, sender_id: nil) # rubocop:disable Rails/SkipsModelValidations
+      message
+    end
+
     before { account.update(auto_resolve_after: 14_400, auto_resolve_ignore_waiting: false) } # 10 days in minutes
 
     it 'does not close a quiet channel while the person writes in another one' do
@@ -127,6 +134,58 @@ RSpec.describe Conversations::ResolutionJob do
       create_message(other_conversation, private: true, message_type: :outgoing, sender: create(:user, account: account))
       create_message(other_conversation, message_type: :activity, sender: nil, content: 'Assigned to somebody')
       create_message(other_conversation, message_type: :template, sender: nil, content: 'Auto message')
+
+      described_class.perform_now(account: account)
+
+      expect(quiet_conversation.reload.status).to eq('resolved')
+    end
+
+    it 'counts the echo of a reply written in the native app of the clinic' do
+      create_message_without_sender(other_conversation, message_type: :outgoing, content_attributes: { external_echo: true })
+
+      described_class.perform_now(account: account)
+
+      expect(quiet_conversation.reload.status).to eq('open')
+    end
+
+    # What the system sends on its own is not the person being live: the quiet channel must not wait another period
+    # after every reminder, follow-up, campaign or closing notice that went out in a sibling channel.
+    {
+      'a reminder or an AI follow-up' => { sender: :user, content_attributes: { touch_id: 7, touch_source: 'touch' } },
+      'a reminder that only carries its touch in the additional attributes' => { sender: :user, additional_attributes: { touch_id: 7 } },
+      'a campaign message' => { sender: :user, additional_attributes: { campaign_id: 3 } },
+      'a message of an automation rule' => { sender: nil, content_attributes: { automation_rule_id: 5 } },
+      'a confirmation request' => { sender: :user, content_attributes: { confirmation_request_id: 9 } },
+      'a message of a bot' => { sender: nil },
+      'a survey' => { sender: nil, content_type: :input_csat }
+    }.each do |description, attributes|
+      it "does not take #{description} in the other channel for the person being live" do
+        if attributes[:sender] == :user
+          create_message(other_conversation, **attributes.except(:sender), message_type: :outgoing, sender: create(:user, account: account))
+        else
+          create_message_without_sender(other_conversation, **attributes.except(:sender), message_type: :outgoing)
+        end
+
+        described_class.perform_now(account: account)
+
+        expect(quiet_conversation.reload.status).to eq('resolved')
+      end
+    end
+
+    it 'does not take a reminder whose attributes are stored as a JSON string for the person being live' do
+      message = create_message(other_conversation, message_type: :outgoing, sender: create(:user, account: account))
+      # rubocop:disable Rails/SkipsModelValidations
+      Message.where(id: message.id).update_all(['content_attributes = to_json(?::text)', { touch_id: 7 }.to_json])
+      # rubocop:enable Rails/SkipsModelValidations
+
+      described_class.perform_now(account: account)
+
+      expect(quiet_conversation.reload.status).to eq('resolved')
+    end
+
+    it 'does not take a message of Captain in the other channel for the person being live' do
+      assistant = create(:captain_assistant, account: account)
+      create_message(other_conversation, message_type: :outgoing, sender: assistant)
 
       described_class.perform_now(account: account)
 
