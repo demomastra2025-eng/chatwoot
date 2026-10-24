@@ -154,6 +154,7 @@ class ActionCableConnector extends BaseActionCableConnector {
       'notification.updated': this.onNotificationUpdated,
       'captain.reply_suggestion.progress':
         this.onCaptainReplySuggestionProgress,
+      'captain.reply_suggestion.result': this.onCaptainReplySuggestionResult,
       'conversation.read': this.onConversationRead,
       'conversation.updated': this.onConversationUpdated,
       'communication_thread.updated': this.onCommunicationThreadUpdated,
@@ -721,6 +722,11 @@ class ActionCableConnector extends BaseActionCableConnector {
   // eslint-disable-next-line class-methods-use-this
   onCaptainReplySuggestionProgress = data => {
     emitter.emit(BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_PROGRESS, data);
+  };
+
+  // eslint-disable-next-line class-methods-use-this
+  onCaptainReplySuggestionResult = data => {
+    emitter.emit(BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_RESULT, data);
   };
 
   onCacheInvalidate = data => {

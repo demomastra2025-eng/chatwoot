@@ -596,6 +596,60 @@ describe('ActionCableConnector', () => {
       );
     });
 
+    it('forwards the reply suggestion progress and result events of the current account to the bus', () => {
+      expect(actionCable.events['captain.reply_suggestion.result']).toBe(
+        actionCable.onCaptainReplySuggestionResult
+      );
+
+      const progress = {
+        account_id: 1,
+        suggestion_request_id: 'sr-1',
+        status: 'running',
+        conversation_id: 42,
+      };
+      const result = {
+        account_id: 1,
+        suggestion_request_id: 'sr-1',
+        status: 'draft',
+        conversation_id: 42,
+        result: { message: 'Здравствуйте!' },
+      };
+      actionCable.onReceived({
+        event: 'captain.reply_suggestion.progress',
+        data: progress,
+      });
+      actionCable.onReceived({
+        event: 'captain.reply_suggestion.result',
+        data: result,
+      });
+
+      expect(emitter.emit).toHaveBeenCalledWith(
+        BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_PROGRESS,
+        progress
+      );
+      expect(emitter.emit).toHaveBeenCalledWith(
+        BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_RESULT,
+        result
+      );
+    });
+
+    it('drops a reply suggestion result of another account', () => {
+      actionCable.onReceived({
+        event: 'captain.reply_suggestion.result',
+        data: {
+          account_id: 2,
+          suggestion_request_id: 'sr-1',
+          status: 'draft',
+          conversation_id: 42,
+        },
+      });
+
+      expect(emitter.emit).not.toHaveBeenCalledWith(
+        BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_RESULT,
+        expect.anything()
+      );
+    });
+
     it('should register WhatsApp agent disconnect handler', () => {
       expect(Object.keys(actionCable.events)).toContain(
         'whatsapp_call.agent_disconnected'

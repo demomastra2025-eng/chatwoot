@@ -29,10 +29,6 @@ const props = defineProps({
     type: String,
     default: '',
   },
-  captainTrace: {
-    type: Object,
-    default: null,
-  },
   suggestionMeta: {
     type: Object,
     default: null,
@@ -48,6 +44,20 @@ const props = defineProps({
   actionLoadingById: {
     type: Object,
     default: () => ({}),
+  },
+  // New customer messages arrived after the suggestion was requested
+  stale: {
+    type: Boolean,
+    default: false,
+  },
+  // 'legacy_prompt' when the account has no AI agent and the plain prompt ran
+  engine: {
+    type: String,
+    default: null,
+  },
+  isQueued: {
+    type: Boolean,
+    default: false,
   },
 });
 
@@ -118,8 +128,10 @@ const liveCouncilParts = computed(() =>
   normalizeCouncilParts(props.liveProgress?.council)
 );
 
+// Live steps come from the live progress only: the final trace of a finished
+// draft is not "what is happening now" while a follow-up is generating.
 const liveSteps = computed(() => {
-  const rawTrace = props.liveProgress?.captain_trace || props.captainTrace;
+  const rawTrace = props.liveProgress?.captain_trace;
   if (!rawTrace) return [];
   const messages = buildCaptainToolTraceMessages(
     { captain_trace: rawTrace },
@@ -150,6 +162,9 @@ const liveSteps = computed(() => {
 });
 
 const liveStatusText = computed(() => {
+  if (props.isQueued) {
+    return t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.QUEUED');
+  }
   const phase = props.liveProgress?.phase;
   if (phase === 'council_running') {
     return t('CONVERSATION.REPLYBOX.COPILOT_TRACE.LIVE_COUNCIL');
@@ -521,12 +536,30 @@ const onSend = () => {
         </div>
       </div>
 
+      <p
+        v-if="showCopilotEditor && stale"
+        class="mb-0 px-1 text-xs text-n-amber-11"
+        data-test="copilot-stale-warning"
+      >
+        {{ t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.STALE_WARNING') }}
+      </p>
+      <p
+        v-if="showCopilotEditor && engine === 'legacy_prompt'"
+        class="mb-0 px-1 text-xs text-n-slate-11"
+        data-test="copilot-legacy-engine"
+      >
+        {{ t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.LEGACY_ENGINE') }}
+      </p>
+
       <CopilotEditor
         v-if="showCopilotEditor"
         v-model="copilotEditorContent"
         class="copilot-editor"
         :generated-content="generatedContent"
-        :placeholder="placeholder || undefined"
+        :placeholder="
+          placeholder ||
+          t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.REFINE_PLACEHOLDER')
+        "
         :min-height="4"
         :enabled-menu-options="[]"
         @focus="onFocus"

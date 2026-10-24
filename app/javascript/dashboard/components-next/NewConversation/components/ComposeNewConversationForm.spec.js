@@ -9,7 +9,11 @@ vi.mock('dashboard/composables/useCopilotReply', async () => {
     useCopilotReply: () => ({
       isActive: ref(copilotState.isActive),
       isButtonDisabled: ref(false),
+      isGenerating: ref(false),
+      canCancel: ref(false),
       reset: vi.fn(),
+      cancelGeneration: vi.fn(),
+      dismiss: vi.fn(),
       accept: vi.fn(() => ''),
     }),
   };

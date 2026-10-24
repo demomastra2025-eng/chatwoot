@@ -60,7 +60,9 @@ describe('CopilotEditorSection.vue', () => {
         stubs: {
           Transition: false,
           CopilotEditor: {
-            template: '<div class="copilot-editor-stub" />',
+            props: ['placeholder'],
+            template:
+              '<div class="copilot-editor-stub" :data-placeholder="placeholder" />',
           },
           CaptainLoader: true,
           Avatar: true,
@@ -158,5 +160,107 @@ describe('CopilotEditorSection.vue', () => {
     expect(wrapper.find('[data-test="copilot-action-approve"]').exists()).toBe(
       true
     );
+  });
+
+  describe('refine and status lines', () => {
+    const REFINE_KEY =
+      'CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.REFINE_PLACEHOLDER';
+
+    it('uses the refine placeholder when the parent passes none', () => {
+      const wrapper = mountComponent({ pendingActions: [] });
+
+      expect(
+        wrapper.get('.copilot-editor-stub').attributes('data-placeholder')
+      ).toBe(REFINE_KEY);
+    });
+
+    it('passes the placeholder of the parent through', () => {
+      const wrapper = mountComponent({
+        pendingActions: [],
+        placeholder: 'Что исправить?',
+      });
+
+      expect(
+        wrapper.get('.copilot-editor-stub').attributes('data-placeholder')
+      ).toBe('Что исправить?');
+    });
+
+    it('warns above the preview when new customer messages arrived', () => {
+      const stale = mountComponent({ pendingActions: [], stale: true });
+      const fresh = mountComponent({ pendingActions: [], stale: false });
+
+      expect(stale.get('[data-test="copilot-stale-warning"]').text()).toBe(
+        'CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.STALE_WARNING'
+      );
+      expect(fresh.find('[data-test="copilot-stale-warning"]').exists()).toBe(
+        false
+      );
+    });
+
+    it('says when the draft was prepared without an AI agent', () => {
+      const legacy = mountComponent({
+        pendingActions: [],
+        engine: 'legacy_prompt',
+      });
+      const agent = mountComponent({ pendingActions: [], engine: 'agent' });
+
+      expect(legacy.get('[data-test="copilot-legacy-engine"]').text()).toBe(
+        'CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.LEGACY_ENGINE'
+      );
+      expect(agent.find('[data-test="copilot-legacy-engine"]').exists()).toBe(
+        false
+      );
+    });
+
+    it('shows no draft lines while the suggestion is still generating', () => {
+      const wrapper = mountComponent({
+        pendingActions: [],
+        isGeneratingContent: true,
+        stale: true,
+        engine: 'legacy_prompt',
+      });
+
+      expect(wrapper.find('.copilot-editor-stub').exists()).toBe(false);
+      expect(wrapper.find('[data-test="copilot-stale-warning"]').exists()).toBe(
+        false
+      );
+      expect(wrapper.find('[data-test="copilot-live-progress"]').exists()).toBe(
+        true
+      );
+    });
+
+    it('says the request is queued instead of "thinking"', () => {
+      const queued = mountComponent({
+        showCopilotEditor: false,
+        pendingActions: [],
+        isGeneratingContent: true,
+        isQueued: true,
+      });
+      const running = mountComponent({
+        showCopilotEditor: false,
+        pendingActions: [],
+        isGeneratingContent: true,
+      });
+
+      expect(
+        queued.get('[data-test="copilot-live-progress"]').text()
+      ).toContain('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.QUEUED');
+      expect(
+        running.get('[data-test="copilot-live-progress"]').text()
+      ).toContain('CONVERSATION.REPLYBOX.COPILOT_THINKING');
+    });
+
+    it('shows no live steps before the first trace arrives', () => {
+      const withoutTrace = mountComponent({
+        showCopilotEditor: false,
+        pendingActions: [],
+        isGeneratingContent: true,
+        liveProgress: { phase: 'thinking' },
+      });
+
+      expect(
+        withoutTrace.find('[data-test="copilot-live-trace"]').exists()
+      ).toBe(false);
+    });
   });
 });

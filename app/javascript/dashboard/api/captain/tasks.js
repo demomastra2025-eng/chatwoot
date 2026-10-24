@@ -51,10 +51,12 @@ class TasksAPI extends ApiClient {
   }
 
   /**
-   * Gets a reply suggestion for a conversation.
+   * Starts a background reply suggestion run for a conversation.
+   * The backend answers 202 with a SuggestionState (status queued or running);
+   * the draft arrives later through the cable `result` event or the status GET.
    * @param {string} conversationId - The conversation ID.
    * @param {AbortSignal} [signal] - AbortSignal to cancel the request.
-   * @returns {Promise} A promise that resolves with the reply suggestion.
+   * @returns {Promise} A promise that resolves with the SuggestionState.
    */
   replySuggestion(conversationId, signal) {
     return axios.post(
@@ -64,6 +66,41 @@ class TasksAPI extends ApiClient {
       },
       { signal }
     );
+  }
+
+  /**
+   * Reads the latest reply suggestion state of the current user.
+   * Without `suggestionRequestId` it returns the newest unconsumed state of the
+   * conversation (`{ suggestion: null }` when there is none). With it, that exact
+   * state is returned (404 when it is not the user's or has expired).
+   * @param {Object} options
+   * @param {string|number} options.conversationId - The conversation display ID.
+   * @param {string} [options.suggestionRequestId] - A specific run to read.
+   * @param {AbortSignal} [signal] - AbortSignal to cancel the request.
+   * @returns {Promise} A promise that resolves with `{ suggestion }`.
+   */
+  replySuggestionStatus({ conversationId, suggestionRequestId }, signal) {
+    return axios.get(`${this.url}/reply_suggestion_status`, {
+      params: {
+        conversation_display_id: conversationId,
+        suggestion_request_id: suggestionRequestId,
+      },
+      signal,
+    });
+  }
+
+  /**
+   * Cancels a queued or running reply suggestion.
+   * @param {Object} options
+   * @param {string|number} options.conversationId - The conversation display ID.
+   * @param {string} options.suggestionRequestId - The run to cancel.
+   * @returns {Promise}
+   */
+  cancelReplySuggestion({ conversationId, suggestionRequestId } = {}) {
+    return axios.post(`${this.url}/cancel_reply_suggestion`, {
+      conversation_display_id: conversationId,
+      suggestion_request_id: suggestionRequestId,
+    });
   }
 
   /**
@@ -104,13 +141,17 @@ class TasksAPI extends ApiClient {
   }
 
   /**
-   * Records manager feedback on a generated Copilot suggestion (applied, dismissed, sent).
+   * Records manager feedback on a Copilot suggestion
+   * (applied, dismissed, sent, notice_dismissed).
+   * `suggestionRequestId` ties the event to a background reply suggestion run;
+   * applied, dismissed and notice_dismissed also mark that run as consumed.
    * @param {Object} options - Feedback payload.
    * @returns {Promise}
    */
   feedback({
     conversationId,
     requestId,
+    suggestionRequestId,
     copilotAction,
     outcome,
     editedBeforeSend,
@@ -122,6 +163,7 @@ class TasksAPI extends ApiClient {
     return axios.post(`${this.url}/feedback`, {
       conversation_display_id: conversationId,
       request_id: requestId,
+      suggestion_request_id: suggestionRequestId,
       copilot_action: copilotAction,
       outcome,
       edited_before_send: editedBeforeSend,

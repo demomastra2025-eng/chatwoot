@@ -255,6 +255,31 @@
       "START_AUDIO_RECORDING": "Start audio recording",
       "STOP_AUDIO_RECORDING": "Stop audio recording",
       "COPILOT_THINKING": "Copilot is thinking",
+      "COPILOT_SUGGESTION": {
+        "INSERT_AND_EDIT": "Кірістіру және өңдеу",
+        "CANCEL": "Болдырмау",
+        "REJECT": "Қабылдамау",
+        "REFINE_PLACEHOLDER": "Нені түзету керек? Мысалы: қысқарақ, ертеңге уақыт ұсын",
+        "REFINE_BUTTON": "ЖИ арқылы түзету",
+        "EDIT_HINT": "Кірістірген соң мәтінді кәдімгі хабарлама сияқты өңдеуге болады",
+        "QUEUED": "Кезекте…",
+        "ELAPSED": "{elapsed} с / ~{budget} с",
+        "STALE_WARNING": "Сұраудан кейін клиенттен жаңа хабарламалар келді — жауаптың өзектілігін тексеріңіз.",
+        "LEGACY_ENGINE": "ЖИ-агентсіз дайындалды: кестесіз және білім базасыз",
+        "NOTICE": {
+          "NO_REPLY_TITLE": "ЖИ жауап қажет емес деп санайды:",
+          "HUMAN_NEEDED_TITLE": "Қызметкер қажет:",
+          "NO_REASON": "себебі көрсетілмеген",
+          "FAILED_TITLE": "ЖИ жауап дайындай алмады",
+          "UNAVAILABLE_TITLE": "ЖИ ұсынысы қолжетімсіз",
+          "RETRY": "Қайталау",
+          "DISMISS": "Жасыру",
+          "AGENT_LABEL": "{agent} агентінің шешімі",
+          "UNAVAILABLE_REASONS": {
+            "VOICE_CHANNEL_UNSUPPORTED": "Қоңырауда мәтін жіберу мүмкін емес. Ұсыныс алу үшін клиенттің мессенджердегі чатын ашыңыз."
+          }
+        }
+      },
       "EMAIL_HEAD": {
         "TO": "TO",
         "ADD_BCC": "Add bcc",
