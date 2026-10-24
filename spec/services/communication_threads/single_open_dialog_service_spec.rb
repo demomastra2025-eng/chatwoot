@@ -17,12 +17,15 @@ RSpec.describe CommunicationThreads::SingleOpenDialogService do
 
   # A conversation that is open since some minutes, created without the live rule so that a thread can be put into the state the
   # production data is in.
-  def open_dialog(inbox, minutes_ago:, status: :open, contact: self.contact, labels: nil, snoozed_until: nil)
+  def open_dialog(inbox, minutes_ago:, status: :open, contact: self.contact, labels: nil)
     create(:conversation, account: inbox.account, contact: contact, inbox: inbox, status: :resolved).tap do |conversation|
       conversation.update_labels(labels) if labels
-      conversation.update_columns(status: Conversation.statuses.fetch(status.to_s), last_activity_at: minutes_ago.minutes.ago, # rubocop:disable Rails/SkipsModelValidations
-                                  snoozed_until: snoozed_until)
+      conversation.update_columns(status: Conversation.statuses.fetch(status.to_s), last_activity_at: minutes_ago.minutes.ago) # rubocop:disable Rails/SkipsModelValidations
     end
+  end
+
+  def snooze_until(conversation, time)
+    conversation.update_columns(snoozed_until: time) # rubocop:disable Rails/SkipsModelValidations
   end
 
   def statuses(*conversations)
@@ -80,7 +83,7 @@ RSpec.describe CommunicationThreads::SingleOpenDialogService do
       { snoozed => 'snoozed', pending_dialog => 'pending', open_one => 'open' }.each do |conversation, status|
         conversation.update_columns(status: Conversation.statuses.fetch(status)) # rubocop:disable Rails/SkipsModelValidations
       end
-      snoozed.update_columns(snoozed_until: 1.day.from_now) # rubocop:disable Rails/SkipsModelValidations
+      snooze_until(snoozed, 1.day.from_now)
 
       plan = described_class.new(thread: thread).perform
 
@@ -101,9 +104,10 @@ RSpec.describe CommunicationThreads::SingleOpenDialogService do
     end
 
     it 'leaves a person whose channels are all snoozed alone unless asked to merge them', :aggregate_failures do
-      latest = open_dialog(whatsapp_inbox, minutes_ago: 5, status: :snoozed, snoozed_until: 1.day.from_now)
-      older = open_dialog(create(:channel_whatsapp_web, account: account).inbox, minutes_ago: 900, status: :snoozed,
-                                                                                 snoozed_until: 2.days.from_now)
+      latest = open_dialog(whatsapp_inbox, minutes_ago: 5, status: :snoozed)
+      older = open_dialog(create(:channel_whatsapp_web, account: account).inbox, minutes_ago: 900, status: :snoozed)
+      snooze_until(latest, 1.day.from_now)
+      snooze_until(older, 2.days.from_now)
 
       expect(described_class.new(thread: thread).perform).to be_nil
       expect(statuses(latest, older)).to eq(%w[snoozed snoozed])
