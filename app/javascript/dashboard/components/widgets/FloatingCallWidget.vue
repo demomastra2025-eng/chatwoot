@@ -982,16 +982,13 @@ const latestPersonNote = (contactId, conversation) => {
     : latestContactNote;
 };
 
-// Contact notes are loaded once per person for the cards on the screen, so
-// the call card can show them without the dialog panel being open.
-const requestedNoteContactIds = new Set();
-const ensureContactNotesLoaded = contactId => {
-  if (requestedNoteContactIds.has(contactId)) return;
-
-  requestedNoteContactIds.add(contactId);
-  store
-    .dispatch('contactNotes/get', { contactId })
-    .catch(() => requestedNoteContactIds.delete(contactId));
+// The notes of the person are loaded when their call card appears, so the card
+// shows what colleagues wrote since the last call without the dialog panel
+// being open. Notes have no live event, so a card that appears again loads
+// them again; a failed load is left alone until then instead of being retried
+// on every change of the conversation store.
+const loadContactNotes = contactId => {
+  store.dispatch('contactNotes/get', { contactId }).catch(() => {});
 };
 
 const visibleCallContactIds = computed(() => [
@@ -1003,9 +1000,16 @@ const visibleCallContactIds = computed(() => [
   ),
 ]);
 
-watch(visibleCallContactIds, ids => ids.forEach(ensureContactNotesLoaded), {
-  immediate: true,
-});
+watch(
+  () => visibleCallContactIds.value.join(','),
+  (_ids, previousIds) => {
+    const alreadyShown = new Set(previousIds ? previousIds.split(',') : []);
+    visibleCallContactIds.value
+      .filter(contactId => !alreadyShown.has(contactId))
+      .forEach(loadContactNotes);
+  },
+  { immediate: true }
+);
 
 const getCallClientContext = call => {
   if (!isCallCardExpandedFor(call)) {

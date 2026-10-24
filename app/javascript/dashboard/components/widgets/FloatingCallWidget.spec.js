@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { ref as makeRef } from 'vue';
+import { reactive as makeReactive, ref as makeRef } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const microphoneState = vi.hoisted(() => ({
@@ -1671,6 +1671,77 @@ describe('FloatingCallWidget', () => {
           )
         ).toHaveLength(1);
         wrapper.unmount();
+      });
+
+      describe('when the call card of the person appears', () => {
+        const incomingCall = {
+          callSid: 'sipuni:notes-1',
+          callDirection: 'inbound',
+          status: 'ringing',
+          conversationId: 724,
+          inboxId: 4769,
+        };
+        const notesRequests = () =>
+          storeDispatch.mock.calls.filter(
+            ([name]) => name === 'contactNotes/get'
+          );
+        let calls;
+        let storeVersion;
+
+        // Reading storeVersion in the getter makes every bump behave like a
+        // change somewhere in the conversation store.
+        beforeEach(() => {
+          calls = makeReactive([incomingCall]);
+          storeVersion = makeRef(0);
+          storeGetters.getConversationById.mockImplementation(() =>
+            storeVersion.value >= 0 ? conversationOf() : null
+          );
+          mockSession.hasActiveCall = false;
+          mockSession.activeCall = null;
+          mockSession.incomingCalls = calls;
+        });
+
+        it('loads the notes again for the next card, not on every change of the store', async () => {
+          const wrapper = mountComponent({ embedded: true });
+          await flushPromises();
+          expect(notesRequests()).toHaveLength(1);
+
+          storeVersion.value += 1;
+          await flushPromises();
+          expect(notesRequests()).toHaveLength(1);
+
+          // The call ends and the same person calls again later: the notes
+          // a colleague wrote in between are on the new card.
+          calls.splice(0, calls.length);
+          await flushPromises();
+          calls.push(incomingCall);
+          await flushPromises();
+          expect(notesRequests()).toHaveLength(2);
+          expect(notesRequests()[1]).toEqual([
+            'contactNotes/get',
+            { contactId: '55' },
+          ]);
+          wrapper.unmount();
+        });
+
+        it('does not retry a failed load on later changes of the store', async () => {
+          storeDispatch.mockImplementation(name =>
+            name === 'contactNotes/get'
+              ? Promise.reject(new Error('forbidden'))
+              : Promise.resolve()
+          );
+          const wrapper = mountComponent({ embedded: true });
+          await flushPromises();
+          expect(notesRequests()).toHaveLength(1);
+
+          storeVersion.value += 1;
+          await flushPromises();
+          storeVersion.value += 1;
+          await flushPromises();
+
+          expect(notesRequests()).toHaveLength(1);
+          wrapper.unmount();
+        });
       });
 
       it('prefers a newer private message of the call conversation over an older contact note', () => {
