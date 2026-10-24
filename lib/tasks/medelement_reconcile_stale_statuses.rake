@@ -8,10 +8,12 @@ namespace :medelement do
 
     days = case args[:days].to_s.strip.downcase
            when '' then Integrations::Medelement::StaleStatusReconciler::DEFAULT_DAYS
-           when 'all', '0' then nil
+           when 'all', '0' then :all
            else Integer(args[:days], exception: false)
            end
-    raise ArgumentError, 'days must be a positive number or "all"' unless days.nil? || days.positive?
+    raise ArgumentError, 'days must be a positive number or "all"' unless days == :all || days&.positive?
+
+    days = nil if days == :all
 
     dry_run = case args[:dry_run].to_s.strip.downcase
               when '', 'true' then true
