@@ -67,6 +67,7 @@ RSpec.describe CommunicationThreads::RealtimeUpdateService do
 
       before do
         create(:inbox_member, inbox: inbox, user: user)
+        InboxMember.where(user: user, inbox: hidden_conversation.inbox).delete_all
         contact.update_labels(%w[card_only shared])
         conversation.update_labels(%w[shared channel])
         hidden_conversation.update_labels(%w[hidden_channel])
