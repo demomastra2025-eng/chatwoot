@@ -40,7 +40,7 @@ const buildStore = (chat, { attachments = [], total = 0 } = {}) => {
   return { store, fetchAllAttachments };
 };
 
-const mountSharedFiles = (store, stubs = {}) =>
+const mountSharedFiles = store =>
   mount(SharedFiles, {
     global: {
       plugins: [store],
@@ -50,7 +50,6 @@ const mountSharedFiles = (store, stubs = {}) =>
         FileIcon: true,
         NextButton: true,
         Spinner: true,
-        ...stubs,
       },
     },
   });
@@ -133,9 +132,9 @@ describe('SharedFiles', () => {
       { id: 7, is_communication_thread: true },
       { attachments: attachmentsOf(100), total: 340 }
     );
-    const wrapper = mountSharedFiles(store, {
-      NextButton: { template: '<button><slot/></button>' },
-    });
+    const wrapper = mountSharedFiles(store);
+    // The first load is still running right after mount and shows a spinner instead of the button.
+    await flushPromises();
     fetchAllAttachments.mockClear();
 
     await wrapper

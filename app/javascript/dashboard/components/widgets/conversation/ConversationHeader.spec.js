@@ -312,7 +312,9 @@ describe('ConversationHeader', () => {
     );
 
     expect(contextRow.exists()).toBe(true);
-    expect(titleRow.find('[data-test-id="conversation-header-context-row"]').exists()).toBe(true);
+    expect(
+      titleRow.find('[data-test-id="conversation-header-context-row"]').exists()
+    ).toBe(true);
     expect(contextRow.text()).not.toContain('CONVERSATION.HEADER');
     expect(stages.text()).not.toContain('Сделка:');
     expect(stages.text()).toContain('Консультация');
@@ -320,7 +322,7 @@ describe('ConversationHeader', () => {
     expect(stageDot.exists()).toBe(true);
     expect(stageDot.classes()).toContain('rounded-full');
     expect(stageDot.classes()).not.toContain('w-0.5');
-    expect( stages.html()).toContain('background-color: rgb(34, 197, 94)');
+    expect(stages.html()).toContain('background-color: rgb(34, 197, 94)');
     expect(statuses.text()).not.toContain('Запись:');
     expect(statuses.text()).toContain('Назначен');
     expect(statuses.text()).toContain('+3');
