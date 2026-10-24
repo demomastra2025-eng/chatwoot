@@ -146,17 +146,14 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   # Labels are the person's: the change goes to the contact and to every conversation of the thread, also to the channels
-  # this agent cannot open, and one change is reported once (Labels::UnifiedAssignmentService). The answer is what this
-  # agent can see.
+  # this agent cannot open, and one change is reported once (Labels::UnifiedAssignmentService), by the conversation in
+  # front of the person, the one whose status the dialog shows. The answer is what this agent can see.
   def update_labels
-    accessible = accessible_thread_conversations
     add, remove = Labels::UnifiedAssignmentService.delta_from_params(
       permitted_label_params,
-      visible_labels: Labels::UnifiedAssignmentService.union_for(contact: nil, conversations: accessible)
+      visible_labels: Labels::UnifiedAssignmentService.union_for(contact: nil, conversations: accessible_thread_conversations)
     )
-    Labels::UnifiedAssignmentService.new(
-      contact: @communication_thread.contact, conversation: accessible.first, add: add, remove: remove
-    ).perform
+    Labels::UnifiedAssignmentService.new(contact: @communication_thread.contact, add: add, remove: remove).perform
     @labels = thread_label_list
     render :labels
   end

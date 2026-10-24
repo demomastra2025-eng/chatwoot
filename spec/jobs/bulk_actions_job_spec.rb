@@ -507,6 +507,37 @@ RSpec.describe BulkActionsJob do
         end.to have_enqueued_job(Conversations::ActivityMessageJob).once
       end
 
+      describe 'the conversation that reports a bulk label change of a thread' do
+        include PersonThreadStatusHelpers
+
+        def bulk_add(label)
+          described_class.perform_now(
+            account: account,
+            params: { type: 'CommunicationThread', labels: { add: [label] }, ids: [thread.display_id] },
+            user: agent
+          )
+        end
+
+        it 'is the open conversation in front, not the resolved primary channel' do
+          give_person_different_statuses(thread_conversation_2, [thread_conversation_1, 'resolved'])
+          updates = record_conversation_updates
+
+          expect { bulk_add('vip') }.to have_enqueued_job(Conversations::ActivityMessageJob).once.with(thread_conversation_2, anything)
+          expect(updates).to eq([thread_conversation_2])
+        end
+
+        it 'keeps the thread open after a snoozed channel writes the activity message' do
+          thread_conversation_2.update_labels(%w[vip])
+          give_person_different_statuses(thread_conversation_2, [thread_conversation_1, 'snoozed'])
+
+          perform_enqueued_jobs(only: Conversations::ActivityMessageJob) { bulk_add('vip') }
+
+          expect(label_activity_messages(thread_conversation_1, 'vip').count).to eq(1)
+          expect(thread_status_of(thread_conversation_2)).to eq('open')
+          expect(realtime_status_of(thread_conversation_2)).to eq('open')
+        end
+      end
+
       it 'bulk marks linked conversations as read and refreshes the thread unread count' do
         create(:message, account: account, conversation: thread_conversation_1, inbox: thread_conversation_1.inbox)
         create(:message, account: account, conversation: thread_conversation_2, inbox: thread_conversation_2.inbox)

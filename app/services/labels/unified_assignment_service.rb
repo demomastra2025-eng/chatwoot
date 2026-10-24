@@ -9,15 +9,18 @@
 # A call is one change of the person, however many conversations it touches:
 # - it writes the contact and EVERY conversation of the contact, not only the ones the caller may open, because the
 #   label belongs to the person (a removal that skipped a hidden channel would bring the label back for a colleague);
-# - the first conversation whose labels change (the source, then the last active ones) reports the change: it fires the
-#   usual conversation events and writes the one activity message. The others are saved without events and without
-#   activity and carry the same communication_thread_event_id, like the other thread-wide writes
-#   (CommunicationThreads::UpdateService, Contacts::OwnerSyncService), so a rule or a webhook sees one change, not N;
+# - the first conversation whose labels change reports the change: the source, else the conversation in front of the
+#   person (the one whose status the thread shows, Conversations::CommunicationThreadResolver.front_first), so a rule or a
+#   webhook checks the status and replies where the agent sees the person. It fires the usual conversation events and
+#   writes the one activity message. The others are saved without events and without activity and carry the same
+#   communication_thread_event_id, like the other thread-wide writes (CommunicationThreads::UpdateService,
+#   Contacts::OwnerSyncService), so a rule or a webhook sees one change, not N;
 # - a record whose labels already are what is asked is not saved at all;
-# - no conversation changes its updated_at. The status of the thread is the status of the open conversation with the newest
+# - no conversation changes its updated_at, neither on the write nor when the activity message is created later
+#   (Message#set_conversation_activity). The status of the thread is the status of the open conversation with the newest
 #   updated_at (Conversations::CommunicationThreadResolver#aggregate_status) and a label is not a change of status: a write
-#   that saved the quiet copies after the reporter would make the least active conversation the newest one and flip the
-#   status of the whole person (a snoozed or pending channel in front of an open one with an unanswered message);
+#   that moved it would put the least active conversation in front and flip the status of the whole person (a snoozed or
+#   pending channel in front of an open one with an unanswered message);
 # - only the given labels are touched. A list the client has not seen (a stale one) cannot erase a label, which is why
 #   callers send add / remove and not the whole list (see delta_from_params for the older clients that still do).
 #
@@ -115,9 +118,11 @@ class Labels::UnifiedAssignmentService
     self.class.person_labels(contact_id: contact.id)
   end
 
+  # The conversation the caller acted on reports the change. Without one (the dialog, the contact card, bulk actions)
+  # it is the conversation in front of the person, the one whose status the thread shows, so a rule that checks the
+  # status or replies in the conversation sees what the agent sees, not an old resolved channel.
   def person_conversations
-    ordered = Conversation.where(contact_id: @person.id)
-                          .order(Arel.sql('conversations.last_activity_at DESC NULLS LAST'), id: :desc).to_a
+    ordered = Conversations::CommunicationThreadResolver.front_first(Conversation.where(contact_id: @person.id).to_a)
     source = ordered.find { |conversation| conversation.id == @source_id }
     source ? [source] + (ordered - [source]) : ordered
   end

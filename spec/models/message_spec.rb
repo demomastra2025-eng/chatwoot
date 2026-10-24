@@ -913,6 +913,34 @@ RSpec.describe Message do
       expect(message.created_at).to eq message.conversation.last_activity_at
     end
 
+    # The updated_at of a conversation decides the status of its communication thread; a message that only records a
+    # change of the person (a label) moves the last activity and leaves it.
+    it 'moves the last activity but not the updated_at of the conversation for an activity message that preserves it' do
+      conversation = create(:conversation)
+      # rubocop:disable Rails/SkipsModelValidations
+      conversation.update_columns(updated_at: 1.hour.ago, last_activity_at: 1.hour.ago)
+      # rubocop:enable Rails/SkipsModelValidations
+      updated_at = conversation.reload.updated_at
+
+      activity = conversation.messages.create!(account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
+                                               content: 'Agent added vip', preserve_conversation_updated_at: true)
+
+      expect(conversation.reload.updated_at).to eq(updated_at)
+      expect(conversation.last_activity_at.to_i).to eq(activity.created_at.to_i)
+    end
+
+    it 'moves the updated_at of the conversation for any other activity message' do
+      conversation = create(:conversation)
+      # rubocop:disable Rails/SkipsModelValidations
+      conversation.update_columns(updated_at: 1.hour.ago, last_activity_at: 1.hour.ago)
+      # rubocop:enable Rails/SkipsModelValidations
+
+      expect do
+        conversation.messages.create!(account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
+                                      content: 'Agent resolved the conversation')
+      end.to(change { conversation.reload.updated_at })
+    end
+
     it 'does not move conversation or contact activity backwards when an older imported history message arrives later' do
       conversation = create(:conversation)
       sender = conversation.contact

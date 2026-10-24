@@ -1,6 +1,25 @@
 require 'digest'
 
 class Conversations::CommunicationThreadResolver
+  class << self
+    # The conversations of a person, the one in front first: the conversation whose status the thread shows (the not
+    # resolved one that changed last, see #aggregate_status), then the other not resolved ones, then the resolved ones by
+    # their last activity. A change of the whole person that is reported by one conversation is reported by the first.
+    def front_first(conversations)
+      active, resolved = Array(conversations).partition { |conversation| !conversation.resolved? }
+      active.sort_by { |conversation| status_sort_key(conversation) }.reverse +
+        resolved.sort_by { |conversation| activity_sort_key(conversation) }.reverse
+    end
+
+    def status_sort_key(conversation)
+      [conversation.updated_at || conversation.last_activity_at, conversation.id]
+    end
+
+    def activity_sort_key(conversation)
+      [conversation.last_activity_at || conversation.updated_at, conversation.id]
+    end
+  end
+
   def initialize(conversation:)
     # Conversation DB triggers populate display_id/uuid after insert and the
     # originating instance can still report those attributes as dirty. Locking
@@ -159,12 +178,8 @@ class Conversations::CommunicationThreadResolver
   end
 
   def aggregate_status(thread)
-    active_conversation = linked_conversations(thread).reject(&:resolved?).max_by { |c| status_sort_key(c) }
+    active_conversation = linked_conversations(thread).reject(&:resolved?).max_by { |c| self.class.status_sort_key(c) }
     active_conversation ? active_conversation.status : 'resolved'
-  end
-
-  def status_sort_key(linked_conversation)
-    [linked_conversation.updated_at || linked_conversation.last_activity_at, linked_conversation.id]
   end
 
   def aggregate_priority(thread)
@@ -193,11 +208,7 @@ class Conversations::CommunicationThreadResolver
   end
 
   def latest_routing_conversation(thread)
-    linked_conversations(thread).sort_by { |c| routing_sort_key(c) }.reverse.find { |c| routed?(c) }
-  end
-
-  def routing_sort_key(linked_conversation)
-    [linked_conversation.last_activity_at || linked_conversation.updated_at, linked_conversation.id]
+    linked_conversations(thread).sort_by { |c| self.class.activity_sort_key(c) }.reverse.find { |c| routed?(c) }
   end
 
   def routed?(linked_conversation)

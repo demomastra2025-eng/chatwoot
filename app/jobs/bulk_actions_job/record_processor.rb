@@ -37,7 +37,7 @@ module BulkActionsJob::RecordProcessor
     params = communication_thread_update_params
     validate_thread_update!(communication_thread, accessible_links, params) if params.present?
 
-    change_person_labels(communication_thread.contact, accessible_links.first.conversation)
+    change_person_labels(communication_thread.contact)
 
     update_thread(communication_thread, accessible_links, params) if params.present?
 

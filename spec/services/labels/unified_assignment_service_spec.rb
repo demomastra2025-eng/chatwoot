@@ -224,6 +224,87 @@ RSpec.describe Labels::UnifiedAssignmentService do
         first_conversation.reload.refresh_communication_thread!
         expect(thread_status_of(first_conversation)).to eq('open')
       end
+
+      # The conversation that reports writes the activity message later, in Conversations::ActivityMessageJob. Saving that
+      # message must not make it the conversation in front either (Message#set_conversation_activity).
+      def write_activity_messages(&)
+        expect { perform_enqueued_jobs(only: Conversations::ActivityMessageJob, &) }.not_to(change { updated_ats })
+      end
+
+      it 'stays open after a conversation that is not in front writes the activity message of an added label' do
+        write_activity_messages { described_class.add(contact: contact, labels: %w[vip], conversation: second_conversation) }
+
+        expect(label_activity_messages(second_conversation, 'vip').count).to eq(1)
+        expect(thread_status_of(first_conversation)).to eq('open')
+        expect(realtime_status_of(first_conversation)).to eq('open')
+      end
+
+      it 'stays open after a conversation that is not in front writes the activity message of a removed label' do
+        described_class.add(contact: contact, labels: %w[vip], silent: true)
+        give_person_different_statuses(first_conversation, [second_conversation, older_statuses.first],
+                                       [third_conversation, older_statuses.last])
+
+        write_activity_messages { described_class.remove(contact: contact, labels: %w[vip], conversation: third_conversation) }
+
+        expect(label_activity_messages(third_conversation, 'vip').count).to eq(1)
+        expect(thread_status_of(first_conversation)).to eq('open')
+        expect(realtime_status_of(first_conversation)).to eq('open')
+      end
+    end
+  end
+
+  # One conversation reports a change of the person (conversation events for rules and webhooks, the activity message).
+  # Without a conversation the caller acted on, it is the one in front of the person: the one whose status the thread shows.
+  describe 'the conversation that reports a change without a source' do
+    include PersonThreadStatusHelpers
+
+    def put(conversation, status, at)
+      # rubocop:disable Rails/SkipsModelValidations
+      conversation.update_columns(status: Conversation.statuses.fetch(status), updated_at: at, last_activity_at: at)
+      # rubocop:enable Rails/SkipsModelValidations
+      conversation.reload
+    end
+
+    def expect_reporter(conversation)
+      updates = record_conversation_updates
+
+      expect { described_class.add(contact: contact, labels: %w[vip]) }
+        .to have_enqueued_job(Conversations::ActivityMessageJob).once.with(conversation, anything)
+      expect(updates).to eq([conversation])
+    end
+
+    it 'is the open conversation in front, not an older resolved one' do
+      put(first_conversation, 'resolved', 3.hours.ago)
+      put(second_conversation, 'open', 1.minute.ago)
+      put(third_conversation, 'snoozed', 1.hour.ago)
+
+      expect_reporter(second_conversation)
+    end
+
+    it 'is the conversation that is not resolved even when a resolved one changed later' do
+      put(first_conversation, 'pending', 2.days.ago)
+      put(second_conversation, 'resolved', 1.minute.ago)
+      put(third_conversation, 'resolved', 1.hour.ago)
+
+      expect_reporter(first_conversation)
+    end
+
+    it 'is the conversation with the latest activity when every conversation is resolved' do
+      put(first_conversation, 'resolved', 1.hour.ago)
+      put(second_conversation, 'resolved', 1.minute.ago)
+      put(third_conversation, 'resolved', 1.day.ago)
+
+      expect_reporter(second_conversation)
+    end
+
+    it 'is the next one in front when the conversation in front already carries the label' do
+      put(first_conversation, 'resolved', 3.hours.ago)
+      put(second_conversation, 'open', 1.minute.ago)
+      put(third_conversation, 'snoozed', 1.hour.ago)
+      second_conversation.update_labels(%w[vip])
+      put(second_conversation, 'open', 1.minute.ago)
+
+      expect_reporter(third_conversation)
     end
   end
 

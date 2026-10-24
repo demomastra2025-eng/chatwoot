@@ -63,8 +63,9 @@ module BulkActionsJob::StatusAndLabels
   end
 
   # Labels belong to the person: add / remove go to the contact and to every conversation of the person, also to the
-  # channels the user cannot open, and are reported once (Labels::UnifiedAssignmentService).
-  def change_person_labels(contact, conversation)
+  # channels the user cannot open, and are reported once (Labels::UnifiedAssignmentService): by the selected conversation,
+  # or for a thread by the conversation in front of the person.
+  def change_person_labels(contact, conversation = nil)
     to_add = @params.dig(:labels, :add)
     to_remove = @params.dig(:labels, :remove)
     return if to_add.blank? && to_remove.blank?

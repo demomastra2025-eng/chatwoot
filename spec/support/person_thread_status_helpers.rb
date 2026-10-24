@@ -20,6 +20,22 @@ module PersonThreadStatusHelpers
     expect(thread_status_of(open)).to eq('open')
   end
 
+  # The conversations that fire conversation_updated from now on: what automation rules and webhooks receive.
+  def record_conversation_updates
+    updates = []
+    allow(Rails.configuration.dispatcher).to receive(:dispatch).and_wrap_original do |original, *args|
+      data = args[2]
+      updates << data[:conversation] if args.first == Events::Types::CONVERSATION_UPDATED && data.is_a?(Hash)
+      original.call(*args)
+    end
+    updates
+  end
+
+  # The label activity messages written into a conversation (by Conversations::ActivityMessageJob).
+  def label_activity_messages(conversation, label)
+    conversation.messages.activity.where('content LIKE ?', "%#{label}%")
+  end
+
   def thread_status_of(conversation)
     CommunicationThread.find_by!(account_id: conversation.account_id, contact_id: conversation.contact_id).status
   end

@@ -1905,6 +1905,61 @@ RSpec.describe 'Communication Threads API', type: :request do
           .to have_enqueued_job(Conversations::ActivityMessageJob).once
       end
     end
+
+    # One conversation reports a label change of the person: the one in front, whose status the dialog shows. A rule that
+    # checks the status or sends a message, and a webhook, get that channel and not the old one the thread started with,
+    # and the activity message of the label does not move the status of the dialog.
+    describe 'the conversation that reports the change' do
+      include PersonThreadStatusHelpers
+
+      let(:contact) { create(:contact, :with_email, account: account) }
+      let!(:first_conversation) { create(:conversation, account: account, contact: contact) }
+      let!(:active_conversation) { create(:conversation, account: account, contact: contact) }
+      let!(:snoozed_conversation) { create(:conversation, account: account, contact: contact) }
+      let(:url) { "/api/v1/accounts/#{account.id}/communication_threads/#{first_conversation.reload.communication_thread.display_id}/labels" }
+
+      before do
+        [first_conversation, active_conversation, snoozed_conversation].each do |conversation|
+          create(:inbox_member, user: agent, inbox: conversation.inbox)
+        end
+      end
+
+      it 'is the open conversation in front, not the older resolved channel the thread started with' do
+        give_person_different_statuses(active_conversation, [snoozed_conversation, 'snoozed'], [first_conversation, 'resolved'])
+        updates = record_conversation_updates
+
+        expect { post url, params: { add: %w[booking_confirmed] }, headers: headers, as: :json }
+          .to have_enqueued_job(Conversations::ActivityMessageJob).once.with(active_conversation, anything)
+
+        expect(response).to have_http_status(:success)
+        expect(updates).to eq([active_conversation])
+      end
+
+      it 'keeps the dialog open after the activity message is written' do
+        give_person_different_statuses(active_conversation, [snoozed_conversation, 'snoozed'], [first_conversation, 'pending'])
+
+        perform_enqueued_jobs(only: Conversations::ActivityMessageJob) do
+          post url, params: { add: %w[booking_confirmed] }, headers: headers, as: :json
+        end
+
+        expect(label_activity_messages(active_conversation, 'booking_confirmed').count).to eq(1)
+        expect(thread_status_of(active_conversation)).to eq('open')
+        expect(realtime_status_of(active_conversation)).to eq('open')
+      end
+
+      it 'keeps the dialog open when a snoozed channel writes the activity message because the open one has the label' do
+        active_conversation.update_labels(%w[booking_confirmed])
+        give_person_different_statuses(active_conversation, [snoozed_conversation, 'snoozed'], [first_conversation, 'pending'])
+
+        perform_enqueued_jobs(only: Conversations::ActivityMessageJob) do
+          post url, params: { add: %w[booking_confirmed] }, headers: headers, as: :json
+        end
+
+        expect(label_activity_messages(snoozed_conversation, 'booking_confirmed').count).to eq(1)
+        expect(thread_status_of(active_conversation)).to eq('open')
+        expect(realtime_status_of(active_conversation)).to eq('open')
+      end
+    end
   end
 
   describe 'DELETE /api/v1/accounts/:account_id/communication_threads/:id/conversations' do

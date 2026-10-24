@@ -204,6 +204,33 @@ RSpec.describe 'Person label write paths' do # rubocop:disable RSpec/DescribeCla
 
         expect_thread_to_stay_open
       end
+
+      # The conversation the rule ran on reports the change and gets the activity message later, in
+      # Conversations::ActivityMessageJob: writing it must not put that conversation in front either.
+      { 'snoozed' => :second_conversation, 'pending' => :third_conversation }.each do |status, name|
+        it "add_label leaves the thread open after the activity message is written on the #{status} conversation" do
+          reporter = public_send(name)
+
+          perform_enqueued_jobs(only: Conversations::ActivityMessageJob) do
+            run_rule([{ 'action_name' => 'add_label', 'action_params' => %w[vip] }], on: reporter)
+          end
+
+          expect(label_activity_messages(reporter, 'vip').count).to eq(1)
+          expect_thread_to_stay_open
+        end
+      end
+
+      it 'remove_label leaves the thread open after the activity message is written on the pending conversation' do
+        Labels::UnifiedAssignmentService.add(contact: contact, labels: %w[vip], silent: true)
+        give_statuses
+
+        perform_enqueued_jobs(only: Conversations::ActivityMessageJob) do
+          run_rule([{ 'action_name' => 'remove_label', 'action_params' => %w[vip] }], on: third_conversation)
+        end
+
+        expect(label_activity_messages(third_conversation, 'vip').count).to eq(1)
+        expect_thread_to_stay_open
+      end
     end
 
     it 'is not moved by a macro that adds a label' do
@@ -211,6 +238,17 @@ RSpec.describe 'Person label write paths' do # rubocop:disable RSpec/DescribeCla
 
       Macros::ExecutionService.new(macro, conversation, user).perform
 
+      expect_thread_to_stay_open
+    end
+
+    it 'is not moved by a macro run on the pending conversation, after its activity message is written' do
+      macro = create(:macro, account: account, actions: [{ 'action_name' => 'add_label', 'action_params' => %w[vip] }])
+
+      perform_enqueued_jobs(only: Conversations::ActivityMessageJob) do
+        Macros::ExecutionService.new(macro, third_conversation, user).perform
+      end
+
+      expect(label_activity_messages(third_conversation, 'vip').count).to eq(1)
       expect_thread_to_stay_open
     end
 
