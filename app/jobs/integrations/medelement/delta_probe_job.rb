@@ -1,6 +1,5 @@
 # Without an argument (the cron entry in config/schedule.yml) it queues one probe per enabled MedElement hook; with a
-# hook id it probes that hook. The queue must be one the cron-enabled worker processes: the probe re-syncs the hook's
-# cron jobs, which is a no-op in a worker where ENABLE_SIDEKIQ_CRON is false.
+# hook id it probes that hook. The probe re-syncs the hook's cron jobs; that writes to Redis and works from any worker.
 class Integrations::Medelement::DeltaProbeJob < ApplicationJob
   queue_as :scheduled_jobs
 

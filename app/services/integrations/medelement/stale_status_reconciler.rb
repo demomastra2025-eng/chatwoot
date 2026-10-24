@@ -10,6 +10,7 @@ class Integrations::Medelement::StaleStatusReconciler
   Abort = Integrations::Medelement::StaleStatusLocks::Unavailable
 
   OPEN_STATUSES = %w[scheduled confirmed].freeze
+  AUTOMATION_EVENTS = %w[appointment_updated appointment_completed appointment_cancelled].freeze
   STALE_AFTER = 1.day
   DEFAULT_DAYS = 30
   DEFAULT_BATCH_SIZE = 50
@@ -100,6 +101,7 @@ class Integrations::Medelement::StaleStatusReconciler
   def finish
     report.last_id = @cursor
     report.remaining = pending.count
+    report.automation_rules = automation_rules
     report
   end
 
@@ -142,16 +144,19 @@ class Integrations::Medelement::StaleStatusReconciler
     case status
     when :out_of_scope then report.out_of_scope!
     when :absent then report.skipped!('absent')
-    else report.transition!(appointment.status, status)
+    else record_transition(appointment.status, status)
     end
   end
 
+  # The visit is long over, so the status is applied as a data correction: no automation rule, CRM re-evaluation or
+  # touch scheduling reacts to it (see Current.with_medelement_reconciliation). Only this import runs inside the flag.
   def apply(appointment, detail)
     locks.hold_sync do
       before = current_status(appointment)
       next report.skipped!('no_longer_open') unless OPEN_STATUSES.include?(before)
 
-      record_applied(before, appointment, delta.apply_detail!(detail))
+      result = Current.with_medelement_reconciliation { delta.apply_detail!(detail) }
+      record_applied(before, appointment, result)
     end
   rescue *SKIPPED_ERRORS => e
     report.skipped!(e.class.name.demodulize)
@@ -162,7 +167,21 @@ class Integrations::Medelement::StaleStatusReconciler
     # The import refused the reception on its own grounds (for example a newer local change), and said why.
     return report.skipped!(result.to_s) if result.is_a?(Symbol)
 
-    report.transition!(before, current_status(appointment))
+    record_transition(before, current_status(appointment))
+  end
+
+  def record_transition(from, to)
+    report.transition!(from, to)
+    return if from == to
+
+    # Shown for information: the rules that listen to these events would have run for a normal status change.
+    events = ['appointment_updated', "appointment_#{to}"]
+    report.automation_match! if events.intersect?(automation_rules.keys)
+  end
+
+  def automation_rules
+    @automation_rules ||= AutomationRule.where(account_id: hook.account_id, active: true, event_name: AUTOMATION_EVENTS)
+                                        .group(:event_name).count
   end
 
   def current_status(appointment)

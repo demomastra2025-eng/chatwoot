@@ -39,7 +39,7 @@ medelement_sync_run_retention_job:
 
 # executed twice a day, at 07:00 and 19:00 Almaty time (02:00 and 14:00 UTC)
 # probes the MedElement fast-sync endpoint of every hook and switches incremental_receptions_enabled to match;
-# it runs on scheduled_jobs because that queue is served by the worker where ENABLE_SIDEKIQ_CRON is true
+# it is a light job, so it stays on scheduled_jobs with the other cron fan-outs
 medelement_delta_probe_job:
   cron: '0 7,19 * * * Asia/Almaty'
   class: 'Integrations::Medelement::DeltaProbeJob'

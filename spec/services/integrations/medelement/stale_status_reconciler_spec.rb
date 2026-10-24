@@ -317,6 +317,109 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
     end
   end
 
+  describe 'patient-facing side effects' do
+    include ActiveJob::TestHelper
+
+    let!(:appointment) { stale_appointment('reception-1') }
+    let(:webhook_url) { 'https://example.com/hooks/appointments' }
+
+    def automation_rule(event_name)
+      create(:automation_rule, account: account, event_name: event_name,
+                               conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['completed'], query_operator: nil }],
+                               actions: [{ action_name: 'send_webhook_event', action_params: [webhook_url] }])
+    end
+
+    before do
+      automation_rule('appointment_completed')
+      provider_says(appointment, 'ACTIVE' => 0)
+      clear_enqueued_jobs
+    end
+
+    it 'applies the status as a data correction: no event, automation rule or CRM job' do
+      reconciler.perform
+      perform_enqueued_jobs(only: EventDispatcherJob)
+
+      expect(appointment.reload.status).to eq('completed')
+      expect(EventDispatcherJob).not_to have_been_enqueued
+      expect(WebhookJob).not_to have_been_enqueued
+      expect(Crm::Appointments::AppointmentChangedJob).not_to have_been_enqueued
+    end
+
+    it 'still fires them for the same status change when the normal delta apply makes it' do
+      delta = Integrations::Medelement::ReceptionsDeltaService.new(hook: hook, client: client)
+
+      delta.apply_detail!(detail_for(appointment, 'ACTIVE' => 0))
+      perform_enqueued_jobs(only: EventDispatcherJob)
+
+      expect(appointment.reload.status).to eq('completed')
+      expect(WebhookJob).to have_been_enqueued
+      expect(Crm::Appointments::AppointmentChangedJob).to have_been_enqueued
+    end
+
+    it 'keeps an appointment that MedElement still shows as open quiet too' do
+      open_one = stale_appointment('open-1')
+      provider_says(open_one)
+      clear_enqueued_jobs
+
+      reconciler.perform
+
+      expect(EventDispatcherJob).not_to have_been_enqueued
+    end
+
+    it 'leaves the flag off after a run, also when an import is refused', :aggregate_failures do
+      broken = stale_appointment('broken-1')
+      provider_says(broken, 'SERVICES' => ['not a row'])
+
+      expect(reconciler.perform.skipped).to eq(1)
+      expect(Current.medelement_reconciliation).to be_nil
+    end
+
+    describe 'the automation line of the report' do
+      let(:no_show) { stale_appointment('no-show-1') }
+
+      before do
+        provider_says(no_show, 'VISIT_STATUS_NAME' => 'неявка')
+      end
+
+      it 'tells in a dry run how many changes active rules would have reacted to, and fires nothing', :aggregate_failures do
+        report = reconciler(dry_run: true).perform
+
+        expect(report).to have_attributes(changed: 2, automation_matches: 1, automation_rules: { 'appointment_completed' => 1 })
+        expect(report.summary_lines).to include(
+          a_string_matching(/automation rules that would have triggered: 1 of 2 status changes.*appointment_completed/)
+        )
+        expect(EventDispatcherJob).not_to have_been_enqueued
+        expect(WebhookJob).not_to have_been_enqueued
+      end
+
+      it 'counts every change for an appointment_updated rule' do
+        automation_rule('appointment_updated')
+
+        report = reconciler(dry_run: true).perform
+
+        expect(report).to have_attributes(changed: 2, automation_matches: 2)
+      end
+
+      it 'says in a real run that the rules were held back' do
+        report = reconciler.perform
+
+        expect(report.summary_lines).to include(a_string_matching(/automation rules that held back \(not triggered\): 1 of 2/))
+        expect(WebhookJob).not_to have_been_enqueued
+      end
+
+      it 'has no automation line when nothing changes' do
+        open_one = stale_appointment('open-1')
+        provider_says(open_one)
+        provider.delete('reception-1')
+        provider.delete('no-show-1')
+
+        report = reconciler(dry_run: true).perform
+
+        expect(report.summary_lines.grep(/automation/)).to be_empty
+      end
+    end
+  end
+
   describe 'throttling, batches and the cap' do
     before do
       hook.update!(settings: hook.settings.merge('throttle_ms' => 500))

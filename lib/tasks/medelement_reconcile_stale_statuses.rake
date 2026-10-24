@@ -26,11 +26,7 @@ namespace :medelement do
     hook = Integrations::Hook.find_by!(account_id: account_id, app_id: 'medelement')
     puts "MedElement stale statuses: account #{account_id}, hook #{hook.id}, #{days ? "last #{days} days" : 'whole history'}, " \
          "#{dry_run ? 'DRY RUN, nothing is written' : 'APPLYING'}"
-    unless dry_run
-      rules = AutomationRule.where(account_id: account_id, active: true,
-                                   event_name: %w[appointment_updated appointment_completed appointment_cancelled])
-      puts "Active automation rules that react to an appointment status change: #{rules.count}"
-    end
+    puts 'Statuses are applied as a data correction: no automation rule, CRM re-evaluation or new touch is triggered.' unless dry_run
 
     report = Integrations::Medelement::StaleStatusReconciler.new(
       hook: hook, days: days, dry_run: dry_run, max_per_run: max_per_run

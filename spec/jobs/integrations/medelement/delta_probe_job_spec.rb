@@ -12,7 +12,7 @@ RSpec.describe Integrations::Medelement::DeltaProbeJob do
     create(:integrations_hook, :medelement, account: account, **attributes)
   end
 
-  it 'runs on the queue served by the cron-enabled worker' do
+  it 'runs on the scheduled jobs queue' do
     expect(described_class.new.queue_name).to eq('scheduled_jobs')
   end
 

@@ -1,20 +1,22 @@
 # What one stale status reconciliation run did, or in a dry run would do. Counts and appointment ids only: no patient data.
 class Integrations::Medelement::StaleStatusReport
   NOT_FOUND_SAMPLE_LIMIT = 200
-  LOG_KEYS = %i[dry_run days examined changed unchanged not_found out_of_scope skipped errors remaining aborted].freeze
+  LOG_KEYS = %i[dry_run days examined changed unchanged automation_matches not_found out_of_scope skipped errors remaining
+                aborted].freeze
 
   attr_reader :dry_run, :days, :examined, :changed, :unchanged, :not_found, :out_of_scope, :skipped, :errors,
-              :transitions, :not_found_appointment_ids, :skipped_reasons, :error_codes
-  attr_accessor :aborted, :last_id, :remaining
+              :transitions, :not_found_appointment_ids, :skipped_reasons, :error_codes, :automation_matches
+  attr_accessor :aborted, :last_id, :remaining, :automation_rules
 
   def initialize(dry_run:, days:)
     @dry_run = dry_run
     @days = days
-    @examined = @changed = @unchanged = @not_found = @out_of_scope = @skipped = @errors = 0
+    @examined = @changed = @unchanged = @not_found = @out_of_scope = @skipped = @errors = @automation_matches = 0
     @transitions = Hash.new { |hash, status| hash[status] = Hash.new(0) }
     @not_found_appointment_ids = []
     @skipped_reasons = Hash.new(0)
     @error_codes = Hash.new(0)
+    @automation_rules = {}
   end
 
   def examine!
@@ -25,6 +27,12 @@ class Integrations::Medelement::StaleStatusReport
   def transition!(from, to)
     @transitions[from][to] += 1
     from == to ? @unchanged += 1 : @changed += 1
+  end
+
+  # A status change that an active automation rule listens for (by event only: its conditions are not evaluated).
+  # Reconciled changes fire no rules, so in a real run these are the ones that were held back.
+  def automation_match!
+    @automation_matches += 1
   end
 
   def not_found!(appointment_id)
@@ -50,6 +58,7 @@ class Integrations::Medelement::StaleStatusReport
     {
       dry_run: dry_run, days: days, examined: examined, changed: changed, unchanged: unchanged, not_found: not_found,
       out_of_scope: out_of_scope, skipped: skipped, errors: errors, transitions: transitions.transform_values(&:to_h),
+      automation_matches: automation_matches, automation_rules: automation_rules,
       not_found_appointment_ids: not_found_appointment_ids, skipped_reasons: skipped_reasons.to_h,
       error_codes: error_codes.to_h, last_id: last_id, remaining: remaining, aborted: aborted
     }
@@ -64,10 +73,19 @@ class Integrations::Medelement::StaleStatusReport
     lines = transitions.sort.flat_map do |from, targets|
       targets.sort.map { |to, count| "  #{from} -> #{to}: #{count}" }
     end
-    lines + outcome_lines
+    lines + automation_lines + outcome_lines
   end
 
   private
+
+  # Status changes are applied as a data correction: no automation rule, CRM re-evaluation or new touch is triggered.
+  def automation_lines
+    return [] unless changed.positive?
+
+    verb = dry_run ? 'would have triggered' : 'held back (not triggered)'
+    ["  automation rules that #{verb}: #{automation_matches} of #{changed} status changes " \
+     "(event match only, conditions not evaluated; active rules by event: #{automation_rules.inspect})"]
+  end
 
   def outcome_lines
     lines = []

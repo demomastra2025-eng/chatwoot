@@ -95,7 +95,7 @@ RSpec.context 'with valid schedule.yml' do
       end
     end
 
-    it 'probes the fast-sync endpoint at 07:00 and 19:00 Almaty time on the queue of the cron-enabled worker' do
+    it 'probes the fast-sync endpoint at 07:00 and 19:00 Almaty time on the scheduled jobs queue' do
       expect(schedule['medelement_delta_probe_job']).to include(
         'cron' => '0 7,19 * * * Asia/Almaty',
         'class' => 'Integrations::Medelement::DeltaProbeJob',

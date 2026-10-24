@@ -191,7 +191,11 @@ class Scheduling::Appointment < ApplicationRecord
     self.custom_attributes = custom_attributes.to_h.except(Integrations::Medelement::LocalCancellation::MARKER_KEY)
   end
 
+  # A MedElement reconciliation of a past visit may close the touches of a visit that is now over, but it never
+  # refreshes the schedule of a touch that is still running.
   def sync_deferred_touch_enrollments
+    return if Current.medelement_reconciliation && %w[cancelled completed no_show].exclude?(status)
+
     Reminders::SyncEnrollmentService.new(remindable: self).perform
   end
 
@@ -225,6 +229,9 @@ class Scheduling::Appointment < ApplicationRecord
   def dispatch_updated_events
     changed_attributes = changed_attributes_payload
     return if changed_attributes.blank?
+    # A status corrected from MedElement for a past visit (Current.with_medelement_reconciliation) is a data correction:
+    # no listener, so no automation rule, CRM re-evaluation or patient message reacts to it.
+    return if Current.medelement_reconciliation
 
     Rails.configuration.dispatcher.dispatch(
       APPOINTMENT_UPDATED,

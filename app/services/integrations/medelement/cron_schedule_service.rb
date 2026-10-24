@@ -21,10 +21,14 @@ class Integrations::Medelement::CronScheduleService
     destroy_stale_jobs!(hook_ids)
   end
 
+  # The cron job definitions live in Redis and any process may write them. ENABLE_SIDEKIQ_CRON only says which process
+  # runs the cron poller, so it must not decide who may change a schedule: the medelement worker, where the full-sweep
+  # backoff changes it, has the flag off. DISABLE_MEDELEMENT_CRON_SYNC=true is the explicit opt-out for a process that
+  # must not touch the schedules (config/initializers/sidekiq.rb still calls sync_all! only in the poller process).
   def self.cron_enabled?
     return false if Rails.env.test?
 
-    ActiveModel::Type::Boolean.new.cast(ENV.fetch('ENABLE_SIDEKIQ_CRON', true))
+    !ActiveModel::Type::Boolean.new.cast(ENV.fetch('DISABLE_MEDELEMENT_CRON_SYNC', false))
   end
 
   def self.destroy_stale_jobs!(hook_ids)
