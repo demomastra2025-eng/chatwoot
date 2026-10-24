@@ -570,22 +570,27 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     )
   end
 
-  it 'keeps the native pending resolver bound to the known written ID when another identical reception appears' do
+  it 'keeps the native pending resolver bound to the known written ID when another identical reception appears', :aggregate_failures do
     account.enable_features!('scheduling')
     zone = ActiveSupport::TimeZone['Asia/Almaty']
     starts_at = zone.local(2026, 3, 21, 9)
     ends_at = starts_at + 20.minutes
     contact = create(:contact, account: account, phone_number: '+77000000002',
                                custom_attributes: { 'medelement_patient_code' => reception['PATIENT_CODE'] })
-    resource.update!(custom_attributes: {
-      'medelement_specialist_code' => import_context[:specialist_code],
-      'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
-    })
-    appointment = create(:scheduling_appointment, account: account, contact: contact, resource: resource, source: 'manual',
-                                                starts_at: starts_at, ends_at: ends_at, custom_attributes: {
-                                                  'medelement_cabinet_code' => 'cabinet-1',
-                                                  'medelement_provider_sync_status' => 'provider_status_unknown'
-                                                })
+    resource.update!(
+      custom_attributes: {
+        'medelement_specialist_code' => import_context[:specialist_code],
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
+    appointment = create(
+      :scheduling_appointment,
+      account: account, contact: contact, resource: resource, source: 'manual', starts_at: starts_at, ends_at: ends_at,
+      custom_attributes: {
+        'medelement_cabinet_code' => 'cabinet-1',
+        'medelement_provider_sync_status' => 'provider_status_unknown'
+      }
+    )
     command = create_unknown_outbound_command(appointment: appointment, contact: contact, starts_at: starts_at, ends_at: ends_at)
     verification = Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService
     command.update!(provider_reception_code: 'created-A', execution_state: command.execution_state.merge(
