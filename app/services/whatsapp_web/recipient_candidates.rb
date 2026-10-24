@@ -1,9 +1,10 @@
 # Ordered remote JID candidates for the contact behind a WhatsApp Web conversation.
 #
 # The conversation may hang on a @lid contact inbox while the same contact also owns a phone identity (another
-# contact inbox / channel profile in the same inbox). Callers pick the first routable candidate (not @lid), so the
-# order is: the matched profile and contact attributes, the conversation's own source id, the phone identities of the
-# same contact (ones tied to this LID first), and finally the contact's phone number.
+# contact inbox / channel profile in the same inbox). Callers pick the first routable candidate (not @lid) and fall back
+# to a @lid candidate only when nothing else is left, so the order is: the matched profile and contact attributes, the
+# conversation's own source id, the phone identities of the same contact (ones tied to this LID first), and finally the
+# contact's phone number.
 class WhatsappWeb::RecipientCandidates
   LID_SUFFIX = '@lid'.freeze
 

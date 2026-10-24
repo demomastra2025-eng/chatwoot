@@ -2,6 +2,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   EVOLUTION_INTEGRATION = 'WHATSAPP-BAILEYS'.freeze
   REQUEST_TIMEOUT_SECONDS = 20
   MEDIA_UNAVAILABLE_STATUSES = [403, 404, 410].freeze
+  LID_JID_PATTERN = /\A[^@\s]+@lid\z/
   ECHO_JOB_CLASSES = [
     Channels::WhatsappWeb::OutgoingEchoJob.name,
     Channels::WhatsappWeb::MessageUpdateBackfillJob.name
@@ -308,7 +309,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
 
   def update_message(message:, content:)
     source_id = message.source_id.to_s.presence
-    remote_jid = normalized_remote_jid(message_remote_jid(message))
+    remote_jid = outbound_remote_jid_for(message)
     raise ArgumentError, 'Message source_id is required for WhatsApp Web edits' if source_id.blank?
     raise ArgumentError, 'Conversation remote JID is required for WhatsApp Web edits' if remote_jid.blank?
 
@@ -325,7 +326,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
 
   def delete_message(message:)
     source_id = message.source_id.to_s.presence
-    remote_jid = normalized_remote_jid(message_remote_jid(message))
+    remote_jid = outbound_remote_jid_for(message)
     raise ArgumentError, 'Message source_id is required for WhatsApp Web deletes' if source_id.blank?
     raise ArgumentError, 'Conversation remote JID is required for WhatsApp Web deletes' if remote_jid.blank?
 
@@ -338,7 +339,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
 
   def send_reaction(message:, emoji:)
     source_id = message.source_id.to_s.presence
-    remote_jid = normalized_remote_jid(message_remote_jid(message))
+    remote_jid = outbound_remote_jid_for(message)
     raise ArgumentError, 'Message source_id is required for WhatsApp Web reactions' if source_id.blank?
     raise ArgumentError, 'Conversation remote JID is required for WhatsApp Web reactions' if remote_jid.blank?
 
@@ -356,7 +357,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     read_messages = Array.wrap(messages).filter_map do |message|
       payload = message.respond_to?(:to_h) ? message.to_h.with_indifferent_access : {}
       source_id = payload[:id].to_s.presence
-      remote_jid = normalized_remote_jid(payload[:remoteJid] || payload[:remote_jid])
+      remote_jid = outbound_remote_jid(payload[:remoteJid] || payload[:remote_jid])
       next if source_id.blank? || remote_jid.blank?
 
       {
@@ -682,11 +683,18 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
       default_terminal_state_message(normalized_state)
   end
 
-  # The first routable candidate (not @lid) wins: a conversation can hang on a LID contact inbox while the same contact
-  # also has a phone identity. When nothing is routable the first candidate is returned so callers can report it.
-  def message_remote_jid(message)
+  # The first routable candidate (phone or group) wins: a conversation can hang on a LID contact inbox while the same
+  # contact also has a phone identity. Only when nothing is routable is the hidden @lid identity addressed itself, which the
+  # gateway accepts as is. Returns nil when there is no candidate at all.
+  def outbound_remote_jid_for(message)
     candidates = WhatsappWeb::RecipientCandidates.new(conversation: message.conversation).to_a
-    candidates.find { |candidate| normalized_remote_jid(candidate).present? } || candidates.first
+    candidates.filter_map { |candidate| normalized_remote_jid(candidate) }.first || lid_remote_jid_for(message, candidates)
+  end
+
+  # The conversation's own @lid id comes before other @lid ids of the same contact.
+  def lid_remote_jid_for(message, candidates)
+    own_source_id = message.conversation.contact_inbox&.source_id
+    [own_source_id, *candidates].filter_map { |candidate| lid_remote_jid(candidate) }.first
   end
 
   def default_terminal_state_message(normalized_state)
@@ -848,6 +856,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     remote_jid = resolved_remote_jid_for(message)
     return remote_jid.split('@').first if remote_jid.end_with?('@s.whatsapp.net')
 
+    # Groups and hidden @lid ids go whole: the gateway needs the suffix to tell them from a phone number.
     remote_jid
   end
 
@@ -900,12 +909,21 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     "#{normalized_value}@s.whatsapp.net"
   end
 
+  def lid_remote_jid(remote_jid)
+    value = remote_jid.to_s.strip
+    value if value.match?(LID_JID_PATTERN)
+  end
+
+  # normalized_remote_jid for an outbound action: a routable JID, or else the hidden @lid JID itself.
+  def outbound_remote_jid(remote_jid)
+    normalized_remote_jid(remote_jid) || lid_remote_jid(remote_jid)
+  end
+
   def resolved_remote_jid_for(message)
-    remote_jid = normalized_remote_jid(message_remote_jid(message))
+    remote_jid = outbound_remote_jid_for(message)
     return remote_jid if remote_jid.present?
 
-    raise UnroutableRecipientError,
-          "WhatsApp Web recipient is still a provisional @lid identity for conversation #{message.conversation_id}"
+    raise UnroutableRecipientError, "WhatsApp Web has no recipient candidate for conversation #{message.conversation_id}"
   end
 
   def extract_from_me(payload)
