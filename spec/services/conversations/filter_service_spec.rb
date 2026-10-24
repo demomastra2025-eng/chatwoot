@@ -736,7 +736,8 @@ describe Conversations::FilterService do
 
     it 'keeps a conversation without a contact in the negative conditions and out of the positive ones' do
       unlabeled_id = unlabeled.id
-      contactless = create(:conversation, account: account, inbox: inbox).tap { |conversation| conversation.update_column(:contact_id, nil) }
+      contactless = create(:conversation, account: account, inbox: inbox)
+      contactless.update_column(:contact_id, nil) # rubocop:disable Rails/SkipsModelValidations
 
       expect(listed_ids([labels_condition('equal_to')])).not_to include(contactless.id)
       expect(listed_ids([labels_condition('not_equal_to')])).to contain_exactly(unlabeled_id, contactless.id)

@@ -41,7 +41,7 @@ class Labels::ConversationScope
     def match_sql(tag_ids = nil)
       return NOTHING if tag_ids&.empty?
 
-      match_tags_sql(tag_ids && tag_ids.map(&:to_i).join(', '))
+      match_tags_sql(tag_ids&.map(&:to_i)&.join(', '))
     end
 
     # The same condition for a list or a subquery of tag ids written as SQL, for example

@@ -110,7 +110,8 @@ RSpec.describe Labels::ConversationScope do
       labeled_contact.update_labels('Семья')
       labeled = create_conversation(contact: labeled_contact)
       unlabeled = create_conversation
-      contactless = create_conversation.tap { |conversation| conversation.update_column(:contact_id, nil) }
+      contactless = create_conversation
+      contactless.update_column(:contact_id, nil) # rubocop:disable Rails/SkipsModelValidations
 
       by_name = described_class.match_sql(described_class.tag_ids_for(['Семья']))
 
