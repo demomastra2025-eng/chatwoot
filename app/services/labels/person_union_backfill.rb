@@ -36,8 +36,7 @@ class Labels::PersonUnionBackfill
     on_contact = labels.where(taggable_type: 'Contact').select(:taggable_id)
     on_conversation = Conversation.where(id: labels.where(taggable_type: 'Conversation').select(:taggable_id)).select(:contact_id)
     scope = Contact.where(id: on_contact).or(Contact.where(id: on_conversation))
-    scope = scope.where(account_id: @account_id) if @account_id
-    scope.reorder(:id)
+    @account_id ? scope.where(account_id: @account_id) : scope
   end
 
   # For every person of the batch: the union and what the contact and each conversation lack.
