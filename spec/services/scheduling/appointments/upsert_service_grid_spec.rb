@@ -199,7 +199,7 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       expect(service.duration_min).to eq(30)
 
       expect { book(zone.local(2026, 4, 20, 11, 30)) }.to raise_error(Scheduling::Error) { |error|
-        expect(error.code).to eq('OUTSIDE_WORKING_HOURS')
+        expect(error.code).to eq('APPOINTMENT_SLOT_UNAVAILABLE')
       }
       expect(account.scheduling_appointments.reload).to be_empty
     end
