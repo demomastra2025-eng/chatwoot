@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { reactive } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import ResourceServiceStatsList from './ResourceServiceStatsList.vue';
 import SchedulingResourcesPage from './SchedulingResourcesPage.vue';
 
 const mocks = vi.hoisted(() => ({ store: null, alert: vi.fn() }));
@@ -31,6 +32,7 @@ const stubs = {
       '<input :data-label="label" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
   ProviderScheduleCard: true,
+  ResourceServiceStatsList: true,
   SchedulingColorPicker: true,
   SchedulingDateTimeField: true,
   SchedulingDrawer: {
@@ -92,6 +94,33 @@ describe('SchedulingResourcesPage', () => {
       id: 7,
       specialty: 'Кардиолог',
     });
+  });
+
+  it('lists the services found in the visit history for an imported specialist only', async () => {
+    const wrapper = mount(SchedulingResourcesPage, {
+      global: { mocks: { $t: key => key }, stubs },
+    });
+    await flushPromises();
+    expect(wrapper.find('resource-service-stats-list-stub').exists()).toBe(
+      false
+    );
+
+    await wrapper.get('[data-icon="i-lucide-pencil"]').trigger('click');
+    expect(
+      wrapper.findComponent(ResourceServiceStatsList).props('resourceId')
+    ).toBe(7);
+
+    mocks.store.resources = [
+      { active: true, customAttributes: {}, id: 12, name: 'Алия' },
+    ];
+    const localWrapper = mount(SchedulingResourcesPage, {
+      global: { mocks: { $t: key => key }, stubs },
+    });
+    await flushPromises();
+    await localWrapper.get('[data-icon="i-lucide-pencil"]').trigger('click');
+    expect(localWrapper.find('resource-service-stats-list-stub').exists()).toBe(
+      false
+    );
   });
 
   it('opens schedule drawer with workday overrides and time-offs for a local specialist', async () => {

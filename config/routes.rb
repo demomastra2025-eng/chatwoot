@@ -211,6 +211,7 @@ Rails.application.routes.draw do
             resources :resources, only: [:index, :show, :create, :update, :destroy] do
               resource :work_rules, only: [:show, :update], controller: 'resource_work_rules'
               resource :break_rules, only: [:show, :update], controller: 'resource_break_rules'
+              resources :service_stats, only: [:index, :update], controller: 'resource_service_stats'
             end
             resources :contacts, only: [:index, :create, :update] do
               get :patients, on: :member
