@@ -961,6 +961,52 @@ const toggleCallCardExpanded = call => {
   }
 };
 
+// The note of the person: the newest of the contact notes ("Notes" in the
+// dialog panel) and the newest private message of the call conversation.
+// Contact notes win a tie, they are the place colleagues look for them.
+const latestPersonNote = (contactId, conversation) => {
+  const getContactNotes = store.getters['contactNotes/getAllNotesByContact'];
+  const contactNotes = (contactId && getContactNotes?.(contactId)) || [];
+  const latestContactNote = contactNotes.find(note => note?.content);
+
+  const privateMessages = Array.isArray(conversation?.messages)
+    ? conversation.messages.filter(msg => msg?.private && msg?.content)
+    : [];
+  const latestPrivateMessage = privateMessages[privateMessages.length - 1];
+
+  if (!latestContactNote) return latestPrivateMessage;
+  if (!latestPrivateMessage) return latestContactNote;
+  return Number(latestPrivateMessage.created_at) >
+    Number(latestContactNote.created_at)
+    ? latestPrivateMessage
+    : latestContactNote;
+};
+
+// Contact notes are loaded once per person for the cards on the screen, so
+// the call card can show them without the dialog panel being open.
+const requestedNoteContactIds = new Set();
+const ensureContactNotesLoaded = contactId => {
+  if (requestedNoteContactIds.has(contactId)) return;
+
+  requestedNoteContactIds.add(contactId);
+  store
+    .dispatch('contactNotes/get', { contactId })
+    .catch(() => requestedNoteContactIds.delete(contactId));
+};
+
+const visibleCallContactIds = computed(() => [
+  ...new Set(
+    visibleCalls.value
+      .map(call => getCallContactId(call, getCallInfo(call).conversation))
+      .filter(Boolean)
+      .map(String)
+  ),
+]);
+
+watch(visibleCallContactIds, ids => ids.forEach(ensureContactNotesLoaded), {
+  immediate: true,
+});
+
 const getCallClientContext = call => {
   if (!isCallCardExpandedFor(call)) {
     return null;
@@ -1017,12 +1063,8 @@ const getCallClientContext = call => {
     ? conversation.labels.filter(Boolean).slice(0, 4)
     : [];
 
-  const privateMessages = Array.isArray(conversation?.messages)
-    ? conversation.messages.filter(msg => msg?.private && msg?.content)
-    : [];
-  const latestPrivateMessage = privateMessages[privateMessages.length - 1];
   const latestNote = firstPresent([
-    latestPrivateMessage?.content,
+    latestPersonNote(contactId, conversation)?.content,
     conversation?.custom_attributes?.call_note,
     storeContact?.custom_attributes?.notes,
   ]);
@@ -1071,18 +1113,28 @@ const submitQuickNote = async call => {
 
   isSavingQuickNote.value = true;
   try {
-    await window.axios.post(
-      `/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
-      {
-        content,
-        private: true,
-      }
-    );
+    // A note taken during a call belongs to the person, like every other
+    // note about them: it shows up in "Notes" of the dialog and on the next
+    // call card. Only when the person cannot be told from the call, the note
+    // is kept as a private message of the call conversation instead of lost.
+    const contactId = getCallContactId(call, getCallInfo(call).conversation);
+    if (contactId) {
+      await store.dispatch('contactNotes/create', { contactId, content });
+      useAlert(t('CONVERSATION.VOICE_WIDGET.QUICK_NOTE_SAVED'));
+    } else {
+      await window.axios.post(
+        `/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
+        {
+          content,
+          private: true,
+        }
+      );
+      useAlert(t('CONVERSATION.VOICE_WIDGET.QUICK_NOTE_SAVED_IN_CONVERSATION'));
+    }
     quickNoteDraft.value = '';
     quickNoteOpenCallSid.value = '';
-    useAlert('Заметка сохранена в карточке обращения');
   } catch {
-    useAlert('Не удалось сохранить заметку');
+    useAlert(t('CONVERSATION.VOICE_WIDGET.QUICK_NOTE_SAVE_FAILED'));
   } finally {
     isSavingQuickNote.value = false;
   }
