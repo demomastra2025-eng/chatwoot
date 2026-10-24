@@ -102,7 +102,7 @@ class Api::V1::Accounts::Integrations::LinearController < Api::V1::Accounts::Bas
   private
 
   def conversation_link
-    "#{ENV.fetch('FRONTEND_URL', nil)}/app/accounts/#{Current.account.id}/conversations/#{@conversation.display_id}"
+    "#{ENV.fetch('FRONTEND_URL', nil)}#{Conversations::DashboardLink.for(@conversation).path}"
   end
 
   def fetch_conversation

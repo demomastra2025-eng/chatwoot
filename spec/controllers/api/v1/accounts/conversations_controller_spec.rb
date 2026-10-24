@@ -496,6 +496,33 @@ RSpec.describe 'Conversations API', type: :request do
         expect(JSON.parse(response.body, symbolize_names: true)[:id]).to eq(conversation.display_id)
       end
 
+      it 'returns no dialog id for a conversation when the account does not use communication threads' do
+        create(:inbox_member, user: agent, inbox: conversation.inbox)
+
+        get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['meta']).to include('communication_thread_id' => nil)
+        expect(response.parsed_body).not_to have_key('communication_thread_id')
+      end
+
+      it 'returns the dialog id of the person in the conversation meta when the account uses communication threads' do
+        account.enable_features!('communication_threads')
+        create(:inbox_member, user: agent, inbox: conversation.inbox)
+        thread = conversation.reload.communication_thread
+
+        get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(thread).to be_present
+        expect(response.parsed_body['meta']).to include('communication_thread_id' => thread.display_id)
+        expect(response.parsed_body).not_to have_key('communication_thread_id')
+      end
+
       it 'returns CRM deal stage accents on the conversation detail payload' do
         account.enable_features!('crm_deals')
         create(:inbox_member, user: agent, inbox: conversation.inbox)

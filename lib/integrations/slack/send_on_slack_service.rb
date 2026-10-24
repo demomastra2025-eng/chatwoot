@@ -203,7 +203,7 @@ class Integrations::Slack::SendOnSlackService < Base::SendOnChannelService
   end
 
   def link_to_conversation
-    "<#{ENV.fetch('FRONTEND_URL', nil)}/app/accounts/#{conversation.account_id}/conversations/#{conversation.display_id}|Click here>"
+    "<#{ENV.fetch('FRONTEND_URL', nil)}#{Conversations::DashboardLink.for(conversation).path}|Click here>"
   end
 
   # Determines whether the conversation identifier should be updated with the ts value.

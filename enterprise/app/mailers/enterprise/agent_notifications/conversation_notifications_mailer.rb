@@ -6,7 +6,7 @@ module Enterprise::AgentNotifications::ConversationNotificationsMailer
     @conversation = conversation
     @sla_policy = sla_policy
     subject = "Conversation [ID - #{@conversation.display_id}] missed SLA for first response"
-    @action_url = app_account_conversation_url(account_id: @conversation.account_id, id: @conversation.display_id)
+    @action_url = Conversations::DashboardLink.for(@conversation).url(self)
     send_mail_with_liquid(to: @agent.email, subject: subject) and return
   end
 
@@ -16,7 +16,7 @@ module Enterprise::AgentNotifications::ConversationNotificationsMailer
     @agent = agent
     @conversation = conversation
     @sla_policy = sla_policy
-    @action_url = app_account_conversation_url(account_id: @conversation.account_id, id: @conversation.display_id)
+    @action_url = Conversations::DashboardLink.for(@conversation).url(self)
     send_mail_with_liquid(to: @agent.email, subject: "Conversation [ID - #{@conversation.display_id}] missed SLA for next response") and return
   end
 
@@ -26,7 +26,7 @@ module Enterprise::AgentNotifications::ConversationNotificationsMailer
     @agent = agent
     @conversation = conversation
     @sla_policy = sla_policy
-    @action_url = app_account_conversation_url(account_id: @conversation.account_id, id: @conversation.display_id)
+    @action_url = Conversations::DashboardLink.for(@conversation).url(self)
     send_mail_with_liquid(to: @agent.email, subject: "Conversation [ID - #{@conversation.display_id}] missed SLA for resolution time") and return
   end
 

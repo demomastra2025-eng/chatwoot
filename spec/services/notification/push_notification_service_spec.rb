@@ -41,6 +41,33 @@ describe Notification::PushNotificationService do
         end
       end
 
+      it 'opens the dialog of the person when the account uses communication threads' do
+        with_modified_env VAPID_PUBLIC_KEY: 'test' do
+          account.enable_features!('communication_threads')
+          notification.reload.primary_actor.refresh_communication_thread!
+          thread = notification.primary_actor.reload.communication_thread
+          create(:notification_subscription, user: notification.user)
+
+          described_class.new(notification: notification).perform
+
+          expect(WebPush).to have_received(:payload_send).with(
+            hash_including(message: a_string_including("/app/accounts/#{account.id}/communication_threads/#{thread.display_id}"))
+          )
+        end
+      end
+
+      it 'opens the conversation when the account does not use communication threads' do
+        with_modified_env VAPID_PUBLIC_KEY: 'test' do
+          create(:notification_subscription, user: notification.user)
+
+          described_class.new(notification: notification).perform
+
+          expect(WebPush).to have_received(:payload_send).with(
+            hash_including(message: a_string_including("/app/accounts/#{account.id}/conversations/#{notification.conversation_display_id}"))
+          )
+        end
+      end
+
       it 'uses the stored snapshot when the conversation has already been deleted' do
         with_modified_env VAPID_PUBLIC_KEY: 'test' do
           notification.primary_actor.destroy!

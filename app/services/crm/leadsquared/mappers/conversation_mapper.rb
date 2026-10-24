@@ -99,7 +99,7 @@ class Crm::Leadsquared::Mappers::ConversationMapper
   end
 
   def conversation_url
-    app_account_conversation_url(account_id: conversation.account.id, id: conversation.display_id)
+    Conversations::DashboardLink.for(conversation).url(self)
   end
 
   def brand_name

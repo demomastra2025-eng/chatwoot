@@ -51,6 +51,28 @@ describe Integrations::Slack::SendOnSlackService do
         expect(conversation.reload.identifier).to eq '12345.6789'
       end
 
+      it 'links to the dialog of the person when the account uses communication threads' do
+        account.enable_features!('communication_threads')
+        thread = conversation.reload.communication_thread
+        inbox = conversation.inbox
+        dialog_link = "<#{ENV.fetch('FRONTEND_URL', nil)}/app/accounts/#{account.id}/communication_threads/#{thread.display_id}|Click here>"
+
+        expect(slack_client).to receive(:chat_postMessage).with(
+          channel: hook.reference_id,
+          text: "
+*Inbox:* #{inbox.name} (#{inbox.inbox_type})
+#{dialog_link} to view the conversation.
+
+#{message.content}",
+          username: "#{message.sender.name} (Contact)",
+          thread_ts: nil,
+          icon_url: anything,
+          unfurl_links: false
+        ).and_return(slack_message)
+
+        builder.perform
+      end
+
       context 'with subject line in email' do
         let(:message) do
           create(:message,

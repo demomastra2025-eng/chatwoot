@@ -4,6 +4,7 @@ const ConversationView = () => import('./ConversationView.vue');
 import inboxDialogRoutes from '../settings/inbox/inboxDialog.routes';
 import { CONVERSATION_ACCESS_PERMISSIONS } from '../../../constants/permissions';
 import { FEATURE_FLAGS } from '../../../featureFlags';
+import { redirectToCommunicationThread } from './redirectToCommunicationThread';
 
 export default {
   routes: [
@@ -55,6 +56,7 @@ export default {
       meta: {
         permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
+      beforeEnter: redirectToCommunicationThread,
       component: ConversationView,
       props: route => {
         return { inboxId: 0, conversationId: route.params.conversation_id };

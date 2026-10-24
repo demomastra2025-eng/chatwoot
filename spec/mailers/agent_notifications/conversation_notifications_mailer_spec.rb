@@ -38,6 +38,21 @@ RSpec.describe AgentNotifications::ConversationNotificationsMailer do
     end
   end
 
+  describe 'conversation link' do
+    let(:mail) { described_class.with(account: account).conversation_assignment(conversation, agent, nil).deliver_now }
+
+    it 'links to the conversation when the account does not use communication threads' do
+      expect(mail.body.decoded).to include("/app/accounts/#{account.id}/conversations/#{conversation.display_id}")
+    end
+
+    it 'links to the dialog of the person when the account uses communication threads' do
+      account.enable_features!('communication_threads')
+      thread = conversation.reload.communication_thread
+
+      expect(mail.body.decoded).to include("/app/accounts/#{account.id}/communication_threads/#{thread.display_id}")
+    end
+  end
+
   describe 'conversation_mention' do
     let(:contact) { create(:contact, name: nil, account: account) }
     let(:another_agent) { create(:user, email: 'agent2@example.com', account: account) }

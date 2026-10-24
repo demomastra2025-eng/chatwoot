@@ -197,6 +197,26 @@ RSpec.describe 'Linear Integration API', type: :request do
         end
       end
 
+      context 'when the account uses communication threads' do
+        let(:linked_issue) { { data: { 'id' => 'issue1', 'link' => 'https://linear.app/issue1' } } }
+        let(:link) do
+          "#{ENV.fetch('FRONTEND_URL', nil)}/app/accounts/#{account.id}/communication_threads/#{conversation.reload.communication_thread.display_id}"
+        end
+
+        before { account.enable_features!('communication_threads') }
+
+        it 'links the issue to the dialog of the person' do
+          expect(processor_service).to receive(:link_issue).with(link, issue_id, title, agent).and_return(linked_issue)
+
+          post "/api/v1/accounts/#{account.id}/integrations/linear/link_issue",
+               params: { conversation_id: conversation.display_id, issue_id: issue_id, title: title },
+               headers: agent.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:ok)
+        end
+      end
+
       context 'when issue linking fails' do
         it 'returns error message and does not create activity message' do
           allow(processor_service).to receive(:link_issue).with(link, issue_id, title, agent).and_return(error: 'error message')
