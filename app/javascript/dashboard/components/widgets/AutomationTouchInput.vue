@@ -51,7 +51,6 @@ const DEFAULT_TOUCH_PARAMS = {
   relative_offset_seconds: 60,
   relative_time_mode: RELATIVE_TIME_MODES.INHERIT_ANCHOR_TIME,
   relative_time_of_day: '',
-  manual_schedule_override: false,
   repeat_mode: 'once',
   repeat_until_at: '',
   scheduled_at: '',
@@ -92,6 +91,13 @@ const normalizeLegacyParams = raw => {
 };
 
 const clone = value => JSON.parse(JSON.stringify(value || {}));
+const LATE_IMPORT_OPT_IN_KEY = 'skip_if_imported_late';
+const VISIT_ANCHORS = ['appointment.starts_at', 'appointment.ends_at'];
+// The late-import skip applies to a booking notice counted from the event; a touch timed from the visit ignores it.
+const allowsLateImportSkip = (eventName, params) =>
+  eventName === 'appointment_created' &&
+  params.timing_mode !== 'absolute' &&
+  !VISIT_ANCHORS.includes(params.relative_anchor);
 const normalizeArray = value => (Array.isArray(value) ? value : []);
 const normalizeAttachmentId = attachment => {
   if (typeof attachment === 'string') return attachment;
@@ -421,6 +427,23 @@ export default {
           post_delivery_action: value ? 'resolve_conversation' : '',
           ...(value ? { repeat_mode: 'once', repeat_until_at: '' } : {}),
         });
+      },
+    },
+    canSkipLateImport() {
+      return allowsLateImportSkip(this.eventName, this.normalizedValue);
+    },
+    skipIfImportedLate: {
+      get() {
+        return this.normalizedValue.metadata?.[LATE_IMPORT_OPT_IN_KEY] === true;
+      },
+      set(value) {
+        const metadata = clone(this.normalizedValue.metadata);
+        if (value) {
+          metadata[LATE_IMPORT_OPT_IN_KEY] = true;
+        } else {
+          delete metadata[LATE_IMPORT_OPT_IN_KEY];
+        }
+        this.emitValue({ metadata });
       },
     },
     confirmAppointmentOnReply: {
@@ -768,6 +791,9 @@ export default {
       };
 
       delete cleaned.delay_minutes;
+      // The editor has no manual-time control: a rule touch never keeps the flag, which would freeze a relative
+      // touch as a draft without a send time.
+      delete cleaned.manual_schedule_override;
 
       if (cleaned.action_type !== 'send_message') {
         cleaned.content_kind = 'free_text';
@@ -816,6 +842,14 @@ export default {
 
       if (cleaned.repeat_mode === 'once') {
         cleaned.repeat_until_at = '';
+      }
+
+      if (
+        !allowsLateImportSkip(this.eventName, cleaned) &&
+        cleaned.metadata?.[LATE_IMPORT_OPT_IN_KEY]
+      ) {
+        cleaned.metadata = clone(cleaned.metadata);
+        delete cleaned.metadata[LATE_IMPORT_OPT_IN_KEY];
       }
 
       if (
@@ -1278,6 +1312,26 @@ export default {
                 'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.AUTO_CANCEL_DESCRIPTION'
               )
             }}
+          </p>
+        </div>
+      </div>
+    </SchedulingFormFieldGroup>
+
+    <SchedulingFormFieldGroup v-if="canSkipLateImport" :framed="false">
+      <div
+        class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 border-t border-n-weak pt-4"
+      >
+        <Checkbox
+          class="mt-0.5 shrink-0"
+          :model-value="skipIfImportedLate"
+          @update:model-value="skipIfImportedLate = $event"
+        />
+        <div class="flex min-w-0 flex-col gap-1">
+          <p class="mb-0 text-sm font-medium text-n-slate-12">
+            {{ $t('AUTOMATION.ACTION.TOUCH_EDITOR.SKIP_LATE_IMPORT_LABEL') }}
+          </p>
+          <p class="mb-0 text-xs leading-5 text-n-slate-10">
+            {{ $t('AUTOMATION.ACTION.TOUCH_EDITOR.SKIP_LATE_IMPORT_NOTE') }}
           </p>
         </div>
       </div>

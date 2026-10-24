@@ -123,6 +123,8 @@
         "APPOINTMENT_CONFIRMATION_DESCRIPTION": "Нажатие выбранной кнопки WhatsApp подтвердит только запись, связанную именно с этим сообщением.",
         "APPOINTMENT_CONFIRMATION_BUTTON_LABEL": "Кнопка подтверждения",
         "APPOINTMENT_CONFIRMATION_UNAVAILABLE": "Выберите в официальном канале WhatsApp Cloud одобренный шаблон с кнопкой QUICK_REPLY.",
+        "SKIP_LATE_IMPORT_LABEL": "Не отправлять, если запись пришла из МедЭлемента с опозданием",
+        "SKIP_LATE_IMPORT_NOTE": "Если запись появилась в OneLink больше чем через час после создания в МедЭлементе, уведомление не отправится. Уведомление о записи или переносе не отправляется никогда, если приём уже начался.",
         "TIMEZONE_LABEL": "Часовой пояс",
         "RELATIVE_UNIT_LABEL": "Единицы",
         "ATTACHMENTS_LABEL": "Вложения",

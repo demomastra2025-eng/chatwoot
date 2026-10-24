@@ -426,6 +426,28 @@ RSpec.describe Reminders::ExecuteService do
       end
     end
 
+    it 'cancels a reschedule notice for a visit that has already started instead of sending it' do
+      account = create(:account)
+      account.enable_features!('scheduling')
+      conversation = create(:conversation, account: account)
+      appointment = create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation,
+                                                    starts_at: 10.minutes.ago, ends_at: 20.minutes.from_now)
+      rule = build(:automation_rule, account: account, event_name: 'appointment_rescheduled', conditions: [], actions: [])
+      rule.save!(validate: false)
+      touch = create(:reminder, account: account, touch_conversation: conversation, remindable: appointment,
+                                status: :processing, body: 'Запись перенесена',
+                                metadata: { 'touch_source' => 'automation' })
+      touch.mark_automation_provenance!(rule)
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.not_to(change { conversation.messages.outgoing.count })
+
+      expect(touch.reload).to be_cancelled
+      expect(touch.last_error).to eq(Reminders::StaleAppointmentNoticePolicy::STARTED_REASON)
+      expect(touch.metadata).to include('cancelled_via' => Reminders::StaleAppointmentNoticePolicy::CANCELLED_VIA)
+    end
+
     it 'materializes a touch into a normal outgoing message' do
       conversation = create(:conversation)
       touch = create(

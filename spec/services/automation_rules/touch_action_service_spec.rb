@@ -816,6 +816,62 @@ RSpec.describe AutomationRules::TouchActionService do
       expect(claim.reminder.body).to eq('Post-completion follow-up')
       expect(enrollment.metadata['allow_terminal_at_activation']).to be(true)
     end
+
+    context 'with a reschedule notice' do
+      let(:appointment) do
+        create(:scheduling_appointment, account: account, contact: contact, conversation: conversation,
+                                        starts_at: 2.days.from_now, ends_at: 2.days.from_now + 30.minutes)
+      end
+      let(:notice) do
+        { body: 'Запись перенесена', timing_mode: 'relative', relative_anchor: 'touch.created_at', relative_offset_seconds: 60 }
+      end
+      let(:reschedule_rule) do
+        create(:automation_rule, account: account, event_name: 'appointment_rescheduled', conditions: [],
+                                 actions: [{ action_name: 'create_touch', action_params: [notice] }])
+      end
+      let(:appointment_service) do
+        described_class.new(rule: reschedule_rule, account: account, record: appointment, entity_kind: 'appointment')
+      end
+
+      before { account.enable_features!('deferred_touch_materialization', 'scheduling') }
+
+      it 'refuses a relative touch that keeps the manual-time flag instead of leaving a draft that never sends' do
+        expect do
+          appointment_service.create_touch(notice.merge(manual_schedule_override: true), action_id: 'legacy-action')
+        end.to raise_error(ArgumentError, AutomationRules::TouchScheduleOverride::RUNTIME_ERROR)
+
+        expect(account.reminders.where(remindable: appointment)).to be_empty
+        expect(account.touch_plan_enrollments.where(remindable: appointment)).to be_empty
+      end
+
+      it 'keeps a legacy immediate notice with the manual-time flag on its absolute send time' do
+        touch = appointment_service.create_touch({ body: 'Запись перенесена', delay_minutes: 0, manual_schedule_override: true },
+                                                 action_id: 'legacy-action')
+
+        expect(touch).to be_pending
+        expect(touch).to be_absolute
+        expect(touch.scheduled_at).to be_within(5.seconds).of(Time.current)
+      end
+
+      it 'makes a notice for every reschedule even when appointment touches are deferred' do
+        action = reschedule_rule.actions.first
+
+        first_touch = appointment_service.create_touch(action['action_params'], action_id: action['action_id'])
+        expect(first_touch).to be_a(Reminder)
+        expect(first_touch).to be_pending
+        expect(first_touch.scheduled_at).to be_within(5.seconds).of(1.minute.from_now)
+        first_touch.complete!
+
+        second_touch = travel(2.minutes) do
+          appointment_service.create_touch(action['action_params'], action_id: action['action_id'])
+        end
+
+        expect(second_touch).to be_a(Reminder)
+        expect(second_touch.id).not_to eq(first_touch.id)
+        expect(second_touch).to be_pending
+        expect(account.touch_plan_enrollments.where(automation_rule: reschedule_rule)).to be_empty
+      end
+    end
   end
 
   describe '#cancel_touches' do

@@ -212,10 +212,23 @@ class AutomationRule < ApplicationRecord
 
       action_id = action['action_id'].presence || existing_actions[index].to_h.deep_stringify_keys['action_id'].presence
       action_id = SecureRandom.uuid if action_id.blank? || seen_action_ids.include?(action_id)
-      action['action_id'] = action_id
       seen_action_ids << action_id
-      action
+      normalized_touch_action(action, action_id)
     end
+  end
+
+  def normalized_touch_action(action, action_id)
+    action['action_id'] = action_id
+    action['action_params'] = without_relative_schedule_override(action['action_params']) if action.key?('action_params')
+    action
+  end
+
+  # The touch editor has no manual-time control, so the flag can only be a leftover of a legacy action: it is dropped
+  # from a relative timing instead of rejecting a save the user cannot fix (AutomationRules::TouchScheduleOverride).
+  def without_relative_schedule_override(action_params)
+    return AutomationRules::TouchScheduleOverride.without_relative_override(action_params) unless action_params.is_a?(Array)
+
+    action_params.map { |params| AutomationRules::TouchScheduleOverride.without_relative_override(params) }
   end
 
   def actions_in_database

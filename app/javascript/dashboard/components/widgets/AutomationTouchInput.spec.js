@@ -507,4 +507,101 @@ describe('AutomationTouchInput', () => {
       wrapper.vm.relativeAnchorOptions.map(option => option.value)
     ).not.toContain('appointment.starts_at');
   });
+
+  it('drops a leftover manual-time flag of a legacy action once the touch is edited', () => {
+    const wrapper = mountComponent({
+      eventName: 'appointment_rescheduled',
+      modelValue: [
+        {
+          body: 'Запись перенесена',
+          delay_minutes: 0,
+          manual_schedule_override: true,
+        },
+      ],
+    });
+
+    wrapper.vm.body = 'Ваша запись перенесена';
+
+    const payload = wrapper.emitted('update:modelValue').at(-1)[0];
+    expect(payload).toMatchObject({
+      timing_mode: 'relative',
+      relative_anchor: 'touch.created_at',
+      relative_offset_seconds: 60,
+    });
+    expect(payload).not.toHaveProperty('manual_schedule_override');
+    expect(payload).not.toHaveProperty('delay_minutes');
+  });
+
+  it('keeps the late-import skip in the touch metadata of booking notices only', async () => {
+    const wrapper = mountComponent({
+      eventName: 'appointment_created',
+      modelValue: { body: 'Вы записаны', metadata: { note: 'keep' } },
+    });
+
+    expect(wrapper.vm.canSkipLateImport).toBe(true);
+    expect(wrapper.vm.skipIfImportedLate).toBe(false);
+
+    wrapper.vm.skipIfImportedLate = true;
+    let payload = await applyLastPayload(wrapper);
+    expect(payload.metadata).toEqual({
+      note: 'keep',
+      skip_if_imported_late: true,
+    });
+    expect(wrapper.vm.skipIfImportedLate).toBe(true);
+
+    wrapper.vm.skipIfImportedLate = false;
+    payload = await applyLastPayload(wrapper);
+    expect(payload.metadata).toEqual({ note: 'keep' });
+
+    const rescheduleWrapper = mountComponent({
+      eventName: 'appointment_rescheduled',
+      modelValue: {
+        body: 'Запись перенесена',
+        metadata: { skip_if_imported_late: true },
+      },
+    });
+
+    expect(rescheduleWrapper.vm.canSkipLateImport).toBe(false);
+    rescheduleWrapper.vm.body = 'Ваша запись перенесена';
+    expect(
+      rescheduleWrapper.emitted('update:modelValue').at(-1)[0].metadata
+    ).toEqual({});
+  });
+
+  it('offers the late-import skip only for a booking notice counted from the event', () => {
+    const optedIn = {
+      body: 'Вы записаны',
+      metadata: { skip_if_imported_late: true },
+    };
+    const mountBooking = params =>
+      mountComponent({
+        eventName: 'appointment_created',
+        modelValue: { ...optedIn, ...params },
+      });
+
+    expect(
+      mountBooking({ relative_anchor: 'appointment.created_at' }).vm
+        .canSkipLateImport
+    ).toBe(true);
+
+    const visitTimed = mountBooking({
+      relative_anchor: 'appointment.starts_at',
+      relative_offset_seconds: -7200,
+    });
+    expect(visitTimed.vm.canSkipLateImport).toBe(false);
+    visitTimed.vm.body = 'Ждём вас через 2 часа';
+    expect(visitTimed.emitted('update:modelValue').at(-1)[0].metadata).toEqual(
+      {}
+    );
+
+    const fixedTime = mountBooking({
+      timing_mode: 'absolute',
+      scheduled_at: '2026-10-25T10:00:00.000Z',
+    });
+    expect(fixedTime.vm.canSkipLateImport).toBe(false);
+    fixedTime.vm.body = 'Вы записаны на приём';
+    expect(fixedTime.emitted('update:modelValue').at(-1)[0].metadata).toEqual(
+      {}
+    );
+  });
 });
