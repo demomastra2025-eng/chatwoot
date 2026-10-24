@@ -979,6 +979,34 @@ RSpec.describe 'Communication Threads API', type: :request do
   end
 
   describe 'GET /api/v1/accounts/:account_id/communication_threads/:id' do
+    it 'returns the earliest snooze time among the snoozed channels' do
+      contact = create(:contact, account: account)
+      first = create(:conversation, account: account, contact: contact)
+      second = create(:conversation, account: account, contact: contact)
+      [first, second].each { |conversation| create(:inbox_member, user: agent, inbox: conversation.inbox) }
+      woken_first = 1.day.from_now.change(usec: 0)
+      first.update!(status: :snoozed, snoozed_until: 3.days.from_now.change(usec: 0))
+      second.update!(status: :snoozed, snoozed_until: woken_first)
+      thread = first.reload.communication_thread
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}", headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(Time.zone.parse(response.parsed_body['snoozed_until'])).to eq(woken_first)
+    end
+
+    it 'returns no snooze time for a thread without snoozed channels' do
+      conversation = create(:conversation, account: account)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      thread = conversation.reload.communication_thread
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}", headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body).to have_key('snoozed_until')
+      expect(response.parsed_body['snoozed_until']).to be_nil
+    end
+
     it 'returns CRM deal stage accents on the communication thread detail payload' do
       account.enable_features!('crm_deals')
       contact = create(:contact, account: account)

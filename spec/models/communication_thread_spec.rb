@@ -18,6 +18,36 @@ RSpec.describe CommunicationThread do
     it { is_expected.to validate_presence_of(:contact_id) }
   end
 
+  describe '.snoozed_until_for' do
+    let(:account) { create(:account) }
+    let(:contact) { create(:contact, account: account) }
+
+    def conversation_with(status:, snoozed_until: nil)
+      conversation = create(:conversation, account: account, contact: contact, status: :open)
+      conversation.update!(status: status, snoozed_until: snoozed_until)
+      conversation
+    end
+
+    it 'returns the earliest wake-up time among the snoozed channels' do
+      later = conversation_with(status: :snoozed, snoozed_until: 3.days.from_now.change(usec: 0))
+      earlier = conversation_with(status: :snoozed, snoozed_until: 1.day.from_now.change(usec: 0))
+      open_one = conversation_with(status: :open)
+
+      expect(described_class.snoozed_until_for([later, earlier, open_one])).to eq(earlier.snoozed_until)
+    end
+
+    it 'ignores channels snoozed until the next reply and channels that are not snoozed' do
+      next_reply = conversation_with(status: :snoozed)
+      open_one = conversation_with(status: :open)
+
+      expect(described_class.snoozed_until_for([next_reply, open_one])).to be_nil
+    end
+
+    it 'returns nil without conversations' do
+      expect(described_class.snoozed_until_for([])).to be_nil
+    end
+  end
+
   describe 'display id' do
     it 'assigns a durable display id on create' do
       thread = create(:communication_thread)

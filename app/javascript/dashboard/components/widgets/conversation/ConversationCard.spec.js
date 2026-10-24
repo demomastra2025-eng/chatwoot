@@ -111,6 +111,41 @@ describe('ConversationCard', () => {
     };
   });
 
+  it('shows when a snoozed person wakes up', () => {
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        status: 'snoozed',
+        snoozed_until: '2026-10-30T10:00:00.000Z',
+      },
+    });
+
+    expect(
+      wrapper.find('[data-test-id="conversation-snoozed-until"]').text()
+    ).toContain('CONVERSATION.CARD_CONTEXT_MENU.SNOOZED_UNTIL_BADGE');
+  });
+
+  it('does not show a snooze time without a date or for a chat that is not snoozed', () => {
+    const snoozedWithoutDate = mountComponent({
+      chat: { ...baseChat, status: 'snoozed', snoozed_until: null },
+    });
+    const openWithDate = mountComponent({
+      chat: {
+        ...baseChat,
+        status: 'open',
+        snoozed_until: '2026-10-30T10:00:00.000Z',
+      },
+    });
+
+    expect(
+      snoozedWithoutDate.find('[data-test-id="conversation-snoozed-until"]')
+        .exists()
+    ).toBe(false);
+    expect(
+      openWithDate.find('[data-test-id="conversation-snoozed-until"]').exists()
+    ).toBe(false);
+  });
+
   it('does not route a child conversation through communication_threads just because the list is in thread mode', async () => {
     const wrapper = mountComponent({
       chat: {

@@ -90,5 +90,6 @@ json.agent_last_seen_at thread_agent_last_seen_at
 json.assignee_last_seen_at thread_assignee_last_seen_at
 json.unread_count linked_conversations.sum { |conversation| (@channel_unread_counts_by_conversation_id || {}).fetch(conversation.id, 0) }
 json.priority communication_thread.priority
+json.snoozed_until CommunicationThread.snoozed_until_for(linked_conversations)
 json.assignee_id communication_thread.assignee_id
 json.team_id communication_thread.team_id

@@ -184,6 +184,7 @@
       "ALL_SELECTED_WARNING": "All channels are selected. The thread will disappear after deletion."
     },
     "CARD_CONTEXT_MENU": {
+      "SNOOZED_UNTIL_BADGE": "{time} дейін кейінге қалдырылған",
       "PENDING": "Hand over to AI agent",
       "RESOLVED": "Mark as resolved",
       "MARK_AS_UNREAD": "Mark as unread",
