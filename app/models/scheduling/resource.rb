@@ -42,6 +42,7 @@ class Scheduling::Resource < ApplicationRecord
   has_many :appointments, class_name: 'Scheduling::Appointment', dependent: :destroy_async, inverse_of: :resource
   has_many :break_rules, class_name: 'Scheduling::BreakRule', dependent: :destroy_async, inverse_of: :resource
   has_many :service_prices, class_name: 'Scheduling::ServicePrice', dependent: :destroy_async, inverse_of: :resource
+  has_many :service_stats, class_name: 'Scheduling::ResourceServiceStat', dependent: :destroy_async, inverse_of: :resource
   has_many :time_offs, class_name: 'Scheduling::TimeOff', dependent: :destroy_async, inverse_of: :resource
   has_many :work_rules, class_name: 'Scheduling::WorkRule', dependent: :destroy_async, inverse_of: :resource
   has_many :workday_overrides, class_name: 'Scheduling::WorkdayOverride', dependent: :destroy_async, inverse_of: :resource

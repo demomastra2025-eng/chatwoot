@@ -28,6 +28,43 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     expect(staff_appointment.reload.source).to eq('manual')
   end
 
+  describe 'the length of a booking that names a service and no length' do
+    let(:contact) { create(:contact, account: account) }
+    let(:starts_at) { 2.days.from_now.in_time_zone(resource.timezone).change(hour: 10, min: 0) }
+
+    def book(service)
+      create(:scheduling_work_rule, resource: resource, weekday: starts_at.wday)
+      params = { resource_id: resource.id, contact_id: contact.id, starts_at: starts_at, service_id: service.id }
+      described_class.new(account: account, params: params).perform.reload
+    end
+
+    before do
+      account.enable_features!('scheduling')
+      resource.update!(slot_duration_min: 15)
+    end
+
+    it 'is the median length of the visits at the specialist for a MedElement service, not its default 30 minutes' do
+      service = create(:scheduling_service, account: account, duration_min: 30, base_price: 9000,
+                                            custom_attributes: { 'medelement_nomenclature_code' => 'U1' })
+      create(:scheduling_resource_service_stat, account: account, resource: resource, service: service, median_duration_min: 10)
+
+      expect(book(service)).to have_attributes(duration_min: 15, ends_at: starts_at + 15.minutes)
+    end
+
+    it 'is the slot of the specialist for a MedElement service with no history at the specialist' do
+      service = create(:scheduling_service, account: account, duration_min: 30, base_price: 9000,
+                                            custom_attributes: { 'medelement_nomenclature_code' => 'U1' })
+
+      expect(book(service)).to have_attributes(duration_min: 15)
+    end
+
+    it 'stays the own length of a local service' do
+      service = create(:scheduling_service, account: account, duration_min: 40, base_price: 9000)
+
+      expect(book(service)).to have_attributes(duration_min: 40)
+    end
+  end
+
   # Cancellation guards below belong to the removal flow (remove_reception_on_cancel on). The local-only default
   # is proven in spec/services/integrations/medelement/local_status_provider_boundary_spec.rb.
   def medelement_hook_settings(write_enabled: false)

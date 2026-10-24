@@ -7,9 +7,10 @@ class Scheduling::AvailableSlotSearchService
 
   class MissingServiceLinkError < ArgumentError; end
 
-  # A search for a service with no specialist named, when no available specialist is recorded for that service. Searching every
-  # specialist instead would offer the slot of a doctor who does not perform the service, so the caller must choose the
-  # specialist first (search_scheduling_resources) and search again with resource_ids.
+  # A search for a service with no specialist named, when no available specialist is recorded for that service (neither a price
+  # link nor a pair of the visit history, see Scheduling::ResourceServiceStat). Searching every specialist instead would offer the
+  # slot of a doctor who does not perform the service, so the caller must choose the specialist first (search_scheduling_resources)
+  # and search again with resource_ids.
   class ResourceSelectionRequiredError < ArgumentError; end
   RESOURCE_SELECTION_REQUIRED_ERROR = 'No specialist is recorded for this service, so the search needs resource_ids'.freeze
 
@@ -60,7 +61,7 @@ class Scheduling::AvailableSlotSearchService
         from: @from.iso8601,
         to: @to.iso8601
       },
-      service: service.present? ? Scheduling::PayloadBuilder.service(service, prices: []) : nil,
+      service: service.present? ? Scheduling::VisitDuration.service_payload(service, duration_min: top_level_duration_min) : nil,
       duration_min: top_level_duration_min,
       resources: resources.map { |resource| Scheduling::PayloadBuilder.resource(resource) },
       slots: normalized_slots,
@@ -87,7 +88,7 @@ class Scheduling::AvailableSlotSearchService
       # Requested specialists are searched with the service whether or not a price link records it: a link is never required.
       scope = @account.scheduling_resources.available_for_scheduling
       scope = scope.where(id: @resource_ids) if @resource_ids.present?
-      scope = scope.where(id: active_price_links.select(:resource_id)) if service.present? && @resource_ids.blank?
+      scope = scope.where(id: service_resource_ids) if service.present? && @resource_ids.blank?
       resolved = scope.ordered.to_a
 
       if @resource_ids.present?
@@ -118,6 +119,14 @@ class Scheduling::AvailableSlotSearchService
 
   def active_price_links
     Scheduling::ServicePrice.active.where(account_id: @account.id, service_id: service.id)
+  end
+
+  # The specialists of a service searched without a specialist named: the ones with an active price link and the ones whose visit
+  # history carries the service (an auto or confirmed pair). A disabled or stale pair does not count.
+  def service_resource_ids
+    history = Scheduling::ResourceServiceStat.usable.where(account_id: @account.id, service_id: service.id)
+    Scheduling::Resource.where(id: active_price_links.select(:resource_id)).or(Scheduling::Resource.where(id: history.select(:resource_id)))
+                        .select(:id)
   end
 
   # With a service and no specialist named, the specialists are the ones recorded for the service. When none of them can be
@@ -163,7 +172,7 @@ class Scheduling::AvailableSlotSearchService
       from: from,
       to: to,
       service: service,
-      duration_min: @requested_duration_min,
+      duration_min: visit_duration(resource),
       limit: @limit,
       **policy.availability_options(provider_working_windows),
       uncapped: uncapped
@@ -189,9 +198,7 @@ class Scheduling::AvailableSlotSearchService
   # a slot exists only when the whole visit fits (starting_in_window then drops the starts at or after `to`). The range never
   # grows past the days the schedule readers accept, and never ends before `to`.
   def query_to(resource)
-    visit_min = Scheduling::ResourceAvailabilityQueryService.duration_for(resource: resource, service: service,
-                                                                          duration_min: @requested_duration_min)
-    visit = [visit_min, Scheduling::Constants::MIN_DURATION_MINUTES].max.minutes
+    visit = [visit_duration(resource), Scheduling::Constants::MIN_DURATION_MINUTES].max.minutes
     horizon = @from + MAX_RANGE_DAYS.days
     horizon > @to ? [@to + visit, horizon].min : @to
   end
@@ -212,7 +219,7 @@ class Scheduling::AvailableSlotSearchService
 
     result = Scheduling::ScheduleDayAvailabilityService.new(
       resource: resource, from: range.first, to: range.last,
-      service: service, duration_min: @requested_duration_min
+      service: service, duration_min: visit_duration(resource)
     ).perform
     record_availability(
       resource_id: resource.id,
@@ -325,10 +332,23 @@ class Scheduling::AvailableSlotSearchService
     provider_related?(resource) && !medelement_resource?(resource)
   end
 
-  def top_level_duration_min
-    return service.duration_min if service.present?
+  # The length of the visit at this specialist: the requested minutes, else the service's, else the specialist's slot. For a MedElement
+  # service it is the median length of the specialist's visits with it (see Scheduling::VisitDuration).
+  def visit_duration(resource)
+    Scheduling::ResourceAvailabilityQueryService.duration_for(resource: resource, service: service, duration_min: @requested_duration_min,
+                                                              stats: duration_stats)
+  end
 
-    @requested_duration_min.presence
+  def duration_stats
+    @duration_stats ||= Scheduling::VisitDuration.stats_for(service: service, resource_ids: resources.map(&:id))
+  end
+
+  # One length for the whole answer, when the searched specialists share it; otherwise none (each slot carries its own duration_min).
+  def top_level_duration_min
+    return @requested_duration_min.presence if service.blank?
+    return service.duration_min if @snapshots
+
+    resources.map { |resource| visit_duration(resource) }.uniq.then { |durations| durations.first if durations.one? }
   end
 
   def normalize_limit(value)

@@ -32,6 +32,7 @@ class Scheduling::Service < ApplicationRecord
 
   has_many :appointments, class_name: 'Scheduling::Appointment', dependent: :nullify, inverse_of: :service
   has_many :prices, class_name: 'Scheduling::ServicePrice', dependent: :destroy, inverse_of: :service
+  has_many :resource_stats, class_name: 'Scheduling::ResourceServiceStat', dependent: :destroy_async, inverse_of: :service
 
   validates :name, presence: true
   validates :base_price, numericality: { greater_than_or_equal_to: 0, only_integer: true }
@@ -42,4 +43,10 @@ class Scheduling::Service < ApplicationRecord
 
   scope :ordered, -> { order(:name, :id) }
   scope :active, -> { where(active: true) }
+
+  # A service imported from MedElement. Its duration_min is the column default, not a real length (MedElement gives none): the real
+  # length comes from the visit history (see Scheduling::VisitDuration).
+  def medelement_service?
+    custom_attributes.to_h['medelement_nomenclature_code'].to_s.strip.present?
+  end
 end

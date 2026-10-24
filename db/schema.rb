@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_20_051000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_24_120000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -3216,6 +3216,22 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_20_051000) do
     t.index ["account_id"], name: "index_scheduling_products_on_account_id"
   end
 
+  create_table "scheduling_resource_service_stats", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "resource_id", null: false
+    t.bigint "service_id", null: false
+    t.integer "receptions_count", default: 0, null: false
+    t.datetime "last_seen_at"
+    t.integer "median_duration_min"
+    t.string "source", default: "history", null: false
+    t.string "status", default: "auto", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_scheduling_resource_service_stats_on_account_id"
+    t.index ["resource_id", "service_id"], name: "idx_scheduling_resource_service_stats_on_resource_service", unique: true
+    t.index ["service_id", "status"], name: "idx_scheduling_resource_service_stats_on_service_status"
+  end
+
   create_table "scheduling_resources", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "user_id"
@@ -4260,6 +4276,9 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_20_051000) do
   add_foreign_key "scheduling_payments", "scheduling_appointments", column: "appointment_id"
   add_foreign_key "scheduling_payments", "users", column: "recorded_by_id"
   add_foreign_key "scheduling_products", "accounts"
+  add_foreign_key "scheduling_resource_service_stats", "accounts"
+  add_foreign_key "scheduling_resource_service_stats", "scheduling_resources", column: "resource_id"
+  add_foreign_key "scheduling_resource_service_stats", "scheduling_services", column: "service_id"
   add_foreign_key "scheduling_resources", "accounts"
   add_foreign_key "scheduling_resources", "users"
   add_foreign_key "scheduling_service_prices", "accounts"

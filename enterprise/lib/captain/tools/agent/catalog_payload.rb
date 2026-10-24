@@ -16,13 +16,15 @@ module Captain::Tools::Agent::CatalogPayload
   module_function
 
   # One service: id, name, base price, duration and the specialists who offer it as "id name" (with their own price in brackets only
-  # when it differs from the base price). components: the services of a package, each one as { id, name, price }.
+  # when it differs from the base price). components: the services of a package, each one as { id, name, price }. A MedElement
+  # service shows no duration: its duration_min is the column default, and the real length depends on the specialist (a slot search
+  # answers it).
   def service(service, links, components: [])
     {
       id: service.id,
       name: service.name.to_s.squish,
       price: service.base_price,
-      duration_min: service.duration_min.presence,
+      duration_min: (service.duration_min.presence unless service.medelement_service?),
       active: (false unless service.active),
       doctors: doctor_entries(links, service.base_price).presence,
       component_services: components.presence,

@@ -23,6 +23,7 @@ import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/Sched
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import ProviderScheduleCard from './ProviderScheduleCard.vue';
+import ResourceServiceStatsList from './ResourceServiceStatsList.vue';
 import {
   DEFAULT_WORKSPACE_TIMEZONE,
   MAX_DURATION_MINUTES,
@@ -1109,6 +1110,12 @@ onMounted(async () => {
             </div>
           </div>
         </SchedulingFormFieldGroup>
+
+        <ResourceServiceStatsList
+          v-if="editingImportedResource && resourceForm.id"
+          :resource-id="resourceForm.id"
+          class="border-t border-n-weak pt-6"
+        />
 
         <SchedulingFormFieldGroup
           v-if="!editingImportedResource"

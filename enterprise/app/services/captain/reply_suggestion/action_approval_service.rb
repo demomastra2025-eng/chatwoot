@@ -429,12 +429,14 @@ class Captain::ReplySuggestion::ActionApprovalService
                        starts_at.to_s, field_name: 'starts_at'
                      )
                    end
+      # The same length slot search offers and the booking writes (Scheduling::VisitDuration): the service's own length, or for a
+      # MedElement service the history median in whole slots of the specialist. service.duration_min is not it for a MedElement
+      # service, it is the column default.
       resolved_duration = if duration_min.present?
                             Scheduling::IntegerNumericNormalizer.normalize_or_zero(duration_min, field_name: :duration_min)
-                          elsif service&.duration_min.to_i.positive?
-                            service.duration_min.to_i
                           else
-                            [resource.slot_duration_min.to_i, Scheduling::Constants::MIN_DURATION_MINUTES].max
+                            visit_minutes = Scheduling::VisitDuration.minutes(resource: resource, service: service).to_i
+                            visit_minutes.positive? ? visit_minutes : Scheduling::VisitDuration.slot_minutes(resource)
                           end
       end_time = if ends_at.present?
                    if ends_at.is_a?(Time) || ends_at.is_a?(ActiveSupport::TimeWithZone)
