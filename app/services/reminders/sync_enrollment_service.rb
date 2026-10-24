@@ -10,6 +10,8 @@ class Reminders::SyncEnrollmentService
       cancel_terminal_enrollments!
       return
     end
+    # A MedElement reconciliation of a past visit may close touches (above) but never refreshes the schedule of a running one.
+    return if Current.medelement_reconciliation
 
     enrollment_scope.where(status: %w[active paused]).find_each do |enrollment|
       enrollment.with_lock do

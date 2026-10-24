@@ -225,8 +225,12 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
     end
 
     it 'lets the full-sweep backoff step change the schedule' do
-      Integrations::Medelement::SyncCursor.create!(hook: hook, name: backoff_name, current_interval_seconds: 120, last_success_at: Time.current)
-      Integrations::Medelement::SyncCursor.create!(hook: hook, name: 'receptions_delta', value: 1.minute.ago, last_poll_at: 30.seconds.ago, last_success_at: 30.seconds.ago)
+      Integrations::Medelement::SyncCursor.create!(
+        hook: hook, name: backoff_name, current_interval_seconds: 120, last_success_at: Time.current
+      )
+      Integrations::Medelement::SyncCursor.create!(
+        hook: hook, name: 'receptions_delta', value: 1.minute.ago, last_poll_at: 30.seconds.ago, last_success_at: 30.seconds.ago
+      )
       expect(Sidekiq::Cron::Job).to receive(:create).with(
         hash_including(name: "integrations_medelement_hook_#{hook.id}_realtime", cron: '*/4 * * * * Asia/Almaty')
       ).and_return(true)

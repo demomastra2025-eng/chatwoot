@@ -17,9 +17,10 @@ module Current
     Current.suppress_runtime_events = previous_value
   end
 
-  # A past MedElement visit whose status is being corrected from the provider (StaleStatusReconciler). Scheduling::Appointment
-  # reads this flag when its update commits and then dispatches no appointment events and schedules no touches: no automation
-  # rule, CRM re-evaluation or reminder runs for it. It only holds inside the block, so a normal sync is never affected.
+  # A past MedElement visit whose status is being corrected from the provider (StaleStatusReconciler). While it is set,
+  # Dispatcher holds back appointment events and Reminders::SyncEnrollmentService only closes touches, never refreshes
+  # them: no automation rule, CRM re-evaluation or reminder reacts. It only holds inside the block, so a normal sync is
+  # never affected.
   def self.with_medelement_reconciliation
     previous_value = Current.medelement_reconciliation
     Current.medelement_reconciliation = true
