@@ -110,7 +110,7 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     end
   end
 
-  context 'before the grid of the doctor is verified' do
+  context 'when the grid of the doctor is not verified yet' do
     let(:verified) { false }
 
     it 'books a start inside a cell, as a doctor booked on 10-minute boundaries is booked' do

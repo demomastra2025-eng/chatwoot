@@ -134,7 +134,7 @@ RSpec.describe Scheduling::SlotGridDetector do
       described_class.run(scope: scope, apply: true)
       stored = resource.reload.custom_attributes
 
-      described_class.run(scope: scope, apply: true, now: Time.current + 1.hour)
+      described_class.run(scope: scope, apply: true, now: 1.hour.from_now)
 
       expect(resource.reload.custom_attributes).to eq(stored)
     end
