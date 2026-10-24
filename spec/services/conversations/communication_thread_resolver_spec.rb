@@ -221,17 +221,85 @@ RSpec.describe Conversations::CommunicationThreadResolver do
       expect(thread.unread_count).to eq(2)
     end
 
-    it 'uses the latest active linked conversation status instead of always preferring open' do
-      contact = create(:contact, account: account)
-      open_conversation = create(:conversation, account: account, contact: contact, status: :open)
-      pending_conversation = create(:conversation, account: account, contact: contact, status: :pending)
+    # One person, one status: the most urgent status of the channels wins (open > pending > snoozed > resolved), whichever
+    # conversation was saved last. The merge of the open dialogs is switched off, so every combination can be built.
+    describe 'the one status of a person' do
+      statuses_by_combination = [
+        [%w[open resolved], 'open'],
+        [%w[open snoozed], 'open'],
+        [%w[open pending], 'open'],
+        [%w[open pending snoozed resolved], 'open'],
+        [%w[pending snoozed], 'pending'],
+        [%w[pending resolved], 'pending'],
+        [%w[snoozed resolved], 'snoozed'],
+        [%w[snoozed snoozed], 'snoozed'],
+        [%w[resolved resolved], 'resolved'],
+        [%w[open], 'open'],
+        [%w[snoozed], 'snoozed'],
+        [%w[resolved], 'resolved']
+      ]
 
-      open_conversation.update_column(:updated_at, 10.minutes.ago)
-      pending_conversation.update_column(:updated_at, Time.current)
+      def person_channel(contact)
+        inbox = create(:inbox, account: account)
+        create(:conversation, account: account, contact: contact, inbox: inbox,
+                              contact_inbox: create(:contact_inbox, contact: contact, inbox: inbox), status: :resolved)
+      end
 
-      thread = described_class.new(conversation: pending_conversation.reload).perform
+      def saved_minutes_ago(status, index, urgent_saved_last)
+        urgencies = Conversations::CommunicationThreadResolver::STATUS_URGENCY
+        urgency = urgencies.index(status)
+        ((urgent_saved_last ? urgency : urgencies.size - urgency) * 10) + index
+      end
 
-      expect(thread.status).to eq('pending')
+      # urgent_saved_last: true saves the most urgent channel last (the old rule would pick it), false saves it first (the
+      # old rule would pick a quieter channel). Either way the person must get the most urgent status. The channels are built
+      # resolved and moved afterwards, so the merge of the open dialogs does not see them one by one.
+      def build_person(statuses, urgent_saved_last:)
+        contact = create(:contact, account: account)
+        conversations = statuses.map { person_channel(contact) }
+        conversations.zip(statuses).each_with_index do |(conversation, status), index|
+          conversation.update_columns(status: Conversation.statuses.fetch(status), # rubocop:disable Rails/SkipsModelValidations
+                                      updated_at: saved_minutes_ago(status, index, urgent_saved_last).minutes.ago)
+        end
+        described_class.new(conversation: conversations.first.reload, enforce_single_open_dialog: false).perform
+      end
+
+      saved_orders = [true, false]
+
+      statuses_by_combination.each do |statuses, expected|
+        saved_orders.each do |urgent_saved_last|
+          it "gives #{statuses.join(' + ')} the status #{expected} (most urgent channel saved #{urgent_saved_last ? 'last' : 'first'})" do
+            thread = build_person(statuses, urgent_saved_last: urgent_saved_last)
+
+            expect(thread.status).to eq(expected)
+          end
+        end
+      end
+
+      it 'does not repaint the person when the priority of a quiet channel changes', :aggregate_failures do
+        thread = build_person(%w[open snoozed resolved], urgent_saved_last: false)
+        quiet_channel = thread.conversations.find(&:snoozed?)
+        expect(thread.status).to eq('open')
+
+        quiet_channel.update!(priority: :urgent)
+
+        expect(quiet_channel.reload.communication_thread.status).to eq('open')
+        expect(thread.reload).to have_attributes(status: 'open', priority: 'urgent')
+      end
+
+      it 'wakes the whole person through the conversation that receives a message', :aggregate_failures do
+        thread = build_person(%w[snoozed snoozed], urgent_saved_last: false)
+        woken, sleeping = thread.conversations.order(:id).to_a
+        expect(thread.status).to eq('snoozed')
+
+        create(:message, conversation: woken, account: account, inbox: woken.inbox, message_type: :incoming, sender: thread.contact,
+                         content: 'Are you there?')
+
+        expect(woken.reload).to be_open
+        expect(sleeping.reload).to be_resolved
+        expect(sleeping.status_transitions.pluck(:to_status, :source)).to eq([%w[resolved system]])
+        expect(thread.reload.status).to eq('open')
+      end
     end
   end
 end

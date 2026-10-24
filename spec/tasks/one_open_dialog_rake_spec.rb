@@ -161,6 +161,36 @@ RSpec.describe 'onelink:one_open_dialog_per_thread rake task' do # rubocop:disab
       expect(voice.reload).to be_resolved
     end
 
+    # The old person update snoozed every channel of a person, the ones resolved long ago too: their timers would open all of
+    # them together. One stays snoozed (the one a person is reached in, with its own timer); next to an open dialog none stays.
+    it 'leaves one conversation of a person whose channels were snoozed together, silently', :aggregate_failures do
+      until_time = 2.days.from_now
+      snoozed_person = create(:contact, account: account, phone_number: '+77015550001')
+      sleeping = [[old_inbox, 90_000], [current_inbox, 20], [voice_inbox, 60_000]].map do |inbox, minutes_ago|
+        open_dialog(inbox, minutes_ago: minutes_ago, contact: snoozed_person)
+      end
+      open_person = create(:contact, account: account, phone_number: '+77015550002')
+      open_chat = open_dialog(current_inbox, minutes_ago: 30, contact: open_person)
+      open_pending_dialogs!
+      leftover = open_dialog(old_inbox, minutes_ago: 10, contact: open_person)
+      snoozed_ids = sleeping.map(&:id) + [leftover.id]
+      Conversation.where(id: snoozed_ids).update_all(status: Conversation.statuses.fetch('snoozed'), snoozed_until: until_time) # rubocop:disable Rails/SkipsModelValidations
+      dispatcher = Rails.configuration.dispatcher
+      allow(dispatcher).to receive(:dispatch).and_call_original
+
+      dry_run = JSON.parse(run_task(account.id.to_s, 'true').lines.last)
+      expect(dry_run).to include('threads' => 4, 'conversations_to_resolve' => 6)
+
+      run_task(account.id.to_s, 'false')
+
+      expect(sleeping.map { |conversation| conversation.reload.status }).to eq(%w[resolved snoozed resolved])
+      expect(sleeping.second.snoozed_until).to be_within(1.minute).of(until_time)
+      expect([open_chat, leftover].map { |conversation| conversation.reload.status }).to eq(%w[open resolved])
+      expect(dispatcher).not_to have_received(:dispatch).with(Events::Types::CONVERSATION_STATUS_CHANGED, anything, anything)
+      expect(CommunicationThread.find_by!(account: account, contact: snoozed_person).status).to eq('snoozed')
+      expect(JSON.parse(run_task(account.id.to_s, 'true').lines.last)).to include('threads' => 0)
+    end
+
     it 'does not resolve anything when the backup cannot be written', :aggregate_failures do
       file_in_the_way = File.join(backup_dir, 'not-a-directory')
       File.write(file_in_the_way, 'x')

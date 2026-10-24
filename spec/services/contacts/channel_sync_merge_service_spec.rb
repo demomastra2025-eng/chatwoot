@@ -50,6 +50,97 @@ RSpec.describe Contacts::ChannelSyncMergeService do
       expect(deal.reload.originating_communication_thread_id).to eq(target_thread.id)
     end
 
+    # One person, one status: the status tabs read only the status of the thread, so the merged thread gets the most urgent
+    # status of the channels it has now, and one open dialog, at once (not at the next message).
+    context 'when communication threads are on' do
+      let(:agent) { create(:user, account: account, role: :administrator) }
+      let(:wa_inbox) { create(:inbox, account: account) }
+      let(:tg_inbox) { create(:inbox, account: account) }
+
+      before do
+        account.enable_features!('communication_threads')
+        Current.account = account
+      end
+
+      after { Current.reset }
+
+      def channel(contact, inbox, status, minutes_ago: 5)
+        create(:conversation, account: account, contact: contact, inbox: inbox, status: :resolved,
+                              contact_inbox: create(:contact_inbox, contact: contact, inbox: inbox)).tap do |conversation|
+          conversation.update_columns(status: Conversation.statuses.fetch(status), last_activity_at: minutes_ago.minutes.ago) # rubocop:disable Rails/SkipsModelValidations
+          Conversations::CommunicationThreadResolver.new(conversation: conversation.reload, enforce_single_open_dialog: false).perform
+        end
+      end
+
+      def tab(status)
+        CommunicationThreadFinder.new(agent, { status: status, assignee_type: 'all' }).perform
+      end
+
+      def merge_source_into_target
+        ActiveRecord::Base.transaction do
+          described_class.new(source_contact: source_contact, target_contact: target_contact) { target_contact.name }.perform
+        end
+      end
+
+      it 'moves a person who is waiting in the merged-in channel from resolved to open', :aggregate_failures do
+        channel(target_contact, wa_inbox, :resolved)
+        waiting = channel(source_contact, tg_inbox, :open)
+        target_thread = CommunicationThread.find_by!(account: account, contact: target_contact)
+        expect(tab('open')[:count][:all_count]).to eq(1)
+        expect(tab('resolved')[:communication_threads].map(&:id)).to eq([target_thread.id])
+
+        expect(merge_source_into_target).to be(true)
+
+        expect(target_thread.reload.conversations).to include(waiting)
+        expect(target_thread.status).to eq('open')
+        expect(tab('open')[:communication_threads].map(&:id)).to eq([target_thread.id])
+        expect(tab('open')[:count][:all_count]).to eq(1)
+        expect(tab('resolved')[:communication_threads]).to be_empty
+        expect(tab('resolved')[:count][:all_count]).to eq(0)
+      end
+
+      status_matrix = [%w[snoozed open open], %w[resolved snoozed snoozed], %w[resolved pending pending], %w[snoozed pending pending]]
+      tab_statuses = %w[open pending snoozed resolved]
+      status_matrix.each do |target_status, source_status, person_status|
+        it "gives a #{target_status} target and a #{source_status} source the status #{person_status}", :aggregate_failures do
+          channel(target_contact, wa_inbox, target_status)
+          channel(source_contact, tg_inbox, source_status)
+
+          expect(merge_source_into_target).to be(true)
+
+          thread = CommunicationThread.find_by!(account: account, contact: target_contact)
+          expect(thread.status).to eq(person_status)
+          expect(tab(person_status)[:communication_threads].map(&:id)).to eq([thread.id])
+          (tab_statuses - [person_status]).each do |status|
+            expect(tab(status)[:communication_threads]).to be_empty, "tab #{status}"
+          end
+        end
+      end
+
+      it 'keeps one open dialog when both contacts brought an open one', :aggregate_failures do
+        older = channel(target_contact, wa_inbox, :open, minutes_ago: 120)
+        newer = channel(source_contact, tg_inbox, :open, minutes_ago: 1)
+
+        expect(merge_source_into_target).to be(true)
+
+        thread = CommunicationThread.find_by!(account: account, contact: target_contact)
+        expect(thread.conversations.where(status: %w[open pending]).pluck(:id)).to eq([newer.id])
+        expect(older.reload).to be_resolved
+        expect(thread.reload.status).to eq('open')
+      end
+
+      it 'does not touch the status of an account without communication threads', :aggregate_failures do
+        channel(target_contact, wa_inbox, :resolved)
+        channel(source_contact, tg_inbox, :open)
+        account.disable_features!('communication_threads')
+        thread = CommunicationThread.find_by!(account: account, contact: target_contact)
+
+        expect(merge_source_into_target).to be(true)
+
+        expect(thread.reload.status).to eq('resolved')
+      end
+    end
+
     it 'reassigns CRM deal links, telephony call sessions, and consolidates duplicate same-inbox dialogs', :aggregate_failures do
       inbox = create(:inbox, account: account)
       target_ci = create(:contact_inbox, contact: target_contact, inbox: inbox)

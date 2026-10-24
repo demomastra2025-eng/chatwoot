@@ -17,6 +17,7 @@ class ContactMergeAction
       merge_communication_threads
       merge_messages
       merge_contact_inboxes
+      refresh_communication_thread_status
       merge_contact_channel_profiles
       merge_crm_deal_contacts
       merge_contact_notes
@@ -50,10 +51,20 @@ class ContactMergeAction
   end
 
   def merge_communication_threads
-    Contacts::CommunicationThreadMergeService.new(
+    communication_thread_merge.perform
+  end
+
+  # After the contact inboxes have moved: the thread resolver skips a conversation whose contact inbox belongs to another
+  # contact. The merged person gets one status again (the most urgent channel) and one open dialog.
+  def refresh_communication_thread_status
+    communication_thread_merge.refresh_status!
+  end
+
+  def communication_thread_merge
+    @communication_thread_merge ||= Contacts::CommunicationThreadMergeService.new(
       base_contact: @base_contact,
       mergee_contact: @mergee_contact
-    ).perform
+    )
   end
 
   def merge_contact_notes

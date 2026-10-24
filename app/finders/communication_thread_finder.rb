@@ -492,22 +492,10 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     selected_status = status || params[:status]
     return scope if selected_status == 'all'
 
-    status_value = selected_status.presence || DEFAULT_STATUS
-    status_thread_ids = CommunicationThread
-                        .where(
-                          account_id: current_account.id,
-                          status: CommunicationThread.statuses.fetch(status_value)
-                        )
-                        .select(:id)
-    matching_thread_ids = linked_thread_ids(
-      conversation_ids: accessible_conversations
-        .where(status: Conversation.statuses.fetch(status_value))
-        .select(:id)
-    )
-
-    scope.where(
-      "communication_threads.id IN ((#{status_thread_ids.to_sql}) UNION (#{matching_thread_ids.to_sql}))"
-    )
+    # One person, one status: a person sits in exactly one status tab, the one of the thread itself (the most urgent status
+    # of the channels, see Conversations::CommunicationThreadResolver). The statuses of the single channels do not count, or
+    # a person who is open in one channel and resolved in another would be in "open" and "resolved" at once.
+    scope.where(status: CommunicationThread.statuses.fetch(selected_status.presence || DEFAULT_STATUS))
   end
 
   def apply_inbox_filter(scope)

@@ -312,6 +312,102 @@ describe ContactMergeAction do
       end
     end
 
+    # One person, one status: the status tabs read only the status of the thread, so the merged thread must get the most
+    # urgent status of the channels it has now, and one open dialog, at once.
+    context 'when the communication threads of both contacts are merged' do
+      let(:agent) { create(:user, account: account, role: :administrator) }
+      let(:card) { create(:contact, account: account, name: 'Patient card') }
+      let(:duplicate) { create(:contact, account: account, name: 'Patient duplicate') }
+
+      before do
+        account.enable_features!('communication_threads')
+        Current.account = account
+      end
+
+      after { Current.reset }
+
+      def channel(contact, status, minutes_ago: 5)
+        inbox = create(:inbox, account: account)
+        create(:conversation, account: account, contact: contact, inbox: inbox, status: :resolved,
+                              contact_inbox: create(:contact_inbox, contact: contact, inbox: inbox)).tap do |conversation|
+          conversation.update_columns(status: Conversation.statuses.fetch(status), last_activity_at: minutes_ago.minutes.ago) # rubocop:disable Rails/SkipsModelValidations
+          Conversations::CommunicationThreadResolver.new(conversation: conversation.reload, enforce_single_open_dialog: false).perform
+        end
+      end
+
+      def tab(status)
+        CommunicationThreadFinder.new(agent, { status: status, assignee_type: 'all' }).perform
+      end
+
+      def merge_duplicate_into_card
+        described_class.new(account: account, base_contact: card, mergee_contact: duplicate).perform
+      end
+
+      status_matrix = [
+        %w[resolved open open], %w[snoozed open open], %w[open resolved open],
+        %w[pending resolved pending], %w[resolved snoozed snoozed], %w[resolved resolved resolved]
+      ]
+      tab_statuses = %w[open pending snoozed resolved]
+      status_matrix.each do |card_status, duplicate_status, person_status|
+        it "gives the person of a #{card_status} card and a #{duplicate_status} duplicate the status #{person_status}", :aggregate_failures do
+          channel(card, card_status)
+          channel(duplicate, duplicate_status)
+
+          merge_duplicate_into_card
+
+          thread = CommunicationThread.find_by!(account: account, contact: card)
+          expect(CommunicationThread.where(account: account, contact_id: [card.id, duplicate.id])).to contain_exactly(thread)
+          expect(thread.reload.status).to eq(person_status)
+          tab_statuses.each do |status|
+            expect(tab(status)[:communication_threads].map(&:id)).to(status == person_status ? eq([thread.id]) : be_empty, "tab #{status}")
+          end
+          expect(tab(person_status)[:count][:all_count]).to eq(1)
+        end
+      end
+
+      it 'moves a person who was waiting in the merged-in channel from resolved to open', :aggregate_failures do
+        channel(card, :resolved)
+        waiting = channel(duplicate, :open)
+        thread = CommunicationThread.find_by!(account: account, contact: card)
+        expect(tab('open')[:count][:all_count]).to eq(1)
+        expect(tab('resolved')[:communication_threads].map(&:id)).to eq([thread.id])
+
+        merge_duplicate_into_card
+
+        expect(thread.reload.conversations).to include(waiting)
+        expect(tab('open')[:communication_threads].map(&:id)).to eq([thread.id])
+        expect(tab('open')[:count][:all_count]).to eq(1)
+        expect(tab('resolved')[:communication_threads]).to be_empty
+        expect(tab('resolved')[:count][:all_count]).to eq(0)
+      end
+
+      it 'keeps one open dialog when both contacts brought an open one', :aggregate_failures do
+        older = channel(card, :open, minutes_ago: 120)
+        newer = channel(duplicate, :open, minutes_ago: 1)
+
+        merge_duplicate_into_card
+
+        thread = CommunicationThread.find_by!(account: account, contact: card)
+        expect(thread.conversations.where(status: %w[open pending]).pluck(:id)).to eq([newer.id])
+        expect(older.reload).to be_resolved
+        expect(thread.reload.status).to eq('open')
+        expect(tab('open')[:communication_threads].map(&:id)).to eq([thread.id])
+      end
+
+      it 'still merges the contacts when the status of the thread cannot be refreshed', :aggregate_failures do
+        channel(card, :resolved)
+        channel(duplicate, :open)
+        allow(Rails.logger).to receive(:warn)
+        allow(Conversations::CommunicationThreadResolver).to receive(:new).and_raise(StandardError, 'refresh failed')
+
+        expect { merge_duplicate_into_card }.not_to raise_error
+
+        expect(Contact.exists?(duplicate.id)).to be(false)
+        expect(CommunicationThread.find_by!(account: account, contact: card).conversations.count).to eq(2)
+        expect(Rails.logger).to have_received(:warn).with(/status refresh skipped contact=#{card.id}: StandardError: refresh failed/)
+      end
+    end
+
     context 'when contacts belong to a different account' do
       it 'throws an exception' do
         new_account = create(:account)

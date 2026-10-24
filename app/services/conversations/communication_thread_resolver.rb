@@ -1,6 +1,10 @@
 require 'digest'
 
-class Conversations::CommunicationThreadResolver # rubocop:disable Metrics/ClassLength
+class Conversations::CommunicationThreadResolver
+  # The status of a person, from the most urgent to the least: open before pending (a bot has it) before snoozed before
+  # resolved. A person is resolved only when every channel is.
+  STATUS_URGENCY = %w[open pending snoozed resolved].freeze
+
   # enforce_single_open_dialog: after the thread is refreshed, keep one open dialog per person, see
   # CommunicationThreads::SingleOpenDialogService. preferred_conversation_id is the conversation a person has just
   # reopened by hand: it stays when several are open. Callers that only repair thread links (the backfill) and the
@@ -21,8 +25,10 @@ class Conversations::CommunicationThreadResolver # rubocop:disable Metrics/Class
     thread = refresh_linked_thread
     return thread unless thread && @enforce_single_open_dialog
 
-    # Two or more open or pending conversations in the thread: all but one are resolved silently, outside the transaction
-    # of the refresh. When the caller is inside a transaction of its own (the intake of a call, for one), the refresh above
+    # Two or more open or pending conversations in the thread, or an open or pending one next to a snoozed one: all but one are
+    # resolved silently, outside the transaction of the refresh. So an incoming message wakes the whole person: the conversation
+    # that received it opens and a snoozed channel of the same person does not keep its timer (which would open it again later
+    # with its own status events). When the caller is inside a transaction of its own (the intake of a call, for one), the refresh above
     # joined it and its contact advisory lock is held until that transaction ends, so the merge waits for the commit, see
     # CommunicationThreads::SingleOpenDialogService.enforce for the lock order.
     CommunicationThreads::SingleOpenDialogService.enforce(thread, linked_conversations(thread), @preferred_conversation_id)
@@ -175,13 +181,10 @@ class Conversations::CommunicationThreadResolver # rubocop:disable Metrics/Class
     )
   end
 
+  # One person, one status: the most urgent status of the linked conversations wins (see STATUS_URGENCY), whichever
+  # conversation was saved last. A priority change or a note on a quiet channel must not repaint the person.
   def aggregate_status(thread)
-    active_conversation = linked_conversations(thread).reject(&:resolved?).max_by { |c| status_sort_key(c) }
-    active_conversation ? active_conversation.status : 'resolved'
-  end
-
-  def status_sort_key(linked_conversation)
-    [linked_conversation.updated_at || linked_conversation.last_activity_at, linked_conversation.id]
+    linked_conversations(thread).map(&:status).min_by { |status| STATUS_URGENCY.index(status) || STATUS_URGENCY.size } || 'resolved'
   end
 
   def aggregate_priority(thread)

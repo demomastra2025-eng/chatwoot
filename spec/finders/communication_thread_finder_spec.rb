@@ -44,9 +44,9 @@ RSpec.describe CommunicationThreadFinder do
 
         [matching_thread, read_thread, wrong_label_thread, wrong_stage_thread,
          wrong_appointment_thread].each do |thread|
-          thread.update!(assignee: user, team: team)
+          thread.update!(assignee: user, team: team, status: :pending) # the tab matches the status of the thread
         end
-        wrong_team_thread.update!(assignee: user, team: other_team)
+        wrong_team_thread.update!(assignee: user, team: other_team, status: :pending)
 
         [matching_conversation, read_conversation, wrong_team_conversation, wrong_label_conversation,
          wrong_stage_conversation, wrong_appointment_conversation].each do |conversation|
@@ -185,7 +185,7 @@ RSpec.describe CommunicationThreadFinder do
       expect(result[:count].dig(:unread_counts, :appointment_statuses)).to eq({})
     end
 
-    it 'keeps the unread status counter service counting thread and linked conversation statuses in one query' do
+    it 'counts an unread person once, under the status of the thread, in one query' do
       thread, first_conversation = create_thread_with_conversation(unread_count: 1)
       second_conversation = create(:conversation, account: account, inbox: inbox, contact: first_conversation.contact, status: :pending)
       create(
@@ -198,22 +198,23 @@ RSpec.describe CommunicationThreadFinder do
       )
       first_conversation.update!(status: :resolved)
       thread.update!(status: :open, unread_count: 1)
+      resolved_thread, = create_thread_with_conversation(unread_count: 1)
+      resolved_thread.update!(status: :resolved)
       sql = []
       subscriber = lambda do |_name, _start, _finish, _id, payload|
         sql << payload[:sql] unless payload[:cached] || payload[:name] == 'SCHEMA'
       end
       status_counter = CommunicationThreads::UnreadStatusCountService.new(
         account: account,
-        thread_scope: CommunicationThread.where(account_id: account.id, id: thread.id),
-        conversation_scope: account.conversations
+        thread_scope: CommunicationThread.where(account_id: account.id, id: [thread.id, resolved_thread.id])
       )
 
       counts = ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') do
         status_counter.perform
       end
 
-      expect(counts).to include('open' => 1, 'pending' => 1, 'resolved' => 1, 'snoozed' => 0)
-      expect(sql.grep(/thread_status_memberships/).size).to eq(1)
+      expect(counts).to eq('open' => 1, 'pending' => 0, 'resolved' => 1, 'snoozed' => 0)
+      expect(sql.size).to eq(1)
     end
   end
 
@@ -349,7 +350,7 @@ RSpec.describe CommunicationThreadFinder do
         contact_inbox: first_thread_second_conversation.contact_inbox
       )
 
-      first_thread.update!(status: :open, assignee: user, team: first_team)
+      first_thread.update!(status: :pending, assignee: user, team: first_team)
       first_conversation.update!(status: :pending)
       first_conversation.update_labels('vip')
       second_thread.update!(status: :resolved, assignee: user, team: second_team)
@@ -399,7 +400,7 @@ RSpec.describe CommunicationThreadFinder do
       expect(sql_queries.size).to be <= 4
     end
 
-    it 'preserves status-overlap and facet-specific filter semantics for the team counts' do
+    it 'matches the status of the thread and keeps the facet-specific filter semantics for the team counts' do
       filtered_counts = described_class.new(
         user,
         {

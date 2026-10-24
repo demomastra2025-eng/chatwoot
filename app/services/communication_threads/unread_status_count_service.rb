@@ -1,65 +1,26 @@
+# Unread threads per status tab. A person is counted once, under the status of the thread itself (the most urgent status of
+# the channels, see Conversations::CommunicationThreadResolver), the same status the tabs of CommunicationThreadFinder match,
+# so the numbers add up to the lists: a person who is open in one channel and resolved in another is not counted as resolved.
+# thread_scope is the (permission filtered) set of unread threads; the statuses of the single channels play no part.
 class CommunicationThreads::UnreadStatusCountService
   STATUS_KEYS = %w[open pending snoozed resolved].freeze
 
-  def initialize(account:, thread_scope:, conversation_scope:)
+  def initialize(account:, thread_scope:)
     @account = account
     @thread_scope = thread_scope
-    @conversation_scope = conversation_scope
   end
 
   def perform
-    counts_by_status = connection.select_rows(query).to_h { |status, count| [status.to_i, count.to_i] }
+    counts_by_status = CommunicationThread.where(account_id: account.id, id: unread_thread_ids).group(:status).count
 
-    STATUS_KEYS.index_with do |status|
-      counts_by_status.fetch(CommunicationThread.statuses.fetch(status), 0)
-    end
+    STATUS_KEYS.index_with { |status| counts_by_status.fetch(status, 0) }
   end
 
   private
 
-  attr_reader :account, :thread_scope, :conversation_scope
+  attr_reader :account, :thread_scope
 
-  def connection
-    ActiveRecord::Base.connection
-  end
-
-  def query
-    <<~SQL.squish
-      WITH unread_threads AS MATERIALIZED (#{unread_threads_sql}),
-      thread_status_memberships AS (#{status_memberships_sql})
-      SELECT status, COUNT(*)
-      FROM thread_status_memberships
-      GROUP BY status
-    SQL
-  end
-
-  def unread_threads_sql
-    thread_scope
-      .except(:order)
-      .reselect('communication_threads.id', 'communication_threads.status')
-      .distinct
-      .to_sql
-  end
-
-  def accessible_conversations_sql
-    conversation_scope
-      .reselect('conversations.id', 'conversations.account_id', 'conversations.status')
-      .to_sql
-  end
-
-  def status_memberships_sql
-    <<~SQL.squish
-      SELECT unread_threads.id, unread_threads.status
-      FROM unread_threads
-      UNION
-      SELECT unread_threads.id, status_conversations.status
-      FROM unread_threads
-      INNER JOIN communication_thread_conversations status_links
-        ON status_links.communication_thread_id = unread_threads.id
-       AND status_links.account_id = #{account.id.to_i}
-      INNER JOIN (#{accessible_conversations_sql}) status_conversations
-        ON status_conversations.id = status_links.conversation_id
-       AND status_conversations.account_id = status_links.account_id
-    SQL
+  def unread_thread_ids
+    thread_scope.except(:order).reselect('communication_threads.id')
   end
 end

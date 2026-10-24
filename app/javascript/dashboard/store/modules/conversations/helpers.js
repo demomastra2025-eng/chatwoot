@@ -85,16 +85,19 @@ const communicationThreadScopes = conversation => {
   return [conversation, ...channels];
 };
 
+// One person, one status: a communication thread sits in the status tab of the thread itself (the most urgent status of its
+// channels, set by the server), never in the tab of one of its channels, or a person who is open in WhatsApp and resolved in
+// Telegram would be in "open" and "resolved" at once. Only the inbox is matched by any channel, like the server does.
 const communicationThreadMatchesPageScope = (
   conversation,
   { status, inboxId }
 ) => {
-  const statusMatches = scope => status === 'all' || scope.status === status;
+  const statusMatches = status === 'all' || conversation.status === status;
   const inboxMatches = scope =>
     !inboxId || Number(scope.inbox_id) === Number(inboxId);
 
-  return communicationThreadScopes(conversation).some(
-    scope => statusMatches(scope) && inboxMatches(scope)
+  return (
+    statusMatches && communicationThreadScopes(conversation).some(inboxMatches)
   );
 };
 
