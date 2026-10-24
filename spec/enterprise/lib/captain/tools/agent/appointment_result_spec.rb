@@ -426,7 +426,7 @@ RSpec.describe Captain::Tools::Agent::AppointmentResult do
 
       expect(payload).to include(success: false, reason: 'validation_error', code: 'START_OFF_GRID', error_class: 'business',
                                  nearest_starts: nearest, audit: { mutation_executed: false, failure_stage: 'tool_arguments' })
-      expect(payload[:correction]).to include('nearest_starts', 'search_available_slots')
+      expect(payload[:correction]).to include('nearest_starts', 'search_available_slots (from = that start) shows it is free')
     end
 
     it 'reaches the agent as a failure it can correct in the same run, and the runtime reads it as a business answer' do

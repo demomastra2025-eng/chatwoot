@@ -16,7 +16,8 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
 
   description 'Search free appointment slots using local rules or confirmed stored MedElement hours. Returned slots can be offered; ' \
               'creation checks availability again. Service link metadata describes recorded price links; ' \
-              'total_slots counts only the returned slots'
+              'total_slots counts only the returned slots. The patient agent gets a compact answer instead: specialist-days as ' \
+              '{resource_id, name, date, times, more}, where limit counts the days and more_days says how many were left out'
   param :from, type: :string, desc: 'Range start datetime in ISO 8601 format', required: true
   param :to, type: :string, desc: 'Range end datetime in ISO 8601 format', required: true
   param :resource_ids, type: :array, desc: 'Optional list of scheduling resource IDs', required: false
@@ -24,7 +25,9 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
                      desc: 'Optional service ID that sets the duration; without resource_ids only specialists with a recorded price ' \
                            'link are searched', required: false
   param :duration_min, type: :number, desc: 'Optional appointment duration in minutes when no service is provided', required: false
-  param :limit, type: :number, desc: 'Maximum number of slots to return', required: false
+  param :limit, type: :number, required: false,
+                desc: 'Maximum number of slots to return; for the patient agent the maximum number of specialist-days listed ' \
+                      "(default #{Captain::Tools::Agent::SlotsPayload::DEFAULT_DAYS}, max #{Captain::Tools::Agent::SlotsPayload::MAX_DAYS})"
 
   # Staff and Copilot get the full payload with the slots one by one, cut at limit. The patient agent gets the compact answer of
   # Captain::Tools::Agent::SlotsPayload: every free start of the range grouped by specialist and day, where limit is the number of

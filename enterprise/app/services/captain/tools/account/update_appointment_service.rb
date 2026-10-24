@@ -7,7 +7,9 @@ class Captain::Tools::Account::UpdateAppointmentService < Captain::Tools::Accoun
   description 'Update the selected appointment with a new specialist, service, or confirmed time details. ' \
               'For another patient, use the search token and first confirm their exact appointment with the caller. ' \
               'A pending, failed or unknown provider result does not mean the change has been applied: the appointment keeps its ' \
-              'confirmed time and provider_move shows the requested time.'
+              'confirmed time and provider_move shows the requested time. ' \
+              'A new start that is not on the specialist\'s schedule grid fails with START_OFF_GRID and nearest_starts: offer one of ' \
+              'them once search_available_slots shows it is free.'
   param :appointment_id, type: :number, desc: 'Exact appointment ID returned by get_appointment or a previous appointment mutation', required: false
   param :appointment_access_token, type: :string, desc: 'Opaque token from search_appointments for a specifically identified other patient appointment', required: false
   param :patient_confirmed, type: :boolean, desc: 'True only after the caller confirms the specific patient, doctor, time and requested change', required: false

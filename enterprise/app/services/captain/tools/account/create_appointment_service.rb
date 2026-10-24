@@ -7,7 +7,9 @@ class Captain::Tools::Account::CreateAppointmentService < Captain::Tools::Accoun
   description 'Create an appointment using a selected specialist and confirmed time details. ' \
               'For a named relative or another patient, pass explicit patient details; the communication chat stays unchanged. ' \
               'For provider-backed appointments, pending_provider_confirmation is not a confirmed booking; do not tell the patient ' \
-              'they are booked until provider_confirmed is true.'
+              'they are booked until provider_confirmed is true. ' \
+              'A start that is not on the specialist\'s schedule grid fails with START_OFF_GRID and nearest_starts: offer one of them ' \
+              'once search_available_slots shows it is free.'
   param :resource_id, type: :number, desc: 'Specialist resource ID', required: true
   param :starts_at, type: :string, desc: 'Appointment start datetime in ISO 8601 format', required: true
   param :ends_at, type: :string, desc: 'Optional appointment end datetime in ISO 8601 format', required: false
