@@ -1,6 +1,6 @@
 require 'digest'
 
-class Conversations::CommunicationThreadResolver
+class Conversations::CommunicationThreadResolver # rubocop:disable Metrics/ClassLength
   # The status of a person, from the most urgent to the least: open before pending (a bot has it) before snoozed before
   # resolved. A person is resolved only when every channel is.
   STATUS_URGENCY = %w[open pending snoozed resolved].freeze

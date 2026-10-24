@@ -193,10 +193,7 @@ class CommunicationThreads::RealtimeUpdateService
   # The person's labels: the contact card and the channels this group of recipients can open. The card alone carries
   # labels that no conversation has, so leaving it out would make them vanish from an open dialog.
   def label_list(communication_thread, links)
-    linked = links.flat_map do |link|
-      conv = link.conversation
-      conv&.association(:labels)&.loaded? ? conv.labels.map(&:name) : conv&.label_list
-    end
+    linked = links.filter_map(&:conversation).flat_map { |conv| conv.association(:labels).loaded? ? conv.labels.map(&:name) : conv.label_list }
     Labels::UnifiedAssignmentService.normalize(contact_label_list(communication_thread.contact) + linked)
   end
 
