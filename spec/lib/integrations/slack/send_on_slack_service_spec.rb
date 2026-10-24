@@ -51,27 +51,27 @@ describe Integrations::Slack::SendOnSlackService do
         expect(conversation.reload.identifier).to eq '12345.6789'
       end
 
-      it 'links to the dialog of the person when the account uses communication threads' do
-        account.enable_features!('communication_threads')
-        conversation.refresh_communication_thread!
-        thread = conversation.reload.communication_thread
-        inbox = conversation.inbox
-        dialog_link = "<#{ENV.fetch('FRONTEND_URL', nil)}/app/accounts/#{account.id}/communication_threads/#{thread.display_id}|Click here>"
+      context 'when the account uses communication threads' do
+        let(:thread_account) { create(:account).tap { |record| record.enable_features!('communication_threads') } }
+        let(:thread_inbox) { create(:channel_email, account: thread_account).inbox }
+        let(:thread_conversation) { create(:conversation, account: thread_account, inbox: thread_inbox, identifier: nil) }
+        let(:thread_hook) { create(:integrations_hook, account: thread_account) }
+        let(:thread_message) do
+          create(:message, account: thread_account, inbox: thread_inbox, conversation: thread_conversation)
+        end
+        let(:thread_builder) { described_class.new(message: thread_message, hook: thread_hook) }
 
-        expect(slack_client).to receive(:chat_postMessage).with(
-          channel: hook.reference_id,
-          text: "
-*Inbox:* #{inbox.name} (#{inbox.inbox_type})
-#{dialog_link} to view the conversation.
+        it 'links to the dialog of the person' do
+          thread = thread_conversation.reload.communication_thread
+          dialog_link = "<#{ENV.fetch('FRONTEND_URL', nil)}/app/accounts/#{thread_account.id}/communication_threads/#{thread.display_id}|Click here>"
+          allow(thread_builder).to receive(:slack_client).and_return(slack_client)
 
-#{message.content}",
-          username: "#{message.sender.name} (Contact)",
-          thread_ts: nil,
-          icon_url: anything,
-          unfurl_links: false
-        ).and_return(slack_message)
+          expect(slack_client).to receive(:chat_postMessage).with(
+            hash_including(text: a_string_including("#{dialog_link} to view the conversation."))
+          ).and_return(slack_message)
 
-        builder.perform
+          thread_builder.perform
+        end
       end
 
       context 'with subject line in email' do

@@ -138,7 +138,8 @@ describe('ConversationCard', () => {
     });
 
     expect(
-      snoozedWithoutDate.find('[data-test-id="conversation-snoozed-until"]')
+      snoozedWithoutDate
+        .find('[data-test-id="conversation-snoozed-until"]')
         .exists()
     ).toBe(false);
     expect(
