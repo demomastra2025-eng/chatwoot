@@ -4,6 +4,9 @@ import { createPinia, setActivePinia } from 'pinia';
 
 import { useCallsStore } from 'dashboard/stores/calls';
 import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
+import enConversation from 'dashboard/i18n/locale/en/conversation.json';
+import kkConversation from 'dashboard/i18n/locale/kk/conversation.json';
+import ruConversation from 'dashboard/i18n/locale/ru/conversation.json';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import VoiceCallButton from './VoiceCallButton.vue';
 
@@ -472,6 +475,52 @@ describe('VoiceCallButton', () => {
     );
     expect(alertMock).toHaveBeenCalledWith(
       'CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE'
+    );
+  });
+
+  it('says the phone is open elsewhere and points to the refresh button', async () => {
+    const { dispatchMock, wrapper } = mountComponent();
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'sipuni',
+      callingSupported: false,
+      registered: false,
+      reason: 'sip_profile_registration_lease_owned_by_another_tab',
+    });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(dispatchMock).not.toHaveBeenCalled();
+    // A call never takes the line over by itself: only the refresh button does.
+    expect(initializeDeviceMock).toHaveBeenCalledWith(4593, {
+      native: true,
+      claimOwnership: true,
+    });
+    expect(alertMock).toHaveBeenCalledWith(
+      'CONVERSATION.VOICE_WIDGET.BROWSER_LINE_OPEN_ELSEWHERE'
+    );
+    expect(alertMock).not.toHaveBeenCalledWith(
+      'CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE'
+    );
+  });
+
+  it('has the toast for a phone open elsewhere in every language', () => {
+    const voiceWidget = locale => locale.CONVERSATION.VOICE_WIDGET;
+
+    expect(voiceWidget(ruConversation).BROWSER_LINE_OPEN_ELSEWHERE).toBe(
+      'Телефон открыт на другой вкладке или компьютере — нажмите ⟳, чтобы перенести его сюда'
+    );
+    [enConversation, kkConversation].forEach(locale => {
+      expect(voiceWidget(locale).BROWSER_LINE_OPEN_ELSEWHERE).toContain('⟳');
+    });
+    [ruConversation, enConversation, kkConversation].forEach(locale => {
+      expect(voiceWidget(locale).BROWSER_LINE_OPEN_ELSEWHERE).not.toBe(
+        voiceWidget(locale).BROWSER_CALLING_UNAVAILABLE
+      );
+    });
+    // The generic text stays for every other reason the phone is not ready.
+    expect(voiceWidget(ruConversation).BROWSER_CALLING_UNAVAILABLE).toBe(
+      'Телефон в браузере не готов. Проверьте подключение и повторите звонок.'
     );
   });
 
@@ -958,15 +1007,15 @@ describe('VoiceCallButton', () => {
       },
     });
 
-    const options = wrapper.findAll('[data-testid="voice-inbox-picker-option"]');
+    const options = wrapper.findAll(
+      '[data-testid="voice-inbox-picker-option"]'
+    );
     expect(options).toHaveLength(2);
     expect(options[0].attributes('data-inbox-id')).toBe('4674');
     expect(options[0].attributes('data-selected')).toBe('true');
     expect(options[0].attributes('data-line-status')).toBe('ready');
     expect(
-      options[0]
-        .get('[data-testid="voice-inbox-picker-status-dot"]')
-        .classes()
+      options[0].get('[data-testid="voice-inbox-picker-status-dot"]').classes()
     ).toContain('bg-n-teal-9');
     expect(
       options[0].get('[data-testid="voice-inbox-picker-provider"]').text()
@@ -981,9 +1030,7 @@ describe('VoiceCallButton', () => {
     expect(options[1].attributes('data-selected')).toBe('false');
     expect(options[1].attributes('data-line-status')).toBe('error');
     expect(
-      options[1]
-        .get('[data-testid="voice-inbox-picker-status-dot"]')
-        .classes()
+      options[1].get('[data-testid="voice-inbox-picker-status-dot"]').classes()
     ).toContain('bg-n-ruby-9');
     expect(
       options[1].get('[data-testid="voice-inbox-picker-provider"]').text()

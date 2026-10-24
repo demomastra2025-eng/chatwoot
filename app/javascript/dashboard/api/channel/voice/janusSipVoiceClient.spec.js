@@ -16,6 +16,7 @@ const {
   uploadRecordingMock,
   updatePresenceMock,
   updatePresenceOnUnloadMock,
+  releaseLeaseOnUnloadMock,
   getNativeWebphoneTokenMock,
 } = vi.hoisted(() => ({
   attachMock: vi.fn(),
@@ -40,6 +41,7 @@ const {
     })
   ),
   updatePresenceOnUnloadMock: vi.fn(() => Promise.resolve(null)),
+  releaseLeaseOnUnloadMock: vi.fn(() => true),
   getNativeWebphoneTokenMock: vi.fn(),
 }));
 
@@ -113,6 +115,7 @@ vi.mock('./voiceAPIClient', () => ({
     uploadWebphoneRecording: uploadRecordingMock,
     updateWebphonePresence: updatePresenceMock,
     updateWebphonePresenceOnUnload: updatePresenceOnUnloadMock,
+    releaseWebphoneLeaseOnUnload: releaseLeaseOnUnloadMock,
     getNativeWebphoneToken: getNativeWebphoneTokenMock,
   },
 }));
@@ -375,6 +378,7 @@ describe('janusSipVoiceClient', () => {
     uploadRecordingMock.mockClear();
     updatePresenceMock.mockClear();
     updatePresenceOnUnloadMock.mockClear();
+    releaseLeaseOnUnloadMock.mockClear();
     getNativeWebphoneTokenMock.mockReset();
     getNativeWebphoneTokenMock.mockResolvedValue({
       ...sipuniSession,
@@ -573,6 +577,45 @@ describe('janusSipVoiceClient', () => {
       );
     });
     expect(updatePresenceMock).not.toHaveBeenCalled();
+  });
+
+  it('also frees the line with its release key, which works without a session', async () => {
+    await JanusSipVoiceClient.initializeDevice(
+      { ...sipuniSession, registration_release_key: 'signed-release-key' },
+      { inboxId: 4769 }
+    );
+
+    await JanusSipVoiceClient.destroyDevice({ keepalivePresence: true });
+
+    expect(releaseLeaseOnUnloadMock).toHaveBeenCalledWith('signed-release-key');
+    expect(updatePresenceOnUnloadMock).toHaveBeenCalledWith(
+      false,
+      expect.objectContaining({ inboxId: 4769 })
+    );
+  });
+
+  it('frees the line on unload even when its phone never registered', async () => {
+    const client = createJanusSipVoiceClient();
+    client.sessionConfig = JanusSipVoiceClientClass.normalizeSessionConfig({
+      ...sipuniSession,
+      registration_release_key: 'signed-release-key',
+    });
+
+    await client.destroyDevice({ keepalivePresence: true });
+
+    expect(releaseLeaseOnUnloadMock).toHaveBeenCalledWith('signed-release-key');
+    expect(updatePresenceOnUnloadMock).not.toHaveBeenCalled();
+  });
+
+  it('does not send the release beacon for an ordinary teardown', async () => {
+    await JanusSipVoiceClient.initializeDevice(
+      { ...sipuniSession, registration_release_key: 'signed-release-key' },
+      { inboxId: 4769 }
+    );
+
+    await JanusSipVoiceClient.destroyDevice();
+
+    expect(releaseLeaseOnUnloadMock).not.toHaveBeenCalled();
   });
 
   it('can wait until the offline presence reached the server before the session ends', async () => {
@@ -1157,6 +1200,77 @@ describe('janusSipVoiceClient', () => {
     expect(destroy).toHaveBeenCalledTimes(1);
     expect(client.sipHandle).toBeNull();
     expect(client.janus).toBeNull();
+  });
+
+  describe('when the line is moved to another computer', () => {
+    const movedLineClient = () => {
+      const client = createJanusSipVoiceClient();
+      const handle = { send: vi.fn(), detach: vi.fn() };
+      const janus = { destroy: vi.fn() };
+      client.sessionConfig =
+        JanusSipVoiceClientClass.normalizeSessionConfig(sipuniSession);
+      client.janus = janus;
+      client.sipHandle = handle;
+      client.initialized = true;
+      client.registered = true;
+      client.registrationInstanceId = 'registration-old-owner';
+      client.inboxId = 4769;
+      return { client, handle, janus };
+    };
+
+    it('unregisters at once, without waiting for the next heartbeat', () => {
+      const { client, handle, janus } = movedLineClient();
+      const unregisteredHandler = vi.fn();
+      client.addEventListener('call:unregistered', unregisteredHandler);
+
+      const released = client.releaseTakenOverLine(
+        'sip_profile_registration_lease_owned_by_another_tab'
+      );
+
+      expect(released).toBe(true);
+      expect(client.registered).toBe(false);
+      expect(client.initialized).toBe(false);
+      expect(handle.send).toHaveBeenCalledWith({
+        message: { request: 'unregister' },
+      });
+      expect(handle.detach).toHaveBeenCalledTimes(1);
+      expect(janus.destroy).toHaveBeenCalledTimes(1);
+      expect(client.sipHandle).toBeNull();
+      expect(unregisteredHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          detail: expect.objectContaining({
+            reason: 'sip_profile_registration_lease_owned_by_another_tab',
+          }),
+        })
+      );
+      // The old registration may no longer renew anything.
+      expect(client.presenceHeartbeatTimer).toBeNull();
+      expect(updatePresenceMock).toHaveBeenCalledWith(
+        false,
+        expect.objectContaining({ inboxId: 4769 })
+      );
+    });
+
+    it('never cuts a call that is in progress', () => {
+      const { client, handle, janus } = movedLineClient();
+      client.hasActiveCall = true;
+
+      expect(client.releaseTakenOverLine()).toBe(false);
+
+      expect(client.registered).toBe(true);
+      expect(handle.send).not.toHaveBeenCalled();
+      expect(handle.detach).not.toHaveBeenCalled();
+      expect(janus.destroy).not.toHaveBeenCalled();
+    });
+
+    it('has nothing to release when the phone is not registered', () => {
+      const { client, handle } = movedLineClient();
+      client.registered = false;
+
+      expect(client.releaseTakenOverLine()).toBe(false);
+
+      expect(handle.send).not.toHaveBeenCalled();
+    });
   });
 
   it('does not schedule an application-level SIP REGISTER refresh', async () => {

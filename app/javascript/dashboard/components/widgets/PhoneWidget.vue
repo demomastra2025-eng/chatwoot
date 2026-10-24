@@ -11,6 +11,10 @@ import { usePhoneWidgetPosition } from 'dashboard/composables/usePhoneWidgetPosi
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { normalizeDialNumber } from 'dashboard/helper/phoneDialNumber';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
+import {
+  WEBPHONE_LINE_ELSEWHERE_REASON,
+  WEBPHONE_TAKEOVER_REFUSED_CALL,
+} from 'dashboard/api/channel/voice/webphoneLineState';
 import { useCallsStore } from 'dashboard/stores/calls';
 import {
   phoneLineProviderLabel,
@@ -32,13 +36,15 @@ const SIP_PROVIDERS = new Set([
   'beeline',
   'wazo',
 ]);
-const STANDBY_REASON = 'sip_profile_registration_lease_owned_by_another_tab';
+const STANDBY_REASON = WEBPHONE_LINE_ELSEWHERE_REASON;
 const OWNER_TAB_BUSY_REASON = 'webphone_owner_tab_busy';
 // Moving the phone between tabs removes its SIP session in both tabs until the
 // new owner registers; keep the line on screen as "connecting" meanwhile
 // instead of hiding the whole phone.
 const HANDOVER_GRACE_MS = 15_000;
-const ACTIONABLE_STATUSES = ['disconnected', 'error', 'ownerTab'];
+// A line held by the employee's other tab or computer ('standby') is
+// refreshed too: the refresh takes the line over.
+const ACTIONABLE_STATUSES = ['disconnected', 'error', 'ownerTab', 'standby'];
 const dialKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
 const { t } = useI18n();
@@ -415,7 +421,6 @@ const employeeStatusLabel = computed(
 );
 const connectionLabel = computed(() => {
   if (status.value === 'ready') return t('PHONE_WIDGET.ACTIVE');
-  if (status.value === 'standby') return t('PHONE_WIDGET.OTHER_TAB');
   return statusLabel.value;
 });
 const actionableSessions = computed(() =>
@@ -476,14 +481,19 @@ const reconnect = async session => {
   connectingKeys.value = new Set([...connectingKeys.value, session.sessionKey]);
   try {
     // An explicit connect means "use the phone in this tab": a tab that only
-    // mirrors the owner takes the phone over (the owner refuses mid-call).
-    await WebphoneClient.initializeDevice(session.inboxId, {
+    // mirrors the owner takes the phone over (the owner refuses mid-call), and
+    // the line is taken from the employee's other tab or computer at once.
+    const result = await WebphoneClient.initializeDevice(session.inboxId, {
       native: true,
       provider: session.provider,
       sipProfileId: session.sipProfileId,
       sessionKey: session.sessionKey,
       claimOwnership: true,
+      takeover: true,
     });
+    if (result?.takeoverRefused === WEBPHONE_TAKEOVER_REFUSED_CALL) {
+      useAlert(t('PHONE_WIDGET.LINE_BUSY_ELSEWHERE'));
+    }
   } catch (error) {
     // The session status is still displayed and can be retried.
     if (error?.reason === OWNER_TAB_BUSY_REASON) {
@@ -845,7 +855,9 @@ onUnmounted(() => {
                   class="size-2 shrink-0 rounded-full"
                   :class="[
                     activePhoneLine.statusColor,
-                    { 'animate-pulse': activePhoneLine.status === 'connecting' },
+                    {
+                      'animate-pulse': activePhoneLine.status === 'connecting',
+                    },
                   ]"
                   :title="activePhoneLine.statusLabel"
                 />
@@ -858,7 +870,9 @@ onUnmounted(() => {
                   "
                   aria-hidden="true"
                 />
-                <span class="min-w-0 flex-1 truncate text-xs font-medium text-n-slate-12">
+                <span
+                  class="min-w-0 flex-1 truncate text-xs font-medium text-n-slate-12"
+                >
                   {{ activePhoneLine.name }}
                 </span>
                 <span
@@ -891,111 +905,111 @@ onUnmounted(() => {
               class="mt-1 flex max-h-28 flex-col gap-1 overflow-y-auto"
               data-testid="phone-widget-lines-list"
             >
-            <div
-              v-for="line in allPhoneLines"
-              :key="line.id"
-              role="button"
-              tabindex="0"
-              class="flex cursor-pointer items-center justify-between gap-1.5 rounded-md border px-2 py-1 text-left transition-colors"
-              :class="
-                String(selectedInboxId) === String(line.id)
-                  ? 'border-n-teal-9 bg-n-teal-2'
-                  : 'border-n-weak bg-n-alpha-1 hover:bg-n-alpha-2'
-              "
-              :aria-pressed="String(selectedInboxId) === String(line.id)"
-              :data-line-id="String(line.id)"
-              :data-line-status="line.status"
-              :data-selected="
-                String(String(selectedInboxId) === String(line.id))
-              "
-              data-testid="phone-widget-line-item"
-              @click="selectLine(line.id)"
-              @keydown.enter.prevent="selectLine(line.id)"
-              @keydown.space.prevent="selectLine(line.id)"
-            >
               <div
-                class="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
+                v-for="line in allPhoneLines"
+                :key="line.id"
+                role="button"
+                tabindex="0"
+                class="flex cursor-pointer items-center justify-between gap-1.5 rounded-md border px-2 py-1 text-left transition-colors"
+                :class="
+                  String(selectedInboxId) === String(line.id)
+                    ? 'border-n-teal-9 bg-n-teal-2'
+                    : 'border-n-weak bg-n-alpha-1 hover:bg-n-alpha-2'
+                "
+                :aria-pressed="String(selectedInboxId) === String(line.id)"
+                :data-line-id="String(line.id)"
+                :data-line-status="line.status"
+                :data-selected="
+                  String(String(selectedInboxId) === String(line.id))
+                "
+                data-testid="phone-widget-line-item"
+                @click="selectLine(line.id)"
+                @keydown.enter.prevent="selectLine(line.id)"
+                @keydown.space.prevent="selectLine(line.id)"
               >
-                <span
-                  class="size-2 shrink-0 rounded-full"
-                  :class="[
-                    line.statusColor,
-                    { 'animate-pulse': line.status === 'connecting' },
-                  ]"
-                  :title="line.statusLabel"
-                  data-testid="phone-widget-line-status-dot"
-                />
-                <i
-                  class="shrink-0 text-xs"
-                  :class="
-                    line.isWhatsapp
-                      ? 'i-ri-whatsapp-fill text-n-teal-9'
-                      : 'i-ri-phone-fill text-n-slate-11'
-                  "
-                  aria-hidden="true"
-                />
-                <span
-                  class="min-w-0 flex-1 truncate text-xs font-medium text-n-slate-12"
-                  :title="
-                    line.phoneNumber &&
-                    !String(line.name || '').includes(line.phoneNumber)
-                      ? `${line.name} (${line.phoneNumber})`
-                      : line.name
-                  "
-                  data-testid="phone-widget-line-name"
+                <div
+                  class="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
                 >
-                  {{ line.name }}
-                </span>
-                <span class="sr-only" data-testid="phone-widget-line-status">
-                  {{ line.statusLabel }}
-                </span>
-              </div>
-              <div class="flex shrink-0 items-center gap-1">
-                <span
-                  v-if="line.providerLabel"
-                  class="max-w-[5.5rem] truncate rounded bg-n-alpha-2 px-1.5 py-0.5 text-[10px] leading-none font-medium text-n-slate-11"
-                  :title="line.providerLabel"
-                  data-testid="phone-widget-line-provider"
-                >
-                  {{ line.providerLabel }}
-                </span>
-                <span
-                  v-if="String(selectedInboxId) === String(line.id)"
-                  class="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-n-teal-9/15 text-n-teal-11"
-                  :title="selectedLineLabel"
-                  data-testid="phone-widget-line-selected-badge"
-                >
-                  <i class="i-lucide-check text-[10px]" aria-hidden="true" />
-                  <span class="sr-only">{{ selectedLineLabel }}</span>
-                </span>
-                <button
-                  v-if="line.canReconnect"
-                  type="button"
-                  class="inline-flex size-5 shrink-0 items-center justify-center rounded bg-n-alpha-2 text-n-teal-11 hover:bg-n-teal-3 transition-colors"
-                  :title="
-                    line.movesHere
-                      ? t('PHONE_WIDGET.MOVE_HERE')
-                      : t('PHONE_WIDGET.REFRESH_CONNECTION')
-                  "
-                  :aria-label="
-                    line.movesHere
-                      ? t('PHONE_WIDGET.MOVE_HERE')
-                      : t('PHONE_WIDGET.REFRESH_CONNECTION')
-                  "
-                  data-testid="phone-widget-line-reconnect"
-                  @click.stop="reconnect(line.session)"
-                >
-                  <i
-                    class="text-[11px]"
-                    :class="
-                      line.movesHere
-                        ? 'i-lucide-monitor-down'
-                        : 'i-lucide-refresh-cw'
-                    "
+                  <span
+                    class="size-2 shrink-0 rounded-full"
+                    :class="[
+                      line.statusColor,
+                      { 'animate-pulse': line.status === 'connecting' },
+                    ]"
+                    :title="line.statusLabel"
+                    data-testid="phone-widget-line-status-dot"
                   />
-                </button>
+                  <i
+                    class="shrink-0 text-xs"
+                    :class="
+                      line.isWhatsapp
+                        ? 'i-ri-whatsapp-fill text-n-teal-9'
+                        : 'i-ri-phone-fill text-n-slate-11'
+                    "
+                    aria-hidden="true"
+                  />
+                  <span
+                    class="min-w-0 flex-1 truncate text-xs font-medium text-n-slate-12"
+                    :title="
+                      line.phoneNumber &&
+                      !String(line.name || '').includes(line.phoneNumber)
+                        ? `${line.name} (${line.phoneNumber})`
+                        : line.name
+                    "
+                    data-testid="phone-widget-line-name"
+                  >
+                    {{ line.name }}
+                  </span>
+                  <span class="sr-only" data-testid="phone-widget-line-status">
+                    {{ line.statusLabel }}
+                  </span>
+                </div>
+                <div class="flex shrink-0 items-center gap-1">
+                  <span
+                    v-if="line.providerLabel"
+                    class="max-w-[5.5rem] truncate rounded bg-n-alpha-2 px-1.5 py-0.5 text-[10px] leading-none font-medium text-n-slate-11"
+                    :title="line.providerLabel"
+                    data-testid="phone-widget-line-provider"
+                  >
+                    {{ line.providerLabel }}
+                  </span>
+                  <span
+                    v-if="String(selectedInboxId) === String(line.id)"
+                    class="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-n-teal-9/15 text-n-teal-11"
+                    :title="selectedLineLabel"
+                    data-testid="phone-widget-line-selected-badge"
+                  >
+                    <i class="i-lucide-check text-[10px]" aria-hidden="true" />
+                    <span class="sr-only">{{ selectedLineLabel }}</span>
+                  </span>
+                  <button
+                    v-if="line.canReconnect"
+                    type="button"
+                    class="inline-flex size-5 shrink-0 items-center justify-center rounded bg-n-alpha-2 text-n-teal-11 hover:bg-n-teal-3 transition-colors"
+                    :title="
+                      line.movesHere
+                        ? t('PHONE_WIDGET.MOVE_HERE')
+                        : t('PHONE_WIDGET.REFRESH_CONNECTION')
+                    "
+                    :aria-label="
+                      line.movesHere
+                        ? t('PHONE_WIDGET.MOVE_HERE')
+                        : t('PHONE_WIDGET.REFRESH_CONNECTION')
+                    "
+                    data-testid="phone-widget-line-reconnect"
+                    @click.stop="reconnect(line.session)"
+                  >
+                    <i
+                      class="text-[11px]"
+                      :class="
+                        line.movesHere
+                          ? 'i-lucide-monitor-down'
+                          : 'i-lucide-refresh-cw'
+                      "
+                    />
+                  </button>
+                </div>
               </div>
-            </div>
             </div>
           </div>
           <div

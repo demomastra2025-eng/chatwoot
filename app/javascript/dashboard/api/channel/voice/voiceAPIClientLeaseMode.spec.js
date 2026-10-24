@@ -56,6 +56,65 @@ describe('#VoiceAPI webphone registration lease mode', () => {
     expect(axiosMock.post).toHaveBeenCalledTimes(2);
   });
 
+  it('asks to take the line over only when told to, and only as the owner tab', async () => {
+    await voiceAPIClient.getNativeWebphoneToken(42, { takeover: true });
+    await voiceAPIClient.getNativeWebphoneToken(42);
+    tabLeadership.owner = false;
+    await voiceAPIClient.getNativeWebphoneToken(42, { takeover: true });
+
+    const [, takeoverBody] = axiosMock.post.mock.calls[0];
+    const [, retryBody] = axiosMock.post.mock.calls[1];
+    const [, followerBody] = axiosMock.post.mock.calls[2];
+    expect(takeoverBody).toMatchObject({
+      inbox_id: 42,
+      browser_instance_id: 'browser-instance-1',
+      lease_mode: 'takeover',
+    });
+    expect(retryBody).not.toHaveProperty('lease_mode');
+    expect(followerBody.lease_mode).toBe('observe');
+  });
+
+  describe('releasing the line when the tab goes away', () => {
+    const releasePath = '/api/v1/accounts/530/telephony/webphone/release';
+    let sendBeacon;
+
+    beforeEach(() => {
+      sendBeacon = vi.fn(() => true);
+      Object.defineProperty(window.navigator, 'sendBeacon', {
+        value: sendBeacon,
+        configurable: true,
+        writable: true,
+      });
+    });
+
+    afterEach(() => {
+      delete window.navigator.sendBeacon;
+    });
+
+    it('sends the release key in a beacon, which needs no session', () => {
+      expect(voiceAPIClient.releaseWebphoneLeaseOnUnload('signed-key')).toBe(
+        true
+      );
+
+      const [path, body] = sendBeacon.mock.calls[0];
+      expect(path).toBe(releasePath);
+      expect(body).toBeInstanceOf(URLSearchParams);
+      expect(body.get('release_key')).toBe('signed-key');
+    });
+
+    it('sends nothing without a key and survives a browser without beacons', () => {
+      expect(voiceAPIClient.releaseWebphoneLeaseOnUnload(null)).toBe(false);
+      expect(sendBeacon).not.toHaveBeenCalled();
+
+      sendBeacon.mockImplementation(() => {
+        throw new TypeError('blocked');
+      });
+      expect(voiceAPIClient.releaseWebphoneLeaseOnUnload('signed-key')).toBe(
+        false
+      );
+    });
+  });
+
   it('switches back to a leasing request once the tab owns the phone', async () => {
     tabLeadership.owner = false;
     await voiceAPIClient.getNativeWebphoneToken();

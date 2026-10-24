@@ -148,6 +148,10 @@ class Telephony::SipProfile < ApplicationRecord
   }.freeze
   private_constant :OFFLINE_REGISTRATION_METADATA
   BROWSER_REGISTRATION_LEASE_KEY = 'browser_registration_lease'
+  LAST_BROWSER_TAKEOVER_KEY = 'last_browser_takeover'
+  LEASE_TAKEOVER_REFUSED_CALL_IN_PROGRESS = 'call_in_progress'
+  BrowserLeaseRequest = Data.define(:client_instance_id, :browser_instance_id, :user_id, :occurred_at, :takeover)
+  private_constant :BrowserLeaseRequest
   LAST_REGISTRATION_FAILURE_KEY = 'last_registration_failure'
   REGISTRATION_CONFIG_VERSION_KEY = 'registration_config_version'
   REGISTRATION_CONTEXT_SIGNATURE_KEY = 'registration_context_signature'
@@ -281,45 +285,45 @@ class Telephony::SipProfile < ApplicationRecord
     end
   end
 
-  def acquire_browser_registration_lease!(client_instance_id:, user_id:, browser_instance_id: nil, occurred_at: Time.current)
+  # `takeover` is the user's explicit "move the line here" from another
+  # computer: it takes the line from that user's other browser at once instead
+  # of waiting for the lease to expire. Automatic retries never set it.
+  def acquire_browser_registration_lease!(client_instance_id:, user_id:, browser_instance_id: nil, occurred_at: Time.current, takeover: false)
     return { acquired: false, registration_instance_id: nil } if client_instance_id.blank?
 
+    request = BrowserLeaseRequest.new(
+      client_instance_id: client_instance_id, browser_instance_id: browser_instance_id, user_id: user_id,
+      occurred_at: occurred_at, takeover: takeover == true
+    )
     result = nil
     with_browser_registration_lock(browser_instance_id) do
       with_lock do
         reload
-        lease = browser_registration_lease
-        if lease.blank? && released_browser_tab_still_displaced?(client_instance_id, browser_instance_id, user_id, occurred_at)
-          result = { acquired: false, registration_instance_id: nil }
-          next
-        end
-        same_browser_takeover = same_browser_lease_takeover?(lease, browser_instance_id, user_id, client_instance_id)
-        if browser_registration_lease_active?(lease, occurred_at) &&
-           lease['client_instance_id'].to_s != client_instance_id.to_s &&
-           !same_browser_takeover
-          result = {
-            acquired: false,
-            registration_instance_id: lease['registration_instance_id'],
-            expires_at: lease['expires_at']
-          }
-          next
-        end
-        if lease.blank? && browser_registered?
-          result = { acquired: false, registration_instance_id: metadata.to_h.dig('registration_context', 'registration_instance_id') }
-          next
-        end
-
-        lease = next_browser_registration_lease(
-          lease, client_instance_id: client_instance_id, browser_instance_id: browser_instance_id, user_id: user_id, occurred_at: occurred_at
-        )
-        store_browser_registration_lease!(lease, release_previous: same_browser_takeover, occurred_at: occurred_at)
-        result = { acquired: true, registration_instance_id: lease['registration_instance_id'], expires_at: lease['expires_at'] }
+        result = browser_registration_lease_refusal(request) || grant_browser_registration_lease!(request)
       end
 
       release_other_users_in_browser!(browser_instance_id, user_id, occurred_at) if result[:acquired]
     end
 
     result
+  end
+
+  # A closing tab, or a tab signed out by a sign-in elsewhere, gives its line up
+  # at once instead of keeping it until the lease expires. Only the current
+  # lease is released: a late request of an older tab changes nothing.
+  def release_browser_registration_lease!(registration_instance_id:, occurred_at: Time.current)
+    released = false
+    with_lock do
+      reload
+      next unless browser_registration_lease_valid?(registration_instance_id, occurred_at: occurred_at)
+
+      registration_metadata = (metadata || {}).deep_dup
+      release_browser_registration!(registration_metadata, occurred_at)
+      registration_metadata.delete(BROWSER_REGISTRATION_LEASE_KEY)
+      update!(metadata: registration_metadata)
+      released = true
+    end
+    released
   end
 
   # One browser profile shares its cookies, so it serves one signed-in user at a
@@ -589,33 +593,102 @@ class Telephony::SipProfile < ApplicationRecord
   # the same browser asking for the lease means the previous owner already
   # closed, reloaded or handed the phone over. Waiting for the lease to expire
   # would only leave the operator unreachable.
-  def same_browser_lease_takeover?(lease, browser_instance_id, user_id, client_instance_id)
-    return false if browser_instance_id.blank? || lease.blank?
-    return false if lease['client_instance_id'].to_s == client_instance_id.to_s
+  def same_browser_lease_takeover?(lease, request)
+    return false if request.browser_instance_id.blank? || lease.blank?
+    return false if lease['client_instance_id'].to_s == request.client_instance_id.to_s
 
-    lease['browser_instance_id'].to_s == browser_instance_id.to_s && lease['user_id'].to_s == user_id.to_s
+    lease['browser_instance_id'].to_s == request.browser_instance_id.to_s && lease['user_id'].to_s == request.user_id.to_s
+  end
+
+  def browser_registration_lease_refusal(request)
+    lease = browser_registration_lease
+    return blank_browser_registration_lease_refusal(request) if lease.blank?
+    return unless browser_registration_lease_held_elsewhere?(lease, request)
+
+    takeover = explicit_browser_lease_takeover?(lease, request)
+    # A call in progress on the other computer is never cut.
+    return if takeover && !browser_call_in_progress?
+
+    refusal = { acquired: false, registration_instance_id: lease['registration_instance_id'], expires_at: lease['expires_at'] }
+    refusal[:takeover_refused] = LEASE_TAKEOVER_REFUSED_CALL_IN_PROGRESS if takeover
+    refusal
+  end
+
+  def blank_browser_registration_lease_refusal(request)
+    displaced = released_browser_tab_still_displaced?(
+      request.client_instance_id, request.browser_instance_id, request.user_id, request.occurred_at
+    )
+    return { acquired: false, registration_instance_id: nil } if displaced
+    return unless browser_registered?
+
+    { acquired: false, registration_instance_id: metadata.to_h.dig('registration_context', 'registration_instance_id') }
+  end
+
+  # An active lease of another tab that this tab does not get by itself: only a
+  # tab of the same browser takes it over without asking.
+  def browser_registration_lease_held_elsewhere?(lease, request)
+    browser_registration_lease_active?(lease, request.occurred_at) &&
+      lease['client_instance_id'].to_s != request.client_instance_id.to_s &&
+      !same_browser_lease_takeover?(lease, request)
+  end
+
+  def explicit_browser_lease_takeover?(lease, request)
+    request.takeover && lease['user_id'].present? && lease['user_id'].to_s == request.user_id.to_s
+  end
+
+  # The active lease of another tab ends when the same user explicitly moves the
+  # line here, whether that tab is in this browser or in another one.
+  def explicit_browser_lease_displacement?(lease, request)
+    browser_registration_lease_active?(lease, request.occurred_at) &&
+      lease['client_instance_id'].to_s != request.client_instance_id.to_s &&
+      explicit_browser_lease_takeover?(lease, request)
+  end
+
+  def grant_browser_registration_lease!(request)
+    previous = browser_registration_lease
+    takeover = explicit_browser_lease_displacement?(previous, request)
+    lease = next_browser_registration_lease(previous, request)
+    store_browser_registration_lease!(
+      lease,
+      release_previous: takeover || same_browser_lease_takeover?(previous, request),
+      occurred_at: request.occurred_at,
+      takeover_record: (browser_lease_takeover_record(previous, request) if takeover)
+    )
+    { acquired: true, registration_instance_id: lease['registration_instance_id'], expires_at: lease['expires_at'],
+      taken_over_registration_instance_id: (previous['registration_instance_id'] if takeover) }.compact
+  end
+
+  def browser_lease_takeover_record(previous, request)
+    {
+      'at' => request.occurred_at.iso8601,
+      'client_instance_id' => previous['client_instance_id'],
+      'browser_instance_id' => previous['browser_instance_id'],
+      'by_client_instance_id' => request.client_instance_id,
+      'by_browser_instance_id' => request.browser_instance_id
+    }.compact
   end
 
   # The same tab keeps its registration instance; any other tab gets a new one.
-  def next_browser_registration_lease(lease, client_instance_id:, browser_instance_id:, user_id:, occurred_at:)
-    registration_instance_id = if lease['client_instance_id'].to_s == client_instance_id.to_s
+  def next_browser_registration_lease(lease, request)
+    registration_instance_id = if lease['client_instance_id'].to_s == request.client_instance_id.to_s
                                  lease['registration_instance_id'].presence || SecureRandom.uuid
                                else
                                  SecureRandom.uuid
                                end
     {
-      'client_instance_id' => client_instance_id,
-      'browser_instance_id' => browser_instance_id.presence,
+      'client_instance_id' => request.client_instance_id,
+      'browser_instance_id' => request.browser_instance_id.presence,
       'registration_instance_id' => registration_instance_id,
-      'user_id' => user_id,
-      'acquired_at' => occurred_at.iso8601,
-      'expires_at' => (occurred_at + registration_ttl.seconds).iso8601
+      'user_id' => request.user_id,
+      'acquired_at' => request.occurred_at.iso8601,
+      'expires_at' => (request.occurred_at + registration_ttl.seconds).iso8601
     }.compact
   end
 
-  def store_browser_registration_lease!(lease, release_previous:, occurred_at:)
+  def store_browser_registration_lease!(lease, release_previous:, occurred_at:, takeover_record: nil)
     registration_metadata = (metadata || {}).deep_dup
     release_browser_registration!(registration_metadata, occurred_at) if release_previous
+    registration_metadata[LAST_BROWSER_TAKEOVER_KEY] = takeover_record if takeover_record
     registration_metadata[BROWSER_REGISTRATION_LEASE_KEY] = lease
     update!(metadata: registration_metadata)
   end

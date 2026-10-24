@@ -8,6 +8,9 @@ import WebphoneTabLeadership, {
   webphoneTabScope,
 } from './webphoneTabLeadership';
 import { registerWebphoneLogoutRelease } from './webphoneLogoutRelease';
+import { WEBPHONE_LINE_ELSEWHERE_REASON } from './webphoneLineState';
+import { BUS_EVENTS } from 'shared/constants/busEvents';
+import { emitter } from 'shared/helpers/mitt';
 
 // Capped low on purpose: an operator waiting a minute for the phone to come
 // back after a short network drop misses calls.
@@ -19,8 +22,7 @@ const WEBPHONE_NATIVE_SIP_CREDENTIAL_FAILURE_CODES = new Set([401, 403, 407]);
 // Providers occasionally answer 401/403 transiently, so credential failures
 // keep retrying slowly instead of blocking the phone until a page reload.
 const WEBPHONE_NATIVE_SIP_CREDENTIAL_RETRY_DELAY_MS = 60_000;
-const WEBPHONE_NATIVE_SIP_STANDBY_REASON =
-  'sip_profile_registration_lease_owned_by_another_tab';
+const WEBPHONE_NATIVE_SIP_STANDBY_REASON = WEBPHONE_LINE_ELSEWHERE_REASON;
 const WEBPHONE_NATIVE_SIP_STANDBY_RETRY_DELAY_MS = 5_000;
 export const WEBPHONE_OWNER_TAB_REASON = 'webphone_active_in_owner_tab';
 const WEBPHONE_TAB_LEADERSHIP_WAIT_MS = 5_000;
@@ -162,6 +164,27 @@ class WebphoneClient extends EventTarget {
     );
     this.tabLeadership.start();
     registerWebphoneLogoutRelease(() => this.releaseForLogout());
+    this.handleLeaseTakenOverEvent = data =>
+      this.handleRegistrationLeaseTakenOver(data);
+    emitter.on(
+      BUS_EVENTS.TELEPHONY_WEBPHONE_LEASE_TAKEN_OVER,
+      this.handleLeaseTakenOverEvent
+    );
+  }
+
+  // The employee moved the line to another browser or tab. The tab that held
+  // it releases the line and unregisters at once (it needs no session for
+  // that, and does not wait for its next heartbeat), then waits in standby.
+  handleRegistrationLeaseTakenOver(data = {}) {
+    const registrationInstanceId =
+      data.registration_instance_id || data.registrationInstanceId;
+    if (!registrationInstanceId) return;
+
+    Object.values(this.nativeSipClients).forEach(client => {
+      if (client?.registrationInstanceId !== registrationInstanceId) return;
+
+      client.releaseTakenOverLine?.(WEBPHONE_LINE_ELSEWHERE_REASON);
+    });
   }
 
   ownsNativeSip() {
@@ -1234,6 +1257,7 @@ class WebphoneClient extends EventTarget {
       sipProfileId = null,
       sessionKey = null,
       claimOwnership = false,
+      takeover = false,
     } = {}
   ) {
     if (this.releaseStaleUserPhone()) return Promise.resolve(null);
@@ -1246,6 +1270,7 @@ class WebphoneClient extends EventTarget {
       sipProfileId || 'any',
       sessionKey || 'any',
       claimOwnership ? 'claim' : 'observe',
+      takeover ? 'takeover' : 'keep',
     ].join(':');
     const existing = this.deviceInitializationPromises[initializationKey];
     if (existing) return existing;
@@ -1255,9 +1280,17 @@ class WebphoneClient extends EventTarget {
       const runtimePromise = native
         ? this.prepareNativeSipRuntime()
         : Promise.resolve();
-      const response = native
-        ? await VoiceAPI.getNativeWebphoneToken(inboxId)
-        : await VoiceAPI.getWebphoneToken(inboxId);
+      let response;
+      if (!native) {
+        response = await VoiceAPI.getWebphoneToken(inboxId);
+      } else if (takeover) {
+        // Only an explicit "move the line here" takes it from another computer.
+        response = await VoiceAPI.getNativeWebphoneToken(inboxId, {
+          takeover: true,
+        });
+      } else {
+        response = await VoiceAPI.getNativeWebphoneToken(inboxId);
+      }
       await runtimePromise;
       return this.initializeResponse(response, {
         inboxId,
@@ -1531,6 +1564,9 @@ class WebphoneClient extends EventTarget {
         registered: false,
         reason: response?.reason,
       };
+      const takeoverRefused =
+        response?.takeoverRefused ?? response?.takeover_refused;
+      if (takeoverRefused) resolvedSession.takeoverRefused = takeoverRefused;
       this.rememberSession(resolvedSession);
       if (this.activeSessionKey === sessionKey) this.activeSessionKey = null;
       if (this.activeProvider === provider) this.activeProvider = null;

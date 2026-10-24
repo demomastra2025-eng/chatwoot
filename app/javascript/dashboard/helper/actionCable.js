@@ -166,6 +166,8 @@ class ActionCableConnector extends BaseActionCableConnector {
       'voice_call.operator_activity': this.onVoiceCallOperatorActivity,
       'telephony.webphone_config_changed':
         this.onTelephonyWebphoneConfigChanged,
+      'telephony.webphone_lease_taken_over':
+        this.onTelephonyWebphoneLeaseTakenOver,
       'whatsapp_call.incoming': this.onWhatsappCallIncoming,
       'whatsapp_call.accepted': this.onWhatsappCallAccepted,
       'whatsapp_call.ended': this.onWhatsappCallEnded,
@@ -907,6 +909,11 @@ class ActionCableConnector extends BaseActionCableConnector {
   // eslint-disable-next-line class-methods-use-this
   onTelephonyWebphoneConfigChanged = data => {
     emitter.emit(BUS_EVENTS.TELEPHONY_WEBPHONE_CONFIG_CHANGED, data);
+  };
+
+  // eslint-disable-next-line class-methods-use-this
+  onTelephonyWebphoneLeaseTakenOver = data => {
+    emitter.emit(BUS_EVENTS.TELEPHONY_WEBPHONE_LEASE_TAKEN_OVER, data);
   };
 
   // eslint-disable-next-line class-methods-use-this

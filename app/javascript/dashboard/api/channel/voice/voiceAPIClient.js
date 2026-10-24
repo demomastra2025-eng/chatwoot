@@ -70,11 +70,15 @@ class VoiceAPI extends ApiClient {
       .then(r => r.data.payload || r.data);
   }
 
-  getNativeWebphoneToken(inboxId = null) {
+  // `takeover` is only for the explicit "move the line here": it takes the
+  // line from the same user's other computer. Retries never send it, and a
+  // follower tab keeps observing.
+  getNativeWebphoneToken(inboxId = null, { takeover = false } = {}) {
     return axios
       .post(`${this.baseUrl()}/telephony/webphone/token`, {
         ...webphoneInstanceParams(),
         ...(inboxId ? { inbox_id: inboxId } : {}),
+        ...(takeover && isWebphoneTabOwner() ? { lease_mode: 'takeover' } : {}),
       })
       .then(r => r.data.payload || r.data);
   }
@@ -124,6 +128,25 @@ class VoiceAPI extends ApiClient {
         if (!response.ok) throw new Error('webphone_presence_release_failed');
         return null;
       });
+  }
+
+  // A closing tab (or one signed out by a sign-in elsewhere) gives its line up
+  // with the signed release key it got with its token. A beacon survives the
+  // page going away and needs no session, which may already be revoked.
+  // Returns whether the browser queued the request.
+  releaseWebphoneLeaseOnUnload(releaseKey) {
+    if (!releaseKey || typeof navigator?.sendBeacon !== 'function') {
+      return false;
+    }
+
+    try {
+      return navigator.sendBeacon(
+        `${this.baseUrl()}/telephony/webphone/release`,
+        new URLSearchParams({ release_key: releaseKey })
+      );
+    } catch {
+      return false;
+    }
   }
 
   reportBrowserSipIncoming(payload = {}) {

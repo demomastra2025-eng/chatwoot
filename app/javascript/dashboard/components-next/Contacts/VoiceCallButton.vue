@@ -13,6 +13,7 @@ import {
 } from 'dashboard/stores/phoneWidget';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
+import { isLineOpenElsewhere } from 'dashboard/api/channel/voice/webphoneLineState';
 import ContactAPI from 'dashboard/api/contacts';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { startOutboundBrowserCall } from 'dashboard/api/channel/voice/outboundCallCoordinator';
@@ -286,6 +287,8 @@ const prepareBrowserSipWebphone = async inbox => {
     if (!ready) stopMicrophonePrewarm(sessionScope);
     return {
       ready,
+      // The line is registered on another computer of this employee.
+      lineElsewhere: !phoneReady && isLineOpenElsewhere(session),
       // The phone is fine, only the microphone is not usable.
       microphoneBlocked: phoneReady && !microphoneReady,
       browserJoinSupported: true,
@@ -314,6 +317,11 @@ const startCall = async inbox => {
   try {
     const contactId = props.contactId || (await resolveDialContactId());
     const webphonePreparation = await prepareBrowserSipWebphone(inbox);
+    if (!webphonePreparation.ready && webphonePreparation.lineElsewhere) {
+      // Say where the line is and point to the refresh button, which moves it here.
+      useAlert(t('CONVERSATION.VOICE_WIDGET.BROWSER_LINE_OPEN_ELSEWHERE'));
+      return;
+    }
     if (!webphonePreparation.ready) {
       useAlert(
         webphonePreparation.microphoneBlocked
@@ -538,11 +546,13 @@ defineExpose({ onClick });
             <span
               v-if="isPreferredInbox(inbox)"
               class="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-n-teal-3 text-n-teal-11"
-              title="Выбрана для звонка"
+              :title="t('PHONE_WIDGET.SELECTED_FOR_CALL')"
               data-testid="voice-inbox-picker-selected-badge"
             >
               <i class="i-lucide-check text-[10px]" aria-hidden="true" />
-              <span class="sr-only">Выбрана для звонка</span>
+              <span class="sr-only">{{
+                t('PHONE_WIDGET.SELECTED_FOR_CALL')
+              }}</span>
             </span>
           </div>
         </button>
