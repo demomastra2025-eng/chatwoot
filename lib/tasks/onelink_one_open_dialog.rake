@@ -7,13 +7,15 @@ module OnelinkThreadTaskArguments
     abort(%(Usage: rake "onelink:#{task_name}[<account_id|all>,<true|false>]")) if account_id.blank?
     abort("Account #{account_id} was not found") unless account_id == 'all' || Account.exists?(id: account_id)
 
-    dry_run = case args[:dry_run].to_s.strip.downcase.presence || 'true'
-              when 'true', '1', 'yes' then true
-              when 'false', '0', 'no' then false
-              else abort("dry_run must be true or false, got #{args[:dry_run].inspect}")
-              end
+    [account_id == 'all' ? nil : account_id, dry_run(args[:dry_run])]
+  end
 
-    [account_id == 'all' ? nil : account_id, dry_run]
+  def self.dry_run(value)
+    case value.to_s.strip.downcase.presence || 'true'
+    when 'true', '1', 'yes' then true
+    when 'false', '0', 'no' then false
+    else abort("dry_run must be true or false, got #{value.inspect}")
+    end
   end
 end
 
