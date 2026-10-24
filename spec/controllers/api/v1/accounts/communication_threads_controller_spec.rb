@@ -1427,6 +1427,27 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(conversation.messages.outgoing).to be_empty
     end
 
+    it 'saves a private note on official WhatsApp outside the reply window without a template', :aggregate_failures do
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_inbox = whatsapp_channel.inbox
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      conversation = create(:conversation, account: account, contact: contact, inbox: whatsapp_inbox, contact_inbox: contact_inbox)
+      create(:message, account: account, inbox: whatsapp_inbox, conversation: conversation, message_type: 'incoming', created_at: 25.hours.ago)
+      create(:inbox_member, user: agent, inbox: whatsapp_inbox)
+      thread = conversation.reload.communication_thread
+
+      expect do
+        post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
+             params: { content: 'Call after 18:00', conversation_id: conversation.display_id, private: true },
+             headers: headers,
+             as: :json
+      end.to change { conversation.messages.outgoing.count }.by(1)
+
+      expect(response).to have_http_status(:success)
+      expect(conversation.messages.outgoing.last).to have_attributes(content: 'Call after 18:00', private: true)
+    end
+
     it 'allows official WhatsApp templates outside the reply window when template params are present' do
       whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
       whatsapp_inbox = whatsapp_channel.inbox
