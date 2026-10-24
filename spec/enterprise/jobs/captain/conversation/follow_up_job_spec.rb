@@ -581,6 +581,62 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
       expect { scheduled_step(anchor: employee_anchor, index: 0) }.not_to change(Reminder, :count)
     end
 
+    context 'when the customer answers in another channel of the same person' do
+      let(:other_inbox) { create(:inbox, account: account) }
+      let(:other_conversation) do
+        create(:conversation, account: account, inbox: other_inbox, contact: conversation.contact,
+                              contact_inbox: create(:contact_inbox, contact: conversation.contact, inbox: other_inbox))
+      end
+
+      def reply_in_other_channel
+        create(:message, account: account, inbox: other_inbox, conversation: other_conversation,
+                         sender: conversation.contact, message_type: :incoming, private: false)
+      end
+
+      it 'cancels the scheduled follow-up' do
+        reminder = scheduled_step(anchor: anchor_message)
+        reply = reply_in_other_channel
+
+        expect(Reminders::AutoCancelOnIncomingService.new(message: reply).perform).to eq(1)
+        expect(reminder.reload).to be_cancelled
+      end
+
+      it 'does not send a follow-up that was not cancelled in time' do
+        evaluator_returns_incomplete
+        reminder = scheduled_step(anchor: anchor_message)
+        reply_in_other_channel
+
+        expect do
+          expect(
+            described_class.new.perform_for_reminder(
+              reminder: reminder,
+              conversation: conversation,
+              assistant: assistant,
+              anchor_message: anchor_message,
+              delivery: delivery_for
+            )
+          ).to eq(:skipped)
+        end.not_to(change { conversation.messages.outgoing.count })
+      end
+
+      it 'ignores history imported into the other channel' do
+        evaluator_returns_incomplete
+        reminder = scheduled_step(anchor: anchor_message)
+        create(:message, account: account, inbox: other_inbox, conversation: other_conversation, sender: conversation.contact,
+                         message_type: :incoming, private: false, content_attributes: { imported_history: true })
+
+        expect(
+          described_class.new.perform_for_reminder(
+            reminder: reminder,
+            conversation: conversation,
+            assistant: assistant,
+            anchor_message: anchor_message,
+            delivery: delivery_for
+          )
+        ).to be_a(Message)
+      end
+    end
+
     it 'allows terminal reminder state after its conversation closes' do
       reminder = scheduled_step(anchor: anchor_message)
       conversation.update_column(:status, Conversation.statuses[:resolved]) # rubocop:disable Rails/SkipsModelValidations

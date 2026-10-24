@@ -35,9 +35,9 @@ class Reminders::AutoCancelOnIncomingService
            .where(auto_cancel_on_incoming: true)
            .where(
              <<~SQL.squish,
-               conversation_id = :conversation_id OR
-               target_conversation_id = :conversation_id OR
-               (remindable_type = :conversation_type AND remindable_id = :conversation_id) OR
+               conversation_id IN (:person_conversation_ids) OR
+               target_conversation_id IN (:person_conversation_ids) OR
+               (remindable_type = :conversation_type AND remindable_id IN (:person_conversation_ids)) OR
                (target_contact_id = :contact_id AND remindable_type IN (:live_entity_types)) OR
                (remindable_type = :appointment_type AND remindable_id IN (:patient_appointment_ids))
              SQL
@@ -45,10 +45,19 @@ class Reminders::AutoCancelOnIncomingService
            )
   end
 
+  # A reply in any channel of the person answers a reminder or an AI follow-up that waits on another of their
+  # channels: the person is one dialog. The sender must be the owner of the conversation; a reply that reaches a
+  # conversation of someone else (a shared route) only releases what is tied to that very conversation.
+  def person_conversation_ids(conversation)
+    return [conversation.id] unless conversation.contact_id.present? && conversation.contact_id == message.sender_id
+
+    (message.account.conversations.where(contact_id: conversation.contact_id).pluck(:id) << conversation.id).uniq
+  end
+
   # A separate patient's own reply also reaches its touches that are still stored on the shared owner's route.
   def cancellable_scope_bindings(conversation)
     {
-      conversation_id: conversation.id,
+      person_conversation_ids: person_conversation_ids(conversation),
       conversation_type: 'Conversation',
       contact_id: message.sender_id,
       live_entity_types: TouchPlanEnrollment::SUPPORTED_REMINDABLE_TYPES,
