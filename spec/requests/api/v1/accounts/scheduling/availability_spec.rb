@@ -91,10 +91,10 @@ RSpec.describe 'Scheduling Availability API', type: :request do
     expect(response).to have_http_status(:ok)
     payload = response.parsed_body.fetch('payload')
     expect(payload).to include('state' => 'schedule_not_confirmed', 'source' => 'provider_schedule')
-    expected_windows = [['10:00', '11:15'], ['10:05', '11:20'], ['10:10', '11:25'], ['10:15', '11:30']].map do |starts_at, ends_at|
-      { 'cabinet_code' => 'cabinet-1', 'starts_at' => "2026-04-26T#{starts_at}:00+05:00", 'ends_at' => "2026-04-26T#{ends_at}:00+05:00" }
-    end
-    expect(payload.fetch('windows')).to eq(expected_windows)
+    # The cell of 10:00 is the only start on the 30-minute grid of the service that leaves room for 75 minutes before 11:30.
+    expect(payload.fetch('windows')).to eq(
+      [{ 'cabinet_code' => 'cabinet-1', 'starts_at' => '2026-04-26T10:00:00+05:00', 'ends_at' => '2026-04-26T11:15:00+05:00' }]
+    )
   end
 
   it 'keeps a missing future 31-day range unconfirmed in confirmed-only mode' do

@@ -168,10 +168,10 @@ class Scheduling::Appointments::ImportedProviderMutationService
       appointments: account.scheduling_appointments.where(resource_id: appointment.resource_id)
                            .where('starts_at < ? AND ends_at > ?', @ends_at, @starts_at).to_a,
       ignore_appointment_id: appointment.id, provider_working_windows: @provider_windows, replace_work_rules: true
-    ).availability_result(starts_at: @starts_at, ends_at: @ends_at)
+    ).availability_result(starts_at: @starts_at, ends_at: @ends_at, enforce_grid: @starts_at != appointment.starts_at)
     return if result.available?
 
-    raise Scheduling::Error.new(code: result.code, message: result.message, status: :conflict)
+    raise Scheduling::Error.new(code: result.code, message: result.message, status: result.status, details: result.details)
   end
 
   def writable_hook!

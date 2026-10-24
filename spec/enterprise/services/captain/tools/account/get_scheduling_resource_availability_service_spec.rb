@@ -30,7 +30,7 @@ RSpec.describe Captain::Tools::Account::GetSchedulingResourceAvailabilityService
         service.execute(
           resource_id: resource.id,
           from: from_time.iso8601,
-          to: to_time.iso8601,
+          to: (to_time + 2.hours).iso8601,
           service_id: consultation.id,
           limit: 3
         )
@@ -44,7 +44,10 @@ RSpec.describe Captain::Tools::Account::GetSchedulingResourceAvailabilityService
         'starts_at' => '2026-04-20T09:00:00+05:00',
         'ends_at' => '2026-04-20T09:45:00+05:00'
       )
-      expect(payload['slots'].map { |slot| slot['starts_at'] }).not_to include('2026-04-20T10:00:00+05:00')
+      # The 30-minute grid of the specialist: 09:30 and 10:00 would run into the visit of 10:00, 11:00 into the break.
+      expect(payload['slots'].map { |slot| slot['starts_at'] }).to eq(
+        %w[2026-04-20T09:00:00+05:00 2026-04-20T11:30:00+05:00 2026-04-20T12:00:00+05:00]
+      )
       expect(payload).not_to have_key('customer_offer_eligible')
     end
 

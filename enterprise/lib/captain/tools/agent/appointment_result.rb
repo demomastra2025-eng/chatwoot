@@ -16,6 +16,10 @@ class Captain::Tools::Agent::AppointmentResult
                               'within the clinic window, use the specialist\'s primary consultation service_id); ' \
                               'ask the patient only when two services fit equally.'.freeze
   SERVICE_LIST_PARTIAL = 'The list is partial: search_scheduling_services finds the others.'.freeze
+  # A start that is not on the grid of the specialist's cells (see Scheduling::SlotGrid): the answer carries the starts next to it.
+  OFF_GRID_CODE = 'START_OFF_GRID'.freeze
+  OFF_GRID_GUIDANCE = 'That start is not on the specialist\'s schedule grid. Offer the patient one of nearest_starts, or call ' \
+                      'search_available_slots for the specialist, and book a returned time exactly.'.freeze
   # The two answers of "nothing was changed" (the statuses of Captain::ToolResult::NO_CHANGE_STATUSES) and their result line.
   STATUS_UNCHANGED = 'unchanged'.freeze
   STATUS_ALREADY_BOOKED = 'already_booked'.freeze
@@ -257,8 +261,19 @@ class Captain::Tools::Agent::AppointmentResult
   end
   private_class_method :service_required_failure
 
+  # A start between the starts of the specialist's grid: nothing was written; the failure names the starts next to it (as exact
+  # ISO 8601 slot starts, which the booking tools take unchanged).
+  def self.off_grid_failure(error)
+    return unless error.is_a?(::Scheduling::Error) && error.code.to_s == OFF_GRID_CODE
+
+    { success: false, reason: 'validation_error', code: OFF_GRID_CODE, error_class: ERROR_CLASS_BUSINESS,
+      nearest_starts: Array(error.details.to_h.with_indifferent_access[:nearest_starts]), correction: OFF_GRID_GUIDANCE,
+      audit: { mutation_executed: false, failure_stage: 'tool_arguments' } }
+  end
+  private_class_method :off_grid_failure
+
   def self.failure(error, account: nil)
-    answer = required_custom_field_failure(error, account) || service_required_failure(error)
+    answer = required_custom_field_failure(error, account) || service_required_failure(error) || off_grid_failure(error)
     return answer if answer
 
     code = error.respond_to?(:code) ? error.code.to_s : ''
