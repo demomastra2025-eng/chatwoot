@@ -132,6 +132,27 @@ RSpec.describe 'Conversations API', type: :request do
         expect(body[:data][:payload].first[:unread_count]).to eq(12)
       end
 
+      it 'lists the conversations of a person whose contact carries the label, with matching list and meta counts' do
+        wife = create(:contact, account: account)
+        wife.update_labels('Семья')
+        wife_conversation = create(:conversation, account: account, inbox: conversation.inbox, contact: wife)
+        labeled_conversation = create(:conversation, account: account, inbox: conversation.inbox)
+        labeled_conversation.update_labels('Семья')
+
+        auth_headers = agent.create_new_auth_token
+
+        get "/api/v1/accounts/#{account.id}/conversations", params: { labels: ['Семья'] }, headers: auth_headers, as: :json
+        list_body = JSON.parse(response.body, symbolize_names: true)
+        get "/api/v1/accounts/#{account.id}/conversations/meta", params: { labels: ['Семья'] }, headers: auth_headers, as: :json
+        expect(response).to have_http_status(:success)
+        meta_body = JSON.parse(response.body, symbolize_names: true)
+
+        expect(list_body[:data][:payload].pluck(:id)).to contain_exactly(wife_conversation.display_id, labeled_conversation.display_id)
+        expect(list_body[:data][:payload].find { |item| item[:id] == wife_conversation.display_id }[:labels]).to eq(['Семья'])
+        expect(list_body[:data][:meta][:all_count]).to eq(2)
+        expect(meta_body[:meta][:all_count]).to eq(2)
+      end
+
       it 'returns only the team unread counts scoped by agent inbox access and keeps the other keys empty' do
         team = create(:team, account: account, allow_auto_assign: false)
         pipeline = create(:crm_pipeline, account: account)

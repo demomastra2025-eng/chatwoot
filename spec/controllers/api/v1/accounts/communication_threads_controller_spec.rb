@@ -337,6 +337,35 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(payload.pluck(:id)).to eq([matching_conversation.reload.communication_thread.display_id])
     end
 
+    it 'lists a person whose contact carries the label while the conversations do not, with matching counts' do
+      wife = create(:contact, account: account)
+      wife.update_labels('Семья')
+      telegram = create(:conversation, account: account, contact: wife, status: :open)
+      whatsapp = create(:conversation, account: account, inbox: telegram.inbox, contact: wife, status: :pending)
+      stranger = create(:conversation, account: account, inbox: telegram.inbox)
+      create(:inbox_member, user: agent, inbox: telegram.inbox)
+
+      get "/api/v1/accounts/#{account.id}/communication_threads",
+          params: { labels: ['Семья'] },
+          headers: headers,
+          as: :json
+      list_body = JSON.parse(response.body, symbolize_names: true)
+      get "/api/v1/accounts/#{account.id}/communication_threads/meta",
+          params: { labels: ['Семья'] },
+          headers: headers,
+          as: :json
+      meta_body = JSON.parse(response.body, symbolize_names: true)
+
+      wife_thread = telegram.reload.communication_thread
+      expect(whatsapp.reload.communication_thread).to eq(wife_thread)
+      expect(telegram.label_list).to be_empty
+      expect(stranger.reload.communication_thread).not_to eq(wife_thread)
+      expect(list_body.dig(:data, :payload).pluck(:id)).to eq([wife_thread.display_id])
+      expect(list_body.dig(:data, :payload).first[:labels]).to eq(['Семья'])
+      expect(list_body.dig(:data, :meta)).to include(all_count: 1)
+      expect(meta_body.dig(:meta, :all_count)).to eq(1)
+    end
+
     it 'filters threads by child conversations with any label' do
       matching_conversation = create(:conversation, account: account)
       other_conversation = create(:conversation, account: account)

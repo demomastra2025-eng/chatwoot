@@ -667,18 +667,13 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def labeled_conversation_ids
-    return accessible_conversations.tagged_with(params[:labels], any: true).reselect(:id) if params[:labels].present?
-
-    conversations_with_any_label(accessible_conversations).reselect(:id)
-  end
-
-  def conversations_with_any_label(scope)
-    scope.joins(
-      'INNER JOIN taggings conversation_any_label_taggings ' \
-      'ON conversation_any_label_taggings.taggable_id = conversations.id ' \
-      "AND conversation_any_label_taggings.taggable_type = 'Conversation' " \
-      "AND conversation_any_label_taggings.context = 'labels'"
-    ).distinct
+    # The label is on the conversation or on its contact (labels belong to the person).
+    labeled = if params[:labels].present?
+                Labels::ConversationScope.with_labels(accessible_conversations, params[:labels])
+              else
+                Labels::ConversationScope.with_any_label(accessible_conversations)
+              end
+    labeled.reselect(:id)
   end
 
   def current_crm_deal_dialog_scope

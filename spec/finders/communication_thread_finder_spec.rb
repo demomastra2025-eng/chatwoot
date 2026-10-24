@@ -217,6 +217,99 @@ RSpec.describe CommunicationThreadFinder do
     end
   end
 
+  describe 'labels that belong to the person' do
+    let(:params) { { status: 'open', assignee_type: 'all', labels: ['Семья'] } }
+    let(:second_inbox) { create(:inbox, account: account, enable_auto_assignment: false) }
+    let(:inaccessible_inbox) do
+      create(:inbox, account: account, enable_auto_assignment: false).tap do |target_inbox|
+        target_inbox.inbox_members.where(user: user).destroy_all
+      end
+    end
+    let!(:wife_thread) do
+      create_labeled_thread(contact_label: 'Семья').tap do |thread|
+        add_conversation_to_thread(thread, status: :pending, target_inbox: second_inbox)
+      end
+    end
+    let!(:mother_thread) { create_labeled_thread(contact_label: 'Семья', conversation_label: 'Семья') }
+    let!(:conversation_only_thread) { create_labeled_thread(conversation_label: 'Семья') }
+    let!(:unlabeled_thread) { create_labeled_thread }
+    let!(:other_label_thread) { create_labeled_thread(contact_label: 'vip') }
+
+    before { create(:inbox_member, user: user, inbox: second_inbox) }
+
+    it 'lists a person whose contact carries the label while the conversations do not' do
+      expect(wife_thread.communication_thread_conversations.map { |link| link.conversation.label_list }).to all(be_empty)
+
+      ids = finder.perform[:communication_threads].map(&:id)
+
+      expect(ids).to contain_exactly(wife_thread.id, mother_thread.id, conversation_only_thread.id)
+      expect(ids).not_to include(unlabeled_thread.id, other_label_thread.id)
+    end
+
+    it 'counts exactly the listed people' do
+      result = finder.perform
+      meta = described_class.new(user, params).perform_meta_only
+
+      expect(result[:count]).to include(all_count: 3, unassigned_count: 3, mine_count: 0)
+      expect(meta[:count]).to include(result[:count].slice(:all_count, :mine_count, :unassigned_count, :assigned_count))
+    end
+
+    it 'keeps the status filter: the person is listed only when one of the conversations or the thread passes it' do
+      resolved_thread, resolved_conversation = create_thread_with_conversation
+      resolved_thread.contact.update_labels('Семья')
+      resolved_thread.update!(status: :resolved)
+      resolved_conversation.update!(status: :resolved)
+
+      open_ids = finder.perform[:communication_threads].map(&:id)
+      resolved_ids = described_class.new(user, params.merge(status: 'resolved')).perform[:communication_threads].map(&:id)
+
+      expect(open_ids).not_to include(resolved_thread.id)
+      expect(resolved_ids).to contain_exactly(resolved_thread.id)
+    end
+
+    it 'keeps the inbox filter: the person is listed through the conversation of that inbox' do
+      ids = described_class.new(user, params.merge(inbox_id: second_inbox.id)).perform[:communication_threads].map(&:id)
+
+      expect(ids).to contain_exactly(wife_thread.id)
+    end
+
+    it 'keeps the permission filter: a person with conversations the agent cannot open is not listed' do
+      hidden_thread, = create_thread_with_conversation(target_inbox: inaccessible_inbox)
+      hidden_thread.contact.update_labels('Семья')
+
+      result = finder.perform
+
+      expect(result[:communication_threads].map(&:id)).not_to include(hidden_thread.id)
+      expect(result[:count][:all_count]).to eq(3)
+    end
+
+    it 'keeps the assignee filter' do
+      wife_thread.update!(assignee: user)
+
+      mine = described_class.new(user, params.merge(assignee_type: 'me')).perform
+
+      expect(mine[:communication_threads].map(&:id)).to contain_exactly(wife_thread.id)
+    end
+
+    it 'lists the same people for the any-label scope' do
+      any_label = described_class.new(user, { status: 'open', assignee_type: 'all', labels_scope: 'any' })
+
+      result = any_label.perform
+
+      expect(result[:communication_threads].map(&:id)).to contain_exactly(
+        wife_thread.id, mother_thread.id, conversation_only_thread.id, other_label_thread.id
+      )
+      expect(result[:count][:all_count]).to eq(4)
+    end
+
+    it 'matches nothing for a label that nobody carries' do
+      result = described_class.new(user, params.merge(labels: ['nobody'])).perform
+
+      expect(result[:communication_threads]).to be_empty
+      expect(result[:count][:all_count]).to eq(0)
+    end
+  end
+
   describe '#perform_sidebar_unread_counts' do
     let(:second_inbox) { create(:inbox, account: account, enable_auto_assignment: false) }
     let(:inaccessible_inbox) do
@@ -346,6 +439,26 @@ RSpec.describe CommunicationThreadFinder do
       contact_inbox: conversation.contact_inbox
     )
     thread
+  end
+
+  def create_labeled_thread(contact_label: nil, conversation_label: nil)
+    thread, conversation = create_thread_with_conversation
+    thread.contact.update_labels(contact_label) if contact_label
+    conversation.update_labels(conversation_label) if conversation_label
+    thread
+  end
+
+  def add_conversation_to_thread(thread, status: :open, target_inbox: inbox)
+    conversation = create(:conversation, account: account, inbox: target_inbox, contact: thread.contact, status: status)
+    create(
+      :communication_thread_conversation,
+      account: account,
+      communication_thread: thread,
+      conversation: conversation,
+      inbox: target_inbox,
+      contact_inbox: conversation.contact_inbox
+    )
+    conversation
   end
 
   def create_thread_with_conversation(unread_count: 0, target_inbox: inbox)
