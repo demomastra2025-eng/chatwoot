@@ -4,6 +4,7 @@ require 'securerandom'
 class Captain::Assistant::AgentRunnerService
   include Integrations::LlmInstrumentationConstants
   include Captain::Assistant::LlmContextHelper
+  include Captain::Assistant::PatientLanguageHelper
   include Captain::Assistant::RunPayloadHelper
   include Captain::Assistant::RunnerCallbacksHelper
   include Captain::Assistant::TracePayloadHelper
@@ -173,16 +174,18 @@ class Captain::Assistant::AgentRunnerService
   def generate_response_with_runtime_cache(message_history)
     time_phase('config.initialize') { Llm::Config.initialize! }
 
+    # The language of the patient is decided while the history, the run state and the agents are built (see PatientLanguageHelper);
+    # the run waits for it at its first agent call.
+    start_patient_language_detection
     message_to_process, context = time_phase('run_payload') { run_payload(message_history) }
     Llm::EventBus.with_context(request_event_context(context)) do
       input_moderation_response = time_phase('moderate_input') { moderate_input(message_to_process, context) }
       return input_moderation_response if input_moderation_response
 
-      context[:patient_language] = time_phase('detect_patient_language') do
-        Captain::PatientLanguageDetector.new(conversation: @conversation, assistant: @assistant).call if @conversation
-      end
       time_phase('run_agent_with_retries') { run_agent_with_blank_response_retries(message_to_process, context) }
     end
+  ensure
+    settle_patient_language_detection
   end
 
   def run_agent_with_blank_response_retries(message_to_process, context)
@@ -224,7 +227,11 @@ class Captain::Assistant::AgentRunnerService
 
   def run_agent(message_to_process, context, runtime_options: {})
     time_phase('runner.run') do
-      runner.run(
+      # The agents are built before the language is awaited: the decision runs meanwhile. Its answer must be in the context before the
+      # run, because the prompt of the first agent call carries it.
+      agent_runner = runner
+      context[:patient_language] = patient_language unless context.key?(:patient_language)
+      agent_runner.run(
         message_to_process,
         context: context,
         max_turns: max_turns_for_run(context),

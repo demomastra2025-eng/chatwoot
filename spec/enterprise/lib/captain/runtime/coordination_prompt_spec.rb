@@ -419,4 +419,52 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
       expect(prompt).not_to include('No plan exists', 'Call plan_request for this message')
     end
   end
+
+  describe '.render_parts' do
+    let(:open_part) do
+      { 'id' => 'open-part', 'state' => 'waiting_customer', 'executor_agent_id' => 92, 'fragment' => 'Запись',
+        'missing_fields' => ['Какое время?'] }
+    end
+
+    before { context[:agent_tasks] = [] }
+
+    it 'keeps the colleagues and the way of working in the stable part, the same whatever the conversation holds' do
+      plain = described_class.render_parts(context)
+      context[:parts] = [open_part]
+      with_open_part = described_class.render_parts(context)
+
+      expect(plain.stable).to eq(colleagues_block)
+      expect(with_open_part.stable).to eq(colleagues_block)
+      expect(plain.volatile).to eq('')
+    end
+
+    it 'puts the data of the conversation in the volatile part, in the order they were written before' do
+      context[:parts] = [open_part]
+      context[:part_plan_accepted] = true
+      context[:part_plan] = { parts: [{ 'id' => 'open-part', 'executor_agent_id' => 92, 'fragment' => 'Запись' }] }
+
+      parts = described_class.render_parts(context)
+
+      expect(parts.volatile).to start_with('# Open parts (data)')
+      expect(parts.volatile).to include('# Accepted plan (data)')
+      expect(parts.volatile.index('# Accepted plan (data)')).to be > parts.volatile.index('# Open parts (data)')
+      expect(parts.stable).not_to include('# Open parts', '# Accepted plan')
+      expect(parts.to_s).to eq(described_class.render(context))
+    end
+
+    it 'is all volatile for an inherited task queue: data throughout' do
+      context[:agent_tasks] = tasks
+
+      parts = described_class.render_parts(context)
+
+      expect(parts.stable).to eq('')
+      expect(parts.volatile).to include('# Task queue', 'Task queue (data)')
+    end
+
+    it 'is empty for an agent without colleagues' do
+      context[:agent_graph] = [entry]
+
+      expect(described_class.render_parts(context).to_s).to eq('')
+    end
+  end
 end

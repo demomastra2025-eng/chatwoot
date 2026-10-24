@@ -9,11 +9,12 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:conversation) { create(:conversation, account: account) }
   let(:tool) { described_class.new(assistant, user: user) }
-  let!(:primary) { create(:scheduling_service, account: account, name: 'Консультация терапевта первичная') }
+  let!(:primary) { create(:scheduling_service, account: account, name: 'Консультация терапевта первичная', base_price: 15_000) }
+  let(:doctor) { create(:scheduling_resource, account: account, name: 'Асланова Айгерим') }
 
   before do
     account.enable_features!('scheduling')
-    create(:scheduling_service_price, account: account, service: primary, resource: create(:scheduling_resource, account: account), active: true)
+    create(:scheduling_service_price, account: account, service: primary, resource: doctor, price: 20_000, active: true)
   end
 
   def search(**arguments)
@@ -35,12 +36,13 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
     as_agent
 
     payload = search(query: 'консультация терапевта')
-    price_row = payload['services'].first['prices'].first
+    entry = payload['services'].first
 
     expect(payload).not_to have_key('eligibility_status')
     expect(payload).to include('match_status' => 'candidate', 'total_count' => 1)
-    expect(price_row).not_to have_key('service_eligibility_status')
-    expect(price_row).to include('price', 'resource_id')
+    expect(entry).to include('id' => primary.id, 'name' => primary.name, 'price' => primary.base_price)
+    expect(entry['doctors']).to eq(["#{doctor.id} Асланова Айгерим (20000)"])
+    expect(entry.keys).to contain_exactly('id', 'name', 'price', 'duration_min', 'doctors')
   end
 
   describe 'the ambiguous flag' do

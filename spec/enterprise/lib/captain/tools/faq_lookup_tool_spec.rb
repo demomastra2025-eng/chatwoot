@@ -20,8 +20,14 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     allow(Captain::AssistantResponse).to receive(:search).and_return(scored_response)
   end
 
+  # The full payload of a lookup, with the retrieval trace: what the answer cache stores and what staff debug with. The model reads
+  # only the compact answer that #perform builds from it (see 'the answer the model reads').
+  def lookup_payload(query, **)
+    tool.send(:lookup_payload, query: query, **)
+  end
+
   it 'returns normalized faq payload' do
-    payload = JSON.parse(tool.perform(tool_context, query: 'password reset'))
+    payload = lookup_payload('password reset')
 
     expect(payload['query']).to eq('password reset')
     expect(payload['total_count']).to eq(1)
@@ -48,8 +54,8 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     scored_response = Captain::AssistantResponse.select('captain_assistant_responses.*, 0.1 AS neighbor_distance').where(id: faq_response.id)
     expect(Captain::AssistantResponse).to receive(:search).once.and_return(scored_response)
 
-    first_payload = JSON.parse(tool.perform(tool_context, query: 'password reset'))
-    second_payload = JSON.parse(tool.perform(tool_context, query: ' password   reset '))
+    first_payload = lookup_payload('password reset')
+    second_payload = lookup_payload(' password   reset ')
 
     expect(first_payload.dig('retrieval_trace', 'answer_cache')).to include('hit' => false, 'stored' => true)
     expect(second_payload.dig('retrieval_trace', 'answer_cache')).to include(
@@ -74,7 +80,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     scored = Captain::AssistantResponse.select('captain_assistant_responses.*, 0.48 AS neighbor_distance').where(id: therapist_faq.id)
     allow(Captain::AssistantResponse).to receive(:search).and_return(scored)
 
-    payload = JSON.parse(tool.perform(tool_context, query: 'стоимость приема терапевта'))
+    payload = lookup_payload('стоимость приема терапевта')
 
     expect(payload).to include(
       'total_count' => 0,
@@ -99,7 +105,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     scored = Captain::AssistantResponse.select('captain_assistant_responses.*, 0.48 AS neighbor_distance').where(id: therapist_faq.id)
     allow(Captain::AssistantResponse).to receive(:search).and_return(scored)
 
-    payload = JSON.parse(tool.perform(tool_context, query: 'хочу к терапевту'))
+    payload = lookup_payload('хочу к терапевту')
 
     expect(payload).to include(
       'total_count' => 1,
@@ -118,7 +124,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     faq_response.define_singleton_method(:neighbor_distance) { 0.9 }
     allow(Captain::AssistantResponse).to receive(:search).and_return([faq_response])
 
-    payload = JSON.parse(tool.perform(tool_context, query: 'unrelated phrase'))
+    payload = lookup_payload('unrelated phrase')
 
     expect(payload).to include(
       'total_count' => 0,
@@ -145,7 +151,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     allow(Captain::AssistantResponse).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
 
-    payload = JSON.parse(tool.perform(tool_context, query: 'reset password'))
+    payload = lookup_payload('reset password')
 
     expect(payload).to include(
       'query' => 'reset password',
@@ -170,7 +176,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     allow(Captain::AssistantResponse).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
 
-    payload = JSON.parse(tool.perform(tool_context, query: 'pricing'))
+    payload = lookup_payload('pricing')
 
     expect(payload).to include(
       'query' => 'pricing',
@@ -185,7 +191,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     allow(Captain::AssistantResponse).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsUnavailableError, 'OpenRouter embeddings are not configured.')
 
-    payload = JSON.parse(tool.perform(tool_context, query: 'reset password'))
+    payload = lookup_payload('reset password')
 
     expect(payload['lookup_strategy']).to eq('lexical')
     expect(payload['retrieval_trace']).to include(
@@ -199,7 +205,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
   it 'degrades to lexical lookup when semantic lookup times out' do
     allow(Captain::AssistantResponse).to receive(:search).and_raise(Timeout::Error, 'execution expired')
 
-    payload = JSON.parse(tool.perform(tool_context, query: 'reset password'))
+    payload = lookup_payload('reset password')
 
     expect(payload['lookup_strategy']).to eq('lexical')
     expect(payload['retrieval_trace']).to include(
@@ -216,7 +222,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
       .with(described_class::SEMANTIC_LOOKUP_TIMEOUT_SECONDS)
       .and_raise(Timeout::Error, 'execution expired')
 
-    payload = JSON.parse(tool.perform(tool_context, query: 'reset password'))
+    payload = lookup_payload('reset password')
 
     expect(payload['lookup_strategy']).to eq('lexical')
     expect(payload['retrieval_trace']).to include(
@@ -233,7 +239,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
       .with(described_class::CACHE_FETCH_TIMEOUT_SECONDS)
       .and_raise(Timeout::Error, 'execution expired')
 
-    payload = JSON.parse(tool.perform(tool_context, query: 'reset password'))
+    payload = lookup_payload('reset password')
 
     expect(payload['lookup_strategy']).to eq('lexical')
     expect(payload['retrieval_trace']).to include(
@@ -250,7 +256,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
       .with(described_class::TOTAL_LOOKUP_TIMEOUT_SECONDS, described_class::TotalLookupTimeout)
       .and_raise(described_class::TotalLookupTimeout, 'execution expired')
 
-    payload = JSON.parse(tool.perform(tool_context, query: 'reset password'))
+    payload = lookup_payload('reset password')
 
     expect(payload['lookup_strategy']).to eq('lexical')
     expect(payload['retrieval_trace']).to include(
@@ -272,7 +278,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     allow(Captain::AssistantResponse).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
 
-    payload = JSON.parse(tool.perform(tool_context, query: 'chunkonly'))
+    payload = lookup_payload('chunkonly')
 
     expect(payload['lookup_strategy']).to eq('lexical')
     expect(payload.dig('retrieval_trace', 'document_chunk_ids')).to contain_exactly(chunk_only.id)
@@ -285,7 +291,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
   it 'can skip semantic lookup for realtime voice calls' do
     expect(Captain::AssistantResponse).not_to receive(:search)
 
-    payload = JSON.parse(tool.perform(tool_context, query: 'reset password', semantic: false))
+    payload = lookup_payload('reset password', semantic: false)
 
     expect(payload).to include(
       'query' => 'reset password',
@@ -319,7 +325,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
       Captain::AssistantResponse.select('captain_assistant_responses.*, 0.1 AS neighbor_distance').where(id: general_response.id)
     )
 
-    payload = JSON.parse(tool.perform(tool_context, query: 'account recovery'))
+    payload = lookup_payload('account recovery')
 
     expect(payload.dig('retrieval_trace', 'response_ids')).to contain_exactly(general_response.id)
     expect(payload['matches'].map { |match| match['answer'] }).to contain_exactly('Shared account recovery source')
@@ -349,9 +355,95 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     expect(Captain::Knowledge::AnswerCache).not_to receive(:new)
     expect(Captain::AssistantResponse).not_to receive(:search)
 
-    payload = JSON.parse(tool.perform(tool_context, query: 'Что такое ADAMANT CLUB?'))
+    payload = lookup_payload('Что такое ADAMANT CLUB?')
 
     expect(payload['lookup_strategy']).to eq('lexical_exact')
     expect(payload['matches'].first).to include('id' => exact.id, 'answer' => 'Закрытый бизнес-клуб.')
+  end
+
+  describe 'the answer the model reads' do
+    def knowledge_graph
+      {
+        corroborated: true,
+        matched_nodes: Array.new(3) { |i| { id: i + 1, name: "Узел #{i}", node_type: 'service', attributes: { price: 5000 } } },
+        connected_nodes: Array.new(4) { |i| { id: i + 10, name: "Связанный #{i}", node_type: 'doctor' } },
+        edges: Array.new(4) { |i| { from: 1, to: i + 10, relation_type: 'offered_by' } },
+        verified_facts: Array.new(3) { |i| { fact: "Факт #{i}", response_id: i } }
+      }
+    end
+
+    it 'holds the result and, for each match, the question, the answer and the score, on one line' do
+      output = tool.perform(tool_context, query: 'password reset')
+
+      expect(output).not_to include("\n")
+      expect(JSON.parse(output)).to eq(
+        'result' => 'found',
+        'matches' => [{ 'question' => 'How to reset password?', 'answer' => 'Click forgot password', 'score' => 0.9 }]
+      )
+    end
+
+    it 'leaves out the retrieval trace, the knowledge graph and the bookkeeping fields of a match' do
+      allow(tool).to receive(:knowledge_graph_payload_for).and_return(knowledge_graph)
+
+      expect(lookup_payload('password reset')).to include('knowledge_graph', 'retrieval_trace')
+      output = tool.perform(tool_context, query: 'password reset')
+
+      expect(output).not_to match(/retrieval_trace|knowledge_graph|document_chunk_id|created_at|updated_at|relevance_threshold|lookup_strategy/)
+    end
+
+    it 'keeps the full answer, with its trace, for the realtime voice agent' do
+      payload = JSON.parse(tool.perform(tool_context, query: 'reset password', voice_realtime: true))
+
+      expect(payload).to include('lookup_strategy' => 'lexical_voice_realtime', 'total_count' => 1)
+      expect(payload['retrieval_trace']).to include('strategy' => 'lexical_voice_realtime', 'fallback_reason' => 'voice_realtime_fast_path')
+      expect(payload['matches'].first).to include('answer' => 'Click forgot password', 'document_chunk_id' => document_chunk.id)
+    end
+
+    it 'says not_found with its message and no matches' do
+      allow(Captain::AssistantResponse).to receive(:search).and_return([])
+
+      expect(JSON.parse(tool.perform(tool_context, query: 'unrelated phrase'))).to eq(
+        'result' => 'not_found', 'message' => 'No relevant FAQ result found'
+      )
+    end
+
+    it 'gives an exact FAQ match the score 1' do
+      create(:captain_assistant_response, assistant: assistant, account: account, question: 'Что такое ADAMANT CLUB?',
+                                          answer: 'Закрытый бизнес-клуб.', status: 'approved')
+
+      match = JSON.parse(tool.perform(tool_context, query: 'Что такое ADAMANT CLUB?'))['matches'].first
+
+      expect(match).to eq('question' => 'Что такое ADAMANT CLUB?', 'answer' => 'Закрытый бизнес-клуб.', 'score' => 1.0)
+    end
+
+    it 'keeps the fact that the lookup ran degraded in the run context, where the handoff and the outcome facts read it' do
+      allow(Captain::AssistantResponse).to receive(:search).and_raise(Timeout::Error, 'execution expired')
+      context = {}
+      run_context = Struct.new(:state, :context).new({}, context)
+
+      output = JSON.parse(tool.perform(run_context, query: 'pricing'))
+
+      expect(output).to eq('result' => 'not_found', 'message' => 'No relevant FAQ result found')
+      expect(context[:captain_faq_outcome]).to eq(assistant_id: assistant.id, result: 'not_found', unavailable: true)
+    end
+
+    it 'is a small fraction of the debugging payload for five long answers with a knowledge graph' do
+      responses = Array.new(5) do |index|
+        create(:captain_assistant_response, assistant: assistant, account: account, documentable: document, status: 'approved',
+                                            question: "Как подготовиться к исследованию номер #{index}?",
+                                            answer: "Подготовка к исследованию номер #{index}: #{'за восемь часов не принимать пищу, ' * 5}")
+      end
+      allow(Captain::AssistantResponse).to receive(:search).and_return(
+        Captain::AssistantResponse.select('captain_assistant_responses.*, 0.1 AS neighbor_distance').where(id: responses.map(&:id))
+      )
+      allow(tool).to receive(:knowledge_graph_payload_for).and_return(knowledge_graph)
+
+      before_size = JSON.pretty_generate(lookup_payload('подготовка к исследованию')).bytesize
+      after_size = tool.perform(tool_context, query: 'подготовка к исследованию').bytesize
+      RSpec.configuration.reporter.message("faq_lookup, 5 long answers with a knowledge graph: #{before_size} bytes -> #{after_size} bytes")
+
+      expect(JSON.parse(tool.perform(tool_context, query: 'подготовка к исследованию'))['matches'].size).to eq(5)
+      expect(after_size).to be < before_size * 0.7
+    end
   end
 end

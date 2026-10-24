@@ -37,17 +37,26 @@ module Captain::Runtime::CoordinationPrompt
   end
 
   def render(context)
+    render_parts(context).to_s
+  end
+
+  # The block in the order the provider caches the system prompt (Captain::PromptParts). stable: the colleagues and the way of working,
+  # the same for every request of the agent (the one rule of a transferred conversation closes it). volatile: the data of this
+  # conversation (open parts, the accepted plan, what is done and not yet told) and the inherited task queue, which is data throughout.
+  def render_parts(context)
     tasks = context[:agent_tasks] || []
     actor_id = context.dig(:state, :assistant_id)
     graph = Array(context[:agent_graph])
     actor = graph.find { |item| item[:id] == actor_id }
-    return task_queue_block(actor, tasks) if Captain::Runtime::TaskQueue.in_flight?(tasks)
+    return Captain::PromptParts.new(stable: '', volatile: task_queue_block(actor, tasks)) if Captain::Runtime::TaskQueue.in_flight?(tasks)
 
     peers = graph.reject { |item| item[:id] == actor_id }
-    return '' if peers.empty?
+    return Captain::PromptParts.new(stable: '', volatile: '') if peers.empty?
 
-    [colleagues_block(actor, peers, context), open_parts_block(context, graph), accepted_plan_block(context, graph),
-     done_block(context)].compact_blank.join("\n\n")
+    Captain::PromptParts.new(
+      stable: colleagues_block(actor, peers, context),
+      volatile: [open_parts_block(context, graph), accepted_plan_block(context, graph), done_block(context)].compact_blank.join("\n\n")
+    )
   end
 
   # The colleagues, then the numbered way of working. The rule for a transferred conversation closes the list, and only a run

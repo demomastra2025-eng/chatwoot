@@ -388,7 +388,9 @@ on the calling thread; because a dialogue lives in an uncommitted transaction, t
 share one connection between threads (`lock_thread`, as transactional specs do). A thread that opens a transaction of its
 own on that connection deadlocks, so the task also sets `CAPTAIN_COUNCIL_PARALLEL=off` (unless it is already set):
 every part of a council then runs in plan order on the calling thread. The events of a turn are read by id window, so parts on
-other threads would not be missed either; keep the switch off all the same.
+other threads would not be missed either; keep the switch off all the same. The decision of the patient language
+(`Captain::Assistant::PatientLanguageHelper`) runs on a thread of its own next to the history and saves the conversation inside a transaction,
+so the task also sets `CAPTAIN_LANGUAGE_PARALLEL=off` (unless it is already set): the decision then runs on the calling thread.
 
 ## Tools an agent may use
 

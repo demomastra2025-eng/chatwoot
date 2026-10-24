@@ -159,7 +159,7 @@ class Captain::Runtime::Council
     runtime = suggestion ? actor.agent(suggestion_tools: true) : actor.agent
     tools = Captain::Runtime::PartTools.filter(runtime.tools)
     Captain::Runtime::Agent.new(
-      name: runtime.name, instructions: runtime.instructions, tools: tools,
+      name: runtime.name, instructions: runtime.instructions, instruction_parts: runtime.instruction_parts, tools: tools,
       model: runtime.model, temperature: runtime.temperature, headers: runtime.headers, params: runtime.params,
       response_schema: Captain::Runtime::PartSchema, suggestion_tools: suggestion
     ).tap { |agent| agent.assistant_id = actor.id }

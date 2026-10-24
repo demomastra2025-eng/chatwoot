@@ -8,6 +8,7 @@ module Concerns::Agentable
     Captain::Runtime::Agent.new(
       name: agent_name,
       instructions: ->(context) { agent_instructions(context) },
+      instruction_parts: ->(context) { agent_instruction_parts(context) },
       tools: built_tools,
       model: time_agent_phase('agent_model') { model_override.presence || agent_model },
       temperature: time_agent_phase('agent_temperature') { temperature_override.nil? ? agent_temperature : temperature_override.to_f },
@@ -22,6 +23,12 @@ module Concerns::Agentable
   end
 
   def agent_instructions(context = nil)
+    agent_instruction_parts(context).to_s
+  end
+
+  # The system prompt of the agent in the order the provider caches it (Captain::PromptParts): the part that is the same for every
+  # request first (platform rules, shared rules, clinic instructions), the clock and the patient data last.
+  def agent_instruction_parts(context = nil)
     state = context&.context&.[](:state) || {}
     prompt_state = state[:prompt_context] || {}
     enhanced_context = time_agent_phase('prompt_context') { prompt_context_for_runtime_state(state) }.merge(default_prompt_runtime_context)
@@ -88,7 +95,9 @@ module Concerns::Agentable
     append_appointment_context_blocks(enhanced_context, prompt_state)
     append_context_summaries(enhanced_context, prompt_state)
 
-    time_agent_phase('prompt_render') { Captain::PromptRenderer.render(template_name, enhanced_context.with_indifferent_access) }
+    Captain::PromptParts.stable_only(
+      time_agent_phase('prompt_render') { Captain::PromptRenderer.render(template_name, enhanced_context.with_indifferent_access) }
+    )
   end
 
   private
@@ -111,10 +120,20 @@ module Concerns::Agentable
     end
     variables = variables.merge(human_handoff_enabled: false) if part || suggestion
     variables = variables.merge(reply_suggestion_mode: suggestion ? true : false)
+    rendered_variables = enhanced_context.merge(variables)
 
     time_agent_phase('prompt_render') do
-      Captain::PromptRenderer.render(template_name, enhanced_context.merge(variables).with_indifferent_access)
+      Captain::PromptParts.new(
+        stable: render_prompt_section(rendered_variables, 'stable'),
+        volatile: render_prompt_section(rendered_variables, 'volatile')
+      )
     end
+  end
+
+  # assistant.liquid renders the rules, the shared rules and the clinic instructions for section 'stable' and the clock and the patient
+  # data for section 'volatile'.
+  def render_prompt_section(variables, section)
+    Captain::PromptRenderer.render(template_name, variables.merge(prompt_section: section).with_indifferent_access)
   end
 
   def append_context_summaries(context, prompt_state)

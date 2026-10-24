@@ -91,10 +91,10 @@ tools:
     hidden_params: []
 
   search_scheduling_services:
-    description: "Find a service and its prices in the clinic catalog. Search here for a price before saying it is unavailable, and before searching slots or booking a named service."
+    description: "Find a service and its prices in the clinic catalog. Each entry has the service id, name, base price, duration and its specialists as id plus name (a specialist's own price in brackets only when it differs from the base price). Search here for a price before saying it is unavailable, and before searching slots or booking a named service. It needs a query: without one nothing is listed."
     params:
       query: "Service words in dictionary form, as the catalog writes them."
-      limit: "Max services, up to 50."
+      limit: "Max services, up to 10."
       offset: "next_offset from the previous result; or add words to query."
     hidden_params:
       - include_inactive

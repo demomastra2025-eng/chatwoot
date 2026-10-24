@@ -1,14 +1,18 @@
 # frozen_string_literal: true
 
 class Captain::Runtime::Agent
-  attr_reader :name, :instructions, :model, :tools, :handoff_agents, :temperature, :response_schema, :headers, :params
+  attr_reader :name, :instructions, :instruction_parts, :model, :tools, :handoff_agents, :temperature, :response_schema, :headers, :params
   attr_accessor :context_preparer, :assistant_id
   attr_writer :tool_ids
 
+  # instruction_parts: a proc that returns the system prompt as Captain::PromptParts (the stable text and the per-request text apart),
+  # for an agent whose prompt has a part that changes from one request to the next. Without it the instructions are all stable.
   def initialize(name:, instructions: nil, model: LlmConstants::DEFAULT_MODEL, tools: [], handoff_agents: [],
-                 temperature: 0.7, response_schema: nil, headers: nil, params: nil, read_only_tools: false, suggestion_tools: false)
+                 temperature: 0.7, response_schema: nil, headers: nil, params: nil, read_only_tools: false, suggestion_tools: false,
+                 instruction_parts: nil)
     @name = name
     @instructions = instructions
+    @instruction_parts = instruction_parts
     @model = model
     @tools = tools.dup.freeze
     @handoff_agents = []
@@ -53,5 +57,12 @@ class Captain::Runtime::Agent
     when Proc
       instructions.call(context)
     end
+  end
+
+  # The system prompt in the order the provider caches it: what is the same for every request first, what changes per request last.
+  def get_system_prompt_parts(context)
+    return @instruction_parts.call(context) if @instruction_parts
+
+    Captain::PromptParts.stable_only(get_system_prompt(context))
   end
 end
