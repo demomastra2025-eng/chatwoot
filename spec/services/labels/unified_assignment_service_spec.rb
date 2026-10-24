@@ -162,6 +162,71 @@ RSpec.describe Labels::UnifiedAssignmentService do
     end
   end
 
+  # The status of the thread follows the conversation with the newest updated_at, and a label is not a change of status.
+  # The older conversations are saved after the one that reports, so a write that moved updated_at put the least active
+  # channel (snoozed, or pending because the assistant handles it) in front of the open one with the unanswered message.
+  [%w[snoozed pending], %w[pending snoozed]].each do |older_statuses|
+    describe "the status of the thread of a person with an open, a #{older_statuses.first} and a #{older_statuses.last} conversation" do
+      include PersonThreadStatusHelpers
+
+      before do
+        give_person_different_statuses(first_conversation, [second_conversation, older_statuses.first],
+                                       [third_conversation, older_statuses.last])
+      end
+
+      def updated_ats
+        conversations.map { |conversation| conversation.reload.updated_at }
+      end
+
+      it 'stays open, in the list and in the realtime update, when a conversation reports an added label' do
+        described_class.add(contact: contact, labels: %w[vip], conversation: first_conversation)
+
+        expect(thread_status_of(first_conversation)).to eq('open')
+        expect(realtime_status_of(first_conversation)).to eq('open')
+      end
+
+      it 'stays open when a label is removed' do
+        described_class.add(contact: contact, labels: %w[vip paid], silent: true)
+        give_person_different_statuses(first_conversation, [second_conversation, older_statuses.first],
+                                       [third_conversation, older_statuses.last])
+
+        described_class.remove(contact: contact, labels: %w[vip], conversation: first_conversation)
+
+        expect(thread_status_of(first_conversation)).to eq('open')
+        expect(realtime_status_of(first_conversation)).to eq('open')
+      end
+
+      it 'stays open when no conversation was acted on, as on the contact card and in bulk actions' do
+        described_class.add(contact: contact, labels: %w[vip])
+
+        expect(thread_status_of(first_conversation)).to eq('open')
+        expect(realtime_status_of(first_conversation)).to eq('open')
+      end
+
+      it 'stays what it was when the label is written on the conversation that is not in front' do
+        described_class.add(contact: contact, labels: %w[vip], conversation: third_conversation)
+
+        expect(thread_status_of(first_conversation)).to eq('open')
+      end
+
+      it 'does not move the updated_at of any conversation, the source included' do
+        expect { described_class.add(contact: contact, labels: %w[vip], conversation: second_conversation) }
+          .not_to(change { updated_ats })
+        expect { described_class.remove(contact: contact, labels: %w[vip], conversation: first_conversation) }
+          .not_to(change { updated_ats })
+      end
+
+      it 'is not moved by the silent rewrite of the contact merge and the backfill, nor by the next refresh of the thread' do
+        contact.update_labels(%w[card_only])
+
+        expect { described_class.unify(contact: contact) }.not_to(change { updated_ats })
+
+        first_conversation.reload.refresh_communication_thread!
+        expect(thread_status_of(first_conversation)).to eq('open')
+      end
+    end
+  end
+
   describe '.unify' do
     it 'gives the contact and every conversation the union without events or activity' do
       contact.update_labels(%w[card_only])

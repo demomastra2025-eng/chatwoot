@@ -14,6 +14,10 @@
 #   activity and carry the same communication_thread_event_id, like the other thread-wide writes
 #   (CommunicationThreads::UpdateService, Contacts::OwnerSyncService), so a rule or a webhook sees one change, not N;
 # - a record whose labels already are what is asked is not saved at all;
+# - no conversation changes its updated_at. The status of the thread is the status of the open conversation with the newest
+#   updated_at (Conversations::CommunicationThreadResolver#aggregate_status) and a label is not a change of status: a write
+#   that saved the quiet copies after the reporter would make the least active conversation the newest one and flip the
+#   status of the whole person (a snoozed or pending channel in front of an open one with an unanswered message);
 # - only the given labels are touched. A list the client has not seen (a stale one) cannot erase a label, which is why
 #   callers send add / remove and not the whole list (see delta_from_params for the older clients that still do).
 #
@@ -132,6 +136,7 @@ class Labels::UnifiedAssignmentService
     return if labels.nil?
 
     conversation.communication_thread_event_id = @event_id
+    conversation.record_timestamps = false
     quiet_conversation(conversation) if silent || @reported
     @reported = true
     conversation.update_labels(labels)

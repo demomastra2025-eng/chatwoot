@@ -125,6 +125,115 @@ RSpec.describe 'Person label write paths' do # rubocop:disable RSpec/DescribeCla
       expect(phone_contact.reload.label_list).to be_empty
       expect([phone_conversation, other_channel_conversation].map { |record| record.reload.label_list.to_a }).to all(be_empty)
     end
+
+    context 'when the person also has a snoozed and a pending channel' do
+      include PersonThreadStatusHelpers
+
+      def pending_conversation
+        phone_contact.conversations.order(:id).last
+      end
+
+      def give_statuses
+        give_person_different_statuses(phone_conversation, [other_channel_conversation, 'snoozed'], [pending_conversation, 'pending'])
+      end
+
+      before do
+        create(:conversation, account: account, contact: phone_contact)
+        give_statuses
+      end
+
+      it 'keeps the thread open when a label is set on the phone' do
+        service.sync_label_association(association)
+
+        expect(phone_conversation.reload.label_list).to eq(%w[wa_vip])
+        expect(thread_status_of(phone_conversation)).to eq('open')
+        expect(realtime_status_of(phone_conversation)).to eq('open')
+      end
+
+      it 'keeps the thread open when a label is taken off on the phone' do
+        Labels::UnifiedAssignmentService.add(contact: phone_contact, labels: %w[wa_vip], silent: true)
+        give_statuses
+
+        service.sync_label_association(association.merge('type' => 'remove'))
+
+        expect(phone_conversation.reload.label_list).to be_empty
+        expect(thread_status_of(phone_conversation)).to eq('open')
+        expect(realtime_status_of(phone_conversation)).to eq('open')
+      end
+    end
+  end
+
+  describe 'the status of the thread of a person with an open, a snoozed and a pending conversation' do
+    include PersonThreadStatusHelpers
+
+    def give_statuses
+      give_person_different_statuses(conversation, [second_conversation, 'snoozed'], [third_conversation, 'pending'])
+    end
+
+    def expect_thread_to_stay_open
+      expect(thread_status_of(conversation)).to eq('open')
+      expect(realtime_status_of(conversation)).to eq('open')
+    end
+
+    before { give_statuses }
+
+    describe 'automation rule actions' do
+      def run_rule(actions, on: conversation)
+        AutomationRules::ActionService.new(create(:automation_rule, account: account, actions: actions), account, on).perform
+      end
+
+      it 'add_label leaves the thread open' do
+        run_rule([{ 'action_name' => 'add_label', 'action_params' => %w[vip] }])
+
+        expect(person_lists).to all(eq(%w[vip]))
+        expect_thread_to_stay_open
+      end
+
+      it 'remove_label leaves the thread open' do
+        Labels::UnifiedAssignmentService.add(contact: contact, labels: %w[vip], silent: true)
+        give_statuses
+
+        run_rule([{ 'action_name' => 'remove_label', 'action_params' => %w[vip] }])
+
+        expect(person_lists).to all(be_empty)
+        expect_thread_to_stay_open
+      end
+
+      it 'add_label leaves the thread open when the rule runs on the oldest conversation' do
+        run_rule([{ 'action_name' => 'add_label', 'action_params' => %w[vip] }], on: third_conversation)
+
+        expect_thread_to_stay_open
+      end
+    end
+
+    it 'is not moved by a macro that adds a label' do
+      macro = create(:macro, account: account, actions: [{ 'action_name' => 'add_label', 'action_params' => %w[vip] }])
+
+      Macros::ExecutionService.new(macro, conversation, user).perform
+
+      expect_thread_to_stay_open
+    end
+
+    describe 'bulk actions on people' do
+      it 'is not moved by labels added and removed through the bulk label service' do
+        Labels::UnifiedAssignmentService.add(contact: contact, labels: %w[old], silent: true)
+        give_statuses
+
+        Contacts::BulkAssignLabelsService.new(account: account, contact_ids: [contact.id], labels: %w[vip], remove_labels: %w[old]).perform
+
+        expect(person_lists).to all(eq(%w[vip]))
+        expect_thread_to_stay_open
+      end
+
+      it 'is not moved by labels removed through the contacts bulk action service' do
+        Labels::UnifiedAssignmentService.add(contact: contact, labels: %w[vip], silent: true)
+        give_statuses
+
+        Contacts::BulkActionService.new(account: account, user: user, params: { ids: [contact.id], labels: { remove: %w[vip] } }).perform
+
+        expect_thread_to_stay_open
+      end
+    end
   end
 
   describe 'the auto-resolve label' do

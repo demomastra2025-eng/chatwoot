@@ -126,5 +126,33 @@ RSpec.describe 'Contact Label API', type: :request do
       expect { post url, params: { add: %w[vip] }, headers: agent.create_new_auth_token, as: :json }
         .to have_enqueued_job(Conversations::ActivityMessageJob).once
     end
+
+    context 'when the person has an open, a snoozed and a pending conversation' do
+      include PersonThreadStatusHelpers
+
+      let!(:third_conversation) { create(:conversation, account: account, contact: contact) }
+
+      def give_statuses
+        give_person_different_statuses(first_conversation, [second_conversation, 'snoozed'], [third_conversation, 'pending'])
+      end
+
+      before { give_statuses }
+
+      it 'keeps the thread open, in the list and in the realtime update, when a label is added on the card' do
+        post url, params: { add: %w[vip] }, headers: agent.create_new_auth_token, as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(thread_status_of(first_conversation)).to eq('open')
+        expect(realtime_status_of(first_conversation)).to eq('open')
+      end
+
+      it 'keeps the thread open when a label is removed on the card' do
+        post url, params: { remove: %w[shared channel_two] }, headers: agent.create_new_auth_token, as: :json
+
+        expect(labels).to eq(%w[card_only channel_one])
+        expect(thread_status_of(first_conversation)).to eq('open')
+        expect(realtime_status_of(first_conversation)).to eq('open')
+      end
+    end
   end
 end
