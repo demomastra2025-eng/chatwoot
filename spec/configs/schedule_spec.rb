@@ -84,6 +84,47 @@ RSpec.context 'with valid schedule.yml' do
     )
   end
 
+  describe 'MedElement probe and status reconciliation' do
+    let(:schedule) { YAML.safe_load(file.read) }
+
+    def next_utc_hours(cron, from)
+      time = from
+      Array.new(2) do
+        time = Fugit.parse_cron(cron).next_time(time).to_t
+        time.utc.hour
+      end
+    end
+
+    it 'probes the fast-sync endpoint at 07:00 and 19:00 Almaty time on the queue of the cron-enabled worker' do
+      expect(schedule['medelement_delta_probe_job']).to include(
+        'cron' => '0 7,19 * * * Asia/Almaty',
+        'class' => 'Integrations::Medelement::DeltaProbeJob',
+        'queue' => 'scheduled_jobs',
+        'active_job' => true
+      )
+      expect(next_utc_hours(schedule.dig('medelement_delta_probe_job', 'cron'), Time.utc(2026, 10, 24, 0, 0))).to eq([2, 14])
+    end
+
+    it 'reconciles stale statuses nightly at 03:00 Almaty time, queueing the per-hook runs from the scheduled jobs queue' do
+      expect(schedule['medelement_stale_status_reconciliation_job']).to include(
+        'cron' => '0 3 * * * Asia/Almaty',
+        'class' => 'Integrations::Medelement::StaleStatusReconciliationJob',
+        'queue' => 'scheduled_jobs',
+        'active_job' => true
+      )
+      expect(next_utc_hours(schedule.dig('medelement_stale_status_reconciliation_job', 'cron'), Time.utc(2026, 10, 24, 0, 0))).to eq([22, 22])
+      expect(schedule['medelement_stale_status_reconciliation_job']).not_to have_key('args')
+    end
+
+    it 'gives sidekiq-cron entries it accepts' do
+      %w[medelement_delta_probe_job medelement_stale_status_reconciliation_job].each do |name|
+        job = Sidekiq::Cron::Job.new(schedule.fetch(name).merge('name' => name))
+
+        expect(job.valid?).to be(true), job.errors.inspect
+      end
+    end
+  end
+
   it 'does not schedule obsolete legacy telephony binding reconciliation' do
     schedule = YAML.safe_load(file.read)
 

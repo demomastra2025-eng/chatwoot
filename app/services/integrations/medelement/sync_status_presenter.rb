@@ -60,10 +60,18 @@ class Integrations::Medelement::SyncStatusPresenter
 
   def delta_status
     configuration = Integrations::Medelement::Configuration.new(hook: hook)
-    return { enabled: false } unless delta_enabled?(configuration)
+    return { enabled: false, probe: probe_status } unless delta_enabled?(configuration)
 
     cursor = Integrations::Medelement::SyncCursor.find_by(hook_id: hook.id, name: 'receptions_delta')
-    cursor_status(cursor, configuration).merge(delta_miss_counts)
+    cursor_status(cursor, configuration).merge(delta_miss_counts).merge(probe: probe_status)
+  end
+
+  # The last twice-daily check of the fast-sync endpoint; shown also while fast sync is off, which is when it matters.
+  def probe_status
+    result = hook.settings[Integrations::Medelement::DeltaProbeService::RESULT_KEY]
+    return unless result.is_a?(Hash)
+
+    { checked_at: result['checked_at'], outcome: result['outcome'], error_code: result['error_code'] }
   end
 
   def delta_enabled?(configuration)

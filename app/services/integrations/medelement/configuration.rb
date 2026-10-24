@@ -64,6 +64,12 @@ class Integrations::Medelement::Configuration
     boolean_setting('incremental_receptions_enabled', true)
   end
 
+  # The daily probe switches incremental_receptions_enabled on and off by itself. Setting this to false pins the
+  # current value of that flag for one clinic.
+  def delta_probe_enabled?
+    boolean_setting('delta_probe_enabled', true)
+  end
+
   def incremental_receptions_interval_seconds
     supported_integer_setting('incremental_receptions_interval_seconds', DELTA_INTERVAL_SECONDS, DELTA_INTERVAL_OPTIONS)
   end

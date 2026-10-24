@@ -437,6 +437,29 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     end
   end
 
+  describe '#provider_status_for' do
+    let(:appointment) do
+      create(:scheduling_appointment, account: account, resource: resource, status: 'scheduled', source: 'medelement',
+                                      external_ref: service.external_ref_for(reception['RECEPTION_CODE']))
+    end
+
+    it 'gives the status upsert! would save and saves nothing' do
+      expected = { 'завершена' => 'completed', 'неявка' => 'no_show', 'отменена' => 'cancelled' }
+      expected.each do |provider_status, status|
+        expect(service.provider_status_for(appointment, reception.merge('VISIT_STATUS_NAME' => provider_status))).to eq(status)
+      end
+      expect(service.provider_status_for(appointment, reception.merge('ACTIVE' => 0))).to eq('completed')
+      expect(service.provider_status_for(appointment, reception.merge('REMOVED' => 1))).to eq('cancelled')
+      expect(appointment.reload).to have_attributes(status: 'scheduled', custom_attributes: {})
+    end
+
+    it 'keeps an active reception as it is, including a local confirmation' do
+      expect(service.provider_status_for(appointment, reception)).to eq('scheduled')
+      appointment.update!(status: 'confirmed')
+      expect(service.provider_status_for(appointment, reception)).to eq('confirmed')
+    end
+  end
+
   it 'reimports a trusted outbound appointment without changing its local origin' do
     contact = create(:contact, account: account)
     appointment = create(

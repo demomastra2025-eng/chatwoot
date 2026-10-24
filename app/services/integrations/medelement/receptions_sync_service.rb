@@ -62,6 +62,20 @@ class Integrations::Medelement::ReceptionsSyncService
     sync_reception(reception, resource, contacts)
   end
 
+  # The status import_reported_reception! would give the appointment of this reception, from the importer's own status
+  # mapping and without saving anything. :absent when OneLink has no such appointment, :out_of_scope when the import would
+  # refuse the reception because its specialist or cabinet is not mapped.
+  def preview_reported_status(detail)
+    appointment = account.scheduling_appointments.find_by(external_ref: importer.external_ref_for(detail.fetch('RECEPTION_CODE').to_s))
+    return :absent unless appointment
+    return 'cancelled' if detail['REMOVED'].to_i == 1
+
+    delta_resource!(detail)
+    importer.provider_status_for(appointment, delta_reception(detail))
+  rescue OutOfScopeReception
+    :out_of_scope
+  end
+
   private
 
   attr_reader :account, :client, :configuration, :conflict_tracker, :importer, :appointment_snapshot_versions, :window_mode

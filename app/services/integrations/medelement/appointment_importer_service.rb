@@ -46,6 +46,11 @@ class Integrations::Medelement::AppointmentImporterService
     end
   end
 
+  # The status upsert! would give this appointment for the reception, from the same mapping and without saving anything.
+  def provider_status_for(appointment, reception, starts_at = nil)
+    provider_status_resolution(appointment, reception, starts_at)[:status]
+  end
+
   private
 
   attr_reader :account, :conflict_tracker
