@@ -320,5 +320,13 @@ describe('#ConversationAPI', () => {
         '/api/v1/conversations/1/attachments'
       );
     });
+
+    it('#getAllAttachments names a later page', () => {
+      conversationAPI.getAllAttachments(1, { page: 3 });
+      expect(axiosMock.get).toHaveBeenCalledWith(
+        '/api/v1/conversations/1/attachments',
+        { params: { page: 3 } }
+      );
+    });
   });
 });

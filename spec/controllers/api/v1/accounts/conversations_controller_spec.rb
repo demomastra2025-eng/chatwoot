@@ -1820,6 +1820,28 @@ RSpec.describe 'Conversations API', type: :request do
         response_body = response.parsed_body
         expect(response_body['payload'].length).to eq(1)
       end
+
+      it 'pages through every attachment without repeating or losing any', :aggregate_failures do
+        stub_const('Api::V1::Accounts::ConversationsController::ATTACHMENT_RESULTS_PER_PAGE', 2)
+        # One timestamp for all rows: only the id tiebreaker keeps the page boundaries stable.
+        freeze_time do
+          4.times do
+            create(:message, :with_attachment, conversation: conversation, account: account,
+                                               inbox: conversation.inbox, message_type: 'incoming')
+          end
+        end
+        attachment_ids = conversation.attachments.pluck(:id)
+
+        paged_ids = (1..4).flat_map do |page|
+          get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/attachments",
+              params: { page: page }, headers: administrator.create_new_auth_token, as: :json
+          expect(response.parsed_body.dig('meta', 'total_count')).to eq(5)
+          response.parsed_body['payload'].pluck('id')
+        end
+
+        expect(attachment_ids.size).to eq(5)
+        expect(paged_ids).to match_array(attachment_ids)
+      end
     end
   end
 

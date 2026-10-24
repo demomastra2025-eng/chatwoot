@@ -590,6 +590,8 @@
       "SHARED_FILES": "Attachments"
     },
     "SHARED_FILES": {
+      "PARTIAL": "Showing {loaded} of {total} attachments",
+      "SHOW_MORE": "Show more",
       "EMPTY": "No attachments yet",
       "DOWNLOAD": "Download file",
       "DOWNLOAD_ERROR": "Could not download the file. Please try again.",

@@ -1794,6 +1794,32 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(body.dig(:meta, :total_count)).to eq(1)
       expect(body[:payload].pluck(:id)).to eq([attachment.id])
     end
+
+    it 'pages through every attachment of the thread without repeating or losing any', :aggregate_failures do
+      stub_const('Api::V1::Accounts::CommunicationThreadsController::ATTACHMENT_RESULTS_PER_PAGE', 2)
+      conversation = create(:conversation, account: account)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      thread = conversation.reload.communication_thread
+      # One timestamp for all rows: only the id tiebreaker keeps the page boundaries stable.
+      attachment_ids = []
+      freeze_time do
+        5.times do
+          message = create(:message, :with_attachment, conversation: conversation, account: account,
+                                                       inbox: conversation.inbox, message_type: 'incoming')
+          attachment_ids << message.attachments.first.id
+        end
+      end
+
+      paged_ids = (1..4).flat_map do |page|
+        get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/attachments",
+            params: { page: page }, headers: headers, as: :json
+        body = JSON.parse(response.body, symbolize_names: true)
+        expect(body.dig(:meta, :total_count)).to eq(5)
+        body[:payload].pluck(:id)
+      end
+
+      expect(paged_ids).to eq(attachment_ids.sort.reverse)
+    end
   end
 
   describe 'GET /api/v1/accounts/:account_id/communication_threads/:id/labels' do

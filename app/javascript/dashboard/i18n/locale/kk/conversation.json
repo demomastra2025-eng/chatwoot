@@ -507,6 +507,10 @@
       "LINEAR_ISSUES": "Linked Linear Issues",
       "SHOPIFY_ORDERS": "Shopify Orders"
     },
+    "SHARED_FILES": {
+      "PARTIAL": "{total} тіркемеден {loaded} көрсетілді",
+      "SHOW_MORE": "Тағы көрсету"
+    },
     "CRM_ACTIONS": {
       "CREATE_DEAL": "Мәміле құру",
       "CREATE_TASK": "Міндет құру",

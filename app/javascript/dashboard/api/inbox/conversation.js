@@ -227,8 +227,13 @@ class ConversationApi extends ApiClient {
     });
   }
 
-  getAllAttachments(conversationId) {
-    return axios.get(`${this.url}/${conversationId}/attachments`);
+  // The first page needs no parameter; further pages ask for it explicitly.
+  getAllAttachments(conversationId, { page } = {}) {
+    return page > 1
+      ? axios.get(`${this.url}/${conversationId}/attachments`, {
+          params: { page },
+        })
+      : axios.get(`${this.url}/${conversationId}/attachments`);
   }
 
   getInboxAssistant(conversationId) {

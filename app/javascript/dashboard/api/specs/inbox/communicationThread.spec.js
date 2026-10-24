@@ -70,6 +70,23 @@ describe('#CommunicationThreadAPI', () => {
       );
     });
 
+    it('#attachments asks for the first page without a parameter', () => {
+      communicationThreadAPI.attachments(7);
+
+      expect(axiosMock.get).toHaveBeenCalledWith(
+        '/api/v1/communication_threads/7/attachments'
+      );
+    });
+
+    it('#attachments names a later page', () => {
+      communicationThreadAPI.attachments(7, { page: 2 });
+
+      expect(axiosMock.get).toHaveBeenCalledWith(
+        '/api/v1/communication_threads/7/attachments',
+        { params: { page: 2 } }
+      );
+    });
+
     it('#meta communication threads', () => {
       communicationThreadAPI.meta({
         status: 'open',

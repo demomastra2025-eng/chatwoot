@@ -36,6 +36,9 @@ const state = {
   // Chats whose full attachment load attempt settled; failed refreshes retain
   // any attachment data already in the store.
   fullyLoadedAttachments: {},
+  // Real number of attachments of a chat (meta.total_count of the attachments endpoint). The list can hold fewer
+  // while later pages are loading or when loading them failed.
+  attachmentTotals: {},
   listLoadingStatus: true,
   listLoadingError: false,
   chatStatusFilter: wootConstants.STATUS_TYPE.OPEN,
@@ -278,6 +281,17 @@ const communicationThreadUpdatesWithRealtimeChannel = (
   };
 };
 
+// Moves the known total of a chat together with attachments that arrive or disappear after the list was loaded.
+const adjustAttachmentTotal = (_state, id, delta) => {
+  const total = _state.attachmentTotals?.[id];
+  if (total === undefined || !delta) return;
+
+  _state.attachmentTotals = {
+    ..._state.attachmentTotals,
+    [id]: Math.max(total + delta, 0),
+  };
+};
+
 const addAttachmentsForChat = (_state, id, message) => {
   if (message.status !== MESSAGE_STATUS.SENT || !message.attachments?.length) {
     return;
@@ -291,6 +305,7 @@ const addAttachmentsForChat = (_state, id, message) => {
   });
 
   _state.attachments[id] = [...existingAttachments, ...attachmentsToAdd];
+  adjustAttachmentTotal(_state, id, attachmentsToAdd.length);
 };
 
 const identityKey = (type, value) => `${type}:${String(value)}`;
@@ -566,12 +581,22 @@ export const mutations = {
       refreshCommunicationThreadReplyState(chat);
     }
   },
-  [types.SET_ALL_ATTACHMENTS](_state, { id, data }) {
+  [types.SET_ALL_ATTACHMENTS](_state, { id, data, total }) {
     _state.attachments[id] = [...data];
     _state.fullyLoadedAttachments = {
       ...(_state.fullyLoadedAttachments || {}),
       [id]: true,
     };
+    if (total !== undefined) {
+      _state.attachmentTotals = {
+        ...(_state.attachmentTotals || {}),
+        [id]: total,
+      };
+    } else if (_state.attachmentTotals?.[id] !== undefined) {
+      const totals = { ..._state.attachmentTotals };
+      delete totals[id];
+      _state.attachmentTotals = totals;
+    }
   },
   [types.SET_MISSING_MESSAGES](_state, { id, data, conversationType }) {
     const chat = getConversationById(_state)(id, conversationType);
@@ -700,6 +725,11 @@ export const mutations = {
     _state.attachments[id] = existingAttachments.filter(attachment => {
       return attachment.message_id !== message.id;
     });
+    adjustAttachmentTotal(
+      _state,
+      id,
+      _state.attachments[id].length - existingAttachments.length
+    );
   },
 
   [types.ADD_MESSAGE](_state, message) {
