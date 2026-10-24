@@ -469,6 +469,37 @@ RSpec.describe Contact do
         expect(contact.push_event_data(contact_inbox: telegram_contact_inbox)[:thumbnail]).to eq('https://cdn.example.com/tg-avatar.jpg')
       end
 
+      it 'keeps the same thumbnail while the channels sync in turn and nothing is pinned or attached' do
+        # Both personal-channel sync services stamp last_synced_at on every incoming message.
+        synced_in_turn = [telegram_profile, whatsapp_profile, telegram_profile, whatsapp_profile, telegram_profile]
+        results = synced_in_turn.each_with_index.map do |profile, minute|
+          profile.update!(last_synced_at: Time.zone.parse('2026-10-24 10:00:00') + minute.minutes)
+          fresh = described_class.find(contact.id)
+
+          [
+            fresh.push_event_data(contact_inbox: profile.contact_inbox)[:thumbnail],
+            fresh.push_event_data[:thumbnail],
+            fresh.resolved_primary_avatar_source['contact_inbox_id']
+          ]
+        end
+
+        expect(contact.additional_attributes).not_to have_key(Contact::DISPLAY_PREFERENCES_KEY)
+        expect(contact.avatar).not_to be_attached
+        telegram_avatar = 'https://cdn.example.com/tg-avatar.jpg'
+        expect(results.uniq).to eq([[telegram_avatar, telegram_avatar, telegram_contact_inbox.id]])
+      end
+
+      it 'takes the avatar of the first linked channel that has one, whichever channel synced last' do
+        telegram_profile.update!(avatar_url: nil, last_synced_at: 1.day.ago)
+        whatsapp_profile.update!(last_synced_at: Time.current)
+
+        expect(described_class.find(contact.id).push_event_data[:thumbnail]).to eq('https://cdn.example.com/wa-avatar.jpg')
+
+        telegram_profile.update!(avatar_url: 'https://cdn.example.com/tg-avatar.jpg')
+
+        expect(described_class.find(contact.id).push_event_data[:thumbnail]).to eq('https://cdn.example.com/tg-avatar.jpg')
+      end
+
       it 'keeps the attached contact avatar over the avatar of the channel the event came from' do
         contact.avatar.attach(io: Rails.root.join('spec/assets/avatar.png').open, filename: 'avatar.png', content_type: 'image/png')
         contact.reload
@@ -513,7 +544,7 @@ RSpec.describe Contact do
         }
       end
 
-      it 'falls back to the latest channel avatar exactly like no preference, without an error' do
+      it 'falls back to the first linked channel avatar exactly like no preference, without an error' do
         create(:contact_channel_profile, contact: contact, contact_inbox: dead_contact_inbox, inbox: dead_contact_inbox.inbox,
                                          source_id: 'gone-1', display_name: 'Gone', avatar_url: 'https://cdn.example.com/gone.jpg',
                                          last_synced_at: 1.year.ago)
@@ -525,7 +556,7 @@ RSpec.describe Contact do
         contact.update!(additional_attributes: contact.additional_attributes.except(Contact::DISPLAY_PREFERENCES_KEY))
 
         expect(with_dead_preference).to eq(snapshot(described_class.find(contact.id)))
-        expect(with_dead_preference[:avatar]).to eq('https://cdn.example.com/wa-avatar.jpg')
+        expect(with_dead_preference[:avatar]).to eq('https://cdn.example.com/tg-avatar.jpg')
       end
 
       it 'falls back to the attached contact avatar exactly like no preference' do
