@@ -19,10 +19,13 @@ RSpec.describe Scheduling::Appointments::UpsertService do
   end
   let(:reception_time) { 30 }
   let(:grid_override) { nil }
+  # The detector has settled the grid of the doctor (slot_grid_checked_at): only then is a start off it refused.
+  let(:verified) { true }
   let(:resource) do
     attributes = { 'medelement_specialist_code' => 'doctor-1', 'medelement_reception_time' => reception_time,
                    'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }] }
     attributes['slot_grid_min'] = grid_override if grid_override
+    attributes['slot_grid_checked_at'] = '2026-04-19T00:00:00Z' if verified
     create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: reception_time, custom_attributes: attributes)
   end
   let(:service) do
@@ -103,6 +106,28 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     it 'still refuses a start that is not on the finer grid' do
       expect { off_grid(zone.local(2026, 4, 20, 9, 15)) }.to raise_error(Scheduling::Error) { |error|
         expect(error.code).to eq('START_OFF_GRID')
+      }
+    end
+  end
+
+  context 'before the grid of the doctor is verified' do
+    let(:verified) { false }
+
+    it 'books a start inside a cell, as a doctor booked on 10-minute boundaries is booked' do
+      expect(off_grid(zone.local(2026, 4, 20, 9, 10))).to have_attributes(starts_at: zone.local(2026, 4, 20, 9, 10))
+    end
+
+    it 'moves a booking to such a start' do
+      booking = perform
+
+      expect(move(booking, zone.local(2026, 4, 20, 10, 20)).starts_at).to eq(zone.local(2026, 4, 20, 10, 20))
+    end
+
+    it 'still refuses a time that is taken' do
+      perform
+
+      expect { off_grid(zone.local(2026, 4, 20, 9, 10)) }.to raise_error(Scheduling::Error) { |error|
+        expect(error.code).to eq('SLOT_CONFLICT')
       }
     end
   end

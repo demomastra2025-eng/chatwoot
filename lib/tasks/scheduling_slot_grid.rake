@@ -8,6 +8,8 @@ namespace :scheduling do
 
     results = Scheduling::SlotGridDetector.run(scope: scope, apply: apply)
     results.each { |result| puts(result.to_h.to_json) }
-    puts({ applied: apply, resources: results.size, finer: results.count { |result| result.status == 'finer' } }.to_json)
+    counts = results.map(&:status).tally
+    puts({ applied: apply, resources: results.size, finer: counts.fetch('finer', 0), on_grid: counts.fetch('on_grid', 0),
+           undecided: counts.fetch('irregular', 0) + counts.fetch('insufficient', 0) }.to_json)
   end
 end

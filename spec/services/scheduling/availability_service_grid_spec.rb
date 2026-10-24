@@ -8,9 +8,12 @@ RSpec.describe Scheduling::AvailabilityService do
   let(:appointments) { [] }
   let(:reception_time) { 10 }
   let(:grid_override) { nil }
+  # The detector has settled the grid of the specialist (slot_grid_checked_at): only then is a start off it refused.
+  let(:verified) { true }
   let(:resource) do
     attributes = { 'medelement_specialist_code' => 'sp-1', 'medelement_reception_time' => reception_time }
     attributes['slot_grid_min'] = grid_override if grid_override
+    attributes['slot_grid_checked_at'] = '2026-04-20T00:00:00Z' if verified
     create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: reception_time, custom_attributes: attributes)
   end
 
@@ -191,6 +194,59 @@ RSpec.describe Scheduling::AvailabilityService do
 
         expect(ok.available?).to be(true)
         expect(off.code).to eq('START_OFF_GRID')
+      end
+    end
+  end
+
+  describe 'a specialist whose grid is not verified yet' do
+    let(:verified) { false }
+    let(:reception_time) { 30 }
+    let(:service) { provider_service(cells(local(9), local(12))) }
+
+    def check(hour, minute)
+      service.availability_result(starts_at: local(hour, minute), ends_at: local(hour, minute) + 30.minutes, enforce_grid: true)
+    end
+
+    it 'does not refuse a start inside a cell, as a doctor booked on 10-minute boundaries is booked' do
+      [[9, 10], [9, 20], [10, 40], [11, 5]].each do |hour, minute|
+        expect(check(hour, minute).available?).to be(true)
+      end
+    end
+
+    it 'still offers the cell starts only' do
+      expect(starts(service, 30)).to eq(%w[09:00 09:30 10:00 10:30 11:00 11:30])
+    end
+
+    it 'still answers a taken time and a time outside the hours' do
+      appointments << create(:scheduling_appointment, account: account, resource: resource, starts_at: local(9, 30), ends_at: local(10))
+
+      expect(check(9, 40).code).to eq('SLOT_CONFLICT')
+      expect(check(12, 10).code).to eq('OUTSIDE_WORKING_HOURS')
+    end
+
+    context 'when slot_grid_min settles the grid at the reception time' do
+      let(:grid_override) { 30 }
+
+      it 'refuses a start off the cells' do
+        expect(check(9, 10).code).to eq('START_OFF_GRID')
+        expect(check(9, 30).available?).to be(true)
+      end
+    end
+
+    context 'when slot_grid_min is a finer step' do
+      let(:grid_override) { 10 }
+
+      it 'refuses a start off the finer grid' do
+        expect(check(9, 10).available?).to be(true)
+        expect(check(9, 15).code).to eq('START_OFF_GRID')
+      end
+    end
+
+    context 'when slot_grid_min is not a usable step' do
+      let(:grid_override) { 7 }
+
+      it 'does not count as a verdict' do
+        expect(check(9, 10).available?).to be(true)
       end
     end
   end

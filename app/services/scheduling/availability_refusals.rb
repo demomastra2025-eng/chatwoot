@@ -37,9 +37,12 @@ module Scheduling::AvailabilityRefusals
     end
   end
 
-  # The grid is enforced for a MedElement specialist whose cells the provider gave; it is the step of Scheduling::SlotGrid.
+  # The grid is enforced for a MedElement specialist whose cells the provider gave and whose grid is verified (the detector or a
+  # person settled it, see Scheduling::SlotGrid.verified?); it is the step of Scheduling::SlotGrid. Until then a start the specialist
+  # really books on, inside a cell, is not refused.
   def grid_enforced?
-    @replace_work_rules && !@provider_working_windows.nil? && Scheduling::SlotGrid.provider?(resource)
+    @replace_work_rules && !@provider_working_windows.nil? && Scheduling::SlotGrid.provider?(resource) &&
+      Scheduling::SlotGrid.verified?(resource)
   end
 
   def grid_step

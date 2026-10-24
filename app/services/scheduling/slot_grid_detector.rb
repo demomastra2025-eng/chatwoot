@@ -1,6 +1,10 @@
 # Finds the start grid a MedElement specialist is really booked on, from the receptions imported in the last 60 days, and stores a
 # finer step than the reception time in custom_attributes.slot_grid_min (see Scheduling::SlotGrid).
 #
+# A verdict (finer or on_grid) also stores custom_attributes.slot_grid_checked_at: the grid is verified from then on, and only a
+# verified grid makes a booking start off it refused. A specialist the data cannot decide (irregular, insufficient) stays unverified,
+# so their starts are never refused on a guess.
+#
 # Some doctors book on 10-minute boundaries inside 30-minute cells; most are exactly on the cell grid. The coarsest step that holds
 # at least 95% of the starts wins: when the reception time itself holds them, no override is needed and an old one is removed.
 #
@@ -45,17 +49,18 @@ class Scheduling::SlotGridDetector
     result('finer', reception, step, share_of(days, step, starts), starts)
   end
 
-  # Stores the finer step, or removes the stored one when the reception grid holds; an unclear result changes nothing.
+  # Stores the finer step, or removes the stored one when the reception grid holds, and marks the grid verified; an unclear result
+  # changes nothing. A second run with the same verdict writes nothing.
   def apply!(result)
     return false unless result.status.in?(%w[finer on_grid])
 
     @resource.with_lock do
       attributes = @resource.custom_attributes.to_h
-      stored = attributes[Scheduling::SlotGrid::OVERRIDE_KEY]
       wanted = result.step_min
-      next false if stored == wanted
+      next false if attributes[Scheduling::SlotGrid::OVERRIDE_KEY] == wanted && attributes[Scheduling::SlotGrid::CHECKED_AT_KEY].present?
 
       wanted ? attributes[Scheduling::SlotGrid::OVERRIDE_KEY] = wanted : attributes.delete(Scheduling::SlotGrid::OVERRIDE_KEY)
+      attributes[Scheduling::SlotGrid::CHECKED_AT_KEY] = @now.utc.iso8601
       @resource.update!(custom_attributes: attributes)
       true
     end

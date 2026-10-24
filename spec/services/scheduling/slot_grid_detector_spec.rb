@@ -107,6 +107,54 @@ RSpec.describe Scheduling::SlotGridDetector do
       expect(Scheduling::SlotGrid.step_minutes(resource)).to eq(10)
     end
 
+    it 'leaves the grid unverified on a dry run and verifies it on apply' do
+      described_class.run(scope: scope)
+
+      expect(resource.reload.custom_attributes).not_to have_key('slot_grid_checked_at')
+      expect(Scheduling::SlotGrid.verified?(resource)).to be(false)
+
+      described_class.run(scope: scope, apply: true)
+
+      expect(resource.reload.custom_attributes).to include('slot_grid_checked_at' => Time.current.utc.iso8601)
+      expect(Scheduling::SlotGrid.verified?(resource)).to be(true)
+    end
+
+    it 'verifies a doctor whose starts sit on the cells, without storing a step' do
+      Scheduling::Appointment.where(resource_id: resource.id).delete_all
+      import([[9, 0], [9, 30], [10, 0]])
+
+      described_class.run(scope: scope, apply: true)
+
+      expect(resource.reload.custom_attributes).to include('slot_grid_checked_at' => Time.current.utc.iso8601)
+      expect(resource.custom_attributes).not_to have_key('slot_grid_min')
+      expect(Scheduling::SlotGrid.verified?(resource)).to be(true)
+    end
+
+    it 'writes nothing on a second run with the same verdict' do
+      described_class.run(scope: scope, apply: true)
+      stored = resource.reload.custom_attributes
+
+      described_class.run(scope: scope, apply: true, now: Time.current + 1.hour)
+
+      expect(resource.reload.custom_attributes).to eq(stored)
+    end
+
+    it 'leaves a doctor unverified when the starts are irregular or too few to decide' do
+      Scheduling::Appointment.where(resource_id: resource.id).delete_all
+      import([[9, 0], [9, 7]])
+      irregular = resource
+
+      few = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 30,
+                                         custom_attributes: attributes.merge('medelement_specialist_code' => 'sp-2'))
+
+      described_class.run(scope: scope, apply: true)
+
+      expect(irregular.reload.custom_attributes).not_to have_key('slot_grid_checked_at')
+      expect(few.reload.custom_attributes).not_to have_key('slot_grid_checked_at')
+      expect(Scheduling::SlotGrid.verified?(irregular)).to be(false)
+      expect(Scheduling::SlotGrid.verified?(few)).to be(false)
+    end
+
     it 'removes a stored step when the reception time holds the starts' do
       resource.update!(custom_attributes: attributes.merge('slot_grid_min' => 10))
       Scheduling::Appointment.where(resource_id: resource.id).delete_all
@@ -115,6 +163,7 @@ RSpec.describe Scheduling::SlotGridDetector do
       described_class.run(scope: scope, apply: true)
 
       expect(resource.reload.custom_attributes).not_to have_key('slot_grid_min')
+      expect(Scheduling::SlotGrid.verified?(resource)).to be(true)
     end
 
     it 'keeps a stored step when the data is not enough to decide' do

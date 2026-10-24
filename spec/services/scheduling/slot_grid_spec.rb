@@ -62,6 +62,36 @@ RSpec.describe Scheduling::SlotGrid do
     end
   end
 
+  describe '.verified?' do
+    def doctor(**attributes)
+      resource(medelement_specialist_code: 'sp-1', medelement_reception_time: 30, **attributes)
+    end
+
+    it 'is false for a specialist whose grid nobody has settled' do
+      expect(described_class.verified?(doctor)).to be(false)
+    end
+
+    it 'is true once the detector stored the time of its verdict' do
+      expect(described_class.verified?(doctor(slot_grid_checked_at: '2026-04-20T00:00:00Z'))).to be(true)
+    end
+
+    it 'is true for a finer slot_grid_min and for one equal to the reception time' do
+      expect(described_class.verified?(doctor(slot_grid_min: 10))).to be(true)
+      expect(described_class.verified?(doctor(slot_grid_min: '15'))).to be(true)
+      expect(described_class.verified?(doctor(slot_grid_min: 30))).to be(true)
+    end
+
+    it 'is false for a slot_grid_min that is no usable step' do
+      [7, 45, 0, -10, 'ten', nil, ''].each do |value|
+        expect(described_class.verified?(doctor(slot_grid_min: value))).to be(false)
+      end
+    end
+
+    it 'is false when only an empty verdict time is stored' do
+      expect(described_class.verified?(doctor(slot_grid_checked_at: ''))).to be(false)
+    end
+  end
+
   describe '.starts' do
     let(:cell_minutes) { 10 }
     let(:cells) { (at(14, 20).to_i...at(20).to_i).step(cell_minutes * 60).map { |from| [zone.at(from), zone.at(from + (cell_minutes * 60))] } }

@@ -7,8 +7,13 @@
 # The step is the reception time (MedElement) or slot_duration_min (a specialist without MedElement hours), unless the resource
 # says a finer one in custom_attributes.slot_grid_min: some doctors book on 10-minute boundaries inside 30-minute cells. The
 # override only ever refines the grid (it must divide the reception time), so it can add starts and never moves a cell start.
+#
+# The cells always cut the starts that are offered (they are bookable on any grid), but a booking start is refused as off the grid
+# only for a specialist whose grid is verified: Scheduling::SlotGridDetector (rake scheduling:detect_slot_grid) has settled it from the
+# real starts, or a person set slot_grid_min. Without that verdict the doctors who book finer than their cells would be refused.
 module Scheduling::SlotGrid
   OVERRIDE_KEY = 'slot_grid_min'.freeze
+  CHECKED_AT_KEY = 'slot_grid_checked_at'.freeze
   RECEPTION_TIME_KEY = 'medelement_reception_time'.freeze
   SPECIALIST_CODE_KEY = 'medelement_specialist_code'.freeze
   MIN_STEP_MINUTES = Scheduling::Constants::SLOT_STEP_MINUTES
@@ -19,6 +24,16 @@ module Scheduling::SlotGrid
   # A specialist whose hours come from MedElement: the specialist code is what links the resource to the provider.
   def provider?(resource)
     custom_attributes(resource)[SPECIALIST_CODE_KEY].present?
+  end
+
+  # True when the grid of the specialist is settled: the detector stored the time of its verdict (the reception time holds the starts,
+  # or a finer step does), or slot_grid_min holds a usable step (the reception time itself or a finer divisor of it).
+  def verified?(resource)
+    return true if custom_attributes(resource)[CHECKED_AT_KEY].present?
+
+    stored = whole_minutes(custom_attributes(resource)[OVERRIDE_KEY])
+    base = base_step_minutes(resource)
+    stored.present? && (stored == base || refines?(stored, base))
   end
 
   # The step between two starts, in minutes.
