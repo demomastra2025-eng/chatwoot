@@ -20,10 +20,13 @@ class Conversations::FilterService < FilterService
   def selection_scope
     validate_query_operator
     @base_filtered_conversations = query_builder(@filters['conversations'])
-    @conversations = apply_sidebar_scopes(
-      apply_scheduling_appointment_context(
-        apply_crm_deal_context(@base_filtered_conversations)
-      )
+    @conversations = Conversations::ThreadRowDeduplicator.apply(
+      apply_sidebar_scopes(
+        apply_scheduling_appointment_context(
+          apply_crm_deal_context(@base_filtered_conversations)
+        )
+      ),
+      account: @account
     )
   end
 

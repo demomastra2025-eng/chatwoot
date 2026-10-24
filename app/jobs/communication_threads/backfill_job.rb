@@ -39,7 +39,7 @@ class CommunicationThreads::BackfillJob < ApplicationJob
     count_expected_changes(conversation)
     return if dry_run
 
-    Conversations::CommunicationThreadResolver.new(conversation: conversation).perform
+    Conversations::CommunicationThreadResolver.new(conversation: conversation, enforce_single_open_dialog: false).perform
   rescue ActiveRecord::ActiveRecordError => e
     counts[:skipped] += 1
     Rails.logger.warn("CommunicationThreads::BackfillJob skipped conversation=#{conversation.id}: #{e.class}: #{e.message}")

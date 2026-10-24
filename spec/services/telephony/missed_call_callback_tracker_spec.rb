@@ -194,4 +194,61 @@ RSpec.describe Telephony::MissedCallCallbackTracker do
       expect(result[:conversations].map(&:id)).not_to include(normal_conversation.id)
     end
   end
+
+  describe 'the end of a call in a thread with another open dialog' do
+    let(:whatsapp_inbox) { create(:channel_whatsapp_web, account: account).inbox }
+
+    before { account.enable_features!('communication_threads') }
+
+    def open_dialog(inbox, minutes_ago:, attributes: {})
+      create(:conversation, account: account, inbox: inbox, contact: contact, status: :resolved).tap do |record|
+        record.update_columns( # rubocop:disable Rails/SkipsModelValidations
+          { status: Conversation.statuses.fetch('open'), last_activity_at: minutes_ago.minutes.ago }.merge(attributes)
+        )
+      end
+    end
+
+    def call_session_for(record, status:, answered_at: nil)
+      Telephony::CallSession.create!(
+        account: account, inbox: voice_inbox, contact: contact, conversation: record, provider: 'wazo',
+        external_call_ref: "wazo-#{SecureRandom.hex(4)}", direction: 'inbound', status: status, answered_at: answered_at,
+        from_number: '+77015556677', to_number: '+77085012233', ended_at: Time.current
+      )
+    end
+
+    it 'decides the single open dialog once an answered call is over, because no conversation was closed during it', :aggregate_failures do
+      chat = open_dialog(whatsapp_inbox, minutes_ago: 5)
+      call = open_dialog(voice_inbox, minutes_ago: 0, attributes: { additional_attributes: { 'call_status' => 'completed' } })
+      session = call_session_for(call, status: 'completed', answered_at: 2.minutes.ago)
+
+      expect(described_class.sync_for_call_session!(session)).to eq(:callback_cleared)
+
+      expect(chat.reload).to be_open
+      expect(call.reload).to be_resolved
+    end
+
+    it 'carries a missed call to the dialog that stays, and leaves the flag on the resolved call', :aggregate_failures do
+      chat = open_dialog(whatsapp_inbox, minutes_ago: 5)
+      call = open_dialog(voice_inbox, minutes_ago: 0, attributes: { additional_attributes: { 'call_status' => 'no_answer' } })
+      session = call_session_for(call, status: 'no_answer')
+
+      expect(described_class.sync_for_call_session!(session)).to eq(:missed_marked)
+
+      expect(chat.reload).to be_open
+      expect(described_class.waiting_for_callback?(chat)).to be(true)
+      expect(chat.additional_attributes['last_missed_call_ref']).to eq(session.external_call_ref)
+      expect(call.reload).to be_resolved
+      expect(described_class.waiting_for_callback?(call)).to be(true)
+    end
+
+    it 'does not close anything while the call has not ended' do
+      chat = open_dialog(whatsapp_inbox, minutes_ago: 5)
+      call = open_dialog(voice_inbox, minutes_ago: 0, attributes: { additional_attributes: { 'call_status' => 'in_progress' } })
+      session = call_session_for(call, status: 'in_progress', answered_at: Time.current)
+
+      described_class.sync_for_call_session!(session)
+
+      expect([chat.reload.status, call.reload.status]).to eq(%w[open open])
+    end
+  end
 end

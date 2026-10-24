@@ -1,17 +1,36 @@
 require 'digest'
 
-class Conversations::CommunicationThreadResolver
-  def initialize(conversation:)
+class Conversations::CommunicationThreadResolver # rubocop:disable Metrics/ClassLength
+  # enforce_single_open_dialog: after the thread is refreshed, keep one open dialog per person, see
+  # CommunicationThreads::SingleOpenDialogService. preferred_conversation_id is the conversation a person has just
+  # reopened by hand: it stays when several are open. Callers that only repair thread links (the backfill) and the
+  # service itself, which refreshes the thread after resolving, pass false.
+  def initialize(conversation:, enforce_single_open_dialog: true, preferred_conversation_id: nil)
     # Conversation DB triggers populate display_id/uuid after insert and the
     # originating instance can still report those attributes as dirty. Locking
     # that instance raises in Active Record, so resolve against a fresh copy
     # without clearing the caller's saved_changes used by event dispatchers.
     @conversation = conversation&.persisted? ? conversation.class.find(conversation.id) : conversation
+    @enforce_single_open_dialog = enforce_single_open_dialog
+    @preferred_conversation_id = preferred_conversation_id
   end
 
   def perform
     return unless linkable_conversation?
 
+    thread = refresh_linked_thread
+    return thread unless thread && @enforce_single_open_dialog
+
+    # Two or more open or pending conversations in the thread: all but one are resolved silently, outside the transaction
+    # of the refresh (see CommunicationThreads::SingleOpenDialogService for the lock order).
+    CommunicationThreads::SingleOpenDialogService.enforce(thread, linked_conversations(thread), @preferred_conversation_id)
+  end
+
+  private
+
+  attr_reader :conversation
+
+  def refresh_linked_thread
     CommunicationThread.transaction do
       conversation.lock!
       next unless linkable_conversation?
@@ -31,10 +50,6 @@ class Conversations::CommunicationThreadResolver
       thread
     end
   end
-
-  private
-
-  attr_reader :conversation
 
   def lock_contact_thread!(account_id, contact_id)
     identity = "communication-thread:#{account_id}:#{contact_id}"

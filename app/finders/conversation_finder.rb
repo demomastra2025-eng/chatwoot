@@ -94,6 +94,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     filter_by_waiting_for_callback
     filter_by_query
     filter_by_source_id
+    filter_by_thread_rows
   end
 
   def set_inboxes
@@ -216,6 +217,13 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
 
     @conversations = @conversations.joins(:contact_inbox)
     @conversations = @conversations.where(contact_inboxes: { source_id: params[:source_id] })
+  end
+
+  # One row per person, as in the list of threads. A text search keeps every conversation that matches.
+  def filter_by_thread_rows
+    return if params[:q]
+
+    @conversations = Conversations::ThreadRowDeduplicator.apply(@conversations, account: current_account)
   end
 
   def set_count_for_all_conversations
