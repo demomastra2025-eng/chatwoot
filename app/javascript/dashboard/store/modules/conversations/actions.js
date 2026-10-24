@@ -978,6 +978,32 @@ const actions = {
         : ConversationApi.getAllAttachments(conversationId, ...pageOptions);
     };
     let totalCount;
+    let isComplete = false;
+
+    // The realtime feed adds new attachments to the store while the pages load. They are the newest ones, so they come
+    // before every page that is fetched later and are never on one: they are kept. What the store held before is
+    // replaced only when every page is loaded.
+    const idsAtStart = new Set(
+      (state.attachments?.[conversationId] || []).map(({ id }) => id)
+    );
+    const commitLoaded = () => {
+      if (!isExpectedContextCurrent()) return;
+
+      const fetchedIds = new Set(attachments.map(({ id }) => id));
+      const kept = (state.attachments?.[conversationId] || []).filter(
+        ({ id }) => !fetchedIds.has(id) && !(isComplete && idsAtStart.has(id))
+      );
+      const data = [...attachments, ...kept];
+      commit(types.SET_ALL_ATTACHMENTS, {
+        id: conversationId,
+        data,
+        ...optionalTotal(
+          totalCount === undefined
+            ? undefined
+            : Math.max(totalCount, data.length)
+        ),
+      });
+    };
 
     try {
       const { data } = await fetchPage(1);
@@ -986,7 +1012,9 @@ const actions = {
       requestSucceeded = true;
 
       // The endpoint is paged, so a person with a long history has more than the first page. Keep loading until
-      // every attachment is here. A failing later page leaves the pages loaded so far; the panel reports the shortfall.
+      // every attachment is here, and show each page as soon as it is loaded. A failing later page leaves the pages
+      // loaded so far; the panel reports the shortfall. Only the chat itself ends the loop: a change of the route
+      // query (a list filter) must not throw away a load that is half done.
       let page = 1;
       while (
         totalCount !== undefined &&
@@ -994,6 +1022,7 @@ const actions = {
         page < MAX_ATTACHMENT_PAGES &&
         isExpectedContextCurrent()
       ) {
+        commitLoaded();
         page += 1;
         // eslint-disable-next-line no-await-in-loop
         const { data: pageData } = await fetchPage(page);
@@ -1002,6 +1031,7 @@ const actions = {
 
         attachments = mergeAttachmentPage(attachments, pageAttachments);
       }
+      isComplete = true;
     } catch (error) {
       // in case of error, log the error and continue
       Sentry.setContext('Conversation', {
@@ -1014,17 +1044,13 @@ const actions = {
     } finally {
       // A delayed request must not replace the current chat's attachments after
       // the account, route, or selected chat changes.
-      if (isExpectedContextCurrent()) {
+      if (requestSucceeded) {
+        commitLoaded();
+      } else if (isExpectedContextCurrent()) {
         commit(types.SET_ALL_ATTACHMENTS, {
           id: conversationId,
-          data: requestSucceeded
-            ? attachments
-            : state.attachments?.[conversationId] || [],
-          ...optionalTotal(
-            requestSucceeded
-              ? totalCount
-              : state.attachmentTotals?.[conversationId]
-          ),
+          data: state.attachments?.[conversationId] || [],
+          ...optionalTotal(state.attachmentTotals?.[conversationId]),
         });
       }
     }

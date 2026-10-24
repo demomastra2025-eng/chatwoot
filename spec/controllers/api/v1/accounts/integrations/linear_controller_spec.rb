@@ -334,6 +334,40 @@ RSpec.describe 'Linear Integration API', type: :request do
         end
       end
 
+      context 'when the account uses communication threads' do
+        let(:dialog_link) do
+          "#{ENV.fetch('FRONTEND_URL', nil)}/app/accounts/#{account.id}/communication_threads/#{conversation.reload.communication_thread.display_id}"
+        end
+
+        before { account.enable_features!('communication_threads') }
+
+        it 'finds the issues linked under the dialog and under the old conversation link, each once' do
+          allow(processor_service).to receive(:linked_issues).with(link).and_return(data: [{ 'id' => 'old' }, { 'id' => 'both' }])
+          allow(processor_service).to receive(:linked_issues).with(dialog_link).and_return(data: [{ 'id' => 'new' }, { 'id' => 'both' }])
+
+          get "/api/v1/accounts/#{account.id}/integrations/linear/linked_issues",
+              params: { conversation_id: conversation.display_id },
+              headers: agent.create_new_auth_token,
+              as: :json
+
+          expect(response).to have_http_status(:ok)
+          expect(response.parsed_body.pluck('id')).to eq(%w[new both old])
+        end
+
+        it 'returns the error when one of the lookups fails, so a missing link is not taken for no link' do
+          allow(processor_service).to receive(:linked_issues).with(link).and_return(error: 'error message')
+          allow(processor_service).to receive(:linked_issues).with(dialog_link).and_return(data: [{ 'id' => 'new' }])
+
+          get "/api/v1/accounts/#{account.id}/integrations/linear/linked_issues",
+              params: { conversation_id: conversation.display_id },
+              headers: agent.create_new_auth_token,
+              as: :json
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.body).to include('error message')
+        end
+      end
+
       context 'when linked issue is not found' do
         it 'returns error message' do
           allow(processor_service).to receive(:linked_issues).with(link).and_return(error: 'error message')

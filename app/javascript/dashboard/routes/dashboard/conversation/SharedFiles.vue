@@ -64,10 +64,11 @@ const loadAttachments = async () => {
   const target = attachmentTarget.value;
   isLoadingAttachments.value = true;
   try {
+    // The load names the chat and the account, not the route: the list filters of the chat list rewrite the route
+    // query while the pages are still loading, and that must not throw the load away.
     await store.dispatch('fetchAllAttachments', {
       conversationId: chat.id,
       isCommunicationThread: Boolean(chat.is_communication_thread),
-      expectedRouteFullPath: route.fullPath,
       expectedAccountId: route.params?.accountId,
       expectedSelectedChatId: chat.id,
       expectedSelectedChatType: chat.is_communication_thread

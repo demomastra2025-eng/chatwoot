@@ -73,6 +73,26 @@ describe('SharedFiles', () => {
     );
   });
 
+  it('names the chat and the account but not the route, so a list filter change cannot cancel the load', () => {
+    const { store, fetchAllAttachments } = buildStore({
+      id: 7,
+      is_communication_thread: true,
+    });
+
+    mountSharedFiles(store);
+
+    expect(fetchAllAttachments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedAccountId: '3',
+        expectedSelectedChatId: 7,
+        expectedSelectedChatType: 'communication_thread',
+      })
+    );
+    expect(fetchAllAttachments.mock.calls[0][0]).not.toHaveProperty(
+      'expectedRouteFullPath'
+    );
+  });
+
   it('reloads when switching between a thread and a conversation with the same id', async () => {
     const { store, fetchAllAttachments } = buildStore({
       id: 7,
