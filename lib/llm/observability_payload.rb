@@ -53,7 +53,9 @@ class Llm::ObservabilityPayload
         assistant_id: source[:assistant_id].presence || metadata[:assistant_id],
         conversation_id: source[:conversation_record_id].presence || source[:conversation_db_id],
         conversation_display_id: source[:conversation_display_id].presence || metadata[:conversation_display_id].presence || source[:conversation_id],
-        copilot_thread_id: source[:copilot_thread_id].presence || metadata[:copilot_thread_id]
+        copilot_thread_id: source[:copilot_thread_id].presence || metadata[:copilot_thread_id],
+        decision_chain_position: source[:decision_chain_position],
+        decision_chain_length: source[:decision_chain_length]
       }
 
       base_payload.merge(openrouter_metadata(source, metadata)).compact
@@ -132,6 +134,7 @@ class Llm::ObservabilityPayload
       payload['openrouter_generation_id'] = response.request_id
       payload['output_type'] = 'decision'
       payload['decision_choice'] = response.choice if response.respond_to?(:choice) && response.choice.present?
+      payload['decision_confidence'] = response.confidence if response.respond_to?(:confidence) && response.confidence.is_a?(Numeric)
       payload.compact!
       payload
     end

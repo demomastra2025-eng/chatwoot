@@ -283,6 +283,16 @@ RSpec.describe Llm::Config do
       expect(described_class.model_for(feature: 'language_detection')).to eq('openai/gpt-6-luna-decisions')
     end
 
+    it 'uses Mercury Decide for the decisions of a patient turn, not the general default model' do
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-5.4-mini')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
+
+      %w[agent_routing fact_check_gate inbound_triage].each do |feature|
+        expect(described_class.model_for(feature: feature)).to eq('inception/mercury-decide')
+      end
+    end
+
     it 'preserves an explicit dated Decision model selected by the platform' do
       upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
       upsert_installation_config('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', 'microsoft/microsoft-decision-1-20261009')

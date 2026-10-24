@@ -14,7 +14,7 @@ class Llm::OpenRouterDecisionClient
   REQUEST_TIMEOUT_SECONDS = 110
   MAX_RESPONSE_BYTES = 1_048_576
   MAX_REQUEST_BYTES = 131_072
-  Result = Struct.new(:choice, :confidence, :model, :provider, :request_id, :usage, keyword_init: true)
+  Result = Struct.new(:choice, :confidence, :probabilities, :model, :provider, :request_id, :usage, keyword_init: true)
 
   class Error < StandardError; end
 
@@ -27,7 +27,7 @@ class Llm::OpenRouterDecisionClient
       validate_request!(state, criteria, instructions, options)
       uri = decision_uri(options[:api_base])
       request = build_request(uri, state, criteria, instructions, options)
-      code, body = perform_request(uri, request)
+      code, body = perform_request(uri, request, options[:timeout] || REQUEST_TIMEOUT_SECONDS)
       raise Error, "OpenRouter decision request failed (HTTP #{code})." unless code.between?(200, 299)
 
       parse_response(body, criteria)
@@ -46,6 +46,7 @@ class Llm::OpenRouterDecisionClient
       raise ArgumentError, 'Invalid decision state.' unless state.is_a?(Hash)
       raise ArgumentError, 'Invalid decision instructions.' unless instructions.is_a?(String) && instructions.length.between?(1, 8000)
       raise ArgumentError, 'Invalid decision choices.' unless criteria.is_a?(Hash) && criteria.size.between?(2, 64)
+      raise ArgumentError, 'Invalid decision timeout.' unless valid_timeout?(options[:timeout])
 
       valid = criteria.all? do |key, value|
         key.is_a?(String) && key.match?(/\A[a-zA-Z0-9_-]{1,100}\z/) && value.is_a?(String) && value.length.between?(1, 2000)
@@ -53,10 +54,15 @@ class Llm::OpenRouterDecisionClient
       raise ArgumentError, 'Invalid decision choices.' unless valid
     end
 
+    def valid_timeout?(timeout)
+      timeout.nil? || (timeout.is_a?(Numeric) && timeout.finite? && timeout.positive? && timeout <= REQUEST_TIMEOUT_SECONDS)
+    end
+
+    # The Decisions endpoint rejects `"provider": null` (HTTP 400), so a blank preference is left out of the body.
     def build_request(uri, state, criteria, instructions, options)
-      body = JSON.generate(model: options[:model], state: state,
-                           questions: { reason: { type: 'choice', instructions: instructions, criteria: criteria } },
-                           provider: options[:provider].presence)
+      body = JSON.generate({ model: options[:model], state: state,
+                             questions: { reason: { type: 'choice', instructions: instructions, criteria: criteria } },
+                             provider: options[:provider].presence }.compact)
       raise ArgumentError, 'Decision request too large.' if body.bytesize > MAX_REQUEST_BYTES
 
       Net::HTTP::Post.new(uri).tap do |request|
@@ -68,10 +74,12 @@ class Llm::OpenRouterDecisionClient
       end
     end
 
-    def perform_request(uri, request)
-      # Two sequential calls (short fragment, optional expansion) stay below the 300s job lease.
-      Timeout.timeout(REQUEST_TIMEOUT_SECONDS) do
-        Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 10, read_timeout: 90, write_timeout: 10) do |http|
+    # Two sequential calls (short fragment, optional expansion) stay below the 300s job lease. A caller inside a patient turn
+    # passes a short timeout, which bounds the whole call and each socket wait.
+    def perform_request(uri, request, timeout)
+      Timeout.timeout(timeout) do
+        Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: [10, timeout].min, read_timeout: [90, timeout].min,
+                                                write_timeout: [10, timeout].min) do |http|
           http.max_retries = 0
           http.request(request) do |response|
             body = +''
@@ -97,8 +105,20 @@ class Llm::OpenRouterDecisionClient
         raise Error, 'OpenRouter decision returned invalid confidence.'
       end
 
-      Result.new(choice: answer['choice'], confidence: confidence, model: data['model'],
-                 provider: safe_identifier(data['provider']), request_id: safe_identifier(data['id']), usage: safe_usage(data['usage']))
+      Result.new(choice: answer['choice'], confidence: confidence, probabilities: safe_probabilities(answer['probabilities'], criteria),
+                 model: data['model'], provider: safe_identifier(data['provider']), request_id: safe_identifier(data['id']),
+                 usage: safe_usage(data['usage']))
+    end
+
+    # Only the probabilities of the offered choices, each a number between 0 and 1; anything else is dropped.
+    def safe_probabilities(value, criteria)
+      return {} unless value.is_a?(Hash)
+
+      value.each_with_object({}) do |(key, number), result|
+        next unless criteria.key?(key) && number.is_a?(Numeric) && number.finite? && number.between?(0, 1)
+
+        result[key] = number
+      end
     end
 
     def safe_usage(value)

@@ -91,9 +91,20 @@ RSpec.describe Llm::Models do
       expect(described_class.models_for('outcome_classification')).to include(*models)
       expect(described_class.models_for('custom_guardrail')).to include('openai/gpt-6-luna-decisions')
       models.each { |model| expect(described_class.model_allowed_for_feature?('custom_guardrail', model)).to be(true) }
-      (described_class.feature_keys - %w[outcome_classification language_detection custom_guardrail]).each do |feature|
+      (described_class.feature_keys - Llm::FeatureProfile.decision_feature_keys).each do |feature|
         expect(described_class.models_for(feature)).not_to include(*models)
         models.each { |model| expect(described_class.model_allowed_for_feature?(feature, model)).to be(false) }
+      end
+    end
+
+    it 'allows the platform chain of Decision models for the decisions of a patient turn' do
+      chain = %w[inception/mercury-decide microsoft/microsoft-decision-1 openai/gpt-6-luna-decisions]
+
+      %w[agent_routing fact_check_gate inbound_triage].each do |feature|
+        expect(described_class.configured_default_model_for(feature)).to eq('inception/mercury-decide')
+        expect(described_class.models_for(feature)).to include(*chain)
+        chain.each { |model| expect(described_class.model_allowed_for_feature?(feature, model)).to be(true) }
+        expect(described_class.model_allowed_for_feature?(feature, 'openai/gpt-6-luna')).to be(false)
       end
     end
 

@@ -62,7 +62,8 @@ class Llm::Monitoring::EventRecorder
     payload_bytes payload_budget_bytes project_case_id queue_wait_ms retry_count schema_invalid_count status
     snippet_hash thinking_tokens tool_calls_count usage_scope provider_response_count provider_observability_error_count
     cached_tokens cache_creation_tokens actual_model endpoint_provider requested_model
-    user_id user_name decision_choice copilot_action suggestion_outcome edited_before_send follow_up_count
+    user_id user_name decision_choice decision_confidence decision_chain_position decision_chain_length
+    copilot_action suggestion_outcome edited_before_send follow_up_count
     generated_reply_preview final_reply_preview message_id
     engine reason_source reason_preview total_ms budget_ms detail suggestion_request_id handoffs_count stale
     suggestion_text final_text suggestion_text_truncated final_text_truncated initial_suggestion_text

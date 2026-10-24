@@ -336,6 +336,12 @@
   description: 'Определяет основной язык последних 20 сообщений клиента перед ответом агента. Пусто — openai/gpt-6-luna-decisions.'
   value: 'openai/gpt-6-luna-decisions'
   locked: false
+- name: CAPTAIN_DECISION_MODEL_CHAIN
+  display_title: 'Цепочка моделей решений внутри хода'
+  description: 'JSON-список моделей решений по порядку (не больше 3) для выбора агента, проверки фактов и разбора входящих. Сначала спрашивается первая модель; при ошибке или таймауте (около 2 секунд на модель) — следующая. Если не ответила ни одна, ход завершается технической ошибкой и диалог передаётся сотрудникам. Пусто — inception/mercury-decide, затем microsoft/microsoft-decision-1, затем openai/gpt-6-luna-decisions.'
+  value: '["inception/mercury-decide", "microsoft/microsoft-decision-1", "openai/gpt-6-luna-decisions"]'
+  locked: false
+  type: code
 - name: CAPTAIN_LABEL_SUGGESTION_MODEL
   display_title: 'Модель подсказок меток'
   description: 'Модель для подсказок меток в диалоге (AI-подсказки); клиенты только включают или выключают подсказки. Пусто — берётся «Модель ИИ по умолчанию».'

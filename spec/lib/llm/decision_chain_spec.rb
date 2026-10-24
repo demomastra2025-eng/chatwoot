@@ -1,0 +1,158 @@
+# frozen_string_literal: true
+
+require 'rails_helper'
+
+RSpec.describe Llm::DecisionChain do
+  let(:account) { create(:account) }
+  let(:api_key) { 'synthetic-decision-chain-key' }
+  let(:endpoint) { 'https://openrouter.example/api/alpha/decisions' }
+  let(:criteria) do
+    { 'agent_ent' => 'SYNTHETIC_PRIVATE_CRITERION: the ENT doctors agent books the doctor.',
+      'agent_procedures' => 'The ENT procedures agent.', 'human' => 'A staff member.' }
+  end
+  let(:question) do
+    { state: { 'message' => 'SYNTHETIC_PRIVATE_PATIENT_TEXT' }, criteria: criteria,
+      instructions: 'SYNTHETIC_PRIVATE_INSTRUCTIONS: choose who answers.' }
+  end
+
+  before do
+    allow(Llm::Config).to receive(:api_key).and_call_original
+    allow(Llm::Config).to receive(:api_key).with('openrouter', account: account).and_return(api_key)
+    allow(Llm::Config).to receive(:api_base).and_call_original
+    allow(Llm::Config).to receive(:api_base).with('openrouter', account: account).and_return('https://openrouter.example/api/v1')
+  end
+
+  def answer(model, choice: 'agent_ent', confidence: 0.92)
+    { status: 200, body: { id: "gen-#{model.tr('/', '-')}", model: model, provider: 'Synthetic',
+                           answers: { reason: { choice: choice, confidence: confidence,
+                                                probabilities: { agent_ent: confidence, agent_procedures: 0.05, human: 0.03 } } },
+                           usage: { input_tokens: 80, output_tokens: 1, total_tokens: 81 } }.to_json }
+  end
+
+  def stub_model(model, response)
+    stub_request(:post, endpoint).with { |request| JSON.parse(request.body)['model'] == model }.to_return(response)
+  end
+
+  def decide(**options)
+    described_class.decide(feature: :agent_routing, account: account, question: question, **options)
+  end
+
+  def chain_events
+    LlmEvent.where(account_id: account.id, event_name: 'llm.decision.complete').order(:id)
+  end
+
+  it 'answers with the head of the chain in one call and returns the choice, confidence, probabilities and model' do
+    head = stub_model('inception/mercury-decide', answer('inception/mercury-decide'))
+
+    result = decide(observability: { trace_id: 'synthetic-trace' })
+
+    expect(result).to have_attributes(choice: 'agent_ent', confidence: 0.92, model: 'inception/mercury-decide',
+                                      served_model: 'inception/mercury-decide', position: 1)
+    expect(result.probabilities).to eq('agent_ent' => 0.92, 'agent_procedures' => 0.05, 'human' => 0.03)
+    expect(result).not_to be_fallback
+    expect(head).to have_been_requested.once
+    expect(chain_events.map { |event| [event.feature, event.status, event.payload['decision_chain_position']] })
+      .to eq([['agent_routing', 'success', 1]])
+  end
+
+  it 'gives every model its short timeout of the profile' do
+    stub_model('inception/mercury-decide', answer('inception/mercury-decide'))
+    expect(Llm::OpenRouterDecisionClient).to receive(:choose).with(hash_including(model: 'inception/mercury-decide', timeout: 2.0))
+                                                             .and_call_original
+
+    decide
+  end
+
+  it 'passes the same question to the next model when one fails or times out and records which model answered' do
+    first = stub_model('inception/mercury-decide', { status: 503, body: { error: { message: "#{api_key} provider text" } }.to_json })
+    second = stub_request(:post, endpoint).with { |request| JSON.parse(request.body)['model'] == 'microsoft/microsoft-decision-1' }
+                                          .to_timeout
+    third = stub_model('openai/gpt-6-luna-decisions', answer('openai/gpt-6-luna-decisions', choice: 'human', confidence: 0.81))
+
+    result = decide
+
+    expect(result).to have_attributes(choice: 'human', confidence: 0.81, model: 'openai/gpt-6-luna-decisions', position: 3)
+    expect(result).to be_fallback
+    [first, second, third].each { |stub| expect(stub).to have_been_requested.once }
+    expect(a_request(:post, endpoint).with do |request|
+      body = JSON.parse(request.body)
+      body['state'] == question[:state] && body.dig('questions', 'reason', 'criteria') == criteria
+    end).to have_been_made.times(3)
+    expect(chain_events.map { |event| [event.payload['requested_model'], event.status, event.payload['decision_chain_position']] })
+      .to eq([['inception/mercury-decide', 'error', 1], ['microsoft/microsoft-decision-1', 'error', 2],
+              ['openai/gpt-6-luna-decisions', 'success', 3]])
+    expect(chain_events.map(&:payload).to_json).not_to include('SYNTHETIC_PRIVATE', api_key)
+  end
+
+  it 'raises one well-defined error naming the models tried when no model answers' do
+    stub_request(:post, endpoint).to_return(status: 500, body: "#{api_key} SYNTHETIC_PRIVATE_PROVIDER_TEXT")
+
+    expect { decide }.to raise_error(described_class::ExhaustedError) do |error|
+      expect(error.feature).to eq('agent_routing')
+      expect(error.attempts).to eq(described_class::DEFAULT_MODELS.map do |model|
+        { model: model, error_class: 'Llm::OpenRouterDecisionClient::Error' }
+      end)
+      expect(error.message).to start_with('No decision model answered for agent_routing')
+      expect(error.message).not_to include(api_key, 'SYNTHETIC_PRIVATE')
+    end
+    expect(a_request(:post, endpoint)).to have_been_made.times(3)
+  end
+
+  it 'treats an answer outside the criteria as a failure of that model' do
+    stub_model('inception/mercury-decide', answer('inception/mercury-decide', choice: 'agent_invented'))
+    stub_model('microsoft/microsoft-decision-1', answer('microsoft/microsoft-decision-1'))
+
+    expect(decide).to have_attributes(choice: 'agent_ent', model: 'microsoft/microsoft-decision-1', position: 2)
+  end
+
+  it 'stops within the total bound instead of starting a call that cannot finish' do
+    expect { decide(total_timeout: 0.1) }.to raise_error(described_class::ExhaustedError) do |error|
+      expect(error.attempts).to eq([])
+    end
+    expect(a_request(:post, endpoint)).not_to have_been_made
+
+    expect(Llm::OpenRouterDecisionClient).to receive(:choose) do |**options|
+      expect(options[:timeout]).to be <= 1.0
+      Llm::OpenRouterDecisionClient::Result.new(choice: 'agent_ent', confidence: 0.9, probabilities: {}, model: 'inception/mercury-decide')
+    end
+    expect(decide(total_timeout: 1.0).position).to eq(1)
+  end
+
+  it 'refuses a feature that is not a decision feature before any call' do
+    expect { described_class.decide(feature: :captain_agent, account: account, question: question) }
+      .to raise_error(ArgumentError, 'Decisions is unavailable for this feature.')
+    expect(a_request(:post, endpoint)).not_to have_been_made
+  end
+
+  describe '.models' do
+    it 'is the built-in chain while the platform setting is absent, blank or unreadable' do
+      InstallationConfig.where(name: described_class::CONFIG_NAME).delete_all
+      expect(described_class.models).to eq(%w[inception/mercury-decide microsoft/microsoft-decision-1 openai/gpt-6-luna-decisions])
+
+      ['', '[not json', '["openai/gpt-6-luna", "vendor/unknown-decision"]'].each do |value|
+        upsert_installation_config(described_class::CONFIG_NAME, value)
+        expect(described_class.models).to eq(described_class::DEFAULT_MODELS)
+      end
+    end
+
+    it 'follows the platform setting, keeping only supported decision models, at most three' do
+      upsert_installation_config(described_class::CONFIG_NAME,
+                                 '["microsoft/microsoft-decision-1", "openai/gpt-6-luna", "inception/mercury-decide", ' \
+                                 '"microsoft/microsoft-decision-1", "openai/gpt-6-luna-decisions", "microsoft/microsoft-decision-1-20261009"]')
+      expect(described_class.models).to eq(%w[microsoft/microsoft-decision-1 inception/mercury-decide openai/gpt-6-luna-decisions])
+
+      upsert_installation_config(described_class::CONFIG_NAME, 'openai/gpt-6-luna-decisions, inception/mercury-decide')
+      expect(described_class.models).to eq(%w[openai/gpt-6-luna-decisions inception/mercury-decide])
+    end
+
+    it 'asks the models in the order of the platform setting' do
+      upsert_installation_config(described_class::CONFIG_NAME, '["microsoft/microsoft-decision-1", "inception/mercury-decide"]')
+      first = stub_model('microsoft/microsoft-decision-1', answer('microsoft/microsoft-decision-1'))
+
+      expect(decide).to have_attributes(model: 'microsoft/microsoft-decision-1', position: 1)
+      expect(first).to have_been_requested.once
+      expect(a_request(:post, endpoint).with { |request| JSON.parse(request.body)['model'] == 'inception/mercury-decide' })
+        .not_to have_been_made
+    end
+  end
+end

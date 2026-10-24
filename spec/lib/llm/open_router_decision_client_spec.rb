@@ -34,6 +34,52 @@ RSpec.describe Llm::OpenRouterDecisionClient do
     expect(result).not_to respond_to(:raw)
   end
 
+  [nil, {}].each do |provider|
+    it "leaves the provider out of the body when it is #{provider.inspect}, so the endpoint does not reject a null" do
+      stub = stub_request(:post, endpoint).with do |request|
+        expect(JSON.parse(request.body).keys).to match_array(%w[model state questions])
+        true
+      end.to_return(status: 200, body: response_body.to_json)
+
+      expect(choose(provider: provider).choice).to eq('solved')
+      expect(stub).to have_been_requested.once
+    end
+  end
+
+  it 'returns the probabilities of the offered choices only, each between 0 and 1' do
+    body = response_body.deep_merge(answers: { reason: { probabilities: { solved: 0.8, other: 0.15, invented: 0.05 } } })
+    stub_request(:post, endpoint).to_return(status: 200, body: body.to_json)
+
+    expect(choose.probabilities).to eq('solved' => 0.8, 'other' => 0.15)
+
+    stub_request(:post, endpoint).to_return(status: 200, body: response_body.deep_merge(
+      answers: { reason: { probabilities: { solved: 'high', other: 1.5 } } }
+    ).to_json)
+    expect(choose.probabilities).to eq({})
+
+    stub_request(:post, endpoint).to_return(status: 200, body: response_body.deep_merge(answers: { reason: { probabilities: nil } }).to_json)
+    expect(choose.probabilities).to eq({})
+  end
+
+  it 'bounds the call by a short timeout when the caller passes one' do
+    stub_request(:post, endpoint).to_return(status: 200, body: response_body.to_json)
+    allow(Timeout).to receive(:timeout).and_call_original
+    expect(Timeout).to receive(:timeout).with(2).and_call_original
+
+    expect(choose(timeout: 2).choice).to eq('solved')
+  end
+
+  it 'keeps the transport default without a timeout and rejects an invalid one before network access' do
+    stub_request(:post, endpoint).to_return(status: 200, body: response_body.to_json)
+    allow(Timeout).to receive(:timeout).and_call_original
+    expect(Timeout).to receive(:timeout).with(described_class::REQUEST_TIMEOUT_SECONDS).and_call_original
+    expect(choose.choice).to eq('solved')
+
+    [0, -1, 'fast', Float::INFINITY, described_class::REQUEST_TIMEOUT_SECONDS + 1].each do |timeout|
+      expect { choose(timeout: timeout) }.to raise_error(ArgumentError, 'Invalid decision timeout.')
+    end
+  end
+
   %w[https://openrouter.ai/api https://openrouter.ai/api/v1/models https://openrouter.ai/api/v1/chat/completions
      https://openrouter.ai/api/alpha/decisions].each do |base|
     it "normalizes #{base} without inserting v1 before alpha" do

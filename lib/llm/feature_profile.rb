@@ -7,6 +7,25 @@ class Llm::FeatureProfile
     'help_center_search' => 'embedding'
   }.freeze
 
+  # A decision feature picks exactly one of the criteria it offers on the native Decisions endpoint (`decisions: true`);
+  # only these features may run on a decision model. The router of the agents, the fact-check gate and the inbound
+  # triage decide inside a patient turn: their call is bounded by the short timeout of the profile (`strict_timeout`).
+  TURN_DECISION_DEFINITION = {
+    required_capabilities: %w[decision_classification],
+    timeout_seconds: 2,
+    strict_timeout: true,
+    max_retries: 0,
+    streaming: false,
+    native_endpoint: '/alpha/decisions',
+    structured_output: true,
+    response_healing: false,
+    reasoning_policy: 'disabled',
+    privacy_policy: 'standard',
+    cost_policy: 'latency_first',
+    fallback_strategy: 'decision_chain',
+    decisions: true
+  }.freeze
+
   FEATURE_DEFINITIONS = {
     'captain_agent' => {
       config_feature_key: 'assistant',
@@ -62,7 +81,8 @@ class Llm::FeatureProfile
       reasoning_policy: 'disabled',
       privacy_policy: 'standard',
       cost_policy: 'speed_cost',
-      fallback_strategy: 'fast_background'
+      fallback_strategy: 'fast_background',
+      decisions: true
     },
     'language_detection' => {
       config_feature_key: 'language_detection',
@@ -76,7 +96,8 @@ class Llm::FeatureProfile
       reasoning_policy: 'disabled',
       privacy_policy: 'standard',
       cost_policy: 'speed_cost',
-      fallback_strategy: 'skip'
+      fallback_strategy: 'skip',
+      decisions: true
     },
     'custom_guardrail' => {
       config_feature_key: 'custom_guardrail',
@@ -90,8 +111,12 @@ class Llm::FeatureProfile
       reasoning_policy: 'disabled',
       privacy_policy: 'standard',
       cost_policy: 'guardrail',
-      fallback_strategy: 'skip'
+      fallback_strategy: 'skip',
+      decisions: true
     },
+    'agent_routing' => TURN_DECISION_DEFINITION.merge(config_feature_key: 'agent_routing'),
+    'fact_check_gate' => TURN_DECISION_DEFINITION.merge(config_feature_key: 'fact_check_gate', cost_policy: 'guardrail'),
+    'inbound_triage' => TURN_DECISION_DEFINITION.merge(config_feature_key: 'inbound_triage'),
     'customer_notice' => {
       config_feature_key: 'customer_notice',
       required_capabilities: %w[text_input text_output],
@@ -212,6 +237,15 @@ class Llm::FeatureProfile
       FEATURE_DEFINITIONS.key?(normalize_feature(feature))
     end
 
+    # Whether the feature may run on a decision model through Llm::Runtime.decide.
+    def decision_feature?(feature)
+      FEATURE_DEFINITIONS.dig(normalize_feature(feature), :decisions) == true
+    end
+
+    def decision_feature_keys
+      FEATURE_DEFINITIONS.filter_map { |feature_key, definition| feature_key if definition[:decisions] == true }
+    end
+
     def equivalent_feature_keys(feature)
       canonical_key = normalize_feature(feature)
       raw_key = feature.to_s.presence
@@ -248,6 +282,8 @@ class Llm::FeatureProfile
   def cost_policy = definition[:cost_policy]
   def fallback_strategy = definition[:fallback_strategy]
 
+  def decisions? = definition[:decisions] == true
+  def strict_timeout? = definition[:strict_timeout] == true
   def streaming? = definition[:streaming] == true
   def structured_output? = definition[:structured_output] == true
   def response_healing? = definition[:response_healing] == true

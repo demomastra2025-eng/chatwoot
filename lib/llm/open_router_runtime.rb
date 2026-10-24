@@ -167,7 +167,7 @@ class Llm::OpenRouterRuntime
       Llm::OpenRouterDecisionClient.choose(
         state: request.input, criteria: decision_criteria(request), instructions: request.options[:decision_instructions],
         model: model, api_key: api_key!(request), api_base: api_base(request),
-        provider: profile.provider_preferences, headers: headers.headers
+        provider: profile.provider_preferences, headers: headers.headers, timeout: decision_timeout_seconds(request)
       )
     end
   end
@@ -199,7 +199,16 @@ class Llm::OpenRouterRuntime
   private
 
   def decision_feature?(feature_key)
-    %w[outcome_classification language_detection custom_guardrail].include?(feature_key)
+    Llm::FeatureProfile.decision_feature?(feature_key)
+  end
+
+  # The bound of one Decisions call: what the caller asks for (a fallback chain gives each model its share), else the short
+  # timeout of a feature that decides inside a patient turn, else the transport default of the client.
+  def decision_timeout_seconds(request)
+    explicit = request.options[:decision_timeout_seconds]
+    return explicit if explicit.is_a?(Numeric) && explicit.positive?
+
+    request.profile.timeout_seconds if request.profile.strict_timeout?
   end
 
   def decision_criteria(request)

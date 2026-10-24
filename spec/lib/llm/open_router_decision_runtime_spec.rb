@@ -86,6 +86,48 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
     expect(LlmEvent.find_by!(account_id: account.id, event_name: 'llm.decision.complete').payload.to_json).not_to include(checked_text)
   end
 
+  %i[agent_routing fact_check_gate inbound_triage].each do |feature|
+    it "runs #{feature} on the Decisions transport with its short timeout and an observed event" do
+      stub = stub_request(:post, endpoint).with do |http_request|
+        expect(JSON.parse(http_request.body)).to include('model' => 'inception/mercury-decide')
+        true
+      end.to_return(status: 200, body: response_body.merge(model: 'inception/mercury-decide').to_json)
+      expect(Llm::OpenRouterDecisionClient).to receive(:choose).with(hash_including(timeout: 2)).and_call_original
+      expect(Llm::BudgetEvaluator).to receive(:evaluate!).and_call_original
+
+      result = Llm::Runtime.decide(decision_request(feature: feature, model: 'inception/mercury-decide'))
+
+      expect(result).to have_attributes(choice: 'synthetic_completed_answer', confidence: 0.9)
+      expect(stub).to have_been_requested.once
+      event = LlmEvent.find_by!(account_id: account.id, event_name: 'llm.decision.complete')
+      expect(event.feature).to eq(feature.to_s)
+      expect(event.payload).to include('requested_model' => 'inception/mercury-decide', 'decision_confidence' => 0.9,
+                                       'openrouter_native_endpoint' => '/alpha/decisions')
+    end
+  end
+
+  it 'passes the timeout and the chain position the caller gives and records which model of the chain answered' do
+    stub_request(:post, endpoint).to_return(status: 200, body: response_body.to_json)
+    expect(Llm::OpenRouterDecisionClient).to receive(:choose).with(hash_including(timeout: 1.5)).and_call_original
+
+    Llm::Runtime.decide(decision_request(
+                          feature: :agent_routing,
+                          options: { decision_criteria: criteria, decision_instructions: instructions, decision_timeout_seconds: 1.5 },
+                          observability: { decision_chain_position: 2, decision_chain_length: 3 }
+                        ))
+
+    expect(LlmEvent.find_by!(account_id: account.id, event_name: 'llm.decision.complete').payload).to include(
+      'decision_chain_position' => 2, 'decision_chain_length' => 3, 'requested_model' => model, 'actual_model' => served_model
+    )
+  end
+
+  it 'keeps the transport default timeout for the background decision features' do
+    stub_request(:post, endpoint).to_return(status: 200, body: response_body.to_json)
+    expect(Llm::OpenRouterDecisionClient).to receive(:choose).with(hash_including(timeout: nil)).and_call_original
+
+    Llm::Runtime.decide(decision_request)
+  end
+
   it 'applies provider preferences and mandatory ZDR before sending the decision state' do
     request = decision_request(
       privacy_profile: 'zdr_required',

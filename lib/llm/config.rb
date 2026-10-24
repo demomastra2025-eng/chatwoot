@@ -80,9 +80,7 @@ module Llm::Config
       explicit_model = explicit_model_for(feature_key, account: account)
       return explicit_model if explicit_model.present?
 
-      unless %w[outcome_classification language_detection custom_guardrail].include?(feature_key)
-        installation_model = installation_model_for(feature_key, account: account)
-      end
+      installation_model = installation_model_for(feature_key, account: account) unless Llm::FeatureProfile.decision_feature?(feature_key)
       return installation_model if installation_model.present?
 
       if feature_key.present?

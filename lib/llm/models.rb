@@ -23,6 +23,9 @@ module Llm::Models
     'outcome_classification' => %w[structured_output],
     'language_detection' => %w[decision_classification],
     'custom_guardrail' => %w[structured_output],
+    'agent_routing' => %w[decision_classification],
+    'fact_check_gate' => %w[decision_classification],
+    'inbound_triage' => %w[decision_classification],
     'customer_notice' => [],
     'assistant' => %w[structured_output tool_calling tool_choice],
     'copilot' => %w[structured_output tool_calling tool_choice],
@@ -131,7 +134,7 @@ module Llm::Models
 
     def required_capability_sets_for(feature, runtime_preferences: nil, model_name: nil)
       feature_key = feature.to_s
-      if %w[outcome_classification language_detection custom_guardrail].include?(feature_key) && decision_model?(model_name)
+      if Llm::FeatureProfile.decision_feature?(feature_key) && decision_model?(model_name)
         return [{ type: 'decision', capabilities: %w[decision_classification] }]
       end
 
@@ -223,7 +226,7 @@ module Llm::Models
 
       model_config = model_config(canonical_name, account: account)
       return false if model_config.blank?
-      return false if decision_model?(canonical_name) && %w[outcome_classification language_detection custom_guardrail].exclude?(feature_key)
+      return false if decision_model?(canonical_name) && !Llm::FeatureProfile.decision_feature?(feature_key)
 
       if configured_static_model_for_feature?(feature_key, canonical_name)
         return model_config_allowed_for_feature?(
@@ -714,7 +717,7 @@ module Llm::Models
     def model_config_allowed_for_feature?(feature_key, model_config, account: nil, runtime_filtered: true)
       return false if model_config.blank?
       if model_config['type'] == 'decision'
-        return %w[outcome_classification language_detection custom_guardrail].include?(feature_key.to_s) && decision_model?(model_config['id'])
+        return Llm::FeatureProfile.decision_feature?(feature_key) && decision_model?(model_config['id'])
       end
 
       return true unless feature_key.to_s == 'help_center_search'
