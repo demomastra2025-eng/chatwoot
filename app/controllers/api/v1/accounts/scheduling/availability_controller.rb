@@ -45,7 +45,9 @@ class Api::V1::Accounts::Scheduling::AvailabilityController < Api::V1::Accounts:
   end
 
   def duration_min(resource, service)
-    parse_duration_min_param!(params[:duration_min]) || service&.duration_min || resource.slot_duration_min
+    Scheduling::ResourceAvailabilityQueryService.duration_for(
+      resource: resource, service: service, duration_min: parse_duration_min_param!(params[:duration_min])
+    )
   end
 
   def resource_time_zone(resource)

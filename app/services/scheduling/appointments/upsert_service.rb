@@ -981,7 +981,7 @@ class Scheduling::Appointments::UpsertService
       return current_duration_min.to_i
     end
 
-    service_duration = services.sum { |service| service.duration_min.to_i }
+    service_duration = services.sum { |service| Scheduling::VisitDuration.minutes(resource: resource, service: service).to_i }
     return service_duration if service_duration.positive?
     return current_duration_min.to_i if current_duration_min.to_i.positive?
 

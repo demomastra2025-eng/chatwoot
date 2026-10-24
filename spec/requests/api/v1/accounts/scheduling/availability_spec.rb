@@ -142,6 +142,25 @@ RSpec.describe 'Scheduling Availability API', type: :request do
     expect(Time.iso8601(first.fetch('ends_at')) - Time.iso8601(first.fetch('starts_at'))).to eq(45.minutes)
   end
 
+  it 'sizes the windows of a MedElement service by the visits of the specialist, never by its default 30 minutes' do
+    resource.update!(slot_duration_min: 15)
+    service = create(:scheduling_service, account: account, duration_min: 30,
+                                          custom_attributes: { 'medelement_nomenclature_code' => 'U1' })
+    stat = create(:scheduling_resource_service_stat, account: account, resource: resource, service: service, median_duration_min: 10)
+    create_day
+
+    first = request_day(service_id: service.id).fetch('windows').first
+    expect(Time.iso8601(first.fetch('ends_at')) - Time.iso8601(first.fetch('starts_at'))).to eq(15.minutes)
+
+    stat.update!(median_duration_min: 40)
+    first = request_day(service_id: service.id).fetch('windows').first
+    expect(Time.iso8601(first.fetch('ends_at')) - Time.iso8601(first.fetch('starts_at'))).to eq(45.minutes)
+
+    stat.destroy!
+    first = request_day(service_id: service.id).fetch('windows').first
+    expect(Time.iso8601(first.fetch('ends_at')) - Time.iso8601(first.fetch('starts_at'))).to eq(15.minutes)
+  end
+
   it 'returns the windows for a service when the account has no service-price links at all' do
     service = create(:scheduling_service, account: account, duration_min: 30)
     local = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')

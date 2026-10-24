@@ -51,6 +51,14 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
       )
     end
 
+    it 'shows no duration for a MedElement service: its duration_min is the column default, the real length depends on the specialist' do
+      ultrasound = service('УЗИ малого таза', base_price: 9000, duration_min: 30, custom_attributes: { 'medelement_nomenclature_code' => 'U1' })
+
+      entry = JSON.parse(agent_tool.execute(query: 'УЗИ малого таза'))['services'].find { |item| item['id'] == ultrasound.id }
+
+      expect(entry).to eq('id' => ultrasound.id, 'name' => 'УЗИ малого таза', 'price' => 9000)
+    end
+
     it 'writes a specialist price only when it differs from the base price' do
       doctors = JSON.parse(agent_tool.execute(query: 'консультация терапевта')).dig('services', 0, 'doctors')
 
