@@ -136,5 +136,37 @@ RSpec.describe CommunicationThreads::RealtimeUpdateService do
         members, payload, hidden_user: hidden_inbox_user, hidden_conversation: hidden_conversation
       )
     end
+
+    # One person, one status: the live update carries the status of the thread (the most urgent status of the channels), which
+    # is what the dashboard shows in the header and matches the tabs with, never the status of the conversation that fired it.
+    it 'carries the status of the person, not the status of the channel that fired the update', :aggregate_failures do
+      account = create(:account).tap { |record| record.enable_features!('communication_threads') }
+      contact = create(:contact, account: account)
+      agent = create(:user, account: account, role: :agent)
+      conversations = %w[resolved open snoozed].map do |status|
+        inbox = create(:inbox, account: account)
+        create(:inbox_member, inbox: inbox, user: agent)
+        create(:conversation, account: account, contact: contact, inbox: inbox, status: :resolved,
+                              contact_inbox: create(:contact_inbox, contact: contact, inbox: inbox)).tap do |conversation|
+          conversation.update_columns(status: Conversation.statuses.fetch(status)) # rubocop:disable Rails/SkipsModelValidations
+        end
+      end
+      thread = Conversations::CommunicationThreadResolver.new(
+        conversation: conversations.first.reload, enforce_single_open_dialog: false
+      ).perform
+      broadcasts = []
+      allow(ActionCableBroadcastJob).to receive(:perform_later) { |members, event, payload| broadcasts << [members, event, payload] }
+
+      conversations.each do |source|
+        described_class.new(
+          communication_thread_id: thread.id, source_conversation_id: source.id, source_event: 'conversation.updated'
+        ).perform
+      end
+
+      payloads = broadcasts.select { |_members, event, _payload| event == 'communication_thread.updated' }.map(&:last)
+      expect(payloads.size).to eq(3)
+      expect(payloads.pluck(:status)).to eq(%w[open open open])
+      expect(payloads.last.fetch(:channels).pluck(:status)).to match_array(%w[resolved open snoozed])
+    end
   end
 end

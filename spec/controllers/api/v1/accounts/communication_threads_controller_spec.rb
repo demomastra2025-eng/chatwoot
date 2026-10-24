@@ -443,28 +443,17 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(stages.pluck(:pipeline_name)).to eq([pipeline.name, pipeline.name])
     end
 
-    it 'filters by child conversation status and prefers the matching channel payload' do
+    it 'lists a person only in the tab of the thread status and prefers the channel with that status in the payload' do
       contact = create(:contact, account: account)
       inbox = create(:inbox, account: account)
-      open_contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
-      pending_contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
-      open_conversation = create(
-        :conversation,
-        account: account,
-        contact: contact,
-        inbox: inbox,
-        contact_inbox: open_contact_inbox,
-        status: :open,
-        updated_at: 2.minutes.ago
-      )
-      pending_conversation = create(
-        :conversation,
-        account: account,
-        contact: contact,
-        inbox: inbox,
-        contact_inbox: pending_contact_inbox,
-        status: :pending
-      )
+      open_conversation, pending_conversation = Array.new(2) do
+        create(:conversation, account: account, contact: contact, inbox: inbox,
+                              contact_inbox: create(:contact_inbox, contact: contact, inbox: inbox), status: :resolved)
+      end
+      # rubocop:disable Rails/SkipsModelValidations
+      open_conversation.update_columns(status: Conversation.statuses.fetch('open'), updated_at: 2.minutes.ago)
+      pending_conversation.update_columns(status: Conversation.statuses.fetch('pending'))
+      # rubocop:enable Rails/SkipsModelValidations
       thread = pending_conversation.reload.communication_thread
       thread.update!(status: :open)
       create(:inbox_member, user: agent, inbox: inbox)
@@ -475,16 +464,23 @@ RSpec.describe 'Communication Threads API', type: :request do
           as: :json
 
       expect(response).to have_http_status(:success)
+      expect(JSON.parse(response.body, symbolize_names: true).dig(:data, :payload)).to eq([])
+
+      get "/api/v1/accounts/#{account.id}/communication_threads",
+          params: { status: 'open' },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:success)
       payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload)
       expect(payload.pluck(:id)).to eq([thread.display_id])
       expect(payload.first[:channels]).to contain_exactly(
         a_hash_including(
-          conversation_id: pending_conversation.display_id,
+          conversation_id: open_conversation.display_id,
           inbox_id: inbox.id,
-          status: 'pending'
+          status: 'open'
         )
       )
-      expect(payload.first[:channels].pluck(:conversation_id)).not_to include(open_conversation.display_id)
     end
 
     it 'returns unread tab counts from meta independent of the current assignee tab page' do

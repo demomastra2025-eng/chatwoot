@@ -220,7 +220,7 @@ describe('#applyPageFilters', () => {
       expect(applyPageFilters(conversationList[1], filters)).toEqual(true);
     });
 
-    it('returns true if communication thread has a matching channel status', () => {
+    it('matches a communication thread only by its own status, never by the status of a channel', () => {
       const communicationThread = {
         id: 2148,
         is_communication_thread: true,
@@ -229,15 +229,22 @@ describe('#applyPageFilters', () => {
         channels: [
           { conversation_id: 20688, status: 'pending', inbox_id: 24 },
           { conversation_id: 20871, status: 'open', inbox_id: 158 },
+          { conversation_id: 20990, status: 'resolved', inbox_id: 31 },
         ],
         meta: {},
       };
 
-      expect(
-        applyPageFilters(communicationThread, {
-          status: 'pending',
-        })
-      ).toEqual(true);
+      expect(applyPageFilters(communicationThread, { status: 'open' })).toEqual(
+        true
+      );
+      expect(applyPageFilters(communicationThread, { status: 'all' })).toEqual(
+        true
+      );
+      ['pending', 'snoozed', 'resolved'].forEach(status => {
+        expect(applyPageFilters(communicationThread, { status })).toEqual(
+          false
+        );
+      });
     });
     it('keeps ordinary child conversations on their own status even when communication_thread_id is present', () => {
       const childConversation = {
@@ -256,7 +263,7 @@ describe('#applyPageFilters', () => {
         })
       ).toEqual(false);
     });
-    it('returns false when status and inbox match different communication-thread channels', () => {
+    it('returns false when the status is not the one of the thread, even if a channel in that inbox has it', () => {
       const communicationThread = {
         id: 2148,
         is_communication_thread: true,
@@ -279,14 +286,14 @@ describe('#applyPageFilters', () => {
   });
 
   describe('#filter-communication-thread-inbox', () => {
-    it('returns true if communication thread has a matching channel inbox', () => {
+    it('returns true if communication thread has a channel in the inbox, whatever the status of that channel', () => {
       const communicationThread = {
         id: 2148,
         is_communication_thread: true,
         status: 'open',
         inbox_id: 158,
         channels: [
-          { conversation_id: 20688, status: 'pending', inbox_id: 24 },
+          { conversation_id: 20688, status: 'resolved', inbox_id: 24 },
           { conversation_id: 20871, status: 'open', inbox_id: 158 },
         ],
         meta: {},
@@ -294,10 +301,16 @@ describe('#applyPageFilters', () => {
 
       expect(
         applyPageFilters(communicationThread, {
-          status: 'pending',
+          status: 'open',
           inboxId: 24,
         })
       ).toEqual(true);
+      expect(
+        applyPageFilters(communicationThread, {
+          status: 'open',
+          inboxId: 99,
+        })
+      ).toEqual(false);
     });
   });
 });
