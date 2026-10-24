@@ -608,4 +608,61 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
     end
   end
+
+  describe 'with image descriptions made beforehand (reply suggestion)' do
+    let(:message) { create(:message, content: 'Вот снимки') }
+    let(:attachments) do
+      %w[a b c].map do |name|
+        message.attachments.create!(account_id: message.account_id, file_type: :image, external_url: "https://example.com/#{name}.jpg")
+      end
+    end
+    let(:descriptions) { attachments.to_h { |attachment| [attachment.id, "Описание #{attachment.id}"] } }
+
+    describe '#describable_images' do
+      it 'lists the images that get a description, with their URLs' do
+        attachments
+        message.attachments.create!(account_id: message.account_id, file_type: :image, external_url: 'https://media.giphy.com/x.gif')
+
+        expect(service.describable_images.map { |attachment, url| [attachment.id, url] })
+          .to match_array(attachments.map { |attachment| [attachment.id, attachment.external_url] })
+      end
+
+      it 'lists nothing when image understanding is switched off' do
+        attachments
+        assistant = build(:captain_assistant, account: message.account)
+        allow(assistant).to receive(:account_settings).and_return(instance_double(Captain::AccountSettings, section: { 'images' => false }))
+
+        expect(described_class.new(message: message, assistant: assistant).describable_images).to eq([])
+      end
+    end
+
+    it 'describes every image from the given map and never calls image recognition itself' do
+      attachments
+      expect(Captain::ImageRecognitionService).not_to receive(:new)
+      described = described_class.new(message: message, image_descriptions: descriptions)
+
+      content = described.generate_content
+
+      expect(content.count { |part| part[:type] == 'image_url' }).to eq(3)
+      attachments.each { |attachment| expect(content).to include({ type: 'text', text: "Image attachment: Описание #{attachment.id}" }) }
+    end
+
+    it 'spends the budget of images on the pixels only: older images keep their description' do
+      attachments
+      budget = Captain::Conversation::HistoryBudget.new
+      described = described_class.new(message: message, budget: budget, image_descriptions: descriptions)
+
+      content = described.generate_content
+
+      expect(content.count { |part| part[:type] == 'image_url' }).to eq(Captain::Conversation::HistoryBudget::MAX_IMAGES)
+      expect(content.count { |part| part[:type] == 'text' && part[:text].start_with?('Image attachment:') }).to eq(3)
+    end
+
+    it 'leaves an image without a description part when none was made' do
+      attachments
+      described = described_class.new(message: message, image_descriptions: {})
+
+      expect(described.generate_content.count { |part| part[:type] == 'text' && part[:text].start_with?('Image attachment:') }).to eq(0)
+    end
+  end
 end

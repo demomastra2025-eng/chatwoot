@@ -6,6 +6,7 @@
 
 :queues:
   - captain_runtime
+  - captain_suggestions
 
 production:
   :concurrency: <%= ENV.fetch("CAPTAIN_RUNTIME_SIDEKIQ_CONCURRENCY", 2) %>

@@ -102,6 +102,7 @@ class Captain::Runtime::Runner
   end
 
   def advance_turn!(session)
+    Captain::ReplySuggestion::RunControl.checkpoint!(:turn)
     session[:current_turn] += 1
     return unless session[:current_turn] > session[:max_turns]
 

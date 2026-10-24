@@ -52,6 +52,7 @@ class Captain::Runtime::ToolWrapper
   end
 
   def call(args)
+    Captain::ReplySuggestion::RunControl.checkpoint!(:tool)
     ensure_response_run_current!
     if context_wrapper_context[:pending_handoff] ||
        (context_wrapper_context[:pending_human_handoff] && @tool.name.to_s != 'plan_request') ||

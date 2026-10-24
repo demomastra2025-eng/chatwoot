@@ -2,16 +2,6 @@ require 'monitor'
 require 'timeout'
 
 module Enterprise::Captain::ReplySuggestionService
-  FALLBACK_USER_PROMPT = 'Suggest the next reply for the customer based on the conversation and context.'.freeze
-  PROGRESS_EVENT = 'captain.reply_suggestion.progress'.freeze
-  SUGGESTION_AGENT_TIMEOUT_SECONDS = 22
-  NON_DELIVERABLE_RESPONSES = [
-    'conversation_handoff',
-    'response_cancelled',
-    Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
-  ].freeze
-  DEFAULT_USAGE = { 'prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0 }.freeze
-
   module AgentCatalogHelpers
     private
 
@@ -223,9 +213,14 @@ module Enterprise::Captain::ReplySuggestionService
     include AgentCatalogHelpers
     include CouncilTrackerHelpers
 
-    def initialize(assistant:, conversation:, user:)
+    # progress_context: { suggestion_request_id:, conversation_id: (the id the client sent), started_at:, deadline_at:, budget_seconds: }
+    def initialize(assistant:, conversation:, user:, progress_context: nil)
       @conversation = conversation
       @user = user
+      @progress_context = progress_context
+      @broadcaster = Captain::ReplySuggestion::Broadcaster.new(user: user)
+      @turns = 0
+      @tools_called = 0
       @monitor = Monitor.new
       @council_parts = {}
       @tool_trace_steps = []
@@ -250,6 +245,11 @@ module Enterprise::Captain::ReplySuggestionService
 
     def broadcast_initial!
       @monitor.synchronize { broadcast_progress! }
+    end
+
+    # Counters for the outcome event.
+    def stats
+      @monitor.synchronize { { tools_called: @tools_called, turns: @turns, handoffs_count: @handoffs.size } }
     end
 
     def captain_trace(payload)
@@ -286,6 +286,7 @@ module Enterprise::Captain::ReplySuggestionService
           upsert_council_part!(context_wrapper.context, actor, status: 'running')
         else
           @phase = 'thinking'
+          @turns += 1
           activate_agent!(actor)
         end
         broadcast_progress!
@@ -298,6 +299,7 @@ module Enterprise::Captain::ReplySuggestionService
         in_council = part_run?(context_wrapper)
         record_working_agent(actor, role: in_council ? 'council' : nil)
         @phase = in_council ? 'council_running' : 'tool_running'
+        @tools_called += 1
         append_step!(tool_name: tool_name, event: 'start', input: args, current_agent: actor&.dig('name'))
         broadcast_progress!
       end
@@ -420,19 +422,29 @@ module Enterprise::Captain::ReplySuggestionService
     end
 
     def broadcast_progress!
-      token = @user&.pubsub_token
-      return if token.blank?
-
-      ActionCable.server.broadcast(token, { event: PROGRESS_EVENT, data: progress_payload })
+      data = progress_payload
+      @broadcaster.progress(data)
+      snapshot_progress(data)
     rescue StandardError => e
       Rails.logger.debug { "[CAPTAIN][ReplySuggestionService] Progress broadcast skipped: #{e.message}" }
     end
 
+    # The last progress is kept in Redis for a manager who returns to the conversation (at most once a second, and on each change
+    # of phase). It runs on the thread of the job, which is the only writer of the request.
+    def snapshot_progress(data)
+      request_id = @progress_context.to_h[:suggestion_request_id]
+      return if request_id.blank?
+
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      return if @snapshot_phase == @phase && @snapshot_at && now - @snapshot_at < Captain::ReplySuggestion::PROGRESS_WRITE_INTERVAL
+
+      @snapshot_at = now
+      @snapshot_phase = @phase
+      Captain::ReplySuggestion::RequestStore.write_progress(request_id, data)
+    end
+
     def progress_payload
-      {
-        account_id: @conversation&.account_id,
-        conversation_id: @conversation&.display_id,
-        conversation_record_id: @conversation&.id,
+      request_progress_fields.merge(
         phase: @phase,
         active_agent: @active_agent,
         working_agents: @working_agents,
@@ -443,18 +455,62 @@ module Enterprise::Captain::ReplySuggestionService
           @tool_trace_steps,
           reasoning: @reasoning.presence || combined_council_reasoning
         )
-      }.compact
+      ).compact
+    end
+
+    # Which request the progress belongs to, and its timing. conversation_id is the id the client sent (it differs from the
+    # conversation's own display id for a communication thread).
+    def request_progress_fields
+      context = @progress_context.to_h
+      fields = {
+        account_id: @conversation&.account_id,
+        conversation_id: context[:conversation_id] || @conversation&.display_id,
+        conversation_record_id: @conversation&.id
+      }
+      context[:suggestion_request_id].blank? ? fields : fields.merge(request_timing_fields(context))
+    end
+
+    def request_timing_fields(context)
+      started_at = context[:started_at]
+      {
+        suggestion_request_id: context[:suggestion_request_id], status: 'running', budget_seconds: context[:budget_seconds],
+        started_at: started_at&.utc&.iso8601(3), deadline_at: context[:deadline_at]&.utc&.iso8601(3),
+        elapsed_ms: (((Time.current - started_at) * 1000).round if started_at)
+      }
     end
   end
 
-  def perform_reply_suggestion
+  # The engine of the request, chosen when it starts (StartService) and never changed by the run: a request for the agent does not
+  # fall back to the old prompt. The resolution of the agent is unchanged: the assistant of the inbox, else the account default,
+  # else the first one that can take the conversation.
+  def suggestion_engine
     assistant = entry_assistant_for_suggestion
-    return super if assistant.blank?
+    assistant ? { engine: 'agent', assistant_id: assistant.id } : super
+  end
 
-    perform_agent_reply_suggestion(assistant) || super
+  def start_error_code
+    code = super
+    return code if code == :disabled
+    return :quota_exceeded unless responses_available?
+
+    code
+  end
+
+  def run_stats
+    @trace_collector&.stats || {}
   end
 
   private
+
+  def perform_reply_suggestion
+    chosen = @engine.present? ? { engine: @engine, assistant_id: @assistant_id } : suggestion_engine
+    return super unless chosen[:engine] == 'agent'
+
+    assistant = account.captain_assistants.entry_eligible.find_by(id: chosen[:assistant_id])
+    return Captain::ReplySuggestion::Outcome.failed('agent_unavailable') unless assistant
+
+    perform_agent_reply_suggestion(assistant)
+  end
 
   def entry_assistant_for_suggestion
     return if conversation.blank? || conversation.inbox&.channel_type == 'Channel::Voice'
@@ -471,86 +527,37 @@ module Enterprise::Captain::ReplySuggestionService
     default_assistant || account.captain_assistants.entry_eligible.order(:id).first
   end
 
+  # Whatever happens, the answer is an outcome of the agent: a draft, no reply, a human, or a failure. A run that is cancelled or out
+  # of time raises (RunAborted, Timeout::Error) and the job turns that into its outcome.
   def perform_agent_reply_suggestion(assistant)
-    return { error: I18n.t('captain.api_key_missing'), error_code: 401 } unless api_key_configured?
+    return Captain::ReplySuggestion::Outcome.failed('api_key_missing') unless api_key_configured?
 
-    trace_collector = TraceCollector.new(assistant: assistant, conversation: conversation, user: user)
-    trace_collector.broadcast_initial!
+    history = Captain::ReplySuggestion::HistoryBuilder.new(account: account, conversation: conversation, assistant: assistant).perform
+    Captain::ReplySuggestion::RunControl.checkpoint!(:history)
+    @trace_collector = TraceCollector.new(assistant: assistant, conversation: conversation, user: user, progress_context: @progress_context)
+    @trace_collector.broadcast_initial!
 
-    raw_response = Llm::EventBus.with_context(user_id: user&.id) do
-      Timeout.timeout(SUGGESTION_AGENT_TIMEOUT_SECONDS) do
-        Captain::Assistant::AgentRunnerService.new(
-          assistant: assistant,
-          conversation: conversation,
-          source: 'reply_suggestion',
-          callbacks: trace_collector.callbacks
-        ).generate_response(message_history: suggestion_message_history(assistant))
-      end
-    end
-
-    build_agent_suggestion_result(raw_response, trace_collector)
+    classify_agent_response(run_suggestion_agent(assistant, history))
+  rescue Captain::Conversation::ControlGenerationStaleError, Timeout::Error
+    raise
   rescue StandardError => e
-    Rails.logger.warn("[CAPTAIN][ReplySuggestionService] Agent suggestion fallback: #{e.class}: #{e.message}")
-    nil
+    Rails.logger.warn("[CAPTAIN][ReplySuggestionService] Agent suggestion failed: #{e.class}: #{e.message}")
+    Captain::ReplySuggestion::Outcome.failed('internal_error', error_class: e.class.name, detail: e.message.to_s.truncate(200))
   end
 
-  def build_agent_suggestion_result(raw_response, trace_collector = nil)
-    payload = raw_response.to_h.with_indifferent_access
-    content = payload[:response].to_s.strip
-    return if non_deliverable_agent_payload?(payload, content)
-
-    result = {
-      message: content,
-      usage: payload[:usage].presence || DEFAULT_USAGE,
-      request_id: payload[:captain_request_id].presence
-    }.compact
-    attach_trace_and_meta!(result, payload, trace_collector) if trace_collector
-    return result unless build_follow_up_context?
-
-    result.merge(follow_up_context: build_follow_up_context([{ role: 'user', content: formatted_conversation }], result))
+  def run_suggestion_agent(assistant, history)
+    Llm::EventBus.with_context(user_id: user&.id) do
+      Captain::Assistant::AgentRunnerService.new(
+        assistant: assistant, conversation: conversation, source: 'reply_suggestion', callbacks: @trace_collector.callbacks,
+        request_id: @request_id
+      ).generate_response(message_history: history)
+    end
   end
 
-  def attach_trace_and_meta!(result, payload, trace_collector)
-    trace = trace_collector.captain_trace(payload)
-    meta = trace_collector.suggestion_meta(payload)
-    result[:captain_trace] = trace if trace.present?
-    return if meta.blank?
+  def classify_agent_response(raw_response)
+    outcome = Captain::ReplySuggestion::AgentOutcomeClassifier.new(raw_response, trace_collector: @trace_collector).perform
+    return outcome unless outcome[:outcome] == 'draft' && build_follow_up_context?
 
-    result[:suggestion_meta] = meta
-    result[:pending_actions] = meta['pending_actions'] if meta['pending_actions'].present?
-  end
-
-  def non_deliverable_agent_payload?(payload, content)
-    content.blank? ||
-      NON_DELIVERABLE_RESPONSES.include?(content) ||
-      payload[:error_class].present? ||
-      payload.values_at(:moderation_blocked, :response_suppressed, :response_cancelled).include?(true)
-  end
-
-  def suggestion_message_history(assistant)
-    history = suggestion_messages(assistant).map { |message| build_suggestion_history_entry(message, assistant) }
-    history << { role: 'user', content: FALLBACK_USER_PROMPT } if history.none? { |entry| entry[:role] == 'user' }
-    history
-  end
-
-  def suggestion_messages(assistant)
-    limit = assistant.history_message_limit_value
-    scope = Captain::Conversation::ControlService
-            .messages_scope(conversation)
-            .where(message_type: [:incoming, :outgoing])
-            .where(private: false)
-    return scope.reorder(created_at: :asc, id: :asc).to_a unless limit.positive?
-
-    scope.reorder(created_at: :desc, id: :desc).limit(limit).to_a.reverse
-  end
-
-  def build_suggestion_history_entry(message, assistant)
-    entry = {
-      content: Captain::OpenAiMessageBuilderService.new(message: message, assistant: assistant).generate_content,
-      role: message.message_type == 'incoming' ? 'user' : 'assistant'
-    }
-    agent_name = message.additional_attributes.to_h['agent_name'].presence
-    entry[:agent_name] = agent_name if agent_name.present?
-    entry
+    outcome.merge(follow_up_context: build_follow_up_context([{ role: 'user', content: formatted_conversation }], outcome))
   end
 end

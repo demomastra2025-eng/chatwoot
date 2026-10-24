@@ -11,7 +11,7 @@ module Concerns::Agentable
       tools: built_tools,
       model: time_agent_phase('agent_model') { model_override.presence || agent_model },
       temperature: time_agent_phase('agent_temperature') { temperature_override.nil? ? agent_temperature : temperature_override.to_f },
-      response_schema: time_agent_phase('agent_response_schema') { agent_response_schema },
+      response_schema: time_agent_phase('agent_response_schema') { agent_output_schema(suggestion_tools) },
       read_only_tools: read_only_tools,
       suggestion_tools: suggestion_tools
     )
@@ -182,6 +182,11 @@ module Concerns::Agentable
 
   def agent_response_schema
     Captain::ResponseSchema
+  end
+
+  # A reply suggestion can also answer "no reply needed" or "a staff member must answer", with a note for the operator.
+  def agent_output_schema(suggestion_tools)
+    suggestion_tools ? Captain::SuggestionResponseSchema : agent_response_schema
   end
 
   def prompt_context

@@ -12,4 +12,11 @@ class CaptainListener < BaseListener
 
     Captain::Llm::ConversationFaqService.new(assistant, conversation).generate_and_deduplicate
   end
+
+  # A manager's message after a dismissed reply suggestion is recorded on the dismissal (what they wrote instead).
+  def message_created(event)
+    Captain::ReplySuggestion::DismissalTracker.message_created(event.data[:message])
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][CaptainListener] dismissal tracking skipped: #{e.class}: #{e.message}")
+  end
 end

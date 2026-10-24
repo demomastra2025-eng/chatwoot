@@ -34,6 +34,7 @@
     :concurrency: <%= ENV.fetch("CAPSULE_AI_CAPTAIN_CONCURRENCY", 6) %>
     :queues:
       - [captain_runtime, 4]
+      - [captain_suggestions, 3]
       - [audio_transcription, 2]
       - [voice_recording_transcription, 2]
 

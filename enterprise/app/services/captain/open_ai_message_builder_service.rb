@@ -20,10 +20,13 @@ class Captain::OpenAiMessageBuilderService
     ['received at', %i[received_at receivedAt]]
   ].freeze
 
-  def initialize(message:, assistant: nil, budget: nil)
+  # image_descriptions: { attachment_id => description }, made beforehand (see Captain::ReplySuggestion::ImageDescriber). With it every
+  # image is described from that map, never by a call made here, and the budget limits only the images sent as pixels.
+  def initialize(message:, assistant: nil, budget: nil, image_descriptions: nil)
     @message = message
     @assistant = assistant
     @budget = budget
+    @image_descriptions = image_descriptions
   end
 
   # Extracts text and image URLs from multimodal content array (reverse of generate_content)
@@ -43,6 +46,18 @@ class Captain::OpenAiMessageBuilderService
     return parts.first[:text] if parts.one? && parts.first[:type] == 'text'
 
     parts
+  end
+
+  # The images of the message that get a description: [[attachment, image_url], ...].
+  def describable_images
+    return [] unless image_understanding_enabled?
+
+    @message.attachments.where(file_type: :image).filter_map do |attachment|
+      next if sticker_or_gif_attachment?(attachment)
+
+      url = get_attachment_url(attachment)
+      [attachment, url] if url.present?
+    end
   end
 
   private
@@ -147,12 +162,23 @@ class Captain::OpenAiMessageBuilderService
       end
 
       url = get_attachment_url(attachment)
-      next if url.blank?
-      next if @budget && !@budget.include_image?
-
-      parts << image_url_part(url)
-      parts << image_description_part(attachment, url)
+      parts.concat(attachment_image_parts(attachment, url)) if url.present?
     end.compact
+  end
+
+  def attachment_image_parts(attachment, url)
+    return described_image_parts(attachment, url) if @image_descriptions
+    return [] if @budget && !@budget.include_image?
+
+    [image_url_part(url), image_description_part(attachment, url)]
+  end
+
+  def described_image_parts(attachment, url)
+    parts = []
+    parts << image_url_part(url) if @budget.nil? || @budget.include_image?
+    description = @image_descriptions[attachment.id].to_s.strip
+    parts << text_part("Image attachment: #{description}") if description.present?
+    parts
   end
 
   def sticker_or_gif_attachment?(attachment)

@@ -134,7 +134,8 @@ RSpec.describe Captain::ReplySuggestionService do
           assistant: assistant,
           conversation: conversation,
           source: 'reply_suggestion',
-          callbacks: kind_of(Hash)
+          callbacks: kind_of(Hash),
+          request_id: nil
         ).and_return(runner_double)
 
         allow(runner_double).to receive(:generate_response).with(
@@ -331,24 +332,159 @@ RSpec.describe Captain::ReplySuggestionService do
         expect(captured_context['assistant_id']).to eq(assistant.id)
       end
 
-      it 'falls back to standard prompt suggestion if AgentRunnerService returns conversation_handoff' do
-        runner_double = instance_double(Captain::Assistant::AgentRunnerService)
-        allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner_double)
-        allow(runner_double).to receive(:generate_response).and_return({ 'response' => 'conversation_handoff' })
+      describe 'when the agent does not give a reply' do
+        let(:runner_double) { instance_double(Captain::Assistant::AgentRunnerService) }
 
-        result = service.perform
+        before { allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner_double) }
 
-        expect(result[:message]).to eq('Sure, I can help!')
+        it 'ends as failed when the agent returns a handoff, and never runs the one-shot prompt' do
+          allow(runner_double).to receive(:generate_response).and_return({ 'response' => 'conversation_handoff' })
+
+          result = service.perform
+
+          expect(result).to include(outcome: 'failed', reason_code: 'invalid_output')
+          expect(result[:message]).to be_nil
+          expect(captured_messages).to be_empty
+        end
+
+        it 'lets a timeout out of the service for the job to settle, and never runs the one-shot prompt' do
+          allow(runner_double).to receive(:generate_response).and_raise(Timeout::Error.new('execution expired'))
+
+          expect { service.perform }.to raise_error(Timeout::Error)
+          expect(captured_messages).to be_empty
+        end
+
+        it 'ends as failed with internal_error on an unexpected error, and never runs the one-shot prompt' do
+          allow(runner_double).to receive(:generate_response).and_raise(ArgumentError, 'boom')
+
+          result = service.perform
+
+          expect(result).to include(outcome: 'failed', reason_code: 'internal_error', error_class: 'ArgumentError')
+          expect(captured_messages).to be_empty
+        end
+
+        it 'does not wrap a stop of the run (cancel, deadline) into a result' do
+          allow(runner_double).to receive(:generate_response).and_raise(Captain::ReplySuggestion::RunAborted.new(:cancelled, 'tool'))
+
+          expect { service.perform }.to raise_error(Captain::ReplySuggestion::RunAborted)
+          expect(captured_messages).to be_empty
+        end
+
+        it 'answers no_reply with the note of the agent' do
+          allow(runner_double).to receive(:generate_response).and_return(
+            { 'response' => '', 'response_mode' => 'suppress', 'response_suppressed' => true, 'operator_note' => 'Пациент только поблагодарил.',
+              'agent_id' => assistant.id, 'agent_display_name' => assistant.name }
+          )
+
+          result = service.perform
+
+          expect(result).to include(outcome: 'no_reply', reason: 'Пациент только поблагодарил.', reason_source: 'agent', engine: 'agent')
+          expect(result.dig(:agent, 'name')).to eq('Координатор')
+        end
+
+        it 'answers human_needed with the note of the agent' do
+          allow(runner_double).to receive(:generate_response).and_return(
+            { 'response' => '', 'response_mode' => 'human', 'operator_note' => 'В базе нет ответа про оперирующего ЛОРа.' }
+          )
+
+          expect(service.perform).to include(outcome: 'human_needed', reason: 'В базе нет ответа про оперирующего ЛОРа.')
+        end
       end
 
-      it 'falls back to standard prompt suggestion if AgentRunnerService raises Timeout::Error' do
-        runner_double = instance_double(Captain::Assistant::AgentRunnerService)
-        allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner_double)
-        allow(runner_double).to receive(:generate_response).and_raise(Timeout::Error.new('execution expired'))
+      describe 'the engine of the request' do
+        it 'is the agent when the account has one' do
+          expect(service.suggestion_engine).to eq(engine: 'agent', assistant_id: assistant.id)
+        end
 
-        result = service.perform
+        it 'keeps the engine the request started with: a deleted agent fails the run, the one-shot prompt does not take over' do
+          assistant_id = assistant.id
+          assistant.destroy!
+          fixed_engine = described_class.new(
+            account: account, conversation_display_id: conversation.display_id, user: agent, engine: 'agent', assistant_id: assistant_id
+          )
 
-        expect(result[:message]).to eq('Sure, I can help!')
+          result = fixed_engine.perform
+
+          expect(result).to include(outcome: 'failed', reason_code: 'agent_unavailable')
+          expect(captured_messages).to be_empty
+        end
+
+        it 'runs the one-shot prompt when the request was started without an agent, even if an agent exists now' do
+          fixed_engine = described_class.new(
+            account: account, conversation_display_id: conversation.display_id, user: agent, engine: 'legacy_prompt'
+          )
+          expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
+
+          result = fixed_engine.perform
+
+          expect(result).to include(outcome: 'draft', message: 'Sure, I can help!', engine: 'legacy_prompt')
+        end
+
+        it 'puts the request id on the events of the one-shot prompt' do
+          legacy = described_class.new(
+            account: account, conversation_display_id: conversation.display_id, user: agent, engine: 'legacy_prompt', request_id: 'req-9'
+          )
+
+          expect(legacy.send(:request_event_context, 'gpt-5.4-mini')).to include(request_id: 'req-9')
+        end
+      end
+
+      describe 'the history of the agent' do
+        let(:image_message) { create(:message, conversation: conversation, message_type: :incoming, content: 'Вот снимок') }
+        let(:runner_double) { instance_double(Captain::Assistant::AgentRunnerService) }
+        let(:received_history) { [] }
+
+        before do
+          allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner_double)
+          allow(runner_double).to receive(:generate_response) do |message_history:|
+            received_history.replace(message_history)
+            { 'response' => 'Хорошо.', 'agent_id' => assistant.id, 'agent_display_name' => assistant.name }
+          end
+        end
+
+        it 'describes every image of the history through the parallel describer, never one at a time inside the message builder' do
+          attachment = image_message.attachments.create!(account_id: account.id, file_type: :image, external_url: 'https://example.com/a.jpg')
+          describer = instance_double(Captain::ReplySuggestion::ImageDescriber, perform: { attachment.id => 'Снимок уха' })
+          allow(Captain::ReplySuggestion::ImageDescriber).to receive(:new).and_return(describer)
+          expect(Captain::ImageRecognitionService).not_to receive(:new)
+
+          service.perform
+
+          parts = received_history.last[:content]
+          expect(parts).to include({ type: 'text', text: 'Image attachment: Снимок уха' })
+        end
+      end
+
+      describe 'the live progress' do
+        it 'carries the request id, the id the client sent and the timing of the request' do
+          allow(ActionCable.server).to receive(:broadcast)
+          started_at = Time.zone.parse('2026-10-24 09:12:03 UTC')
+          progress_service = described_class.new(
+            account: account, conversation_display_id: conversation.display_id, user: agent, request_id: 'req-1',
+            progress_context: {
+              suggestion_request_id: 'req-1', conversation_id: 7001, started_at: started_at, deadline_at: started_at + 60, budget_seconds: 60
+            }
+          )
+          runner_double = instance_double(Captain::Assistant::AgentRunnerService)
+          allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner_double)
+          allow(runner_double).to receive(:generate_response).and_return({ 'response' => 'Хорошо.', 'agent_id' => assistant.id })
+          allow(Captain::ReplySuggestion::RequestStore).to receive(:write_progress)
+
+          progress_service.perform
+
+          expect(ActionCable.server).to have_received(:broadcast).with(
+            agent.pubsub_token,
+            hash_including(
+              event: 'captain.reply_suggestion.progress',
+              data: hash_including(
+                suggestion_request_id: 'req-1', status: 'running', conversation_id: 7001, conversation_record_id: conversation.id,
+                started_at: '2026-10-24T09:12:03.000Z', deadline_at: '2026-10-24T09:13:03.000Z', budget_seconds: 60
+              )
+            )
+          ).at_least(:once)
+          expect(Captain::ReplySuggestion::RequestStore).to have_received(:write_progress)
+            .with('req-1', hash_including(phase: 'thinking')).at_least(:once)
+        end
       end
 
       def stub_council_runner_execution(entry_assistant, specialist)

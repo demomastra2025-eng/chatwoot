@@ -16,6 +16,7 @@ class Llm::Monitoring::EventRecorder
       captain.council.part_finished
       captain.customer_notice.fallback
       captain.customer_notice.generated
+      captain.reply_suggestion.complete
       captain.tool.technical_failure
       llm.agent.handoff
       llm.budget.blocked
@@ -63,6 +64,9 @@ class Llm::Monitoring::EventRecorder
     cached_tokens cache_creation_tokens actual_model endpoint_provider requested_model
     user_id user_name decision_choice copilot_action suggestion_outcome edited_before_send follow_up_count
     generated_reply_preview final_reply_preview message_id
+    engine reason_source reason_preview total_ms budget_ms detail suggestion_request_id handoffs_count stale
+    suggestion_text final_text suggestion_text_truncated final_text_truncated initial_suggestion_text
+    next_message_id next_message_delay_seconds based_on_message_id
   ].freeze
   CHAT_ACCOUNTING_KEYS = %w[
     usage_scope request_id parent_request_id trace_id session_id account_id user_id assistant_id conversation_id

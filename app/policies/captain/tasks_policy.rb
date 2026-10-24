@@ -11,6 +11,15 @@ class Captain::TasksPolicy < ApplicationPolicy
     true
   end
 
+  # Conversation-level access is checked by the controller (ConversationPolicy#show?).
+  def reply_suggestion_status?
+    true
+  end
+
+  def cancel_reply_suggestion?
+    true
+  end
+
   def label_suggestion?
     true
   end

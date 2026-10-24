@@ -9,6 +9,8 @@ module Captain::Assistant::RunPayloadHelper
       conversation_history: normalize_history(message_history),
       state: build_state
     }
+    # A caller with an id of its own (a reply suggestion request) gives it to the run: all llm events of the run share it.
+    context[:agent_request_id] = @request_id if @request_id.present?
     @assistant.persisted? ? agent_run_context.prepare(context) : context
   end
 

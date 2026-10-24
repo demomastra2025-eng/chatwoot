@@ -22,7 +22,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Tasks', type: :request do
   {
     'rewrite' => ['Captain::RewriteService', { content: 'Draft reply', operation: 'improve', conversation_display_id: 1 }],
     'summarize' => ['Captain::SummaryService', { conversation_display_id: 1 }],
-    'reply_suggestion' => ['Captain::ReplySuggestionService', { conversation_display_id: 1 }],
     'follow_up' => ['Captain::FollowUpService', { follow_up_context: { event_name: 'rewrite' }, message: 'Shorter', conversation_display_id: 1 }]
   }.each do |action, (service_name, task_params)|
     describe "POST /api/v1/accounts/{account.id}/captain/tasks/#{action}" do
@@ -56,47 +55,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Tasks', type: :request do
         expect(json_response[:error]).to eq(I18n.t('captain.text_improvement_disabled', locale: account.locale))
         expect(service_class).not_to have_received(:new)
       end
-    end
-  end
-
-  describe 'POST /api/v1/accounts/{account.id}/captain/tasks/reply_suggestion trace & meta' do
-    it 'includes captain_trace and suggestion_meta when present in result' do
-      stub_task_service(
-        Captain::ReplySuggestionService,
-        {
-          message: 'Suggested reply',
-          captain_trace: { 'version' => 1, 'reasoning' => 'Checked slots', 'tool_calls' => [{ 'tool_name' => 'search_available_slots' }] },
-          suggestion_meta: { 'agent' => { 'id' => 10, 'name' => 'Администратор' } },
-          pending_actions: [{ 'id' => 'act-1', 'title' => 'Записать на приём', 'status' => 'pending' }]
-        }
-      )
-
-      post "#{tasks_path}/reply_suggestion",
-           params: { conversation_display_id: 1 },
-           headers: agent.create_new_auth_token,
-           as: :json
-
-      expect(response).to have_http_status(:success)
-      expect(json_response[:message]).to eq('Suggested reply')
-      expect(json_response[:request_id]).to be_present
-      expect(json_response.dig(:captain_trace, :reasoning)).to eq('Checked slots')
-      expect(json_response.dig(:suggestion_meta, :agent, :name)).to eq('Администратор')
-      expect(json_response[:pending_actions]).to eq([{ id: 'act-1', title: 'Записать на приём', status: 'pending' }])
-    end
-
-    it 'returns a graceful error payload instead of 500 when the task service raises Timeout::Error' do
-      service = instance_double(Captain::ReplySuggestionService)
-      allow(Captain::ReplySuggestionService).to receive(:new).and_return(service)
-      allow(service).to receive(:perform).and_raise(Timeout::Error.new('execution expired'))
-
-      post "#{tasks_path}/reply_suggestion",
-           params: { conversation_display_id: 1 },
-           headers: agent.create_new_auth_token,
-           as: :json
-
-      expect(response).to have_http_status(:success)
-      expect(json_response[:message]).to be_nil
-      expect(json_response[:error]).to be_present
     end
   end
 

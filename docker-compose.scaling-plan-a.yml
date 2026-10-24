@@ -68,8 +68,8 @@ services:
     stop_grace_period: 35s
     environment:
       <<: *consolidated-worker-env
-      CAPSULE_AI_CAPTAIN_CONCURRENCY: ${CAPSULE_AI_CAPTAIN_CONCURRENCY:-6}
-      SIDEKIQ_DB_POOL: ${CAPSULE_AI_CAPTAIN_DB_POOL:-8}
+      CAPSULE_AI_CAPTAIN_CONCURRENCY: ${CAPSULE_AI_CAPTAIN_CONCURRENCY:-10}
+      SIDEKIQ_DB_POOL: ${CAPSULE_AI_CAPTAIN_DB_POOL:-12}
     working_dir: /app
     entrypoint: /app/docker/entrypoints/rails.sh
     command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq_capsule_ai_captain.yml"]
