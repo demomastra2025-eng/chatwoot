@@ -5,24 +5,12 @@ module BulkActionsJob::RecordProcessor
     params[:fields].dup.delete_if { |key, value| value.nil? && key.to_s == 'status' }
   end
 
-  def bulk_add_labels(conversation)
-    conversation.add_labels(@params[:labels][:add]) if @params[:labels] && @params[:labels][:add]
-  end
-
   def bulk_snoozed_until(conversation)
     conversation.snoozed_until = parse_date_time(@params[:snoozed_until].to_s) if @params[:snoozed_until]
   end
 
-  def remove_labels(conversation)
-    return unless @params[:labels] && @params[:labels][:remove]
-
-    labels = conversation.label_list - @params[:labels][:remove]
-    conversation.update!(label_list: labels)
-  end
-
   def process_conversation(conversation)
-    remove_labels(conversation)
-    bulk_add_labels(conversation)
+    change_person_labels(conversation.contact, conversation)
 
     params = available_params(@params)
     if status_update_params?(params)
@@ -49,8 +37,7 @@ module BulkActionsJob::RecordProcessor
     params = communication_thread_update_params
     validate_thread_update!(communication_thread, accessible_links, params) if params.present?
 
-    bulk_remove_thread_labels(accessible_links)
-    bulk_add_thread_labels(accessible_links)
+    change_person_labels(communication_thread.contact, accessible_links.first.conversation)
 
     update_thread(communication_thread, accessible_links, params) if params.present?
 

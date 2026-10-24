@@ -62,20 +62,13 @@ module BulkActionsJob::StatusAndLabels
     raise ArgumentError, 'Cannot update communication thread without access to all linked channels'
   end
 
-  def bulk_add_thread_labels(accessible_links)
-    return unless @params[:labels] && @params[:labels][:add]
+  # Labels belong to the person: add / remove go to the contact and to every conversation of the person, also to the
+  # channels the user cannot open, and are reported once (Labels::UnifiedAssignmentService).
+  def change_person_labels(contact, conversation)
+    to_add = @params.dig(:labels, :add)
+    to_remove = @params.dig(:labels, :remove)
+    return if to_add.blank? && to_remove.blank?
 
-    accessible_links.each do |link|
-      link.conversation.add_labels(@params[:labels][:add])
-    end
-  end
-
-  def bulk_remove_thread_labels(accessible_links)
-    return unless @params[:labels] && @params[:labels][:remove]
-
-    accessible_links.each do |link|
-      labels = link.conversation.label_list - @params[:labels][:remove]
-      link.conversation.update!(label_list: labels)
-    end
+    Labels::UnifiedAssignmentService.new(contact: contact, conversation: conversation, add: to_add, remove: to_remove).perform
   end
 end

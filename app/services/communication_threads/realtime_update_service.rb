@@ -110,7 +110,7 @@ class CommunicationThreads::RealtimeUpdateService
     {
       status: communication_thread.status, priority: communication_thread.priority,
       assignee_id: communication_thread.assignee_id, team_id: communication_thread.team_id,
-      labels: label_list(links), scheduling_appointment_statuses: scheduling_appointment_statuses(communication_thread)
+      labels: label_list(communication_thread, links), scheduling_appointment_statuses: scheduling_appointment_statuses(communication_thread)
     }
   end
 
@@ -187,11 +187,18 @@ class CommunicationThreads::RealtimeUpdateService
       (channel[:channel] == 'Channel::Voice' && !channel[:disabled])
   end
 
-  def label_list(links)
-    links.flat_map do |link|
+  # The person's labels: the contact card and the channels this group of recipients can open. The card alone carries
+  # labels that no conversation has, so leaving it out would make them vanish from an open dialog.
+  def label_list(communication_thread, links)
+    linked = links.flat_map do |link|
       conv = link.conversation
       conv&.association(:labels)&.loaded? ? conv.labels.map(&:name) : conv&.label_list
-    end.compact.uniq
+    end
+    Labels::UnifiedAssignmentService.normalize(contact_label_list(communication_thread.contact) + linked)
+  end
+
+  def contact_label_list(contact)
+    @contact_label_list ||= contact.label_list.to_a
   end
 
   def broadcast(account, members, data)

@@ -39,6 +39,7 @@ class Contacts::ChannelSyncMergeService
     now = Time.current
     reassign_core_associations!(now)
     reference_merger.reassign_remaining_references!
+    unify_labels!
     finalize_contact_merge!(now)
   rescue Contacts::ReferenceMergeService::UnsafeMergeError
     false
@@ -79,6 +80,14 @@ class Contacts::ChannelSyncMergeService
     Contacts::CommunicationThreadMergeService.new(base_contact: target_contact, mergee_contact: source_contact).perform
     Note.where(contact_id: source_contact.id, account_id: source_contact.account_id)
         .update_all(contact_id: target_contact.id, updated_at: now)
+  end
+
+  # The labels of the card that goes away stay with the person (see ContactMergeAction#merge_labels).
+  def unify_labels!
+    Labels::UnifiedAssignmentService.unify(
+      contact: target_contact,
+      extra_labels: Labels::UnifiedAssignmentService.person_labels(contact_id: source_contact.id, account_id: source_contact.account_id)
+    )
   end
 
   def finalize_contact_merge!(now)
