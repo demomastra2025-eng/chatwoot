@@ -79,7 +79,9 @@ class CommunicationThreads::PersonStatusRepair
 
   def mismatched_rows(account_id)
     threads = CommunicationThread.where(account_id: account_id).where("communication_threads.status <> #{self.class.expected_status_sql}")
-    threads.pluck(:id, :display_id, :status, Arel.sql(self.class.expected_status_sql)).map do |id, display_id, before, after|
+    # The alias keeps the model from casting the expression as its own status column: it comes back as the plain integer.
+    expected = Arel.sql("#{self.class.expected_status_sql} AS expected_status")
+    threads.pluck(:id, :display_id, :status, expected).map do |id, display_id, before, after|
       [account_id, id, display_id, before, CommunicationThread.statuses.key(after)]
     end
   end
