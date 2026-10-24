@@ -15,6 +15,9 @@ namespace :captain do
     # whatever its request id), so parallel parts would not be missed either; the switch stays off by default because of the
     # deadlock.
     ENV['CAPTAIN_COUNCIL_PARALLEL'] ||= 'off'
+    # The decision of the patient language runs on a thread next to the history and writes the conversation inside a transaction: the
+    # same deadlock, so it runs on the calling thread, at the first agent call.
+    ENV['CAPTAIN_LANGUAGE_PARALLEL'] ||= 'off'
     Rails.logger.level = :warn
     Rails.logger.level = :warn
     pool = ActiveRecord::Base.connection_pool

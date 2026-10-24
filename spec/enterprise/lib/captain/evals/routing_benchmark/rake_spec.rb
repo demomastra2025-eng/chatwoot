@@ -129,10 +129,10 @@ RSpec.describe 'routing benchmark rake tasks' do
     let(:runner) { instance_double(Captain::Evals::RoutingBenchmark::Runner, call: {}) }
 
     around do |example|
-      saved = ENV.fetch('CAPTAIN_COUNCIL_PARALLEL', nil)
+      saved = %w[CAPTAIN_COUNCIL_PARALLEL CAPTAIN_LANGUAGE_PARALLEL].index_with { |key| ENV.fetch(key, nil) }
       example.run
     ensure
-      saved.nil? ? ENV.delete('CAPTAIN_COUNCIL_PARALLEL') : ENV['CAPTAIN_COUNCIL_PARALLEL'] = saved
+      saved.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
     end
 
     before do
@@ -150,6 +150,16 @@ RSpec.describe 'routing benchmark rake tasks' do
 
       expect(ENV.fetch('CAPTAIN_COUNCIL_PARALLEL')).to eq('off')
       expect(runner).to have_received(:call)
+    end
+
+    it 'decides the patient language on the calling thread too, unless the switch is set on purpose' do
+      ENV.delete('CAPTAIN_LANGUAGE_PARALLEL')
+      run_task('captain:routing_benchmark', FIXTURES: 'tmp/x/*.yml', BUDGET_USD: '1', OUT: 'tmp/x.json')
+      expect(ENV.fetch('CAPTAIN_LANGUAGE_PARALLEL')).to eq('off')
+
+      ENV['CAPTAIN_LANGUAGE_PARALLEL'] = 'on'
+      run_task('captain:routing_benchmark', FIXTURES: 'tmp/x/*.yml', BUDGET_USD: '1', OUT: 'tmp/x.json')
+      expect(ENV.fetch('CAPTAIN_LANGUAGE_PARALLEL')).to eq('on')
     end
 
     it 'gives the runner the standard output for its progress lines: one per dialogue, while the run goes' do

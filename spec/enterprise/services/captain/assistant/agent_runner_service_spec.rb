@@ -159,6 +159,129 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
                                                                 max_turns: anything, runtime_options: anything)
     end
 
+    describe 'the language decision running next to the history' do
+      def detector
+        @detector ||= instance_double(Captain::PatientLanguageDetector, call: 'kk', safe_saved_language: 'ru')
+      end
+
+      def expect_run_in(language)
+        expect(mock_runner).to have_received(:run).with(anything, context: hash_including(patient_language: language),
+                                                                  max_turns: anything, runtime_options: anything)
+      end
+
+      before do
+        allow(Captain::PatientLanguageDetector).to receive(:new).with(conversation: conversation, assistant: assistant).and_return(detector)
+      end
+
+      it 'starts with the history, and is awaited only at the first agent call, after the agents are built' do
+        events = Queue.new
+        started = Queue.new
+        release = Queue.new
+        allow(detector).to receive(:call) do
+          events << :decision_started
+          started << true
+          release.pop(timeout: 5)
+          events << :decision_finished
+          'kk'
+        end
+        allow(service).to receive(:run_payload).and_wrap_original do |original, *arguments|
+          started.pop(timeout: 5)
+          events << :history_started
+          original.call(*arguments).tap { events << :history_built }
+        end
+        allow(Captain::Runtime::Runner).to receive(:with_agents) do
+          events << :agents_built
+          release << true
+          mock_runner
+        end
+        allow(mock_runner).to receive(:run) do |*|
+          events << :agent_run
+          mock_result
+        end
+
+        service.generate_response(message_history: message_history)
+
+        order = Array.new(events.size) { events.pop }
+        expect(order).to eq(%i[decision_started history_started history_built agents_built decision_finished agent_run])
+        expect_run_in('kk')
+      end
+
+      it 'decides on a thread of its own with the current account of the run' do
+        deciding = {}
+        allow(detector).to receive(:call) do
+          deciding[:thread] = Thread.current
+          deciding[:account] = Current.account
+          'kk'
+        end
+        Current.account = account
+
+        service.generate_response(message_history: message_history)
+
+        expect(deciding[:thread]).not_to eq(Thread.current)
+        expect(deciding[:account]).to eq(account)
+      end
+
+      it 'gives the agent the saved language of the conversation when the decision raises' do
+        allow(detector).to receive(:call).and_raise(StandardError, 'boom')
+
+        service.generate_response(message_history: message_history)
+
+        expect_run_in('ru')
+      end
+
+      it 'gives the agent the saved language, without waiting for it, when the decision does not finish in time' do
+        stub_const('Captain::Assistant::PatientLanguageHelper::LANGUAGE_WAIT_SECONDS', 0.05)
+        allow(detector).to receive(:call) { sleep(2) }
+        started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+        service.generate_response(message_history: message_history)
+
+        expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at).to be < 1.5
+        expect_run_in('ru')
+      end
+
+      it 'decides on the calling thread, at the first agent call, when the threads are switched off' do
+        threads = []
+        allow(detector).to receive(:call) do
+          threads << Thread.current
+          'kk'
+        end
+
+        with_modified_env(Captain::Assistant::PatientLanguageHelper::PARALLEL_SWITCH => 'off') do
+          service.generate_response(message_history: message_history)
+        end
+
+        expect(threads).to eq([Thread.current])
+        expect_run_in('kk')
+      end
+
+      it 'does not leave the decision running behind a run that ends at the input check' do
+        over = []
+        allow(detector).to receive(:call) do
+          sleep(0.3)
+          over << true
+          'kk'
+        end
+        allow(Llm::SafetyPolicy).to receive(:check!).and_raise(
+          Llm::SafetyPolicy::UnsafeContentError.new(feature: :assistant, stage: :input, reason: :moderation_flagged)
+        )
+
+        result = service.generate_response(message_history: message_history)
+
+        expect(result).to include('response' => 'conversation_handoff')
+        expect(over).to eq([true])
+      end
+
+      it 'decides nothing for a run without a conversation' do
+        allow(Captain::PatientLanguageDetector).to receive(:new)
+
+        described_class.new(assistant: assistant).generate_response(message_history: message_history)
+
+        expect(Captain::PatientLanguageDetector).not_to have_received(:new)
+        expect_run_in(nil)
+      end
+    end
+
     it 'reports measured playground response latency and only provider-reported reasoning tokens' do
       usage = Struct.new(:thinking_tokens).new(17)
       result = Captain::Runtime::Result.new(
