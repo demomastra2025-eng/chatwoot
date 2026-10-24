@@ -347,6 +347,7 @@ describe ContactMergeAction do
         %w[resolved open open], %w[snoozed open open], %w[open resolved open],
         %w[pending resolved pending], %w[resolved snoozed snoozed], %w[resolved resolved resolved]
       ]
+      tab_statuses = %w[open pending snoozed resolved]
       status_matrix.each do |card_status, duplicate_status, person_status|
         it "gives the person of a #{card_status} card and a #{duplicate_status} duplicate the status #{person_status}", :aggregate_failures do
           channel(card, card_status)
@@ -357,7 +358,7 @@ describe ContactMergeAction do
           thread = CommunicationThread.find_by!(account: account, contact: card)
           expect(CommunicationThread.where(account: account, contact_id: [card.id, duplicate.id])).to contain_exactly(thread)
           expect(thread.reload.status).to eq(person_status)
-          %w[open pending snoozed resolved].each do |status|
+          tab_statuses.each do |status|
             expect(tab(status)[:communication_threads].map(&:id)).to(status == person_status ? eq([thread.id]) : be_empty, "tab #{status}")
           end
           expect(tab(person_status)[:count][:all_count]).to eq(1)

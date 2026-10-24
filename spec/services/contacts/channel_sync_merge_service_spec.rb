@@ -100,6 +100,7 @@ RSpec.describe Contacts::ChannelSyncMergeService do
       end
 
       status_matrix = [%w[snoozed open open], %w[resolved snoozed snoozed], %w[resolved pending pending], %w[snoozed pending pending]]
+      tab_statuses = %w[open pending snoozed resolved]
       status_matrix.each do |target_status, source_status, person_status|
         it "gives a #{target_status} target and a #{source_status} source the status #{person_status}", :aggregate_failures do
           channel(target_contact, wa_inbox, target_status)
@@ -110,7 +111,7 @@ RSpec.describe Contacts::ChannelSyncMergeService do
           thread = CommunicationThread.find_by!(account: account, contact: target_contact)
           expect(thread.status).to eq(person_status)
           expect(tab(person_status)[:communication_threads].map(&:id)).to eq([thread.id])
-          (%w[open pending snoozed resolved] - [person_status]).each do |status|
+          (tab_statuses - [person_status]).each do |status|
             expect(tab(status)[:communication_threads]).to be_empty, "tab #{status}"
           end
         end

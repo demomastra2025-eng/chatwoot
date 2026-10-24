@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-namespace :onelink do
-  # The two arguments of the tasks below: an account id or "all", and dry_run (true when it is left out).
-  parse_arguments = lambda do |args, task_name|
+# The two arguments of the tasks below: an account id or "all", and dry_run (true when it is left out).
+module OnelinkThreadTaskArguments
+  def self.parse(args, task_name)
     account_id = args[:account_id].to_s.strip
     abort(%(Usage: rake "onelink:#{task_name}[<account_id|all>,<true|false>]")) if account_id.blank?
     abort("Account #{account_id} was not found") unless account_id == 'all' || Account.exists?(id: account_id)
@@ -15,13 +15,15 @@ namespace :onelink do
 
     [account_id == 'all' ? nil : account_id, dry_run]
   end
+end
 
+namespace :onelink do
   desc 'One open dialog per person: resolve silently every open or pending conversation of a thread except the one that stays ' \
        '(latest activity, a messenger before a call). Usage: rake "onelink:one_open_dialog_per_thread[<account_id|all>,<dry_run>]". ' \
        'dry_run is true by default: it prints the counts and (thread, kept, closed) and writes nothing. dry_run=false writes the ' \
        'backup CSV into BACKUP_DIR (default tmp/) first, then resolves. Run onelink:person_status_repair after it.'
   task :one_open_dialog_per_thread, [:account_id, :dry_run] => :environment do |_task, args|
-    account_id, dry_run = parse_arguments.call(args, 'one_open_dialog_per_thread')
+    account_id, dry_run = OnelinkThreadTaskArguments.parse(args, 'one_open_dialog_per_thread')
 
     CommunicationThreads::SingleOpenDialogCleanup.new(
       account_id: account_id,
@@ -38,7 +40,7 @@ namespace :onelink do
        'repairs. Run it from the new release right after the deploy (before the new web takes traffic if you can) and after ' \
        'onelink:one_open_dialog_per_thread; it can be repeated, a second run finds nothing.'
   task :person_status_repair, [:account_id, :dry_run] => :environment do |_task, args|
-    account_id, dry_run = parse_arguments.call(args, 'person_status_repair')
+    account_id, dry_run = OnelinkThreadTaskArguments.parse(args, 'person_status_repair')
 
     CommunicationThreads::PersonStatusRepair.new(
       account_id: account_id,

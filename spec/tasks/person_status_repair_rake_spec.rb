@@ -135,7 +135,7 @@ RSpec.describe 'onelink:person_status_repair rake task' do # rubocop:disable RSp
       }
       expect(rows.headers).to eq(CommunicationThreads::PersonStatusRepair::BACKUP_HEADERS)
       expect(rows.to_h { |row| [row['thread_id'].to_i, [row['status_before'], row['status_after']]] })
-        .to eq(changes.to_h { |name, change| [people.fetch(name).id, change] })
+        .to eq(changes.transform_keys { |name| people.fetch(name).id })
       expect(output).to include("Backup of the repaired threads: #{backup}")
     end
 
