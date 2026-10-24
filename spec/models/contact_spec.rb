@@ -401,6 +401,7 @@ RSpec.describe Contact do
     before do
       telegram_profile
       whatsapp_profile
+      contact.reload
     end
 
     it 'blocks cross-channel name overwrites when another source is primary' do
@@ -440,6 +441,135 @@ RSpec.describe Contact do
         'kind' => 'channel_profile',
         'contact_inbox_id' => telegram_contact_inbox.id
       )
+    end
+
+    describe '#push_event_data with a contact inbox' do
+      let(:person_level) { contact.push_event_data.slice(:name, :thumbnail) }
+
+      it 'keeps the same name and avatar whichever channel the event came from' do
+        from_telegram = contact.push_event_data(contact_inbox: telegram_contact_inbox)
+        from_whatsapp = contact.push_event_data(contact_inbox: whatsapp_contact_inbox)
+
+        expect(from_telegram.slice(:name, :thumbnail)).to eq(person_level)
+        expect(from_whatsapp.slice(:name, :thumbnail)).to eq(person_level)
+        expect(person_level).to eq(name: contact.display_full_name, thumbnail: contact.resolved_avatar_url)
+        expect(person_level[:thumbnail]).to be_present
+      end
+
+      it 'keeps the chosen avatar when the event comes from the other channel' do
+        contact.update!(
+          additional_attributes: contact.merge_display_source(
+            additional_attributes: contact.additional_attributes,
+            key: Contact::PRIMARY_AVATAR_SOURCE_KEY,
+            source: contact.display_source_for_contact_inbox(telegram_contact_inbox)
+          )
+        )
+
+        expect(contact.push_event_data(contact_inbox: whatsapp_contact_inbox)[:thumbnail]).to eq('https://cdn.example.com/tg-avatar.jpg')
+        expect(contact.push_event_data(contact_inbox: telegram_contact_inbox)[:thumbnail]).to eq('https://cdn.example.com/tg-avatar.jpg')
+      end
+
+      it 'keeps the same thumbnail while the channels sync in turn and nothing is pinned or attached' do
+        # Both personal-channel sync services stamp last_synced_at on every incoming message.
+        synced_in_turn = [telegram_profile, whatsapp_profile, telegram_profile, whatsapp_profile, telegram_profile]
+        results = synced_in_turn.each_with_index.map do |profile, minute|
+          profile.update!(last_synced_at: Time.zone.parse('2026-10-24 10:00:00') + minute.minutes)
+          fresh = described_class.find(contact.id)
+
+          [
+            fresh.push_event_data(contact_inbox: profile.contact_inbox)[:thumbnail],
+            fresh.push_event_data[:thumbnail],
+            fresh.resolved_primary_avatar_source['contact_inbox_id']
+          ]
+        end
+
+        expect(contact.additional_attributes).not_to have_key(Contact::DISPLAY_PREFERENCES_KEY)
+        expect(contact.avatar).not_to be_attached
+        telegram_avatar = 'https://cdn.example.com/tg-avatar.jpg'
+        expect(results.uniq).to eq([[telegram_avatar, telegram_avatar, telegram_contact_inbox.id]])
+      end
+
+      it 'takes the avatar of the first linked channel that has one, whichever channel synced last' do
+        telegram_profile.update!(avatar_url: nil, last_synced_at: 1.day.ago)
+        whatsapp_profile.update!(last_synced_at: Time.current)
+
+        expect(described_class.find(contact.id).push_event_data[:thumbnail]).to eq('https://cdn.example.com/wa-avatar.jpg')
+
+        telegram_profile.update!(avatar_url: 'https://cdn.example.com/tg-avatar.jpg')
+
+        expect(described_class.find(contact.id).push_event_data[:thumbnail]).to eq('https://cdn.example.com/tg-avatar.jpg')
+      end
+
+      it 'keeps the attached contact avatar over the avatar of the channel the event came from' do
+        contact.avatar.attach(io: Rails.root.join('spec/assets/avatar.png').open, filename: 'avatar.png', content_type: 'image/png')
+        contact.reload
+
+        expect(contact.contact_avatar_url).to be_present
+        expect(contact.push_event_data(contact_inbox: telegram_contact_inbox)[:thumbnail]).to eq(contact.contact_avatar_url)
+        expect(contact.push_event_data(contact_inbox: whatsapp_contact_inbox)[:thumbnail]).to eq(contact.contact_avatar_url)
+      end
+
+      it 'carries the profile of the given channel apart as channel_profile' do
+        expect(contact.push_event_data(contact_inbox: telegram_contact_inbox)[:channel_profile]).to include(
+          display_name: 'Arman', avatar_url: 'https://cdn.example.com/tg-avatar.jpg'
+        )
+        expect(contact.push_event_data(contact_inbox: whatsapp_contact_inbox)[:channel_profile]).to include(
+          display_name: 'Akhan', avatar_url: 'https://cdn.example.com/wa-avatar.jpg'
+        )
+        expect(contact.push_event_data).not_to have_key(:channel_profile)
+      end
+    end
+
+    describe 'a chosen avatar source whose contact inbox no longer exists' do
+      let(:dead_contact_inbox) do
+        create(:contact_inbox, contact: contact, inbox: create(:inbox, account: account), source_id: 'gone-1')
+      end
+
+      def choose_avatar_source(source)
+        contact.update!(
+          additional_attributes: contact.merge_display_source(
+            additional_attributes: contact.additional_attributes,
+            key: Contact::PRIMARY_AVATAR_SOURCE_KEY,
+            source: source
+          )
+        )
+      end
+
+      def snapshot(record)
+        {
+          avatar: record.resolved_avatar_url,
+          source: record.resolved_primary_avatar_source,
+          updates_allowed: record.avatar_updates_allowed_for?(contact_inbox: whatsapp_contact_inbox),
+          pushed: record.push_event_data(contact_inbox: whatsapp_contact_inbox).slice(:name, :thumbnail)
+        }
+      end
+
+      it 'falls back to the first linked channel avatar exactly like no preference, without an error' do
+        create(:contact_channel_profile, contact: contact, contact_inbox: dead_contact_inbox, inbox: dead_contact_inbox.inbox,
+                                         source_id: 'gone-1', display_name: 'Gone', avatar_url: 'https://cdn.example.com/gone.jpg',
+                                         last_synced_at: 1.year.ago)
+        choose_avatar_source(contact.display_source_for_contact_inbox(dead_contact_inbox))
+        dead_contact_inbox.destroy!
+
+        with_dead_preference = nil
+        expect { with_dead_preference = snapshot(described_class.find(contact.id)) }.not_to raise_error
+        contact.update!(additional_attributes: contact.additional_attributes.except(Contact::DISPLAY_PREFERENCES_KEY))
+
+        expect(with_dead_preference).to eq(snapshot(described_class.find(contact.id)))
+        expect(with_dead_preference[:avatar]).to eq('https://cdn.example.com/tg-avatar.jpg')
+      end
+
+      it 'falls back to the attached contact avatar exactly like no preference' do
+        choose_avatar_source('kind' => 'channel_profile', 'contact_inbox_id' => 0, 'inbox_id' => 0)
+        contact.avatar.attach(io: Rails.root.join('spec/assets/avatar.png').open, filename: 'avatar.png', content_type: 'image/png')
+
+        with_dead_preference = snapshot(described_class.find(contact.id))
+        contact.update!(additional_attributes: contact.additional_attributes.except(Contact::DISPLAY_PREFERENCES_KEY))
+
+        expect(with_dead_preference).to eq(snapshot(described_class.find(contact.id)))
+        expect(with_dead_preference[:avatar]).to eq(described_class.find(contact.id).contact_avatar_url)
+        expect(with_dead_preference[:avatar]).to be_present
+      end
     end
   end
 end

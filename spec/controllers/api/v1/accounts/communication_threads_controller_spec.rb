@@ -1031,6 +1031,76 @@ RSpec.describe 'Communication Threads API', type: :request do
     end
   end
 
+  describe 'person name and avatar across channels' do
+    let(:contact) { create(:contact, :with_avatar, account: account, name: 'Arman') }
+    let(:telegram_inbox) { create(:inbox, account: account) }
+    let(:whatsapp_inbox) { create(:inbox, account: account) }
+    let(:telegram_contact_inbox) { create(:contact_inbox, contact: contact, inbox: telegram_inbox) }
+    let(:whatsapp_contact_inbox) { create(:contact_inbox, contact: contact, inbox: whatsapp_inbox) }
+    let!(:telegram_conversation) do
+      create(:conversation, account: account, contact: contact, inbox: telegram_inbox, contact_inbox: telegram_contact_inbox)
+    end
+    let!(:whatsapp_conversation) do
+      create(:conversation, account: account, contact: contact, inbox: whatsapp_inbox, contact_inbox: whatsapp_contact_inbox)
+    end
+    let(:thread) { telegram_conversation.reload.communication_thread }
+    let(:broadcasts) { [] }
+
+    before do
+      create(:inbox_member, user: agent, inbox: telegram_inbox)
+      create(:inbox_member, user: agent, inbox: whatsapp_inbox)
+      create(:contact_channel_profile, contact: contact, contact_inbox: telegram_contact_inbox, inbox: telegram_inbox,
+                                       provider: 'telegram_personal', display_name: 'Arman Telegram',
+                                       avatar_url: 'https://cdn.example.com/tg-avatar.jpg')
+      create(:contact_channel_profile, contact: contact, contact_inbox: whatsapp_contact_inbox, inbox: whatsapp_inbox,
+                                       provider: 'whatsapp_web', display_name: 'Akhan WhatsApp', avatar_url: nil)
+      create_shared_unread_message(telegram_conversation)
+      allow(ActionCableBroadcastJob).to receive(:perform_later) { |members, event, payload| broadcasts << [members, event, payload] }
+    end
+
+    def realtime_sender_from(conversation)
+      broadcasts.clear
+      CommunicationThreads::RealtimeUpdateService.new(
+        communication_thread_id: thread.id, source_conversation_id: conversation.id, source_event: 'message.created'
+      ).perform
+      broadcasts.find { |_members, event, _payload| event == 'communication_thread.updated' }.last.dig(:meta, :sender)
+    end
+
+    it 'gives the thread detail, the thread list and realtime updates from every channel the same name and avatar' do
+      get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}", headers: headers, as: :json
+      detail_sender = JSON.parse(response.body, symbolize_names: true).dig(:meta, :sender)
+      get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
+      list_sender = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).first.dig(:meta, :sender)
+
+      expect(detail_sender[:thumbnail]).to eq(contact.reload.contact_avatar_url)
+      expect(detail_sender[:thumbnail]).to be_present
+      expect(list_sender.slice(:name, :thumbnail)).to eq(detail_sender.slice(:name, :thumbnail))
+      [telegram_conversation, whatsapp_conversation].each do |conversation|
+        expect(realtime_sender_from(conversation).slice(:name, :thumbnail)).to eq(detail_sender.slice(:name, :thumbnail))
+      end
+    end
+
+    it 'falls back quietly when the chosen avatar source points to a contact inbox that no longer exists' do
+      dead_contact_inbox = create(:contact_inbox, contact: contact, inbox: create(:inbox, account: account))
+      contact.update!(
+        additional_attributes: contact.merge_display_source(
+          additional_attributes: contact.additional_attributes,
+          key: Contact::PRIMARY_AVATAR_SOURCE_KEY,
+          source: contact.display_source_for_contact_inbox(dead_contact_inbox)
+        )
+      )
+      dead_contact_inbox.destroy!
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}", headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      detail_sender = JSON.parse(response.body, symbolize_names: true).dig(:meta, :sender)
+      expect(detail_sender[:thumbnail]).to eq(contact.reload.contact_avatar_url)
+      expect(detail_sender[:primary_avatar_source]).to include(kind: 'contact_avatar')
+      expect(realtime_sender_from(whatsapp_conversation)[:thumbnail]).to eq(detail_sender[:thumbnail])
+    end
+  end
+
   describe 'GET /api/v1/accounts/:account_id/communication_threads/:id/messages' do
     it 'returns a unified message timeline for accessible channel conversations', :aggregate_failures do
       contact = create(:contact, :with_email, account: account)

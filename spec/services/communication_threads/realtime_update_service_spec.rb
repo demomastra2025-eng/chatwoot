@@ -136,5 +136,93 @@ RSpec.describe CommunicationThreads::RealtimeUpdateService do
         members, payload, hidden_user: hidden_inbox_user, hidden_conversation: hidden_conversation
       )
     end
+
+    context 'when one person is reachable on two channels' do
+      let(:account) { create(:account).tap { |record| record.enable_features!('communication_threads') } }
+      let(:agent) { create(:user, account: account, role: :agent) }
+      let(:contact) { create(:contact, :with_avatar, account: account, name: 'Arman') }
+      let(:telegram_inbox) { create(:inbox, account: account) }
+      let(:whatsapp_inbox) { create(:inbox, account: account) }
+      let(:telegram_contact_inbox) { create(:contact_inbox, contact: contact, inbox: telegram_inbox) }
+      let(:whatsapp_contact_inbox) { create(:contact_inbox, contact: contact, inbox: whatsapp_inbox) }
+      let(:telegram_conversation) do
+        create(:conversation, account: account, contact: contact, inbox: telegram_inbox, contact_inbox: telegram_contact_inbox)
+      end
+      let(:whatsapp_conversation) do
+        create(:conversation, account: account, contact: contact, inbox: whatsapp_inbox, contact_inbox: whatsapp_contact_inbox)
+      end
+      let(:broadcasts) { [] }
+
+      before do
+        create(:inbox_member, inbox: telegram_inbox, user: agent)
+        create(:inbox_member, inbox: whatsapp_inbox, user: agent)
+        create(
+          :contact_channel_profile,
+          contact: contact, contact_inbox: telegram_contact_inbox, inbox: telegram_inbox,
+          provider: 'telegram_personal',
+          display_name: 'Arman Telegram', avatar_url: 'https://cdn.example.com/tg-avatar.jpg'
+        )
+        create(
+          :contact_channel_profile,
+          contact: contact, contact_inbox: whatsapp_contact_inbox, inbox: whatsapp_inbox,
+          provider: 'whatsapp_web',
+          display_name: 'Akhan WhatsApp', avatar_url: nil
+        )
+        telegram_conversation
+        whatsapp_conversation
+        allow(ActionCableBroadcastJob).to receive(:perform_later) { |members, event, payload| broadcasts << [members, event, payload] }
+      end
+
+      def thread_payload_for(conversation)
+        broadcasts.clear
+        described_class.new(
+          communication_thread_id: telegram_conversation.reload.communication_thread.id,
+          source_conversation_id: conversation.id,
+          source_event: 'message.created'
+        ).perform
+        broadcasts.find { |_members, event, _payload| event == 'communication_thread.updated' }.last
+      end
+
+      it 'sends the same name and avatar from a Telegram event and from a WhatsApp event' do
+        expect(whatsapp_conversation.reload.communication_thread).to eq(telegram_conversation.reload.communication_thread)
+
+        from_telegram = thread_payload_for(telegram_conversation)
+        from_whatsapp = thread_payload_for(whatsapp_conversation)
+
+        expect(from_telegram[:contact_inbox_id]).not_to eq(from_whatsapp[:contact_inbox_id])
+        telegram_sender = from_telegram.dig(:meta, :sender)
+        whatsapp_sender = from_whatsapp.dig(:meta, :sender)
+        expect(telegram_sender.slice(:id, :name, :thumbnail)).to eq(whatsapp_sender.slice(:id, :name, :thumbnail))
+        expect(telegram_sender[:name]).to eq('Arman')
+        expect(telegram_sender[:thumbnail]).to eq(contact.reload.resolved_avatar_url)
+        expect(telegram_sender[:thumbnail]).to eq(contact.contact_avatar_url)
+        expect(telegram_sender[:thumbnail]).to be_present
+      end
+
+      it 'keeps each channel profile in channels instead of the person sender' do
+        payload = thread_payload_for(telegram_conversation)
+
+        expect(payload.dig(:meta, :sender)).not_to have_key(:channel_profile)
+        profiles = payload.fetch(:channels).to_h { |channel| [channel[:contact_inbox_id], channel[:channel_profile]] }
+        expect(profiles.fetch(telegram_contact_inbox.id)).to include(display_name: 'Arman Telegram')
+        expect(profiles.fetch(whatsapp_contact_inbox.id)).to include(display_name: 'Akhan WhatsApp')
+      end
+
+      it 'keeps the chosen avatar source for events from either channel' do
+        contact.update!(
+          additional_attributes: contact.merge_display_source(
+            additional_attributes: contact.additional_attributes,
+            key: Contact::PRIMARY_AVATAR_SOURCE_KEY,
+            source: contact.display_source_for_contact_inbox(telegram_contact_inbox)
+          )
+        )
+
+        thumbnails = [telegram_conversation, whatsapp_conversation].map do |conversation|
+          thread_payload_for(conversation).dig(:meta, :sender, :thumbnail)
+        end
+
+        expect(thumbnails).to eq(['https://cdn.example.com/tg-avatar.jpg'] * 2)
+      end
+    end
   end
 end
