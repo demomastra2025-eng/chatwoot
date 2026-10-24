@@ -134,8 +134,8 @@ RSpec.describe Captain::Tools::Account::SearchAvailableSlotsService do
                         service_id: consultation.id)
       )
 
-      expect(payload['slots'].last['starts_at']).to eq('2026-04-20T12:55:00+05:00')
-      expect(payload['slots'].last['ends_at']).to eq('2026-04-20T13:40:00+05:00')
+      expect(payload['slots'].last['starts_at']).to eq('2026-04-20T12:30:00+05:00')
+      expect(payload['slots'].last['ends_at']).to eq('2026-04-20T13:15:00+05:00')
     end
 
     it 'searches a requested specialist with a service that is not linked to them, with the service duration' do
@@ -182,9 +182,11 @@ RSpec.describe Captain::Tools::Account::SearchAvailableSlotsService do
         expect(execute(service_id: consultation.id)).to include('RESOURCE_REQUIRED')
 
         payload = JSON.parse(execute(resource_ids: [resource.id], limit: 1))
-        expect(payload['service']).to be_nil
-        expect(payload['duration_min']).to be_nil
-        expect(payload['slots'].first).to include('starts_at' => '2026-04-20T09:00:00+05:00', 'ends_at' => '2026-04-20T09:30:00+05:00')
+        expect(payload).not_to include('service', 'service_id')
+        expect(payload['duration_min']).to eq(30)
+        expect(payload['days']).to eq([{ 'resource_id' => resource.id, 'name' => 'Aigerim', 'date' => '2026-04-20',
+                                         'times' => %w[09:00 09:30 11:30], 'more' => 0 }])
+        expect(payload).to include('total' => 3)
       end
     end
   end

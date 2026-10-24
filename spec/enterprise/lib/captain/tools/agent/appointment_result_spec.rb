@@ -413,4 +413,29 @@ RSpec.describe Captain::Tools::Agent::AppointmentResult do
       expect(Captain::Runtime::ToolFailure.business_answer?(output)).to be(true)
     end
   end
+
+  describe 'a booking at a start that is not on the grid of the specialist' do
+    let(:nearest) { %w[2026-04-21T14:20:00+05:00 2026-04-21T14:30:00+05:00] }
+    let(:error) do
+      Scheduling::Error.new(code: 'START_OFF_GRID', message: 'Start 14:25 is not on the grid', status: :unprocessable_content,
+                            details: { step_min: 10, nearest_starts: nearest })
+    end
+
+    it 'is a business answer that names the starts next to it, with nothing written' do
+      payload = described_class.failure(error)
+
+      expect(payload).to include(success: false, reason: 'validation_error', code: 'START_OFF_GRID', error_class: 'business',
+                                 nearest_starts: nearest, audit: { mutation_executed: false, failure_stage: 'tool_arguments' })
+      expect(payload[:correction]).to include('nearest_starts', 'search_available_slots')
+    end
+
+    it 'reaches the agent as a failure it can correct in the same run, and the runtime reads it as a business answer' do
+      output = described_class.failure_output(error)
+      result = Captain::ToolResult.normalize(output)
+
+      expect(result).to include(success: false, retryable: false, error: include('nearest_starts'),
+                                data: include(code: 'START_OFF_GRID', nearest_starts: nearest))
+      expect(Captain::Runtime::ToolFailure.classify(output)).to eq('business')
+    end
+  end
 end
