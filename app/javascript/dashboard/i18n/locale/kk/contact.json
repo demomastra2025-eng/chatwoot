@@ -229,6 +229,9 @@
       "DELETE": "Delete attribute",
       "EDIT": "Edit attribute"
     },
+    "READ_ONLY": {
+      "PROVIDER_OWNED": "MedElement жүйесінен автоматты түрде толтырылады. Мұнда өзгертуге болмайды."
+    },
     "ADD": {
       "TITLE": "Create custom attribute",
       "DESC": "Add custom information to this contact."
