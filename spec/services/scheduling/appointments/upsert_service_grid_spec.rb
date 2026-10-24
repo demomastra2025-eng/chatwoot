@@ -159,4 +159,55 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       expect(longer).to have_attributes(starts_at: zone.local(2026, 4, 20, 9, 10), duration_min: 45)
     end
   end
+
+  # The length of a visit is the one slot search offers (Scheduling::VisitDuration): a MedElement service has no length of its own (its
+  # duration_min is the column default), it is the median of the visits of the doctor. The check of the whole visit against the
+  # touching cells of the day uses that length, not service.duration_min, so a booking is accepted exactly where the search offers it.
+  context 'with a MedElement service whose visits at the doctor last 60 minutes, two cells' do
+    let(:booking_params) { params.except(:ends_at) }
+
+    before do
+      create(:scheduling_resource_service_stat, account: account, resource: resource, service: service, median_duration_min: 60)
+      windows = ((9 * 60)...(12 * 60)).step(reception_time).map { |minute| { start_minute: minute, end_minute: minute + reception_time } }
+      Integrations::Medelement::ScheduleDay.create!(
+        account: account, hook: account.hooks.find_by!(app_id: 'medelement'), resource: resource, specialist_code: 'doctor-1',
+        date: Date.new(2026, 4, 20), status: 'confirmed', source_checked_at: Time.current, windows: windows
+      )
+    end
+
+    def book(starts)
+      described_class.new(account: account, actor: actor, params: booking_params.merge(starts_at: starts.iso8601)).perform
+    end
+
+    def offered_starts
+      Scheduling::CompleteSlotSearchService.new(
+        account: account, resource_ids: [resource.id], service_id: service.id, from: zone.local(2026, 4, 20, 9), to: zone.local(2026, 4, 20, 12)
+      ).perform[:slots].map { |slot| Time.iso8601(slot[:starts_at]).in_time_zone(zone).strftime('%H:%M') }
+    end
+
+    it 'offers the starts whose whole visit fits the cells: the last one is 11:00, not 11:30' do
+      expect(offered_starts).to eq(%w[09:00 09:30 10:00 10:30 11:00])
+    end
+
+    it 'books the last offered start with the 60 minutes of the history, over two cells' do
+      booking = book(zone.local(2026, 4, 20, 11))
+
+      expect(booking).to have_attributes(starts_at: zone.local(2026, 4, 20, 11), ends_at: zone.local(2026, 4, 20, 12), duration_min: 60)
+    end
+
+    it 'refuses the next grid start, where 30 minutes (the default of the service) would still fit but the visit does not' do
+      expect(service.duration_min).to eq(30)
+
+      expect { book(zone.local(2026, 4, 20, 11, 30)) }.to raise_error(Scheduling::Error) { |error|
+        expect(error.code).to eq('OUTSIDE_WORKING_HOURS')
+      }
+      expect(account.scheduling_appointments.reload).to be_empty
+    end
+
+    it 'checks the grid of the start with the same length: a start off the grid is refused as off the grid' do
+      expect { book(zone.local(2026, 4, 20, 10, 15)) }.to raise_error(Scheduling::Error) { |error|
+        expect(error.code).to eq('START_OFF_GRID')
+      }
+    end
+  end
 end
