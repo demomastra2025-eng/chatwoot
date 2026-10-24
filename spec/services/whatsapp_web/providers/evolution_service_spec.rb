@@ -822,6 +822,20 @@ describe WhatsappWeb::Providers::EvolutionService do
     end
   end
 
+  describe '#mark_messages_read for a hidden @lid chat' do
+    it 'keeps the @lid JID in the read payload' do
+      service = described_class.new(channel: channel)
+
+      expect(service).to receive(:request).with(
+        :post,
+        "/chat/markMessageAsRead/#{channel.instance_name}",
+        body: { readMessages: [{ remoteJid: '143907392331785@lid', fromMe: false, id: 'wa-read-1' }] }
+      ).and_return({})
+
+      service.mark_messages_read(messages: [{ remoteJid: '143907392331785@lid', fromMe: false, id: 'wa-read-1' }])
+    end
+  end
+
   describe '#update_message' do
     it 'posts the normalized edit payload to Evolution' do
       service = described_class.new(channel: channel)
@@ -986,42 +1000,6 @@ describe WhatsappWeb::Providers::EvolutionService do
       expect(service.send_message(message)).to eq('provider-message-id')
     end
 
-    it 'rejects lid-only provisional recipients before calling Evolution' do
-      service = described_class.new(channel: channel)
-      contact = create(
-        :contact,
-        account: channel.account,
-        additional_attributes: {
-          'lid_jid' => '143907392331785@lid',
-          'raw_jid' => '143907392331785@lid',
-          'canonical_jid' => '143907392331785@lid',
-          'provisional_whatsapp_identity' => true
-        }
-      )
-      contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: '143907392331785@lid')
-      conversation = create(
-        :conversation,
-        account: channel.account,
-        inbox: channel.inbox,
-        contact: contact,
-        contact_inbox: contact_inbox
-      )
-      message = create(
-        :message,
-        account: channel.account,
-        inbox: channel.inbox,
-        conversation: conversation,
-        message_type: :outgoing
-      )
-
-      expect(service).not_to receive(:request)
-
-      expect { service.send_message(message) }.to raise_error(
-        described_class::UnroutableRecipientError,
-        /provisional @lid identity/
-      )
-    end
-
     it 'records provider activity once Evolution accepts the message' do
       service = described_class.new(channel: channel)
       contact = create(:contact, account: channel.account)
@@ -1143,14 +1121,238 @@ describe WhatsappWeb::Providers::EvolutionService do
         service.send_message(message)
       end
 
-      it 'still reports an unroutable recipient when the contact has no phone identity at all' do
+      it 'leaves a refused send to the phone number as a plain RequestError' do
+        allow(service).to receive(:request)
+          .with(:post, "/message/sendText/#{channel.instance_name}", body: hash_including(number: phone_digits))
+          .and_raise(described_class::RequestError.new('Bad Request', status: 400, body: {}))
+
+        expect { service.send_message(message) }.to raise_error(an_instance_of(described_class::RequestError))
+      end
+
+      it 'addresses the @lid JID itself when the contact has no phone identity at all' do
         phone_contact_inbox.channel_profile.destroy!
         phone_contact_inbox.destroy!
         contact.update!(phone_number: nil)
         conversation
 
+        expect(service).to receive(:request)
+          .with(:post, "/message/sendText/#{channel.instance_name}", body: hash_including(number: lid_jid))
+          .and_return({ 'key' => { 'id' => 'provider-message-id' } })
+
+        service.send_message(message)
+      end
+    end
+
+    context 'when the contact is known only by a hidden @lid identity' do
+      let(:lid_jid) { '143907392331785@lid' }
+      let(:contact) do
+        create(
+          :contact,
+          account: channel.account,
+          additional_attributes: {
+            'lid_jid' => lid_jid,
+            'raw_jid' => lid_jid,
+            'canonical_jid' => lid_jid,
+            'provisional_whatsapp_identity' => true
+          }
+        )
+      end
+      let(:contact_inbox) { create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: lid_jid) }
+      let(:conversation) do
+        create(:conversation, account: channel.account, inbox: channel.inbox, contact: contact, contact_inbox: contact_inbox)
+      end
+      let(:message) do
+        create(:message, account: channel.account, inbox: channel.inbox, conversation: conversation, message_type: :outgoing)
+      end
+      let(:quoted_message) do
+        create(
+          :message,
+          account: channel.account,
+          inbox: channel.inbox,
+          conversation: conversation,
+          message_type: :incoming,
+          source_id: 'quoted-wa-id'
+        )
+      end
+      let(:service) { described_class.new(channel: channel) }
+      let(:send_text_path) { "/message/sendText/#{channel.instance_name}" }
+
+      it 'addresses the text message to the full @lid JID' do
+        expect(service).to receive(:request)
+          .with(:post, send_text_path, body: hash_including(number: lid_jid))
+          .and_return({ 'key' => { 'id' => 'provider-message-id' } })
+
+        expect(service.send_message(message)).to eq('provider-message-id')
+      end
+
+      it 'addresses media to the full @lid JID' do
+        attachment = message.attachments.new(account_id: message.account_id, file_type: :image)
+        attachment.file.attach(io: Rails.root.join('spec/assets/avatar.png').open, filename: 'avatar.png', content_type: 'image/png')
+        attachment.save!
+
+        expect(service).to receive(:request)
+          .with(:post, "/message/sendMedia/#{channel.instance_name}", body: hash_including(number: lid_jid, mediatype: 'image'))
+          .and_return({ 'key' => { 'id' => 'provider-message-id' } })
+
+        expect(service.send_message(message)).to eq('provider-message-id')
+      end
+
+      it 'quotes the replied message under the @lid JID' do
+        quoted_message
+        message.update!(content_attributes: { 'in_reply_to_external_id' => 'quoted-wa-id' })
+
+        expect(service).to receive(:request)
+          .with(
+            :post,
+            send_text_path,
+            body: hash_including(number: lid_jid, quoted: { key: { remoteJid: lid_jid, id: 'quoted-wa-id' } })
+          ).and_return({ 'key' => { 'id' => 'provider-message-id' } })
+
+        service.send_message(message)
+      end
+
+      it 'prefers the conversation own @lid over another @lid kept on the contact' do
+        contact.update!(additional_attributes: contact.additional_attributes.merge('canonical_jid' => '999@lid', 'raw_jid' => '999@lid'))
+
+        expect(service).to receive(:request)
+          .with(:post, send_text_path, body: hash_including(number: lid_jid))
+          .and_return({ 'key' => { 'id' => 'provider-message-id' } })
+
+        service.send_message(message)
+      end
+
+      it 'uses the @lid JID for edits, deletes and reactions' do
+        message.update!(source_id: 'wa-lid-1')
+
+        expect(service).to receive(:request)
+          .with(
+            :post,
+            "/chat/updateMessage/#{channel.instance_name}",
+            body: hash_including(number: lid_jid, key: { id: 'wa-lid-1', fromMe: true, remoteJid: lid_jid })
+          ).and_return({})
+        service.update_message(message: message, content: 'Edited text')
+
+        expect(service).to receive(:request)
+          .with(:delete, "/chat/deleteMessageForEveryone/#{channel.instance_name}", body: { id: 'wa-lid-1', fromMe: true, remoteJid: lid_jid })
+          .and_return({})
+        service.delete_message(message: message)
+
+        expect(service).to receive(:request)
+          .with(
+            :post,
+            "/message/sendReaction/#{channel.instance_name}",
+            body: { key: { remoteJid: lid_jid, fromMe: true, id: 'wa-lid-1' }, reaction: 'ok' }
+          ).and_return({})
+        service.send_reaction(message: message, emoji: 'ok')
+      end
+
+      context 'when the gateway refuses the @lid' do
+        let(:refusal_body) do
+          { 'status' => 400, 'error' => 'Bad Request', 'response' => { 'message' => [{ 'jid' => lid_jid, 'exists' => false }] } }
+        end
+
+        def gateway_error(status)
+          described_class::RequestError.new('Bad Request', status: status, body: refusal_body)
+        end
+
+        it 'raises a LidRecipientRequestError that keeps the status and the body of the refusal' do
+          allow(service).to receive(:request).with(:post, send_text_path, body: hash_including(number: lid_jid)).and_raise(gateway_error(400))
+
+          expect { service.send_message(message) }.to raise_error(described_class::LidRecipientRequestError) do |error|
+            expect(error).to be_a(described_class::RequestError)
+            expect([error.status, error.body, error.message]).to eq([400, refusal_body, 'Bad Request'])
+          end
+        end
+
+        it 'tags a refused media message the same way' do
+          attachment = message.attachments.new(account_id: message.account_id, file_type: :image)
+          attachment.file.attach(io: Rails.root.join('spec/assets/avatar.png').open, filename: 'avatar.png', content_type: 'image/png')
+          attachment.save!
+          allow(service).to receive(:request).with(:post, "/message/sendMedia/#{channel.instance_name}", body: hash_including(number: lid_jid))
+                                             .and_raise(gateway_error(404))
+
+          expect { service.send_message(message) }.to raise_error(described_class::LidRecipientRequestError) do |error|
+            expect(error.status).to eq(404)
+          end
+        end
+
+        it 'does not change what a transient failure means: it stays retryable and keeps its status' do
+          allow(service).to receive(:request).and_raise(gateway_error(503))
+
+          expect { service.send_message(message) }.to raise_error(described_class::RequestError) do |error|
+            expect([error.status, error.retryable?]).to eq([503, true])
+          end
+        end
+
+        it 'does not record provider activity for a refused message' do
+          allow(service).to receive(:request).and_raise(gateway_error(400))
+
+          expect { service.send_message(message) }.to raise_error(described_class::RequestError)
+          expect(channel.reload.last_provider_activity_at).to be_nil
+        end
+      end
+
+      it 'still reports an unroutable recipient when there is no candidate at all' do
+        quoted_message
+        message.update!(content_attributes: { 'in_reply_to_external_id' => 'quoted-wa-id' })
+        contact_inbox.update_column(:source_id, ' ') # rubocop:disable Rails/SkipsModelValidations
+        contact.update!(additional_attributes: {}, phone_number: nil)
+
         expect(service).not_to receive(:request)
         expect { service.send_message(message) }.to raise_error(described_class::UnroutableRecipientError)
+        expect { service.send(:quoted_payload, message) }.to raise_error(described_class::UnroutableRecipientError)
+      end
+    end
+
+    context 'when the conversation is a group chat or a plain phone chat' do
+      let(:service) { described_class.new(channel: channel) }
+      let(:send_text_path) { "/message/sendText/#{channel.instance_name}" }
+
+      def message_for(source_id, in_reply_to: nil)
+        contact = create(:contact, account: channel.account)
+        contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: source_id)
+        conversation = create(:conversation, account: channel.account, inbox: channel.inbox, contact: contact, contact_inbox: contact_inbox)
+        if in_reply_to
+          create(:message, account: channel.account, inbox: channel.inbox, conversation: conversation, message_type: :incoming,
+                           source_id: in_reply_to)
+        end
+        create(
+          :message,
+          account: channel.account,
+          inbox: channel.inbox,
+          conversation: conversation,
+          message_type: :outgoing,
+          content_attributes: { 'in_reply_to_external_id' => in_reply_to }.compact
+        )
+      end
+
+      it 'addresses and quotes a group by its group JID' do
+        group_jid = '120363025246125486@g.us'
+
+        expect(service).to receive(:request)
+          .with(:post, send_text_path, body: hash_including(number: group_jid, quoted: { key: { remoteJid: group_jid, id: 'quoted-wa-id' } }))
+          .and_return({ 'key' => { 'id' => 'provider-message-id' } })
+
+        service.send_message(message_for(group_jid, in_reply_to: 'quoted-wa-id'))
+      end
+
+      it 'leaves a refused send to a group or a phone chat as a plain RequestError' do
+        allow(service).to receive(:request).and_raise(described_class::RequestError.new('Bad Request', status: 400, body: {}))
+
+        %w[120363025246125486@g.us 15551234567].each do |source_id|
+          expect { service.send_message(message_for(source_id)) }.to raise_error(an_instance_of(described_class::RequestError))
+        end
+      end
+
+      it 'addresses a phone chat by digits and quotes it under the phone JID' do
+        expect(service).to receive(:request)
+          .with(
+            :post,
+            send_text_path,
+            body: hash_including(number: '15551234567', quoted: { key: { remoteJid: '15551234567@s.whatsapp.net', id: 'quoted-wa-id' } })
+          ).and_return({ 'key' => { 'id' => 'provider-message-id' } })
+
+        service.send_message(message_for('15551234567', in_reply_to: 'quoted-wa-id'))
       end
     end
   end

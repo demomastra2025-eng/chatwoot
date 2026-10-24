@@ -55,6 +55,103 @@ RSpec.describe WhatsappWeb::SendOnWhatsappWebService do
     expect(message.external_error).to eq('Не удалось отправить сообщение в WhatsApp')
   end
 
+  context 'when the recipient is a hidden @lid id' do
+    let(:lid_jid) { '143907392331785@lid' }
+    let(:lid_contact) do
+      create(:contact, account: channel.account, additional_attributes: { 'lid_jid' => lid_jid, 'raw_jid' => lid_jid, 'canonical_jid' => lid_jid })
+    end
+    let(:lid_contact_inbox) { create(:contact_inbox, inbox: channel.inbox, contact: lid_contact, source_id: lid_jid) }
+    let(:lid_conversation) do
+      create(:conversation, account: channel.account, inbox: channel.inbox, contact: lid_contact, contact_inbox: lid_contact_inbox)
+    end
+    let(:lid_message) { new_lid_message }
+    let(:provider) { WhatsappWeb::Providers::EvolutionService.new(channel: channel) }
+    let(:send_text_path) { "/message/sendText/#{channel.instance_name}" }
+
+    def new_lid_message
+      create(:message, account: channel.account, inbox: channel.inbox, conversation: lid_conversation, message_type: :outgoing, status: :sent)
+    end
+
+    def gateway_refuses(status, body: { 'status' => status, 'error' => 'Bad Request' })
+      error = WhatsappWeb::Providers::EvolutionService::RequestError.new('Bad Request', status: status, body: body)
+      allow(provider).to receive(:request).and_raise(error)
+    end
+
+    before do
+      channel.update!(lifecycle_state: 'connected', connection_state: 'open')
+      allow(channel).to receive(:provider_service).and_return(provider)
+    end
+
+    it 'sends the full @lid JID to the gateway' do
+      expect(provider).to receive(:request)
+        .with(:post, send_text_path, body: hash_including(number: lid_jid))
+        .and_return({ 'key' => { 'id' => 'provider-message-id' } })
+
+      described_class.new(message: lid_message).perform
+
+      expect(lid_message.reload.source_id).to eq('provider-message-id')
+    end
+
+    it 'records an unroutable recipient when the gateway refuses it with a permanent 4xx' do
+      [400, 404, 410, 422].each do |status|
+        refused_message = new_lid_message
+        gateway_refuses(status)
+
+        expect { described_class.new(message: refused_message).perform }.not_to raise_error
+
+        expect(refused_message.reload.status).to eq('failed')
+        expect(refused_message.external_error).to eq('Не удалось определить номер получателя')
+      end
+    end
+
+    it 'keeps the technical detail of the refusal in the log' do
+      gateway_refuses(400, body: { 'status' => 400, 'response' => { 'message' => ['jid 143907392331785 does not exist'] } })
+      allow(Rails.logger).to receive(:warn)
+
+      described_class.new(message: lid_message).perform
+
+      expect(Rails.logger).to have_received(:warn)
+        .with(/Outbound message #{lid_message.id} failed.*LidRecipientRequestError status=400.*jid \[number\] does not exist/)
+    end
+
+    it 'is resent by the retry service once a phone identity arrives' do
+      gateway_refuses(400)
+      described_class.new(message: lid_message).perform
+      clear_enqueued_jobs
+
+      expect { WhatsappWeb::RetryFailedProvisionalMessagesService.new(channel: channel, contact: lid_contact).perform }
+        .to have_enqueued_job(SendReplyJob).with(lid_message.id)
+      expect(lid_message.reload.status).to eq('sent')
+    end
+
+    it 'blames the lost session when the refusal says that the connection is closed' do
+      gateway_refuses(400, body: { 'response' => { 'message' => ['Error: Connection Closed'] } })
+
+      described_class.new(message: lid_message).perform
+
+      expect(lid_message.reload.external_error).to eq('WhatsApp отключён — переподключите номер в настройках канала')
+    end
+
+    it 'does not touch the retry of auth and transient errors' do
+      [403, 500, 503].each do |status|
+        pending_message = new_lid_message
+        gateway_refuses(status)
+
+        expect { described_class.new(message: pending_message).perform }
+          .to raise_error(WhatsappWeb::Providers::EvolutionService::RequestError) { |error| expect(error.status).to eq(status) }
+        expect(pending_message.reload.status).to eq('sent')
+      end
+    end
+
+    it 'keeps the generic reason when the same refusal comes for a phone recipient' do
+      gateway_refuses(400)
+
+      described_class.new(message: message).perform
+
+      expect(message.reload.external_error).to eq('Не удалось отправить сообщение в WhatsApp')
+    end
+  end
+
   it 'stores a reconnect hint instead of Bad Request when the gateway connection is closed' do
     error = WhatsappWeb::Providers::EvolutionService::RequestError.new(
       'Error: Connection Closed',
