@@ -480,6 +480,7 @@ medelement:
           'sync_patients': { 'type': 'boolean' },
           'write_enabled': { 'type': 'boolean' },
           'remove_reception_on_cancel': { 'type': 'boolean' },
+          'stale_status_apply_enabled': { 'type': 'boolean' },
           'receptions_days_back': { 'type': 'integer', 'minimum': 0, 'maximum': 30 },
           'receptions_days_forward': { 'type': 'integer', 'minimum': 0, 'maximum': 365 },
           'throttle_ms': { 'type': 'integer', 'minimum': 200, 'maximum': 5000 },

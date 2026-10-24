@@ -47,9 +47,12 @@ medelement_delta_probe_job:
   active_job: true
 
 # executed nightly at 03:00 Almaty time (22:00 UTC)
-# re-reads the MedElement appointments of the last 30 days that are still scheduled or confirmed a day after their start
-# and applies the status MedElement gives them; this entry only queues one run per hook, the runs themselves go to the
-# low queue (the job's own queue) so that they never hold up the sync queues
+# re-reads the MedElement appointments of the last 30 days that are still scheduled or confirmed a day after their start;
+# this entry only queues one run per hook, the runs themselves go to the low queue (the job's own queue) so that they never
+# hold up the sync queues. A run applies the status MedElement gives only for a hook that has the setting
+# stale_status_apply_enabled on (off by default: the owner turns it on per clinic after reviewing a dry run); for any other
+# hook it is a dry run that writes nothing and logs what it would change. The entry carries no args on purpose: the job
+# decides from the hook's setting.
 medelement_stale_status_reconciliation_job:
   cron: '0 3 * * * Asia/Almaty'
   class: 'Integrations::Medelement::StaleStatusReconciliationJob'

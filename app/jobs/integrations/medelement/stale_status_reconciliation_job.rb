@@ -4,7 +4,9 @@
 #
 #   Integrations::Medelement::StaleStatusReconciliationJob.perform_later(hook.id, days: nil, dry_run: true)
 #
-# days: nil reads the whole history. max_per_run: nil removes the cap of one run.
+# dry_run: left out (the nightly entry), a run applies the statuses only for a hook that has stale_status_apply_enabled on
+# (off by default) and is otherwise a dry run that reads MedElement and logs what it would change. true or false decides
+# for the run, whatever the hook says. days: nil reads the whole history. max_per_run: nil removes the cap of one run.
 class Integrations::Medelement::StaleStatusReconciliationJob < ApplicationJob
   queue_as :low
 
@@ -13,17 +15,21 @@ class Integrations::Medelement::StaleStatusReconciliationJob < ApplicationJob
 
   discard_on ActiveRecord::RecordNotFound
 
-  def perform(hook_id = nil, days: Integrations::Medelement::StaleStatusReconciler::DEFAULT_DAYS, dry_run: false,
+  def perform(hook_id = nil, days: Integrations::Medelement::StaleStatusReconciler::DEFAULT_DAYS, dry_run: nil,
               max_per_run: Integrations::Medelement::StaleStatusReconciler::DEFAULT_MAX_PER_RUN)
     return enqueue_runs(days, dry_run, max_per_run) if hook_id.nil?
 
     hook = Integrations::Hook.find_by!(id: hook_id, app_id: 'medelement')
     Integrations::Medelement::StaleStatusReconciler.new(
-      hook: hook, days: days, dry_run: dry_run, max_per_run: max_per_run
+      hook: hook, days: days, dry_run: dry_run.nil? ? !apply_enabled?(hook) : dry_run, max_per_run: max_per_run
     ).perform.to_h
   end
 
   private
+
+  def apply_enabled?(hook)
+    Integrations::Medelement::Configuration.new(hook: hook).stale_status_apply_enabled?
+  end
 
   def enqueue_runs(days, dry_run, max_per_run)
     Integrations::Hook.where(app_id: 'medelement', status: 'enabled').order(:id).pluck(:id).each_with_index do |id, index|

@@ -89,6 +89,16 @@ RSpec.describe Integrations::Medelement::Configuration do
       expect(configuration.delta_probe_enabled?).to be(false)
     end
 
+    it 'applies stale statuses from the nightly run only for a clinic that has been switched on' do
+      expect(configuration.stale_status_apply_enabled?).to be(false)
+
+      allow(hook).to receive(:settings).and_return('stale_status_apply_enabled' => true)
+      expect(configuration.stale_status_apply_enabled?).to be(true)
+
+      allow(hook).to receive(:settings).and_return('stale_status_apply_enabled' => false)
+      expect(configuration.stale_status_apply_enabled?).to be(false)
+    end
+
     it 'accepts only the supported intervals and uses minute cron when appropriate' do
       allow(hook).to receive(:settings).and_return(
         'incremental_receptions_enabled' => true,
