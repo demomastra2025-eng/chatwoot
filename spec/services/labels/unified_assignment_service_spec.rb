@@ -258,7 +258,7 @@ RSpec.describe Labels::UnifiedAssignmentService do
   describe 'the conversation that reports a change without a source' do
     include PersonThreadStatusHelpers
 
-    def put(conversation, status, at)
+    def give_state(conversation, status, at)
       # rubocop:disable Rails/SkipsModelValidations
       conversation.update_columns(status: Conversation.statuses.fetch(status), updated_at: at, last_activity_at: at)
       # rubocop:enable Rails/SkipsModelValidations
@@ -274,35 +274,35 @@ RSpec.describe Labels::UnifiedAssignmentService do
     end
 
     it 'is the open conversation in front, not an older resolved one' do
-      put(first_conversation, 'resolved', 3.hours.ago)
-      put(second_conversation, 'open', 1.minute.ago)
-      put(third_conversation, 'snoozed', 1.hour.ago)
+      give_state(first_conversation, 'resolved', 3.hours.ago)
+      give_state(second_conversation, 'open', 1.minute.ago)
+      give_state(third_conversation, 'snoozed', 1.hour.ago)
 
       expect_reporter(second_conversation)
     end
 
     it 'is the conversation that is not resolved even when a resolved one changed later' do
-      put(first_conversation, 'pending', 2.days.ago)
-      put(second_conversation, 'resolved', 1.minute.ago)
-      put(third_conversation, 'resolved', 1.hour.ago)
+      give_state(first_conversation, 'pending', 2.days.ago)
+      give_state(second_conversation, 'resolved', 1.minute.ago)
+      give_state(third_conversation, 'resolved', 1.hour.ago)
 
       expect_reporter(first_conversation)
     end
 
     it 'is the conversation with the latest activity when every conversation is resolved' do
-      put(first_conversation, 'resolved', 1.hour.ago)
-      put(second_conversation, 'resolved', 1.minute.ago)
-      put(third_conversation, 'resolved', 1.day.ago)
+      give_state(first_conversation, 'resolved', 1.hour.ago)
+      give_state(second_conversation, 'resolved', 1.minute.ago)
+      give_state(third_conversation, 'resolved', 1.day.ago)
 
       expect_reporter(second_conversation)
     end
 
     it 'is the next one in front when the conversation in front already carries the label' do
-      put(first_conversation, 'resolved', 3.hours.ago)
-      put(second_conversation, 'open', 1.minute.ago)
-      put(third_conversation, 'snoozed', 1.hour.ago)
+      give_state(first_conversation, 'resolved', 3.hours.ago)
+      give_state(second_conversation, 'open', 1.minute.ago)
+      give_state(third_conversation, 'snoozed', 1.hour.ago)
       second_conversation.update_labels(%w[vip])
-      put(second_conversation, 'open', 1.minute.ago)
+      give_state(second_conversation, 'open', 1.minute.ago)
 
       expect_reporter(third_conversation)
     end

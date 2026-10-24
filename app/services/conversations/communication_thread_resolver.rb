@@ -7,8 +7,7 @@ class Conversations::CommunicationThreadResolver
     # their last activity. A change of the whole person that is reported by one conversation is reported by the first.
     def front_first(conversations)
       active, resolved = Array(conversations).partition { |conversation| !conversation.resolved? }
-      active.sort_by { |conversation| status_sort_key(conversation) }.reverse +
-        resolved.sort_by { |conversation| activity_sort_key(conversation) }.reverse
+      active.sort_by { |c| status_sort_key(c) }.reverse + resolved.sort_by { |c| activity_sort_key(c) }.reverse
     end
 
     def status_sort_key(conversation)
