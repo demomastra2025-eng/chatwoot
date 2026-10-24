@@ -16,7 +16,10 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     label = account.labels.find_by(title: label_name.to_s.strip.downcase)
     raise ArgumentError, 'Label not found' if label.blank?
 
-    target_conversation.add_labels(label.title)
+    # The label is the person's: it goes to the contact and to every conversation of the thread.
+    Labels::UnifiedAssignmentService.add(
+      contact: target_conversation.contact, labels: [label.title], conversation: target_conversation
+    )
     target_conversation.reload
   end
 
@@ -25,9 +28,9 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
 
     target_conversation = resolve_conversation!(conversation_id)
 
-    normalized_label = label_name.to_s.strip.downcase
-    labels = target_conversation.label_list.to_a - [normalized_label]
-    target_conversation.update!(label_list: labels)
+    Labels::UnifiedAssignmentService.remove(
+      contact: target_conversation.contact, labels: [label_name.to_s.strip.downcase], conversation: target_conversation
+    )
     target_conversation.reload
   end
 

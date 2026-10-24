@@ -34,10 +34,12 @@ class ActionService
     @conversation.update!(priority: (priority[0] == 'nil' ? nil : priority[0]))
   end
 
+  # Labels belong to the person: the contact and every conversation of the thread get them, and the change is reported once.
   def add_label(labels)
     return if labels.empty?
 
-    @conversation.reload.add_labels(labels)
+    Labels::UnifiedAssignmentService.add(contact: @conversation.contact, labels: labels, conversation: @conversation)
+    @conversation.reload
   end
 
   def assign_agent(agent_ids = [])
@@ -55,8 +57,8 @@ class ActionService
   def remove_label(labels)
     return if labels.empty?
 
-    labels = @conversation.label_list - labels
-    @conversation.update(label_list: labels)
+    Labels::UnifiedAssignmentService.remove(contact: @conversation.contact, labels: labels, conversation: @conversation)
+    @conversation.reload
   end
 
   def assign_team(team_ids = [])

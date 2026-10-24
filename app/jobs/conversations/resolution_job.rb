@@ -8,12 +8,16 @@ class Conversations::ResolutionJob < ApplicationJob
       # send message from bot that conversation has been resolved
       # do this is account.auto_resolve_message is set
       ::MessageTemplates::Template::AutoResolve.new(conversation: conversation).perform if account.auto_resolve_message.present?
-      conversation.add_labels(account.auto_resolve_label) if account.auto_resolve_label.present?
+      add_auto_resolve_label(conversation, account.auto_resolve_label) if account.auto_resolve_label.present?
       conversation.toggle_status
     end
   end
 
   private
+
+  def add_auto_resolve_label(conversation, label)
+    Labels::UnifiedAssignmentService.add(contact: conversation.contact, labels: [label], conversation: conversation)
+  end
 
   def conversation_scope(account)
     base_scope = if account.auto_resolve_ignore_waiting

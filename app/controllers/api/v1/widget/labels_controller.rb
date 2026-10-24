@@ -1,8 +1,7 @@
 class Api::V1::Widget::LabelsController < Api::V1::Widget::BaseController
   def create
     if conversation.present? && label_defined_in_account?
-      conversation.label_list.add(permitted_params[:label])
-      conversation.save!
+      Labels::UnifiedAssignmentService.add(contact: conversation.contact, labels: [permitted_params[:label]], conversation: conversation)
     end
 
     head :no_content
@@ -10,8 +9,7 @@ class Api::V1::Widget::LabelsController < Api::V1::Widget::BaseController
 
   def destroy
     if conversation.present?
-      conversation.label_list.remove(permitted_params[:id])
-      conversation.save!
+      Labels::UnifiedAssignmentService.remove(contact: conversation.contact, labels: [permitted_params[:id]], conversation: conversation)
     end
 
     head :no_content

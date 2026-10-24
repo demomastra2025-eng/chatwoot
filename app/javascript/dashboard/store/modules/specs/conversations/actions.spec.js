@@ -1557,6 +1557,55 @@ describe('#deleteMessage', () => {
     });
   });
 
+  describe('#updateCommunicationThreadLabels', () => {
+    it('sends a change, not the whole list, and stores the labels the server answers with', async () => {
+      const localCommit = vi.fn();
+      const changeSpy = vi
+        .spyOn(CommunicationThreadApi, 'changeLabels')
+        .mockResolvedValue({ data: { payload: ['vip', 'card_only'] } });
+      const wholeListSpy = vi.spyOn(CommunicationThreadApi, 'updateLabels');
+
+      try {
+        const labels = await actions.updateCommunicationThreadLabels(
+          { commit: localCommit },
+          { conversationId: 7, add: ['vip'] }
+        );
+
+        expect(changeSpy).toHaveBeenCalledWith(7, {
+          add: ['vip'],
+          remove: undefined,
+        });
+        expect(wholeListSpy).not.toHaveBeenCalled();
+        expect(labels).toEqual(['vip', 'card_only']);
+        expect(localCommit).toHaveBeenCalledWith(
+          types.UPDATE_CONVERSATION,
+          expect.objectContaining({ id: 7, labels: ['vip', 'card_only'] })
+        );
+      } finally {
+        changeSpy.mockRestore();
+        wholeListSpy.mockRestore();
+      }
+    });
+
+    it('still sends the whole list when it is given one', async () => {
+      const localCommit = vi.fn();
+      const wholeListSpy = vi
+        .spyOn(CommunicationThreadApi, 'updateLabels')
+        .mockResolvedValue({ data: { payload: ['paid'] } });
+
+      try {
+        await actions.updateCommunicationThreadLabels(
+          { commit: localCommit },
+          { conversationId: 7, labels: ['paid'] }
+        );
+
+        expect(wholeListSpy).toHaveBeenCalledWith(7, ['paid']);
+      } finally {
+        wholeListSpy.mockRestore();
+      }
+    });
+  });
+
   describe('#sendMessageWithData', () => {
     it('uses the communication thread endpoint when a thread id is present', async () => {
       const localCommit = vi.fn();

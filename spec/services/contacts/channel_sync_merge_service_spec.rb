@@ -141,6 +141,28 @@ RSpec.describe Contacts::ChannelSyncMergeService do
       end
     end
 
+    it 'keeps the labels of the merged-away card on the person', :aggregate_failures do
+      wa_inbox = create(:inbox, account: account)
+      tg_inbox = create(:inbox, account: account)
+      target_ci = create(:contact_inbox, contact: target_contact, inbox: wa_inbox)
+      source_ci = create(:contact_inbox, contact: source_contact, inbox: tg_inbox)
+      target_conv = create(:conversation, account: account, inbox: wa_inbox, contact: target_contact, contact_inbox: target_ci)
+      source_conv = create(:conversation, account: account, inbox: tg_inbox, contact: source_contact, contact_inbox: source_ci)
+      target_contact.update_labels(%w[target_card])
+      source_contact.update_labels(%w[source_card])
+      source_conv.update_labels(%w[source_channel])
+      union = %w[target_card source_card source_channel]
+
+      merged = ActiveRecord::Base.transaction do
+        described_class.new(source_contact: source_contact, target_contact: target_contact) { target_contact.name }.perform
+      end
+
+      expect(merged).to be(true)
+      expect(target_contact.reload.label_list).to match_array(union)
+      expect(target_conv.reload.label_list).to match_array(union)
+      expect(source_conv.reload.label_list).to match_array(union)
+    end
+
     it 'reassigns CRM deal links, telephony call sessions, and consolidates duplicate same-inbox dialogs', :aggregate_failures do
       inbox = create(:inbox, account: account)
       target_ci = create(:contact_inbox, contact: target_contact, inbox: inbox)

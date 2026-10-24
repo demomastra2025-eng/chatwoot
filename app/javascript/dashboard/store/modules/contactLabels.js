@@ -39,12 +39,17 @@ export const actions = {
       });
     }
   },
-  update: async ({ commit, dispatch }, { contactId, labels }) => {
+  // Pass add / remove (what changed) rather than labels (the whole list): the server writes the change to the
+  // person's contact and all its conversations, and a list that is out of date can no longer erase a label.
+  update: async ({ commit, dispatch }, { contactId, labels, add, remove }) => {
     commit(types.SET_CONTACT_LABELS_UI_FLAG, {
       isUpdating: true,
     });
     try {
-      const response = await ContactAPI.updateContactLabels(contactId, labels);
+      const isChange = Array.isArray(add) || Array.isArray(remove);
+      const response = isChange
+        ? await ContactAPI.changeContactLabels(contactId, { add, remove })
+        : await ContactAPI.updateContactLabels(contactId, labels);
       commit(types.SET_CONTACT_LABELS, {
         id: contactId,
         data: response.data.payload,

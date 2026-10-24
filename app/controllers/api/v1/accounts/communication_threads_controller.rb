@@ -145,14 +145,16 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     @labels = thread_label_list
   end
 
+  # Labels are the person's: the change goes to the contact and to every conversation of the thread, also to the channels
+  # this agent cannot open, and one change is reported once (Labels::UnifiedAssignmentService), by the conversation in
+  # front of the person, the one whose status the dialog shows. The answer is what this agent can see.
   def update_labels
-    label_values = permitted_label_params[:labels] || []
-    conversations = accessible_links_for(@communication_thread).includes(:conversation).map(&:conversation)
-    @labels = Labels::UnifiedAssignmentService.new(
-      contact: @communication_thread.contact,
-      conversations: conversations,
-      labels: label_values
-    ).perform
+    add, remove = Labels::UnifiedAssignmentService.delta_from_params(
+      permitted_label_params,
+      visible_labels: Labels::UnifiedAssignmentService.union_for(contact: nil, conversations: accessible_thread_conversations)
+    )
+    Labels::UnifiedAssignmentService.new(contact: @communication_thread.contact, add: add, remove: remove).perform
+    @labels = thread_label_list
     render :labels
   end
 
@@ -288,7 +290,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def permitted_label_params
-    params.permit(:id, labels: [])
+    params.permit(:id, labels: [], add: [], remove: [])
   end
 
   def permitted_delete_conversation_ids
@@ -320,13 +322,14 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def thread_label_list
-    conversations = accessible_links_for(@communication_thread)
-                    .includes(:conversation)
-                    .map(&:conversation)
     Labels::UnifiedAssignmentService.union_for(
       contact: @communication_thread.contact,
-      conversations: conversations
+      conversations: accessible_thread_conversations
     )
+  end
+
+  def accessible_thread_conversations
+    accessible_links_for(@communication_thread).includes(:conversation).map(&:conversation)
   end
 
   def permitted_message_params

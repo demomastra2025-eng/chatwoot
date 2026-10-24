@@ -39,10 +39,11 @@ class WhatsappWeb::LabelSyncService
     conversation = find_conversation(payload['chatId'].to_s)
     return if conversation.blank?
 
+    # A label set or taken off on the phone is a label of the person, not of one chat.
     if payload['type'] == 'remove'
-      conversation.update!(label_list: conversation.label_list - [label_title])
+      Labels::UnifiedAssignmentService.remove(contact: conversation.contact, labels: [label_title], conversation: conversation)
     else
-      conversation.add_labels([label_title]) unless conversation.label_list.include?(label_title)
+      Labels::UnifiedAssignmentService.add(contact: conversation.contact, labels: [label_title], conversation: conversation)
     end
   end
 

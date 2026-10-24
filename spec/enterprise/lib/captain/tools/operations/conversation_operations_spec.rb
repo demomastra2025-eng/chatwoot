@@ -28,6 +28,32 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
     )
   end
 
+  describe 'labels of the person' do
+    let!(:other_conversation) { create(:conversation, account: account, contact: contact) }
+
+    before do
+      conversation
+      create(:label, account: account, title: 'vip')
+    end
+
+    it 'adds a label to the contact and to every conversation of the person' do
+      operations.add_label(label_name: 'VIP', conversation_id: conversation.id)
+
+      expect(contact.reload.label_list).to eq(%w[vip])
+      expect([conversation, other_conversation].map { |record| record.reload.label_list.to_a }).to all(eq(%w[vip]))
+    end
+
+    it 'removes a label from the contact and from every conversation of the person' do
+      Labels::UnifiedAssignmentService.add(contact: contact, labels: %w[vip paid], silent: true)
+
+      result = operations.remove_label(label_name: 'vip', conversation_id: conversation.id)
+
+      expect(result.label_list.to_a).to eq(%w[paid])
+      expect(contact.reload.label_list).to eq(%w[paid])
+      expect(other_conversation.reload.label_list).to eq(%w[paid])
+    end
+  end
+
   describe '#send_message_to_conversation' do
     it 'sends selected attachment ids through the native message builder pipeline' do
       message = operations.send_message_to_conversation(

@@ -41,6 +41,20 @@ RSpec.describe '/api/v1/widget/labels', type: :request do
       end
     end
 
+    context 'with a defined label and a person that has other channels' do
+      let!(:other_conversation) { create(:conversation, contact: contact, account: account) }
+
+      before { account.labels.create!(title: 'customer-support') }
+
+      it 'puts the label on the person: the contact and every conversation' do
+        post '/api/v1/widget/labels', params: params, headers: { 'X-Auth-Token' => token }, as: :json
+
+        expect(contact.reload.label_list).to eq(%w[customer-support])
+        expect(conversation.reload.label_list).to eq(%w[customer-support])
+        expect(other_conversation.reload.label_list).to eq(%w[customer-support])
+      end
+    end
+
     context 'with invalid website token' do
       it 'returns the list of labels' do
         post '/api/v1/widget/labels', params: { website_token: '' }
@@ -66,6 +80,19 @@ RSpec.describe '/api/v1/widget/labels', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(conversation.reload.label_list.count).to eq 0
+      end
+    end
+
+    context 'with a person that has the label on the contact and on another channel' do
+      let!(:other_conversation) { create(:conversation, contact: contact, account: account) }
+
+      before { Labels::UnifiedAssignmentService.add(contact: contact, labels: %w[customer-support], silent: true) }
+
+      it 'takes the label off the whole person' do
+        delete "/api/v1/widget/labels/#{params[:label]}", params: params, headers: { 'X-Auth-Token' => token }, as: :json
+
+        expect(contact.reload.label_list).to be_empty
+        expect([conversation, other_conversation].map { |record| record.reload.label_list.to_a }).to all(be_empty)
       end
     end
 

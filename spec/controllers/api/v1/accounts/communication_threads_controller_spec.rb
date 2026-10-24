@@ -1887,7 +1887,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(contact.reload.label_list).to contain_exactly('vip', 'paid')
     end
 
-    it 'updates labels only on accessible linked child conversations when the thread has hidden channels' do
+    it 'writes the labels to the hidden channels of the person too and keeps the labels the agent cannot see' do
       contact = create(:contact, :with_email, account: account)
       accessible_conversation = create(:conversation, account: account, contact: contact)
       inaccessible_conversation = create(:conversation, account: account, contact: contact)
@@ -1902,8 +1902,131 @@ RSpec.describe 'Communication Threads API', type: :request do
            as: :json
 
       expect(response).to have_http_status(:success)
+      expect(response.parsed_body['payload']).to contain_exactly('vip', 'paid')
       expect(accessible_conversation.reload.label_list).to contain_exactly('vip', 'paid')
-      expect(inaccessible_conversation.reload.label_list).to contain_exactly('hidden')
+      expect(inaccessible_conversation.reload.label_list).to contain_exactly('hidden', 'vip', 'paid')
+      expect(contact.reload.label_list).to contain_exactly('vip', 'paid')
+    end
+
+    describe 'as a change (add / remove)' do
+      let(:contact) { create(:contact, :with_email, account: account) }
+      let(:first_conversation) { create(:conversation, account: account, contact: contact) }
+      let(:second_conversation) { create(:conversation, account: account, contact: contact) }
+      let(:hidden_conversation) { create(:conversation, account: account, contact: contact) }
+      let(:thread) { first_conversation.reload.communication_thread }
+      let(:url) { "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/labels" }
+
+      before do
+        [first_conversation, second_conversation, hidden_conversation]
+        create(:inbox_member, user: agent, inbox: first_conversation.inbox)
+        create(:inbox_member, user: agent, inbox: second_conversation.inbox)
+        InboxMember.where(user: agent, inbox: hidden_conversation.inbox).delete_all
+        Labels::UnifiedAssignmentService.add(contact: contact, labels: %w[vip], silent: true)
+        contact.update_labels(%w[vip card_only])
+      end
+
+      it 'adds a label to the contact and to every channel, also the ones the agent cannot open' do
+        post url, params: { add: %w[paid] }, headers: headers, as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['payload']).to contain_exactly('vip', 'card_only', 'paid')
+        [first_conversation, second_conversation, hidden_conversation].each do |conversation|
+          expect(conversation.reload.label_list).to include('paid')
+        end
+        expect(contact.reload.label_list).to contain_exactly('vip', 'card_only', 'paid')
+      end
+
+      it 'removes a label from the contact and from every channel, also the ones the agent cannot open' do
+        post url, params: { remove: %w[vip] }, headers: headers, as: :json
+
+        expect(response.parsed_body['payload']).to contain_exactly('card_only')
+        [first_conversation, second_conversation, hidden_conversation].each do |conversation|
+          expect(conversation.reload.label_list).not_to include('vip')
+        end
+        expect(contact.reload.label_list).to contain_exactly('card_only')
+      end
+
+      it 'removes a label that lives only on the contact card' do
+        post url, params: { remove: %w[card_only] }, headers: headers, as: :json
+
+        expect(contact.reload.label_list).to contain_exactly('vip')
+        expect(response.parsed_body['payload']).to contain_exactly('vip')
+      end
+
+      it 'does not drop a label that lives only on the contact card when an older client sends a stale whole list' do
+        post url, params: { labels: %w[vip paid] }, headers: headers, as: :json
+
+        expect(response.parsed_body['payload']).to contain_exactly('vip', 'card_only', 'paid')
+        expect(contact.reload.label_list).to contain_exactly('vip', 'card_only', 'paid')
+      end
+
+      it 'still removes the labels an older client saw and left out of its whole list' do
+        post url, params: { labels: [] }, headers: headers, as: :json
+
+        expect([first_conversation, second_conversation, hidden_conversation].map { |conversation| conversation.reload.label_list.to_a })
+          .to all(be_empty)
+        expect(contact.reload.label_list).to contain_exactly('card_only')
+      end
+
+      it 'reports the change once however many channels the person has' do
+        expect { post url, params: { add: %w[paid] }, headers: headers, as: :json }
+          .to have_enqueued_job(Conversations::ActivityMessageJob).once
+      end
+    end
+
+    # One conversation reports a label change of the person: the one in front, whose status the dialog shows. A rule that
+    # checks the status or sends a message, and a webhook, get that channel and not the old one the thread started with,
+    # and the activity message of the label does not move the status of the dialog.
+    describe 'the conversation that reports the change' do
+      include PersonThreadStatusHelpers
+
+      let(:contact) { create(:contact, :with_email, account: account) }
+      let!(:first_conversation) { create(:conversation, account: account, contact: contact) }
+      let!(:active_conversation) { create(:conversation, account: account, contact: contact) }
+      let!(:snoozed_conversation) { create(:conversation, account: account, contact: contact) }
+      let(:url) { "/api/v1/accounts/#{account.id}/communication_threads/#{first_conversation.reload.communication_thread.display_id}/labels" }
+
+      before do
+        [first_conversation, active_conversation, snoozed_conversation].each do |conversation|
+          create(:inbox_member, user: agent, inbox: conversation.inbox)
+        end
+      end
+
+      it 'is the open conversation in front, not the older resolved channel the thread started with' do
+        give_person_different_statuses(active_conversation, [snoozed_conversation, 'snoozed'], [first_conversation, 'resolved'])
+        updates = record_conversation_updates
+
+        expect { post url, params: { add: %w[booking_confirmed] }, headers: headers, as: :json }
+          .to have_enqueued_job(Conversations::ActivityMessageJob).once.with(active_conversation, anything)
+
+        expect(response).to have_http_status(:success)
+        expect(updates).to eq([active_conversation])
+      end
+
+      it 'keeps the dialog open after the activity message is written' do
+        give_person_different_statuses(active_conversation, [snoozed_conversation, 'snoozed'], [first_conversation, 'pending'])
+
+        perform_enqueued_jobs(only: Conversations::ActivityMessageJob) do
+          post url, params: { add: %w[booking_confirmed] }, headers: headers, as: :json
+        end
+
+        expect(label_activity_messages(active_conversation, 'booking_confirmed').count).to eq(1)
+        expect(thread_status_of(active_conversation)).to eq('open')
+        expect(realtime_status_of(active_conversation)).to eq('open')
+      end
+
+      it 'keeps the dialog open when a snoozed channel writes the activity message because the open one has the label' do
+        active_conversation.update_labels(%w[booking_confirmed])
+        give_person_different_statuses(active_conversation, [snoozed_conversation, 'snoozed'], [first_conversation, 'pending'])
+
+        perform_enqueued_jobs(only: Conversations::ActivityMessageJob) do
+          post url, params: { add: %w[booking_confirmed] }, headers: headers, as: :json
+        end
+
+        expect(label_activity_messages(snoozed_conversation, 'booking_confirmed').count).to eq(1)
+        expect(thread_status_of(active_conversation)).to eq('open')
+        expect(realtime_status_of(active_conversation)).to eq('open')
+      end
     end
   end
 

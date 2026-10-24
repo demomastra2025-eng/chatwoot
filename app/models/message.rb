@@ -108,6 +108,9 @@ class Message < ApplicationRecord
   # Transient flag used to skip waiting_since clearing for specific bot/system messages.
   attr_accessor :preserve_waiting_since
   attr_accessor :skip_runtime_events, :skip_send_reply, :preserve_initial_pending_status
+  # Transient flag for an activity message about something that is not a change of the conversation (a label of the
+  # person): it moves the last activity of the conversation but not its updated_at, see set_conversation_activity.
+  attr_accessor :preserve_conversation_updated_at
 
   enum message_type: { incoming: 0, outgoing: 1, activity: 2, template: 3 }
   enum content_type: {
@@ -765,9 +768,12 @@ class Message < ApplicationRecord
     current_activity = conversation[:last_activity_at]
     return if current_activity.present? && current_activity >= activity_time
 
-    # rubocop:disable Rails/SkipsModelValidations
-    conversation.update_columns(last_activity_at: activity_time, updated_at: Time.current)
-    # rubocop:enable Rails/SkipsModelValidations
+    # updated_at decides which conversation gives the communication thread its status
+    # (Conversations::CommunicationThreadResolver#aggregate_status). A message that only records a change of the person
+    # keeps it, or a snoozed or pending channel would come in front of the open one.
+    columns = { last_activity_at: activity_time }
+    columns[:updated_at] = Time.current unless preserve_conversation_updated_at
+    conversation.update_columns(columns) # rubocop:disable Rails/SkipsModelValidations
   end
 
   def refresh_communication_thread

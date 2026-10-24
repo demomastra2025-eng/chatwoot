@@ -14,7 +14,7 @@ class Captain::Tools::Account::RemoveLabelFromConversationService < Captain::Too
       action: 'remove_label_from_conversation',
       conversation_id: conversation.display_id,
       label_name: label_name.to_s.strip.downcase,
-      labels: conversation.label_list.to_a
+      labels: Labels::UnifiedAssignmentService.union_for(contact: conversation.contact, conversations: [conversation])
     )
   rescue StandardError => e
     tool_failure(e)

@@ -408,6 +408,40 @@ describe ContactMergeAction do
       end
     end
 
+    context 'when the cards carry labels' do
+      let(:union) { %w[base_card mergee_card shared mergee_channel base_channel] }
+
+      before do
+        base_contact.update_labels(%w[base_card shared])
+        mergee_contact.update_labels(%w[mergee_card shared])
+        base_contact.conversations.first.update_labels(%w[base_channel])
+        mergee_contact.conversations.first.update_labels(%w[mergee_channel])
+      end
+
+      it 'keeps the labels of the merged-away card on the person' do
+        contact_merge
+
+        expect(base_contact.reload.label_list).to match_array(union)
+      end
+
+      it 'gives every conversation of the person, also the ones that came from the merged-away card, the same labels' do
+        contact_merge
+
+        lists = Conversation.where(contact_id: base_contact.id).map { |conversation| conversation.label_list.to_a }
+        expect(lists.size).to eq(4)
+        expect(lists).to all(match_array(union))
+      end
+
+      it 'does not fire a conversation update for the rewrite' do
+        allow(Rails.configuration.dispatcher).to receive(:dispatch).and_call_original
+
+        contact_merge
+
+        expect(Rails.configuration.dispatcher).not_to have_received(:dispatch)
+          .with(Events::Types::CONVERSATION_UPDATED, anything, hash_including(changed_attributes: hash_including('label_list')))
+      end
+    end
+
     context 'when contacts belong to a different account' do
       it 'throws an exception' do
         new_account = create(:account)

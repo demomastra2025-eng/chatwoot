@@ -42,6 +42,21 @@ RSpec.describe BulkActionsJob do
     [thread, conversation]
   end
 
+  it 'writes a label change of a conversation to the person: the contact and every channel of it' do
+    sibling = create(:conversation, account: account, contact: conversation_1.contact)
+    Labels::UnifiedAssignmentService.add(contact: conversation_1.contact, labels: %w[old], silent: true)
+
+    described_class.perform_now(
+      account: account,
+      params: { type: 'Conversation', labels: { add: %w[vip], remove: %w[old] }, ids: [conversation_1.display_id] },
+      user: agent
+    )
+
+    expect(conversation_1.contact.reload.label_list).to eq(%w[vip])
+    expect(conversation_1.reload.label_list).to eq(%w[vip])
+    expect(sibling.reload.label_list).to eq(%w[vip])
+  end
+
   def after_run_start(run)
     runs = account.bulk_action_runs
     allow(account).to receive(:bulk_action_runs).and_return(runs)
@@ -464,6 +479,63 @@ RSpec.describe BulkActionsJob do
 
         expect(thread_conversation_1.reload.label_list).to contain_exactly('vip', 'support')
         expect(thread_conversation_2.reload.label_list).to contain_exactly('vip', 'support')
+      end
+
+      it 'bulk removes a label from the contact and from every channel, also the ones the user cannot open' do
+        hidden_conversation = create(:conversation, account: account, contact: contact)
+        InboxMember.where(user: agent, inbox: hidden_conversation.inbox).delete_all
+        Labels::UnifiedAssignmentService.add(contact: contact, labels: %w[vip support], silent: true)
+
+        described_class.perform_now(
+          account: account,
+          params: { type: 'CommunicationThread', labels: { remove: %w[vip] }, ids: [thread.display_id] },
+          user: agent
+        )
+
+        expect(contact.reload.label_list).to eq(%w[support])
+        expect([thread_conversation_1, thread_conversation_2, hidden_conversation].map { |record| record.reload.label_list.to_a })
+          .to all(eq(%w[support]))
+      end
+
+      it 'reports a bulk label change of a thread once' do
+        expect do
+          described_class.perform_now(
+            account: account,
+            params: { type: 'CommunicationThread', labels: { add: %w[vip] }, ids: [thread.display_id] },
+            user: agent
+          )
+        end.to have_enqueued_job(Conversations::ActivityMessageJob).once
+      end
+
+      describe 'the conversation that reports a bulk label change of a thread' do
+        include PersonThreadStatusHelpers
+
+        def bulk_add(label)
+          described_class.perform_now(
+            account: account,
+            params: { type: 'CommunicationThread', labels: { add: [label] }, ids: [thread.display_id] },
+            user: agent
+          )
+        end
+
+        it 'is the open conversation in front, not the resolved primary channel' do
+          give_person_different_statuses(thread_conversation_2, [thread_conversation_1, 'resolved'])
+          updates = record_conversation_updates
+
+          expect { bulk_add('vip') }.to have_enqueued_job(Conversations::ActivityMessageJob).once.with(thread_conversation_2, anything)
+          expect(updates).to eq([thread_conversation_2])
+        end
+
+        it 'keeps the thread open after a snoozed channel writes the activity message' do
+          thread_conversation_2.update_labels(%w[vip])
+          give_person_different_statuses(thread_conversation_2, [thread_conversation_1, 'snoozed'])
+
+          perform_enqueued_jobs(only: Conversations::ActivityMessageJob) { bulk_add('vip') }
+
+          expect(label_activity_messages(thread_conversation_1, 'vip').count).to eq(1)
+          expect(thread_status_of(thread_conversation_2)).to eq('open')
+          expect(realtime_status_of(thread_conversation_2)).to eq('open')
+        end
       end
 
       it 'bulk marks linked conversations as read and refreshes the thread unread count' do

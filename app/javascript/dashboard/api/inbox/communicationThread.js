@@ -214,8 +214,14 @@ class CommunicationThreadApi extends ApiClient {
     return axios.get(`${this.url}/${id}/labels`);
   }
 
+  // Sends the whole list. Prefer changeLabels: a list that is out of date erases labels it never saw.
   updateLabels(id, labels) {
     return axios.post(`${this.url}/${id}/labels`, { labels });
+  }
+
+  // Labels belong to the person: add / remove are applied to the contact and to all its conversations.
+  changeLabels(id, { add = [], remove = [] } = {}) {
+    return axios.post(`${this.url}/${id}/labels`, { add, remove });
   }
 
   deleteConversations(id, conversationIds, requestKey, context = null) {

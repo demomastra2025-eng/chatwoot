@@ -63,8 +63,14 @@ class ContactAPI extends ApiClient {
     });
   }
 
+  // Sends the whole list. Prefer changeContactLabels: a list that is out of date erases labels it never saw.
   updateContactLabels(contactId, labels) {
     return axios.post(`${this.url}/${contactId}/labels`, { labels });
+  }
+
+  // Labels belong to the person: add / remove are applied to the contact and to all its conversations.
+  changeContactLabels(contactId, { add = [], remove = [] } = {}) {
+    return axios.post(`${this.url}/${contactId}/labels`, { add, remove });
   }
 
   search(search = '', page = 1, sortAttr = 'name', label = '', options = {}) {

@@ -18,7 +18,7 @@ class Conversations::EventDataPresenter < SimpleDelegator
       id: display_id,
       inbox_id: inbox_id,
       messages: push_messages,
-      labels: label_list,
+      labels: payload_labels,
       meta: push_meta,
       status: status,
       custom_attributes: custom_attributes,
@@ -37,10 +37,25 @@ class Conversations::EventDataPresenter < SimpleDelegator
   end
 
   def external_push_data
+    @customer_facing = true
     push_data.merge(additional_attributes: external_additional_attributes, messages: external_push_messages)
   end
 
   private
+
+  # The dashboard and the webhooks get the person's labels, the customer-facing payload only those of the conversation.
+  def payload_labels
+    @customer_facing ? label_list : person_labels
+  end
+
+  # The contact card and every conversation of the contact (its communication thread): the labels the dialog shows, so a
+  # live update or a webhook never carries less than the list did, and a client that sends labels back does not drop the
+  # ones that live only on the card or on another channel.
+  def person_labels
+    return label_list if contact_id.blank?
+
+    Labels::UnifiedAssignmentService.person_labels(contact_id: contact_id)
+  end
 
   def push_messages
     [messages.where(account_id: account_id).chat.last&.push_event_data].compact

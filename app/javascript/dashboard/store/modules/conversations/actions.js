@@ -1321,15 +1321,20 @@ const actions = {
     }
   },
 
+  // Pass add / remove (what changed) rather than labels (the whole list): the server writes the change to the
+  // person's contact and all its conversations, and a list that is out of date can no longer erase a label.
   updateCommunicationThreadLabels: async (
     { commit },
-    { conversationId, labels }
+    { conversationId, labels, add, remove }
   ) => {
-    const response = await CommunicationThreadApi.updateLabels(
-      conversationId,
-      labels
-    );
-    const updatedLabels = response.data?.payload || labels;
+    const isChange = Array.isArray(add) || Array.isArray(remove);
+    const response = isChange
+      ? await CommunicationThreadApi.changeLabels(conversationId, {
+          add,
+          remove,
+        })
+      : await CommunicationThreadApi.updateLabels(conversationId, labels);
+    const updatedLabels = response.data?.payload || labels || [];
     commitCommunicationThreadUpdate(commit, {
       id: conversationId,
       labels: updatedLabels,

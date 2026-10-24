@@ -138,7 +138,7 @@ export default {
       }
       this.$store.dispatch('conversationLabels/update', {
         conversationId: this.conversationId,
-        labels: labelsToAdd,
+        add: labelsToAdd,
       });
       this.trackLabelEvent(CAPTAIN_EVENTS.LABEL_SUGGESTION_APPLIED);
     },

@@ -318,7 +318,7 @@ RSpec.describe Conversation do
       expect(Conversations::ActivityMessageJob)
         .to(have_been_enqueued.at_least(:once)
         .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
-                              content: label_content }))
+                              content: label_content, preserve_conversation_updated_at: true }))
       expect(Conversations::ActivityMessageJob)
         .to(have_been_enqueued.at_least(:once)
         .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
@@ -392,7 +392,7 @@ RSpec.describe Conversation do
       expect { conversation.update_labels(labels) }
         .to have_enqueued_job(Conversations::ActivityMessageJob)
         .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
-                              content: expected_content })
+                              content: expected_content, preserve_conversation_updated_at: true })
 
       expect(conversation.label_list).to match_array(labels)
     end
@@ -404,7 +404,7 @@ RSpec.describe Conversation do
       expect { conversation.update_labels(labels) }
         .to have_enqueued_job(Conversations::ActivityMessageJob)
         .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
-                              content: initial_expected_content })
+                              content: initial_expected_content, preserve_conversation_updated_at: true })
       expect(conversation.label_list).to match_array(labels)
 
       updated_labels = [second_label, third_label].map(&:title)
@@ -417,11 +417,11 @@ RSpec.describe Conversation do
       expect(Conversations::ActivityMessageJob)
         .to(have_been_enqueued.at_least(:once)
         .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id,
-                              message_type: :activity, content: updated_expected_content }))
+                              message_type: :activity, content: updated_expected_content, preserve_conversation_updated_at: true }))
       expect(Conversations::ActivityMessageJob)
         .to(have_been_enqueued.at_least(:once)
         .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id,
-                              message_type: :activity, content: removed_expected_content }))
+                              message_type: :activity, content: removed_expected_content, preserve_conversation_updated_at: true }))
     end
   end
 

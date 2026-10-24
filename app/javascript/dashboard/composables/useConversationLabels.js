@@ -72,25 +72,28 @@ export function useConversationLabels() {
   };
 
   /**
-   * Adds a label to the current conversation
+   * Adds a label to the current conversation. Only the change is sent, so a list that is out of date cannot erase labels.
    * @param {Object} value - The label object to be added
    * @param {string} value.title - The title of the label to be added
    */
   const addLabelToConversation = value => {
-    const result = activeLabels.value.map(item => item.title);
-    result.push(value.title);
-    onUpdateLabels(result);
+    store.dispatch('conversationLabels/update', {
+      conversationId: conversationId.value,
+      isCommunicationThread: isCommunicationThread.value,
+      add: [value.title],
+    });
   };
 
   /**
-   * Removes a label from the current conversation
+   * Removes a label from the current conversation. Only the change is sent.
    * @param {string} value - The title of the label to be removed
    */
   const removeLabelFromConversation = value => {
-    const result = activeLabels.value
-      .map(label => label.title)
-      .filter(label => label !== value);
-    onUpdateLabels(result);
+    store.dispatch('conversationLabels/update', {
+      conversationId: conversationId.value,
+      isCommunicationThread: isCommunicationThread.value,
+      remove: [value],
+    });
   };
 
   return {

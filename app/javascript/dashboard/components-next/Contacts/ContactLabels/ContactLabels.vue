@@ -74,21 +74,14 @@ const handleLabelAction = async ({ value }) => {
     const selectedLabel = allLabels.value.find(label => label.id === value);
     if (!selectedLabel) return;
 
-    let updatedLabels;
-
-    // If label is already selected, remove it (toggle behavior)
-    if (currentLabels.includes(selectedLabel.title)) {
-      updatedLabels = currentLabels.filter(
-        labelTitle => labelTitle !== selectedLabel.title
-      );
-    } else {
-      // Add the new label
-      updatedLabels = [...currentLabels, selectedLabel.title];
-    }
+    // Toggle: only the change is sent, so a list that is out of date cannot erase labels of the person
+    const change = currentLabels.includes(selectedLabel.title)
+      ? { remove: [selectedLabel.title] }
+      : { add: [selectedLabel.title] };
 
     await store.dispatch('contactLabels/update', {
       contactId: props.contactId,
-      labels: updatedLabels,
+      ...change,
     });
   } catch (error) {
     // error

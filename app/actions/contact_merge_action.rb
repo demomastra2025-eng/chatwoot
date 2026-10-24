@@ -22,6 +22,7 @@ class ContactMergeAction
       merge_crm_deal_contacts
       merge_contact_notes
       merge_remaining_contact_references
+      merge_labels
       merge_and_remove_mergee_contact
     end
     @base_contact
@@ -80,6 +81,16 @@ class ContactMergeAction
       base_contact: @base_contact,
       mergee_contact: @mergee_contact
     ).perform
+  end
+
+  # The labels of the card that goes away stay with the person. They are written, together with everything the person
+  # already carries (the moved conversations bring their own), to the contact and to every conversation through the
+  # one write point, quietly: a merge is not an agent adding labels.
+  def merge_labels
+    Labels::UnifiedAssignmentService.unify(
+      contact: @base_contact,
+      extra_labels: Labels::UnifiedAssignmentService.person_labels(contact_id: @mergee_contact.id)
+    )
   end
 
   def merge_messages

@@ -53,7 +53,9 @@ class Api::V1::Widget::MessagesController < Api::V1::Widget::BaseController
 
   def apply_labels
     valid_labels = inbox.account.labels.where(title: permitted_params[:labels]).pluck(:title)
-    @conversation.update_labels(valid_labels) if valid_labels.present?
+    return if valid_labels.blank?
+
+    Labels::UnifiedAssignmentService.add(contact: @conversation.contact, labels: valid_labels, conversation: @conversation)
   end
 
   def message_finder_params

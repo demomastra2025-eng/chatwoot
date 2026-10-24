@@ -22,7 +22,7 @@ class Captain::Tools::AddLabelToConversationTool < Captain::Tools::BasePublicToo
         conversation_id: conversation.id,
         conversation_display_id: conversation.display_id,
         label_name: label_name,
-        labels: conversation.label_list.to_a
+        labels: Labels::UnifiedAssignmentService.union_for(contact: conversation.contact, conversations: [conversation])
       }
     )
   end
@@ -34,7 +34,7 @@ class Captain::Tools::AddLabelToConversationTool < Captain::Tools::BasePublicToo
   end
 
   def add_label_to_conversation(conversation, label_name)
-    conversation.add_labels(label_name)
+    Labels::UnifiedAssignmentService.add(contact: conversation.contact, labels: [label_name], conversation: conversation)
     conversation.reload
   rescue StandardError => e
     Rails.logger.error "Failed to add label to conversation: #{e.message}"
