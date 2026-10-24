@@ -257,7 +257,8 @@ RSpec.describe Telephony::MissedCallCallbackTracker do
         Telephony::CallSession.transaction(requires_new: true) do
           expect(described_class.sync_for_call_session!(session)).to eq(:missed_marked)
         end
-        row_locks_after_advisory = statements[statements.index { |sql| sql.include?('pg_advisory_xact_lock') }..].grep(/FOR UPDATE/i)
+        advisory = statements.index { |sql| sql.include?('pg_advisory_xact_lock') }
+        row_locks_after_advisory = statements.drop(advisory).grep(/FOR UPDATE/i)
         inside_intake = [chat.reload.status, call.reload.status]
       end
 
