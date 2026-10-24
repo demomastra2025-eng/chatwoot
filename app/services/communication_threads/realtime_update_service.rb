@@ -97,7 +97,7 @@ class CommunicationThreads::RealtimeUpdateService
   def thread_identity_payload(communication_thread, links, source_conversation)
     {
       id: communication_thread.display_id, communication_thread_id: communication_thread.display_id,
-      is_communication_thread: true, meta: thread_meta(communication_thread, source_conversation),
+      is_communication_thread: true, meta: thread_meta(communication_thread),
       source_event: source_event, conversation_id: source_conversation.display_id,
       conversation_ids: links.map { |link| link.conversation.display_id },
       contact_id: communication_thread.contact_id, inbox_id: source_conversation.inbox_id,
@@ -138,9 +138,11 @@ class CommunicationThreads::RealtimeUpdateService
     inbox&.channel.respond_to?(:medium) ? inbox.channel.medium : nil
   end
 
-  def thread_meta(communication_thread, source_conversation)
+  # The thread belongs to one person: its name and avatar must not depend on the channel the event came from, or the
+  # list row and the dialog header would swap pictures on every event. Per-channel profiles travel in channels[].
+  def thread_meta(communication_thread)
     @thread_meta ||= {
-      sender: communication_thread.contact.push_event_data(contact_inbox: source_conversation.contact_inbox),
+      sender: communication_thread.contact.push_event_data,
       channel: 'CommunicationThread', assignee: communication_thread.assignee&.push_event_data,
       assignee_type: communication_thread.assignee.present? ? 'User' : nil, team: communication_thread.team&.push_event_data
     }

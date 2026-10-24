@@ -207,6 +207,9 @@ class Contact < ApplicationRecord
     tokens.first(tokens.length - suffix_tokens.length)
   end
 
+  # The name and the avatar here are always the person's own (display_full_name / resolved_avatar_url), whatever
+  # channel the event came from, so a list row, a dialog header and a contact panel never swap pictures between
+  # events. The profile of the given contact_inbox is carried apart, as channel_profile, for per-channel places.
   def push_event_data(contact_inbox: nil)
     data = {
       additional_attributes: additional_attributes,
@@ -225,7 +228,7 @@ class Contact < ApplicationRecord
       type: 'contact'
     }
 
-    apply_channel_profile_data(data, contact_inbox)
+    attach_channel_profile(data, contact_inbox)
   end
 
   # Tells open dashboards that a contact's number routing or history changed (number transfer, promotion hint).
@@ -371,26 +374,10 @@ class Contact < ApplicationRecord
     [parts.first, *parts.drop(1).reject { |part| first_tokens.include?(part.downcase) }].join(' ')
   end
 
-  def apply_channel_profile_data(data, contact_inbox)
+  def attach_channel_profile(data, contact_inbox)
     profile = channel_profile_for(contact_inbox)
-    return data if profile.blank?
-
-    data[:channel_profile] = profile.push_event_data
-    data[:name] = profile.display_name if channel_profile_display_name_applicable?(profile, data[:name])
-    data[:thumbnail] = profile.avatar_url if profile.avatar_url.present?
+    data[:channel_profile] = profile.push_event_data if profile.present?
     data
-  end
-
-  def channel_profile_display_name_applicable?(profile, current_name)
-    candidate = profile.display_name.to_s.strip
-    return false if candidate.blank? || structured_full_name_present?
-    return true if current_name.to_s.strip.blank?
-
-    !phone_like_display_name?(candidate)
-  end
-
-  def phone_like_display_name?(value)
-    ::Contacts::PhoneNumberNormalizer.normalize(value).present? || value.to_s.strip.match?(/\A?\d[\d\s()-]{6,}\z/)
   end
 
   def channel_profile_for(contact_inbox)
@@ -519,8 +506,10 @@ class Contact < ApplicationRecord
     sorted_channel_profiles.find { |profile| profile.avatar_url.present? }
   end
 
+  # Not memoized on the record: a copy made before a profile was created or synced would keep answering with the old
+  # list after reload, and a payload built from it would show another avatar than the next one.
   def sorted_channel_profiles
-    @sorted_channel_profiles ||= contact_channel_profiles.to_a.sort_by do |profile|
+    contact_channel_profiles.to_a.sort_by do |profile|
       [profile.last_synced_at || profile.updated_at || Time.zone.at(0), profile.id]
     end.reverse
   end

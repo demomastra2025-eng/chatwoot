@@ -1764,7 +1764,7 @@ RSpec.describe 'Conversations API', type: :request do
         expect(response_body['payload'].first['sender']['id']).to eq(conversation.messages.last.sender.id)
       end
 
-      it 'returns the current channel profile in sender metadata' do
+      it 'returns the person name and avatar in sender metadata with the channel profile apart' do
         create(
           :contact_channel_profile,
           contact_inbox: conversation.contact_inbox,
@@ -1777,10 +1777,15 @@ RSpec.describe 'Conversations API', type: :request do
             as: :json
 
         expect(response).to have_http_status(:success)
-        response_body = response.parsed_body
-        expect(response_body['payload'].first['sender']).to include(
+        sender = response.parsed_body['payload'].first['sender']
+        message_sender = conversation.messages.last.sender
+        expect(sender['name']).to eq(message_sender.display_full_name)
+        expect(sender['name']).not_to eq('Telegram Contact')
+        expect(sender['thumbnail']).to eq(message_sender.resolved_avatar_url)
+        expect(sender['thumbnail']).not_to eq('https://chatwoot-assets.local/telegram.png')
+        expect(sender['channel_profile']).to include(
           'name' => 'Telegram Contact',
-          'thumbnail' => 'https://chatwoot-assets.local/telegram.png'
+          'avatar_url' => 'https://chatwoot-assets.local/telegram.png'
         )
       end
 
