@@ -134,8 +134,8 @@ RSpec.describe Captain::Tools::Account::SearchAvailableSlotsService do
                         service_id: consultation.id)
       )
 
-      expect(payload['slots'].last['starts_at']).to eq('2026-04-20T12:55:00+05:00')
-      expect(payload['slots'].last['ends_at']).to eq('2026-04-20T13:40:00+05:00')
+      expect(payload['slots'].last['starts_at']).to eq('2026-04-20T12:30:00+05:00')
+      expect(payload['slots'].last['ends_at']).to eq('2026-04-20T13:15:00+05:00')
     end
 
     it 'searches a requested specialist with a service that is not linked to them, with the service duration' do

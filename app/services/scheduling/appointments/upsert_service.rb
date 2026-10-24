@@ -1261,14 +1261,17 @@ class Scheduling::Appointments::UpsertService
     ensure_resource_available_for_scheduling!(appointment.resource) if medelement_resource?
     ensure_provider_interval_verified!
 
-    result = availability_service.availability_result(starts_at: appointment.starts_at, ends_at: appointment.ends_at)
+    result = availability_service.availability_result(starts_at: appointment.starts_at, ends_at: appointment.ends_at,
+                                                      enforce_grid: start_chosen?)
     return if result.available?
 
-    raise Scheduling::Error.new(
-      code: result.code,
-      message: result.message,
-      status: result.code == 'VALIDATION_ERROR' ? :unprocessable_content : :conflict
-    )
+    raise Scheduling::Error.new(code: result.code, message: result.message, status: result.status, details: result.details)
+  end
+
+  # The start is chosen by this request (a new booking, a move in time or to another specialist), so it must be on the grid of the
+  # specialist; a visit that keeps its start and specialist (a longer visit, a cabinet, a restored visit) is not asked again.
+  def start_chosen?
+    appointment.new_record? || appointment.will_save_change_to_resource_id? || appointment.will_save_change_to_starts_at?
   end
 
   def validate_provider_availability!(resource, projected)

@@ -5,6 +5,7 @@ class Integrations::Medelement::CleanupService
     medelement_reception_time
     medelement_schedule_published
     medelement_specialist_code
+    slot_grid_min
   ].freeze
 
   def initialize(account:)

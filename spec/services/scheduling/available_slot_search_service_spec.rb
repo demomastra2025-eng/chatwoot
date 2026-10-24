@@ -182,7 +182,11 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     end
 
     it 'finds a free time that is not on the hour' do
-      expect(starts(search_between(at(10, 15), at(10, 16), duration_min: 20))).to eq([at(10, 15).iso8601])
+      expect(starts(search_between(at(10, 30), at(10, 31), duration_min: 20))).to eq([at(10, 30).iso8601])
+    end
+
+    it 'finds no start between two starts of the grid of the specialist' do
+      expect(starts(search_between(at(10, 15), at(10, 16), duration_min: 20))).to eq([])
     end
 
     it 'accepts a range whose end equals its start as an exact-time check' do
@@ -199,19 +203,18 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       expect(payload[:total_slots]).to eq(0)
     end
 
-    it 'offers every start inside a window shorter than one visit, although its visit ends after the window' do
+    it 'offers the start inside a window shorter than one visit, although its visit ends after the window' do
       payload = search_between(at(10), at(10, 20), service_id: service_record.id)
 
-      expect(starts(payload)).to eq([at(10), at(10, 5), at(10, 10), at(10, 15)].map(&:iso8601))
-      expect(payload[:slots].last[:ends_at]).to eq(at(10, 45).iso8601)
+      expect(starts(payload)).to eq([at(10).iso8601])
+      expect(payload[:slots].last[:ends_at]).to eq(at(10, 30).iso8601)
     end
 
     it 'offers the starts up to the end of a window that holds a visit, whose visit ends after it' do
-      payload = search_between(at(9), at(10), service_id: service_record.id)
+      payload = search_between(at(9), at(10), duration_min: 45)
 
-      expect(starts(payload).first).to eq(at(9).iso8601)
-      expect(starts(payload).last).to eq(at(9, 55).iso8601)
-      expect(payload[:slots].last[:ends_at]).to eq(at(10, 25).iso8601)
+      expect(starts(payload)).to eq([at(9).iso8601, at(9, 30).iso8601])
+      expect(payload[:slots].last[:ends_at]).to eq(at(10, 15).iso8601)
     end
 
     it 'does not offer a start at or after the end of the range' do
@@ -229,12 +232,12 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       early = search_between(at(9), at(11), service_id: service_record.id, limit: 2)
       later = search_between(at(10), at(11), service_id: service_record.id, limit: 2)
 
-      expect(starts(early)).to eq([at(9).iso8601, at(9, 5).iso8601])
-      expect(starts(later)).to eq([at(10).iso8601, at(10, 5).iso8601])
+      expect(starts(early)).to eq([at(9).iso8601, at(9, 30).iso8601])
+      expect(starts(later)).to eq([at(10).iso8601, at(10, 30).iso8601])
     end
 
     it 'returns the named time with a limit of one' do
-      expect(starts(search_between(at(10, 25), at(10, 26), service_id: service_record.id, limit: 1))).to eq([at(10, 25).iso8601])
+      expect(starts(search_between(at(10, 30), at(10, 31), service_id: service_record.id, limit: 1))).to eq([at(10, 30).iso8601])
     end
 
     it 'reads each specialist with the length of its own visit' do

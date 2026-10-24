@@ -5,7 +5,7 @@ class Captain::Playground::AvailabilitySnapshot
   class Rules < Array
     def active = self
   end
-  Resource = Struct.new(:id, :timezone, :work_rules, :break_rules, :account, keyword_init: true)
+  Resource = Struct.new(:id, :timezone, :work_rules, :break_rules, :account, :slot_duration_min, keyword_init: true)
   Rule = Struct.new(:weekday, :start_minute, :end_minute, :title, keyword_init: true)
   Override = Struct.new(:date, :start_minute, :end_minute, :break_start_minute, :break_end_minute, :break_title, keyword_init: true)
   Interval = Struct.new(:id, :starts_at, :ends_at, :status, :title, :kind, :source, :custom_attributes, :external_ref, keyword_init: true)
@@ -48,7 +48,7 @@ class Captain::Playground::AvailabilitySnapshot
   private
 
   def adapted_resource
-    Resource.new(id: @resource.fetch('id'), timezone: @resource.fetch('timezone'),
+    Resource.new(id: @resource.fetch('id'), timezone: @resource.fetch('timezone'), slot_duration_min: @resource['slot_duration_min'],
                  work_rules: rules('work_rules'), break_rules: rules('break_rules'))
   end
 
