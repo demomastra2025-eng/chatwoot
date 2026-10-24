@@ -232,6 +232,9 @@ ru:
       delivery_status:
         error_code: 'Код ошибки: %{error_code}'
     activity:
+      single_open_dialog:
+        merged_call: 'Объединено: звонок из канала «%{channel}»'
+        merged_dialog: 'Объединено: диалог из канала «%{channel}»'
       number_history_transfer:
         medelement: 'История переписки с номером %{phone} перенесена с контакта «%{from}» на контакт «%{to}». Основание: МедЭлемент (автоматически). %{time}.'
         administrator: 'История переписки с номером %{phone} перенесена с контакта «%{from}» на контакт «%{to}». Основание: администратор %{user_name}. %{time}.'

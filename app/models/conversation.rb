@@ -264,7 +264,10 @@ class Conversation < ApplicationRecord
   def refresh_communication_thread!
     return unless communication_threads_enabled?
 
-    Conversations::CommunicationThreadResolver.new(conversation: self).perform
+    Conversations::CommunicationThreadResolver.new(
+      conversation: self,
+      preferred_conversation_id: (id if reopened_by_user?)
+    ).perform
   end
 
   # True for a conversation that was created closed only to carry automated notifications. Such a conversation is never
@@ -306,6 +309,15 @@ class Conversation < ApplicationRecord
 
   def ensure_communication_thread
     refresh_communication_thread!
+  end
+
+  # A person reopened this conversation by hand (not an incoming message, a bot or a timer). When another conversation of
+  # the same thread is open, this one is the dialog that stays, see CommunicationThreads::SingleOpenDialogService.
+  def reopened_by_user?
+    return false if Current.user.blank?
+
+    previous_status, current_status = saved_change_to_status
+    previous_status.to_s.in?(%w[resolved snoozed]) && current_status.to_s.in?(%w[open pending])
   end
 
   def communication_threads_enabled?

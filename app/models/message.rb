@@ -487,9 +487,11 @@ class Message < ApplicationRecord
   end
 
   def execute_after_create_commit_callbacks
+    # The activity goes first: the status changes below refresh the communication thread, which keeps one open dialog per
+    # person by the latest activity, and a reopened conversation must already carry the time of this message.
+    set_conversation_activity
     if runtime_events_suppressed?
       mark_pending_conversation_as_open_for_human_response(runtime_events: false)
-      set_conversation_activity
       update_contact_activity(runtime_events: false)
       refresh_communication_thread
       return
@@ -499,7 +501,6 @@ class Message < ApplicationRecord
     reopen_conversation
     mark_pending_conversation_as_open_for_human_response
     assign_conversation_to_responding_agent
-    set_conversation_activity
     Telephony::MissedCallCallbackTracker.clear_on_outgoing_message!(self)
     ensure_communication_thread_for_create_event
     dispatch_create_events

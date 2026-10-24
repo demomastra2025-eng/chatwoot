@@ -921,11 +921,13 @@ RSpec.describe 'Communication Threads API', type: :request do
       create(:inbox_member, user: agent, inbox: second_matching_conversation.inbox)
       create_thread_stage_deal(second_matching_conversation, matching_stage)
 
-      hidden_linked_conversation = create(:conversation, account: account, contact: matching_conversation.contact)
+      # A thread keeps one open dialog, so the linked conversation the agent cannot access is a resolved one that only
+      # carries a newer public message.
+      hidden_linked_conversation = create(:conversation, account: account, contact: matching_conversation.contact, status: :resolved)
       InboxMember.where(user: agent, inbox: hidden_linked_conversation.inbox).delete_all
       matching_public_message = create(:message, conversation: matching_conversation, message_type: :incoming, created_at: base_time - 2.days)
       matching_activity_message = create(:message, conversation: matching_conversation, message_type: :activity, created_at: base_time)
-      create(:message, conversation: hidden_linked_conversation, message_type: :incoming, created_at: base_time + 1.hour)
+      create(:message, conversation: hidden_linked_conversation, message_type: :outgoing, created_at: base_time + 1.hour)
       create(:message, conversation: second_matching_conversation, message_type: :incoming, created_at: base_time - 1.hour)
 
       post "/api/v1/accounts/#{account.id}/communication_threads/filter",
@@ -1944,8 +1946,9 @@ RSpec.describe 'Communication Threads API', type: :request do
 
     it 'rejects updates when the agent cannot access every linked channel' do
       contact = create(:contact, :with_email, account: account)
+      # A thread keeps one open dialog, so the channel the agent cannot access is a resolved conversation.
+      inaccessible_conversation = create(:conversation, account: account, contact: contact, status: :resolved)
       accessible_conversation = create(:conversation, account: account, contact: contact, status: :open)
-      inaccessible_conversation = create(:conversation, account: account, contact: contact, status: :open)
       create(:inbox_member, user: agent, inbox: accessible_conversation.inbox)
       InboxMember.where(user: agent, inbox: inaccessible_conversation.inbox).delete_all
       thread = accessible_conversation.reload.communication_thread
@@ -1958,7 +1961,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.parsed_body['error']).to include('without access to all linked channels')
       expect(accessible_conversation.reload).to be_open
-      expect(inaccessible_conversation.reload).to be_open
+      expect(inaccessible_conversation.reload).to be_resolved
       expect(thread.reload).to be_open
     end
 

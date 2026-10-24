@@ -56,19 +56,9 @@ class Telephony::MissedCallCallbackTracker
     def sync_for_call_session!(call_session)
       return :noop if call_session.blank? || call_session.conversation.blank?
 
-      if unanswered_inbound_terminal?(call_session)
-        mark_waiting_for_callback!(call_session)
-        :missed_marked
-      elsif answered_call?(call_session)
-        clear_for_contact!(
-          account: call_session.account,
-          contact_id: call_session.contact_id || call_session.conversation&.contact_id,
-          primary_conversation: call_session.conversation
-        )
-        :callback_cleared
-      else
-        :noop
-      end
+      result = sync_callback_state!(call_session)
+      settle_thread_after_call!(call_session) unless result == :missed_marked
+      result
     rescue StandardError => e
       Rails.logger.warn(
         "TELEPHONY_MISSED_CALL_TRACKER_ERROR call_ref=#{call_session&.external_call_ref} " \
@@ -150,6 +140,29 @@ class Telephony::MissedCallCallbackTracker
     end
 
     private
+
+    def sync_callback_state!(call_session)
+      if unanswered_inbound_terminal?(call_session)
+        mark_waiting_for_callback!(call_session)
+        :missed_marked
+      elsif answered_call?(call_session)
+        clear_for_contact!(
+          account: call_session.account,
+          contact_id: call_session.contact_id || call_session.conversation&.contact_id,
+          primary_conversation: call_session.conversation
+        )
+        :callback_cleared
+      else
+        :noop
+      end
+    end
+
+    # While a call lasts no conversation of the thread is closed in favour of another one (the single open dialog rule leaves
+    # a live call alone), so the dialog of the person is decided when the call is over. A missed call has refreshed the thread
+    # by itself when it was marked.
+    def settle_thread_after_call!(call_session)
+      refresh_thread_if_present!(call_session.conversation) if call_session.terminal?
+    end
 
     def session_answered?(session)
       session.answered_at.present? ||
