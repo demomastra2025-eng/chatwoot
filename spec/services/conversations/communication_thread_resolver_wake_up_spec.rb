@@ -70,6 +70,7 @@ RSpec.describe Conversations::CommunicationThreadResolver do
     settle_thread(sleeping)
     expect(thread.status).to eq('snoozed')
     expect(tab_for('snoozed')).to eq([thread.id])
+    conversation_events.clear
 
     write(resolved)
 
@@ -147,6 +148,7 @@ RSpec.describe Conversations::CommunicationThreadResolver do
     open_one = channel(:open, minutes_ago: 30)
     settle_thread(open_one)
     expect(thread.status).to eq('open')
+    conversation_events.clear
 
     Conversations::ReopenSnoozedConversationsJob.perform_now
 

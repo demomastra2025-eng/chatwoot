@@ -73,9 +73,14 @@ RSpec.describe CommunicationThreads::SingleOpenDialogService do
     end
 
     it 'counts a pending conversation as open and resolves a snoozed one next to them', :aggregate_failures do
-      snoozed = open_dialog(voice_inbox, minutes_ago: 1, status: :snoozed, snoozed_until: 1.day.from_now)
-      pending_dialog = open_dialog(whatsapp_inbox, minutes_ago: 30, status: :pending)
-      open_one = open_dialog(create(:channel_whatsapp_web, account: account).inbox, minutes_ago: 5)
+      # Built resolved and moved together, so the live rule does not merge them while they are created one by one.
+      snoozed = open_dialog(voice_inbox, minutes_ago: 1, status: :resolved)
+      pending_dialog = open_dialog(whatsapp_inbox, minutes_ago: 30, status: :resolved)
+      open_one = open_dialog(create(:channel_whatsapp_web, account: account).inbox, minutes_ago: 5, status: :resolved)
+      { snoozed => 'snoozed', pending_dialog => 'pending', open_one => 'open' }.each do |conversation, status|
+        conversation.update_columns(status: Conversation.statuses.fetch(status)) # rubocop:disable Rails/SkipsModelValidations
+      end
+      snoozed.update_columns(snoozed_until: 1.day.from_now) # rubocop:disable Rails/SkipsModelValidations
 
       plan = described_class.new(thread: thread).perform
 
