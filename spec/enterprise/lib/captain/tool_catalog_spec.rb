@@ -94,6 +94,17 @@ RSpec.describe Captain::ToolCatalog do
       ).to be(true)
     end
 
+    it 'lists custom tools in the order of their ids, also after one was updated: the definitions lead the cached prefix' do
+      first = create(:captain_custom_tool, account: account, slug: 'custom_first-tool')
+      second = create(:captain_custom_tool, account: account, slug: 'custom_second-tool')
+      third = create(:captain_custom_tool, account: account, slug: 'custom_third-tool')
+      first.update!(description: 'Changed so that its row is rewritten')
+
+      listed = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT).pluck(:id) & [first, second, third].map(&:slug)
+
+      expect(listed).to eq(%w[custom_first-tool custom_second-tool custom_third-tool])
+    end
+
     it 'does not expose account-private custom tools from a different account' do
       own_tool = create(:captain_custom_tool, account: account, slug: 'custom_own-tool')
       other_tool = create(:captain_custom_tool, account: create(:account), slug: 'custom_other-tool')

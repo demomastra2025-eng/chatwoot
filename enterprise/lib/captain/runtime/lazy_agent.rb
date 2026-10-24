@@ -42,6 +42,10 @@ class Captain::Runtime::LazyAgent < Captain::Runtime::Agent
     materialized.get_system_prompt(context)
   end
 
+  def get_system_prompt_parts(context)
+    materialized.get_system_prompt_parts(context)
+  end
+
   private
 
   def materialized

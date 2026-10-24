@@ -45,13 +45,25 @@ RSpec.describe Concerns::Agentable do
       expect(Captain::Runtime::Agent).to receive(:new).with(
         name: 'Test Agent',
         instructions: instance_of(Proc),
+        instruction_parts: instance_of(Proc),
         tools: [],
         model: 'gpt-4-turbo',
         temperature: 0.8,
-        response_schema: Captain::ResponseSchema
+        response_schema: Captain::ResponseSchema,
+        read_only_tools: false,
+        suggestion_tools: false
       )
 
       dummy_instance.agent
+    end
+
+    it 'gives the agent the prompt as the stable part and the part that changes per request' do
+      allow(Captain::Runtime::Agent).to receive(:new).and_call_original
+
+      parts = dummy_instance.agent.get_system_prompt_parts(nil)
+
+      expect(parts).to eq(Captain::PromptParts.new(stable: 'rendered_template', volatile: ''))
+      expect(dummy_instance.agent.get_system_prompt(nil)).to eq('rendered_template')
     end
 
     it 'leaves missing temperature unset so the provider uses its own default' do

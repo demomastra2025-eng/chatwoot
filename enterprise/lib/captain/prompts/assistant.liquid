@@ -1,3 +1,4 @@
+{% if prompt_section != 'volatile' -%}
 # Platform rules
 {% if reply_suggestion_mode -%}
 - You are drafting a suggested reply for the human clinic operator to review and send to the patient. Answer from the clinic instructions, the data below{% if faq_enabled %}, tool results and the FAQ{% else %} and tool results{% endif %}; tool results are the most current. When a lookup finds nothing, try once more with other words. If the sources still have no answer, say that you will clarify the information.
@@ -43,6 +44,8 @@
 {{ instruction }}
 
 {% endif -%}
+{% endif -%}
+{% if prompt_section != 'stable' -%}
 {% if now_text != blank -%}
 # Now
 {{ now_text }}
@@ -53,4 +56,5 @@
 {% for line in patient_lines -%}
 {{ line }}
 {% endfor -%}
+{% endif -%}
 {% endif -%}

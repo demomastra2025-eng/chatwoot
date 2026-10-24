@@ -3,7 +3,8 @@
 require 'rails_helper'
 
 # The owner of a council part is a run of its own agent, so its prompt is the prompt of that agent (the platform rules, the clinic
-# instructions, the Now block and the Patient block) followed by the rules of a part. This renders it from real records, the way
+# instructions, the Now block and the Patient block) together with the rules of a part: the rules come with the stable text, in front
+# of the Now and Patient blocks, and the data of the part after them. This renders it from real records, the way
 # the council builds it, and shows that nothing of the agent prompt is missing for a part.
 RSpec.describe Captain::Runtime::Council, '#build_plan' do
   let(:account) { create(:account) }
@@ -36,7 +37,7 @@ RSpec.describe Captain::Runtime::Council, '#build_plan' do
     Captain::Runtime::ChatFactory.send(:system_prompt_for, plan.agent, Captain::Runtime::RunContext.new(plan.snapshot))
   end
 
-  it 'carries the platform rules, the shared rules, the clinic instructions of the owner, the Now block, the Patient block and then the rules of a part' do
+  it 'puts the rules of a part with the stable text, then the Now block, the Patient block and the data of the part' do
     allow(Llm::Config).to receive(:global_agent_system_prompt).and_return('SHARED RULES OF THE INSTALLATION')
 
     prompt = part_prompt
@@ -45,7 +46,8 @@ RSpec.describe Captain::Runtime::Council, '#build_plan' do
                               "# Clinic instructions\nSPECIALIST CLINIC INSTRUCTIONS", '# Now', '# Patient',
                               "You handle ONE part of the patient's message with your own tools")
     expect(prompt).not_to include('ENTRY CLINIC INSTRUCTIONS')
-    headings = ['# Platform rules', '# Shared rules', '# Clinic instructions', '# Now', '# Patient', 'You handle ONE part']
+    headings = ['# Platform rules', '# Shared rules', '# Clinic instructions', 'You handle ONE part', '# Now', '# Patient',
+                "Patient's latest message (data)"]
     positions = headings.map { |text| prompt.index(text) }
     expect(positions).to eq(positions.sort)
   end

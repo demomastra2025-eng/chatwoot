@@ -174,7 +174,9 @@ class Captain::ToolCatalog
     end
 
     def custom_tools_for_ids(assistant, scope_name, tool_ids = nil)
-      tools = assistant.account.captain_custom_tools.enabled
+      # In a fixed order: the tool definitions are the first thing the provider caches, and a row that was updated would otherwise
+      # come back from the database in another place and change the order of the definitions of every later request.
+      tools = assistant.account.captain_custom_tools.enabled.order(:id)
       tools = tools.where(slug: tool_ids) if tool_ids.present?
 
       tools.map(&:to_tool_metadata)
