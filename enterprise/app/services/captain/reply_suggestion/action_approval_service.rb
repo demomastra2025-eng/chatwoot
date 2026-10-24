@@ -105,7 +105,24 @@ class Captain::ReplySuggestion::ActionApprovalService
         updated_ids = ([action_id] + existing_ids).uniq.first(25)
         Redis::Alfred.set(idx_key, JSON.generate(updated_ids), ex: TTL)
       end
+      track_for_run(record)
       record
+    end
+
+    # Rejects the cards of a suggestion run that did not finish (failed, cancelled): it leaves no partial result behind, the cards
+    # included. Cards that were already acted on stay as they are.
+    def discard!(action_ids:, reason:)
+      Array(action_ids).each do |action_id|
+        record = fetch_record(action_id)
+        next unless record && record['status'] == PENDING_STATUS
+
+        store_record!(record.merge('status' => REJECTED_STATUS, 'rejected_at' => Time.current.iso8601, 'rejected_reason' => reason.to_s))
+      end
+    end
+
+    # The run that prepares a card knows it (RunControl), so that it can discard the card if the run does not finish.
+    def track_for_run(record)
+      Captain::ReplySuggestion::RunControl.register_action(record['action_id']) if record['status'] == PENDING_STATUS
     end
 
     def public_payload(record)

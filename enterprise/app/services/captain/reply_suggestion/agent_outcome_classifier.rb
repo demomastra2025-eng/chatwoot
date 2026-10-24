@@ -1,0 +1,126 @@
+# frozen_string_literal: true
+
+# What the run of the agent ended with, as an outcome of the reply suggestion. The rules are evaluated in this order:
+#
+#   1  the safety check blocked the turn                    human_needed (safety)
+#   2  a custom rule of the agent stopped the turn          human_needed (agent_rule)
+#   3  an error ended the run                               failed (reason_code from the error class)
+#   4  the agent answered response_mode human              human_needed (operator_note), failed when the note is blank
+#   5  the agent answered response_mode suppress           no_reply (operator_note), failed when the note is blank
+#   6  a cancelled response, or a handoff                   failed (invalid_output): a suggestion has neither
+#   7  an empty reply                                       failed (empty_output)
+#   8  otherwise                                            draft
+#
+# A text never comes out of an outcome other than draft.
+class Captain::ReplySuggestion::AgentOutcomeClassifier
+  RUNNER = Captain::Assistant::AgentRunnerService
+  PROVIDER_ERROR = RUNNER::PROVIDER_ERROR_RESPONSE
+  NON_DELIVERABLE_RESPONSES = %w[conversation_handoff response_cancelled].freeze
+  ERROR_CLASS_CODES = {
+    'Captain::TechnicalToolFailure' => 'tool_failure',
+    'Captain::Runtime::Runner::TechnicalFailure' => 'tool_failure',
+    'Captain::Runtime::Runner::ToolLoopStopped' => 'tool_loop',
+    'Captain::Runtime::Runner::MaxTurnsExceeded' => 'max_turns',
+    'Captain::Assistant::AgentRunnerService::BlankResponseError' => 'empty_output',
+    'Captain::Assistant::AgentRunnerService::SemanticOutputError' => 'invalid_output'
+  }.freeze
+  DEFAULT_USAGE = { 'prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0 }.freeze
+  PROVIDER_ERROR_PREFIXES = %w[RubyLLM:: Faraday:: Llm:: Net:: Timeout:: OpenSSL:: Errno:: SocketError].freeze
+
+  def initialize(raw_payload, trace_collector:)
+    @payload = raw_payload.to_h.with_indifferent_access
+    @trace_collector = trace_collector
+  end
+
+  def perform
+    classify || draft
+  end
+
+  private
+
+  attr_reader :payload, :trace_collector
+
+  def classify
+    blocked_outcome || failure_outcome || handoff_outcome || suppress_outcome || undeliverable_outcome
+  end
+
+  # 1 and 2: a safety stop is a reason for the manager to answer, not an error.
+  def blocked_outcome
+    return human_needed(I18n.t('captain.reply_suggestion.reasons.safety_blocked'), 'safety') if payload[RUNNER::MODERATION_BLOCKED_KEY] == true
+    return if payload[Captain::Safety::CustomRulesRuntime::RESPONSE_KEY].blank?
+
+    rule_reason = payload.dig(Captain::Safety::CustomRulesRuntime::RESPONSE_KEY, 'reason').presence || '—'
+    human_needed(I18n.t('captain.reply_suggestion.reasons.agent_rule', reason: rule_reason), 'agent_rule')
+  end
+
+  # 3
+  def failure_outcome
+    return unless payload[:error_class].present? || payload[:response] == PROVIDER_ERROR
+
+    Captain::ReplySuggestion::Outcome.failed(
+      error_code_for(payload[:error_class]), error_class: payload[:error_class].presence, detail: payload[:error_message].to_s.truncate(200).presence
+    )
+  end
+
+  # 4
+  def handoff_outcome
+    return unless payload[:response_mode] == 'human'
+
+    human_needed(payload[:operator_note], 'agent')
+  end
+
+  # 5
+  def suppress_outcome
+    return unless payload[:response_mode] == 'suppress' || payload[:response_suppressed]
+
+    meta = suggestion_meta
+    Captain::ReplySuggestion::Outcome.no_reply(
+      reason: payload[:operator_note], engine: 'agent', reason_source: 'agent', agent: meta['agent'],
+      pending_actions: Array(meta['pending_actions']), usage: usage
+    )
+  end
+
+  # 6 and 7
+  def undeliverable_outcome
+    if payload[:response_cancelled] || NON_DELIVERABLE_RESPONSES.include?(payload[:response].to_s.strip)
+      return Captain::ReplySuggestion::Outcome.failed('invalid_output', detail: 'non_deliverable_response')
+    end
+    return Captain::ReplySuggestion::Outcome.failed('empty_output') if payload[:response].to_s.strip.blank?
+
+    nil
+  end
+
+  # 8
+  def draft
+    meta = suggestion_meta
+    trace = trace_collector.captain_trace(payload)
+    Captain::ReplySuggestion::Outcome.draft(
+      message: payload[:response].to_s.strip, engine: 'agent', usage: usage, agent: meta['agent'], captain_trace: trace.presence,
+      suggestion_meta: meta.presence, pending_actions: Array(meta['pending_actions'])
+    )
+  end
+
+  def human_needed(reason, source)
+    meta = suggestion_meta
+    Captain::ReplySuggestion::Outcome.human_needed(
+      reason: reason, engine: 'agent', reason_source: source, agent: meta['agent'], pending_actions: Array(meta['pending_actions']),
+      usage: usage
+    )
+  end
+
+  def suggestion_meta
+    @suggestion_meta ||= trace_collector.suggestion_meta(payload)
+  end
+
+  def usage
+    payload[:usage].presence || DEFAULT_USAGE
+  end
+
+  def error_code_for(error_class)
+    name = error_class.to_s
+    return ERROR_CLASS_CODES[name] if ERROR_CLASS_CODES.key?(name)
+    return 'provider_error' if PROVIDER_ERROR_PREFIXES.any? { |prefix| name.start_with?(prefix) } || name.blank?
+
+    'agent_error'
+  end
+end

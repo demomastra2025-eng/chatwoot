@@ -31,10 +31,16 @@ class Captain::AssistantPrompt
       { instruction: @context[:instruction], global_system_instruction: @context[:global_system_instruction] },
       @prompt_state, bound_tool_ids: bound_tool_ids, time_zone: time_zone
     )
-    texts.merge(now_text: now_text, patient_lines: patient_lines)
+    variables = texts.merge(now_text: now_text, patient_lines: patient_lines)
+    @suggestion ? variables.merge(operator_language: operator_language) : variables
   end
 
   private
+
+  # The language the clinic operator reads: the notes of a reply suggestion (operator_note) are written in it.
+  def operator_language
+    @assistant.account&.locale_english_name.presence || 'russian'
+  end
 
   # The tools of this run; nil when the context does not say (every @ mention is then its function name, no number is shown).
   def bound_tool_ids

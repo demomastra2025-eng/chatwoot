@@ -23,6 +23,8 @@ class Captain::Assistant::AgentRunnerService
   MAX_RUNTIME_TURNS = 24
   MAX_SUGGESTION_RUNTIME_TURNS = 10
   MAX_GRAPH_RUNTIME_TURNS = (Captain::Runtime::TaskQueue::MAX_TASKS * 2) + 1
+  RESPONSE_MODES = %w[reply suppress].freeze
+  SUGGESTION_RESPONSE_MODES = (RESPONSE_MODES + %w[human]).freeze
   MAX_BLANK_RESPONSE_RETRIES = 1
   MAX_FINALIZATION_ONLY_RETRIES = 1
   MAX_TOOL_ARTIFACT_SCAN_BYTES = 100_000
@@ -45,9 +47,11 @@ class Captain::Assistant::AgentRunnerService
     end
   end
 
+  # request_id: the id the llm events of the run share when the caller has one (a reply suggestion request).
   def initialize(assistant:, conversation: nil, callbacks: {}, source: nil, response_fence: nil, test_overrides: {}, playground_session: nil,
-                 deal: nil, incoming_message_id: nil)
+                 deal: nil, incoming_message_id: nil, request_id: nil)
     @assistant = assistant
+    @request_id = request_id.presence
     @conversation = conversation
     @callbacks = callbacks
     @source = source
@@ -361,6 +365,7 @@ class Captain::Assistant::AgentRunnerService
     return semantic_output_error_response(semantic_error, response, result.context, handoff_tool_called: handoff_tool_called) if semantic_error
 
     return suppressed_response(response) if response_suppressed?(response)
+    return human_needed_suggestion_response(response) if suggestion_run? && response_mode(response) == 'human'
 
     if blank_public_response?(response)
       error = blank_response_error
@@ -509,6 +514,8 @@ class Captain::Assistant::AgentRunnerService
         duration_ms: elapsed_ms(started_at)
       )
     end
+  rescue Captain::Conversation::ControlGenerationStaleError
+    raise
   rescue StandardError => e
     Rails.logger.warn(
       "[Captain V2] Finalization-only retry failed for assistant=#{@assistant.id} " \
@@ -661,8 +668,9 @@ class Captain::Assistant::AgentRunnerService
     nil
   end
 
+  # `human` (a staff member must answer) exists in a reply suggestion only: in a live conversation the handoff tool does that.
   def response_mode_valid?(response)
-    response_mode(response).in?(%w[reply suppress])
+    response_mode(response).in?(suggestion_run? ? SUGGESTION_RESPONSE_MODES : RESPONSE_MODES)
   end
 
   def invalid_response_mode_error(response)
@@ -707,6 +715,11 @@ class Captain::Assistant::AgentRunnerService
       'response_mode' => 'suppress',
       'response_suppressed' => true
     )
+  end
+
+  # A reply suggestion for which only staff can answer: no text, and operator_note tells the manager why.
+  def human_needed_suggestion_response(response)
+    response.merge('response' => '', 'response_mode' => 'human', 'response_human_needed' => true)
   end
 
   def invalid_public_response?(response)
@@ -918,7 +931,7 @@ class Captain::Assistant::AgentRunnerService
     state = context[:state] || {}
     conversation = state[:conversation] || {}
 
-    @captain_request_id = context[:agent_request_id] || SecureRandom.uuid
+    @captain_request_id = context[:agent_request_id] || @request_id || SecureRandom.uuid
     {
       request_id: @captain_request_id,
       feature: 'assistant',
@@ -1378,6 +1391,8 @@ class Captain::Assistant::AgentRunnerService
     actor = custom_guardrail_actor(context[:acting_assistant_id])
     @acting_assistant_id = actor.id
     Captain::Safety::CustomRulesRuntime.check_input!(assistant: actor, context: context, text: message_to_process)
+    # Before the patient language is decided and the agent is called: a cancelled or out-of-time suggestion stops here.
+    Captain::ReplySuggestion::RunControl.checkpoint!(:moderation)
     nil
   rescue Llm::SafetyPolicy::UnsafeContentError => e
     blocked_by_moderation_response('Agent input blocked by moderation policy', safety_reason: e.reason)

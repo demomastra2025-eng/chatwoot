@@ -2,10 +2,12 @@ require 'securerandom'
 require 'timeout'
 
 class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseController
-  VALID_FEEDBACK_OUTCOMES = %w[generated applied dismissed sent].freeze
+  VALID_FEEDBACK_OUTCOMES = %w[generated applied dismissed sent notice_dismissed].freeze
+  ACTIVE_SUGGESTION_STATUSES = Captain::ReplySuggestion::RequestStore::ACTIVE_STATUSES
 
   before_action :check_authorization
-  before_action :ensure_text_improvement_enabled, except: [:label_suggestion, :feedback]
+  before_action :ensure_text_improvement_enabled,
+                except: [:label_suggestion, :feedback, :reply_suggestion_status, :cancel_reply_suggestion]
 
   def rewrite
     result = safe_execute_task do
@@ -31,16 +33,43 @@ class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseContr
     render_result(result, copilot_action: 'summarize')
   end
 
+  # Starts the suggestion in the background and answers at once (202); the result comes over ActionCable, or from #reply_suggestion_status.
   def reply_suggestion
-    result = safe_execute_task do
-      Captain::ReplySuggestionService.new(
-        account: Current.account,
-        conversation_display_id: params[:conversation_display_id],
-        user: Current.user
-      ).perform
-    end
+    conversation = find_accessible_conversation
+    return unless conversation
 
-    render_result(result, copilot_action: 'reply_suggestion')
+    result = Captain::ReplySuggestion::StartService.new(
+      account: Current.account, user: Current.user, conversation: conversation, conversation_display_id: params[:conversation_display_id]
+    ).perform
+    render json: result.body, status: result.http_status
+  end
+
+  # The latest suggestion of this user in the conversation that was not acted on (it survives navigation), or the one asked for.
+  def reply_suggestion_status
+    conversation = find_accessible_conversation
+    return unless conversation
+
+    if params[:suggestion_request_id].present?
+      record = find_owned_suggestion(params[:suggestion_request_id], conversation)
+      return render_suggestion_error(:not_found, 'not_found') unless record
+    else
+      record = latest_open_suggestion(conversation)
+    end
+    render json: { suggestion: (Captain::ReplySuggestion::StatePresenter.new(record).as_json if record) }
+  end
+
+  # Stops the run on the server (the next checkpoint of the agent), and the suggestion never reappears.
+  def cancel_reply_suggestion
+    conversation = find_accessible_conversation
+    return unless conversation
+
+    record = find_owned_suggestion(params[:suggestion_request_id], conversation)
+    return render_suggestion_error(:not_found, 'not_found') unless record
+
+    Captain::ReplySuggestion::RequestStore.request_cancel!(record['id'])
+    Captain::ReplySuggestion::RequestStore.consume!(record['id'])
+    status = ACTIVE_SUGGESTION_STATUSES.include?(record['status']) ? 'cancelling' : record['status']
+    render json: { suggestion_request_id: record['id'], status: status }
   end
 
   def label_suggestion
@@ -71,18 +100,14 @@ class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseContr
     outcome = params[:outcome].to_s
     return render json: { error: 'Invalid feedback outcome' }, status: :unprocessable_content unless VALID_FEEDBACK_OUTCOMES.include?(outcome)
 
-    record_copilot_feedback_event(
-      outcome: outcome,
-      copilot_action: params[:copilot_action].presence || 'reply_suggestion',
-      request_id: params[:request_id].presence,
-      generated_text: params[:generated_text],
-      final_text: params[:final_text],
-      edited_before_send: params[:edited_before_send],
-      follow_up_count: params[:follow_up_count],
-      message_id: params[:message_id]
-    )
+    conversation = resolved_conversation
+    return render_suggestion_error(:not_found, 'not_found') if conversation.nil? && params[:suggestion_request_id].present?
+    return unless conversation.nil? || authorized_for_conversation?(conversation)
 
+    record_feedback(outcome, conversation)
     render json: { ok: true, status: 'ok' }
+  rescue Captain::ReplySuggestion::FeedbackService::NotFoundError
+    render_suggestion_error(:not_found, 'not_found')
   end
 
   def approve_action
@@ -150,12 +175,7 @@ class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseContr
   def record_generated_feedback(result, copilot_action, request_id)
     return if result[:message].blank?
 
-    record_copilot_feedback_event(
-      outcome: 'generated',
-      copilot_action: copilot_action,
-      request_id: request_id,
-      generated_text: result[:message]
-    )
+    record_copilot_feedback(outcome: 'generated', copilot_action: copilot_action, request_id: request_id, generated_text: result[:message])
   end
 
   def build_task_response(result, request_id)
@@ -169,62 +189,73 @@ class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseContr
     }.compact
   end
 
-  def record_copilot_feedback_event(attributes = {})
-    Llm::EventBus.publish('copilot.feedback', build_copilot_feedback_payload(attributes))
-  rescue StandardError => e
-    Rails.logger.warn("[CAPTAIN][TasksController] Failed to record copilot feedback: #{e.class}: #{e.message}")
-    nil
-  end
+  def record_feedback(outcome, conversation)
+    copilot_action = params[:copilot_action].presence || 'reply_suggestion'
+    return record_suggestion_feedback(outcome, copilot_action, conversation) if copilot_action == 'reply_suggestion'
 
-  def build_copilot_feedback_payload(attrs)
-    copilot_action = attrs[:copilot_action].to_s
-    copilot_context_attributes(copilot_action, attrs[:outcome]).merge(
-      request_id: attrs[:request_id].presence || SecureRandom.uuid,
-      edited_before_send: cast_optional_boolean(attrs[:edited_before_send]),
-      follow_up_count: cast_optional_integer(attrs[:follow_up_count]),
-      generated_reply_preview: sanitize_preview(attrs[:generated_text]),
-      final_reply_preview: sanitize_preview(attrs[:final_text]),
-      message_id: cast_optional_integer(attrs[:message_id])
+    record_copilot_feedback(
+      outcome: outcome, copilot_action: copilot_action, request_id: params[:request_id].presence, generated_text: params[:generated_text],
+      final_text: params[:final_text], edited_before_send: params[:edited_before_send], follow_up_count: params[:follow_up_count],
+      message_id: params[:message_id]
     )
   end
 
-  def copilot_context_attributes(copilot_action, outcome)
-    {
-      feature: action_name == 'feedback' ? copilot_action : action_name,
-      runtime_mode: 'captain_task',
-      status: outcome,
-      account_id: Current.account&.id,
-      user_id: Current.user&.id,
-      user_name: Current.user&.name,
-      source: copilot_action.presence || 'copilot_ui',
-      copilot_action: copilot_action,
-      suggestion_outcome: outcome
-    }.merge(copilot_conversation_attributes)
+  def record_suggestion_feedback(outcome, copilot_action, conversation)
+    Captain::ReplySuggestion::FeedbackService.new(
+      account: Current.account, user: Current.user, conversation: conversation, outcome: outcome, copilot_action: copilot_action,
+      requested_display_id: params[:conversation_display_id], request_id: params[:request_id].presence,
+      suggestion_request_id: params[:suggestion_request_id].presence, generated_text: params[:generated_text],
+      final_text: params[:final_text], edited_before_send: params[:edited_before_send], follow_up_count: params[:follow_up_count],
+      message_id: params[:message_id]
+    ).perform
   end
 
-  def copilot_conversation_attributes
-    conv = resolved_conversation
-    {
-      conversation_id: conv&.id,
-      conversation_display_id: conv&.display_id || params[:conversation_display_id],
-      channel_type: conv&.inbox&.channel_type
-    }
+  def record_copilot_feedback(outcome:, copilot_action:, request_id:, **fields)
+    Captain::CopilotFeedbackRecorder.record!(
+      account: Current.account, user: Current.user, conversation: resolved_conversation, requested_display_id: params[:conversation_display_id],
+      outcome: outcome, copilot_action: copilot_action, request_id: request_id,
+      feature: action_name == 'feedback' ? copilot_action : action_name, **fields
+    )
   end
 
-  def cast_optional_integer(value)
-    value.present? ? value.to_i : nil
+  # The conversation of the request, when this user may see it. Otherwise the answer is already rendered and this returns nil.
+  def find_accessible_conversation
+    conversation = resolved_conversation
+    if conversation.nil?
+      render_suggestion_error(:not_found, 'conversation_not_found')
+      return
+    end
+
+    conversation if authorized_for_conversation?(conversation)
   end
 
-  def cast_optional_boolean(value)
-    return if value.nil?
-
-    ActiveModel::Type::Boolean.new.cast(value)
+  def authorized_for_conversation?(conversation)
+    authorize(conversation, :show?)
+    true
+  rescue Pundit::NotAuthorizedError
+    render_suggestion_error(:forbidden, 'forbidden')
+    false
   end
 
-  def sanitize_preview(text)
-    return if text.blank?
+  # The suggestion has to be this user's, in this account and conversation: otherwise it does not exist for the caller.
+  def find_owned_suggestion(id, conversation)
+    record = Captain::ReplySuggestion::RequestStore.fetch(id.to_s)
+    return unless record && record['account_id'] == Current.account.id && record['user_id'] == Current.user.id
+    return unless record['conversation_id'] == conversation.id
 
-    Llm::Monitoring::PayloadSanitizer.call(text.to_s.strip.first(1000))
+    record
+  end
+
+  def latest_open_suggestion(conversation)
+    id = Captain::ReplySuggestion::RequestStore.latest_id(Current.account.id, Current.user.id, conversation.id)
+    return if id.blank? || Captain::ReplySuggestion::RequestStore.consumed?(id)
+
+    record = Captain::ReplySuggestion::RequestStore.fetch(id)
+    record if record && record['status'] != 'cancelled'
+  end
+
+  def render_suggestion_error(status, code)
+    render json: { error: I18n.t("captain.reply_suggestion.errors.#{code}"), error_code: code }, status: status
   end
 
   def resolved_conversation
@@ -234,7 +265,8 @@ class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseContr
     return @resolved_conversation = nil unless display_id
 
     @resolved_conversation = Current.account.conversations.find_by(display_id: display_id) ||
-                             Current.account.communication_threads.find_by(display_id: display_id)&.conversations&.order(id: :desc)&.first
+                             CommunicationThread.find_by(account_id: Current.account.id, display_id: display_id)
+                                                &.conversations&.order(id: :desc)&.first
   end
 
   def check_authorization
@@ -249,7 +281,14 @@ class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseContr
   def ensure_text_improvement_enabled
     return if Current.account.captain_editor_enabled?
 
-    render json: { error: I18n.t('captain.text_improvement_disabled') }, status: :forbidden
+    publish_suggestion_unavailable('text_improvement_disabled') if action_name == 'reply_suggestion'
+    render json: { error: I18n.t('captain.text_improvement_disabled'), error_code: 'text_improvement_disabled' }, status: :forbidden
+  end
+
+  def publish_suggestion_unavailable(error_code)
+    Captain::ReplySuggestion::OutcomeEvent.publish_unavailable(
+      account: Current.account, user: Current.user, conversation: resolved_conversation, error_code: error_code
+    )
   end
 end
 

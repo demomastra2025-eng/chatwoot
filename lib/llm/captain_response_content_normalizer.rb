@@ -2,6 +2,8 @@
 
 class Llm::CaptainResponseContentNormalizer
   SCHEMA_NAME = 'Captain::ResponseSchema'
+  SUGGESTION_SCHEMA_NAME = 'Captain::SuggestionResponseSchema'
+  SCHEMA_NAMES = [SCHEMA_NAME, SUGGESTION_SCHEMA_NAME].freeze
   DEFAULT_REASONING = 'Response generated from the current conversation and available tool results.'
   INVALID_PUBLIC_RESPONSE_LITERALS = %w[true false null response].freeze
   RETIRED_HANDOFF_KEYS = %w[handoff_message handoff_reason].freeze
@@ -21,6 +23,7 @@ class Llm::CaptainResponseContentNormalizer
       payload['response_mode'] = normalized_response_mode(payload['response_mode'])
       # The language is for the logs and the reply is delivered whatever it says: a missing one is blank, never a rejected reply.
       apply_text_default!(payload, 'patient_language')
+      apply_text_default!(payload, 'operator_note') if suggestion_schema?(schema)
       apply_reasoning_default!(payload)
       payload['artifact_ids'] = normalized_artifact_ids(payload['artifact_ids'])
       payload
@@ -33,17 +36,22 @@ class Llm::CaptainResponseContentNormalizer
       text = strip_provider_reasoning(content)
       return if text.blank? || json_document_like?(text) || Llm::JsonDocumentExtractor.call(text).present?
 
-      {
+      fallback = {
         patient_language: '',
         response: text,
         response_mode: 'reply',
         reasoning: DEFAULT_REASONING,
         artifact_ids: []
       }
+      suggestion_schema?(schema) ? fallback.merge(operator_note: '') : fallback
     end
 
     def applicable?(schema)
-      Llm::StructuredOutputSchema.name_for(schema) == SCHEMA_NAME
+      SCHEMA_NAMES.include?(Llm::StructuredOutputSchema.name_for(schema))
+    end
+
+    def suggestion_schema?(schema)
+      Llm::StructuredOutputSchema.name_for(schema) == SUGGESTION_SCHEMA_NAME
     end
 
     def invalid_public_response?(value)

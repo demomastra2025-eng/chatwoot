@@ -146,6 +146,8 @@ class Llm::ObservabilityPayload
     end
 
     def attach_error!(payload, error)
+      return attach_suggestion_abort!(payload, error) if suggestion_abort?(error)
+
       payload['status'] = 'error'
       payload['error'] = true
       payload['reason'] = error.class.name.demodulize.underscore
@@ -162,6 +164,20 @@ class Llm::ObservabilityPayload
     end
 
     private
+
+    # A reply suggestion that the manager cancelled, or that ran out of time, is not an error of the model call it interrupted.
+    def attach_suggestion_abort!(payload, error)
+      payload['status'] = 'aborted'
+      payload['error'] = false
+      payload['reason'] = "suggestion_#{error.kind}"
+      payload['error_code'] = "suggestion_#{error.kind}"
+      payload.compact!
+      payload
+    end
+
+    def suggestion_abort?(error)
+      defined?(Captain::ReplySuggestion::RunAborted) && error.is_a?(Captain::ReplySuggestion::RunAborted)
+    end
 
     def provider_for(model)
       return if model.blank?

@@ -1,0 +1,15 @@
+en:
+  captain:
+    reply_suggestion:
+      errors:
+        voice_channel_unsupported: A call cannot carry a text. Open the customer's messenger chat to get a suggestion.
+        busy: There are too many AI requests in the account right now. Try again in a minute.
+        conversation_not_found: Conversation not found.
+        api_key_missing: AI is not configured.
+        disabled: AI features are turned off for this account.
+        quota_exceeded: The AI reply limit is used up.
+        forbidden: You do not have access to this conversation.
+        not_found: Suggestion not found.
+      reasons:
+        safety_blocked: The safety check stopped the AI reply, please answer the customer yourself.
+        agent_rule: 'An agent rule applied: %{reason}. Please answer the customer yourself.'
