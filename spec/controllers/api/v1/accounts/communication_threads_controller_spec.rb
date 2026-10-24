@@ -346,12 +346,12 @@ RSpec.describe 'Communication Threads API', type: :request do
       create(:inbox_member, user: agent, inbox: telegram.inbox)
 
       get "/api/v1/accounts/#{account.id}/communication_threads",
-          params: { labels: ['Семья'] },
+          params: { labels: ['Семья'], status: 'all' },
           headers: headers,
           as: :json
       list_body = JSON.parse(response.body, symbolize_names: true)
       get "/api/v1/accounts/#{account.id}/communication_threads/meta",
-          params: { labels: ['Семья'] },
+          params: { labels: ['Семья'], status: 'all' },
           headers: headers,
           as: :json
       meta_body = JSON.parse(response.body, symbolize_names: true)
