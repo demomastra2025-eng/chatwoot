@@ -5,7 +5,10 @@ require 'fileutils'
 
 # One-off cleanup behind rake onelink:one_open_dialog_per_thread: applies the single open dialog rule, with the same
 # service the live code uses (CommunicationThreads::SingleOpenDialogService), to the threads that already have two or more
-# open or pending conversations.
+# conversations that are not resolved: two open or pending ones, an open or pending one next to a snoozed one, and also
+# several snoozed ones (all_snoozed). The old person update snoozed every channel of a person, the ones resolved long ago too,
+# so the timers of a person would open all of those channels together; only the one a person is reached in stays snoozed,
+# with its own timer.
 #
 # A dry run prints the counts and, for every thread, the conversation that stays and the ones that would be resolved, and
 # writes nothing. A real run writes the backup CSV (ids and statuses before the change) first and stops if it cannot.
@@ -44,7 +47,7 @@ class CommunicationThreads::SingleOpenDialogCleanup
     CommunicationThreads::SingleOpenDialogService.threads_to_consolidate(account_id: @account_id).includes(:account).find_each do |thread|
       next skip_account(thread.account_id) unless threads_enabled?(thread.account)
 
-      plan = CommunicationThreads::SingleOpenDialogService.new(thread: thread, dry_run: true).perform
+      plan = CommunicationThreads::SingleOpenDialogService.new(thread: thread, dry_run: true, all_snoozed: true).perform
       plans << plan if plan&.closed.present?
       @summary[:deferred_live_call] += 1 if plan&.deferred.present?
     end
@@ -72,7 +75,7 @@ class CommunicationThreads::SingleOpenDialogCleanup
 
   def apply(plans)
     plans.each do |plan|
-      result = CommunicationThreads::SingleOpenDialogService.new(thread: plan.thread).perform
+      result = CommunicationThreads::SingleOpenDialogService.new(thread: plan.thread, all_snoozed: true).perform
       @summary[:resolved] += result&.closed&.size.to_i
     rescue StandardError => e
       @summary[:failed] += 1

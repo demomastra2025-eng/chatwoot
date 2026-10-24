@@ -287,7 +287,7 @@ RSpec.describe Conversations::CommunicationThreadResolver do
         expect(thread.reload).to have_attributes(status: 'open', priority: 'urgent')
       end
 
-      it 'wakes the person through the conversation that receives a message', :aggregate_failures do
+      it 'wakes the whole person through the conversation that receives a message', :aggregate_failures do
         thread = build_person(%w[snoozed snoozed], urgent_saved_last: false)
         woken, sleeping = thread.conversations.order(:id).to_a
         expect(thread.status).to eq('snoozed')
@@ -296,7 +296,8 @@ RSpec.describe Conversations::CommunicationThreadResolver do
                          content: 'Are you there?')
 
         expect(woken.reload).to be_open
-        expect(sleeping.reload).to be_snoozed
+        expect(sleeping.reload).to be_resolved
+        expect(sleeping.status_transitions.pluck(:to_status, :source)).to eq([%w[resolved system]])
         expect(thread.reload.status).to eq('open')
       end
     end

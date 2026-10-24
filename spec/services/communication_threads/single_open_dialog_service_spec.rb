@@ -2,8 +2,8 @@
 
 require 'rails_helper'
 
-# "One person, one open dialog": the conversations of a communication thread that are open or pending together are
-# resolved silently except for one.
+# "One person, one dialog": the conversations of a communication thread that are open or pending together, or snoozed next to
+# an open or pending one, are resolved silently except for one.
 RSpec.describe CommunicationThreads::SingleOpenDialogService do
   include ActiveJob::TestHelper
 
@@ -17,10 +17,11 @@ RSpec.describe CommunicationThreads::SingleOpenDialogService do
 
   # A conversation that is open since some minutes, created without the live rule so that a thread can be put into the state the
   # production data is in.
-  def open_dialog(inbox, minutes_ago:, status: :open, contact: self.contact, labels: nil)
+  def open_dialog(inbox, minutes_ago:, status: :open, contact: self.contact, labels: nil, snoozed_until: nil)
     create(:conversation, account: inbox.account, contact: contact, inbox: inbox, status: :resolved).tap do |conversation|
       conversation.update_labels(labels) if labels
-      conversation.update_columns(status: Conversation.statuses.fetch(status.to_s), last_activity_at: minutes_ago.minutes.ago) # rubocop:disable Rails/SkipsModelValidations
+      conversation.update_columns(status: Conversation.statuses.fetch(status.to_s), last_activity_at: minutes_ago.minutes.ago, # rubocop:disable Rails/SkipsModelValidations
+                                  snoozed_until: snoozed_until)
     end
   end
 
@@ -71,15 +72,43 @@ RSpec.describe CommunicationThreads::SingleOpenDialogService do
       expect(statuses(current_dialog, old_dialog)).to eq(%w[open resolved])
     end
 
-    it 'counts a pending conversation as open and leaves a snoozed one alone', :aggregate_failures do
-      snoozed = open_dialog(voice_inbox, minutes_ago: 1, status: :snoozed)
+    it 'counts a pending conversation as open and resolves a snoozed one next to them', :aggregate_failures do
+      snoozed = open_dialog(voice_inbox, minutes_ago: 1, status: :snoozed, snoozed_until: 1.day.from_now)
       pending_dialog = open_dialog(whatsapp_inbox, minutes_ago: 30, status: :pending)
       open_one = open_dialog(create(:channel_whatsapp_web, account: account).inbox, minutes_ago: 5)
 
       plan = described_class.new(thread: thread).perform
 
-      expect(plan.closed).to eq([pending_dialog])
-      expect(statuses(open_one, snoozed, pending_dialog)).to eq(%w[open snoozed resolved])
+      expect(plan.kept).to eq(open_one)
+      expect(plan.closed).to eq([snoozed, pending_dialog])
+      expect(statuses(open_one, snoozed, pending_dialog)).to eq(%w[open resolved resolved])
+      expect(snoozed.snoozed_until).to be_nil
+    end
+
+    it 'keeps the open dialog rather than a snoozed channel with a later activity', :aggregate_failures do
+      open_one = open_dialog(whatsapp_inbox, minutes_ago: 600)
+      snoozed = open_dialog(create(:channel_whatsapp_web, account: account).inbox, minutes_ago: 1, status: :snoozed)
+
+      plan = described_class.new(thread: thread).perform
+
+      expect(plan.kept).to eq(open_one)
+      expect(statuses(open_one, snoozed)).to eq(%w[open resolved])
+    end
+
+    it 'leaves a person whose channels are all snoozed alone unless asked to merge them', :aggregate_failures do
+      latest = open_dialog(whatsapp_inbox, minutes_ago: 5, status: :snoozed, snoozed_until: 1.day.from_now)
+      older = open_dialog(create(:channel_whatsapp_web, account: account).inbox, minutes_ago: 900, status: :snoozed,
+                                                                                 snoozed_until: 2.days.from_now)
+
+      expect(described_class.new(thread: thread).perform).to be_nil
+      expect(statuses(latest, older)).to eq(%w[snoozed snoozed])
+
+      plan = described_class.new(thread: thread, all_snoozed: true).perform
+
+      expect(plan.kept).to eq(latest)
+      expect(statuses(latest, older)).to eq(%w[snoozed resolved])
+      expect(latest.snoozed_until).to be_within(1.minute).of(1.day.from_now)
+      expect(thread.reload.status).to eq('snoozed')
     end
 
     it 'keeps the conversation a person has just reopened by hand', :aggregate_failures do
@@ -436,6 +465,21 @@ RSpec.describe CommunicationThreads::SingleOpenDialogService do
   end
 
   describe '.threads_to_consolidate' do
+    it 'lists the threads with two conversations that are not resolved, snoozed ones included', :aggregate_failures do
+      snoozed_contact = create(:contact, account: account)
+      open_dialog(whatsapp_inbox, minutes_ago: 10, status: :snoozed, contact: snoozed_contact)
+      open_dialog(voice_inbox, minutes_ago: 1, status: :snoozed, contact: snoozed_contact)
+      mixed_contact = create(:contact, account: account)
+      open_dialog(whatsapp_inbox, minutes_ago: 10, contact: mixed_contact)
+      open_dialog(voice_inbox, minutes_ago: 1, status: :snoozed, contact: mixed_contact)
+      single_contact = create(:contact, account: account)
+      open_dialog(whatsapp_inbox, minutes_ago: 10, status: :snoozed, contact: single_contact)
+      open_dialog(voice_inbox, minutes_ago: 1, status: :resolved, contact: single_contact)
+
+      expect(described_class.threads_to_consolidate(account_id: account.id).map(&:contact_id))
+        .to contain_exactly(snoozed_contact.id, mixed_contact.id)
+    end
+
     it 'lists the threads with two open or pending conversations of the account', :aggregate_failures do
       open_dialog(whatsapp_inbox, minutes_ago: 10)
       open_dialog(voice_inbox, minutes_ago: 1, status: :pending)

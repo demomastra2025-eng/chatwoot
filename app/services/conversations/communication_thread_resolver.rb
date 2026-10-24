@@ -25,8 +25,10 @@ class Conversations::CommunicationThreadResolver
     thread = refresh_linked_thread
     return thread unless thread && @enforce_single_open_dialog
 
-    # Two or more open or pending conversations in the thread: all but one are resolved silently, outside the transaction
-    # of the refresh. When the caller is inside a transaction of its own (the intake of a call, for one), the refresh above
+    # Two or more open or pending conversations in the thread, or an open or pending one next to a snoozed one: all but one are
+    # resolved silently, outside the transaction of the refresh. So an incoming message wakes the whole person: the conversation
+    # that received it opens and a snoozed channel of the same person does not keep its timer (which would open it again later
+    # with its own status events). When the caller is inside a transaction of its own (the intake of a call, for one), the refresh above
     # joined it and its contact advisory lock is held until that transaction ends, so the merge waits for the commit, see
     # CommunicationThreads::SingleOpenDialogService.enforce for the lock order.
     CommunicationThreads::SingleOpenDialogService.enforce(thread, linked_conversations(thread), @preferred_conversation_id)

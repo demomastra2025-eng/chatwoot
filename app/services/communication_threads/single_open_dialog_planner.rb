@@ -1,13 +1,17 @@
 # frozen_string_literal: true
 
-# Decides which of the open or pending conversations of one communication thread stays open. It reads and never writes,
+# Decides which of the conversations of one communication thread that are not resolved stays. It reads and never writes,
 # so the one-off cleanup can print the same decision as a dry run.
 #
-# The conversation with the latest activity stays. A voice conversation that is only slightly newer than a messaging
-# conversation (a missed call right after a chat) does not win: the person is reached in the messenger, the call stays in
-# the thread. A call that is live right now is never closed, and nothing is decided while it lasts.
+# An open or pending conversation stays before a snoozed one: the person is being handled in it, and a snoozed channel next
+# to it is only a timer that would open a second dialog later. Among them the conversation with the latest activity stays.
+# A voice conversation that is only slightly newer than a messaging conversation (a missed call right after a chat) does not
+# win: the person is reached in the messenger, the call stays in the thread. A call that is live right now is never closed,
+# and nothing is decided while it lasts.
 class CommunicationThreads::SingleOpenDialogPlanner
   OPEN_STATUSES = %w[open pending].freeze
+  # The statuses of a conversation that is not resolved. A person keeps at most one such conversation once an open one exists.
+  ACTIVE_STATUSES = %w[open pending snoozed].freeze
   VOICE_CHANNEL_TYPE = 'Channel::Voice'
   # A messaging conversation whose last activity is at most this long before the latest voice activity still wins.
   MESSAGING_PREFERENCE_WINDOW = 30.minutes
@@ -36,30 +40,39 @@ class CommunicationThreads::SingleOpenDialogPlanner
     Plan.new(thread: @thread, kept: kept, closed: @conversations - [kept])
   end
 
-  # The conversation that stays when several are open. It is also the one conversation a person gets back when every
-  # channel is resolved and the dialog is reopened (see CommunicationThreads::UpdateService): the one with the latest
-  # activity, a messenger before a call that is only slightly newer, or the preferred one.
+  # The conversation that stays when several are not resolved. It is also the one conversation that gets the status when a
+  # person is opened, moved to pending or snoozed, and the one a person gets back when every channel is resolved and the
+  # dialog is reopened (see CommunicationThreads::UpdateService): among the open or pending ones when there are any, the
+  # preferred one, else the one with the latest activity, a messenger before a call that is only slightly newer.
   def conversation_to_keep
+    return if candidates.empty?
+
     preferred_conversation || messenger_close_to_latest_call || latest_conversation
   end
 
   private
 
+  # The open or pending conversations when there are any; otherwise (a snoozed person, or one whose channels are all resolved)
+  # every given conversation.
+  def candidates
+    @candidates ||= @conversations.select { |conversation| OPEN_STATUSES.include?(conversation.status) }.presence || @conversations
+  end
+
   def preferred_conversation
-    @conversations.find { |conversation| conversation.id == @preferred_conversation_id }
+    candidates.find { |conversation| conversation.id == @preferred_conversation_id }
   end
 
   def latest_conversation
-    @latest_conversation ||= @conversations.max_by { |conversation| activity_key(conversation) }
+    @latest_conversation ||= candidates.max_by { |conversation| activity_key(conversation) }
   end
 
   # The newest messenger conversation that is at most MESSAGING_PREFERENCE_WINDOW older than the call that is the latest.
   def messenger_close_to_latest_call
     return unless self.class.voice?(latest_conversation)
 
-    @conversations.reject { |conversation| self.class.voice?(conversation) }
-                  .select { |conversation| close_to_latest?(conversation) }
-                  .max_by { |conversation| activity_key(conversation) }
+    candidates.reject { |conversation| self.class.voice?(conversation) }
+              .select { |conversation| close_to_latest?(conversation) }
+              .max_by { |conversation| activity_key(conversation) }
   end
 
   def close_to_latest?(conversation)

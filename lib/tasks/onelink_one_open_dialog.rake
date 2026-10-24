@@ -20,8 +20,10 @@ module OnelinkThreadTaskArguments
 end
 
 namespace :onelink do
-  desc 'One open dialog per person: resolve silently every open or pending conversation of a thread except the one that stays ' \
-       '(latest activity, a messenger before a call). Usage: rake "onelink:one_open_dialog_per_thread[<account_id|all>,<dry_run>]". ' \
+  desc 'One dialog per person: resolve silently every conversation of a thread that is not resolved (open, pending or snoozed, ' \
+       'such as the channels the old rule snoozed together) except the one that stays (an open or pending one before a snoozed ' \
+       'one, then the latest activity, a messenger before a call). ' \
+       'Usage: rake "onelink:one_open_dialog_per_thread[<account_id|all>,<dry_run>]". ' \
        'dry_run is true by default: it prints the counts and (thread, kept, closed) and writes nothing. dry_run=false writes the ' \
        'backup CSV into BACKUP_DIR (default tmp/) first, then resolves. Run onelink:person_status_repair after it.'
   task :one_open_dialog_per_thread, [:account_id, :dry_run] => :environment do |_task, args|

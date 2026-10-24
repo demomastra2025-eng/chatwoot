@@ -2,9 +2,11 @@
 
 require 'rails_helper'
 
-# "Open", "snooze" and "pending" on a person (a communication thread) touch only the conversations that are not resolved; a
-# person whose channels are all resolved gets ONE conversation back, never all of them; "resolve" resolves every channel.
-# The status of the person itself is the most urgent status of its channels, see Conversations::CommunicationThreadResolver.
+# "Open", "snooze" and "pending" on a person (a communication thread) write the status to ONE conversation: the open or pending
+# one, else the snoozed one a person is reached in, and a person whose channels are all resolved gets ONE conversation back,
+# never all of them. The other channels that are not resolved are resolved silently, so one click gives one status event.
+# "Resolve" resolves every channel. The status of the person itself is the most urgent status of its channels, see
+# Conversations::CommunicationThreadResolver.
 RSpec.describe CommunicationThreads::UpdateService do
   include ActiveJob::TestHelper
 
@@ -16,12 +18,15 @@ RSpec.describe CommunicationThreads::UpdateService do
   let(:dispatcher) { Rails.configuration.dispatcher }
   # The conversations a status event (the one automation rules, webhooks and reports hang on) was dispatched for.
   let(:status_events) { [] }
+  # The conversations a conversation_opened event (the one the "conversation opened" automation rules run on) was dispatched for.
+  let(:opened_events) { [] }
   let(:voice_inbox) { create(:channel_voice, :sipuni, account: account).inbox }
 
   before do
     Current.user = actor
     allow(dispatcher).to receive(:dispatch).and_wrap_original do |original, event, time, data|
       status_events << data[:conversation].id if event == Events::Types::CONVERSATION_STATUS_CHANGED
+      opened_events << data[:conversation].id if event == Events::Types::CONVERSATION_OPENED
       original.call(event, time, data)
     end
   end
@@ -49,6 +54,7 @@ RSpec.describe CommunicationThreads::UpdateService do
 
   def update_person(attributes)
     status_events.clear
+    opened_events.clear
     params = ActionController::Parameters.new(attributes).permit!
     described_class.new(
       communication_thread: thread, params: params, actor: actor,
@@ -102,7 +108,7 @@ RSpec.describe CommunicationThreads::UpdateService do
   end
 
   describe 'open, pending and snooze on a person that is not resolved' do
-    it 'snoozes only the channels that are not resolved', :aggregate_failures do
+    it 'snoozes the one dialog of the person and resolves a leftover snoozed channel silently', :aggregate_failures do
       active = channel(:open, minutes_ago: 5)
       sleeping = channel(:snoozed, minutes_ago: 50, snoozed_until: 1.day.from_now)
       old_one = channel(:resolved, minutes_ago: 3000)
@@ -112,11 +118,26 @@ RSpec.describe CommunicationThreads::UpdateService do
 
       update_person(status: 'snoozed', snoozed_until: until_time.to_i)
 
-      expect(statuses(active, sleeping, old_one, older_one)).to eq(%w[snoozed snoozed resolved resolved])
+      expect(statuses(active, sleeping, old_one, older_one)).to eq(%w[snoozed resolved resolved resolved])
       expect(active.snoozed_until).to be_within(1.minute).of(until_time)
-      expect(sleeping.snoozed_until).to be_within(1.minute).of(until_time)
+      expect(sleeping.snoozed_until).to be_nil
+      expect(ConversationStatusTransition.where(conversation_id: sleeping.id).pluck(:from_status, :to_status, :source))
+        .to eq([%w[snoozed resolved system]])
       expect(ConversationStatusTransition.where(conversation_id: [old_one.id, older_one.id])).to be_empty
+      expect(status_events).to eq([active.id])
       expect(thread.reload.status).to eq('snoozed')
+    end
+
+    it 'moves the open dialog to pending with one status event when a snoozed channel is left over', :aggregate_failures do
+      active = channel(:open, minutes_ago: 5)
+      sleeping = channel(:snoozed, minutes_ago: 50, snoozed_until: 1.day.from_now)
+      settle_thread(active)
+
+      update_person(status: 'pending')
+
+      expect(statuses(active, sleeping)).to eq(%w[pending resolved])
+      expect(status_events).to eq([active.id])
+      expect(thread.reload.status).to eq('pending')
     end
 
     it 'marks only the channel that is not resolved as pending', :aggregate_failures do
@@ -181,8 +202,10 @@ RSpec.describe CommunicationThreads::UpdateService do
     end
   end
 
+  # The old rule snoozed every channel of a person, the ones resolved long ago too, so a person can have several snoozed
+  # channels. One click wakes the person in one of them: one status event and one run of the "conversation opened" rules.
   describe 'open on a person with several snoozed channels' do
-    it 'leaves one open dialog, resolves the other one silently and keeps the callback flag', :aggregate_failures do
+    it 'opens one dialog, resolves the other one silently and keeps the callback flag', :aggregate_failures do
       kept = channel(:snoozed, minutes_ago: 10, snoozed_until: 1.day.from_now)
       merged = channel(:snoozed, minutes_ago: 90, snoozed_until: 1.day.from_now)
       merged.update_columns(custom_attributes: { 'waiting_for_callback' => true }) # rubocop:disable Rails/SkipsModelValidations
@@ -193,9 +216,54 @@ RSpec.describe CommunicationThreads::UpdateService do
       expect(statuses(kept, merged)).to eq(%w[open resolved])
       expect(Telephony::MissedCallCallbackTracker.waiting_for_callback?(kept.reload)).to be(true)
       expect(thread.reload.status).to eq('open')
-      expect(ConversationStatusTransition.where(conversation_id: merged.id).pluck(:to_status, :source)).to include(%w[resolved system])
-      # Each channel reports its own wake-up once; the silent resolve of the merged one adds no second event.
-      expect(status_events).to contain_exactly(kept.id, merged.id)
+      expect(ConversationStatusTransition.where(conversation_id: merged.id).pluck(:from_status, :to_status, :source))
+        .to eq([%w[snoozed resolved system]])
+      expect(status_events).to eq([kept.id])
+      expect(opened_events).to eq([kept.id])
+    end
+
+    it 'wakes WhatsApp, Telegram and Instagram snoozed together in one channel, with one event', :aggregate_failures do
+      whatsapp = channel(:snoozed, minutes_ago: 30, snoozed_until: 1.day.from_now)
+      telegram = channel(:snoozed, minutes_ago: 90_000, snoozed_until: 1.day.from_now)
+      instagram = channel(:snoozed, minutes_ago: 120_000, snoozed_until: 1.day.from_now)
+      settle_thread(whatsapp)
+
+      result = update_person(status: 'open')
+
+      expect(statuses(whatsapp, telegram, instagram)).to eq(%w[open resolved resolved])
+      expect(status_events).to eq([whatsapp.id])
+      expect(opened_events).to eq([whatsapp.id])
+      expect(ConversationStatusTransition.where(conversation_id: [telegram.id, instagram.id]).pluck(:to_status, :source).uniq)
+        .to eq([%w[resolved system]])
+      expect(result.status).to eq('open')
+    end
+
+    it 'moves one of them to pending with one event', :aggregate_failures do
+      latest = channel(:snoozed, minutes_ago: 10, snoozed_until: 1.day.from_now)
+      older = channel(:snoozed, minutes_ago: 900, snoozed_until: 1.day.from_now)
+      settle_thread(latest)
+
+      update_person(status: 'pending')
+
+      expect(statuses(latest, older)).to eq(%w[pending resolved])
+      expect(status_events).to eq([latest.id])
+    end
+
+    it 'snoozes again in one channel, so the timer later wakes one channel', :aggregate_failures do
+      latest = channel(:snoozed, minutes_ago: 10, snoozed_until: 1.day.from_now)
+      older = channel(:snoozed, minutes_ago: 900, snoozed_until: 1.day.from_now)
+      settle_thread(latest)
+      until_time = 2.hours.from_now
+
+      update_person(status: 'snoozed', snoozed_until: until_time.to_i)
+      expect(statuses(latest, older)).to eq(%w[snoozed resolved])
+      expect(latest.snoozed_until).to be_within(1.minute).of(until_time)
+      expect(status_events).to be_empty
+
+      travel_to(3.hours.from_now) { Conversations::ReopenSnoozedConversationsJob.perform_now }
+
+      expect(statuses(latest, older)).to eq(%w[open resolved])
+      expect(status_events).to eq([latest.id])
     end
   end
 
@@ -213,6 +281,24 @@ RSpec.describe CommunicationThreads::UpdateService do
       expect(statuses(active, old_one, older_one)).to eq(%w[open resolved resolved])
       expect(thread.reload.status).to eq('open')
       expect(ConversationStatusTransition.where(conversation_id: [old_one.id, older_one.id])).to be_empty
+    end
+
+    # The state the old rule left: every channel snoozed until the same time. The timer wakes the channel a person is reached
+    # in; the others are resolved silently instead of being opened one after another and merged back.
+    it 'wakes ONE channel of a person whose channels were snoozed together', :aggregate_failures do
+      until_time = 1.hour.from_now
+      latest = channel(:snoozed, minutes_ago: 20, snoozed_until: until_time)
+      older = channel(:snoozed, minutes_ago: 9000, snoozed_until: until_time)
+      oldest = channel(:snoozed, minutes_ago: 90_000, snoozed_until: until_time)
+      settle_thread(oldest)
+      status_events.clear
+
+      travel_to(2.hours.from_now) { Conversations::ReopenSnoozedConversationsJob.perform_now }
+
+      expect(statuses(latest, older, oldest)).to eq(%w[open resolved resolved])
+      expect(status_events).to eq([latest.id])
+      expect(opened_events).to eq([latest.id])
+      expect(thread.reload.status).to eq('open')
     end
   end
 end

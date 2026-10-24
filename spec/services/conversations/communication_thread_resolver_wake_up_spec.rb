@@ -2,9 +2,10 @@
 
 require 'rails_helper'
 
-# An incoming message wakes the person: the conversation that receives it opens, and the status of the person (the most urgent
-# status of its channels) follows. The other channels are settled by the rule "one open dialog per person" without any
-# change flipping back and forth.
+# An incoming message wakes the whole person: the conversation that receives it opens, the status of the person (the most urgent
+# status of its channels) follows, and a snoozed channel of the same person is resolved silently instead of keeping its timer.
+# That timer would otherwise open it again later, with its own status events (automation rules, webhooks, reports), for a
+# person who is already being handled, or leave the person snoozed once the open dialog is closed.
 RSpec.describe Conversations::CommunicationThreadResolver do
   include ActiveJob::TestHelper
 
@@ -14,11 +15,14 @@ RSpec.describe Conversations::CommunicationThreadResolver do
   let(:dispatcher) { Rails.configuration.dispatcher }
   # The conversations a status event (the one automation rules and webhooks hang on) was dispatched for, in order.
   let(:status_events) { [] }
+  # Every event dispatched for a conversation, as [event name, conversation id].
+  let(:conversation_events) { [] }
 
   before do
     Current.account = account
     allow(dispatcher).to receive(:dispatch).and_wrap_original do |original, event, time, data|
       status_events << data[:conversation].id if event == Events::Types::CONVERSATION_STATUS_CHANGED
+      conversation_events << [event, data[:conversation].id] if data.is_a?(Hash) && data[:conversation].is_a?(Conversation)
       original.call(event, time, data)
     end
   end
@@ -56,7 +60,11 @@ RSpec.describe Conversations::CommunicationThreadResolver do
     CommunicationThreadFinder.new(agent, { status: status, assignee_type: 'all' }).perform[:communication_threads].map(&:id)
   end
 
-  it 'opens the person through the channel that received the message and leaves the snoozed channel snoozed', :aggregate_failures do
+  def events_for(conversation)
+    conversation_events.select { |_event, id| id == conversation.id }.map(&:first)
+  end
+
+  it 'opens the person through the channel that received the message and resolves the snoozed channel silently', :aggregate_failures do
     sleeping = channel(:snoozed, minutes_ago: 120, snoozed_until: 1.day.from_now)
     resolved = channel(:resolved, minutes_ago: 3000)
     settle_thread(sleeping)
@@ -65,11 +73,14 @@ RSpec.describe Conversations::CommunicationThreadResolver do
 
     write(resolved)
 
-    expect(statuses(sleeping, resolved)).to eq(%w[snoozed open])
+    expect(statuses(sleeping, resolved)).to eq(%w[resolved open])
+    expect(sleeping.snoozed_until).to be_nil
+    expect(sleeping.status_transitions.pluck(:from_status, :to_status, :source)).to eq([%w[snoozed resolved system]])
     expect(thread.reload.status).to eq('open')
     expect(tab_for('open')).to eq([thread.id])
     expect(tab_for('snoozed')).to be_empty
     expect(status_events).to eq([resolved.id])
+    expect(events_for(sleeping)).to be_empty
   end
 
   it 'wakes a snoozed channel by its own message and leaves the old resolved channel alone', :aggregate_failures do
@@ -96,24 +107,72 @@ RSpec.describe Conversations::CommunicationThreadResolver do
     expect(status_events).to eq([resolved.id])
   end
 
-  it 'settles the snoozed channel without flipping anything back when its time is up', :aggregate_failures do
-    sleeping = channel(:snoozed, minutes_ago: 600, snoozed_until: 1.day.from_now)
+  # The snooze was dated: on Friday nothing wakes, because the snoozed channel was settled by the message on Wednesday.
+  it 'leaves nothing for the snooze timer: no channel opens again when its time is up', :aggregate_failures do
+    sleeping = channel(:snoozed, minutes_ago: 600, snoozed_until: 2.days.from_now)
     resolved = channel(:resolved, minutes_ago: 3000)
     settle_thread(sleeping)
     write(resolved)
-    sleeping.update_columns(snoozed_until: 1.minute.ago) # rubocop:disable Rails/SkipsModelValidations
     status_events.clear
+    conversation_events.clear
 
-    Conversations::ReopenSnoozedConversationsJob.perform_now
+    travel_to(3.days.from_now) { Conversations::ReopenSnoozedConversationsJob.perform_now }
+
     expect(statuses(sleeping, resolved)).to eq(%w[resolved open])
     expect(thread.reload.status).to eq('open')
+    expect(conversation_events).to be_empty
+  end
 
-    # A second pass of the job and of the thread refresh changes nothing: no channel is opened or closed again.
-    settled_events = status_events.dup
+  # The snooze was "until the next reply" (no time): once the dialog the person wrote in is closed by a single-conversation path
+  # (auto-resolve, an automation rule, the API), the person is resolved, not left in the snoozed tab.
+  it 'does not leave the person snoozed when the dialog they wrote in is closed by itself', :aggregate_failures do
+    sleeping = channel(:snoozed, minutes_ago: 600)
+    resolved = channel(:resolved, minutes_ago: 3000)
+    settle_thread(sleeping)
+    write(resolved)
+
+    resolved.reload.toggle_status
+
+    expect(statuses(sleeping, resolved)).to eq(%w[resolved resolved])
+    expect(thread.reload.status).to eq('resolved')
+    expect(tab_for('snoozed')).to be_empty
+    expect(tab_for('resolved')).to eq([thread.id])
+  end
+
+  # The state the old code left behind: an open dialog next to a snoozed channel. When the timer of the snoozed channel is up it
+  # is resolved silently into the open dialog: the first pass already dispatches no event for it, and a second pass of the job
+  # and of the thread refresh changes nothing.
+  it 'resolves a snoozed channel silently into the open dialog when its time is up', :aggregate_failures do
+    sleeping = channel(:snoozed, minutes_ago: 600, snoozed_until: 1.minute.ago)
+    open_one = channel(:open, minutes_ago: 30)
+    settle_thread(open_one)
+    expect(thread.status).to eq('open')
+
     Conversations::ReopenSnoozedConversationsJob.perform_now
-    settle_thread(resolved)
-    expect(statuses(sleeping, resolved)).to eq(%w[resolved open])
+
+    expect(statuses(sleeping, open_one)).to eq(%w[resolved open])
+    expect(sleeping.status_transitions.pluck(:from_status, :to_status, :source)).to eq([%w[snoozed resolved system]])
     expect(thread.reload.status).to eq('open')
-    expect(status_events).to eq(settled_events)
+    expect(conversation_events).to be_empty
+
+    Conversations::ReopenSnoozedConversationsJob.perform_now
+    settle_thread(open_one)
+    expect(statuses(sleeping, open_one)).to eq(%w[resolved open])
+    expect(conversation_events).to be_empty
+  end
+
+  it 'waits while a call is live in the open dialog, and settles the snoozed channel once it ended', :aggregate_failures do
+    sleeping = channel(:snoozed, minutes_ago: 600, snoozed_until: 1.minute.ago)
+    call = channel(:open, minutes_ago: 1)
+    call.update_columns(additional_attributes: { 'call_status' => 'in_progress' }) # rubocop:disable Rails/SkipsModelValidations
+    settle_thread(call)
+
+    Conversations::ReopenSnoozedConversationsJob.perform_now
+    expect(statuses(sleeping, call)).to eq(%w[snoozed open])
+
+    call.update_columns(additional_attributes: { 'call_status' => 'completed' }) # rubocop:disable Rails/SkipsModelValidations
+    Conversations::ReopenSnoozedConversationsJob.perform_now
+    expect(statuses(sleeping, call)).to eq(%w[resolved open])
+    expect(status_events).to be_empty
   end
 end
