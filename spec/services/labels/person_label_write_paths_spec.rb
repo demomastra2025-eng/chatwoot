@@ -2,7 +2,7 @@ require 'rails_helper'
 
 # Labels belong to a person. Every path that adds or removes one writes the contact and every conversation of the person
 # through Labels::UnifiedAssignmentService, and the change is reported once, however many channels the person has.
-RSpec.describe Labels::UnifiedAssignmentService, 'write paths' do
+RSpec.describe 'Person label write paths', type: :service do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:contact) { create(:contact, account: account) }
@@ -44,7 +44,7 @@ RSpec.describe Labels::UnifiedAssignmentService, 'write paths' do
     end
 
     it 'remove_label takes the label off the contact and every conversation of the person' do
-      described_class.add(contact: contact, labels: %w[vip support], silent: true)
+      Labels::UnifiedAssignmentService.add(contact: contact, labels: %w[vip support], silent: true)
       contact.update_labels(%w[vip support card_only])
 
       run_rule([{ 'action_name' => 'remove_label', 'action_params' => %w[vip card_only] }])
@@ -87,7 +87,7 @@ RSpec.describe Labels::UnifiedAssignmentService, 'write paths' do
     end
 
     it 'remove_label takes the label off everywhere' do
-      described_class.add(contact: contact, labels: %w[vip], silent: true)
+      Labels::UnifiedAssignmentService.add(contact: contact, labels: %w[vip], silent: true)
 
       run_macro([{ 'action_name' => 'remove_label', 'action_params' => %w[vip] }])
 
@@ -149,7 +149,7 @@ RSpec.describe Labels::UnifiedAssignmentService, 'write paths' do
     before { create(:conversation, account: account, contact: other_contact) }
 
     it 'adds and removes labels on the contact and every conversation, one change per person' do
-      described_class.add(contact: other_contact, labels: %w[old], silent: true)
+      Labels::UnifiedAssignmentService.add(contact: other_contact, labels: %w[old], silent: true)
 
       Contacts::BulkAssignLabelsService.new(
         account: account, contact_ids: [contact.id, other_contact.id], labels: %w[vip], remove_labels: %w[old]
@@ -161,7 +161,7 @@ RSpec.describe Labels::UnifiedAssignmentService, 'write paths' do
     end
 
     it 'removes labels through the contacts bulk action service' do
-      described_class.add(contact: contact, labels: %w[vip paid], silent: true)
+      Labels::UnifiedAssignmentService.add(contact: contact, labels: %w[vip paid], silent: true)
 
       Contacts::BulkActionService.new(
         account: account, user: user, params: { ids: [contact.id], labels: { remove: %w[vip] } }

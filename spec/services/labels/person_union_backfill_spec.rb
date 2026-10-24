@@ -12,9 +12,9 @@ RSpec.describe Labels::PersonUnionBackfill do
   let!(:settled_conversation) { create(:conversation, account: account, contact: settled_contact) }
   # Person with a card label and no conversation, and one without any label
   let!(:card_only_contact) { create(:contact, account: account) }
-  let!(:unlabeled_conversation) { create(:conversation, account: account) }
 
   before do
+    create(:conversation, account: account)
     contact.update_labels(%w[card])
     first_conversation.update_labels(%w[channel])
     settled_contact.update_labels(%w[settled])

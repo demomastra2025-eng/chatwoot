@@ -20,6 +20,8 @@
 # silent: true is for system rewrites (contact merge, the one-time backfill): nothing is dispatched, no activity message.
 class Labels::UnifiedAssignmentService
   REALTIME_SOURCE_EVENT = 'conversation.updated'.freeze
+  # What ActsAsTaggableOn keeps on a record between reads and drops on reload.
+  CACHED_LABEL_IVARS = %i[@label_list @all_label_list].freeze
 
   class << self
     def union_for(contact:, conversations:)
@@ -45,12 +47,12 @@ class Labels::UnifiedAssignmentService
       normalize(scope.joins(:tag).order(order, 'taggings.id').pluck('tags.name'))
     end
 
-    def add(contact:, labels:, **options)
-      new(contact: contact, add: labels, **options).perform
+    def add(contact:, labels:, **)
+      new(contact: contact, add: labels, **).perform
     end
 
-    def remove(contact:, labels:, **options)
-      new(contact: contact, remove: labels, **options).perform
+    def remove(contact:, labels:, **)
+      new(contact: contact, remove: labels, **).perform
     end
 
     # Writes the union of everything the person carries (plus extra_labels) to the contact and to every conversation.
@@ -156,7 +158,7 @@ class Labels::UnifiedAssignmentService
   # copy would be written back over it (ActsAsTaggable keeps it until the record is reloaded), so drop it the same way.
   def forget_cached_labels
     [contact, @source].compact.each do |record|
-      %i[@label_list @all_label_list].each do |name|
+      CACHED_LABEL_IVARS.each do |name|
         record.remove_instance_variable(name) if record.instance_variable_defined?(name)
       end
     end
@@ -168,14 +170,18 @@ class Labels::UnifiedAssignmentService
     return if silent || @reported || !@contact_changed
 
     source = @conversations&.first
-    return if source.blank? || !@person.account.feature_enabled?('communication_threads')
-
-    thread = source.communication_thread
+    thread = thread_of(source)
     return if thread.blank?
 
     CommunicationThreads::RealtimeUpdateJob.perform_later(
       communication_thread_id: thread.id, source_conversation_id: source.id,
       source_event: REALTIME_SOURCE_EVENT, performer_id: Current.user&.id
     )
+  end
+
+  def thread_of(conversation)
+    return if conversation.blank? || !@person.account.feature_enabled?('communication_threads')
+
+    conversation.communication_thread
   end
 end
