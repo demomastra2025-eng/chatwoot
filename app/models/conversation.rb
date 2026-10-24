@@ -89,15 +89,42 @@ class Conversation < ApplicationRecord
   scope :assigned, -> { where.not(assignee_id: nil) }
   scope :assigned_to, ->(agent) { where(assignee_id: agent.id) }
   scope :unattended, -> { where(first_reply_created_at: nil).or(where.not(waiting_since: nil)) }
+  # Inactivity belongs to the person, not to one channel: a conversation is not quiet while the same contact wrote or
+  # was answered in another conversation since the cutoff. Only public incoming and outgoing messages count; activity
+  # lines, private notes and templates (the auto-resolve message itself) do not, so resolving one channel never keeps
+  # the next one alive.
+  scope :without_recent_messages_in_other_conversations_of_contact, lambda { |since|
+    where(
+      <<~SQL.squish,
+        NOT EXISTS (
+          SELECT 1 FROM conversations sibling_conversations
+          INNER JOIN messages sibling_messages
+            ON sibling_messages.account_id = sibling_conversations.account_id
+           AND sibling_messages.conversation_id = sibling_conversations.id
+          WHERE sibling_conversations.account_id = conversations.account_id
+            AND sibling_conversations.contact_id = conversations.contact_id
+            AND sibling_conversations.id <> conversations.id
+            AND sibling_messages.private = FALSE
+            AND sibling_messages.message_type IN (:message_types)
+            AND sibling_messages.created_at >= :since
+        )
+      SQL
+      message_types: Message.message_types.values_at('incoming', 'outgoing'), since: since
+    )
+  }
   scope :resolvable_not_waiting, lambda { |auto_resolve_after|
     return none if auto_resolve_after.to_i.zero?
 
-    open.where('last_activity_at < ? AND waiting_since IS NULL', Time.now.utc - auto_resolve_after.minutes)
+    cutoff = Time.now.utc - auto_resolve_after.minutes
+    open.where('last_activity_at < ? AND waiting_since IS NULL', cutoff)
+        .without_recent_messages_in_other_conversations_of_contact(cutoff)
   }
   scope :resolvable_all, lambda { |auto_resolve_after|
     return none if auto_resolve_after.to_i.zero?
 
-    open.where('last_activity_at < ?', Time.now.utc - auto_resolve_after.minutes)
+    cutoff = Time.now.utc - auto_resolve_after.minutes
+    open.where('last_activity_at < ?', cutoff)
+        .without_recent_messages_in_other_conversations_of_contact(cutoff)
   }
 
   scope :last_user_message_at, lambda {

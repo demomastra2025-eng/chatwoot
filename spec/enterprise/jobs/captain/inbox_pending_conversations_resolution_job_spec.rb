@@ -56,6 +56,36 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
 
       expect(Captain::ConversationCompletionService).not_to have_received(:new)
     end
+
+    context 'when the same person writes in another channel' do
+      let(:contact) { resolvable_pending_conversation.contact }
+      let(:other_inbox) { create(:inbox, account: inbox.account) }
+      let(:other_conversation) do
+        create(:conversation, account: inbox.account, inbox: other_inbox, contact: contact,
+                              contact_inbox: create(:contact_inbox, contact: contact, inbox: other_inbox))
+      end
+
+      def write_in_other_channel(created_at:)
+        create(:message, account: inbox.account, inbox: other_inbox, conversation: other_conversation, sender: contact,
+                         message_type: :incoming, private: false, created_at: created_at)
+      end
+
+      it 'keeps the quiet pending conversation while the person is live elsewhere' do
+        write_in_other_channel(created_at: 5.minutes.ago)
+
+        described_class.perform_now(inbox)
+
+        expect(resolvable_pending_conversation.reload.status).to eq('pending')
+      end
+
+      it 'resolves it once the person has been quiet everywhere' do
+        write_in_other_channel(created_at: 3.hours.ago)
+
+        described_class.perform_now(inbox)
+
+        expect(resolvable_pending_conversation.reload.status).to eq('resolved')
+      end
+    end
   end
 
   context 'when captain_tasks is enabled' do
