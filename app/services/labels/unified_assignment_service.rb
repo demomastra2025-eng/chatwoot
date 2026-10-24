@@ -112,7 +112,7 @@ class Labels::UnifiedAssignmentService
   end
 
   def person_conversations
-    ordered = Conversation.where(account_id: @person.account_id, contact_id: @person.id)
+    ordered = Conversation.where(contact_id: @person.id)
                           .order(Arel.sql('conversations.last_activity_at DESC NULLS LAST'), id: :desc).to_a
     source = ordered.find { |conversation| conversation.id == @source_id }
     source ? [source] + (ordered - [source]) : ordered
