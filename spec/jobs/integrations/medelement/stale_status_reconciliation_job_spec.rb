@@ -22,7 +22,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciliationJob do
     described_class.perform_now(hook.id)
 
     expect(Integrations::Medelement::StaleStatusReconciler).to have_received(:new)
-      .with(hook: hook, days: 30, dry_run: false, max_per_run: 500)
+      .with(hook: hook, days: 30, dry_run: false, max_per_run: 1000)
     expect(reconciler).to have_received(:perform)
   end
 
@@ -37,7 +37,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciliationJob do
     first = medelement_hook
     second = medelement_hook
     disabled = medelement_hook(status: 'disabled')
-    options = { days: 30, dry_run: false, max_per_run: 500 }
+    options = { days: 30, dry_run: false, max_per_run: 1000 }
 
     expect { described_class.perform_now }
       .to have_enqueued_job(described_class).with(first.id, **options)
@@ -49,7 +49,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciliationJob do
   it 'spreads the queued runs over time' do
     first = medelement_hook
     second = medelement_hook
-    options = { days: 30, dry_run: false, max_per_run: 500 }
+    options = { days: 30, dry_run: false, max_per_run: 1000 }
 
     freeze_time do
       expect { described_class.perform_now }

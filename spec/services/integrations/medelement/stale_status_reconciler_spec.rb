@@ -212,7 +212,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
 
       report = reconciler.perform
 
-      expect(report.not_found_appointment_ids).to eq([empty.id, other.id])
+      expect(report.not_found_appointment_ids).to contain_exactly(empty.id, other.id)
       expect(Scheduling::Appointment.where(id: [empty.id, other.id]).pluck(:status)).to eq(%w[scheduled scheduled])
     end
 
@@ -350,7 +350,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
       third = reconciler(max_per_run: 2).perform
       expect([second.examined, third.examined]).to eq([2, 1])
       expect(third.remaining).to eq(0)
-      expect(codes).to eq(%w[reception-0 reception-1 reception-2 reception-3 reception-4])
+      expect(codes).to eq(%w[reception-4 reception-3 reception-2 reception-1 reception-0])
       expect(Scheduling::Appointment.distinct.pluck(:status)).to eq(['completed'])
     end
 
@@ -359,7 +359,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
     end
 
     it 'carries a default cap and a default window' do
-      expect([described_class::DEFAULT_MAX_PER_RUN, described_class::DEFAULT_DAYS]).to eq([500, 30])
+      expect([described_class::DEFAULT_MAX_PER_RUN, described_class::DEFAULT_DAYS]).to eq([1000, 30])
     end
   end
 

@@ -12,14 +12,14 @@ class Integrations::Medelement::StaleStatusReconciler
   STALE_AFTER = 1.day
   DEFAULT_DAYS = 30
   DEFAULT_BATCH_SIZE = 50
-  # Bounds one run. The nightly run starts again from the oldest appointment that is still open, and every appointment
-  # that MedElement closes drops out of the selection, so a long backlog is worked off over several nights.
-  DEFAULT_MAX_PER_RUN = 500
+  # Bounds one run. Every appointment that MedElement closes drops out of the selection, so a backlog longer than the cap
+  # is worked off over several nights. Appointments that MedElement keeps open are read again by every run.
+  DEFAULT_MAX_PER_RUN = 1000
   MAX_CONSECUTIVE_PROVIDER_ERRORS = 5
   PROVIDER_ERROR_PAUSE_SECONDS = 5
   RUN_LOCK_LEASE = 30.minutes
   SYNC_LOCK_LEASE = 2.minutes
-  SYNC_LOCK_ATTEMPTS = 12
+  SYNC_LOCK_ATTEMPTS = 24
   SYNC_LOCK_PAUSE_SECONDS = 5
   PROVIDER_ERRORS = [
     Integrations::Medelement::Client::ApiError,
@@ -47,16 +47,18 @@ class Integrations::Medelement::StaleStatusReconciler
     @max_per_run = options.fetch(:max_per_run, DEFAULT_MAX_PER_RUN) || Float::INFINITY
     @sleeper = options.fetch(:sleeper) { ->(seconds) { Kernel.sleep(seconds) } }
     @report = Integrations::Medelement::StaleStatusReport.new(dry_run: @dry_run, days: @days)
-    @cursor = 0
+    @cursor = nil
     @consecutive_errors = 0
     @provider_read_made = false
   end
 
   def perform
-    return report.tap { |result| result.aborted = 'not_eligible' } unless eligible?
-
-    # A dry run only reads, so it takes no lock and cannot hold a real run back.
-    dry_run ? run : with_run_lock { run }
+    if eligible?
+      # A dry run only reads, so it takes no lock and cannot hold a real run back.
+      dry_run ? run : with_run_lock { run }
+    else
+      report.aborted = 'not_eligible'
+    end
     finish
   rescue Abort => e
     report.aborted = e.message
@@ -81,9 +83,11 @@ class Integrations::Medelement::StaleStatusReconciler
         .where(starts_at: from..STALE_AFTER.ago)
   end
 
+  # Newest first: the appointments that just passed are the ones MedElement is about to close, and a capped run should
+  # reach them before the old ones that MedElement keeps open.
   def run
     while report.examined < max_per_run
-      batch = candidates.where('id > ?', @cursor).order(:id).limit([batch_size, max_per_run - report.examined].min).to_a
+      batch = pending.order(id: :desc).limit([batch_size, max_per_run - report.examined].min).to_a
       break if batch.empty?
 
       batch.each { |appointment| process(appointment) }
@@ -91,9 +95,13 @@ class Integrations::Medelement::StaleStatusReconciler
     end
   end
 
+  def pending
+    @cursor ? candidates.where('id < ?', @cursor) : candidates
+  end
+
   def finish
     report.last_id = @cursor
-    report.remaining = candidates.where('id > ?', @cursor).count
+    report.remaining = pending.count
     report
   end
 
