@@ -1,4 +1,4 @@
-class Integrations::Medelement::Configuration
+class Integrations::Medelement::Configuration # rubocop:disable Metrics/ClassLength
   INTEGRATOR_KEY_ENV = 'MEDELEMENT_INTEGRATOR_KEY'.freeze
   DEFAULT_DAYS_BACK = 3
   DEFAULT_DAYS_FORWARD = 89
