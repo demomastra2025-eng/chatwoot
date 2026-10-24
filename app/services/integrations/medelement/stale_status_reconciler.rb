@@ -222,16 +222,9 @@ class Integrations::Medelement::StaleStatusReconciler
   end
 
   def log_result
-    Rails.logger.info(
-      "[MEDELEMENT::STALE_STATUS] hook=#{hook.id} dry_run=#{dry_run} days=#{days.inspect} examined=#{report.examined} " \
-      "changed=#{report.changed} unchanged=#{report.unchanged} not_found=#{report.not_found} " \
-      "out_of_scope=#{report.out_of_scope} skipped=#{report.skipped} errors=#{report.errors} " \
-      "remaining=#{report.remaining.inspect} aborted=#{report.aborted.inspect}"
-    )
+    Rails.logger.info("[MEDELEMENT::STALE_STATUS] hook=#{hook.id} #{report.log_line}")
     return if report.not_found_appointment_ids.empty?
 
-    Rails.logger.warn(
-      "[MEDELEMENT::STALE_STATUS] hook=#{hook.id} not_found_appointment_ids=#{report.not_found_appointment_ids.inspect}"
-    )
+    Rails.logger.warn("[MEDELEMENT::STALE_STATUS] hook=#{hook.id} not_found_appointment_ids=#{report.not_found_appointment_ids.inspect}")
   end
 end

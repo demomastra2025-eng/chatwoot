@@ -43,7 +43,7 @@ class Integrations::Medelement::DeltaProbeService
   rescue Integrations::Medelement::Client::ApiError => e
     [error_outcome(e), error_code(e)]
   rescue Integrations::Medelement::ProviderScope::MismatchError
-    ['error', 'provider_scope_mismatch']
+    %w[error provider_scope_mismatch]
   end
 
   def window_start

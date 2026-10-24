@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/BlockLength
 namespace :medelement do
   desc 'Re-read MedElement appointments that are still scheduled/confirmed a day after their start and apply the provider ' \
        'status. Usage: rake "medelement:reconcile_stale_statuses[account_id,days,dry_run,max_per_run]" ' \
@@ -14,7 +15,6 @@ namespace :medelement do
     raise ArgumentError, 'days must be a positive number or "all"' unless days == :all || days&.positive?
 
     days = nil if days == :all
-
     dry_run = case args[:dry_run].to_s.strip.downcase
               when '', 'true' then true
               when 'false' then false
@@ -26,8 +26,11 @@ namespace :medelement do
     hook = Integrations::Hook.find_by!(account_id: account_id, app_id: 'medelement')
     puts "MedElement stale statuses: account #{account_id}, hook #{hook.id}, #{days ? "last #{days} days" : 'whole history'}, " \
          "#{dry_run ? 'DRY RUN, nothing is written' : 'APPLYING'}"
-    rules = AutomationRule.where(account_id: account_id, active: true, event_name: %w[appointment_updated appointment_completed appointment_cancelled])
-    puts "Active automation rules that react to an appointment status change: #{rules.count}" unless dry_run
+    unless dry_run
+      rules = AutomationRule.where(account_id: account_id, active: true,
+                                   event_name: %w[appointment_updated appointment_completed appointment_cancelled])
+      puts "Active automation rules that react to an appointment status change: #{rules.count}"
+    end
 
     report = Integrations::Medelement::StaleStatusReconciler.new(
       hook: hook, days: days, dry_run: dry_run, max_per_run: max_per_run
@@ -45,3 +48,4 @@ namespace :medelement do
     exit 1
   end
 end
+# rubocop:enable Metrics/BlockLength

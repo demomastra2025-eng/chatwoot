@@ -37,8 +37,8 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
     end
   end
 
-  def reconciler(**options)
-    described_class.new(hook: hook, client: client, sleeper: sleeper, **options)
+  def reconciler(**)
+    described_class.new(hook: hook, client: client, sleeper: sleeper, **)
   end
 
   def stale_appointment(code, **attributes)
@@ -63,12 +63,12 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
     provider[appointment.external_ref.delete_prefix('medelement:reception:')] = detail_for(appointment, **overrides)
   end
 
-  def database_writes
+  def database_writes(&)
     statements = []
     subscriber = lambda do |_name, _started, _finished, _id, payload|
       statements << payload[:sql] if payload[:sql].to_s.match?(/\A\s*(INSERT|UPDATE|DELETE)\b/i)
     end
-    ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') { yield }
+    ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record', &)
     statements
   end
 
@@ -103,7 +103,6 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
       expect(reconciler(dry_run: true, days: 7).perform.examined).to eq(1)
       expect(reconciler(dry_run: true, days: nil).perform.examined).to eq(3)
     end
-
   end
 
   describe 'the margin of a day' do
@@ -352,7 +351,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
       expect([second.examined, third.examined]).to eq([2, 1])
       expect(third.remaining).to eq(0)
       expect(codes).to eq(%w[reception-0 reception-1 reception-2 reception-3 reception-4])
-      expect(Scheduling::Appointment.pluck(:status).uniq).to eq(['completed'])
+      expect(Scheduling::Appointment.distinct.pluck(:status)).to eq(['completed'])
     end
 
     it 'has no cap when asked for none' do
@@ -386,7 +385,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
       report = reconciler.perform
 
       expect(report).to have_attributes(examined: 5, errors: 5, aborted: 'provider_errors', remaining: 2)
-      expect(Scheduling::Appointment.pluck(:status).uniq).to eq(['scheduled'])
+      expect(Scheduling::Appointment.distinct.pluck(:status)).to eq(['scheduled'])
     end
 
     it 'ends the run, writing nothing, when the account sync stays locked' do

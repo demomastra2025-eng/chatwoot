@@ -132,6 +132,7 @@ RSpec.describe Integrations::Medelement::DeltaProbeService do
     end
   end
 
+  flags = [true, false]
   {
     'a timeout' => [nil, 'api_error'],
     'a 500' => [500, 'http_500'],
@@ -139,7 +140,7 @@ RSpec.describe Integrations::Medelement::DeltaProbeService do
     'a 429' => [429, 'http_429'],
     'a 408' => [408, 'http_408']
   }.each do |label, (status, code)|
-    [true, false].each do |before_flag|
+    flags.each do |before_flag|
       context "when the probe meets #{label} and the flag is #{before_flag}" do
         let(:flag) { before_flag }
 

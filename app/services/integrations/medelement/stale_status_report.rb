@@ -1,6 +1,7 @@
 # What one stale status reconciliation run did, or in a dry run would do. Counts and appointment ids only: no patient data.
 class Integrations::Medelement::StaleStatusReport
   NOT_FOUND_SAMPLE_LIMIT = 200
+  LOG_KEYS = %i[dry_run days examined changed unchanged not_found out_of_scope skipped errors remaining aborted].freeze
 
   attr_reader :dry_run, :days, :examined, :changed, :unchanged, :not_found, :out_of_scope, :skipped, :errors,
               :transitions, :not_found_appointment_ids, :skipped_reasons, :error_codes
@@ -52,6 +53,10 @@ class Integrations::Medelement::StaleStatusReport
       not_found_appointment_ids: not_found_appointment_ids, skipped_reasons: skipped_reasons.to_h,
       error_codes: error_codes.to_h, last_id: last_id, remaining: remaining, aborted: aborted
     }
+  end
+
+  def log_line
+    LOG_KEYS.map { |key| "#{key}=#{to_h[key].inspect}" }.join(' ')
   end
 
   # One line per old status and provider status, then the outcomes that did not lead to a status.
