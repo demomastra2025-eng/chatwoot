@@ -119,7 +119,7 @@ RSpec.describe Integrations::Medelement::StaleStatusReconciler do
   end
 
   describe 'applying the provider status' do
-    it 'completes a scheduled appointment with the importer's status and records where it came from' do
+    it 'completes a scheduled appointment with the status of the importer mapping and records where it came from' do
       appointment = stale_appointment('reception-1')
       provider_says(appointment, 'VISIT_STATUS_NAME' => 'завершена')
 
