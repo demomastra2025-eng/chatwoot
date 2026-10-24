@@ -76,7 +76,9 @@ class Contacts::ChannelSyncMergeService
   def consolidate_conversations_and_threads!(now)
     Conversation.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
     Conversations::SingleDialogConsolidator.new(account: target_contact.account, contact_id: target_contact.id).perform
-    Contacts::CommunicationThreadMergeService.new(base_contact: target_contact, mergee_contact: source_contact).perform
+    thread_merge = Contacts::CommunicationThreadMergeService.new(base_contact: target_contact, mergee_contact: source_contact)
+    thread_merge.perform
+    thread_merge.refresh_status!
     Note.where(contact_id: source_contact.id, account_id: source_contact.account_id)
         .update_all(contact_id: target_contact.id, updated_at: now)
   end

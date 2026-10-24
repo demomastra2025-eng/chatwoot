@@ -25,9 +25,38 @@ class Contacts::CommunicationThreadMergeService
     end
   end
 
+  # One person, one status: the base thread took the conversations of the other contact, so its status (the most urgent of
+  # its channels) and the rule of one open dialog are decided again, as after any other change of a conversation. The status
+  # tabs read only the status of the thread: without this a patient who is waiting in the merged-in channel would stay in
+  # "resolved" until the next message. Call it after #perform and once the contact inboxes of the mergee have moved too (the
+  # resolver skips a conversation whose contact inbox belongs to another contact). It does nothing for an account without
+  # communication threads. A failure is logged and never undoes the merge: the next event of the thread repairs the status.
+  def refresh_status!
+    return unless table_exists?('communication_threads')
+
+    conversation = latest_thread_conversation
+    return if conversation.blank?
+
+    ActiveRecord::Base.transaction(requires_new: true) { conversation.refresh_communication_thread! }
+  rescue StandardError => e
+    Rails.logger.warn(
+      "[Contacts::CommunicationThreadMergeService] status refresh skipped contact=#{base_contact.id}: #{e.class}: #{e.message}"
+    )
+  end
+
   private
 
   attr_reader :base_contact, :mergee_contact, :account_id
+
+  def latest_thread_conversation
+    thread = CommunicationThread.find_by(account_id: account_id, contact_id: base_contact.id)
+    return if thread.blank?
+
+    linked_ids = CommunicationThreadConversation.where(communication_thread_id: thread.id).select(:conversation_id)
+    Conversation.where(account_id: account_id, id: linked_ids)
+                .order(Arel.sql('conversations.last_activity_at DESC NULLS LAST'), id: :desc)
+                .first
+  end
 
   def consolidate_thread!(base_thread:, mergee_thread:, now:)
     move_thread_conversations!(base_thread: base_thread, mergee_thread: mergee_thread, now: now)
