@@ -78,7 +78,7 @@ class ContactMergeAction
   def merge_labels
     Labels::UnifiedAssignmentService.unify(
       contact: @base_contact,
-      extra_labels: Labels::UnifiedAssignmentService.person_labels(contact_id: @mergee_contact.id, account_id: @account.id)
+      extra_labels: Labels::UnifiedAssignmentService.person_labels(contact_id: @mergee_contact.id)
     )
   end
 

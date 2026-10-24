@@ -15,7 +15,7 @@ class Api::V1::Accounts::Contacts::LabelsController < Api::V1::Accounts::Contact
   end
 
   def current_label_list
-    Labels::UnifiedAssignmentService.person_labels(contact_id: @contact.id, account_id: @contact.account_id)
+    Labels::UnifiedAssignmentService.person_labels(contact_id: @contact.id)
   end
 
   def permitted_params

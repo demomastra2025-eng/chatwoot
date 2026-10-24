@@ -86,7 +86,7 @@ class Contacts::ChannelSyncMergeService
   def unify_labels!
     Labels::UnifiedAssignmentService.unify(
       contact: target_contact,
-      extra_labels: Labels::UnifiedAssignmentService.person_labels(contact_id: source_contact.id, account_id: source_contact.account_id)
+      extra_labels: Labels::UnifiedAssignmentService.person_labels(contact_id: source_contact.id)
     )
   end
 

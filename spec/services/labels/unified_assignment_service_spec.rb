@@ -192,11 +192,11 @@ RSpec.describe Labels::UnifiedAssignmentService do
       second_conversation.update_labels(%w[shared two])
       create(:conversation, account: account).update_labels(%w[someone_else])
 
-      expect(described_class.person_labels(contact_id: contact.id, account_id: account.id)).to eq(%w[card shared one two])
+      expect(described_class.person_labels(contact_id: contact.id)).to eq(%w[card shared one two])
     end
 
     it 'is empty without a contact' do
-      expect(described_class.person_labels(contact_id: nil, account_id: account.id)).to eq([])
+      expect(described_class.person_labels(contact_id: nil)).to eq([])
     end
   end
 

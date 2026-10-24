@@ -54,7 +54,7 @@ class Conversations::EventDataPresenter < SimpleDelegator
   def person_labels
     return label_list if contact_id.blank?
 
-    Labels::UnifiedAssignmentService.person_labels(contact_id: contact_id, account_id: account_id)
+    Labels::UnifiedAssignmentService.person_labels(contact_id: contact_id)
   end
 
   def push_messages

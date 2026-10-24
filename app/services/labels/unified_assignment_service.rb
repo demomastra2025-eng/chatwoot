@@ -36,11 +36,11 @@ class Labels::UnifiedAssignmentService
     end
 
     # Labels of the whole person in one query: the contact first, then every conversation of the contact.
-    def person_labels(contact_id:, account_id:)
+    def person_labels(contact_id:)
       return [] if contact_id.blank?
 
       taggings = ActsAsTaggableOn::Tagging.where(context: 'labels', tagger_id: nil)
-      conversation_ids = Conversation.where(account_id: account_id, contact_id: contact_id).select(:id)
+      conversation_ids = Conversation.where(contact_id: contact_id).select(:id)
       scope = taggings.where(taggable_type: 'Contact', taggable_id: contact_id)
                       .or(taggings.where(taggable_type: 'Conversation', taggable_id: conversation_ids))
       order = Arel.sql("CASE taggings.taggable_type WHEN 'Contact' THEN 0 ELSE 1 END")
@@ -58,7 +58,7 @@ class Labels::UnifiedAssignmentService
     # Writes the union of everything the person carries (plus extra_labels) to the contact and to every conversation.
     # Used where two cards become one and by Labels::PersonUnionBackfill.
     def unify(contact:, extra_labels: [])
-      labels = person_labels(contact_id: contact.id, account_id: contact.account_id) + Array(extra_labels)
+      labels = person_labels(contact_id: contact.id) + Array(extra_labels)
       add(contact: contact, labels: labels, silent: true)
     end
 
@@ -108,7 +108,7 @@ class Labels::UnifiedAssignmentService
   attr_reader :contact, :silent
 
   def person_labels
-    self.class.person_labels(contact_id: contact.id, account_id: contact.account_id)
+    self.class.person_labels(contact_id: contact.id)
   end
 
   def person_conversations
