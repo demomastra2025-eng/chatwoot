@@ -17,8 +17,7 @@ class Captain::Evals::RouterBenchmark::Insights
 
   def traps
     @rows.select(&:trap).group_by(&:trap).transform_values do |group|
-      { count: group.size, accuracy: ratio(group.count { |row| correct?(row) }, group.size),
-        failures: group.reject { |row| correct?(row) }.map { |row| "#{row.scenario_id}: #{row.expected} -> #{row.got || row.error}" } }
+      { count: group.size, accuracy: ratio(group.count { |row| correct?(row) }, group.size), failures: failures(group) }
     end
   end
 
@@ -34,15 +33,13 @@ class Captain::Evals::RouterBenchmark::Insights
       low_confidence_share: ratio(low + missing, wrong.size) }
   end
 
+  # fixed: the decision models were wrong and the escalation right; broke: the other way round; still_wrong: both wrong.
   def escalation
     escalated = @rows.select(&:escalated)
-    {
-      fired: escalated.size, rate: ratio(escalated.size, @rows.size),
-      fixed: escalated.count { |row| row.first_choice != row.expected && correct?(row) },
-      broke: escalated.count { |row| row.first_choice == row.expected && !correct?(row) },
-      still_wrong: escalated.count { |row| row.first_choice != row.expected && !correct?(row) },
-      latency: latency(escalated.filter_map(&:escalation_ms))
-    }
+    outcomes = escalated.map { |row| [row.first_choice == row.expected, correct?(row)] }.tally
+    { fired: escalated.size, rate: ratio(escalated.size, @rows.size), fixed: outcomes.fetch([false, true], 0),
+      broke: outcomes.fetch([true, false], 0), still_wrong: outcomes.fetch([false, false], 0),
+      latency: latency(escalated.filter_map(&:escalation_ms)) }
   end
 
   def answered_by
@@ -52,6 +49,10 @@ class Captain::Evals::RouterBenchmark::Insights
   private
 
   def correct?(row) = row.got == row.expected
+
+  def failures(rows)
+    rows.reject { |row| correct?(row) }.map { |row| "#{row.scenario_id}: #{row.expected} -> #{row.got || row.error}" }
+  end
 
   def latency(values)
     values = values.sort

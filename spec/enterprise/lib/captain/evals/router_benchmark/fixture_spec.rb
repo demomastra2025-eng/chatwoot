@@ -40,8 +40,8 @@ RSpec.describe Captain::Evals::RouterBenchmark::Fixture do
 
     expect(ids.size).to eq(57)
     expect(ids).to include('SZ01', 'A11', 'I06')
-    traps = committed['suites'].flat_map { |suite| suite['scenarios'] }.select { |scenario| scenario['trap'] }.group_by { |scenario| scenario['trap'] }
-    expect(traps.transform_values(&:size)).to eq('human' => 3, 'injection' => 4, 'false_council' => 6)
+    traps = committed['suites'].flat_map { |suite| suite['scenarios'] }.filter_map { |scenario| scenario['trap'] }
+    expect(traps.tally).to eq('human' => 3, 'injection' => 4, 'false_council' => 6)
     expect(committed['suites'].flat_map { |suite| suite['scenarios'].pluck('expected') }).to all(match(described_class::KEY))
   end
 
