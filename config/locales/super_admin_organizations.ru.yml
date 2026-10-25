@@ -123,6 +123,7 @@ ru:
         main: "основное"
         limits: "лимиты"
         features: "функции"
+        ai: "контекст клиники"
 
     organizations:
       controller:

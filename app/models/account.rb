@@ -55,6 +55,8 @@ class Account < ApplicationRecord
 
   include AccountSettingsSchema
   include AccountWorkspaceWorkingHours
+  # The "# Clinic" block of every external AI agent of the account (internal_attributes, edited only by the platform team)
+  include AccountCaptainClinicContext
 
   DEFAULT_QUERY_SETTING = {
     flag_query_mode: :bit_operator,

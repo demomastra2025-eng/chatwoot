@@ -2,8 +2,10 @@
 # «ИИ» of an account
 
 A small block of the card: the model the AI agents of the account really answer with (the platform's own or one the account
-chose), how many AI agents it has and how many are on, and whether the account may bring its own OpenRouter key and has
-connected one. It only shows; the answers are changed where they live (the model on «Модели ИИ», the key in «Служебные»).
+chose), how many AI agents it has and how many are on, whether the account may bring its own OpenRouter key and has
+connected one, and the clinic context (the "# Clinic" block of every external agent, Account#captain_clinic_context). It only
+shows; the answers are changed where they live (the model on «Модели ИИ», the key in «Служебные», the clinic context on the
+edit form).
 
 ## Local variables:
 
@@ -17,6 +19,7 @@ connected one. It only shows; the answers are changed where they live (the model
   connected = ai.own_key_connected?
   # The switch of the key lives in the collapsed block «Служебные»; the link opens it
   service_flags = SuperAdmin::FineTuning.new(account).service_switches.any?
+  clinic_context = account.captain_clinic_context
 %>
 
 <section class="admin-block" aria-labelledby="ai-title" data-testid="ai-block">
@@ -59,7 +62,25 @@ connected one. It only shows; the answers are changed where they live (the model
         <span class="ms-1 text-n-slate-11" data-testid="own-key-state"><%= t(connected ? 'super_admin.safety.ai.key_connected' : 'super_admin.safety.ai.key_not_connected') %></span>
       </dd>
     </div>
+    <div class="admin-kv__row" data-ai-row="clinic-context">
+      <dt class="admin-kv__key"><%= t('super_admin.safety.ai.clinic_context') %></dt>
+      <dd class="admin-kv__value" data-testid="clinic-context-state">
+        <% if clinic_context.present? %>
+          <span class="tabular-nums"><%= t('super_admin.safety.ai.clinic_context_length', count: clinic_context.length) %></span>
+        <% else %>
+          <span class="text-n-slate-11"><%= t('super_admin.safety.ai.clinic_context_empty') %></span>
+        <% end %>
+      </dd>
+    </div>
   </dl>
+
+  <%# The text itself, collapsed: it is long, and the card is read for other things first %>
+  <% if clinic_context.present? %>
+    <details class="admin-block__note" data-testid="clinic-context">
+      <summary class="cursor-pointer text-n-brand"><%= t('super_admin.safety.ai.clinic_context_show') %></summary>
+      <pre class="mt-2 whitespace-pre-wrap break-words font-sans text-[13px] text-n-slate-12"><%= clinic_context %></pre>
+    </details>
+  <% end %>
 
   <%# What the numbers do not say: the agents with a model of their own and the key that is connected but not in use %>
   <% if own_agents.positive? %>

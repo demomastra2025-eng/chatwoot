@@ -1,12 +1,26 @@
 # Russian texts of the clinic list, the clinic card and the clinic forms of the super admin.
 # The main file of the super admin is super_admin.ru.yml; the names of the plan and its modules live there.
 ru:
+  activerecord:
+    attributes:
+      account:
+        captain_clinic_context: "Контекст клиники"
+    errors:
+      models:
+        account:
+          attributes:
+            captain_clinic_context:
+              tool_link: "не может ссылаться на инструменты и навыки (tool://, skill://): текст общий для всех ИИ-агентов"
+              field_link: "может ссылаться только на поля контакта (field://contact.…), например [ИИН пациента](field://contact.identifier)"
+
   helpers:
     label:
       account:
         section_main: "Основное"
         section_limits: "Лимиты"
         section_features: "Тонкая настройка"
+        section_ai: "ИИ"
+        captain_clinic_context: "Контекст клиники"
       account_user:
         account_id: "Аккаунт"
         user_id: "Пользователь"
@@ -18,6 +32,7 @@ ru:
         name: "Так аккаунт называется в списке и в кабинете оператора."
         locale: "Платформа пока работает только на русском, поэтому язык аккаунта не выбирается."
         status: "Заблокированный аккаунт не может войти в кабинет."
+        captain_clinic_context: "Общие факты клиники для всех ИИ-агентов аккаунта: название, филиалы и контакты, режим работы, оплата, данные для записи, тон. Агенты видят текст блоком «# Clinic» перед своими инструкциями; клиника его не видит. До 6 000 символов, без ссылок на инструменты и навыки; из полей можно только поля контакта, например [ИИН пациента](field://contact.identifier)."
 
   super_admin:
     index:

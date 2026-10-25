@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 # Builds the compact variables of assistant.liquid:
-#   instruction, global_system_instruction   the clinic instruction and the shared rules with $ field values and @ tool names resolved
+#   instruction, global_system_instruction,  the clinic instruction, the shared rules and the clinic context (the "# Clinic" block,
+#   clinic_context                           Account#captain_clinic_context) with $ field values and @ tool names resolved
 #   now_text                                 the one-line clock (after midnight with the night line) and, on the official WhatsApp channel,
 #                                            the reply window
 #   patient_lines                            the patient name and phone, an ID only when a bound tool takes it, the appointment
@@ -28,7 +29,8 @@ class Captain::AssistantPrompt
 
   def variables
     texts = @assistant.resolve_prompt_texts(
-      { instruction: @context[:instruction], global_system_instruction: @context[:global_system_instruction] },
+      { instruction: @context[:instruction], global_system_instruction: @context[:global_system_instruction],
+        clinic_context: @context[:clinic_context] },
       @prompt_state, bound_tool_ids: bound_tool_ids, time_zone: time_zone
     )
     variables = texts.merge(now_text: now_text, patient_lines: patient_lines)
@@ -93,7 +95,7 @@ class Captain::AssistantPrompt
   # A summary the agent has selected as context but the clinic instruction does not write with a $ reference would reach the model
   # nowhere else, so it is one line here. A reference that is made renders the summary inside the instruction, once. Only the clinic
   # instruction counts: a $ reference in the shared rules is not resolved by itself (resolve_prompt_texts reads the fields of the
-  # instruction).
+  # instruction and of the clinic context), and the clinic context may link only contact fields (AccountCaptainClinicContext).
   def unplaced_summary_lines
     placed = Captain::ContextFields.extract_field_ids_from_text(@context[:instruction])
     summaries = @prompt_state[:context_summaries].to_h

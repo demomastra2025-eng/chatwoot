@@ -371,9 +371,24 @@ RSpec.describe 'Super Admin forms drawn from an earlier state of an account', ty
       account.update!(name: 'Другое название')
       changed = described_class.new(account).tokens
 
-      expect(tokens.keys).to eq(%w[main limits features])
+      expect(tokens.keys).to eq(%w[main limits features ai])
       expect(changed['main']).not_to eq(tokens['main'])
-      expect(changed.values_at('limits', 'features')).to eq(tokens.values_at('limits', 'features'))
+      expect(changed.values_at('limits', 'features', 'ai')).to eq(tokens.values_at('limits', 'features', 'ai'))
+    end
+
+    it 'checks the clinic context only for a request that carries its token (a page drawn before the section has none)' do
+      tokens = described_class.new(account).tokens
+      account.update!(captain_clinic_context: 'Клиника: МО «Тест».')
+
+      expect(described_class.stale_sections(account, tokens)).to eq(['ai'])
+      expect(described_class.stale_sections(account, tokens.except('ai'))).to eq([])
+      expect(described_class.stale_sections(account, tokens.except('main'))).to eq(described_class::SECTIONS)
+    end
+
+    it 'draws the current token of the clinic context into a form that comes back with the tokens of a page drawn before it' do
+      submitted = described_class.new(account).tokens.except('ai')
+
+      expect(described_class.tokens_for(account, submitted)).to eq(described_class.new(account).tokens)
     end
 
     it 'does not mix the organization into any token (it has its own guard)' do

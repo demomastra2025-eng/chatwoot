@@ -36,6 +36,26 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
       )
     end
 
+    it 'shows the clinic context of the account as its own layer, in the compiled prompt and in the used fields' do
+      account.update!(captain_clinic_context: 'Клиника: МО «Тест». ИИН: [ИИН](field://contact.identifier).')
+
+      preview = described_class.new(assistant: assistant).preview
+
+      expect(preview.dig(:assistant, :layers).pluck(:id).first(3)).to eq(%w[global_system_instruction clinic_context instruction])
+      expect(preview.dig(:assistant, :layers)).to include(
+        include(id: 'clinic_context', title: 'Clinic context', kind: 'text', enabled: true,
+                value: 'Клиника: МО «Тест». ИИН: [ИИН](field://contact.identifier).')
+      )
+      expect(preview.dig(:assistant, :compiled_prompt)).to include("# Clinic\nКлиника: МО «Тест». ИИН: not specified.\n\n# Clinic instructions")
+      expect(preview.dig(:assistant, :used_field_ids)).to include('contact.identifier')
+    end
+
+    it 'has an empty clinic context layer when the account has none' do
+      layer = described_class.new(assistant: assistant).preview.dig(:assistant, :layers).find { |item| item[:id] == 'clinic_context' }
+
+      expect(layer).to include(enabled: false, value: '')
+    end
+
     it 'uses assistant tool access when building the copilot preview summary' do
       assistant.update!(
         config: assistant.config.merge(

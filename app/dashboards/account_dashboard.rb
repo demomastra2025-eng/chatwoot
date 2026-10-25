@@ -12,7 +12,9 @@ class AccountDashboard < Administrate::BaseDashboard
                                  attributes = {
                                    limits: AccountLimitsField,
                                    account_usage_overview: AccountUsageField,
-                                   limit_counter_excluded_user_ids_raw: CommaSeparatedIdsField
+                                   limit_counter_excluded_user_ids_raw: CommaSeparatedIdsField,
+                                   # The "# Clinic" block of the AI agents (Account#captain_clinic_context, internal_attributes)
+                                   captain_clinic_context: Field::Text
                                  }
 
                                  # Only show manually managed features in Chatwoot Cloud deployment
@@ -80,6 +82,7 @@ class AccountDashboard < Administrate::BaseDashboard
                                         limit_counter_excluded_user_ids_raw
                                         limits
                                         account_usage_overview
+                                        captain_clinic_context
                                       ]
                                       attrs << :manually_managed_features if ChatwootApp.chatwoot_cloud?
                                       attrs << :all_features
@@ -122,7 +125,7 @@ class AccountDashboard < Administrate::BaseDashboard
   # (app/views/super_admin/accounts/new.html.erb) and applied right after the account is saved.
   FORM_ATTRIBUTES_NEW = %i[name locale].freeze
 
-  # The edit form in three sections. The keys are the section legends (helpers.label.account.<key>).
+  # The edit form in four sections. The keys are the section legends (helpers.label.account.<key>).
   # The meters sit in the rows of the limits themselves, so the separate overview is not drawn on the form
   enterprise_limit_section = ChatwootApp.enterprise? ? %i[limits limit_counter_excluded_user_ids_raw] : []
   enterprise_feature_section = if ChatwootApp.enterprise?
@@ -130,9 +133,12 @@ class AccountDashboard < Administrate::BaseDashboard
                                else
                                  []
                                end
+  # The clinic context is edited only here (and by the prompts-v2 rake): the clinic never sees it.
+  enterprise_ai_section = ChatwootApp.enterprise? ? %i[captain_clinic_context] : []
   FORM_ATTRIBUTES_EDIT = {
     section_main: %i[name locale organization_id],
     section_limits: enterprise_limit_section,
+    section_ai: enterprise_ai_section,
     section_features: enterprise_feature_section
   }.reject { |_section, section_attributes| section_attributes.empty? }.freeze
 

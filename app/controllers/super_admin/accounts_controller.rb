@@ -557,6 +557,8 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   def drop_stale_form_sections!(permitted_params)
     permitted_params.delete(:name) if stale_form_sections.include?('main')
     permitted_params.delete(:locale) if stale_form_sections.include?('main')
+    # The clinic context (Account#captain_clinic_context): the prompts-v2 rake may have written a newer text meanwhile
+    permitted_params.delete(:captain_clinic_context) if stale_form_sections.include?('ai')
     return unless stale_form_sections.include?('limits')
 
     %i[limits limit_choices limit_values limit_counter_excluded_user_ids_raw].each { |name| permitted_params.delete(name) }
@@ -579,6 +581,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     case section
     when 'main' then %i[name locale].any? { |name| fields.key?(name) }
     when 'limits' then limit_form.submitted? || fields.key?(:limit_counter_excluded_user_ids_raw)
+    when 'ai' then fields.key?(:captain_clinic_context)
     else params[:enabled_features].respond_to?(:to_unsafe_h)
     end
   end
