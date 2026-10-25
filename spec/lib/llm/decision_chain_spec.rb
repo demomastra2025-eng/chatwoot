@@ -29,12 +29,12 @@ RSpec.describe Llm::DecisionChain do
                            usage: { input_tokens: 80, output_tokens: 1, total_tokens: 81 } }.to_json }
   end
 
-  def stub_model(model, response)
+  def stub_decision_model(model, response)
     stub_request(:post, endpoint).with { |request| JSON.parse(request.body)['model'] == model }.to_return(response)
   end
 
-  def decide(**options)
-    described_class.decide(feature: :agent_routing, account: account, question: question, **options)
+  def decide(**)
+    described_class.decide(feature: :agent_routing, account: account, question: question, **)
   end
 
   def chain_events
@@ -42,7 +42,7 @@ RSpec.describe Llm::DecisionChain do
   end
 
   it 'answers with the head of the chain in one call and returns the choice, confidence, probabilities and model' do
-    head = stub_model('inception/mercury-decide', answer('inception/mercury-decide'))
+    head = stub_decision_model('inception/mercury-decide', answer('inception/mercury-decide'))
 
     result = decide(observability: { trace_id: 'synthetic-trace' })
 
@@ -56,7 +56,7 @@ RSpec.describe Llm::DecisionChain do
   end
 
   it 'gives every model its short timeout of the profile' do
-    stub_model('inception/mercury-decide', answer('inception/mercury-decide'))
+    stub_decision_model('inception/mercury-decide', answer('inception/mercury-decide'))
     expect(Llm::OpenRouterDecisionClient).to receive(:choose).with(hash_including(model: 'inception/mercury-decide', timeout: 2.0))
                                                              .and_call_original
 
@@ -64,16 +64,16 @@ RSpec.describe Llm::DecisionChain do
   end
 
   it 'passes the same question to the next model when one fails or times out and records which model answered' do
-    first = stub_model('inception/mercury-decide', { status: 503, body: { error: { message: "#{api_key} provider text" } }.to_json })
+    first = stub_decision_model('inception/mercury-decide', { status: 503, body: { error: { message: "#{api_key} provider text" } }.to_json })
     second = stub_request(:post, endpoint).with { |request| JSON.parse(request.body)['model'] == 'microsoft/microsoft-decision-1' }
                                           .to_timeout
-    third = stub_model('openai/gpt-6-luna-decisions', answer('openai/gpt-6-luna-decisions', choice: 'human', confidence: 0.81))
+    third = stub_decision_model('openai/gpt-6-luna-decisions', answer('openai/gpt-6-luna-decisions', choice: 'human', confidence: 0.81))
 
     result = decide
 
     expect(result).to have_attributes(choice: 'human', confidence: 0.81, model: 'openai/gpt-6-luna-decisions', position: 3)
     expect(result).to be_fallback
-    [first, second, third].each { |stub| expect(stub).to have_been_requested.once }
+    expect([first, second, third]).to all(have_been_requested.once)
     expect(a_request(:post, endpoint).with do |request|
       body = JSON.parse(request.body)
       body['state'] == question[:state] && body.dig('questions', 'reason', 'criteria') == criteria
@@ -99,8 +99,8 @@ RSpec.describe Llm::DecisionChain do
   end
 
   it 'treats an answer outside the criteria as a failure of that model' do
-    stub_model('inception/mercury-decide', answer('inception/mercury-decide', choice: 'agent_invented'))
-    stub_model('microsoft/microsoft-decision-1', answer('microsoft/microsoft-decision-1'))
+    stub_decision_model('inception/mercury-decide', answer('inception/mercury-decide', choice: 'agent_invented'))
+    stub_decision_model('microsoft/microsoft-decision-1', answer('microsoft/microsoft-decision-1'))
 
     expect(decide).to have_attributes(choice: 'agent_ent', model: 'microsoft/microsoft-decision-1', position: 2)
   end
@@ -147,7 +147,7 @@ RSpec.describe Llm::DecisionChain do
 
     it 'asks the models in the order of the platform setting' do
       upsert_installation_config(described_class::CONFIG_NAME, '["microsoft/microsoft-decision-1", "inception/mercury-decide"]')
-      first = stub_model('microsoft/microsoft-decision-1', answer('microsoft/microsoft-decision-1'))
+      first = stub_decision_model('microsoft/microsoft-decision-1', answer('microsoft/microsoft-decision-1'))
 
       expect(decide).to have_attributes(model: 'microsoft/microsoft-decision-1', position: 1)
       expect(first).to have_been_requested.once
