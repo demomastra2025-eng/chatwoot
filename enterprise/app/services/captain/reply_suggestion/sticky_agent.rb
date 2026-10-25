@@ -9,10 +9,14 @@
 # It is kept in Redis per conversation and per person thread, in two kinds, each with the time it was written; the newest value of
 # all of them is the sticky agent, so the person's latest dialog wins over an older one in another channel («Контакт = Диалог»):
 #   provisional  the agent of a finished suggestion (GenerateJob), for as long as its request lives (30 minutes). A rejected
-#                suggestion («Отклонить») withdraws it, and the value before it applies again.
+#                suggestion («Отклонить»), a closed notice of it and a new suggestion of the same manager that supersedes it
+#                («Предложить ответ» / «Повторить» again, StartService) withdraw it, and the value before it applies again.
 #   confirmed    the agent of a suggestion the manager inserted or sent (FeedbackService), for 24 hours.
 # A suggestion that the anchor answered only because no agent leads the dialog (the router's default_to anchor) makes nobody
-# sticky. Resolving the conversation clears it (CaptainListener).
+# sticky. Resolving the conversation clears it (CaptainListener). A message the manager writes by hand (an outgoing public message
+# of a user that did not come from a used suggestion, CaptainListener#message_created) leaves a mark in the conversation and in the
+# person's thread (ManualReply): every value written before that message no longer leads the dialog, whichever conversation of the
+# person it was written in (the manager took the dialog elsewhere, so a short reply to it must not go back to the old agent).
 module Captain::ReplySuggestion::StickyAgent
   PREFIX = "#{Captain::ReplySuggestion::RequestStore::PREFIX}:sticky_agent".freeze
   CONFIRMED_TTL_SECONDS = 24.hours.to_i
@@ -26,8 +30,9 @@ module Captain::ReplySuggestion::StickyAgent
     def read(conversation)
       return if conversation.blank?
 
-      entries = Redis::Alfred.mget(keys_for(conversation)).filter_map { |raw| parse(raw) }
-      entries.max_by { |entry| entry['at'].to_f }&.dig('agent_id')
+      keys = keys_for(conversation)
+      raws = Redis::Alfred.mget(keys + ManualReply.keys(conversation))
+      newest_agent_id(raws.first(keys.size), after: ManualReply.latest(raws.drop(keys.size)))
     rescue StandardError => e
       Rails.logger.warn("[CAPTAIN][ReplySuggestion] sticky agent unreadable error_class=#{e.class.name}")
       nil
@@ -47,19 +52,27 @@ module Captain::ReplySuggestion::StickyAgent
     def withdraw!(conversation, request_id:)
       return if conversation.blank? || request_id.blank?
 
-      keys_for(conversation, kinds: %w[provisional]).each do |key|
-        raw = Redis::Alfred.get(key)
-        Redis::Alfred.delete_if_value(key, raw) if parse(raw)&.dig('request_id') == request_id.to_s
-      end
+      keys_for(conversation, kinds: %w[provisional]).each { |key| withdraw_key(key) { |entry| entry['request_id'] == request_id.to_s } }
     rescue StandardError => e
       Rails.logger.warn("[CAPTAIN][ReplySuggestion] sticky agent not withdrawn error_class=#{e.class.name}")
+    end
+
+    # A new suggestion of this manager (keep_request_id) supersedes the earlier ones nobody used: their provisional agents go, so the
+    # dialog is led again by the confirmed agent (or by nobody). A provisional agent of another manager's live request stays.
+    def withdraw_superseded!(conversation, user_id:, keep_request_id:)
+      return if conversation.blank?
+
+      superseded = ->(request_id) { superseded?(request_id, user_id, keep_request_id) }
+      keys_for(conversation, kinds: %w[provisional]).each { |key| withdraw_key(key) { |entry| superseded.call(entry['request_id'].to_s) } }
+    rescue StandardError => e
+      Rails.logger.warn("[CAPTAIN][ReplySuggestion] superseded sticky agent not withdrawn error_class=#{e.class.name}")
     end
 
     # The conversation was resolved: its dialog has nobody leading it any more.
     def clear!(conversation)
       return if conversation.blank?
 
-      keys_for(conversation).each { |key| Redis::Alfred.delete(key) }
+      keys_for(conversation, kinds: KINDS + [ManualReply::KIND]).each { |key| Redis::Alfred.delete(key) }
     rescue StandardError => e
       Rails.logger.warn("[CAPTAIN][ReplySuggestion] sticky agent not cleared error_class=#{e.class.name}")
     end
@@ -111,6 +124,26 @@ module Captain::ReplySuggestion::StickyAgent
       entry if entry.is_a?(Hash) && entry['agent_id'].to_i.positive?
     rescue JSON::ParserError
       nil
+    end
+
+    # The agent of the newest value written after the manager's last manual reply (after: its time).
+    def newest_agent_id(raws, after:)
+      entries = raws.filter_map { |raw| parse(raw) }.select { |entry| entry['at'].to_f > after }
+      entries.max_by { |entry| entry['at'].to_f }&.dig('agent_id')
+    end
+
+    # Another request than the new one, that is gone (expired) or that this manager made.
+    def superseded?(request_id, user_id, keep_request_id)
+      return false if request_id.blank? || request_id == keep_request_id.to_s
+
+      Captain::ReplySuggestion::RequestStore.fetch_raw(request_id).then { |record| record.nil? || record['user_id'].to_i == user_id.to_i }
+    end
+
+    # Deletes the value of the key when the block says so (and nobody changed it meanwhile).
+    def withdraw_key(key)
+      raw = Redis::Alfred.get(key)
+      entry = parse(raw)
+      Redis::Alfred.delete_if_value(key, raw) if entry && yield(entry)
     end
 
     def anchor_default?(result)

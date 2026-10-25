@@ -89,27 +89,39 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
     describe 'a reply suggestion whose answers name no agent' do
       let(:history) { [{ role: 'clinic', text: 'Свободно 14:00 и 15:30. Какое время удобно?' }] }
 
-      it 'stays with the agent that leads the dialog (the sticky agent), as a default' do
+      it 'stays with the agent that leads the dialog (the sticky agent) only on an explicit stay_current' do
         questions = build(3, current: 20, suggestion: true, history: history)
 
-        expect(questions.outcome(answers('route_agent'))).to have_attributes(kind: 'stay', agent_ids: [20], key: 'stay_current',
-                                                                             default_to: 'current')
-        expect(questions.outcome(answers('stay_current'))).to have_attributes(kind: 'stay', default_to: 'current')
+        expect(questions.outcome(answers('stay_current'))).to have_attributes(kind: 'stay', agent_ids: [20], key: 'stay_current',
+                                                                              default_to: 'current')
         expect(questions.outcome(answers('stay_current', yes: [20]))).to have_attributes(kind: 'stay', default_to: nil)
       end
 
-      it 'goes to the anchor of the channel on the first message of the dialog while no agent leads it' do
+      it 'has no outcome for route_agent naming no agent while an agent leads the dialog, as in a live turn (it escalates)' do
+        questions = build(3, current: 20, suggestion: true, history: history)
+
+        expect(questions.outcome(answers('route_agent'))).to be_nil
+        expect(questions.outcome(answers('route_agent'), final: true)).to be_nil
+        expect(build(3, current: 20, suggestion: true).outcome(answers('route_agent'))).to be_nil
+        expect(questions.names_no_agent?(answers('route_agent'))).to be(true)
+        expect(questions.names_no_agent?(answers('stay_current'))).to be(true)
+        expect(questions.names_no_agent?(answers('route_agent', yes: [10]))).to be(false)
+        expect(questions.names_no_agent?(answers('human_handoff'))).to be(false)
+      end
+
+      it 'goes to the anchor of the channel on the first message of the dialog while no agent leads it, never as the escalation' do
         questions = build(3, suggestion: true, anchor: 30)
 
         expect(questions.outcome(answers('route_agent'))).to have_attributes(kind: 'agent', agent_ids: [30], key: 'route_agent_30',
                                                                              default_to: 'anchor')
+        expect(questions.outcome(answers('route_agent'), final: true)).to be_nil
       end
 
-      it 'has no outcome mid-dialog without a sticky agent (the escalation decides), and goes to the anchor when the escalation says so' do
+      it 'has no outcome mid-dialog without a sticky agent, neither from the decision models nor from the escalation' do
         questions = build(3, suggestion: true, anchor: 30, history: history)
 
         expect(questions.outcome(answers('route_agent'))).to be_nil
-        expect(questions.outcome(answers('route_agent'), final: true)).to have_attributes(key: 'route_agent_30', default_to: 'anchor')
+        expect(questions.outcome(answers('route_agent'), final: true)).to be_nil
         expect(questions.outcome(answers('route_agent', yes: [10]), final: true)).to have_attributes(key: 'route_agent_10', default_to: nil)
       end
 

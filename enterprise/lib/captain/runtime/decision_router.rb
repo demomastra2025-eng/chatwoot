@@ -15,10 +15,11 @@
 # through the existing technical-failure path (the conversation goes to staff), as when OpenRouter is down for generation.
 #
 # A reply suggestion keeps a dialog with the agent that leads it (the sticky agent, see Captain::ReplySuggestion::StickyAgent): it is
-# the current agent of the turn, so a short reply («Да, на 14:00», an IIN, «Спасибо») can stay with it. Answers that name no agent go
-# to that agent, or, while no agent leads the dialog, to the anchor of the channel on the first message of the dialog or when the
-# escalation model answers so (Questions, default_to). A suggestion meets the same confidence threshold and the same escalation as
-# a live turn, whatever the length of the message, and a failure still fails.
+# the current agent of the turn, so a short reply («Да, на 14:00», an IIN, «Спасибо») can stay with it: an explicit stay_current that
+# names no agent keeps that agent; while no agent leads the dialog, route_agent naming no agent on the first message goes to the
+# anchor of the channel (Questions, default_to). A suggestion meets the same confidence threshold and the same escalation as a live
+# turn, whatever the length of the message, and a failure still fails. An escalation that names no agent raises UndecidedError: the
+# suggestion ends as "staff must answer" with a note of the router (never a silent draft of the anchor).
 class Captain::Runtime::DecisionRouter
   FEATURE = :agent_routing
   INSTRUCTIONS = <<~TEXT
@@ -39,7 +40,7 @@ class Captain::Runtime::DecisionRouter
   TEXT
 
   # The router could not decide: every decision model failed, or the escalation failed. reason: decision_chain_unavailable,
-  # escalation_unavailable or escalation_invalid. Names and codes only, never a prompt, a provider body or a key.
+  # escalation_unavailable, escalation_invalid or escalation_undecided. Names and codes only, never a prompt, a provider body or a key.
   class UnavailableError < StandardError
     attr_reader :reason, :detail, :models_tried
 
@@ -52,6 +53,11 @@ class Captain::Runtime::DecisionRouter
   end
 
   class EscalationError < UnavailableError; end
+
+  # The escalation model named no agent either (stay_current or route_agent with every include answer no) and no default applies:
+  # nobody can tell who answers. reason: escalation_undecided. A reply suggestion goes to the manager with a note; a live turn fails
+  # like any other escalation failure.
+  class UndecidedError < EscalationError; end
 
   # key: the canonical key of the outcome; kind: stay, agent, council, human or none (inconsistent only without escalation, in the
   # evaluation harness); agent_ids: who answers (the participants of a council in ascending order). decided_by: the decision model
@@ -169,11 +175,19 @@ class Captain::Runtime::DecisionRouter
     escalation_started = monotonic_now
     answer = escalation.choose(state: snapshot.to_state, questions: questions, instructions: INSTRUCTIONS)
     outcome = questions.outcome(answer.choices, final: true)
-    raise EscalationError.new(reason: 'escalation_invalid', detail: 'inconsistent', models_tried: [answer.model]) unless outcome
+    raise escalation_without_outcome(questions, answer) unless outcome
 
     finish(decision.merge(decided_by: "escalation:#{answer.model}", confidence: nil, escalated: true, escalation_reason: answer.reason,
                           guard: ('bounce' if trigger == 'bounce'), escalation_ms: elapsed_ms(escalation_started)),
            outcome, started)
+  end
+
+  def escalation_without_outcome(questions, answer)
+    if questions.names_no_agent?(answer.choices)
+      return UndecidedError.new(reason: 'escalation_undecided', detail: 'no_agent', models_tried: [answer.model])
+    end
+
+    EscalationError.new(reason: 'escalation_invalid', detail: 'inconsistent', models_tried: [answer.model])
   end
 
   def base_decision(questions, snapshot, first, mode)

@@ -43,8 +43,9 @@ GROUP BY 1, 2, 3 ORDER BY 1 DESC;
 ```
 
 Отказы маршрутизатора во всех ходах (живые диалоги и подсказки; `reason`: `decision_chain_unavailable`,
-`escalation_unavailable`, `escalation_invalid`; `models_tried` — какие модели пробовали). `reason` хранится в колонке
-`llm_events.reason`, не в `payload`:
+`escalation_unavailable`, `escalation_invalid`, `escalation_undecided` — модель эскалации тоже не назвала агента: подсказка
+уходит менеджеру как «ответьте сами» с `reason_source` router, черновика якоря нет; `models_tried` — какие модели пробовали).
+`reason` хранится в колонке `llm_events.reason`, не в `payload`:
 
 ```sql
 SELECT date_trunc('hour', created_at) AS hour, payload->>'run_source' AS run_source, reason,

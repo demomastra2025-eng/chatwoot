@@ -84,6 +84,19 @@ RSpec.describe Captain::Evals::RouterBenchmark::Runner do
     expect(rows.sole).to have_attributes(mode: 'pipeline', decided_by: 'inception/mercury-decide')
   end
 
+  it 'records an escalation that names no agent as undecided, an answer of the pipeline and not a failure' do
+    error = Captain::Runtime::DecisionRouter::UndecidedError.new(reason: 'escalation_undecided', detail: 'no_agent',
+                                                                 models_tried: ['openai/gpt-6-luna'])
+    router = instance_double(Captain::Runtime::DecisionRouter)
+    allow(router).to receive(:decide).and_raise(error)
+    allow(Captain::Runtime::DecisionRouter).to receive(:new).and_return(router)
+
+    row = described_class.new(fixture: fixture, account: account, options: { budget_usd: 1 }).call.sole
+
+    expect(row).to have_attributes(mode: 'pipeline', got: 'undecided', error: nil, escalated: true, escalation_trigger: 'undecided',
+                                   decided_by: 'escalation:openai/gpt-6-luna')
+  end
+
   it 'plays only the listed scenarios and refuses an unknown failure mode' do
     allow(Captain::Runtime::DecisionRouter).to receive(:new)
 

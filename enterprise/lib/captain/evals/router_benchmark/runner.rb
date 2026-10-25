@@ -121,6 +121,10 @@ class Captain::Evals::RouterBenchmark::Runner
                               escalated: decision.escalated, escalation_trigger: decision.escalation_trigger,
                               escalation_ms: decision.escalation_ms, first_choice: decision.first_choice, decided_by: decision.decided_by,
                               chain_position: decision.chain_position)
+  rescue Captain::Runtime::DecisionRouter::UndecidedError => e
+    # The escalation named no agent either: a suggestion goes to the manager (an answer of the pipeline, not a failure).
+    row(suite, scenario, run, mode: 'pipeline', model: "escalation:#{e.models_tried.first}", got: Captain::Evals::RouterBenchmark::Fixture::UNDECIDED,
+                              escalated: true, escalation_trigger: 'undecided', decided_by: "escalation:#{e.models_tried.first}")
   rescue Captain::Runtime::DecisionRouter::UnavailableError => e
     row(suite, scenario, run, mode: 'pipeline', model: 'unavailable', error: e.reason)
   end

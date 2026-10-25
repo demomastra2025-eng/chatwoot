@@ -34,6 +34,7 @@ class Captain::ReplySuggestion::FeedbackService
 
     Captain::ReplySuggestion::RequestStore.consume!(record['id']) if CONSUMING_OUTCOMES.include?(outcome)
     rejected(record) if outcome == 'dismissed'
+    notice_closed(record) if outcome == 'notice_dismissed'
     used(record) if USED_OUTCOMES.include?(outcome)
   end
 
@@ -45,6 +46,11 @@ class Captain::ReplySuggestion::FeedbackService
     Captain::ReplySuggestion::ActionApprovalService.discard_for_request!(
       account_id: account.id, conversation_id: record['conversation_id'], request_id: record['id'], reason: 'suggestion_dismissed'
     )
+    Captain::ReplySuggestion::StickyAgent.withdraw!(conversation, request_id: record['id'])
+  end
+
+  # A closed "no reply needed" / "staff must answer" notice was not a use of its agent: its provisional sticky agent goes.
+  def notice_closed(record)
     Captain::ReplySuggestion::StickyAgent.withdraw!(conversation, request_id: record['id'])
   end
 

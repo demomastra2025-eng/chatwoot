@@ -104,4 +104,63 @@ RSpec.describe Captain::ReplySuggestion::StickyAgent do
       expect(described_class.agent_id_of(outcome: 'draft', agent: { 'id' => 119 }, routing_default_to: 'current')).to eq(119)
     end
   end
+
+  describe '.withdraw_superseded!' do
+    let(:manager) { create(:user, account: account) }
+    let(:colleague) { create(:user, account: account) }
+
+    def request_of(user)
+      Captain::ReplySuggestion::RequestStore.create!('account_id' => account.id, 'user_id' => user.id, 'conversation_id' => conversation.id)
+    end
+
+    it "withdraws the provisional agent of the manager's earlier request, not the confirmed one or another manager's live one" do
+      described_class.confirm!(conversation, 84, request_id: 'r-0')
+      described_class.remember_provisional!(conversation, 119, request_id: request_of(manager)['id'])
+
+      described_class.withdraw_superseded!(conversation, user_id: manager.id, keep_request_id: 'r-new')
+      expect(described_class.read(conversation)).to eq(84)
+
+      described_class.remember_provisional!(conversation, 120, request_id: request_of(colleague)['id'])
+      described_class.withdraw_superseded!(conversation, user_id: manager.id, keep_request_id: 'r-new')
+      expect(described_class.read(conversation)).to eq(120)
+    end
+  end
+
+  describe 'ManualReply.mark!' do
+    let(:manager) { create(:user, account: account) }
+    let(:manual_reply) { described_class::ManualReply }
+
+    def outgoing(target, at:, assisted: false, **attributes)
+      content = assisted ? { copilot: { assisted: true } } : {}
+      create(:message, conversation: target, account: account, message_type: :outgoing, sender: manager, content_attributes: content,
+                       created_at: at, **attributes)
+    end
+
+    it 'ends the lead of every value written before a message the manager wrote by hand, in the person thread too' do
+      share_thread(conversation, other_conversation)
+      described_class.confirm!(other_conversation, 84, request_id: 'r-1')
+      expect(described_class.read(conversation)).to eq(84)
+
+      expect(manual_reply.mark!(outgoing(conversation, at: 1.second.from_now))).to be(true)
+
+      expect(described_class.read(conversation)).to be_nil
+      expect(described_class.read(other_conversation)).to be_nil
+      travel 2.seconds do
+        described_class.remember_provisional!(conversation, 119, request_id: 'r-2')
+        expect(described_class.read(other_conversation)).to eq(119)
+      end
+    end
+
+    it 'ignores the sent text of a used suggestion, notes, bots and customers, and an older message' do
+      described_class.confirm!(conversation, 84, request_id: 'r-1')
+
+      expect(manual_reply.mark!(outgoing(conversation, at: 1.second.from_now, assisted: true))).to be(false)
+      expect(manual_reply.mark!(outgoing(conversation, at: 1.second.from_now, private: true))).to be(false)
+      expect(manual_reply.mark!(create(:message, :bot_message, conversation: conversation, account: account))).to be(false)
+      expect(manual_reply.mark!(create(:message, conversation: conversation, account: account, message_type: :incoming))).to be(false)
+      expect(manual_reply.mark!(outgoing(conversation, at: 1.minute.ago))).to be(true)
+
+      expect(described_class.read(conversation)).to eq(84)
+    end
+  end
 end

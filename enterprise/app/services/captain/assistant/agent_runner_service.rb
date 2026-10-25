@@ -205,6 +205,8 @@ class Captain::Assistant::AgentRunnerService
     # The chosen agent (or the acting agent of a council) holds the conversation now: a failure of its run answers as it.
     @acting_assistant_id = context[:acting_assistant_id] if context[:acting_assistant_id]
     time_phase('run_agent_with_retries') { run_agent_with_blank_response_retries(message_to_process, context) }
+  rescue Captain::Runtime::DecisionRouter::UndecidedError => e
+    suggestion_run? ? routed_undecided_suggestion : routing_failure_response(e, context)
   rescue Captain::Runtime::DecisionRouter::UnavailableError => e
     routing_failure_response(e, context)
   rescue Captain::Runtime::TurnDispatcher::CouncilUnavailable => e
@@ -244,6 +246,15 @@ class Captain::Assistant::AgentRunnerService
   # The router decided it, not an agent: routing_human tells the outcome so (no agent is named as its author).
   def routed_human_suggestion
     note = I18n.t('captain.reply_suggestion.reasons.patient_requested_human')
+    { 'response' => '', 'response_mode' => 'human', 'response_human_needed' => true, 'operator_note' => note, 'routing_human' => true }
+  end
+
+  # Nobody could tell which agent answers (the escalation named none, see DecisionRouter::UndecidedError): no agent drafts, not even
+  # the anchor; the manager answers. The routing_failed event (reason escalation_undecided) and the outcome event (human_needed,
+  # reason_source router) are the monitoring signal.
+  def routed_undecided_suggestion
+    Rails.logger.warn("[CAPTAIN][Router] suggestion undecided: the escalation named no agent request=#{@routing_request_id}")
+    note = I18n.t('captain.reply_suggestion.reasons.router_undecided')
     { 'response' => '', 'response_mode' => 'human', 'response_human_needed' => true, 'operator_note' => note, 'routing_human' => true }
   end
 

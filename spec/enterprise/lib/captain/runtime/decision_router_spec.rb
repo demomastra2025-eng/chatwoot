@@ -209,13 +209,24 @@ RSpec.describe Captain::Runtime::DecisionRouter do
                                                first_confidence: 0.3)
     end
 
-    it 'gives answers that name no agent to the sticky agent, and escalates them at a low confidence' do
-      answer_chain(chain_answer('route_agent'), chain_answer('route_agent', confidence: 0.5))
-      escalate_to(choices('route_agent'))
+    it 'gives an explicit stay_current that names no agent to the sticky agent, and escalates it at a low confidence' do
+      answer_chain(chain_answer('stay_current'), chain_answer('stay_current', confidence: 0.5))
+      escalate_to(choices('stay_current'))
 
       expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalated: false, default_to: 'current')
       expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalated: true, escalation_trigger: 'low_confidence',
                                                default_to: 'current')
+    end
+
+    it 'escalates route_agent naming no agent as inconsistent, and raises UndecidedError when the escalation names none either' do
+      answer_chain(chain_answer('route_agent', confidence: 0.99))
+      escalation = escalate_to(choices('route_agent'))
+
+      expect { router.decide }.to raise_error(described_class::UndecidedError) do |error|
+        expect(error).to have_attributes(reason: 'escalation_undecided', detail: 'no_agent', models_tried: ['openai/gpt-6-luna'])
+        expect(error).to be_a(described_class::EscalationError)
+      end
+      expect(escalation).to have_received(:choose)
     end
 
     context 'without a sticky agent' do
@@ -230,24 +241,30 @@ RSpec.describe Captain::Runtime::DecisionRouter do
         expect(escalation).to have_received(:choose)
       end
 
-      it 'gives the turn to the anchor when the escalation also names no agent' do
+      it 'never gives the turn to the anchor when the escalation also names no agent: nobody decided' do
         answer_chain(chain_answer('route_agent', confidence: 0.95))
         escalate_to(choices('route_agent'))
 
-        expect(router.decide).to have_attributes(key: 'route_agent_84', kind: 'agent', agent_ids: [84], escalated: true, default_to: 'anchor')
+        expect { router.decide }.to raise_error(described_class::UndecidedError) { |error| expect(error.reason).to eq('escalation_undecided') }
       end
 
       context 'with the first message of the dialog' do
         let(:history) { [] }
         let(:message) { 'Здравствуйте!' }
 
-        it 'gives confident answers that name no agent to the anchor, and escalates them at a low confidence' do
+        it 'gives confident answers that name no agent to the anchor; an unsure one escalates and is undecided when the escalation names none' do
           answer_chain(chain_answer('route_agent'), chain_answer('route_agent', confidence: 0.6))
           escalate_to(choices('route_agent'))
 
           expect(router.decide).to have_attributes(key: 'route_agent_84', escalated: false, default_to: 'anchor')
-          expect(router.decide).to have_attributes(key: 'route_agent_84', escalated: true, escalation_trigger: 'low_confidence',
-                                                   default_to: 'anchor')
+          expect { router.decide }.to raise_error(described_class::UndecidedError)
+        end
+
+        it 'is undecided on the first message after an inconsistent answer when the escalation names no agent' do
+          answer_chain(chain_answer('council', yes: [119], confidence: 0.99))
+          escalate_to(choices('route_agent'))
+
+          expect { router.decide }.to raise_error(described_class::UndecidedError)
         end
       end
     end
@@ -264,7 +281,7 @@ RSpec.describe Captain::Runtime::DecisionRouter do
     end
 
     it 'says in its event that the answers named no agent and who got the turn' do
-      answer_chain(chain_answer('route_agent'))
+      answer_chain(chain_answer('stay_current'))
 
       expect(router.decide.to_event_payload).to include(default_to: 'current', escalated: false)
     end
