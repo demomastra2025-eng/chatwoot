@@ -145,6 +145,18 @@ RSpec.describe Captain::ReplySuggestion::StartService do
       expect(second).to include(status: 'queued', reused: false)
     end
 
+    it 'takes over the account slot of a cancelled run, so that rapid cancel and restart never hits the account cap' do
+      allow(Captain::ReplySuggestion).to receive(:max_active_per_account).and_return(1)
+      first = service.perform.body
+      Captain::ReplySuggestion::RequestStore.request_cancel!(first[:suggestion_request_id])
+
+      second = service.perform
+
+      expect(second.http_status).to eq(:accepted)
+      slots = Redis::Alfred.zrangebyscore(Captain::ReplySuggestion::RequestLocks.account_active_key(account.id), '-inf', '+inf')
+      expect(slots).to eq([second.body[:suggestion_request_id]])
+    end
+
     it 'discards the pending approval cards of the earlier suggestions of this manager, and keeps those of other managers' do
       other = create(:user, account: account, role: :agent)
       own_card = store_card('own-card', user: agent, request_id: 'earlier-request')
@@ -155,6 +167,14 @@ RSpec.describe Captain::ReplySuggestion::StartService do
       expect(Captain::ReplySuggestion::ActionApprovalService.fetch_record(own_card))
         .to include('status' => 'rejected', 'rejected_reason' => 'suggestion_superseded')
       expect(Captain::ReplySuggestion::ActionApprovalService.fetch_record(foreign_card)).to include('status' => 'pending')
+    end
+
+    it 'keeps the pending cards of a suggestion the manager inserted or sent: its action still waits for approval' do
+      kept_card = store_card('kept-card', user: agent, request_id: 'applied-request', kept: true)
+
+      service.perform
+
+      expect(Captain::ReplySuggestion::ActionApprovalService.fetch_record(kept_card)).to include('status' => 'pending')
     end
 
     it 'does not share the run between users' do
@@ -169,10 +189,11 @@ RSpec.describe Captain::ReplySuggestion::StartService do
     end
   end
 
-  def store_card(action_id, user:, request_id:)
+  def store_card(action_id, user:, request_id:, kept: false)
     Captain::ReplySuggestion::ActionApprovalService.store_record!(
-      'action_id' => action_id, 'account_id' => account.id, 'conversation_id' => conversation.id, 'status' => 'pending',
-      'tool_name' => 'create_appointment', 'digest' => "digest-#{action_id}", 'user_id' => user.id, 'suggestion_request_id' => request_id
+      { 'action_id' => action_id, 'account_id' => account.id, 'conversation_id' => conversation.id, 'status' => 'pending',
+        'tool_name' => 'create_appointment', 'digest' => "digest-#{action_id}", 'user_id' => user.id, 'suggestion_request_id' => request_id,
+        'kept_at' => (Time.current.iso8601 if kept) }.compact
     )
     action_id
   end
