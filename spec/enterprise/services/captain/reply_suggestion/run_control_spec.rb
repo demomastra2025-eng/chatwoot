@@ -164,34 +164,83 @@ RSpec.describe Captain::ReplySuggestion::RunControl do
   end
 
   describe Captain::ReplySuggestion::RunControl::RequestTimeout do
-    let(:request) { Struct.new(:options).new(Struct.new(:timeout).new(300)) }
+    let(:options) { Struct.new(:timeout).new(300) }
+    let(:timeouts) { [] }
 
-    it 'bounds every RubyLLM request of a run by the time the run or the council part has left' do
-      expect(RubyLLM::Connection.ancestors).to include(described_class)
-      Captain::ReplySuggestion::RunControl.with(request_id: request_id, deadline: Process.clock_gettime(Process::CLOCK_MONOTONIC) + 20) do |control|
-        described_class.bound!(request)
-        expect(request.options.timeout).to be_within(1).of(20)
+    def monotonic_now
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
 
-        described_class.bound!(request, control: control.for_parts(reserve: 15))
-        expect(request.options.timeout).to be_within(1).of(5)
+    # A Faraday connection retried like RubyLLM's (max_retries 2), whose provider hangs: each attempt records its timeout, then
+    # the block lets time pass (it brings the deadline closer) and the attempt times out.
+    def hanging_connection(&on_attempt)
+      stubs = Faraday::Adapter::Test::Stubs.new do |stub|
+        stub.post('/chat') do |env|
+          timeouts << env.request.timeout
+          on_attempt&.call
+          raise Faraday::TimeoutError, 'hung'
+        end
+      end
+      Faraday.new(url: 'https://llm.test') do |faraday|
+        faraday.request :retry, max: 2, interval: 0, methods: [:post], exceptions: [Faraday::TimeoutError]
+        faraday.use described_class::Middleware
+        faraday.adapter :test, stubs
+      end
+    end
+
+    it 'bounds the timeout by the time the run or the council part has left' do
+      Captain::ReplySuggestion::RunControl.with(request_id: request_id, deadline: monotonic_now + 20) do |control|
+        described_class.bound!(options)
+        expect(options.timeout).to be_within(1).of(20)
+
+        described_class.bound!(options, control: control.for_parts(reserve: 15))
+        expect(options.timeout).to be_within(1).of(5)
       end
     end
 
     it 'keeps a shorter provider timeout and never goes under a second; outside a run nothing changes' do
-      request.options.timeout = 8
-      Captain::ReplySuggestion::RunControl.with(request_id: request_id, deadline: Process.clock_gettime(Process::CLOCK_MONOTONIC) + 30) do
-        described_class.bound!(request)
-      end
-      expect(request.options.timeout).to eq(8.0)
+      options.timeout = 8
+      Captain::ReplySuggestion::RunControl.with(request_id: request_id, deadline: monotonic_now + 30) { described_class.bound!(options) }
+      expect(options.timeout).to eq(8.0)
 
-      Captain::ReplySuggestion::RunControl.with(request_id: request_id, deadline: Process.clock_gettime(Process::CLOCK_MONOTONIC) - 1) do
-        described_class.bound!(request)
-      end
-      expect(request.options.timeout).to eq(described_class::MIN_SECONDS)
+      Captain::ReplySuggestion::RunControl.with(request_id: request_id, deadline: monotonic_now - 1) { described_class.bound!(options) }
+      expect(options.timeout).to eq(described_class::MIN_SECONDS)
 
-      request.options.timeout = 300
-      described_class.bound!(request)
-      expect(request.options.timeout).to eq(300)
+      options.timeout = 300
+      described_class.bound!(options)
+      expect(options.timeout).to eq(300)
+    end
+
+    it 'sits right inside the retry middleware of every RubyLLM connection, so each attempt passes through it' do
+      config = RubyLLM::Configuration.new.tap { |item| item.openai_api_key = 'test-key' }
+      handlers = RubyLLM::Providers::OpenAI.new(config).connection.connection.builder.handlers.map(&:klass)
+
+      expect(handlers.index(described_class::Middleware)).to eq(handlers.index(Faraday::Retry::Middleware) + 1)
+    end
+
+    it 'bounds every retry by the time left then, and stops retrying when the run has no time left' do
+      Captain::ReplySuggestion::RunControl.with(request_id: request_id, deadline: monotonic_now + 20) do |control|
+        connection = hanging_connection { control.shorten!(timeouts.one? ? 5 : 0) }
+
+        expect { connection.post('/chat', '{}') }
+          .to raise_error(Captain::ReplySuggestion::RunAborted) { |error| expect(error).to have_attributes(kind: :deadline, stage: 'llm_request') }
+      end
+
+      expect(timeouts.size).to eq(2)
+      expect(timeouts.first).to be_within(1).of(20)
+      expect(timeouts.second).to be_within(1).of(5)
+    end
+
+    it 'makes no attempt for a council part out of time, and changes nothing outside a run' do
+      Captain::ReplySuggestion::RunControl.with(request_id: request_id, deadline: monotonic_now + 20) do |control|
+        Captain::ReplySuggestion::RunControl.adopt(control.for_parts(reserve: 25)) do
+          expect { hanging_connection.post('/chat', '{}') }.to raise_error(Captain::ReplySuggestion::RunControl::PartTimeUp)
+        end
+      end
+      expect(timeouts).to be_empty
+
+      expect { hanging_connection.post('/chat', '{}') }.to raise_error(Faraday::TimeoutError)
+      expect(timeouts).to eq([nil, nil, nil])
     end
   end
 

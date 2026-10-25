@@ -8,7 +8,7 @@
 # editor its time. A part that reaches it stops with PartTimeUp, a technical failure of that part alone; the council still answers
 # with the other parts. A routed suggestion that one agent answers gets the budget of one agent from the decision on (#shorten!):
 # on_shorten tells the job the new deadline, so the request, the manager's timer and the hard cut of the run (HardCut) follow it.
-# Every RubyLLM call of the run is bounded by the time left (RequestTimeout).
+# Every attempt of a RubyLLM call of the run, its retries too, is bounded by the time left and is not made without it (RequestTimeout).
 class Captain::ReplySuggestion::RunControl
   STATE_KEY = :captain_reply_suggestion_run_control
 
