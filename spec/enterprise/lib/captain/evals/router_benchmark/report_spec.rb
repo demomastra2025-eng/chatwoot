@@ -32,7 +32,7 @@ RSpec.describe Captain::Evals::RouterBenchmark::Report do
     report = described_class.new(rows).to_h
 
     expect(report[:pipeline][:traps]).to include('false_council' => include(accuracy: 1.0), 'injection' => include(accuracy: 0.0))
-    expect(report[:pipeline][:wrong_answers]).to include(count: 1, low_confidence: 1, confident: 0)
+    expect(report[:pipeline][:wrong_answers]).to include(count: 1, inconsistent: 0, low_confidence: 1, unsafe: 0)
     expect(report[:pipeline][:escalation_detail]).to include(fired: 1, fixed: 1, broke: 0, latency: { p50: 900, p90: 900, max: 900 })
     expect(report[:pipeline][:answered_by]).to include('escalation:openai/gpt-6-luna (position -)' => 1)
     expect(report[:gate][:checks][:traps]).to be(false)

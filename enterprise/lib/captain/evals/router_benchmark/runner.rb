@@ -6,6 +6,8 @@
 #   pipeline  the production decision (Captain::Runtime::DecisionRouter: the platform chain, the thresholds, the bounce guard and,
 #             with ESCALATION=1, the escalation model)
 # The cost of every call is read from the recorded llm events of the benchmark account; the run stops at the budget.
+# chain_models runs the pipeline on another chain than the platform one (for example the owner's chain: Mercury Decide, then
+# Microsoft Decision 1, then GPT-6 Luna Decisions), with the same thresholds and escalation.
 # fail_models makes the listed decision models fail (at once with fail_mode 'error', after the per-call timeout with 'timeout', as a
 # provider that hangs would), so the pipeline rows show the fallback chain at work: which model answered and at what latency.
 class Captain::Evals::RouterBenchmark::Runner
@@ -30,7 +32,7 @@ class Captain::Evals::RouterBenchmark::Runner
 
   # fixture: Captain::Evals::RouterBenchmark::Fixture; account: the (throwaway) account the calls are made for; models: the models
   # called alone; chain: run the production pipeline; escalation: let the pipeline call the escalation model; only: the scenario ids
-  # to play (all when empty); fail_models / fail_mode: see the class comment.
+  # to play (all when empty); chain_models, fail_models / fail_mode: see the class comment.
   def initialize(fixture:, account:, options: {})
     @fixture = fixture
     @account = account
@@ -41,6 +43,7 @@ class Captain::Evals::RouterBenchmark::Runner
     @budget = BigDecimal(options.fetch(:budget_usd, 1).to_s)
     @progress = options[:progress]
     @only = Array(options[:only]).map(&:to_s)
+    @chain_models = Array(options[:chain_models]).map(&:to_s).compact_blank.presence
     @failure = failure_option(options)
     @spent = BigDecimal(0)
     @rows = []
@@ -113,7 +116,7 @@ class Captain::Evals::RouterBenchmark::Runner
 
   def pipeline_row(suite, scenario, run, snapshot)
     decision = Captain::Runtime::DecisionRouter.new(snapshot, account: @account, observability: observability(suite, scenario),
-                                                              escalate: @escalation).decide
+                                                              escalate: @escalation, chain_models: @chain_models).decide
     row(suite, scenario, run, mode: 'pipeline', model: decision.decided_by, got: decision.key, confidence: decision.first_confidence,
                               escalated: decision.escalated, escalation_trigger: decision.escalation_trigger,
                               escalation_ms: decision.escalation_ms, first_choice: decision.first_choice, decided_by: decision.decided_by,

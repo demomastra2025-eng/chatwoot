@@ -3,13 +3,16 @@
 # The release questions of a router benchmark run that the plain accuracy does not answer (part of
 # Captain::Evals::RouterBenchmark::Report):
 #   traps          accuracy on the trap scenarios (the "trap" tag of a scenario: human, injection, false_council), which must all pass
-#   wrong_answers  how many wrong answers came with a confidence below the routing threshold (they would be escalated) and how many
-#                  came confident (they would be used as they are)
+#   wrong_answers  how many wrong answers the production pipeline would catch (their answers contradict each other, or their
+#                  confidence is below the threshold: 0.75, 0.80 for staff; then the escalation decides) and how many are unsafe (a
+#                  consistent and confident wrong answer is used as it is)
 #   escalation     for the production pipeline: how often the escalation model decided, its latency, and whether it fixed or broke
 #                  the answer of the decision models
 #   answered_by    for the production pipeline: which model of the chain (or the escalation) gave the final answer
 class Captain::Evals::RouterBenchmark::Insights
   LOW_CONFIDENCE = 0.75
+  HUMAN_LOW_CONFIDENCE = 0.80
+  INCONSISTENT = 'inconsistent'
 
   def initialize(rows)
     @rows = Array(rows)
@@ -27,10 +30,10 @@ class Captain::Evals::RouterBenchmark::Insights
 
   def wrong_answers
     wrong = @rows.reject { |row| row.error || correct?(row) }
-    low = wrong.count { |row| row.confidence.is_a?(Numeric) && row.confidence < LOW_CONFIDENCE }
-    missing = wrong.count { |row| !row.confidence.is_a?(Numeric) }
-    { count: wrong.size, low_confidence: low, missing_confidence: missing, confident: wrong.size - low - missing,
-      low_confidence_share: ratio(low + missing, wrong.size) }
+    inconsistent = wrong.count { |row| row.got == INCONSISTENT }
+    low = wrong.count { |row| row.got != INCONSISTENT && low_confidence?(row) }
+    { count: wrong.size, inconsistent: inconsistent, low_confidence: low, unsafe: wrong.size - inconsistent - low,
+      caught_share: ratio(inconsistent + low, wrong.size) }
   end
 
   # fixed: the decision models were wrong and the escalation right; broke: the other way round; still_wrong: both wrong.
@@ -49,6 +52,11 @@ class Captain::Evals::RouterBenchmark::Insights
   private
 
   def correct?(row) = row.got == row.expected
+
+  def low_confidence?(row)
+    threshold = row.got == 'human_handoff' ? HUMAN_LOW_CONFIDENCE : LOW_CONFIDENCE
+    !row.confidence.is_a?(Numeric) || row.confidence < threshold
+  end
 
   def failures(rows)
     rows.reject { |row| correct?(row) }.map { |row| "#{row.scenario_id}: #{row.expected} -> #{row.got || row.error}" }

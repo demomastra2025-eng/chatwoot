@@ -36,7 +36,7 @@ RSpec.describe Captain::Evals::RouterBenchmark::Runner do
     rows = described_class.new(fixture: fixture, account: account,
                                options: { models: ['typesafe/jev-1.14'], chain: true, budget_usd: 1, progress: progress }).call
 
-    expect(routers).to eq([{ escalate: false, chain_models: ['typesafe/jev-1.14'] }, { escalate: true }])
+    expect(routers).to eq([{ escalate: false, chain_models: ['typesafe/jev-1.14'] }, { escalate: true, chain_models: nil }])
     expect(rows.map { |row| [row.mode, row.got, row.expected] })
       .to eq([%w[model inconsistent route_agent_84], %w[pipeline route_agent_84 route_agent_84]])
     expect(rows.last).to have_attributes(escalated: true, decided_by: 'escalation:openai/gpt-6-luna')
@@ -70,6 +70,18 @@ RSpec.describe Captain::Evals::RouterBenchmark::Runner do
     # After the run the model is called for real again: here it stops at the missing key, not at the simulation.
     expect { Llm::OpenRouterDecisionClient.choose(state: {}, criteria: {}, instructions: 'x', model: 'perplexity/pplx-decider-v1.2') }
       .to raise_error(ArgumentError)
+  end
+
+  it 'runs the pipeline on another chain when asked, with the escalation' do
+    decision = Captain::Runtime::DecisionRouter::Decision.new(key: 'route_agent_84', kind: 'agent', agent_ids: [84], first_confidence: 0.9,
+                                                              decided_by: 'inception/mercury-decide', chain_position: 1)
+    allow(Captain::Runtime::DecisionRouter).to receive(:new).and_return(instance_double(Captain::Runtime::DecisionRouter, decide: decision))
+    chain = %w[inception/mercury-decide microsoft/microsoft-decision-1 openai/gpt-6-luna-decisions]
+
+    rows = described_class.new(fixture: fixture, account: account, options: { chain_models: chain, budget_usd: 1 }).call
+
+    expect(Captain::Runtime::DecisionRouter).to have_received(:new).with(anything, hash_including(escalate: true, chain_models: chain))
+    expect(rows.sole).to have_attributes(mode: 'pipeline', decided_by: 'inception/mercury-decide')
   end
 
   it 'plays only the listed scenarios and refuses an unknown failure mode' do

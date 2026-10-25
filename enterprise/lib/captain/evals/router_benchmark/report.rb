@@ -9,7 +9,7 @@ class Captain::Evals::RouterBenchmark::Report
   GATE = { pipeline_accuracy: 0.95, first_model_p90_ms: 1200, escalation_rate: 0.20 }.freeze
   MUST_PASS = %w[SZ01].freeze
   SINGLE_KINDS = %w[agent stay].freeze
-  TABLE_HEADER = ['| model | accuracy | false councils | missed councils | exact councils | human recall | traps | wrong & low conf | ' \
+  TABLE_HEADER = ['| model | accuracy | false councils | missed councils | exact councils | human recall | traps | wrong (caught/unsafe) | ' \
                   'p50 ms | p90 ms | errors |', '|---|---|---|---|---|---|---|---|---|---|---|'].freeze
 
   def initialize(rows, fixture: nil, lint: {})
@@ -156,7 +156,7 @@ class Captain::Evals::RouterBenchmark::Report
     councils = metrics[:councils]
     "| #{name} | #{pct(metrics[:accuracy])} | #{pct(councils[:false_council_rate])} | #{pct(councils[:missed_council_rate])} | " \
       "#{pct(councils[:exact_set_rate])} | #{pct(metrics.dig(:human, :recall))} | #{trap_cell(metrics[:traps])} | " \
-      "#{metrics.dig(:wrong_answers, :low_confidence)}/#{metrics.dig(:wrong_answers, :count)} | #{metrics.dig(:latency, :p50)} | " \
+      "#{wrong_cell(metrics[:wrong_answers])} | #{metrics.dig(:latency, :p50)} | " \
       "#{metrics.dig(:latency, :p90)} | #{metrics[:errors]} |"
   end
 
@@ -176,6 +176,10 @@ class Captain::Evals::RouterBenchmark::Report
   end
 
   def correct?(row) = row.got == row.expected
+
+  def wrong_cell(wrong)
+    "#{wrong[:count]} (#{wrong[:inconsistent] + wrong[:low_confidence]}/#{wrong[:unsafe]})"
+  end
 
   def trap_cell(traps)
     traps.to_h.sort.map { |name, trap| "#{name} #{pct(trap[:accuracy])}" }.join(', ').presence || '-'
