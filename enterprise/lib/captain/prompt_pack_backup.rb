@@ -30,15 +30,18 @@ class Captain::PromptPackBackup
       path
     end
 
-    # The Captain::PromptPack::Target of a backup file; Refused unless the file has exactly the shape above
+    # The Captain::PromptPack::Target of a backup file; Refused unless the file has exactly the shape above. Its source names the
+    # SHA-256 of the bytes that were read.
     def read(path)
       refuse!('a backup file is required') if path.blank?
       refuse!("file not found: #{path}") unless File.file?(path)
 
-      data = JSON.parse(File.read(path, encoding: 'bom|utf-8'))
+      bytes = File.binread(path)
+      data = JSON.parse(bytes.dup.force_encoding(Encoding::UTF_8).delete_prefix("\u{FEFF}"))
       check!(data)
+      source = "backup #{path} (sha256 #{Digest::SHA256.hexdigest(bytes)}, taken at #{data['taken_at']})"
       Captain::PromptPack::Target.new(account_id: data['account_id'], clinic_context: data['clinic_context'],
-                                      assistants: data['assistants'], source: "backup #{path} (taken at #{data['taken_at']})")
+                                      assistants: data['assistants'], source: source)
     rescue JSON::ParserError => e
       refuse!("not valid JSON: #{e.message.truncate(200)}")
     end

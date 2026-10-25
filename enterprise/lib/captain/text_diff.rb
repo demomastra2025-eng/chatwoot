@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # A unified diff of two texts, line by line (the format of `diff -u`), without a gem: the production bundle has no diff library.
-# The onelink:captain:apply_prompts_v2 rake prints the change of every prompt with it before anything is written.
+# The onelink:captain:apply_prompt_pack rake prints the change of every prompt with it (VERBOSE=1) before anything is written.
 #
 #   Captain::TextDiff.unified("a\nb\nc", "a\nB\nc", from: 'stored', to: 'file')
 #   # => "--- stored\n+++ file\n@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n"
