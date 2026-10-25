@@ -181,6 +181,32 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
       Current.reset
     end
 
+    it 'shows the kept card of an inserted suggestion instead of preparing the same action a second time' do
+      Current.user = user
+      args = { resource_id: resource.id, service_id: service_item.id, starts_at: starts_at, ends_at: ends_at }
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 60
+      first = Captain::ReplySuggestion::RunControl.with(request_id: 'request-1', deadline: deadline) do
+        JSON.parse(described_class.intercept(tool: create_tool, tool_context: tool_context, arguments: args))
+      end
+      described_class.keep_for_request!(account_id: account.id, conversation_id: conversation.id, request_id: 'request-1')
+
+      next_context = Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new(
+        run_context.context.deep_dup.merge(captain_suggestion_pending_actions: [])
+      ))
+      control = nil
+      second = Captain::ReplySuggestion::RunControl.with(request_id: 'request-2', deadline: deadline) do |run_control|
+        control = run_control
+        JSON.parse(described_class.intercept(tool: create_tool, tool_context: next_context, arguments: args))
+      end
+
+      expect(second['action_id']).to eq(first['action_id'])
+      expect(control.action_ids).to be_empty
+      expect(described_class.pending_for(account_id: account.id, conversation_id: conversation.id, request_id: 'request-2').pluck('action_id'))
+        .to eq([first['action_id']])
+    ensure
+      Current.reset
+    end
+
     it 'returns failure without storing a pending proposal when resource_id is invalid' do
       raw_result = described_class.intercept(
         tool: create_tool,

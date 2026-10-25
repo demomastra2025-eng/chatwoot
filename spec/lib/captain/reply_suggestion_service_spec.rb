@@ -269,6 +269,23 @@ RSpec.describe Captain::ReplySuggestionService do
         expect(result[:pending_actions]).to eq([])
       end
 
+      it 'shows again the kept cards of a suggestion the manager inserted, which still wait for approval' do
+        runner_double = instance_double(Captain::Assistant::AgentRunnerService)
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner_double)
+        allow(runner_double).to receive(:generate_response).and_return({ 'response' => 'Окно завтра в 10:00.', 'agent_id' => assistant.id })
+        Captain::ReplySuggestion::ActionApprovalService.store_record!(
+          'action_id' => 'kept-card', 'account_id' => account.id, 'conversation_id' => conversation.id, 'status' => 'pending',
+          'tool_name' => 'create_appointment', 'digest' => 'dig-kept', 'suggestion_request_id' => 'applied-request',
+          'kept_at' => Time.current.iso8601
+        )
+        new_request = described_class.new(account: account, conversation_display_id: conversation.display_id, user: agent, request_id: 'req-3',
+                                          progress_context: { suggestion_request_id: 'req-3' })
+
+        result = new_request.perform
+
+        expect(result[:pending_actions].pluck('action_id')).to eq(['kept-card'])
+      end
+
       it 'records the decision of the router and the agent it routed to' do
         specialist = create(:captain_assistant, account: account, name: 'ЛОР-специалист', active: true)
         runner_double = instance_double(Captain::Assistant::AgentRunnerService)

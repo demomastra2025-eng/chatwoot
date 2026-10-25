@@ -127,13 +127,24 @@ RSpec.describe Captain::ReplySuggestion::GenerateJob do
       expect(Redis::Alfred.zcard(Captain::ReplySuggestion::RequestLocks.account_active_key(account.id))).to eq(0)
     end
 
-    it 'makes the agent of the draft the sticky agent of the dialog for the next suggestions' do
+    it 'makes the agent of the draft the provisional sticky agent of the dialog until the manager uses or rejects it' do
+      script_run { draft_outcome }
       id = start_request
       run_job(id)
 
       expect(Captain::ReplySuggestion::StickyAgent.read(conversation)).to eq(84)
+      key = Captain::ReplySuggestion::StickyAgent.keys_for(conversation, kinds: %w[provisional]).first
+      expect(JSON.parse(Redis::Alfred.get(key))).to include('agent_id' => 84, 'request_id' => id)
+      expect($alfred.with { |connection| connection.ttl(key) }).to be <= Captain::ReplySuggestion::TTL_SECONDS # rubocop:disable Style/GlobalVars
     ensure
-      Captain::ReplySuggestion::StickyAgent.keys_for(conversation).each { |key| Redis::Alfred.delete(key) }
+      Captain::ReplySuggestion::StickyAgent.clear!(conversation)
+    end
+
+    it 'makes nobody sticky when the anchor answered only because no agent leads the dialog' do
+      script_run { draft_outcome(routing_default_to: 'anchor') }
+      run_job(start_request)
+
+      expect(Captain::ReplySuggestion::StickyAgent.read(conversation)).to be_nil
     end
 
     it 'runs as the manager, in the language of the account' do
@@ -172,14 +183,14 @@ RSpec.describe Captain::ReplySuggestion::GenerateJob do
     end
 
     it 'leaves the sticky agent as it was when the router sent the turn to staff' do
-      Captain::ReplySuggestion::StickyAgent.remember!(conversation, 119)
+      Captain::ReplySuggestion::StickyAgent.confirm!(conversation, 119, request_id: 'earlier')
       script_run { outcomes.human_needed(reason: 'Пациент просит сотрудника.', engine: 'agent', reason_source: 'router', agent: nil) }
 
       run_job(start_request)
 
       expect(Captain::ReplySuggestion::StickyAgent.read(conversation)).to eq(119)
     ensure
-      Captain::ReplySuggestion::StickyAgent.keys_for(conversation).each { |key| Redis::Alfred.delete(key) }
+      Captain::ReplySuggestion::StickyAgent.clear!(conversation)
     end
 
     it 'ends as human_needed with the reason for the manager' do

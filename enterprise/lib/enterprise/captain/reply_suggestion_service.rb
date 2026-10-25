@@ -325,8 +325,9 @@ module Enterprise::Captain::ReplySuggestionService
       @pending_actions = (@pending_actions + actions).uniq { |item| item['action_id'] || item[:action_id] }
     end
 
-    # The cards of this run: what the run reported, and what it stored (a card of a part on a thread). The cards of earlier
-    # suggestions are not this suggestion's (a new suggestion discards them, see StartService).
+    # The cards of this run: what the run reported, and what it stored (a card of a part on a thread); after them the cards of an
+    # earlier suggestion that the manager inserted or sent and that still wait for approval (kept, see ActionApprovalService). Other
+    # cards of earlier suggestions are not this suggestion's (a new suggestion discards them, see StartService).
     def resolve_pending_actions(payload)
       combined = Array(payload[:pending_actions]) + @pending_actions + stored_pending_actions
       items = combined.filter_map do |entry|
@@ -349,7 +350,7 @@ module Enterprise::Captain::ReplySuggestionService
     def handle_agent_routed(decision, _context_wrapper = nil)
       @monitor.synchronize do
         decision = decision.to_h.with_indifferent_access
-        @routing = decision.slice(:decision_key, :kind, :decided_by, :confidence, :escalated).to_h.compact.presence
+        @routing = decision.slice(:decision_key, :kind, :decided_by, :confidence, :escalated, :default_to).to_h.compact.presence
         targets = Array(decision[:target_ids]).filter_map { |id| agent_by_id(id) }
         if decision[:kind].to_s == 'council'
           targets.each { |actor| record_working_agent(actor, role: 'council') }

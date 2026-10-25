@@ -132,9 +132,10 @@ class Captain::ReplySuggestion::GenerateJob < ApplicationJob
     Rails.logger.warn("[CAPTAIN][ReplySuggestion] side effects of #{outcome[:outcome]} skipped: #{e.class}: #{e.message}")
   end
 
-  # The agent of a finished suggestion leads the dialog of the next ones (see StickyAgent).
+  # The agent of a finished suggestion leads the dialog of the next ones until the manager uses or rejects it (see StickyAgent).
   def remember_sticky_agent(outcome)
-    Captain::ReplySuggestion::StickyAgent.remember!(conversation, Captain::ReplySuggestion::StickyAgent.agent_id_of(outcome))
+    sticky = Captain::ReplySuggestion::StickyAgent
+    sticky.remember_provisional!(conversation, sticky.agent_id_of(outcome), request_id: @request_id)
   end
 
   def record_generated(outcome)

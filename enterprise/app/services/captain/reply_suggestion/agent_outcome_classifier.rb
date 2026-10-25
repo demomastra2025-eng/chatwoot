@@ -16,7 +16,8 @@
 #   8  otherwise                                            draft; a council that left parts to staff adds the note for the manager
 #                                                           (suggestion_meta operator_note)
 #
-# A text never comes out of an outcome other than draft.
+# A text never comes out of an outcome other than draft. An outcome of a turn that the router gave to the anchor only because no
+# agent leads the dialog says so (routing_default_to: anchor): its agent does not become the sticky agent (see StickyAgent).
 class Captain::ReplySuggestion::AgentOutcomeClassifier
   RUNNER = Captain::Assistant::AgentRunnerService
   PROVIDER_ERROR = RUNNER::PROVIDER_ERROR_RESPONSE
@@ -40,8 +41,10 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
     @trace_collector = trace_collector
   end
 
+  REASONED_OUTCOMES = %w[draft no_reply human_needed].freeze
+
   def perform
-    classify || draft
+    with_routing_default(classify || draft)
   end
 
   private
@@ -176,6 +179,13 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
 
   def suggestion_meta
     @suggestion_meta ||= trace_collector.suggestion_meta(payload)
+  end
+
+  def with_routing_default(outcome)
+    return outcome unless REASONED_OUTCOMES.include?(outcome[:outcome].to_s)
+
+    default_to = suggestion_meta.to_h.dig('routing', 'default_to').presence
+    default_to ? outcome.merge(routing_default_to: default_to) : outcome
   end
 
   def usage

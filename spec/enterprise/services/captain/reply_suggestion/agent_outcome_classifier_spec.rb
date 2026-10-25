@@ -124,6 +124,15 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
     end
   end
 
+  context 'when the router gave the turn to the anchor only because no agent leads the dialog' do
+    let(:meta) { { 'agent' => agent_summary, 'routing' => { 'decision_key' => 'route_agent_84', 'default_to' => 'anchor' } } }
+
+    it 'says so on the outcome, so that the anchor does not become the sticky agent' do
+      expect(outcome).to include(outcome: 'draft', routing_default_to: 'anchor')
+      expect(Captain::ReplySuggestion::StickyAgent.agent_id_of(outcome)).to be_nil
+    end
+  end
+
   context 'when the router sent the turn to staff' do
     let(:payload) do
       { 'response' => '', 'response_mode' => 'human', 'response_human_needed' => true, 'routing_human' => true, 'agent_id' => 84,

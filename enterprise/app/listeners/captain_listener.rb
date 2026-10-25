@@ -3,6 +3,8 @@ class CaptainListener < BaseListener
 
   def conversation_resolved(event)
     conversation = extract_conversation_and_account(event)[0]
+    # The dialog is over: no agent leads the next suggestions of «Предложить ответ» (see ReplySuggestion::StickyAgent).
+    Captain::ReplySuggestion::StickyAgent.clear!(conversation)
     return unless conversation.inbox.captain_active?
 
     assistant = Captain::Conversation::AgentOwnership.new(conversation: conversation).current_assistant
