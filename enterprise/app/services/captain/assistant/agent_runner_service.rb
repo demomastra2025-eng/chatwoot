@@ -195,6 +195,7 @@ class Captain::Assistant::AgentRunnerService
 
   def routed_turn(message_to_process, context)
     @turn_decision = time_phase('routing_await') { await_routing(context) }
+    limit_suggestion_budget(@turn_decision)
     check_custom_input_rules!(message_to_process, context)
     # Before the patient language is decided and an agent is called: a cancelled or out-of-time suggestion stops here.
     Captain::ReplySuggestion::RunControl.checkpoint!(:moderation)
@@ -208,6 +209,15 @@ class Captain::Assistant::AgentRunnerService
     routing_failure_response(e, context)
   rescue Captain::Runtime::TurnDispatcher::CouncilUnavailable => e
     council_unavailable_response(e, context)
+  end
+
+  # A routed reply suggestion starts with the time of a council (Captain::ReplySuggestion.budget_seconds(router: true)); when the
+  # router chose one agent or staff, the rest of the run has the budget of one agent, so a slow or stuck agent run fails as soon as
+  # it would without a router.
+  def limit_suggestion_budget(decision)
+    return unless suggestion_run? && decision && !decision.council?
+
+    Captain::ReplySuggestion::RunControl.current&.shorten!(Captain::ReplySuggestion.budget_seconds)
   end
 
   # The council could not be set up. The dispatcher may already have given the conversation to the acting agent of the council

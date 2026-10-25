@@ -3,6 +3,10 @@
 # Cooperative cancel and deadline of one reply suggestion run. The job installs a control for the thread it runs on; the runtime
 # calls RunControl.checkpoint! before each agent turn and before each tool call. Outside a suggestion run no control is set and a
 # checkpoint is a no-op, so live conversations are not affected.
+#
+# The parts of a council run under a scope of the control (#for_parts): the same run, with a deadline of its own that leaves the
+# editor its time. A part that reaches it stops with PartTimeUp, a technical failure of that part alone; the council still answers
+# with the other parts. A routed suggestion that one agent answers gets the budget of one agent from the decision on (#shorten!).
 class Captain::ReplySuggestion::RunControl
   STATE_KEY = :captain_reply_suggestion_run_control
 
@@ -64,6 +68,16 @@ class Captain::ReplySuggestion::RunControl
 
   def seconds_left
     [@deadline - monotonic_now, 0].max
+  end
+
+  # The scope of the parts of a council: their deadline leaves `reserve` seconds of the run to what follows them (the editor).
+  def for_parts(reserve:)
+    PartScope.new(self, [@deadline - reserve, monotonic_now].max)
+  end
+
+  # The deadline comes closer, never later.
+  def shorten!(seconds)
+    @lock.synchronize { @deadline = [@deadline, monotonic_now + seconds].min }
   end
 
   private

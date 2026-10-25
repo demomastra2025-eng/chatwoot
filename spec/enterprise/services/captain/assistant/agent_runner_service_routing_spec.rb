@@ -221,11 +221,11 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
        { role: 'user', content: 'Да, на 17:00' }]
     end
 
-    before { Captain::ReplySuggestion::StickyAgent.remember!(conversation, procedures.id) }
-    after { Captain::ReplySuggestion::StickyAgent.keys_for(conversation).each { |key| Redis::Alfred.delete(key) } }
+    before { Captain::ReplySuggestion::StickyAgent.confirm!(conversation, procedures.id, request_id: 'earlier') }
+    after { Captain::ReplySuggestion::StickyAgent.clear!(conversation) }
 
-    it 'gives the router the sticky agent as the current agent and keeps a short reply with it without the escalation' do
-      decide('stay_current', yes: [procedures.id], confidence: 0.6)
+    it 'gives the router the sticky agent as the current agent and keeps a confident short reply with it' do
+      decide('stay_current', yes: [procedures.id], confidence: 0.92)
       expect(Captain::Runtime::DecisionRouter::Escalation).not_to receive(:new)
 
       response = suggestion.generate_response(message_history: history)
@@ -236,7 +236,18 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       end
       expect(runs.pluck(:agent)).to eq(["assistant_#{procedures.id}"])
       expect(response).to include('agent_id' => procedures.id)
-      expect(routed_event).to include('decision_key' => 'stay_current', 'settled' => 'short_reply', 'run_source' => 'reply_suggestion')
+      expect(routed_event).to include('decision_key' => 'stay_current', 'escalated' => false, 'run_source' => 'reply_suggestion')
+    end
+
+    it 'leaves the run the budget of one agent once the router chose one agent' do
+      decide('stay_current', yes: [procedures.id], confidence: 0.92)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + Captain::ReplySuggestion::ROUTER_BUDGET_SECONDS
+
+      Captain::ReplySuggestion::RunControl.with(request_id: SecureRandom.uuid, deadline: deadline) do |control|
+        suggestion.generate_response(message_history: history)
+
+        expect(control.seconds_left).to be <= Captain::ReplySuggestion.budget_seconds
+      end
     end
 
     it 'routes to another agent when the patient asks for its service, with no transfer in the live report' do

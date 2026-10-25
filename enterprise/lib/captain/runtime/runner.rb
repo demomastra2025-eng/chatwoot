@@ -45,7 +45,7 @@ class Captain::Runtime::Runner
   # A council turn. parts: the registry parts of the accepted council (exactly the participants the router chose). The acting agent
   # is the agent the turn runs as (the current agent, else the first participant); it writes nothing itself. No part has a text of
   # its own: nothing is sent (the staff handoff and note the council recorded still follow). A council whose every part failed
-  # technically ends as a failed turn.
+  # technically ends as a failed turn (a reply suggestion instead names the failed parts to the manager, see Council#assemble).
   def run_council(acting_agent, input, parts:, reassigner: nil, **options)
     wrapper = Captain::Runtime::RunContext.new(deep_copy_context(options.fetch(:context, {})), callbacks: options.fetch(:callbacks, {}))
     wrapper.callback_manager.emit_run_start(acting_agent.name, input, wrapper)

@@ -22,8 +22,13 @@
 # unavailable, and the conversation goes to staff after the one reply.
 #
 # A reply suggestion writes nothing: an action tool only prepares an approval card for the operator (see ToolWrapper). Its parts
-# are all read-only lanes, side by side on threads, each with at most SUGGESTION_PART_MAX_TURNS turns, so that a council fits the
-# budget of the suggestion (Captain::ReplySuggestion.budget_seconds).
+# are all read-only lanes, side by side on threads while there are slots (else one after another on the calling thread), each
+# with at most SUGGESTION_PART_MAX_TURNS turns. They run against a deadline of their own that leaves the editor its time (see
+# Captain::ReplySuggestion::RunControl#for_parts): a part that reaches it - a slow model, a lane of dependent parts, a lane that
+# got no thread, a second run after a re-decision - stops as a technical failure of that part, and the suggestion answers with the
+# other parts and names the stopped one to the manager. A part is decided again only while the router and a short run still fit.
+# A suggestion council without a text never fails for a technical failure of a part: the manager is told what failed, and the
+# approval cards of the other parts stay.
 #
 # A part whose owner answers that it is not its own (out_of_scope) and did nothing is decided again by the router on the part's
 # own words (one agent or staff, the first owner excluded) and runs once more with the agent it chose. No model names an agent.
@@ -34,9 +39,13 @@ class Captain::Runtime::Council
   PART_SEPARATOR = "\n\n"
   # A booking is: find the resource, the service and the slot, read the contact, create, verify. ToolLoopGuard allows 16 tool requests.
   PART_MAX_TURNS = 14
-  # A suggestion part prepares a card instead of verifying a write: search, slot, card, text. The slowest part (8 turns of about 8 s)
-  # plus the router, the split and the editor stay within the router budget of a suggestion (120 s).
+  # A suggestion part prepares a card instead of verifying a write: search, slot, card, text. Its time is bounded by the deadline of
+  # the parts; the turn cap only stops a part that loops.
   SUGGESTION_PART_MAX_TURNS = 8
+  # What a suggestion keeps of its run after the parts: the editor and the classification of the answer.
+  SUGGESTION_AFTER_PARTS_SECONDS = Captain::Runtime::CouncilEditor::TIMEOUT_SECONDS + 3
+  # A suggestion decides a part again (and runs it once more) only while the router and a run of this length still fit.
+  SUGGESTION_REASSIGN_RUN_SECONDS = 15
   THREAD_LIMIT = [ENV.fetch('CAPTAIN_COUNCIL_THREADS', 4).to_i, 1].max
   # Read-only lanes on threads, process-wide. A lane that gets no slot runs on the calling thread.
   SLOTS = Concurrent::Semaphore.new(THREAD_LIMIT)
@@ -275,6 +284,19 @@ class Captain::Runtime::Council
     runnable = plans.select(&:runnable?)
     return if runnable.empty?
 
+    within_part_deadline { run_parts(runnable, plans) }
+  end
+
+  # The parts of a suggestion (their lanes on threads and on the calling thread, and their second runs) run under the part scope of
+  # the run's control: they end in time for the editor.
+  def within_part_deadline(&)
+    control = Captain::ReplySuggestion::RunControl.current
+    return yield unless suggestion? && control
+
+    Captain::ReplySuggestion::RunControl.adopt(control.for_parts(reserve: SUGGESTION_AFTER_PARTS_SECONDS), &)
+  end
+
+  def run_parts(runnable, plans)
     inline, threads = schedule(runnable)
     failure = nil
     begin
@@ -453,12 +475,26 @@ class Captain::Runtime::Council
     return unless @reassigner
 
     plans.each do |plan|
-      entry = @entries[plan.part['id']]
-      next unless entry && entry[:status] == 'out_of_scope' && !entry[:acted] && !entry[:technical]
+      next unless reassignable?(@entries[plan.part['id']])
 
       chosen = reassigned_actor(plan)
       reassign(plan, chosen) if chosen && chosen.id != plan.part['executor_agent_id']
     end
+  end
+
+  # A part that answered it is not its own and did nothing, while there is time to decide it again.
+  def reassignable?(entry)
+    entry.present? && entry[:status] == 'out_of_scope' && !entry[:acted] && !entry[:technical] && reassign_time?
+  end
+
+  # Outside a suggestion always; in a suggestion while the router (its chain and its escalation) and a short run of the new owner
+  # still fit before the deadline of the parts. A part that is not decided again stays unresolved and is named to the manager.
+  def reassign_time?
+    control = Captain::ReplySuggestion::RunControl.current
+    return true unless suggestion? && control
+
+    settings = Captain::Runtime::DecisionRouter::Settings
+    control.seconds_left >= settings.chain_budget_seconds + settings.escalation_timeout_seconds + SUGGESTION_REASSIGN_RUN_SECONDS
   end
 
   def reassigned_actor(plan)
@@ -657,14 +693,16 @@ class Captain::Runtime::Council
   # could not be resolved, a dependent part that did not start, a cancelled part, a part that acted and wrote nothing) is left
   # out; parts that failed technically or could not be resolved hand the conversation to staff after the reply, in silence. When
   # no part has a text the reply is empty: with a technical failure the run ends as a failed turn (see Runner#run_council),
-  # otherwise nothing is sent, and the conversation still goes to staff when a part is unresolved.
+  # otherwise nothing is sent, and the conversation still goes to staff when a part is unresolved. A reply suggestion never ends as
+  # a failed turn for a part: without a text it hands the failed parts to the manager (council_handoff, technical) and keeps the
+  # approval cards of the other parts.
   def assemble(entries)
     @context.delete(:council_handoff)
     @context.delete(:council_note)
     @context.delete(:council_patient_language)
     failures = entries.filter_map { |entry| entry[:technical] }
     shown = entries.select { |entry| told?(entry) }
-    return no_reply(failures, entries) if shown.empty? && failures.any?
+    return no_reply(failures, entries) if failed_turn?(shown, failures)
 
     languages = patient_languages(shown)
     @context[:council_patient_language] = languages.join(', ') if languages.any?
@@ -677,6 +715,11 @@ class Captain::Runtime::Council
     mark_handed_to_staff(entries) if handoff
     staff_note(entries, unresolved, handoff: handoff)
     reply
+  end
+
+  # No part has a text and a part failed technically: a live turn ends as a failed turn; a reply suggestion never does.
+  def failed_turn?(shown, failures)
+    shown.empty? && failures.any? && !suggestion?
   end
 
   # The parts the conversation goes to staff for (the unresolved ones and the ones that failed technically) are theirs now: the

@@ -108,6 +108,52 @@ RSpec.describe Captain::ReplySuggestion::RunControl do
     end
   end
 
+  describe 'the parts of a council' do
+    def now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+    it 'stop at their own deadline, which leaves the reserve of the run, with a part failure that is not a stop of the run' do
+      allow(Captain::ReplySuggestion::RequestStore).to receive(:cancel_requested?).and_return(false)
+
+      described_class.with(request_id: request_id, deadline: now + 20.2) do |control|
+        parts = control.for_parts(reserve: 20)
+        expect(parts.seconds_left).to be <= 0.2
+        described_class.adopt(parts) do
+          described_class.register_action('card-of-a-part')
+          sleep 0.25
+          expect { described_class.checkpoint!(:turn) }.to raise_error(described_class::PartTimeUp) { |error| expect(error.stage).to eq('turn') }
+        end
+
+        expect(described_class::PartTimeUp.ancestors).not_to include(Captain::Conversation::ControlGenerationStaleError)
+        expect(control.action_ids).to eq(['card-of-a-part'])
+        expect { described_class.checkpoint!(:editor) }.not_to raise_error
+      end
+    end
+
+    it 'still stop with the run when the manager cancels it' do
+      Captain::ReplySuggestion::RequestStore.request_cancel!(request_id)
+
+      described_class.with(request_id: request_id, deadline: far_deadline) do |control|
+        described_class.adopt(control.for_parts(reserve: 18)) do
+          expect { described_class.checkpoint!(:tool) }.to raise_error(Captain::ReplySuggestion::RunAborted) { |error|
+            expect(error.kind).to eq(:cancelled)
+          }
+        end
+      end
+    end
+  end
+
+  describe '#shorten!' do
+    it 'brings the deadline closer, never later' do
+      described_class.with(request_id: request_id, deadline: far_deadline) do |control|
+        control.shorten!(60)
+        expect(control.seconds_left).to be_within(1).of(60)
+
+        control.shorten!(300)
+        expect(control.seconds_left).to be <= 60
+      end
+    end
+  end
+
   describe Captain::ReplySuggestion::RunAborted do
     it 'is a stale-generation error, so that the runtime re-raises it at every layer' do
       expect(described_class.ancestors).to include(Captain::Conversation::ControlGenerationStaleError)

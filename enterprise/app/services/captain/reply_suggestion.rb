@@ -7,8 +7,8 @@ module Captain::ReplySuggestion
   QUEUE_NAME = :captain_suggestions
   DEFAULT_BUDGET_SECONDS = 60
   # A clinic with two or more agents routes every suggestion (Captain::Runtime::DecisionRouter) and may answer it with a council:
-  # the router (its chain and its escalation, 21.5 s at most), the split (4 s), the parts side by side (SUGGESTION_PART_MAX_TURNS
-  # turns each, see Captain::Runtime::Council) and the editor (15 s) must fit.
+  # the run starts with this budget. The parts of a council end in time for the editor (RunControl#for_parts); a turn that the
+  # router gives to one agent or to staff keeps the budget of one agent from the decision on (RunControl#shorten!).
   ROUTER_BUDGET_SECONDS = 120
   MIN_BUDGET_SECONDS = 30
   MAX_BUDGET_SECONDS = 180

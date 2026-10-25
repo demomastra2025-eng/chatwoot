@@ -90,6 +90,12 @@ RSpec.describe Captain::Runtime::Council::PartRun do
     expect(part_run.call('x')[:technical]).to eq('kind' => 'technical', 'reason' => 'run_error', 'error_class' => 'RuntimeError')
   end
 
+  it 'names a part of a suggestion that reached the deadline of the parts' do
+    stub_run(output: nil, error: Captain::ReplySuggestion::RunControl::PartTimeUp.new(:turn))
+
+    expect(part_run.call('x')[:technical]).to include('reason' => 'time_up')
+  end
+
   it 'has no answer for an output that is not a structured result' do
     ['not json', { 'status' => 'done' }, nil, { 'customer_text' => 'x' }].each do |output|
       stub_run(output: output)
