@@ -40,8 +40,7 @@ RSpec.describe Captain::AssistantPrompt do
     result = variables(state: state, clinic_context: assistant.prompt_clinic_context)
 
     expect(result[:clinic_context]).to eq('ИИН пациента: 900101300123.')
-    expect(result[:now_text].split("
-").second).to start_with("Patient's last message was sent Saturday, 24 October 2026")
+    expect(result[:now_text].lines.second).to start_with("Patient's last message was sent Saturday, 24 October 2026")
   end
 
   it 'adds the night line after the clock line between 00:00 and 05:00 and before the reply window line' do

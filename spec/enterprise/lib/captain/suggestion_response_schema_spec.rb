@@ -51,9 +51,7 @@ RSpec.describe Captain::SuggestionResponseSchema do
         OpenStruct.new(context: { state: { source: 'reply_suggestion' }, part_run: true })
       )
 
-      [draft, part].each do |prompt|
-        expect(prompt).to include('Answer from # Clinic, the clinic instructions, the data below', "# Clinic\nКлиника: МО «Тест».")
-      end
+      expect([draft, part]).to all(include('Answer from # Clinic, the clinic instructions, the data below', "# Clinic\nКлиника: МО «Тест»."))
       expect(draft).to include('do not draft a reply: set response_mode to human')
       expect(draft).not_to include('end your part as the rules of your part below say')
       expect(part).to include('end your part as the rules of your part below say')
