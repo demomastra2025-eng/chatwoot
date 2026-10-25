@@ -1,0 +1,186 @@
+require 'rails_helper'
+require 'rake'
+
+RSpec.describe AuditLogs::ChannelSecretRedaction do
+  let(:channel) { create(:channel_telegram_personal) }
+  let(:inbox) { channel.inbox }
+  let(:session) { '1BVtsOK8Bu-stored-session' }
+  let(:object_changes) do
+    {
+      'string_session' => [nil, session],
+      'runtime_state' => [{}, { 'qr_login_url' => 'tg://login?token=stored-login-token' }],
+      'phone_number' => ['+77010000001', '+77010000002']
+    }
+  end
+  let(:string_changes) { { 'api_hash' => %w[stored-old-hash stored-new-hash] } }
+  let!(:session_row_id) { insert_audit(inbox, object_changes) }
+  let!(:string_row_id) { insert_audit(inbox, string_changes, as_string: true) }
+  let!(:clean_row_id) { insert_audit(inbox, { 'name' => %w[old new] }) }
+
+  def connection
+    Audited::Audit.connection
+  end
+
+  # Written straight into the table, the way entries got there before the filter: as a JSON object or as a JSON string
+  def insert_audit(target_inbox, changes, as_string: false)
+    json = connection.quote(changes.to_json)
+    value = as_string ? "to_jsonb(#{json}::text)" : "#{json}::jsonb"
+    connection.select_value(<<~SQL.squish)
+      INSERT INTO audits (auditable_type, auditable_id, associated_type, associated_id, action, audited_changes, version, created_at)
+      VALUES ('Inbox', #{target_inbox.id.to_i}, 'Account', #{target_inbox.account_id.to_i}, 'update', #{value}, 1, NOW())
+      RETURNING id
+    SQL
+  end
+
+  def stored(id)
+    connection.select_one("SELECT jsonb_typeof(audited_changes) AS storage, audited_changes::text AS raw FROM audits WHERE id = #{id.to_i}")
+  end
+
+  def run_task(**env)
+    Rails.application.load_tasks unless Rake::Task.task_defined?('onelink:audits:redact_channel_secrets')
+    task = Rake::Task['onelink:audits:redact_channel_secrets']
+    task.reenable
+    output = StringIO.new
+    $stdout = output
+    with_modified_env(env.transform_values(&:to_s)) { task.invoke }
+    output.string
+  ensure
+    $stdout = STDOUT
+  end
+
+  it 'counts per inbox and key on a dry run, prints no value and changes nothing' do
+    before = [session_row_id, string_row_id, clean_row_id].map { |id| stored(id) }
+
+    output = run_task
+
+    expect(output).to include(
+      { inbox_id: inbox.id, account_id: inbox.account_id, rows: 2, empty: 0, unparsed: 0,
+        keys: { 'api_hash' => 1, 'runtime_state' => 1, 'string_session' => 1 } }.to_json
+    )
+    expect(output).to include('"mode":"dry_run"', '"rows":2', '"empty":0,"deleted":0', '"inboxes":1', '"unparsed":0,"unparsed_ids":[]')
+    expect(output).not_to include(session, 'stored-login-token', 'stored-old-hash', '+7701')
+    expect([session_row_id, string_row_id, clean_row_id].map { |id| stored(id) }).to eq(before)
+  end
+
+  it 'filters the stored entries in place with APPLY=1, keeps their storage form and is idempotent' do
+    clean_before = stored(clean_row_id)
+
+    expect(run_task(APPLY: '1')).to include('"mode":"applied"', '"rows":2')
+
+    object_row = stored(session_row_id)
+    expect(object_row['storage']).to eq('object')
+    # The snapshot change held no setting of the operator: it is left out, as the write path leaves it out
+    expect(JSON.parse(object_row['raw'])).to eq(
+      'string_session' => [nil, '[FILTERED]'],
+      'phone_number' => ['+77010000001', '+77010000002']
+    )
+
+    string_row = stored(string_row_id)
+    expect(string_row['storage']).to eq('string')
+    expect(JSON.parse(JSON.parse(string_row['raw']))).to eq('api_hash' => ['[FILTERED]', '[FILTERED]'])
+    expect(stored(clean_row_id)).to eq(clean_before)
+
+    expect(run_task(APPLY: '1')).to include('"rows":0')
+  end
+
+  it 'keeps who turned group sync or an ignored chat on or off, without the rest of the snapshot' do
+    snapshot = {
+      'qr_login_url' => 'tg://login?token=stored-login-token', 'history_sync_checkpoint' => { 'dialog_user_ids' => %w[700100] },
+      'sync_groups' => false, 'ignored_chat_ids' => []
+    }
+    toggle_row_id = insert_audit(inbox, { 'runtime_state' => [snapshot, snapshot.merge('sync_groups' => true, 'ignored_chat_ids' => ['555'])] })
+
+    described_class.new(apply: true).perform
+
+    expect(JSON.parse(stored(toggle_row_id)['raw'])).to eq(
+      'runtime_state' => [{ 'ignored_chat_ids' => [], 'sync_groups' => false }, { 'ignored_chat_ids' => ['555'], 'sync_groups' => true }]
+    )
+    expect(stored(toggle_row_id)['raw']).not_to include('stored-login-token', '700100')
+    expect(described_class.new(apply: true, inbox_ids: [inbox.id]).perform.rows).to eq(0)
+  end
+
+  it 'reports by id, never by value, the entries it cannot read and leaves them as they are' do
+    array_row_id = connection.select_value(<<~SQL.squish)
+      INSERT INTO audits (auditable_type, auditable_id, associated_type, associated_id, action, audited_changes, version, created_at)
+      VALUES ('Inbox', #{inbox.id.to_i}, 'Account', #{inbox.account_id.to_i}, 'update', '["stored-array-secret"]'::jsonb, 1, NOW())
+      RETURNING id
+    SQL
+    text_row_id = connection.select_value(<<~SQL.squish)
+      INSERT INTO audits (auditable_type, auditable_id, associated_type, associated_id, action, audited_changes, version, created_at)
+      VALUES ('Inbox', #{inbox.id.to_i}, 'Account', #{inbox.account_id.to_i}, 'update', to_jsonb('stored-text-secret'::text), 1, NOW())
+      RETURNING id
+    SQL
+    before = [array_row_id, text_row_id].map { |id| stored(id) }
+
+    output = run_task(APPLY: '1')
+
+    expect(output).to include(%("unparsed":2,"unparsed_ids":[#{array_row_id},#{text_row_id}]))
+    expect(output).to include({ inbox_id: inbox.id, account_id: inbox.account_id, rows: 2, empty: 0, unparsed: 2 }.to_json.delete_suffix('}'))
+    expect(output).not_to include('stored-array-secret', 'stored-text-secret')
+    expect([array_row_id, text_row_id].map { |id| stored(id) }).to eq(before)
+  end
+
+  # A JSON column kept as a string: its credential keys are filtered and the row stays a string inside the object
+  it 'filters the credentials of a JSON column kept as a string' do
+    provider_row_id = insert_audit(inbox, { 'provider_config' => ['{"api_key":"stored-old-key"}', '{"api_key":"stored-new-key"}'] })
+
+    report = described_class.new(apply: false, inbox_ids: [inbox.id]).perform
+    expect(report.inboxes[inbox.id][:keys]).to include('provider_config' => 1)
+
+    described_class.new(apply: true, inbox_ids: [inbox.id]).perform
+
+    sides = JSON.parse(stored(provider_row_id)['raw'])['provider_config']
+    expect(sides.map { |side| JSON.parse(side) }).to eq([{ 'api_key' => '[FILTERED]' }, { 'api_key' => '[FILTERED]' }])
+    expect(described_class.new(apply: true, inbox_ids: [inbox.id]).perform.rows).to eq(0)
+  end
+
+  # The runtime columns of the channel are left out as the write path leaves them out; an entry of nothing else ends up empty
+  describe 'the runtime noise of a channel' do
+    let!(:noise_row_id) do
+      insert_audit(inbox, { 'connection_state' => %w[connecting connected], 'last_synced_at' => [nil, '2026-10-01T10:00:00Z'],
+                            'runtime_state' => [{ 'history_sync_state' => 'running' }, { 'history_sync_state' => 'completed' }] })
+    end
+    let!(:mixed_row_id) { insert_audit(inbox, { 'last_error' => ['stored-error-text', nil], 'phone_number' => %w[+7701 +7702] }) }
+
+    it 'counts the entries that would end up empty on a dry run' do
+      output = run_task
+
+      expect(output).to include(
+        { inbox_id: inbox.id, account_id: inbox.account_id, rows: 4, empty: 1, unparsed: 0,
+          keys: { 'api_hash' => 1, 'connection_state' => 1, 'last_error' => 1, 'last_synced_at' => 1, 'runtime_state' => 2,
+                  'string_session' => 1 } }.to_json
+      )
+      expect(output).to include('"rows":4,"empty":1,"deleted":0')
+      expect(output).not_to include('stored-error-text')
+    end
+
+    it 'writes an empty entry back as {} and drops the runtime columns of the others with APPLY=1' do
+      run_task(APPLY: '1')
+
+      expect(JSON.parse(stored(noise_row_id)['raw'])).to eq({})
+      expect(JSON.parse(stored(mixed_row_id)['raw'])).to eq('phone_number' => %w[+7701 +7702])
+      expect(run_task(APPLY: '1')).to include('"rows":0')
+    end
+
+    it 'deletes the entries left empty with DELETE_EMPTY=1 and only with APPLY=1' do
+      expect(run_task(DELETE_EMPTY: '1')).to include('"mode":"dry_run"', '"empty":1,"deleted":0')
+      expect(Audited::Audit.exists?(noise_row_id)).to be(true)
+
+      expect(run_task(APPLY: '1', DELETE_EMPTY: '1')).to include('"mode":"applied"', '"empty":1,"deleted":1')
+      expect(Audited::Audit.exists?(noise_row_id)).to be(false)
+      expect(JSON.parse(stored(mixed_row_id)['raw'])).to eq('phone_number' => %w[+7701 +7702])
+    end
+  end
+
+  it 'touches only the inboxes it is given' do
+    other_inbox = create(:channel_telegram_personal).inbox
+    other_row_id = insert_audit(other_inbox, object_changes)
+
+    report = described_class.new(apply: true, inbox_ids: [other_inbox.id.to_s], batch_size: 1).perform
+
+    expect(report.rows).to eq(1)
+    expect(report.inboxes.keys).to eq([other_inbox.id])
+    expect(JSON.parse(stored(other_row_id)['raw'])['string_session']).to eq([nil, '[FILTERED]'])
+    expect(JSON.parse(stored(session_row_id)['raw'])['string_session']).to eq([nil, session])
+  end
+end

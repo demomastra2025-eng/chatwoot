@@ -69,4 +69,32 @@ RSpec.describe SuperAdmin::AuditChanges do
       expect(entry('update', 'name' => %w[A B]).rest).to eq('name' => %w[A B])
     end
   end
+
+  # An entry of an inbox written before the secrets of the channels were filtered at write time (AuditLogs::SecretFilter)
+  describe 'the secrets of a channel' do
+    def inbox_entry(changes)
+      described_class.new(Audited::Audit.new(auditable_type: 'Inbox', action: 'update', audited_changes: changes), limit_value)
+    end
+
+    it 'never shows a stored session string or API key, and keeps the rest of the entry', :aggregate_failures do
+      changes = inbox_entry(
+        'string_session' => [nil, 'stored-telethon-session'],
+        'provider_config' => [{}, { 'api_key' => 'stored-api-key', 'phone_number_id' => '7' }],
+        'name' => %w[A B]
+      )
+
+      expect(changes.rest).to eq(
+        'string_session' => [nil, '[FILTERED]'],
+        'provider_config' => [{}, { 'api_key' => '[FILTERED]', 'phone_number_id' => '7' }],
+        'name' => %w[A B]
+      )
+      expect(changes.readable.to_json).not_to include('stored-telethon-session', 'stored-api-key')
+    end
+
+    it 'filters an entry kept as a JSON string' do
+      changes = inbox_entry({ 'api_hash' => %w[stored-old-hash stored-new-hash] }.to_json)
+
+      expect(changes.rest).to eq('api_hash' => ['[FILTERED]', '[FILTERED]'])
+    end
+  end
 end

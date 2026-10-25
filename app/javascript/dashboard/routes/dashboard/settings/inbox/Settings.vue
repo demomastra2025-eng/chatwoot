@@ -1881,20 +1881,7 @@ export default {
 
       return 'bg-n-alpha-2 text-n-slate-11';
     },
-    async quickAddTelegramPersonalIgnoredChatId(chatId) {
-      const normalizedId = String(chatId || '').trim();
-      if (
-        !normalizedId ||
-        this.telegramPersonalIgnoredChatIds.includes(normalizedId)
-      ) {
-        return;
-      }
 
-      await this.saveTelegramPersonalIgnoredChatIds([
-        ...this.telegramPersonalIgnoredChatIds,
-        normalizedId,
-      ]);
-    },
     async fetchWeixinDiagnostics({ force = false } = {}) {
       if (!this.isAWeixinChannel || !this.currentInboxId) {
         this.weixinDiagnostics = null;
@@ -3788,21 +3775,22 @@ export default {
                       />
                     </div>
 
-                    <!-- Quick Preset for Official Telegram Service Account (777000) -->
-                    <div
-                      v-if="!telegramPersonalIgnoredChatIds.includes('777000')"
-                      class="mt-2.5 flex flex-wrap items-center gap-2"
+                    <!-- Telegram's service account (777000, login codes) is never imported: the server always skips it -->
+                    <p
+                      class="mt-2.5 mb-0 flex items-center gap-1.5 text-xs text-n-slate-11"
                     >
-                      <button
-                        type="button"
-                        class="inline-flex items-center gap-1.5 rounded-full bg-n-alpha-1 px-2.5 py-1 text-xs text-n-slate-11 outline outline-1 -outline-offset-1 outline-n-weak transition hover:bg-n-alpha-2 hover:text-n-slate-12 disabled:opacity-50"
-                        :disabled="isSavingTelegramPersonalIgnoredChats"
-                        @click="quickAddTelegramPersonalIgnoredChatId('777000')"
-                      >
-                        <Icon icon="i-lucide-shield-ban" class="size-3" />
-                        <span>{{ '+ 777000 (Telegram)' }}</span>
-                      </button>
-                    </div>
+                      <Icon
+                        icon="i-lucide-shield-check"
+                        class="size-3 shrink-0"
+                      />
+                      <span>
+                        {{
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.SERVICE_ACCOUNT_SKIPPED'
+                          )
+                        }}
+                      </span>
+                    </p>
 
                     <div
                       v-if="telegramPersonalIgnoredChatIds.length"

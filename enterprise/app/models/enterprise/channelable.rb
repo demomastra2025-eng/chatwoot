@@ -1,23 +1,8 @@
 module Enterprise::Channelable
   extend ActiveSupport::Concern
 
-  WHATSAPP_WEB_RUNTIME_AUDIT_FIELDS = %w[
-    connection_state
-    lifecycle_state
-    last_error
-    last_synced_at
-    qr_code
-    sync_state
-  ].freeze
-
-  WEIXIN_SENSITIVE_AUDIT_FIELDS = %w[
-    context_token
-    context_tokens
-    ilink_token
-    last_error
-    token_fingerprint
-    webhook_secret
-  ].freeze
+  # The columns the runtime of a channel rewrites all day (AuditLogs::SecretFilter::RUNTIME_COLUMNS) never reach its audit log;
+  # its credentials are written as "[FILTERED]".
 
   # Active support concern has `included` which changes the order of the method lookup chain
   # https://stackoverflow.com/q/40061982/3824876
@@ -60,12 +45,10 @@ module Enterprise::Channelable
       changes.key?('message_templates_last_updated')
     end
 
+    # The same filter as the audit-log API and the redaction task: the runtime columns of the channel are left out, and a change
+    # of the runtime snapshot is written only when the operator's own settings changed, and only those settings
     def filtered_audited_changes
-      changes = saved_changes.except('updated_at', 'secret')
-      return changes.except(*WHATSAPP_WEB_RUNTIME_AUDIT_FIELDS) if is_a?(::Channel::WhatsappWeb)
-      return changes.except(*WEIXIN_SENSITIVE_AUDIT_FIELDS) if is_a?(::Channel::Weixin)
-
-      changes
+      AuditLogs::SecretFilter.filter(saved_changes.to_h.except('updated_at'), channel_type: self.class.name)
     end
   end
 end

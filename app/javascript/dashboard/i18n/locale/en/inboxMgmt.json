@@ -1483,6 +1483,7 @@
         "IGNORED_CHAT_ID_REQUIRED": "Enter a Telegram chat/user ID",
         "IGNORED_CHATS_SUCCESS": "Ignored Telegram chats saved",
         "IGNORED_CHATS_ERROR": "Unable to save ignored Telegram chats",
+        "SERVICE_ACCOUNT_SKIPPED": "Messages from Telegram's service account (777000: login codes and sign-in notices) are never imported.",
         "DIAGNOSTICS_SECTION": "Service diagnostics",
         "DIAGNOSTICS_SECTION_SUBTITLE": "A compact set of technical signals for quick health checks.",
         "RAW_DIAGNOSTICS": "Raw diagnostics JSON",

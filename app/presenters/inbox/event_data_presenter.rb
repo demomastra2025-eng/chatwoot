@@ -29,7 +29,15 @@ class Inbox::EventDataPresenter < SimpleDelegator
       updated_at: updated_at,
 
       # Associated channel attributes
-      channel: channel
+      channel: channel_data
     }
+  end
+
+  private
+
+  # The columns of the channel with every credential written as "[FILTERED]" (AuditLogs::SecretFilter): the payload goes to the
+  # account webhooks, which never get a session string, a token, a password or a webhook secret
+  def channel_data
+    channel && AuditLogs::SecretFilter.filter(channel.as_json)
   end
 end

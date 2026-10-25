@@ -254,6 +254,68 @@ RSpec.describe 'Inboxes API', type: :request do
 
         expect(data[:hmac_token]).to be_nil
       end
+
+      # The runtime snapshot of a personal channel: the login link only for the administrator who runs the login, never the
+      # ids of the owner's dialogs or of the deduplicated messages
+      context 'when it is a Telegram personal or Weixin inbox' do
+        let(:telegram_runtime_state) do
+          {
+            'qr_login_url' => 'tg://login?token=api-login',
+            'ignored_chat_ids' => ['6002671687'],
+            'history_sync_state' => 'running',
+            'history_sync_checkpoint' => { 'dialog_user_ids' => %w[700100 700200], 'next_dialog_index' => 1, 'last_completed_dialog_id' => '700100' }
+          }
+        end
+        let(:weixin_runtime_state) do
+          { 'qr_login_url' => 'https://login.example/qr', 'qr_login_state' => 'waiting_scan', 'message_dedup' => { 'ids' => %w[900100] } }
+        end
+        let(:telegram_inbox) { create(:channel_telegram_personal, account: account, runtime_state: telegram_runtime_state).inbox }
+        let(:weixin_inbox) { create(:channel_weixin, account: account, runtime_state: weixin_runtime_state).inbox }
+
+        def runtime_state_of(target_inbox, user)
+          get "/api/v1/accounts/#{account.id}/inboxes/#{target_inbox.id}", headers: user.create_new_auth_token, as: :json
+          expect(response).to have_http_status(:success)
+          response.parsed_body['runtime_state']
+        end
+
+        it 'shows the Telegram login link and ignored chats to an administrator, without the dialog ids', :aggregate_failures do
+          state = runtime_state_of(telegram_inbox, admin)
+
+          expect(state).to include(telegram_runtime_state.slice('qr_login_url', 'ignored_chat_ids', 'history_sync_state'))
+          expect(state['history_sync_checkpoint']).to include('next_dialog_index' => 1)
+          expect(state['history_sync_checkpoint'].keys).not_to include('dialog_user_ids', 'last_completed_dialog_id')
+        end
+
+        # A hash stored before the channel dropped it (Channel::TelegramPersonal::SECRET_RUNTIME_KEYS) is not shown either
+        it 'never shows the hash of a pending Telegram login code, to an administrator or an agent', :aggregate_failures do
+          # rubocop:disable Rails/SkipsModelValidations
+          telegram_inbox.channel.update_column(:runtime_state, telegram_runtime_state.merge('pending_phone_code_hash' => 'stored-code-hash'))
+          # rubocop:enable Rails/SkipsModelValidations
+
+          [admin, agent].each do |user|
+            expect(runtime_state_of(telegram_inbox, user).keys).not_to include('pending_phone_code_hash')
+            expect(response.body).not_to include('stored-code-hash')
+          end
+        end
+
+        it 'shows an agent the Telegram state without the login link, the ignored chats or the dialog ids', :aggregate_failures do
+          state = runtime_state_of(telegram_inbox, agent)
+
+          expect(state).to include('history_sync_state' => 'running', 'sync_groups' => false)
+          expect(state.keys).not_to include('qr_login_url', 'ignored_chat_ids')
+          expect(response.body).not_to include('api-login', '700100', '6002671687')
+        end
+
+        it 'shows the Weixin login link to an administrator, without the deduplicated message ids', :aggregate_failures do
+          expect(runtime_state_of(weixin_inbox, admin)).to include('qr_login_url' => 'https://login.example/qr')
+          expect(response.body).not_to include('900100')
+        end
+
+        it 'shows an agent the Weixin state without the login link or the message ids', :aggregate_failures do
+          expect(runtime_state_of(weixin_inbox, agent)).to eq('qr_login_state' => 'waiting_scan')
+          expect(response.body).not_to include('login.example', '900100')
+        end
+      end
     end
   end
 

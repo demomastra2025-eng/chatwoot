@@ -170,6 +170,18 @@ RSpec.describe Channel::TelegramPersonal do
       expect(channel.runtime_state).not_to have_key('contacts_sync_state')
     end
 
+    # Only the gateway uses the hash of a pending login code: it is never stored, shown or sent back to the gateway
+    it 'never stores the login code hash of the gateway snapshot' do
+      channel = create(:channel_telegram_personal)
+
+      channel.apply_runtime_update!(lifecycle_state: 'code_sent',
+                                    runtime_state: { pending_phone_code_hash: 'gateway-code-hash', history_sync_count: 1 })
+
+      expect(channel.reload.runtime_state).not_to have_key('pending_phone_code_hash')
+      expect(channel.runtime_state['history_sync_count']).to eq(1)
+      expect(TelegramPersonal::GatewayClient.new(channel: channel).send(:channel_payload).to_json).not_to include('gateway-code-hash')
+    end
+
     it 'clears stale last_error when apply_runtime_update! receives nil last_error or transitions to connected' do
       channel = create(
         :channel_telegram_personal,

@@ -40,6 +40,9 @@ class Channel::TelegramPersonal < ApplicationRecord
   CONNECTION_STATES = %w[disconnected connecting connected auth_required failed flood_wait].freeze
   LIFECYCLE_STATES = %w[pending_auth code_sent qr_ready qr_expired password_required connected disconnected failed].freeze
   IMMUTABLE_RUNTIME_ATTRS = %i[api_id phone_number].freeze
+  # The gateway's snapshot carries the hash of a pending login code, which only the gateway uses: it is never stored, so it is
+  # never shown in the inbox API nor sent back to the gateway
+  SECRET_RUNTIME_KEYS = %w[pending_phone_code_hash].freeze
   DEFAULT_HISTORY_SYNC_CHECKPOINT = {
     'version' => 1,
     'requested_at' => nil,
@@ -220,7 +223,7 @@ class Channel::TelegramPersonal < ApplicationRecord
   end
 
   def normalize_runtime_state(value)
-    payload = (value || {}).deep_stringify_keys
+    payload = (value || {}).deep_stringify_keys.except(*SECRET_RUNTIME_KEYS)
 
     DEFAULT_RUNTIME_STATE.deep_merge(payload).tap do |runtime|
       checkpoint = runtime['history_sync_checkpoint']

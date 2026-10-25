@@ -116,6 +116,42 @@ RSpec.describe 'Api::V1::Accounts::TelegramPersonalChannelsController', type: :r
       expect(response.parsed_body['unread_reactions_count']).to eq(3)
     end
 
+    # The gateway snapshot (RuntimeState.snapshot) carries the Telethon session and the hash of a pending login code
+    it 'never returns the session string, the login code hash or the dialog ids of the gateway snapshot', :aggregate_failures do
+      gateway_client = instance_double(TelegramPersonal::GatewayClient, sync_channel!: {})
+      allow(TelegramPersonal::GatewayClient).to receive(:new).with(channel: channel).and_return(gateway_client)
+      allow(gateway_client).to receive(:diagnostics).and_return(
+        {
+          channel: {
+            connection_state: 'connected',
+            lifecycle_state: 'code_sent',
+            last_error: nil,
+            string_session: '1BVtsOK8Bu-gateway-session',
+            runtime_state: {
+              history_sync_state: 'running',
+              pending_phone_code_hash: 'gateway-code-hash',
+              qr_login_url: 'tg://login?token=gateway-qr',
+              history_sync_checkpoint: { dialog_user_ids: %w[700100 700200], next_dialog_index: 1, last_completed_dialog_id: '700100' }
+            }
+          },
+          connected: true,
+          me: { id: 42, username: 'owner' }
+        }.with_indifferent_access
+      )
+
+      get "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/telegram_personal_diagnostics",
+          headers: admin.create_new_auth_token,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      body = response.parsed_body
+      expect(response.body).not_to include('1BVtsOK8Bu-gateway-session', 'gateway-code-hash', '700100', '700200')
+      expect(body['channel'].keys).to contain_exactly('connection_state', 'lifecycle_state', 'last_error', 'runtime_state')
+      expect(body.dig('channel', 'runtime_state')).to include('history_sync_state' => 'running', 'qr_login_url' => 'tg://login?token=gateway-qr')
+      expect(body.dig('channel', 'runtime_state', 'history_sync_checkpoint')).to eq('next_dialog_index' => 1)
+      expect(body).to include('connected' => true, 'me' => { 'id' => 42, 'username' => 'owner' })
+    end
+
     it 'returns accepted deleting state when the inbox is deleting' do
       inbox.mark_pending_deletion!
 
