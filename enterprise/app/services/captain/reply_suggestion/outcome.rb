@@ -91,7 +91,7 @@ module Captain::ReplySuggestion::Outcome
         'suggestion_meta' => outcome[:suggestion_meta],
         'pending_actions' => Array(outcome[:pending_actions]),
         'follow_up_context' => outcome[:follow_up_context]
-      }.merge(outcome[:lead_agent_id].present? ? { 'lead_agent_id' => outcome[:lead_agent_id] } : {})
+      }.merge(outcome[:lead_agent_id].present? ? { 'lead_agent_id' => outcome[:lead_agent_id] } : {}).merge(superseded_result(outcome))
     end
 
     def reason_result(outcome)
@@ -100,7 +100,13 @@ module Captain::ReplySuggestion::Outcome
         'reason_source' => outcome[:reason_source].to_s,
         'agent' => outcome[:agent],
         'pending_actions' => Array(outcome[:pending_actions])
-      }
+      }.merge(superseded_result(outcome))
+    end
+
+    # The cards the run withdrew (a corrected card replaced them): the manager's panel drops them, as it may have shown them live.
+    def superseded_result(outcome)
+      ids = Array(outcome[:superseded_action_ids]).map(&:to_s)
+      ids.any? ? { 'superseded_action_ids' => ids } : {}
     end
   end
 end

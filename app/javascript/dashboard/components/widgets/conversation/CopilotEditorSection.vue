@@ -243,9 +243,17 @@ const normalizedPendingActions = computed(() => {
     props.liveProgress?.pending_actions ||
     [];
   if (!Array.isArray(rawList)) return [];
+  // A card the run withdrew (a corrected card replaced it) is never shown.
+  const superseded = new Set(
+    [
+      ...(props.suggestionMeta?.superseded_action_ids || []),
+      ...(props.liveProgress?.superseded_action_ids || []),
+    ].map(String)
+  );
 
   return rawList
     .filter(item => item && (item.action_id || item.actionId))
+    .filter(item => !superseded.has(String(item.action_id || item.actionId)))
     .map(item => {
       const actionId = String(item.action_id || item.actionId);
       const agent =

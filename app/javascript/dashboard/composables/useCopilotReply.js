@@ -61,17 +61,28 @@ function recordCopilotFeedback(payload) {
   }
 }
 
-function normalizePendingActionList(rawList, currentList = []) {
-  if (!Array.isArray(rawList) || !rawList.length) return currentList;
+// The cards the panel shows: the ones it already had and the new ones of the
+// run (a card keeps the operator's decision). removedIds are the cards the run
+// withdrew (a corrected card replaced them): they leave the panel.
+function normalizePendingActionList(
+  rawList,
+  currentList = [],
+  removedIds = []
+) {
+  const removed = new Set(
+    (Array.isArray(removedIds) ? removedIds : []).map(id => String(id))
+  );
+  const hasNew = Array.isArray(rawList) && rawList.length > 0;
+  if (!hasNew && !removed.size) return currentList;
   const byId = new Map();
   currentList.forEach(item => {
     const id = item?.action_id || item?.actionId;
-    if (id) byId.set(String(id), item);
+    if (id && !removed.has(String(id))) byId.set(String(id), item);
   });
-  rawList.forEach(item => {
+  (hasNew ? rawList : []).forEach(item => {
     if (!item || typeof item !== 'object') return;
     const id = item.action_id || item.actionId;
-    if (!id) return;
+    if (!id || removed.has(String(id))) return;
     const key = String(id);
     const existing = byId.get(key);
     if (
@@ -327,11 +338,23 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     };
   }
 
-  function mergePendingActions(rawList) {
-    if (!Array.isArray(rawList) || !rawList.length) return;
+  function mergePendingActions(rawList, removedIds = []) {
+    const hasNew = Array.isArray(rawList) && rawList.length > 0;
+    const hasRemoved = Array.isArray(removedIds) && removedIds.length > 0;
+    if (!hasNew && !hasRemoved) return;
     pendingActions.value = normalizePendingActionList(
       rawList,
-      pendingActions.value
+      pendingActions.value,
+      removedIds
+    );
+  }
+
+  // The ids of the cards a result withdrew (on top level, or in the meta).
+  function supersededIdsOf(result) {
+    return (
+      result?.superseded_action_ids ||
+      result?.suggestion_meta?.superseded_action_ids ||
+      []
     );
   }
 
@@ -454,7 +477,10 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     isContentReady.value = false;
     if (state.progress && typeof state.progress === 'object') {
       liveProgress.value = state.progress;
-      mergePendingActions(state.progress.pending_actions);
+      mergePendingActions(
+        state.progress.pending_actions,
+        state.progress.superseded_action_ids
+      );
     }
     setPhase(isQueuedState ? PHASE.QUEUED : PHASE.GENERATING);
   }
@@ -515,7 +541,8 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     mergePendingActions(
       result.pending_actions?.length
         ? result.pending_actions
-        : result.suggestion_meta?.pending_actions
+        : result.suggestion_meta?.pending_actions,
+      supersededIdsOf(result)
     );
     requestId.value = state.suggestion_request_id;
     liveProgress.value = null;
@@ -537,7 +564,7 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
   function applyOutcomeNotice(state) {
     const result = state.result || {};
     adoptRequest(state);
-    mergePendingActions(result.pending_actions);
+    mergePendingActions(result.pending_actions, supersededIdsOf(result));
     showNotice(
       {
         kind:
@@ -1046,7 +1073,8 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
       const candidateActions = incomingActions || meta?.pending_actions || [];
       pendingActions.value = normalizePendingActionList(
         candidateActions,
-        pendingActions.value
+        pendingActions.value,
+        meta?.superseded_action_ids
       );
       requestId.value = newRequestId || newContext?.request_id || null;
       if (content) {

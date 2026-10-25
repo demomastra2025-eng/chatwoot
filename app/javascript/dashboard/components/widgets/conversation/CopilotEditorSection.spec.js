@@ -162,6 +162,45 @@ describe('CopilotEditorSection.vue', () => {
     );
   });
 
+  it('never shows a card that the run withdrew for a corrected one', async () => {
+    const corrected = {
+      ...sampleAction,
+      action_id: 'act-102',
+      tool_name: 'update_appointment',
+      title: 'Перенести запись',
+    };
+    const replaced = { ...corrected, action_id: 'act-101' };
+
+    const live = mountComponent({
+      pendingActions: [],
+      liveProgress: {
+        pending_actions: [replaced, corrected],
+        superseded_action_ids: ['act-101'],
+      },
+    });
+    const draft = mountComponent({
+      pendingActions: [],
+      suggestionMeta: {
+        pending_actions: [replaced, corrected],
+        superseded_action_ids: ['act-101'],
+      },
+    });
+
+    [live, draft].forEach(wrapper => {
+      const titles = wrapper.findAll('[data-test="copilot-action-title"]');
+      expect(titles).toHaveLength(1);
+      expect(titles[0].text()).toBe(
+        'Агент Координатор хочет: Перенести запись'
+      );
+    });
+    const kept = mountComponent({
+      pendingActions: [replaced, corrected],
+      suggestionMeta: { superseded_action_ids: ['act-101'] },
+    });
+    await kept.find('[data-test="copilot-action-approve"]').trigger('click');
+    expect(kept.emitted('approveAction')).toEqual([[corrected]]);
+  });
+
   describe('refine and status lines', () => {
     const REFINE_KEY =
       'CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.REFINE_PLACEHOLDER';

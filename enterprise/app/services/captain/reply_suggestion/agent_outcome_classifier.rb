@@ -95,8 +95,8 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
 
     meta = suggestion_meta
     note = payload[:operator_note].presence || council_note.presence || I18n.t('captain.reply_suggestion.reasons.council_no_text')
-    attributes = { reason: note, engine: 'agent', reason_source: 'agent', agent: meta['agent'],
-                   pending_actions: Array(meta['pending_actions']), usage: usage }.merge(lead_agent)
+    attributes = { reason: note, engine: 'agent', reason_source: 'agent', agent: meta['agent'], **cards_of(meta), usage: usage }
+                 .merge(lead_agent)
     return Captain::ReplySuggestion::Outcome.human_needed(**attributes) if payload[:council_handoff].present?
 
     Captain::ReplySuggestion::Outcome.no_reply(**attributes)
@@ -108,8 +108,7 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
 
     meta = suggestion_meta
     Captain::ReplySuggestion::Outcome.no_reply(
-      reason: payload[:operator_note], engine: 'agent', reason_source: 'agent', agent: meta['agent'],
-      pending_actions: Array(meta['pending_actions']), usage: usage
+      reason: payload[:operator_note], engine: 'agent', reason_source: 'agent', agent: meta['agent'], **cards_of(meta), usage: usage
     )
   end
 
@@ -133,8 +132,14 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
     trace = trace_collector.captain_trace(payload)
     Captain::ReplySuggestion::Outcome.draft(
       message: payload[:response].to_s.strip, engine: 'agent', usage: usage, agent: meta['agent'], captain_trace: trace.presence,
-      suggestion_meta: meta.presence, pending_actions: Array(meta['pending_actions']), **lead_agent
+      suggestion_meta: meta.presence, **cards_of(meta), **lead_agent
     )
+  end
+
+  # The approval cards of the run, and the ids of the cards it withdrew (a corrected card replaced them) for the manager's panel.
+  def cards_of(meta)
+    superseded = Array(meta['superseded_action_ids'])
+    { pending_actions: Array(meta['pending_actions']) }.merge(superseded.any? ? { superseded_action_ids: superseded } : {})
   end
 
   # A council draft that leaves parts to the manager says so above the draft.
@@ -151,8 +156,7 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
   def human_needed(reason, source)
     meta = suggestion_meta
     Captain::ReplySuggestion::Outcome.human_needed(
-      reason: reason, engine: 'agent', reason_source: source, agent: meta['agent'], pending_actions: Array(meta['pending_actions']),
-      usage: usage
+      reason: reason, engine: 'agent', reason_source: source, agent: meta['agent'], **cards_of(meta), usage: usage
     )
   end
 

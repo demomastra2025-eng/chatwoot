@@ -265,7 +265,8 @@ module Enterprise::Captain::ReplySuggestionService
           'council' => council_snapshot,
           'handoffs' => @handoffs.presence,
           'routing' => @routing,
-          'pending_actions' => resolve_pending_actions(payload).presence
+          'pending_actions' => resolve_pending_actions(payload).presence,
+          'superseded_action_ids' => @superseded_action_ids.presence
         }.compact
       end
     end
@@ -319,8 +320,9 @@ module Enterprise::Captain::ReplySuggestionService
       end
     end
 
-    # The cards of the run so far. A card that a corrected card of the same action replaced (a booking at another time) was rejected
-    # and leaves the list: the operator approves only the card the draft names.
+    # The cards of the run so far. A card that a corrected card of the same action replaced (another time for the same appointment)
+    # was rejected and leaves the list: the operator approves only the card the draft names. Its id goes with the progress and the
+    # result (superseded_action_ids), so that the manager's panel, which keeps the cards it was shown, drops it too.
     def capture_pending_actions!(context)
       @superseded_action_ids = (@superseded_action_ids + superseded_action_ids_of(context)).uniq
       actions = Array(context&.dig(Captain::ReplySuggestion::ActionApprovalService::CONTEXT_KEY))
@@ -478,6 +480,7 @@ module Enterprise::Captain::ReplySuggestionService
         handoffs: @handoffs.presence,
         council: council_snapshot,
         pending_actions: @pending_actions.presence,
+        superseded_action_ids: @superseded_action_ids.presence,
         captain_trace: Captain::ToolTraceBuilder.payload(
           @tool_trace_steps,
           reasoning: @reasoning.presence || combined_council_reasoning

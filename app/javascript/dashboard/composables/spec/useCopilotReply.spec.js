@@ -343,6 +343,41 @@ describe('useCopilotReply', () => {
       );
     });
 
+    it('drops a card the run replaced with a corrected one, live and in the result', async () => {
+      const copilot = create();
+      mockStartReplySuggestion.mockResolvedValueOnce({
+        state: suggestionState(),
+      });
+      await copilot.startReplySuggestion();
+      const corrected = { ...sampleAction, action_id: 'act-56' };
+      const other = { ...sampleAction, action_id: 'act-57' };
+      emitProgress(progressEvent({ pending_actions: [sampleAction, other] }));
+      expect(copilot.pendingActions.value).toHaveLength(2);
+
+      emitProgress(
+        progressEvent({
+          pending_actions: [other, corrected],
+          superseded_action_ids: ['act-55'],
+        })
+      );
+      expect(copilot.pendingActions.value.map(item => item.action_id)).toEqual([
+        'act-57',
+        'act-56',
+      ]);
+
+      emitProgress(progressEvent({ pending_actions: [sampleAction, other] }));
+      emitResult(
+        draftState({
+          pending_actions: [other, corrected],
+          superseded_action_ids: ['act-55'],
+        })
+      );
+      expect(copilot.pendingActions.value.map(item => item.action_id)).toEqual([
+        'act-57',
+        'act-56',
+      ]);
+    });
+
     it('treats a draft without text as a failure instead of opening an empty editor', async () => {
       const copilot = create();
       mockStartReplySuggestion.mockResolvedValueOnce({
