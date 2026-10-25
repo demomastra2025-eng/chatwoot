@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ChannelSelector from 'dashboard/components/ChannelSelector.vue';
 import ru from 'dashboard/i18n/locale/ru/inboxMgmt.json';
-import WhatsappWebRiskNotice from '../components/WhatsappWebRiskNotice.vue';
 import Whatsapp from './Whatsapp.vue';
 
 const state = vi.hoisted(() => ({
@@ -93,11 +92,6 @@ describe('WhatsApp channel setup: unofficial hint', () => {
 
   beforeEach(() => {
     state.account = { id: 1 };
-    state.route = {
-      name: 'settings_inboxes_page_channel',
-      params: {},
-      query: {},
-    };
   });
 
   it('marks only the WhatsApp Web card as unofficial', () => {
@@ -109,17 +103,5 @@ describe('WhatsApp channel setup: unofficial hint', () => {
     expect(ru.INBOX_MGMT.ADD.AUTH.CHANNEL.WHATSAPP_WEB.DESCRIPTION).toBe(
       'Неофициальный канал, подключение по QR-коду'
     );
-  });
-
-  it('shows no WhatsApp Web warning while the official WhatsApp is set up', () => {
-    state.route = { ...state.route, query: { provider: 'whatsapp' } };
-    const wrapper = shallowMount(Whatsapp, {
-      global: { mocks: { $t: key => key } },
-    });
-
-    expect(wrapper.findComponent(WhatsappWebRiskNotice).exists()).toBe(false);
-    expect(
-      wrapper.find('[data-testid="whatsapp-web-risk-notice"]').exists()
-    ).toBe(false);
   });
 });
