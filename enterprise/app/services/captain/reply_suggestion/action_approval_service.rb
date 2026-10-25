@@ -48,9 +48,12 @@ class Captain::ReplySuggestion::ActionApprovalService
     'cancel_appointment' => 'a cancellation of an existing appointment'
   }.freeze
   NOT_APPOINTMENT_SCOPE = 'not an appointment: it books, moves or cancels nothing'
-  # The cards of a run that a corrected card of the same action replaced (see supersede_in_run!): the suggestion leaves them out.
+  # The cards that a corrected card replaced (see supersede_in_run! and supersede_kept!): the suggestion and the panel leave them out.
   SUPERSEDED_CONTEXT_KEY = :captain_suggestion_superseded_actions
   SUPERSEDED_REASON = 'superseded_in_run'
+  # A kept card of an earlier suggestion that a corrected booking replaced (see supersede_kept!).
+  KEPT_SUPERSEDED_REASON = 'superseded_by_later_booking'
+  SUPERSEDED_REASONS = [SUPERSEDED_REASON, KEPT_SUPERSEDED_REASON].freeze
 
   class Error < StandardError; end
   class NotFoundError < Error; end
@@ -67,8 +70,9 @@ class Captain::ReplySuggestion::ActionApprovalService
   end
 
   class << self
-    # replaces: the ids of this run's cards that the new card replaces (a booking for the same person at a corrected time, another
-    # change of the same appointment). They are withdrawn only once the new card exists; a refused call leaves them as they are.
+    # replaces: the ids of this run's cards that the new card replaces (another change or cancellation of the same appointment). A
+    # booking finds the cards it replaces itself (see replaced_booking_ids and supersede_kept!). They are withdrawn only once the new
+    # card exists; a refused call leaves them as they are.
     def intercept(tool:, tool_context:, arguments:, replaces: [])
       new_interception(tool: tool, tool_context: tool_context, arguments: arguments, replaces: replaces)
     end
@@ -188,7 +192,25 @@ class Captain::ReplySuggestion::ActionApprovalService
         next unless record && record['status'] == PENDING_STATUS
 
         update_record!(record.merge('status' => REJECTED_STATUS, 'rejected_at' => Time.current.iso8601, 'rejected_reason' => reason.to_s))
+        restore_replaced_kept!(record)
       end
+    end
+
+    # The kept cards that a booking card replaced come back when that card goes without the operator acting on it (its suggestion did
+    # not finish, was dismissed or gave way to a new one, or a corrected card of its run replaced it): the draft the patient read still
+    # stands. A kept card that changed since (the operator acted on it, another card replaced it) stays as it is.
+    def restore_replaced_kept!(record)
+      Array(record['replaced_kept_ids']).each do |kept_id|
+        kept = fetch_record(kept_id)
+        next unless kept && kept['status'] == REJECTED_STATUS && kept['superseded_by'].to_s == record['action_id'].to_s
+
+        update_record!(kept.except('rejected_at', 'rejected_reason', 'superseded_by').merge('status' => PENDING_STATUS))
+      end
+    end
+
+    # A card that a corrected card replaced: a card of the same run, or a kept card of an earlier suggestion.
+    def superseded?(record)
+      record['status'] == REJECTED_STATUS && SUPERSEDED_REASONS.include?(record['rejected_reason'].to_s)
     end
 
     # The run that prepares a card knows it (RunControl), so that it can discard the card if the run does not finish.
@@ -249,23 +271,49 @@ class Captain::ReplySuggestion::ActionApprovalService
       policy_or_scope_error = verify_policy_and_scope(tool, tool_context, normalized_args)
       return policy_or_scope_error if policy_or_scope_error
 
-      early_or_invalid = validate_domain_call(
-        tool_id: tool_id, assistant: assistant, account: account, conversation: conversation,
-        state: state, arguments: normalized_args
-      )
+      booking = {}
+      early_or_invalid = validate_domain_call(tool_id: tool_id, assistant: assistant, account: account, conversation: conversation,
+                                              state: state, arguments: normalized_args, booking: booking)
       return early_or_invalid if early_or_invalid
 
       record = build_or_reuse_proposal(
-        context: context, state: state, assistant: assistant, account: account,
-        conversation: conversation, tool_id: tool_id, arguments: normalized_args
+        context: context, state: state, assistant: assistant, account: account, conversation: conversation, tool_id: tool_id,
+        arguments: normalized_args, booking_key: booking_key(normalized_args, booking)
       )
       proposal_result(record, context, replaces)
     end
 
-    # The answer of a new card for the agent, once the cards of the run that it replaces are withdrawn.
+    # The answer of a new card for the agent, once the cards it replaces are withdrawn: the run's cards it was told to replace, the
+    # run's booking cards of the same booking, and then the kept booking card of the same booking (in this order: a booking card of
+    # the run that goes gives back the kept card it replaced, which the new card then replaces).
     def proposal_result(record, context, replaces)
-      replaced = supersede_in_run!(context, Array(replaces).map(&:to_s) - [record['action_id'].to_s])
+      own = (Array(replaces).map(&:to_s) + replaced_booking_ids(context, record)).uniq - [record['action_id'].to_s]
+      replaced = supersede_in_run!(context, own)
+      replaced += supersede_kept!(context, record)
       render_interception_result(record, context, replaced)
+    end
+
+    # One booking is one patient with one specialist and one service (as the booking resolves them): a booking at another date or
+    # time with the same three is a corrected booking, and its card replaces the earlier one; another specialist or service is
+    # another booking with a card of its own. The patient is the person the booking names, or else the person of the conversation.
+    def booking_key(arguments, booking)
+      return if booking[:resource_id].blank?
+
+      person = Captain::Runtime::OperationTarget.person(arguments[:patient])
+      Digest::SHA256.hexdigest(JSON.generate([person, booking[:resource_id].to_s, booking[:service_id].to_s]))
+    end
+
+    # The booking cards of the run (not the kept cards it lists) of the same booking as the new card.
+    def replaced_booking_ids(context, record)
+      return [] if record['booking_key'].blank?
+
+      Array(context[CONTEXT_KEY]).filter_map do |item|
+        action_id = item.to_h.stringify_keys['action_id'].to_s
+        next if action_id == record['action_id'].to_s
+
+        card = fetch_record(action_id)
+        action_id if card && !kept?(card) && card['booking_key'] == record['booking_key']
+      end
     end
 
     # Withdraws the cards of this run that the new card replaces: nothing ran, so each is rejected, leaves the run's list and is
@@ -274,11 +322,44 @@ class Captain::ReplySuggestion::ActionApprovalService
       ids = own_run_card_ids(action_ids.compact_blank)
       return [] if ids.empty?
 
-      cards = context[CONTEXT_KEY].is_a?(Array) ? context[CONTEXT_KEY] : []
-      replaced, kept = cards.partition { |item| ids.include?(item.to_h.stringify_keys['action_id'].to_s) }
-      cards.replace(kept)
-      context[SUPERSEDED_CONTEXT_KEY] = (Array(context[SUPERSEDED_CONTEXT_KEY]) + ids).uniq
+      replaced = withdraw_from_run!(context, ids)
       discard!(action_ids: ids, reason: SUPERSEDED_REASON)
+      replaced
+    end
+
+    # A booking replaces the kept card of an earlier suggestion of the conversation for the same booking at another date or time (the
+    # manager inserted or sent that draft, and its card still waits): one card per booking waits for the operator, the one the latest
+    # draft names. The kept card comes back if the new card goes without the operator acting on it (see restore_replaced_kept!).
+    # Returns the withdrawn cards.
+    def supersede_kept!(context, record)
+      kept = replaced_kept_records(record)
+      return [] if kept.empty?
+
+      ids = kept.map { |card| card['action_id'].to_s }
+      update_record!(record.merge!('replaced_kept_ids' => (Array(record['replaced_kept_ids']) + ids).uniq))
+      kept.each do |card|
+        update_record!(card.merge('status' => REJECTED_STATUS, 'rejected_at' => Time.current.iso8601,
+                                  'rejected_reason' => KEPT_SUPERSEDED_REASON, 'superseded_by' => record['action_id']))
+      end
+      withdraw_from_run!(context, ids)
+      kept
+    end
+
+    def replaced_kept_records(record)
+      return [] if record['booking_key'].blank?
+
+      pending_records(record['account_id'], record['conversation_id']).select do |card|
+        kept?(card) && card['action_id'].to_s != record['action_id'].to_s && card['booking_key'] == record['booking_key']
+      end
+    end
+
+    # Takes withdrawn cards out of the run's list and remembers them as superseded, so that the draft, the result and the manager's
+    # panel leave them out. Returns the cards the run listed.
+    def withdraw_from_run!(context, ids)
+      cards = context[CONTEXT_KEY].is_a?(Array) ? context[CONTEXT_KEY] : []
+      replaced, listed = cards.partition { |item| ids.include?(item.to_h.stringify_keys['action_id'].to_s) }
+      cards.replace(listed)
+      context[SUPERSEDED_CONTEXT_KEY] = (Array(context[SUPERSEDED_CONTEXT_KEY]) + ids).uniq
       replaced
     end
 
@@ -313,10 +394,11 @@ class Captain::ReplySuggestion::ActionApprovalService
       business_failure(e.message, reason: 'validation_error')
     end
 
-    def validate_domain_call(tool_id:, assistant:, account:, conversation:, state:, arguments:)
+    # booking: filled with the specialist and the service a valid booking resolves to (see booking_key).
+    def validate_domain_call(tool_id:, assistant:, account:, conversation:, state:, arguments:, booking: {})
       case tool_id
       when 'create_appointment'
-        validate_create_appointment(assistant: assistant, account: account, conversation: conversation, arguments: arguments)
+        validate_create_appointment(assistant: assistant, account: account, conversation: conversation, arguments: arguments, booking: booking)
       when 'update_appointment'
         validate_update_appointment(assistant: assistant, account: account, conversation: conversation, arguments: arguments)
       when 'cancel_appointment'
@@ -326,7 +408,7 @@ class Captain::ReplySuggestion::ActionApprovalService
       end
     end
 
-    def validate_create_appointment(assistant:, account:, conversation:, arguments:)
+    def validate_create_appointment(assistant:, account:, conversation:, arguments:, booking: {})
       return business_failure('Scheduling is not available', reason: 'validation_error') unless assistant && account
 
       operation = Captain::Tools::Operations::AppointmentOperations.new(
@@ -367,6 +449,8 @@ class Captain::ReplySuggestion::ActionApprovalService
         duration_min: arguments[:duration_min], service: service
       )
 
+      booking[:resource_id] = resource.id
+      booking[:service_id] = service&.id
       nil
     rescue StandardError => e
       Captain::Tools::Agent::AppointmentResult.failure_output(e, account: account)
@@ -635,7 +719,8 @@ class Captain::ReplySuggestion::ActionApprovalService
       )
     end
 
-    def build_or_reuse_proposal(context:, state:, assistant:, account:, conversation:, tool_id:, arguments:)
+    # booking_key: the booking of a create_appointment card (see booking_key), which a corrected booking replaces.
+    def build_or_reuse_proposal(context:, state:, assistant:, account:, conversation:, tool_id:, arguments:, booking_key: nil)
       digest = compute_digest(account_id: account&.id, conversation_id: conversation&.id, tool_name: tool_id, arguments: arguments)
       reusable = own_proposal(context, digest) || kept_proposal(context, account&.id, conversation&.id, digest)
       return reusable if reusable
@@ -657,6 +742,7 @@ class Captain::ReplySuggestion::ActionApprovalService
         'tool_name' => tool_id,
         'status' => PENDING_STATUS,
         'digest' => digest,
+        'booking_key' => booking_key,
         'title' => presentation[:title],
         'description' => presentation[:description],
         'details' => presentation[:details],
@@ -976,7 +1062,9 @@ class Captain::ReplySuggestion::ActionApprovalService
     record
   end
 
+  # A card that a corrected card replaced is never executed: approving it as well would book the same visit twice.
   def validate_approvable_state!(record, digest: nil)
+    raise InvalidStateError, 'Action was replaced by a corrected card; approve the card that replaced it' if self.class.superseded?(record)
     raise InvalidStateError, 'Action was already rejected by the operator' if record['status'] == REJECTED_STATUS
     raise InvalidStateError, 'Action is currently executing' if record['status'] == EXECUTING_STATUS
 

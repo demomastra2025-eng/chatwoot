@@ -123,6 +123,8 @@ RSpec.describe Captain::Runtime::ToolWrapper do
   # The appointment tools of the agent as the guards see them: the booking names a person, a change or a cancellation an appointment.
   class ToolWrapperSpecAppointmentTool < Captain::Runtime::Tool
     param :starts_at, type: :string, required: false
+    param :resource_id, type: :integer, required: false
+    param :service_id, type: :integer, required: false
     param :appointment_id, type: :integer, required: false
     param :patient, type: 'object', required: false
     param :reason, type: :string, required: false
@@ -1289,18 +1291,26 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     let(:read_only_tool) { ToolWrapperSpecReadOnlyTool.new }
     let(:read_only_wrapper) { described_class.new(read_only_tool, context_wrapper) }
     let(:cards_key) { Captain::ReplySuggestion::ActionApprovalService::CONTEXT_KEY }
+    let(:superseded_key) { Captain::ReplySuggestion::ActionApprovalService::SUPERSEDED_CONTEXT_KEY }
     let(:intercepted) { [] }
+    let(:patient) { { first_name: 'Айгуль', last_name: 'Серикова', birth_date: '1990-01-01' } }
 
-    # The approval service as the wrapper sees it: a card per call, and the cards it is told to replace leave the run's list.
+    # The approval service as the wrapper sees it: a card per call. The cards it is told to replace, and the booking cards of the same
+    # patient, specialist and service (a booking finds them itself), leave the run's list and are remembered as superseded.
     before do
       context_wrapper.context[:state][:source] = 'reply_suggestion'
       allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:intercept) do |tool:, tool_context:, arguments:, replaces: []|
         intercepted << { tool: tool.name, arguments: arguments, replaces: replaces }
-        cards = (tool_context.context[cards_key] ||= [])
-        cards.reject! { |item| replaces.include?(item['action_id']) }
-        key = arguments[:title] || [arguments[:appointment_id], arguments[:starts_at], arguments[:reason]].compact.join(' ')
+        context = tool_context.context
+        cards = (context[cards_key] ||= [])
+        booking = arguments.slice(:patient, :resource_id, :service_id) if tool.name == 'create_appointment'
+        withdrawn = cards.select { |item| replaces.include?(item['action_id']) || (booking && item['booking'] == booking) }
+        cards.reject! { |item| withdrawn.include?(item) }
+        context[superseded_key] = Array(context[superseded_key]) + withdrawn.pluck('action_id') if withdrawn.any?
+        doctor = "doctor-#{arguments[:resource_id]}/#{arguments[:service_id]}" if arguments[:resource_id]
+        key = arguments[:title] || [arguments[:appointment_id], doctor, arguments[:starts_at], arguments[:reason]].compact.join(' ')
         card = { 'action_id' => "card-#{key}", 'tool_name' => tool.name, 'status' => 'pending', 'title' => 'Создать задачу',
-                 'description' => "Задача: #{key}" }
+                 'description' => "Задача: #{key}", 'booking' => booking }.compact
         cards << card
         JSON.generate(success: true, status: 'pending_operator_approval', action_id: card['action_id'], action: tool.name)
       end
@@ -1343,35 +1353,67 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       expect(intercepted.size).to eq(2)
     end
 
-    # One message may book the same patient twice (a consultation and a test, another specialist, another time): each booking is a
-    # card of its own. Only an identical booking is a repeat, and it is answered with its own card.
-    it 'prepares a second booking card of the same patient with other arguments, and reuses the card of an identical booking' do
-      booking = described_class.new(ToolWrapperSpecAppointmentTool.new, context_wrapper)
-      patient = { first_name: 'Айгуль', last_name: 'Серикова', birth_date: '1990-01-01' }
-
-      first = JSON.parse(call_in_new_batch(booking, patient: patient, starts_at: '2026-10-26T10:00'))
-      second = JSON.parse(call_in_new_batch(booking, patient: patient, starts_at: '2026-10-26T11:30'))
-      again = JSON.parse(call_in_new_batch(booking, patient: patient, starts_at: '2026-10-26T10:00'))
-
-      expect(second).to include('status' => 'pending_operator_approval', 'action_id' => 'card-2026-10-26T11:30')
-      expect(again['action_id']).to eq(first['action_id'])
-      expect(intercepted.map { |call| call[:replaces] }).to eq([[], []])
-      expect(card_ids).to eq(['card-2026-10-26T10:00', 'card-2026-10-26T11:30'])
-      expect(context_wrapper.context).not_to have_key(described_class::TERMINAL_TOOL_STOP_KEY)
+    def claim_card_ids
+      context_wrapper.context[described_class::MUTATING_TOOL_EXECUTIONS_KEY].values.flat_map { |entry| Array(entry[:suggestion_cards]) }
+                     .pluck(:action_id)
     end
 
-    it 'keeps a booking card when another booking of the same patient is refused' do
+    # The draft promised one time while the operator approved a card with another, and an operator who approved both cards booked the
+    # visit twice: a booking of the same patient with the same specialist and service at a corrected time replaces the earlier card.
+    it 'replaces the booking card of the same patient, specialist and service when the booking is repeated with another start',
+       :aggregate_failures do
       booking = described_class.new(ToolWrapperSpecAppointmentTool.new, context_wrapper)
-      call_in_new_batch(booking, starts_at: '2026-10-26T10:00')
+      visit = { patient: patient, resource_id: 7, service_id: 3 }
+
+      first = JSON.parse(call_in_new_batch(booking, **visit, starts_at: '2026-10-26T10:00'))
+      second = JSON.parse(call_in_new_batch(booking, **visit, starts_at: '2026-10-26T11:30'))
+
+      expect(first['action_id']).to eq('card-doctor-7/3 2026-10-26T10:00')
+      expect(second).to include('status' => 'pending_operator_approval', 'action_id' => 'card-doctor-7/3 2026-10-26T11:30')
+      expect(card_ids).to eq([second['action_id']])
+      expect(claim_card_ids).to eq([second['action_id']])
+      expect(context_wrapper.context).not_to have_key(described_class::TERMINAL_TOOL_STOP_KEY)
+
+      # Back to the first time: its answer was withdrawn with its card, so the card is prepared again and replaces the second one.
+      third = JSON.parse(call_in_new_batch(booking, **visit, starts_at: '2026-10-26T10:00'))
+
+      expect(intercepted.size).to eq(3)
+      expect(third['action_id']).to eq('card-doctor-7/3 2026-10-26T10:00')
+      expect(card_ids).to eq([third['action_id']])
+      expect(claim_card_ids).to eq([third['action_id']])
+    end
+
+    # One message may book the same patient for two visits (an ultrasound and an endocrinologist the same day): a booking with another
+    # specialist or service is a card of its own, and only an identical booking is a repeat, answered with its own card.
+    it 'prepares a card of its own for a booking of the same patient with another specialist or service' do
+      booking = described_class.new(ToolWrapperSpecAppointmentTool.new, context_wrapper)
+
+      ultrasound = JSON.parse(call_in_new_batch(booking, patient: patient, resource_id: 7, service_id: 3, starts_at: '2026-10-26T10:00'))
+      endocrinologist = JSON.parse(call_in_new_batch(booking, patient: patient, resource_id: 8, service_id: 4, starts_at: '2026-10-26T11:30'))
+      other_service = JSON.parse(call_in_new_batch(booking, patient: patient, resource_id: 7, service_id: 5, starts_at: '2026-10-26T12:00'))
+      again = JSON.parse(call_in_new_batch(booking, patient: patient, resource_id: 7, service_id: 3, starts_at: '2026-10-26T10:00'))
+
+      ids = [ultrasound, endocrinologist, other_service].pluck('action_id')
+      expect(ids).to eq(['card-doctor-7/3 2026-10-26T10:00', 'card-doctor-8/4 2026-10-26T11:30', 'card-doctor-7/5 2026-10-26T12:00'])
+      expect(again['action_id']).to eq(ultrasound['action_id'])
+      expect(intercepted.map { |call| call[:replaces] }).to eq([[], [], []])
+      expect(card_ids).to eq(ids)
+      expect(claim_card_ids).to eq(ids)
+      expect(context_wrapper.context[superseded_key]).to be_blank
+    end
+
+    it 'keeps a booking card when the booking that should replace it is refused' do
+      booking = described_class.new(ToolWrapperSpecAppointmentTool.new, context_wrapper)
+      call_in_new_batch(booking, resource_id: 7, service_id: 3, starts_at: '2026-10-26T10:00')
       allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:intercept)
         .and_return(JSON.generate(success: false, reason: 'schedule_not_open', error_class: 'business'))
 
-      refused = call_in_new_batch(booking, starts_at: '2026-10-26T19:30')
+      refused = call_in_new_batch(booking, resource_id: 7, service_id: 3, starts_at: '2026-10-26T19:30')
 
       expect(refused).not_to be_a(RubyLLM::Tool::Halt)
-      expect(card_ids).to eq(['card-2026-10-26T10:00'])
+      expect(card_ids).to eq(['card-doctor-7/3 2026-10-26T10:00'])
       expect(context_wrapper.context[described_class::MUTATING_TOOL_EXECUTIONS_KEY]['create_appointment'][:suggestion_cards])
-        .to match([hash_including(action_id: 'card-2026-10-26T10:00')])
+        .to match([hash_including(action_id: 'card-doctor-7/3 2026-10-26T10:00')])
     end
 
     it 'answers and replaces only the card of the appointment the call is for, never another target or a kept card' do

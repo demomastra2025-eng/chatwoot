@@ -69,6 +69,13 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
   let(:starts_at) { 2.days.from_now.change(hour: 10, min: 0, sec: 0).iso8601 }
   let(:ends_at) { 2.days.from_now.change(hour: 10, min: 30, sec: 0).iso8601 }
 
+  # A corrected time of the same day.
+  def later_starts_at = 2.days.from_now.change(hour: 11, min: 30, sec: 0).iso8601
+  def later_ends_at = 2.days.from_now.change(hour: 12, min: 0, sec: 0).iso8601
+
+  # Another specialist for a second visit of the same patient.
+  def create_endocrinologist = account.scheduling_resources.create!(name: 'Д-р Ли', active: true)
+
   before do
     if defined?(Scheduling::ServicePrice)
       Scheduling::ServicePrice.find_or_create_by!(
@@ -147,28 +154,113 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
       expect(booking['message']).to end_with('mention a booking, change or cancellation only when its card is listed.')
     end
 
-    # One message may book the same patient twice (another service, specialist or time): each booking is a card of its own, both
-    # wait for the operator, and the agent is told about both. Only a change or a cancellation of one appointment replaces its card.
-    it 'prepares a second booking card when the agent books the same patient again at another time' do
+    # The draft once promised one time while the operator approved a card with another, and an operator who approved both cards
+    # booked the visit twice: the second booking of the same patient with the same specialist and service at a corrected time
+    # withdraws the first card, and the agent and the operator see only the new one.
+    it 'replaces the booking card of a run when the agent books the same patient with the same specialist and service at another time',
+       :aggregate_failures do
       wrapper = Captain::Runtime::ToolWrapper.new(create_tool, run_context)
-      later_starts_at = 2.days.from_now.change(hour: 11, min: 30, sec: 0).iso8601
-      later_ends_at = 2.days.from_now.change(hour: 12, min: 0, sec: 0).iso8601
       first_args = { resource_id: resource.id, service_id: service_item.id, starts_at: starts_at, ends_at: ends_at }
 
       first = JSON.parse(wrapper.call(first_args))
       second = JSON.parse(wrapper.call(first_args.merge(starts_at: later_starts_at, ends_at: later_ends_at)))
 
       expect(second).to include('status' => 'pending_operator_approval')
-      expect(second['message']).not_to include('It replaces')
       expect(second['message']).to include(
-        "Cards waiting in this run: «Записать на приём» (create_appointment: #{first['summary']}), " \
-        "«Записать на приём» (create_appointment: #{second['summary']})."
+        "It replaces «Записать на приём» (create_appointment: #{first['summary']}): that card is withdrawn",
+        "Cards waiting in this run: «Записать на приём» (create_appointment: #{second['summary']})."
       )
-      expect(run_context.context[described_class::CONTEXT_KEY].pluck('action_id')).to eq([first['action_id'], second['action_id']])
+      expect(run_context.context[described_class::CONTEXT_KEY].pluck('action_id')).to eq([second['action_id']])
+      expect(run_context.context[described_class::SUPERSEDED_CONTEXT_KEY]).to eq([first['action_id']])
+      expect(described_class.pending_for(account_id: account.id, conversation_id: conversation.id).pluck('action_id'))
+        .to eq([second['action_id']])
+      expect(described_class.fetch_record(first['action_id'])).to include('status' => 'rejected', 'rejected_reason' => 'superseded_in_run')
+      expect(account.scheduling_appointments.count).to eq(0)
+
+      # Back to the first time: the withdrawn card is not answered again; a new card is prepared and replaces the second one.
+      third = JSON.parse(wrapper.call(first_args))
+
+      expect(third['action_id']).not_to eq(first['action_id'])
+      expect(third['summary']).to eq(first['summary'])
+      expect(run_context.context[described_class::CONTEXT_KEY].pluck('action_id')).to eq([third['action_id']])
+      expect(described_class.pending_for(account_id: account.id, conversation_id: conversation.id).pluck('action_id'))
+        .to eq([third['action_id']])
+    end
+
+    # One message may book the same patient for two visits (an ultrasound and an endocrinologist the same day): a booking with another
+    # specialist or service is a card of its own, every card waits for the operator, and the agent is told about all of them.
+    it 'prepares a card of its own for a booking of the same patient with another specialist or service', :aggregate_failures do
+      thyroid_ultrasound = account.scheduling_services.create!(name: 'УЗИ щитовидной железы', duration_min: 30, base_price: 8_000, active: true)
+      wrapper = Captain::Runtime::ToolWrapper.new(create_tool, run_context)
+      first_args = { resource_id: resource.id, service_id: service_item.id, starts_at: starts_at, ends_at: ends_at }
+
+      first = JSON.parse(wrapper.call(first_args))
+      other_doctor = JSON.parse(wrapper.call(first_args.merge(resource_id: create_endocrinologist.id)))
+      later_args = { starts_at: later_starts_at, ends_at: later_ends_at }
+      other_service = JSON.parse(wrapper.call(first_args.merge(service_id: thyroid_ultrasound.id, **later_args)))
+
+      cards = [first, other_doctor, other_service]
+      expect(cards.pluck('status')).to all(eq('pending_operator_approval'))
+      expect(cards.map { |card| card['message'] }.grep(/It replaces/)).to be_empty
+      expect(other_service['message']).to include(
+        "Cards waiting in this run: #{cards.map { |card| "«Записать на приём» (create_appointment: #{card['summary']})" }.join(', ')}."
+      )
+      expect(run_context.context[described_class::CONTEXT_KEY].pluck('action_id')).to eq(cards.pluck('action_id'))
       expect(run_context.context[described_class::SUPERSEDED_CONTEXT_KEY]).to be_blank
       expect(described_class.pending_for(account_id: account.id, conversation_id: conversation.id).pluck('action_id'))
-        .to contain_exactly(first['action_id'], second['action_id'])
-      expect(account.scheduling_appointments.count).to eq(0)
+        .to match_array(cards.pluck('action_id'))
+    end
+
+    # The manager sent the draft of an earlier suggestion, and its booking card still waits. The next suggestion books the same patient
+    # with the same specialist and service at another time: the kept card is withdrawn, so that one card of that booking waits, and a
+    # kept card of another specialist stays. If the new card goes unused (the suggestion is dismissed), the kept card waits again.
+    it 'replaces the kept booking card of an earlier suggestion of the same specialist and service, and gives it back when the new card goes',
+       :aggregate_failures do
+      Current.user = user
+      args = { resource_id: resource.id, service_id: service_item.id, starts_at: starts_at, ends_at: ends_at }
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 60
+      kept, kept_other = Captain::ReplySuggestion::RunControl.with(request_id: 'request-1', deadline: deadline) do
+        [args, args.merge(resource_id: create_endocrinologist.id)].map do |arguments|
+          JSON.parse(described_class.intercept(tool: create_tool, tool_context: tool_context, arguments: arguments))
+        end
+      end
+      described_class.keep_for_request!(account_id: account.id, conversation_id: conversation.id, request_id: 'request-1')
+
+      next_context = Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new(
+        run_context.context.deep_dup.merge(captain_suggestion_pending_actions: [])
+      ))
+      # The next suggestion corrects the time, and then corrects it once more in the same run.
+      later_times = [[later_starts_at, later_ends_at], [2.days.from_now.change(hour: 13, min: 0, sec: 0).iso8601, nil]]
+      corrected, recorrected = Captain::ReplySuggestion::RunControl.with(request_id: 'request-2', deadline: deadline) do
+        later_times.map do |from, to|
+          JSON.parse(described_class.intercept(tool: create_tool, tool_context: next_context,
+                                               arguments: args.merge(starts_at: from, ends_at: to).compact))
+        end
+      end
+
+      kept_label = "«Записать на приём» (create_appointment: #{kept['summary']})"
+      expect(corrected['message']).to include("It replaces #{kept_label}: that card is withdrawn")
+      expect(recorrected['message']).to include("It replaces «Записать на приём» (create_appointment: #{corrected['summary']}), #{kept_label}")
+      expect(next_context.context[described_class::SUPERSEDED_CONTEXT_KEY]).to contain_exactly(kept['action_id'], corrected['action_id'])
+      expect(described_class.fetch_record(corrected['action_id'])).to include('status' => 'rejected', 'rejected_reason' => 'superseded_in_run')
+      expect(described_class.fetch_record(kept['action_id'])).to include(
+        'status' => 'rejected', 'rejected_reason' => 'superseded_by_later_booking', 'superseded_by' => recorrected['action_id']
+      )
+      expect(described_class.pending_for(account_id: account.id, conversation_id: conversation.id, request_id: 'request-2').pluck('action_id'))
+        .to eq([recorrected['action_id'], kept_other['action_id']])
+      expect { described_class.new(account: account, user: user).approve!(action_id: kept['action_id']) }
+        .to raise_error(described_class::InvalidStateError, /replaced by a corrected card/)
+
+      # The manager dismisses the new suggestion: its card goes, and the kept card that the patient read about waits again.
+      described_class.discard_for_request!(account_id: account.id, conversation_id: conversation.id, request_id: 'request-2',
+                                           reason: 'suggestion_dismissed')
+
+      expect(described_class.fetch_record(kept['action_id'])).to include('status' => 'pending', 'kept_at' => be_present)
+      expect(described_class.fetch_record(kept['action_id']).keys).not_to include('superseded_by', 'rejected_reason')
+      expect(described_class.pending_for(account_id: account.id, conversation_id: conversation.id, request_id: 'request-3').pluck('action_id'))
+        .to contain_exactly(kept['action_id'], kept_other['action_id'])
+    ensure
+      Current.reset
     end
 
     it 'withdraws only a card that the run itself prepared' do
@@ -540,6 +632,31 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
       approved = approval_service.approve!(action_id: action_id)
       expect(approved['status']).to eq('approved')
       expect(appointment.reload.status).to eq('cancelled')
+    end
+
+    # Both cards of a corrected booking reached the operator once, and approving both booked the visit twice: the replaced card is
+    # refused without running anything, and the card that replaced it books the visit once.
+    it 'refuses to approve a booking card that a corrected booking replaced, and books the corrected one' do
+      wrapper = Captain::Runtime::ToolWrapper.new(create_tool, run_context)
+      args = { resource_id: resource.id, service_id: service_item.id, starts_at: starts_at, ends_at: ends_at }
+      replaced = JSON.parse(wrapper.call(args))
+      corrected = JSON.parse(wrapper.call(args.merge(starts_at: later_starts_at, ends_at: later_ends_at)))
+      tool_double = instance_double(Captain::Tools::CreateAppointmentTool, name: 'create_appointment')
+      allow(Captain::Tools::CreateAppointmentTool).to receive(:new).with(assistant).and_return(tool_double)
+      allow(tool_double).to receive(:execute).and_return(
+        JSON.generate(success: true, action: 'create_appointment', appointment_id: 778, doctor_name: 'Д-р Смит', local_time: '11:30',
+                      status: 'created')
+      )
+
+      expect { approval_service.approve!(action_id: replaced['action_id']) }
+        .to raise_error(described_class::InvalidStateError, /replaced by a corrected card/)
+      expect(described_class.fetch_record(replaced['action_id'])).to include('status' => 'rejected', 'rejected_reason' => 'superseded_in_run')
+
+      approved = approval_service.approve!(action_id: corrected['action_id'])
+
+      expect(approved['status']).to eq('approved')
+      expect(tool_double).to have_received(:execute).once
+      expect(tool_double).to have_received(:execute).with(anything, hash_including(starts_at: later_starts_at))
     end
 
     it 'raises InvalidStateError when digest does not match' do

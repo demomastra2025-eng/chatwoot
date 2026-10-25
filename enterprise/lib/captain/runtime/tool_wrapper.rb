@@ -48,8 +48,9 @@ class Captain::Runtime::ToolWrapper
   SUGGESTION_FREE_READ_REPEATS = 1
   REPEATED_READ_NOTE = 'Same call as before in this run, same result as before (below). Do not call it again: finish the draft ' \
                        'with the results you have.'
-  # A repeat of an action with other arguments in a reply suggestion is a new approval card (nothing ran). An appointment keeps one
-  # card per claim: the new card replaces the earlier one. Any other action gets up to this many cards in a run.
+  # A repeat of an action with other arguments in a reply suggestion is a new approval card (nothing ran). A change or a cancellation
+  # keeps one card per appointment, and a booking one card per patient, specialist and service: a corrected card replaces the earlier
+  # one. Any other card, a booking with another specialist or service too, counts against this many cards of the claim in a run.
   SUGGESTION_CARDS_PER_TOOL = 3
   SUGGESTION_CARD_LIMIT_ERROR = 'NOT prepared: the cards of this action listed in data already wait for the operator in this run, ' \
                                 'and these new arguments were not prepared. Do not call the tool again. Finish the draft and mention ' \
@@ -833,9 +834,10 @@ class Captain::Runtime::ToolWrapper
 
   # A reply suggestion runs nothing before the operator allows it, so the same action with other arguments (an identical repeat is
   # answered from the cache before this) is a new card: a change or a cancellation of an appointment replaces the claim's card
-  # (another time or reason for the same appointment), and any other action, a booking too, gets up to SUGGESTION_CARDS_PER_TOOL
-  # cards (a second booking of the same person with another service, specialist or time, a second task, another field of the
-  # contact). Past that the call is answered with the cards that wait, and nothing new is prepared. nil: prepare it.
+  # (another time or reason for the same appointment), a booking at a corrected date or time replaces the card of the same specialist
+  # and service (the approval service finds it), and the claim keeps up to SUGGESTION_CARDS_PER_TOOL cards (a booking of the same
+  # person with another specialist or service, a second task, another field of the contact). Past that the call is answered with the
+  # cards that wait, and nothing new is prepared. nil: prepare it.
   def suggestion_card_repeat_result(entry)
     return if card_replacing_tool?
 
@@ -867,7 +869,9 @@ class Captain::Runtime::ToolWrapper
 
   # In a reply suggestion an action tool prepares an approval card for the operator instead of running. A new card of a change or a
   # cancellation replaces the cards of the same appointment (the same claim): the approval service withdraws them once the new card
-  # exists. Two bookings of the same person with other arguments are two cards; an identical booking reuses its card.
+  # exists. A booking replaces the card of the same patient, specialist and service, which the approval service finds itself (it
+  # knows the specialist and the service the booking resolves to, and the kept cards of earlier suggestions); a booking with another
+  # specialist or service is a card of its own, and an identical booking reuses its card.
   def intercept_for_approval(tool_context, normalized_args)
     @replaced_card_ids = card_replacing_tool? ? suggestion_cards(mutating_tool_executions[mutation_claim_key]).pluck(:action_id).map(&:to_s) : []
     Captain::ReplySuggestion::ActionApprovalService.intercept(
@@ -880,16 +884,22 @@ class Captain::Runtime::ToolWrapper
     Captain::Runtime::OperationTarget::APPOINTMENT_TOOLS.include?(Captain::Runtime::ToolFailure.canonical_name(@tool.name))
   end
 
-  # Keeps the card a reply suggestion prepared on its claim, and drops the cards it replaced with their cached results, so an
-  # identical repeat of a replaced call prepares its card again instead of answering with a withdrawn one.
+  # Keeps the card a reply suggestion prepared on its claim, and drops the cards it replaced (the ones the call named, and the ones
+  # the approval service withdrew, see SUPERSEDED_CONTEXT_KEY) with their cached results, so an identical repeat of a replaced call
+  # prepares its card again instead of answering with a withdrawn one.
   def record_suggestion_card(entry, result)
     action_id = pending_card_id(result) if reply_suggestion_run?
     return if action_id.blank?
 
+    withdrawn = Array(@replaced_card_ids) + superseded_card_ids
     cards = suggestion_cards(entry).reject { |card| card[:action_id].to_s == action_id }
-    replaced, kept = cards.partition { |card| Array(@replaced_card_ids).include?(card[:action_id].to_s) }
+    replaced, kept = cards.partition { |card| withdrawn.include?(card[:action_id].to_s) }
     replaced.each { |card| tool_result_cache.delete(card[:digest]) }
     entry[:suggestion_cards] = kept + [{ action_id: action_id, digest: entry[:arguments_digest] }]
+  end
+
+  def superseded_card_ids
+    Array(context_wrapper_context[Captain::ReplySuggestion::ActionApprovalService::SUPERSEDED_CONTEXT_KEY]).map(&:to_s)
   end
 
   def pending_card_id(result)
