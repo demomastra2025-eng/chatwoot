@@ -38,8 +38,10 @@ RSpec.describe Captain::Evals::RouterBenchmark::Fixture do
     committed = JSON.parse(File.read(Rails.root.join('script/captain/router_benchmark/router_scenarios.json')))
     ids = committed['suites'].flat_map { |suite| suite['scenarios'].pluck('id') }
 
-    expect(ids.size).to eq(54)
+    expect(ids.size).to eq(57)
     expect(ids).to include('SZ01', 'A11', 'I06')
+    traps = committed['suites'].flat_map { |suite| suite['scenarios'] }.select { |scenario| scenario['trap'] }.group_by { |scenario| scenario['trap'] }
+    expect(traps.transform_values(&:size)).to eq('human' => 3, 'injection' => 4, 'false_council' => 6)
     expect(committed['suites'].flat_map { |suite| suite['scenarios'].pluck('expected') }).to all(match(described_class::KEY))
   end
 

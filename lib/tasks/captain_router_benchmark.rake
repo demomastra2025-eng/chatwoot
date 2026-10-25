@@ -10,7 +10,10 @@
 #     [SCENARIOS=script/captain/router_benchmark/router_scenarios.json] [CARDS=proposed|prod] \
 #     [PROPOSALS=config/captain/router_prompt_migration/2026-10-router.yml] \
 #     [MODELS=perplexity/pplx-decider-v1.2,typesafe/jev-1.14,inception/mercury-decide] [CHAIN=1] [ESCALATION=1] \
-#     [RUNS=3] BUDGET_USD=2 OUT=tmp/router-<date>.json
+#     [RUNS=3] [ONLY=SZ01,A11] [FAIL_MODELS=perplexity/pplx-decider-v1.2 FAIL_MODE=error|timeout] BUDGET_USD=2 OUT=tmp/router-<date>.json
+#
+# ONLY plays the listed scenario ids. FAIL_MODELS makes the listed decision models fail (no call is made; with FAIL_MODE=timeout
+# after the per-call timeout), to show the fallback chain at work: the pipeline rows say which model of the chain answered.
 #
 # A dry check of the inputs without any model call: rake captain:router_benchmark_check GRAPHS=... (prints the card lint).
 # rubocop:disable Metrics/BlockLength
@@ -55,7 +58,9 @@ namespace :captain do
         fixture: fixture, account: account,
         options: { models: ENV.fetch('MODELS', '').split(',').map(&:strip).compact_blank, chain: ENV.fetch('CHAIN', '1') == '1',
                    escalation: ENV.fetch('ESCALATION', '1') == '1', runs: ENV.fetch('RUNS', 1), budget_usd: ENV.fetch('BUDGET_USD'),
-                   progress: $stdout }
+                   only: ENV.fetch('ONLY', '').split(',').map(&:strip).compact_blank,
+                   fail_models: ENV.fetch('FAIL_MODELS', '').split(',').map(&:strip).compact_blank,
+                   fail_mode: ENV.fetch('FAIL_MODE', 'error'), progress: $stdout }
       )
       rows = runner.call
       report = Captain::Evals::RouterBenchmark::Report.new(rows, fixture: fixture, lint: router_lint.call(fixture))

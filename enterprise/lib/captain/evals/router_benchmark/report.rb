@@ -3,14 +3,14 @@
 # The metrics of a router benchmark run (JSON and Markdown): accuracy per model, suite and expected kind; councils (exact set,
 # participant precision and recall, false and missed councils); staff requests; a kind confusion; calibration by confidence; the
 # production pipeline (escalation rate and accuracy, chain fallbacks, failures); latency; cost; agreement across runs; and the
-# proposed release gate.
+# proposed release gate; the trap scenarios, the confidence of wrong answers and the escalation detail (Insights).
 class Captain::Evals::RouterBenchmark::Report
   CONFIDENCE_BINS = [[0.9, 1.01, '>=0.9'], [0.8, 0.9, '0.8-0.9'], [0.75, 0.8, '0.75-0.8'], [0.0, 0.75, '<0.75']].freeze
   GATE = { pipeline_accuracy: 0.95, first_model_p90_ms: 1200, escalation_rate: 0.20 }.freeze
   MUST_PASS = %w[SZ01].freeze
   SINGLE_KINDS = %w[agent stay].freeze
-  TABLE_HEADER = ['| model | accuracy | false councils | missed councils | exact councils | human recall | p50 ms | p90 ms | errors |',
-                  '|---|---|---|---|---|---|---|---|---|'].freeze
+  TABLE_HEADER = ['| model | accuracy | false councils | missed councils | exact councils | human recall | traps | wrong & low conf | ' \
+                  'p50 ms | p90 ms | errors |', '|---|---|---|---|---|---|---|---|---|---|---|'].freeze
 
   def initialize(rows, fixture: nil, lint: {})
     @rows = Array(rows)
@@ -42,7 +42,9 @@ class Captain::Evals::RouterBenchmark::Report
   end
 
   def metrics(rows)
+    insights = Captain::Evals::RouterBenchmark::Insights.new(rows)
     accuracy_metrics(rows).merge(
+      traps: insights.traps, traps_passed: insights.traps_passed?, wrong_answers: insights.wrong_answers,
       councils: council_metrics(rows), human: human_metrics(rows), confusion: confusion(rows),
       calibration: calibration(rows.reject(&:error)), errors: rows.count(&:error), latency: latency(rows),
       cost_per_1000: ratio(rows.sum { |row| row.cost_usd.to_f } * 1000, rows.size), stability: stability(rows), failures: failures(rows)
@@ -60,11 +62,13 @@ class Captain::Evals::RouterBenchmark::Report
 
   def pipeline_metrics(rows)
     escalated = rows.select(&:escalated)
+    insights = Captain::Evals::RouterBenchmark::Insights.new(rows)
     metrics(rows).merge(
       escalation_rate: ratio(escalated.size, rows.size), escalation_accuracy: accuracy(escalated),
       escalation_agreement: ratio(escalated.count { |row| row.first_choice == row.got }, escalated.size),
       escalation_triggers: rows.filter_map(&:escalation_trigger).tally,
-      chain_fallbacks: rows.count { |row| row.chain_position.to_i > 1 }, failures_unavailable: rows.count(&:error)
+      chain_fallbacks: rows.count { |row| row.chain_position.to_i > 1 }, failures_unavailable: rows.count(&:error),
+      escalation_detail: insights.escalation, answered_by: insights.answered_by
     )
   end
 
@@ -126,6 +130,7 @@ class Captain::Evals::RouterBenchmark::Report
     first_p90 = head_model_p90
     checks = {
       pipeline_accuracy: metrics[:accuracy].to_f >= GATE[:pipeline_accuracy], human_scenarios: all_correct?(metrics, :human),
+      traps: metrics[:traps_passed],
       must_pass: pipeline_rows.select { |row| MUST_PASS.include?(row.scenario_id) }.all? { |row| correct?(row) },
       no_false_councils: metrics.dig(:councils, :false_council_rate).to_f.zero?,
       first_model_p90: first_p90.nil? || first_p90 <= GATE[:first_model_p90_ms],
@@ -150,7 +155,8 @@ class Captain::Evals::RouterBenchmark::Report
   def metric_row(name, metrics)
     councils = metrics[:councils]
     "| #{name} | #{pct(metrics[:accuracy])} | #{pct(councils[:false_council_rate])} | #{pct(councils[:missed_council_rate])} | " \
-      "#{pct(councils[:exact_set_rate])} | #{pct(metrics.dig(:human, :recall))} | #{metrics.dig(:latency, :p50)} | " \
+      "#{pct(councils[:exact_set_rate])} | #{pct(metrics.dig(:human, :recall))} | #{trap_cell(metrics[:traps])} | " \
+      "#{metrics.dig(:wrong_answers, :low_confidence)}/#{metrics.dig(:wrong_answers, :count)} | #{metrics.dig(:latency, :p50)} | " \
       "#{metrics.dig(:latency, :p90)} | #{metrics[:errors]} |"
   end
 
@@ -158,6 +164,7 @@ class Captain::Evals::RouterBenchmark::Report
     ['', '## Pipeline', "Escalation rate: #{pct(pipeline[:escalation_rate])}, escalation accuracy: #{pct(pipeline[:escalation_accuracy])}, " \
                         "first model and escalation agree: #{pct(pipeline[:escalation_agreement])}",
      "Triggers: #{pipeline[:escalation_triggers]}", "Chain fallbacks: #{pipeline[:chain_fallbacks]}, unavailable: #{pipeline[:failures_unavailable]}",
+     "Escalation detail: #{pipeline[:escalation_detail]}", "Answered by: #{pipeline[:answered_by]}",
      "Failures: #{pipeline[:failures].join('; ').presence || 'none'}", '', "## Gate: #{gate[:verdict]}",
      *gate[:checks].map { |name, passed| "- #{name}: #{passed ? 'pass' : 'FAIL'}" }]
   end
@@ -169,6 +176,10 @@ class Captain::Evals::RouterBenchmark::Report
   end
 
   def correct?(row) = row.got == row.expected
+
+  def trap_cell(traps)
+    traps.to_h.sort.map { |name, trap| "#{name} #{pct(trap[:accuracy])}" }.join(', ').presence || '-'
+  end
 
   def accuracy(rows) = ratio(rows.count { |row| correct?(row) }, rows.size)
 

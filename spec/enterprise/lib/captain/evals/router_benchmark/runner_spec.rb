@@ -47,4 +47,37 @@ RSpec.describe Captain::Evals::RouterBenchmark::Runner do
     expect(report[:pipeline]).to include(accuracy: 1.0, escalation_rate: 1.0)
     expect(report[:gate][:checks][:must_pass]).to be(true)
   end
+
+  it 'makes the listed decision models fail only while it runs, so the pipeline rows show which model of the chain answered' do
+    failures = []
+    allow(Captain::Runtime::DecisionRouter).to receive(:new) do
+      instance_double(Captain::Runtime::DecisionRouter).tap do |router|
+        allow(router).to receive(:decide) do
+          Llm::OpenRouterDecisionClient.choose(state: {}, criteria: {}, instructions: 'x', model: 'perplexity/pplx-decider-v1.2', timeout: 1)
+        rescue Llm::OpenRouterDecisionClient::Error => e
+          failures << e.message
+          Captain::Runtime::DecisionRouter::Decision.new(key: 'route_agent_84', kind: 'agent', agent_ids: [84], first_confidence: 0.9,
+                                                         decided_by: 'typesafe/jev-1.14', chain_position: 2)
+        end
+      end
+    end
+
+    rows = described_class.new(fixture: fixture, account: account,
+                               options: { chain: true, fail_models: ['perplexity/pplx-decider-v1.2'], budget_usd: 1 }).call
+
+    expect(failures).to eq(['Simulated error of the decision model (router benchmark).'])
+    expect(rows.sole).to have_attributes(got: 'route_agent_84', decided_by: 'typesafe/jev-1.14', chain_position: 2)
+    # After the run the model is called for real again: here it stops at the missing key, not at the simulation.
+    expect { Llm::OpenRouterDecisionClient.choose(state: {}, criteria: {}, instructions: 'x', model: 'perplexity/pplx-decider-v1.2') }
+      .to raise_error(ArgumentError)
+  end
+
+  it 'plays only the listed scenarios and refuses an unknown failure mode' do
+    allow(Captain::Runtime::DecisionRouter).to receive(:new)
+
+    expect(described_class.new(fixture: fixture, account: account, options: { only: ['A01'], budget_usd: 1 }).call).to eq([])
+    expect(Captain::Runtime::DecisionRouter).not_to have_received(:new)
+    expect { described_class.new(fixture: fixture, account: account, options: { fail_models: ['x'], fail_mode: 'slow' }) }
+      .to raise_error(ArgumentError)
+  end
 end
