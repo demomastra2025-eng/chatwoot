@@ -236,6 +236,38 @@ RSpec.describe Captain::AgentRunContext do
     expect(context[:state][:captain_runtime]['assistant_thinking_effort']).to eq('none')
   end
 
+  describe 'the sticky agent of a reply suggestion' do
+    let(:suggestion) do
+      described_class.new(entry: entry, conversation: conversation, ephemeral_session: true, sticky_agent_id: specialist.id)
+    end
+
+    it 'is the current agent and the holder while the saved session has none' do
+      suggestion.prepare(context)
+
+      expect(context[:routing_current_agent_id]).to eq(specialist.id)
+      expect(suggestion.holder).to eq(specialist)
+      expect(conversation.reload.additional_attributes.to_h).not_to have_key(Captain::Conversation::AgentSession::ATTRIBUTE)
+    end
+
+    it 'comes before a stale holder of the saved session' do
+      session.update_routing(actor_id: entry.id)
+
+      runtime = described_class.new(entry: entry, conversation: conversation.reload, ephemeral_session: true,
+                                    sticky_agent_id: specialist.id)
+      runtime.prepare(context)
+
+      expect(context[:routing_current_agent_id]).to eq(specialist.id)
+    end
+
+    it 'is ignored when it is not a candidate of the channel (an agent of another inbox of the thread)' do
+      runtime = described_class.new(entry: entry, conversation: conversation, ephemeral_session: true, sticky_agent_id: entry.id + 10_000)
+      runtime.prepare(context)
+
+      expect(context[:routing_current_agent_id]).to be_nil
+      expect(runtime.holder).to eq(entry)
+    end
+  end
+
   it 'retains the standalone internal-agent path' do
     entry.update!(usage_mode: 'internal_assistant')
     expect(Captain::AgentGraph.new(entry).agents).to eq([entry])

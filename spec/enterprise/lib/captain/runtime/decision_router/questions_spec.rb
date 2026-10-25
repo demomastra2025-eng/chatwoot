@@ -3,9 +3,10 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Runtime::DecisionRouter::Questions do
-  def snapshot(count, current: nil, human: true, card: 'Услуги агента')
+  def snapshot(count, current: nil, human: true, card: 'Услуги агента', suggestion: false, anchor: nil) # rubocop:disable Metrics/ParameterLists
     agents = (1..count).map { |id| Captain::Runtime::RoutingSnapshot::Agent.new(id: id * 10, label: "Agent #{id}", card: card) }
-    Captain::Runtime::RoutingSnapshot.new(agents: agents, latest_message: 'Здравствуйте', current_agent_id: current, human_available: human)
+    Captain::Runtime::RoutingSnapshot.new(agents: agents, latest_message: 'Здравствуйте', current_agent_id: current, human_available: human,
+                                          suggestion: suggestion, anchor_agent_id: anchor)
   end
 
   def build(count, mode: :full, **)
@@ -83,6 +84,36 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
 
       expect(single.outcome(answers('route_agent', yes: [20])).key).to eq('route_agent_20')
       expect(single.outcome(answers('council', yes: [20]))).to be_nil
+    end
+
+    describe 'a reply suggestion that asks for nothing any agent handles' do
+      it 'stays with the agent that leads the dialog (the sticky agent), as a default' do
+        questions = build(3, current: 20, suggestion: true)
+
+        expect(questions.outcome(answers('route_agent'))).to have_attributes(kind: 'stay', agent_ids: [20], key: 'stay_current', default: true)
+        expect(questions.outcome(answers('stay_current'))).to have_attributes(kind: 'stay', default: true)
+        expect(questions.outcome(answers('stay_current', yes: [20]))).to have_attributes(kind: 'stay', default: nil)
+      end
+
+      it 'goes to the anchor of the channel while no agent leads the dialog' do
+        questions = build(3, suggestion: true, anchor: 30)
+
+        expect(questions.outcome(answers('route_agent'))).to have_attributes(kind: 'agent', agent_ids: [30], key: 'route_agent_30', default: true)
+      end
+
+      it 'still has no outcome for answers that contradict each other otherwise' do
+        questions = build(3, suggestion: true, anchor: 30)
+
+        expect(questions.outcome(answers('route_agent', yes: [10, 20]))).to be_nil
+        expect(questions.outcome(answers('council', yes: [10]))).to be_nil
+        expect(questions.outcome(answers('council'))).to be_nil
+      end
+
+      it 'is not a default of a live turn or of a council part' do
+        expect(build(3, current: 20).outcome(answers('route_agent'))).to be_nil
+        expect(build(3, anchor: 30).outcome(answers('route_agent'))).to be_nil
+        expect(build(3, current: 10, mode: :singles, suggestion: true, anchor: 30).outcome(answers('route_agent'))).to be_nil
+      end
     end
 
     it 'routes a council part to the agent that is yes, also the current one, or to nobody' do

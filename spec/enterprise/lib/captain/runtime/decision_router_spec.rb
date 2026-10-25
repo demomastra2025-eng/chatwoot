@@ -185,6 +185,70 @@ RSpec.describe Captain::Runtime::DecisionRouter do
     expect(calls.sole[:models]).to eq(['typesafe/jev-1.14'])
   end
 
+  describe 'a reply suggestion' do
+    let(:sticky) { 119 }
+    let(:message) { 'Да, на 16:30' }
+    let(:snapshot) do
+      Captain::Runtime::RoutingSnapshot.new(agents: agents, latest_message: message, current_agent_id: sticky, human_available: true,
+                                            suggestion: true, anchor_agent_id: 84)
+    end
+
+    it 'keeps a short reply with the sticky agent without the escalation, whatever the confidence' do
+      answer_chain(chain_answer('stay_current', yes: [119], confidences: { 'include_agent_84' => 0.55 }))
+      expect(described_class::Escalation).not_to receive(:new)
+
+      expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalated: false, escalation_trigger: nil,
+                                               settled: 'short_reply', first_confidence: 0.55)
+    end
+
+    it 'gives a turn that asks for nothing any agent handles to the sticky agent without the escalation' do
+      answer_chain(chain_answer('route_agent', confidence: 0.5))
+      expect(described_class::Escalation).not_to receive(:new)
+
+      expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalated: false, settled: 'default')
+    end
+
+    context 'without a sticky agent' do
+      let(:sticky) { nil }
+      let(:message) { 'Спасибо!' }
+
+      it 'gives a turn whose answers are all no to the anchor without the escalation' do
+        answer_chain(chain_answer('route_agent', confidence: 0.6))
+        expect(described_class::Escalation).not_to receive(:new)
+
+        expect(router.decide).to have_attributes(key: 'route_agent_84', kind: 'agent', agent_ids: [84], escalated: false, settled: 'default')
+      end
+    end
+
+    context 'with a long message that the decision model keeps with the sticky agent at a low confidence' do
+      let(:message) { 'Хорошо, тогда давайте завтра на 16:30, меня зовут Ахметов Ерлан, и ещё скажите, нужно ли что-то взять с собой' }
+
+      it 'still escalates it' do
+        answer_chain(chain_answer('stay_current', yes: [119], confidences: { 'include_agent_120' => 0.5 }))
+        escalate_to(choices('route_agent', yes: [119]))
+
+        expect(router.decide).to have_attributes(key: 'stay_current', escalated: true, escalation_trigger: 'low_confidence', settled: nil)
+      end
+    end
+
+    it 'escalates answers that contradict each other and fails when every decision model fails: there is no fallback' do
+      answer_chain(chain_answer('council', yes: [119], confidence: 0.99))
+      escalate_to(choices('stay_current', yes: [119]))
+      expect(router.decide).to have_attributes(escalated: true, escalation_trigger: 'inconsistent')
+
+      allow(Llm::DecisionChain).to receive(:decide).and_raise(
+        Llm::DecisionChain::ExhaustedError.new(feature: :agent_routing, attempts: [{ model: 'perplexity/pplx-decider-v1.2', error_class: 'Timeout' }])
+      )
+      expect { router.decide }.to raise_error(described_class::UnavailableError)
+    end
+
+    it 'says in its event why it did not escalate' do
+      answer_chain(chain_answer('stay_current', yes: [119], confidence: 0.6))
+
+      expect(router.decide.to_event_payload).to include(settled: 'short_reply', escalated: false)
+    end
+  end
+
   describe '#redecide for a council part that was not its owner\'s' do
     it 'decides among the other agents, staff or nobody, never a council' do
       allow(Llm::DecisionChain).to receive(:decide) do |**kwargs|

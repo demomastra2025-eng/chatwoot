@@ -13,6 +13,11 @@
 # just passed the conversation on - the same state and the same questions go to the escalation model (Escalation), whose answer
 # is final. When every decision model fails, or the escalation fails, UnavailableError is raised: the caller ends the turn
 # through the existing technical-failure path (the conversation goes to staff), as when OpenRouter is down for generation.
+#
+# A reply suggestion keeps a dialog with the agent that leads it (the sticky agent, see Captain::ReplySuggestion::StickyAgent): a
+# turn that asks for nothing any agent handles goes to that agent, or to the anchor while no agent leads it (Questions, default),
+# and a short reply that the decision model keeps with the current agent («Да, на 14:00», an IIN, «Спасибо») is used as it is. Neither
+# goes to the escalation model for its confidence; answers that contradict each other still do, and a failure still fails.
 class Captain::Runtime::DecisionRouter
   FEATURE = :agent_routing
   INSTRUCTIONS = <<~TEXT
@@ -50,11 +55,13 @@ class Captain::Runtime::DecisionRouter
   # key: the canonical key of the outcome; kind: stay, agent, council, human or none (inconsistent only without escalation, in the
   # evaluation harness); agent_ids: who answers (the participants of a council in ascending order). decided_by: the decision model
   # that answered, or "escalation:<model>". first_*: what the decision models answered, also when the escalation decided
-  # (first_answers: the chosen key of every question). guard: 'bounce' when the turn would have gone straight back.
+  # (first_answers: the chosen key of every question). guard: 'bounce' when the turn would have gone straight back. settled: why a
+  # reply suggestion was not escalated for its confidence ('default': nothing any agent handles; 'short_reply': a short reply kept
+  # with the current agent).
   Decision = Struct.new(
     :key, :kind, :agent_ids, :decided_by, :confidence, :first_choice, :first_confidence, :first_answers, :first_model, :chain_position,
     :escalated, :escalation_reason, :escalation_trigger, :guard, :criteria_count, :candidate_count, :first_message,
-    :chain_ms, :escalation_ms, :total_ms, :mode,
+    :chain_ms, :escalation_ms, :total_ms, :mode, :settled,
     keyword_init: true
   ) do
     def stay? = kind == 'stay'
@@ -71,8 +78,8 @@ class Captain::Runtime::DecisionRouter
         first_choice: first_choice, first_confidence: first_confidence, first_answers: first_answers, first_model: first_model,
         chain_position: chain_position, escalated: escalated == true, escalation_trigger: escalation_trigger,
         escalation_reason: escalation_reason, guard: guard, criteria_count: criteria_count, candidate_count: candidate_count,
-        first_message: first_message == true, mode: mode, latency_chain_ms: chain_ms, latency_escalation_ms: escalation_ms,
-        latency_total_ms: total_ms
+        first_message: first_message == true, mode: mode, settled: settled, latency_chain_ms: chain_ms,
+        latency_escalation_ms: escalation_ms, latency_total_ms: total_ms
       }.compact
     end
   end
@@ -125,7 +132,7 @@ class Captain::Runtime::DecisionRouter
     decision[:escalation_trigger] = trigger
     return escalate(questions, snapshot, decision, trigger, started) if trigger && @escalate
 
-    finish(decision.merge(decided_by: first.model, confidence: confidence), outcome, started)
+    finish(decision.merge(decided_by: first.model, confidence: confidence, settled: settled(outcome, snapshot)), outcome, started)
   end
 
   def ask_chain(questions, snapshot)
@@ -143,9 +150,19 @@ class Captain::Runtime::DecisionRouter
   def escalation_trigger(outcome, confidence, snapshot)
     return 'inconsistent' unless outcome
     return 'bounce' if bounce?(outcome, snapshot)
+    return if settled(outcome, snapshot)
 
     threshold = outcome.kind == 'human' ? @human_min_confidence : @min_confidence
     'low_confidence' unless confidence.is_a?(Numeric) && confidence >= threshold
+  end
+
+  # A reply suggestion whose outcome stands whatever its confidence: the default of a turn that asks for nothing any agent handles,
+  # or a short reply kept with the current agent. nil otherwise.
+  def settled(outcome, snapshot)
+    return unless snapshot.suggestion? && outcome
+    return 'default' if outcome.default?
+
+    'short_reply' if outcome.kind == 'stay' && snapshot.short_reply?
   end
 
   def bounce?(outcome, snapshot)

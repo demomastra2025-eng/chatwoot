@@ -175,4 +175,41 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     expect(response['operator_note']).to be_present
     expect(conversation.reload.additional_attributes.to_h).not_to have_key(Captain::Conversation::AgentSession::ATTRIBUTE)
   end
+
+  describe 'a reply suggestion with a sticky agent' do
+    let(:suggestion) { described_class.new(assistant: doctors, conversation: conversation, source: 'reply_suggestion') }
+    let(:history) do
+      [{ role: 'user', content: 'Хочу на промывание миндалин завтра' },
+       { role: 'assistant', content: 'Завтра свободно 16:30 и 17:00. Какое время удобно?' },
+       { role: 'user', content: 'Да, на 17:00' }]
+    end
+
+    before { Captain::ReplySuggestion::StickyAgent.remember!(conversation, procedures.id) }
+    after { Captain::ReplySuggestion::StickyAgent.keys_for(conversation).each { |key| Redis::Alfred.delete(key) } }
+
+    it 'gives the router the sticky agent as the current agent and keeps a short reply with it without the escalation' do
+      decide('stay_current', yes: [procedures.id], confidence: 0.6)
+      expect(Captain::Runtime::DecisionRouter::Escalation).not_to receive(:new)
+
+      response = suggestion.generate_response(message_history: history)
+
+      expect(Llm::DecisionChain).to have_received(:decide) do |question:, **|
+        expect(question[:state]).to include(current_agent_id: procedures.id)
+        expect(question[:questions]['route_mode'][:criteria].keys).to include('stay_current')
+      end
+      expect(runs.pluck(:agent)).to eq(["assistant_#{procedures.id}"])
+      expect(response).to include('agent_id' => procedures.id)
+      expect(routed_event).to include('decision_key' => 'stay_current', 'settled' => 'short_reply', 'run_source' => 'reply_suggestion')
+    end
+
+    it 'routes to another agent when the patient asks for its service, with no transfer in the live report' do
+      decide('route_agent', yes: [doctors.id])
+
+      response = suggestion.generate_response(message_history: history)
+
+      expect(response['agent_id']).to eq(doctors.id)
+      transfer = events.find { |name, _| name == 'captain.agent.transfer' }&.last
+      expect(transfer).to include('run_source' => 'reply_suggestion', 'from_agent_id' => procedures.id, 'to_agent_id' => doctors.id)
+    end
+  end
 end

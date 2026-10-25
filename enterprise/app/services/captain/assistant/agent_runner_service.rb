@@ -1081,7 +1081,11 @@ class Captain::Assistant::AgentRunnerService
   def agent_run_context
     @agent_run_context ||= begin
       options = { entry: @assistant, conversation: @conversation, playground: @playground_session, fence: @response_fence }
-      options[:ephemeral_session] = true if suggestion_run?
+      if suggestion_run?
+        options[:ephemeral_session] = true
+        # The agent that leads the dialog of the suggestions (the saved session has none while the AI only suggests).
+        options[:sticky_agent_id] = Captain::ReplySuggestion::StickyAgent.read(@conversation)
+      end
       Captain::AgentRunContext.new(**options)
     end
   end

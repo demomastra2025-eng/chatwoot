@@ -127,6 +127,15 @@ RSpec.describe Captain::ReplySuggestion::GenerateJob do
       expect(Redis::Alfred.zcard(Captain::ReplySuggestion::RequestLocks.account_active_key(account.id))).to eq(0)
     end
 
+    it 'makes the agent of the draft the sticky agent of the dialog for the next suggestions' do
+      id = start_request
+      run_job(id)
+
+      expect(Captain::ReplySuggestion::StickyAgent.read(conversation)).to eq(84)
+    ensure
+      Captain::ReplySuggestion::StickyAgent.keys_for(conversation).each { |key| Redis::Alfred.delete(key) }
+    end
+
     it 'runs as the manager, in the language of the account' do
       account.update!(locale: 'ru')
       seen = {}
@@ -160,6 +169,17 @@ RSpec.describe Captain::ReplySuggestion::GenerateJob do
       expect(feedback_events(id, 'generated')).to be_empty
       expect(outcome_events(id).sole).to have_attributes(status: 'no_reply', reason: 'agent', error: false)
       expect(outcome_events(id).sole.payload).to include('reason_preview' => 'Пациент только поблагодарил.')
+    end
+
+    it 'leaves the sticky agent as it was when the router sent the turn to staff' do
+      Captain::ReplySuggestion::StickyAgent.remember!(conversation, 119)
+      script_run { outcomes.human_needed(reason: 'Пациент просит сотрудника.', engine: 'agent', reason_source: 'router', agent: nil) }
+
+      run_job(start_request)
+
+      expect(Captain::ReplySuggestion::StickyAgent.read(conversation)).to eq(119)
+    ensure
+      Captain::ReplySuggestion::StickyAgent.keys_for(conversation).each { |key| Redis::Alfred.delete(key) }
     end
 
     it 'ends as human_needed with the reason for the manager' do

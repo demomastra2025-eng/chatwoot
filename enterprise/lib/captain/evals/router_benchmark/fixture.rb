@@ -4,6 +4,10 @@
 # assistants: [{ id, name, routing_description, enabled_tool_ids, entry_eligible }] }), the scenarios (router_scenarios.json) and,
 # for CARDS=proposed, the routing descriptions of the reviewed prompt migration (the same YAML the rake task applies). The
 # candidates of a suite go through the same Captain::Routing::Candidate and competence card code as the live router.
+#
+# A reply suggestion scenario sets sticky (the sticky agent of the dialog, see Captain::ReplySuggestion::StickyAgent: the current
+# agent of the turn while the saved session has none) or suggestion: true, and may set anchor (the anchor of the channel, which
+# answers a suggestion that asks for nothing any agent handles while no agent leads the dialog).
 class Captain::Evals::RouterBenchmark::Fixture
   class Invalid < StandardError; end
 
@@ -66,8 +70,18 @@ class Captain::Evals::RouterBenchmark::Fixture
     raise Invalid, "#{label}: expected #{expected.inspect} is not a criteria key" unless expected.match?(KEY)
     raise Invalid, "#{label}: expected names an agent that is not a candidate" unless (expected.scan(/\d+/).map(&:to_i) - candidate_ids).empty?
 
-    check_current!(label, expected, scenario['current'])
+    check_suggestion!(label, scenario, candidate_ids)
+    check_current!(label, expected, scenario['current'].presence || scenario['sticky'])
     scenario
+  end
+
+  def check_suggestion!(label, scenario, candidate_ids)
+    %w[sticky anchor].each do |key|
+      next if scenario[key].blank? || candidate_ids.include?(scenario[key].to_i)
+
+      raise Invalid, "#{label}: #{key} #{scenario[key]} is not a candidate"
+    end
+    raise Invalid, "#{label}: a sticky agent replaces the saved current agent" if scenario['sticky'].present? && scenario['current'].present?
   end
 
   def check_current!(label, expected, current)

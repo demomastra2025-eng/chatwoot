@@ -23,14 +23,24 @@ class Captain::ReplySuggestion::FeedbackService
       message_id: nil }
   ]
 
+  # The manager used the draft: its agent leads the dialog of the next suggestions (see StickyAgent).
+  STICKY_OUTCOMES = %w[applied sent].freeze
+
   def perform
     record = load_record!
     record_event(record)
     Captain::ReplySuggestion::RequestStore.consume!(record['id']) if record && CONSUMING_OUTCOMES.include?(outcome)
     remember_dismissal(record) if record && outcome == 'dismissed'
+    remember_sticky_agent(record) if record && STICKY_OUTCOMES.include?(outcome)
   end
 
   private
+
+  def remember_sticky_agent(record)
+    return unless record['status'] == 'draft'
+
+    Captain::ReplySuggestion::StickyAgent.remember!(conversation, record.dig('result', 'agent', 'id'))
+  end
 
   # The request of the suggestion must be this user's, in this account and conversation.
   def load_record!

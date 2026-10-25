@@ -99,6 +99,27 @@ RSpec.describe Captain::ReplySuggestion::FeedbackService do
     end
   end
 
+  describe 'the sticky agent of the suggestion' do
+    let(:record) do
+      created = store.create!(
+        'account_id' => account.id, 'user_id' => agent.id, 'conversation_id' => conversation.id,
+        'conversation_display_id' => conversation.display_id, 'engine' => 'agent', 'assistant_id' => 1
+      )
+      store.finish!(created, status: 'draft', result: { 'message' => suggestion_text, 'agent' => { 'id' => 119, 'name' => 'Процедуры' } })
+    end
+
+    after { Captain::ReplySuggestion::StickyAgent.keys_for(conversation).each { |key| Redis::Alfred.delete(key) } }
+
+    it 'makes the agent of an inserted or sent draft the sticky agent of the dialog' do
+      perform('applied', generated_text: suggestion_text)
+      expect(Captain::ReplySuggestion::StickyAgent.read(conversation)).to eq(119)
+
+      Captain::ReplySuggestion::StickyAgent.remember!(conversation, 84)
+      perform('sent', final_text: suggestion_text)
+      expect(Captain::ReplySuggestion::StickyAgent.read(conversation)).to eq(119)
+    end
+  end
+
   describe 'long texts' do
     let(:long_text) { 'Здравствуйте! ' * 200 }
 

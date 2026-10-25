@@ -5,10 +5,13 @@
 # Captain::Runtime::DecisionRouter and Captain::Runtime::TurnDispatcher), and #activate prepares the chosen agent. The assistant
 # the run was started with (`entry`) is the technical anchor of the channel, never a default agent.
 class Captain::AgentRunContext
-  def initialize(entry:, conversation: nil, playground: nil, fence: {}, ephemeral_session: false)
+  # sticky_agent_id: the agent that leads the dialog of a reply suggestion (Captain::ReplySuggestion::StickyAgent); while it is a
+  # candidate it is the current agent and the holder of the run, whatever the saved session says.
+  def initialize(entry:, conversation: nil, playground: nil, fence: {}, ephemeral_session: false, sticky_agent_id: nil) # rubocop:disable Metrics/ParameterLists
     @entry = entry
     @conversation = conversation
     @playground = playground
+    @sticky_agent_id = sticky_agent_id.presence&.to_i
     @graph = Captain::AgentGraph.new(
       entry,
       inbox: conversation&.inbox || playground&.routing_inbox,
@@ -20,10 +23,10 @@ class Captain::AgentRunContext
   end
 
   # graph: the agents of the channel. holder: the agent that holds the conversation as the response builder checks it
-  # (Captain::Conversation::AgentOwnership), set by #prepare: the saved holder while it is an agent of the channel (a candidate of
-  # the router or not), else the anchor. Every response that no chosen agent produced (a blocked input, a router failure, a
-  # council that could not be set up, a staff request, a custom input rule) answers as the holder; otherwise the response builder
-  # drops it as stale.
+  # (Captain::Conversation::AgentOwnership), set by #prepare: the sticky agent of a reply suggestion while it is a candidate, else
+  # the saved holder while it is an agent of the channel (a candidate of the router or not), else the anchor. Every response that
+  # no chosen agent produced (a blocked input, a router failure, a council that could not be set up, a staff request, a custom
+  # input rule) answers as the holder; otherwise the response builder drops it as stale.
   attr_reader :graph, :holder
 
   def prepare(context)
@@ -33,8 +36,9 @@ class Captain::AgentRunContext
     saved = @session.read
     raise ArgumentError, 'The entry agent is disabled' unless graph.find(@entry.id)
 
-    @holder = holder_of(saved)
-    current = current_candidate(saved, context)
+    sticky = sticky_candidate
+    @holder = sticky || holder_of(saved)
+    current = sticky || current_candidate(saved, context)
     context[:routing_current_agent_id] = current&.id
     context[:routing_trail] = Array(saved['routing_trail'])
     context[:agent_graph] = graph.solo? ? [] : graph.payload
@@ -102,6 +106,14 @@ class Captain::AgentRunContext
 
     @session.release_holder(saved_id)
     @entry
+  end
+
+  # The sticky agent of a reply suggestion, when it is a candidate of this channel (an agent of another inbox of the person's thread
+  # is not).
+  def sticky_candidate
+    return unless @sticky_agent_id
+
+    graph.candidates.find { |actor| actor.id == @sticky_agent_id }
   end
 
   # The agent that holds the conversation, when it is still a candidate. One that is no longer reachable (switched off, removed

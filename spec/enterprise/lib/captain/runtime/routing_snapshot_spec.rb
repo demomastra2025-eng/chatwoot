@@ -59,6 +59,16 @@ RSpec.describe Captain::Runtime::RoutingSnapshot do
       expect(snapshot.to_state.to_json).not_to include('701 123')
     end
 
+    it 'marks the turn of a reply suggestion and keeps its anchor, which a live turn has not' do
+      suggestion = described_class.from_context(context, candidates: candidates, anchor_agent_id: 84)
+      live = described_class.from_context(context.merge(state: { source: 'incoming_message' }), candidates: candidates, anchor_agent_id: 84)
+
+      expect(suggestion).to be_suggestion
+      expect(suggestion.anchor_agent_id).to eq(84)
+      expect(live).not_to be_suggestion
+      expect(live.anchor_agent_id).to be_nil
+    end
+
     it 'has no current agent when the saved one is no longer a candidate' do
       snapshot = described_class.from_context(context.merge(routing_current_agent_id: 999), candidates: candidates)
 
@@ -94,6 +104,28 @@ RSpec.describe Captain::Runtime::RoutingSnapshot do
     expect(narrowed.latest_message).to eq('про операцию')
     expect(narrowed.current_agent_id).to eq(84)
     expect(narrowed.human_available).to be(true)
+  end
+
+  it 'counts a reply of at most eight words as a short reply' do
+    short = described_class.new(agents: described_class.agents_for(candidates), latest_message: 'Иванова Мария, 12.03.1985')
+    long = described_class.new(agents: described_class.agents_for(candidates),
+                               latest_message: 'Хорошо, давайте завтра на 16:30, меня зовут Ахметов Ерлан, спасибо')
+
+    expect(short).to be_short_reply
+    expect(long).not_to be_short_reply
+  end
+
+  it 'takes the sticky agent of a reply suggestion scenario as the current agent of the turn' do
+    scenario = { 'id' => 'SS01', 'current' => nil, 'sticky' => 119, 'message' => 'Иә, 17:00 болады',
+                 'history' => [{ 'role' => 'agent', 'text' => 'Ертең бос уақыт: 16:30 және 17:00.' }] }
+
+    snapshot = described_class.from_fixture(candidates: candidates, scenario: scenario)
+
+    expect(snapshot.current_agent_id).to eq(119)
+    expect(snapshot).to be_suggestion
+    expect(snapshot.to_state[:recent_messages]).to eq([{ role: 'clinic', text: 'Ертең бос уақыт: 16:30 және 17:00.' }])
+    anchored = described_class.from_fixture(candidates: candidates, scenario: scenario.except('sticky').merge('suggestion' => true, 'anchor' => 84))
+    expect(anchored).to have_attributes(current_agent_id: nil, anchor_agent_id: 84)
   end
 
   it 'builds the same state from a benchmark scenario' do
