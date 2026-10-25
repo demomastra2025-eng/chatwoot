@@ -1,34 +1,54 @@
 class TelegramPersonal::IncomingEventService
+  # The events that would bring a chat into the inbox: its messages (live and imported), its calls and its contact
+  CHAT_EVENTS = %w[message.created message.imported message.activity contact.imported].freeze
+  EVENT_SERVICES = {
+    'contact.imported' => 'TelegramPersonal::ContactSyncService',
+    'message.created' => 'TelegramPersonal::IncomingMessageService',
+    'message.imported' => 'TelegramPersonal::IncomingMessageService',
+    'message.activity' => 'TelegramPersonal::CreateActivityMessageService',
+    'message.updated' => 'TelegramPersonal::UpdateMessageService',
+    'message.read' => 'TelegramPersonal::UpdateMessageReadStatusService',
+    'message.deleted' => 'TelegramPersonal::DeleteMessagesService'
+  }.freeze
+
   pattr_initialize [:channel!, :payload!]
 
   def perform
-    case payload[:event].to_s
-    when 'runtime.updated'
-      process_runtime_update
-    when 'contact.imported'
-      TelegramPersonal::ContactSyncService.new(inbox: channel.inbox, params: event_data).perform
-    when 'message.created', 'message.imported'
-      TelegramPersonal::IncomingMessageService.new(inbox: channel.inbox, params: event_data).perform
-    when 'message.activity'
-      TelegramPersonal::CreateActivityMessageService.new(inbox: channel.inbox, params: event_data).perform
-    when 'message.updated'
-      TelegramPersonal::UpdateMessageService.new(inbox: channel.inbox, params: event_data).perform
-    when 'message.read'
-      TelegramPersonal::UpdateMessageReadStatusService.new(
-        inbox: channel.inbox,
-        params: event_data
-      ).perform
-    when 'message.deleted'
-      TelegramPersonal::DeleteMessagesService.new(inbox: channel.inbox, params: event_data).perform
+    if service_account_chat?
+      log_skipped_service_account_event
+    else
+      process_event
     end
 
-    channel.update_column(:last_synced_at, Time.current)
+    channel.update_column(:last_synced_at, Time.current) # rubocop:disable Rails/SkipsModelValidations
   end
 
   private
 
+  def process_event
+    return process_runtime_update if event == 'runtime.updated'
+
+    EVENT_SERVICES[event]&.constantize&.new(inbox: channel.inbox, params: event_data)&.perform
+  end
+
+  def event
+    payload[:event].to_s
+  end
+
   def event_data
-    payload.dig(:telegram_personal, :data).to_h.deep_symbolize_keys
+    @event_data ||= payload.dig(:telegram_personal, :data).to_h.deep_symbolize_keys
+  end
+
+  # The login codes and notices of Telegram itself (TelegramPersonal::ServiceAccount) are not taken in
+  def service_account_chat?
+    CHAT_EVENTS.include?(event) && TelegramPersonal::ServiceAccount.chat?(event_data)
+  end
+
+  # Never the text: only that an event of a service account was left out, for which inbox
+  def log_skipped_service_account_event
+    Rails.logger.info(
+      "[TELEGRAM PERSONAL] Skipped #{event} of a Telegram service account for inbox #{channel.inbox&.id} (channel #{channel.id})"
+    )
   end
 
   def process_runtime_update
