@@ -124,10 +124,23 @@ RSpec.describe TelegramPersonal::IncomingEventService do
 
         described_class.new(channel: channel, payload: history).perform
         described_class.new(channel: channel, payload: contact).perform
-        described_class.new(channel: channel, payload: message_payload('message.created', '42777')).perform
 
         expect(channel.inbox.messages.count).to eq(0)
         expect(channel.inbox.contact_inboxes.count).to eq(0)
+      end
+
+      # 42777 is the service account of the test servers only: on the production servers it can be a person
+      it 'takes in a private chat with 42777 unless the gateway signs in to the test servers' do
+        described_class.new(channel: channel, payload: message_payload('message.created', '42777', text: 'Hello')).perform
+
+        expect(channel.inbox.contact_inboxes.pluck(:source_id)).to eq(['42777'])
+        expect(channel.inbox.messages.count).to eq(1)
+
+        with_modified_env(TELEGRAM_PERSONAL_TEST_SERVERS: 'true') do
+          described_class.new(channel: channel, payload: message_payload('message.created', '42777', message_id: '503')).perform
+        end
+
+        expect(channel.inbox.messages.count).to eq(1)
       end
 
       it 'keeps the chat of a person with the same text and a group post forwarded by the service account' do
