@@ -8,7 +8,8 @@
 # keeps only the settings the operator sets himself (sync_groups, ignored_chat_ids).
 #
 # The same filter runs when an entry is written (nothing secret is stored), when an entry of an inbox is read (the entries
-# written before it) and in onelink:audits:redact_channel_secrets (the stored entries are cleaned in place).
+# written before it) and in onelink:audits:redact_channel_secrets (the stored entries are cleaned in place). The inbox_created
+# and inbox_updated account webhooks send the columns of the channel through it as well (Inbox::EventDataPresenter).
 #
 #   AuditLogs::SecretFilter.filter('string_session' => [nil, '1BVts...'], 'name' => %w[a b])
 #   # => { 'string_session' => [nil, '[FILTERED]'], 'name' => ['a', 'b'] }

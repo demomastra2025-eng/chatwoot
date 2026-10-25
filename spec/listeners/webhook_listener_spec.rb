@@ -371,6 +371,33 @@ describe WebhookListener do
     end
   end
 
+  # The inbox webhooks go to every account webhook that subscribes to them: the credentials of the channel never go with them
+  describe 'the channel in the inbox webhooks' do
+    let(:event_name) { :'inbox.created' }
+    let(:channel) do
+      create(:channel_telegram_personal, account: account, string_session: '1BVtsOK8Bu-webhook-session', api_hash: 'webhook-api-hash',
+                                         runtime_state: { 'qr_login_url' => 'tg://login?token=webhook-login' })
+    end
+
+    it 'sends the channel of inbox_created and inbox_updated with its credentials filtered', :aggregate_failures do
+      create(:webhook, account: account, subscriptions: %w[inbox_created inbox_updated])
+      payloads = []
+      allow(WebhookJob).to receive(:perform_later) { |_url, payload, *| payloads << payload }
+
+      listener.inbox_created(Events::Base.new(event_name, Time.zone.now, inbox: channel.inbox))
+      listener.inbox_updated(Events::Base.new(:'inbox.updated', Time.zone.now, inbox: channel.inbox, changed_attributes: { 'name' => %w[a b] }))
+
+      expect(payloads.pluck(:event)).to eq(%w[inbox_created inbox_updated])
+      payloads.each do |payload|
+        expect(payload.to_json).not_to include('1BVtsOK8Bu-webhook-session', 'webhook-api-hash', channel.webhook_secret, 'webhook-login')
+        expect(payload[:channel]).to include(
+          'string_session' => '[FILTERED]', 'api_hash' => '[FILTERED]', 'webhook_secret' => '[FILTERED]',
+          'phone_number' => channel.phone_number, 'runtime_state' => { 'ignored_chat_ids' => [], 'sync_groups' => false }
+        )
+      end
+    end
+  end
+
   describe '#conversation_typing_on' do
     let(:event_name) { :'conversation.typing_on' }
     let!(:typing_event) { Events::Base.new(event_name, Time.zone.now, conversation: conversation, user: user) }
