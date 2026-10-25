@@ -11,6 +11,7 @@ require 'digest'
 #   unchanged       the proposal equals what is stored
 #   drift           the stored text changed since the review (base_digest differs): never applied
 #   edit_not_found  an edit's find text is not in the stored description: never applied
+#   lint_error      the proposed texts still speak of transfers, coordination or other agents (see Lint): never applied
 #   missing         no such agent in that account
 #
 # The digest of the plan covers every applicable change and the stored texts it was computed from: APPLY=1 needs CONFIRM equal to
@@ -58,6 +59,11 @@ class Captain::PromptMigration::Plan
     @entries.count { |entry| %w[drift edit_not_found missing].include?(entry.status) }
   end
 
+  # The proposals that are not written because their texts still have lint errors.
+  def blocked_count
+    @entries.count { |entry| entry.status == 'lint_error' }
+  end
+
   private
 
   def selected_account?(account_id)
@@ -70,10 +76,10 @@ class Captain::PromptMigration::Plan
 
     current = { description: assistant.description.to_s, routing_description: assistant.routing_description.to_s }
     proposed, notes = proposed_texts(row, current)
+    findings = Captain::PromptMigration::Lint.call(proposed, others: others_of(assistant), routable: assistant.external_agent?)
     Entry.new(account_id: assistant.account_id, assistant_id: assistant.id, name: assistant.name, current: current, proposed: proposed,
               current_digest: self.class.digest_of(current[:description], current[:routing_description]),
-              status: status_for(row, current, proposed, notes), notes: notes,
-              findings: Captain::PromptMigration::Lint.call(proposed, others: others_of(assistant), routable: assistant.external_agent?))
+              status: status_for(row, current, proposed, notes, findings), notes: notes, findings: findings)
   end
 
   def proposed_texts(row, current)
@@ -94,11 +100,14 @@ class Captain::PromptMigration::Plan
     result
   end
 
-  def status_for(row, current, proposed, notes)
+  # A proposal that would still leave transfers, coordination or other agents' names in the prompt is never written: half a
+  # migration is worse than none (the agent would speak of transfers that no longer exist).
+  def status_for(row, current, proposed, notes, findings)
     base = row['base_digest'].presence
     return 'drift' if base && base != self.class.digest_of(current[:description], current[:routing_description])
     return 'edit_not_found' if notes.any?
     return 'unchanged' if proposed == { description: current[:description].strip, routing_description: current[:routing_description] }
+    return 'lint_error' if findings.any? { |finding| finding[:severity] == 'error' }
 
     'ok'
   end

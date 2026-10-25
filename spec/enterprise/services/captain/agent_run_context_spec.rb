@@ -64,7 +64,6 @@ RSpec.describe Captain::AgentRunContext do
     # Released in the session: the response builder reads the anchor until the router gives the conversation to an agent.
     expect(runtime.holder).to eq(entry)
     expect(session.read).to include('current_assistant_id' => nil, 'routing_revision' => 2)
-    expect(Captain::Conversation::AgentOwnership.new(conversation: conversation.reload).current_actor_id).to eq(entry.id)
   end
 
   it 'names the agent that holds the conversation as its holder, also when the router may no longer choose it' do

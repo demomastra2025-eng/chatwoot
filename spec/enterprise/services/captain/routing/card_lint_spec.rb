@@ -38,6 +38,14 @@ RSpec.describe Captain::Routing::CardLint do
     expect(described_class.forbidden_words('Ты — главный ИИ-администратор клиники')).not_to be_empty
   end
 
+  it 'does not take the coordinator of an insurer for an agent role, but finds a coordinating agent' do
+    insurer = 'Страховка ДМС: Halyk, Samal (по направлению координатора в МЦ «Мейірім» на Сыганак, 19).'
+
+    expect(described_class.forbidden_words(insurer)).to be_empty
+    expect(described_class.forbidden_words('Ты — ИИ-координатор отдела анализов')).to eq(['координатор'])
+    expect(described_class.forbidden_words('Ты — «Медсестра-координатор: Анализы»')).to eq(['координатор'])
+  end
+
   it 'checks nothing for a clinic with one agent' do
     expect(described_class.call([candidate(1, '')])).to eq([])
   end

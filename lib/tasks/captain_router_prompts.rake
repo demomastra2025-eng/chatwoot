@@ -6,7 +6,8 @@
 #   rake captain:router_prompts:rollback MIGRATION=2026-10-router [APPLY=1 CONFIRM=<digest>]
 #
 # Release order: the owner approves the dry run computed on PROD, APPLY=1 runs right before the code deploy, the dry run runs once
-# more after it. A drift (a stored text changed after the review) or a lint error makes the exit code non-zero.
+# more after it. A drift (a stored text changed after the review) or a lint error makes the exit code non-zero; an agent whose
+# proposed texts still have a lint error is never written (LINT_ERROR in the report).
 # rubocop:disable Metrics/BlockLength
 namespace :captain do
   namespace :router_prompts do
@@ -22,7 +23,7 @@ namespace :captain do
       if ENV['APPLY'] == '1'
         outcome = Captain::PromptMigration::Applier.new(plan, confirm: ENV.fetch('CONFIRM', nil)).apply!
         puts "\nApplied: #{outcome.applied.size} (#{outcome.applied.join(', ')}); skipped: #{outcome.skipped.size} " \
-             "(#{outcome.skipped.join(', ')}); drift: #{plan.drift_count}"
+             "(#{outcome.skipped.join(', ')}); drift: #{plan.drift_count}; blocked by lint errors: #{plan.blocked_count}"
         exit(1) if outcome.skipped.any? || plan.drift_count.positive? || plan.error_count.positive?
       else
         puts "\nDRY RUN - nothing written. To apply: APPLY=1 CONFIRM=#{plan.digest}"

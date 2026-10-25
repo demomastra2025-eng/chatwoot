@@ -55,6 +55,24 @@ RSpec.describe Captain::PromptMigration::Plan do
     expect(plan.entries.find { |entry| entry.assistant_id == admin.id }.errors).to be_empty
   end
 
+  it 'never writes a proposal whose texts still have lint errors' do
+    half = proposals.deep_dup
+    half['assistants'][1]['description_edits'] = [{ 'find' => 'Анализы.', 'replace' => 'Анализы и справки.' }]
+    File.write(file, half.to_yaml)
+    reviewed = plan
+
+    nurse_entry = reviewed.entries.find { |entry| entry.assistant_id == nurse.id }
+    expect(nurse_entry.status).to eq('lint_error')
+    expect(reviewed.applicable.map(&:assistant_id)).to eq([admin.id])
+    expect(reviewed.blocked_count).to eq(1)
+    expect(Captain::PromptMigration::Report.new(reviewed).to_s).to include("assistant #{nurse.id} Медсестра [LINT_ERROR]")
+
+    outcome = Captain::PromptMigration::Applier.new(reviewed, confirm: reviewed.digest).apply!
+
+    expect(outcome.applied).to eq([admin.id])
+    expect(nurse.reload.description).to eq("Ты — медсестра.\n#{transfer_line}\nАнализы.")
+  end
+
   it 'refuses to write without the digest of the reviewed dry run' do
     expect { Captain::PromptMigration::Applier.new(plan, confirm: 'wrong') }.to raise_error(Captain::PromptMigration::Applier::ConfirmationError)
     expect(admin.reload.description).to start_with('Ты — главный')

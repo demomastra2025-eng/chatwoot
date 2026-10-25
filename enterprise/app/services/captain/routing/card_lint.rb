@@ -9,9 +9,10 @@
 #   error   too_many_agents  more candidates than the router can ask about in one call
 class Captain::Routing::CardLint
   # Words of the former agent-driven routing. A staff handoff step ("передай диалог старшему администратору через handoff") is the
-  # agent's own procedure and is not matched: a transfer is matched only towards an agent, a colleague or a «named» unit.
+  # agent's own procedure and is not matched: a transfer is matched only towards an agent, a colleague or a «named» unit. Nor is a
+  # person of the clinic's business: a referral "по направлению координатора" (of an insurer) names a staff member, not an agent role.
   FORBIDDEN = [
-    /координатор/i, /оркестратор/i, /orchestrator/i, /coordinator/i, /главн\p{L}*\s+(?:ии-)?(?:администратор|агент)/i,
+    /(?<!направлению\s)координатор/i, /оркестратор/i, /orchestrator/i, /coordinator/i, /главн\p{L}*\s+(?:ии-)?(?:администратор|агент)/i,
     /transfer_to_\w*/i, /handoff_to_\w*/i, /plan_request/i, /консилиум/i, /\bcouncil\b/i,
     /(?:передай|переведи|перевести|передать|переключи)[^.\n]{0,60}(?:агент|коллег|«)/i,
     /transfer[^.\n]{0,40}(?:colleague|another agent|specialized agent|channel agent)/i
