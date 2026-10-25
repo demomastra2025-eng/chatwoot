@@ -3,13 +3,13 @@
 # The evaluation harness of the decision router (see Captain::Evals::RouterBenchmark): real calls to OpenRouter, no database
 # fixtures. Every scenario is routed by the same RoutingSnapshot, questions (route_mode + include_agent_<id>) and DecisionRouter
 # the live runtime uses. MODELS asks each listed decision model alone (no escalation); CHAIN=1 runs the production pipeline (the
-# routing chain CAPTAIN_AGENT_ROUTING_MODELS, built in Perplexity Decider 1.2, then JEV 1.14, then Mercury Decide, plus the
-# escalation when ESCALATION=1).
+# routing chain CAPTAIN_AGENT_ROUTING_MODELS, built in Perplexity Decider 1.2, then Mercury Decide, then Microsoft Decision 1,
+# plus the escalation when ESCALATION=1).
 #
 #   RAILS_ENV=test bundle exec rake captain:router_benchmark GRAPHS=tmp/clinic_graphs.json \
 #     [SCENARIOS=script/captain/router_benchmark/router_scenarios.json] [CARDS=proposed|prod] \
 #     [PROPOSALS=config/captain/router_prompt_migration/2026-10-router.yml] \
-#     [MODELS=perplexity/pplx-decider-v1.2,typesafe/jev-1.14,inception/mercury-decide] [CHAIN=1] [ESCALATION=1] \
+#     [MODELS=perplexity/pplx-decider-v1.2,inception/mercury-decide,microsoft/microsoft-decision-1] [CHAIN=1] [ESCALATION=1] \
 #     [CHAIN_MODELS=inception/mercury-decide,microsoft/microsoft-decision-1,openai/gpt-6-luna-decisions] \
 #     [RUNS=3] [ONLY=SZ01,A11] [FAIL_MODELS=perplexity/pplx-decider-v1.2 FAIL_MODE=error|timeout] BUDGET_USD=2 OUT=tmp/router-<date>.json
 #

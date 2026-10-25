@@ -154,12 +154,12 @@ RSpec.describe Captain::Runtime::DecisionRouter do
   it 'raises UnavailableError with the models it tried when every decision model fails' do
     allow(Llm::DecisionChain).to receive(:decide).and_raise(
       Llm::DecisionChain::ExhaustedError.new(feature: :agent_routing, attempts: [{ model: 'perplexity/pplx-decider-v1.2', error_class: 'Timeout' },
-                                                                                 { model: 'typesafe/jev-1.14', error_class: 'Error' }])
+                                                                                 { model: 'inception/mercury-decide', error_class: 'Error' }])
     )
 
     expect { router.decide }.to raise_error(described_class::UnavailableError) do |error|
       expect(error.reason).to eq('decision_chain_unavailable')
-      expect(error.models_tried).to eq(%w[perplexity/pplx-decider-v1.2 typesafe/jev-1.14])
+      expect(error.models_tried).to eq(%w[perplexity/pplx-decider-v1.2 inception/mercury-decide])
     end
   end
 

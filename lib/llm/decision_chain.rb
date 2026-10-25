@@ -7,14 +7,14 @@
 # technical-failure path, the same as when OpenRouter is down for generation.
 #
 # The chain of a feature: agent_routing has its own (installation config CAPTAIN_AGENT_ROUTING_MODELS, built in Perplexity
-# Decider, then JEV, then Mercury Decide: the models that composed councils exactly in the owner's benchmark); every other turn
-# decision feature uses the shared chain CAPTAIN_DECISION_MODEL_CHAIN.
+# Decider, then Mercury Decide, then Microsoft Decision 1: the owner's choice of 25.10 after the router benchmark); every other
+# turn decision feature uses the shared chain CAPTAIN_DECISION_MODEL_CHAIN.
 class Llm::DecisionChain
   CONFIG_NAME = 'CAPTAIN_DECISION_MODEL_CHAIN'
   DEFAULT_MODELS = %w[inception/mercury-decide microsoft/microsoft-decision-1 openai/gpt-6-luna-decisions].freeze
   FEATURE_CHAINS = {
     'agent_routing' => { config: 'CAPTAIN_AGENT_ROUTING_MODELS',
-                         default: %w[perplexity/pplx-decider-v1.2 typesafe/jev-1.14 inception/mercury-decide].freeze }
+                         default: %w[perplexity/pplx-decider-v1.2 inception/mercury-decide microsoft/microsoft-decision-1].freeze }
   }.freeze
   MAX_MODELS = 3
   # Below this a call cannot finish, so the chain stops instead of starting it.

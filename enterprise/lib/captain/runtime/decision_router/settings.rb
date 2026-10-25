@@ -5,8 +5,10 @@
 module Captain::Runtime::DecisionRouter::Settings
   MIN_CONFIDENCE = 0.75
   HUMAN_MIN_CONFIDENCE = 0.80
-  CHAIN_BUDGET_SECONDS = 4.5
-  ESCALATION_TIMEOUT_SECONDS = 10.0
+  # Three full attempts of the routing chain (2 s each, the turn decision profile) plus overhead, so the third model is never cut short.
+  CHAIN_BUDGET_SECONDS = 6.5
+  # The slowest escalation of the router benchmark took 9.1 s; 15 s leaves it room.
+  ESCALATION_TIMEOUT_SECONDS = 15.0
   ESCALATION_EFFORT = 'high'
   EFFORTS = %w[low medium high].freeze
   OFF_VALUES = %w[off 0 false disabled no].freeze

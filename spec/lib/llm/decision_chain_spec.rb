@@ -119,6 +119,27 @@ RSpec.describe Llm::DecisionChain do
     expect(decide(total_timeout: 1.0).position).to eq(1)
   end
 
+  it 'gives the third model of the routing chain a full attempt within the router budget when the first two time out' do
+    InstallationConfig.where(name: 'CAPTAIN_AGENT_ROUTING_MODELS').delete_all
+    clock = 1000.0
+    allow(Process).to receive(:clock_gettime).and_call_original
+    allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC) { clock }
+    attempts = []
+    allow(Llm::OpenRouterDecisionClient).to receive(:choose) do |**options|
+      attempts << [options[:model], options[:timeout]]
+      clock += options[:timeout]
+      raise Llm::OpenRouterDecisionClient::Error, 'synthetic timeout' if attempts.size < 3
+
+      Llm::OpenRouterDecisionClient::Result.new(choice: 'agent_ent', confidence: 0.9, probabilities: {}, model: options[:model])
+    end
+
+    result = described_class.decide(feature: :agent_routing, account: account, question: question,
+                                    total_timeout: Captain::Runtime::DecisionRouter::Settings::CHAIN_BUDGET_SECONDS)
+
+    expect(attempts).to eq([['perplexity/pplx-decider-v1.2', 2.0], ['inception/mercury-decide', 2.0], ['microsoft/microsoft-decision-1', 2.0]])
+    expect(result).to have_attributes(choice: 'agent_ent', model: 'microsoft/microsoft-decision-1', position: 3)
+  end
+
   it 'refuses a feature that is not a decision feature before any call' do
     expect { described_class.decide(feature: :captain_agent, account: account, question: question) }
       .to raise_error(ArgumentError, 'Decisions is unavailable for this feature.')
@@ -177,11 +198,12 @@ RSpec.describe Llm::DecisionChain do
       expect(described_class.models).to eq(%w[openai/gpt-6-luna-decisions inception/mercury-decide])
     end
 
-    it 'gives agent_routing its own chain: Perplexity Decider, then JEV, then Mercury Decide, and never the shared one' do
+    it 'gives agent_routing its own chain: Perplexity Decider, then Mercury Decide, then Microsoft Decision 1, and never the shared one' do
       InstallationConfig.where(name: 'CAPTAIN_AGENT_ROUTING_MODELS').delete_all
       upsert_installation_config(described_class::CONFIG_NAME, '["openai/gpt-6-luna-decisions"]')
 
-      expect(described_class.models(:agent_routing)).to eq(%w[perplexity/pplx-decider-v1.2 typesafe/jev-1.14 inception/mercury-decide])
+      expect(described_class.models(:agent_routing))
+        .to eq(%w[perplexity/pplx-decider-v1.2 inception/mercury-decide microsoft/microsoft-decision-1])
       expect(described_class.models(:agent_routing)).not_to include('openai/gpt-6-luna-decisions')
 
       upsert_installation_config('CAPTAIN_AGENT_ROUTING_MODELS', '["typesafe/jev-1.14", "perplexity/pplx-decider-flash-v1.2"]')

@@ -95,7 +95,7 @@ RSpec.describe Llm::FeatureProfile do
     escalation = described_class.for(:agent_routing_escalation)
     split = described_class.for(:council_split)
 
-    expect(escalation).to have_attributes(timeout_seconds: 10, max_retries: 0, reasoning_policy: 'platform')
+    expect(escalation).to have_attributes(timeout_seconds: 15, max_retries: 0, reasoning_policy: 'platform')
     expect(split).to have_attributes(timeout_seconds: 4, max_retries: 0, reasoning_policy: 'disabled')
     expect([escalation, split]).to all(be_structured_output)
     expect([escalation, split].map(&:decisions?)).to eq([false, false])

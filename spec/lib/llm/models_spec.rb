@@ -100,7 +100,7 @@ RSpec.describe Llm::Models do
     end
 
     it 'allows the routing chain of Decision models for agent_routing, without Luna Decisions' do
-      chain = %w[perplexity/pplx-decider-v1.2 typesafe/jev-1.14 inception/mercury-decide]
+      chain = %w[perplexity/pplx-decider-v1.2 inception/mercury-decide microsoft/microsoft-decision-1]
 
       expect(described_class.configured_default_model_for('agent_routing')).to eq('perplexity/pplx-decider-v1.2')
       expect(described_class.models_for('agent_routing')).to include(*chain)

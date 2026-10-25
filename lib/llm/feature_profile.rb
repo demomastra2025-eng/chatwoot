@@ -125,7 +125,7 @@ class Llm::FeatureProfile
     'agent_routing_escalation' => {
       config_feature_key: 'agent_routing_escalation',
       required_capabilities: %w[text_input text_output structured_output],
-      timeout_seconds: 10,
+      timeout_seconds: 15,
       max_retries: 0,
       streaming: false,
       native_endpoint: nil,
