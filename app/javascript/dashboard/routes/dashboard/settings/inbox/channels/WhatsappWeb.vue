@@ -6,6 +6,7 @@ import { required } from '@vuelidate/validators';
 import router from '../../../../index';
 import PageHeader from '../../SettingsSubPageHeader.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import WhatsappWebRiskNotice from '../components/WhatsappWebRiskNotice.vue';
 import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
 
 const shouldBeKazakhstanPhoneNumber = (value = '') => /^7\d{10}$/.test(value);
@@ -14,6 +15,7 @@ export default {
   components: {
     PageHeader,
     NextButton,
+    WhatsappWebRiskNotice,
   },
   setup() {
     return { v$: useVuelidate() };
@@ -89,6 +91,8 @@ export default {
           :header-title="$t('INBOX_MGMT.ADD.WHATSAPP_WEB_CHANNEL.TITLE')"
           :header-content="$t('INBOX_MGMT.ADD.WHATSAPP_WEB_CHANNEL.DESC')"
         />
+
+        <WhatsappWebRiskNotice class="mt-4" />
 
         <form
           class="mt-4 flex flex-col gap-5 mx-0"

@@ -2,6 +2,8 @@ import { shallowMount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ChannelSelector from 'dashboard/components/ChannelSelector.vue';
+import ru from 'dashboard/i18n/locale/ru/inboxMgmt.json';
+import WhatsappWebRiskNotice from '../components/WhatsappWebRiskNotice.vue';
 import Whatsapp from './Whatsapp.vue';
 
 const state = vi.hoisted(() => ({
@@ -73,5 +75,51 @@ describe('WhatsApp channel setup: provider choice', () => {
     state.account.available_channels = ['website'];
 
     expect(offeredProviders()).toEqual([]);
+  });
+});
+
+describe('WhatsApp channel setup: unofficial hint', () => {
+  const WEB_HINT = 'INBOX_MGMT.ADD.AUTH.CHANNEL.WHATSAPP_WEB.DESCRIPTION';
+
+  const descriptions = () =>
+    Object.fromEntries(
+      shallowMount(Whatsapp, { global: { mocks: { $t: key => key } } })
+        .findAllComponents(ChannelSelector)
+        .map(selector => [
+          selector.props('title'),
+          selector.props('description'),
+        ])
+    );
+
+  beforeEach(() => {
+    state.account = { id: 1 };
+    state.route = {
+      name: 'settings_inboxes_page_channel',
+      params: {},
+      query: {},
+    };
+  });
+
+  it('marks only the WhatsApp Web card as unofficial', () => {
+    const cards = descriptions();
+
+    expect(cards[WEB]).toBe(WEB_HINT);
+    expect(cards[CLOUD]).not.toBe(WEB_HINT);
+    expect(cards[TWILIO]).not.toBe(WEB_HINT);
+    expect(ru.INBOX_MGMT.ADD.AUTH.CHANNEL.WHATSAPP_WEB.DESCRIPTION).toBe(
+      'Неофициальный канал, подключение по QR-коду'
+    );
+  });
+
+  it('shows no WhatsApp Web warning while the official WhatsApp is set up', () => {
+    state.route = { ...state.route, query: { provider: 'whatsapp' } };
+    const wrapper = shallowMount(Whatsapp, {
+      global: { mocks: { $t: key => key } },
+    });
+
+    expect(wrapper.findComponent(WhatsappWebRiskNotice).exists()).toBe(false);
+    expect(
+      wrapper.find('[data-testid="whatsapp-web-risk-notice"]').exists()
+    ).toBe(false);
   });
 });

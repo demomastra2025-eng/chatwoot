@@ -5,6 +5,10 @@
     "LEARN_MORE": "Learn more about inboxes",
     "RECONNECTION_REQUIRED": "Your inbox is disconnected. You won't receive new messages until you reauthorize it.",
     "CLICK_TO_RECONNECT": "Click here to reconnect.",
+    "WHATSAPP_WEB_RISK": {
+      "TITLE": "Unofficial channel: WhatsApp may block the number",
+      "DESCRIPTION": "For business, we recommend the official WhatsApp. The risk is higher with mass messaging and with messages to people who have not written to you first."
+    },
     "HEALTH_STATUS": {
       "CONNECTED": "Connected",
       "CONNECTED_DESCRIPTION": "The channel is ready to receive messages.",
@@ -1131,7 +1135,7 @@
           },
           "WHATSAPP_WEB": {
             "TITLE": "WhatsApp Web",
-            "DESCRIPTION": "Link a dedicated WhatsApp Web session with a QR code"
+            "DESCRIPTION": "Unofficial channel, linked with a QR code"
           },
           "EMAIL": {
             "TITLE": "Email",
