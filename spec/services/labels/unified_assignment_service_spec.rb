@@ -162,9 +162,10 @@ RSpec.describe Labels::UnifiedAssignmentService do
     end
   end
 
-  # The status of the thread follows the conversation with the newest updated_at, and a label is not a change of status.
-  # The older conversations are saved after the one that reports, so a write that moved updated_at put the least active
-  # channel (snoozed, or pending because the assistant handles it) in front of the open one with the unanswered message.
+  # The thread shows the most urgent status of the person (open before pending before snoozed), and a label is not a change
+  # of status. The older conversations are saved after the one that reports, so a write that moved updated_at or the status
+  # must not put the least active channel (snoozed, or pending because the assistant handles it) in front of the open one
+  # with the unanswered message.
   [%w[snoozed pending], %w[pending snoozed]].each do |older_statuses|
     describe "the status of the thread of a person with an open, a #{older_statuses.first} and a #{older_statuses.last} conversation" do
       include PersonThreadStatusHelpers

@@ -498,6 +498,10 @@ RSpec.describe BulkActionsJob do
       end
 
       it 'reports a bulk label change of a thread once' do
+        # One open dialog per person: the other channel is resolved, as CommunicationThreads::SingleOpenDialogService leaves
+        # it. Two open channels would be settled by the thread refresh of the write, with an activity message of its own.
+        thread_conversation_1.update!(status: :resolved)
+
         expect do
           described_class.perform_now(
             account: account,

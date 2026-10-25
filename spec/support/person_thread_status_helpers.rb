@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
-# The status of a person's communication thread is the status of the open (not resolved) conversation that changed last
-# (Conversations::CommunicationThreadResolver#aggregate_status). A label is not a change of status, so a label written to
-# the person must never move it. These helpers build a person whose conversations disagree about their status, and read
-# the thread status the way the list and the realtime update show it.
+# The status of a person's communication thread is the most urgent status of their conversations, and among the
+# conversations of one status the one that changed last is in front and reports a change of the whole person
+# (Conversations::CommunicationThreadResolver#aggregate_status and .front_first). A label is not a change of status, so a
+# label written to the person must never move either. These helpers build a person whose conversations disagree about
+# their status, and read the thread status the way the list and the realtime update show it.
 module PersonThreadStatusHelpers
   # The first conversation is open, talked last and decides the thread. The others are older, most recent first, each with
   # the status it keeps (snoozed, pending). A write that saved an older one after the first would put it in front.
