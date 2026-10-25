@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 # The mark a message the manager wrote by hand leaves in the conversation and in the person's thread (see StickyAgent): the time of
-# the newest such message. Every sticky value written before it no longer leads the dialog.
+# the newest such message. Every sticky value written before it no longer leads the dialog. Resolving a conversation sets the same
+# mark in that conversation alone (#mark_resolved!).
 module Captain::ReplySuggestion::StickyAgent::ManualReply
   KIND = 'manual_reply'
 
@@ -20,6 +21,15 @@ module Captain::ReplySuggestion::StickyAgent::ManualReply
     rescue StandardError => e
       Rails.logger.warn("[CAPTAIN][ReplySuggestion] manual reply not marked error_class=#{e.class.name}")
       false
+    end
+
+    # The conversation was resolved (StickyAgent.clear!): the values written before now no longer lead its dialog. Only the mark of
+    # the conversation is set; the person's thread keeps its own, which the person's other conversations read.
+    def mark_resolved!(conversation)
+      value = JSON.generate({ 'at' => Time.current.to_f, 'resolved' => true })
+      Captain::ReplySuggestion::StickyAgent.keys_for(conversation, kinds: [KIND], thread: false).each do |key|
+        Redis::Alfred.set(key, value, ex: Captain::ReplySuggestion::StickyAgent::CONFIRMED_TTL_SECONDS)
+      end
     end
 
     def keys(conversation)

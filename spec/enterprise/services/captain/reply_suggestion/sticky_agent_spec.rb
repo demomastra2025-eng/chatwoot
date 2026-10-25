@@ -151,6 +151,25 @@ RSpec.describe Captain::ReplySuggestion::StickyAgent do
       end
     end
 
+    # Resolving one conversation of the person must not bring back, in another conversation, the agent the manager's hand-written
+    # reply ended: only the resolved conversation's own keys change.
+    it 'keeps the mark and the values of the person thread when one conversation of the person is resolved' do
+      first, second = share_thread(conversation, other_conversation)
+      described_class.confirm!(second, 84, request_id: 'r-1')
+      manual_reply.mark!(outgoing(first, at: 1.second.from_now))
+
+      described_class.clear!(first)
+
+      expect(described_class.read(second)).to be_nil
+      expect(described_class.read(first)).to be_nil
+      travel 2.seconds do
+        described_class.confirm!(first, 119, request_id: 'r-2')
+        described_class.clear!(first)
+        expect(described_class.read(first)).to be_nil
+        expect(described_class.read(second)).to eq(119)
+      end
+    end
+
     it 'ignores the sent text of a used suggestion, notes, bots and customers, and an older message' do
       described_class.confirm!(conversation, 84, request_id: 'r-1')
 

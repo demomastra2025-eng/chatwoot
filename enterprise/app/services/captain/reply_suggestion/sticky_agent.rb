@@ -13,10 +13,12 @@
 #                («Предложить ответ» / «Повторить» again, StartService) withdraw it, and the value before it applies again.
 #   confirmed    the agent of a suggestion the manager inserted or sent (FeedbackService), for 24 hours.
 # A suggestion that the anchor answered only because no agent leads the dialog (the router's default_to anchor) makes nobody
-# sticky. Resolving the conversation clears it (CaptainListener). A message the manager writes by hand (an outgoing public message
-# of a user that did not come from a used suggestion, CaptainListener#message_created) leaves a mark in the conversation and in the
-# person's thread (ManualReply): every value written before that message no longer leads the dialog, whichever conversation of the
-# person it was written in (the manager took the dialog elsewhere, so a short reply to it must not go back to the old agent).
+# sticky. A message the manager writes by hand (an outgoing public message of a user that did not come from a used suggestion,
+# CaptainListener#message_created) leaves a mark in the conversation and in the person's thread (ManualReply): every value written
+# before that message no longer leads the dialog, whichever conversation of the person it was written in (the manager took the
+# dialog elsewhere, so a short reply to it must not go back to the old agent). Resolving a conversation ends its lead
+# (CaptainListener, #clear!) and changes only the keys of that conversation: the person's thread keeps its values and its mark,
+# which the person's other conversations read.
 module Captain::ReplySuggestion::StickyAgent
   PREFIX = "#{Captain::ReplySuggestion::RequestStore::PREFIX}:sticky_agent".freeze
   CONFIRMED_TTL_SECONDS = 24.hours.to_i
@@ -68,11 +70,14 @@ module Captain::ReplySuggestion::StickyAgent
       Rails.logger.warn("[CAPTAIN][ReplySuggestion] superseded sticky agent not withdrawn error_class=#{e.class.name}")
     end
 
-    # The conversation was resolved: its dialog has nobody leading it any more.
+    # The conversation was resolved: its dialog has nobody leading it any more. Only the conversation's own keys change: its values
+    # go, and a mark of the resolve (ManualReply.mark_resolved!) ends the lead of the thread's older values here. The thread's values
+    # and its manual-reply mark stay: deleting that mark would bring an older agent back in another conversation of the person.
     def clear!(conversation)
       return if conversation.blank?
 
-      keys_for(conversation, kinds: KINDS + [ManualReply::KIND]).each { |key| Redis::Alfred.delete(key) }
+      keys_for(conversation, thread: false).each { |key| Redis::Alfred.delete(key) }
+      ManualReply.mark_resolved!(conversation)
     rescue StandardError => e
       Rails.logger.warn("[CAPTAIN][ReplySuggestion] sticky agent not cleared error_class=#{e.class.name}")
     end
@@ -96,9 +101,10 @@ module Captain::ReplySuggestion::StickyAgent
       (result[:lead_agent_id].presence || result[:agent].to_h.with_indifferent_access[:id]).presence&.to_i
     end
 
-    def keys_for(conversation, kinds: KINDS)
+    # thread: false - the keys of the conversation alone, without the person's thread.
+    def keys_for(conversation, kinds: KINDS, thread: true)
       scopes = ["conversation:#{conversation.id}"]
-      thread_id = thread_id_for(conversation)
+      thread_id = thread_id_for(conversation) if thread
       scopes << "thread:#{thread_id}" if thread_id
       scopes.product(kinds).map { |scope, kind| "#{PREFIX}:#{conversation.account_id}:#{scope}:#{kind}" }
     end
