@@ -7,7 +7,7 @@ class Captain::ToolSafety
   # HTTP tools, MCP tools) or send data outside, which includes tools that deliver model-written text to a customer
   # (send_message_to_conversation, edit_message, create_touch): that text is a second reply channel and the output stage
   # reads only the final reply. Built-in system tools (scheduling, FAQ lookup, contacts, deals, tasks, notes, labels,
-  # handoff, plan_request ...) only read and write the workspace's own records, so scanning them adds false positives and
+  # handoff ...) only read and write the workspace's own records, so scanning them adds false positives and
   # no protection.
   #
   # `external_tool?` is the single decision point and it fails closed: a tool is skipped only when it is positively known
@@ -84,8 +84,6 @@ class Captain::ToolSafety
     end
 
     def built_in_system_tool?(tool)
-      return true if coordination_tool_classes.any? { |tool_class| tool.is_a?(tool_class) }
-
       definition = registered_definition(tool)
       definition.present? && !definition.external_content?
     end
@@ -94,11 +92,6 @@ class Captain::ToolSafety
     # are recognised by class and never by a name that could collide with a built-in id.
     def external_tool_classes
       [Captain::Tools::HttpTool, Captain::Tools::McpTool, Captain::Tools::SkillScriptTool]
-    end
-
-    # Hand-over, task queue and request plan only write the run's own coordination state.
-    def coordination_tool_classes
-      [Captain::Runtime::HandoffTool, Captain::Runtime::TaskQueueTool, Captain::Runtime::PartPlanTool]
     end
 
     def registered_definition(tool)

@@ -12,7 +12,6 @@ class Captain::Runtime::TracingCallbacks
     @llm_span_name = "#{trace_name}.generation"
     @tool_span_name = "#{trace_name}.tool.%s"
     @agent_span_name = "#{trace_name}.agent.%s"
-    @handoff_event_name = "#{trace_name}.handoff"
     @span_attributes = span_attributes
     @attribute_provider = attribute_provider
   end
@@ -95,8 +94,8 @@ class Captain::Runtime::TracingCallbacks
     input = trace_input_payload(args, context_wrapper)
     attributes[ATTR_LANGFUSE_OBSERVATION_INPUT] = input if input.present?
 
-    parent_span = handoff_tool?(tool_name) ? tracing[:root_span] : parent_span_for(tracing)
-    parent = handoff_tool?(tool_name) ? tracing[:root_context] : parent_context(tracing)
+    parent_span = parent_span_for(tracing)
+    parent = parent_context(tracing)
     tracing[:current_tool_span] = @tracer.start_span(span_name, with_parent: parent, attributes: attributes)
     tracing[:current_tool_metadata] = span_metadata(
       span: tracing[:current_tool_span],
@@ -135,23 +134,6 @@ class Captain::Runtime::TracingCallbacks
     tracing[:current_tool_metadata] = nil
   end
 
-  def on_agent_handoff(from_agent, to_agent, reason, context_wrapper)
-    tracing = tracing_state(context_wrapper)
-    return unless tracing
-
-    tracing[:root_span]&.add_event(
-      @handoff_event_name,
-      attributes: {
-        'handoff.from' => from_agent,
-        'handoff.to' => to_agent,
-        'handoff.reason' => reason.to_s
-      }
-    )
-    set_trace_event_context!(
-      context_wrapper,
-      tracing[:last_agent_metadata] || tracing[:current_agent_metadata] || tracing[:root_metadata]
-    )
-  end
 
   def on_run_complete(_agent_name, result, context_wrapper)
     tracing = tracing_state(context_wrapper)
@@ -334,10 +316,6 @@ class Captain::Runtime::TracingCallbacks
     tracing[:current_agent_span] || tracing[:root_span]
   end
 
-  def handoff_tool?(tool_name)
-    Captain::HandoffNaming.transfer_tool_name?(tool_name)
-  end
-
   def build_root_attributes(agent_name, input, context_wrapper)
     attributes = @span_attributes.dup
     session_id = context_wrapper&.context&.dig(:session_id)&.to_s
@@ -351,6 +329,9 @@ class Captain::Runtime::TracingCallbacks
     end
 
     attributes['agent.name'] = agent_name
+    routing = context_wrapper&.context&.dig(:routing_decision).to_h.stringify_keys
+    attributes['routing.decision_key'] = routing['decision_key'].to_s if routing['decision_key'].present?
+    attributes['routing.decided_by'] = routing['decided_by'].to_s if routing['decided_by'].present?
 
     if @attribute_provider
       dynamic_attributes = @attribute_provider.call(context_wrapper)

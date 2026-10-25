@@ -151,6 +151,10 @@ class Llm::OpenRouterRuntime
     end
   end
 
+  # One Decisions call: one question (options decision_criteria + decision_instructions) or several questions at once (option
+  # decision_questions: { name => { criteria:, instructions: } }). A feature with a fallback decision model in its profile (see
+  # Llm::FeatureProfile#decision_fallback_models) asks the fallback when the model fails at the transport or answers outside the
+  # criteria; every attempt is its own event. A caller that falls back itself (Llm::DecisionChain) passes decision_fallback: false.
   def decide(request)
     request = normalize_request(request)
     raise ArgumentError, 'Decisions is unavailable for this feature.' unless decision_feature?(request.feature_key)
@@ -158,17 +162,13 @@ class Llm::OpenRouterRuntime
     model = resolve_model(request)
     raise ArgumentError, 'Unsupported decision model.' unless Llm::OpenRouterDecisionClient.supported_model?(model)
 
-    enforce_budget!(request, model)
-    profile = routing_profile(request, model)
-    headers = Llm::OpenRouterHeaders.build(include_cache: false)
-    metadata = native_routing_metadata(request, model, profile, headers).merge(openrouter_native_endpoint: '/alpha/decisions')
-    # FeatureRequest symbolises nested options; the Decisions contract uses string category IDs.
-    observe_native_request(request, model, 'decision.complete', routing_metadata: metadata) do
-      Llm::OpenRouterDecisionClient.choose(
-        state: request.input, criteria: decision_criteria(request), instructions: request.options[:decision_instructions],
-        model: model, api_key: api_key!(request), api_base: api_base(request),
-        provider: profile.provider_preferences, headers: headers.headers, timeout: decision_timeout_seconds(request)
-      )
+    models = decision_attempt_models(request, model)
+    models.each_with_index do |attempt_model, index|
+      return decide_with(request, attempt_model, position: (index + 1 if models.size > 1), total: models.size)
+    rescue Llm::OpenRouterDecisionClient::Error => e
+      raise if index == models.size - 1
+
+      Rails.logger.warn("[LLM][Decisions] fallback feature=#{request.feature_key} model=#{attempt_model} error_class=#{e.class.name}")
     end
   end
 
@@ -200,6 +200,44 @@ class Llm::OpenRouterRuntime
 
   def decision_feature?(feature_key)
     Llm::FeatureProfile.decision_feature?(feature_key)
+  end
+
+  def decide_with(request, model, position:, total:)
+    enforce_budget!(request, model)
+    profile = routing_profile(request, model)
+    headers = Llm::OpenRouterHeaders.build(include_cache: false)
+    metadata = native_routing_metadata(request, model, profile, headers).merge(openrouter_native_endpoint: '/alpha/decisions')
+    if position
+      metadata[:decision_chain_position] = position
+      metadata[:decision_chain_length] = total
+    end
+    # FeatureRequest symbolises nested options; the Decisions contract uses string category IDs.
+    observe_native_request(request, model, 'decision.complete', routing_metadata: metadata) do
+      Llm::OpenRouterDecisionClient.choose(
+        state: request.input, **decision_question_arguments(request),
+        model: model, api_key: api_key!(request), api_base: api_base(request),
+        provider: profile.provider_preferences, headers: headers.headers, timeout: decision_timeout_seconds(request)
+      )
+    end
+  end
+
+  # The model the caller resolved, then the fallback decision models of the feature (supported ones, each once).
+  def decision_attempt_models(request, model)
+    return [model] if request.options[:decision_fallback] == false
+
+    fallbacks = request.profile.decision_fallback_models.map { |name| Llm::Models.canonical_model_name(name) }
+    ([model] + fallbacks.select { |name| Llm::OpenRouterDecisionClient.supported_model?(name) }).uniq
+  end
+
+  def decision_question_arguments(request)
+    questions = request.options[:decision_questions]
+    return { criteria: decision_criteria(request), instructions: request.options[:decision_instructions] } if questions.blank?
+
+    { questions: questions.to_h.to_h do |name, question|
+      question = question.to_h.with_indifferent_access
+      criteria = question[:criteria].is_a?(Hash) ? question[:criteria].to_h.transform_keys(&:to_s) : question[:criteria]
+      [name.to_s, { criteria: criteria, instructions: question[:instructions] }]
+    end }
   end
 
   # The bound of one Decisions call: what the caller asks for (a fallback chain gives each model its share), else the short

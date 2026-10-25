@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+# The run state of one patient turn: the durable session, the agents of the channel and the activation of the agent that answers.
+# #prepare reads the session and the history and never chooses an agent: the router decides who answers (see
+# Captain::Runtime::DecisionRouter and Captain::Runtime::TurnDispatcher), and #activate prepares the chosen agent. The assistant
+# the run was started with (`entry`) is the technical anchor of the channel, never a default agent.
 class Captain::AgentRunContext
   def initialize(entry:, conversation: nil, playground: nil, fence: {}, ephemeral_session: false)
     @entry = entry
@@ -20,97 +24,100 @@ class Captain::AgentRunContext
   def prepare(context)
     context.delete(:captain_faq_outcome)
     context[:agent_request_id] ||= SecureRandom.uuid
-    @entry_playground_overrides = context.fetch(:state, {}).slice(:playground_thinking_effort)
+    @playground_overrides = context.fetch(:state, {}).slice(:playground_thinking_effort)
     saved = @session.read
-    current = graph.find(saved['current_assistant_id']) || graph.entry
-    raise ArgumentError, 'The entry agent is disabled' unless graph.find(current.id)
+    raise ArgumentError, 'The entry agent is disabled' unless graph.find(@entry.id)
 
-    if saved['current_assistant_id'].present? && current.id != saved['current_assistant_id'].to_i
-      Captain::Runtime::CoordinationEvents.publish(
-        'agent.reset', context: context, reason: 'agent_unavailable',
-                       from_agent_id: saved['current_assistant_id'], to_agent_id: current.id
-      )
-    end
-
-    # The channel grid decides the routing. When the main agent is the only agent of the channel there is nobody
-    # to transfer to or to bring together: the directory stays empty, so no plan, council, transfer or request
-    # queue exists for it (the runtime and the prompt build those only from a non-empty directory).
-    peers = graph.peers?
-    suggestion = Captain::Runtime::Runner.reply_suggestion?(context)
-    context[:agent_graph] = peers ? graph.payload_for(current, suggestion_tools: suggestion) : []
+    current = current_candidate(saved, context)
+    context[:routing_current_agent_id] = current&.id
+    context[:routing_trail] = Array(saved['routing_trail'])
+    context[:agent_graph] = graph.solo? ? [] : graph.payload
     context[:agent_graph_object] = graph
     context[:agent_run_context_object] = self
     context[:agent_inbox_id] = graph.inbox&.id
     context[:agent_session] = @session
-    context[:agent_tasks] = peers ? (saved['tasks'] || []) : []
     context[:parts] = saved['parts'] || []
     # What the agents already did in this conversation (see Captain::DoneActions): the prompt of every agent that takes the turn.
     context[:done_actions] = Array(saved['done'])
-    close_handed_off_history!(context, current)
-    context[:agent_tasks].each do |task|
-      next if Captain::Runtime::TaskQueue::TERMINAL.include?(task['status']) || graph.find(task['assistant_id'])
-
-      task['status'] = 'waiting'
-      task['result'] = 'The assigned agent is unavailable. Explain the remaining request or cancel it if the customer no longer needs it.'
-    end
-    context[:current_agent] = "assistant_#{current.id}"
+    close_handed_off_history!(context, current || @entry)
     context[:state][:entry_assistant_id] = @entry.id
-    context[:state][:agent_graph_ids] = graph.agents.map(&:id)
-    activate(current, context)
+    context[:state][:agent_graph_ids] = graph.candidates.map(&:id)
+    # A lone agent needs no decision: it answers, and it is prepared now.
+    activate(graph.candidates.first, context) if graph.solo?
     context
   end
 
+  # The chosen agent takes the turn: its configuration, its runtime preferences and the public history (never another agent's
+  # private retrievals or provider reasoning).
   def activate(actor, context)
     state = context[:state] ||= {}
     previous_id = state[:assistant_id]
     state[:assistant_id] = actor.id
-    suggestion = Captain::Runtime::Runner.reply_suggestion?(context)
-    context[:agent_graph] = graph.payload_for(actor, suggestion_tools: suggestion) if graph.peers?
     state[:mesh_routing] = true
     state[:assistant_config] = actor.config
     prior_runtime = state[:captain_runtime]
     state[:captain_runtime] = Captain::AssistantSafetyPreferences.for(assistant: actor, feature: :assistant)
     state[:captain_runtime]['assistant_thinking_effort'] = actor.config['thinking_effort'] if actor.config['thinking_effort'].present?
-    state.delete(:playground_thinking_effort)
-    if actor.id == @entry.id && @entry_playground_overrides&.key?(:playground_thinking_effort)
-      state[:playground_thinking_effort] = @entry_playground_overrides[:playground_thinking_effort]
-      state[:captain_runtime]['assistant_thinking_effort'] = state[:playground_thinking_effort]
-    elsif actor.id == @entry.id && previous_id == actor.id && prior_runtime&.key?('assistant_thinking_effort') && @playground
-      state[:captain_runtime]['assistant_thinking_effort'] = prior_runtime['assistant_thinking_effort']
-    end
+    apply_playground_effort(state, actor, previous_id, prior_runtime)
     state[:prompt_context] = actor.prompt_context_state(state)
     context[:current_agent] = "assistant_#{actor.id}"
     context[:acting_assistant_id] = actor.id
     @playground&.activate_agent!(actor)
     state[:playground] = @playground.context_reference if @playground
     Current.executed_by = actor if @conversation
-    if previous_id.present? && previous_id != actor.id
-      # A destination receives the public dialogue and explicit task outcomes,
-      # never another agent's raw private retrievals or provider reasoning.
-      context[:conversation_history] = public_history(context[:conversation_history])
-      clear_actor_caches(context)
-    end
-    Captain::Runtime::TaskQueue.new(context).on_handoff
+    return unless previous_id.present? && previous_id != actor.id
+
+    context[:conversation_history] = public_history(context[:conversation_history])
+    clear_actor_caches(context)
   end
 
+  # The agents of the channel as runtime agents, built lazily: only the agent that answers builds its tools.
   def runtime_agents(overrides: {})
     shared_options = overrides.to_h.symbolize_keys.slice(:read_only_tools, :suggestion_tools)
-    registry = graph.agents.index_with do |actor|
-      # Playground model controls affect the selected agent only.
-      options = actor.id == @entry.id ? overrides : shared_options
+    graph.candidates.map do |actor|
+      # Playground model controls affect the agent that is being tried out; in a live run there are none.
+      options = playground_target?(actor) ? overrides : shared_options
       Captain::Runtime::LazyAgent.new(actor, options: options).tap do |runtime_agent|
         runtime_agent.context_preparer = ->(wrapper) { activate(actor, wrapper.context) }
       end
     end
-    registry.each do |actor, runtime_agent|
-      runtime_agent.register_handoffs(*registry.except(actor).values.select do |target|
-        Captain::Runtime::TransferCapabilities.useful?(runtime_agent, target)
-      end)
-    end
-    registry.values
   end
 
   private
+
+  # The agent that holds the conversation, when it is still a candidate. One that is no longer reachable (switched off, removed
+  # from the channel, excluded) leaves the conversation without a current agent, and the router chooses again among all.
+  def current_candidate(saved, context)
+    saved_id = saved['current_assistant_id'].presence&.to_i
+    return unless saved_id
+
+    current = graph.candidates.find { |actor| actor.id == saved_id }
+    return current if current
+
+    Captain::Runtime::CoordinationEvents.publish('agent.reset', context: context, reason: 'agent_unavailable', from_agent_id: saved_id)
+    nil
+  end
+
+  # The Playground thinking-effort control belongs to the agent the user is trying out: the assistant the session was opened with.
+  def apply_playground_effort(state, actor, previous_id, prior_runtime)
+    state.delete(:playground_thinking_effort)
+    return unless playground_target?(actor)
+    return keep_playground_effort(state, actor.id == previous_id, prior_runtime) unless @playground_overrides&.key?(:playground_thinking_effort)
+
+    state[:playground_thinking_effort] = @playground_overrides[:playground_thinking_effort]
+    state[:captain_runtime]['assistant_thinking_effort'] = state[:playground_thinking_effort]
+  end
+
+  # The same agent activated again in the same Playground run keeps the effort it already had.
+  def keep_playground_effort(state, same_agent, prior_runtime)
+    return unless @playground && same_agent && prior_runtime&.key?('assistant_thinking_effort')
+
+    state[:captain_runtime]['assistant_thinking_effort'] = prior_runtime['assistant_thinking_effort']
+  end
+
+  def playground_target?(actor)
+    actor.id == @entry.id
+  end
 
   # A silent handoff leaves no public assistant reply in the transcript. When the conversation returns to the AI on a later
   # turn, close the earlier user message that was already handed off so the model does not treat it as an unanswered message of

@@ -82,7 +82,8 @@ class Llm::FeatureProfile
       privacy_policy: 'standard',
       cost_policy: 'speed_cost',
       fallback_strategy: 'fast_background',
-      decisions: true
+      decisions: true,
+      decision_fallback_models: %w[microsoft/microsoft-decision-1]
     },
     'language_detection' => {
       config_feature_key: 'language_detection',
@@ -97,7 +98,8 @@ class Llm::FeatureProfile
       privacy_policy: 'standard',
       cost_policy: 'speed_cost',
       fallback_strategy: 'skip',
-      decisions: true
+      decisions: true,
+      decision_fallback_models: %w[respan/span-02]
     },
     'custom_guardrail' => {
       config_feature_key: 'custom_guardrail',
@@ -112,11 +114,43 @@ class Llm::FeatureProfile
       privacy_policy: 'standard',
       cost_policy: 'guardrail',
       fallback_strategy: 'skip',
-      decisions: true
+      decisions: true,
+      decision_fallback_models: %w[openai/gpt-6-luna-decisions]
     },
     'agent_routing' => TURN_DECISION_DEFINITION.merge(config_feature_key: 'agent_routing'),
     'fact_check_gate' => TURN_DECISION_DEFINITION.merge(config_feature_key: 'fact_check_gate', cost_policy: 'guardrail'),
     'inbound_triage' => TURN_DECISION_DEFINITION.merge(config_feature_key: 'inbound_triage'),
+    # The strong reasoning chat model that decides a routing turn the decision models were not confident about: the same state
+    # and criteria, one key of the criteria back as structured output, thinking on. Bounded by its own timeout; no retry.
+    'agent_routing_escalation' => {
+      config_feature_key: 'agent_routing_escalation',
+      required_capabilities: %w[text_input text_output structured_output],
+      timeout_seconds: 10,
+      max_retries: 0,
+      streaming: false,
+      native_endpoint: nil,
+      structured_output: true,
+      response_healing: false,
+      reasoning_policy: 'platform',
+      privacy_policy: 'standard',
+      cost_policy: 'quality',
+      fallback_strategy: 'technical_failure'
+    },
+    # Cuts the patient's message into one fragment per council participant the router chose; no thinking.
+    'council_split' => {
+      config_feature_key: 'council_split',
+      required_capabilities: %w[text_input text_output structured_output],
+      timeout_seconds: 4,
+      max_retries: 0,
+      streaming: false,
+      native_endpoint: nil,
+      structured_output: true,
+      response_healing: false,
+      reasoning_policy: 'disabled',
+      privacy_policy: 'standard',
+      cost_policy: 'latency_first',
+      fallback_strategy: 'whole_message'
+    },
     'customer_notice' => {
       config_feature_key: 'customer_notice',
       required_capabilities: %w[text_input text_output],
@@ -283,6 +317,8 @@ class Llm::FeatureProfile
   def fallback_strategy = definition[:fallback_strategy]
 
   def decisions? = definition[:decisions] == true
+  # The decision models asked, in order, when the resolved one fails (see Llm::OpenRouterRuntime#decide).
+  def decision_fallback_models = Array(definition[:decision_fallback_models])
   def strict_timeout? = definition[:strict_timeout] == true
   def streaming? = definition[:streaming] == true
   def structured_output? = definition[:structured_output] == true

@@ -123,6 +123,72 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
     )
   end
 
+  describe 'the fallback decision model of a feature' do
+    def body_for(name)
+      response_body.merge(model: name, answers: { reason: { choice: 'other', confidence: 0.8 } }).to_json
+    end
+
+    def stub_decider(name, response)
+      stub_request(:post, endpoint).with { |request| JSON.parse(request.body)['model'] == name }.to_return(response)
+    end
+
+    {
+      custom_guardrail: %w[perplexity/pplx-decider-v1.2 openai/gpt-6-luna-decisions],
+      language_detection: %w[openai/gpt-6-luna-decisions respan/span-02],
+      outcome_classification: %w[inception/mercury-decide microsoft/microsoft-decision-1]
+    }.each do |feature, (primary, fallback)|
+      it "asks #{fallback} for #{feature} when #{primary} fails, and records both attempts" do
+        stub_decider(primary, { status: 503, body: 'SYNTHETIC_PRIVATE_PROVIDER_TEXT' })
+        second = stub_decider(fallback, { status: 200, body: body_for(fallback) })
+
+        result = Llm::Runtime.decide(decision_request(feature: feature, model: primary))
+
+        expect(result).to have_attributes(choice: 'other', model: fallback)
+        expect(second).to have_been_requested.once
+        events = LlmEvent.where(account_id: account.id, event_name: 'llm.decision.complete').order(:id)
+        expect(events.map { |event| [event.payload['requested_model'], event.status, event.payload['decision_chain_position']] })
+          .to eq([[primary, 'error', 1], [fallback, 'success', 2]])
+        expect(Llm::FeatureProfile.for(feature).decision_fallback_models).to eq([fallback])
+      end
+    end
+
+    it 'asks no fallback when the caller falls back itself, nor for a model that answered' do
+      stub_decider('perplexity/pplx-decider-v1.2', { status: 503, body: 'x' })
+
+      expect do
+        Llm::Runtime.decide(decision_request(feature: :custom_guardrail, model: 'perplexity/pplx-decider-v1.2',
+                                             options: { decision_criteria: criteria, decision_instructions: instructions,
+                                                        decision_fallback: false }))
+      end.to raise_error(Llm::OpenRouterDecisionClient::Error)
+      expect(a_request(:post, endpoint).with { |request| JSON.parse(request.body)['model'] == 'openai/gpt-6-luna-decisions' })
+        .not_to have_been_made
+
+      stub_decider('perplexity/pplx-decider-v1.2', { status: 200, body: body_for('perplexity/pplx-decider-v1.2') })
+      expect(Llm::Runtime.decide(decision_request(feature: :custom_guardrail, model: 'perplexity/pplx-decider-v1.2')).model)
+        .to eq('perplexity/pplx-decider-v1.2')
+    end
+
+    it 'has no fallback for the decisions inside a patient turn: their chain falls back' do
+      expect(Llm::FeatureProfile.for(:agent_routing).decision_fallback_models).to eq([])
+    end
+  end
+
+  it 'passes several questions in one call' do
+    questions = { 'route_mode' => { criteria: { 'route_agent' => 'One', 'council' => 'Two' }, instructions: 'Route.' },
+                  'include_agent_7' => { criteria: { 'yes' => 'Agent 7', 'no' => 'Not 7' }, instructions: 'Include?' } }
+    stub_request(:post, endpoint).with do |request|
+      JSON.parse(request.body).dig('questions', 'include_agent_7', 'criteria') == { 'yes' => 'Agent 7', 'no' => 'Not 7' }
+    end.to_return(status: 200, body: response_body.merge(answers: { route_mode: { choice: 'route_agent', confidence: 0.9 },
+                                                                    include_agent_7: { choice: 'yes', confidence: 0.8 } }).to_json)
+
+    result = Llm::Runtime.decide(decision_request(feature: :agent_routing, model: 'perplexity/pplx-decider-v1.2',
+                                                  options: { decision_questions: questions }))
+
+    expect(result.answers.transform_values(&:choice)).to eq('route_mode' => 'route_agent', 'include_agent_7' => 'yes')
+    expect(LlmEvent.find_by!(account_id: account.id, event_name: 'llm.decision.complete').payload)
+      .to include('decision_choice' => 'route_mode=route_agent include_agent_7=yes', 'decision_confidence' => 0.8)
+  end
+
   it 'keeps the transport default timeout for the background decision features' do
     stub_request(:post, endpoint).to_return(status: 200, body: response_body.to_json)
     expect(Llm::OpenRouterDecisionClient).to receive(:choose).with(hash_including(timeout: nil)).and_call_original

@@ -100,9 +100,8 @@ RSpec.describe Captain::Conversation::RunFenceService do
   it 'fences an older actor after A to B to A even with the same incoming message' do
     current = state.deep_dup
     current[:entry_assistant_id] = assistant.id
-    current[:captain_response_fence][:routing_revision] = 0
     session = Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation)
-    session.update_routing(actor_id: assistant.id)
+    current[:captain_response_fence][:routing_revision] = session.update_routing(actor_id: assistant.id)
     expect { described_class.new(assistant: assistant, state: current).ensure_current! }.not_to raise_error
     peer = create(:captain_assistant, account: account)
     session.update_routing(actor_id: peer.id)

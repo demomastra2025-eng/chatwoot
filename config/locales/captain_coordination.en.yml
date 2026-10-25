@@ -4,3 +4,4 @@ en:
       unresolved_handoff: 'Part of the request is unanswered and needs a staff reply: %{parts}.'
       technical_failure_note: 'Part of the request was not completed because of a technical error (%{details}). The conversation was handed to staff.'
       unreported_action_note: 'An action for part of the request was done, but the patient was not told about it: %{parts}.'
+      patient_requested_human: 'The patient asks for a live staff member.'

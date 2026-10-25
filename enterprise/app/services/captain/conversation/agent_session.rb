@@ -7,6 +7,8 @@ require 'digest'
 class Captain::Conversation::AgentSession
   ATTRIBUTE = 'captain_agent_session'
   MAX_OPERATIONS = 100
+  # The last routing decisions the next turn reads (the bounce guard and the state of the router).
+  TRAIL_LIMIT = 3
   BLOCKED = { 'status' => 'blocked', 'reason' => 'mutation_retry_blocked' }.freeze
 
   def initialize(entry:, conversation: nil, playground: nil, fence: {}, ephemeral: false)
@@ -77,27 +79,21 @@ class Captain::Conversation::AgentSession
     end
   end
 
-  def update_routing(actor_id:, tasks: nil, new_queue_request_scope: nil)
+  # The router chose who answers this turn (see Captain::Runtime::RoutingState). actor_id: the agent that holds the conversation
+  # now (nil keeps the current one: a staff request, or a council when an agent already holds it); trail: the decision, for
+  # the next turn. A change of the holder raises the routing revision, which the response fence of a run carries.
+  def update_routing(actor_id:, trail: nil)
     change do |data|
       expected = @task_revision || data['task_revision'].to_i
       if data['task_revision'].to_i != expected
-        raise Captain::Conversation::ControlGenerationStaleError, 'Agent task queue changed during this run'
+        raise Captain::Conversation::ControlGenerationStaleError, 'Agent routing changed during this run'
       end
-      if new_queue_request_scope
-        already_planned = data['queue_request_scope'] == new_queue_request_scope
-        already_started = data.fetch('operations', {}).values.any? { |operation| operation['scope'] == new_queue_request_scope }
-        if already_planned || already_started
-          raise ArgumentError, 'Plan requests once, before taking actions. Keep the existing task IDs and recorded outcomes.'
-        end
-        data['queue_request_scope'] = new_queue_request_scope
-      end
-      changed = data['current_assistant_id'] != actor_id || (tasks && data['tasks'] != tasks)
-      if data['current_assistant_id'] != actor_id
+      if actor_id.present? && data['current_assistant_id'] != actor_id
         data['routing_revision'] = data['routing_revision'].to_i + 1
+        data['current_assistant_id'] = actor_id
+        data['task_revision'] = expected + 1
       end
-      data['current_assistant_id'] = actor_id
-      data['tasks'] = tasks.deep_dup if tasks
-      data['task_revision'] = expected + 1 if changed
+      append_trail(data, trail)
       @task_revision = data['task_revision'].to_i
       data['routing_revision'].to_i
     end
@@ -112,19 +108,6 @@ class Captain::Conversation::AgentSession
     change do |data|
       if @task_revision && data['task_revision'].to_i != @task_revision
         raise Captain::Conversation::ControlGenerationStaleError, 'Agent task queue changed before this action'
-      end
-      # Once an input has a plan, its actions must retain the planned task IDs.
-      # Completing or waiting all tasks must not open a fresh unscoped receipt.
-      if data['queue_request_scope'] == scope
-        pending = Array(data['tasks']).any? { |task| %w[awaiting active waiting].include?(task['status']) }
-        next [:existing, { 'status' => 'blocked', 'reason' => pending ? 'agent_task_not_active' : 'mutation_retry_blocked' }]
-      end
-
-      if scope.to_s.start_with?('task:')
-        task = Array(data['tasks']).find { |item| "task:#{item['id']}" == scope }
-        unless task && task['status'] == 'active' && task['assistant_id'] == actor_id && data['current_assistant_id'] == actor_id
-          raise Captain::Conversation::ControlGenerationStaleError, 'Agent task is no longer active for this actor'
-        end
       end
       if scope.to_s.start_with?('part:')
         part_id, version = scope.to_s.match(/\Apart:([^:]+):v(\d+)\z/)&.captures
@@ -144,8 +127,7 @@ class Captain::Conversation::AgentSession
       next earlier if earlier
 
       # The receipts of every version of every part that is still in the registry stay: they are that memory.
-      retained_scopes = Array(data['tasks']).map { |item| "task:#{item['id']}" } +
-                        Array(data['parts']).flat_map { |item| (1..item['version'].to_i).map { |number| "part:#{item['id']}:v#{number}" } } + [scope]
+      retained_scopes = Array(data['parts']).flat_map { |item| (1..item['version'].to_i).map { |number| "part:#{item['id']}:v#{number}" } } + [scope]
       operations.delete_if { |_id, operation| operation['status'] == 'finished' && !retained_scopes.include?(operation['scope']) }
       raise ArgumentError, 'Too many actions in this conversation session' if operations.size >= MAX_OPERATIONS
 
@@ -189,6 +171,12 @@ class Captain::Conversation::AgentSession
   def deep_dup = self
 
   private
+
+  def append_trail(data, trail)
+    return if trail.blank?
+
+    data['routing_trail'] = (Array(data['routing_trail']) + [trail.deep_stringify_keys]).last(TRAIL_LIMIT)
+  end
 
   def compatible?(data)
     data['entry_assistant_id'] == @entry.id
@@ -247,33 +235,14 @@ class Captain::Conversation::AgentSession
     return data if data['epoch'] == epoch
 
     data['epoch'] = epoch
-    Array(data['tasks']).each do |task|
-      next unless %w[active awaiting].include?(task['status'])
-
-      task['status'] = 'waiting'
-      task['result'] = 'Paused after a change in conversation control; check the current customer request before resuming.'
-    end
     data
   end
 
+  # A new conversation has no agent yet: the router chooses among all agents of the clinic on the first message (there is no main
+  # agent). entry_assistant_id is the technical anchor of the channel (the assistant the inbox is bound to), not an agent role.
   def fresh
-    { 'entry_assistant_id' => @entry.id, 'current_assistant_id' => legacy_actor_id || @entry.id, 'routing_revision' => 0, 'task_revision' => 0,
-      'epoch' => epoch, 'tasks' => [], 'parts' => [], 'operations' => {} }
-  end
-
-  def legacy_actor_id
-    return unless @conversation
-
-    last_reply = @conversation.messages.outgoing.where(private: false).reorder(created_at: :desc, id: :desc).first
-    return unless last_reply&.sender_type == 'Captain::Assistant' && last_reply.sender_id == @entry.id
-    return if @conversation.status_transitions.where('created_at > ?', last_reply.created_at).exists?
-
-    key = last_reply.additional_attributes.to_h['agent_name']
-    return unless key.to_s.start_with?('scenario_')
-
-    Captain::AgentGraph.new(@entry, inbox: @conversation.inbox).resolve(key)&.id
-  rescue Captain::AgentGraph::EntryDisabledError
-    nil
+    { 'entry_assistant_id' => @entry.id, 'current_assistant_id' => nil, 'routing_revision' => 0, 'task_revision' => 0,
+      'epoch' => epoch, 'parts' => [], 'operations' => {}, 'routing_trail' => [] }
   end
 
   def epoch

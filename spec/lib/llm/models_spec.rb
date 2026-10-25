@@ -55,7 +55,7 @@ RSpec.describe Llm::Models do
       expect(described_class.features.dig('audio_transcription', 'default')).to eq('openai/gpt-4o-mini-transcribe')
       expect(described_class.features.dig('moderation', 'default')).to eq('openai/gpt-oss-safeguard-20b')
       expect(described_class.features.dig('outcome_classification', 'default')).to eq('inception/mercury-decide')
-      expect(described_class.features.dig('custom_guardrail', 'default')).to eq('openai/gpt-6-luna-decisions')
+      expect(described_class.features.dig('custom_guardrail', 'default')).to eq('perplexity/pplx-decider-v1.2')
     end
   end
 
@@ -66,9 +66,11 @@ RSpec.describe Llm::Models do
       allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoint_metadata).and_return({})
     end
 
-    it 'selects independent Decision defaults for the outcome classifier and custom guardrail' do
+    it 'selects independent Decision defaults for the outcome classifier, the custom guardrail and the language' do
       expect(described_class.default_model_for('outcome_classification')).to eq('inception/mercury-decide')
-      expect(described_class.default_model_for('custom_guardrail')).to eq('openai/gpt-6-luna-decisions')
+      expect(described_class.default_model_for('custom_guardrail')).to eq('perplexity/pplx-decider-v1.2')
+      expect(described_class.default_model_for('language_detection')).to eq('openai/gpt-6-luna-decisions')
+      expect(described_class.models_for('language_detection')).to include('respan/span-02')
     end
 
     it 'keeps native transport metadata authoritative even when a refreshed chat catalog claims chat capabilities' do
@@ -97,10 +99,19 @@ RSpec.describe Llm::Models do
       end
     end
 
-    it 'allows the platform chain of Decision models for the decisions of a patient turn' do
+    it 'allows the routing chain of Decision models for agent_routing, without Luna Decisions' do
+      chain = %w[perplexity/pplx-decider-v1.2 typesafe/jev-1.14 inception/mercury-decide]
+
+      expect(described_class.configured_default_model_for('agent_routing')).to eq('perplexity/pplx-decider-v1.2')
+      expect(described_class.models_for('agent_routing')).to include(*chain)
+      expect(described_class.models_for('agent_routing')).not_to include('openai/gpt-6-luna-decisions')
+      chain.each { |model| expect(described_class.model_allowed_for_feature?('agent_routing', model)).to be(true) }
+    end
+
+    it 'allows the platform chain of Decision models for the other decisions of a patient turn' do
       chain = %w[inception/mercury-decide microsoft/microsoft-decision-1 openai/gpt-6-luna-decisions]
 
-      %w[agent_routing fact_check_gate inbound_triage].each do |feature|
+      %w[fact_check_gate inbound_triage].each do |feature|
         expect(described_class.configured_default_model_for(feature)).to eq('inception/mercury-decide')
         expect(described_class.models_for(feature)).to include(*chain)
         chain.each { |model| expect(described_class.model_allowed_for_feature?(feature, model)).to be(true) }

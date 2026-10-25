@@ -487,10 +487,16 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     authorized_v2_handoff_requested?
   end
 
+  # A handoff the agent asked for with its handoff tool, or the router's decision that the patient asked for a live staff member
+  # (routing_handoff): both need an agent that may hand conversations to staff.
   def authorized_v2_handoff_requested?
     response_assistant.handoff_enabled? && response_assistant.selected_agent_tool_ids.include?('handoff') &&
       ActiveModel::Type::Boolean.new.cast(@response['handoff_authorized']) &&
-      v2_handoff_tool_fired? && @response['response'] == 'conversation_handoff'
+      (v2_handoff_tool_fired? || routing_handoff?) && @response['response'] == 'conversation_handoff'
+  end
+
+  def routing_handoff?
+    ActiveModel::Type::Boolean.new.cast(@response&.[]('routing_handoff'))
   end
 
   def response_cancelled?
@@ -736,7 +742,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     audit = outcome_reason_config.pending_transition_options(
       :handoff,
       explanation: handoff_activity_reason,
-      signal: v2_handoff_tool_fired? ? @response['handoff_outcome_signal'] : nil
+      signal: v2_handoff_tool_fired? || routing_handoff? ? @response['handoff_outcome_signal'] : nil
     ).fetch(:audit, {})
     audit[:metadata][:outcome_run_facts] = @response['outcome_run_facts'] if @response['outcome_run_facts'].present?
     audit

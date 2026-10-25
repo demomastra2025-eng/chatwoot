@@ -13,3 +13,4 @@ en:
       reasons:
         safety_blocked: The safety check stopped the AI reply, please answer the customer yourself.
         agent_rule: 'An agent rule applied: %{reason}. Please answer the customer yourself.'
+        patient_requested_human: The patient asks for a live staff member, please answer yourself.

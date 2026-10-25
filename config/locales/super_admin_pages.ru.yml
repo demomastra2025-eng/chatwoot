@@ -106,6 +106,8 @@ ru:
         agent_routing: "Выбор агента"
         fact_check_gate: "Проверка фактов в ответе"
         inbound_triage: "Разбор входящих сообщений"
+        agent_routing_escalation: "Трудный выбор агента"
+        council_split: "Разделение сообщения для консилиума"
         customer_notice: "Сообщения при передаче и завершении"
         label_suggestion: "Подсказки меток"
         image_recognition: "Распознавание изображений"

@@ -1,12 +1,14 @@
 # frozen_string_literal: true
 
-# A text channel enters through the workspace main agent and can reach every
-# other active external agent. Without a channel, the entry agent works alone.
+# The agents of one channel. A text channel reaches every active external agent of the workspace; a voice channel and a run
+# without a channel have their assigned agent only. The assistant the channel is bound to (`entry`) is a technical anchor of
+# the channel (who the job runs as, whose account settings apply): it is not a main agent and has no routing role. Who answers a
+# patient turn is decided by Captain::Runtime::DecisionRouter among the candidates, all of them peers.
 class Captain::AgentGraph
   MAX_AGENTS = 100
 
-  # The channel's entry agent is switched off, so no routing exists. Callers that only
-  # ask "who may act" treat this as "nobody"; it stays an ArgumentError for the others.
+  # The channel's anchor assistant is switched off, so the channel has no agents. Callers that only ask "who may act" treat this
+  # as "nobody"; it stays an ArgumentError for the others.
   class EntryDisabledError < ArgumentError; end
 
   def initialize(entry, inbox: nil, standalone: false)
@@ -17,6 +19,7 @@ class Captain::AgentGraph
 
   attr_reader :entry, :inbox
 
+  # Every agent that may act in this channel (ownership, fences, parts): the anchor and the channel members.
   def agents
     @agents ||= begin
       raise EntryDisabledError, 'The entry agent is disabled' unless entry.active?
@@ -24,7 +27,7 @@ class Captain::AgentGraph
       members = [entry] + channel_members.reject { |actor| actor.id == entry.id }
       raise ArgumentError, 'Agent routing graph is too large' if members.size > MAX_AGENTS
 
-      members
+      members.sort_by(&:id)
     end
   end
 
@@ -32,15 +35,28 @@ class Captain::AgentGraph
     agents.find { |actor| actor.id == id.to_i }
   end
 
-  # Another agent works on this channel. Only then is there anyone to transfer
-  # to, consult or plan with: a lone agent (the main one) gets no routing,
-  # council or transfer prompts and tools at all.
-  def peers?
-    agents.size > 1
+  # The agents the router chooses among for a patient turn: patient-facing (an internal assistant such as Workspace MCP is not a
+  # channel member), not excluded by the platform (config patient_routing false), and with a competence card to be chosen by.
+  # A channel left with no such agent (a voice channel, an internal anchor, agents without cards) has its anchor answer alone.
+  def candidates
+    @candidates ||= begin
+      routable = agents.select { |actor| actor.external_agent? && actor.config.to_h['patient_routing'] != false }
+      described = routable.select { |actor| actor.routing_description.to_s.strip.present? }
+      described.presence || [entry]
+    end
   end
 
-  # An agent by its key: assistant_<id> (the runtime key) or agent_<id> (as it appears in a transfer tool name), a legacy
-  # scenario key, or its normalized name. A key that still carries a transfer prefix (a stored tool name) is read as well.
+  # One candidate or none: nothing to choose, the router is not called.
+  def solo?
+    candidates.size < 2
+  end
+
+  def candidate_rows
+    candidates.map { |actor| Captain::Routing::Candidate.from_assistant(actor) }
+  end
+
+  # An agent by its key: assistant_<id> (the runtime key) or agent_<id> (as it appears in a stored tool name), a legacy
+  # scenario key, or its normalized name. A key that still carries a former transfer prefix (a stored tool name) is read as well.
   def resolve(key)
     key = Captain::HandoffNaming.target_key_for(key) || key.to_s
     agent_id = Captain::HandoffNaming.agent_id_from_key(key)
@@ -52,42 +68,14 @@ class Captain::AgentGraph
     agents.find { |actor| Captain::HandoffNaming.safe_target_name(actor.name, record_id: actor.id) == key }
   end
 
-  def allows?(source, target, read_only_tools: false, suggestion_tools: false)
-    options = { read_only_tools: read_only_tools, suggestion_tools: suggestion_tools }.compact_blank
-    !!(source && target && source.id != target.id && find(source.id) && find(target.id) &&
-      Captain::Runtime::TransferCapabilities.useful?(
-        Captain::Runtime::LazyAgent.new(source, options: options),
-        Captain::Runtime::LazyAgent.new(target, options: options)
-      ))
-  end
-
+  # The candidates as the run context lists them (who may own a council part): ids and names, no descriptions.
   def payload
-    agents.map do |actor|
-      { id: actor.id, key: "assistant_#{actor.id}", name: actor.name,
-        description: actor.routing_description.to_s }
-    end
-  end
-
-  def payload_for(actor, read_only_tools: false, suggestion_tools: false)
-    options = { read_only_tools: read_only_tools, suggestion_tools: suggestion_tools }.compact_blank
-    source = Captain::Runtime::LazyAgent.new(actor, options: options)
-    allowed = agents.select do |candidate|
-      candidate.id == actor.id ||
-        Captain::Runtime::TransferCapabilities.useful?(source, Captain::Runtime::LazyAgent.new(candidate, options: options))
-    end
-    allowed.map do |candidate|
-      row = { id: candidate.id, key: "assistant_#{candidate.id}", name: candidate.name }
-      target = Captain::Runtime::LazyAgent.new(candidate, options: options)
-      action = candidate.id == actor.id ? '' : Captain::Runtime::TransferCapabilities.actions(source, target)
-      note = candidate.routing_description.to_s.squish.first(120).presence
-      row[:description] = [action, ("Note: #{note}" if note)].compact_blank.join('. ')
-      row
-    end
+    candidates.map { |actor| { id: actor.id, key: "assistant_#{actor.id}", name: actor.name } }
   end
 
   private
 
-  # For an external agent on a text channel or in the workspace sandbox, every active external agent is a peer.
+  # For an external agent on a text channel or in the workspace sandbox, every active external agent is a member.
   def channel_members
     return [] if @standalone
     return [] unless entry.external_agent?

@@ -35,15 +35,6 @@ RSpec.describe Captain::ToolSafety do
       expect(system_tools.map { |tool| described_class.external_tool?(tool) }).to all(be(false))
     end
 
-    it 'treats the agent hand-over, task queue and request plan as internal' do
-      specialist = Struct.new(:name, :assistant_id).new('Specialist', 5)
-      coordination_tools = [
-        Captain::Runtime::HandoffTool.new(specialist), Captain::Runtime::TaskQueueTool.new, Captain::Runtime::PartPlanTool.new
-      ]
-
-      expect(coordination_tools.map { |tool| described_class.external_tool?(tool) }).to all(be(false))
-    end
-
     it 'treats web search, web page reading and integrations as external' do
       expect(inbound_external_ids.map { |tool_id| described_class.external_tool?(adapter(tool_id)) }).to all(be(true))
     end

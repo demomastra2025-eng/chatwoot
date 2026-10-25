@@ -51,7 +51,7 @@ RSpec.describe 'Captain strict structured output schemas' do
 
     it 'is refused for the part status, as the provider would not offer it' do
       complete = { 'patient_language' => 'Russian', 'customer_text' => 'Готово', 'status' => 'answered', 'questions' => [],
-                   'sources' => [], 'suggested_agent' => '', 'reasoning' => 'done' }
+                   'sources' => [], 'reasoning' => 'done' }
 
       expect(valid?(Captain::Runtime::PartSchema, complete)).to be(true)
       expect(valid?(Captain::Runtime::PartSchema, complete.merge('status' => 'done'))).to be(false)

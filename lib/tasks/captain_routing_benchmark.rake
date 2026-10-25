@@ -18,6 +18,8 @@ namespace :captain do
     # The decision of the patient language runs on a thread next to the history and writes the conversation inside a transaction: the
     # same deadlock, so it runs on the calling thread, at the first agent call.
     ENV['CAPTAIN_LANGUAGE_PARALLEL'] ||= 'off'
+    # The routing decision too: its thread would need a second connection inside the rolled-back transaction.
+    ENV['CAPTAIN_ROUTER_PARALLEL'] ||= 'off'
     Rails.logger.level = :warn
     Rails.logger.level = :warn
     pool = ActiveRecord::Base.connection_pool

@@ -1177,6 +1177,30 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.messages.outgoing.where(private: false).last.content).to eq('Продолжу помогать здесь.')
     end
 
+    it 'applies the router decision that the patient asked for a live staff member, without the handoff tool' do
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        { 'response' => 'conversation_handoff', 'handoff_authorized' => true, 'routing_handoff' => true,
+          'handoff_reason' => 'Пациент просит живого сотрудника.', 'agent_id' => assistant.id }
+      )
+
+      expect(conversation).to receive(:bot_handoff!).once.and_call_original
+
+      described_class.perform_now(conversation, assistant)
+
+      expect(conversation.reload.status).to eq('open')
+      expect(conversation.messages.where(private: true).pluck(:content)).to include('Пациент просит живого сотрудника.')
+    end
+
+    it 'does not take an unauthorized router handoff for one' do
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        { 'response' => 'conversation_handoff', 'routing_handoff' => true }
+      )
+
+      expect(conversation).not_to receive(:bot_handoff!)
+
+      described_class.perform_now(conversation, assistant)
+    end
+
     it 'applies an authorized strict handoff with one private note and the generated clinic notice' do
       assistant.update!(config: assistant.config.merge('handoff_requires_explicit_consent' => true))
       save_account_handoff_message(mode: 'generated')

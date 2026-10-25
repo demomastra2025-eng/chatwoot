@@ -309,8 +309,8 @@
   locked: false
 - name: CAPTAIN_CUSTOM_GUARDRAIL_MODEL
   display_title: 'Модель пользовательских проверок входящих сообщений и ответов'
-  description: 'Проверяет условия, заданные в профиле агента. Подходит модель решений или чата со структурированным ответом. Пусто — OpenAI GPT-6 Luna Decisions. При ошибке проверки агент продолжает ответ без этой проверки.'
-  value: 'openai/gpt-6-luna-decisions'
+  description: 'Проверяет условия, заданные в профиле агента. Подходит модель решений или чата со структурированным ответом. Пусто — Perplexity Decider 1.2; если модель решений не ответила, спрашивается OpenAI GPT-6 Luna Decisions. При ошибке проверки агент продолжает ответ без этой проверки.'
+  value: 'perplexity/pplx-decider-v1.2'
   locked: false
 - name: CAPTAIN_CUSTOMER_NOTICE_MODEL
   display_title: 'Модель сообщений при передаче и завершении'
@@ -328,20 +328,66 @@
   locked: false
 - name: CAPTAIN_OUTCOME_CLASSIFIER_MODEL
   display_title: 'Модель классификации итогов диалога'
-  description: 'Выбирает причину после передачи сотруднику или завершения. Получает факты и короткий фрагмент диалога, при необходимости — один расширенный. Не меняет статус и не отвечает клиенту. Пусто — Mercury Decide. Также можно выбрать модель со структурированным ответом.'
+  description: 'Выбирает причину после передачи сотруднику или завершения. Получает факты и короткий фрагмент диалога, при необходимости — один расширенный. Не меняет статус и не отвечает клиенту. Пусто — Mercury Decide; если модель решений не ответила, спрашивается Microsoft Decision 1. Также можно выбрать модель со структурированным ответом.'
   value: 'inception/mercury-decide'
   locked: false
 - name: CAPTAIN_LANGUAGE_DETECTION_MODEL
   display_title: 'Модель определения языка клиента'
-  description: 'Определяет основной язык последних 20 сообщений клиента перед ответом агента. Пусто — openai/gpt-6-luna-decisions.'
+  description: 'Определяет основной язык последних 20 сообщений клиента перед ответом агента. Пусто — openai/gpt-6-luna-decisions; если модель решений не ответила, спрашивается respan/span-02.'
   value: 'openai/gpt-6-luna-decisions'
   locked: false
 - name: CAPTAIN_DECISION_MODEL_CHAIN
   display_title: 'Цепочка моделей решений внутри хода'
-  description: 'JSON-список моделей решений по порядку (не больше 3) для выбора агента, проверки фактов и разбора входящих. Сначала спрашивается первая модель; при ошибке или таймауте (около 2 секунд на модель) — следующая. Если не ответила ни одна, ход завершается технической ошибкой и диалог передаётся сотрудникам. Пусто — inception/mercury-decide, затем microsoft/microsoft-decision-1, затем openai/gpt-6-luna-decisions.'
+  description: 'JSON-список моделей решений по порядку (не больше 3) для проверки фактов и разбора входящих (у выбора агента своя цепочка). Сначала спрашивается первая модель; при ошибке или таймауте (около 2 секунд на модель) — следующая. Если не ответила ни одна, ход завершается технической ошибкой и диалог передаётся сотрудникам. Пусто — inception/mercury-decide, затем microsoft/microsoft-decision-1, затем openai/gpt-6-luna-decisions.'
   value: '["inception/mercury-decide", "microsoft/microsoft-decision-1", "openai/gpt-6-luna-decisions"]'
   locked: false
   type: code
+- name: CAPTAIN_AGENT_ROUTING_MODELS
+  display_title: 'Цепочка моделей выбора агента'
+  description: 'JSON-список моделей решений по порядку (не больше 3), которые решают, кто отвечает пациенту: агент, консилиум или сотрудник. Сначала спрашивается первая модель; при ошибке или таймауте (около 2 секунд на модель) — следующая. Если не ответила ни одна, ход завершается технической ошибкой и диалог передаётся сотрудникам. Пусто — perplexity/pplx-decider-v1.2, затем typesafe/jev-1.14, затем inception/mercury-decide.'
+  value: '["perplexity/pplx-decider-v1.2", "typesafe/jev-1.14", "inception/mercury-decide"]'
+  locked: false
+  type: code
+- name: CAPTAIN_AGENT_ROUTING_ESCALATION_MODEL
+  display_title: 'Модель трудных решений о выборе агента'
+  description: 'Сильная модель чата с рассуждением. Получает тот же вопрос, что и модели решений, когда их уверенность ниже порога (0.75 для агента и консилиума, 0.80 для передачи сотруднику), и возвращает один вариант со структурированным ответом. Если она не ответила, ход завершается технической ошибкой и диалог передаётся сотрудникам. Пусто — openai/gpt-6-luna.'
+  value: 'openai/gpt-6-luna'
+  locked: false
+- name: CAPTAIN_AGENT_ROUTING_ESCALATION_EFFORT
+  display_title: 'Глубина рассуждения при трудном выборе агента'
+  description: 'Уровень рассуждения модели трудных решений о выборе агента (low, medium, high). Пусто — high.'
+  value: 'high'
+  locked: false
+- name: CAPTAIN_AGENT_ROUTING_ESCALATION_TIMEOUT_MS
+  display_title: 'Время на трудное решение о выборе агента, мс'
+  description: 'Сколько миллисекунд ждать модель трудных решений. Пусто — 10000.'
+  value: '10000'
+  locked: false
+- name: CAPTAIN_AGENT_ROUTING_CHAIN_BUDGET_MS
+  display_title: 'Время на всю цепочку моделей выбора агента, мс'
+  description: 'Общее время на все модели цепочки решений при выборе агента (каждая модель — около 2 секунд). Пусто — 4500.'
+  value: '4500'
+  locked: false
+- name: CAPTAIN_AGENT_ROUTING_MIN_CONFIDENCE
+  display_title: 'Порог уверенности выбора агента и консилиума'
+  description: 'Ниже этого порога решение модели решений проверяет модель трудных решений. Пусто — 0.75.'
+  value: '0.75'
+  locked: false
+- name: CAPTAIN_AGENT_ROUTING_HUMAN_MIN_CONFIDENCE
+  display_title: 'Порог уверенности передачи сотруднику'
+  description: 'Ниже этого порога решение «передать сотруднику» проверяет модель трудных решений. Пусто — 0.80.'
+  value: '0.80'
+  locked: false
+- name: CAPTAIN_AGENT_ROUTING_BOUNCE_ESCALATION
+  display_title: 'Проверять возврат к предыдущему агенту'
+  description: 'Если ход возвращает диалог агенту, который передал его в прошлом ходе, решение всегда проверяет модель трудных решений. Пусто — включено.'
+  value: 'true'
+  locked: false
+- name: CAPTAIN_COUNCIL_SPLIT_MODEL
+  display_title: 'Модель разделения сообщения для консилиума'
+  description: 'Делит сообщение пациента на части для участников консилиума, которых выбрал маршрутизатор. Без рассуждения. При ошибке каждый участник получает всё сообщение. Пусто — openai/gpt-6-luna.'
+  value: 'openai/gpt-6-luna'
+  locked: false
 - name: CAPTAIN_LABEL_SUGGESTION_MODEL
   display_title: 'Модель подсказок меток'
   description: 'Модель для подсказок меток в диалоге (AI-подсказки); клиенты только включают или выключают подсказки. Пусто — берётся «Модель ИИ по умолчанию».'

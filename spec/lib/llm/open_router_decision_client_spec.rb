@@ -102,6 +102,74 @@ RSpec.describe Llm::OpenRouterDecisionClient do
     end
   end
 
+  it 'supports exactly the verified decision models: the existing ones and the models of the benchmark of the owner' do
+    expect(described_class::SUPPORTED_MODELS).to contain_exactly(
+      'inception/mercury-decide', 'microsoft/microsoft-decision-1', 'microsoft/microsoft-decision-1-20261009', 'openai/gpt-6-luna-decisions',
+      'perplexity/pplx-decider-v1.2', 'perplexity/pplx-decider-flash-v1.2', 'typesafe/jev-1.14', 'liquid/d1-ultra', 'respan/span-02',
+      'nace-ai/drex-max'
+    )
+    described_class::SUPPORTED_MODELS.each do |name|
+      expect(Llm::Models.model_config(name)).to include('type' => 'decision', 'provider' => 'openrouter')
+    end
+  end
+
+  describe 'several questions in one call' do
+    let(:questions) do
+      { 'route_mode' => { criteria: { 'route_agent' => 'One agent', 'council' => 'Two or three agents' }, instructions: 'Route.' },
+        'include_agent_84' => { criteria: { 'yes' => 'Agent 84', 'no' => 'Not agent 84' }, instructions: 'Include?' } }
+    end
+    let(:answers) do
+      { route_mode: { choice: 'council', confidence: 0.96, probabilities: { council: 0.96, route_agent: 0.04 } },
+        include_agent_84: { choice: 'yes', confidence: 0.88 } }
+    end
+
+    def choose_many(**overrides)
+      described_class.choose(state: { message: 'x' }, questions: questions, model: 'perplexity/pplx-decider-v1.2', api_key: 'synthetic-key',
+                             api_base: 'https://openrouter.ai/api/v1', **overrides)
+    end
+
+    it 'sends every question under its name and returns the answer of each, the lowest confidence and a summary of the keys' do
+      stub = stub_request(:post, endpoint).with do |request|
+        expect(JSON.parse(request.body)['questions']).to eq(
+          'route_mode' => { 'type' => 'choice', 'instructions' => 'Route.', 'criteria' => questions['route_mode'][:criteria] },
+          'include_agent_84' => { 'type' => 'choice', 'instructions' => 'Include?', 'criteria' => questions['include_agent_84'][:criteria] }
+        )
+      end.to_return(status: 200, body: { id: 'gen-q', model: 'perplexity/pplx-decider-v1.2', answers: answers }.to_json)
+
+      result = choose_many
+
+      expect(stub).to have_been_requested.once
+      expect(result.answers.transform_values(&:choice)).to eq('route_mode' => 'council', 'include_agent_84' => 'yes')
+      expect(result.answers['route_mode'].probabilities).to eq('council' => 0.96, 'route_agent' => 0.04)
+      expect(result).to have_attributes(choice: 'route_mode=council include_agent_84=yes', confidence: 0.88)
+    end
+
+    it 'has no confidence for the whole when one answer has none' do
+      stub_request(:post, endpoint).to_return(status: 200, body: { model: 'perplexity/pplx-decider-v1.2',
+                                                                   answers: answers.deep_merge(include_agent_84: { confidence: nil }) }.to_json)
+
+      expect(choose_many.confidence).to be_nil
+    end
+
+    it 'rejects a missing answer or an answer outside the criteria of its question' do
+      [answers.except(:include_agent_84), answers.deep_merge(include_agent_84: { choice: 'council' })].each do |body_answers|
+        stub_request(:post, endpoint).to_return(status: 200, body: { model: 'perplexity/pplx-decider-v1.2', answers: body_answers }.to_json)
+        expect { choose_many }.to raise_error(described_class::Error, /invalid selection/)
+      end
+    end
+
+    it 'validates the questions before network access' do
+      expect { choose_many(questions: {}) }.to raise_error(ArgumentError, /questions/)
+      expect { choose_many(questions: { 'bad name' => questions['route_mode'] }) }.to raise_error(ArgumentError, /questions/)
+      expect { choose_many(questions: { 'q' => { criteria: { 'only' => 'One' }, instructions: 'x' } }) }.to raise_error(ArgumentError, /choices/)
+      too_many = (1..(described_class::MAX_QUESTIONS + 1)).to_h { |index| ["q#{index}", questions['route_mode']] }
+      expect { choose_many(questions: too_many) }.to raise_error(ArgumentError, /questions/)
+      expect { described_class.choose(state: {}, criteria: {}, questions: questions, model: 'perplexity/pplx-decider-v1.2', api_key: 'k') }
+        .to raise_error(ArgumentError, /questions/)
+      expect(a_request(:post, endpoint)).not_to have_been_made
+    end
+  end
+
   it 'rejects an unverified model before network access' do
     expect { choose(model: 'microsoft/microsoft-decision-1-fake') }.to raise_error(ArgumentError, /Unsupported decision model/)
   end

@@ -62,16 +62,6 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       expect(Llm::SafetyPolicy).not_to have_received(:check!)
       expect(Llm::ModerationService).not_to have_received(:check!)
     end
-
-    it 'skips the agent hand-over, task queue and request plan as well' do
-      allow(Llm::SafetyPolicy).to receive(:check!)
-      wrapper = wrap(Captain::Runtime::PartPlanTool.new)
-
-      wrapper.send(:check_tool_arguments!, { parts: [{ fragment: injection }] })
-      wrapper.send(:check_tool_results!, "ok #{api_key}")
-
-      expect(Llm::SafetyPolicy).not_to have_received(:check!)
-    end
   end
 
   describe 'external tools' do

@@ -37,8 +37,9 @@ class Captain::Evals::RoutingBenchmark::Fixture
   }.freeze
   # Transfer tools are account-specific names (a hash of the colleague), so a fixture can never list one.
   TRANSFER_TOOL_PREFIXES = %w[handoff_to_ transfer_to_].freeze
-  # Tools of the runtime that are no tool of an agent's list: the planning tool of a council and the human handoff.
-  RUNTIME_TOOLS = %w[plan_request handoff].freeze
+  # The tool of the runtime that is no tool of an agent's list: the human handoff. No agent transfers or plans any more: the router
+  # decides who answers (captain.agent.routed).
+  RUNTIME_TOOLS = %w[handoff].freeze
   OFFSET = /(?:Z|[+-]\d{2}:\d{2})\z/
 
   attr_reader :data
@@ -275,7 +276,7 @@ class Captain::Evals::RoutingBenchmark::Fixture
   end
 
   # A tool name that matches nothing is a silent hole: a typo in `must_not_call` ("cancel_apointment") disables the check of the tool it
-  # was meant to forbid. `must_call` names a tool that some agent of the workspace has (or plan_request / handoff), `must_not_call` any
+  # was meant to forbid. `must_call` names a tool that some agent of the workspace has (or handoff), `must_not_call` any
   # tool of the benchmark.
   def validate_tool_names!(expect, tools_by_agent)
     known = self.class.safe_tool_ids | RUNTIME_TOOLS

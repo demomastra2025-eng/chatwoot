@@ -18,6 +18,5 @@ class Captain::Runtime::PartSchema < RubyLLM::Schema
   string :status, enum: STATUSES, description: STATUS_DESCRIPTION
   array :questions, of: :string, description: QUESTIONS_DESCRIPTION
   array :sources, of: :string, description: 'Tool names, document titles, or "instructions" for facts from your own instructions.'
-  string :suggested_agent, description: 'Exact name of the responsible agent from the list in your prompt when out_of_scope; otherwise empty string.'
   string :reasoning, description: 'Internal reasoning, never shown to the patient.'
 end

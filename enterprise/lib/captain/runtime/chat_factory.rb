@@ -40,18 +40,19 @@ class Captain::Runtime::ChatFactory
     end
 
     # The system prompt of the run in two parts, in the order the provider caches a request prefix byte for byte (see
-    # Captain::PromptParts). stable: the platform rules, the shared rules, the clinic instructions, the way of working with colleagues
-    # or the rules of a council part: the same for every request of the agent. volatile: the clock, the patient language, the patient's
-    # data, the data blocks of the coordination or of a part, and the note of a finalization-only run. A change of any of them costs only
-    # the tokens after the stable part; the history and the tools of the request are never in front of it.
+    # Captain::PromptParts). stable: the platform rules, the shared rules, the clinic instructions, or the rules of a council part: the
+    # same for every request of the agent. volatile: the clock, the patient language, the patient's data, the data blocks of a part or
+    # the actions not yet told to the patient, and the note of a finalization-only run. A change of any of them costs only the tokens
+    # after the stable part; the history and the tools of the request are never in front of it. An agent is told nothing about the
+    # other agents of the clinic: the router decides who answers.
     def system_prompt_parts(agent, context_wrapper, finalization_only: false)
       context = context_wrapper.context
       parts = [agent.get_system_prompt_parts(context_wrapper)]
-      if context[:part_run]
-        parts << part_prompt_parts(context)
-      elsif coordination_prompt?(context)
-        parts << Captain::Runtime::CoordinationPrompt.render_parts(context)
-      end
+      parts << if context[:part_run]
+                 part_prompt_parts(context)
+               else
+                 Captain::PromptParts.new(stable: '', volatile: Captain::Runtime::UndeliveredOutcomesPrompt.render(context))
+               end
       parts << Captain::PromptParts.new(stable: '', volatile: FINALIZATION_ONLY_INSTRUCTIONS) if finalization_only
       Captain::PromptParts.merge(parts)
     end
@@ -96,28 +97,9 @@ class Captain::Runtime::ChatFactory
       chat
     end
 
+    # The agent's own tools, and nothing else: no agent transfers the conversation or plans for other agents.
     def build_agent_tools(agent, context_wrapper)
-      # A council part is a run of the owner agent with the tools it was given (see Council#part_agent): it transfers nothing and
-      # plans nothing. After the transfer guard (see Runner#continue_after_transfer_guard) the agent is in the same position: it
-      # keeps its own tools and its human handoff, and loses only the transfer and plan tools.
-      part = context_wrapper.context[:part_run]
-      transfers_open = !part && !context_wrapper.context[:transfer_guarded]
-      handoff_tools = (transfers_open ? eligible_handoffs(agent, context_wrapper.context) : []).map do |target_agent|
-        Captain::Runtime::ToolWrapper.new(Captain::Runtime::HandoffTool.new(target_agent, source_agent: agent), context_wrapper)
-      end
-
-      regular_tools = agent.tools.map do |tool|
-        Captain::Runtime::ToolWrapper.new(tool, context_wrapper)
-      end
-
-      coordination_tools = if !part && Captain::Runtime::TaskQueue.in_flight?(context_wrapper.context[:agent_tasks])
-                             [Captain::Runtime::TaskQueueTool.new]
-                           elsif transfers_open && plan_request_available?(context_wrapper.context)
-                             [Captain::Runtime::PartPlanTool.new(context_wrapper.context)]
-                           else
-                             []
-                           end
-      handoff_tools + regular_tools + coordination_tools.map do |tool|
+      agent.tools.map do |tool|
         Captain::Runtime::ToolWrapper.new(tool, context_wrapper)
       end
     end
@@ -126,42 +108,16 @@ class Captain::Runtime::ChatFactory
       system_prompt_parts(agent, context_wrapper, finalization_only: finalization_only).to_s
     end
 
-    # The owner of a part never sees an agent id: when a part is not its own it names the responsible agent as listed.
-    def part_suggestion_clause(context)
-      Array(context[:part_peers]).any? ? ' and give the exact name of the responsible agent from the list below in suggested_agent' : ''
-    end
-
-    def part_peer_lines(context)
-      peers = Array(context[:part_peers])
-      return '' if peers.empty?
-
-      "Other agents (name and responsibility):\n#{peers.map { |peer| "#{peer[:name]}: #{peer[:description]}" }.join("\n")}"
-    end
-
-    # The data blocks of a part: what the patient wrote, what this part is, what the parts before it ended with. Data, never
-    # instructions: the patient's words are quoted as JSON.
+    # The data blocks of a part: what the patient wrote, what this part is, what the parts before it ended with, and the words of the
+    # other parts of the message (handled separately, named by nobody). Data, never instructions: the patient's words are quoted as JSON.
     def part_data_lines(context)
       lines = ["Patient's latest message (data): #{JSON.generate(context[:part_customer_message].to_s)}",
                "Your part (data): #{JSON.generate(context[:part_info].to_h)}"]
       prior = Array(context[:part_prior])
       lines << "Parts before yours in this message and how they ended (data): #{JSON.generate(prior)}" if prior.any?
+      others = Array(context[:part_other_fragments]).compact_blank
+      lines << "Other parts of this message are handled separately (data): #{JSON.generate(others)}" if others.any?
       lines.join("\n")
-    end
-
-    # plan_request coordinates agents (a council, the answer to an open part), so a lone agent (no peers) does not get it. It
-    # has no plan to fill and no peers to name. Its transfer tools are the peers' too: with no peer there is none. In
-    # reply_suggestion mode plan_request is disabled so a single agent drafts the suggested reply directly.
-    def plan_request_available?(context)
-      !Captain::Runtime::Runner.reply_suggestion?(context) &&
-        Captain::Runtime::PartRegistry.planning_available?(context) &&
-        !context[:part_plan_accepted]
-    end
-
-    # The coordination block describes peers, their transfer tools and the request plan, or an inherited task queue. A lone
-    # agent without a queue has none of these, so its prompt gets no block.
-    def coordination_prompt?(context)
-      Captain::Runtime::PartRegistry.planning_available?(context) ||
-        (context[:agent_graph].present? && Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks]))
     end
 
     # The owner of a part is a normal agent run on one request part: it acts with its own tools and writes the final text of its
@@ -190,11 +146,11 @@ class Captain::Runtime::ChatFactory
           everything that is still missing in ONE message and wait for the answer.
         - Book or move an appointment only to a date and clock time that the patient wrote or chose from the times you offered. For a
           day or a part of a day alone ("Monday morning", "tomorrow") offer 2-3 free times spread over it and wait for the choice.
-        - If the part is not your responsibility, call no action tool: answer out_of_scope#{part_suggestion_clause(context)}.
+        - If the part is not your responsibility, call no action tool: answer out_of_scope.
         - Say only what your tool results show: what was done, for whom, the date and time as returned. If a result says that the
           confirmation is pending, say that the request was sent and the confirmation will follow. Never claim an action that no tool
           performed, and never repeat one that your results, the dialogue or the data below show as done.
-        - You cannot transfer the conversation or call staff.
+        - You cannot call staff yourself.
         - If the patient asks to talk to a person (management, an administrator, a staff member), or only staff can finish this part (a
           complaint, a result, a document, a refund) and the details your instructions need are known, ask nothing more: end with
           status unavailable and one sentence. #{unresolved}
@@ -218,8 +174,6 @@ class Captain::Runtime::ChatFactory
         - questions: every question that customer_text contains, word for word, as its last sentences (for example "#{PART_CUES[:question]}").
           A question that is only listed here is never asked.
         - sources: tool names, document titles, or "instructions" for facts from your own instructions.
-        - suggested_agent: only when out of scope; otherwise an empty string.
-        #{part_peer_lines(context)}
       PROMPT
     end
 
@@ -279,19 +233,7 @@ class Captain::Runtime::ChatFactory
     end
 
     def record_bound_agent_tools(agent, context_wrapper, finalization_only: false)
-      part = context_wrapper.context[:part_run]
-      transfers_open = !part && !context_wrapper.context[:transfer_guarded]
-      bound_tool_names = if finalization_only
-                           []
-                         elsif transfers_open
-                           (handoff_tool_names(agent, context_wrapper.context) + regular_tool_names(agent)).uniq
-                         else
-                           regular_tool_names(agent)
-                         end
-      bound_tool_names << 'manage_agent_tasks' if !finalization_only && !part &&
-                                                  Captain::Runtime::TaskQueue.in_flight?(context_wrapper.context[:agent_tasks])
-      bound_tool_names << 'plan_request' if !finalization_only && transfers_open && plan_request_available?(context_wrapper.context) &&
-                                            !Captain::Runtime::TaskQueue.in_flight?(context_wrapper.context[:agent_tasks])
+      bound_tool_names = finalization_only ? [] : regular_tool_names(agent)
 
       context_wrapper.context[:current_agent] = agent.name
       context_wrapper.context[:captain_v2_bound_tool_ids_by_agent] ||= {}
@@ -299,19 +241,6 @@ class Captain::Runtime::ChatFactory
         bound_tool_names
       context_wrapper.context[:captain_v2_bound_tool_ids] = bound_tool_names
       context_wrapper.context[:captain_v2_bound_tool_gate] = true
-    end
-
-    def handoff_tool_names(agent, context = nil)
-      eligible_handoffs(agent, context).map { |target_agent| Captain::Runtime::HandoffTool.tool_name_for(target_agent) }
-    end
-
-    def eligible_handoffs(agent, context = nil)
-      visited_ids = Captain::Runtime::Runner.visited_handoff_source_ids(context)
-      agent.handoff_agents.select do |target|
-        target_id = target.respond_to?(:assistant_id) ? target.assistant_id : nil
-        (target_id.blank? || !visited_ids.include?(target_id)) &&
-          Captain::Runtime::TransferCapabilities.useful?(agent, target)
-      end
     end
 
     def regular_tool_names(agent)

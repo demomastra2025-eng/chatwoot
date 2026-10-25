@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+# Runs the agent that answers a turn. The agent is always explicit: the router chose it (context[:current_agent], see
+# Captain::Runtime::TurnDispatcher), or the channel has one agent only. Nothing here picks an agent from the history or falls back
+# to a first or main agent.
 class Captain::Runtime::AgentRunner
   attr_reader :agents
 
@@ -8,19 +11,31 @@ class Captain::Runtime::AgentRunner
 
     @agents = agents.dup.freeze
     @callbacks_mutex = Mutex.new
-    @default_agent = agents.first
     @registry = build_registry(agents).freeze
     @callbacks = Captain::Runtime::CallbackManager::EVENT_TYPES.index_with { [] }
   end
 
   def run(input, context: {}, max_turns: Captain::Runtime::Runner::DEFAULT_MAX_TURNS, runtime_options: {})
-    current_agent = determine_conversation_agent(context)
-
     Captain::Runtime::Runner.new.run(
-      current_agent,
+      conversation_agent(context),
       input,
       **build_run_options(context, max_turns, runtime_options)
     )
+  end
+
+  # A council turn. council: { parts:, acting_agent_key:, reassigner: }: the participants the router chose answer their parts; the
+  # acting agent is the one the turn runs as.
+  def run_council(input, council:, context: {}, runtime_options: {})
+    Captain::Runtime::Runner.new.run_council(
+      fetch(council.fetch(:acting_agent_key)),
+      input,
+      parts: council.fetch(:parts), reassigner: council[:reassigner],
+      **build_run_options(context, Captain::Runtime::Runner::DEFAULT_MAX_TURNS, runtime_options)
+    )
+  end
+
+  def fetch(name)
+    @registry[name.to_s] || raise(Captain::Runtime::Runner::AgentNotFoundError, "Agent '#{name}' not found in registry")
   end
 
   Captain::Runtime::CallbackManager::EVENT_TYPES.each do |event_type|
@@ -47,36 +62,11 @@ class Captain::Runtime::AgentRunner
     }.merge(runtime_options.symbolize_keys.slice(:llm_context, :headers, :params, :account, :finalization_only, :continue_from_history))
   end
 
-  def determine_conversation_agent(context)
-    explicit_agent = explicit_conversation_agent(context)
-    return explicit_agent if explicit_agent
+  def conversation_agent(context)
+    name = context[:current_agent] || context['current_agent']
+    return fetch(name) if name.present?
+    return @agents.first if @agents.one?
 
-    history = context[:conversation_history] || []
-    return @default_agent if history.empty?
-
-    last_assistant_message = history.reverse.find do |msg|
-      message_role(msg) == 'assistant' && message_agent_name(msg).present?
-    end
-    last_agent_name = message_agent_name(last_assistant_message) if last_assistant_message
-
-    @registry[last_agent_name] || @default_agent
-  end
-
-  def explicit_conversation_agent(context)
-    current_agent_name = context[:current_agent] || context['current_agent']
-    return if current_agent_name.blank?
-
-    agent = @registry[current_agent_name]
-    return agent if agent
-
-    raise Captain::Runtime::Runner::AgentNotFoundError, "Current agent '#{current_agent_name}' not found in registry"
-  end
-
-  def message_role(message)
-    (message[:role] || message['role']).to_s
-  end
-
-  def message_agent_name(message)
-    message[:agent_name] || message['agent_name']
+    raise Captain::Runtime::Runner::AgentNotFoundError, 'No agent was chosen for this turn'
   end
 end

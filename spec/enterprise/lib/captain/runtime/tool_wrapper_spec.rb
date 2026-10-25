@@ -841,34 +841,11 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     expect(events.last[2]).to be_a(RubyLLM::Tool::Halt)
   end
 
-  it 'stops a later read-only call in the same sequential batch after an agent handoff' do
-    target = Captain::Runtime::Agent.new(name: 'billing_specialist')
-    handoff_tool = Captain::Runtime::HandoffTool.new(target)
-    handoff_wrapper = described_class.new(handoff_tool, context_wrapper)
-    later_tool = ToolWrapperSpecReadOnlyTool.new
-    later_wrapper = described_class.new(later_tool, context_wrapper)
-    context_wrapper.context[:captain_v2_current_tool_batch_id] = 'handoff-batch'
-
-    handoff_result = handoff_wrapper.call({})
-    later_result = later_wrapper.call(result: 'must not execute in the former agent')
-
-    expect(handoff_result).to be_a(RubyLLM::Tool::Halt)
-    expect(context_wrapper.context[:pending_handoff]).to include(target_agent: target)
-    expect(later_result).to be_a(RubyLLM::Tool::Halt)
-    expect(later_result.content).to include('Control has been transferred')
-    expect(later_tool.calls).to eq(0)
-    expect(events.count { |event| event.first == :start }).to eq(1)
-    expect(requested_calls.map(&:first)).to eq([handoff_tool.name])
-    expect(context_wrapper.context[:captain_v2_current_tool_batch_id]).to eq('handoff-batch')
-  end
-
   [Captain::Tools::HandoffTool, Captain::Tools::ResolveConversationTool].each do |terminal_tool_class|
-    it "permits #{terminal_tool_class.name} after a completed queue exceeded the ordinary call budget" do
-      2.times do |task_index|
-        3.times do |tool_index|
-          guard = Captain::Runtime::ToolLoopGuard.new(context_wrapper, "read_#{tool_index}", task_scope: "task:#{task_index}")
-          3.times { |index| expect(guard.register_request(signature: index.to_s)).to be_nil }
-        end
+    it "permits #{terminal_tool_class.name} after the run exceeded the ordinary call budget" do
+      6.times do |tool_index|
+        guard = Captain::Runtime::ToolLoopGuard.new(context_wrapper, "read_#{tool_index}")
+        3.times { |index| guard.register_request(signature: "#{tool_index}-#{index}") }
       end
       assistant = create(:captain_assistant)
       conversation = create(:conversation, account: assistant.account, status: :pending)
@@ -1011,18 +988,6 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       expect(mutating_tool.calls).to eq(1)
       expect(JSON.parse(repeated)).to include('data' => include('title' => 'Own booking', 'id' => 1))
       expect(agent_session.read.fetch('operations').size).to eq(1)
-    end
-
-    it 'transfers the conversation to a colleague without a request plan, in a session with peers' do
-      colleague = Captain::Runtime::Agent.new(name: "assistant_#{assistant.id + 1}").tap { |agent| agent.assistant_id = assistant.id + 1 }
-      transfer = described_class.new(Captain::Runtime::HandoffTool.new(colleague), context_wrapper)
-
-      result = transfer.call({})
-
-      expect(result).to be_a(RubyLLM::Tool::Halt)
-      expect(context_wrapper.context[:pending_handoff]).to include(target_agent: colleague)
-      expect(context_wrapper.context).not_to include(:part_plan_accepted, :active_part_id)
-      expect(events.map(&:first)).to eq(%i[start complete])
     end
 
     describe 'the run of a council part' do
@@ -1416,15 +1381,6 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       expect(context_wrapper.context[:technical_failure]).to eq(
         'tool' => 'faq_lookup', 'kind' => 'technical', 'reason' => 'exception', 'error_class' => 'RuntimeError', 'mutating' => false
       )
-    end
-
-    it 'does not take the failure of a coordination or control tool for a failure of the work' do
-      target = Captain::Runtime::Agent.new(name: 'billing_specialist')
-      transfer = described_class.new(Captain::Runtime::HandoffTool.new(target), context_wrapper)
-      allow(transfer.instance_variable_get(:@tool)).to receive(:perform).and_raise(RuntimeError, 'boom')
-
-      expect { transfer.call({}) }.to raise_error(RuntimeError)
-      expect(context_wrapper.context).not_to have_key(:technical_failure)
     end
 
     it 'leaves a Playground run alone: its failures are scenario outcomes' do

@@ -277,7 +277,7 @@ RSpec.describe Captain::Playground::Session do
       Captain::AgentRunContext.new(entry: assistant, playground: workspace).prepare(context)
 
       expect(context[:current_agent]).to eq("assistant_#{assistant.id}")
-      expect(context[:agent_tasks]).to eq([])
+      expect(context[:routing_current_agent_id]).to be_nil
     end
   end
 

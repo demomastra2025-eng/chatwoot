@@ -18,8 +18,10 @@ RSpec.describe Reports::AiAgentTransfersQuery do
                        payload: { 'run_source' => 'live', 'from_agent_id' => from.id, 'to_agent_id' => to.id })
     create(:llm_event, account: account, conversation: conversation, event_name: 'captain.agent.staff_handoff',
                        request_id: 'synthetic-request', created_at: at, payload: { 'run_source' => 'live' })
-    create(:llm_event, account: account, conversation: conversation, event_name: 'captain.agent.transfer_guard',
-                       created_at: at, payload: { 'run_source' => 'live' })
+    create(:llm_event, account: account, conversation: conversation, event_name: 'captain.agent.routed',
+                       created_at: at, payload: { 'run_source' => 'live', 'guard' => 'bounce', 'decision_key' => "route_agent_#{from.id}" })
+    create(:llm_event, account: account, conversation: conversation, event_name: 'captain.agent.routed',
+                       created_at: at, payload: { 'run_source' => 'live', 'decision_key' => 'stay_current' })
     create(:llm_event, account: account, conversation: conversation, event_name: 'captain.agent.transfer',
                        created_at: at, payload: { 'run_source' => 'benchmark', 'from_agent_id' => from.id })
 

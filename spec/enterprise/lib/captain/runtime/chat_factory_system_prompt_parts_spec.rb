@@ -3,9 +3,10 @@
 require 'rails_helper'
 
 # The provider caches a request prefix byte for byte: the system prompt of an agent must start with everything that is the same for
-# every request (platform rules, clinic instructions, the way of working with colleagues) and end with what changes per request
-# (the clock, the patient language, the patient's data, the coordination data). Two requests of the same agent at different times,
-# for different patients, must share the whole stable part. All data is synthetic.
+# every request (platform rules, clinic instructions) and end with what changes per request (the clock, the patient language, the
+# patient's data, the actions not yet told to the patient). Two requests of the same agent at different times, for different
+# patients, must share the whole stable part. An agent is told nothing about the other agents: the router decides who answers.
+# All data is synthetic.
 RSpec.describe Captain::Runtime::ChatFactory, '.system_prompt_parts' do
   let(:account) { create(:account) }
   let(:entry) { create(:captain_assistant, account: account, description: 'ENTRY CLINIC INSTRUCTIONS') }
@@ -31,7 +32,7 @@ RSpec.describe Captain::Runtime::ChatFactory, '.system_prompt_parts' do
       captain_v2_current_input: current_input, patient_language: language
     }
     runtime.prepare(context)
-    # Two agents on the channel, so the prompt has the colleagues block.
+    # Two agents on the channel: the prompt of either still names no colleague.
     context[:agent_graph] = [{ id: entry.id, key: "assistant_#{entry.id}", name: entry.name, description: '' },
                              { id: specialist.id, key: "assistant_#{specialist.id}", name: specialist.name,
                                description: 'Appointments for children' }]
@@ -59,8 +60,8 @@ RSpec.describe Captain::Runtime::ChatFactory, '.system_prompt_parts' do
     second = parts_for(**second_request)
 
     expect(first.stable).to eq(second.stable)
-    expect(first.stable).to include('# Platform rules', "# Clinic instructions\nENTRY CLINIC INSTRUCTIONS", '# Colleagues on this channel',
-                                    'How to work together')
+    expect(first.stable).to include('# Platform rules', "# Clinic instructions\nENTRY CLINIC INSTRUCTIONS")
+    expect(first.to_s).not_to include('# Colleagues on this channel', 'How to work together', 'Appointments for children', 'Детский приём')
     expect(first.volatile).not_to eq(second.volatile)
   end
 
@@ -91,17 +92,17 @@ RSpec.describe Captain::Runtime::ChatFactory, '.system_prompt_parts' do
     expect(second_step).to eq(first_step)
   end
 
-  it 'puts the data blocks of the coordination after the clock and the patient, and keeps them out of the stable part' do
+  it 'puts the actions not yet told to the patient after the clock and the patient, and keeps them out of the stable part' do
     plain = parts_for(**first_request)
     context = context_for(**first_request)
-    context[:parts] = [{ 'id' => 'open-part', 'version' => 1, 'state' => 'waiting_customer', 'executor_agent_id' => specialist.id,
-                         'fragment' => 'запись ребенка', 'missing_fields' => ['Сколько лет ребенку?'] }]
-    with_open_part = parts_of(context)
+    context[:parts] = [{ 'id' => 'done-part', 'version' => 1, 'state' => 'answered', 'executor_agent_id' => specialist.id, 'acted' => true,
+                         'fragment' => 'запись ребенка', 'summary' => 'Child booked for 14 October at 10:00' }]
+    with_outcome = parts_of(context)
 
-    expect(with_open_part.stable).to eq(plain.stable)
-    expect(with_open_part.volatile).to include('# Open parts (data)', 'Сколько лет ребенку?')
-    expect(with_open_part.to_s.index('# Open parts (data)')).to be > with_open_part.to_s.index('# Patient')
-    expect(plain.volatile).not_to include('Open parts')
+    expect(with_outcome.stable).to eq(plain.stable)
+    expect(with_outcome.volatile).to include('# Done, not yet told to the patient (data)', 'Child booked for 14 October at 10:00.')
+    expect(with_outcome.to_s.index('# Done, not yet told')).to be > with_outcome.to_s.index('# Patient')
+    expect(plain.volatile).not_to include('Done, not yet told')
   end
 
   it 'gives the owner of a council part the same stable part for every request, and the patient message and language last' do

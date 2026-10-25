@@ -3,6 +3,8 @@
 class Llm::Monitoring::EventRecorder
   PERSISTED_EVENTS = Set.new(
     %w[
+      captain.agent.routed
+      captain.agent.routing_failed
       captain.agent.transfer
       captain.agent.transfer_guard
       captain.agent.return
@@ -68,6 +70,10 @@ class Llm::Monitoring::EventRecorder
     engine reason_source reason_preview total_ms budget_ms detail suggestion_request_id handoffs_count stale
     suggestion_text final_text suggestion_text_truncated final_text_truncated initial_suggestion_text
     next_message_id next_message_delay_seconds based_on_message_id
+    decision_key kind target_ids decided_by confidence first_choice first_confidence first_answers first_model chain_position escalated
+    escalation_trigger escalation_reason guard criteria_count candidate_count first_message mode latency_chain_ms
+    latency_escalation_ms latency_total_ms reason models_tried routing_request_id decision_criteria_count escalation_choice
+    parts_count split_fallback
   ].freeze
   CHAT_ACCOUNTING_KEYS = %w[
     usage_scope request_id parent_request_id trace_id session_id account_id user_id assistant_id conversation_id

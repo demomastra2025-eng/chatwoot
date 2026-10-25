@@ -290,7 +290,8 @@ class Captain::Evals::RoutingBenchmark::Runner
   # The agent that holds the conversation and how often the routing changed, from the durable session of the conversation.
   def routing_state(conversation, entry)
     session = conversation.reload.additional_attributes.to_h['captain_agent_session'].to_h
-    { current_assistant_id: session['current_assistant_id'] || entry.id, routing_revision: session['routing_revision'].to_i }
+    { current_assistant_id: session['current_assistant_id'] || entry.id, routing_revision: session['routing_revision'].to_i,
+      routing_trail: Array(session['routing_trail']).presence }.compact
   end
 
   def agent_names(workspace) = workspace.agents.values.to_h { |agent| [agent.id, agent.name] }
@@ -317,8 +318,7 @@ class Captain::Evals::RoutingBenchmark::Runner
       council_handoff: response['council_handoff'].present? || nil, error_class: response['error_class'],
       error_message: response['error_message']&.truncate(300), part_refs: response['part_refs'].presence,
       technical_failure: response['technical_failure'].presence&.to_h&.slice('tool', 'stage', 'reason', 'kind', 'completed'),
-      tool_result_fallback: response['tool_result_fallback'] || nil,
-      agent_tasks: Array(response['agent_tasks']).filter_map { |task| task.to_h.stringify_keys.slice('id', 'status', 'assistant_id').presence }.presence
+      tool_result_fallback: response['tool_result_fallback'] || nil, routing_handoff: response['routing_handoff'] || nil
     }.compact
   end
 

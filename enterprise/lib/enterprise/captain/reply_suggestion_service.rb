@@ -12,7 +12,6 @@ module Enterprise::Captain::ReplySuggestionService
       @working_agents = []
       index_agents!
       @active_agent = summary_for(@assistant)
-      record_working_agent(@active_agent, role: 'entry')
     end
 
     def activate_agent!(actor, role: nil)
@@ -100,7 +99,7 @@ module Enterprise::Captain::ReplySuggestionService
     end
 
     def upgrade_role(entry, role)
-      entry['role'] = role if role.present? && entry['role'] == 'entry'
+      entry['role'] = role if role.present? && entry['role'].blank?
       entry
     end
 
@@ -111,14 +110,6 @@ module Enterprise::Captain::ReplySuggestionService
 
   module CouncilTrackerHelpers
     private
-
-    def capture_council_plan!(context)
-      parts = Array(context&.dig(:part_plan, :parts))
-      return false if parts.blank?
-
-      parts.each { |part| register_planned_part(part) }
-      true
-    end
 
     def upsert_council_part!(context, actor, status:)
       part_id = context[:active_part_id].to_s
@@ -174,22 +165,6 @@ module Enterprise::Captain::ReplySuggestionService
       sanitized.is_a?(Hash) ? sanitized['preview'].to_s : sanitized.to_s
     end
 
-    def register_planned_part(part)
-      part_id = part['id'].to_s
-      return if part_id.blank?
-
-      part_actor = agent_by_id(part['executor_agent_id'])
-      record_working_agent(part_actor, role: 'council') if part_actor.present?
-      @council_parts[part_id] = {
-        'id' => part['id'],
-        'fragment' => sanitize_text(part['fragment']),
-        'patient' => sanitize_text(part['patient']),
-        'relation' => part['relation'].to_s.presence,
-        'status' => 'planned',
-        'agent' => part_actor
-      }.compact
-    end
-
     def merge_part_fields!(entry, info, actor, status)
       entry['fragment'] ||= sanitize_text(info[:fragment])
       entry['patient'] ||= sanitize_text(info[:patient])
@@ -226,6 +201,7 @@ module Enterprise::Captain::ReplySuggestionService
       @tool_trace_steps = []
       @sequence = 0
       @handoffs = []
+      @routing = nil
       @pending_actions = []
       @reasoning = nil
       @phase = 'thinking'
@@ -238,7 +214,7 @@ module Enterprise::Captain::ReplySuggestionService
         on_tool_start: method(:handle_tool_start),
         on_tool_progress: method(:handle_tool_progress),
         on_tool_complete: method(:handle_tool_complete),
-        on_agent_handoff: method(:handle_agent_handoff),
+        on_agent_routed: method(:handle_agent_routed),
         on_llm_call_complete: method(:handle_llm_call_complete)
       }
     end
@@ -269,7 +245,7 @@ module Enterprise::Captain::ReplySuggestionService
           'council_contributors' => resolve_council_contributors(payload).presence,
           'council' => council_snapshot,
           'handoffs' => @handoffs.presence,
-          'agent_tasks' => Array(payload[:agent_tasks]).presence,
+          'routing' => @routing,
           'pending_actions' => resolve_pending_actions(payload).presence
         }.compact
       end
@@ -320,7 +296,6 @@ module Enterprise::Captain::ReplySuggestionService
         event = Captain::ToolResult.error?(normalized) ? 'failed' : 'finish'
         append_step!(tool_name: tool_name, event: event, output: normalized, current_agent: actor&.dig('name'))
         capture_pending_actions!(context_wrapper&.context)
-        @phase = 'council_running' if tool_name.to_s == 'plan_request' && capture_council_plan!(context_wrapper&.context)
         broadcast_progress!
       end
     end
@@ -345,16 +320,29 @@ module Enterprise::Captain::ReplySuggestionService
       items.uniq { |item| item['digest'].presence || item['action_id'] }
     end
 
-    def handle_agent_handoff(from_name, to_name, reason = nil, context_wrapper = nil)
+    # The router's decision for the turn (keys, ids and models only): who drafts the suggestion, or a council of exactly these agents.
+    def handle_agent_routed(decision, _context_wrapper = nil)
       @monitor.synchronize do
-        from_actor = agent_by_name(from_name) || @active_agent
-        to_actor = agent_by_name(to_name) || actor_from_context(context_wrapper, to_name)
-        record_working_agent(from_actor)
-        activate_agent!(to_actor, role: 'handoff')
-        @phase = 'handoff'
-        @handoffs << build_handoff_entry(from_actor, to_actor, from_name, to_name, reason)
+        decision = decision.to_h.with_indifferent_access
+        @routing = decision.slice(:decision_key, :kind, :decided_by, :confidence, :escalated).to_h.compact.presence
+        targets = Array(decision[:target_ids]).filter_map { |id| agent_by_id(id) }
+        if decision[:kind].to_s == 'council'
+          targets.each { |actor| record_working_agent(actor, role: 'council') }
+          @phase = 'council_running'
+        elsif targets.any?
+          route_to!(targets.first, decision)
+        end
         broadcast_progress!
       end
+    end
+
+    def route_to!(target, decision)
+      from_actor = agent_by_id(decision[:from_agent_id])
+      activate_agent!(target, role: 'routed')
+      return if from_actor.blank? || from_actor['id'] == target['id']
+
+      @phase = 'handoff'
+      @handoffs << build_handoff_entry(from_actor, target, nil, nil, decision[:decision_key])
     end
 
     def handle_llm_call_complete(agent_name, _model = nil, response = nil, context_wrapper = nil)
@@ -481,10 +469,10 @@ module Enterprise::Captain::ReplySuggestionService
   end
 
   # The engine of the request, chosen when it starts (StartService) and never changed by the run: a request for the agent does not
-  # fall back to the old prompt. The resolution of the agent is unchanged: the assistant of the inbox, else the account default,
-  # else the first one that can take the conversation.
+  # fall back to the old prompt. The assistant found here (the assistant of the inbox, else the account default, else the first one
+  # that can take the conversation) is the technical anchor of the run only: the router decides which agent drafts the suggestion.
   def suggestion_engine
-    assistant = entry_assistant_for_suggestion
+    assistant = anchor_assistant_for_suggestion
     assistant ? { engine: 'agent', assistant_id: assistant.id } : super
   end
 
@@ -512,7 +500,7 @@ module Enterprise::Captain::ReplySuggestionService
     perform_agent_reply_suggestion(assistant)
   end
 
-  def entry_assistant_for_suggestion
+  def anchor_assistant_for_suggestion
     return if conversation.blank? || conversation.inbox&.channel_type == 'Channel::Voice'
 
     inbox_assistant = conversation.inbox&.captain_assistant

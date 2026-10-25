@@ -34,11 +34,11 @@ RSpec.describe Captain::Safety::CustomRulesStructuredOutputEngine do
     engine.select(model: engine.model, rules: rules, direction: 'output', text: text, context: context)
   end
 
-  it 'uses the Luna Decisions default independently of the existing provider moderation setting' do
+  it 'uses the Perplexity Decider default independently of the existing provider moderation setting' do
     allow(GlobalConfig).to receive(:get_value).with('CAPTAIN_CUSTOM_GUARDRAIL_MODEL').and_return(nil)
     expect(Llm::Config).not_to receive(:moderation_model)
 
-    expect(engine.model).to eq('openai/gpt-6-luna-decisions')
+    expect(engine.model).to eq('perplexity/pplx-decider-v1.2')
   end
 
   it 'reads the separate global configuration and canonicalizes a configured model' do

@@ -33,8 +33,9 @@ RSpec.describe Llm::DecisionChain do
     stub_request(:post, endpoint).with { |request| JSON.parse(request.body)['model'] == model }.to_return(response)
   end
 
+  # The shared chain of the turn decision features; agent_routing has a chain of its own (see '.models').
   def decide(**)
-    described_class.decide(feature: :agent_routing, account: account, question: question, **)
+    described_class.decide(feature: :fact_check_gate, account: account, question: question, **)
   end
 
   def chain_events
@@ -52,7 +53,7 @@ RSpec.describe Llm::DecisionChain do
     expect(result).not_to be_fallback
     expect(head).to have_been_requested.once
     expect(chain_events.map { |event| [event.feature, event.status, event.payload['decision_chain_position']] })
-      .to eq([['agent_routing', 'success', 1]])
+      .to eq([['fact_check_gate', 'success', 1]])
   end
 
   it 'gives every model its short timeout of the profile' do
@@ -88,11 +89,11 @@ RSpec.describe Llm::DecisionChain do
     stub_request(:post, endpoint).to_return(status: 500, body: "#{api_key} SYNTHETIC_PRIVATE_PROVIDER_TEXT")
 
     expect { decide }.to raise_error(described_class::ExhaustedError) do |error|
-      expect(error.feature).to eq('agent_routing')
+      expect(error.feature).to eq('fact_check_gate')
       expect(error.attempts).to eq(described_class::DEFAULT_MODELS.map do |model|
         { model: model, error_class: 'Llm::OpenRouterDecisionClient::Error' }
       end)
-      expect(error.message).to start_with('No decision model answered for agent_routing')
+      expect(error.message).to start_with('No decision model answered for fact_check_gate')
       expect(error.message).not_to include(api_key, 'SYNTHETIC_PRIVATE')
     end
     expect(a_request(:post, endpoint)).to have_been_made.times(3)
@@ -124,6 +125,37 @@ RSpec.describe Llm::DecisionChain do
     expect(a_request(:post, endpoint)).not_to have_been_made
   end
 
+  describe 'several questions in one call' do
+    let(:questions) do
+      { 'route_mode' => { criteria: { 'route_agent' => 'One agent.', 'council' => 'Several agents.' }, instructions: 'Route.' },
+        'include_agent_84' => { criteria: { 'yes' => 'Agent 84 handles it.', 'no' => 'It does not.' }, instructions: 'Include?' } }
+    end
+
+    it 'sends every question in one call and returns the answer of each question' do
+      stub = stub_request(:post, endpoint).with do |request|
+        body = JSON.parse(request.body)
+        body['model'] == 'perplexity/pplx-decider-v1.2' && body['questions'].keys == %w[route_mode include_agent_84] &&
+          body.dig('questions', 'include_agent_84', 'criteria') == questions['include_agent_84'][:criteria].stringify_keys
+      end.to_return(status: 200, body: { id: 'gen-1', model: 'perplexity/pplx-decider-v1.2',
+                                         answers: { route_mode: { choice: 'route_agent', confidence: 0.97 },
+                                                    include_agent_84: { choice: 'yes', confidence: 0.91 } } }.to_json)
+
+      result = described_class.decide(feature: :agent_routing, account: account, question: { state: { 'm' => 'x' }, questions: questions })
+
+      expect(stub).to have_been_requested.once
+      expect(result.answers.transform_values(&:choice)).to eq('route_mode' => 'route_agent', 'include_agent_84' => 'yes')
+      expect(result).to have_attributes(confidence: 0.91, model: 'perplexity/pplx-decider-v1.2', position: 1)
+      expect(chain_events.last.payload['decision_choice']).to eq('route_mode=route_agent include_agent_84=yes')
+    end
+
+    it 'asks only the models the caller names (the evaluation harness)' do
+      stub = stub_decision_model('typesafe/jev-1.14', answer('typesafe/jev-1.14'))
+
+      expect(decide(models: ['typesafe/jev-1.14', 'vendor/unknown'])).to have_attributes(model: 'typesafe/jev-1.14', position: 1)
+      expect(stub).to have_been_requested.once
+    end
+  end
+
   describe '.models' do
     it 'is the built-in chain while the platform setting is absent, blank or unreadable' do
       InstallationConfig.where(name: described_class::CONFIG_NAME).delete_all
@@ -143,6 +175,18 @@ RSpec.describe Llm::DecisionChain do
 
       upsert_installation_config(described_class::CONFIG_NAME, 'openai/gpt-6-luna-decisions, inception/mercury-decide')
       expect(described_class.models).to eq(%w[openai/gpt-6-luna-decisions inception/mercury-decide])
+    end
+
+    it 'gives agent_routing its own chain: Perplexity Decider, then JEV, then Mercury Decide, and never the shared one' do
+      InstallationConfig.where(name: 'CAPTAIN_AGENT_ROUTING_MODELS').delete_all
+      upsert_installation_config(described_class::CONFIG_NAME, '["openai/gpt-6-luna-decisions"]')
+
+      expect(described_class.models(:agent_routing)).to eq(%w[perplexity/pplx-decider-v1.2 typesafe/jev-1.14 inception/mercury-decide])
+      expect(described_class.models(:agent_routing)).not_to include('openai/gpt-6-luna-decisions')
+
+      upsert_installation_config('CAPTAIN_AGENT_ROUTING_MODELS', '["typesafe/jev-1.14", "perplexity/pplx-decider-flash-v1.2"]')
+      expect(described_class.models(:agent_routing)).to eq(%w[typesafe/jev-1.14 perplexity/pplx-decider-flash-v1.2])
+      expect(described_class.models(:fact_check_gate)).to eq(%w[openai/gpt-6-luna-decisions])
     end
 
     it 'asks the models in the order of the platform setting' do

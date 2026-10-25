@@ -82,6 +82,25 @@ RSpec.describe Llm::FeatureProfile do
     expect(described_class.for(:custom_guardrail)).not_to be_strict_timeout
   end
 
+  it 'gives the background decision features one fallback decision model each, and the turn decisions none (their chain falls back)' do
+    expect(described_class.for(:custom_guardrail).decision_fallback_models).to eq(%w[openai/gpt-6-luna-decisions])
+    expect(described_class.for(:language_detection).decision_fallback_models).to eq(%w[respan/span-02])
+    expect(described_class.for(:outcome_classification).decision_fallback_models).to eq(%w[microsoft/microsoft-decision-1])
+    %i[agent_routing fact_check_gate inbound_triage assistant].each do |feature|
+      expect(described_class.for(feature).decision_fallback_models).to eq([])
+    end
+  end
+
+  it 'registers the escalation of the router and the council split as structured chat features, not decision features' do
+    escalation = described_class.for(:agent_routing_escalation)
+    split = described_class.for(:council_split)
+
+    expect(escalation).to have_attributes(timeout_seconds: 10, max_retries: 0, reasoning_policy: 'platform')
+    expect(split).to have_attributes(timeout_seconds: 4, max_retries: 0, reasoning_policy: 'disabled')
+    expect([escalation, split]).to all(be_structured_output)
+    expect([escalation, split].map(&:decisions?)).to eq([false, false])
+  end
+
   it 'rejects unsupported feature keys' do
     expect { described_class.for(:unknown_feature) }
       .to raise_error(ArgumentError, /Unsupported LLM feature/)

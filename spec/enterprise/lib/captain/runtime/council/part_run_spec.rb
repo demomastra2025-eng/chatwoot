@@ -13,7 +13,7 @@ RSpec.describe Captain::Runtime::Council::PartRun do
   let(:run_callbacks) { [] }
   let(:answer) do
     { 'patient_language' => 'Russian', 'customer_text' => 'Вы записаны на 14 октября в 10:00.', 'status' => 'answered', 'questions' => [],
-      'sources' => ['create_appointment'], 'suggested_agent' => '', 'reasoning' => 'ok' }
+      'sources' => ['create_appointment'], 'reasoning' => 'ok' }
   end
   let(:created) { Captain::ToolResult.success(data: { appointment_id: 7, local_date: '14.10.2026', local_time: '10:00' }) }
 
@@ -114,11 +114,11 @@ RSpec.describe Captain::Runtime::Council::PartRun do
 
   it 'reads the answer from a JSON string and drops anything but strings from the lists' do
     stub_run(output: JSON.generate(status: 'needs_information', patient_language: ' Kazakh ', customer_text: ' На какое время? ',
-                                   questions: ['На какое время?', 5, nil], sources: 'x', suggested_agent: 3))
+                                   questions: ['На какое время?', 5, nil], sources: 'x'))
 
     expect(part_run.call('x')[:output]).to eq('status' => 'needs_information', 'patient_language' => 'Kazakh',
                                               'customer_text' => 'На какое время?', 'questions' => ['На какое время?'], 'sources' => [],
-                                              'suggested_agent' => '', 'reasoning' => '')
+                                              'reasoning' => '')
   end
 
   it 'keeps an answer that names no language, with a blank one' do

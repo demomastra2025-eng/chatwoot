@@ -116,20 +116,6 @@ class Captain::Runtime::EventBusCallbacks
     )
   end
 
-  def on_agent_handoff(from_agent, to_agent, reason, context_wrapper)
-    publish(
-      'agent.handoff',
-      context_wrapper,
-      from_agent: from_agent,
-      to_agent: to_agent,
-      reason: reason.to_s
-    )
-    payload = { from_agent_id: agent_id(from_agent), to_agent_id: agent_id(to_agent) }
-    publish('captain.agent.transfer', context_wrapper, payload)
-    entry_id = context_wrapper.context.dig(:state, :entry_assistant_id)
-    publish('captain.agent.return', context_wrapper, payload) if entry_id && payload[:to_agent_id] == entry_id
-  end
-
   def on_run_complete(agent_name, result, context_wrapper)
     publish(
       'run.complete',
@@ -151,10 +137,6 @@ class Captain::Runtime::EventBusCallbacks
       event_payload.except!(*Llm::ChatResponseObserver::USAGE_KEYS.map(&:to_sym), :usage, :generation_id)
     end
     Llm::EventBus.publish(event_name, event_payload)
-  end
-
-  def agent_id(name)
-    name.to_s.delete_prefix('assistant_').to_i if name.to_s.match?(/\Aassistant_\d+\z/)
   end
 
   def base_payload(context_wrapper)

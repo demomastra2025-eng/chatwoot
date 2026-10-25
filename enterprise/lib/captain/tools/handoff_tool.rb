@@ -40,7 +40,7 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
     tool_context.context[AUTHORIZED_CONTEXT_KEY] = true
     done = Captain::DoneActions.handoff_entry(
       reason: reason,
-      request: Captain::Runtime::TaskQueue.new(tool_context.context).request_scope,
+      request: Captain::Runtime::OperationScope.request(tool_context.context),
       user_message: tool_context.context[:captain_v2_current_input]
     )
     return unless done

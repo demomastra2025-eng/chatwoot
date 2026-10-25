@@ -26,6 +26,8 @@ module Llm::Models
     'agent_routing' => %w[decision_classification],
     'fact_check_gate' => %w[decision_classification],
     'inbound_triage' => %w[decision_classification],
+    'agent_routing_escalation' => %w[structured_output],
+    'council_split' => %w[structured_output],
     'customer_notice' => [],
     'assistant' => %w[structured_output tool_calling tool_choice],
     'copilot' => %w[structured_output tool_calling tool_choice],

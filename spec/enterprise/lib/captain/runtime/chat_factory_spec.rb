@@ -160,13 +160,11 @@ RSpec.describe Captain::Runtime::ChatFactory do
       )
     end
 
-    it 'does not pass parallel tool call routing for handoff-only Captain agents' do
-      handoff_target = Captain::Runtime::Agent.new(name: 'scenario_agent')
-      handoff_target.tool_ids = ['create_appointment']
+    it 'does not pass parallel tool call routing for Captain agents with their own tools' do
       handoff_agent = Captain::Runtime::Agent.new(
         name: 'assistant_agent',
         model: 'openai/gpt-5.4-mini',
-        handoff_agents: [handoff_target]
+        tools: [ChatFactorySpecTool.new('handoff', 'Hand off the conversation to a human team')]
       )
 
       allow(chat).to receive(:model).and_return('openai/gpt-5.4-mini')
@@ -252,18 +250,13 @@ RSpec.describe Captain::Runtime::ChatFactory do
     end
   end
 
-  describe 'the request plan tool' do
+  describe 'the tools and the prompt of an agent run' do
     let(:tools) { [] }
     let(:agent) do
       Captain::Runtime::Agent.new(name: 'assistant_92', model: 'openai/gpt-5.4-mini', instructions: 'Agent instructions', tools: tools)
     end
-    let(:lone_graph) { [{ id: 92, name: 'Scheduling', description: 'Visits' }] }
-    let(:peer_graph) { lone_graph + [{ id: 91, name: 'Quotes', description: 'Price quotes' }] }
-    let(:graph) { lone_graph }
-    let(:tasks) { [] }
-    let(:context_wrapper) do
-      Captain::Runtime::RunContext.new({ state: { assistant_id: 92 }, agent_graph: graph, agent_tasks: tasks, parts: [] })
-    end
+    let(:peer_graph) { [{ id: 92, name: 'Scheduling' }, { id: 91, name: 'Quotes' }] }
+    let(:context_wrapper) { Captain::Runtime::RunContext.new({ state: { assistant_id: 92 }, agent_graph: peer_graph, parts: [] }) }
 
     def bound_tool_names
       described_class.send(:record_bound_agent_tools, agent, context_wrapper)
@@ -278,141 +271,38 @@ RSpec.describe Captain::Runtime::ChatFactory do
       described_class.send(:system_prompt_for, agent, context_wrapper)
     end
 
-    context 'with a lone agent' do
-      it 'binds no plan_request and adds no coordination block to its prompt' do
-        expect(built_tool_names).to be_empty
-        expect(bound_tool_names).to be_empty
-        expect(system_prompt).to eq('Agent instructions')
-      end
+    it 'binds the agent\'s own tools only, also with other agents on the channel: no transfer, no plan, no task queue' do
+      tools.replace([ChatFactorySpecTool.new('create_appointment', 'Book a visit'), ChatFactorySpecTool.new('handoff', 'Hand off to staff')])
 
-      it 'keeps the task queue tool and prompt of an inherited queue' do
-        tasks.replace([{ 'id' => 'visit', 'assistant_id' => 92, 'status' => 'active', 'title' => 'Book a visit', 'result' => nil }])
-
-        expect(built_tool_names).to eq(['manage_agent_tasks'])
-        expect(bound_tool_names).to eq(['manage_agent_tasks'])
-        expect(system_prompt).to include('Agent instructions', 'Task queue (data)')
-      end
-
-      context 'with the human handoff tool' do
-        let(:tools) { [ChatFactorySpecTool.new('handoff', 'Hand off the conversation to a human team')] }
-        let(:rules) { ['is never an answer: call the handoff tool', 'unless the handoff tool succeeded in this reply'] }
-
-        it 'adds no human handoff rules of its own: the platform rules of the main prompt carry them' do
-          expect(system_prompt).to eq('Agent instructions')
-          expect(bound_tool_names).to eq(['handoff'])
-        end
-
-        it 'adds only the colleagues block with peers, and no handoff rules' do
-          context_wrapper.context[:agent_graph] = peer_graph
-
-          expect(system_prompt).to start_with("Agent instructions\n\n# Colleagues on this channel\n")
-          expect(system_prompt).to include('- Quotes: Price quotes', '5. Staff are reached through handoff.')
-          expect(system_prompt).not_to include(*rules)
-        end
-      end
-
-      context 'without the human handoff tool' do
-        let(:tools) { [ChatFactorySpecTool.new('search_deals', 'Search CRM deals')] }
-
-        it 'adds no handoff rules' do
-          expect(system_prompt).to eq('Agent instructions')
-        end
-      end
+      expect(built_tool_names).to eq(%w[create_appointment handoff])
+      expect(bound_tool_names).to eq(%w[create_appointment handoff])
+      expect(system_prompt).to eq('Agent instructions')
     end
 
-    context 'with other agents in the channel' do
-      let(:graph) { peer_graph }
+    it 'tells the agent nothing about the other agents' do
+      expect(system_prompt).not_to include('Quotes', 'Colleagues', 'plan_request', 'transfer')
+    end
 
-      it 'binds plan_request and describes the coordination until the message is planned' do
-        expect(built_tool_names).to eq(['plan_request'])
-        expect(bound_tool_names).to eq(['plan_request'])
-        expect(system_prompt).to include('Agent instructions', '- Quotes: Price quotes', 'call plan_request once')
-        expect(system_prompt).not_to include('Accepted plan')
+    it 'binds nothing for a finalization-only run' do
+      tools.replace([ChatFactorySpecTool.new('create_appointment', 'Book a visit')])
+      described_class.send(:record_bound_agent_tools, agent, context_wrapper, finalization_only: true)
 
-        context_wrapper.context[:part_plan_accepted] = true
-        context_wrapper.context[:part_plan] = { mode: 'council', parts: [{ 'id' => 'p-1', 'executor_agent_id' => 91, 'fragment' => 'Цена МРТ' }] }
+      expect(context_wrapper.context[:captain_v2_bound_tool_ids]).to be_empty
+    end
 
-        expect(built_tool_names).to be_empty
-        expect(bound_tool_names).to be_empty
-        expect(system_prompt).to include("# Accepted plan (data)\n- Quotes · \"Цена МРТ\"\nThe plan for this message is already accepted: " \
-                                         'continue only your own parts and do not call plan_request again.')
-      end
+    it 'tells the agent what specialists did that the patient was not told yet' do
+      context_wrapper.context[:parts] = [{ 'id' => 'p1', 'acted' => true, 'delivered' => [], 'summary' => 'Записан на МРТ на пятницу' }]
 
-      it 'binds the transfer tool of each colleague next to plan_request, and sends a single request to the colleague without a plan' do
-        colleague = Captain::Runtime::Agent.new(name: 'assistant_91', tools: [ChatFactorySpecTool.new('create_appointment', 'Book')])
-        colleague.assistant_id = 91
-        agent.register_handoffs(colleague)
-        transfer = 'transfer_to_agent_91'
+      expect(system_prompt).to eq("Agent instructions\n\n# Done, not yet told to the patient (data)\n" \
+                                  '- Записан на МРТ на пятницу. Mention it in your reply.')
+    end
 
-        expect(built_tool_names).to eq([transfer, 'plan_request'])
-        expect(bound_tool_names).to eq([transfer, 'plan_request'])
-        expect(system_prompt.squish).to include('transfer the conversation to the colleague whose tools can do it; ' \
-                                                'that colleague also answers the questions of the message.')
-        expect(system_prompt).not_to include('mode handoff')
+    it 'offers a council part the tools of its agent, reads and writes alike' do
+      tools.replace([ChatFactorySpecTool.new('create_appointment', 'Book a visit'), ChatFactorySpecTool.new('faq_lookup', 'Search the FAQ')])
+      context_wrapper.context[:part_run] = true
 
-        context_wrapper.context[:part_plan_accepted] = true
-
-        expect(built_tool_names).to eq([transfer])
-        expect(bound_tool_names).to eq([transfer])
-      end
-
-      it 'offers a council part the tools of its agent only: no transfer tool and no plan_request' do
-        agent.register_handoffs(Captain::Runtime::Agent.new(name: 'assistant_91'))
-        context_wrapper.context[:part_run] = true
-
-        expect(built_tool_names).to be_empty
-        expect(bound_tool_names).to be_empty
-      end
-
-      context 'with its own tools' do
-        let(:tools) { [ChatFactorySpecTool.new('create_appointment', 'Book a visit'), ChatFactorySpecTool.new('faq_lookup', 'Search the FAQ')] }
-        let(:colleague) do
-          Captain::Runtime::Agent.new(name: 'assistant_91', tools: [ChatFactorySpecTool.new('cancel_appointment', 'Cancel')]).tap do |item|
-            item.assistant_id = 91
-          end
-        end
-
-        it 'binds exactly the tools of the part, reads and writes alike, and no coordination tool' do
-          agent.register_handoffs(Captain::Runtime::Agent.new(name: 'assistant_91'))
-          context_wrapper.context[:part_run] = true
-
-          expect(built_tool_names).to eq(%w[create_appointment faq_lookup])
-          expect(bound_tool_names).to eq(%w[create_appointment faq_lookup])
-        end
-
-        it 'keeps these tools after the transfer guard and loses only the transfer tools and plan_request' do
-          agent.register_handoffs(colleague)
-          expect(built_tool_names).to eq(%w[transfer_to_agent_91 create_appointment faq_lookup plan_request])
-          expect(bound_tool_names).to eq(%w[transfer_to_agent_91 create_appointment faq_lookup plan_request])
-
-          context_wrapper.context[:transfer_guarded] = true
-
-          expect(built_tool_names).to eq(%w[create_appointment faq_lookup])
-          expect(bound_tool_names).to eq(%w[create_appointment faq_lookup])
-        end
-
-        it 'keeps the task queue tool of an inherited queue after the transfer guard' do
-          agent.register_handoffs(colleague)
-          tasks.replace([{ 'id' => 'visit', 'assistant_id' => 92, 'status' => 'active', 'title' => 'Book a visit', 'result' => nil }])
-          context_wrapper.context[:transfer_guarded] = true
-
-          expect(built_tool_names).to eq(%w[create_appointment faq_lookup manage_agent_tasks])
-          expect(bound_tool_names).to eq(%w[create_appointment faq_lookup manage_agent_tasks])
-        end
-
-        it 'still offers the human handoff after the transfer guard, and a finalization-only run offers nothing' do
-          human = ChatFactorySpecTool.new('handoff', 'Hand off to staff')
-          staffed = Captain::Runtime::Agent.new(name: 'assistant_92', model: 'openai/gpt-5.4-mini', tools: [tools.first, human])
-          staffed.register_handoffs(colleague)
-          context_wrapper.context[:transfer_guarded] = true
-
-          expect(described_class.send(:build_agent_tools, staffed, context_wrapper).map(&:name)).to eq(%w[create_appointment handoff])
-          described_class.send(:record_bound_agent_tools, staffed, context_wrapper)
-          expect(context_wrapper.context[:captain_v2_bound_tool_ids]).to eq(%w[create_appointment handoff])
-          described_class.send(:record_bound_agent_tools, staffed, context_wrapper, finalization_only: true)
-          expect(context_wrapper.context[:captain_v2_bound_tool_ids]).to be_empty
-        end
-      end
+      expect(built_tool_names).to eq(%w[create_appointment faq_lookup])
+      expect(bound_tool_names).to eq(%w[create_appointment faq_lookup])
     end
   end
 
@@ -437,7 +327,7 @@ RSpec.describe Captain::Runtime::ChatFactory do
                               'say that the request was sent and the confirmation will follow',
                               'Never claim an action that no tool performed, and never repeat one that your results, ' \
                               'the dialogue or the data below show as done',
-                              'You cannot transfer the conversation or call staff',
+                              'You cannot call staff yourself',
                               'patient_language: the patient\'s language; customer_text is written in it.',
                               'customer_text: the FINAL text for THIS part only, addressed to the patient politely.',
                               'done: say what was done, for whom, the date and the time ' \
@@ -617,34 +507,25 @@ RSpec.describe Captain::Runtime::ChatFactory do
     end
   end
 
-  describe 'the peers in the prompt of a council part' do
+  describe 'the other parts in the prompt of a council part' do
     let(:agent) { Captain::Runtime::Agent.new(name: 'assistant_agent', model: 'openai/gpt-5.4-mini', instructions: 'Base prompt') }
 
     def prompt_for(context)
       described_class.send(:system_prompt_for, agent, Captain::Runtime::RunContext.new({ part_run: true }.merge(context)))
     end
 
-    it 'lists the other agents by name and asks for the suggested agent by name, never by an id' do
-      peers = [{ name: 'Лаборатория', description: 'Анализы' }, { name: 'Регистратура', description: 'Запись на приём' }]
+    it 'gives the words of the other parts as data and names no agent' do
+      prompt = prompt_for(part_other_fragments: ['сколько стоит септопластика'])
 
-      prompt = prompt_for(part_peers: peers)
-
-      expect(prompt).to include('and give the exact name of the responsible agent from the list below in suggested_agent')
-      expect(prompt).to include("Other agents (name and responsibility):\nЛаборатория: Анализы\nРегистратура: Запись на приём")
-      expect(prompt).not_to include('suggested_agent_id')
-    end
-
-    it 'does not list agents or ask for a name when there is no other agent to suggest' do
-      prompt = prompt_for(part_peers: [])
-
+      expect(prompt).to include('Other parts of this message are handled separately (data): ["сколько стоит септопластика"]')
       expect(prompt).to include('answer out_of_scope.')
-      expect(prompt).not_to include('Other agents', 'from the list below')
+      expect(prompt).not_to include('suggested_agent', 'Other agents')
     end
 
-    it 'does not add the coordination block of the conversation to a part' do
-      prompt = prompt_for(part_peers: [], agent_graph: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }], state: { assistant_id: 1 })
+    it 'has no block of other parts when there are none, and no block of the conversation' do
+      prompt = prompt_for(part_other_fragments: [], agent_graph: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }], state: { assistant_id: 1 })
 
-      expect(prompt).not_to include('plan_request', 'Open parts')
+      expect(prompt).not_to include('Other parts', 'plan_request', 'Open parts')
     end
   end
 end

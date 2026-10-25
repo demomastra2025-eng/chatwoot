@@ -54,14 +54,12 @@ class Captain::Runtime::ToolWrapper
   def call(args)
     Captain::ReplySuggestion::RunControl.checkpoint!(:tool)
     ensure_response_run_current!
-    if context_wrapper_context[:pending_handoff] ||
-       (context_wrapper_context[:pending_human_handoff] && @tool.name.to_s != 'plan_request') ||
-       (context_wrapper_context[:part_plan] && !context_wrapper_context[:part_run] && @tool.name.to_s != 'handoff' && !coordination_tool?) ||
-       context_wrapper_context[:pending_response_cancellation] || context_wrapper_context[:technical_failure]
+    if context_wrapper_context[:pending_human_handoff] || context_wrapper_context[:pending_response_cancellation] ||
+       context_wrapper_context[:technical_failure]
       return RubyLLM::Tool::Halt.new('Control has been transferred; remaining calls in this batch were not executed.')
     end
 
-    @operation_scope = Captain::Runtime::TaskQueue.new(context_wrapper_context).operation_scope if context_wrapper_context[:agent_session]
+    @operation_scope = Captain::Runtime::OperationScope.operation(context_wrapper_context) if context_wrapper_context[:agent_session]
     @operation_target = nil
     normalized_args = normalize_args(args)
     @operation_target = Captain::Runtime::OperationTarget.of(@tool.name, normalized_args)
@@ -241,12 +239,12 @@ class Captain::Runtime::ToolWrapper
     Captain::Runtime::CoordinationEvents.technical_failure(context: context_wrapper_context, failure: context_wrapper_context[:technical_failure])
   end
 
-  # The tools that move the conversation (a transfer, the plan, the task queue, the human handoff, the resolution, a cancelled
-  # reply) are not business tools: what they report is not a failure of the work for the customer. A Playground run has no
+  # The tools that move the conversation (the human handoff, the resolution, a cancelled reply) are not business tools: what they
+  # report is not a failure of the work for the customer. A Playground run has no
   # customer and no staff to hand over to: the failures of its simulated tools are scenario outcomes that the person who tests
   # sees as they are.
   def reportable_failure_tool?
-    !coordination_tool? && !terminal_control_tool? && !@tool.is_a?(Captain::Tools::CancelResponseTool) &&
+    !terminal_control_tool? && !@tool.is_a?(Captain::Tools::CancelResponseTool) &&
       context_wrapper_context[:playground_session].nil?
   end
 
@@ -470,9 +468,8 @@ class Captain::Runtime::ToolWrapper
     allowed.is_a?(Array) && error['type'] == 'enum' ? " (allowed: #{allowed.first(12).map(&:to_s).join(', ')})" : ''
   end
 
-  # An agent's own actions (booking, rescheduling, card updates, the human handoff) and its transfer of the conversation to one
-  # colleague (HandoffTool) need no request plan: the plan only coordinates several agents (councils, answers to open parts).
-  # The owner of a council part acts with its own tools in the same way, so nothing here looks at the part.
+  # An agent's own actions (booking, rescheduling, card updates, the human handoff). The owner of a council part acts with its own
+  # tools in the same way, so nothing here looks at the part.
   def pre_execution_error(normalized_args)
     bound_tool_error_for_current_agent ||
       tool_safety_error_for(:tool_arguments, normalized_args) ||
@@ -716,12 +713,11 @@ class Captain::Runtime::ToolWrapper
   end
 
   def register_tool_execution_attempt(normalized_args)
-    attempt_key = coordination_tool? ? @tool.name.to_s : mutation_execution_key
+    attempt_key = mutation_execution_key
     counts = tool_attempt_counts.fetch(attempt_key) { { total: 0, by_signature: {} } }
     signature = tool_result_cache_digest(normalized_args)
     signature_count = counts[:by_signature].fetch(signature, 0)
-    execution_limit = coordination_tool? ? Captain::Runtime::ToolLoopGuard::MAX_COORDINATION_REQUESTS : MAX_TOOL_EXECUTIONS_PER_TOOL
-    return tool_attempt_limit_result(counts, signature_count) if counts[:total] >= execution_limit ||
+    return tool_attempt_limit_result(counts, signature_count) if counts[:total] >= MAX_TOOL_EXECUTIONS_PER_TOOL ||
                                                                  signature_count >= MAX_IDENTICAL_TOOL_EXECUTIONS
 
     counts[:total] += 1
@@ -752,9 +748,7 @@ class Captain::Runtime::ToolWrapper
   end
 
   def tool_loop_guard
-    Captain::Runtime::ToolLoopGuard.new(
-      @context_wrapper, @tool.name, coordination: coordination_tool? || terminal_control_tool?, task_scope: task_operation_scope
-    )
+    Captain::Runtime::ToolLoopGuard.new(@context_wrapper, @tool.name, coordination: terminal_control_tool?)
   end
 
   def repeated_mutating_tool_result(normalized_args)
@@ -816,14 +810,14 @@ class Captain::Runtime::ToolWrapper
     Digest::SHA256.hexdigest(JSON.generate(canonical_json_value({
                                                                   tool_name: @tool.name.to_s, arguments: normalized_args,
                                                                   actor_id: context_wrapper_context.dig(:state, :assistant_id),
-                                                                  task_scope: task_operation_scope
+                                                                  operation_scope: run_operation_scope
                                                                 })))
   end
 
   def mutation_execution_key
     return @tool.name.to_s unless context_wrapper_context[:agent_session]
 
-    "#{task_operation_scope}:#{@tool.name}"
+    "#{run_operation_scope}:#{@tool.name}"
   end
 
   # The claim of an action in a request: the tool, and the target of the call when it has one (the person a booking is for, the
@@ -833,10 +827,10 @@ class Captain::Runtime::ToolWrapper
     [mutation_execution_key, @operation_target].compact.join(':')
   end
 
-  def task_operation_scope
+  def run_operation_scope
     return unless context_wrapper_context[:agent_session]
 
-    @operation_scope || Captain::Runtime::TaskQueue.new(context_wrapper_context).operation_scope
+    @operation_scope || Captain::Runtime::OperationScope.operation(context_wrapper_context)
   end
 
   def semantic_tool_call_digest(normalized_args)
@@ -865,14 +859,7 @@ class Captain::Runtime::ToolWrapper
   end
 
   def mutating_tool?
-    return false if coordination_tool?
-
     Llm::ToolRiskPolicy.mutating?(@tool)
-  end
-
-  def coordination_tool?
-    @tool.is_a?(Captain::Runtime::HandoffTool) || @tool.is_a?(Captain::Runtime::TaskQueueTool) ||
-      @tool.is_a?(Captain::Runtime::PartPlanTool)
   end
 
   def terminal_control_tool?

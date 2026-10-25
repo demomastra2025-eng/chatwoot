@@ -231,7 +231,9 @@ RSpec.describe Llm::Config do
         'customer_notice' => 'CAPTAIN_CUSTOMER_NOTICE_MODEL',
         'label_suggestion' => 'CAPTAIN_LABEL_SUGGESTION_MODEL',
         'language_detection' => 'CAPTAIN_LANGUAGE_DETECTION_MODEL',
-        'outcome_classification' => 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL'
+        'outcome_classification' => 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL',
+        'agent_routing_escalation' => 'CAPTAIN_AGENT_ROUTING_ESCALATION_MODEL',
+        'council_split' => 'CAPTAIN_COUNCIL_SPLIT_MODEL'
       )
     end
 
@@ -283,12 +285,13 @@ RSpec.describe Llm::Config do
       expect(described_class.model_for(feature: 'language_detection')).to eq('openai/gpt-6-luna-decisions')
     end
 
-    it 'uses Mercury Decide for the decisions of a patient turn, not the general default model' do
+    it 'uses a decision model for the decisions of a patient turn, not the general default model' do
       upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
       upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-5.4-mini')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
 
-      %w[agent_routing fact_check_gate inbound_triage].each do |feature|
+      expect(described_class.model_for(feature: 'agent_routing')).to eq('perplexity/pplx-decider-v1.2')
+      %w[fact_check_gate inbound_triage].each do |feature|
         expect(described_class.model_for(feature: feature)).to eq('inception/mercury-decide')
       end
     end
@@ -310,7 +313,7 @@ RSpec.describe Llm::Config do
       upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-5.4-mini')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(transcription_catalog)
 
-      expect(described_class.model_for(feature: 'custom_guardrail', account: account)).to eq('openai/gpt-6-luna-decisions')
+      expect(described_class.model_for(feature: 'custom_guardrail', account: account)).to eq('perplexity/pplx-decider-v1.2')
 
       upsert_installation_config('CAPTAIN_CUSTOM_GUARDRAIL_MODEL', 'openai/gpt-5.4-mini')
       expect(described_class.model_for(feature: 'custom_guardrail', account: account)).to eq('openai/gpt-5.4-mini')

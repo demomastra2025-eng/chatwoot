@@ -51,6 +51,48 @@ models:
     type: decision
     source: static_openrouter_decision
     capabilities: [decision_classification]
+  perplexity/pplx-decider-v1.2:
+    id: perplexity/pplx-decider-v1.2
+    provider: openrouter
+    display_name: 'Perplexity Decider 1.2'
+    type: decision
+    source: static_openrouter_decision
+    capabilities: [decision_classification]
+  perplexity/pplx-decider-flash-v1.2:
+    id: perplexity/pplx-decider-flash-v1.2
+    provider: openrouter
+    display_name: 'Perplexity Decider Flash 1.2'
+    type: decision
+    source: static_openrouter_decision
+    capabilities: [decision_classification]
+  typesafe/jev-1.14:
+    id: typesafe/jev-1.14
+    provider: openrouter
+    display_name: 'Typesafe JEV 1.14'
+    type: decision
+    source: static_openrouter_decision
+    capabilities: [decision_classification]
+  liquid/d1-ultra:
+    id: liquid/d1-ultra
+    provider: openrouter
+    display_name: 'Liquid D1 Ultra'
+    type: decision
+    source: static_openrouter_decision
+    capabilities: [decision_classification]
+  respan/span-02:
+    id: respan/span-02
+    provider: openrouter
+    display_name: 'Respan Span 02'
+    type: decision
+    source: static_openrouter_decision
+    capabilities: [decision_classification]
+  nace-ai/drex-max:
+    id: nace-ai/drex-max
+    provider: openrouter
+    display_name: 'Nace DREX Max'
+    type: decision
+    source: static_openrouter_decision
+    capabilities: [decision_classification]
   gpt-4.1:
     provider: openai
     display_name: 'GPT-4.1'
@@ -369,18 +411,19 @@ features:
       ]
     default: inception/mercury-decide
   language_detection:
-    models: [openai/gpt-6-luna-decisions]
+    models: [openai/gpt-6-luna-decisions, respan/span-02]
     default: openai/gpt-6-luna-decisions
   custom_guardrail:
-    models: [openai/gpt-6-luna-decisions, inception/mercury-decide, microsoft/microsoft-decision-1,
+    models: [perplexity/pplx-decider-v1.2, openai/gpt-6-luna-decisions, inception/mercury-decide, microsoft/microsoft-decision-1,
              microsoft/microsoft-decision-1-20261009, openai/gpt-6-luna, openai/gpt-5.6-luna,
              gpt-4.1-mini, gpt-5-mini, gpt-5.4-mini]
-    default: openai/gpt-6-luna-decisions
+    default: perplexity/pplx-decider-v1.2
   # Decisions inside a patient turn; the call goes down the platform chain of decision models (Llm::DecisionChain).
+  # The chain of agent_routing is its own (CAPTAIN_AGENT_ROUTING_MODELS): Perplexity Decider, then JEV, then Mercury Decide.
   agent_routing:
-    models: [inception/mercury-decide, microsoft/microsoft-decision-1, microsoft/microsoft-decision-1-20261009,
-             openai/gpt-6-luna-decisions]
-    default: inception/mercury-decide
+    models: [perplexity/pplx-decider-v1.2, typesafe/jev-1.14, inception/mercury-decide, perplexity/pplx-decider-flash-v1.2,
+             microsoft/microsoft-decision-1, liquid/d1-ultra, respan/span-02, nace-ai/drex-max]
+    default: perplexity/pplx-decider-v1.2
   fact_check_gate:
     models: [inception/mercury-decide, microsoft/microsoft-decision-1, microsoft/microsoft-decision-1-20261009,
              openai/gpt-6-luna-decisions]
@@ -389,6 +432,15 @@ features:
     models: [inception/mercury-decide, microsoft/microsoft-decision-1, microsoft/microsoft-decision-1-20261009,
              openai/gpt-6-luna-decisions]
     default: inception/mercury-decide
+  # The strong reasoning chat model that takes over a routing decision the decision models were not confident about
+  # (Captain::Runtime::DecisionRouter::Escalation): the same state and criteria, structured output, thinking on.
+  agent_routing_escalation:
+    models: [openai/gpt-6-luna, openai/gpt-5.6-luna, gpt-5.4, claude-sonnet-4-6, claude-opus-4-6, gemini-3.1-pro-preview]
+    default: openai/gpt-6-luna
+  # Cuts the patient's message into one fragment per council participant (Captain::Runtime::CouncilSplitter); no thinking.
+  council_split:
+    models: [openai/gpt-6-luna, openai/gpt-5.6-luna, gpt-4.1-mini, gpt-5-mini, gpt-5.4-mini]
+    default: openai/gpt-6-luna
   customer_notice:
     models: [openai/gpt-6-luna, openai/gpt-5.6-luna, gpt-4.1-mini, gpt-5-mini, gpt-5.4-mini]
     default: openai/gpt-6-luna
