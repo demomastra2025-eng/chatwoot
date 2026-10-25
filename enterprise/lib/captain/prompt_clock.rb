@@ -17,7 +17,7 @@ class Captain::PromptClock
   NIGHT_ENDS_AT_HOUR = 5
   NIGHT_LINE = 'It is after midnight: a patient\'s "tomorrow" may mean today, %<today>s. ' \
                'For "today" or "tomorrow" offer free slots with the full date and book after the patient picks one.'
-  NIGHT_MESSAGE_LINE = 'The patient\'s last message was sent after midnight: their "tomorrow" may mean that day, %<day>s.'
+  NIGHT_MESSAGE_LINE = 'The patient\'s last message was sent after midnight, at %<time>s: their "tomorrow" may mean that day, %<day>s.'
   # The send time of a history message, in front of its text: "[Sat 24.10 09:50]". A few tokens per message tell the model which day
   # a patient's "today", "tomorrow" or "on Monday" was written on (a message of Saturday answered on Monday).
   STAMP_FORMAT = '[%a %d.%m %H:%M]'
@@ -37,16 +37,18 @@ class Captain::PromptClock
 
     # One more line for the hours after midnight, when "today" and "tomorrow" are ambiguous. It names the date of today, so the
     # model reads "tomorrow" as that date or as the one after it by the patient's words and offers times with the full date; nil
-    # at any other time and without a usable clock. When the patient's last message (message_sent_at of the clock) was sent on an
-    # earlier day, the hour of that message decides instead, and the line names the day it was sent.
+    # at any other time and without a usable clock. When the patient's last message (message_sent_at of the clock) was sent after
+    # midnight and is answered later (in the morning of the same day, or on a later day), the hour of that message decides instead,
+    # and the line names the time and the day it was sent: the message being answered carries no send stamp of its own.
     def night_line(runtime_clock)
       local, = local_clock(runtime_clock)
       return if local.blank?
 
       sent = message_time(runtime_clock, local.time_zone)
-      return format(NIGHT_LINE, today: local.strftime(LONG_DATE_FORMAT)) if (sent.nil? || sent.to_date >= local.to_date) && night?(local)
+      return format(NIGHT_LINE, today: local.strftime(LONG_DATE_FORMAT)) if night?(local) && !earlier_day?(sent, local)
+      return unless night_message?(sent, local)
 
-      format(NIGHT_MESSAGE_LINE, day: sent.strftime(LONG_DATE_FORMAT)) if sent && sent.to_date < local.to_date && night?(sent)
+      format(NIGHT_MESSAGE_LINE, time: sent.strftime('%H:%M'), day: sent.strftime(LONG_DATE_FORMAT))
     end
 
     # "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago): ..." when the message being
@@ -146,6 +148,15 @@ class Captain::PromptClock
 
     def night?(time)
       time.hour < NIGHT_ENDS_AT_HOUR
+    end
+
+    def earlier_day?(sent, local)
+      sent.present? && sent.to_date < local.to_date
+    end
+
+    # A message sent after midnight and answered later: in the morning of that day or on a later day (never a time still to come).
+    def night_message?(sent, local)
+      sent.present? && sent.to_date <= local.to_date && night?(sent)
     end
 
     def offset_label(local)

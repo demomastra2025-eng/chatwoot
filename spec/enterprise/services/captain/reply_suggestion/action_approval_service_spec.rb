@@ -136,13 +136,55 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
       expect(task).to include('status' => 'pending_operator_approval', 'title' => 'Создать задачу')
       expect(task['message']).to start_with(
         'NOT executed. Waiting for operator approval (Allow / Deny): «Создать задачу» (not an appointment: it books, moves or cancels ' \
-        'nothing). Cards waiting in this run: «Создать задачу» (create_task).'
+        'nothing). Cards waiting in this run: «Создать задачу» (create_task: Задача: Перезвонить пациенту).'
       )
       expect(booking['message']).to start_with(
         'NOT executed. Waiting for operator approval (Allow / Deny): «Записать на приём» (a new appointment booking). ' \
-        'Cards waiting in this run: «Создать задачу» (create_task), «Записать на приём» (create_appointment).'
+        'Cards waiting in this run: «Создать задачу» (create_task: Задача: Перезвонить пациенту), ' \
+        "«Записать на приём» (create_appointment: #{booking['summary']})."
       )
+      expect(booking['summary']).to include('Специалист: Д-р Смит', 'Дата и время: ')
       expect(booking['message']).to end_with('mention a booking, change or cancellation only when its card is listed.')
+    end
+
+    # The draft once promised one time while the operator approved a card with another: the second booking of the same patient at a
+    # corrected time withdraws the first card, and the agent and the operator see only the new one.
+    it 'replaces the booking card of a run when the agent books the same patient again at another time' do
+      wrapper = Captain::Runtime::ToolWrapper.new(create_tool, run_context)
+      later_starts_at = 2.days.from_now.change(hour: 11, min: 30, sec: 0).iso8601
+      later_ends_at = 2.days.from_now.change(hour: 12, min: 0, sec: 0).iso8601
+      first_args = { resource_id: resource.id, service_id: service_item.id, starts_at: starts_at, ends_at: ends_at }
+
+      first = JSON.parse(wrapper.call(first_args))
+      second = JSON.parse(wrapper.call(first_args.merge(starts_at: later_starts_at, ends_at: later_ends_at)))
+
+      expect(second).to include('status' => 'pending_operator_approval')
+      expect(second['message']).to include(
+        "It replaces «Записать на приём» (create_appointment: #{first['summary']}): that card is withdrawn",
+        "Cards waiting in this run: «Записать на приём» (create_appointment: #{second['summary']})."
+      )
+      expect(run_context.context[described_class::CONTEXT_KEY].pluck('action_id')).to eq([second['action_id']])
+      expect(run_context.context[described_class::SUPERSEDED_CONTEXT_KEY]).to eq([first['action_id']])
+      expect(described_class.pending_for(account_id: account.id, conversation_id: conversation.id).pluck('action_id'))
+        .to eq([second['action_id']])
+      expect(described_class.fetch_record(first['action_id'])).to include('status' => 'rejected', 'rejected_reason' => 'superseded_in_run')
+      expect(account.scheduling_appointments.count).to eq(0)
+    end
+
+    it 'withdraws only a card that the run itself prepared' do
+      args = { resource_id: resource.id, service_id: service_item.id, starts_at: starts_at, ends_at: ends_at }
+      earlier = JSON.parse(described_class.intercept(tool: create_tool, tool_context: tool_context, arguments: args))
+      later_args = args.merge(starts_at: 2.days.from_now.change(hour: 11, min: 30, sec: 0).iso8601,
+                              ends_at: 2.days.from_now.change(hour: 12, min: 0, sec: 0).iso8601)
+
+      later = Captain::ReplySuggestion::RunControl.with(request_id: 'req-2', deadline: Process.clock_gettime(Process::CLOCK_MONOTONIC) + 60) do
+        JSON.parse(described_class.intercept(tool: create_tool, tool_context: tool_context, arguments: later_args,
+                                             replaces: [earlier['action_id']]))
+      end
+
+      expect(later['message']).not_to include('It replaces')
+      expect(described_class.pending_for(account_id: account.id, conversation_id: conversation.id).pluck('action_id'))
+        .to contain_exactly(earlier['action_id'], later['action_id'])
     end
 
     it 'stores the proposal for a service with no specialist link when the account has no links at all' do

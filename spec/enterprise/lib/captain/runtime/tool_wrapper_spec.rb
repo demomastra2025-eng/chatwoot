@@ -125,6 +125,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     param :starts_at, type: :string, required: false
     param :appointment_id, type: :integer, required: false
     param :patient, type: 'object', required: false
+    param :reason, type: :string, required: false
 
     attr_reader :calls
 
@@ -1288,31 +1289,109 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     let(:read_only_tool) { ToolWrapperSpecReadOnlyTool.new }
     let(:read_only_wrapper) { described_class.new(read_only_tool, context_wrapper) }
     let(:cards_key) { Captain::ReplySuggestion::ActionApprovalService::CONTEXT_KEY }
+    let(:intercepted) { [] }
 
+    # The approval service as the wrapper sees it: a card per call, and the cards it is told to replace leave the run's list.
     before do
       context_wrapper.context[:state][:source] = 'reply_suggestion'
-      allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:intercept) do |tool:, tool_context:, arguments:|
-        card = { 'action_id' => "card-#{arguments[:title]}", 'tool_name' => tool.name, 'status' => 'pending', 'title' => 'Создать задачу',
-                 'description' => "Задача: #{arguments[:title]}" }
-        (tool_context.context[cards_key] ||= []) << card
+      allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:intercept) do |tool:, tool_context:, arguments:, replaces: []|
+        intercepted << { tool: tool.name, arguments: arguments, replaces: replaces }
+        cards = (tool_context.context[cards_key] ||= [])
+        cards.reject! { |item| replaces.include?(item['action_id']) }
+        key = arguments[:title] || [arguments[:appointment_id], arguments[:starts_at], arguments[:reason]].compact.join(' ')
+        card = { 'action_id' => "card-#{key}", 'tool_name' => tool.name, 'status' => 'pending', 'title' => 'Создать задачу',
+                 'description' => "Задача: #{key}" }
+        cards << card
         JSON.generate(success: true, status: 'pending_operator_approval', action_id: card['action_id'], action: tool.name)
       end
     end
 
-    it 'answers a repeated action with its pending card instead of stopping the run' do
-      mutating_wrapper.call(title: 'Перезвонить')
-      context_wrapper.context[:captain_v2_current_tool_batch_id] = 'next-batch'
+    def call_in_new_batch(wrapper, **arguments)
+      context_wrapper.context[:captain_v2_current_tool_batch_id] = "batch-#{SecureRandom.hex(4)}"
+      wrapper.call(**arguments)
+    end
 
-      result = mutating_wrapper.call(title: 'Перезвонить пациенту завтра')
+    def card_ids
+      context_wrapper.context[cards_key].pluck('action_id')
+    end
 
-      expect(result).to be_a(String)
-      expect(JSON.parse(result)).to include(
-        'status' => 'pending_operator_approval', 'already_proposed' => true, 'action_id' => 'card-Перезвонить',
-        'title' => 'Создать задачу', 'summary' => 'Задача: Перезвонить', 'message' => described_class::ALREADY_PROPOSED_MESSAGE
+    it 'prepares a card for another task, and past the card limit names the waiting cards without preparing the new one' do
+      titles = ['Перезвонить', 'Отправить анализы', 'Напомнить о приёме']
+      results = titles.map { |title| call_in_new_batch(mutating_wrapper, title: title) }
+
+      over_limit = call_in_new_batch(mutating_wrapper, title: 'Перезвонить пациенту завтра')
+
+      expect(results.map { |result| JSON.parse(result)['action_id'] }).to eq(titles.map { |title| "card-#{title}" })
+      expect(over_limit).not_to be_a(RubyLLM::Tool::Halt)
+      waiting = titles.map { |title| { 'action_id' => "card-#{title}", 'title' => 'Создать задачу', 'description' => "Задача: #{title}" } }
+      expect(JSON.parse(over_limit.delete_prefix('ERROR: '))).to eq(
+        'error' => described_class::SUGGESTION_CARD_LIMIT_ERROR, 'retryable' => false,
+        'data' => { 'status' => 'not_prepared', 'waiting_cards' => waiting }
       )
-      expect(Captain::ReplySuggestion::ActionApprovalService).to have_received(:intercept).once
-      expect(context_wrapper.context[cards_key].size).to eq(1)
+      expect(intercepted.size).to eq(3)
+      expect(card_ids).to eq(titles.map { |title| "card-#{title}" })
       expect(context_wrapper.context).not_to have_key(described_class::TERMINAL_TOOL_STOP_KEY)
+    end
+
+    it 'answers an identical repeat of an action with its own card' do
+      first = call_in_new_batch(mutating_wrapper, title: 'Перезвонить')
+      call_in_new_batch(mutating_wrapper, title: 'Отправить анализы')
+
+      repeat = call_in_new_batch(mutating_wrapper, title: 'Перезвонить')
+
+      expect(repeat).to eq(first)
+      expect(intercepted.size).to eq(2)
+    end
+
+    # The draft promised one time while the operator approved a card with another: a corrected booking replaces the earlier card.
+    it 'replaces the booking card of the same patient when the booking is repeated with another start' do
+      booking = described_class.new(ToolWrapperSpecAppointmentTool.new, context_wrapper)
+
+      first = JSON.parse(call_in_new_batch(booking, starts_at: '2026-10-26T10:00'))
+      second = JSON.parse(call_in_new_batch(booking, starts_at: '2026-10-26T11:30'))
+
+      expect(second).to include('status' => 'pending_operator_approval', 'action_id' => 'card-2026-10-26T11:30')
+      expect(intercepted.map { |call| call[:replaces] }).to eq([[], [first['action_id']]])
+      expect(card_ids).to eq(['card-2026-10-26T11:30'])
+      expect(context_wrapper.context).not_to have_key(described_class::TERMINAL_TOOL_STOP_KEY)
+
+      # Back to the first time: its answer was withdrawn with its card, so the card is prepared again and replaces the second one.
+      third = JSON.parse(call_in_new_batch(booking, starts_at: '2026-10-26T10:00'))
+
+      expect(intercepted.map { |call| call[:replaces] }).to eq([[], [first['action_id']], ['card-2026-10-26T11:30']])
+      expect(third['action_id']).to eq('card-2026-10-26T10:00')
+      expect(card_ids).to eq(['card-2026-10-26T10:00'])
+    end
+
+    it 'keeps a booking card when the booking that should replace it is refused' do
+      booking = described_class.new(ToolWrapperSpecAppointmentTool.new, context_wrapper)
+      call_in_new_batch(booking, starts_at: '2026-10-26T10:00')
+      allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:intercept)
+        .and_return(JSON.generate(success: false, reason: 'schedule_not_open', error_class: 'business'))
+
+      refused = call_in_new_batch(booking, starts_at: '2026-10-26T19:30')
+
+      expect(refused).not_to be_a(RubyLLM::Tool::Halt)
+      expect(card_ids).to eq(['card-2026-10-26T10:00'])
+      expect(context_wrapper.context[described_class::MUTATING_TOOL_EXECUTIONS_KEY]['create_appointment'][:suggestion_cards])
+        .to match([hash_including(action_id: 'card-2026-10-26T10:00')])
+    end
+
+    it 'answers and replaces only the card of the appointment the call is for, never another target or a kept card' do
+      kept = { 'action_id' => 'kept-1', 'tool_name' => 'cancel_appointment', 'status' => 'pending', 'title' => 'Отменить запись на приём' }
+      context_wrapper.context[cards_key] = [kept]
+      cancel = described_class.new(ToolWrapperSpecAppointmentTool.new(tool_name: 'cancel_appointment'), context_wrapper)
+
+      first_a = call_in_new_batch(cancel, appointment_id: 101)
+      call_in_new_batch(cancel, appointment_id: 102)
+      again_a = call_in_new_batch(cancel, appointment_id: 101)
+      corrected_a = JSON.parse(call_in_new_batch(cancel, appointment_id: 101, reason: 'Пациент заболел'))
+
+      expect(JSON.parse(again_a)['action_id']).to eq('card-101')
+      expect(again_a).to eq(first_a)
+      expect(intercepted.map { |call| call[:replaces] }).to eq([[], [], ['card-101']])
+      expect(corrected_a['action_id']).to eq('card-101 Пациент заболел')
+      expect(card_ids).to eq(['kept-1', 'card-102', 'card-101 Пациент заболел'])
     end
 
     it 'shows a refused repeat of an action that has no card to the agent and lets the run go on' do
@@ -1339,14 +1418,36 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       expect(context_wrapper.context).not_to have_key(described_class::TERMINAL_TOOL_STOP_KEY)
     end
 
-    it 'answers a repeated identical read from the first result without counting it against the tool limits' do
-      results = Array.new(described_class::MAX_IDENTICAL_TOOL_EXECUTIONS + 3) { read_only_wrapper.call(result: 'Mon 17:00, Mon 18:00') }
+    it 'answers a repeated identical read from the first result with a note, and counts every repeat after the first one' do
+      results = Array.new(described_class::MAX_TOOL_REQUESTS_PER_TOOL + 1) { read_only_wrapper.call(result: 'Mon 17:00, Mon 18:00') }
 
-      expect(results.uniq).to eq(['Mon 17:00, Mon 18:00'])
-      expect(read_only_tool.calls).to eq(1)
-      expect(context_wrapper.context[described_class::TOOL_REQUEST_COUNTS_KEY][:total]).to eq(1)
+      repeated = "#{described_class::REPEATED_READ_NOTE}\nMon 17:00, Mon 18:00"
+      expect(results).to eq(['Mon 17:00, Mon 18:00'] + ([repeated] * described_class::MAX_TOOL_REQUESTS_PER_TOOL))
+      expect(context_wrapper.context[described_class::TOOL_REQUEST_COUNTS_KEY][:total]).to eq(described_class::MAX_TOOL_REQUESTS_PER_TOOL)
       expect(events.count { |event| event.first == :complete }).to eq(results.size)
       expect(context_wrapper.context).not_to have_key(described_class::TERMINAL_TOOL_STOP_KEY)
+
+      # A model stuck on the same read stops like any other loop, and the run writes the draft from the results so far.
+      stopped = read_only_wrapper.call(result: 'Mon 17:00, Mon 18:00')
+
+      expect(stopped).to be_a(RubyLLM::Tool::Halt).and(have_attributes(content: include('Tool request limit reached')))
+      expect(read_only_tool.calls).to eq(1)
+    end
+
+    it 'runs the scheduling guard before the read cache: a generic search after a service-specific one is refused' do
+      allow(Llm::EventBus).to receive(:publish)
+      scheduling_tool = ToolWrapperSpecSchedulingTool.new
+      scheduling_wrapper = described_class.new(scheduling_tool, context_wrapper)
+
+      expect(scheduling_wrapper.call(resource_ids: ['157'])).to eq('slots')
+      scheduling_tool.result = 'therapist slots'
+      expect(scheduling_wrapper.call(service_id: 469, resource_ids: ['157'])).to eq('therapist slots')
+      blocked = scheduling_wrapper.call(resource_ids: ['157'])
+
+      expect_tool_error(blocked, 'Service-specific availability requires a confirmed service_id.', retryable: false)
+      expect(scheduling_tool.calls).to eq(2)
+      expect(Llm::EventBus).to have_received(:publish)
+        .with('captain.generic_after_service_specific_attempt', hash_including(provider_call_blocked: true))
     end
 
     it 'reads again after a failed read' do

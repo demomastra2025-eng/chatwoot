@@ -43,8 +43,17 @@ class Captain::Runtime::ToolWrapper
   # answered and the agent finishes its draft: these refusals do not stop a suggestion run.
   SUGGESTION_NON_TERMINAL_REASONS = %w[duplicate_failed_tool_call mutation_retry_blocked].freeze
   SUGGESTION_READ_CACHE_KEY = :captain_suggestion_read_result_cache
-  ALREADY_PROPOSED_MESSAGE = 'This action is already proposed to the operator in this run (title and summary here) and is NOT ' \
-                             'executed. Do not call the tool again: the operator can edit or deny the card. Finish the draft reply.'
+  # A repeated identical read of a reply suggestion is answered from the first result. One repeat of a call is free; every further
+  # one counts against the request limits of the loop guard, so a model stuck on one read still stops after a few requests.
+  SUGGESTION_FREE_READ_REPEATS = 1
+  REPEATED_READ_NOTE = 'Same call as before in this run, same result as before (below). Do not call it again: finish the draft ' \
+                       'with the results you have.'
+  # A repeat of an action with other arguments in a reply suggestion is a new approval card (nothing ran). An appointment keeps one
+  # card per claim: the new card replaces the earlier one. Any other action gets up to this many cards in a run.
+  SUGGESTION_CARDS_PER_TOOL = 3
+  SUGGESTION_CARD_LIMIT_ERROR = 'NOT prepared: the cards of this action listed in data already wait for the operator in this run, ' \
+                                'and these new arguments were not prepared. Do not call the tool again. Finish the draft and mention ' \
+                                'only the listed cards.'
   MAX_IDENTICAL_TOOL_EXECUTIONS = 3
   MAX_TOOL_EXECUTIONS_PER_TOOL = 12
   MAX_TOOL_REQUESTS_PER_TOOL = Captain::Runtime::ToolLoopGuard::MAX_REQUESTS_PER_TOOL
@@ -70,14 +79,14 @@ class Captain::Runtime::ToolWrapper
     normalized_args = normalize_args(args)
     @operation_target = Captain::Runtime::OperationTarget.of(@tool.name, normalized_args)
 
-    repeated_read = repeated_read_result(normalized_args)
-    request_stop = requested_tool_stop_result(normalized_args, count: repeated_read.nil?)
+    repeated_read = repeated_read_entry(normalized_args)
+    request_stop = requested_tool_stop_result(normalized_args, count: counted_request?(repeated_read))
     return complete_and_halt(request_stop) if request_stop
-    return complete_and_render(repeated_read) if repeated_read
 
     early_result = early_tool_result(normalized_args)
     return complete_and_halt(early_result) if terminal_early_result?(early_result)
     return complete_and_render(early_result) if early_result
+    return complete_repeated_read(repeated_read) if repeated_read
 
     attempt_error = register_tool_execution_attempt(normalized_args)
     return complete_and_halt(attempt_error) if attempt_error
@@ -192,9 +201,7 @@ class Captain::Runtime::ToolWrapper
 
   def execute_tool(tool_context, normalized_args)
     result = if mutating_tool? && Captain::Runtime::Runner.reply_suggestion?(tool_context&.context)
-               Captain::ReplySuggestion::ActionApprovalService.intercept(
-                 tool: @tool, tool_context: tool_context, arguments: normalized_args
-               )
+               intercept_for_approval(tool_context, normalized_args)
              else
                Captain::Playground::ExecutionBoundary.execute(@tool, tool_context, normalized_args) do
                  @tool.execute(tool_context, **normalized_args)
@@ -577,7 +584,7 @@ class Captain::Runtime::ToolWrapper
     @context_wrapper.callback_manager.emit_tool_requested(@tool.name, normalized_args, @context_wrapper)
   end
 
-  # count: false for a repeated read of a reply suggestion (see repeated_read_result), which is no new request of the loop guard.
+  # count: false for the free repeat of a read of a reply suggestion (see counted_request?).
   def requested_tool_stop_result(normalized_args, count: true)
     emit_tool_requested(normalized_args)
     request_error = register_tool_request(normalized_args) if count
@@ -603,13 +610,27 @@ class Captain::Runtime::ToolWrapper
   end
 
   # A reply suggestion changes nothing in the clinic system, so within its run the same read with the same arguments has the same
-  # answer: a repeat (a slot search the model asks again) gets the first result and does not count against the tool limits. A live
-  # run reads again, because its own actions change the data.
-  def repeated_read_result(normalized_args)
+  # answer: a repeat (a slot search the model asks again) gets the first result without another provider call. A live run reads
+  # again, because its own actions change the data. The checks before a call (the bound tools, the scheduling guard) run first.
+  def repeated_read_entry(normalized_args)
     return unless suggestion_read_cache?
 
-    entry = suggestion_read_cache[tool_result_cache_digest(normalized_args)]
-    entry[:result].deep_dup if entry
+    suggestion_read_cache[tool_result_cache_digest(normalized_args)]
+  end
+
+  # Whether the call is a request of the loop guard (6 per tool, 16 per run). Every call is, except the first repeat of a read of a
+  # reply suggestion: a model that keeps asking the same thing (answered from the cache or refused by a check) still stops and
+  # writes its draft.
+  def counted_request?(repeated_read)
+    return true if repeated_read.nil?
+
+    repeated_read[:repeats] = repeated_read[:repeats].to_i + 1
+    repeated_read[:repeats] > SUGGESTION_FREE_READ_REPEATS
+  end
+
+  # The first result again, with a note that tells the model it already has it.
+  def complete_repeated_read(entry)
+    "#{REPEATED_READ_NOTE}\n#{complete_and_render(entry[:result].deep_dup)}"
   end
 
   def cache_suggestion_read_result(normalized_args, result)
@@ -799,29 +820,82 @@ class Captain::Runtime::ToolWrapper
     return unless domain_mutating_tool?
 
     entry = mutating_tool_executions[mutation_claim_key]
-    return if entry.blank? || mutation_retry_allowed?(entry, normalized_args)
+    return if entry.blank?
+    return suggestion_card_repeat_result(entry) if reply_suggestion_run? && suggestion_cards(entry).any?
+    return if mutation_retry_allowed?(entry, normalized_args)
 
-    proposed_action_result || Captain::ToolResult.failure(
+    Captain::ToolResult.failure(
       error: 'This action tool already ran in the current assistant run. Do not retry it with alternate arguments.',
       retryable: false,
       audit: { failure_stage: 'tool_execution', failure_reason: 'mutation_retry_blocked' }
     )
   end
 
-  # In a reply suggestion the action already has its approval card in this run: the repeat (another title, a corrected reason) gets
-  # that card back, still pending, instead of a refusal. The agent finishes the draft; the operator can edit or deny the card.
-  def proposed_action_result
-    return unless reply_suggestion_run?
+  # A reply suggestion runs nothing before the operator allows it, so the same action with other arguments (an identical repeat is
+  # answered from the cache before this) is a new card: for an appointment it replaces the claim's card (a corrected time, another
+  # reason for the same cancellation), and any other action gets up to SUGGESTION_CARDS_PER_TOOL cards (a second task, another
+  # field of the contact). Past that the call is answered with the cards that wait, and nothing new is prepared. nil: prepare it.
+  def suggestion_card_repeat_result(entry)
+    return if Captain::ReplySuggestion::ActionApprovalService.appointment_tool?(@tool.name)
 
-    tool_id = Captain::Runtime::ToolFailure.canonical_name(@tool.name)
-    card = Array(context_wrapper_context[Captain::ReplySuggestion::ActionApprovalService::CONTEXT_KEY]).reverse.find do |item|
-      item.to_h['tool_name'].to_s == tool_id
+    cards = suggestion_cards(entry)
+    return if cards.size < SUGGESTION_CARDS_PER_TOOL
+
+    Captain::ToolResult.failure(
+      error: SUGGESTION_CARD_LIMIT_ERROR,
+      data: { status: 'not_prepared', waiting_cards: waiting_suggestion_cards(cards) },
+      retryable: false,
+      audit: { failure_stage: 'tool_execution', failure_reason: 'suggestion_card_limit', mutation_executed: false }
+    )
+  end
+
+  # The approval cards this claim prepared in the run, as { action_id:, digest: } (digest: the key of the cached result of the call).
+  def suggestion_cards(entry)
+    Array(entry.to_h[:suggestion_cards])
+  end
+
+  # The cards of the claim as the run lists them (title, summary, details), never another target's card or a card kept from an
+  # earlier suggestion.
+  def waiting_suggestion_cards(cards)
+    ids = cards.map { |card| card[:action_id].to_s }
+    Array(context_wrapper_context[Captain::ReplySuggestion::ActionApprovalService::CONTEXT_KEY]).filter_map do |item|
+      card = item.to_h.stringify_keys
+      card.slice('action_id', 'title', 'description', 'details') if ids.include?(card['action_id'].to_s)
     end
-    return if card.blank?
+  end
 
-    JSON.generate(success: true, status: 'pending_operator_approval', already_proposed: true, operator_approval_required: true,
-                  action_id: card['action_id'], action: card['tool_name'], title: card['title'], summary: card['description'],
-                  message: ALREADY_PROPOSED_MESSAGE)
+  # In a reply suggestion an action tool prepares an approval card for the operator instead of running. A new appointment card
+  # replaces the cards of the same claim (the same person's booking, the same appointment's change or cancellation): the approval
+  # service withdraws them once the new card exists.
+  def intercept_for_approval(tool_context, normalized_args)
+    @replaced_card_ids = if Captain::ReplySuggestion::ActionApprovalService.appointment_tool?(@tool.name)
+                           suggestion_cards(mutating_tool_executions[mutation_claim_key]).map { |card| card[:action_id].to_s }
+                         end
+    Captain::ReplySuggestion::ActionApprovalService.intercept(
+      tool: @tool, tool_context: tool_context, arguments: normalized_args, replaces: Array(@replaced_card_ids)
+    )
+  end
+
+  # Keeps the card a reply suggestion prepared on its claim, and drops the cards it replaced with their cached results, so an
+  # identical repeat of a replaced call prepares its card again instead of answering with a withdrawn one.
+  def record_suggestion_card(entry, result)
+    action_id = pending_card_id(result) if reply_suggestion_run?
+    return if action_id.blank?
+
+    cards = suggestion_cards(entry).reject { |card| card[:action_id].to_s == action_id }
+    replaced, kept = cards.partition { |card| Array(@replaced_card_ids).include?(card[:action_id].to_s) }
+    replaced.each { |card| tool_result_cache.delete(card[:digest]) }
+    entry[:suggestion_cards] = kept + [{ action_id: action_id, digest: entry[:arguments_digest] }]
+  end
+
+  def pending_card_id(result)
+    body = result.is_a?(String) ? JSON.parse(result) : result
+    return unless body.is_a?(Hash)
+
+    body = body.with_indifferent_access
+    body[:action_id].to_s.presence if body[:status].to_s == 'pending_operator_approval'
+  rescue JSON::ParserError
+    nil
   end
 
   def mutation_retry_allowed?(entry, normalized_args)
@@ -834,11 +908,13 @@ class Captain::Runtime::ToolWrapper
   def track_mutating_tool_execution(normalized_args)
     return unless domain_mutating_tool?
 
+    cards = suggestion_cards(mutating_tool_executions[mutation_claim_key])
     mutating_tool_executions[mutation_claim_key] = {
       arguments_digest: tool_result_cache_digest(normalized_args),
       idempotency_key: normalized_args[:idempotency_key].presence,
-      retryable: false
-    }
+      retryable: false,
+      suggestion_cards: cards.presence
+    }.compact
   end
 
   def record_mutating_tool_result(result)
@@ -850,6 +926,7 @@ class Captain::Runtime::ToolWrapper
     entry[:failure_stage] = normalized_result.dig(:audit, :failure_stage).to_s.presence
     entry[:failure_reason] = normalized_result.dig(:audit, :failure_reason).to_s.presence
     entry[:safe_to_correct] = unexecuted_argument_failure?(normalized_result) || Captain::Runtime::ToolFailure.business_answer?(result)
+    record_suggestion_card(entry, result)
   rescue StandardError
     entry[:retryable] = false
   end
