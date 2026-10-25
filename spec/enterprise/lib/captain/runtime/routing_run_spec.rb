@@ -34,11 +34,56 @@ RSpec.describe Captain::Runtime::RoutingRun do
       .to raise_error(Captain::Runtime::DecisionRouter::UnavailableError) { |error| expect(error.detail).to eq('NoMethodError') }
   end
 
-  it 'gives up when the decision does not finish in time' do
+  describe 'a reply suggestion that stops while the router decides' do
+    let(:request_id) { SecureRandom.uuid }
+    let(:slow_router) { instance_double(Captain::Runtime::DecisionRouter) }
+
+    before { allow(slow_router).to receive(:decide) { sleep 2 } }
+
+    def now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+    it 'stops at once when the manager cancels it, and does not wait for the decision afterwards' do
+      run = described_class.new(slow_router, parallel: true)
+      Captain::ReplySuggestion::RequestStore.request_cancel!(request_id)
+      started = now
+
+      expect do
+        Captain::ReplySuggestion::RunControl.with(request_id: request_id, deadline: now + 60) { run.await }
+      end.to raise_error(Captain::ReplySuggestion::RunAborted) { |error| expect([error.kind, error.stage]).to eq([:cancelled, 'routing']) }
+      run.settle
+
+      expect(now - started).to be < 1.0
+    end
+
+    it 'stops at its deadline' do
+      run = described_class.new(slow_router, parallel: true)
+
+      expect do
+        Captain::ReplySuggestion::RunControl.with(request_id: request_id, deadline: now + 0.4) { run.await }
+      end.to raise_error(Captain::ReplySuggestion::RunAborted) { |error| expect(error.kind).to eq(:deadline) }
+    end
+  end
+
+  it 'is not waited for once the turn abandoned it' do
+    slow = instance_double(Captain::Runtime::DecisionRouter)
+    allow(slow).to receive(:decide) { sleep 2 }
+    run = described_class.new(slow, parallel: true)
+    run.abandon
+
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    run.settle
+
+    expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 0.5
+  end
+
+  it 'gives up when the decision does not finish in time, and does not wait for it a second time' do
     allow(router).to receive(:decide) { sleep 2 }
     run = described_class.new(router, parallel: true)
-    allow(run).to receive(:wait_seconds).and_return(0.05)
+    allow(run).to receive(:wait_seconds).and_return(0.05, 5)
 
     expect { run.await }.to raise_error(Captain::Runtime::DecisionRouter::UnavailableError) { |error| expect(error.detail).to eq('router_timeout') }
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    run.settle
+    expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 0.5
   end
 end

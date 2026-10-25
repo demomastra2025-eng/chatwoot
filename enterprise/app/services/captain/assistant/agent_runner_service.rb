@@ -180,7 +180,11 @@ class Captain::Assistant::AgentRunnerService
     Llm::EventBus.with_context(request_event_context(context)) do
       time_phase('routing_start') { start_routing(context) }
       input_moderation_response = time_phase('moderate_input') { moderate_input(message_to_process, context) }
-      return input_moderation_response if input_moderation_response
+      if input_moderation_response
+        # A blocked input has no use for the decision: the turn ends now, without waiting for the router.
+        abandon_routing
+        return input_moderation_response
+      end
 
       routed_turn(message_to_process, context)
     end

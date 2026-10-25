@@ -47,8 +47,14 @@ module Captain::Assistant::RoutingHelper
     raise
   end
 
+  # Waits for a decision the turn started and did not await (an error before #await_routing); an abandoned one is not waited for.
   def settle_routing
     @routing_run&.settle
+  end
+
+  # The turn ends without the decision (a blocked input): nothing waits for it.
+  def abandon_routing
+    @routing_run&.abandon
   end
 
   def turn_dispatcher

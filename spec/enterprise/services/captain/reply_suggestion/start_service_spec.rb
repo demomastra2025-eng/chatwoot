@@ -121,6 +121,18 @@ RSpec.describe Captain::ReplySuggestion::StartService do
       expect(second[:reused]).to be(false)
     end
 
+    it 'does not reuse a run the manager cancelled: that run only waits for its next checkpoint' do
+      first = service.perform.body
+      record = Captain::ReplySuggestion::RequestStore.fetch_raw(first[:suggestion_request_id])
+      Captain::ReplySuggestion::RequestStore.mark_running!(record, started_at: Time.current, deadline_at: Time.current + 60)
+      Captain::ReplySuggestion::RequestStore.request_cancel!(first[:suggestion_request_id])
+
+      second = service.perform.body
+
+      expect(second[:suggestion_request_id]).not_to eq(first[:suggestion_request_id])
+      expect(second).to include(status: 'queued', reused: false)
+    end
+
     it 'does not share the run between users' do
       first = service.perform.body
       other = create(:user, account: account, role: :agent)

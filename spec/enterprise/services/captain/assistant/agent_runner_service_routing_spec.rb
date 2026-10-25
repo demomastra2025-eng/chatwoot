@@ -176,6 +176,21 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     expect(conversation.reload.additional_attributes.to_h).not_to have_key(Captain::Conversation::AgentSession::ATTRIBUTE)
   end
 
+  it 'does not wait for the router when the safety check blocked the input' do
+    allow(Llm::DecisionChain).to receive(:decide) do
+      sleep 1.5
+      raise Llm::DecisionChain::ExhaustedError.new(feature: :agent_routing, attempts: [])
+    end
+    unsafe = Llm::SafetyPolicy::UnsafeContentError.new(feature: :assistant, stage: :input, reason: 'unsafe')
+    allow(Llm::SafetyPolicy).to receive(:check!).and_raise(unsafe)
+
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    response = service.generate_response(message_history: history)
+
+    expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 1.0
+    expect(response).to include(described_class::MODERATION_BLOCKED_KEY => true)
+  end
+
   describe 'a reply suggestion with a sticky agent' do
     let(:suggestion) { described_class.new(assistant: doctors, conversation: conversation, source: 'reply_suggestion') }
     let(:history) do

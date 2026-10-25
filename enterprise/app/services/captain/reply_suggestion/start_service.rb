@@ -59,19 +59,25 @@ class Captain::ReplySuggestion::StartService
     reject(code)
   end
 
-  # One active run per user and conversation. A lock whose run is over or gone (a lost job) is taken over once.
-  # Returns the active record to reuse, or nil when this request holds the lock.
+  # One active run per user and conversation. A lock whose run is over, gone (a lost job) or cancelled (the manager pressed
+  # «Отменить»: that run only waits for its next checkpoint) is taken over once. Returns the active record to reuse, or nil when
+  # this request holds the lock.
   def claim_active_lock(id)
     2.times do
       holder = Captain::ReplySuggestion::RequestLocks.claim_active(account.id, user.id, conversation.id, id)
       return if holder.nil?
 
       existing = Captain::ReplySuggestion::RequestStore.fetch(holder)
-      return existing if existing && Captain::ReplySuggestion::RequestStore::ACTIVE_STATUSES.include?(existing['status'])
+      return existing if reusable?(existing)
 
       Captain::ReplySuggestion::RequestLocks.release_active(account.id, user.id, conversation.id, holder)
     end
     nil
+  end
+
+  def reusable?(record)
+    record.present? && Captain::ReplySuggestion::RequestStore::ACTIVE_STATUSES.include?(record['status']) &&
+      !Captain::ReplySuggestion::RequestStore.cancel_requested?(record['id'])
   end
 
   def reused(record)
