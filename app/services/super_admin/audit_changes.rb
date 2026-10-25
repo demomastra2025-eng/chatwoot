@@ -30,7 +30,7 @@ class SuperAdmin::AuditChanges
   def readable
     return @readable if defined?(@readable)
 
-    @readable = read_changes(@audit.audited_changes)
+    @readable = read_changes(AuditLogs::SecretFilter.filter_audit(@audit))
   end
 
   # One line per changed limit, in the order of the screens: «Операторы: не задан → 5 операторов»

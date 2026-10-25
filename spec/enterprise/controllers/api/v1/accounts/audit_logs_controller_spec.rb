@@ -84,6 +84,33 @@ RSpec.describe 'Enterprise Audit API', type: :request do
         expect(bot_log).to include('auditable_id' => 41, 'action' => 'destroy', 'auditable' => nil)
         expect(bot_log['audited_changes']).to eq('name' => 'Old bot')
       end
+
+      # An entry written before the channel secrets were filtered at write time is filtered when it is read
+      it 'never returns a channel secret stored in an older entry' do
+        account.enable_features(:audit_logs)
+        account.save!
+        # rubocop:disable Rails/SkipsModelValidations
+        Audited::Audit.insert_all!(
+          [{ auditable_type: 'Inbox', auditable_id: inbox.id, associated_type: 'Account', associated_id: account.id, action: 'update',
+             audited_changes: { 'string_session' => [nil, 'stored-telethon-session'], 'provider_config' => [{}, { 'api_key' => 'k-1' }],
+                                'runtime_state' => [{}, { 'qr_login_url' => 'tg://login?token=t-1' }] },
+             created_at: Time.current }]
+        )
+        # rubocop:enable Rails/SkipsModelValidations
+
+        get "/api/v1/accounts/#{account.id}/audit_logs",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.body).not_to include('stored-telethon-session', 'k-1', 'token=t-1')
+        session_log = response.parsed_body['audit_logs'].find { |audit_log| audit_log['audited_changes'].to_h.key?('string_session') }
+        expect(session_log['audited_changes']).to eq(
+          'string_session' => [nil, '[FILTERED]'],
+          'provider_config' => [{}, { 'api_key' => '[FILTERED]' }],
+          'runtime_state' => [{}, '[FILTERED]']
+        )
+      end
     end
   end
 end

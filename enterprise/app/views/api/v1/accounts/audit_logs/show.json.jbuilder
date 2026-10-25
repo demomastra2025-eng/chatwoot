@@ -49,7 +49,8 @@ json.audit_logs do
     json.user_type audit_log.user_type
     json.username audit_log.username
     json.action audit_log.action
-    json.audited_changes audit_log.audited_changes
+    # Defence in depth: an entry written before the channel secrets were filtered still shows them as "[FILTERED]"
+    json.audited_changes AuditLogs::SecretFilter.filter_audit(audit_log)
     json.version audit_log.version
     json.comment audit_log.comment
     json.request_uuid audit_log.request_uuid
