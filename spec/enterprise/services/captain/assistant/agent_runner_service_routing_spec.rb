@@ -109,6 +109,25 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     expect(failed).to include('reason' => 'decision_chain_unavailable', 'models_tried' => ['inception/mercury-decide'])
   end
 
+  it 'names the agent that holds the conversation on the technical failure of a routed turn' do
+    session.update_routing(actor_id: procedures.id)
+    allow(Llm::DecisionChain).to receive(:decide).and_raise(
+      Llm::DecisionChain::ExhaustedError.new(feature: :agent_routing, attempts: [{ model: 'inception/mercury-decide', error_class: 'Timeout' }])
+    )
+
+    expect(service.generate_response(message_history: history)['agent_id']).to eq(procedures.id)
+  end
+
+  it 'names the routed agent when its run fails after the router gave it the conversation' do
+    decide('route_agent', yes: [procedures.id])
+    allow(runtime_runner).to receive(:run).and_raise(StandardError, 'provider down')
+
+    response = service.generate_response(message_history: history)
+
+    expect(response['agent_id']).to eq(procedures.id)
+    expect(session.read['current_assistant_id']).to eq(procedures.id)
+  end
+
   it 'runs a council of exactly the participants the router chose' do
     decide('council', yes: [doctors.id, procedures.id])
     split = Captain::Runtime::CouncilSplitter::Result.new(parts: [

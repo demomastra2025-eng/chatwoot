@@ -19,7 +19,12 @@ class Captain::AgentRunContext
     @session = Captain::Conversation::AgentSession.new(**session_options)
   end
 
-  attr_reader :graph
+  # graph: the agents of the channel. holder: the agent that holds the conversation as the response builder checks it
+  # (Captain::Conversation::AgentOwnership), set by #prepare: the saved holder while it is an agent of the channel (a candidate of
+  # the router or not), else the anchor. Every response that no chosen agent produced (a blocked input, a router failure, a
+  # council that could not be set up, a staff request, a custom input rule) answers as the holder; otherwise the response builder
+  # drops it as stale.
+  attr_reader :graph, :holder
 
   def prepare(context)
     context.delete(:captain_faq_outcome)
@@ -28,6 +33,7 @@ class Captain::AgentRunContext
     saved = @session.read
     raise ArgumentError, 'The entry agent is disabled' unless graph.find(@entry.id)
 
+    @holder = holder_of(saved)
     current = current_candidate(saved, context)
     context[:routing_current_agent_id] = current&.id
     context[:routing_trail] = Array(saved['routing_trail'])
@@ -84,6 +90,19 @@ class Captain::AgentRunContext
   end
 
   private
+
+  # A saved holder that is no longer an agent of the channel at all (switched off, removed) is released in the session: the
+  # conversation is then the anchor's for the response builder, until the router gives it to an agent.
+  def holder_of(saved)
+    saved_id = saved['current_assistant_id'].presence&.to_i
+    return @entry unless saved_id
+
+    found = graph.find(saved_id)
+    return found if found
+
+    @session.release_holder(saved_id)
+    @entry
+  end
 
   # The agent that holds the conversation, when it is still a candidate. One that is no longer reachable (switched off, removed
   # from the channel, excluded) leaves the conversation without a current agent, and the router chooses again among all.

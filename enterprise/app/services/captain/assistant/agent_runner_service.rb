@@ -168,7 +168,7 @@ class Captain::Assistant::AgentRunnerService
   end
 
   # One patient turn: the run state is built, the router decides who answers (in parallel with the platform safety check of the input,
-  # see RoutingHelper), the custom input rules of the chosen agents run, and the decision is applied (TurnDispatcher): one agent
+  # see RoutingHelper), the custom input rules run, and the decision is applied (TurnDispatcher): one agent
   # runs, a council runs, or the conversation goes to staff without an agent call. A clinic with one agent makes no decision.
   def generate_response_with_runtime_cache(message_history)
     time_phase('config.initialize') { Llm::Config.initialize! }
@@ -197,20 +197,28 @@ class Captain::Assistant::AgentRunnerService
     return routed_human_response(context) if @turn_decision&.human?
 
     time_phase('dispatch') { turn_dispatcher.prepare!(context) } if @assistant.persisted?
+    # The chosen agent (or the acting agent of a council) holds the conversation now: a failure of its run answers as it.
+    @acting_assistant_id = context[:acting_assistant_id] if context[:acting_assistant_id]
     time_phase('run_agent_with_retries') { run_agent_with_blank_response_retries(message_to_process, context) }
   rescue Captain::Runtime::DecisionRouter::UnavailableError => e
     routing_failure_response(e, context)
   rescue Captain::Runtime::TurnDispatcher::CouncilUnavailable => e
-    Rails.logger.warn("[CAPTAIN][Router] council unavailable: #{e.message}")
+    council_unavailable_response(e, context)
+  end
+
+  # The council could not be set up. The dispatcher may already have given the conversation to the acting agent of the council
+  # (saved and activated): the failure answers as it; else the holder still has the conversation.
+  def council_unavailable_response(error, context)
+    Rails.logger.warn("[CAPTAIN][Router] council unavailable: #{error.message}")
+    @acting_assistant_id = context[:acting_assistant_id] || conversation_holder.id
     technical_failure_response({ 'kind' => Captain::Runtime::ToolFailure::TECHNICAL, 'tool' => 'agent_router', 'reason' => 'council_unavailable' },
                                context)
   end
 
-  # The patient asks for a live staff member: no agent runs. The agent that holds the conversation (else the channel's anchor) hands
-  # it over; the response builder applies the handoff (status, the clinic's notice, a staff note). In a reply suggestion the operator
-  # is told to answer.
+  # The patient asks for a live staff member: no agent runs. The agent that holds the conversation hands it over; the response
+  # builder applies the handoff (status, the clinic's notice, a staff note). In a reply suggestion the operator is told to answer.
   def routed_human_response(context)
-    actor = agent_run_context.graph.find(context[:routing_current_agent_id]) || @assistant
+    actor = conversation_holder
     @acting_assistant_id = actor.id
     reason = I18n.with_locale(@assistant.account&.locale || I18n.default_locale) { I18n.t('captain.coordination.patient_requested_human') }
     return routed_human_suggestion if suggestion_run?
@@ -1440,17 +1448,15 @@ class Captain::Assistant::AgentRunnerService
     blocked_by_moderation_response('Agent input blocked because moderation policy is unavailable', safety_reason: e.reason)
   end
 
-  # The custom input rules of the agents that answer this turn: the chosen agent, every participant of a council, or the one agent
-  # of the channel. A staff request runs none (no agent answers). Zero cost for agents without rules.
+  # The custom input rules are one workspace setting (Captain::AccountSettings), the same for every agent: they are checked once,
+  # before the decision is applied, as the agent that holds the conversation, so that a rule's handoff names the agent the session
+  # names (the response builder drops any other). A staff request runs none (no agent answers). Zero cost without rules.
   def check_custom_input_rules!(message_to_process, context)
     return if @turn_decision&.human?
 
-    ids = @turn_decision ? @turn_decision.agent_ids : [context[:acting_assistant_id]]
-    ids.each do |id|
-      actor = custom_guardrail_actor(id)
-      @acting_assistant_id = actor.id
-      Captain::Safety::CustomRulesRuntime.check_input!(assistant: actor, context: context, text: message_to_process)
-    end
+    actor = custom_guardrail_actor(conversation_holder.id)
+    @acting_assistant_id = actor.id
+    Captain::Safety::CustomRulesRuntime.check_input!(assistant: actor, context: context, text: message_to_process)
   end
 
   def moderate_output!(response, runtime_preferences)

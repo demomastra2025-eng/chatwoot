@@ -13,17 +13,20 @@ module Captain::Assistant::RoutingHelper
   private
 
   # Builds the state and starts the decision. Nothing is started for a clinic with one agent (or a run without a stored assistant).
+  # Until the decision is applied, the turn answers as the agent that holds the conversation (Captain::AgentRunContext#holder): a
+  # blocked input, a router failure or a staff request then names the agent the session names, as the response builder requires.
   def start_routing(context)
     reset_routing_state
     return unless @assistant.persisted?
 
+    @acting_assistant_id = conversation_holder.id
     graph = agent_run_context.graph
     return if graph.solo?
 
     @routing_request_id = SecureRandom.uuid
     @routing_snapshot = Captain::Runtime::RoutingSnapshot.from_context(
       context, candidates: graph.candidate_rows, clinic: @assistant.account&.name, patient_language: saved_patient_language,
-               human_available: routing_human_available?(context, graph)
+               human_available: routing_human_available?
     )
     @router = Captain::Runtime::DecisionRouter.new(@routing_snapshot, account: @assistant.account,
                                                                       observability: routing_observability(context),
@@ -61,6 +64,13 @@ module Captain::Assistant::RoutingHelper
                                context)
   end
 
+  # The agent that holds the conversation (see Captain::AgentRunContext#holder); a temporary assistant holds its own run.
+  def conversation_holder
+    return @assistant unless @assistant.persisted?
+
+    agent_run_context.holder || @assistant
+  end
+
   def reset_routing_state
     @routing_snapshot = nil
     @routing_run = nil
@@ -82,12 +92,12 @@ module Captain::Assistant::RoutingHelper
   end
 
   # Staff can take the conversation: a reply suggestion always offers it (the operator answers); a conversation when the agent that
-  # would hand it over (the current agent, else the channel's anchor) may hand conversations to staff.
-  def routing_human_available?(context, graph)
+  # would hand it over (the agent that holds the conversation) may hand conversations to staff.
+  def routing_human_available?
     return true if suggestion_run?
     return false unless @conversation || @playground_session
 
-    actor = graph.find(context[:routing_current_agent_id]) || @assistant
+    actor = conversation_holder
     actor.handoff_enabled? && Array(actor.selected_agent_tool_ids).include?('handoff')
   rescue StandardError
     false

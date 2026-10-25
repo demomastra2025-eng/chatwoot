@@ -57,9 +57,29 @@ RSpec.describe Captain::AgentRunContext do
     session.update_routing(actor_id: specialist.id)
     specialist.update!(active: false)
 
-    described_class.new(entry: entry.reload, conversation: conversation.reload).prepare(context)
+    runtime = described_class.new(entry: entry.reload, conversation: conversation.reload)
+    runtime.prepare(context)
 
     expect(context[:routing_current_agent_id]).to be_nil
+    # Released in the session: the response builder reads the anchor until the router gives the conversation to an agent.
+    expect(runtime.holder).to eq(entry)
+    expect(session.read).to include('current_assistant_id' => nil, 'routing_revision' => 2)
+    expect(Captain::Conversation::AgentOwnership.new(conversation: conversation.reload).current_actor_id).to eq(entry.id)
+  end
+
+  it 'names the agent that holds the conversation as its holder, also when the router may no longer choose it' do
+    runtime = described_class.new(entry: entry, conversation: conversation)
+    runtime.prepare(context)
+    expect(runtime.holder).to eq(entry)
+
+    session.update_routing(actor_id: specialist.id)
+    specialist.update!(config: specialist.config.merge('patient_routing' => false))
+    runtime = described_class.new(entry: entry, conversation: conversation.reload)
+    runtime.prepare(context)
+
+    expect(context[:routing_current_agent_id]).to be_nil
+    expect(runtime.holder).to eq(specialist)
+    expect(session.read['current_assistant_id']).to eq(specialist.id)
   end
 
   it 'prepares the one agent of a channel at once: there is nothing to decide' do

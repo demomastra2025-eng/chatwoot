@@ -99,6 +99,24 @@ class Captain::Conversation::AgentSession
     end
   end
 
+  # The agent that held the conversation is no longer an agent of the channel (switched off, removed): the conversation has no
+  # holder again (the router chooses among all agents; the response builder reads the channel's anchor), and the routing
+  # revision moves on, so a reply or a follow-up of that agent is dropped.
+  def release_holder(actor_id)
+    change do |data|
+      expected = @task_revision || data['task_revision'].to_i
+      raise Captain::Conversation::ControlGenerationStaleError, 'Agent routing changed during this run' if data['task_revision'].to_i != expected
+
+      if data['current_assistant_id'].present? && data['current_assistant_id'].to_i == actor_id.to_i
+        data['current_assistant_id'] = nil
+        data['routing_revision'] = data['routing_revision'].to_i + 1
+        data['task_revision'] = expected + 1
+      end
+      @task_revision = data['task_revision'].to_i
+      data['routing_revision'].to_i
+    end
+  end
+
   # peer_part: the actor is the owner of a council part, which does not hold the conversation. Its part is still checked
   # against its own executor, only the current agent of the conversation is not.
   def reserve_operation(scope:, tool:, arguments:, actor_id:, peer_part: false)
