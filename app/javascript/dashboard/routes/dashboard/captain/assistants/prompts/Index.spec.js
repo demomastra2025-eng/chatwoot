@@ -11,6 +11,8 @@ const assistantRecord = {
   description: 'Own instructions',
   config: {},
 };
+const currentUser = ref({ type: 'User', role: 'administrator' });
+const isImpersonating = ref(false);
 
 const PageLayoutStub = defineComponent({
   name: 'PageLayout',
@@ -101,9 +103,16 @@ vi.mock('dashboard/composables/store', () => ({
     if (key === 'captainAssistants/getUIFlags') {
       return ref({ fetchingItem: false });
     }
+    if (key === 'getCurrentUser') {
+      return currentUser;
+    }
 
     return ref({});
   },
+}));
+
+vi.mock('dashboard/composables/useImpersonation', () => ({
+  useImpersonation: () => ({ isImpersonating }),
 }));
 
 vi.mock('dashboard/components-next/captain/PageLayout.vue', () => ({
@@ -144,6 +153,8 @@ describe('Captain prompts page', () => {
       assistant: { description: 'Updated instruction' },
     });
     assistantRecord.description = 'Own instructions';
+    currentUser.value = { type: 'User', role: 'administrator' };
+    isImpersonating.value = false;
   });
 
   it('uses the assistant loaded by the route guard without another show request', () => {
@@ -165,19 +176,45 @@ describe('Captain prompts page', () => {
     );
   });
 
-  it('keeps the tall prompt editor and compiled preview available', () => {
+  it('keeps the tall prompt editor', () => {
     const wrapper = buildWrapper();
     const form = wrapper.findComponent({ name: 'AssistantBasicSettingsForm' });
     expect(form.props('descriptionMaxLength')).toBe(20000);
     expect(form.props('descriptionInitialHeight')).toBe(420);
     expect(form.props('descriptionMinHeight')).toBe('26rem');
-    expect(wrapper.findComponent({ name: 'PromptInspector' }).exists()).toBe(
-      true
-    );
     expect(
       wrapper.findComponent({ name: 'AssistantRulesManager' }).exists()
     ).toBe(false);
     expect(wrapper.find('[data-testid="page-save"]').exists()).toBe(true);
+  });
+
+  it.each([
+    ['administrator', { type: 'User', role: 'administrator' }],
+    ['agent', { type: 'User', role: 'agent' }],
+    ['user without a type', { role: 'administrator' }],
+  ])('hides the compiled prompt from a clinic %s', (_label, user) => {
+    currentUser.value = user;
+    const wrapper = buildWrapper();
+    expect(wrapper.findComponent({ name: 'PromptInspector' }).exists()).toBe(
+      false
+    );
+    expect(wrapper.text()).toContain('basic-form');
+  });
+
+  it('shows the compiled prompt to a super admin', () => {
+    currentUser.value = { type: 'SuperAdmin', role: 'administrator' };
+    const wrapper = buildWrapper();
+    expect(wrapper.findComponent({ name: 'PromptInspector' }).exists()).toBe(
+      true
+    );
+  });
+
+  it('shows the compiled prompt to a super admin inside the clinic', () => {
+    isImpersonating.value = true;
+    const wrapper = buildWrapper();
+    expect(wrapper.findComponent({ name: 'PromptInspector' }).exists()).toBe(
+      true
+    );
   });
 
   it('allows editing an existing prompt enlarged by preserved legacy rules', () => {

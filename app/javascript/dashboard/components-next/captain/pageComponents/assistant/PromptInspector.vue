@@ -6,6 +6,7 @@ import CaptainAssistantAPI from 'dashboard/api/captain/assistant';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import { normalizePromptPreviewText } from 'dashboard/helper/captainPromptPreview';
+import { usePromptInspectorAccess } from 'dashboard/composables/captain/usePromptInspectorAccess';
 import SettingsInfoDialog from './settings/SettingsInfoDialog.vue';
 
 const props = defineProps({
@@ -28,6 +29,8 @@ const props = defineProps({
 });
 
 const { t } = useI18n();
+// The platform team only: for a clinic user nothing is requested or drawn.
+const { canInspectPrompts } = usePromptInspectorAccess();
 
 const PROMPT_HEIGHT_STORAGE_PREFIX = 'captain:prompt-preview-height:';
 const DEFAULT_PROMPT_HEIGHT = 360;
@@ -152,7 +155,7 @@ const resetPromptHeight = key => {
 };
 
 const loadPreview = async () => {
-  if (!props.assistantId) {
+  if (!canInspectPrompts.value || !props.assistantId) {
     preview.value = null;
     return;
   }
@@ -200,8 +203,10 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex min-w-0 flex-col gap-4">
+    <!-- Nothing for a clinic user: the compiled prompt is for the platform team. -->
+    <template v-if="!canInspectPrompts" />
     <div
-      v-if="isLoading"
+      v-else-if="isLoading"
       class="rounded-2xl border border-n-weak bg-n-solid-1 px-4 py-6 text-sm text-n-slate-11"
     >
       <div class="flex items-center gap-3">

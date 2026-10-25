@@ -35,8 +35,9 @@ class Captain::AssistantPolicy < ApplicationPolicy
     true
   end
 
+  # The compiled prompt is for the platform team only, never for a clinic (Captain::PromptInspectorAccess).
   def prompt_preview?
-    true
+    Captain::PromptInspectorAccess.allowed?(user: user, impersonation: user_context[:super_admin_impersonation])
   end
 
   def voice_preview?

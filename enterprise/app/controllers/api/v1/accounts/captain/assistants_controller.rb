@@ -15,6 +15,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   VOICE_SETTINGS_SCALAR_FIELDS = (Telephony::AiVoice::VoiceSettingsDefaults::DEFAULTS.keys - VOICE_SETTINGS_ARRAY_FIELDS.keys).freeze
 
   before_action :current_account
+  before_action :hide_prompt_preview_from_clinics, only: :prompt_preview
   before_action -> { check_authorization(Captain::Assistant) }
 
   before_action :set_assistant, only: [:show, :update, :destroy, :playground, :avatar, :prompt_preview, :voice_preview]
@@ -139,6 +140,19 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   private
+
+  # The policy also needs the verified «Войти как» session to recognise a super admin inside a clinic.
+  def pundit_user
+    super.merge(super_admin_impersonation: @super_admin_impersonation)
+  end
+
+  # The compiled prompt is for the platform team only (Captain::PromptInspectorAccess). A clinic user of any
+  # role gets 404, as if the endpoint did not exist, before the assistant is even looked up.
+  def hide_prompt_preview_from_clinics
+    return if Captain::PromptInspectorAccess.allowed?(user: Current.user, impersonation: @super_admin_impersonation)
+
+    render_not_found_error('Resource could not be found')
+  end
 
   def reject_separate_rules
     attributes = params[:assistant]

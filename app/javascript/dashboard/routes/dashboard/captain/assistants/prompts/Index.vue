@@ -9,10 +9,13 @@ import { useMapGetter } from 'dashboard/composables/store';
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import AssistantBasicSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantBasicSettingsForm.vue';
 import PromptInspector from 'dashboard/components-next/captain/pageComponents/assistant/PromptInspector.vue';
+import { usePromptInspectorAccess } from 'dashboard/composables/captain/usePromptInspectorAccess';
 
 const { t } = useI18n();
 const route = useRoute();
 const store = useStore();
+// The compiled prompt is shown to the platform team only, never to a clinic.
+const { canInspectPrompts } = usePromptInspectorAccess();
 
 const promptDescriptionFormRef = ref(null);
 const PROMPT_INSTRUCTION_INITIAL_HEIGHT = 420;
@@ -77,7 +80,11 @@ const handlePromptsSave = async () => {
     <template #body>
       <div class="flex flex-col gap-6">
         <div
-          class="grid gap-6 lg:grid-cols-[minmax(0,1.02fr)_minmax(24rem,1fr)]"
+          class="grid gap-6"
+          :class="{
+            'lg:grid-cols-[minmax(0,1.02fr)_minmax(24rem,1fr)]':
+              canInspectPrompts,
+          }"
         >
           <div class="flex h-full flex-col gap-6">
             <div class="instructions-card flex h-full flex-col gap-6">
@@ -95,7 +102,7 @@ const handlePromptsSave = async () => {
             </div>
           </div>
 
-          <div class="lg:self-start">
+          <div v-if="canInspectPrompts" class="lg:self-start">
             <PromptInspector
               :assistant-id="assistant?.id"
               :assistant="assistant"
