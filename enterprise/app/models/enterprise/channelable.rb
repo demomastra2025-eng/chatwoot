@@ -1,33 +1,8 @@
 module Enterprise::Channelable
   extend ActiveSupport::Concern
 
-  WHATSAPP_WEB_RUNTIME_AUDIT_FIELDS = %w[
-    connection_state
-    lifecycle_state
-    last_error
-    last_synced_at
-    qr_code
-    sync_state
-  ].freeze
-
-  # The tokens a Weixin channel receives at runtime and its runtime snapshot. Its credentials (ilink_token, webhook_secret)
-  # stay in the entry as "[FILTERED]" (AuditLogs::SecretFilter).
-  WEIXIN_SENSITIVE_AUDIT_FIELDS = %w[
-    context_token
-    context_tokens
-    last_error
-    runtime_state
-    token_fingerprint
-  ].freeze
-
-  # The state of the Telegram session the gateway reports all day. The runtime snapshot (runtime_state) keeps only the
-  # operator's settings and the session string, the API hash and the webhook secret are written as "[FILTERED]".
-  TELEGRAM_PERSONAL_RUNTIME_AUDIT_FIELDS = %w[
-    connection_state
-    lifecycle_state
-    last_error
-    last_synced_at
-  ].freeze
+  # The columns the runtime of a channel rewrites all day (AuditLogs::SecretFilter::RUNTIME_COLUMNS) never reach its audit log;
+  # its credentials are written as "[FILTERED]".
 
   # Active support concern has `included` which changes the order of the method lookup chain
   # https://stackoverflow.com/q/40061982/3824876
@@ -70,19 +45,10 @@ module Enterprise::Channelable
       changes.key?('message_templates_last_updated')
     end
 
-    # The same filter as the audit-log API and the redaction task: a change of the runtime snapshot is written only when the
-    # operator's own settings changed, and only those settings
+    # The same filter as the audit-log API and the redaction task: the runtime columns of the channel are left out, and a change
+    # of the runtime snapshot is written only when the operator's own settings changed, and only those settings
     def filtered_audited_changes
-      AuditLogs::SecretFilter.filter(saved_changes.to_h.except('updated_at', *runtime_audit_fields))
-    end
-
-    def runtime_audit_fields
-      case self
-      when ::Channel::WhatsappWeb then WHATSAPP_WEB_RUNTIME_AUDIT_FIELDS
-      when ::Channel::Weixin then WEIXIN_SENSITIVE_AUDIT_FIELDS
-      when ::Channel::TelegramPersonal then TELEGRAM_PERSONAL_RUNTIME_AUDIT_FIELDS
-      else []
-      end
+      AuditLogs::SecretFilter.filter(saved_changes.to_h.except('updated_at'), channel_type: self.class.name)
     end
   end
 end

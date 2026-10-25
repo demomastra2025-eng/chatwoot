@@ -14,10 +14,8 @@ RSpec.describe AuditLogs::SecretFilter do
   describe '.filter' do
     it 'writes the credential columns as [FILTERED] and keeps blank sides and the other columns' do
       filtered = described_class.filter(
-        'string_session' => [nil, '1BVtsOK8Bu'],
-        'api_hash' => %w[old-hash new-hash],
-        'bot_token' => ['123:abc', ''],
-        'phone_number' => ['+77010000001', '+77010000002']
+        { 'string_session' => [nil, '1BVtsOK8Bu'], 'api_hash' => %w[old-hash new-hash], 'bot_token' => ['123:abc', ''],
+          'phone_number' => ['+77010000001', '+77010000002'] }
       )
 
       expect(filtered).to eq(
@@ -29,12 +27,11 @@ RSpec.describe AuditLogs::SecretFilter do
     end
 
     it 'filters the credential keys inside a JSON column and keeps the rest of it' do
-      filtered = described_class.filter(
-        'provider_config' => [
-          { 'api_key' => 'old-key', 'phone_number_id' => '1', 'verification_pin' => '123456' },
-          { 'api_key' => 'new-key', 'phone_number_id' => '1', 'auth' => { 'refresh_token' => 'r', 'expires_on' => 'x' } }
-        ]
-      )
+      config = [
+        { 'api_key' => 'old-key', 'phone_number_id' => '1', 'verification_pin' => '123456' },
+        { 'api_key' => 'new-key', 'phone_number_id' => '1', 'auth' => { 'refresh_token' => 'r', 'expires_on' => 'x' } }
+      ]
+      filtered = described_class.filter({ 'provider_config' => config })
 
       expect(filtered['provider_config']).to eq(
         [
@@ -49,19 +46,49 @@ RSpec.describe AuditLogs::SecretFilter do
       new_settings = { 'sync_groups' => true, 'ignored_chat_ids' => %w[5] }
       full_snapshot = old_settings.merge('qr_login_url' => 'tg://login?token=abc', 'history_sync_checkpoint' => { 'dialog_user_ids' => %w[1 2] })
 
-      expect(described_class.filter('runtime_state' => [full_snapshot, full_snapshot.merge(new_settings)])).to eq(
+      expect(described_class.filter({ 'runtime_state' => [full_snapshot, full_snapshot.merge(new_settings)] })).to eq(
         'runtime_state' => [old_settings, new_settings]
       )
-      expect(described_class.filter('runtime_state' => full_snapshot)).to eq('runtime_state' => old_settings)
-      expect(described_class.filter('runtime_state' => [{}, 'tg://login?token=abc'])).to eq('runtime_state' => [{}, '[FILTERED]'])
+      expect(described_class.filter({ 'runtime_state' => full_snapshot })).to eq('runtime_state' => old_settings)
+      expect(described_class.filter({ 'runtime_state' => [{}, 'tg://login?token=abc'] })).to eq('runtime_state' => [{}, '[FILTERED]'])
     end
 
     it 'leaves out a change of the runtime snapshot that keeps the settings as they were' do
       before = { 'sync_groups' => false, 'ignored_chat_ids' => [], 'history_sync_state' => 'running' }
       after = { 'sync_groups' => false, 'ignored_chat_ids' => [], 'history_sync_state' => 'completed', 'qr_login_url' => 'tg://x' }
 
-      expect(described_class.filter('runtime_state' => [before, after], 'name' => %w[a b])).to eq('name' => %w[a b])
-      expect(described_class.filter('runtime_state' => [{}, { 'qr_login_url' => 'tg://x' }])).to eq({})
+      expect(described_class.filter({ 'runtime_state' => [before, after], 'name' => %w[a b] })).to eq('name' => %w[a b])
+      expect(described_class.filter({ 'runtime_state' => [{}, { 'qr_login_url' => 'tg://x' }] })).to eq({})
+    end
+
+    # A JSON column can keep its JSON as a string (Channel::Voice#provider_config_hash reads both forms)
+    it 'filters the credential keys of a JSON column kept as a string and leaves a string with nothing to filter as it was' do
+      filtered = described_class.filter(
+        { 'provider_config' => ['{"api_key":"old-key","phone_number_id":"1"}', '{"api_key":"new-key","phone_number_id":"1"}'],
+          'additional_attributes' => ['{"chat_title":"Clinic"}', '{ not json'], 'name' => ['{x', '[a]'] }
+      )
+
+      expect(filtered['provider_config'].map { |side| JSON.parse(side) }).to eq(
+        [{ 'api_key' => '[FILTERED]', 'phone_number_id' => '1' }, { 'api_key' => '[FILTERED]', 'phone_number_id' => '1' }]
+      )
+      expect(filtered.to_json).not_to include('old-key', 'new-key')
+      expect(filtered['additional_attributes']).to eq(['{"chat_title":"Clinic"}', '{ not json'])
+      expect(filtered['name']).to eq(['{x', '[a]'])
+      expect(described_class.filter(filtered)).to eq(filtered)
+    end
+
+    # The write path leaves these out (Enterprise::Channelable); the read path and the redaction task do the same for older entries
+    it 'leaves out the runtime columns of the channel type it is given' do
+      changes = {
+        'connection_state' => %w[connecting connected], 'last_synced_at' => [nil, '2026-10-25T10:00:00Z'],
+        'last_error' => ['flood wait', nil], 'lifecycle_state' => %w[code_sent connected], 'phone_number' => %w[+7701 +7702]
+      }
+
+      expect(described_class.filter(changes, channel_type: 'Channel::TelegramPersonal')).to eq('phone_number' => %w[+7701 +7702])
+      expect(described_class.filter(changes)).to eq(changes)
+      expect(described_class.filter({ 'runtime_state' => [{}, { 'sync_groups' => true }], 'name' => %w[a b] }, channel_type: 'Channel::Weixin'))
+        .to eq('name' => %w[a b])
+      expect(described_class.filter({ 'qr_code' => [nil, 'qr'], 'sync_state' => %w[a b] }, channel_type: 'Channel::WhatsappWeb')).to eq({})
     end
 
     it 'leaves a filtered entry as it is' do
@@ -93,6 +120,26 @@ RSpec.describe AuditLogs::SecretFilter do
 
       expect(described_class.filter_audit(inbox_entry)).to eq('bot_token' => ['[FILTERED]', '[FILTERED]'])
       expect(described_class.filter_audit(account_entry)).to eq('limits' => [{}, { 'captain_tokens' => 5 }])
+    end
+
+    # The same entries the redaction task reports as unparsed and leaves as they are
+    it 'shows no changes for an entry of an inbox that is not a JSON object', :aggregate_failures do
+      ['["array-secret"]', 'text-secret', { 'string_session' => 'nested' }.to_json.to_json].each do |stored|
+        expect(described_class.filter_audit(Audited::Audit.new(auditable_type: 'Inbox', audited_changes: stored))).to eq({})
+      end
+      expect(described_class.filter_audit(Audited::Audit.new(auditable_type: 'Inbox', audited_changes: ['array-secret']))).to eq({})
+      expect(described_class.filter_audit(Audited::Audit.new(auditable_type: 'Inbox', audited_changes: nil))).to be_nil
+      expect(described_class.filter_audit(Audited::Audit.new(auditable_type: 'Account', audited_changes: 'text'))).to eq('text')
+    end
+
+    it 'leaves out the runtime columns of the channel of the inbox' do
+      inbox = create(:channel_telegram_personal).inbox
+      entry = Audited::Audit.new(
+        auditable: inbox, audited_changes: { 'connection_state' => %w[connecting connected], 'last_synced_at' => [nil, 'now'],
+                                             'string_session' => [nil, 'stored-session'] }
+      )
+
+      expect(described_class.filter_audit(entry)).to eq('string_session' => [nil, '[FILTERED]'])
     end
   end
 

@@ -54,10 +54,10 @@ RSpec.describe AuditLogs::ChannelSecretRedaction do
     output = run_task
 
     expect(output).to include(
-      { inbox_id: inbox.id, account_id: inbox.account_id, rows: 2, unparsed: 0,
+      { inbox_id: inbox.id, account_id: inbox.account_id, rows: 2, empty: 0, unparsed: 0,
         keys: { 'api_hash' => 1, 'runtime_state' => 1, 'string_session' => 1 } }.to_json
     )
-    expect(output).to include('"mode":"dry_run"', '"rows":2', '"inboxes":1', '"unparsed":0,"unparsed_ids":[]')
+    expect(output).to include('"mode":"dry_run"', '"rows":2', '"empty":0,"deleted":0', '"inboxes":1', '"unparsed":0,"unparsed_ids":[]')
     expect(output).not_to include(session, 'stored-login-token', 'stored-old-hash', '+7701')
     expect([session_row_id, string_row_id, clean_row_id].map { |id| stored(id) }).to eq(before)
   end
@@ -115,9 +115,61 @@ RSpec.describe AuditLogs::ChannelSecretRedaction do
     output = run_task(APPLY: '1')
 
     expect(output).to include(%("unparsed":2,"unparsed_ids":[#{array_row_id},#{text_row_id}]))
-    expect(output).to include({ inbox_id: inbox.id, account_id: inbox.account_id, rows: 2, unparsed: 2 }.to_json.delete_suffix('}'))
+    expect(output).to include({ inbox_id: inbox.id, account_id: inbox.account_id, rows: 2, empty: 0, unparsed: 2 }.to_json.delete_suffix('}'))
     expect(output).not_to include('stored-array-secret', 'stored-text-secret')
     expect([array_row_id, text_row_id].map { |id| stored(id) }).to eq(before)
+  end
+
+  # A JSON column kept as a string: its credential keys are filtered and the row stays a string inside the object
+  it 'filters the credentials of a JSON column kept as a string' do
+    provider_row_id = insert_audit(inbox, { 'provider_config' => ['{"api_key":"stored-old-key"}', '{"api_key":"stored-new-key"}'] })
+
+    report = described_class.new(apply: false, inbox_ids: [inbox.id]).perform
+    expect(report.inboxes[inbox.id][:keys]).to include('provider_config' => 1)
+
+    described_class.new(apply: true, inbox_ids: [inbox.id]).perform
+
+    sides = JSON.parse(stored(provider_row_id)['raw'])['provider_config']
+    expect(sides.map { |side| JSON.parse(side) }).to eq([{ 'api_key' => '[FILTERED]' }, { 'api_key' => '[FILTERED]' }])
+    expect(described_class.new(apply: true, inbox_ids: [inbox.id]).perform.rows).to eq(0)
+  end
+
+  # The runtime columns of the channel are left out as the write path leaves them out; an entry of nothing else ends up empty
+  describe 'the runtime noise of a channel' do
+    let!(:noise_row_id) do
+      insert_audit(inbox, { 'connection_state' => %w[connecting connected], 'last_synced_at' => [nil, '2026-10-01T10:00:00Z'],
+                            'runtime_state' => [{ 'history_sync_state' => 'running' }, { 'history_sync_state' => 'completed' }] })
+    end
+    let!(:mixed_row_id) { insert_audit(inbox, { 'last_error' => ['stored-error-text', nil], 'phone_number' => %w[+7701 +7702] }) }
+
+    it 'counts the entries that would end up empty on a dry run' do
+      output = run_task
+
+      expect(output).to include(
+        { inbox_id: inbox.id, account_id: inbox.account_id, rows: 4, empty: 1, unparsed: 0,
+          keys: { 'api_hash' => 1, 'connection_state' => 1, 'last_error' => 1, 'last_synced_at' => 1, 'runtime_state' => 2,
+                  'string_session' => 1 } }.to_json
+      )
+      expect(output).to include('"rows":4,"empty":1,"deleted":0')
+      expect(output).not_to include('stored-error-text')
+    end
+
+    it 'writes an empty entry back as {} and drops the runtime columns of the others with APPLY=1' do
+      run_task(APPLY: '1')
+
+      expect(JSON.parse(stored(noise_row_id)['raw'])).to eq({})
+      expect(JSON.parse(stored(mixed_row_id)['raw'])).to eq('phone_number' => %w[+7701 +7702])
+      expect(run_task(APPLY: '1')).to include('"rows":0')
+    end
+
+    it 'deletes the entries left empty with DELETE_EMPTY=1 and only with APPLY=1' do
+      expect(run_task(DELETE_EMPTY: '1')).to include('"mode":"dry_run"', '"empty":1,"deleted":0')
+      expect(Audited::Audit.exists?(noise_row_id)).to be(true)
+
+      expect(run_task(APPLY: '1', DELETE_EMPTY: '1')).to include('"mode":"applied"', '"empty":1,"deleted":1')
+      expect(Audited::Audit.exists?(noise_row_id)).to be(false)
+      expect(JSON.parse(stored(mixed_row_id)['raw'])).to eq('phone_number' => %w[+7701 +7702])
+    end
   end
 
   it 'touches only the inboxes it is given' do
