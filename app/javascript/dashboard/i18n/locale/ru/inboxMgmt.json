@@ -1483,6 +1483,7 @@
         "IGNORED_CHAT_ID_REQUIRED": "Введите Telegram chat/user ID",
         "IGNORED_CHATS_SUCCESS": "Список игнорируемых Telegram чатов сохранён",
         "IGNORED_CHATS_ERROR": "Не удалось сохранить список игнорируемых Telegram чатов",
+        "SERVICE_ACCOUNT_SKIPPED": "Сообщения служебного аккаунта Telegram (777000: коды входа и уведомления о входе) никогда не импортируются.",
         "DIAGNOSTICS_SECTION": "Служебная диагностика",
         "DIAGNOSTICS_SECTION_SUBTITLE": "Минимальный набор технических сигналов для быстрой проверки состояния канала.",
         "RAW_DIAGNOSTICS": "Сырой JSON диагностики",
