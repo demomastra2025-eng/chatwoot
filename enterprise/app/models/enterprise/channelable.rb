@@ -10,13 +10,23 @@ module Enterprise::Channelable
     sync_state
   ].freeze
 
+  # The tokens a Weixin channel receives at runtime and its runtime snapshot. Its credentials (ilink_token, webhook_secret)
+  # stay in the entry as "[FILTERED]" (AuditLogs::SecretFilter).
   WEIXIN_SENSITIVE_AUDIT_FIELDS = %w[
     context_token
     context_tokens
-    ilink_token
     last_error
+    runtime_state
     token_fingerprint
-    webhook_secret
+  ].freeze
+
+  # The state of the Telegram session the gateway reports all day. The runtime snapshot (runtime_state) keeps only the
+  # operator's settings and the session string, the API hash and the webhook secret are written as "[FILTERED]".
+  TELEGRAM_PERSONAL_RUNTIME_AUDIT_FIELDS = %w[
+    connection_state
+    lifecycle_state
+    last_error
+    last_synced_at
   ].freeze
 
   # Active support concern has `included` which changes the order of the method lookup chain
@@ -61,11 +71,28 @@ module Enterprise::Channelable
     end
 
     def filtered_audited_changes
-      changes = saved_changes.except('updated_at', 'secret')
-      return changes.except(*WHATSAPP_WEB_RUNTIME_AUDIT_FIELDS) if is_a?(::Channel::WhatsappWeb)
-      return changes.except(*WEIXIN_SENSITIVE_AUDIT_FIELDS) if is_a?(::Channel::Weixin)
+      changes = saved_changes.to_h.except('updated_at', *runtime_audit_fields)
+      keep_runtime_settings_only!(changes)
 
-      changes
+      AuditLogs::SecretFilter.filter(changes)
+    end
+
+    # A change of the runtime snapshot is written only when the operator's own settings changed, and only those settings
+    def keep_runtime_settings_only!(changes)
+      key = AuditLogs::SecretFilter::RUNTIME_STATE
+      return unless changes.key?(key)
+
+      settings = AuditLogs::SecretFilter.runtime_settings_change(changes.delete(key))
+      changes[key] = settings if settings
+    end
+
+    def runtime_audit_fields
+      case self
+      when ::Channel::WhatsappWeb then WHATSAPP_WEB_RUNTIME_AUDIT_FIELDS
+      when ::Channel::Weixin then WEIXIN_SENSITIVE_AUDIT_FIELDS
+      when ::Channel::TelegramPersonal then TELEGRAM_PERSONAL_RUNTIME_AUDIT_FIELDS
+      else []
+      end
     end
   end
 end
