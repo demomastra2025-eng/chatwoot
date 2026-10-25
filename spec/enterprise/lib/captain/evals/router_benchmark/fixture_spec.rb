@@ -38,7 +38,7 @@ RSpec.describe Captain::Evals::RouterBenchmark::Fixture do
     committed = JSON.parse(File.read(Rails.root.join('script/captain/router_benchmark/router_scenarios.json')))
     ids = committed['suites'].flat_map { |suite| suite['scenarios'].pluck('id') }
 
-    expect(ids.size).to eq(71)
+    expect(ids.size).to eq(75)
     expect(ids).to include('SZ01', 'A11', 'I06')
     traps = committed['suites'].flat_map { |suite| suite['scenarios'] }.filter_map { |scenario| scenario['trap'] }
     expect(traps.tally).to eq('human' => 3, 'injection' => 4, 'false_council' => 6)
@@ -51,7 +51,10 @@ RSpec.describe Captain::Evals::RouterBenchmark::Fixture do
 
     expect(sticky.values.sum(&:size)).to be >= 10
     expect(sticky.keys).to contain_exactly('aliya_owner18', 'intermedical', 'sezim_bogenbay')
-    expect(sticky.values).to all(satisfy { |items| items.pluck('type').uniq.size == 2 })
+    expect(sticky.values).to all(satisfy { |items| items.pluck('type').uniq.size >= 2 })
+    # A short reply mid-booking without a sticky agent (the first suggestion of a dialog) must reach the agent of the booking.
+    no_sticky_booking = ->(item) { item['type'] == 'suggestion_no_sticky' && item['expected'] != "route_agent_#{item['anchor']}" }
+    expect(sticky.values).to all(satisfy { |items| items.any?(&no_sticky_booking) })
     expect(sticky.values.flatten.reject { |item| item.key?('sticky') }).to all(include('suggestion' => true, 'anchor' => be_present))
     expect(sticky.values.flatten.select { |item| item.key?('sticky') }).to all(include('current' => nil))
   end

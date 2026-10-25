@@ -7,7 +7,7 @@
 #
 # A reply suggestion scenario sets sticky (the sticky agent of the dialog, see Captain::ReplySuggestion::StickyAgent: the current
 # agent of the turn while the saved session has none) or suggestion: true, and may set anchor (the anchor of the channel, which
-# answers a suggestion that asks for nothing any agent handles while no agent leads the dialog).
+# answers a suggestion whose answers name no agent while no agent leads the dialog, see DecisionRouter::Questions).
 class Captain::Evals::RouterBenchmark::Fixture
   class Invalid < StandardError; end
 

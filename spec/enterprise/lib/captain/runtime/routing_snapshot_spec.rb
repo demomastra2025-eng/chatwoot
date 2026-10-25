@@ -106,13 +106,13 @@ RSpec.describe Captain::Runtime::RoutingSnapshot do
     expect(narrowed.human_available).to be(true)
   end
 
-  it 'counts a reply of at most eight words as a short reply' do
-    short = described_class.new(agents: described_class.agents_for(candidates), latest_message: 'Иванова Мария, 12.03.1985')
-    long = described_class.new(agents: described_class.agents_for(candidates),
-                               latest_message: 'Хорошо, давайте завтра на 16:30, меня зовут Ахметов Ерлан, спасибо')
+  it 'is mid-dialog when the dialog has messages before the turn' do
+    first = described_class.new(agents: described_class.agents_for(candidates), latest_message: 'Здравствуйте')
+    later = described_class.new(agents: described_class.agents_for(candidates), latest_message: 'Да, на 14:00',
+                                recent_messages: [{ role: 'clinic', text: 'Свободно 14:00 и 15:30' }])
 
-    expect(short).to be_short_reply
-    expect(long).not_to be_short_reply
+    expect(first).not_to be_mid_dialog
+    expect(later).to be_mid_dialog
   end
 
   it 'takes the sticky agent of a reply suggestion scenario as the current agent of the turn' do

@@ -93,11 +93,23 @@
             { "role": "patient", "text": "Давайте на 14:00, ИИН 900101300123" },
             { "role": "agent", "text": "Готово: УЗИ щитовидной железы завтра в 14:00 у Салимовой К.В." } ],
           "message": "Спасибо! И ещё запишите меня к эндокринологу Кудабаевой на тот же день после УЗИ", "expected": "route_agent_77" },
-        { "id": "AS05", "type": "suggestion_short_reply", "title": "suggestion: thanks with no sticky agent goes to the anchor",
+        { "id": "AS05", "type": "suggestion_short_reply", "title": "suggestion: thanks with no sticky agent mid-dialog: no agent is asked for, the escalation leaves it to the anchor",
           "current": null, "suggestion": true, "anchor": 77,
           "history": [
             { "role": "agent", "text": "Здравствуйте! Ваша запись подтверждена, ждём вас." } ],
-          "message": "Спасибо!", "expected": "route_agent_77" }
+          "message": "Спасибо!", "expected": "route_agent_77" },
+        { "id": "AN01", "type": "suggestion_no_sticky", "title": "suggestion: time choice mid-booking with no sticky agent goes to the ultrasound agent, not the anchor",
+          "current": null, "suggestion": true, "anchor": 77,
+          "history": [
+            { "role": "patient", "text": "Здравствуйте, хочу сделать УЗИ щитовидной железы" },
+            { "role": "agent", "text": "Здравствуйте! УЗИ щитовидной железы завтра у Салимовой К.В.: свободно 11:30, 14:00 и 15:30. Какое время удобно? Подскажите ФИО и ИИН." } ],
+          "message": "Да, на 14:00", "expected": "route_agent_109" },
+        { "id": "AN02", "type": "suggestion_no_sticky", "title": "suggestion: an IIN alone mid-booking with no sticky agent goes to the ultrasound agent",
+          "current": null, "suggestion": true, "anchor": 77,
+          "history": [
+            { "role": "patient", "text": "Давайте на УЗИ щитовидки завтра в 14:00, Серик Ахметов" },
+            { "role": "agent", "text": "Хорошо, Серик. Подскажите, пожалуйста, ваш ИИН для записи на УЗИ." } ],
+          "message": "900101300123", "expected": "route_agent_109" }
       ]
     },
     {
@@ -183,7 +195,13 @@
           "current": null, "sticky": 113,
           "history": [
             { "role": "agent", "text": "Вы записаны на ФГДС в четверг в 12:00." } ],
-          "message": "Хорошо, а капельницу мне тоже у вас можно поставить на этой неделе?", "expected": "route_agent_90" }
+          "message": "Хорошо, а капельницу мне тоже у вас можно поставить на этой неделе?", "expected": "route_agent_90" },
+        { "id": "IN01", "type": "suggestion_no_sticky", "title": "suggestion: FGDS time choice mid-booking with no sticky agent goes to the diagnostics agent, not the anchor",
+          "current": null, "suggestion": true, "anchor": 85,
+          "history": [
+            { "role": "patient", "text": "Хочу сделать ФГДС на этой неделе" },
+            { "role": "agent", "text": "ФГДС можно в четверг: свободно 10:00 и 12:00. Подготовка — не есть 8 часов. Какое время удобно? Напишите ФИО и дату рождения." } ],
+          "message": "Давайте в 12:00", "expected": "route_agent_113" }
       ]
     },
     {
@@ -269,7 +287,13 @@
           "current": null, "sticky": 84, "language": "kk",
           "history": [
             { "role": "agent", "text": "Сіз жексенбі күні 11:00-де Ағабекке консультацияға жазылдыңыз." } ],
-          "message": "Консультациядан кейін сол күні «Кукушка» жуу процедурасын жасатуға бола ма?", "expected": "route_agent_119" }
+          "message": "Консультациядан кейін сол күні «Кукушка» жуу процедурасын жасатуға бола ма?", "expected": "route_agent_119" },
+        { "id": "SN01", "type": "suggestion_no_sticky", "title": "suggestion: Kazakh time choice mid-booking with no sticky agent goes to the procedures agent, not the anchor",
+          "current": null, "suggestion": true, "anchor": 84, "language": "kk",
+          "history": [
+            { "role": "patient", "text": "Ертеңге «Кукушка» жасатқым келеді" },
+            { "role": "agent", "text": "Ертең бос уақыт: 16:30 және 17:00. Қай уақыт ыңғайлы? Аты-жөніңізді жазыңыз." } ],
+          "message": "Иә, 17:00 болады", "expected": "route_agent_119" }
       ]
     }
   ]

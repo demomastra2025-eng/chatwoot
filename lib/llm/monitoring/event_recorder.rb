@@ -73,7 +73,7 @@ class Llm::Monitoring::EventRecorder
     decision_key kind target_ids decided_by confidence first_choice first_confidence first_answers first_model chain_position escalated
     escalation_trigger escalation_reason guard criteria_count candidate_count first_message mode latency_chain_ms
     latency_escalation_ms latency_total_ms reason models_tried routing_request_id decision_criteria_count escalation_choice
-    parts_count split_fallback settled
+    parts_count split_fallback default_to
   ].freeze
   CHAT_ACCOUNTING_KEYS = %w[
     usage_scope request_id parent_request_id trace_id session_id account_id user_id assistant_id conversation_id

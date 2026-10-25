@@ -20,16 +20,13 @@ class Captain::Runtime::RoutingSnapshot
 
   Agent = Struct.new(:id, :label, :card, keyword_init: true)
 
-  # A reply of at most this many words is a short reply («Да, на 14:00», an IIN, «Спасибо»).
-  SHORT_REPLY_WORDS = 8
-
   attr_reader :clinic, :patient_language, :current_agent_id, :agents, :recent_messages, :latest_message, :open_questions,
               :visited_agent_ids, :trail, :human_available, :source, :anchor_agent_id
 
   # agents: [Agent] (required); latest_message (required); clinic, patient_language, current_agent_id, recent_messages,
   # open_questions, visited_agent_ids, trail (the last routing decisions, oldest first: { 'kind', 'from', 'to' => [ids] }),
   # human_available, source. suggestion: the turn of a reply suggestion; anchor_agent_id: the anchor of its channel, which answers
-  # a suggestion that asks for nothing any agent handles while no agent leads the dialog (see DecisionRouter::Questions).
+  # a suggestion whose answers name no agent while no agent leads the dialog (see DecisionRouter::Questions).
   def initialize(**attributes)
     @agents = Array(attributes.fetch(:agents))
     @latest_message = attributes.fetch(:latest_message).to_s.strip.first(LATEST_LIMIT)
@@ -47,10 +44,9 @@ class Captain::Runtime::RoutingSnapshot
     @suggestion
   end
 
-  # The latest message is a short reply: a time, a name, a date, an IIN, a confirmation, thanks.
-  def short_reply?
-    words = @latest_message.split(/\s+/).compact_blank
-    words.any? && words.size <= SHORT_REPLY_WORDS
+  # The dialog has messages before the turn (the patient's unanswered messages are the turn itself).
+  def mid_dialog?
+    @recent_messages.any?
   end
 
   def agent(id)

@@ -188,46 +188,67 @@ RSpec.describe Captain::Runtime::DecisionRouter do
   describe 'a reply suggestion' do
     let(:sticky) { 119 }
     let(:message) { 'Да, на 16:30' }
+    let(:history) { [{ role: 'clinic', text: 'Свободно 16:30 и 17:00. Какое время удобно?' }] }
     let(:snapshot) do
       Captain::Runtime::RoutingSnapshot.new(agents: agents, latest_message: message, current_agent_id: sticky, human_available: true,
-                                            suggestion: true, anchor_agent_id: 84)
+                                            recent_messages: history, suggestion: true, anchor_agent_id: 84)
     end
 
-    it 'keeps a short reply with the sticky agent without the escalation, whatever the confidence' do
-      answer_chain(chain_answer('stay_current', yes: [119], confidences: { 'include_agent_84' => 0.55 }))
+    it 'keeps a confident short reply with the sticky agent without the escalation' do
+      answer_chain(chain_answer('stay_current', yes: [119]))
       expect(described_class::Escalation).not_to receive(:new)
 
-      expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalated: false, escalation_trigger: nil,
-                                               settled: 'short_reply', first_confidence: 0.55)
+      expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalated: false, escalation_trigger: nil, default_to: nil)
     end
 
-    it 'gives a turn that asks for nothing any agent handles to the sticky agent without the escalation' do
-      answer_chain(chain_answer('route_agent', confidence: 0.5))
-      expect(described_class::Escalation).not_to receive(:new)
+    it 'escalates a short reply kept with the sticky agent at a low confidence, as any other turn' do
+      answer_chain(chain_answer('stay_current', yes: [119], confidences: { 'include_agent_84' => 0.3 }))
+      escalate_to(choices('stay_current', yes: [119]))
 
-      expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalated: false, settled: 'default')
+      expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalated: true, escalation_trigger: 'low_confidence',
+                                               first_confidence: 0.3)
+    end
+
+    it 'gives answers that name no agent to the sticky agent, and escalates them at a low confidence' do
+      answer_chain(chain_answer('route_agent'), chain_answer('route_agent', confidence: 0.5))
+      escalate_to(choices('route_agent'))
+
+      expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalated: false, default_to: 'current')
+      expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalated: true, escalation_trigger: 'low_confidence',
+                                               default_to: 'current')
     end
 
     context 'without a sticky agent' do
       let(:sticky) { nil }
-      let(:message) { 'Спасибо!' }
 
-      it 'gives a turn whose answers are all no to the anchor without the escalation' do
-        answer_chain(chain_answer('route_agent', confidence: 0.6))
-        expect(described_class::Escalation).not_to receive(:new)
+      it 'escalates a short reply mid-dialog whose answers name no agent: the escalation finds the agent of the booking' do
+        answer_chain(chain_answer('route_agent', confidence: 0.95))
+        escalation = escalate_to(choices('route_agent', yes: [119]))
 
-        expect(router.decide).to have_attributes(key: 'route_agent_84', kind: 'agent', agent_ids: [84], escalated: false, settled: 'default')
+        expect(router.decide).to have_attributes(key: 'route_agent_119', agent_ids: [119], escalated: true, escalation_trigger: 'inconsistent',
+                                                 default_to: nil)
+        expect(escalation).to have_received(:choose)
       end
-    end
 
-    context 'with a long message that the decision model keeps with the sticky agent at a low confidence' do
-      let(:message) { 'Хорошо, тогда давайте завтра на 16:30, меня зовут Ахметов Ерлан, и ещё скажите, нужно ли что-то взять с собой' }
+      it 'gives the turn to the anchor when the escalation also names no agent' do
+        answer_chain(chain_answer('route_agent', confidence: 0.95))
+        escalate_to(choices('route_agent'))
 
-      it 'still escalates it' do
-        answer_chain(chain_answer('stay_current', yes: [119], confidences: { 'include_agent_120' => 0.5 }))
-        escalate_to(choices('route_agent', yes: [119]))
+        expect(router.decide).to have_attributes(key: 'route_agent_84', kind: 'agent', agent_ids: [84], escalated: true, default_to: 'anchor')
+      end
 
-        expect(router.decide).to have_attributes(key: 'stay_current', escalated: true, escalation_trigger: 'low_confidence', settled: nil)
+      context 'with the first message of the dialog' do
+        let(:history) { [] }
+        let(:message) { 'Здравствуйте!' }
+
+        it 'gives confident answers that name no agent to the anchor, and escalates them at a low confidence' do
+          answer_chain(chain_answer('route_agent'), chain_answer('route_agent', confidence: 0.6))
+          escalate_to(choices('route_agent'))
+
+          expect(router.decide).to have_attributes(key: 'route_agent_84', escalated: false, default_to: 'anchor')
+          expect(router.decide).to have_attributes(key: 'route_agent_84', escalated: true, escalation_trigger: 'low_confidence',
+                                                   default_to: 'anchor')
+        end
       end
     end
 
@@ -242,10 +263,10 @@ RSpec.describe Captain::Runtime::DecisionRouter do
       expect { router.decide }.to raise_error(described_class::UnavailableError)
     end
 
-    it 'says in its event why it did not escalate' do
-      answer_chain(chain_answer('stay_current', yes: [119], confidence: 0.6))
+    it 'says in its event that the answers named no agent and who got the turn' do
+      answer_chain(chain_answer('route_agent'))
 
-      expect(router.decide.to_event_payload).to include(settled: 'short_reply', escalated: false)
+      expect(router.decide.to_event_payload).to include(default_to: 'current', escalated: false)
     end
   end
 
