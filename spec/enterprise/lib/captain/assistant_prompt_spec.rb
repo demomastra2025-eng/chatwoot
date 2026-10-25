@@ -46,6 +46,18 @@ RSpec.describe Captain::AssistantPrompt do
     )
   end
 
+  it 'names the send time of a patient message of Saturday answered on Monday right after the clock line' do
+    monday = { now_utc: '2026-10-26T04:00:00Z', timezone: 'Asia/Almaty', message_sent_at: '2026-10-24T04:50:00Z' }
+
+    expect(variables(state: { runtime_clock: monday })[:now_text].split("\n")).to eq(
+      [
+        'Monday, 26 October 2026 (2026-10-26), 09:00, Almaty (UTC+5). Tomorrow: Tuesday, 27 October 2026 (2026-10-27).',
+        "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago): " \
+        'read its today, tomorrow and weekdays from that day.'
+      ]
+    )
+  end
+
   it 'adds the decided language in the Now block' do
     result = variables(state: { runtime_clock: clock }, patient_language: 'kk')
 

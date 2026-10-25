@@ -13,6 +13,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
   describe '#perform' do
     let(:conversation) { create(:conversation, inbox: inbox, account: account, status: :pending) }
     let(:agent_runner_service) { instance_double(Captain::Assistant::AgentRunnerService) }
+    # Every history entry carries the send time of its message; the runner writes the message after it.
+    let(:sent_time) { a_kind_of(ActiveSupport::TimeWithZone) }
 
     before do
       account.enable_features!('captain_integration', 'captain_tasks')
@@ -267,7 +269,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
     it 'passes message history to the agent runner service' do
       expect(agent_runner_service).to receive(:generate_response).with(
-        message_history: [{ content: 'Hello', role: 'user' }]
+        message_history: [{ content: 'Hello', role: 'user', sent_at: sent_time }]
       )
 
       described_class.perform_now(conversation, assistant)
@@ -303,9 +305,9 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       expect(agent_runner_service).to receive(:generate_response).with(
         message_history: [
-          { content: 'Question from WhatsApp', role: 'user' },
-          { content: 'Earlier Captain answer', role: 'assistant' },
-          { content: 'Hello', role: 'user' }
+          { content: 'Question from WhatsApp', role: 'user', sent_at: sent_time },
+          { content: 'Earlier Captain answer', role: 'assistant', sent_at: sent_time },
+          { content: 'Hello', role: 'user', sent_at: sent_time }
         ]
       )
 
@@ -366,10 +368,10 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       expect(agent_runner_service).to receive(:generate_response).with(
         message_history: [
-          { content: 'Original question', role: 'user' },
-          { content: 'Earlier Captain reply', role: 'assistant' },
-          { content: 'Static follow-up', role: 'assistant' },
-          { content: 'I still have a question', role: 'user' }
+          { content: 'Original question', role: 'user', sent_at: sent_time },
+          { content: 'Earlier Captain reply', role: 'assistant', sent_at: sent_time },
+          { content: 'Static follow-up', role: 'assistant', sent_at: sent_time },
+          { content: 'I still have a question', role: 'user', sent_at: sent_time }
         ]
       )
 
@@ -393,10 +395,10 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       expect(agent_runner_service).to receive(:generate_response).with(
         message_history: [
-          { content: 'Start', role: 'user' },
-          { content: 'Answer after transfer_to_agent_35', role: 'assistant', agent_name: 'assistant_35' },
-          { content: 'Answer after handoff_to_assistant_36', role: 'assistant', agent_name: 'assistant_36' },
-          { content: 'Continue please', role: 'user' }
+          { content: 'Start', role: 'user', sent_at: sent_time },
+          { content: 'Answer after transfer_to_agent_35', role: 'assistant', agent_name: 'assistant_35', sent_at: sent_time },
+          { content: 'Answer after handoff_to_assistant_36', role: 'assistant', agent_name: 'assistant_36', sent_at: sent_time },
+          { content: 'Continue please', role: 'user', sent_at: sent_time }
         ]
       )
 
@@ -438,13 +440,14 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       expect(agent_runner_service).to receive(:generate_response).with(
         message_history: [
-          { content: 'Start scenario', role: 'user' },
+          { content: 'Start scenario', role: 'user', sent_at: sent_time },
           {
             content: 'Scenario answer',
             role: 'assistant',
-            agent_name: 'scenario_35_andalusiya_agent'
+            agent_name: 'scenario_35_andalusiya_agent',
+            sent_at: sent_time
           },
-          { content: 'Continue please', role: 'user' }
+          { content: 'Continue please', role: 'user', sent_at: sent_time }
         ]
       )
 

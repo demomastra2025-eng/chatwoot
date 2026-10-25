@@ -59,7 +59,7 @@ class Captain::Runtime::Council
     :captain_v2_mutating_tool_executions, :captain_v2_current_tool_batch_id, :captain_v2_mutating_tool_calls_by_batch,
     :captain_v2_bound_tool_ids, :captain_v2_bound_tool_ids_by_agent, :captain_v2_bound_tool_gate, :captain_v2_completed_tool_names,
     :captain_v2_completed_tool_results, :captain_v2_completed_actions, :captain_v2_service_specific_scheduling, :captain_faq_outcome,
-    :captain_suggestion_pending_actions,
+    :captain_suggestion_pending_actions, :captain_suggestion_superseded_actions, :captain_suggestion_read_result_cache,
     :outcome_facts,
     :captain_v2_handoff_tool_called,
     :pending_human_handoff, :pending_response_cancellation,

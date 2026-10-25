@@ -40,6 +40,17 @@ class Captain::ReplySuggestion::ActionApprovalService
     'add_label_to_conversation' => 'Добавить метку к диалогу',
     'update_priority' => 'Изменить приоритет диалога'
   }.freeze
+  # What a card is, in the result the agent reads: an appointment card names its kind, every other card says it is no appointment.
+  # A contact update read as a booking made a draft report a booking that had no card.
+  APPROVAL_SCOPES = {
+    'create_appointment' => 'a new appointment booking',
+    'update_appointment' => 'a change of an existing appointment',
+    'cancel_appointment' => 'a cancellation of an existing appointment'
+  }.freeze
+  NOT_APPOINTMENT_SCOPE = 'not an appointment: it books, moves or cancels nothing'
+  # The cards of a run that a corrected card of the same action replaced (see supersede_in_run!): the suggestion leaves them out.
+  SUPERSEDED_CONTEXT_KEY = :captain_suggestion_superseded_actions
+  SUPERSEDED_REASON = 'superseded_in_run'
 
   class Error < StandardError; end
   class NotFoundError < Error; end
@@ -56,8 +67,14 @@ class Captain::ReplySuggestion::ActionApprovalService
   end
 
   class << self
-    def intercept(tool:, tool_context:, arguments:)
-      new_interception(tool: tool, tool_context: tool_context, arguments: arguments)
+    # replaces: the ids of this run's cards that the new card replaces (a booking for the same person at a corrected time, another
+    # change of the same appointment). They are withdrawn only once the new card exists; a refused call leaves them as they are.
+    def intercept(tool:, tool_context:, arguments:, replaces: [])
+      new_interception(tool: tool, tool_context: tool_context, arguments: arguments, replaces: replaces)
+    end
+
+    def appointment_tool?(tool_name)
+      canonical_tool_name(tool_name).in?(APPOINTMENT_TOOLS)
     end
 
     # The pending cards of the conversation. request_id: only the cards of that suggestion request, and after them the kept cards (of
@@ -220,7 +237,7 @@ class Captain::ReplySuggestion::ActionApprovalService
 
     private
 
-    def new_interception(tool:, tool_context:, arguments:)
+    def new_interception(tool:, tool_context:, arguments:, replaces: [])
       context = tool_context&.context || {}
       state = (tool_context&.state || context[:state] || {}).to_h.with_indifferent_access
       assistant = resolve_assistant(tool, state)
@@ -242,7 +259,33 @@ class Captain::ReplySuggestion::ActionApprovalService
         context: context, state: state, assistant: assistant, account: account,
         conversation: conversation, tool_id: tool_id, arguments: normalized_args
       )
-      render_interception_result(record)
+      proposal_result(record, context, replaces)
+    end
+
+    # The answer of a new card for the agent, once the cards of the run that it replaces are withdrawn.
+    def proposal_result(record, context, replaces)
+      replaced = supersede_in_run!(context, Array(replaces).map(&:to_s) - [record['action_id'].to_s])
+      render_interception_result(record, context, replaced)
+    end
+
+    # Withdraws the cards of this run that the new card replaces: nothing ran, so each is rejected, leaves the run's list and is
+    # remembered as superseded, and the draft and the operator see only the new card. Returns the withdrawn cards.
+    def supersede_in_run!(context, action_ids)
+      ids = own_run_card_ids(action_ids.compact_blank)
+      return [] if ids.empty?
+
+      cards = context[CONTEXT_KEY].is_a?(Array) ? context[CONTEXT_KEY] : []
+      replaced, kept = cards.partition { |item| ids.include?(item.to_h.stringify_keys['action_id'].to_s) }
+      cards.replace(kept)
+      context[SUPERSEDED_CONTEXT_KEY] = (Array(context[SUPERSEDED_CONTEXT_KEY]) + ids).uniq
+      discard!(action_ids: ids, reason: SUPERSEDED_REASON)
+      replaced
+    end
+
+    # Only a card that this run prepared is withdrawn; a card of an earlier suggestion that still waits for approval is not the run's.
+    def own_run_card_ids(ids)
+      control = Captain::ReplySuggestion::RunControl.current
+      control ? ids & control.action_ids : ids
     end
 
     def resolve_assistant(tool, state)
@@ -660,7 +703,7 @@ class Captain::ReplySuggestion::ActionApprovalService
       }
     end
 
-    def render_interception_result(record)
+    def render_interception_result(record, context = {}, replaced = [])
       JSON.generate(
         success: true,
         status: 'pending_operator_approval',
@@ -670,10 +713,33 @@ class Captain::ReplySuggestion::ActionApprovalService
         title: record['title'],
         summary: record['description'],
         details: record['details'],
-        message: 'Action prepared and queued for human operator approval (Allow / Deny) in the reply suggestion panel. ' \
-                 'It has NOT been executed in the system yet. ' \
-                 'Draft the reply for the operator without claiming that this action is already completed.'
+        message: approval_message(record, context, replaced)
       )
+    end
+
+    # Exactly what waits for the operator: this card and its kind, the card it replaced, and every card of the run with its details,
+    # so the draft names no other action and no other time.
+    def approval_message(record, context, replaced = [])
+      scope = APPROVAL_SCOPES.fetch(record['tool_name'].to_s, NOT_APPOINTMENT_SCOPE)
+      replaced_labels = replaced.filter_map { |item| card_label(item.to_h.stringify_keys) }
+      replaced_note = "It replaces #{replaced_labels.join(', ')}: that card is withdrawn, the operator no longer sees it. " if replaced_labels.any?
+      "NOT executed. Waiting for operator approval (Allow / Deny): «#{record['title']}» (#{scope}). #{replaced_note}" \
+        "Cards waiting in this run: #{waiting_card_labels(record, context).join(', ')}. " \
+        'Draft the reply without saying that any of them is done; mention a booking, change or cancellation only when its card is listed.'
+    end
+
+    def waiting_card_labels(record, context)
+      cards = (Array(context.to_h[CONTEXT_KEY]) + [record]).map { |item| item.to_h.stringify_keys }
+      cards.uniq { |item| item['action_id'].presence || item['digest'] }.filter_map { |item| card_label(item) }
+    end
+
+    # "«Записать на приём» (create_appointment: Специалист: Д-р Смит • Дата и время: ...)": the title, the tool and the details of a
+    # card, so that two cards of one tool are told apart.
+    def card_label(item)
+      return if item['title'].blank?
+
+      details = item['description'].presence unless item['description'].to_s == item['title'].to_s
+      "«#{item['title']}» (#{[item['tool_name'], details].compact_blank.join(': ')})"
     end
 
     def agent_summary(assistant)

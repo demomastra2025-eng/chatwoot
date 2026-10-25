@@ -101,6 +101,71 @@ RSpec.describe Captain::PromptClock do
     end
   end
 
+  # A patient wrote on Saturday 24 October (Almaty); the operator asks for a suggestion on Monday 26 October.
+  describe 'the time of the message being answered' do
+    let(:monday) { clock('Asia/Almaty', '2026-10-26T04:00:00Z') }
+
+    it 'names the day and the time of a message sent on an earlier day, and how long ago' do
+      line = described_class.message_line(monday.merge(message_sent_at: '2026-10-24T04:50:00Z'))
+
+      expect(line).to eq(
+        "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago): " \
+        'read its today, tomorrow and weekdays from that day.'
+      )
+      expect(described_class.message_line(monday.merge(message_sent_at: '2026-10-25T15:00:00Z'))).to include('(yesterday)')
+    end
+
+    it 'writes nothing for a message of today, a missing time or a clock without a zone' do
+      expect(described_class.message_line(monday.merge(message_sent_at: '2026-10-25T19:30:00Z'))).to be_nil
+      expect(described_class.message_line(monday)).to be_nil
+      expect(described_class.message_line(message_sent_at: '2026-10-24T04:50:00Z')).to be_nil
+    end
+
+    it 'reads the night of the message instead of the night of the clock when the message is of an earlier day' do
+      night_message = 'The patient\'s last message was sent after midnight, at 01:30: their "tomorrow" may mean that day, ' \
+                      'Saturday, 24 October 2026 (2026-10-24).'
+      monday_night = clock('Asia/Almaty', '2026-10-25T20:30:00Z')
+
+      expect(described_class.night_line(monday.merge(message_sent_at: '2026-10-23T20:30:00Z'))).to eq(night_message)
+      expect(described_class.night_line(monday.merge(message_sent_at: '2026-10-24T04:50:00Z'))).to be_nil
+      expect(described_class.night_line(monday_night.merge(message_sent_at: '2026-10-25T17:50:00Z'))).to be_nil
+      expect(described_class.night_line(monday_night.merge(message_sent_at: '2026-10-25T20:20:00Z')))
+        .to start_with('It is after midnight: a patient\'s "tomorrow" may mean today, Monday, 26 October 2026 (2026-10-26).')
+    end
+
+    # A patient writes at 01:30 on Monday and the operator asks for a suggestion at 09:00 the same day: no other line names the time
+    # of that message (it is of today), and its "tomorrow" may mean Monday.
+    it 'reads the night of a message of the same day that is answered in the morning' do
+      monday_night_message = monday.merge(message_sent_at: '2026-10-25T20:30:00Z')
+
+      expect(described_class.night_line(monday_night_message)).to eq(
+        'The patient\'s last message was sent after midnight, at 01:30: their "tomorrow" may mean that day, ' \
+        'Monday, 26 October 2026 (2026-10-26).'
+      )
+      expect(described_class.message_line(monday_night_message)).to be_nil
+      expect(described_class.night_line(monday.merge(message_sent_at: '2026-10-26T03:50:00Z'))).to be_nil
+      expect(described_class.night_line(monday.merge(message_sent_at: '2026-10-26T20:30:00Z'))).to be_nil
+    end
+  end
+
+  describe '.message_stamp and .unstamped' do
+    it 'writes the weekday, the day, the month and the time of a message in the given zone' do
+      expect(described_class.message_stamp(Time.utc(2026, 10, 24, 4, 50), 'Asia/Almaty')).to eq('[Sat 24.10 09:50]')
+      expect(described_class.message_stamp('2026-10-25T20:30:00Z', 'Asia/Almaty')).to eq('[Mon 26.10 01:30]')
+      expect(described_class.message_stamp(Time.utc(2026, 10, 24, 4, 50).in_time_zone('Asia/Almaty'), 'Europe/Moscow')).to eq('[Sat 24.10 07:50]')
+      expect(described_class.message_stamp(nil, 'Asia/Almaty')).to be_nil
+      expect(described_class.message_stamp('garbage', 'Asia/Almaty')).to be_nil
+    end
+
+    it 'removes a leading stamp only' do
+      expect(described_class.unstamped('[Sat 24.10 09:50] Можно завтра?')).to eq('Можно завтра?')
+      expect(described_class.unstamped('  [Mon 26.10 01:30]Здравствуйте')).to eq('Здравствуйте')
+      expect(described_class.unstamped('Запись [Sat 24.10 09:50] осталась')).to eq('Запись [Sat 24.10 09:50] осталась')
+      expect(described_class.unstamped('[24.10 09:50] текст')).to eq('[24.10 09:50] текст')
+      expect(described_class.unstamped(nil)).to be_nil
+    end
+  end
+
   describe '.reply_window_line' do
     let(:window) do
       { channel: 'official_whatsapp', last_incoming_at: '2026-10-12T10:00:00Z', closes_at: '2026-10-13T10:00:00Z', open_now: true }

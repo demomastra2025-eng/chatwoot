@@ -384,6 +384,9 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     }
     return unless budget.include_message?(message_hash[:content], protected: protected_ids.include?(message.id))
 
+    # The runner writes each message after its send time (see Captain::Assistant::RunPayloadHelper#stamped_content).
+    message_hash[:sent_at] = message.created_at
+
     agent_name = message_agent_name_for_history(message)
     message_hash[:agent_name] = agent_name if agent_name.present?
 

@@ -44,10 +44,13 @@ class Captain::ReplySuggestion::HistoryBuilder
     Captain::OpenAiMessageBuilderService.new(message: message, assistant: assistant, budget: budget, image_descriptions: descriptions)
   end
 
+  # sent_at: the runner writes each message after its send time and gives the time of the message being answered to the prompt
+  # clock (see Captain::Assistant::RunPayloadHelper#stamped_content): a suggestion often answers a message of an earlier day.
   def history_entry(message, budget, descriptions)
     entry = {
       content: message_builder(message, budget: budget, descriptions: descriptions).generate_content,
-      role: message.message_type == 'incoming' ? 'user' : 'assistant'
+      role: message.message_type == 'incoming' ? 'user' : 'assistant',
+      sent_at: message.created_at
     }
     agent_name = message.additional_attributes.to_h['agent_name'].presence
     entry[:agent_name] = agent_name if agent_name.present?

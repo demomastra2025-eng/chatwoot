@@ -220,6 +220,7 @@ module Enterprise::Captain::ReplySuggestionService
       @handoffs = []
       @routing = nil
       @pending_actions = []
+      @superseded_action_ids = []
       @reasoning = nil
       init_agent_catalog!(assistant)
       # While the router decides who answers, the manager sees that, and no agent.
@@ -318,11 +319,22 @@ module Enterprise::Captain::ReplySuggestionService
       end
     end
 
+    # The cards of the run so far. A card that a corrected card of the same action replaced (a booking at another time) was rejected
+    # and leaves the list: the operator approves only the card the draft names.
     def capture_pending_actions!(context)
-      actions = Array(context&.dig(:captain_suggestion_pending_actions))
-      return if actions.blank?
+      @superseded_action_ids = (@superseded_action_ids + superseded_action_ids_of(context)).uniq
+      actions = Array(context&.dig(Captain::ReplySuggestion::ActionApprovalService::CONTEXT_KEY))
+      @pending_actions = without_superseded((@pending_actions + actions).uniq { |item| item['action_id'] || item[:action_id] })
+    end
 
-      @pending_actions = (@pending_actions + actions).uniq { |item| item['action_id'] || item[:action_id] }
+    def superseded_action_ids_of(context)
+      Array(context&.dig(Captain::ReplySuggestion::ActionApprovalService::SUPERSEDED_CONTEXT_KEY)).map(&:to_s)
+    end
+
+    def without_superseded(actions)
+      return actions if @superseded_action_ids.blank?
+
+      actions.reject { |item| @superseded_action_ids.include?(item.to_h.stringify_keys['action_id'].to_s) }
     end
 
     # The cards of this run: what the run reported, and what it stored (a card of a part on a thread); after them the cards of an
@@ -334,7 +346,7 @@ module Enterprise::Captain::ReplySuggestionService
         hash = entry.to_h.deep_stringify_keys
         hash if hash['action_id'].present?
       end
-      items.uniq { |item| item['digest'].presence || item['action_id'] }
+      without_superseded(items).uniq { |item| item['digest'].presence || item['action_id'] }
     end
 
     def stored_pending_actions

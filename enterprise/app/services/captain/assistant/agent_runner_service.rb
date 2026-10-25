@@ -102,6 +102,9 @@ class Captain::Assistant::AgentRunnerService
 
   def guard_public_response(response)
     return response unless response.is_a?(Hash) && response['response'].present?
+
+    # The history shows each message after its send time ("[Sat 24.10 09:50] ..."); a model that copies one into its reply loses it here.
+    response['response'] = Captain::PromptClock.unstamped(response['response'])
     return response if response['response_suppressed'] || response['response_cancelled']
     return response if ['conversation_handoff', PROVIDER_ERROR_RESPONSE, 'response_cancelled'].include?(response['response'])
 
@@ -984,6 +987,7 @@ class Captain::Assistant::AgentRunnerService
     state
   end
 
+  # message_sent_at: the send time of the patient message being answered (a suggestion may answer a message of an earlier day).
   def runtime_clock_state
     timezone = runtime_timezone
     now = Time.current
@@ -994,8 +998,9 @@ class Captain::Assistant::AgentRunnerService
       now_local: local_now.iso8601,
       timezone: timezone,
       date_local: local_now.to_date.iso8601,
-      time_local: local_now.strftime('%H:%M:%S')
-    }
+      time_local: local_now.strftime('%H:%M:%S'),
+      message_sent_at: Captain::PromptClock.parse_time(@current_input_sent_at)&.utc&.iso8601
+    }.compact
   end
 
   def runtime_timezone
@@ -1453,6 +1458,7 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def run_payload(message_history)
+    @current_input_sent_at = last_user_message_sent_at(message_history)
     message_to_process = extract_last_user_message(message_history)
     context = build_context(message_history_without_last_user_message(message_history))
     if @playground_session

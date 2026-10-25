@@ -15,19 +15,30 @@ RSpec.describe Captain::ReplySuggestion::HistoryBuilder do
     message.attachments.create!(account_id: account.id, file_type: :image, external_url: "https://example.com/#{name}.jpg")
   end
 
-  it 'gives the messages in the order of the conversation with the role of each, and the name of the agent that wrote an answer' do
-    add_message(:incoming, 'Нужен ЛОР')
-    add_message(:outgoing, 'Какой день?', additional_attributes: { 'agent_name' => 'Сезім' })
-    add_message(:incoming, 'Завтра')
+  it 'gives the messages in order with the role and the send time of each, and the name of the agent that wrote an answer' do
+    question = add_message(:incoming, 'Нужен ЛОР')
+    answer = add_message(:outgoing, 'Какой день?', additional_attributes: { 'agent_name' => 'Сезім' })
+    day = add_message(:incoming, 'Завтра')
     add_message(:incoming, 'Заметка', private: true)
 
     expect(history).to eq(
       [
-        { content: 'Нужен ЛОР', role: 'user' },
-        { content: 'Какой день?', role: 'assistant', agent_name: 'Сезім' },
-        { content: 'Завтра', role: 'user' }
+        { content: 'Нужен ЛОР', role: 'user', sent_at: question.reload.created_at },
+        { content: 'Какой день?', role: 'assistant', agent_name: 'Сезім', sent_at: answer.reload.created_at },
+        { content: 'Завтра', role: 'user', sent_at: day.reload.created_at }
       ]
     )
+  end
+
+  # The runner writes each message after its send time and tells the model when the message being answered was sent: a suggestion
+  # asked on Monday for a patient's Saturday "tomorrow" reads Sunday, not Tuesday.
+  it 'keeps the Saturday send time of a message that is answered on Monday' do
+    saturday = Time.find_zone('Asia/Almaty').local(2026, 10, 24, 9, 50)
+    add_message(:incoming, 'Я записан на 10:10 завтра?', created_at: saturday)
+
+    travel_to(Time.find_zone('Asia/Almaty').local(2026, 10, 26, 9, 0)) do
+      expect(history.last).to include(content: 'Я записан на 10:10 завтра?', role: 'user', sent_at: saturday)
+    end
   end
 
   it 'asks for a reply in general when the conversation has no message of the customer' do

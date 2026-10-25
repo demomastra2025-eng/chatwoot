@@ -139,7 +139,7 @@ RSpec.describe Captain::ReplySuggestionService do
         ).and_return(runner_double)
 
         allow(runner_double).to receive(:generate_response).with(
-          message_history: [{ role: 'user', content: 'I need help' }]
+          message_history: [{ role: 'user', content: 'I need help', sent_at: kind_of(ActiveSupport::TimeWithZone) }]
         ).and_return(
           {
             'response' => 'Available slots for Dr. Smith tomorrow are 10:00 and 14:30.',
@@ -443,6 +443,30 @@ RSpec.describe Captain::ReplySuggestionService do
           parts = received_history.last[:content]
           expect(parts).to include({ type: 'text', text: 'Image attachment: Снимок уха' })
         end
+      end
+
+      # A booking repeated at a corrected time replaces its card in the run: the operator must not see, and approve, the first one.
+      it 'leaves out a card that a corrected card of the same run replaced' do
+        runner_double = instance_double(Captain::Assistant::AgentRunnerService)
+        captured_callbacks = nil
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |**kwargs|
+          captured_callbacks = kwargs[:callbacks]
+          runner_double
+        end
+        first_card = { 'action_id' => 'act-10', 'tool_name' => 'create_appointment', 'title' => 'Записать на приём', 'status' => 'pending' }
+        second_card = first_card.merge('action_id' => 'act-11')
+        allow(runner_double).to receive(:generate_response) do
+          run = OpenStruct.new(context: { captain_suggestion_pending_actions: [first_card] })
+          captured_callbacks[:on_tool_complete].call('create_appointment', '{"status":"pending_operator_approval"}', run)
+          run.context.merge!(captain_suggestion_pending_actions: [second_card], captain_suggestion_superseded_actions: ['act-10'])
+          captured_callbacks[:on_tool_complete].call('create_appointment', '{"status":"pending_operator_approval"}', run)
+          { 'response' => 'Подготовила запись на 11:30.', 'agent_id' => assistant.id, 'pending_actions' => [first_card, second_card] }
+        end
+        allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:pending_for).and_return([])
+
+        result = service.perform
+
+        expect(result[:pending_actions].pluck('action_id')).to eq(['act-11'])
       end
 
       describe 'the live progress' do

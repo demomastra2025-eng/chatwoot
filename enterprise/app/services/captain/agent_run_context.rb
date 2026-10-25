@@ -160,7 +160,8 @@ class Captain::AgentRunContext
     last = history.last
     return unless last && last[:role].to_s == 'user'
 
-    text = last[:content].to_s.squish
+    # The history writes the message after its send time; the handoff record keeps the text alone.
+    text = Captain::PromptClock.unstamped(last[:content].to_s).squish
     handoff = Array(context[:done_actions]).find do |entry|
       entry.to_h['tool'] == Captain::DoneActions::HANDOFF_TOOL &&
         (entry.to_h['user_message'].blank? || entry.to_h['user_message'].to_s.squish == text)

@@ -3,8 +3,8 @@
 # Builds the compact variables of assistant.liquid:
 #   instruction, global_system_instruction,  the clinic instruction, the shared rules and the clinic context (the "# Clinic" block,
 #   clinic_context                           Account#captain_clinic_context) with $ field values and @ tool names resolved
-#   now_text                                 the one-line clock (after midnight with the night line) and, on the official WhatsApp channel,
-#                                            the reply window
+#   now_text                                 the one-line clock, the send time of the patient's last message when it was not sent
+#                                            today, after midnight the night line and, on the official WhatsApp channel, the reply window
 #   patient_lines                            the patient name and phone, an ID only when a bound tool takes it, the appointment
 #                                            and deal summaries that the clinic instruction does not place itself, and the list of
 #                                            what the agents already did in this conversation (Captain::DoneActions)
@@ -65,6 +65,7 @@ class Captain::AssistantPrompt
 
     [
       Captain::PromptClock.now_line(@state[:runtime_clock]),
+      Captain::PromptClock.message_line(@state[:runtime_clock]),
       Captain::PromptClock.night_line(@state[:runtime_clock]),
       Captain::PromptClock.reply_window_line(@state[:reply_window], time_zone: time_zone),
       Captain::PatientLanguage.line(@context[:patient_language])
