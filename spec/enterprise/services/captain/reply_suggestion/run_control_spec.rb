@@ -152,6 +152,69 @@ RSpec.describe Captain::ReplySuggestion::RunControl do
         expect(control.seconds_left).to be <= 60
       end
     end
+
+    it 'tells on_shorten the new deadline only when it came closer' do
+      deadlines = []
+      described_class.with(request_id: request_id, deadline: far_deadline, on_shorten: ->(deadline) { deadlines << deadline }) do |control|
+        control.shorten!(60)
+        control.shorten!(300)
+        expect(deadlines).to eq([control.deadline])
+      end
+    end
+  end
+
+  describe Captain::ReplySuggestion::RunControl::RequestTimeout do
+    let(:request) { Struct.new(:options).new(Struct.new(:timeout).new(300)) }
+
+    it 'bounds every RubyLLM request of a run by the time the run or the council part has left' do
+      expect(RubyLLM::Connection.ancestors).to include(described_class)
+      Captain::ReplySuggestion::RunControl.with(request_id: request_id, deadline: Process.clock_gettime(Process::CLOCK_MONOTONIC) + 20) do |control|
+        described_class.bound!(request)
+        expect(request.options.timeout).to be_within(1).of(20)
+
+        described_class.bound!(request, control: control.for_parts(reserve: 15))
+        expect(request.options.timeout).to be_within(1).of(5)
+      end
+    end
+
+    it 'keeps a shorter provider timeout and never goes under a second; outside a run nothing changes' do
+      request.options.timeout = 8
+      Captain::ReplySuggestion::RunControl.with(request_id: request_id, deadline: Process.clock_gettime(Process::CLOCK_MONOTONIC) + 30) do
+        described_class.bound!(request)
+      end
+      expect(request.options.timeout).to eq(8.0)
+
+      Captain::ReplySuggestion::RunControl.with(request_id: request_id, deadline: Process.clock_gettime(Process::CLOCK_MONOTONIC) - 1) do
+        described_class.bound!(request)
+      end
+      expect(request.options.timeout).to eq(described_class::MIN_SECONDS)
+
+      request.options.timeout = 300
+      described_class.bound!(request)
+      expect(request.options.timeout).to eq(300)
+    end
+  end
+
+  describe Captain::ReplySuggestion::HardCut do
+    it 'cuts the run at the deadline of its control plus the grace, also after the deadline came closer' do
+      Captain::ReplySuggestion::RunControl.with(request_id: request_id, deadline: far_deadline) do |control|
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        expect do
+          described_class.run(control, grace: 0.2) do
+            control.shorten!(0.3)
+            sleep 5
+          end
+        end.to raise_error(described_class::Expired)
+        expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 2
+      end
+    end
+
+    it 'returns the result of a run that ends in time, and its watchdog never fires afterwards' do
+      Captain::ReplySuggestion::RunControl.with(request_id: request_id, deadline: Process.clock_gettime(Process::CLOCK_MONOTONIC) + 0.3) do |control|
+        expect(described_class.run(control, grace: 0) { :done }).to eq(:done)
+        expect { sleep 0.6 }.not_to raise_error
+      end
+    end
   end
 
   describe Captain::ReplySuggestion::RunAborted do

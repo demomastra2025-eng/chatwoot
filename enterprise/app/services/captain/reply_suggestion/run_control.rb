@@ -6,7 +6,9 @@
 #
 # The parts of a council run under a scope of the control (#for_parts): the same run, with a deadline of its own that leaves the
 # editor its time. A part that reaches it stops with PartTimeUp, a technical failure of that part alone; the council still answers
-# with the other parts. A routed suggestion that one agent answers gets the budget of one agent from the decision on (#shorten!).
+# with the other parts. A routed suggestion that one agent answers gets the budget of one agent from the decision on (#shorten!):
+# on_shorten tells the job the new deadline, so the request, the manager's timer and the hard cut of the run (HardCut) follow it.
+# Every RubyLLM call of the run is bounded by the time left (RequestTimeout).
 class Captain::ReplySuggestion::RunControl
   STATE_KEY = :captain_reply_suggestion_run_control
 
@@ -14,9 +16,10 @@ class Captain::ReplySuggestion::RunControl
 
   class << self
     # deadline: monotonic seconds (Process.clock_gettime(Process::CLOCK_MONOTONIC)).
-    def with(request_id:, deadline:)
+    # on_shorten: called with the new deadline (monotonic seconds) when #shorten! brings it closer.
+    def with(request_id:, deadline:, on_shorten: nil)
       previous = ActiveSupport::IsolatedExecutionState[STATE_KEY]
-      control = new(request_id, deadline)
+      control = new(request_id, deadline, on_shorten: on_shorten)
       ActiveSupport::IsolatedExecutionState[STATE_KEY] = control
       yield control
     ensure
@@ -46,9 +49,10 @@ class Captain::ReplySuggestion::RunControl
     end
   end
 
-  def initialize(request_id, deadline)
+  def initialize(request_id, deadline, on_shorten: nil)
     @request_id = request_id
     @deadline = deadline
+    @on_shorten = on_shorten
     @cancel_checked_at = nil
     @cancelled = false
     @action_ids = []
@@ -58,7 +62,7 @@ class Captain::ReplySuggestion::RunControl
 
   def checkpoint!(stage)
     now = monotonic_now
-    raise Captain::ReplySuggestion::RunAborted.new(:deadline, stage) if now >= @deadline
+    raise Captain::ReplySuggestion::RunAborted.new(:deadline, stage) if now >= deadline
     raise Captain::ReplySuggestion::RunAborted.new(:cancelled, stage) if cancelled?(now)
   end
 
@@ -67,17 +71,28 @@ class Captain::ReplySuggestion::RunControl
   end
 
   def seconds_left
-    [@deadline - monotonic_now, 0].max
+    [deadline - monotonic_now, 0].max
+  end
+
+  # The deadline of the run (monotonic seconds).
+  def deadline
+    @lock.synchronize { @deadline }
   end
 
   # The scope of the parts of a council: their deadline leaves `reserve` seconds of the run to what follows them (the editor).
   def for_parts(reserve:)
-    PartScope.new(self, [@deadline - reserve, monotonic_now].max)
+    PartScope.new(self, [deadline - reserve, monotonic_now].max)
   end
 
-  # The deadline comes closer, never later.
+  # The deadline comes closer, never later. Returns the deadline.
   def shorten!(seconds)
-    @lock.synchronize { @deadline = [@deadline, monotonic_now + seconds].min }
+    previous, current = @lock.synchronize do
+      before = @deadline
+      @deadline = [@deadline, monotonic_now + seconds].min
+      [before, @deadline]
+    end
+    @on_shorten&.call(current) if current < previous
+    current
   end
 
   private

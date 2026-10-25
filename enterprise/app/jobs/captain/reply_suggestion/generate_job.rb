@@ -5,8 +5,10 @@ require 'timeout'
 # Makes a reply suggestion in the background ("Предложить ответ"). StartService creates the request in Redis and queues this job; the
 # manager sees live progress over ActionCable and gets the result as one `captain.reply_suggestion.result` event.
 #
-# The run has a budget (60 s by default, from the start of the job). It either finishes or ends as `failed`: a run that did not finish
-# leaves no draft, whatever it had collected, and an account that has an agent never gets the old one-shot prompt instead.
+# The run has a budget (60 s by default, from the start of the job; a routed run starts with the time of a council and keeps the
+# budget of one agent from the decision on when one agent or staff answers: the request, the manager's timer and the hard cut follow
+# the new deadline). It either finishes or ends as `failed`: a run that did not finish leaves no draft, whatever it had collected,
+# and an account that has an agent never gets the old one-shot prompt instead.
 #
 # Never retried: a second run after the manager has moved on would be a second answer. #perform does not raise: every end is an outcome.
 class Captain::ReplySuggestion::GenerateJob < ApplicationJob
@@ -18,6 +20,7 @@ class Captain::ReplySuggestion::GenerateJob < ApplicationJob
   Outcome = Captain::ReplySuggestion::Outcome
   OutcomeEvent = Captain::ReplySuggestion::OutcomeEvent
   RequestStore = Captain::ReplySuggestion::RequestStore
+  include Captain::ReplySuggestion::RunTiming
 
   def perform(request_id)
     @request_id = request_id
@@ -54,16 +57,16 @@ class Captain::ReplySuggestion::GenerateJob < ApplicationJob
     @running = true
     broadcaster.progress(starting_progress)
 
-    run_and_publish(@started_monotonic + budget, budget)
+    run_and_publish(@started_monotonic + budget)
     finish_run(@outcome)
   end
 
   # The outcome event is published around the run (block form), so that its duration is the duration of the run.
-  def run_and_publish(deadline, budget)
+  def run_and_publish(deadline)
     Llm::EventBus.publish(OutcomeEvent::EVENT, OutcomeEvent.base_payload(@state, conversation: conversation)) do |event|
       @event_published = true
       begin
-        @outcome = final_gate(run_with_controls(deadline, budget))
+        @outcome = final_gate(run_with_controls(deadline))
       ensure
         # Without an outcome an exception that is not a StandardError (Sidekiq::Shutdown) ended the run.
         @outcome ||= Outcome.failed('interrupted')
@@ -72,18 +75,20 @@ class Captain::ReplySuggestion::GenerateJob < ApplicationJob
     end
   end
 
-  def run_with_controls(deadline, budget)
+  # The hard cut (HardCut) is the deadline of the run control plus the grace: it follows a deadline the router shortened.
+  def run_with_controls(deadline)
     with_run_context do
-      Timeout.timeout(budget + Captain::ReplySuggestion::HARD_GRACE_SECONDS) do
-        Captain::ReplySuggestion::RunControl.with(request_id: @request_id, deadline: deadline) do |control|
-          @control = control
+      Captain::ReplySuggestion::RunControl.with(request_id: @request_id, deadline: deadline,
+                                                on_shorten: method(:deadline_shortened)) do |control|
+        @control = control
+        Captain::ReplySuggestion::HardCut.run(control, grace: Captain::ReplySuggestion::HARD_GRACE_SECONDS) do
           Outcome.normalize(service.perform)
         end
       end
     end
   rescue Captain::ReplySuggestion::RunAborted => e
     aborted_outcome(e)
-  rescue Timeout::Error
+  rescue Captain::ReplySuggestion::HardCut::Expired, Timeout::Error
     Outcome.failed('timeout', detail: 'hard_limit')
   rescue StandardError => e
     Rails.logger.warn("[CAPTAIN][ReplySuggestion] request=#{@request_id} run failed: #{e.class}: #{e.message}")
@@ -180,22 +185,6 @@ class Captain::ReplySuggestion::GenerateJob < ApplicationJob
       account: account, conversation_display_id: @state['conversation_display_id'], user: user, conversation: conversation,
       request_id: @request_id, engine: @state['engine'], assistant_id: @state['assistant_id'], progress_context: progress_context
     )
-  end
-
-  def progress_context
-    {
-      suggestion_request_id: @request_id, conversation_id: @state['conversation_display_id'],
-      started_at: Time.zone.parse(@state['started_at']), deadline_at: Time.zone.parse(@state['deadline_at']),
-      budget_seconds: @state['budget_seconds']
-    }
-  end
-
-  def starting_progress
-    {
-      suggestion_request_id: @request_id, status: 'running', account_id: account.id, conversation_id: @state['conversation_display_id'],
-      conversation_record_id: conversation.id, started_at: @state['started_at'], deadline_at: @state['deadline_at'],
-      budget_seconds: @state['budget_seconds'], elapsed_ms: 0, phase: 'starting'
-    }
   end
 
   def run_stats

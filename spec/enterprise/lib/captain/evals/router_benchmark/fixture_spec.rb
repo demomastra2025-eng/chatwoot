@@ -38,7 +38,8 @@ RSpec.describe Captain::Evals::RouterBenchmark::Fixture do
     committed = JSON.parse(File.read(Rails.root.join('script/captain/router_benchmark/router_scenarios.json')))
     ids = committed['suites'].flat_map { |suite| suite['scenarios'].pluck('id') }
 
-    expect(ids.size).to eq(75)
+    expect(ids.size).to eq(77)
+    expect(ids).to include('AM01', 'IM01')
     expect(ids).to include('SZ01', 'A11', 'I06')
     traps = committed['suites'].flat_map { |suite| suite['scenarios'] }.filter_map { |scenario| scenario['trap'] }
     expect(traps.tally).to eq('human' => 3, 'injection' => 4, 'false_council' => 6)
@@ -68,6 +69,15 @@ RSpec.describe Captain::Evals::RouterBenchmark::Fixture do
     expect do
       described_class.new(graphs, scenarios_with('suggestion' => true, 'anchor' => 79, 'expected' => 'route_agent_84'), cards: 'prod')
     end.to raise_error(described_class::Invalid)
+  end
+
+  it 'lets only a suggestion expect undecided (the escalation names no agent either)' do
+    undecided = { 'suggestion' => true, 'anchor' => 84, 'history' => [{ 'role' => 'agent', 'text' => 'Ждём вас.' }],
+                  'message' => 'Спасибо!', 'expected' => 'undecided' }
+
+    expect { described_class.new(graphs, scenarios_with(undecided), cards: 'prod') }.not_to raise_error
+    expect { described_class.new(graphs, scenarios_with(undecided.except('suggestion')), cards: 'prod') }
+      .to raise_error(described_class::Invalid, /only a suggestion/)
   end
 
   def scenarios_with(changes)

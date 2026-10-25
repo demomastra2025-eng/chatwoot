@@ -15,9 +15,18 @@ class CaptainListener < BaseListener
     Captain::Llm::ConversationFaqService.new(assistant, conversation).generate_and_deduplicate
   end
 
-  # A manager's message after a dismissed reply suggestion is recorded on the dismissal (what they wrote instead).
+  # A manager's message after a dismissed reply suggestion is recorded on the dismissal (what they wrote instead). A message the
+  # manager wrote by hand ends the lead of the sticky agent of «Предложить ответ» (see ReplySuggestion::StickyAgent::ManualReply).
   def message_created(event)
-    Captain::ReplySuggestion::DismissalTracker.message_created(event.data[:message])
+    message = event.data[:message]
+    Captain::ReplySuggestion::StickyAgent::ManualReply.mark!(message)
+    track_dismissal(message)
+  end
+
+  private
+
+  def track_dismissal(message)
+    Captain::ReplySuggestion::DismissalTracker.message_created(message)
   rescue StandardError => e
     Rails.logger.warn("[CAPTAIN][CaptainListener] dismissal tracking skipped: #{e.class}: #{e.message}")
   end

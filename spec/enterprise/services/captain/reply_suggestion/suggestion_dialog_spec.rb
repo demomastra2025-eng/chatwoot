@@ -4,7 +4,9 @@ require 'rails_helper'
 
 # «Предложить ответ» end to end: StartService -> GenerateJob -> ReplySuggestionService -> AgentRunnerService -> DecisionRouter, with
 # only the model calls stubbed (the agent runs and the decision chain). It guards the dialog that the suggestions keep across turns:
-# the sticky agent, the escalation of an unsure router, the anchor default and the approval cards of an inserted draft.
+# the sticky agent (and what ends its lead: a rejection, a closed notice, a new suggestion over an unused one, a manual reply), the
+# escalation of an unsure router, the anchor default, an undecided router, the budget of one agent and the approval cards of an
+# inserted draft.
 RSpec.describe 'Reply suggestion dialog' do # rubocop:disable RSpec/DescribeClass
   let(:account) { create(:account) }
   let(:manager) { create(:user, account: account, role: :agent) }
@@ -76,6 +78,16 @@ RSpec.describe 'Reply suggestion dialog' do # rubocop:disable RSpec/DescribeClas
     store.fetch_raw(body[:suggestion_request_id])
   end
 
+  # What the reply box sends: a manual message, or the text of a used suggestion (content_attributes.copilot.assisted). The async
+  # CaptainListener is called as the event dispatcher calls it.
+  def manager_sends(text, assisted: false)
+    attributes = assisted ? { copilot: { assisted: true, action: 'reply_suggestion' } } : {}
+    message = create(:message, conversation: conversation, account: account, message_type: :outgoing, sender: manager, content: text,
+                               content_attributes: attributes)
+    CaptainListener.instance.message_created(Events::Base.new(:message_created, Time.zone.now, message: message))
+    message
+  end
+
   def feedback(record, outcome)
     Captain::ReplySuggestion::FeedbackService.new(
       account: account, user: manager, conversation: conversation, outcome: outcome, copilot_action: 'reply_suggestion',
@@ -86,7 +98,7 @@ RSpec.describe 'Reply suggestion dialog' do # rubocop:disable RSpec/DescribeClas
   it 'makes the agent of a draft the current agent of the next suggestion, which keeps a confident short reply with it' do
     decide('route_agent', yes: [procedures.id])
     first = suggest
-    expect(first).to include('status' => 'draft', 'budget_seconds' => Captain::ReplySuggestion::ROUTER_BUDGET_SECONDS)
+    expect(first).to include('status' => 'draft')
     expect(sticky.read(conversation)).to eq(procedures.id)
     feedback(first, 'applied')
 
@@ -123,21 +135,122 @@ RSpec.describe 'Reply suggestion dialog' do # rubocop:disable RSpec/DescribeClas
     expect(sticky.read(conversation)).to eq(doctors.id)
   end
 
-  it 'sends a short reply mid-dialog without a sticky agent to the escalation, and makes no anchor default sticky' do
+  it 'sends a short reply mid-dialog without a sticky agent to the escalation, and hands it to the manager when that names no agent' do
     clinic_says('Завтра 16:30 или 17:00?')
     patient_says('Да, на 17:00')
     decide('route_agent', confidence: 0.95)
     escalation = escalate_to('route_agent')
+    allow(Captain::Runtime::RoutingEvents).to receive(:failed).and_call_original
 
     record = suggest
 
     expect(escalation).to have_received(:choose)
+    expect(Captain::Runtime::RoutingEvents).to have_received(:failed)
+      .with(hash_including(error: having_attributes(reason: 'escalation_undecided')))
     expect(questions_seen.last[:state][:current_agent_id]).to be_nil
+    expect(runs).to be_empty
+    expect(record).to include('status' => 'human_needed')
+    expect(record['result']).to include('reason_source' => 'router',
+                                        'reason' => I18n.t('captain.reply_suggestion.reasons.router_undecided', locale: account.locale))
+    expect(sticky.read(conversation)).to be_nil
+  end
+
+  it 'gives a confident first-message greeting that names no agent to the anchor, which never becomes sticky' do
+    decide('route_agent', confidence: 0.95)
+    expect(Captain::Runtime::DecisionRouter::Escalation).not_to receive(:new)
+
+    record = suggest
+
     expect(record).to include('status' => 'draft')
     expect(record.dig('result', 'suggestion_meta', 'routing')).to include('decision_key' => "route_agent_#{doctors.id}", 'default_to' => 'anchor')
-    expect(sticky.read(conversation)).to be_nil
     feedback(record, 'applied')
     expect(sticky.read(conversation)).to be_nil
+  end
+
+  it 'escalates route_agent naming no agent while a sticky agent leads the dialog, instead of keeping the sticky agent' do
+    sticky.confirm!(conversation, procedures.id, request_id: 'earlier')
+    clinic_says('Завтра 16:30 или 17:00?')
+    patient_says('А к врачу Ивановой можно?')
+    decide('route_agent', confidence: 0.99)
+    escalation = escalate_to('route_agent', yes: [doctors.id])
+
+    record = suggest
+
+    expect(escalation).to have_received(:choose)
+    expect(record).to include('status' => 'draft')
+    expect(runs.pluck(:agent)).to eq(["assistant_#{doctors.id}"])
+  end
+
+  it 'withdraws the provisional agent of a draft that a new suggestion replaces without feedback: the confirmed agent leads again' do
+    sticky.confirm!(conversation, doctors.id, request_id: 'earlier')
+    decide('route_agent', yes: [procedures.id])
+    suggest
+    expect(sticky.read(conversation)).to eq(procedures.id)
+
+    decide('stay_current')
+    suggest
+
+    expect(questions_seen.last[:state][:current_agent_id]).to eq(doctors.id)
+  end
+
+  it 'leaves no current agent after a regenerated draft that nobody confirmed' do
+    decide('route_agent', yes: [procedures.id])
+    suggest
+    expect(sticky.read(conversation)).to eq(procedures.id)
+
+    decide('route_agent', yes: [procedures.id])
+    suggest
+
+    expect(questions_seen.last[:state][:current_agent_id]).to be_nil
+  end
+
+  it 'withdraws the provisional agent of a closed "no reply needed" notice' do
+    allow(runtime_runner).to receive(:run) do |agent_runtime, _input, **options|
+      runs << { agent: agent_runtime.name }
+      Captain::Runtime::Result.new(output: { 'response' => '', 'response_mode' => 'suppress', 'operator_note' => 'Ответ не нужен' },
+                                   messages: [], usage: nil, error: nil, context: options[:context])
+    end
+    decide('route_agent', yes: [procedures.id])
+    notice = suggest
+    expect(notice).to include('status' => 'no_reply')
+    expect(sticky.read(conversation)).to eq(procedures.id)
+
+    feedback(notice, 'notice_dismissed')
+
+    expect(sticky.read(conversation)).to be_nil
+  end
+
+  it 'drops a confirmed sticky agent when the manager then writes by hand, but not for the sent text of the suggestion' do
+    decide('route_agent', yes: [procedures.id])
+    first = suggest
+    feedback(first, 'applied')
+    manager_sends(first.dig('result', 'message'), assisted: true)
+    expect(sticky.read(conversation)).to eq(procedures.id)
+
+    manager_sends('А ещё вам нужен приём ЛОР-врача после процедуры — записать?')
+    patient_says('Да')
+    decide('route_agent', yes: [doctors.id])
+    suggest
+
+    expect(questions_seen.last[:state][:current_agent_id]).to be_nil
+    expect(sticky.read(conversation)).to eq(doctors.id)
+  end
+
+  it 'keeps the budget of one agent after the router chose one, and tells the manager the real deadline' do
+    decide('route_agent', yes: [procedures.id])
+
+    record = suggest
+
+    started = Time.zone.parse(record['started_at'])
+    expect(record['budget_seconds']).to be_between(Captain::ReplySuggestion::DEFAULT_BUDGET_SECONDS,
+                                                   Captain::ReplySuggestion::DEFAULT_BUDGET_SECONDS + 2)
+    expect(Time.zone.parse(record['deadline_at']) - started).to be < Captain::ReplySuggestion::DEFAULT_BUDGET_SECONDS + 2
+    progress = []
+    expect(ActionCable.server).to have_received(:broadcast).at_least(:once) do |_token, payload|
+      progress << payload[:data] if payload[:event] == Captain::ReplySuggestion::Broadcaster::PROGRESS_EVENT
+    end
+    expect(progress.pluck(:budget_seconds)).to include(Captain::ReplySuggestion::ROUTER_BUDGET_SECONDS, record['budget_seconds'])
+    expect(progress.pluck(:deadline_at).compact.last).to eq(record['deadline_at'])
   end
 
   it 'keeps the pending card of an inserted draft through the next suggestion and shows it there again' do

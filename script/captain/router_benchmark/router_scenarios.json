@@ -93,11 +93,11 @@
             { "role": "patient", "text": "Давайте на 14:00, ИИН 900101300123" },
             { "role": "agent", "text": "Готово: УЗИ щитовидной железы завтра в 14:00 у Салимовой К.В." } ],
           "message": "Спасибо! И ещё запишите меня к эндокринологу Кудабаевой на тот же день после УЗИ", "expected": "route_agent_77" },
-        { "id": "AS05", "type": "suggestion_short_reply", "title": "suggestion: thanks with no sticky agent mid-dialog: no agent is asked for, the escalation leaves it to the anchor",
+        { "id": "AS05", "type": "suggestion_short_reply", "title": "suggestion: thanks with no sticky agent mid-dialog: no agent is asked for, the escalation names none either, the manager answers",
           "current": null, "suggestion": true, "anchor": 77,
           "history": [
             { "role": "agent", "text": "Здравствуйте! Ваша запись подтверждена, ждём вас." } ],
-          "message": "Спасибо!", "expected": "route_agent_77" },
+          "message": "Спасибо!", "expected": "undecided" },
         { "id": "AN01", "type": "suggestion_no_sticky", "title": "suggestion: time choice mid-booking with no sticky agent goes to the ultrasound agent, not the anchor",
           "current": null, "suggestion": true, "anchor": 77,
           "history": [
@@ -109,7 +109,14 @@
           "history": [
             { "role": "patient", "text": "Давайте на УЗИ щитовидки завтра в 14:00, Серик Ахметов" },
             { "role": "agent", "text": "Хорошо, Серик. Подскажите, пожалуйста, ваш ИИН для записи на УЗИ." } ],
-          "message": "900101300123", "expected": "route_agent_109" }
+          "message": "900101300123", "expected": "route_agent_109" },
+        { "id": "AM01", "type": "suggestion_manual_topic_switch", "title": "suggestion: the manager asked by hand about hormone tests after an ultrasound booking (the sticky agent is dropped), the patient says yes: the lab agent",
+          "current": null, "suggestion": true, "anchor": 109,
+          "history": [
+            { "role": "patient", "text": "Здравствуйте, хочу записаться на УЗИ малого таза" },
+            { "role": "agent", "agent_id": 109, "text": "Записали вас на УЗИ малого таза на завтра в 10:00 к Салимовой К.В." },
+            { "role": "agent", "text": "Перед приёмом гинеколога нужно сдать анализ крови на гормоны. Записать вас на сдачу завтра в 9:30, до УЗИ?" } ],
+          "message": "Да, давайте", "expected": "route_agent_108" }
       ]
     },
     {
@@ -201,7 +208,16 @@
           "history": [
             { "role": "patient", "text": "Хочу сделать ФГДС на этой неделе" },
             { "role": "agent", "text": "ФГДС можно в четверг: свободно 10:00 и 12:00. Подготовка — не есть 8 часов. Какое время удобно? Напишите ФИО и дату рождения." } ],
-          "message": "Давайте в 12:00", "expected": "route_agent_113" }
+          "message": "Давайте в 12:00", "expected": "route_agent_113" },
+        { "id": "IM01", "type": "suggestion_manual_topic_switch", "title": "suggestion: the manager offered a gastroenterologist by hand after an abdominal ultrasound booking (the sticky agent is dropped), the patient agrees in Kazakh: the doctors agent",
+          "current": null, "suggestion": true, "anchor": 113,
+          "history": [
+            { "role": "patient", "text": "Сколько стоит УЗИ брюшной полости?" },
+            { "role": "agent", "agent_id": 113, "text": "УЗИ брюшной полости стоит 8000 тг. Записать вас?" },
+            { "role": "patient", "text": "Да, на пятницу" },
+            { "role": "agent", "agent_id": 113, "text": "Записали вас на УЗИ брюшной полости в пятницу в 11:00." },
+            { "role": "agent", "text": "По результатам УЗИ можно сразу попасть к гастроэнтерологу: в пятницу есть время в 12:00. Записать вас?" } ],
+          "message": "Иә, жазыңыз", "expected": "route_agent_85" }
       ]
     },
     {

@@ -9,12 +9,15 @@
 #   council        yes for exactly two or three agents           -> a council of exactly those agents
 #   human_handoff  the include answers do not matter             -> staff
 #   nobody         no listed agent handles it (council parts)    -> nobody
-# A reply suggestion (and only a suggestion) has a default for answers that name no agent (route_agent or stay_current with every
-# include answer no): the current agent (the sticky agent of the dialog) keeps the turn. While no agent leads the dialog the anchor
-# of the channel answers, but only on the first message of the dialog or when the escalation model answers so (final): mid-dialog
-# the decision models' answers have no outcome and go to the escalation, which can tell from the history whose booking a short
-# reply continues. Such an outcome names its default (default_to current or anchor) and meets the same confidence threshold as any
-# other. It is not a fallback for a failure: answers that do not come, or that contradict each other otherwise, have no outcome.
+# A reply suggestion (and only a suggestion) has two defaults for answers that name no agent, each for one explicit answer:
+#   stay_current with every include answer no  -> the current agent (the sticky agent of the dialog) keeps the turn
+#   route_agent with every include answer no   -> the anchor of the channel, only on the first message of the dialog, while no agent
+#                                                 leads it, and only as the decision models' own answer (never the escalation's)
+# Everything else that names no agent has no outcome and escalates as inconsistent, as in a live turn: route_agent with every
+# include answer no while an agent leads the dialog (it routes away from the current agent to nobody), and such an answer mid-dialog,
+# where the escalation can tell from the history whose booking a short reply continues. An escalation that names no agent either
+# has no outcome (#names_no_agent?): the router raises UndecidedError and the suggestion goes to the manager. A default names itself
+# (default_to current or anchor) and meets the same confidence threshold as any other outcome. It is not a fallback for a failure.
 # Several services of one agent make only that agent "yes", so they never make a council (the anti-false-council rule is also
 # written into the instructions). The canonical key of an outcome (stay_current, route_agent_<id>, council_<a>_<b>[_<c>],
 # human_handoff, nobody) names the decision in events and in the evaluation harness.
@@ -91,6 +94,12 @@ class Captain::Runtime::DecisionRouter::Questions
 
   def mode_keys = mode_criteria.keys
 
+  # The answers name no agent: stay_current or route_agent with every include answer no.
+  def names_no_agent?(choices)
+    choices = choices.to_h.transform_keys(&:to_s)
+    [STAY, ROUTE].include?(choices[MODE]) && agent_ids.none? { |id| choices[include_name(id)] == YES }
+  end
+
   # The outcome of the answers ({ name => key }), or nil when they do not agree. final: the answers of the escalation model.
   def outcome(choices, final: false)
     choices = choices.to_h.transform_keys(&:to_s)
@@ -135,16 +144,15 @@ class Captain::Runtime::DecisionRouter::Questions
     Outcome.new(kind: 'agent', agent_ids: included, key: "route_agent_#{included.first}")
   end
 
-  # A reply suggestion whose answers name no agent: the agent that leads the dialog keeps it. While none leads it, the anchor
-  # answers the first message of the dialog, or a turn that the escalation model (final) found asks for no agent; mid-dialog the
-  # decision models' answers have no outcome (the escalation decides). Elsewhere (a live turn, a council part) such answers
-  # contradict each other.
+  # route_agent with every include answer no. In a reply suggestion, while no agent leads the dialog, the anchor answers the first
+  # message of the dialog when the decision models answered so (a greeting, thanks); never as the escalation's answer (final), never
+  # mid-dialog and never while an agent leads the dialog (only an explicit stay_current keeps the current agent). Elsewhere (a live
+  # turn, a council part) such answers contradict each other.
   def idle_outcome(final)
-    return unless suggestion_default?
-    return Outcome.new(kind: 'stay', agent_ids: [current_id], key: STAY, default_to: 'current') if current_id
+    return unless suggestion_default? && current_id.nil? && !final && !@snapshot.mid_dialog?
 
     anchor = @snapshot.anchor_agent_id
-    return unless anchor && (final || !@snapshot.mid_dialog?)
+    return unless anchor
 
     Outcome.new(kind: 'agent', agent_ids: [anchor], key: "route_agent_#{anchor}", default_to: 'anchor')
   end

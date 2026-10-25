@@ -62,6 +62,11 @@ module Captain::ReplySuggestion::RequestStore
       write!(record.merge('status' => 'running', 'started_at' => started_at.utc.iso8601(3), 'deadline_at' => deadline_at.utc.iso8601(3)))
     end
 
+    # The router gave the run the budget of one agent (RunControl#shorten!): the real deadline and budget of the run.
+    def reschedule!(record, deadline_at:, budget_seconds:)
+      write!(record.merge('deadline_at' => deadline_at.utc.iso8601(3), 'budget_seconds' => budget_seconds.to_i))
+    end
+
     def finish!(record, status:, result: nil, reason_code: nil, duration_ms: nil)
       write!(
         record.merge(

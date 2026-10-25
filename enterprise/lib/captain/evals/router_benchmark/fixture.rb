@@ -7,11 +7,13 @@
 #
 # A reply suggestion scenario sets sticky (the sticky agent of the dialog, see Captain::ReplySuggestion::StickyAgent: the current
 # agent of the turn while the saved session has none) or suggestion: true, and may set anchor (the anchor of the channel, which
-# answers a suggestion whose answers name no agent while no agent leads the dialog, see DecisionRouter::Questions).
+# answers a suggestion whose answers name no agent while no agent leads the dialog, see DecisionRouter::Questions). A suggestion
+# scenario may expect undecided: the escalation names no agent either and the manager answers (DecisionRouter::UndecidedError).
 class Captain::Evals::RouterBenchmark::Fixture
   class Invalid < StandardError; end
 
-  KEY = /\A(?:stay_current|human_handoff|route_agent_\d+|council_\d+_\d+(?:_\d+)?)\z/
+  KEY = /\A(?:stay_current|human_handoff|undecided|route_agent_\d+|council_\d+_\d+(?:_\d+)?)\z/
+  UNDECIDED = 'undecided'
   CARD_SOURCES = %w[prod proposed].freeze
 
   Suite = Struct.new(:name, :account_id, :clinic, :candidates, :scenarios, keyword_init: true)
@@ -82,6 +84,16 @@ class Captain::Evals::RouterBenchmark::Fixture
       raise Invalid, "#{label}: #{key} #{scenario[key]} is not a candidate"
     end
     raise Invalid, "#{label}: a sticky agent replaces the saved current agent" if scenario['sticky'].present? && scenario['current'].present?
+
+    check_undecided!(label, scenario)
+  end
+
+  def check_undecided!(label, scenario)
+    raise Invalid, "#{label}: only a suggestion can be undecided" if scenario['expected'].to_s == UNDECIDED && !suggestion?(scenario)
+  end
+
+  def suggestion?(scenario)
+    scenario.key?('sticky') || scenario['suggestion'] == true
   end
 
   def check_current!(label, expected, current)
