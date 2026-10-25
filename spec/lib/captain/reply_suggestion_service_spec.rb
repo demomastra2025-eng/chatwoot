@@ -440,6 +440,30 @@ RSpec.describe Captain::ReplySuggestionService do
           expect(Captain::ReplySuggestion::RequestStore).to have_received(:write_progress)
             .with('req-1', hash_including(phase: 'thinking')).at_least(:once)
         end
+
+        it 'shows that the router chooses the agent, and no agent thinking, until it has chosen' do
+          assistant.update!(routing_description: 'Общие вопросы о клинике')
+          specialist = create(:captain_assistant, account: account, name: 'ЛОР-специалист', active: true, routing_description: 'Запись к ЛОРу')
+          progress = []
+          allow(ActionCable.server).to receive(:broadcast) { |_stream, payload| progress << payload[:data] }
+          runner_double = instance_double(Captain::Assistant::AgentRunnerService)
+          captured_callbacks = nil
+          allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |**kwargs|
+            captured_callbacks = kwargs[:callbacks]
+            runner_double
+          end
+          allow(runner_double).to receive(:generate_response) do
+            captured_callbacks[:on_agent_routed].call({ decision_key: "route_agent_#{specialist.id}", kind: 'agent', target_ids: [specialist.id] },
+                                                      nil)
+            { 'response' => 'Можем записать вас к ЛОРу.', 'agent_id' => specialist.id }
+          end
+
+          service.perform
+
+          expect(progress.first).to include(phase: 'routing')
+          expect(progress.first).not_to have_key(:active_agent)
+          expect(progress.last).to include(phase: 'thinking', active_agent: include('id' => specialist.id))
+        end
       end
 
       def stub_council_runner_execution(entry_assistant, specialist)

@@ -227,9 +227,10 @@ class Captain::Assistant::AgentRunnerService
     human_handoff_response({ reason: reason }, actor.agent_name).merge('routing_handoff' => true)
   end
 
+  # The router decided it, not an agent: routing_human tells the outcome so (no agent is named as its author).
   def routed_human_suggestion
     note = I18n.t('captain.reply_suggestion.reasons.patient_requested_human')
-    { 'response' => '', 'response_mode' => 'human', 'response_human_needed' => true, 'operator_note' => note }
+    { 'response' => '', 'response_mode' => 'human', 'response_human_needed' => true, 'operator_note' => note, 'routing_human' => true }
   end
 
   # The same record the handoff tool leaves: the next turn closes the handed-off message instead of answering it again.

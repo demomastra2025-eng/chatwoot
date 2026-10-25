@@ -5,13 +5,15 @@ module Enterprise::Captain::ReplySuggestionService
   module AgentCatalogHelpers
     private
 
+    # The anchor answers a channel of one agent; with two or more agents nobody is active until the router chose (the anchor is
+    # not "thinking" while the router decides).
     def init_agent_catalog!(assistant)
       @assistant = assistant
       @agents_by_id = {}
       @agents_by_name = {}
       @working_agents = []
-      index_agents!
-      @active_agent = summary_for(@assistant)
+      @routed = index_agents! > 1
+      @active_agent = summary_for(@assistant) unless @routed
     end
 
     def activate_agent!(actor, role: nil)
@@ -55,15 +57,30 @@ module Enterprise::Captain::ReplySuggestionService
         @active_agent
     end
 
+    # Returns how many candidates the router chooses among (0 or 1: there is no decision).
     def index_agents!
-      graph_actors.each { |actor| register_actor(actor) }
+      graph = agent_graph
+      graph_actors(graph).each { |actor| register_actor(actor) }
+      candidate_count(graph)
     end
 
-    def graph_actors
-      actors = @assistant.persisted? ? Captain::AgentGraph.new(@assistant, inbox: @conversation&.inbox).agents : [@assistant]
+    def agent_graph
+      Captain::AgentGraph.new(@assistant, inbox: @conversation&.inbox) if @assistant.persisted?
+    rescue StandardError
+      nil
+    end
+
+    def graph_actors(graph)
+      actors = graph ? graph.agents : [@assistant]
       (Array(actors) + [@assistant]).compact.uniq(&:id)
     rescue StandardError
       [@assistant].compact
+    end
+
+    def candidate_count(graph)
+      graph ? graph.candidates.size : 0
+    rescue StandardError
+      0
     end
 
     def register_actor(actor)
@@ -204,8 +221,9 @@ module Enterprise::Captain::ReplySuggestionService
       @routing = nil
       @pending_actions = []
       @reasoning = nil
-      @phase = 'thinking'
       init_agent_catalog!(assistant)
+      # While the router decides who answers, the manager sees that, and no agent.
+      @phase = @routed ? 'routing' : 'thinking'
     end
 
     def callbacks
@@ -339,6 +357,7 @@ module Enterprise::Captain::ReplySuggestionService
     def route_to!(target, decision)
       from_actor = agent_by_id(decision[:from_agent_id])
       activate_agent!(target, role: 'routed')
+      @phase = 'thinking'
       return if from_actor.blank? || from_actor['id'] == target['id']
 
       @phase = 'handoff'

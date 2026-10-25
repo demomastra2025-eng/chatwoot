@@ -166,6 +166,10 @@ const liveStatusText = computed(() => {
     return t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.QUEUED');
   }
   const phase = props.liveProgress?.phase;
+  // The router is choosing the agent: no agent is thinking yet.
+  if (phase === 'routing') {
+    return t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.ROUTING');
+  }
   if (phase === 'council_running') {
     return t('CONVERSATION.REPLYBOX.COPILOT_TRACE.LIVE_COUNCIL');
   }

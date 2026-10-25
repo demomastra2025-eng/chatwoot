@@ -71,6 +71,23 @@ const isDecision = computed(
     props.notice.kind === KIND.HUMAN_NEEDED
 );
 
+// Failures the manager can understand: the router could not choose the agent,
+// or the council it chose could not be set up.
+const failedReason = computed(() => {
+  if (props.notice.kind !== KIND.FAILED) return '';
+  if (props.notice.reasonCode === 'router_unavailable') {
+    return t(
+      'CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.FAILED_REASONS.ROUTER_UNAVAILABLE'
+    );
+  }
+  if (props.notice.reasonCode === 'council_unavailable') {
+    return t(
+      'CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.FAILED_REASONS.COUNCIL_UNAVAILABLE'
+    );
+  }
+  return '';
+});
+
 const body = computed(() => {
   if (reasonText.value) return reasonText.value;
   if (isDecision.value)
@@ -80,7 +97,7 @@ const body = computed(() => {
       'CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.UNAVAILABLE_REASONS.VOICE_CHANNEL_UNSUPPORTED'
     );
   }
-  return '';
+  return failedReason.value;
 });
 
 // A real space between the title and the reason: template whitespace between
@@ -88,6 +105,18 @@ const body = computed(() => {
 const reasonLine = computed(() => ` ${body.value}`);
 
 const agentName = computed(() => props.notice.agent?.name || '');
+
+// Who decided: the router (a staff request is nobody's among the agents), or
+// the agent that answered.
+const decidedBy = computed(() => {
+  if (props.notice.reasonSource === 'router') {
+    return t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.ROUTER_LABEL');
+  }
+  if (!agentName.value) return '';
+  return t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.AGENT_LABEL', {
+    agent: agentName.value,
+  });
+});
 </script>
 
 <template>
@@ -114,15 +143,11 @@ const agentName = computed(() => props.notice.agent?.name || '');
         }}</span>
       </p>
       <p
-        v-if="agentName"
+        v-if="decidedBy"
         class="mb-0 text-xs text-n-slate-11"
         data-test="copilot-notice-agent"
       >
-        {{
-          t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.AGENT_LABEL', {
-            agent: agentName,
-          })
-        }}
+        {{ decidedBy }}
       </p>
       <p
         v-if="stale"

@@ -4,15 +4,17 @@
 #
 #   draft         a text for the manager to review and insert
 #   no_reply      the agent decided that no reply is needed; reason: why
-#   human_needed  only a staff member can answer; reason: why
+#   human_needed  only a staff member can answer; reason: why (reason_source router: the router decided it, no agent did)
 #   failed        the run did not finish (timeout, provider error ...): there is NO draft, whatever the run had collected
 #   cancelled     the manager cancelled it
 module Captain::ReplySuggestion::Outcome
   OUTCOMES = %w[draft no_reply human_needed failed cancelled].freeze
-  REASON_SOURCES = %w[agent safety agent_rule].freeze
+  REASON_SOURCES = %w[agent safety agent_rule router].freeze
+  # router_unavailable: no decision model (nor the escalation) could choose the agent; council_unavailable: the council the router
+  # chose could not be set up.
   FAILURE_CODES = %w[
     timeout provider_error tool_failure tool_loop max_turns invalid_output empty_output agent_unavailable agent_error
-    queue_timeout interrupted quota_exceeded api_key_missing disabled internal_error
+    queue_timeout interrupted quota_exceeded api_key_missing disabled internal_error router_unavailable council_unavailable
   ].freeze
   REASON_LIMIT = 500
   # Precondition errors of the task wrapper (Enterprise::Captain::BaseTaskService#perform) that have no outcome key.

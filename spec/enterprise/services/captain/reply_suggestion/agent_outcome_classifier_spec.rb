@@ -124,6 +124,48 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
     end
   end
 
+  context 'when the router sent the turn to staff' do
+    let(:payload) do
+      { 'response' => '', 'response_mode' => 'human', 'response_human_needed' => true, 'routing_human' => true, 'agent_id' => 84,
+        'operator_note' => I18n.t('captain.reply_suggestion.reasons.patient_requested_human') }
+    end
+
+    it 'is a decision of the router, with no agent named as its author' do
+      expect(outcome).to include(outcome: 'human_needed', reason_source: 'router', agent: nil,
+                                 reason: I18n.t('captain.reply_suggestion.reasons.patient_requested_human'))
+    end
+  end
+
+  describe 'a run the router could not route' do
+    def failed_with(reason)
+      described_class.new(
+        { 'response' => described_class::PROVIDER_ERROR, 'error_class' => 'Captain::TechnicalToolFailure',
+          'error_message' => "agent_router: #{reason}", 'technical_failure' => { 'tool' => 'agent_router', 'reason' => reason } },
+        trace_collector: trace_collector
+      ).perform
+    end
+
+    it 'is router_unavailable, not a failure of a tool' do
+      %w[decision_chain_unavailable escalation_unavailable escalation_invalid].each do |reason|
+        expect(failed_with(reason)).to include(outcome: 'failed', reason_code: 'router_unavailable', detail: "agent_router: #{reason}")
+      end
+    end
+
+    it 'is council_unavailable when the council it chose could not be set up' do
+      expect(failed_with('council_unavailable')).to include(outcome: 'failed', reason_code: 'council_unavailable')
+    end
+
+    it 'keeps tool_failure for a tool of the agent' do
+      failure = described_class.new(
+        { 'response' => described_class::PROVIDER_ERROR, 'error_class' => 'Captain::TechnicalToolFailure',
+          'technical_failure' => { 'tool' => 'create_appointment', 'reason' => 'provider_unavailable' } },
+        trace_collector: trace_collector
+      ).perform
+
+      expect(failure).to include(reason_code: 'tool_failure')
+    end
+  end
+
   describe 'a reply that cannot be given' do
     it 'fails a handoff: a suggestion has no such thing' do
       failure = described_class.new({ 'response' => 'conversation_handoff' }, trace_collector: trace_collector).perform

@@ -4,8 +4,10 @@
 #
 #   1  the safety check blocked the turn                    human_needed (safety)
 #   2  a custom rule of the agent stopped the turn          human_needed (agent_rule)
-#   3  an error ended the run                               failed (reason_code from the error class)
-#   4  the agent answered response_mode human              human_needed (operator_note), failed when the note is blank
+#   3  an error ended the run                               failed (reason_code from the error class; router_unavailable or
+#                                                           council_unavailable when the router could not route the turn)
+#   4  the router sent the turn to staff                    human_needed (router): no agent is named as its author
+#      the agent answered response_mode human              human_needed (operator_note), failed when the note is blank
 #   5  the agent answered response_mode suppress           no_reply (operator_note), failed when the note is blank
 #   6  a cancelled response, or a handoff                   failed (invalid_output): a suggestion has neither
 #   7  an empty reply                                       failed (empty_output)
@@ -24,6 +26,8 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
     'Captain::Assistant::AgentRunnerService::BlankResponseError' => 'empty_output',
     'Captain::Assistant::AgentRunnerService::SemanticOutputError' => 'invalid_output'
   }.freeze
+  # The technical failure the runner reports when the router could not decide or the council could not be set up.
+  ROUTER_TOOL = 'agent_router'
   DEFAULT_USAGE = { 'prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0 }.freeze
   PROVIDER_ERROR_PREFIXES = %w[RubyLLM:: Faraday:: Llm:: Net:: Timeout:: OpenSSL:: Errno:: SocketError].freeze
 
@@ -65,19 +69,31 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
   # 4
   def handoff_outcome
     return unless payload[:response_mode] == 'human'
+    return router_human_needed if payload[:routing_human] == true
 
     human_needed(payload[:operator_note], 'agent')
   end
 
+  # The router chose staff for the turn: it is nobody's decision among the agents, so no agent is named.
+  def router_human_needed
+    Captain::ReplySuggestion::Outcome.human_needed(
+      reason: payload[:operator_note], engine: 'agent', reason_source: 'router', agent: nil, pending_actions: [], usage: usage
+    )
+  end
+
   # 5
   def suppress_outcome
-    return unless payload[:response_mode] == 'suppress' || payload[:response_suppressed]
+    return unless suppressed?
 
     meta = suggestion_meta
     Captain::ReplySuggestion::Outcome.no_reply(
       reason: payload[:operator_note], engine: 'agent', reason_source: 'agent', agent: meta['agent'],
       pending_actions: Array(meta['pending_actions']), usage: usage
     )
+  end
+
+  def suppressed?
+    payload[:response_mode] == 'suppress' || payload[:response_suppressed]
   end
 
   # 6 and 7
@@ -118,9 +134,19 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
 
   def error_code_for(error_class)
     name = error_class.to_s
+    return router_failure_code if router_failure_code
     return ERROR_CLASS_CODES[name] if ERROR_CLASS_CODES.key?(name)
     return 'provider_error' if PROVIDER_ERROR_PREFIXES.any? { |prefix| name.start_with?(prefix) } || name.blank?
 
     'agent_error'
+  end
+
+  # The router could not route the turn (every decision model and the escalation failed), or the council it chose could not be set
+  # up: not a failure of a tool of the agent.
+  def router_failure_code
+    failure = payload[:technical_failure].to_h.with_indifferent_access
+    return unless failure[:tool].to_s == ROUTER_TOOL
+
+    failure[:reason].to_s == 'council_unavailable' ? 'council_unavailable' : 'router_unavailable'
   end
 end

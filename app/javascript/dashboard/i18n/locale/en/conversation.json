@@ -288,6 +288,7 @@
         "REFINE_BUTTON": "Refine with AI",
         "EDIT_HINT": "After inserting, you can edit the text like a regular message",
         "QUEUED": "Queued…",
+        "ROUTING": "Choosing the agent for the reply…",
         "ELAPSED": "{elapsed} s of ~{budget} s",
         "STALE_WARNING": "New customer messages arrived after this request. Check that the reply is still relevant.",
         "LEGACY_ENGINE": "Prepared without an AI agent: no schedule and no knowledge base",
@@ -300,6 +301,11 @@
           "RETRY": "Retry",
           "DISMISS": "Dismiss",
           "AGENT_LABEL": "Decision by agent {agent}",
+          "ROUTER_LABEL": "Decision of the AI routing",
+          "FAILED_REASONS": {
+            "ROUTER_UNAVAILABLE": "The AI could not choose an agent for this dialog right now. Answer yourself or retry.",
+            "COUNCIL_UNAVAILABLE": "The AI could not gather the agents for this request right now. Answer yourself or retry."
+          },
           "UNAVAILABLE_REASONS": {
             "VOICE_CHANNEL_UNSUPPORTED": "Text cannot be sent during a call. Open the customer's messenger chat to get a suggestion."
           }

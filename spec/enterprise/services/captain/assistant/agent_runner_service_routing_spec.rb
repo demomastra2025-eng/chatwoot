@@ -171,7 +171,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     response = suggestion.generate_response(message_history: history)
 
     expect(runs).to be_empty
-    expect(response).to include('response' => '', 'response_mode' => 'human')
+    expect(response).to include('response' => '', 'response_mode' => 'human', 'routing_human' => true)
     expect(response['operator_note']).to be_present
     expect(conversation.reload.additional_attributes.to_h).not_to have_key(Captain::Conversation::AgentSession::ATTRIBUTE)
   end
