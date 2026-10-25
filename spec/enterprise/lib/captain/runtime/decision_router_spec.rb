@@ -68,7 +68,7 @@ RSpec.describe Captain::Runtime::DecisionRouter do
     expect(question[:question][:questions].keys).to eq(%w[route_mode include_agent_84 include_agent_119 include_agent_120])
     expect(question[:question][:questions]['route_mode'][:instructions]).to eq(described_class::INSTRUCTIONS)
     expect(question[:question][:state]).to include(current_agent_id: nil, latest_message: snapshot.latest_message,
-                                                   agents: agents.map { |agent| { id: agent.id, label: agent.label } })
+                                                   agents: agents.map { |agent| { id: agent.id, label: agent.label, handles: agent.card } })
     expect(question[:observability]).to include(routing_request_id: 'r-1', operation: 'captain.agent_routing')
   end
 

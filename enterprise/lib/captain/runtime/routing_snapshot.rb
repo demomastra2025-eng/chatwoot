@@ -4,8 +4,10 @@
 # context (.from_context, on the calling thread: database reads only, no model call); the evaluation harness builds it from an
 # exported graph and a scenario (.from_fixture). Both feed the same Captain::Runtime::DecisionRouter.
 #
-# The state the decision model reads (#to_state) holds the agents by id and short label only: what each agent handles is written
-# once, in the criteria (Captain::Routing::CompetenceCard). Patient text is data for the model, never written to an event.
+# The state the decision model reads (#to_state) holds the agents by id, short label and competence card
+# (Captain::Routing::CompetenceCard): every question of the call sees what every agent handles, so route_mode can tell one agent
+# from several and an include_agent question can see that another agent names the topic explicitly. The card of an agent is also
+# in the yes criterion of its include_agent question. Patient text is data for the model, never written to an event.
 class Captain::Runtime::RoutingSnapshot
   MAX_RECENT_MESSAGES = 6
   TEXT_LIMIT = 500
@@ -66,7 +68,7 @@ class Captain::Runtime::RoutingSnapshot
   def to_state
     {
       clinic: @clinic, patient_language: @patient_language, current_agent_id: @current_agent_id, last_turn: last_turn,
-      visited_agent_ids: @visited_agent_ids, agents: @agents.map { |item| { id: item.id, label: item.label } },
+      visited_agent_ids: @visited_agent_ids, agents: @agents.map { |item| { id: item.id, label: item.label, handles: item.card.to_s } },
       recent_messages: @recent_messages, latest_message: @latest_message, open_questions: @open_questions
     }
   end

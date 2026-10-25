@@ -33,8 +33,10 @@ RSpec.describe Captain::Runtime::RoutingSnapshot do
       state = described_class.from_context(context, candidates: candidates, clinic: 'SEZIM', patient_language: 'ru').to_state
 
       expect(state).to include(current_agent_id: 119, clinic: 'SEZIM', last_turn: { kind: 'agent', agent_ids: [119] }, visited_agent_ids: [119])
-      expect(state[:agents]).to eq([{ id: 84, label: 'Сезім — Богенбай Батыра' }, { id: 119, label: 'Кабинет ЛОР-процедур' },
-                                    { id: 120, label: 'Отдел хирургии' }])
+      note = Captain::Routing::CompetenceCard::NO_BOOKING_NOTE
+      expect(state[:agents]).to eq([{ id: 84, label: 'Сезім — Богенбай Батыра', handles: 'Запись к ЛОР-врачам. Тел.' },
+                                    { id: 119, label: 'Кабинет ЛОР-процедур', handles: 'ЛОР-процедуры' },
+                                    { id: 120, label: 'Отдел хирургии', handles: "ЛОР-операции #{note}" }])
       expect(state[:recent_messages]).to eq([{ role: 'patient', text: 'Хочу криотерапию' },
                                              { role: 'clinic', agent_id: 119, text: 'Свободно завтра 15:00. Как вас зовут?' }])
       expect(state[:latest_message]).to eq("Вот снимок [image]\nДавайте на 15:00, Ерлан")
@@ -48,12 +50,13 @@ RSpec.describe Captain::Runtime::RoutingSnapshot do
       expect(snapshot.human_available).to be(true)
     end
 
-    it 'writes the competence cards into the agents, not into the state' do
+    it 'gives every question the competence cards of all agents, cleaned of contacts' do
       snapshot = described_class.from_context(context, candidates: candidates)
 
       expect(snapshot.agent(84).card).to eq('Запись к ЛОР-врачам. Тел.')
       expect(snapshot.agent(120).card).to eq("ЛОР-операции #{Captain::Routing::CompetenceCard::NO_BOOKING_NOTE}")
-      expect(snapshot.to_state.to_json).not_to include('ЛОР-операции')
+      expect(snapshot.to_state[:agents].pluck(:handles)).to eq(snapshot.agents.map(&:card))
+      expect(snapshot.to_state.to_json).not_to include('701 123')
     end
 
     it 'has no current agent when the saved one is no longer a candidate' do
