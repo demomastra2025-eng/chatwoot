@@ -17,10 +17,10 @@
 #   Contacts::OwnerSyncService), so a rule or a webhook sees one change, not N;
 # - a record whose labels already are what is asked is not saved at all;
 # - no conversation changes its updated_at, neither on the write nor when the activity message is created later
-#   (Message#set_conversation_activity). The status of the thread is the status of the open conversation with the newest
-#   updated_at (Conversations::CommunicationThreadResolver#aggregate_status) and a label is not a change of status: a write
-#   that moved it would put the least active conversation in front and flip the status of the whole person (a snoozed or
-#   pending channel in front of an open one with an unanswered message);
+#   (Message#set_conversation_activity). The thread shows the most urgent status of the person's conversations
+#   (Conversations::CommunicationThreadResolver#aggregate_status) and, among the conversations of one status, the one with
+#   the newest updated_at is in front (front_first). A label is not a change of status: a write that moved updated_at
+#   would put the least active conversation in front and make it report the next change of the whole person;
 # - only the given labels are touched. A list the client has not seen (a stale one) cannot erase a label, which is why
 #   callers send add / remove and not the whole list (see delta_from_params for the older clients that still do).
 #

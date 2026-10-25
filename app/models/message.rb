@@ -801,9 +801,9 @@ class Message < ApplicationRecord
     current_activity = conversation[:last_activity_at]
     return if current_activity.present? && current_activity >= activity_time
 
-    # updated_at decides which conversation gives the communication thread its status
-    # (Conversations::CommunicationThreadResolver#aggregate_status). A message that only records a change of the person
-    # keeps it, or a snoozed or pending channel would come in front of the open one.
+    # Among the person's conversations of the same status, updated_at decides which one is in front and reports a change
+    # of the whole person (Conversations::CommunicationThreadResolver.front_first). A message that only records a change
+    # of the person keeps it, or the least active channel would come in front of its equals.
     columns = { last_activity_at: activity_time }
     columns[:updated_at] = Time.current unless preserve_conversation_updated_at
     conversation.update_columns(columns) # rubocop:disable Rails/SkipsModelValidations
