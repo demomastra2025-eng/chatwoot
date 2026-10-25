@@ -3,10 +3,11 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Evals::RouterBenchmark::Report do
-  def row(id, expected, got, confidence: 0.9, escalated: false, **extra)
-    Captain::Evals::RouterBenchmark::Runner::Row.new(suite: 's', scenario_id: id, run: 1, mode: 'pipeline', model: 'm', expected: expected,
-                                                     got: got, confidence: confidence, escalated: escalated, latency_ms: 400,
-                                                     cost_usd: 0.001, **extra)
+  def row(id, expected, got, confidence: 0.9, **extra)
+    item = Captain::Evals::RouterBenchmark::Runner::Row.new(suite: 's', scenario_id: id, run: 1, mode: 'pipeline', model: 'm', expected: expected,
+                                                            got: got, confidence: confidence, escalated: false, latency_ms: 400, cost_usd: 0.001)
+    extra.each { |name, value| item[name] = value }
+    item
   end
 
   it 'counts false councils, exact councils, human recall and calibration' do
