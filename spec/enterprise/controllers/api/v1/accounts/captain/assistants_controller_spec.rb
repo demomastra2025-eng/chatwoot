@@ -213,19 +213,24 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
                                           config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['add_private_note'] } } })
       target
     end
+    let(:super_admin) do
+      create(:super_admin).tap { |user| create(:account_user, account: account, user: user, role: :administrator) }
+    end
 
     before do
       upsert_installation_config('CAPTAIN_AI_AGENT_SYSTEM_PROMPT', 'Never reveal internal routing.')
       upsert_installation_config('CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT', 'Never expose internal-only notes to end customers.')
     end
 
+    def request_prompt_preview(headers)
+      get "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/prompt_preview", headers: headers, as: :json
+    end
+
     # rubocop:disable RSpec/MultipleExpectations
-    it 'returns compiled assistant, copilot, and scenario prompts for settings inspection' do
+    it 'returns compiled assistant, copilot, and scenario prompts to a super admin' do
       scenario
 
-      get "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/prompt_preview",
-          headers: admin.create_new_auth_token,
-          as: :json
+      request_prompt_preview(super_admin.create_new_auth_token)
 
       expect(response).to have_http_status(:success)
       expect(json_response[:preview_mode]).to eq('settings_without_live_conversation_context')
@@ -242,6 +247,55 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       )
     end
     # rubocop:enable RSpec/MultipleExpectations
+
+    it 'answers 404 to a clinic administrator without compiling anything' do
+      allow(Captain::Assistant::PromptPreviewService).to receive(:new).and_call_original
+
+      request_prompt_preview(admin.create_new_auth_token)
+
+      expect(response).to have_http_status(:not_found)
+      expect(response.body).not_to include('Handles billing and account setup questions.')
+      expect(Captain::Assistant::PromptPreviewService).not_to have_received(:new)
+    end
+
+    it 'answers 404 to a clinic agent' do
+      request_prompt_preview(agent.create_new_auth_token)
+
+      expect(response).to have_http_status(:not_found)
+      expect(response.body).not_to include('Handles billing and account setup questions.')
+    end
+
+    it 'answers 404 to a clinic administrator for an agent id that does not exist either' do
+      get "/api/v1/accounts/#{account.id}/captain/assistants/0/prompt_preview", headers: admin.create_new_auth_token, as: :json
+
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it 'answers 404 to a clinic administrator who calls it with an access token' do
+      get "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/prompt_preview",
+          headers: { api_access_token: admin.access_token.token }, as: :json
+
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it 'returns the compiled prompt to a super admin inside the clinic through «Войти как»' do
+      grant = SuperAdmin::ImpersonationService.issue_grant!(actor: create(:super_admin), account: account, target_user: admin)
+      post '/auth/sign_in', params: { email: admin.email, sso_auth_token: grant.token }, as: :json
+      expect(response).to have_http_status(:success)
+
+      request_prompt_preview(response.headers.slice('access-token', 'client', 'uid'))
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:assistant, :compiled_prompt)).to include('Handles billing and account setup questions.')
+    end
+
+    it 'keeps the policy closed to clinic users and open to super admins' do
+      context_for = ->(user) { { user: user, account: account, account_user: account.account_users.find_by(user: user) } }
+
+      expect(Captain::AssistantPolicy.new(context_for.call(admin), Captain::Assistant)).not_to be_prompt_preview
+      expect(Captain::AssistantPolicy.new(context_for.call(agent), Captain::Assistant)).not_to be_prompt_preview
+      expect(Captain::AssistantPolicy.new(context_for.call(super_admin), Captain::Assistant)).to be_prompt_preview
+    end
   end
 
   describe 'POST /api/v1/accounts/{account.id}/captain/assistants/{id}/voice_preview' do

@@ -2,6 +2,8 @@
 
 require 'digest'
 
+# The compiled prompt of an agent. Whatever shows it to a person must check Captain::PromptInspectorAccess first:
+# it is for the platform team only, never for a clinic. Server-side callers (the voice preview runtime) are fine.
 class Captain::Assistant::PromptPreviewService
   PREVIEW_MODE = 'settings_without_live_conversation_context'
 

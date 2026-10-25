@@ -84,7 +84,31 @@ RSpec.describe 'Captain assistant admin copilot tools' do
   end
 
   describe Captain::Tools::Account::PreviewCaptainAssistantPromptService do
-    let(:service) { described_class.new(assistant, user: admin) }
+    let(:super_admin) do
+      create(:super_admin).tap { |user| create(:account_user, account: account, user: user, role: :administrator) }
+    end
+    let(:service) { described_class.new(assistant, user: super_admin) }
+
+    it 'keeps the compiled prompt from a clinic administrator through MCP and Copilot' do
+      allow(Captain::Assistant::PromptPreviewService).to receive(:new).and_call_original
+      clinic_tool = described_class.new(assistant, user: admin)
+
+      result = clinic_tool.execute(assistant_id: assistant.id)
+
+      expect(clinic_tool).not_to be_active
+      expect(result).to include('The compiled prompt is available to the platform team only')
+      expect(Captain::Assistant::PromptPreviewService).not_to have_received(:new)
+    end
+
+    it 'still asks a clinic agent for the administrator permission first' do
+      result = described_class.new(assistant, user: create(:user, account: account, role: :agent)).execute(assistant_id: assistant.id)
+
+      expect(result).to include('Account administrator permission is required')
+    end
+
+    it 'is active for a super admin who administers the account' do
+      expect(service).to be_active
+    end
 
     it 'returns the prompt preview payload for self-test/diff before mutation' do
       preview_payload = {
