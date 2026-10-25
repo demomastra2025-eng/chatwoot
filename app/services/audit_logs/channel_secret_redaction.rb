@@ -6,15 +6,22 @@
 # writes the filtered changes back in place, in the form they were stored (a JSON object, or the same object kept as a JSON
 # string). A filtered entry is left as it is on the next run, so the run can be repeated.
 #
-# The report says, per inbox, how many entries and which keys would be (or were) filtered. It never carries a value.
+# The report says, per inbox, how many entries and which keys would be (or were) filtered. It never carries a value. An entry
+# whose changes are not a JSON object (an array, null, a string that is not the JSON of an object) cannot be examined: it is
+# left as it is and counted as unparsed, with its id, so the operator can look at it before and after the run.
 #
 #   report = AuditLogs::ChannelSecretRedaction.new(apply: false).perform
-#   report.rows      # => 6
-#   report.inboxes   # => { 99 => { account_id: 1, rows: 4, keys: { 'string_session' => 2, 'runtime_state' => 3 } } }
+#   report.rows          # => 6
+#   report.unparsed_ids  # => []
+#   report.inboxes       # => { 99 => { account_id: 1, rows: 4, unparsed: 0, keys: { 'string_session' => 2, 'runtime_state' => 3 } } }
 class AuditLogs::ChannelSecretRedaction
   DEFAULT_BATCH_SIZE = 500
 
-  Report = Struct.new(:apply, :scanned, :rows, :inboxes, keyword_init: true)
+  Report = Struct.new(:apply, :scanned, :rows, :unparsed_ids, :inboxes, keyword_init: true) do
+    def unparsed
+      unparsed_ids.size
+    end
+  end
 
   def initialize(apply: false, batch_size: DEFAULT_BATCH_SIZE, inbox_ids: nil)
     @apply = apply
@@ -23,7 +30,7 @@ class AuditLogs::ChannelSecretRedaction
   end
 
   def perform
-    @report = Report.new(apply: @apply, scanned: 0, rows: 0, inboxes: {})
+    @report = Report.new(apply: @apply, scanned: 0, rows: 0, unparsed_ids: [], inboxes: {})
     each_batch { |rows| rows.each { |row| redact(*row) } }
     @report
   end
@@ -51,7 +58,7 @@ class AuditLogs::ChannelSecretRedaction
   def redact(id, auditable_id, account_id, storage, raw)
     @report.scanned += 1
     changes = stored_changes(storage, raw)
-    return unless changes.is_a?(Hash)
+    return count_unparsed(id, auditable_id, account_id) unless changes.is_a?(Hash)
 
     filtered = AuditLogs::SecretFilter.filter(changes)
     keys = changes.keys.reject { |key| changes[key] == filtered[key] }
@@ -78,8 +85,17 @@ class AuditLogs::ChannelSecretRedaction
 
   def count(auditable_id, account_id, keys)
     @report.rows += 1
-    inbox = @report.inboxes[auditable_id] ||= { account_id: account_id, rows: 0, keys: Hash.new(0) }
+    inbox = inbox_counts(auditable_id, account_id)
     inbox[:rows] += 1
     keys.each { |key| inbox[:keys][key] += 1 }
+  end
+
+  def count_unparsed(id, auditable_id, account_id)
+    @report.unparsed_ids << id
+    inbox_counts(auditable_id, account_id)[:unparsed] += 1
+  end
+
+  def inbox_counts(auditable_id, account_id)
+    @report.inboxes[auditable_id] ||= { account_id: account_id, rows: 0, unparsed: 0, keys: Hash.new(0) }
   end
 end

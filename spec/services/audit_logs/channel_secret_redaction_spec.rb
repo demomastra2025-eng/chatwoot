@@ -54,9 +54,10 @@ RSpec.describe AuditLogs::ChannelSecretRedaction do
     output = run_task
 
     expect(output).to include(
-      { inbox_id: inbox.id, account_id: inbox.account_id, rows: 2, keys: { 'api_hash' => 1, 'runtime_state' => 1, 'string_session' => 1 } }.to_json
+      { inbox_id: inbox.id, account_id: inbox.account_id, rows: 2, unparsed: 0,
+        keys: { 'api_hash' => 1, 'runtime_state' => 1, 'string_session' => 1 } }.to_json
     )
-    expect(output).to include('"mode":"dry_run"', '"rows":2', '"inboxes":1')
+    expect(output).to include('"mode":"dry_run"', '"rows":2', '"inboxes":1', '"unparsed":0,"unparsed_ids":[]')
     expect(output).not_to include(session, 'stored-login-token', 'stored-old-hash', '+7701')
     expect([session_row_id, string_row_id, clean_row_id].map { |id| stored(id) }).to eq(before)
   end
@@ -96,6 +97,27 @@ RSpec.describe AuditLogs::ChannelSecretRedaction do
     )
     expect(stored(toggle_row_id)['raw']).not_to include('stored-login-token', '700100')
     expect(described_class.new(apply: true, inbox_ids: [inbox.id]).perform.rows).to eq(0)
+  end
+
+  it 'reports by id, never by value, the entries it cannot read and leaves them as they are' do
+    array_row_id = connection.select_value(<<~SQL.squish)
+      INSERT INTO audits (auditable_type, auditable_id, associated_type, associated_id, action, audited_changes, version, created_at)
+      VALUES ('Inbox', #{inbox.id.to_i}, 'Account', #{inbox.account_id.to_i}, 'update', '["stored-array-secret"]'::jsonb, 1, NOW())
+      RETURNING id
+    SQL
+    text_row_id = connection.select_value(<<~SQL.squish)
+      INSERT INTO audits (auditable_type, auditable_id, associated_type, associated_id, action, audited_changes, version, created_at)
+      VALUES ('Inbox', #{inbox.id.to_i}, 'Account', #{inbox.account_id.to_i}, 'update', to_jsonb('stored-text-secret'::text), 1, NOW())
+      RETURNING id
+    SQL
+    before = [array_row_id, text_row_id].map { |id| stored(id) }
+
+    output = run_task(APPLY: '1')
+
+    expect(output).to include(%("unparsed":2,"unparsed_ids":[#{array_row_id},#{text_row_id}]))
+    expect(output).to include({ inbox_id: inbox.id, account_id: inbox.account_id, rows: 2, unparsed: 2 }.to_json.delete_suffix('}'))
+    expect(output).not_to include('stored-array-secret', 'stored-text-secret')
+    expect([array_row_id, text_row_id].map { |id| stored(id) }).to eq(before)
   end
 
   it 'touches only the inboxes it is given' do
