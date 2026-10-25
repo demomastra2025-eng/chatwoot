@@ -150,6 +150,37 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
       expect(run_context.context[described_class::CONTEXT_KEY].size).to eq(1)
     end
 
+    it 'fingerprints the action, not the agent that prepared it: the same action of another agent is one card' do
+      other_agent = create(:captain_assistant, account: account, name: 'Процедуры', active: true, config: assistant.config)
+      args = { resource_id: resource.id, service_id: service_item.id, starts_at: starts_at, ends_at: ends_at }
+
+      first = JSON.parse(described_class.intercept(tool: create_tool, tool_context: tool_context, arguments: args))
+      other_context = Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new(
+        run_context.context.deep_dup.merge(captain_suggestion_pending_actions: []).tap { |item| item[:state][:assistant_id] = other_agent.id }
+      ))
+      second = JSON.parse(described_class.intercept(tool: Captain::Tools::CreateAppointmentTool.new(other_agent), tool_context: other_context,
+                                                    arguments: args))
+
+      pending = described_class.pending_for(account_id: account.id, conversation_id: conversation.id)
+      expect(described_class.fetch_record(second['action_id'])['digest']).to eq(described_class.fetch_record(first['action_id'])['digest'])
+      expect(pending.size).to eq(1)
+    end
+
+    it 'records the suggestion request and the manager of the card, and lists the cards of one request' do
+      Current.user = user
+      args = { resource_id: resource.id, service_id: service_item.id, starts_at: starts_at, ends_at: ends_at }
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 60
+      result = Captain::ReplySuggestion::RunControl.with(request_id: 'request-1', deadline: deadline) do
+        JSON.parse(described_class.intercept(tool: create_tool, tool_context: tool_context, arguments: args))
+      end
+
+      expect(described_class.fetch_record(result['action_id'])).to include('suggestion_request_id' => 'request-1', 'user_id' => user.id)
+      expect(described_class.pending_for(account_id: account.id, conversation_id: conversation.id, request_id: 'request-1').size).to eq(1)
+      expect(described_class.pending_for(account_id: account.id, conversation_id: conversation.id, request_id: 'request-2')).to be_empty
+    ensure
+      Current.reset
+    end
+
     it 'returns failure without storing a pending proposal when resource_id is invalid' do
       raw_result = described_class.intercept(
         tool: create_tool,

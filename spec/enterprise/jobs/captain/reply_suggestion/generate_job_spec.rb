@@ -251,8 +251,10 @@ RSpec.describe Captain::ReplySuggestion::GenerateJob do
     end
 
     it 'discards the approval cards the failed run prepared, and only those' do
+      # A card of another manager's suggestion in the same conversation (the earlier cards of this manager go when a new one starts).
       older = Captain::ReplySuggestion::ActionApprovalService.store_record!(
-        'action_id' => 'older-card', 'account_id' => account.id, 'conversation_id' => conversation.id, 'status' => 'pending'
+        'action_id' => 'older-card', 'account_id' => account.id, 'conversation_id' => conversation.id, 'status' => 'pending',
+        'user_id' => create(:user, account: account, role: :agent).id, 'suggestion_request_id' => 'another-request'
       )
       script_run do
         Captain::ReplySuggestion::ActionApprovalService.store_record!(

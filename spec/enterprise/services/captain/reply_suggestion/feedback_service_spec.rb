@@ -99,7 +99,7 @@ RSpec.describe Captain::ReplySuggestion::FeedbackService do
     end
   end
 
-  describe 'the sticky agent of the suggestion' do
+  describe 'the sticky agent and the approval cards of the suggestion' do
     let(:record) do
       created = store.create!(
         'account_id' => account.id, 'user_id' => agent.id, 'conversation_id' => conversation.id,
@@ -117,6 +117,19 @@ RSpec.describe Captain::ReplySuggestion::FeedbackService do
       Captain::ReplySuggestion::StickyAgent.remember!(conversation, 84)
       perform('sent', final_text: suggestion_text)
       expect(Captain::ReplySuggestion::StickyAgent.read(conversation)).to eq(119)
+    end
+
+    it 'does not make the agent of a dismissed draft sticky, and discards the cards of that suggestion only' do
+      approvals = Captain::ReplySuggestion::ActionApprovalService
+      card = { 'account_id' => account.id, 'conversation_id' => conversation.id, 'status' => 'pending', 'tool_name' => 'create_appointment' }
+      approvals.store_record!(card.merge('action_id' => 'own-card', 'digest' => 'd-1', 'suggestion_request_id' => record['id']))
+      approvals.store_record!(card.merge('action_id' => 'other-card', 'digest' => 'd-2', 'suggestion_request_id' => 'other-request'))
+
+      perform('dismissed')
+
+      expect(Captain::ReplySuggestion::StickyAgent.read(conversation)).to be_nil
+      expect(approvals.fetch_record('own-card')).to include('status' => 'rejected', 'rejected_reason' => 'suggestion_dismissed')
+      expect(approvals.fetch_record('other-card')).to include('status' => 'pending')
     end
   end
 

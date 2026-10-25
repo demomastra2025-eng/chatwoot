@@ -325,17 +325,24 @@ module Enterprise::Captain::ReplySuggestionService
       @pending_actions = (@pending_actions + actions).uniq { |item| item['action_id'] || item[:action_id] }
     end
 
+    # The cards of this run: what the run reported, and what it stored (a card of a part on a thread). The cards of earlier
+    # suggestions are not this suggestion's (a new suggestion discards them, see StartService).
     def resolve_pending_actions(payload)
-      stored_pending = Captain::ReplySuggestion::ActionApprovalService.pending_for(
-        account_id: @conversation&.account_id,
-        conversation_id: @conversation&.id
-      )
-      combined = Array(payload[:pending_actions]) + @pending_actions + Array(stored_pending)
+      combined = Array(payload[:pending_actions]) + @pending_actions + stored_pending_actions
       items = combined.filter_map do |entry|
         hash = entry.to_h.deep_stringify_keys
         hash if hash['action_id'].present?
       end
       items.uniq { |item| item['digest'].presence || item['action_id'] }
+    end
+
+    def stored_pending_actions
+      request_id = @progress_context.to_h[:suggestion_request_id]
+      return [] if request_id.blank?
+
+      Array(Captain::ReplySuggestion::ActionApprovalService.pending_for(
+              account_id: @conversation&.account_id, conversation_id: @conversation&.id, request_id: request_id
+            ))
     end
 
     # The router's decision for the turn (keys, ids and models only): who drafts the suggestion, or a council of exactly these agents.

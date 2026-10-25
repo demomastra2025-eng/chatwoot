@@ -59,22 +59,48 @@ class Captain::ReplySuggestion::ActionApprovalService
       new_interception(tool: tool, tool_context: tool_context, arguments: arguments)
     end
 
-    def pending_for(account_id:, conversation_id:)
-      return [] if account_id.blank? || conversation_id.blank?
-
-      raw_ids = Redis::Alfred.get(conversation_index_key(account_id, conversation_id))
-      ids = raw_ids.present? ? Array(JSON.parse(raw_ids)) : []
-      items = ids.filter_map do |action_id|
-        record = fetch_record(action_id)
-        next unless record && record['account_id'].to_i == account_id.to_i && record['conversation_id'].to_i == conversation_id.to_i
-        next unless record['status'] == PENDING_STATUS
-
-        public_payload(record)
+    # The pending cards of the conversation; request_id: only the cards of that suggestion request.
+    def pending_for(account_id:, conversation_id:, request_id: nil)
+      items = pending_records(account_id, conversation_id).filter_map do |record|
+        public_payload(record) if request_id.nil? || record['suggestion_request_id'].to_s == request_id.to_s
       end
       items.uniq { |item| item['digest'] || item['action_id'] }
     rescue StandardError => e
       Rails.logger.warn("[CAPTAIN][ActionApprovalService] pending_for failed: #{e.class}: #{e.message}")
       []
+    end
+
+    # A new suggestion of this manager starts in the conversation: the pending cards of the manager's earlier suggestions there (and
+    # cards that name no manager or request) are discarded, so that the new suggestion does not show them again next to its own.
+    # Cards of other managers' suggestions stay.
+    def discard_superseded!(account_id:, conversation_id:, user_id:, keep_request_id:)
+      superseded = pending_records(account_id, conversation_id).select do |record|
+        (record['user_id'].blank? || record['user_id'].to_i == user_id.to_i) && record['suggestion_request_id'].to_s != keep_request_id.to_s
+      end
+      discard!(action_ids: superseded.pluck('action_id'), reason: 'suggestion_superseded')
+    rescue StandardError => e
+      Rails.logger.warn("[CAPTAIN][ActionApprovalService] discard_superseded failed: #{e.class}: #{e.message}")
+    end
+
+    # The manager dismissed the suggestion: its pending cards go with it.
+    def discard_for_request!(account_id:, conversation_id:, request_id:, reason:)
+      cards = pending_records(account_id, conversation_id).select { |record| record['suggestion_request_id'].to_s == request_id.to_s }
+      discard!(action_ids: cards.pluck('action_id'), reason: reason)
+    rescue StandardError => e
+      Rails.logger.warn("[CAPTAIN][ActionApprovalService] discard_for_request failed: #{e.class}: #{e.message}")
+    end
+
+    def pending_records(account_id, conversation_id)
+      return [] if account_id.blank? || conversation_id.blank?
+
+      raw_ids = Redis::Alfred.get(conversation_index_key(account_id, conversation_id))
+      ids = raw_ids.present? ? Array(JSON.parse(raw_ids)) : []
+      ids.filter_map { |action_id| fetch_record(action_id) }.select { |record| pending_in?(record, account_id, conversation_id) }
+    end
+
+    def pending_in?(record, account_id, conversation_id)
+      record['status'] == PENDING_STATUS && record['account_id'].to_i == account_id.to_i &&
+        record['conversation_id'].to_i == conversation_id.to_i
     end
 
     def fetch_record(action_id)
@@ -539,13 +565,7 @@ class Captain::ReplySuggestion::ActionApprovalService
     end
 
     def build_or_reuse_proposal(context:, state:, assistant:, account:, conversation:, tool_id:, arguments:)
-      digest = compute_digest(
-        account_id: account&.id,
-        conversation_id: conversation&.id,
-        assistant_id: assistant&.id,
-        tool_name: tool_id,
-        arguments: arguments
-      )
+      digest = compute_digest(account_id: account&.id, conversation_id: conversation&.id, tool_name: tool_id, arguments: arguments)
       existing = Array(context[CONTEXT_KEY]).find { |item| item['digest'] == digest }
       if existing
         stored = fetch_record(existing['action_id'])
@@ -573,6 +593,9 @@ class Captain::ReplySuggestion::ActionApprovalService
         'description' => presentation[:description],
         'details' => presentation[:details],
         'agent' => agent_summary(assistant),
+        # The suggestion request and the manager the card was prepared for (a later suggestion replaces it, see discard_superseded!).
+        'suggestion_request_id' => Captain::ReplySuggestion::RunControl.current&.request_id,
+        'user_id' => Current.user&.id,
         'arguments' => JSON.parse(JSON.generate(arguments)),
         'appointment_snapshot' => (appointment_access_snapshot(target_appt) if target_appt),
         'created_at' => Time.current.iso8601
@@ -771,11 +794,12 @@ class Captain::ReplySuggestion::ActionApprovalService
       end.first(5)
     end
 
-    def compute_digest(account_id:, conversation_id:, assistant_id:, tool_name:, arguments:)
+    # The fingerprint of an action: the same action in the same conversation is one card, whichever agent prepared it (the router may
+    # give the dialog to another agent between two suggestions, and two parts of a council may prepare the same action).
+    def compute_digest(account_id:, conversation_id:, tool_name:, arguments:)
       payload = {
         account_id: account_id.to_i,
         conversation_id: conversation_id.to_i,
-        assistant_id: assistant_id.to_i,
         tool_name: tool_name.to_s,
         arguments: canonical_json(arguments)
       }

@@ -242,13 +242,31 @@ RSpec.describe Captain::ReplySuggestionService do
           'digest' => 'dig-78'
         }
         allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:pending_for)
-          .with(account_id: account.id, conversation_id: conversation.id)
+          .with(account_id: account.id, conversation_id: conversation.id, request_id: 'req-1')
           .and_return([stored_pending])
+        own_request = described_class.new(account: account, conversation_display_id: conversation.display_id, user: agent, request_id: 'req-1',
+                                          progress_context: { suggestion_request_id: 'req-1' })
 
-        result = service.perform
+        result = own_request.perform
 
         expect(result[:pending_actions]).to eq([pending_action, stored_pending])
         expect(result.dig(:suggestion_meta, 'pending_actions')).to eq([pending_action, stored_pending])
+      end
+
+      it 'does not add the pending cards of earlier suggestions to a new one' do
+        runner_double = instance_double(Captain::Assistant::AgentRunnerService)
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner_double)
+        allow(runner_double).to receive(:generate_response).and_return({ 'response' => 'Окно завтра в 10:00.', 'agent_id' => assistant.id })
+        Captain::ReplySuggestion::ActionApprovalService.store_record!(
+          'action_id' => 'earlier-card', 'account_id' => account.id, 'conversation_id' => conversation.id, 'status' => 'pending',
+          'tool_name' => 'create_appointment', 'digest' => 'dig-earlier', 'suggestion_request_id' => 'earlier-request'
+        )
+        new_request = described_class.new(account: account, conversation_display_id: conversation.display_id, user: agent, request_id: 'req-2',
+                                          progress_context: { suggestion_request_id: 'req-2' })
+
+        result = new_request.perform
+
+        expect(result[:pending_actions]).to eq([])
       end
 
       it 'records the decision of the router and the agent it routed to' do

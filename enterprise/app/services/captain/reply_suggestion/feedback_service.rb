@@ -31,10 +31,18 @@ class Captain::ReplySuggestion::FeedbackService
     record_event(record)
     Captain::ReplySuggestion::RequestStore.consume!(record['id']) if record && CONSUMING_OUTCOMES.include?(outcome)
     remember_dismissal(record) if record && outcome == 'dismissed'
+    discard_cards(record) if record && outcome == 'dismissed'
     remember_sticky_agent(record) if record && STICKY_OUTCOMES.include?(outcome)
   end
 
   private
+
+  # A rejected suggestion leaves no approval card of its own behind.
+  def discard_cards(record)
+    Captain::ReplySuggestion::ActionApprovalService.discard_for_request!(
+      account_id: account.id, conversation_id: record['conversation_id'], request_id: record['id'], reason: 'suggestion_dismissed'
+    )
+  end
 
   def remember_sticky_agent(record)
     return unless record['status'] == 'draft'

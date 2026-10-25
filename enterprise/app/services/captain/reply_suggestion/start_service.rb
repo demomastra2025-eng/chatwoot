@@ -86,6 +86,10 @@ class Captain::ReplySuggestion::StartService
 
   def queue_run(id)
     record = create_record(id)
+    # The approval cards of this manager's earlier suggestions in the conversation go: the new suggestion prepares its own.
+    Captain::ReplySuggestion::ActionApprovalService.discard_superseded!(
+      account_id: account.id, conversation_id: conversation.id, user_id: user.id, keep_request_id: id
+    )
     Captain::ReplySuggestion::GenerateJob.perform_later(id)
     Result.new(:accepted, Captain::ReplySuggestion::StatePresenter.new(record, reused: false).as_json)
   rescue StandardError

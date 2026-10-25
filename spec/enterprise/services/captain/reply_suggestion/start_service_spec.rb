@@ -145,6 +145,18 @@ RSpec.describe Captain::ReplySuggestion::StartService do
       expect(second).to include(status: 'queued', reused: false)
     end
 
+    it 'discards the pending approval cards of the earlier suggestions of this manager, and keeps those of other managers' do
+      other = create(:user, account: account, role: :agent)
+      own_card = store_card('own-card', user: agent, request_id: 'earlier-request')
+      foreign_card = store_card('foreign-card', user: other, request_id: 'foreign-request')
+
+      service.perform
+
+      expect(Captain::ReplySuggestion::ActionApprovalService.fetch_record(own_card))
+        .to include('status' => 'rejected', 'rejected_reason' => 'suggestion_superseded')
+      expect(Captain::ReplySuggestion::ActionApprovalService.fetch_record(foreign_card)).to include('status' => 'pending')
+    end
+
     it 'does not share the run between users' do
       first = service.perform.body
       other = create(:user, account: account, role: :agent)
@@ -155,6 +167,14 @@ RSpec.describe Captain::ReplySuggestion::StartService do
 
       expect(second[:suggestion_request_id]).not_to eq(first[:suggestion_request_id])
     end
+  end
+
+  def store_card(action_id, user:, request_id:)
+    Captain::ReplySuggestion::ActionApprovalService.store_record!(
+      'action_id' => action_id, 'account_id' => account.id, 'conversation_id' => conversation.id, 'status' => 'pending',
+      'tool_name' => 'create_appointment', 'digest' => "digest-#{action_id}", 'user_id' => user.id, 'suggestion_request_id' => request_id
+    )
+    action_id
   end
 
   describe 'the rejections' do
