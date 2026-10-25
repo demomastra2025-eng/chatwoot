@@ -70,20 +70,10 @@ module Enterprise::Channelable
       changes.key?('message_templates_last_updated')
     end
 
+    # The same filter as the audit-log API and the redaction task: a change of the runtime snapshot is written only when the
+    # operator's own settings changed, and only those settings
     def filtered_audited_changes
-      changes = saved_changes.to_h.except('updated_at', *runtime_audit_fields)
-      keep_runtime_settings_only!(changes)
-
-      AuditLogs::SecretFilter.filter(changes)
-    end
-
-    # A change of the runtime snapshot is written only when the operator's own settings changed, and only those settings
-    def keep_runtime_settings_only!(changes)
-      key = AuditLogs::SecretFilter::RUNTIME_STATE
-      return unless changes.key?(key)
-
-      settings = AuditLogs::SecretFilter.runtime_settings_change(changes.delete(key))
-      changes[key] = settings if settings
+      AuditLogs::SecretFilter.filter(saved_changes.to_h.except('updated_at', *runtime_audit_fields))
     end
 
     def runtime_audit_fields

@@ -44,17 +44,34 @@ RSpec.describe AuditLogs::SecretFilter do
       )
     end
 
-    it 'keeps only the operator settings of a runtime snapshot and filters a full snapshot' do
-      full_snapshot = { 'qr_login_url' => 'tg://login?token=abc', 'history_sync_checkpoint' => { 'dialog_user_ids' => %w[1 2] } }
-      settings = { 'sync_groups' => true, 'ignored_chat_ids' => %w[5] }
+    it 'keeps only the operator settings of a runtime snapshot' do
+      old_settings = { 'sync_groups' => false, 'ignored_chat_ids' => [] }
+      new_settings = { 'sync_groups' => true, 'ignored_chat_ids' => %w[5] }
+      full_snapshot = old_settings.merge('qr_login_url' => 'tg://login?token=abc', 'history_sync_checkpoint' => { 'dialog_user_ids' => %w[1 2] })
 
-      expect(described_class.filter('runtime_state' => [full_snapshot, settings])).to eq('runtime_state' => ['[FILTERED]', settings])
+      expect(described_class.filter('runtime_state' => [full_snapshot, full_snapshot.merge(new_settings)])).to eq(
+        'runtime_state' => [old_settings, new_settings]
+      )
+      expect(described_class.filter('runtime_state' => full_snapshot)).to eq('runtime_state' => old_settings)
+      expect(described_class.filter('runtime_state' => [{}, 'tg://login?token=abc'])).to eq('runtime_state' => [{}, '[FILTERED]'])
+    end
+
+    it 'leaves out a change of the runtime snapshot that keeps the settings as they were' do
+      before = { 'sync_groups' => false, 'ignored_chat_ids' => [], 'history_sync_state' => 'running' }
+      after = { 'sync_groups' => false, 'ignored_chat_ids' => [], 'history_sync_state' => 'completed', 'qr_login_url' => 'tg://x' }
+
+      expect(described_class.filter('runtime_state' => [before, after], 'name' => %w[a b])).to eq('name' => %w[a b])
+      expect(described_class.filter('runtime_state' => [{}, { 'qr_login_url' => 'tg://x' }])).to eq({})
     end
 
     it 'leaves a filtered entry as it is' do
-      changes = { 'string_session' => [nil, 'secret'], 'runtime_state' => [{ 'qr_login_url' => 'x' }, {}], 'name' => %w[a b] }
+      changes = {
+        'string_session' => [nil, 'secret'], 'name' => %w[a b],
+        'runtime_state' => [{ 'qr_login_url' => 'x', 'sync_groups' => false }, { 'sync_groups' => true }]
+      }
       once = described_class.filter(changes)
 
+      expect(once['runtime_state']).to eq([{ 'sync_groups' => false }, { 'sync_groups' => true }])
       expect(described_class.filter(once)).to eq(once)
     end
   end
@@ -86,18 +103,6 @@ RSpec.describe AuditLogs::SecretFilter do
 
       expect(secrets.select { |key| described_class.secret_key?(key) }).to eq(secrets)
       expect(others.select { |key| described_class.secret_key?(key) }).to eq([])
-    end
-  end
-
-  describe '.runtime_settings_change' do
-    it 'returns the settings when they changed and nil when only the runtime moved' do
-      before = { 'sync_groups' => false, 'ignored_chat_ids' => [], 'history_sync_state' => 'running' }
-      after = { 'sync_groups' => false, 'ignored_chat_ids' => [], 'history_sync_state' => 'completed' }
-
-      expect(described_class.runtime_settings_change([before, after])).to be_nil
-      expect(described_class.runtime_settings_change([before, after.merge('sync_groups' => true)])).to eq(
-        [{ 'sync_groups' => false, 'ignored_chat_ids' => [] }, { 'sync_groups' => true, 'ignored_chat_ids' => [] }]
-      )
     end
   end
 

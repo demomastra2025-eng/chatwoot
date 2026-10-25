@@ -60,12 +60,16 @@ class AuditLogs::SecretFilter
   RUNTIME_STATE_SETTINGS = %w[ignored_chat_ids sync_groups].freeze
 
   class << self
-    # The changes of one entry ({ column => [before, after] } or { column => value }) with every secret filtered
+    # The changes of one entry ({ column => [before, after] } or { column => value }) with every secret filtered. A change of the
+    # runtime snapshot that leaves the operator's settings as they were tells nothing, and is left out.
     def filter(changes)
       return changes unless changes.is_a?(Hash)
 
       changes.each_with_object({}) do |(key, value), filtered|
-        filtered[key] = filter_column(key.to_s, value)
+        value = filter_column(key.to_s, value)
+        next if key.to_s == RUNTIME_STATE && unchanged_pair?(value)
+
+        filtered[key] = value
       end
     end
 
@@ -83,14 +87,6 @@ class AuditLogs::SecretFilter
       return audit.audited_changes unless CHANNEL_AUDITABLE_TYPES.include?(audit.try(:auditable_type))
 
       filter_stored(audit.audited_changes)
-    end
-
-    # Only the operator's settings out of a change of the runtime snapshot, nil when they did not change
-    def runtime_settings_change(change)
-      return unless change.is_a?(Array) && change.size == 2
-
-      sides = change.map { |side| side.is_a?(Hash) ? side.stringify_keys.slice(*RUNTIME_STATE_SETTINGS) : side }
-      sides.first == sides.last ? nil : sides
     end
 
     def secret_key?(key)
@@ -130,11 +126,16 @@ class AuditLogs::SecretFilter
       value.is_a?(Array) ? value.map { |side| runtime_state_side(side) } : runtime_state_side(value)
     end
 
+    # A snapshot keeps the operator's settings (who turned group sync or an ignored chat on or off) and nothing else
     def runtime_state_side(side)
       return side if side.blank?
-      return side if side.is_a?(Hash) && (side.keys.map(&:to_s) - RUNTIME_STATE_SETTINGS).empty?
+      return side.stringify_keys.slice(*RUNTIME_STATE_SETTINGS) if side.is_a?(Hash)
 
       FILTERED
+    end
+
+    def unchanged_pair?(value)
+      value.is_a?(Array) && value.size == 2 && value.first == value.last
     end
 
     def parse_json(value)

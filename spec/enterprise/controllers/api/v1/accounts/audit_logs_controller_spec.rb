@@ -93,7 +93,8 @@ RSpec.describe 'Enterprise Audit API', type: :request do
         Audited::Audit.insert_all!(
           [{ auditable_type: 'Inbox', auditable_id: inbox.id, associated_type: 'Account', associated_id: account.id, action: 'update',
              audited_changes: { 'string_session' => [nil, 'stored-telethon-session'], 'provider_config' => [{}, { 'api_key' => 'k-1' }],
-                                'runtime_state' => [{}, { 'qr_login_url' => 'tg://login?token=t-1' }] },
+                                'runtime_state' => [{ 'sync_groups' => false },
+                                                    { 'sync_groups' => true, 'qr_login_url' => 'tg://login?token=t-1' }] },
              created_at: Time.current }]
         )
         # rubocop:enable Rails/SkipsModelValidations
@@ -108,7 +109,7 @@ RSpec.describe 'Enterprise Audit API', type: :request do
         expect(session_log['audited_changes']).to eq(
           'string_session' => [nil, '[FILTERED]'],
           'provider_config' => [{}, { 'api_key' => '[FILTERED]' }],
-          'runtime_state' => [{}, '[FILTERED]']
+          'runtime_state' => [{ 'sync_groups' => false }, { 'sync_groups' => true }]
         )
       end
     end

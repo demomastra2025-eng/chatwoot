@@ -68,9 +68,9 @@ RSpec.describe AuditLogs::ChannelSecretRedaction do
 
     object_row = stored(session_row_id)
     expect(object_row['storage']).to eq('object')
+    # The snapshot change held no setting of the operator: it is left out, as the write path leaves it out
     expect(JSON.parse(object_row['raw'])).to eq(
       'string_session' => [nil, '[FILTERED]'],
-      'runtime_state' => [{}, '[FILTERED]'],
       'phone_number' => ['+77010000001', '+77010000002']
     )
 
@@ -80,6 +80,22 @@ RSpec.describe AuditLogs::ChannelSecretRedaction do
     expect(stored(clean_row_id)).to eq(clean_before)
 
     expect(run_task(APPLY: '1')).to include('"rows":0')
+  end
+
+  it 'keeps who turned group sync or an ignored chat on or off, without the rest of the snapshot' do
+    snapshot = {
+      'qr_login_url' => 'tg://login?token=stored-login-token', 'history_sync_checkpoint' => { 'dialog_user_ids' => %w[700100] },
+      'sync_groups' => false, 'ignored_chat_ids' => []
+    }
+    toggle_row_id = insert_audit(inbox, { 'runtime_state' => [snapshot, snapshot.merge('sync_groups' => true, 'ignored_chat_ids' => ['555'])] })
+
+    described_class.new(apply: true).perform
+
+    expect(JSON.parse(stored(toggle_row_id)['raw'])).to eq(
+      'runtime_state' => [{ 'ignored_chat_ids' => [], 'sync_groups' => false }, { 'ignored_chat_ids' => ['555'], 'sync_groups' => true }]
+    )
+    expect(stored(toggle_row_id)['raw']).not_to include('stored-login-token', '700100')
+    expect(described_class.new(apply: true, inbox_ids: [inbox.id]).perform.rows).to eq(0)
   end
 
   it 'touches only the inboxes it is given' do
