@@ -7,7 +7,7 @@
 # An action is recorded once, when its tool succeeded (see Captain::Runtime::OperationGuard and
 # Captain::Conversation::AgentSession#finish_operation), from the arguments and the result of that tool. The labels are English; the
 # values (names, titles, dates, amounts) stay as the tool returned them. A patient's data is named by field, never by value. Each
-# record keeps the request it was done in (the anchor of Captain::Runtime::TaskQueue#request_scope), so the list can say which
+# record keeps the request it was done in (the anchor of Captain::Runtime::OperationScope.request), so the list can say which
 # action answers the current message and which one is earlier.
 module Captain::DoneActions
   LIMIT = 5
@@ -60,7 +60,7 @@ module Captain::DoneActions
     entries = Array(context.to_h[:done_actions])
     return if entries.empty?
 
-    { entries: entries, request: Captain::Runtime::TaskQueue.new(context).request_scope }
+    { entries: entries, request: Captain::Runtime::OperationScope.request(context) }
   end
 
   # The lines of the prompt: a header, then one line per action, newest first, marked as done in reply to the current message or

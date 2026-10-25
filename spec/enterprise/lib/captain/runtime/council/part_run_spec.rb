@@ -13,7 +13,7 @@ RSpec.describe Captain::Runtime::Council::PartRun do
   let(:run_callbacks) { [] }
   let(:answer) do
     { 'patient_language' => 'Russian', 'customer_text' => 'Вы записаны на 14 октября в 10:00.', 'status' => 'answered', 'questions' => [],
-      'sources' => ['create_appointment'], 'suggested_agent' => '', 'reasoning' => 'ok' }
+      'sources' => ['create_appointment'], 'reasoning' => 'ok' }
   end
   let(:created) { Captain::ToolResult.success(data: { appointment_id: 7, local_date: '14.10.2026', local_time: '10:00' }) }
 
@@ -90,6 +90,12 @@ RSpec.describe Captain::Runtime::Council::PartRun do
     expect(part_run.call('x')[:technical]).to eq('kind' => 'technical', 'reason' => 'run_error', 'error_class' => 'RuntimeError')
   end
 
+  it 'names a part of a suggestion that reached the deadline of the parts' do
+    stub_run(output: nil, error: Captain::ReplySuggestion::RunControl::PartTimeUp.new(:turn))
+
+    expect(part_run.call('x')[:technical]).to include('reason' => 'time_up')
+  end
+
   it 'has no answer for an output that is not a structured result' do
     ['not json', { 'status' => 'done' }, nil, { 'customer_text' => 'x' }].each do |output|
       stub_run(output: output)
@@ -114,11 +120,11 @@ RSpec.describe Captain::Runtime::Council::PartRun do
 
   it 'reads the answer from a JSON string and drops anything but strings from the lists' do
     stub_run(output: JSON.generate(status: 'needs_information', patient_language: ' Kazakh ', customer_text: ' На какое время? ',
-                                   questions: ['На какое время?', 5, nil], sources: 'x', suggested_agent: 3))
+                                   questions: ['На какое время?', 5, nil], sources: 'x'))
 
     expect(part_run.call('x')[:output]).to eq('status' => 'needs_information', 'patient_language' => 'Kazakh',
                                               'customer_text' => 'На какое время?', 'questions' => ['На какое время?'], 'sources' => [],
-                                              'suggested_agent' => '', 'reasoning' => '')
+                                              'reasoning' => '')
   end
 
   it 'keeps an answer that names no language, with a blank one' do
@@ -149,7 +155,7 @@ RSpec.describe Captain::Runtime::Council::PartRun do
 
     expect(tracking).to eq(completed_tool_names: ['create_appointment'], completed_actions: ['create_appointment'],
                            completed_tool_results: [{ tool_name: 'create_appointment', success: true }], artifact_ids: ['doc-1'],
-                           outcome_facts: {})
+                           outcome_facts: {}, pending_actions: [])
   end
 
   it 'keeps what the tools did when the run turns stale' do

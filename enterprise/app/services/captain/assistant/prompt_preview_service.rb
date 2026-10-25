@@ -71,9 +71,7 @@ class Captain::Assistant::PromptPreviewService
   def scenario_previews = peers.map { |agent| scenario_preview(agent) }
 
   def peers
-    @peers ||= assistant.channel_peers.select do |peer|
-      Captain::Runtime::TransferCapabilities.useful?(Captain::Runtime::LazyAgent.new(assistant), Captain::Runtime::LazyAgent.new(peer))
-    end
+    @peers ||= assistant.channel_peers
   end
 
   def allowed_copilot_tools
@@ -85,18 +83,19 @@ class Captain::Assistant::PromptPreviewService
       text_layer('global_system_instruction', 'Global system instruction', Llm::Config.global_agent_system_prompt),
       text_layer('clinic_context', 'Clinic context', assistant.prompt_clinic_context),
       text_layer('instruction', 'System instruction', assistant.system_instruction),
-      list_layer('available_runtime_tools', 'Available runtime tools', assistant_runtime_tools.map { |tool| "#{tool[:id]}: #{tool[:description]}" }),
       list_layer(
-        'scenario_handoffs',
-        'Scenario handoffs',
-        peers.map do |agent|
-          action = Captain::Runtime::TransferCapabilities.actions(
-            Captain::Runtime::LazyAgent.new(assistant), Captain::Runtime::LazyAgent.new(agent)
-          )
-          "#{agent.name}: #{action}. Note: #{agent.routing_description.to_s.squish.first(120)}"
-        end
-      )
+        'available_runtime_tools',
+        'Available runtime tools',
+        assistant_runtime_tools.map { |tool| "#{tool[:id]}: #{tool[:description]}" }
+      ),
+      text_layer('routing_card', 'Routing card', routing_card)
     ]
+  end
+
+  # What the router reads about this agent when it decides who answers a patient turn (see Captain::Routing::CompetenceCard).
+  def routing_card
+    candidate = Captain::Routing::Candidate.from_assistant(assistant)
+    Captain::Routing::CompetenceCard.text(candidate, peers: peers.map { |peer| Captain::Routing::Candidate.from_assistant(peer) })
   end
 
   def copilot_layers

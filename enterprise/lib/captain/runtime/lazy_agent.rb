@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-# A handoff target is represented without building its tools or MCP catalog.
-# Its full runtime is created only when a turn actually reaches that agent.
+# An agent of the channel represented without building its tools or MCP catalog.
+# Its full runtime is created only when the router gives it the turn.
 class Captain::Runtime::LazyAgent < Captain::Runtime::Agent
   attr_reader :display_name, :routing_description
 

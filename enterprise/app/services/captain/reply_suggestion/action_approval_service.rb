@@ -11,6 +11,7 @@ class Captain::ReplySuggestion::ActionApprovalService
   CONVERSATION_INDEX_PREFIX = 'captain:reply_suggestion:conversation_actions'
   LOCK_PREFIX = 'captain:reply_suggestion:action_lock'
   CONTEXT_KEY = :captain_suggestion_pending_actions
+  INDEX_LIMIT = 25
 
   PENDING_STATUS = 'pending'
   EXECUTING_STATUS = 'executing'
@@ -59,22 +60,68 @@ class Captain::ReplySuggestion::ActionApprovalService
       new_interception(tool: tool, tool_context: tool_context, arguments: arguments)
     end
 
-    def pending_for(account_id:, conversation_id:)
+    # The pending cards of the conversation. request_id: only the cards of that suggestion request, and after them the kept cards (of
+    # a suggestion the manager inserted or sent, see keep_for_request!); the same action is shown once.
+    def pending_for(account_id:, conversation_id:, request_id: nil)
+      records = pending_records(account_id, conversation_id)
+      records = own_then_kept(records, request_id) if request_id
+      records.map { |record| public_payload(record) }.uniq { |item| item['digest'] || item['action_id'] }
+    rescue StandardError => e
+      Rails.logger.warn("[CAPTAIN][ActionApprovalService] pending_for failed: #{e.class}: #{e.message}")
+      []
+    end
+
+    def own_then_kept(records, request_id)
+      own, others = records.partition { |record| record['suggestion_request_id'].to_s == request_id.to_s }
+      own + others.select { |record| kept?(record) }
+    end
+
+    # A new suggestion of this manager starts in the conversation: the pending cards of the manager's earlier suggestions there (and
+    # cards that name no manager or request) are discarded, so that the new suggestion does not show them again next to its own.
+    # Cards of other managers' suggestions stay, and so do the kept cards: the manager inserted or sent their text (the patient may
+    # already have read «Записала вас на 14:00») and the action still waits for «Разрешить».
+    def discard_superseded!(account_id:, conversation_id:, user_id:, keep_request_id:)
+      superseded = pending_records(account_id, conversation_id).select do |record|
+        (record['user_id'].blank? || record['user_id'].to_i == user_id.to_i) &&
+          record['suggestion_request_id'].to_s != keep_request_id.to_s && !kept?(record)
+      end
+      discard!(action_ids: superseded.pluck('action_id'), reason: 'suggestion_superseded')
+    rescue StandardError => e
+      Rails.logger.warn("[CAPTAIN][ActionApprovalService] discard_superseded failed: #{e.class}: #{e.message}")
+    end
+
+    # The manager inserted or sent the draft of this request: its pending cards are kept until the manager approves or rejects them
+    # (or they expire), and the next suggestions show them again.
+    def keep_for_request!(account_id:, conversation_id:, request_id:)
+      cards = pending_records(account_id, conversation_id).select { |record| record['suggestion_request_id'].to_s == request_id.to_s }
+      cards.reject { |record| kept?(record) }.each { |record| update_record!(record.merge('kept_at' => Time.current.iso8601)) }
+    rescue StandardError => e
+      Rails.logger.warn("[CAPTAIN][ActionApprovalService] keep_for_request failed: #{e.class}: #{e.message}")
+    end
+
+    def kept?(record)
+      record['kept_at'].present?
+    end
+
+    # The manager dismissed the suggestion: its pending cards go with it.
+    def discard_for_request!(account_id:, conversation_id:, request_id:, reason:)
+      cards = pending_records(account_id, conversation_id).select { |record| record['suggestion_request_id'].to_s == request_id.to_s }
+      discard!(action_ids: cards.pluck('action_id'), reason: reason)
+    rescue StandardError => e
+      Rails.logger.warn("[CAPTAIN][ActionApprovalService] discard_for_request failed: #{e.class}: #{e.message}")
+    end
+
+    def pending_records(account_id, conversation_id)
       return [] if account_id.blank? || conversation_id.blank?
 
       raw_ids = Redis::Alfred.get(conversation_index_key(account_id, conversation_id))
       ids = raw_ids.present? ? Array(JSON.parse(raw_ids)) : []
-      items = ids.filter_map do |action_id|
-        record = fetch_record(action_id)
-        next unless record && record['account_id'].to_i == account_id.to_i && record['conversation_id'].to_i == conversation_id.to_i
-        next unless record['status'] == PENDING_STATUS
+      ids.filter_map { |action_id| fetch_record(action_id) }.select { |record| pending_in?(record, account_id, conversation_id) }
+    end
 
-        public_payload(record)
-      end
-      items.uniq { |item| item['digest'] || item['action_id'] }
-    rescue StandardError => e
-      Rails.logger.warn("[CAPTAIN][ActionApprovalService] pending_for failed: #{e.class}: #{e.message}")
-      []
+    def pending_in?(record, account_id, conversation_id)
+      record['status'] == PENDING_STATUS && record['account_id'].to_i == account_id.to_i &&
+        record['conversation_id'].to_i == conversation_id.to_i
     end
 
     def fetch_record(action_id)
@@ -89,24 +136,31 @@ class Captain::ReplySuggestion::ActionApprovalService
       nil
     end
 
+    # Stores a card of the current run (a pending one is registered with the run, see track_for_run).
     def store_record!(record)
+      return unless write_record!(record)
+
+      track_for_run(record)
+      record
+    end
+
+    # Stores a card that is not the current run's own (a kept or a discarded card): a run that does not finish discards only the cards
+    # it prepared.
+    def update_record!(record)
+      record if write_record!(record)
+    end
+
+    # The conversation index is updated in one atomic step (parts of a council store their cards from threads of their own).
+    def write_record!(record)
       action_id = record['action_id'].to_s
-      return if action_id.blank?
+      return false if action_id.blank?
 
       Redis::Alfred.set(redis_key(action_id), JSON.generate(record), ex: TTL)
       if record['account_id'].present? && record['conversation_id'].present?
-        idx_key = conversation_index_key(record['account_id'], record['conversation_id'])
-        raw_ids = Redis::Alfred.get(idx_key)
-        existing_ids = begin
-          raw_ids.present? ? Array(JSON.parse(raw_ids)) : []
-        rescue StandardError
-          []
-        end
-        updated_ids = ([action_id] + existing_ids).uniq.first(25)
-        Redis::Alfred.set(idx_key, JSON.generate(updated_ids), ex: TTL)
+        Redis::Alfred.prepend_to_json_list(conversation_index_key(record['account_id'], record['conversation_id']), action_id,
+                                           limit: INDEX_LIMIT, ex: TTL)
       end
-      track_for_run(record)
-      record
+      true
     end
 
     # Rejects the cards of a suggestion run that did not finish (failed, cancelled): it leaves no partial result behind, the cards
@@ -116,7 +170,7 @@ class Captain::ReplySuggestion::ActionApprovalService
         record = fetch_record(action_id)
         next unless record && record['status'] == PENDING_STATUS
 
-        store_record!(record.merge('status' => REJECTED_STATUS, 'rejected_at' => Time.current.iso8601, 'rejected_reason' => reason.to_s))
+        update_record!(record.merge('status' => REJECTED_STATUS, 'rejected_at' => Time.current.iso8601, 'rejected_reason' => reason.to_s))
       end
     end
 
@@ -539,18 +593,9 @@ class Captain::ReplySuggestion::ActionApprovalService
     end
 
     def build_or_reuse_proposal(context:, state:, assistant:, account:, conversation:, tool_id:, arguments:)
-      digest = compute_digest(
-        account_id: account&.id,
-        conversation_id: conversation&.id,
-        assistant_id: assistant&.id,
-        tool_name: tool_id,
-        arguments: arguments
-      )
-      existing = Array(context[CONTEXT_KEY]).find { |item| item['digest'] == digest }
-      if existing
-        stored = fetch_record(existing['action_id'])
-        return stored if stored.present?
-      end
+      digest = compute_digest(account_id: account&.id, conversation_id: conversation&.id, tool_name: tool_id, arguments: arguments)
+      reusable = own_proposal(context, digest) || kept_proposal(context, account&.id, conversation&.id, digest)
+      return reusable if reusable
 
       presentation = build_presentation(
         tool_id: tool_id, assistant: assistant, account: account, conversation: conversation, state: state, arguments: arguments
@@ -573,6 +618,9 @@ class Captain::ReplySuggestion::ActionApprovalService
         'description' => presentation[:description],
         'details' => presentation[:details],
         'agent' => agent_summary(assistant),
+        # The suggestion request and the manager the card was prepared for (a later suggestion replaces it, see discard_superseded!).
+        'suggestion_request_id' => Captain::ReplySuggestion::RunControl.current&.request_id,
+        'user_id' => Current.user&.id,
         'arguments' => JSON.parse(JSON.generate(arguments)),
         'appointment_snapshot' => (appointment_access_snapshot(target_appt) if target_appt),
         'created_at' => Time.current.iso8601
@@ -581,6 +629,22 @@ class Captain::ReplySuggestion::ActionApprovalService
       store_record!(record)
       (context[CONTEXT_KEY] ||= []) << public_payload(record)
       record
+    end
+
+    # The card this run already prepared for the same action.
+    def own_proposal(context, digest)
+      existing = Array(context[CONTEXT_KEY]).find { |item| item['digest'] == digest }
+      fetch_record(existing['action_id']).presence if existing
+    end
+
+    # The card of the same action of a suggestion the manager inserted or sent, which still waits for approval: the run shows that
+    # card instead of a second one (it is not the run's own: a run that does not finish leaves it as it is).
+    def kept_proposal(context, account_id, conversation_id, digest)
+      kept = pending_records(account_id, conversation_id).find { |record| kept?(record) && record['digest'] == digest }
+      return unless kept
+
+      (context[CONTEXT_KEY] ||= []) << public_payload(kept)
+      kept
     end
 
     def appointment_access_snapshot(appointment)
@@ -771,11 +835,12 @@ class Captain::ReplySuggestion::ActionApprovalService
       end.first(5)
     end
 
-    def compute_digest(account_id:, conversation_id:, assistant_id:, tool_name:, arguments:)
+    # The fingerprint of an action: the same action in the same conversation is one card, whichever agent prepared it (the router may
+    # give the dialog to another agent between two suggestions, and two parts of a council may prepare the same action).
+    def compute_digest(account_id:, conversation_id:, tool_name:, arguments:)
       payload = {
         account_id: account_id.to_i,
         conversation_id: conversation_id.to_i,
-        assistant_id: assistant_id.to_i,
         tool_name: tool_name.to_s,
         arguments: canonical_json(arguments)
       }

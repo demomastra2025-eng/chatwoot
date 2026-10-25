@@ -59,19 +59,27 @@ class Captain::ReplySuggestion::StartService
     reject(code)
   end
 
-  # One active run per user and conversation. A lock whose run is over or gone (a lost job) is taken over once.
-  # Returns the active record to reuse, or nil when this request holds the lock.
+  # One active run per user and conversation. A lock whose run is over, gone (a lost job) or cancelled (the manager pressed
+  # «Отменить»: that run only waits for its next checkpoint) is taken over once, with the account slot of that run: a cancelled run
+  # that still finishes its last step must not keep the new one out of the account's cap. Returns the active record to reuse, or
+  # nil when this request holds the lock.
   def claim_active_lock(id)
     2.times do
       holder = Captain::ReplySuggestion::RequestLocks.claim_active(account.id, user.id, conversation.id, id)
       return if holder.nil?
 
       existing = Captain::ReplySuggestion::RequestStore.fetch(holder)
-      return existing if existing && Captain::ReplySuggestion::RequestStore::ACTIVE_STATUSES.include?(existing['status'])
+      return existing if reusable?(existing)
 
       Captain::ReplySuggestion::RequestLocks.release_active(account.id, user.id, conversation.id, holder)
+      Captain::ReplySuggestion::RequestLocks.release_account_slot(account.id, holder)
     end
     nil
+  end
+
+  def reusable?(record)
+    record.present? && Captain::ReplySuggestion::RequestStore::ACTIVE_STATUSES.include?(record['status']) &&
+      !Captain::ReplySuggestion::RequestStore.cancel_requested?(record['id'])
   end
 
   def reused(record)
@@ -80,6 +88,10 @@ class Captain::ReplySuggestion::StartService
 
   def queue_run(id)
     record = create_record(id)
+    # The approval cards of this manager's earlier suggestions in the conversation go: the new suggestion prepares its own.
+    Captain::ReplySuggestion::ActionApprovalService.discard_superseded!(
+      account_id: account.id, conversation_id: conversation.id, user_id: user.id, keep_request_id: id
+    )
     Captain::ReplySuggestion::GenerateJob.perform_later(id)
     Result.new(:accepted, Captain::ReplySuggestion::StatePresenter.new(record, reused: false).as_json)
   rescue StandardError
@@ -92,9 +104,19 @@ class Captain::ReplySuggestion::StartService
     Captain::ReplySuggestion::RequestStore.create!(
       lock_owner(id).merge(
         'conversation_display_id' => conversation_display_id.to_i, 'engine' => engine[:engine], 'assistant_id' => engine[:assistant_id],
-        'based_on_message_id' => based_on_message_id
+        'based_on_message_id' => based_on_message_id, 'budget_seconds' => Captain::ReplySuggestion.budget_seconds(router: routed?(engine))
       )
     )
+  end
+
+  # The agent of the request is chosen by the router among two or more agents (and may be a council): the longer budget.
+  def routed?(engine)
+    return false unless engine[:engine] == 'agent' && engine[:assistant_id].present?
+
+    assistant = account.captain_assistants.find_by(id: engine[:assistant_id])
+    assistant.present? && !Captain::AgentGraph.new(assistant, inbox: conversation.inbox).solo?
+  rescue StandardError
+    false
   end
 
   # The fields of the request that its locks are kept under.

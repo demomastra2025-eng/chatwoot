@@ -1,19 +1,15 @@
 # frozen_string_literal: true
 
+# Runs ONE agent on a patient turn: the agent the router chose (see Captain::Runtime::DecisionRouter), with its own tools, until it
+# answers, a tool hands the conversation to staff, a technical failure stops the run, or the turn limit is reached. The agent
+# never changes within a run: there are no transfers between agents. A council turn runs through #run_council: the participants
+# the router chose answer their parts (Captain::Runtime::Council) and one reply goes out.
 class Captain::Runtime::Runner
   DEFAULT_MAX_TURNS = 10
-  MAX_TASK_FINALIZATION_REPAIRS = 2
-  MAX_TRANSFERS = 2
-  MAX_SUGGESTION_TRANSFERS = 1
-  TRANSFER_GUARD_NOTE = 'You cannot transfer any more: handle the request with your own tools, or call handoff if only staff can do it.'
-  SUGGESTION_TRANSFER_GUARD_NOTE = 'You cannot transfer any more: draft the suggested reply for the operator using your own tools ' \
-                                   'and instructions.'
 
   class MaxTurnsExceeded < StandardError; end
   class ToolLoopStopped < StandardError; end
   class AgentNotFoundError < StandardError; end
-  class SelfHandoffError < StandardError; end
-  class UnresolvedTasksError < StandardError; end
   # A technical failure of a tool ended the run (see ToolFailure). The customer gets no text: the result is an error, which the
   # runner of the conversation turns into the system handoff to staff.
   class TechnicalFailure < StandardError; end
@@ -28,16 +24,6 @@ class Captain::Runtime::Runner
     (context.dig(:state, :source) || context.dig(:state, 'source')).to_s == 'reply_suggestion'
   end
 
-  def self.max_transfers_for(context)
-    reply_suggestion?(context) ? MAX_SUGGESTION_TRANSFERS : MAX_TRANSFERS
-  end
-
-  def self.visited_handoff_source_ids(context)
-    return [] unless context.is_a?(Hash)
-
-    (Array(context[:visited_handoff_source_ids]) + [context[:previous_handoff_source_id]]).compact.uniq
-  end
-
   # An error ends the run as a result with an error, never as a text for the customer: the caller hands the conversation to staff.
   # A run of a live conversation that runs out of turns, or that is stopped by the loop guard, is a technical failure of the run:
   # it ends the same way as the failure of a tool, with the conversation handed to staff and no text about it.
@@ -46,7 +32,7 @@ class Captain::Runtime::Runner
     session = build_session(starting_agent, input, options)
     process_session(session)
   rescue MaxTurnsExceeded => e
-    return technical_run_result(session, 'max_turns') if planned_run?(session)
+    return technical_run_result(session, 'max_turns') if conversation_run?(session)
 
     finalize_run(session&.dig(:chat), session&.dig(:context_wrapper), session&.dig(:current_agent),
                  output: "Conversation ended: #{e.message}", error: e)
@@ -56,13 +42,52 @@ class Captain::Runtime::Runner
     finalize_run(session&.dig(:chat), session&.dig(:context_wrapper), session&.dig(:current_agent), output: nil, error: e)
   end
 
+  # A council turn. parts: the registry parts of the accepted council (exactly the participants the router chose). The acting agent
+  # is the agent the turn runs as (the current agent, else the first participant); it writes nothing itself. No part has a text of
+  # its own: nothing is sent (the staff handoff and note the council recorded still follow). A council whose every part failed
+  # technically ends as a failed turn (a reply suggestion instead names the failed parts to the manager, see Council#assemble).
+  def run_council(acting_agent, input, parts:, reassigner: nil, **options)
+    wrapper = Captain::Runtime::RunContext.new(deep_copy_context(options.fetch(:context, {})), callbacks: options.fetch(:callbacks, {}))
+    wrapper.callback_manager.emit_run_start(acting_agent.name, input, wrapper)
+    context = wrapper.context
+    answer = Captain::Runtime::Council.new(
+      context: context, graph: context[:agent_graph_object], account: options[:account], llm_context: options[:llm_context],
+      model: council_editor_model(acting_agent), callbacks: wrapper.callbacks, reassigner: reassigner
+    ).run(parts)
+    finalize_council(wrapper, acting_agent, answer)
+  rescue Captain::Conversation::ControlGenerationStaleError
+    raise
+  rescue StandardError => e
+    finalize_run(nil, wrapper, acting_agent, output: nil, error: e)
+  end
+
   private
 
-  # A planned run of an agent that has no task queue: it continues the conversation when a transfer cannot happen. A council
-  # part is not one: it has its own context and no plan of its own.
-  def planned_run?(session)
+  # A run of a conversation (not a council part): an exhausted or looping run is a technical failure, handed to staff.
+  def conversation_run?(session)
     context = session&.dig(:context_wrapper)&.context
-    context && context[:agent_session] && !context[:part_run] && !Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks])
+    context && context[:agent_session] && !context[:part_run]
+  end
+
+  def council_editor_model(acting_agent)
+    acting_agent.model
+  rescue StandardError
+    nil
+  end
+
+  def finalize_council(wrapper, acting_agent, answer)
+    context = wrapper.context
+    if answer.blank? && context[:technical_failure].present?
+      failure = context[:technical_failure].to_h.with_indifferent_access
+      error = TechnicalFailure.new("Technical failure #{[failure[:tool], failure[:reason]].compact.join(' ')}".squish)
+      return finalize_run(nil, wrapper, acting_agent, output: nil, error: error)
+    end
+
+    output = answer.blank? ? { response: '', response_mode: 'suppress', reasoning: '' } : { response: answer, reasoning: '' }
+    # The language the owners of the parts wrote in goes to the logs with the reply; delivery does not read it.
+    output[:patient_language] = context[:council_patient_language] if context[:council_patient_language].present?
+    context[:current_agent] = acting_agent.name
+    finalize_run(nil, wrapper, acting_agent, output: output)
   end
 
   def build_session(starting_agent, input, options)
@@ -161,18 +186,8 @@ class Captain::Runtime::Runner
   def resolve_response(session, response)
     return technical_failure_result(session) if technical_failure_stop?(session, response)
     return terminal_tool_stop_result(session) if terminal_tool_stop?(session, response)
-    return continue_after_transfer_guard(session) if session[:context_wrapper].context.delete(:transfer_guard_active)
-
-    # An accepted plan is handled before a transfer that was requested in the same step: the message is planned, so each agent of
-    # the plan answers its part (HandoffTool refuses a transfer after the plan, and this order covers a transfer called before it).
-    plan_result = handle_plan(session)
-    return plan_result if plan_result
-    return handle_handoff(session) if handoff_requested?(session, response)
     return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: response.content) if halt_response?(response)
     return if response.tool_call?
-    return if continue_unresolved_tasks?(session, response)
-
-    return if ensure_part_plan(session, response) == :retry
 
     finalize_run(
       session[:chat],
@@ -180,157 +195,6 @@ class Captain::Runtime::Runner
       session[:current_agent],
       output: response.content
     )
-  end
-
-  # A plain reply needs no request plan, and neither do the agent's own actions or a transfer to one colleague (HandoffTool):
-  # a plan only coordinates several agents. The coordination prompt asks for it when the message holds separate requests
-  # for different agents, or when the customer answers an open part of another agent. One case is guarded here, once: the last
-  # thing the customer was told is the question of such a part, so this message is probably its answer, and only a plan
-  # gives it to the agent that asked. The draft is dropped and the agent is asked to plan or to reply; its second plain reply
-  # is accepted, whatever it is.
-  def ensure_part_plan(session, response)
-    return unless plan_required_before_reply?(session)
-
-    # The unplanned draft is never published, so it must not stay in the stored dialogue either.
-    discard_unpublished_draft(session[:chat], response)
-    session[:plan_repairs] = 1
-    session[:chat].add_message(role: :system, content: plan_repair_prompt(session[:context_wrapper].context))
-    :retry
-  end
-
-  def plan_repair_prompt(context)
-    waiting = Array(context[:parts]).select do |part|
-      part['state'] == 'waiting_customer' && part['executor_agent_id'] != context.dig(:state, :assistant_id)
-    end
-    names = waiting.filter_map do |part|
-      Array(context[:agent_graph]).find { |agent| agent[:id] == part['executor_agent_id'] }&.dig(:name).to_s.squish.presence
-    end.uniq
-    "An open part of #{names.join(', ').presence || 'another agent'} waits for the customer's answer: its question was the last " \
-      'thing the customer was told. If this message answers, corrects or cancels that part, call plan_request with mode council ' \
-      'and ONLY that part linked by its number (see the open parts). Otherwise reply normally (for example, when the message ' \
-      'only confirms or thanks for an action that was already completed in an earlier turn, confirm that it is already done ' \
-      'without calling plan_request).'
-  end
-
-  def plan_required_before_reply?(session)
-    context = session[:context_wrapper].context
-    return false if self.class.reply_suggestion?(context)
-    # A lone agent has no plan_request to call; a council part and a finalization-only continuation cannot call it.
-    return false if !Captain::Runtime::PartRegistry.planning_available?(context) || context[:part_plan_accepted]
-    return false if Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks])
-    return false if context[:part_run] || session[:finalization_only] || session[:plan_repairs].to_i.positive?
-
-    Captain::Runtime::PartRegistry.awaiting_peer_answer?(context)
-  end
-
-  def handle_plan(session)
-    context = session[:context_wrapper].context
-    plan = context[:part_plan]
-    return if plan.blank? || context[:part_plan_processed]
-
-    context[:part_plan_processed] = true
-    # A cancellation of a part that never acted needs no agent: there is nothing to undo. (A part that acted is planned as a
-    # correction, see PartRegistry#accept!, so its owner runs and undoes the action with its own tools.) The runtime writes no
-    # sentence for it: the agent that took the cancellation continues and answers in its own words.
-    return if plan[:parts].all? { |part| part['link_action'] == 'cancellation' }
-
-    case plan[:mode]
-    when 'council'
-      # The conversation never changes hands: the current agent stays the current agent while the owners of the parts act.
-      answer = Captain::Runtime::Council.new(context: context, graph: context[:agent_graph_object], account: session[:account],
-                                             llm_context: session[:llm_context], model: session[:current_agent].model,
-                                             callbacks: session[:context_wrapper].callbacks,
-                                             staff_request: take_staff_request(context)).run(plan[:parts])
-      return technical_failure_result(session) if answer.blank? && context[:technical_failure].present?
-
-      # No part has a text of its own: nothing is sent (the staff handoff and note the council recorded still follow).
-      output = answer.blank? ? { response: '', response_mode: 'suppress', reasoning: '' } : { response: answer, reasoning: '' }
-      # The language the owners of the parts wrote in goes to the logs with the reply; delivery does not read it.
-      output[:patient_language] = context[:council_patient_language] if context[:council_patient_language].present?
-      finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: output)
-    when 'handoff'
-      # Only a plan stored with the former mode: a new plan never has it, a transfer is the colleague's own tool.
-      target_id = plan[:parts].first['executor_agent_id']
-      context[:pending_handoff] = { target_agent: "assistant_#{target_id}" }
-      handle_handoff(session)
-    when 'clarify'
-      registry = Captain::Runtime::PartRegistry.new(context)
-      plan[:parts].each do |part|
-        registry.update!(part['id'], state: 'waiting_customer')
-      end
-      finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
-                   output: { response: plan[:clarification], reasoning: '' })
-    end
-  end
-
-  # The agent that planned a council can ask for staff in the same step (the handoff tool). Its request must not discard the answers
-  # of the other parts: it leaves the run state here and goes to the council, which sends the one reply and hands the conversation
-  # to staff after it, as it does for a part that ends unavailable. Without it the run would end as a bare human handoff.
-  def take_staff_request(context)
-    request = context.delete(:pending_human_handoff)
-    return if request.blank?
-
-    context.delete(:captain_v2_handoff_tool_called)
-    request.to_h
-  end
-
-  # No more transfers in this run (the transfer limit was reached, or the colleague cannot be reached): the agent keeps its own
-  # tools and its human handoff, and loses only the transfer and plan tools (see ChatFactory.build_agent_tools).
-  def continue_after_transfer_guard(session)
-    previous_chat = session[:chat]
-    extracted_messages = Captain::Runtime::MessageExtractor.extract_messages(previous_chat, session[:current_agent])
-    session[:context_wrapper].context[:transfer_guarded] = true
-    rebuild_chat!(session)
-    restore_guarded_chat_messages!(session, previous_chat, extracted_messages)
-    session[:chat].add_message(role: :system, content: transfer_guard_note(session))
-    nil
-  end
-
-  def restore_guarded_chat_messages!(session, previous_chat, extracted_messages)
-    return if session[:chat].equal?(previous_chat) || extracted_messages.blank?
-
-    session[:context_wrapper].context[:conversation_history] = extracted_messages
-    session[:chat].messages.clear if session[:chat].respond_to?(:messages) && session[:chat].messages.respond_to?(:clear)
-    Captain::Runtime::HistoryRestorer.restore(session[:chat], extracted_messages)
-  end
-
-  def transfer_guard_note(session)
-    context = session[:context_wrapper].context
-    note = self.class.reply_suggestion?(context) ? SUGGESTION_TRANSFER_GUARD_NOTE : TRANSFER_GUARD_NOTE
-    language_line = Captain::PatientLanguage.line(context[:patient_language])
-    [note, language_line].compact.join(' ')
-  end
-
-  def continue_unresolved_tasks?(session, response)
-    return false if session[:finalization_only]
-
-    context = session[:context_wrapper].context
-    tasks = context[:agent_tasks] || []
-    return false unless tasks.any? { |task| %w[active awaiting].include?(task['status']) }
-
-    discard_unpublished_draft(session[:chat], response)
-    repairs = session[:task_finalization_repairs].to_i
-    raise UnresolvedTasksError, 'Independent customer requests still need an outcome before replying' if repairs >= MAX_TASK_FINALIZATION_REPAIRS
-
-    session[:task_finalization_repairs] = repairs + 1
-    session[:chat].add_message(role: :system, content: <<~PROMPT)
-      The draft reply has not been sent. The request queue still contains active or awaiting work.
-      Record the verified outcome of your own task with manage_agent_tasks: completed, waiting for a specific customer fact, failed, or cancelled.
-      A partial draft that still needs customer information remains waiting, not completed.
-      Use completed tool results already in this conversation; do not repeat completed business actions.
-      If another agent has awaiting work, transfer to that assigned agent using an available handoff.
-      Do not change another agent's task. Once no active or awaiting work remains, give one customer reply covering the results and what is waiting.
-      Current agent ID (data): #{JSON.generate(context.dig(:state, :assistant_id))}
-      Current request queue (data): #{JSON.generate(tasks)}
-    PROMPT
-    true
-  end
-
-  def discard_unpublished_draft(chat, response)
-    last = chat.messages.last
-    return unless last&.role == :assistant && !last.tool_call? && last.content == response.content
-
-    chat.messages.pop
   end
 
   def terminal_tool_stop?(session, response)
@@ -355,7 +219,7 @@ class Captain::Runtime::Runner
   end
 
   def terminal_tool_stop_result(session)
-    return technical_run_result(session, 'tool_loop') if planned_run?(session)
+    return technical_run_result(session, 'tool_loop') if conversation_run?(session)
 
     terminal_state = terminal_tool_stop_state(session).to_h.with_indifferent_access
     message = terminal_state.dig(:result, :error).presence || 'Captain stopped a repeated tool-call loop'
@@ -369,102 +233,8 @@ class Captain::Runtime::Runner
     context[key] || context[key.to_s]
   end
 
-  def handoff_requested?(session, response)
-    halt_response?(response) && session[:context_wrapper].context[:pending_handoff]
-  end
-
   def halt_response?(response)
     response.is_a?(RubyLLM::Tool::Halt)
-  end
-
-  def handle_handoff(session)
-    next_agent, target_name = handoff_target(session)
-    return missing_agent_result(session, target_name) unless next_agent
-    return self_handoff_result(session, next_agent) if self_handoff?(session, next_agent)
-
-    context = session[:context_wrapper].context
-    if handoff_limit_reached?(context, next_agent)
-      record_transfer_guard(session, 'handoff_limit', next_agent)
-      return continue_after_transfer_guard(session)
-    end
-
-    persist_handoff_state(session, next_agent)
-    reset_session_for_handoff!(session, next_agent)
-    nil
-  end
-
-  # Transfers per message at most (MAX_TRANSFERS, or MAX_SUGGESTION_TRANSFERS in reply_suggestion). A return to an agent that
-  # already handed over in this run is refused by the transfer tool with a result the model can act on (HandoffTool).
-  def handoff_limit_reached?(context, _next_agent)
-    context[:handoff_count].to_i >= self.class.max_transfers_for(context)
-  end
-
-  def handoff_target(session)
-    pending_handoff = session[:context_wrapper].context.delete(:pending_handoff).to_h.with_indifferent_access
-    raw_target = pending_handoff[:target_agent]
-    target_name = handoff_target_name(raw_target)
-
-    [session[:registry][target_name], target_name]
-  end
-
-  def handoff_target_name(raw_target)
-    return raw_target.name.to_s if raw_target.respond_to?(:name)
-
-    raw_target.to_s
-  end
-
-  def missing_agent_result(session, target_name)
-    record_transfer_guard(session, 'target_missing')
-    return continue_after_transfer_guard(session) if planned_run?(session)
-
-    message = target_name.present? ? "Handoff failed: Agent '#{target_name}' not found in registry" : 'Handoff failed: target agent is missing'
-    error = AgentNotFoundError.new(message)
-    finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: nil, error: error)
-  end
-
-  def self_handoff?(session, next_agent)
-    current_agent = session[:current_agent]
-    next_agent.equal?(current_agent) || next_agent.name == current_agent.name
-  end
-
-  def self_handoff_result(session, next_agent)
-    record_transfer_guard(session, 'self_transfer', next_agent)
-    return continue_after_transfer_guard(session) if planned_run?(session)
-
-    error = SelfHandoffError.new("Agent #{next_agent.name} attempted to hand off to itself")
-    finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: nil, error: error)
-  end
-
-  def record_transfer_guard(session, reason, target = nil)
-    Captain::Runtime::CoordinationEvents.publish(
-      'agent.transfer_guard', context: session[:context_wrapper].context, reason: reason,
-                              from_agent_id: session[:current_agent].assistant_id, to_agent_id: target&.assistant_id
-    )
-  end
-
-  def persist_handoff_state(session, next_agent)
-    context = session[:context_wrapper].context
-    source_id = session[:current_agent].assistant_id
-    context[:handoff_count] = context[:handoff_count].to_i + 1
-    context[:previous_handoff_source_id] = source_id
-    context[:visited_handoff_source_ids] = (Array(context[:visited_handoff_source_ids]) + [source_id]).compact.uniq
-    context[:transfer_guarded] = true if self.class.reply_suggestion?(context) && handoff_limit_reached?(context, next_agent)
-    save_conversation_state(session[:chat], session[:context_wrapper], session[:current_agent])
-    callback_manager(session).emit_agent_complete(session[:current_agent].name, nil, nil, session[:context_wrapper])
-    callback_manager(session).emit_agent_handoff(
-      session[:current_agent].name,
-      next_agent.name,
-      'handoff',
-      session[:context_wrapper]
-    )
-  end
-
-  def reset_session_for_handoff!(session, next_agent)
-    session[:current_agent] = next_agent
-    session[:context_wrapper].context[:current_agent] = next_agent.name
-    session[:input] = nil
-    session[:input_already_in_history] = false
-    rebuild_chat!(session)
   end
 
   def rebuild_chat!(session)
@@ -512,7 +282,6 @@ class Captain::Runtime::Runner
     context_wrapper.context[:current_agent] = current_agent.name
     context_wrapper.context[:turn_count] = (context_wrapper.context[:turn_count] || 0) + 1
     context_wrapper.context[:last_updated] = Time.current
-    context_wrapper.context.delete(:pending_handoff)
   end
 
   def track_usage(response, context_wrapper)

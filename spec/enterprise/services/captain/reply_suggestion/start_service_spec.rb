@@ -81,6 +81,18 @@ RSpec.describe Captain::ReplySuggestion::StartService do
       expect(record['assistant_id']).to eq(assistant.id)
     end
 
+    it 'gives a request that the router routes among two or more agents the router budget, and one agent the shorter one' do
+      create(:captain_assistant, account: account, active: true, routing_description: 'Запись к ЛОР-врачам')
+      solo = service.perform.body
+      expect(solo[:budget_seconds]).to eq(Captain::ReplySuggestion::DEFAULT_BUDGET_SECONDS)
+
+      create(:captain_assistant, account: account, active: true, routing_description: 'ЛОР-процедуры')
+      Captain::ReplySuggestion::RequestLocks.release_active(account.id, agent.id, conversation.id, solo[:suggestion_request_id])
+      routed = service.perform.body
+
+      expect(routed[:budget_seconds]).to eq(Captain::ReplySuggestion::ROUTER_BUDGET_SECONDS)
+    end
+
     it 'is the old prompt only when the account has no agent: it is then the only engine' do
       create(:captain_assistant, account: account, active: false)
 
@@ -121,6 +133,50 @@ RSpec.describe Captain::ReplySuggestion::StartService do
       expect(second[:reused]).to be(false)
     end
 
+    it 'does not reuse a run the manager cancelled: that run only waits for its next checkpoint' do
+      first = service.perform.body
+      record = Captain::ReplySuggestion::RequestStore.fetch_raw(first[:suggestion_request_id])
+      Captain::ReplySuggestion::RequestStore.mark_running!(record, started_at: Time.current, deadline_at: Time.current + 60)
+      Captain::ReplySuggestion::RequestStore.request_cancel!(first[:suggestion_request_id])
+
+      second = service.perform.body
+
+      expect(second[:suggestion_request_id]).not_to eq(first[:suggestion_request_id])
+      expect(second).to include(status: 'queued', reused: false)
+    end
+
+    it 'takes over the account slot of a cancelled run, so that rapid cancel and restart never hits the account cap' do
+      allow(Captain::ReplySuggestion).to receive(:max_active_per_account).and_return(1)
+      first = service.perform.body
+      Captain::ReplySuggestion::RequestStore.request_cancel!(first[:suggestion_request_id])
+
+      second = service.perform
+
+      expect(second.http_status).to eq(:accepted)
+      slots = Redis::Alfred.zrangebyscore(Captain::ReplySuggestion::RequestLocks.account_active_key(account.id), '-inf', '+inf')
+      expect(slots).to eq([second.body[:suggestion_request_id]])
+    end
+
+    it 'discards the pending approval cards of the earlier suggestions of this manager, and keeps those of other managers' do
+      other = create(:user, account: account, role: :agent)
+      own_card = store_card('own-card', user: agent, request_id: 'earlier-request')
+      foreign_card = store_card('foreign-card', user: other, request_id: 'foreign-request')
+
+      service.perform
+
+      expect(Captain::ReplySuggestion::ActionApprovalService.fetch_record(own_card))
+        .to include('status' => 'rejected', 'rejected_reason' => 'suggestion_superseded')
+      expect(Captain::ReplySuggestion::ActionApprovalService.fetch_record(foreign_card)).to include('status' => 'pending')
+    end
+
+    it 'keeps the pending cards of a suggestion the manager inserted or sent: its action still waits for approval' do
+      kept_card = store_card('kept-card', user: agent, request_id: 'applied-request', kept: true)
+
+      service.perform
+
+      expect(Captain::ReplySuggestion::ActionApprovalService.fetch_record(kept_card)).to include('status' => 'pending')
+    end
+
     it 'does not share the run between users' do
       first = service.perform.body
       other = create(:user, account: account, role: :agent)
@@ -131,6 +187,15 @@ RSpec.describe Captain::ReplySuggestion::StartService do
 
       expect(second[:suggestion_request_id]).not_to eq(first[:suggestion_request_id])
     end
+  end
+
+  def store_card(action_id, user:, request_id:, kept: false)
+    Captain::ReplySuggestion::ActionApprovalService.store_record!(
+      { 'action_id' => action_id, 'account_id' => account.id, 'conversation_id' => conversation.id, 'status' => 'pending',
+        'tool_name' => 'create_appointment', 'digest' => "digest-#{action_id}", 'user_id' => user.id, 'suggestion_request_id' => request_id,
+        'kept_at' => (Time.current.iso8601 if kept) }.compact
+    )
+    action_id
   end
 
   describe 'the rejections' do

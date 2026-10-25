@@ -8,17 +8,14 @@ RSpec.describe Captain::AgentGraph do
   let(:member) { create(:captain_assistant, account: account, channel_scope: 'selected') }
   let(:other) { create(:captain_assistant, account: account, channel_scope: 'selected') }
 
-  it 'keeps all active external agents in the channel graph while read-only peers cannot transfer' do
+  it 'keeps every active external agent in the channel graph, ordered by id, with no transfer permissions between them' do
     Captain::AgentChannel.create!(account: account, inbox: inbox, assistant: member)
     Captain::AgentChannel.create!(account: account, inbox: other_inbox, assistant: other)
 
     graph = described_class.new(entry, inbox: inbox)
-    expect(graph.agents.map(&:id)).to contain_exactly(entry.id, member.id, other.id)
-    expect(graph.peers?).to be(true)
-    expect(graph.allows?(entry, member)).to be(false)
-    expect(graph.allows?(member, entry)).to be(false)
-    expect(graph.allows?(member, other)).to be(false)
-    expect(graph.allows?(entry, entry)).to be(false)
+    expect(graph.agents.map(&:id)).to eq([entry.id, member.id, other.id].sort)
+    expect(graph).not_to respond_to(:peers?)
+    expect(graph).not_to respond_to(:allows?)
     expect(graph.payload.first).not_to have_key(:target_ids)
   end
 
@@ -31,37 +28,53 @@ RSpec.describe Captain::AgentGraph do
   end
 
   it 'includes active external agents of the workspace even when there is no channel (workspace sandbox)' do
-    member
-    other
+    [entry, member, other].each { |agent| agent.update!(routing_description: "Card of #{agent.id}") }
     graph = described_class.new(entry)
 
     expect(graph.agents.map(&:id)).to contain_exactly(entry.id, member.id, other.id)
     expect(graph.payload.pluck(:id)).to contain_exactly(entry.id, member.id, other.id)
-    expect(graph.peers?).to be(true)
-    expect(graph.allows?(entry, member)).to be(false)
+    expect(graph).not_to be_solo
   end
 
   it 'includes an active colleague even when the legacy channel rows list another inbox' do
-    other
+    other.update!(routing_description: 'Lab tests')
+    entry.update!(routing_description: 'Doctors')
     Captain::AgentChannel.create!(account: account, inbox: other_inbox, assistant: other)
 
     graph = described_class.new(entry, inbox: inbox)
 
     expect(graph.agents.map(&:id)).to contain_exactly(entry.id, other.id)
-    expect(graph.peers?).to be(true)
-    expect(graph.allows?(entry, other)).to be(false)
+    expect(graph.candidates.map(&:id)).to contain_exactly(entry.id, other.id)
   end
 
   it 'ignores the stored allowed-targets list of an agent' do
     Captain::AgentChannel.create!(account: account, inbox: inbox, assistant: member)
-    entry.update!(handoff_agent_ids: [other.id])
-    member.update!(handoff_agent_ids: [])
+    entry.update!(handoff_agent_ids: [other.id], routing_description: 'Doctors')
+    member.update!(handoff_agent_ids: [], routing_description: 'Lab tests')
+    other.update!(routing_description: 'Ultrasound')
 
     graph = described_class.new(entry, inbox: inbox)
 
     expect(graph.agents.map(&:id)).to contain_exactly(entry.id, member.id, other.id)
-    expect(graph.allows?(entry, member)).to be(false)
-    expect(graph.allows?(entry, other)).to be(false)
+    expect(graph.candidates.map(&:id)).to contain_exactly(entry.id, member.id, other.id)
+  end
+
+  it 'offers the router only the patient-facing agents with a card, as peers; the anchor alone when none has one' do
+    member.update!(routing_description: 'Lab tests')
+    other.update!(routing_description: 'Ultrasound', config: other.config.to_h.merge('patient_routing' => false))
+    graph = described_class.new(entry, inbox: inbox)
+
+    expect(graph.candidates).to eq([member])
+    expect(graph).to be_solo
+
+    entry.update!(routing_description: 'Doctors')
+    graph = described_class.new(entry, inbox: inbox)
+    expect(graph.candidates.map(&:id)).to eq([entry.id, member.id].sort)
+    expect(graph.candidate_rows.map(&:routing_description)).to eq(graph.candidates.map(&:routing_description))
+    expect(graph).not_to be_solo
+
+    [entry, member].each { |agent| agent.update!(routing_description: '') }
+    expect(described_class.new(entry, inbox: inbox).candidates).to eq([entry])
   end
 
   it 'leaves out an agent that is switched off or is not an external agent' do
@@ -73,7 +86,7 @@ RSpec.describe Captain::AgentGraph do
     graph = described_class.new(entry, inbox: inbox)
 
     expect(graph.agents).to eq([entry])
-    expect(graph.peers?).to be(false)
+    expect(graph).to be_solo
   end
 
   describe '#resolve' do

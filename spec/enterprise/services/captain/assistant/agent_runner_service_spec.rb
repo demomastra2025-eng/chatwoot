@@ -7,13 +7,15 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   let(:inbox) { create(:inbox, account: account) }
   let(:contact) { create(:contact, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact) }
-  let(:assistant) { create(:captain_assistant, account: account) }
+  # Every agent of the channel is a peer with a competence card: the router (stubbed below at Llm::DecisionChain) gives the first
+  # message to the anchor and keeps the agent that holds the conversation afterwards, as the main agent used to.
+  let(:assistant) { create(:captain_assistant, account: account, routing_description: 'Main agent') }
   let(:scenario) { create(:captain_assistant, account: account, routing_description: 'Specialist') }
   let(:second_scenario) { create(:captain_assistant, account: account, routing_description: 'Second specialist') }
   let(:captain_request_id_matcher) { a_string_matching(/\A\h{8}(-\h{4}){3}-\h{12}\z/) }
   let(:entry_agent_identity) do
     {
-      'agent_id' => assistant.id, 'agent_display_name' => assistant.name, 'agent_tasks' => [],
+      'agent_id' => assistant.id, 'agent_display_name' => assistant.name,
       # Every response of a persisted agent carries the id of the runtime request that produced it.
       'captain_request_id' => captain_request_id_matcher
     }
@@ -57,9 +59,14 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     Captain::Runtime::CallbackManager::EVENT_TYPES.each do |event_type|
       allow(mock_runner).to receive(:"on_#{event_type}").and_return(mock_runner)
     end
-    allow(mock_agent).to receive(:register_handoffs)
-    allow(mock_scenario_agent).to receive(:register_handoffs)
-    allow(mock_second_scenario_agent).to receive(:register_handoffs)
+    allow(Llm::DecisionChain).to receive(:decide) do |question:, **|
+      current = question[:state][:current_agent_id]
+      chosen = current || assistant.id
+      choices = question[:questions].keys.index_with { |name| name == "include_agent_#{chosen}" ? 'yes' : 'no' }
+      choices['route_mode'] = current ? 'stay_current' : 'route_agent'
+      answers = choices.transform_values { |choice| Llm::OpenRouterDecisionClient::Answer.new(choice: choice, confidence: 0.99) }
+      Llm::DecisionChain::Result.new(answers: answers, model: 'perplexity/pplx-decider-v1.2', position: 1)
+    end
     [mock_agent, mock_scenario_agent, mock_second_scenario_agent].each do |runtime_agent|
       allow(runtime_agent).to receive(:context_preparer=)
       allow(runtime_agent).to receive(:assistant_id=)
@@ -98,7 +105,6 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       %w[touch_agent touch_ai_wakeup campaign_agent].each do |source|
         it "runs the temporary #{source} assistant without loading persisted routing state" do
           expect(Captain::Runtime::Runner).to receive(:with_agents).with(mock_agent).and_return(mock_runner)
-          expect(mock_agent).not_to receive(:register_handoffs)
           expect(mock_runner).to receive(:run) do |input, context:, **_options|
             expect(input).to eq('I need help with my account')
             expect(context).not_to include(:agent_graph, :agent_session, :acting_assistant_id)
@@ -149,7 +155,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
 
     it 'decides the language once before the agent and reuses it in the run context' do
-      detector = instance_double(Captain::PatientLanguageDetector, call: 'kk')
+      detector = instance_double(Captain::PatientLanguageDetector, call: 'kk', safe_saved_language: nil)
       allow(Captain::PatientLanguageDetector).to receive(:new).with(conversation: conversation, assistant: assistant).and_return(detector)
 
       service.generate_response(message_history: message_history)
@@ -384,7 +390,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       service.generate_response(message_history: message_history)
     end
 
-    it 'builds one lazy runtime agent per channel agent and wires them together' do
+    it 'builds one lazy runtime agent per channel agent, with no transfers between them' do
       assistant.update!(config: (assistant.config || {}).merge('tool_access' => { 'agent' => { 'enabled' => true,
                                                                                                'tool_ids' => ['add_private_note'] } }))
       scenario.update!(config: (scenario.config || {}).merge('tool_access' => { 'agent' => { 'enabled' => true,
@@ -397,10 +403,10 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       expect(agents).to all(be_a(Captain::Runtime::LazyAgent))
       expect(agents.map(&:assistant_id)).to eq([assistant.id, scenario.id, second_scenario.id])
-      agents.each { |agent| expect(agent.handoff_agents).to match_array(agents - [agent]) }
+      expect(agents).to all(satisfy { |agent| !agent.respond_to?(:handoff_agents) })
     end
 
-    it 'wires the agents of the channel for direct handoff without any saved handoff edges' do
+    it 'builds the agents of the channel without any saved handoff edges' do
       assistant.update!(config: (assistant.config || {}).merge('tool_access' => { 'agent' => { 'enabled' => true,
                                                                                                'tool_ids' => ['add_private_note'] } }))
       scenario.update!(config: (scenario.config || {}).merge('tool_access' => { 'agent' => { 'enabled' => true,
@@ -414,10 +420,10 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       service.generate_response(message_history: message_history)
 
       expect(agents.map(&:assistant_id)).to eq([assistant.id, scenario.id, second_scenario.id])
-      agents.each { |agent| expect(agent.handoff_agents).to match_array(agents - [agent]) }
+      expect(agents).to all(satisfy { |agent| !agent.respond_to?(:handoff_agents) })
     end
 
-    it 'creates the runner with the entry agent first' do
+    it 'creates the runner with every agent of the channel' do
       agents = capture_runtime_agents
 
       service.generate_response(message_history: message_history)
@@ -459,19 +465,6 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         expect(context[:captain_v2_trace_input]).to include('I need help with my account')
         expect(max_turns).to eq(described_class::MAX_RUNTIME_TURNS)
         expect(runtime_options[:llm_context]).to be_a(RubyLLM::Context)
-        mock_result
-      end
-
-      service.generate_response(message_history: message_history)
-    end
-
-    it 'allows the larger turn budget only while an independent request queue is in flight' do
-      allow(Captain::Runtime::TaskQueue).to receive(:in_flight?).and_return(true)
-
-      expect(mock_runner).to receive(:run) do |_input, context:, max_turns:, runtime_options:|
-        expect(context[:state]).to include(assistant_id: assistant.id)
-        expect(max_turns).to eq(described_class::MAX_GRAPH_RUNTIME_TURNS)
-        expect(runtime_options[:account]).to eq(account)
         mock_result
       end
 
@@ -589,15 +582,13 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
     end
 
-    it 'reports the independent agent that answered and the current task outcomes' do
-      tasks = [{ 'id' => 'billing-task', 'assistant_id' => scenario.id, 'status' => 'completed', 'result' => 'Billing request completed' }]
-      allow(mock_result).to receive(:context).and_return(
-        current_agent: "assistant_#{scenario.id}", acting_assistant_id: scenario.id, agent_tasks: tasks
-      )
+    it 'reports the agent that answered' do
+      allow(mock_result).to receive(:context).and_return(current_agent: "assistant_#{scenario.id}", acting_assistant_id: scenario.id)
 
       response = service.generate_response(message_history: message_history)
 
-      expect(response).to include('agent_id' => scenario.id, 'agent_display_name' => scenario.name, 'agent_tasks' => tasks)
+      expect(response).to include('agent_id' => scenario.id, 'agent_display_name' => scenario.name)
+      expect(response).not_to have_key('agent_tasks')
     end
 
     it 'records a persisted omission reason when the model skips all bound tools' do
@@ -623,33 +614,6 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       ).and_call_original
 
       service.generate_response(message_history: message_history)
-    end
-
-    describe 'the omission reason of a graph run' do
-      def omission_result(bound_tool_ids)
-        instance_double(
-          Captain::Runtime::Result,
-          output: { 'response' => 'The clinic opens at nine.', 'reasoning' => '' },
-          context: { current_agent: 'assistant_agent', captain_v2_bound_tool_ids: bound_tool_ids, captain_v2_completed_tool_names: [] },
-          error: nil
-        )
-      end
-
-      it 'is not recorded for a plain reply when only the planning tool was bound' do
-        allow(mock_runner).to receive(:run).and_return(omission_result(%w[plan_request manage_agent_tasks]))
-        allow(Llm::EventBus).to receive(:publish).and_call_original
-        expect(Llm::EventBus).not_to receive(:publish).with('tool.omitted', anything)
-
-        service.generate_response(message_history: message_history)
-      end
-
-      it 'is recorded without counting the planning tool when a business tool was bound and skipped' do
-        allow(mock_runner).to receive(:run).and_return(omission_result(%w[search_scheduling_services plan_request]))
-        allow(Llm::EventBus).to receive(:publish).and_call_original
-        expect(Llm::EventBus).to receive(:publish).with('tool.omitted', hash_including(available_tool_count: 1)).and_call_original
-
-        service.generate_response(message_history: message_history)
-      end
     end
 
     it 'does not persist native provider reasoning from runtime history' do
@@ -743,60 +707,6 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
     ensure
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
-    end
-
-    # A transfer is the tool transfer_to_agent_<id>; stored runs still carry the former name handoff_to_*.
-    %w[transfer_to_agent_7 handoff_to_scenario_agent].each do |transfer_tool|
-      it "retries once from the post-handoff context when structured agent output is blank (transfer tool #{transfer_tool})" do
-        retry_history = [
-          { role: :user, content: 'I need help with my account' },
-          { role: :assistant, content: '', agent_name: 'assistant_agent', tool_calls: [{ name: transfer_tool }] },
-          { role: :tool, content: 'Transferred to scenario', tool_call_id: 'call_1' }
-        ]
-        blank_context = {
-          current_agent: 'scenario_agent',
-          conversation_history: retry_history,
-          captain_v2_handoff_tool_called: true,
-          captain_v2_completed_tool_names: [transfer_tool]
-        }
-        blank_result = instance_double(
-          Captain::Runtime::Result,
-          output: { 'response' => '' },
-          context: blank_context,
-          error: nil
-        )
-        recovered_result = instance_double(
-          Captain::Runtime::Result,
-          output: { 'response' => 'Recovered answer' },
-          context: { current_agent: 'scenario_agent' },
-          error: nil
-        )
-        run_contexts = []
-        allow(mock_runner).to receive(:run) do |_input, context:, **_kwargs|
-          run_contexts << context
-          run_contexts.one? ? blank_result : recovered_result
-        end
-
-        result = service.generate_response(message_history: message_history)
-
-        expect(mock_runner).to have_received(:run).twice
-        expect(run_contexts.second).to include(
-          current_agent: 'scenario_agent',
-          conversation_history: retry_history
-        )
-        expect(run_contexts.second).not_to have_key(:captain_v2_handoff_tool_called)
-        expect(run_contexts.second).not_to have_key(:captain_v2_completed_tool_names)
-        expect(result.except('outcome_run_facts')).to match(
-          {
-            'response' => 'Recovered answer',
-            'agent_name' => 'scenario_agent',
-            'handoff_tool_called' => false,
-            'blank_response_retry' => true,
-            'zero_completion_recovered' => true,
-            'zero_completion_recovery_kind' => described_class::ZERO_COMPLETION_BLANK_RETRY
-          }.merge(entry_agent_identity)
-        )
-      end
     end
 
     it 'hands a blank structured output over to staff, with no text of the system, after non-handoff tools completed' do
@@ -921,26 +831,6 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       expect(result['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
       expect(result.to_json).not_to include('Запрос обработан', 'Сұрау өңделді', 'was processed')
-    end
-
-    it 'does not report planning alone as a completed customer action' do
-      allow(mock_runner).to receive(:run).and_return(
-        instance_double(
-          Captain::Runtime::Result,
-          output: { 'response' => '' },
-          context: {
-            current_agent: 'scenario_agent',
-            captain_v2_completed_tool_results: [{ tool_name: 'plan_request', success: true },
-                                                { tool_name: 'manage_agent_tasks', success: true }]
-          },
-          error: nil
-        )
-      )
-
-      result = service.generate_response(message_history: message_history)
-
-      expect(result['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
-      expect(result).not_to have_key('technical_failure')
     end
 
     it 'blocks model-invented response cancellation instead of silently suppressing the reply' do
@@ -1732,7 +1622,6 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         service.generate_response(message_history: message_history)
 
         expect(agents.map(&:assistant_id)).to eq([assistant.id])
-        expect(agents.first.handoff_agents).to be_empty
       end
     end
 

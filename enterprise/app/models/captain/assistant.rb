@@ -202,7 +202,7 @@ class Captain::Assistant < ApplicationRecord
       id: 'assistant_system_context',
       group: RULE_GROUP_ASSISTANT_STRUCTURE,
       slot: SYSTEM_TEMPLATE_SLOT_ASSISTANT_CONTEXT,
-      content: 'You are part of Captain, a multi-agent AI system designed for seamless agent coordination and task execution. You can transfer conversations to specialized agents when appropriate, and those internal transfers must remain invisible to the user.',
+      content: 'You are an AI assistant of the clinic. Answer within your own competence, using only the tools and context available in this prompt.',
       editable: true,
       deletable: false
     },
@@ -210,7 +210,7 @@ class Captain::Assistant < ApplicationRecord
       id: 'assistant_identity',
       group: RULE_GROUP_ASSISTANT_STRUCTURE,
       slot: SYSTEM_TEMPLATE_SLOT_ASSISTANT_IDENTITY,
-      content: 'Handle this conversation directly in your scope. Hand it to another channel agent when that agent is responsible, and use only the approved tools and context available in this prompt.',
+      content: 'Handle this conversation within your own scope and use only the approved tools and context available in this prompt.',
       editable: true,
       deletable: false
     },
@@ -241,7 +241,7 @@ class Captain::Assistant < ApplicationRecord
       id: 'scenario_system_context',
       group: RULE_GROUP_SCENARIO_STRUCTURE,
       slot: SYSTEM_TEMPLATE_SLOT_SCENARIO_CONTEXT,
-      content: 'You are part of a multi-agent system and received this conversation through a seamless internal handoff. Continue naturally and never mention the transfer to the user.',
+      content: 'Continue the conversation naturally from the messages above.',
       editable: true,
       deletable: false
     },
@@ -257,7 +257,7 @@ class Captain::Assistant < ApplicationRecord
       id: 'scenario_return_to_orchestrator',
       group: RULE_GROUP_SCENARIO_STRUCTURE,
       slot: SYSTEM_TEMPLATE_SLOT_SCENARIO_RETURN,
-      content: 'If the request is outside your scope, hand the conversation directly to the responsible channel agent.',
+      content: 'If the request is outside your scope, say so briefly and promise nothing that your tools cannot do.',
       editable: true,
       deletable: false
     },
@@ -265,7 +265,7 @@ class Captain::Assistant < ApplicationRecord
       id: 'scenario_peer_handoffs',
       group: RULE_GROUP_SCENARIO_STRUCTURE,
       slot: SYSTEM_TEMPLATE_SLOT_SCENARIO_PEER_HANDOFFS,
-      content: 'If another specialized scenario is a better fit, transfer the conversation directly using the matching handoff route below.',
+      content: 'Follow the instructions of this scenario only.',
       editable: true,
       deletable: false
     },
@@ -444,7 +444,7 @@ class Captain::Assistant < ApplicationRecord
     id.present? ? "assistant_#{id}" : Captain::HandoffNaming.safe_target_name(name, fallback_prefix: 'assistant')
   end
 
-  # The transfer tool that hands a conversation to this assistant (the one Captain::Runtime::HandoffTool gives it).
+  # The tool name the voice service receives for this assistant (voice runs one assistant; text agents never transfer).
   def handoff_tool_name
     Captain::HandoffNaming.tool_name_for(handoff_target_name, record_id: id)
   end

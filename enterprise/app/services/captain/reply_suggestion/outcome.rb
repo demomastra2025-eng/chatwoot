@@ -2,17 +2,20 @@
 
 # The outcome of a reply suggestion run, as the service returns it and as the manager is told about it.
 #
-#   draft         a text for the manager to review and insert
+#   draft         a text for the manager to review and insert (a council may add operator_note to suggestion_meta: a part of the
+#                 request that the draft leaves to the manager)
 #   no_reply      the agent decided that no reply is needed; reason: why
-#   human_needed  only a staff member can answer; reason: why
+#   human_needed  only a staff member can answer; reason: why (reason_source router: the router decided it, no agent did)
 #   failed        the run did not finish (timeout, provider error ...): there is NO draft, whatever the run had collected
 #   cancelled     the manager cancelled it
 module Captain::ReplySuggestion::Outcome
   OUTCOMES = %w[draft no_reply human_needed failed cancelled].freeze
-  REASON_SOURCES = %w[agent safety agent_rule].freeze
+  REASON_SOURCES = %w[agent safety agent_rule router].freeze
+  # router_unavailable: no decision model (nor the escalation) could choose the agent; council_unavailable: the council the router
+  # chose could not be set up.
   FAILURE_CODES = %w[
     timeout provider_error tool_failure tool_loop max_turns invalid_output empty_output agent_unavailable agent_error
-    queue_timeout interrupted quota_exceeded api_key_missing disabled internal_error
+    queue_timeout interrupted quota_exceeded api_key_missing disabled internal_error router_unavailable council_unavailable
   ].freeze
   REASON_LIMIT = 500
   # Precondition errors of the task wrapper (Enterprise::Captain::BaseTaskService#perform) that have no outcome key.
@@ -79,6 +82,7 @@ module Captain::ReplySuggestion::Outcome
       ERROR_CODE_FAILURES.fetch(code.to_i, 'disabled')
     end
 
+    # lead_agent_id (a council only): the agent the dialog stays with when the manager uses the draft (see StickyAgent).
     def draft_result(outcome)
       {
         'message' => outcome[:message].to_s,
@@ -87,7 +91,7 @@ module Captain::ReplySuggestion::Outcome
         'suggestion_meta' => outcome[:suggestion_meta],
         'pending_actions' => Array(outcome[:pending_actions]),
         'follow_up_context' => outcome[:follow_up_context]
-      }
+      }.merge(outcome[:lead_agent_id].present? ? { 'lead_agent_id' => outcome[:lead_agent_id] } : {})
     end
 
     def reason_result(outcome)

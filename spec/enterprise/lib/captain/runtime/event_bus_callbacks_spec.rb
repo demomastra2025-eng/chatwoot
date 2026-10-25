@@ -59,7 +59,6 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
     callbacks.on_tool_start('lookup_contact', { contact_id: 123 }, context_wrapper)
     callbacks.on_tool_progress('lookup_contact', { phase: 'querying' }, context_wrapper)
     callbacks.on_tool_complete('lookup_contact', { status: 'ok' }, context_wrapper)
-    callbacks.on_agent_handoff('assistant_agent', 'scenario_agent', 'handoff', context_wrapper)
     callbacks.on_run_complete('scenario_agent', result, context_wrapper)
 
     expect(events.map(&:name)).to include(
@@ -69,7 +68,6 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
       'llm.tool.execute',
       'llm.tool.progress',
       'llm.tool.complete',
-      'llm.agent.handoff',
       'llm.run.complete'
     )
 
@@ -127,22 +125,9 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
     expect(flags).to eq([{ 'result_success' => true, 'result_no_change' => true }, { 'result_success' => true }, { 'result_success' => false }])
   end
 
-  it 'records an agent transfer and return with source and request IDs' do
-    context_wrapper.context[:state][:entry_assistant_id] = 2
-    captured = []
-    listener = ActiveSupport::Notifications.subscribe(/\Acaptain\.agent\./) do |*args|
-      captured << ActiveSupport::Notifications::Event.new(*args)
-    end
-
-    Llm::EventBus.with_context(request_id: 'synthetic-request') do
-      callbacks.on_agent_handoff('assistant_3', 'assistant_2', 'handoff', context_wrapper)
-    end
-
-    expect(captured.map(&:name)).to contain_exactly('captain.agent.transfer', 'captain.agent.return')
-    expect(captured.first.payload).to include('from_agent_id' => 3, 'to_agent_id' => 2,
-                                              'run_source' => 'live', 'request_id' => 'synthetic-request')
-  ensure
-    ActiveSupport::Notifications.unsubscribe(listener) if listener
+  it 'publishes no transfer of its own: the router publishes who answers the turn' do
+    expect(callbacks).not_to respond_to(:on_agent_handoff)
+    expect(Captain::Runtime::CallbackManager::EVENT_TYPES).not_to include(:agent_handoff)
   end
 
   it 'records lightweight tool execution timing when start and complete are paired' do

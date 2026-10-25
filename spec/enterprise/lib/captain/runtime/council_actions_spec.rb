@@ -117,7 +117,7 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
 
   def answer(text, status: 'answered', sources: ['faq_lookup'], questions: [])
     RubyLLM::Message.new(role: :assistant, content: JSON.generate(customer_text: text, status: status, questions: questions, sources: sources,
-                                                                  suggested_agent: '', reasoning: ''))
+                                                                  reasoning: ''))
   end
 
   def books(title, text: 'Вы записаны к терапевту Иванову на 14 октября в 10:00.')
@@ -207,7 +207,8 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
     expect(waiting).to include('state' => 'waiting_customer', 'missing_fields' => ['На какое время вас записать?'])
 
     second_context = new_context('request-2', 'давайте в 11')
-    second_parts = plan_for(second_context, [{ fragment: 'давайте в 11', executor_agent_id: current_id, link_part_id: waiting['id'], link_action: 'answer' }])
+    second_parts = plan_for(second_context, [{ fragment: 'давайте в 11', executor_agent_id: writer_id, link_part_id: waiting['id'],
+                                               link_action: 'answer' }])
     writer_chat.script(books('Анна, 11:00', text: 'Вы записаны к терапевту Иванову на 14 октября в 11:00.'))
     second_reply = run_council(second_context, second_parts)
 
@@ -246,7 +247,7 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
     expect(booked).to include('state' => 'done', 'acted' => true)
     expect(booked['summary']).to include('create_appointment')
     expect(Captain::Runtime::PartRegistry.undelivered_outcomes(session.read['parts']).pluck('id')).to eq([booked['id']])
-    next_prompt = Captain::Runtime::CoordinationPrompt.render(new_context('request-2', 'Ну что?').merge(agent_tasks: []))
+    next_prompt = Captain::Runtime::UndeliveredOutcomesPrompt.render(new_context('request-2', 'Ну что?'))
     expect(next_prompt).to include('# Done, not yet told to the patient (data)', "- #{booked['summary'].squish}")
     expect(next_prompt).not_to include(booked['id'])
   end
@@ -269,7 +270,8 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
 
     booking.result = nil
     second_context = new_context('request-2', 'давайте в 11')
-    second_parts = plan_for(second_context, [{ fragment: 'давайте в 11', executor_agent_id: current_id, link_part_id: waiting['id'], link_action: 'answer' }])
+    second_parts = plan_for(second_context, [{ fragment: 'давайте в 11', executor_agent_id: writer_id, link_part_id: waiting['id'],
+                                               link_action: 'answer' }])
     writer_chat.script(books('Анна, 11:00', text: 'Вы записаны на 11:00.'))
 
     expect(run_council(second_context, second_parts)).to eq('Вы записаны на 11:00.')
@@ -307,7 +309,8 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
     end
 
     second_context = new_context('request-2', 'давайте в 11')
-    second_parts = plan_for(second_context, [{ fragment: 'давайте в 11', executor_agent_id: current_id, link_part_id: waiting['id'], link_action: 'answer' }])
+    second_parts = plan_for(second_context, [{ fragment: 'давайте в 11', executor_agent_id: writer_id, link_part_id: waiting['id'],
+                                               link_action: 'answer' }])
     writer_chat.script(books('Анна, 11:00', text: 'Вы записаны к терапевту Иванову на 14 октября в 11:00.'))
     run_council(second_context, second_parts)
     # The customer wrote again while the booking ran: the reply of this run is dropped, so nothing was delivered for version 2.
@@ -316,7 +319,7 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
     booked = parts.first
     expect(booked).to include('version' => 2, 'acted' => true)
     expect(Captain::Runtime::PartRegistry.undelivered_outcomes(parts).pluck('id', 'version')).to eq([[booked['id'], 2]])
-    next_prompt = Captain::Runtime::CoordinationPrompt.render(new_context('request-3', 'Ну что, записали?').merge(agent_tasks: []))
+    next_prompt = Captain::Runtime::UndeliveredOutcomesPrompt.render(new_context('request-3', 'Ну что, записали?'))
     expect(next_prompt).to include('# Done, not yet told to the patient (data)', "- #{booked['summary'].squish}")
     expect(next_prompt).not_to include(booked['id'])
   end

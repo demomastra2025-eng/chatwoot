@@ -151,160 +151,37 @@ RSpec.describe Captain::Runtime::Runner do
         params: { max_tokens: 22 }
       )
     end
-    let(:handoff_response) { RubyLLM::Tool::Halt.new('Transferred to scenario') }
-    let(:first_chat) { RuntimeRunnerSpecChat.new(ask_response: handoff_response) }
-    let(:second_chat) { RuntimeRunnerSpecChat.new(complete_response: RubyLLM::Message.new(role: :assistant, content: 'Done')) }
 
-    it 'builds a fresh chat for each handoff and reapplies the next agent configuration', :aggregate_failures do
+    it 'runs the one agent it is given, with the chat configuration of that agent', :aggregate_failures do
       allow(Llm::Models).to receive(:model_config).and_call_original
-      [first_agent, second_agent].each do |agent|
-        model_config = Llm::Models.model_config(agent.model, account: account).merge(
-          'supported_parameters' => %w[temperature max_tokens]
-        )
-        allow(Llm::Models).to receive(:model_config).with(agent.model, account: account).and_return(model_config)
-      end
+      model_config = Llm::Models.model_config(second_agent.model, account: account).merge('supported_parameters' => %w[temperature max_tokens])
+      allow(Llm::Models).to receive(:model_config).with(second_agent.model, account: account).and_return(model_config)
+      chat = RuntimeRunnerSpecChat.new(ask_response: RubyLLM::Message.new(role: :assistant, content: 'Done'))
+      expect(Llm::Runtime).to receive(:build_chat).once.with(
+        feature: :captain_agent, account: account, model: 'gpt-4.1-nano', runtime_preferences: {},
+        options: { context: llm_context, temperature: 0.9, params: { max_tokens: 22 }, headers: { :'X-Agent' => 'scenario' } }
+      ).and_return(chat)
 
-      allow(runner).to receive(:handoff_requested?).and_call_original
-      allow(runner).to receive(:handoff_requested?).with(anything, handoff_response).and_return(true)
-
-      expect(Llm::Runtime).to receive(:build_chat).with(
-        feature: :captain_agent,
-        account: account,
-        model: 'gpt-4.1-mini',
-        runtime_preferences: {},
-        options: {
-          context: llm_context,
-          temperature: 0.2,
-          params: { max_tokens: 111 },
-          headers: { :'X-Agent' => 'primary' }
-        }
-      ).and_return(first_chat).ordered
-
-      expect(Llm::Runtime).to receive(:build_chat).with(
-        feature: :captain_agent,
-        account: account,
-        model: 'gpt-4.1-nano',
-        runtime_preferences: {},
-        options: {
-          context: llm_context,
-          temperature: 0.9,
-          params: { max_tokens: 22 },
-          headers: { :'X-Agent' => 'scenario' }
-        }
-      ).and_return(second_chat).ordered
-
-      result = runner.run(
-        first_agent,
-        'Help me',
-        context: {
-          pending_handoff: { target_agent: second_agent }
-        },
-        registry: {
-          first_agent.name => first_agent,
-          second_agent.name => second_agent
-        },
-        llm_context: llm_context,
-        account: account
-      )
+      result = runner.run(second_agent, 'Help me', registry: { first_agent.name => first_agent, second_agent.name => second_agent },
+                                                   llm_context: llm_context, account: account)
 
       expect(result.output).to eq('Done')
       expect(result.context[:current_agent]).to eq('scenario_agent')
-      expect(first_chat.instructions).to eq('Primary instructions')
-      expect(first_chat.schema).to eq(Captain::ResponseSchema)
-      expect(second_chat.instructions).to eq('Scenario instructions')
-      expect(second_chat.schema).to be_nil
+      expect(chat.instructions).to eq('Scenario instructions')
+      expect(chat.schema).to be_nil
     end
 
-    it 'blocks self-handoff instead of rebuilding the same agent again' do
-      agent = Captain::Runtime::Agent.new(name: 'assistant_agent')
-      self_handoff_response = RubyLLM::Tool::Halt.new('Transferred to assistant')
-      chat = RuntimeRunnerSpecChat.new(ask_response: self_handoff_response)
-
+    it 'never moves the run to another agent, whatever the context or a tool halt says' do
+      chat = RuntimeRunnerSpecChat.new(ask_response: RubyLLM::Tool::Halt.new('Transferred to scenario'))
       expect(Llm::Runtime).to receive(:build_chat).once.and_return(chat)
 
-      result = runner.run(
-        agent,
-        'handoff to yourself',
-        context: { pending_handoff: { target_agent: agent } },
-        registry: { agent.name => agent },
-        llm_context: llm_context,
-        account: account
-      )
+      result = runner.run(first_agent, 'Help me', context: { pending_handoff: { target_agent: second_agent } },
+                                                  registry: { first_agent.name => first_agent, second_agent.name => second_agent },
+                                                  llm_context: llm_context, account: account)
 
-      expect(result.output).to be_nil
-      expect(result.error).to be_a(described_class::SelfHandoffError)
-      expect(result.error.message).to eq('Agent assistant_agent attempted to hand off to itself')
+      expect(result.error).to be_nil
+      expect(result.output).to eq('Transferred to scenario')
       expect(result.context[:current_agent]).to eq('assistant_agent')
-    end
-
-    it 'resolves string handoff targets through the runtime registry' do
-      handoff_response = RubyLLM::Tool::Halt.new('Transferred to scenario')
-      first_chat = RuntimeRunnerSpecChat.new(ask_response: handoff_response)
-      second_chat = RuntimeRunnerSpecChat.new(complete_response: RubyLLM::Message.new(role: :assistant, content: 'Done'))
-
-      allow(runner).to receive(:handoff_requested?).and_call_original
-      allow(runner).to receive(:handoff_requested?).with(anything, handoff_response).and_return(true)
-      expect(Llm::Runtime).to receive(:build_chat).and_return(first_chat, second_chat)
-
-      result = runner.run(
-        first_agent,
-        'Help me',
-        context: { pending_handoff: { target_agent: 'scenario_agent' } },
-        registry: { first_agent.name => first_agent, second_agent.name => second_agent },
-        llm_context: llm_context,
-        account: account
-      )
-
-      expect(result.output).to eq('Done')
-      expect(result.context[:current_agent]).to eq('scenario_agent')
-    end
-
-    it 'returns a safe runtime error for stale handoff target identifiers' do
-      handoff_response = RubyLLM::Tool::Halt.new('Transferred to deleted scenario')
-      chat = RuntimeRunnerSpecChat.new(ask_response: handoff_response)
-
-      allow(runner).to receive(:handoff_requested?).and_call_original
-      allow(runner).to receive(:handoff_requested?).with(anything, handoff_response).and_return(true)
-      expect(Llm::Runtime).to receive(:build_chat).once.and_return(chat)
-
-      result = runner.run(
-        first_agent,
-        'Help me',
-        context: { pending_handoff: { target_agent: 'deleted_scenario_agent' } },
-        registry: { first_agent.name => first_agent },
-        llm_context: llm_context,
-        account: account
-      )
-
-      expect(result.output).to be_nil
-      expect(result.error).to be_a(described_class::AgentNotFoundError)
-      expect(result.error.message).to eq("Handoff failed: Agent 'deleted_scenario_agent' not found in registry")
-      expect(result.context[:current_agent]).to eq('assistant_agent')
-      expect(result.context).not_to have_key(:pending_handoff)
-    end
-
-    it 'returns a safe runtime error for malformed handoff state without a target' do
-      handoff_response = RubyLLM::Tool::Halt.new('Transferred to nowhere')
-      chat = RuntimeRunnerSpecChat.new(ask_response: handoff_response)
-
-      allow(runner).to receive(:handoff_requested?).and_call_original
-      allow(runner).to receive(:handoff_requested?).with(anything, handoff_response).and_return(true)
-      expect(Llm::Runtime).to receive(:build_chat).once.and_return(chat)
-
-      result = runner.run(
-        first_agent,
-        'Help me',
-        context: { pending_handoff: {} },
-        registry: { first_agent.name => first_agent },
-        llm_context: llm_context,
-        account: account
-      )
-
-      expect(result.output).to be_nil
-      expect(result.error).to be_a(described_class::AgentNotFoundError)
-      expect(result.error.message).to eq('Handoff failed: target agent is missing')
-      expect(result.context[:current_agent]).to eq('assistant_agent')
-      expect(result.context).not_to have_key(:pending_handoff)
     end
 
     it 'normalizes structured output when the runtime continues with complete' do
@@ -361,42 +238,27 @@ RSpec.describe Captain::Runtime::Runner do
       expect(chat.messages.select { |message| message.role == :user }.map(&:content)).to eq(['Already supplied'])
     end
 
-    it 'attributes continuation events to the activated handoff actor instead of the entry context' do
+    it 'attributes the events of the run to the agent it runs, as its context preparer sets it' do
       events = []
       subscriber = ActiveSupport::Notifications.subscribe('llm.chat.complete') do |*args|
         events << ActiveSupport::Notifications::Event.new(*args)
       end
-      entry = Captain::Runtime::Agent.new(name: 'assistant_10', model: 'gpt-4.1-mini')
-      target = Captain::Runtime::Agent.new(name: 'assistant_11', model: 'gpt-4.1-nano')
-      target.context_preparer = lambda do |wrapper|
-        wrapper.context[:state][:assistant_id] = 11
-      end
-      first_chat = RuntimeRunnerSpecChat.new(ask_response: handoff_response)
-      next_chat = RuntimeRunnerSpecChat.new(complete_response: RubyLLM::Message.new(role: :assistant, content: 'Done'))
-      expect(Llm::Runtime).to receive(:build_chat).and_return(first_chat, next_chat)
-      expect(next_chat).not_to receive(:ask)
+      agent = Captain::Runtime::Agent.new(name: 'assistant_11', model: 'gpt-4.1-nano')
+      agent.context_preparer = ->(wrapper) { wrapper.context[:state][:assistant_id] = 11 }
+      chat = RuntimeRunnerSpecChat.new(ask_response: RubyLLM::Message.new(role: :assistant, content: 'Done'))
+      expect(Llm::Runtime).to receive(:build_chat).once.and_return(chat)
 
       result = Llm::EventBus.with_context(assistant_id: 10, conversation_id: 999) do
-        runner.run(
-          entry,
-          'Help me',
-          context: {
-            pending_handoff: { target_agent: target },
-            state: { assistant_id: 10, conversation: { id: 25, display_id: 7 }, private_tool_results: 'Synthetic private context' }
-          },
-          registry: { entry.name => entry, target.name => target },
-          llm_context: llm_context,
-          account: account
-        )
+        runner.run(agent, 'Help me', context: { state: { assistant_id: 10, conversation: { id: 25, display_id: 7 },
+                                                         private_tool_results: 'Synthetic private context' } },
+                                     registry: { agent.name => agent }, llm_context: llm_context, account: account)
       end
 
       expect(result.output).to eq('Done')
-      expect(events.map { |event| event.payload['assistant_id'] }).to eq([10, 11])
-      expect(events.map { |event| event.payload['current_agent'] }).to eq(%w[assistant_10 assistant_11])
-      expect(events.map { |event| event.payload['model'] }).to eq(%w[gpt-4.1-mini gpt-4.1-nano])
-      expect(events.map { |event| event.payload['account_id'] }).to eq([account.id, account.id])
-      expect(events.map { |event| event.payload['conversation_id'] }).to eq([25, 25])
-      expect(events.map { |event| event.payload['conversation_display_id'] }).to eq([7, 7])
+      expect(events.map(&:payload)).to contain_exactly(
+        hash_including('assistant_id' => 11, 'current_agent' => 'assistant_11', 'model' => 'gpt-4.1-nano', 'account_id' => account.id,
+                       'conversation_id' => 25, 'conversation_display_id' => 7)
+      )
       expect(events.map(&:payload).to_json).not_to include('Synthetic private context')
     ensure
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber

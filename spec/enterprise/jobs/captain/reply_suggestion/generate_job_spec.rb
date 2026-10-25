@@ -127,6 +127,26 @@ RSpec.describe Captain::ReplySuggestion::GenerateJob do
       expect(Redis::Alfred.zcard(Captain::ReplySuggestion::RequestLocks.account_active_key(account.id))).to eq(0)
     end
 
+    it 'makes the agent of the draft the provisional sticky agent of the dialog until the manager uses or rejects it' do
+      script_run { draft_outcome }
+      id = start_request
+      run_job(id)
+
+      expect(Captain::ReplySuggestion::StickyAgent.read(conversation)).to eq(84)
+      key = Captain::ReplySuggestion::StickyAgent.keys_for(conversation, kinds: %w[provisional]).first
+      expect(JSON.parse(Redis::Alfred.get(key))).to include('agent_id' => 84, 'request_id' => id)
+      expect($alfred.with { |connection| connection.ttl(key) }).to be <= Captain::ReplySuggestion::TTL_SECONDS # rubocop:disable Style/GlobalVars
+    ensure
+      Captain::ReplySuggestion::StickyAgent.clear!(conversation)
+    end
+
+    it 'makes nobody sticky when the anchor answered only because no agent leads the dialog' do
+      script_run { draft_outcome(routing_default_to: 'anchor') }
+      run_job(start_request)
+
+      expect(Captain::ReplySuggestion::StickyAgent.read(conversation)).to be_nil
+    end
+
     it 'runs as the manager, in the language of the account' do
       account.update!(locale: 'ru')
       seen = {}
@@ -160,6 +180,17 @@ RSpec.describe Captain::ReplySuggestion::GenerateJob do
       expect(feedback_events(id, 'generated')).to be_empty
       expect(outcome_events(id).sole).to have_attributes(status: 'no_reply', reason: 'agent', error: false)
       expect(outcome_events(id).sole.payload).to include('reason_preview' => 'Пациент только поблагодарил.')
+    end
+
+    it 'leaves the sticky agent as it was when the router sent the turn to staff' do
+      Captain::ReplySuggestion::StickyAgent.confirm!(conversation, 119, request_id: 'earlier')
+      script_run { outcomes.human_needed(reason: 'Пациент просит сотрудника.', engine: 'agent', reason_source: 'router', agent: nil) }
+
+      run_job(start_request)
+
+      expect(Captain::ReplySuggestion::StickyAgent.read(conversation)).to eq(119)
+    ensure
+      Captain::ReplySuggestion::StickyAgent.clear!(conversation)
     end
 
     it 'ends as human_needed with the reason for the manager' do
@@ -231,8 +262,10 @@ RSpec.describe Captain::ReplySuggestion::GenerateJob do
     end
 
     it 'discards the approval cards the failed run prepared, and only those' do
+      # A card of another manager's suggestion in the same conversation (the earlier cards of this manager go when a new one starts).
       older = Captain::ReplySuggestion::ActionApprovalService.store_record!(
-        'action_id' => 'older-card', 'account_id' => account.id, 'conversation_id' => conversation.id, 'status' => 'pending'
+        'action_id' => 'older-card', 'account_id' => account.id, 'conversation_id' => conversation.id, 'status' => 'pending',
+        'user_id' => create(:user, account: account, role: :agent).id, 'suggestion_request_id' => 'another-request'
       )
       script_run do
         Captain::ReplySuggestion::ActionApprovalService.store_record!(

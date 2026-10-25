@@ -7,6 +7,25 @@ class Llm::FeatureProfile
     'help_center_search' => 'embedding'
   }.freeze
 
+  # A decision feature picks exactly one of the criteria it offers on the native Decisions endpoint (`decisions: true`);
+  # only these features may run on a decision model. The router of the agents, the fact-check gate and the inbound
+  # triage decide inside a patient turn: their call is bounded by the short timeout of the profile (`strict_timeout`).
+  TURN_DECISION_DEFINITION = {
+    required_capabilities: %w[decision_classification],
+    timeout_seconds: 2,
+    strict_timeout: true,
+    max_retries: 0,
+    streaming: false,
+    native_endpoint: '/alpha/decisions',
+    structured_output: true,
+    response_healing: false,
+    reasoning_policy: 'disabled',
+    privacy_policy: 'standard',
+    cost_policy: 'latency_first',
+    fallback_strategy: 'decision_chain',
+    decisions: true
+  }.freeze
+
   FEATURE_DEFINITIONS = {
     'captain_agent' => {
       config_feature_key: 'assistant',
@@ -62,7 +81,9 @@ class Llm::FeatureProfile
       reasoning_policy: 'disabled',
       privacy_policy: 'standard',
       cost_policy: 'speed_cost',
-      fallback_strategy: 'fast_background'
+      fallback_strategy: 'fast_background',
+      decisions: true,
+      decision_fallback_models: %w[microsoft/microsoft-decision-1]
     },
     'language_detection' => {
       config_feature_key: 'language_detection',
@@ -76,7 +97,9 @@ class Llm::FeatureProfile
       reasoning_policy: 'disabled',
       privacy_policy: 'standard',
       cost_policy: 'speed_cost',
-      fallback_strategy: 'skip'
+      fallback_strategy: 'skip',
+      decisions: true,
+      decision_fallback_models: %w[respan/span-02]
     },
     'custom_guardrail' => {
       config_feature_key: 'custom_guardrail',
@@ -90,7 +113,43 @@ class Llm::FeatureProfile
       reasoning_policy: 'disabled',
       privacy_policy: 'standard',
       cost_policy: 'guardrail',
-      fallback_strategy: 'skip'
+      fallback_strategy: 'skip',
+      decisions: true,
+      decision_fallback_models: %w[openai/gpt-6-luna-decisions]
+    },
+    'agent_routing' => TURN_DECISION_DEFINITION.merge(config_feature_key: 'agent_routing'),
+    'fact_check_gate' => TURN_DECISION_DEFINITION.merge(config_feature_key: 'fact_check_gate', cost_policy: 'guardrail'),
+    'inbound_triage' => TURN_DECISION_DEFINITION.merge(config_feature_key: 'inbound_triage'),
+    # The strong reasoning chat model that decides a routing turn the decision models were not confident about: the same state
+    # and criteria, one key of the criteria back as structured output, thinking on. Bounded by its own timeout; no retry.
+    'agent_routing_escalation' => {
+      config_feature_key: 'agent_routing_escalation',
+      required_capabilities: %w[text_input text_output structured_output],
+      timeout_seconds: 15,
+      max_retries: 0,
+      streaming: false,
+      native_endpoint: nil,
+      structured_output: true,
+      response_healing: false,
+      reasoning_policy: 'platform',
+      privacy_policy: 'standard',
+      cost_policy: 'quality',
+      fallback_strategy: 'technical_failure'
+    },
+    # Cuts the patient's message into one fragment per council participant the router chose; no thinking.
+    'council_split' => {
+      config_feature_key: 'council_split',
+      required_capabilities: %w[text_input text_output structured_output],
+      timeout_seconds: 4,
+      max_retries: 0,
+      streaming: false,
+      native_endpoint: nil,
+      structured_output: true,
+      response_healing: false,
+      reasoning_policy: 'disabled',
+      privacy_policy: 'standard',
+      cost_policy: 'latency_first',
+      fallback_strategy: 'whole_message'
     },
     'customer_notice' => {
       config_feature_key: 'customer_notice',
@@ -212,6 +271,15 @@ class Llm::FeatureProfile
       FEATURE_DEFINITIONS.key?(normalize_feature(feature))
     end
 
+    # Whether the feature may run on a decision model through Llm::Runtime.decide.
+    def decision_feature?(feature)
+      FEATURE_DEFINITIONS.dig(normalize_feature(feature), :decisions) == true
+    end
+
+    def decision_feature_keys
+      FEATURE_DEFINITIONS.filter_map { |feature_key, definition| feature_key if definition[:decisions] == true }
+    end
+
     def equivalent_feature_keys(feature)
       canonical_key = normalize_feature(feature)
       raw_key = feature.to_s.presence
@@ -248,6 +316,10 @@ class Llm::FeatureProfile
   def cost_policy = definition[:cost_policy]
   def fallback_strategy = definition[:fallback_strategy]
 
+  def decisions? = definition[:decisions] == true
+  # The decision models asked, in order, when the resolved one fails (see Llm::OpenRouterRuntime#decide).
+  def decision_fallback_models = Array(definition[:decision_fallback_models])
+  def strict_timeout? = definition[:strict_timeout] == true
   def streaming? = definition[:streaming] == true
   def structured_output? = definition[:structured_output] == true
   def response_healing? = definition[:response_healing] == true

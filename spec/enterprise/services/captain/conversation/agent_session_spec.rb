@@ -15,6 +15,12 @@ RSpec.describe Captain::Conversation::AgentSession do
 
   before { allow(Llm::EventBus).to receive(:publish) }
 
+  # The agent that acts holds the conversation (the router gave it the turn): a part of its own is checked against it.
+  def hold_conversation!
+    holder = described_class.new(entry: assistant, conversation: conversation)
+    holder.update_routing(actor_id: assistant.id) if holder.read['current_assistant_id'].nil?
+  end
+
   def reserve(scope: 'request:synthetic', tool: 'create_appointment')
     session.reserve_operation(scope: scope, tool: tool, arguments: { slot_id: 9 }, actor_id: assistant.id)
   end
@@ -24,6 +30,7 @@ RSpec.describe Captain::Conversation::AgentSession do
   end
 
   def store_part(version)
+    hold_conversation!
     session.change do |data|
       data['parts'] = [{ 'id' => 'synthetic-part', 'version' => version, 'executor_agent_id' => assistant.id, 'state' => 'open' }]
     end

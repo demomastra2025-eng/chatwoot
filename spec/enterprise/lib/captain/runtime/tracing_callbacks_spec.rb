@@ -5,14 +5,15 @@ require 'rails_helper'
 RSpec.describe Captain::Runtime::TracingCallbacks do
   subject(:callbacks) { described_class.new(tracer: double('tracer'), trace_name: 'captain') } # rubocop:disable RSpec/VerifiedDoubles
 
-  it 'puts the transfer of a colleague under the root of the trace, under its new name and under the former one in stored runs' do
-    transfers = %w[transfer_to_agent_4 transfer_to_scenario_1_x_agent handoff_to_assistant_4 handoff_to_scenario_1_x_agent]
+  it 'names the decision of the router on the root span of the trace, identifiers only' do
+    wrapper = Captain::Runtime::RunContext.new({ routing_decision: { decision_key: 'route_agent_4', decided_by: 'inception/mercury-decide' } })
 
-    expect(transfers.map { |name| callbacks.send(:handoff_tool?, name) }).to all(be(true))
+    attributes = callbacks.send(:build_root_attributes, 'assistant_4', 'текст пациента', wrapper)
+
+    expect(attributes).to include('routing.decision_key' => 'route_agent_4', 'routing.decided_by' => 'inception/mercury-decide')
   end
 
-  it 'leaves every other tool, the human handoff included, under the current agent' do
-    expect(%w[handoff plan_request manage_agent_tasks faq_lookup create_appointment].map { |name| callbacks.send(:handoff_tool?, name) })
-      .to all(be(false))
+  it 'has no transfer tools to place under the root of the trace' do
+    expect(described_class.private_method_defined?(:handoff_tool?)).to be(false)
   end
 end

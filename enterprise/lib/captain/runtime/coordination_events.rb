@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
 class Captain::Runtime::CoordinationEvents
+  # Sources whose events are not live conversation turns: the reports of live routing (Reports::AiAgentTransfersQuery) read
+  # run_source live only. A reply suggestion routes too (with its sticky agent as the current one), but it moves no conversation.
+  OWN_RUN_SOURCES = %w[playground benchmark reply_suggestion].freeze
+
   class << self
     def council_started(context:, participant_ids:, part_ids: [])
       publish('council.started', context: context, participants: Array(participant_ids).map(&:to_i).uniq,
@@ -56,7 +60,7 @@ class Captain::Runtime::CoordinationEvents
           feature: 'assistant', runtime_mode: 'captain_runtime',
           account_id: state[:account_id], assistant_id: state[:assistant_id],
           conversation_id: conversation[:id], request_id: context[:agent_request_id] || Llm::EventBus.request_id,
-          source: source.presence, run_source: %w[playground benchmark].include?(source) ? source : 'live'
+          source: source.presence, run_source: OWN_RUN_SOURCES.include?(source) ? source : 'live'
         }.merge(details).compact
       )
     end

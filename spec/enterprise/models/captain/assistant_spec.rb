@@ -213,7 +213,6 @@ RSpec.describe Captain::Assistant, type: :model do
 
       expect(assistant.handoff_target_name).to eq("assistant_#{assistant.id}")
       expect(assistant.handoff_tool_name).to eq("transfer_to_agent_#{assistant.id}")
-      expect(assistant.handoff_tool_name).to eq(Captain::Runtime::HandoffTool.new(Captain::Runtime::LazyAgent.new(assistant)).name)
       expect(assistant.agent.name).to eq("assistant_#{assistant.id}")
     end
 

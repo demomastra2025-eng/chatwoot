@@ -271,9 +271,10 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
         expect { described_class.new(with_expect(must_not_call: %w[update_appointment cancel_appointment faq_lookup])) }.not_to raise_error
       end
 
-      it 'takes the runtime tools plan_request and handoff, which are in no list of an agent' do
-        expect { described_class.new(with_expect(must_not_call: %w[plan_request handoff])) }.not_to raise_error
-        expect { described_class.new(with_expect(must_call: %w[create_appointment handoff plan_request])) }.not_to raise_error
+      it 'takes the runtime tool handoff, which is in no list of an agent, and no longer the former plan_request' do
+        expect { described_class.new(with_expect(must_not_call: %w[handoff])) }.not_to raise_error
+        expect { described_class.new(with_expect(must_call: %w[create_appointment handoff])) }.not_to raise_error
+        expect { described_class.new(with_expect(must_call: %w[plan_request])) }.to raise_error(described_class::Invalid)
       end
 
       it 'rejects a transfer tool in must_call and must_not_call: its name is account-specific' do

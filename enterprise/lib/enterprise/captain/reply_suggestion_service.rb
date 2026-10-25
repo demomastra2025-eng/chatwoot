@@ -5,14 +5,15 @@ module Enterprise::Captain::ReplySuggestionService
   module AgentCatalogHelpers
     private
 
+    # The anchor answers a channel of one agent; with two or more agents nobody is active until the router chose (the anchor is
+    # not "thinking" while the router decides).
     def init_agent_catalog!(assistant)
       @assistant = assistant
       @agents_by_id = {}
       @agents_by_name = {}
       @working_agents = []
-      index_agents!
-      @active_agent = summary_for(@assistant)
-      record_working_agent(@active_agent, role: 'entry')
+      @routed = index_agents! > 1
+      @active_agent = summary_for(@assistant) unless @routed
     end
 
     def activate_agent!(actor, role: nil)
@@ -56,15 +57,30 @@ module Enterprise::Captain::ReplySuggestionService
         @active_agent
     end
 
+    # Returns how many candidates the router chooses among (0 or 1: there is no decision).
     def index_agents!
-      graph_actors.each { |actor| register_actor(actor) }
+      graph = agent_graph
+      graph_actors(graph).each { |actor| register_actor(actor) }
+      candidate_count(graph)
     end
 
-    def graph_actors
-      actors = @assistant.persisted? ? Captain::AgentGraph.new(@assistant, inbox: @conversation&.inbox).agents : [@assistant]
+    def agent_graph
+      Captain::AgentGraph.new(@assistant, inbox: @conversation&.inbox) if @assistant.persisted?
+    rescue StandardError
+      nil
+    end
+
+    def graph_actors(graph)
+      actors = graph ? graph.agents : [@assistant]
       (Array(actors) + [@assistant]).compact.uniq(&:id)
     rescue StandardError
       [@assistant].compact
+    end
+
+    def candidate_count(graph)
+      graph ? graph.candidates.size : 0
+    rescue StandardError
+      0
     end
 
     def register_actor(actor)
@@ -100,7 +116,7 @@ module Enterprise::Captain::ReplySuggestionService
     end
 
     def upgrade_role(entry, role)
-      entry['role'] = role if role.present? && entry['role'] == 'entry'
+      entry['role'] = role if role.present? && entry['role'].blank?
       entry
     end
 
@@ -111,14 +127,6 @@ module Enterprise::Captain::ReplySuggestionService
 
   module CouncilTrackerHelpers
     private
-
-    def capture_council_plan!(context)
-      parts = Array(context&.dig(:part_plan, :parts))
-      return false if parts.blank?
-
-      parts.each { |part| register_planned_part(part) }
-      true
-    end
 
     def upsert_council_part!(context, actor, status:)
       part_id = context[:active_part_id].to_s
@@ -174,22 +182,6 @@ module Enterprise::Captain::ReplySuggestionService
       sanitized.is_a?(Hash) ? sanitized['preview'].to_s : sanitized.to_s
     end
 
-    def register_planned_part(part)
-      part_id = part['id'].to_s
-      return if part_id.blank?
-
-      part_actor = agent_by_id(part['executor_agent_id'])
-      record_working_agent(part_actor, role: 'council') if part_actor.present?
-      @council_parts[part_id] = {
-        'id' => part['id'],
-        'fragment' => sanitize_text(part['fragment']),
-        'patient' => sanitize_text(part['patient']),
-        'relation' => part['relation'].to_s.presence,
-        'status' => 'planned',
-        'agent' => part_actor
-      }.compact
-    end
-
     def merge_part_fields!(entry, info, actor, status)
       entry['fragment'] ||= sanitize_text(info[:fragment])
       entry['patient'] ||= sanitize_text(info[:patient])
@@ -226,10 +218,12 @@ module Enterprise::Captain::ReplySuggestionService
       @tool_trace_steps = []
       @sequence = 0
       @handoffs = []
+      @routing = nil
       @pending_actions = []
       @reasoning = nil
-      @phase = 'thinking'
       init_agent_catalog!(assistant)
+      # While the router decides who answers, the manager sees that, and no agent.
+      @phase = @routed ? 'routing' : 'thinking'
     end
 
     def callbacks
@@ -238,7 +232,7 @@ module Enterprise::Captain::ReplySuggestionService
         on_tool_start: method(:handle_tool_start),
         on_tool_progress: method(:handle_tool_progress),
         on_tool_complete: method(:handle_tool_complete),
-        on_agent_handoff: method(:handle_agent_handoff),
+        on_agent_routed: method(:handle_agent_routed),
         on_llm_call_complete: method(:handle_llm_call_complete)
       }
     end
@@ -269,7 +263,7 @@ module Enterprise::Captain::ReplySuggestionService
           'council_contributors' => resolve_council_contributors(payload).presence,
           'council' => council_snapshot,
           'handoffs' => @handoffs.presence,
-          'agent_tasks' => Array(payload[:agent_tasks]).presence,
+          'routing' => @routing,
           'pending_actions' => resolve_pending_actions(payload).presence
         }.compact
       end
@@ -320,7 +314,6 @@ module Enterprise::Captain::ReplySuggestionService
         event = Captain::ToolResult.error?(normalized) ? 'failed' : 'finish'
         append_step!(tool_name: tool_name, event: event, output: normalized, current_agent: actor&.dig('name'))
         capture_pending_actions!(context_wrapper&.context)
-        @phase = 'council_running' if tool_name.to_s == 'plan_request' && capture_council_plan!(context_wrapper&.context)
         broadcast_progress!
       end
     end
@@ -332,12 +325,11 @@ module Enterprise::Captain::ReplySuggestionService
       @pending_actions = (@pending_actions + actions).uniq { |item| item['action_id'] || item[:action_id] }
     end
 
+    # The cards of this run: what the run reported, and what it stored (a card of a part on a thread); after them the cards of an
+    # earlier suggestion that the manager inserted or sent and that still wait for approval (kept, see ActionApprovalService). Other
+    # cards of earlier suggestions are not this suggestion's (a new suggestion discards them, see StartService).
     def resolve_pending_actions(payload)
-      stored_pending = Captain::ReplySuggestion::ActionApprovalService.pending_for(
-        account_id: @conversation&.account_id,
-        conversation_id: @conversation&.id
-      )
-      combined = Array(payload[:pending_actions]) + @pending_actions + Array(stored_pending)
+      combined = Array(payload[:pending_actions]) + @pending_actions + stored_pending_actions
       items = combined.filter_map do |entry|
         hash = entry.to_h.deep_stringify_keys
         hash if hash['action_id'].present?
@@ -345,16 +337,39 @@ module Enterprise::Captain::ReplySuggestionService
       items.uniq { |item| item['digest'].presence || item['action_id'] }
     end
 
-    def handle_agent_handoff(from_name, to_name, reason = nil, context_wrapper = nil)
+    def stored_pending_actions
+      request_id = @progress_context.to_h[:suggestion_request_id]
+      return [] if request_id.blank?
+
+      Array(Captain::ReplySuggestion::ActionApprovalService.pending_for(
+              account_id: @conversation&.account_id, conversation_id: @conversation&.id, request_id: request_id
+            ))
+    end
+
+    # The router's decision for the turn (keys, ids and models only): who drafts the suggestion, or a council of exactly these agents.
+    def handle_agent_routed(decision, _context_wrapper = nil)
       @monitor.synchronize do
-        from_actor = agent_by_name(from_name) || @active_agent
-        to_actor = agent_by_name(to_name) || actor_from_context(context_wrapper, to_name)
-        record_working_agent(from_actor)
-        activate_agent!(to_actor, role: 'handoff')
-        @phase = 'handoff'
-        @handoffs << build_handoff_entry(from_actor, to_actor, from_name, to_name, reason)
+        decision = decision.to_h.with_indifferent_access
+        @routing = decision.slice(:decision_key, :kind, :decided_by, :confidence, :escalated, :default_to).to_h.compact.presence
+        targets = Array(decision[:target_ids]).filter_map { |id| agent_by_id(id) }
+        if decision[:kind].to_s == 'council'
+          targets.each { |actor| record_working_agent(actor, role: 'council') }
+          @phase = 'council_running'
+        elsif targets.any?
+          route_to!(targets.first, decision)
+        end
         broadcast_progress!
       end
+    end
+
+    def route_to!(target, decision)
+      from_actor = agent_by_id(decision[:from_agent_id])
+      activate_agent!(target, role: 'routed')
+      @phase = 'thinking'
+      return if from_actor.blank? || from_actor['id'] == target['id']
+
+      @phase = 'handoff'
+      @handoffs << build_handoff_entry(from_actor, target, nil, nil, decision[:decision_key])
     end
 
     def handle_llm_call_complete(agent_name, _model = nil, response = nil, context_wrapper = nil)
@@ -481,10 +496,10 @@ module Enterprise::Captain::ReplySuggestionService
   end
 
   # The engine of the request, chosen when it starts (StartService) and never changed by the run: a request for the agent does not
-  # fall back to the old prompt. The resolution of the agent is unchanged: the assistant of the inbox, else the account default,
-  # else the first one that can take the conversation.
+  # fall back to the old prompt. The assistant found here (the assistant of the inbox, else the account default, else the first one
+  # that can take the conversation) is the technical anchor of the run only: the router decides which agent drafts the suggestion.
   def suggestion_engine
-    assistant = entry_assistant_for_suggestion
+    assistant = anchor_assistant_for_suggestion
     assistant ? { engine: 'agent', assistant_id: assistant.id } : super
   end
 
@@ -512,7 +527,7 @@ module Enterprise::Captain::ReplySuggestionService
     perform_agent_reply_suggestion(assistant)
   end
 
-  def entry_assistant_for_suggestion
+  def anchor_assistant_for_suggestion
     return if conversation.blank? || conversation.inbox&.channel_type == 'Channel::Voice'
 
     inbox_assistant = conversation.inbox&.captain_assistant

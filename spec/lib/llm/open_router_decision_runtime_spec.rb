@@ -36,9 +36,11 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
                             options: { decision_criteria: criteria, decision_instructions: instructions }, **overrides)
   end
 
+  # The chosen criterion key is recorded on purpose (decision_choice, for evaluation); its description, the state, the
+  # instructions, provider text and the key are not.
   def private_values
     [state['messages'].first['content'], criteria['synthetic_completed_answer'], instructions,
-     'synthetic_completed_answer', 'SYNTHETIC_PRIVATE_PROVIDER_TEXT', api_key]
+     'SYNTHETIC_PRIVATE_PROVIDER_TEXT', api_key]
   end
 
   it 'uses the same Decisions transport for language detection' do
@@ -84,6 +86,114 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
     expect(Llm::Runtime.decide(request).choice).to eq('rule_one')
     expect(stub).to have_been_requested.once
     expect(LlmEvent.find_by!(account_id: account.id, event_name: 'llm.decision.complete').payload.to_json).not_to include(checked_text)
+  end
+
+  %i[agent_routing fact_check_gate inbound_triage].each do |feature|
+    it "runs #{feature} on the Decisions transport with its short timeout and an observed event" do
+      stub = stub_request(:post, endpoint).with do |http_request|
+        expect(JSON.parse(http_request.body)).to include('model' => 'inception/mercury-decide')
+        true
+      end.to_return(status: 200, body: response_body.merge(model: 'inception/mercury-decide').to_json)
+      expect(Llm::OpenRouterDecisionClient).to receive(:choose).with(hash_including(timeout: 2)).and_call_original
+      expect(Llm::BudgetEvaluator).to receive(:evaluate!).and_call_original
+
+      result = Llm::Runtime.decide(decision_request(feature: feature, model: 'inception/mercury-decide'))
+
+      expect(result).to have_attributes(choice: 'synthetic_completed_answer', confidence: 0.9)
+      expect(stub).to have_been_requested.once
+      event = LlmEvent.find_by!(account_id: account.id, event_name: 'llm.decision.complete')
+      expect(event.feature).to eq(feature.to_s)
+      expect(event.payload).to include('requested_model' => 'inception/mercury-decide', 'decision_confidence' => 0.9,
+                                       'openrouter_native_endpoint' => '/alpha/decisions')
+    end
+  end
+
+  it 'passes the timeout and the chain position the caller gives and records which model of the chain answered' do
+    stub_request(:post, endpoint).to_return(status: 200, body: response_body.to_json)
+    expect(Llm::OpenRouterDecisionClient).to receive(:choose).with(hash_including(timeout: 1.5)).and_call_original
+
+    Llm::Runtime.decide(decision_request(
+                          feature: :agent_routing,
+                          options: { decision_criteria: criteria, decision_instructions: instructions, decision_timeout_seconds: 1.5 },
+                          observability: { decision_chain_position: 2, decision_chain_length: 3 }
+                        ))
+
+    expect(LlmEvent.find_by!(account_id: account.id, event_name: 'llm.decision.complete').payload).to include(
+      'decision_chain_position' => 2, 'decision_chain_length' => 3, 'requested_model' => model, 'actual_model' => served_model
+    )
+  end
+
+  describe 'the fallback decision model of a feature' do
+    def body_for(name)
+      response_body.merge(model: name, answers: { reason: { choice: 'other', confidence: 0.8 } }).to_json
+    end
+
+    def stub_decider(name, response)
+      stub_request(:post, endpoint).with { |request| JSON.parse(request.body)['model'] == name }.to_return(response)
+    end
+
+    {
+      custom_guardrail: %w[perplexity/pplx-decider-v1.2 openai/gpt-6-luna-decisions],
+      language_detection: %w[openai/gpt-6-luna-decisions respan/span-02],
+      outcome_classification: %w[inception/mercury-decide microsoft/microsoft-decision-1]
+    }.each do |feature, (primary, fallback)|
+      it "asks #{fallback} for #{feature} when #{primary} fails, and records both attempts" do
+        stub_decider(primary, { status: 503, body: 'SYNTHETIC_PRIVATE_PROVIDER_TEXT' })
+        second = stub_decider(fallback, { status: 200, body: body_for(fallback) })
+
+        result = Llm::Runtime.decide(decision_request(feature: feature, model: primary))
+
+        expect(result).to have_attributes(choice: 'other', model: fallback)
+        expect(second).to have_been_requested.once
+        events = LlmEvent.where(account_id: account.id, event_name: 'llm.decision.complete').order(:id)
+        expect(events.map { |event| [event.payload['requested_model'], event.status, event.payload['decision_chain_position']] })
+          .to eq([[primary, 'error', 1], [fallback, 'success', 2]])
+        expect(Llm::FeatureProfile.for(feature).decision_fallback_models).to eq([fallback])
+      end
+    end
+
+    it 'asks no fallback when the caller falls back itself, nor for a model that answered' do
+      stub_decider('perplexity/pplx-decider-v1.2', { status: 503, body: 'x' })
+
+      expect do
+        Llm::Runtime.decide(decision_request(feature: :custom_guardrail, model: 'perplexity/pplx-decider-v1.2',
+                                             options: { decision_criteria: criteria, decision_instructions: instructions,
+                                                        decision_fallback: false }))
+      end.to raise_error(Llm::OpenRouterDecisionClient::Error)
+      expect(a_request(:post, endpoint).with { |request| JSON.parse(request.body)['model'] == 'openai/gpt-6-luna-decisions' })
+        .not_to have_been_made
+
+      stub_decider('perplexity/pplx-decider-v1.2', { status: 200, body: body_for('perplexity/pplx-decider-v1.2') })
+      expect(Llm::Runtime.decide(decision_request(feature: :custom_guardrail, model: 'perplexity/pplx-decider-v1.2')).model)
+        .to eq('perplexity/pplx-decider-v1.2')
+    end
+
+    it 'has no fallback for the decisions inside a patient turn: their chain falls back' do
+      expect(Llm::FeatureProfile.for(:agent_routing).decision_fallback_models).to eq([])
+    end
+  end
+
+  it 'passes several questions in one call' do
+    questions = { 'route_mode' => { criteria: { 'route_agent' => 'One', 'council' => 'Two' }, instructions: 'Route.' },
+                  'include_agent_7' => { criteria: { 'yes' => 'Agent 7', 'no' => 'Not 7' }, instructions: 'Include?' } }
+    stub_request(:post, endpoint).with do |request|
+      JSON.parse(request.body).dig('questions', 'include_agent_7', 'criteria') == { 'yes' => 'Agent 7', 'no' => 'Not 7' }
+    end.to_return(status: 200, body: response_body.merge(answers: { route_mode: { choice: 'route_agent', confidence: 0.9 },
+                                                                    include_agent_7: { choice: 'yes', confidence: 0.8 } }).to_json)
+
+    result = Llm::Runtime.decide(decision_request(feature: :agent_routing, model: 'perplexity/pplx-decider-v1.2',
+                                                  options: { decision_questions: questions }))
+
+    expect(result.answers.transform_values(&:choice)).to eq('route_mode' => 'route_agent', 'include_agent_7' => 'yes')
+    expect(LlmEvent.find_by!(account_id: account.id, event_name: 'llm.decision.complete').payload)
+      .to include('decision_choice' => 'route_mode=route_agent include_agent_7=yes', 'decision_confidence' => 0.8)
+  end
+
+  it 'keeps the transport default timeout for the background decision features' do
+    stub_request(:post, endpoint).to_return(status: 200, body: response_body.to_json)
+    expect(Llm::OpenRouterDecisionClient).to receive(:choose).with(hash_including(timeout: nil)).and_call_original
+
+    Llm::Runtime.decide(decision_request)
   end
 
   it 'applies provider preferences and mandatory ZDR before sending the decision state' do
@@ -157,7 +267,8 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
       'canonical_event_name' => 'llm.decision.complete', 'feature' => 'outcome_classification',
       'provider' => 'openrouter', 'runtime_mode' => 'openrouter_runtime', 'status' => 'success',
       'trace_id' => 'synthetic-decision-trace', 'requested_model' => model, 'actual_model' => served_model,
-      'endpoint_provider' => 'Azure', 'output_type' => 'decision', 'openrouter_native_endpoint' => '/alpha/decisions'
+      'endpoint_provider' => 'Azure', 'output_type' => 'decision', 'openrouter_native_endpoint' => '/alpha/decisions',
+      'decision_choice' => 'synthetic_completed_answer', 'decision_confidence' => 0.9
     )
     expect(events.first.payload).not_to include('state', 'messages', 'input', 'prompt', 'answer', 'answers', 'api_key')
     expect(events.first.payload.to_json).not_to include(*private_values)
@@ -183,6 +294,7 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
     )
     expect(usage.estimated_cost.to_f).to eq(0.0000042)
     expect(event.estimated_cost.to_f).to eq(0.0000042)
+    expect(event.payload['decision_choice']).to eq('synthetic_completed_answer')
     expect([event.attributes, usage.attributes].to_json).not_to include(*private_values)
   end
 

@@ -8,14 +8,12 @@ class Captain::Runtime::OperationGuard
     @tool = tool
     @arguments = arguments
     @session = context[:agent_session]
-    @scope = scope || Captain::Runtime::TaskQueue.new(context).operation_scope
+    @scope = scope || Captain::Runtime::OperationScope.operation(context)
   end
 
   def reserve
     return unless @session && Llm::ToolRiskPolicy.mutating?(@tool)
     return if Captain::Runtime::Runner.reply_suggestion?(@context)
-    return if @tool.is_a?(Captain::Runtime::HandoffTool) || @tool.is_a?(Captain::Runtime::TaskQueueTool) ||
-              @tool.is_a?(Captain::Runtime::PartPlanTool)
     # These tools already atomically change conversation ownership/status. They
     # must remain available after all business tasks finish or need staff help.
     return if @tool.is_a?(Captain::Tools::HandoffTool) || @tool.is_a?(Captain::Tools::ResolveConversationTool)
@@ -69,7 +67,7 @@ class Captain::Runtime::OperationGuard
   # messages; the run keeps it for the agent that gets the conversation by a transfer in this same run.
   def done_entry(result)
     Captain::DoneActions.entry(tool_name: @tool.name, arguments: @arguments, result: result,
-                               request: Captain::Runtime::TaskQueue.new(@context).request_scope)
+                               request: Captain::Runtime::OperationScope.request(@context))
   end
 
   def remember_done(done)

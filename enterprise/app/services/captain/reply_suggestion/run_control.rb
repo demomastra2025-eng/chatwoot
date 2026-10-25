@@ -3,6 +3,10 @@
 # Cooperative cancel and deadline of one reply suggestion run. The job installs a control for the thread it runs on; the runtime
 # calls RunControl.checkpoint! before each agent turn and before each tool call. Outside a suggestion run no control is set and a
 # checkpoint is a no-op, so live conversations are not affected.
+#
+# The parts of a council run under a scope of the control (#for_parts): the same run, with a deadline of its own that leaves the
+# editor its time. A part that reaches it stops with PartTimeUp, a technical failure of that part alone; the council still answers
+# with the other parts. A routed suggestion that one agent answers gets the budget of one agent from the decision on (#shorten!).
 class Captain::ReplySuggestion::RunControl
   STATE_KEY = :captain_reply_suggestion_run_control
 
@@ -23,6 +27,15 @@ class Captain::ReplySuggestion::RunControl
       ActiveSupport::IsolatedExecutionState[STATE_KEY]
     end
 
+    # The control of the run on another thread of the same run (see Captain::Runtime::Council::ThreadScope); nil sets none.
+    def adopt(control)
+      previous = ActiveSupport::IsolatedExecutionState[STATE_KEY]
+      ActiveSupport::IsolatedExecutionState[STATE_KEY] = control
+      yield
+    ensure
+      ActiveSupport::IsolatedExecutionState[STATE_KEY] = previous
+    end
+
     def checkpoint!(stage)
       current&.checkpoint!(stage)
     end
@@ -37,27 +50,48 @@ class Captain::ReplySuggestion::RunControl
     @request_id = request_id
     @deadline = deadline
     @cancel_checked_at = nil
+    @cancelled = false
     @action_ids = []
+    # The parts of a council may run on threads of their own (see Captain::Runtime::Council::ThreadScope).
+    @lock = Mutex.new
   end
 
   def checkpoint!(stage)
     now = monotonic_now
     raise Captain::ReplySuggestion::RunAborted.new(:deadline, stage) if now >= @deadline
-    return if @cancel_checked_at && now - @cancel_checked_at < Captain::ReplySuggestion::CANCEL_CHECK_INTERVAL
-
-    @cancel_checked_at = now
-    raise Captain::ReplySuggestion::RunAborted.new(:cancelled, stage) if Captain::ReplySuggestion::RequestStore.cancel_requested?(@request_id)
+    raise Captain::ReplySuggestion::RunAborted.new(:cancelled, stage) if cancelled?(now)
   end
 
   def register_action(action_id)
-    @action_ids << action_id.to_s if action_id.present? && @action_ids.exclude?(action_id.to_s)
+    @lock.synchronize { @action_ids << action_id.to_s if action_id.present? && @action_ids.exclude?(action_id.to_s) }
   end
 
   def seconds_left
     [@deadline - monotonic_now, 0].max
   end
 
+  # The scope of the parts of a council: their deadline leaves `reserve` seconds of the run to what follows them (the editor).
+  def for_parts(reserve:)
+    PartScope.new(self, [@deadline - reserve, monotonic_now].max)
+  end
+
+  # The deadline comes closer, never later.
+  def shorten!(seconds)
+    @lock.synchronize { @deadline = [@deadline, monotonic_now + seconds].min }
+  end
+
   private
+
+  # Redis is asked at most once per CANCEL_CHECK_INTERVAL, whichever thread asks; a cancel once seen stays seen.
+  def cancelled?(now)
+    @lock.synchronize do
+      return true if @cancelled
+      return false if @cancel_checked_at && now - @cancel_checked_at < Captain::ReplySuggestion::CANCEL_CHECK_INTERVAL
+
+      @cancel_checked_at = now
+      @cancelled = Captain::ReplySuggestion::RequestStore.cancel_requested?(@request_id)
+    end
+  end
 
   def monotonic_now
     Process.clock_gettime(Process::CLOCK_MONOTONIC)

@@ -17,7 +17,9 @@ module Llm::Config
     'customer_notice' => 'CAPTAIN_CUSTOMER_NOTICE_MODEL',
     'label_suggestion' => 'CAPTAIN_LABEL_SUGGESTION_MODEL',
     'outcome_classification' => 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL',
-    'language_detection' => 'CAPTAIN_LANGUAGE_DETECTION_MODEL'
+    'language_detection' => 'CAPTAIN_LANGUAGE_DETECTION_MODEL',
+    'agent_routing_escalation' => 'CAPTAIN_AGENT_ROUTING_ESCALATION_MODEL',
+    'council_split' => 'CAPTAIN_COUNCIL_SPLIT_MODEL'
   }.freeze
   OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1'.freeze
   OPENROUTER_DEFAULT_API_BASE = 'https://openrouter.ai/api/v1'.freeze
@@ -80,9 +82,7 @@ module Llm::Config
       explicit_model = explicit_model_for(feature_key, account: account)
       return explicit_model if explicit_model.present?
 
-      unless %w[outcome_classification language_detection custom_guardrail].include?(feature_key)
-        installation_model = installation_model_for(feature_key, account: account)
-      end
+      installation_model = installation_model_for(feature_key, account: account) unless Llm::FeatureProfile.decision_feature?(feature_key)
       return installation_model if installation_model.present?
 
       if feature_key.present?

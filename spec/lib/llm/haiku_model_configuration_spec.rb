@@ -23,7 +23,7 @@ RSpec.describe 'Claude Haiku 5.5 model configuration' do
     expect(Llm::Models.curated_model_names_for(:assistant, account: account)).to include(model)
     expect(Llm::Models.configured_default_model_for(:assistant)).to eq('openai/gpt-6-luna')
     expect(Llm::Models.configured_default_model_for(:outcome_classification)).to eq('inception/mercury-decide')
-    expect(Llm::Models.configured_default_model_for(:custom_guardrail)).to eq('openai/gpt-6-luna-decisions')
+    expect(Llm::Models.configured_default_model_for(:custom_guardrail)).to eq('perplexity/pplx-decider-v1.2')
   end
 
   it 'identifies the confirmed canonical model without claiming unsupported capabilities' do

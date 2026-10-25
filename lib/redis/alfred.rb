@@ -33,6 +33,9 @@ module Redis::Alfred
 
     def set_if_newer(key, value, **) = Redis::SetIfNewer.call($alfred, key, value, **)
 
+    # value at the front of the JSON array under key (atomic), the first `limit` values kept, expiry `ex` seconds
+    def prepend_to_json_list(key, value, **) = Redis::JsonListPrepend.call($alfred, key, value, **)
+
     def publish_storage_snapshot(keys, values) = Redis::StorageSnapshotPublish.call($alfred, keys, values)
 
     def expire_if_value(key, value, seconds)

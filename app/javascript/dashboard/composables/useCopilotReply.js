@@ -29,7 +29,12 @@ const REWRITE_ACTIONS = [
 ];
 
 const REPLY_SUGGESTION_ACTION = 'reply_suggestion';
-const DEFAULT_BUDGET_SECONDS = 60;
+// Until the server tells the budget of the run (60 s for one agent, 120 s
+// when the router chooses among several agents and may call a council).
+const DEFAULT_BUDGET_SECONDS = 120;
+// A new suggestion right after «Отменить» waits this long at most for the
+// cancel to reach the server, so that the cancelled run is not reused.
+const CANCEL_WAIT_MS = 2000;
 // No cable event for this long (or until the run deadline plus the grace
 // period, whichever is later) means the socket probably dropped: ask the API.
 const WATCHDOG_MIN_MS = 15000;
@@ -221,6 +226,8 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
   // know that the conversation or the user's intent changed while they waited.
   let epoch = 0;
   let startToken = null;
+  // The cancel request that is still on its way to the server.
+  let pendingCancel = null;
   let tickTimer = null;
   let watchdogTimer = null;
 
@@ -812,12 +819,43 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
         conversationId: conversation,
         suggestionRequestId: id,
       });
-      if (promise && typeof promise.catch === 'function') {
-        promise.catch(() => {});
+      if (promise && typeof promise.then === 'function') {
+        const settled = promise
+          .catch(() => {})
+          .finally(() => {
+            if (pendingCancel === settled) pendingCancel = null;
+          });
+        pendingCancel = settled;
+        return settled;
       }
     } catch {
       // The run ends on its own at the deadline
     }
+    return Promise.resolve();
+  }
+
+  // A cancel that is still on its way: the server would otherwise hand the
+  // run that is being cancelled back as the active one.
+  function waitForPendingCancel() {
+    if (!pendingCancel) return Promise.resolve();
+    return Promise.race([
+      pendingCancel,
+      new Promise(resolve => {
+        setTimeout(resolve, CANCEL_WAIT_MS);
+      }),
+    ]);
+  }
+
+  // The server handed back a run the manager cancelled (its cancel had not
+  // arrived yet): cancel it again and ask once more.
+  async function requestFreshSuggestion(targetConversation) {
+    const answer = await requestReplySuggestion({
+      conversationId: targetConversation,
+    });
+    const reusedId = answer?.state?.suggestion_request_id;
+    if (!reusedId || !ignoredRequestIds.has(reusedId)) return answer;
+    await sendCancel(reusedId, targetConversation);
+    return requestReplySuggestion({ conversationId: targetConversation });
   }
 
   /**
@@ -841,9 +879,11 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     localStartedAt.value = Date.now();
     setPhase(PHASE.REQUESTING);
 
-    const answer = await requestReplySuggestion({
-      conversationId: targetConversation,
-    });
+    if (pendingCancel) await waitForPendingCancel();
+    const answer =
+      myEpoch === epoch
+        ? await requestFreshSuggestion(targetConversation)
+        : null;
 
     if (myEpoch !== epoch) {
       // Cancelled, or the manager left the conversation while the request was

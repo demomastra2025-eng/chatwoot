@@ -136,6 +136,35 @@ describe('CopilotSuggestionNotice', () => {
     );
   });
 
+  it('says that the router decided a staff request, and names no agent', () => {
+    const wrapper = mountNotice({
+      notice: notice({
+        kind: 'human_needed',
+        reason: 'Пациент просит живого сотрудника — ответьте ему сами.',
+        reasonSource: 'router',
+        agent: null,
+      }),
+    });
+
+    expect(wrapper.get('[data-test="copilot-notice-agent"]').text()).toBe(
+      'Решение маршрутизации ИИ'
+    );
+  });
+
+  it.each([
+    ['router_unavailable', 'ИИ не смог сейчас выбрать агента'],
+    ['council_unavailable', 'ИИ не смог сейчас собрать агентов'],
+  ])('explains the failure %s in a short sentence', (reasonCode, sentence) => {
+    const wrapper = mountNotice({
+      notice: notice({ kind: 'failed', reason: null, reasonCode }),
+    });
+
+    expect(text(wrapper)).toContain('ИИ не смог подготовить ответ');
+    expect(wrapper.get('[data-test="copilot-notice-reason"]').text()).toContain(
+      sentence
+    );
+  });
+
   it('warns when new customer messages arrived after the request', () => {
     const stale = mountNotice({ notice: notice(), stale: true });
     const fresh = mountNotice({ notice: notice(), stale: false });
@@ -190,6 +219,15 @@ describe('CopilotSuggestionNotice', () => {
     ['kk', kk],
   ])('titles in %s', (locale, messages) => {
     const { NOTICE } = messages.CONVERSATION.REPLYBOX.COPILOT_SUGGESTION;
+
+    it('has the texts of the router failures and of the router decision', () => {
+      expect(NOTICE.ROUTER_LABEL).toBeTruthy();
+      expect(NOTICE.FAILED_REASONS.ROUTER_UNAVAILABLE).toBeTruthy();
+      expect(NOTICE.FAILED_REASONS.COUNCIL_UNAVAILABLE).toBeTruthy();
+      expect(
+        messages.CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.ROUTING
+      ).toBeTruthy();
+    });
 
     it.each([
       ['no_reply', NOTICE.NO_REPLY_TITLE],

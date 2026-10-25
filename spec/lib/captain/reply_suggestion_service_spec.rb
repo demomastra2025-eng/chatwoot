@@ -209,7 +209,7 @@ RSpec.describe Captain::ReplySuggestionService do
 
         run_context = Captain::AgentRunContext.new(entry: assistant, conversation: conversation, ephemeral_session: true)
         session = run_context.prepare(state: { source: 'reply_suggestion' })[:agent_session]
-        session.update_routing(actor_id: assistant.id, tasks: [{ 'id' => 't1', 'status' => 'active' }])
+        session.update_routing(actor_id: assistant.id, trail: { 'kind' => 'agent', 'to' => [assistant.id] })
 
         expect(conversation.reload.additional_attributes.to_h).not_to have_key(Captain::Conversation::AgentSession::ATTRIBUTE)
       end
@@ -242,82 +242,72 @@ RSpec.describe Captain::ReplySuggestionService do
           'digest' => 'dig-78'
         }
         allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:pending_for)
-          .with(account_id: account.id, conversation_id: conversation.id)
+          .with(account_id: account.id, conversation_id: conversation.id, request_id: 'req-1')
           .and_return([stored_pending])
+        own_request = described_class.new(account: account, conversation_display_id: conversation.display_id, user: agent, request_id: 'req-1',
+                                          progress_context: { suggestion_request_id: 'req-1' })
 
-        result = service.perform
+        result = own_request.perform
 
         expect(result[:pending_actions]).to eq([pending_action, stored_pending])
         expect(result.dig(:suggestion_meta, 'pending_actions')).to eq([pending_action, stored_pending])
       end
 
-      it 'prevents handoff ping-pong back to visited source agents and enforces 1-transfer limit in reply_suggestion' do
-        specialist = create(:captain_assistant, account: account, name: 'ЛОР-специалист', active: true)
-        expect(Captain::Runtime::Runner.max_transfers_for({ state: { source: 'reply_suggestion' } })).to eq(1)
-        expect(Captain::Runtime::Runner.max_transfers_for({ state: { source: 'incoming_message' } })).to eq(2)
-
-        lazy_entry = Captain::Runtime::LazyAgent.new(assistant, options: { suggestion_tools: true })
-        lazy_specialist = Captain::Runtime::LazyAgent.new(specialist, options: { suggestion_tools: true })
-
-        handoff_tool = Captain::Runtime::HandoffTool.new(lazy_entry, source_agent: lazy_specialist)
-        tool_ctx = OpenStruct.new(
-          run_context: OpenStruct.new(
-            context: {
-              state: { source: 'reply_suggestion', assistant_id: specialist.id },
-              handoff_count: 0,
-              visited_handoff_source_ids: [assistant.id]
-            }
-          )
+      it 'does not add the pending cards of earlier suggestions to a new one' do
+        runner_double = instance_double(Captain::Assistant::AgentRunnerService)
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner_double)
+        allow(runner_double).to receive(:generate_response).and_return({ 'response' => 'Окно завтра в 10:00.', 'agent_id' => assistant.id })
+        Captain::ReplySuggestion::ActionApprovalService.store_record!(
+          'action_id' => 'earlier-card', 'account_id' => account.id, 'conversation_id' => conversation.id, 'status' => 'pending',
+          'tool_name' => 'create_appointment', 'digest' => 'dig-earlier', 'suggestion_request_id' => 'earlier-request'
         )
+        new_request = described_class.new(account: account, conversation_display_id: conversation.display_id, user: agent, request_id: 'req-2',
+                                          progress_context: { suggestion_request_id: 'req-2' })
 
-        ping_pong_result = handoff_tool.perform(tool_ctx)
-        expect(ping_pong_result[:error] || ping_pong_result['error']).to eq(Captain::Runtime::HandoffTool::RETURN_TO_SOURCE)
+        result = new_request.perform
 
-        limit_ctx = OpenStruct.new(
-          run_context: OpenStruct.new(
-            context: {
-              state: { source: 'reply_suggestion', assistant_id: assistant.id },
-              handoff_count: 1,
-              visited_handoff_source_ids: []
-            }
-          )
-        )
-        handoff_to_specialist = Captain::Runtime::HandoffTool.new(lazy_specialist, source_agent: lazy_entry)
-        handoff_to_specialist.perform(limit_ctx)
-        expect(limit_ctx.run_context.context[:transfer_guard_active]).to be(true)
+        expect(result[:pending_actions]).to eq([])
       end
 
-      it 'omits visited transfer tools in ExecutorResolver and hides clarify in PartPlanTool when < 2 open parts' do
+      it 'shows again the kept cards of a suggestion the manager inserted, which still wait for approval' do
+        runner_double = instance_double(Captain::Assistant::AgentRunnerService)
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner_double)
+        allow(runner_double).to receive(:generate_response).and_return({ 'response' => 'Окно завтра в 10:00.', 'agent_id' => assistant.id })
+        Captain::ReplySuggestion::ActionApprovalService.store_record!(
+          'action_id' => 'kept-card', 'account_id' => account.id, 'conversation_id' => conversation.id, 'status' => 'pending',
+          'tool_name' => 'create_appointment', 'digest' => 'dig-kept', 'suggestion_request_id' => 'applied-request',
+          'kept_at' => Time.current.iso8601
+        )
+        new_request = described_class.new(account: account, conversation_display_id: conversation.display_id, user: agent, request_id: 'req-3',
+                                          progress_context: { suggestion_request_id: 'req-3' })
+
+        result = new_request.perform
+
+        expect(result[:pending_actions].pluck('action_id')).to eq(['kept-card'])
+      end
+
+      it 'records the decision of the router and the agent it routed to' do
         specialist = create(:captain_assistant, account: account, name: 'ЛОР-специалист', active: true)
-        ctx = {
-          state: { source: 'reply_suggestion', assistant_id: specialist.id },
-          agent_graph: [
-            { id: assistant.id, name: assistant.name },
-            { id: specialist.id, name: specialist.name }
-          ],
-          visited_handoff_source_ids: [assistant.id],
-          parts: []
-        }
+        runner_double = instance_double(Captain::Assistant::AgentRunnerService)
+        captured_callbacks = nil
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |**kwargs|
+          captured_callbacks = kwargs[:callbacks]
+          runner_double
+        end
+        decision = { decision_key: "route_agent_#{specialist.id}", kind: 'agent', target_ids: [specialist.id], from_agent_id: assistant.id,
+                     decided_by: 'inception/mercury-decide', confidence: 0.91, escalated: false }
+        allow(runner_double).to receive(:generate_response) do
+          captured_callbacks[:on_agent_routed].call(decision, nil)
+          { 'response' => 'Можем записать вас к ЛОРу.', 'agent_id' => specialist.id, 'agent_display_name' => specialist.name }
+        end
 
-        resolver = Captain::Runtime::ExecutorResolver.new(ctx)
-        expect do
-          resolver.resolve([{ 'executor' => assistant.name, 'fragment' => 'Уточнить цену' }], mode: 'council')
-        end.to raise_error(
-          Captain::Runtime::ExecutorResolver::RetryableError,
-          /handle the request with your own tools and instructions/
-        )
+        meta = service.perform[:suggestion_meta]
 
-        plan_tool_no_open = Captain::Runtime::PartPlanTool.new(ctx)
-        expect(plan_tool_no_open.params_schema.dig('properties', 'mode', 'enum')).to eq(['council'])
-
-        ctx_two_open = ctx.merge(
-          parts: [
-            { 'id' => 'p1', 'state' => 'waiting_customer', 'executor_agent_id' => assistant.id, 'fragment' => 'A' },
-            { 'id' => 'p2', 'state' => 'waiting_customer', 'executor_agent_id' => assistant.id, 'fragment' => 'B' }
-          ]
-        )
-        plan_tool_two_open = Captain::Runtime::PartPlanTool.new(ctx_two_open)
-        expect(plan_tool_two_open.params_schema.dig('properties', 'mode', 'enum')).to include('council', 'clarify')
+        expect(meta['routing']).to include('decision_key' => "route_agent_#{specialist.id}", 'decided_by' => 'inception/mercury-decide',
+                                           'escalated' => false)
+        expect(meta['handoffs']).to eq([{ 'from' => assistant.name, 'to' => specialist.name, 'reason' => "route_agent_#{specialist.id}" }])
+        expect(meta['working_agents'].find { |item| item['name'] == specialist.name }).to include('role' => 'routed')
+        expect(captured_callbacks).not_to have_key(:on_agent_handoff)
       end
 
       it 'preserves outer user_id in Llm::EventBus.with_context across nested contexts' do
@@ -485,6 +475,30 @@ RSpec.describe Captain::ReplySuggestionService do
           expect(Captain::ReplySuggestion::RequestStore).to have_received(:write_progress)
             .with('req-1', hash_including(phase: 'thinking')).at_least(:once)
         end
+
+        it 'shows that the router chooses the agent, and no agent thinking, until it has chosen' do
+          assistant.update!(routing_description: 'Общие вопросы о клинике')
+          specialist = create(:captain_assistant, account: account, name: 'ЛОР-специалист', active: true, routing_description: 'Запись к ЛОРу')
+          progress = []
+          allow(ActionCable.server).to receive(:broadcast) { |_stream, payload| progress << payload[:data] }
+          runner_double = instance_double(Captain::Assistant::AgentRunnerService)
+          captured_callbacks = nil
+          allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |**kwargs|
+            captured_callbacks = kwargs[:callbacks]
+            runner_double
+          end
+          allow(runner_double).to receive(:generate_response) do
+            captured_callbacks[:on_agent_routed].call({ decision_key: "route_agent_#{specialist.id}", kind: 'agent', target_ids: [specialist.id] },
+                                                      nil)
+            { 'response' => 'Можем записать вас к ЛОРу.', 'agent_id' => specialist.id }
+          end
+
+          service.perform
+
+          expect(progress.first).to include(phase: 'routing')
+          expect(progress.first).not_to have_key(:active_agent)
+          expect(progress.last).to include(phase: 'thinking', active_agent: include('id' => specialist.id))
+        end
       end
 
       def stub_council_runner_execution(entry_assistant, specialist)
@@ -510,23 +524,16 @@ RSpec.describe Captain::ReplySuggestionService do
       end
 
       def simulate_council_callbacks(callbacks, entry_assistant, specialist)
-        simulate_plan_callbacks(callbacks, entry_assistant, specialist)
+        simulate_routing_callbacks(callbacks, entry_assistant, specialist)
         simulate_specialist_callbacks(callbacks, specialist)
       end
 
-      def simulate_plan_callbacks(callbacks, entry_assistant, specialist)
-        plan_ctx = OpenStruct.new(
-          context: {
-            state: { assistant_id: entry_assistant.id },
-            part_plan: {
-              mode: 'council',
-              parts: [{ 'id' => 1, 'executor_agent_id' => specialist.id, 'fragment' => 'Болит ухо, нужно к Дани', 'patient' => 'self' }]
-            }
-          }
+      # The router chose a council of exactly the anchor and the specialist.
+      def simulate_routing_callbacks(callbacks, entry_assistant, specialist)
+        callbacks[:on_agent_routed].call(
+          { decision_key: "council_#{entry_assistant.id}_#{specialist.id}", kind: 'council', target_ids: [entry_assistant.id, specialist.id],
+            decided_by: 'inception/mercury-decide' }, nil
         )
-        callbacks[:on_agent_thinking].call(entry_assistant.agent_name, 'I need help', plan_ctx)
-        callbacks[:on_tool_start].call('plan_request', { mode: 'council' }, plan_ctx)
-        callbacks[:on_tool_complete].call('plan_request', { status: 'planned' }, plan_ctx)
       end
 
       def simulate_specialist_callbacks(callbacks, specialist)
@@ -541,7 +548,7 @@ RSpec.describe Captain::ReplySuggestionService do
         callbacks[:on_tool_complete].call('search_available_slots', { slots: ['15:00'] }, part_ctx)
         llm_json = {
           status: 'answered', patient_language: 'ru', customer_text: 'Ближайшее окно к Дани сегодня в 15:00.',
-          questions: [], sources: ['search_available_slots'], suggested_agent: '', reasoning: 'Найдено свободное время у врача Дани на 15:00.'
+          questions: [], sources: ['search_available_slots'], reasoning: 'Найдено свободное время у врача Дани на 15:00.'
         }.to_json
         llm_msg = instance_double(RubyLLM::Message, tool_call?: false, content: llm_json)
         callbacks[:on_llm_call_complete].call(specialist.agent_name, 'gpt-5.4-mini', llm_msg, part_ctx)

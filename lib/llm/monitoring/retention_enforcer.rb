@@ -4,6 +4,8 @@ class Llm::Monitoring::RetentionEnforcer
   ACCOUNT_BATCH_SIZE = 100
   EVENT_BATCH_SIZE = 1_000
   REPORT_CRITICAL_EVENT_NAMES = %w[
+    captain.agent.routed
+    captain.agent.routing_failed
     captain.agent.transfer
     captain.agent.staff_handoff
     captain.agent.transfer_guard

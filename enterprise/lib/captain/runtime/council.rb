@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
-# A council: one customer message that holds separate requests for different agents, or the answer to an open part of another
-# agent. Every part is a normal run of the agent that OWNS it (see Council::PartRun), with that agent's own tools, mutating tools
+# A council: one customer message that holds requests for two or three different agents at once. The router chose exactly these
+# participants (see Captain::Runtime::DecisionRouter) and the message was cut into one part per participant (CouncilSplitter).
+# Every part is a normal run of the agent that OWNS it (see Council::PartRun), with that agent's own tools, mutating tools
 # included: the owner books, moves or cancels as soon as it has what it needs, otherwise it asks for everything still missing in one message, and it
 # writes the final text of its part from what its tools returned. The editor (CouncilEditor) only merges the part texts into one
 # message; a council of one part sends that text as it is. The conversation never changes hands.
@@ -18,17 +19,33 @@
 # (council_handoff, technical: true). When no part has a text, the reply is empty and the run sends nothing.
 #
 # Staff for a part. The owner of a part cannot call the handoff tool (see PartTools): a part that only staff can finish ends
-# unavailable. The agent that planned the council can call it in the same step as its plan; the runner gives that request to the
-# council (staff_request) instead of ending the run with it, so the answers of the other parts are not lost: they go out in the
-# one reply and the conversation goes to staff after it, the same handoff as for a part that ends unavailable.
+# unavailable, and the conversation goes to staff after the one reply.
+#
+# A reply suggestion writes nothing: an action tool only prepares an approval card for the operator (see ToolWrapper). Its parts
+# are all read-only lanes, side by side on threads while there are slots (else one after another on the calling thread), each
+# with at most SUGGESTION_PART_MAX_TURNS turns. They run against a deadline of their own that leaves the editor its time (see
+# Captain::ReplySuggestion::RunControl#for_parts): a part that reaches it - a slow model, a lane of dependent parts, a lane that
+# got no thread, a second run after a re-decision - stops as a technical failure of that part, and the suggestion answers with the
+# other parts and names the stopped one to the manager. A part is decided again only while the router and a short run still fit.
+# A suggestion council without a text never fails for a technical failure of a part: the manager is told what failed, and the
+# approval cards of the other parts stay.
+#
+# A part whose owner answers that it is not its own (out_of_scope) and did nothing is decided again by the router on the part's
+# own words (one agent or staff, the first owner excluded) and runs once more with the agent it chose. No model names an agent.
 class Captain::Runtime::Council
   UNRESOLVED_STATES = %w[open unknown].freeze
   HANDOFF_REASON = 'council_unresolved'
   TECHNICAL_HANDOFF_REASON = 'council_technical_failure'
-  STAFF_REASON_LIMIT = 300
   PART_SEPARATOR = "\n\n"
   # A booking is: find the resource, the service and the slot, read the contact, create, verify. ToolLoopGuard allows 16 tool requests.
   PART_MAX_TURNS = 14
+  # A suggestion part prepares a card instead of verifying a write: search, slot, card, text. Its time is bounded by the deadline of
+  # the parts; the turn cap only stops a part that loops.
+  SUGGESTION_PART_MAX_TURNS = 8
+  # What a suggestion keeps of its run after the parts: the editor and the classification of the answer.
+  SUGGESTION_AFTER_PARTS_SECONDS = Captain::Runtime::CouncilEditor::TIMEOUT_SECONDS + 3
+  # A suggestion decides a part again (and runs it once more) only while the router and a run of this length still fit.
+  SUGGESTION_REASSIGN_RUN_SECONDS = 15
   THREAD_LIMIT = [ENV.fetch('CAPTAIN_COUNCIL_THREADS', 4).to_i, 1].max
   # Read-only lanes on threads, process-wide. A lane that gets no slot runs on the calling thread.
   SLOTS = Concurrent::Semaphore.new(THREAD_LIMIT)
@@ -45,8 +62,8 @@ class Captain::Runtime::Council
     :captain_suggestion_pending_actions,
     :outcome_facts,
     :captain_v2_handoff_tool_called,
-    :pending_handoff, :pending_human_handoff, :pending_response_cancellation, :handoff_count, :previous_handoff_source_id, :visited_handoff_source_ids,
-    :part_plan, :part_plan_refused, :part_plan_processed, :transfer_guard, :transfer_guard_active, :transfer_guarded,
+    :pending_human_handoff, :pending_response_cancellation,
+    :part_plan, :part_plan_processed,
     :technical_failure, :council_handoff, :council_note, :council_untold_part_ids, :council_contributors, :council_patient_language,
     :__otel_tracing,
     :__llm_event_bus,
@@ -54,7 +71,8 @@ class Captain::Runtime::Council
     Captain::Runtime::TracingCallbacks::TRACE_EVENT_CONTEXT_KEY
   ].freeze
   # What a part must not hold of the main run: its durable session (only a writer gets it back), its graph, queue and plan.
-  MAIN_RUN_KEYS = %i[agent_session agent_graph agent_graph_object agent_run_context_object agent_tasks parts].freeze
+  MAIN_RUN_KEYS = %i[agent_session agent_graph agent_graph_object agent_run_context_object parts routing_current_agent_id
+                     routing_trail routing_decision].freeze
 
   # What the council knows about one part before it runs. settled: the stored part of an earlier attempt of the same request.
   Plan = Struct.new(:part, :actor, :agent, :writer, :snapshot, :settled, keyword_init: true) do
@@ -77,16 +95,15 @@ class Captain::Runtime::Council
 
   # model: the acting agent's runtime model, used by the editor that writes the single customer reply.
   # callbacks: the callbacks of the run, so that the tool calls of the parts are traced like those of any other run.
-  # staff_request: the human handoff that the planning agent asked for in the same step as the plan (its reason, as the handoff
-  # tool recorded it). It does not discard the other parts: they are answered, and the conversation goes to staff after the reply,
-  # as for a part that ends unavailable.
-  def initialize(context:, graph:, account:, llm_context: nil, model: nil, callbacks: nil, staff_request: nil)
+  # reassigner: called with (fragment:, without:) for a part that was not its owner's; returns the router's decision for it
+  # (Captain::Runtime::DecisionRouter::Decision) or nil. Without it such a part stays unresolved.
+  def initialize(context:, graph:, account:, llm_context: nil, model: nil, callbacks: nil, reassigner: nil) # rubocop:disable Metrics/ParameterLists
     @context = context
     @graph = graph
     @account = account
     @llm_context = llm_context
     @model = model
-    @staff_request = staff_request.to_h.with_indifferent_access.presence
+    @reassigner = reassigner
     @callbacks = callbacks || {}
     @entries = {}
     @results = []
@@ -98,6 +115,7 @@ class Captain::Runtime::Council
 
   def run(parts)
     ids = parts.pluck('id')
+    @all_parts = parts
     @participants = parts.pluck('executor_agent_id').uniq
     Captain::Runtime::CoordinationEvents.council_started(context: @context, participant_ids: @participants, part_ids: ids)
     prime_run_state
@@ -123,7 +141,7 @@ class Captain::Runtime::Council
     @calling_thread = Thread.current
     customer_message
     staff_handoff_available?
-    @peers = Array(@context[:agent_graph])
+    suggestion?
     @shared_callbacks = serialized(@callbacks)
   end
 
@@ -143,7 +161,8 @@ class Captain::Runtime::Council
     return Plan.new(part: part) unless actor
 
     agent = part_agent(actor)
-    writer = agent.tools.any? { |tool| Llm::ToolRiskPolicy.mutating?(tool) }
+    # A suggestion part writes nothing (its action tools prepare cards): it is a reader, without the durable session.
+    writer = !suggestion? && agent.tools.any? { |tool| Llm::ToolRiskPolicy.mutating?(tool) }
     Plan.new(part: part, actor: actor, agent: agent, writer: writer, snapshot: part_snapshot(actor, part, writer))
   rescue Captain::Conversation::ControlGenerationStaleError
     raise
@@ -152,17 +171,27 @@ class Captain::Runtime::Council
     Plan.new(part: part)
   end
 
-  # The owner's own agent, without the tools that change who controls the conversation and without any handoff target: a part
-  # never transfers the conversation. It answers with the structured result of a part.
+  # The owner's own agent, without the tools that change who controls the conversation: a part never hands the conversation over.
+  # It answers with the structured result of a part.
   def part_agent(actor)
-    suggestion = (@context.dig(:state, :source) || @context.dig(:state, 'source')).to_s == 'reply_suggestion'
-    runtime = suggestion ? actor.agent(suggestion_tools: true) : actor.agent
+    runtime = suggestion? ? actor.agent(suggestion_tools: true) : actor.agent
     tools = Captain::Runtime::PartTools.filter(runtime.tools)
     Captain::Runtime::Agent.new(
       name: runtime.name, instructions: runtime.instructions, instruction_parts: runtime.instruction_parts, tools: tools,
       model: runtime.model, temperature: runtime.temperature, headers: runtime.headers, params: runtime.params,
-      response_schema: Captain::Runtime::PartSchema, suggestion_tools: suggestion
+      response_schema: Captain::Runtime::PartSchema, suggestion_tools: suggestion?
     ).tap { |agent| agent.assistant_id = actor.id }
+  end
+
+  # Read once on the calling thread (see #prime_run_state); the threads of the parts only read it.
+  def suggestion?
+    return @suggestion if defined?(@suggestion)
+
+    @suggestion = Captain::Runtime::Runner.reply_suggestion?(@context)
+  end
+
+  def part_max_turns
+    suggestion? ? SUGGESTION_PART_MAX_TURNS : PART_MAX_TURNS
   end
 
   def fresh_actor(id)
@@ -182,7 +211,7 @@ class Captain::Runtime::Council
     snapshot = @context.except(*MAIN_RUN_KEYS, *RUN_STATE_KEYS).deep_dup
     snapshot.merge!(part_run: true, part_plan_accepted: true, active_part_id: part['id'], active_part_version: part['version'],
                     part_staff_handoff: staff_handoff_available?, part_customer_message: customer_message, part_info: part_info(part),
-                    part_peers: @peers.reject { |item| item[:id] == actor.id }.map { |item| item.slice(:name, :description) },
+                    part_other_fragments: other_fragments(part),
                     conversation_history: public_history(@context[:conversation_history]), current_agent: actor.agent_name)
     # The durable session protects the actions of a writer from being repeated. A read-only part has no actions.
     snapshot[:agent_session] = @context[:agent_session] if writer && @context[:agent_session]
@@ -208,6 +237,11 @@ class Captain::Runtime::Council
     return if fence.blank?
 
     state[:captain_response_fence] = fence.except(:routing_revision).merge(part_id: part['id'], part_version: part['version'])
+  end
+
+  # The words of the other parts of this message: the owner knows what is handled separately, without the name of any agent.
+  def other_fragments(part)
+    Array(@all_parts).reject { |item| item['id'] == part['id'] }.map { |item| item['fragment'].to_s.strip.first(300) }.compact_blank
   end
 
   def part_info(part)
@@ -250,6 +284,19 @@ class Captain::Runtime::Council
     runnable = plans.select(&:runnable?)
     return if runnable.empty?
 
+    within_part_deadline { run_parts(runnable, plans) }
+  end
+
+  # The parts of a suggestion (their lanes on threads and on the calling thread, and their second runs) run under the part scope of
+  # the run's control: they end in time for the editor.
+  def within_part_deadline(&)
+    control = Captain::ReplySuggestion::RunControl.current
+    return yield unless suggestion? && control
+
+    Captain::ReplySuggestion::RunControl.adopt(control.for_parts(reserve: SUGGESTION_AFTER_PARTS_SECONDS), &)
+  end
+
+  def run_parts(runnable, plans)
     inline, threads = schedule(runnable)
     failure = nil
     begin
@@ -367,7 +414,7 @@ class Captain::Runtime::Council
     plan.snapshot[:part_prior] = prior.map { |entry| entry.slice(:text, :status, :acted) }
     part_run = Captain::Runtime::Council::PartRun.new(
       agent: plan.agent, snapshot: plan.snapshot, account: @account, llm_context: @llm_context, callbacks: @shared_callbacks,
-      max_turns: PART_MAX_TURNS
+      max_turns: part_max_turns
     )
     begin
       result = part_run.call(plan.part['fragment'])
@@ -413,41 +460,61 @@ class Captain::Runtime::Council
 
   # The write of a part that ran before the run went stale is kept: the provider call already happened.
   def record_interrupted(plan, part_run)
-    return unless part_run.tracker.acted?
+    # A suggestion part wrote nothing (its cards go with the stopped run): there is nothing to keep.
+    return if suggestion? || !part_run.tracker.acted?
 
     registry.record_result!(plan.part['id'], state: 'done', summary: part_run.tracker.summary, acted: true)
   rescue StandardError => e
     Rails.logger.warn("[CAPTAIN][Council] could not store an interrupted part error_class=#{e.class.name}")
   end
 
-  # One more run for a part that said it is not its own and named the responsible agent: once, and only when nothing was done.
+  # One more run for a part that said it is not its own: the router decides again on the part's words, among the other agents
+  # (one agent or staff). Once, and only when nothing was done. A decision for staff, or none, leaves the part unresolved: the
+  # conversation goes to staff after the reply, as for any unresolved part.
   def reassign_pass(plans)
-    plans.each do |plan|
-      entry = @entries[plan.part['id']]
-      next unless entry && entry[:status] == 'out_of_scope' && !entry[:acted] && !entry[:technical]
+    return unless @reassigner
 
-      suggested = suggested_agent(entry[:suggested_agent])
-      reassign(plan, suggested) if suggested && suggested.id != plan.part['executor_agent_id']
+    plans.each do |plan|
+      next unless reassignable?(@entries[plan.part['id']])
+
+      chosen = reassigned_actor(plan)
+      reassign(plan, chosen) if chosen && chosen.id != plan.part['executor_agent_id']
     end
   end
 
-  def reassign(plan, suggested)
-    new_plan = build_plan(plan.part.merge('executor_agent_id' => suggested.id))
+  # A part that answered it is not its own and did nothing, while there is time to decide it again.
+  def reassignable?(entry)
+    entry.present? && entry[:status] == 'out_of_scope' && !entry[:acted] && !entry[:technical] && reassign_time?
+  end
+
+  # Outside a suggestion always; in a suggestion while the router (its chain and its escalation) and a short run of the new owner
+  # still fit before the deadline of the parts. A part that is not decided again stays unresolved and is named to the manager.
+  def reassign_time?
+    control = Captain::ReplySuggestion::RunControl.current
+    return true unless suggestion? && control
+
+    settings = Captain::Runtime::DecisionRouter::Settings
+    control.seconds_left >= settings.chain_budget_seconds + settings.escalation_timeout_seconds + SUGGESTION_REASSIGN_RUN_SECONDS
+  end
+
+  def reassigned_actor(plan)
+    decision = @reassigner.call(fragment: plan.part['fragment'].to_s, without: [plan.part['executor_agent_id']])
+    @graph&.find(decision.agent_id) if decision&.agent?
+  rescue Captain::Conversation::ControlGenerationStaleError
+    raise
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][Council] part re-decision unavailable error_class=#{e.class.name}")
+    nil
+  end
+
+  def reassign(plan, chosen)
+    new_plan = build_plan(plan.part.merge('executor_agent_id' => chosen.id))
     return unless new_plan.runnable?
 
     # The new owner is stored first: the receipt of an action checks that the part belongs to the agent that acts.
-    registry.record_result!(plan.part['id'], state: 'open', executor_agent_id: suggested.id)
-    @participants = (@participants + [suggested.id]).uniq
+    registry.record_result!(plan.part['id'], state: 'open', executor_agent_id: chosen.id)
+    @participants = (@participants + [chosen.id]).uniq
     run_lane([new_plan]) { |next_plan, entry, result| record_outcome(next_plan, entry, result) }
-  end
-
-  # The part names the agent as it is listed in its prompt and never sees an id; an unknown or ambiguous name reassigns nothing.
-  def suggested_agent(name)
-    wanted = Captain::Runtime::ExecutorResolver.normalize(name)
-    return if wanted.empty?
-
-    matches = @graph.agents.select { |agent| Captain::Runtime::ExecutorResolver.normalize(agent.name) == wanted }
-    matches.first if matches.one?
   end
 
   # --- The outcome of a part ------------------------------------------------------------------------------------------------
@@ -487,7 +554,7 @@ class Captain::Runtime::Council
                   else ['unknown', text]
                   end
     { status: output['status'], state: state, text: text, questions: output['questions'], sources: output['sources'],
-      suggested_agent: output['suggested_agent'], patient_language: output['patient_language'].to_s }
+      patient_language: output['patient_language'].to_s }
   end
 
   # An action that was performed is done. An answer without a source (a tool, a document, the agent's own instructions) is not
@@ -625,27 +692,34 @@ class Captain::Runtime::Council
   # The reply holds the texts the owners wrote, and nothing else. A part without a text (one that failed technically, one that
   # could not be resolved, a dependent part that did not start, a cancelled part, a part that acted and wrote nothing) is left
   # out; parts that failed technically or could not be resolved hand the conversation to staff after the reply, in silence. When
-  # no part has a text the reply is empty: with a technical failure the run ends as a failed turn (see Runner#handle_plan),
-  # otherwise nothing is sent, and the conversation still goes to staff when a part is unresolved.
+  # no part has a text the reply is empty: with a technical failure the run ends as a failed turn (see Runner#run_council),
+  # otherwise nothing is sent, and the conversation still goes to staff when a part is unresolved. A reply suggestion never ends as
+  # a failed turn for a part: without a text it hands the failed parts to the manager (council_handoff, technical) and keeps the
+  # approval cards of the other parts.
   def assemble(entries)
     @context.delete(:council_handoff)
     @context.delete(:council_note)
     @context.delete(:council_patient_language)
     failures = entries.filter_map { |entry| entry[:technical] }
     shown = entries.select { |entry| told?(entry) }
-    return no_reply(failures, entries) if shown.empty? && failures.any?
+    return no_reply(failures, entries) if failed_turn?(shown, failures)
 
     languages = patient_languages(shown)
     @context[:council_patient_language] = languages.join(', ') if languages.any?
 
     unresolved = entries.select { |entry| entry[:unresolved] && !entry[:technical] }
-    handoff = failures.any? || ((unresolved.any? || @staff_request.present?) && staff_handoff_available?)
+    handoff = failures.any? || (unresolved.any? && staff_handoff_available?)
     reply = reply_for(shown, handoff: handoff)
     @context[:council_untold_part_ids] = entries.reject { |entry| told?(entry) }.pluck(:id)
-    @context[:council_handoff] = handoff_request(unresolved, failures) if handoff
+    @context[:council_handoff] = handoff_request(unresolved, failures, entries.select { |entry| entry[:technical] }) if handoff
     mark_handed_to_staff(entries) if handoff
     staff_note(entries, unresolved, handoff: handoff)
     reply
+  end
+
+  # No part has a text and a part failed technically: a live turn ends as a failed turn; a reply suggestion never does.
+  def failed_turn?(shown, failures)
+    shown.empty? && failures.any? && !suggestion?
   end
 
   # The parts the conversation goes to staff for (the unresolved ones and the ones that failed technically) are theirs now: the
@@ -687,13 +761,10 @@ class Captain::Runtime::Council
     @context[:council_note] = note if note.any?
   end
 
-  # staff_reason: why the planning agent asked for staff, in its own words (the reason of its handoff call), for the note to staff
-  # when no part names what is left unanswered.
-  def handoff_request(unresolved, failures)
+  # failed_parts: the requests of the parts that failed technically (a reply suggestion names them to the manager).
+  def handoff_request(unresolved, failures, failed_entries = [])
     request = { reason: failures.any? ? TECHNICAL_HANDOFF_REASON : HANDOFF_REASON, parts: unresolved.pluck(:request) }
-    staff_reason = @staff_request&.dig(:reason).to_s.squish.first(STAFF_REASON_LIMIT).presence
-    request[:staff_reason] = staff_reason if staff_reason
-    request.merge!(technical: true, failures: failures) if failures.any?
+    request.merge!(technical: true, failures: failures, failed_parts: failed_entries.pluck(:request).compact_blank) if failures.any?
     request
   end
 
@@ -751,8 +822,9 @@ class Captain::Runtime::Council
     @customer_message ||= Captain::Runtime::CouncilEditor.customer_text(@context[:captain_v2_current_input]).strip
   end
 
+  # The agent the council turn runs as: the current agent, else the first participant (see TurnDispatcher). Never a main agent.
   def acting_actor
-    @graph&.find(@context[:acting_assistant_id] || @context.dig(:state, :assistant_id)) || @graph&.entry
+    @graph&.find(@context[:acting_assistant_id] || @context.dig(:state, :assistant_id)) || @graph&.find(@participants.first)
   end
 
   def editor_model

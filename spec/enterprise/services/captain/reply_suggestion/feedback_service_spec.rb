@@ -99,6 +99,70 @@ RSpec.describe Captain::ReplySuggestion::FeedbackService do
     end
   end
 
+  describe 'the sticky agent and the approval cards of the suggestion' do
+    let(:record) do
+      created = store.create!(
+        'account_id' => account.id, 'user_id' => agent.id, 'conversation_id' => conversation.id,
+        'conversation_display_id' => conversation.display_id, 'engine' => 'agent', 'assistant_id' => 1
+      )
+      store.finish!(created, status: 'draft', result: { 'message' => suggestion_text, 'agent' => { 'id' => 119, 'name' => 'Процедуры' } })
+    end
+
+    let(:sticky) { Captain::ReplySuggestion::StickyAgent }
+    let(:approvals) { Captain::ReplySuggestion::ActionApprovalService }
+    let(:card) { { 'account_id' => account.id, 'conversation_id' => conversation.id, 'status' => 'pending', 'tool_name' => 'create_appointment' } }
+
+    after { sticky.clear!(conversation) }
+
+    it 'confirms the agent of an inserted or sent draft as the sticky agent of the dialog for 24 hours' do
+      perform('applied', generated_text: suggestion_text)
+      expect(sticky.read(conversation)).to eq(119)
+      key = sticky.keys_for(conversation, kinds: %w[confirmed]).first
+      expect($alfred.with { |connection| connection.ttl(key) }).to be_within(5).of(24.hours.to_i) # rubocop:disable Style/GlobalVars
+
+      sticky.confirm!(conversation, 84, request_id: 'other-request')
+      perform('sent', final_text: suggestion_text)
+      expect(sticky.read(conversation)).to eq(119)
+    end
+
+    it 'withdraws the agent of a dismissed draft (the agent before it leads again) and discards the cards of that suggestion only' do
+      sticky.confirm!(conversation, 84, request_id: 'earlier-request')
+      sticky.remember_provisional!(conversation, 119, request_id: record['id'])
+      expect(sticky.read(conversation)).to eq(119)
+      approvals.store_record!(card.merge('action_id' => 'own-card', 'digest' => 'd-1', 'suggestion_request_id' => record['id']))
+      approvals.store_record!(card.merge('action_id' => 'other-card', 'digest' => 'd-2', 'suggestion_request_id' => 'other-request'))
+
+      perform('dismissed')
+
+      expect(sticky.read(conversation)).to eq(84)
+      expect(approvals.fetch_record('own-card')).to include('status' => 'rejected', 'rejected_reason' => 'suggestion_dismissed')
+      expect(approvals.fetch_record('other-card')).to include('status' => 'pending')
+    end
+
+    it 'keeps the approval cards of an inserted draft: the next suggestion neither discards them nor hides them' do
+      approvals.store_record!(card.merge('action_id' => 'booking-card', 'digest' => 'd-3', 'suggestion_request_id' => record['id'],
+                                         'user_id' => agent.id))
+
+      perform('applied', generated_text: suggestion_text)
+      approvals.discard_superseded!(account_id: account.id, conversation_id: conversation.id, user_id: agent.id, keep_request_id: 'next')
+
+      expect(approvals.fetch_record('booking-card')).to include('status' => 'pending', 'kept_at' => be_present)
+      expect(approvals.pending_for(account_id: account.id, conversation_id: conversation.id, request_id: 'next').pluck('action_id'))
+        .to eq(['booking-card'])
+    end
+
+    it 'makes nobody sticky for a draft of the anchor that answered only because no agent led the dialog' do
+      routing = { 'decision_key' => 'route_agent_84', 'default_to' => 'anchor' }
+      store.finish!(store.fetch_raw(record['id']), status: 'draft',
+                                                   result: { 'message' => suggestion_text, 'agent' => { 'id' => 84 },
+                                                             'suggestion_meta' => { 'routing' => routing } })
+
+      perform('applied', generated_text: suggestion_text)
+
+      expect(sticky.read(conversation)).to be_nil
+    end
+  end
+
   describe 'long texts' do
     let(:long_text) { 'Здравствуйте! ' * 200 }
 

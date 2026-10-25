@@ -250,6 +250,38 @@ describe('CopilotEditorSection.vue', () => {
       ).toContain('CONVERSATION.REPLYBOX.COPILOT_THINKING');
     });
 
+    it('says that the agent is being chosen while the router decides, and names no agent', () => {
+      const wrapper = mountComponent({
+        showCopilotEditor: false,
+        pendingActions: [],
+        isGeneratingContent: true,
+        liveProgress: { phase: 'routing', working_agents: [] },
+      });
+
+      const status = wrapper.get('[data-test="copilot-live-progress"]').text();
+      expect(status).toContain(
+        'CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.ROUTING'
+      );
+      expect(status).not.toContain('LIVE_AGENT_THINKING');
+    });
+
+    it('shows above the draft what a council left to the manager', () => {
+      const note =
+        'ИИ не решил часть обращения — ответьте на неё сами: справка.';
+      const withNote = mountComponent({
+        pendingActions: [],
+        suggestionMeta: { operator_note: note },
+      });
+      const withoutNote = mountComponent({ pendingActions: [] });
+
+      expect(withNote.get('[data-test="copilot-operator-note"]').text()).toBe(
+        note
+      );
+      expect(
+        withoutNote.find('[data-test="copilot-operator-note"]').exists()
+      ).toBe(false);
+    });
+
     it('shows no live steps before the first trace arrives', () => {
       const withoutTrace = mountComponent({
         showCopilotEditor: false,

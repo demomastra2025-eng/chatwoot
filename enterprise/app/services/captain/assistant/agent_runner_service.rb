@@ -5,13 +5,10 @@ class Captain::Assistant::AgentRunnerService
   include Integrations::LlmInstrumentationConstants
   include Captain::Assistant::LlmContextHelper
   include Captain::Assistant::PatientLanguageHelper
+  include Captain::Assistant::RoutingHelper
   include Captain::Assistant::RunPayloadHelper
   include Captain::Assistant::RunnerCallbacksHelper
   include Captain::Assistant::TracePayloadHelper
-
-  # Coordination tools (planning, task bookkeeping) are not customer actions: a run that only planned has no completed
-  # work, so it must not count as one when a failed finalization is retried or a skipped tool is reported.
-  COORDINATION_TOOL_NAMES = %w[plan_request manage_agent_tasks].freeze
 
   PROVIDER_ERROR_RESPONSE = 'conversation_handoff_due_to_provider_error'.freeze
   PROVIDER_ERROR_AUTHORIZED_KEY = 'provider_error_handoff_authorized'.freeze
@@ -23,7 +20,6 @@ class Captain::Assistant::AgentRunnerService
   CAMPAIGN_STATE_ATTRIBUTES = %i[id title message campaign_type description].freeze
   MAX_RUNTIME_TURNS = 24
   MAX_SUGGESTION_RUNTIME_TURNS = 10
-  MAX_GRAPH_RUNTIME_TURNS = (Captain::Runtime::TaskQueue::MAX_TASKS * 2) + 1
   RESPONSE_MODES = %w[reply suppress].freeze
   SUGGESTION_RESPONSE_MODES = (RESPONSE_MODES + %w[human]).freeze
   MAX_BLANK_RESPONSE_RETRIES = 1
@@ -171,6 +167,9 @@ class Captain::Assistant::AgentRunnerService
     end
   end
 
+  # One patient turn: the run state is built, the router decides who answers (in parallel with the platform safety check of the input,
+  # see RoutingHelper), the custom input rules run, and the decision is applied (TurnDispatcher): one agent
+  # runs, a council runs, or the conversation goes to staff without an agent call. A clinic with one agent makes no decision.
   def generate_response_with_runtime_cache(message_history)
     time_phase('config.initialize') { Llm::Config.initialize! }
 
@@ -179,13 +178,82 @@ class Captain::Assistant::AgentRunnerService
     start_patient_language_detection
     message_to_process, context = time_phase('run_payload') { run_payload(message_history) }
     Llm::EventBus.with_context(request_event_context(context)) do
+      time_phase('routing_start') { start_routing(context) }
       input_moderation_response = time_phase('moderate_input') { moderate_input(message_to_process, context) }
-      return input_moderation_response if input_moderation_response
+      if input_moderation_response
+        # A blocked input has no use for the decision: the turn ends now, without waiting for the router.
+        abandon_routing
+        return input_moderation_response
+      end
 
-      time_phase('run_agent_with_retries') { run_agent_with_blank_response_retries(message_to_process, context) }
+      routed_turn(message_to_process, context)
     end
   ensure
+    settle_routing
     settle_patient_language_detection
+  end
+
+  def routed_turn(message_to_process, context)
+    @turn_decision = time_phase('routing_await') { await_routing(context) }
+    limit_suggestion_budget(@turn_decision)
+    check_custom_input_rules!(message_to_process, context)
+    # Before the patient language is decided and an agent is called: a cancelled or out-of-time suggestion stops here.
+    Captain::ReplySuggestion::RunControl.checkpoint!(:moderation)
+    return routed_human_response(context) if @turn_decision&.human?
+
+    time_phase('dispatch') { turn_dispatcher.prepare!(context) } if @assistant.persisted?
+    # The chosen agent (or the acting agent of a council) holds the conversation now: a failure of its run answers as it.
+    @acting_assistant_id = context[:acting_assistant_id] if context[:acting_assistant_id]
+    time_phase('run_agent_with_retries') { run_agent_with_blank_response_retries(message_to_process, context) }
+  rescue Captain::Runtime::DecisionRouter::UnavailableError => e
+    routing_failure_response(e, context)
+  rescue Captain::Runtime::TurnDispatcher::CouncilUnavailable => e
+    council_unavailable_response(e, context)
+  end
+
+  # A routed reply suggestion starts with the time of a council (Captain::ReplySuggestion.budget_seconds(router: true)); when the
+  # router chose one agent or staff, the rest of the run has the budget of one agent, so a slow or stuck agent run fails as soon as
+  # it would without a router.
+  def limit_suggestion_budget(decision)
+    return unless suggestion_run? && decision && !decision.council?
+
+    Captain::ReplySuggestion::RunControl.current&.shorten!(Captain::ReplySuggestion.budget_seconds)
+  end
+
+  # The council could not be set up. The dispatcher may already have given the conversation to the acting agent of the council
+  # (saved and activated): the failure answers as it; else the holder still has the conversation.
+  def council_unavailable_response(error, context)
+    Rails.logger.warn("[CAPTAIN][Router] council unavailable: #{error.message}")
+    @acting_assistant_id = context[:acting_assistant_id] || conversation_holder.id
+    technical_failure_response({ 'kind' => Captain::Runtime::ToolFailure::TECHNICAL, 'tool' => 'agent_router', 'reason' => 'council_unavailable' },
+                               context)
+  end
+
+  # The patient asks for a live staff member: no agent runs. The agent that holds the conversation hands it over; the response
+  # builder applies the handoff (status, the clinic's notice, a staff note). In a reply suggestion the operator is told to answer.
+  def routed_human_response(context)
+    actor = conversation_holder
+    @acting_assistant_id = actor.id
+    reason = I18n.with_locale(@assistant.account&.locale || I18n.default_locale) { I18n.t('captain.coordination.patient_requested_human') }
+    return routed_human_suggestion if suggestion_run?
+
+    record_routed_handoff(context, reason)
+    human_handoff_response({ reason: reason }, actor.agent_name).merge('routing_handoff' => true)
+  end
+
+  # The router decided it, not an agent: routing_human tells the outcome so (no agent is named as its author).
+  def routed_human_suggestion
+    note = I18n.t('captain.reply_suggestion.reasons.patient_requested_human')
+    { 'response' => '', 'response_mode' => 'human', 'response_human_needed' => true, 'operator_note' => note, 'routing_human' => true }
+  end
+
+  # The same record the handoff tool leaves: the next turn closes the handed-off message instead of answering it again.
+  def record_routed_handoff(context, reason)
+    done = Captain::DoneActions.handoff_entry(reason: reason, request: Captain::Runtime::OperationScope.request(context),
+                                              user_message: context[:captain_v2_current_input])
+    context[:agent_session]&.record_done(done) if done
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][Router] handoff record failed error_class=#{e.class.name}")
   end
 
   def run_agent_with_blank_response_retries(message_to_process, context)
@@ -225,34 +293,35 @@ class Captain::Assistant::AgentRunnerService
     )
   end
 
+  # The agent the router chose runs (or the council it chose, see TurnDispatcher#run).
   def run_agent(message_to_process, context, runtime_options: {})
     time_phase('runner.run') do
       # The agents are built before the language is awaited: the decision runs meanwhile. Its answer must be in the context before the
       # run, because the prompt of the first agent call carries it.
       agent_runner = runner
       context[:patient_language] = patient_language unless context.key?(:patient_language)
-      agent_runner.run(
-        message_to_process,
-        context: context,
-        max_turns: max_turns_for_run(context),
-        runtime_options: {
-          llm_context: llm_context_for_run,
-          account: @assistant.account
-        }.merge(runtime_options)
-      )
+      options = { context: context, max_turns: max_turns_for_run,
+                  runtime_options: { llm_context: llm_context_for_run, account: @assistant.account }.merge(runtime_options) }
+      # A temporary (unsaved) assistant has no channel and no router: it runs alone.
+      next agent_runner.run(message_to_process, **options) unless @assistant.persisted?
+
+      turn_dispatcher.run(agent_runner, message_to_process, **options)
     end
   end
 
-  def max_turns_for_run(context)
-    return MAX_GRAPH_RUNTIME_TURNS if Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks])
-    return MAX_SUGGESTION_RUNTIME_TURNS if suggestion_run?
-
-    MAX_RUNTIME_TURNS
+  def council_turn?
+    @turn_decision&.council? == true
   end
 
+  def max_turns_for_run
+    suggestion_run? ? MAX_SUGGESTION_RUNTIME_TURNS : MAX_RUNTIME_TURNS
+  end
+
+  # A council turn is not run again: its parts already acted, and its own outcome handling covers a reply without text.
   def retry_blank_response?(response, result, attempts)
     return false unless blank_response_error_payload?(response)
     return false unless attempts < MAX_BLANK_RESPONSE_RETRIES
+    return false if council_turn?
 
     retry_safe_completed_tools?(result.context)
   end
@@ -261,13 +330,9 @@ class Captain::Assistant::AgentRunnerService
     response['error_class'] == BlankResponseError.name && response['error_message'] == blank_response_error.message
   end
 
+  # A retry is safe only when the run completed no tool: a completed tool may have changed something.
   def retry_safe_completed_tools?(context)
-    completed_tool_names = Array(context&.dig(:captain_v2_completed_tool_names)).map(&:to_s)
-    completed_tool_names.all? { |tool_name| handoff_tool_name?(tool_name) }
-  end
-
-  def handoff_tool_name?(tool_name)
-    Captain::HandoffNaming.transfer_tool_name?(tool_name)
+    Array(context&.dig(:captain_v2_completed_tool_names)).empty?
   end
 
   def publish_blank_response_retry(result, attempt)
@@ -299,7 +364,6 @@ class Captain::Assistant::AgentRunnerService
   def process_agent_result(result)
     @custom_guardrail_context = result.context if result.context
     @acting_assistant_id = result.context&.dig(:acting_assistant_id)
-    @agent_tasks = result.context&.dig(:agent_tasks)
     log_agent_result(result)
     handoff_tool_called = handoff_tool_called_from_context(result.context)
     if result.respond_to?(:error) && result.error.is_a?(Captain::Safety::CustomRulesRuntime::HandoffRequired)
@@ -349,7 +413,6 @@ class Captain::Assistant::AgentRunnerService
     response.delete(Captain::Safety::CustomRulesRuntime::RESPONSE_KEY)
     response['agent_name'] = result.context&.dig(:current_agent)
     response['agent_id'] = @acting_assistant_id
-    response['agent_tasks'] = @agent_tasks if @agent_tasks.present?
     pending_actions = Array(result.context&.dig(:captain_suggestion_pending_actions))
     response['pending_actions'] = pending_actions if pending_actions.any?
     response['council_contributors'] = result.context[:council_contributors] if result.context&.dig(:council_contributors).present?
@@ -357,6 +420,12 @@ class Captain::Assistant::AgentRunnerService
     response['council_handoff'] = result.context[:council_handoff].to_h.deep_stringify_keys if result.context&.dig(:council_handoff).present?
     # Set by the council only for a part that acted without a text for the customer, or that nobody will answer; a private note.
     response['council_note'] = result.context[:council_note].to_h.deep_stringify_keys if result.context&.dig(:council_note).present?
+    # A suggestion tells the manager what a council left without a text (see ReplySuggestion::AgentOutcomeClassifier), and which
+    # agent the dialog stays with (see ReplySuggestion::StickyAgent).
+    if suggestion_run? && council_turn?
+      response['council_turn'] = true
+      response['lead_agent_id'] = council_lead_agent_id(result.context)
+    end
     refs = part_refs_for(result.context)
     response['part_refs'] = refs if refs.any?
     response['handoff_tool_called'] = handoff_tool_called
@@ -402,6 +471,14 @@ class Captain::Assistant::AgentRunnerService
     (planned + undelivered).reject { |part| untold.include?(part['id']) }.map { |part| part.slice('id', 'version') }.uniq
   end
 
+  # The agent a council suggestion leaves the dialog with: the owner of the last part that asked the patient something (the answer
+  # is its), else the first agent that wrote a part of the reply; nil when neither (the acting agent then keeps it).
+  def council_lead_agent_id(context)
+    planned = Array(context&.dig(:part_plan, :parts)).pluck('id')
+    asking = Array(context&.dig(:parts)).select { |part| planned.include?(part['id']) && part['state'] == 'waiting_customer' }
+    asking.last&.dig('executor_agent_id') || Array(context&.dig(:council_contributors)).first.to_h.with_indifferent_access[:id]
+  end
+
   def technical_failure_from(context)
     context_value(context, :technical_failure).presence
   end
@@ -432,9 +509,6 @@ class Captain::Assistant::AgentRunnerService
 
   def publish_tool_omission_event(response, context)
     bound_tool_ids = Array(context&.dig(:captain_v2_bound_tool_ids)).map(&:to_s).reject(&:blank?).uniq
-    bound_tool_ids.reject! { |tool_id| Captain::HandoffNaming.transfer_tool_name?(tool_id) }
-    # The planning tools are bound to graph runs with other agents; a plain reply that skips them is not a skipped business tool.
-    bound_tool_ids -= COORDINATION_TOOL_NAMES
     return if bound_tool_ids.blank? || completed_tool_names(context).any?
 
     reasoning = response['reasoning'].to_s.squish
@@ -556,6 +630,7 @@ class Captain::Assistant::AgentRunnerService
 
   def finalization_only_retry_eligible?(context)
     return false if context.blank?
+    return false if council_turn?
     return false if finalization_only_retry_attempted?(context)
     return false if successful_non_handoff_tool_records(context).blank? && !terminal_tool_stop?(context)
 
@@ -811,7 +886,7 @@ class Captain::Assistant::AgentRunnerService
   def successful_non_handoff_tool_records(context)
     tool_result_records(context).select do |record|
       tool_name = record[:tool_name].to_s
-      record[:success] && !handoff_tool_name?(tool_name) && COORDINATION_TOOL_NAMES.exclude?(tool_name)
+      record[:success] && !Captain::HandoffNaming.transfer_tool_name?(tool_name)
     end
   end
 
@@ -1020,6 +1095,7 @@ class Captain::Assistant::AgentRunnerService
     record.attributes.symbolize_keys.slice(*keys)
   end
 
+  # The agents of the channel, built lazily: only the agent the router chooses builds its tools.
   def build_and_wire_agents
     agent_options = {
       model_override: @test_overrides[:model],
@@ -1034,7 +1110,11 @@ class Captain::Assistant::AgentRunnerService
   def agent_run_context
     @agent_run_context ||= begin
       options = { entry: @assistant, conversation: @conversation, playground: @playground_session, fence: @response_fence }
-      options[:ephemeral_session] = true if suggestion_run?
+      if suggestion_run?
+        options[:ephemeral_session] = true
+        # The agent that leads the dialog of the suggestions (the saved session has none while the AI only suggests).
+        options[:sticky_agent_id] = Captain::ReplySuggestion::StickyAgent.read(@conversation)
+      end
       Captain::AgentRunContext.new(**options)
     end
   end
@@ -1066,7 +1146,7 @@ class Captain::Assistant::AgentRunnerService
     return response unless @assistant.persisted?
 
     actor = agent_run_context.graph.find(@acting_assistant_id || @assistant.id)
-    response.merge('agent_id' => actor&.id, 'agent_display_name' => actor&.name, 'agent_tasks' => @agent_tasks || [])
+    response.merge('agent_id' => actor&.id, 'agent_display_name' => actor&.name)
   end
 
   def add_playground_usage(response, result)
@@ -1353,8 +1433,6 @@ class Captain::Assistant::AgentRunnerService
     context_wrapper.context[:captain_v2_handoff_tool_called] = true
   end
 
-  # A handoff that the planning agent asked for next to a council plan is carried out after the council reply (see
-  # Captain::Runtime::Runner#take_staff_request): that run answered the patient, so it used a credit; the flag of the run says so.
   def write_credits_used_metadata(context_wrapper)
     root_span = context_wrapper&.context&.dig(:__otel_tracing, :root_span)
     return unless root_span
@@ -1387,6 +1465,7 @@ class Captain::Assistant::AgentRunnerService
     [message_to_process, context]
   end
 
+  # The platform safety check of the input. It runs while the router decides; a blocked input discards the decision.
   def moderate_input(message_to_process, context)
     Llm::SafetyPolicy.check!(
       feature: :assistant,
@@ -1395,16 +1474,22 @@ class Captain::Assistant::AgentRunnerService
       account: @assistant.account,
       preferences: context.dig(:state, :captain_runtime)
     )
-    actor = custom_guardrail_actor(context[:acting_assistant_id])
-    @acting_assistant_id = actor.id
-    Captain::Safety::CustomRulesRuntime.check_input!(assistant: actor, context: context, text: message_to_process)
-    # Before the patient language is decided and the agent is called: a cancelled or out-of-time suggestion stops here.
-    Captain::ReplySuggestion::RunControl.checkpoint!(:moderation)
     nil
   rescue Llm::SafetyPolicy::UnsafeContentError => e
     blocked_by_moderation_response('Agent input blocked by moderation policy', safety_reason: e.reason)
   rescue Llm::SafetyPolicy::UnavailableError => e
     blocked_by_moderation_response('Agent input blocked because moderation policy is unavailable', safety_reason: e.reason)
+  end
+
+  # The custom input rules are one workspace setting (Captain::AccountSettings), the same for every agent: they are checked once,
+  # before the decision is applied, as the agent that holds the conversation, so that a rule's handoff names the agent the session
+  # names (the response builder drops any other). A staff request runs none (no agent answers). Zero cost without rules.
+  def check_custom_input_rules!(message_to_process, context)
+    return if @turn_decision&.human?
+
+    actor = custom_guardrail_actor(conversation_holder.id)
+    @acting_assistant_id = actor.id
+    Captain::Safety::CustomRulesRuntime.check_input!(assistant: actor, context: context, text: message_to_process)
   end
 
   def moderate_output!(response, runtime_preferences)

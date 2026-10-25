@@ -23,14 +23,41 @@ class Captain::ReplySuggestion::FeedbackService
       message_id: nil }
   ]
 
+  # The manager used the draft: its agent leads the dialog of the next suggestions (see StickyAgent), and its approval cards stay
+  # until the manager acts on them (a later suggestion does not discard them, see ActionApprovalService.discard_superseded!).
+  USED_OUTCOMES = %w[applied sent].freeze
+
   def perform
     record = load_record!
     record_event(record)
-    Captain::ReplySuggestion::RequestStore.consume!(record['id']) if record && CONSUMING_OUTCOMES.include?(outcome)
-    remember_dismissal(record) if record && outcome == 'dismissed'
+    return unless record
+
+    Captain::ReplySuggestion::RequestStore.consume!(record['id']) if CONSUMING_OUTCOMES.include?(outcome)
+    rejected(record) if outcome == 'dismissed'
+    used(record) if USED_OUTCOMES.include?(outcome)
   end
 
   private
+
+  # A rejected suggestion leaves no approval card and no sticky agent of its own behind.
+  def rejected(record)
+    remember_dismissal(record)
+    Captain::ReplySuggestion::ActionApprovalService.discard_for_request!(
+      account_id: account.id, conversation_id: record['conversation_id'], request_id: record['id'], reason: 'suggestion_dismissed'
+    )
+    Captain::ReplySuggestion::StickyAgent.withdraw!(conversation, request_id: record['id'])
+  end
+
+  def used(record)
+    return unless record['status'] == 'draft'
+
+    Captain::ReplySuggestion::ActionApprovalService.keep_for_request!(
+      account_id: account.id, conversation_id: record['conversation_id'], request_id: record['id']
+    )
+    Captain::ReplySuggestion::StickyAgent.confirm!(
+      conversation, Captain::ReplySuggestion::StickyAgent.agent_id_of_result(record['result']), request_id: record['id']
+    )
+  end
 
   # The request of the suggestion must be this user's, in this account and conversation.
   def load_record!

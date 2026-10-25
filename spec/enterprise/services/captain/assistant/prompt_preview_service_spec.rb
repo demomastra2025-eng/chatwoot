@@ -128,26 +128,19 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
                          :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation', 'add_private_note', custom.slug)
     end
 
-    it 'lists every active external agent regardless of stored handoff lists or legacy channel scope' do
+    it 'lists every active external agent regardless of stored handoff lists, and shows the routing card instead of transfer targets' do
       shared = create(:captain_assistant, account: account, name: 'Shared agent', routing_description: 'Prices',
                                           config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['add_private_note'] } } })
       stored_only = create(:captain_assistant, account: account, name: 'Selected agent', routing_description: 'Records', channel_scope: 'selected',
                                                config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['add_private_note'] } } })
-      assistant.update!(handoff_agent_ids: [stored_only.id])
+      assistant.update!(handoff_agent_ids: [stored_only.id], routing_description: 'Billing questions')
 
       preview = described_class.new(assistant: assistant).preview
+      layers = preview.dig(:assistant, :layers)
 
       expect(preview[:scenarios].pluck(:id)).to eq([shared.id, stored_only.id])
-      expect(preview.dig(:assistant, :layers)).to include(
-        include(
-          id: 'scenario_handoffs',
-          enabled: true,
-          values: [
-            a_string_starting_with('Shared agent:').and(a_string_ending_with('Note: Prices')),
-            a_string_starting_with('Selected agent:').and(a_string_ending_with('Note: Records'))
-          ]
-        )
-      )
+      expect(layers.pluck(:id)).not_to include('scenario_handoffs')
+      expect(layers).to include(include(id: 'routing_card', enabled: true, value: a_string_including('Billing questions')))
     end
 
     it 'includes handoff in the assistant preview when the default capability is enabled' do

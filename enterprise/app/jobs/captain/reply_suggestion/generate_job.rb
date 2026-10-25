@@ -127,8 +127,15 @@ class Captain::ReplySuggestion::GenerateJob < ApplicationJob
     when 'no_reply', 'human_needed' then count_tokens(outcome)
     else discard_run_actions
     end
+    remember_sticky_agent(outcome)
   rescue StandardError => e
     Rails.logger.warn("[CAPTAIN][ReplySuggestion] side effects of #{outcome[:outcome]} skipped: #{e.class}: #{e.message}")
+  end
+
+  # The agent of a finished suggestion leads the dialog of the next ones until the manager uses or rejects it (see StickyAgent).
+  def remember_sticky_agent(outcome)
+    sticky = Captain::ReplySuggestion::StickyAgent
+    sticky.remember_provisional!(conversation, sticky.agent_id_of(outcome), request_id: @request_id)
   end
 
   def record_generated(outcome)

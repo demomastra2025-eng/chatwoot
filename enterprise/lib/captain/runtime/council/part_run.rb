@@ -95,7 +95,7 @@ class Captain::Runtime::Council::PartRun
       'status' => parsed['status'].to_s.strip, 'patient_language' => text_of(parsed['patient_language']),
       'customer_text' => text_of(parsed['customer_text']),
       'questions' => strings_of(parsed['questions']), 'sources' => strings_of(parsed['sources']),
-      'suggested_agent' => text_of(parsed['suggested_agent']), 'reasoning' => text_of(parsed['reasoning'])
+      'reasoning' => text_of(parsed['reasoning'])
     }
   rescue JSON::ParserError
     nil
@@ -124,7 +124,7 @@ class Captain::Runtime::Council::PartRun
     context = result.context || {}
     technical = context[:technical_failure].presence
     if result.error
-      technical ||= { 'kind' => Captain::Runtime::ToolFailure::TECHNICAL, 'reason' => 'run_error',
+      technical ||= { 'kind' => Captain::Runtime::ToolFailure::TECHNICAL, 'reason' => run_error_reason(result.error),
                       'error_class' => result.error.class.name }
     end
     output = self.class.parse_output(result.output) unless technical
@@ -138,6 +138,11 @@ class Captain::Runtime::Council::PartRun
       mutations_succeeded: @tracker.mutations_succeeded, mutations_failed: @tracker.mutations_failed,
       mutations_unknown: @tracker.mutations_unknown, tools_called: @tracker.tools_called, turns: @tracker.turns
     }
+  end
+
+  # A part of a suggestion that reached the deadline of the parts (see Captain::ReplySuggestion::RunControl#for_parts) is out of time.
+  def run_error_reason(error)
+    error.is_a?(Captain::ReplySuggestion::RunControl::PartTimeUp) ? 'time_up' : 'run_error'
   end
 
   # What the main run must know about the tools this run called (retry safety, error fallbacks, attachments). The appointment

@@ -541,6 +541,60 @@ describe('useCopilotReply', () => {
       expect(copilot.generatedContent.value).toBe('');
     });
 
+    it('starts a new run right after «Отменить» only once the cancel reached the server', async () => {
+      const copilot = create();
+      mockStartReplySuggestion.mockResolvedValueOnce({
+        state: suggestionState({ status: 'running' }),
+      });
+      await copilot.startReplySuggestion();
+      let resolveCancel;
+      mockCancelReplySuggestion.mockReturnValueOnce(
+        new Promise(resolve => {
+          resolveCancel = resolve;
+        })
+      );
+      copilot.cancelGeneration();
+      mockStartReplySuggestion.mockResolvedValueOnce({
+        state: suggestionState({ suggestion_request_id: 'sr-2' }),
+      });
+
+      const restarted = copilot.startReplySuggestion();
+      await Promise.resolve();
+      expect(mockStartReplySuggestion).toHaveBeenCalledTimes(1);
+
+      resolveCancel({ ok: true, status: 'cancelling' });
+      await restarted;
+
+      expect(mockStartReplySuggestion).toHaveBeenCalledTimes(2);
+      expect(copilot.suggestionRequestId.value).toBe('sr-2');
+      expect(copilot.suggestionPhase.value).toBe('queued');
+      expect(copilot.suggestionNotice.value).toBeNull();
+    });
+
+    it('cancels again and asks once more when the server hands back the run it cancelled', async () => {
+      const copilot = create();
+      mockStartReplySuggestion.mockResolvedValueOnce({
+        state: suggestionState({ status: 'running' }),
+      });
+      await copilot.startReplySuggestion();
+      copilot.cancelGeneration();
+      await Promise.resolve();
+      mockStartReplySuggestion
+        .mockResolvedValueOnce({
+          state: suggestionState({ status: 'running' }),
+        })
+        .mockResolvedValueOnce({
+          state: suggestionState({ suggestion_request_id: 'sr-3' }),
+        });
+
+      await copilot.startReplySuggestion();
+
+      expect(mockCancelReplySuggestion).toHaveBeenCalledTimes(2);
+      expect(mockStartReplySuggestion).toHaveBeenCalledTimes(3);
+      expect(copilot.suggestionRequestId.value).toBe('sr-3');
+      expect(copilot.suggestionNotice.value).toBeNull();
+    });
+
     it('cancels while queued', async () => {
       const copilot = create();
       mockStartReplySuggestion.mockResolvedValueOnce({

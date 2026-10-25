@@ -26,7 +26,7 @@ RSpec.describe Llm::OpenRouterCapabilityResolver do
     it 'rejects Decision models for other normal Captain features' do
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
 
-      (Llm::Models.feature_keys - %w[outcome_classification language_detection custom_guardrail]).each do |feature|
+      (Llm::Models.feature_keys - Llm::FeatureProfile.decision_feature_keys).each do |feature|
         result = described_class.call(model_id: 'microsoft/microsoft-decision-1', feature: feature)
 
         expect(result).not_to be_allowed
@@ -37,6 +37,12 @@ RSpec.describe Llm::OpenRouterCapabilityResolver do
     it 'allows approved Decision models for custom guardrails' do
       %w[openai/gpt-6-luna-decisions microsoft/microsoft-decision-1].each do |model|
         expect(described_class.call(model_id: model, feature: :custom_guardrail)).to be_allowed
+      end
+    end
+
+    it 'allows the chain of Decision models for agent routing' do
+      %w[inception/mercury-decide microsoft/microsoft-decision-1 openai/gpt-6-luna-decisions].each do |model|
+        expect(described_class.call(model_id: model, feature: :agent_routing)).to be_allowed
       end
     end
 

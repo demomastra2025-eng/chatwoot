@@ -92,46 +92,6 @@ RSpec.describe Captain::Runtime::OperationGuard do
     expect(described_class.new(context, tool, arguments.merge(service_id: 2)).reserve.dig(:audit, :failure_reason)).to eq('mutation_retry_blocked')
   end
 
-  it 'cannot repeat completed task actions through a fresh request scope after the queue finishes' do
-    context[:agent_graph] = [{ id: assistant.id }]
-    queue = Captain::Runtime::TaskQueue.new(context)
-    queue.create([{ title: 'First booking', assistant_id: assistant.id }, { title: 'Second booking', assistant_id: assistant.id }])
-    2.times do |index|
-      action = described_class.new(context, tool, arguments)
-      expect(action.reserve).to be_nil
-      action.finish({ success: true, data: { appointment_id: index + 17 } })
-      queue.update(id: queue.active['id'], status: 'completed')
-    end
-    expect(queue.active).to be_nil
-    repeated = described_class.new(context, tool, arguments).reserve
-    expect(repeated.dig(:audit, :failure_reason)).to eq('mutation_retry_blocked')
-    [Captain::Tools::HandoffTool, Captain::Tools::ResolveConversationTool].each do |tool_class|
-      expect(described_class.new(context, tool_class.new(assistant), {}).reserve).to be_nil
-    end
-  end
-
-  it 'explains a waiting task without claiming a provider action started and permits an explicit valid resume' do
-    context[:agent_graph] = [{ id: assistant.id }]
-    queue = Captain::Runtime::TaskQueue.new(context)
-    queue.create([{ title: 'Own appointment', assistant_id: assistant.id }, { title: 'Relative identity', assistant_id: assistant.id }])
-    own_id = queue.active['id']
-    queue.update(id: own_id, status: 'waiting', result: 'Waiting for a selected time')
-    queue.update(id: queue.active['id'], status: 'waiting', result: 'Waiting for relative identity')
-
-    blocked = described_class.new(context, tool, arguments).reserve
-    expect(blocked.dig(:audit, :failure_reason)).to eq('agent_task_not_active')
-    expect(blocked.dig(:audit, :mutation_executed)).to be(false)
-    expect(blocked[:error]).to include('was not started')
-    expect(session.read.fetch('operations', {})).to be_empty
-
-    queue.update(id: own_id, status: 'active', result: 'Customer selected a verified time')
-    resumed = described_class.new(context, tool, arguments)
-    expect(resumed.reserve).to be_nil
-    resumed.finish({ success: true, data: { appointment_id: 17 } })
-    expect(session.read.fetch('operations').size).to eq(1)
-    expect(queue.tasks.map { |task| task['status'] }).to eq(%w[active waiting])
-  end
-
   it 'records what an action did on its receipt: success, nothing changed, or unknown' do
     results = [
       ['create_appointment', { success: true, data: { appointment_id: 1 } }, 'success'],

@@ -14,4 +14,10 @@ RSpec.describe Captain::Runtime::PartSchema do
     expect(status[:enum]).to eq(%w[answered needs_information out_of_scope unavailable])
     expect(status[:enum]).to eq(Captain::Runtime::Council::PartRun::STATUSES)
   end
+
+  it 'asks no part for the name of another agent: the router decides who handles a part that is not its owner\'s' do
+    properties = described_class.new.to_json_schema.with_indifferent_access.dig(:schema, :properties)
+
+    expect(properties.keys).not_to include('suggested_agent')
+  end
 end
