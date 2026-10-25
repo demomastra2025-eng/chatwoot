@@ -36,9 +36,11 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
                             options: { decision_criteria: criteria, decision_instructions: instructions }, **overrides)
   end
 
+  # The chosen criterion key is recorded on purpose (decision_choice, for evaluation); its description, the state, the
+  # instructions, provider text and the key are not.
   def private_values
     [state['messages'].first['content'], criteria['synthetic_completed_answer'], instructions,
-     'synthetic_completed_answer', 'SYNTHETIC_PRIVATE_PROVIDER_TEXT', api_key]
+     'SYNTHETIC_PRIVATE_PROVIDER_TEXT', api_key]
   end
 
   it 'uses the same Decisions transport for language detection' do
@@ -199,7 +201,8 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
       'canonical_event_name' => 'llm.decision.complete', 'feature' => 'outcome_classification',
       'provider' => 'openrouter', 'runtime_mode' => 'openrouter_runtime', 'status' => 'success',
       'trace_id' => 'synthetic-decision-trace', 'requested_model' => model, 'actual_model' => served_model,
-      'endpoint_provider' => 'Azure', 'output_type' => 'decision', 'openrouter_native_endpoint' => '/alpha/decisions'
+      'endpoint_provider' => 'Azure', 'output_type' => 'decision', 'openrouter_native_endpoint' => '/alpha/decisions',
+      'decision_choice' => 'synthetic_completed_answer', 'decision_confidence' => 0.9
     )
     expect(events.first.payload).not_to include('state', 'messages', 'input', 'prompt', 'answer', 'answers', 'api_key')
     expect(events.first.payload.to_json).not_to include(*private_values)
@@ -225,6 +228,7 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
     )
     expect(usage.estimated_cost.to_f).to eq(0.0000042)
     expect(event.estimated_cost.to_f).to eq(0.0000042)
+    expect(event.payload['decision_choice']).to eq('synthetic_completed_answer')
     expect([event.attributes, usage.attributes].to_json).not_to include(*private_values)
   end
 
