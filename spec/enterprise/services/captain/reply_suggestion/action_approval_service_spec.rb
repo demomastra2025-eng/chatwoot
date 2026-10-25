@@ -147,9 +147,9 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
       expect(booking['message']).to end_with('mention a booking, change or cancellation only when its card is listed.')
     end
 
-    # The draft once promised one time while the operator approved a card with another: the second booking of the same patient at a
-    # corrected time withdraws the first card, and the agent and the operator see only the new one.
-    it 'replaces the booking card of a run when the agent books the same patient again at another time' do
+    # One message may book the same patient twice (another service, specialist or time): each booking is a card of its own, both
+    # wait for the operator, and the agent is told about both. Only a change or a cancellation of one appointment replaces its card.
+    it 'prepares a second booking card when the agent books the same patient again at another time' do
       wrapper = Captain::Runtime::ToolWrapper.new(create_tool, run_context)
       later_starts_at = 2.days.from_now.change(hour: 11, min: 30, sec: 0).iso8601
       later_ends_at = 2.days.from_now.change(hour: 12, min: 0, sec: 0).iso8601
@@ -159,15 +159,15 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
       second = JSON.parse(wrapper.call(first_args.merge(starts_at: later_starts_at, ends_at: later_ends_at)))
 
       expect(second).to include('status' => 'pending_operator_approval')
+      expect(second['message']).not_to include('It replaces')
       expect(second['message']).to include(
-        "It replaces «Записать на приём» (create_appointment: #{first['summary']}): that card is withdrawn",
-        "Cards waiting in this run: «Записать на приём» (create_appointment: #{second['summary']})."
+        "Cards waiting in this run: «Записать на приём» (create_appointment: #{first['summary']}), " \
+        "«Записать на приём» (create_appointment: #{second['summary']})."
       )
-      expect(run_context.context[described_class::CONTEXT_KEY].pluck('action_id')).to eq([second['action_id']])
-      expect(run_context.context[described_class::SUPERSEDED_CONTEXT_KEY]).to eq([first['action_id']])
+      expect(run_context.context[described_class::CONTEXT_KEY].pluck('action_id')).to eq([first['action_id'], second['action_id']])
+      expect(run_context.context[described_class::SUPERSEDED_CONTEXT_KEY]).to be_blank
       expect(described_class.pending_for(account_id: account.id, conversation_id: conversation.id).pluck('action_id'))
-        .to eq([second['action_id']])
-      expect(described_class.fetch_record(first['action_id'])).to include('status' => 'rejected', 'rejected_reason' => 'superseded_in_run')
+        .to contain_exactly(first['action_id'], second['action_id'])
       expect(account.scheduling_appointments.count).to eq(0)
     end
 

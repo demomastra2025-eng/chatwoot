@@ -832,11 +832,12 @@ class Captain::Runtime::ToolWrapper
   end
 
   # A reply suggestion runs nothing before the operator allows it, so the same action with other arguments (an identical repeat is
-  # answered from the cache before this) is a new card: for an appointment it replaces the claim's card (a corrected time, another
-  # reason for the same cancellation), and any other action gets up to SUGGESTION_CARDS_PER_TOOL cards (a second task, another
-  # field of the contact). Past that the call is answered with the cards that wait, and nothing new is prepared. nil: prepare it.
+  # answered from the cache before this) is a new card: a change or a cancellation of an appointment replaces the claim's card
+  # (another time or reason for the same appointment), and any other action, a booking too, gets up to SUGGESTION_CARDS_PER_TOOL
+  # cards (a second booking of the same person with another service, specialist or time, a second task, another field of the
+  # contact). Past that the call is answered with the cards that wait, and nothing new is prepared. nil: prepare it.
   def suggestion_card_repeat_result(entry)
-    return if Captain::ReplySuggestion::ActionApprovalService.appointment_tool?(@tool.name)
+    return if card_replacing_tool?
 
     cards = suggestion_cards(entry)
     return if cards.size < SUGGESTION_CARDS_PER_TOOL
@@ -864,16 +865,19 @@ class Captain::Runtime::ToolWrapper
     end
   end
 
-  # In a reply suggestion an action tool prepares an approval card for the operator instead of running. A new appointment card
-  # replaces the cards of the same claim (the same person's booking, the same appointment's change or cancellation): the approval
-  # service withdraws them once the new card exists.
+  # In a reply suggestion an action tool prepares an approval card for the operator instead of running. A new card of a change or a
+  # cancellation replaces the cards of the same appointment (the same claim): the approval service withdraws them once the new card
+  # exists. Two bookings of the same person with other arguments are two cards; an identical booking reuses its card.
   def intercept_for_approval(tool_context, normalized_args)
-    @replaced_card_ids = if Captain::ReplySuggestion::ActionApprovalService.appointment_tool?(@tool.name)
-                           suggestion_cards(mutating_tool_executions[mutation_claim_key]).map { |card| card[:action_id].to_s }
-                         end
+    @replaced_card_ids = card_replacing_tool? ? suggestion_cards(mutating_tool_executions[mutation_claim_key]).pluck(:action_id).map(&:to_s) : []
     Captain::ReplySuggestion::ActionApprovalService.intercept(
-      tool: @tool, tool_context: tool_context, arguments: normalized_args, replaces: Array(@replaced_card_ids)
+      tool: @tool, tool_context: tool_context, arguments: normalized_args, replaces: @replaced_card_ids
     )
+  end
+
+  # A change or a cancellation of an appointment: one appointment takes one change, so its new card replaces the claim's cards.
+  def card_replacing_tool?
+    Captain::Runtime::OperationTarget::APPOINTMENT_TOOLS.include?(Captain::Runtime::ToolFailure.canonical_name(@tool.name))
   end
 
   # Keeps the card a reply suggestion prepared on its claim, and drops the cards it replaced with their cached results, so an

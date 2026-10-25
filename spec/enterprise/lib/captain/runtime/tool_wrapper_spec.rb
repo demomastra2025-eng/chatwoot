@@ -1343,27 +1343,24 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       expect(intercepted.size).to eq(2)
     end
 
-    # The draft promised one time while the operator approved a card with another: a corrected booking replaces the earlier card.
-    it 'replaces the booking card of the same patient when the booking is repeated with another start' do
+    # One message may book the same patient twice (a consultation and a test, another specialist, another time): each booking is a
+    # card of its own. Only an identical booking is a repeat, and it is answered with its own card.
+    it 'prepares a second booking card of the same patient with other arguments, and reuses the card of an identical booking' do
       booking = described_class.new(ToolWrapperSpecAppointmentTool.new, context_wrapper)
+      patient = { first_name: 'Айгуль', last_name: 'Серикова', birth_date: '1990-01-01' }
 
-      first = JSON.parse(call_in_new_batch(booking, starts_at: '2026-10-26T10:00'))
-      second = JSON.parse(call_in_new_batch(booking, starts_at: '2026-10-26T11:30'))
+      first = JSON.parse(call_in_new_batch(booking, patient: patient, starts_at: '2026-10-26T10:00'))
+      second = JSON.parse(call_in_new_batch(booking, patient: patient, starts_at: '2026-10-26T11:30'))
+      again = JSON.parse(call_in_new_batch(booking, patient: patient, starts_at: '2026-10-26T10:00'))
 
       expect(second).to include('status' => 'pending_operator_approval', 'action_id' => 'card-2026-10-26T11:30')
-      expect(intercepted.map { |call| call[:replaces] }).to eq([[], [first['action_id']]])
-      expect(card_ids).to eq(['card-2026-10-26T11:30'])
+      expect(again['action_id']).to eq(first['action_id'])
+      expect(intercepted.map { |call| call[:replaces] }).to eq([[], []])
+      expect(card_ids).to eq(['card-2026-10-26T10:00', 'card-2026-10-26T11:30'])
       expect(context_wrapper.context).not_to have_key(described_class::TERMINAL_TOOL_STOP_KEY)
-
-      # Back to the first time: its answer was withdrawn with its card, so the card is prepared again and replaces the second one.
-      third = JSON.parse(call_in_new_batch(booking, starts_at: '2026-10-26T10:00'))
-
-      expect(intercepted.map { |call| call[:replaces] }).to eq([[], [first['action_id']], ['card-2026-10-26T11:30']])
-      expect(third['action_id']).to eq('card-2026-10-26T10:00')
-      expect(card_ids).to eq(['card-2026-10-26T10:00'])
     end
 
-    it 'keeps a booking card when the booking that should replace it is refused' do
+    it 'keeps a booking card when another booking of the same patient is refused' do
       booking = described_class.new(ToolWrapperSpecAppointmentTool.new, context_wrapper)
       call_in_new_batch(booking, starts_at: '2026-10-26T10:00')
       allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:intercept)
