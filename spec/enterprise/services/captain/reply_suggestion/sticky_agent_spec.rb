@@ -52,6 +52,12 @@ RSpec.describe Captain::ReplySuggestion::StickyAgent do
       expect(described_class.agent_id_of(outcome: 'human_needed', reason_source: 'agent', agent: { 'id' => 120 })).to eq(120)
     end
 
+    it 'is the agent a council left the dialog with, for an outcome and for a stored draft' do
+      expect(described_class.agent_id_of(outcome: 'draft', agent: { 'id' => 84 }, lead_agent_id: 119)).to eq(119)
+      expect(described_class.agent_id_of_result('agent' => { 'id' => 84 }, 'lead_agent_id' => 120)).to eq(120)
+      expect(described_class.agent_id_of_result('agent' => { 'id' => 84 })).to eq(84)
+    end
+
     it 'is nobody for a staff request of the router, a safety stop, a failure or a cancel' do
       expect(described_class.agent_id_of(outcome: 'human_needed', reason_source: 'router', agent: nil)).to be_nil
       expect(described_class.agent_id_of(outcome: 'human_needed', reason_source: 'safety', agent: { 'id' => 84 })).to be_nil

@@ -14,3 +14,7 @@ en:
         safety_blocked: The safety check stopped the AI reply, please answer the customer yourself.
         agent_rule: 'An agent rule applied: %{reason}. Please answer the customer yourself.'
         patient_requested_human: The patient asks for a live staff member, please answer yourself.
+        council_unresolved: 'The AI did not resolve part of the request, please answer it yourself: %{parts}.'
+        council_technical: 'Part of the request was not done because of a technical error, please answer it yourself: %{parts}.'
+        council_unreported: 'An action was prepared for part of the request, but there is no text for the patient; check the card: %{parts}.'
+        council_no_text: The AI council prepared no text for the patient. Check the prepared actions or answer yourself.

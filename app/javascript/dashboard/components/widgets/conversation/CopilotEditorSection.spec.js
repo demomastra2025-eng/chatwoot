@@ -265,6 +265,23 @@ describe('CopilotEditorSection.vue', () => {
       expect(status).not.toContain('LIVE_AGENT_THINKING');
     });
 
+    it('shows above the draft what a council left to the manager', () => {
+      const note =
+        'ИИ не решил часть обращения — ответьте на неё сами: справка.';
+      const withNote = mountComponent({
+        pendingActions: [],
+        suggestionMeta: { operator_note: note },
+      });
+      const withoutNote = mountComponent({ pendingActions: [] });
+
+      expect(withNote.get('[data-test="copilot-operator-note"]').text()).toBe(
+        note
+      );
+      expect(
+        withoutNote.find('[data-test="copilot-operator-note"]').exists()
+      ).toBe(false);
+    });
+
     it('shows no live steps before the first trace arrives', () => {
       const withoutTrace = mountComponent({
         showCopilotEditor: false,

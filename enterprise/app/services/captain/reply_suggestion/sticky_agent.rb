@@ -38,14 +38,20 @@ module Captain::ReplySuggestion::StickyAgent
       nil
     end
 
-    # The agent an outcome makes sticky: the agent of a draft or of a "no reply needed", and of a staff request that the agent itself
-    # made (reason_source agent); nil for everything else.
+    # The agent an outcome makes sticky: the agent of a draft or of a "no reply needed" (for a council, the agent it leaves the dialog
+    # with: lead_agent_id), and of a staff request that the agent itself made (reason_source agent); nil for everything else.
     def agent_id_of(outcome)
       outcome = outcome.to_h.with_indifferent_access
       kind = outcome[:outcome].to_s
       return unless AGENT_OUTCOMES.include?(kind) || (kind == 'human_needed' && outcome[:reason_source].to_s == 'agent')
 
-      outcome[:agent].to_h.with_indifferent_access[:id].presence&.to_i
+      agent_id_of_result(outcome)
+    end
+
+    # The agent of a stored draft (see FeedbackService), or of an outcome.
+    def agent_id_of_result(result)
+      result = result.to_h.with_indifferent_access
+      (result[:lead_agent_id].presence || result[:agent].to_h.with_indifferent_access[:id]).presence&.to_i
     end
 
     def keys_for(conversation)

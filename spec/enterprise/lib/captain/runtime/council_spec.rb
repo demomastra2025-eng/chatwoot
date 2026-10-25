@@ -944,7 +944,8 @@ RSpec.describe Captain::Runtime::Council do
       expect(reply).to eq('Цена 15000 тенге.')
       expect(editor).not_to have_received(:edit)
       expect(state_of('part-0')['state']).to eq('unknown')
-      expect(context[:council_handoff]).to eq(reason: 'council_technical_failure', parts: [], technical: true, failures: [technical_failure])
+      expect(context[:council_handoff]).to eq(reason: 'council_technical_failure', parts: [], technical: true, failures: [technical_failure],
+                                              failed_parts: ['Запрос 0'])
       expect(context[:council_contributors].pluck(:id)).to eq([2])
     end
 

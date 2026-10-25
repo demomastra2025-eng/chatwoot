@@ -143,6 +143,27 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     expect(response['response']).to eq('Ответ консилиума')
   end
 
+  it 'tells the outcome of a suggestion that a council answered: what it left to the manager, and the agent that asked the patient' do
+    decide('council', yes: [doctors.id, procedures.id])
+    split = Captain::Runtime::CouncilSplitter::Result.new(parts: [
+                                                            { 'executor_agent_id' => doctors.id, 'fragment' => 'к ЛОРу' },
+                                                            { 'executor_agent_id' => procedures.id, 'fragment' => 'аудиометрия' }
+                                                          ], fallback: false)
+    allow(Captain::Runtime::CouncilSplitter).to receive(:new).and_return(instance_double(Captain::Runtime::CouncilSplitter, split: split))
+    allow(runtime_runner).to receive(:run_council) do |_agent, _input, **options|
+      context = options[:context].deep_dup.merge(council_handoff: { reason: 'council_unresolved', parts: ['аудиометрия'] })
+      asked = context[:part_plan][:parts].find { |part| part['executor_agent_id'] == procedures.id }['id']
+      context[:parts] = context[:parts].map { |part| part['id'] == asked ? part.merge('state' => 'waiting_customer') : part }
+      Captain::Runtime::Result.new(output: { response: 'Записала к ЛОРу на 10:00.' }, messages: [], usage: nil, error: nil, context: context)
+    end
+    suggestion = described_class.new(assistant: doctors, conversation: conversation, source: 'reply_suggestion')
+
+    response = suggestion.generate_response(message_history: history)
+
+    expect(response).to include('council_turn' => true, 'lead_agent_id' => procedures.id,
+                                'council_handoff' => { 'reason' => 'council_unresolved', 'parts' => ['аудиометрия'] })
+  end
+
   it 'makes no decision for a clinic with one agent' do
     procedures.update!(active: false)
     expect(Captain::Runtime::DecisionRouter).not_to receive(:new)

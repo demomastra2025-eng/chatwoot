@@ -119,7 +119,9 @@ module Concerns::Agentable
       ).variables
     end
     variables = variables.merge(human_handoff_enabled: false) if part || suggestion
-    variables = variables.merge(reply_suggestion_mode: suggestion ? true : false)
+    # A council part answers with the structured result of a part (Captain::Runtime::PartSchema): it gets no rule about
+    # response_mode or operator_note, which only the reply of a suggestion has.
+    variables = variables.merge(reply_suggestion_mode: suggestion ? true : false, council_part: part ? true : false)
     rendered_variables = enhanced_context.merge(variables)
 
     time_agent_phase('prompt_render') do

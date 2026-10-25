@@ -166,6 +166,65 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
     end
   end
 
+  describe 'a council' do
+    let(:handoff) { { 'reason' => 'council_unresolved', 'parts' => ['справка для бассейна'] } }
+
+    it 'keeps its draft and tells the manager which part needs a staff reply' do
+      draft = described_class.new(reply.merge('council_turn' => true, 'council_handoff' => handoff), trace_collector: trace_collector).perform
+
+      expect(draft).to include(outcome: 'draft', message: 'Здравствуйте! Есть окно в 15:00.')
+      expect(draft[:suggestion_meta]['operator_note'])
+        .to eq(I18n.t('captain.reply_suggestion.reasons.council_unresolved', parts: 'справка для бассейна'))
+    end
+
+    it 'keeps the agent it leaves the dialog with, for the sticky agent of the next suggestion' do
+      draft = described_class.new(reply.merge('council_turn' => true, 'lead_agent_id' => 119), trace_collector: trace_collector).perform
+
+      expect(draft).to include(outcome: 'draft', lead_agent_id: 119, agent: agent_summary)
+      expect(Captain::ReplySuggestion::Outcome.public_result(draft)).to include('lead_agent_id' => 119)
+      expect(Captain::ReplySuggestion::Outcome.public_result(described_class.new(reply, trace_collector: trace_collector).perform))
+        .not_to have_key('lead_agent_id')
+    end
+
+    it 'names the parts that failed technically and the actions prepared without a text' do
+      council = reply.merge('council_turn' => true,
+                            'council_handoff' => { 'reason' => 'council_technical_failure', 'parts' => [], 'technical' => true,
+                                                   'failed_parts' => ['перенос записи'] },
+                            'council_note' => { 'unreported' => ['запись к ЛОРу'] })
+
+      note = described_class.new(council, trace_collector: trace_collector).perform[:suggestion_meta]['operator_note']
+
+      expect(note).to include(I18n.t('captain.reply_suggestion.reasons.council_technical', parts: 'перенос записи'),
+                              I18n.t('captain.reply_suggestion.reasons.council_unreported', parts: 'запись к ЛОРу'))
+    end
+
+    context 'without a text for the patient' do
+      let(:silent) { { 'response' => '', 'response_mode' => 'suppress', 'response_suppressed' => true, 'council_turn' => true } }
+
+      it 'is no_reply with a written note and keeps its approval cards, never an invalid output' do
+        result = described_class.new(silent.merge('council_note' => { 'unreported' => ['запись к ЛОРу'] }), trace_collector: trace_collector)
+                                .perform
+
+        expect(result).to include(outcome: 'no_reply', reason_source: 'agent', pending_actions: [{ 'action_id' => 'a-1' }],
+                                  reason: I18n.t('captain.reply_suggestion.reasons.council_unreported', parts: 'запись к ЛОРу'))
+      end
+
+      it 'is no_reply with the general note when the council left only cards' do
+        result = described_class.new(silent, trace_collector: trace_collector).perform
+
+        expect(result).to include(outcome: 'no_reply', reason: I18n.t('captain.reply_suggestion.reasons.council_no_text'),
+                                  pending_actions: [{ 'action_id' => 'a-1' }])
+      end
+
+      it 'is human_needed when a part needs a staff reply' do
+        result = described_class.new(silent.merge('council_handoff' => handoff), trace_collector: trace_collector).perform
+
+        reason = I18n.t('captain.reply_suggestion.reasons.council_unresolved', parts: 'справка для бассейна')
+        expect(result).to include(outcome: 'human_needed', reason: reason)
+      end
+    end
+  end
+
   describe 'a reply that cannot be given' do
     it 'fails a handoff: a suggestion has no such thing' do
       failure = described_class.new({ 'response' => 'conversation_handoff' }, trace_collector: trace_collector).perform

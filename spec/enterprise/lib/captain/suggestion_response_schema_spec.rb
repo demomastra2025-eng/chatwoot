@@ -36,6 +36,14 @@ RSpec.describe Captain::SuggestionResponseSchema do
       expect(prompt).not_to include('say that you will clarify the information')
     end
 
+    it 'gives a council part of a suggestion no rule about response_mode or operator_note: it answers with the result of a part' do
+      context = OpenStruct.new(context: { state: { source: 'reply_suggestion' }, part_run: true })
+      prompt = assistant.agent(suggestion_tools: true).get_system_prompt(context)
+
+      expect(prompt).not_to include('response_mode', 'operator_note')
+      expect(prompt).to include('pending_operator_approval', 'end your part as the rules of your part below say')
+    end
+
     it 'does not give the live agent any of it' do
       prompt = system_prompt(assistant.agent, 'incoming_message')
 

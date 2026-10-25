@@ -673,7 +673,7 @@ class Captain::Runtime::Council
     handoff = failures.any? || (unresolved.any? && staff_handoff_available?)
     reply = reply_for(shown, handoff: handoff)
     @context[:council_untold_part_ids] = entries.reject { |entry| told?(entry) }.pluck(:id)
-    @context[:council_handoff] = handoff_request(unresolved, failures) if handoff
+    @context[:council_handoff] = handoff_request(unresolved, failures, entries.select { |entry| entry[:technical] }) if handoff
     mark_handed_to_staff(entries) if handoff
     staff_note(entries, unresolved, handoff: handoff)
     reply
@@ -718,9 +718,10 @@ class Captain::Runtime::Council
     @context[:council_note] = note if note.any?
   end
 
-  def handoff_request(unresolved, failures)
+  # failed_parts: the requests of the parts that failed technically (a reply suggestion names them to the manager).
+  def handoff_request(unresolved, failures, failed_entries = [])
     request = { reason: failures.any? ? TECHNICAL_HANDOFF_REASON : HANDOFF_REASON, parts: unresolved.pluck(:request) }
-    request.merge!(technical: true, failures: failures) if failures.any?
+    request.merge!(technical: true, failures: failures, failed_parts: failed_entries.pluck(:request).compact_blank) if failures.any?
     request
   end
 

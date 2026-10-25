@@ -39,7 +39,7 @@ class Captain::ReplySuggestion::FeedbackService
   def remember_sticky_agent(record)
     return unless record['status'] == 'draft'
 
-    Captain::ReplySuggestion::StickyAgent.remember!(conversation, record.dig('result', 'agent', 'id'))
+    Captain::ReplySuggestion::StickyAgent.remember!(conversation, Captain::ReplySuggestion::StickyAgent.agent_id_of_result(record['result']))
   end
 
   # The request of the suggestion must be this user's, in this account and conversation.

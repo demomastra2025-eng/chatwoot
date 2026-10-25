@@ -8,10 +8,13 @@
 #                                                           council_unavailable when the router could not route the turn)
 #   4  the router sent the turn to staff                    human_needed (router): no agent is named as its author
 #      the agent answered response_mode human              human_needed (operator_note), failed when the note is blank
-#   5  the agent answered response_mode suppress           no_reply (operator_note), failed when the note is blank
+#   5  a council without a text for the patient             human_needed when a part needs staff, else no_reply; the note is
+#                                                           written from what the council left (its approval cards are kept)
+#      the agent answered response_mode suppress           no_reply (operator_note), failed when the note is blank
 #   6  a cancelled response, or a handoff                   failed (invalid_output): a suggestion has neither
 #   7  an empty reply                                       failed (empty_output)
-#   8  otherwise                                            draft
+#   8  otherwise                                            draft; a council that left parts to staff adds the note for the manager
+#                                                           (suggestion_meta operator_note)
 #
 # A text never comes out of an outcome other than draft.
 class Captain::ReplySuggestion::AgentOutcomeClassifier
@@ -30,6 +33,7 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
   ROUTER_TOOL = 'agent_router'
   DEFAULT_USAGE = { 'prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0 }.freeze
   PROVIDER_ERROR_PREFIXES = %w[RubyLLM:: Faraday:: Llm:: Net:: Timeout:: OpenSSL:: Errno:: SocketError].freeze
+  PART_LIMIT = 160
 
   def initialize(raw_payload, trace_collector:)
     @payload = raw_payload.to_h.with_indifferent_access
@@ -45,7 +49,7 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
   attr_reader :payload, :trace_collector
 
   def classify
-    blocked_outcome || failure_outcome || handoff_outcome || suppress_outcome || undeliverable_outcome
+    blocked_outcome || failure_outcome || handoff_outcome || council_silent_outcome || suppress_outcome || undeliverable_outcome
   end
 
   # 1 and 2: a safety stop is a reason for the manager to answer, not an error.
@@ -81,6 +85,20 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
     )
   end
 
+  # 5: a council that has no text for the patient. Its parts that need staff, its approval cards and its other notes are still
+  # the manager's: they are never dropped as an invalid output.
+  def council_silent_outcome
+    return unless payload[:council_turn] == true && suppressed?
+
+    meta = suggestion_meta
+    note = payload[:operator_note].presence || council_note.presence || I18n.t('captain.reply_suggestion.reasons.council_no_text')
+    attributes = { reason: note, engine: 'agent', reason_source: 'agent', agent: meta['agent'],
+                   pending_actions: Array(meta['pending_actions']), usage: usage }.merge(lead_agent)
+    return Captain::ReplySuggestion::Outcome.human_needed(**attributes) if payload[:council_handoff].present?
+
+    Captain::ReplySuggestion::Outcome.no_reply(**attributes)
+  end
+
   # 5
   def suppress_outcome
     return unless suppressed?
@@ -108,12 +126,23 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
 
   # 8
   def draft
-    meta = suggestion_meta
+    meta = draft_meta
     trace = trace_collector.captain_trace(payload)
     Captain::ReplySuggestion::Outcome.draft(
       message: payload[:response].to_s.strip, engine: 'agent', usage: usage, agent: meta['agent'], captain_trace: trace.presence,
-      suggestion_meta: meta.presence, pending_actions: Array(meta['pending_actions'])
+      suggestion_meta: meta.presence, pending_actions: Array(meta['pending_actions']), **lead_agent
     )
+  end
+
+  # A council draft that leaves parts to the manager says so above the draft.
+  def draft_meta
+    note = council_note
+    note.present? ? suggestion_meta.merge('operator_note' => note) : suggestion_meta
+  end
+
+  # The agent a council leaves the dialog with (see StickyAgent), when it is not the agent the suggestion is attributed to.
+  def lead_agent
+    payload[:lead_agent_id].present? ? { lead_agent_id: payload[:lead_agent_id].to_i } : {}
   end
 
   def human_needed(reason, source)
@@ -122,6 +151,27 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
       reason: reason, engine: 'agent', reason_source: source, agent: meta['agent'], pending_actions: Array(meta['pending_actions']),
       usage: usage
     )
+  end
+
+  # What the council left to the manager, one sentence per kind, in the language of the account (the job runs in it): the parts
+  # that failed technically or that it could not resolve (they need the manager's own answer), and the parts whose action was
+  # prepared without a text for the patient. The parts are the patient's request fragments, as the staff note of a live council
+  # names them. Blank when the council left nothing.
+  def council_note
+    handoff = payload[:council_handoff].to_h.with_indifferent_access
+    note = payload[:council_note].to_h.with_indifferent_access
+    {
+      'council_technical' => handoff[:failed_parts],
+      'council_unresolved' => Array(handoff[:parts]) + Array(note[:unanswered]),
+      'council_unreported' => note[:unreported]
+    }.filter_map do |key, parts|
+      text = parts_text(parts)
+      I18n.t("captain.reply_suggestion.reasons.#{key}", parts: text) if text.present?
+    end.join(' ')
+  end
+
+  def parts_text(parts)
+    Array(parts).map { |part| part.to_s.squish.first(PART_LIMIT) }.compact_blank.uniq.join('; ')
   end
 
   def suggestion_meta

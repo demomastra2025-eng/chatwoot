@@ -223,6 +223,12 @@ const councilHeaderText = computed(() => {
   });
 });
 
+// What a council left to the manager (a part that needs a staff reply, an
+// action prepared without a text): shown above the draft.
+const operatorNote = computed(() =>
+  String(props.suggestionMeta?.operator_note || '').trim()
+);
+
 const hasAuthorAttribution = computed(
   () => Boolean(primaryAgent.value) || isCouncilSuggestion.value
 );
@@ -540,6 +546,15 @@ const onSend = () => {
         </div>
       </div>
 
+      <p
+        v-if="showCopilotEditor && operatorNote"
+        class="mb-0 flex items-start gap-1.5 rounded-lg bg-n-amber-3 px-2.5 py-1.5 text-xs text-n-amber-11 outline outline-1 -outline-offset-1 outline-n-amber-5"
+        role="status"
+        data-test="copilot-operator-note"
+      >
+        <Icon icon="i-lucide-user-round" class="mt-0.5 size-3.5 shrink-0" />
+        <span class="min-w-0 break-words">{{ operatorNote }}</span>
+      </p>
       <p
         v-if="showCopilotEditor && stale"
         class="mb-0 px-1 text-xs text-n-amber-11"

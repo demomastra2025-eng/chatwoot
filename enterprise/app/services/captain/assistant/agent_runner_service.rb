@@ -410,6 +410,12 @@ class Captain::Assistant::AgentRunnerService
     response['council_handoff'] = result.context[:council_handoff].to_h.deep_stringify_keys if result.context&.dig(:council_handoff).present?
     # Set by the council only for a part that acted without a text for the customer, or that nobody will answer; a private note.
     response['council_note'] = result.context[:council_note].to_h.deep_stringify_keys if result.context&.dig(:council_note).present?
+    # A suggestion tells the manager what a council left without a text (see ReplySuggestion::AgentOutcomeClassifier), and which
+    # agent the dialog stays with (see ReplySuggestion::StickyAgent).
+    if suggestion_run? && council_turn?
+      response['council_turn'] = true
+      response['lead_agent_id'] = council_lead_agent_id(result.context)
+    end
     refs = part_refs_for(result.context)
     response['part_refs'] = refs if refs.any?
     response['handoff_tool_called'] = handoff_tool_called
@@ -453,6 +459,14 @@ class Captain::Assistant::AgentRunnerService
     planned = Array(context&.dig(:part_plan, :parts))
     undelivered = context&.key?(:council_untold_part_ids) ? [] : Captain::Runtime::PartRegistry.undelivered_outcomes(context&.dig(:parts))
     (planned + undelivered).reject { |part| untold.include?(part['id']) }.map { |part| part.slice('id', 'version') }.uniq
+  end
+
+  # The agent a council suggestion leaves the dialog with: the owner of the last part that asked the patient something (the answer
+  # is its), else the first agent that wrote a part of the reply; nil when neither (the acting agent then keeps it).
+  def council_lead_agent_id(context)
+    planned = Array(context&.dig(:part_plan, :parts)).pluck('id')
+    asking = Array(context&.dig(:parts)).select { |part| planned.include?(part['id']) && part['state'] == 'waiting_customer' }
+    asking.last&.dig('executor_agent_id') || Array(context&.dig(:council_contributors)).first.to_h.with_indifferent_access[:id]
   end
 
   def technical_failure_from(context)
