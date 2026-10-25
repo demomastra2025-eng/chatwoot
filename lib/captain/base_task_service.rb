@@ -30,9 +30,12 @@ class Captain::BaseTaskService
     raise NotImplementedError, "#{self.class} must implement #event_name"
   end
 
+  # A display id of a thread stands for the conversation in front of it, as in Api::V1::Accounts::Captain::TasksController.
   def conversation
     @conversation ||= account.conversations.find_by(display_id: conversation_display_id) ||
-                      account.communication_threads.find_by(display_id: conversation_display_id)&.conversations&.order(id: :desc)&.first
+                      Conversations::CommunicationThreadResolver.front_conversation(
+                        CommunicationThread.find_by(account_id: account.id, display_id: conversation_display_id)
+                      )
   end
 
   def make_api_call(model:, messages:, schema: nil, tools: [])

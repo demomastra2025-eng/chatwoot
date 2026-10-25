@@ -78,6 +78,18 @@ RSpec.describe Captain::BaseTaskService do
       service.send(:conversation)
       service.send(:conversation)
     end
+
+    it 'takes a display id of a communication thread for the conversation in front of it, not the newest one' do
+      newer_resolved = create(:conversation, account: account, contact: conversation.contact, inbox: create(:inbox, account: account),
+                                             status: :resolved)
+      thread = create(:communication_thread, account: account, contact: conversation.contact, display_id: 7001)
+      [conversation, newer_resolved].each do |linked|
+        create(:communication_thread_conversation, communication_thread: thread, conversation: linked)
+      end
+
+      expect(newer_resolved.id).to be > conversation.id
+      expect(test_service_class.new(account: account, conversation_display_id: 7001).send(:conversation)).to eq(conversation)
+    end
   end
 
   describe '#system_api_key' do

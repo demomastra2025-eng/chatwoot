@@ -124,7 +124,8 @@ class Captain::ReplySuggestion::StartService
     { 'id' => id, 'account_id' => account.id, 'user_id' => user.id, 'conversation_id' => conversation.id }
   end
 
+  # The latest customer message of the person, in whichever conversation of the thread it came (see StatePresenter.stale?).
   def based_on_message_id
-    Message.where(conversation_id: conversation.id, message_type: :incoming, private: false).maximum(:id)
+    Captain::ReplySuggestion::StatePresenter.customer_messages(conversation).maximum(:id)
   end
 end

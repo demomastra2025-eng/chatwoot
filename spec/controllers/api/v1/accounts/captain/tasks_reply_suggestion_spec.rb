@@ -142,6 +142,46 @@ RSpec.describe 'Api::V1::Accounts::Captain::Tasks reply suggestion', type: :requ
     end
   end
 
+  # One person, two channels: the open WhatsApp dialog and a newer Telegram conversation that was resolved.
+  describe 'a person with a communication thread' do
+    let(:newer_resolved) do
+      create(:conversation, account: account, contact: conversation.contact, inbox: create(:inbox, account: account), status: :resolved)
+    end
+    let(:thread) { create(:communication_thread, account: account, contact: conversation.contact, display_id: 7001) }
+
+    before do
+      [conversation, newer_resolved].each do |linked|
+        create(:communication_thread_conversation, communication_thread: thread, conversation: linked)
+      end
+    end
+
+    it 'takes a display id of the thread for the conversation in front of it, the open one, not the newest one' do
+      expect(newer_resolved.id).to be > conversation.id
+
+      start(headers, display_id: thread.display_id)
+
+      expect(response).to have_http_status(:accepted)
+      expect(json_response).to include(conversation_id: 7001, conversation_record_id: conversation.id)
+      get "#{tasks_path}/reply_suggestion_status", params: { conversation_display_id: thread.display_id }, headers: headers
+      expect(json_response[:suggestion]).to include(conversation_record_id: conversation.id, status: 'queued')
+    end
+
+    it 'bases the suggestion on the latest customer message of the person and tells it is stale after one in another channel' do
+      first = create(:message, conversation: newer_resolved, account: account, message_type: :incoming, content: 'Нужен ЛОР')
+      start
+      id = json_response[:suggestion_request_id]
+      expect(store.fetch_raw(id)['based_on_message_id']).to eq(first.id)
+      store.finish!(store.fetch_raw(id), status: 'draft', result: { 'message' => 'Здравствуйте' })
+
+      get "#{tasks_path}/reply_suggestion_status", params: { conversation_display_id: conversation.display_id }, headers: headers
+      expect(json_response[:suggestion]).to include(suggestion_request_id: id, stale: false)
+
+      create(:message, conversation: newer_resolved, account: account, message_type: :incoming, content: 'А на завтра?')
+      get "#{tasks_path}/reply_suggestion_status", params: { conversation_display_id: conversation.display_id }, headers: headers
+      expect(json_response[:suggestion]).to include(suggestion_request_id: id, stale: true)
+    end
+  end
+
   describe 'GET /reply_suggestion_status' do
     def status(params = {}, user_headers = headers)
       get "#{tasks_path}/reply_suggestion_status", params: { conversation_display_id: conversation.display_id }.merge(params), headers: user_headers

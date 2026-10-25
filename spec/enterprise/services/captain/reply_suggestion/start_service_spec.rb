@@ -70,6 +70,36 @@ RSpec.describe Captain::ReplySuggestion::StartService do
     end
   end
 
+  describe 'the message it is based on' do
+    it 'is the latest public customer message of the whole person, also when it came to another channel of the thread' do
+      thread = create(:communication_thread, account: account, contact: conversation.contact)
+      other_channel = create(:conversation, account: account, contact: conversation.contact, inbox: create(:inbox, account: account))
+      [conversation, other_channel].each do |linked|
+        create(:communication_thread_conversation, communication_thread: thread, conversation: linked)
+        linked.association(:communication_thread_conversation).reset
+        linked.association(:communication_thread).reset
+      end
+      create(:message, conversation: conversation, account: account, message_type: :incoming, content: 'Нужен ЛОР')
+      latest = create(:message, conversation: other_channel, account: account, message_type: :incoming, content: 'А на завтра?')
+      create(:message, conversation: other_channel, account: account, message_type: :incoming, content: 'Заметка', private: true)
+      create(:message, conversation: other_channel, account: account, message_type: :outgoing, content: 'Здравствуйте')
+
+      body = service.perform.body
+
+      expect(Captain::ReplySuggestion::RequestStore.fetch_raw(body[:suggestion_request_id])['based_on_message_id']).to eq(latest.id)
+      expect(body[:stale]).to be(false)
+    end
+
+    it 'leaves out the messages of another person' do
+      mine = create(:message, conversation: conversation, account: account, message_type: :incoming, content: 'Нужен ЛОР')
+      create(:message, conversation: create(:conversation, account: account, inbox: inbox), account: account, message_type: :incoming)
+
+      body = service.perform.body
+
+      expect(Captain::ReplySuggestion::RequestStore.fetch_raw(body[:suggestion_request_id])['based_on_message_id']).to eq(mine.id)
+    end
+  end
+
   describe 'the engine' do
     it 'is the agent when the account has one that can take the conversation' do
       assistant = create(:captain_assistant, account: account, active: true)

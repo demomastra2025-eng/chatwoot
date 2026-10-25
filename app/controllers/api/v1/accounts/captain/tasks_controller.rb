@@ -258,6 +258,8 @@ class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseContr
     render json: { error: I18n.t("captain.reply_suggestion.errors.#{code}"), error_code: code }, status: status
   end
 
+  # A display id of a conversation, or of a communication thread (the person): then the conversation in front of the thread, the
+  # one whose status it shows (Conversations::CommunicationThreadResolver.front_first), not the newest one.
   def resolved_conversation
     return @resolved_conversation if defined?(@resolved_conversation)
 
@@ -265,8 +267,9 @@ class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseContr
     return @resolved_conversation = nil unless display_id
 
     @resolved_conversation = Current.account.conversations.find_by(display_id: display_id) ||
-                             CommunicationThread.find_by(account_id: Current.account.id, display_id: display_id)
-                                                &.conversations&.order(id: :desc)&.first
+                             Conversations::CommunicationThreadResolver.front_conversation(
+                               CommunicationThread.find_by(account_id: Current.account.id, display_id: display_id)
+                             )
   end
 
   def check_authorization

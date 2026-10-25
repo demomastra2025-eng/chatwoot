@@ -16,6 +16,13 @@ class Conversations::CommunicationThreadResolver # rubocop:disable Metrics/Class
         resolved.sort_by { |c| activity_sort_key(c) }.reverse
     end
 
+    # The conversation in front of a thread (see front_first): the one a display id of the thread stands for. nil without one.
+    def front_conversation(thread)
+      return if thread.blank?
+
+      front_first(thread.conversations.where(account_id: thread.account_id).to_a).first
+    end
+
     # The index of a status in STATUS_URGENCY: lower is more urgent.
     def status_urgency(status)
       STATUS_URGENCY.index(status) || STATUS_URGENCY.size

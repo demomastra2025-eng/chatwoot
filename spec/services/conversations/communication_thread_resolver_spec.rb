@@ -302,4 +302,33 @@ RSpec.describe Conversations::CommunicationThreadResolver do
       end
     end
   end
+
+  describe '.front_conversation' do
+    let(:account) { create(:account) }
+    let(:contact) { create(:contact, account: account) }
+    let(:thread) { create(:communication_thread, account: account, contact: contact) }
+
+    def linked_conversation(status)
+      create(:conversation, account: account, contact: contact, inbox: create(:inbox, account: account), status: status).tap do |conversation|
+        create(:communication_thread_conversation, communication_thread: thread, conversation: conversation)
+      end
+    end
+
+    it 'is the conversation whose status the thread shows, not the newest one, and nil without a thread' do
+      open = linked_conversation(:open)
+      linked_conversation(:resolved)
+
+      expect(described_class.front_conversation(thread)).to eq(open)
+      expect(described_class.front_conversation(nil)).to be_nil
+    end
+
+    it 'is the conversation of the latest activity when every conversation is resolved' do
+      older = linked_conversation(:resolved)
+      newer = linked_conversation(:resolved)
+      older.update_columns(last_activity_at: 1.minute.ago) # rubocop:disable Rails/SkipsModelValidations
+      newer.update_columns(last_activity_at: 1.hour.ago) # rubocop:disable Rails/SkipsModelValidations
+
+      expect(described_class.front_conversation(thread)).to eq(older)
+    end
+  end
 end

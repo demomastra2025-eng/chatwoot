@@ -4,12 +4,22 @@
 # answer, in the GET answer and in the `captain.reply_suggestion.result` cable event.
 class Captain::ReplySuggestion::StatePresenter
   class << self
-    # New customer messages arrived after the suggestion was requested.
+    # New customer messages arrived after the suggestion was requested, in any conversation of the person.
     def stale?(record)
       based_on = record['based_on_message_id']
       return false if based_on.blank? || record['conversation_id'].blank?
 
-      Message.where(conversation_id: record['conversation_id'], message_type: :incoming, private: false).exists?(['id > ?', based_on])
+      conversation = Conversation.find_by(id: record['conversation_id'])
+      return false unless conversation
+
+      customer_messages(conversation).exists?(['messages.id > ?', based_on])
+    end
+
+    # The public messages of the customer over the whole person: every conversation of the communication thread, as the history
+    # of the suggestion reads them (Captain::Conversation::ControlService.messages_scope, see HistoryBuilder). A message that came
+    # to another channel of the same person also makes a suggestion stale and moves the message it is based on.
+    def customer_messages(conversation)
+      Captain::Conversation::ControlService.messages_scope(conversation).where(message_type: :incoming, private: false)
     end
   end
 
