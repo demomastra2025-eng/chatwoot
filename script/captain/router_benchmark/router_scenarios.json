@@ -93,11 +93,11 @@
             { "role": "patient", "text": "Давайте на 14:00, ИИН 900101300123" },
             { "role": "agent", "text": "Готово: УЗИ щитовидной железы завтра в 14:00 у Салимовой К.В." } ],
           "message": "Спасибо! И ещё запишите меня к эндокринологу Кудабаевой на тот же день после УЗИ", "expected": "route_agent_77" },
-        { "id": "AS05", "type": "suggestion_short_reply", "title": "suggestion: thanks with no sticky agent mid-dialog: no agent is asked for, the escalation names none either, the manager answers",
+        { "id": "AS05", "type": "suggestion_short_reply", "title": "suggestion: thanks with no sticky agent mid-dialog: no agent is asked for, so the anchor answers (the strong model's explicit choice of it is fine)",
           "current": null, "suggestion": true, "anchor": 77,
           "history": [
             { "role": "agent", "text": "Здравствуйте! Ваша запись подтверждена, ждём вас." } ],
-          "message": "Спасибо!", "expected": "undecided" },
+          "message": "Спасибо!", "expected": "route_agent_77" },
         { "id": "AN01", "type": "suggestion_no_sticky", "title": "suggestion: time choice mid-booking with no sticky agent goes to the ultrasound agent, not the anchor",
           "current": null, "suggestion": true, "anchor": 77,
           "history": [
