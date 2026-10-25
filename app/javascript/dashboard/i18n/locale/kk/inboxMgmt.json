@@ -5,6 +5,10 @@
     "LEARN_MORE": "Learn more about inboxes",
     "RECONNECTION_REQUIRED": "Your inbox is disconnected. You won't receive new messages until you reauthorize it.",
     "CLICK_TO_RECONNECT": "Click here to reconnect.",
+    "WHATSAPP_WEB_RISK": {
+      "TITLE": "Ресми емес арна: WhatsApp нөмірді бұғаттауы мүмкін",
+      "DESCRIPTION": "Бизнес үшін ресми WhatsApp-ты ұсынамыз. Жаппай таратылымда және сізге бірінші жазбаған адамдарға хабарлама жібергенде тәуекел жоғары."
+    },
     "HEALTH_STATUS": {
       "CONNECTED": "Қосылған",
       "CONNECTED_DESCRIPTION": "Арна хабарламаларды қабылдауға дайын.",
@@ -1082,7 +1086,7 @@
           },
           "WHATSAPP_WEB": {
             "TITLE": "WhatsApp Web",
-            "DESCRIPTION": "API арқылы WhatsApp стиліндегі арнайы арнаны жасаңыз"
+            "DESCRIPTION": "Ресми емес арна, QR-код арқылы қосылады"
           },
           "EMAIL": {
             "TITLE": "Email",

@@ -23,6 +23,7 @@ import WhatsAppTemplatesPage from './settingsPage/WhatsAppTemplatesPage.vue';
 import AccountHealth from './components/AccountHealth.vue';
 import ConnectionStatusBadge from './components/ConnectionStatusBadge.vue';
 import DeveloperDetails from './components/DeveloperDetails.vue';
+import WhatsappWebRiskNotice from './components/WhatsappWebRiskNotice.vue';
 import WebsiteTriggerCampaigns from './components/WebsiteTriggerCampaigns.vue';
 import SenderNameExamplePreview from './components/SenderNameExamplePreview.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
@@ -108,6 +109,7 @@ export default {
     TiktokReauthorize,
     WhatsappReauthorize,
     DuplicateInboxBanner,
+    WhatsappWebRiskNotice,
     Editor,
     ColorPicker,
     SelectInput,
@@ -2507,6 +2509,8 @@ export default {
                 <p class="mb-0 text-body-main text-n-slate-11">
                   {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SUBTITLE') }}
                 </p>
+
+                <WhatsappWebRiskNotice />
 
                 <!-- The number, the one connection status and the main actions -->
                 <div
