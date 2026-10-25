@@ -198,8 +198,9 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   end
 
   it 'does not wait for the router when the safety check blocked the input' do
+    # The decision takes 5 s: a turn that waited for it would take at least that long.
     allow(Llm::DecisionChain).to receive(:decide) do
-      sleep 1.5
+      sleep 5
       raise Llm::DecisionChain::ExhaustedError.new(feature: :agent_routing, attempts: [])
     end
     unsafe = Llm::SafetyPolicy::UnsafeContentError.new(feature: :assistant, stage: :input, reason: 'unsafe')
@@ -208,7 +209,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     response = service.generate_response(message_history: history)
 
-    expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 1.0
+    expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 3.0
     expect(response).to include(described_class::MODERATION_BLOCKED_KEY => true)
   end
 
