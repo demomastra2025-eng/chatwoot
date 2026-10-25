@@ -50,6 +50,18 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
       expect(preview.dig(:assistant, :used_field_ids)).to include('contact.identifier')
     end
 
+    it 'shows the clinic context layer and the routing card of a routed agent together, and no handoff list' do
+      account.update!(captain_clinic_context: 'Клиника: МО «Тест».')
+      create(:captain_assistant, account: account, name: 'Records agent', routing_description: 'Records')
+      assistant.update!(routing_description: 'Billing questions')
+
+      layers = described_class.new(assistant: assistant).preview.dig(:assistant, :layers)
+
+      expect(layers.pluck(:id)).to eq(%w[global_system_instruction clinic_context instruction available_runtime_tools routing_card])
+      expect(layers).to include(include(id: 'clinic_context', enabled: true, value: 'Клиника: МО «Тест».'),
+                                include(id: 'routing_card', enabled: true, value: a_string_including('Billing questions')))
+    end
+
     it 'has an empty clinic context layer when the account has none' do
       layer = described_class.new(assistant: assistant).preview.dig(:assistant, :layers).find { |item| item[:id] == 'clinic_context' }
 

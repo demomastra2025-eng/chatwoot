@@ -32,6 +32,18 @@ RSpec.describe Captain::AssistantPrompt do
     expect(variables(state: state, clinic_context: assistant.prompt_clinic_context)[:clinic_context]).to eq('ИИН пациента: 900101300123.')
   end
 
+  it 'gives the clinic context and the send time line of an earlier day together' do
+    account.update!(captain_clinic_context: 'ИИН пациента: [ИИН](field://contact.identifier).')
+    monday = { now_utc: '2026-10-26T04:00:00Z', timezone: 'Asia/Almaty', message_sent_at: '2026-10-24T04:50:00Z' }
+    state = { runtime_clock: monday, prompt_context: { contact: contact.merge('identifier' => '900101300123') } }
+
+    result = variables(state: state, clinic_context: assistant.prompt_clinic_context)
+
+    expect(result[:clinic_context]).to eq('ИИН пациента: 900101300123.')
+    expect(result[:now_text].split("
+").second).to start_with("Patient's last message was sent Saturday, 24 October 2026")
+  end
+
   it 'adds the night line after the clock line between 00:00 and 05:00 and before the reply window line' do
     night = { now_utc: '2026-10-12T20:15:00Z', timezone: 'Asia/Almaty' }
     window = { channel: 'official_whatsapp', closes_at: '2026-10-13T10:00:00Z', open_now: true }

@@ -44,6 +44,25 @@ RSpec.describe Captain::SuggestionResponseSchema do
       expect(prompt).to include('pending_operator_approval', 'end your part as the rules of your part below say')
     end
 
+    it 'names the # Clinic block in the first rule of a suggestion and of a council part, and each still ends in its own way' do
+      account.update!(captain_clinic_context: 'Клиника: МО «Тест».')
+      draft = system_prompt(assistant.agent(suggestion_tools: true), 'reply_suggestion')
+      part = assistant.agent(suggestion_tools: true).get_system_prompt(
+        OpenStruct.new(context: { state: { source: 'reply_suggestion' }, part_run: true })
+      )
+
+      [draft, part].each do |prompt|
+        expect(prompt).to include('Answer from # Clinic, the clinic instructions, the data below', "# Clinic\nКлиника: МО «Тест».")
+      end
+      expect(draft).to include('do not draft a reply: set response_mode to human')
+      expect(draft).not_to include('end your part as the rules of your part below say')
+      expect(part).to include('end your part as the rules of your part below say')
+      expect(part).not_to include('response_mode')
+
+      account.update!(captain_clinic_context: '')
+      expect(system_prompt(assistant.reload.agent(suggestion_tools: true), 'reply_suggestion')).not_to include('# Clinic,')
+    end
+
     it 'does not give the live agent any of it' do
       prompt = system_prompt(assistant.agent, 'incoming_message')
 
