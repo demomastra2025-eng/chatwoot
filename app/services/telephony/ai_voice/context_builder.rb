@@ -354,12 +354,20 @@ class Telephony::AiVoice::ContextBuilder
     sections = []
     sections << "Captain assistant: #{captain_assistant.name}" if captain_assistant.name.present?
     sections << captain_assistant.description.to_s.strip if captain_assistant.description.present?
+    sections << titled_clinic_context
     sections.concat(platform_rules)
     sections << titled_lines('Response guidelines', captain_assistant.response_guidelines)
     sections << titled_lines('Guardrails', captain_assistant.guardrails)
     sections << titled_scenarios
     sections << titled_context('Current caller context', fast_voice_prompt_context)
     sections.compact_blank.join("\n\n")
+  end
+
+  # The facts every agent of the clinic needs (the "# Clinic" block of the full prompt, Captain::Assistant#prompt_clinic_context).
+  # Like the description, its $ field links are not resolved on this path.
+  def titled_clinic_context
+    clinic_context = captain_assistant.prompt_clinic_context
+    "Clinic:\n#{clinic_context}" if clinic_context.present?
   end
 
   def fast_voice_prompt_context

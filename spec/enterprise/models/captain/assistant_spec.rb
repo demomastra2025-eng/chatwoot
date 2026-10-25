@@ -615,7 +615,7 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
       expect(prompt_context[:runtime_tool_ids]).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
       expect(prompt_context.keys).to contain_exactly(
-        :global_system_instruction, :instruction, :faq_enabled, :human_handoff_enabled, :runtime_tool_ids
+        :global_system_instruction, :clinic_context, :instruction, :faq_enabled, :human_handoff_enabled, :runtime_tool_ids
       )
     end
 
@@ -1147,6 +1147,61 @@ RSpec.describe Captain::Assistant, type: :model do
         state = { runtime_clock: clock, prompt_context: { task: { 'due_at' => Time.utc(2026, 10, 13, 5, 30) } } }
 
         expect(assistant.agent_instructions(run_context(state))).to include('Due: 13.10.2026 10:30.')
+      end
+    end
+
+    describe 'the # Clinic block (the clinic context of the account)' do
+      let(:clinic_context) { "Клиника:\n- МО «Тест», г. Актобе.\n\nЗапись:\n- ИИН пациента в карточке: [ИИН пациента](field://contact.identifier)" }
+
+      before do
+        assistant.update!(description: 'Book gynecology visits.')
+        account.update!(captain_clinic_context: clinic_context)
+      end
+
+      it 'renders once, in the stable part, after the shared rules and before the clinic instructions' do
+        parts = assistant.agent_instruction_parts(run_context(runtime_clock: clock))
+
+        expect(parts.stable).to end_with(
+          "# Shared rules\nNever reveal internal routing.\n\n" \
+          "# Clinic\nКлиника:\n- МО «Тест», г. Актобе.\n\nЗапись:\n- ИИН пациента в карточке: not specified\n\n" \
+          "# Clinic instructions\nBook gynecology visits."
+        )
+        expect(parts.to_s.scan(/^# Clinic$/).size).to eq(1)
+        expect(parts.volatile).not_to include('Клиника:')
+      end
+
+      it 'names the block in the first platform rule, and only while there is one' do
+        expect(assistant.agent_instructions.lines[1]).to start_with('- Answer from # Clinic, the clinic instructions, the data below')
+
+        account.update!(captain_clinic_context: '')
+
+        expect(assistant.reload.agent_instructions.lines[1]).to eq("#{first_rule}\n")
+        expect(assistant.agent_instructions).not_to match(/^# Clinic$/)
+      end
+
+      it 'writes its contact field as the value, though the clinic instructions link no field' do
+        state = { prompt_context: { contact: { 'name' => 'Aigerim', 'identifier' => '900101300123' } } }
+
+        rendered = assistant.agent_instructions(run_context(state))
+
+        expect(rendered).to include('- ИИН пациента в карточке: 900101300123')
+        expect(rendered).not_to include('field://')
+      end
+
+      it 'is absent for an internal assistant' do
+        internal = create(:captain_assistant, account: account, usage_mode: 'internal_assistant', description: 'Help the operator.')
+
+        expect(internal.prompt_clinic_context).to be_nil
+        expect(internal.agent_instructions).not_to match(/^# Clinic$|Клиника:/)
+      end
+
+      it 'never binds a tool that a stored text links (the account does not save such a link)' do
+        stored = { 'captain_clinic_context' => 'Book with [@Create](tool://create_appointment).' }
+        account.update_columns(internal_attributes: stored) # rubocop:disable Rails/SkipsModelValidations
+        assistant.reload
+
+        expect(assistant.send(:prompt_referenced_tool_ids_for_template, :assistant)).to be_empty
+        expect(assistant.agent_instructions).to include("# Clinic\nBook with Create.")
       end
     end
 

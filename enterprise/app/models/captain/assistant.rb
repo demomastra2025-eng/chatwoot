@@ -655,7 +655,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def prompt_context_state(runtime_state = {}, field_ids: nil)
-    effective_field_ids = effective_context_field_ids(field_ids || referenced_field_ids_for_texts(prompt_glossary_texts))
+    effective_field_ids = effective_context_field_ids(field_ids || referenced_field_ids_for_texts(prompt_field_texts))
 
     Captain::ContextFields.prompt_state_for(
       assistant: self,
@@ -668,7 +668,7 @@ class Captain::Assistant < ApplicationRecord
   # text, and a mentioned tool is only its label. The time zone is the one of the conversation's inbox.
   def render_runtime_text(text, conversation: nil)
     runtime_state = runtime_state_for(conversation)
-    field_ids = referenced_field_ids_for_texts(prompt_glossary_texts + [text])
+    field_ids = referenced_field_ids_for_texts(prompt_field_texts + [text])
     prompt_state = prompt_context_state(runtime_state, field_ids: field_ids)
 
     resolve_runtime_value(
@@ -678,15 +678,15 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def resolve_runtime_prompt_context(context, prompt_state, field_ids: nil)
-    effective_field_ids = field_ids || referenced_field_ids_for_texts(prompt_glossary_texts)
+    effective_field_ids = field_ids || referenced_field_ids_for_texts(prompt_field_texts)
 
     resolve_runtime_value(context, prompt_state, field_ids: effective_field_ids)
   end
 
-  # The texts of the agent prompt (the clinic instruction, the shared rules) with every $ field written as its plain value in
-  # time_zone and every @ tool as the function name, or as the bare label when the tool is not in bound_tool_ids.
+  # The texts of the agent prompt (the clinic instruction, the clinic context, the shared rules) with every $ field written as its
+  # plain value in time_zone and every @ tool as the function name, or as the bare label when the tool is not in bound_tool_ids.
   def resolve_prompt_texts(texts, prompt_state, bound_tool_ids: nil, time_zone: nil)
-    field_ids = referenced_field_ids_for_texts(prompt_glossary_texts)
+    field_ids = referenced_field_ids_for_texts(prompt_field_texts)
 
     resolve_runtime_value(
       texts, prompt_state, field_ids: field_ids, allowed_fields: (field_ids.empty? ? [] : nil),
@@ -720,6 +720,12 @@ class Captain::Assistant < ApplicationRecord
 
   def system_instruction
     description.to_s.strip
+  end
+
+  # The "# Clinic" block: the facts every agent of the clinic needs (Account#captain_clinic_context). Only the agents that talk to
+  # patients get it; an internal assistant does not. nil when there is none.
+  def prompt_clinic_context
+    account&.captain_clinic_context.presence if external_agent?
   end
 
   def history_message_limit_value
@@ -911,6 +917,7 @@ class Captain::Assistant < ApplicationRecord
   def prompt_context
     {
       global_system_instruction: Llm::Config.global_agent_system_prompt,
+      clinic_context: prompt_clinic_context,
       instruction: system_instruction,
       faq_enabled: faq_enabled?,
       human_handoff_enabled: handoff_enabled? && selected_agent_tool_ids.include?(HANDOFF_TOOL_ID),
@@ -1020,6 +1027,12 @@ class Captain::Assistant < ApplicationRecord
 
   def prompt_glossary_texts
     prompt_glossary_texts_for_template(:assistant)
+  end
+
+  # The texts whose $ fields the prompt reads: the clinic instruction and the clinic context. Tools are bound from the instruction
+  # alone (prompt_referenced_tool_ids_for_template): the clinic context is shared by every agent and may not bind a tool to all of them.
+  def prompt_field_texts
+    prompt_glossary_texts + [prompt_clinic_context]
   end
 
   def referenced_tool_ids_for_texts(texts)

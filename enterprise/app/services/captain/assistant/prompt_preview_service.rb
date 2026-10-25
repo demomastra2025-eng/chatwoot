@@ -81,12 +81,9 @@ class Captain::Assistant::PromptPreviewService
   def assistant_layers
     [
       text_layer('global_system_instruction', 'Global system instruction', Llm::Config.global_agent_system_prompt),
+      text_layer('clinic_context', 'Clinic context', assistant.prompt_clinic_context),
       text_layer('instruction', 'System instruction', assistant.system_instruction),
-      list_layer(
-        'available_runtime_tools',
-        'Available runtime tools',
-        assistant_runtime_tools.map { |tool| "#{tool[:id]}: #{tool[:description]}" }
-      ),
+      list_layer('available_runtime_tools', 'Available runtime tools', assistant_runtime_tools.map { |tool| "#{tool[:id]}: #{tool[:description]}" }),
       list_layer(
         'scenario_handoffs',
         'Scenario handoffs',
@@ -122,9 +119,7 @@ class Captain::Assistant::PromptPreviewService
   end
 
   def assistant_used_field_ids
-    field_ids = referenced_field_ids_for_texts(
-      assistant.send(:prompt_glossary_texts_for_template, :assistant)
-    )
+    field_ids = referenced_field_ids_for_texts(assistant.send(:prompt_field_texts))
 
     field_ids & assistant.available_context_field_ids
   end

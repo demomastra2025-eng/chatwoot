@@ -93,4 +93,33 @@ RSpec.describe Telephony::AiVoice::ContextBuilder do
       expect(state.to_json).not_to include('Private child clinical comment')
     end
   end
+
+  describe '#fast_captain_voice_prompt' do
+    let(:account) { create(:account) }
+    let(:whatsapp_channel) do
+      create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud', sync_templates: false, validate_provider_config: false)
+    end
+    let(:inbox) { whatsapp_channel.inbox }
+    let(:conversation) { create(:conversation, account: account, inbox: inbox) }
+    let(:assistant) { create(:captain_assistant, account: account, description: 'Запись к гинекологу.') }
+    let(:call_session) do
+      create(:telephony_call_session, account: account, conversation: conversation, inbox: inbox, number_binding: nil,
+                                      external_call_ref: 'whatsapp:wacid-clinic-context')
+    end
+    let(:builder) { described_class.new(params: { 'call_ref' => call_session.external_call_ref, 'account_id' => account.id }) }
+
+    before { create(:captain_inbox, inbox: inbox, captain_assistant: assistant) }
+
+    it 'has the clinic context of the account right after the description of the agent' do
+      account.update!(captain_clinic_context: "Клиника:\n- МО «Әлия», г. Актобе.")
+
+      prompt = builder.send(:fast_captain_voice_prompt)
+
+      expect(prompt).to include("Запись к гинекологу.\n\nClinic:\nКлиника:\n- МО «Әлия», г. Актобе.")
+    end
+
+    it 'has no clinic block when the account has no clinic context' do
+      expect(builder.send(:fast_captain_voice_prompt)).not_to include('Clinic:')
+    end
+  end
 end

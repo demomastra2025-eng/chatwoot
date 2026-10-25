@@ -135,9 +135,9 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
       get "/super_admin/accounts/#{account.id}/edit"
     end
 
-    it 'has three sections' do
+    it 'has four sections' do
       expect(response).to have_http_status(:ok)
-      expect(page.css('fieldset.form-section > legend').map { |legend| text(legend) }).to eq(['Основное', 'Лимиты', 'Тонкая настройка'])
+      expect(page.css('fieldset.form-section > legend').map { |legend| text(legend) }).to eq(['Основное', 'Лимиты', 'ИИ', 'Тонкая настройка'])
       expect(response.body).not_to include('translation missing')
     end
 
@@ -234,7 +234,7 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(page.at_css('#error_explanation')).to be_present
-      expect(page.css('fieldset.form-section > legend').size).to eq(3)
+      expect(page.css('fieldset.form-section > legend').size).to eq(4)
     end
   end
 end

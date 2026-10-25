@@ -486,7 +486,7 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       get "/super_admin/accounts/#{account.id}/edit"
 
       expect(response).to have_http_status(:ok)
-      expect(page.css('fieldset.form-section > legend').map { |legend| text(legend) }).to eq(['Основное', 'Лимиты', 'Тонкая настройка'])
+      expect(page.css('fieldset.form-section > legend').map { |legend| text(legend) }).to eq(['Основное', 'Лимиты', 'ИИ', 'Тонкая настройка'])
       expect(page.css("[data-testid='limit-rows'] [data-limit]").map { |node| node['data-limit'] }).to eq(keys)
       expect(page.css('input[name^="account[limits]"]')).to be_empty
       expect(page.css('input[name^="account[limit_choices]"][type=radio]').size).to eq(27)

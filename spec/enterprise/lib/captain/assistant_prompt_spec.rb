@@ -13,15 +13,23 @@ RSpec.describe Captain::AssistantPrompt do
     described_class.new(assistant: assistant, context: context.merge(overrides), state: state, prompt_state: state[:prompt_context].to_h).variables
   end
 
-  it 'returns the two resolved texts, the Now text and the Patient lines' do
+  it 'returns the resolved texts (no clinic context here), the Now text and the Patient lines' do
     state = { runtime_clock: clock, prompt_context: { contact: contact } }
 
     expect(variables(state: state)).to eq(
       instruction: 'Use `faq_lookup` for Aigerim.',
       global_system_instruction: 'Shared',
+      clinic_context: nil,
       now_text: 'Monday, 12 October 2026 (2026-10-12), 23:56, Almaty (UTC+5). Tomorrow: Tuesday, 13 October 2026 (2026-10-13).',
       patient_lines: ['Aigerim, +77000000000.']
     )
+  end
+
+  it 'resolves the contact field of the clinic context, which the clinic instruction does not link' do
+    account.update!(captain_clinic_context: 'ИИН пациента: [ИИН](field://contact.identifier).')
+    state = { prompt_context: { contact: contact.merge('identifier' => '900101300123') } }
+
+    expect(variables(state: state, clinic_context: assistant.prompt_clinic_context)[:clinic_context]).to eq('ИИН пациента: 900101300123.')
   end
 
   it 'adds the night line after the clock line between 00:00 and 05:00 and before the reply window line' do
