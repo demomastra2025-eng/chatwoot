@@ -26,13 +26,14 @@ class Captain::Runtime::Runner
 
   # An error ends the run as a result with an error, never as a text for the customer: the caller hands the conversation to staff.
   # A run of a live conversation that runs out of turns, or that is stopped by the loop guard, is a technical failure of the run:
-  # it ends the same way as the failure of a tool, with the conversation handed to staff and no text about it.
+  # it ends the same way as the failure of a tool, with the conversation handed to staff and no text about it (a reply suggestion
+  # does not: see staff_takeover_run?).
   def run(starting_agent, input, **options)
     session = nil
     session = build_session(starting_agent, input, options)
     process_session(session)
   rescue MaxTurnsExceeded => e
-    return technical_run_result(session, 'max_turns') if conversation_run?(session)
+    return technical_run_result(session, 'max_turns') if staff_takeover_run?(session)
 
     finalize_run(session&.dig(:chat), session&.dig(:context_wrapper), session&.dig(:current_agent),
                  output: "Conversation ended: #{e.message}", error: e)
@@ -67,6 +68,13 @@ class Captain::Runtime::Runner
   def conversation_run?(session)
     context = session&.dig(:context_wrapper)&.context
     context && context[:agent_session] && !context[:part_run]
+  end
+
+  # A reply suggestion is a draft for the operator, not a turn staff must take over: a loop or the turn limit ends it with the error,
+  # and the runner of the conversation writes the draft from the results so far in one more call without tools
+  # (AgentRunnerService#finalization_only_retry_response). The approval cards it prepared stay with the draft.
+  def staff_takeover_run?(session)
+    conversation_run?(session) && !self.class.reply_suggestion?(session[:context_wrapper].context)
   end
 
   def council_editor_model(acting_agent)
@@ -219,7 +227,7 @@ class Captain::Runtime::Runner
   end
 
   def terminal_tool_stop_result(session)
-    return technical_run_result(session, 'tool_loop') if conversation_run?(session)
+    return technical_run_result(session, 'tool_loop') if staff_takeover_run?(session)
 
     terminal_state = terminal_tool_stop_state(session).to_h.with_indifferent_access
     message = terminal_state.dig(:result, :error).presence || 'Captain stopped a repeated tool-call loop'

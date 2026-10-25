@@ -139,7 +139,7 @@ RSpec.describe Captain::ReplySuggestionService do
         ).and_return(runner_double)
 
         allow(runner_double).to receive(:generate_response).with(
-          message_history: [{ role: 'user', content: 'I need help' }]
+          message_history: [{ role: 'user', content: 'I need help', sent_at: kind_of(ActiveSupport::TimeWithZone) }]
         ).and_return(
           {
             'response' => 'Available slots for Dr. Smith tomorrow are 10:00 and 14:30.',

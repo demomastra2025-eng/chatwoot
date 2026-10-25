@@ -1280,6 +1280,93 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     expect(context_wrapper.context[:captain_v2_tool_result_cache]).to be_blank
   end
 
+  # A reply suggestion changes nothing in the clinic system: an action tool only prepares an approval card for the operator. A
+  # repeated call must not end the run as a technical failure: the operator would get no draft at all.
+  describe 'in a reply suggestion' do
+    let(:mutating_tool) { ToolWrapperSpecMutatingTool.new }
+    let(:mutating_wrapper) { described_class.new(mutating_tool, context_wrapper) }
+    let(:read_only_tool) { ToolWrapperSpecReadOnlyTool.new }
+    let(:read_only_wrapper) { described_class.new(read_only_tool, context_wrapper) }
+    let(:cards_key) { Captain::ReplySuggestion::ActionApprovalService::CONTEXT_KEY }
+
+    before do
+      context_wrapper.context[:state][:source] = 'reply_suggestion'
+      allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:intercept) do |tool:, tool_context:, arguments:|
+        card = { 'action_id' => "card-#{arguments[:title]}", 'tool_name' => tool.name, 'status' => 'pending', 'title' => 'Создать задачу',
+                 'description' => "Задача: #{arguments[:title]}" }
+        (tool_context.context[cards_key] ||= []) << card
+        JSON.generate(success: true, status: 'pending_operator_approval', action_id: card['action_id'], action: tool.name)
+      end
+    end
+
+    it 'answers a repeated action with its pending card instead of stopping the run' do
+      mutating_wrapper.call(title: 'Перезвонить')
+      context_wrapper.context[:captain_v2_current_tool_batch_id] = 'next-batch'
+
+      result = mutating_wrapper.call(title: 'Перезвонить пациенту завтра')
+
+      expect(result).to be_a(String)
+      expect(JSON.parse(result)).to include(
+        'status' => 'pending_operator_approval', 'already_proposed' => true, 'action_id' => 'card-Перезвонить',
+        'title' => 'Создать задачу', 'summary' => 'Задача: Перезвонить', 'message' => described_class::ALREADY_PROPOSED_MESSAGE
+      )
+      expect(Captain::ReplySuggestion::ActionApprovalService).to have_received(:intercept).once
+      expect(context_wrapper.context[cards_key].size).to eq(1)
+      expect(context_wrapper.context).not_to have_key(described_class::TERMINAL_TOOL_STOP_KEY)
+    end
+
+    it 'shows a refused repeat of an action that has no card to the agent and lets the run go on' do
+      allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:intercept)
+        .and_return(Captain::ToolResult.failure(error: 'Temporary failure', retryable: true))
+      mutating_wrapper.call(title: 'Перезвонить')
+
+      result = mutating_wrapper.call(title: 'Другая задача')
+
+      expect(result).not_to be_a(RubyLLM::Tool::Halt)
+      expect_tool_error(result, 'This action tool already ran in the current assistant run. Do not retry it with alternate arguments.',
+                        retryable: false)
+      expect(context_wrapper.context).not_to have_key(described_class::TERMINAL_TOOL_STOP_KEY)
+    end
+
+    it 'shows a repeated failed call to the agent instead of stopping the run' do
+      failure = Captain::ToolResult.failure(error: 'Unknown service', retryable: false, audit: { failure_stage: 'tool_arguments' })
+      read_only_wrapper.call(result: failure)
+
+      result = read_only_wrapper.call(result: failure)
+
+      expect(result).not_to be_a(RubyLLM::Tool::Halt)
+      expect_tool_error(result, described_class::DUPLICATE_FAILED_TOOL_ERROR, retryable: false)
+      expect(context_wrapper.context).not_to have_key(described_class::TERMINAL_TOOL_STOP_KEY)
+    end
+
+    it 'answers a repeated identical read from the first result without counting it against the tool limits' do
+      results = Array.new(described_class::MAX_IDENTICAL_TOOL_EXECUTIONS + 3) { read_only_wrapper.call(result: 'Mon 17:00, Mon 18:00') }
+
+      expect(results.uniq).to eq(['Mon 17:00, Mon 18:00'])
+      expect(read_only_tool.calls).to eq(1)
+      expect(context_wrapper.context[described_class::TOOL_REQUEST_COUNTS_KEY][:total]).to eq(1)
+      expect(events.count { |event| event.first == :complete }).to eq(results.size)
+      expect(context_wrapper.context).not_to have_key(described_class::TERMINAL_TOOL_STOP_KEY)
+    end
+
+    it 'reads again after a failed read' do
+      failure = Captain::ToolResult.failure(error: 'Temporary provider timeout', retryable: true)
+
+      2.times { read_only_wrapper.call(result: failure) }
+
+      expect(read_only_tool.calls).to eq(2)
+    end
+
+    it 'keeps the stop of a live run for a repeated action and reads again in a live run' do
+      context_wrapper.context[:state][:source] = 'incoming_message'
+      2.times { read_only_wrapper.call(result: 'slots') }
+      mutating_wrapper.call(title: 'Первая')
+
+      expect(read_only_tool.calls).to eq(2)
+      expect(mutating_wrapper.call(title: 'Вторая')).to be_a(RubyLLM::Tool::Halt)
+    end
+  end
+
   describe 'a technical failure of a tool' do
     let(:read_only_tool) { ToolWrapperSpecReadOnlyTool.new(tool_name: 'faq_lookup') }
     let(:read_only_wrapper) { described_class.new(read_only_tool, context_wrapper) }

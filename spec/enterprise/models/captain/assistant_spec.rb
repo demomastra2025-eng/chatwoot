@@ -916,7 +916,7 @@ RSpec.describe Captain::Assistant, type: :model do
         - The patient chooses the time of an appointment: an exact time they ask about while booking is a request to book it now when free. For a day or part of a day alone, offer 2-3 free times and book after the patient chooses.
         - An additional visit uses create_appointment. Use update_appointment when the patient asks to move or change that appointment.
         - If a time is taken or no slots are free, search following days and offer the 2-3 nearest free times with full dates in one message. Keep the existing appointment.
-        - After midnight, "tomorrow" can mean today; offer free times with full dates.
+        - History messages start with the local time they were sent, like [Sat 24.10 09:50] (added by the platform; never write it). Read today, tomorrow and weekdays in a message from the day it was sent, not from Now; if that day has passed, say so and offer the nearest free times with full dates. After midnight, "tomorrow" can mean today.
         - For a price, search_scheduling_services before saying no answer is available. For documents and certificates, use faq_lookup first.
         - Before changing an appointment, make sure which one; if several match, ask.
         - When you book for another patient (a child, a relative), pass that person in create_appointment's patient parameter; to change or cancel that person's appointment, find it with search_appointments.

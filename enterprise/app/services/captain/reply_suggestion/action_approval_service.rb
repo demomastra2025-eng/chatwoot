@@ -39,6 +39,14 @@ class Captain::ReplySuggestion::ActionApprovalService
     'add_label_to_conversation' => 'Добавить метку к диалогу',
     'update_priority' => 'Изменить приоритет диалога'
   }.freeze
+  # What a card is, in the result the agent reads: an appointment card names its kind, every other card says it is no appointment.
+  # A contact update read as a booking made a draft report a booking that had no card.
+  APPROVAL_SCOPES = {
+    'create_appointment' => 'a new appointment booking',
+    'update_appointment' => 'a change of an existing appointment',
+    'cancel_appointment' => 'a cancellation of an existing appointment'
+  }.freeze
+  NOT_APPOINTMENT_SCOPE = 'not an appointment: it books, moves or cancels nothing'
 
   class Error < StandardError; end
   class NotFoundError < Error; end
@@ -188,7 +196,7 @@ class Captain::ReplySuggestion::ActionApprovalService
         context: context, state: state, assistant: assistant, account: account,
         conversation: conversation, tool_id: tool_id, arguments: normalized_args
       )
-      render_interception_result(record)
+      render_interception_result(record, context)
     end
 
     def resolve_assistant(tool, state)
@@ -596,7 +604,7 @@ class Captain::ReplySuggestion::ActionApprovalService
       }
     end
 
-    def render_interception_result(record)
+    def render_interception_result(record, context = {})
       JSON.generate(
         success: true,
         status: 'pending_operator_approval',
@@ -606,10 +614,19 @@ class Captain::ReplySuggestion::ActionApprovalService
         title: record['title'],
         summary: record['description'],
         details: record['details'],
-        message: 'Action prepared and queued for human operator approval (Allow / Deny) in the reply suggestion panel. ' \
-                 'It has NOT been executed in the system yet. ' \
-                 'Draft the reply for the operator without claiming that this action is already completed.'
+        message: approval_message(record, context)
       )
+    end
+
+    # Exactly what waits for the operator: this card and its kind, and every card of the run, so the draft names no other action.
+    def approval_message(record, context)
+      scope = APPROVAL_SCOPES.fetch(record['tool_name'].to_s, NOT_APPOINTMENT_SCOPE)
+      cards = (Array(context.to_h[CONTEXT_KEY]) + [record]).filter_map do |item|
+        "«#{item['title']}» (#{item['tool_name']})" if item.to_h['title'].present?
+      end
+      "NOT executed. Waiting for operator approval (Allow / Deny): «#{record['title']}» (#{scope}). " \
+        "Cards waiting in this run: #{cards.uniq.join(', ')}. " \
+        'Draft the reply without saying that any of them is done; mention a booking, change or cancellation only when its card is listed.'
     end
 
     def agent_summary(assistant)

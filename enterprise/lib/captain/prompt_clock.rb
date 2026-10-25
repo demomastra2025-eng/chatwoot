@@ -17,6 +17,12 @@ class Captain::PromptClock
   NIGHT_ENDS_AT_HOUR = 5
   NIGHT_LINE = 'It is after midnight: a patient\'s "tomorrow" may mean today, %<today>s. ' \
                'For "today" or "tomorrow" offer free slots with the full date and book after the patient picks one.'
+  NIGHT_MESSAGE_LINE = 'The patient\'s last message was sent after midnight: their "tomorrow" may mean that day, %<day>s.'
+  # The send time of a history message, in front of its text: "[Sat 24.10 09:50]". A few tokens per message tell the model which day
+  # a patient's "today", "tomorrow" or "on Monday" was written on (a message of Saturday answered on Monday).
+  STAMP_FORMAT = '[%a %d.%m %H:%M]'
+  STAMP_PATTERN = /\A\s*\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{2}\.\d{2} \d{2}:\d{2}\]\s*/
+  MESSAGE_LINE = "Patient's last message was sent %<sent>s, %<time>s (%<ago>s): read its today, tomorrow and weekdays from that day."
 
   class << self
     # "Monday, 12 October 2026 (2026-10-12), 12:34, Almaty (UTC+5). Tomorrow: Tuesday, 13 October 2026 (2026-10-13)." or nil when
@@ -31,12 +37,43 @@ class Captain::PromptClock
 
     # One more line for the hours after midnight, when "today" and "tomorrow" are ambiguous. It names the date of today, so the
     # model reads "tomorrow" as that date or as the one after it by the patient's words and offers times with the full date; nil
-    # at any other time and without a usable clock.
+    # at any other time and without a usable clock. When the patient's last message (message_sent_at of the clock) was sent on an
+    # earlier day, the hour of that message decides instead, and the line names the day it was sent.
     def night_line(runtime_clock)
       local, = local_clock(runtime_clock)
-      return unless local.present? && local.hour < NIGHT_ENDS_AT_HOUR
+      return if local.blank?
 
-      format(NIGHT_LINE, today: local.strftime(LONG_DATE_FORMAT))
+      sent = message_time(runtime_clock, local.time_zone)
+      return format(NIGHT_LINE, today: local.strftime(LONG_DATE_FORMAT)) if (sent.nil? || sent.to_date >= local.to_date) && night?(local)
+
+      format(NIGHT_MESSAGE_LINE, day: sent.strftime(LONG_DATE_FORMAT)) if sent && sent.to_date < local.to_date && night?(sent)
+    end
+
+    # "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago): ..." when the message being
+    # answered (message_sent_at of the clock) was sent on an earlier day than now; nil when it was sent today or is unknown.
+    def message_line(runtime_clock)
+      local, = local_clock(runtime_clock)
+      return if local.blank?
+
+      sent = message_time(runtime_clock, local.time_zone)
+      return if sent.nil? || sent.to_date >= local.to_date
+
+      days = (local.to_date - sent.to_date).to_i
+      format(MESSAGE_LINE, sent: sent.strftime(LONG_DATE_FORMAT), time: sent.strftime('%H:%M'), ago: days == 1 ? 'yesterday' : "#{days} days ago")
+    end
+
+    # "[Sat 24.10 09:50]": the send time of a message (a time or an ISO 8601 string) in the given zone; nil without a usable time.
+    def message_stamp(value, time_zone = nil)
+      time = value.is_a?(DateTime) ? value.to_time : parse_time(value)
+      time&.in_time_zone(zone_for(time_zone))&.strftime(STAMP_FORMAT)
+    end
+
+    # The text without a leading send stamp: one the model copied into its reply, or a stamped history text compared with a stored
+    # text. Anything that is not a string is returned as it is.
+    def unstamped(text)
+      return text unless text.is_a?(String)
+
+      text.sub(STAMP_PATTERN, '')
     end
 
     # One short line about the official WhatsApp reply window, or nil for every other channel.
@@ -101,6 +138,14 @@ class Captain::PromptClock
       return if zone.blank? || time.blank?
 
       [time.in_time_zone(zone), CITIES[zone_id] || CITIES[zone.tzinfo.name] || zone_id]
+    end
+
+    def message_time(runtime_clock, zone)
+      parse_time(runtime_clock.to_h.with_indifferent_access[:message_sent_at])&.in_time_zone(zone)
+    end
+
+    def night?(time)
+      time.hour < NIGHT_ENDS_AT_HOUR
     end
 
     def offset_label(local)

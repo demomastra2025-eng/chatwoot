@@ -149,6 +149,18 @@ RSpec.describe Captain::AgentRunContext do
         '- Booked: Терапевт Нурланова Асель, Fri 16.10.2026 09:00 (earlier)'
       )
     end
+
+    # The history writes every earlier message after its send time; the handoff record keeps the text alone.
+    it 'closes the handed-off message of an earlier turn although the history shows it after its send time' do
+      handoff = Captain::DoneActions.handoff_entry(reason: 'Нужен врач', request: 'request:earlier', user_message: 'Болит уже три дня')
+      Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation).change { |data| data['done'] = [booked, handoff] }
+      context[:conversation_history] = [{ role: :user, content: '[Sat 24.10 09:50] Болит уже три дня' }]
+
+      described_class.new(entry: entry, conversation: conversation).prepare(context)
+
+      expect(context[:conversation_history].last).to include(role: :assistant)
+      expect(context[:conversation_history].last[:content]).to start_with('Запрос передан специалистам')
+    end
   end
 
   describe 'what the model is given for the run' do

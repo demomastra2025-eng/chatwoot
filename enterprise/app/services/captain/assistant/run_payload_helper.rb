@@ -73,7 +73,7 @@ module Captain::Assistant::RunPayloadHelper
 
       {
         role: role.to_sym,
-        content: normalized_message_content(message),
+        content: stamped_content(normalized_message_content(message), message),
         agent_name: message_value(message, :agent_name),
         tool_calls: message_value(message, :tool_calls),
         tool_call_id: message_value(message, :tool_call_id)
@@ -86,6 +86,41 @@ module Captain::Assistant::RunPayloadHelper
     return content if content.is_a?(Array)
 
     extract_text_from_content(content)
+  end
+
+  # A message of the conversation (the history builders give its sent_at) starts with its send time in the zone of the run,
+  # "[Sat 24.10 09:50] Можно завтра?": the model reads a patient's "today" or "tomorrow" from the day it was written, not from the
+  # clock of the run. The message being answered is the input of the run and stays unstamped (the guardrails, the router and the
+  # lookups read its text); its time reaches the prompt as message_sent_at of the run clock (see last_user_message_sent_at).
+  def stamped_content(content, message)
+    stamp = Captain::PromptClock.message_stamp(message_value(message, :sent_at), history_time_zone)
+    return content if stamp.blank?
+    return "#{stamp} #{content}" if content.is_a?(String)
+    return content unless content.is_a?(Array)
+
+    first = content.first
+    text_key = text_part_key(first)
+    return [{ type: 'text', text: stamp }, *content] unless text_key
+
+    [first.merge(text_key => "#{stamp} #{first[text_key]}"), *content.drop(1)]
+  end
+
+  # :text or 'text' when the part is a text part, else nil.
+  def text_part_key(part)
+    return unless part.is_a?(Hash) && (part[:type] || part['type']).to_s == 'text'
+
+    part.key?(:text) ? :text : 'text'
+  end
+
+  # The send time of the message being answered (the last message of the patient), as the history builders give it; nil when the
+  # history carries no time (a Playground run, a campaign message).
+  def last_user_message_sent_at(message_history)
+    last_user_msg = message_history.reverse.find { |msg| message_role(msg) == 'user' }
+    message_value(last_user_msg, :sent_at) if last_user_msg
+  end
+
+  def history_time_zone
+    @history_time_zone ||= respond_to?(:runtime_timezone, true) ? runtime_timezone : nil
   end
 
   def message_role(message)

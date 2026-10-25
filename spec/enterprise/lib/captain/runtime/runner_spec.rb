@@ -307,6 +307,50 @@ RSpec.describe Captain::Runtime::Runner do
       expect(result.context[Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY]).to be_present
     end
 
+    # A live conversation that loops is handed to staff; a reply suggestion is a draft for the operator, so it ends with the error
+    # and the runner of the conversation writes the draft from the results so far (AgentRunnerService#finalization_only_retry_response).
+    describe 'a loop in the run of a conversation' do
+      let(:agent) { Captain::Runtime::Agent.new(name: 'assistant_agent') }
+      let(:agent_session) { Captain::Conversation::AgentSession.new(entry: build_stubbed(:captain_assistant)) }
+      let(:terminal_result) do
+        Captain::ToolResult.failure(error: 'Tool request limit reached', retryable: false, audit: { failure_reason: 'tool_request_limit' })
+      end
+      let(:tool_call) do
+        RubyLLM::Message.new(role: :assistant, content: '',
+                             tool_calls: { 'call_1' => RubyLLM::ToolCall.new(id: 'call_1', name: 'search_available_slots', arguments: {}) })
+      end
+
+      def run_conversation(source, response:, **)
+        allow(Llm::Runtime).to receive(:build_chat).and_return(RuntimeRunnerSpecChat.new(ask_response: response, complete_response: response))
+        context = { state: { source: source }, agent_session: agent_session }
+        context[Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY] = { tool_name: 'search_available_slots', result: terminal_result }
+        runner.run(agent, 'Keep searching', context: context, registry: { agent.name => agent }, llm_context: llm_context, account: account, **)
+      end
+
+      it 'is a technical failure of a live conversation: staff take it over' do
+        result = run_conversation('incoming_message', response: RubyLLM::Tool::Halt.new(Captain::ToolResult.render(terminal_result)))
+
+        expect(result.error).to be_a(described_class::TechnicalFailure)
+        expect(result.context[:technical_failure]).to include('reason' => 'tool_loop')
+      end
+
+      it 'ends a reply suggestion with the loop error and no technical failure, so its draft is still written' do
+        result = run_conversation('reply_suggestion', response: RubyLLM::Tool::Halt.new(Captain::ToolResult.render(terminal_result)))
+
+        expect(result.error).to be_a(described_class::ToolLoopStopped)
+        expect(result.context).not_to have_key(:technical_failure)
+      end
+
+      it 'treats the turn limit the same way' do
+        live = run_conversation('incoming_message', response: tool_call, max_turns: 1)
+        suggestion = run_conversation('reply_suggestion', response: tool_call, max_turns: 1)
+
+        expect(live.context[:technical_failure]).to include('reason' => 'max_turns')
+        expect(suggestion.error).to be_a(described_class::MaxTurnsExceeded)
+        expect(suggestion.context).not_to have_key(:technical_failure)
+      end
+    end
+
     it 'propagates a stale Captain response fence instead of converting it to a provider error' do
       stale_error = Captain::Conversation::ControlGenerationStaleError.new('Captain response run is stale')
       agent = Captain::Runtime::Agent.new(name: 'assistant_agent')

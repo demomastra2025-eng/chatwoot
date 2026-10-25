@@ -124,6 +124,27 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
       expect(run_context.context[described_class::CONTEXT_KEY].size).to eq(1)
     end
 
+    # A contact update read as a booking once made a draft say "the booking waits for the administrator" with no booking card.
+    it 'tells the agent exactly what waits for the operator and which cards the run prepared' do
+      account.enable_features!('crm', 'crm_tasks')
+      task = JSON.parse(described_class.intercept(tool: Captain::Tools::CreateTaskTool.new(assistant), tool_context: tool_context,
+                                                  arguments: { title: 'Перезвонить пациенту' }))
+      booking = JSON.parse(described_class.intercept(tool: create_tool, tool_context: tool_context,
+                                                     arguments: { resource_id: resource.id, service_id: service_item.id,
+                                                                  starts_at: starts_at, ends_at: ends_at }))
+
+      expect(task).to include('status' => 'pending_operator_approval', 'title' => 'Создать задачу')
+      expect(task['message']).to start_with(
+        'NOT executed. Waiting for operator approval (Allow / Deny): «Создать задачу» (not an appointment: it books, moves or cancels ' \
+        'nothing). Cards waiting in this run: «Создать задачу» (create_task).'
+      )
+      expect(booking['message']).to start_with(
+        'NOT executed. Waiting for operator approval (Allow / Deny): «Записать на приём» (a new appointment booking). ' \
+        'Cards waiting in this run: «Создать задачу» (create_task), «Записать на приём» (create_appointment).'
+      )
+      expect(booking['message']).to end_with('mention a booking, change or cancellation only when its card is listed.')
+    end
+
     it 'stores the proposal for a service with no specialist link when the account has no links at all' do
       Scheduling::ServicePrice.where(account_id: account.id).delete_all
       args = { resource_id: resource.id, service_id: service_item.id, starts_at: starts_at, ends_at: ends_at }
