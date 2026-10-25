@@ -43,6 +43,12 @@ class Captain::PromptsV2Import
     true
   end
 
+  # The file as a hash with string keys, checked against the shape in the header of this class; Refused otherwise.
+  # Captain::PromptPack reads its packs with it.
+  def payload
+    @payload ||= read_payload
+  end
+
   private
 
   # Assigns the texts of the file, prints what changes and returns the listed agents; raises Refused when a text would not be

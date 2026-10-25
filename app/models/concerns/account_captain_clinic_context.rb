@@ -4,7 +4,7 @@
 # instructions.
 #
 # It lives in internal_attributes, which no clinic-facing screen or API reads or writes: only the platform team edits it (the
-# account form of the super admin, or the onelink:captain:apply_prompts_v2 rake).
+# account form of the super admin, or the onelink:captain:apply_prompts_v2 and onelink:captain:apply_prompt_pack rakes).
 #
 # The text is shared by every agent of the clinic, so it may not mention a tool or a skill (a tool:// link would bind that tool
 # to every agent) and may link only contact fields ([ИИН пациента](field://contact.identifier)), the scope every agent can read.
