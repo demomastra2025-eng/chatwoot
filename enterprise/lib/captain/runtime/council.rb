@@ -21,6 +21,10 @@
 # Staff for a part. The owner of a part cannot call the handoff tool (see PartTools): a part that only staff can finish ends
 # unavailable, and the conversation goes to staff after the one reply.
 #
+# A reply suggestion writes nothing: an action tool only prepares an approval card for the operator (see ToolWrapper). Its parts
+# are all read-only lanes, side by side on threads, each with at most SUGGESTION_PART_MAX_TURNS turns, so that a council fits the
+# budget of the suggestion (Captain::ReplySuggestion.budget_seconds).
+#
 # A part whose owner answers that it is not its own (out_of_scope) and did nothing is decided again by the router on the part's
 # own words (one agent or staff, the first owner excluded) and runs once more with the agent it chose. No model names an agent.
 class Captain::Runtime::Council
@@ -30,6 +34,9 @@ class Captain::Runtime::Council
   PART_SEPARATOR = "\n\n"
   # A booking is: find the resource, the service and the slot, read the contact, create, verify. ToolLoopGuard allows 16 tool requests.
   PART_MAX_TURNS = 14
+  # A suggestion part prepares a card instead of verifying a write: search, slot, card, text. The slowest part (8 turns of about 8 s)
+  # plus the router, the split and the editor stay within the router budget of a suggestion (120 s).
+  SUGGESTION_PART_MAX_TURNS = 8
   THREAD_LIMIT = [ENV.fetch('CAPTAIN_COUNCIL_THREADS', 4).to_i, 1].max
   # Read-only lanes on threads, process-wide. A lane that gets no slot runs on the calling thread.
   SLOTS = Concurrent::Semaphore.new(THREAD_LIMIT)
@@ -125,6 +132,7 @@ class Captain::Runtime::Council
     @calling_thread = Thread.current
     customer_message
     staff_handoff_available?
+    suggestion?
     @shared_callbacks = serialized(@callbacks)
   end
 
@@ -144,7 +152,8 @@ class Captain::Runtime::Council
     return Plan.new(part: part) unless actor
 
     agent = part_agent(actor)
-    writer = agent.tools.any? { |tool| Llm::ToolRiskPolicy.mutating?(tool) }
+    # A suggestion part writes nothing (its action tools prepare cards): it is a reader, without the durable session.
+    writer = !suggestion? && agent.tools.any? { |tool| Llm::ToolRiskPolicy.mutating?(tool) }
     Plan.new(part: part, actor: actor, agent: agent, writer: writer, snapshot: part_snapshot(actor, part, writer))
   rescue Captain::Conversation::ControlGenerationStaleError
     raise
@@ -156,14 +165,24 @@ class Captain::Runtime::Council
   # The owner's own agent, without the tools that change who controls the conversation: a part never hands the conversation over.
   # It answers with the structured result of a part.
   def part_agent(actor)
-    suggestion = (@context.dig(:state, :source) || @context.dig(:state, 'source')).to_s == 'reply_suggestion'
-    runtime = suggestion ? actor.agent(suggestion_tools: true) : actor.agent
+    runtime = suggestion? ? actor.agent(suggestion_tools: true) : actor.agent
     tools = Captain::Runtime::PartTools.filter(runtime.tools)
     Captain::Runtime::Agent.new(
       name: runtime.name, instructions: runtime.instructions, instruction_parts: runtime.instruction_parts, tools: tools,
       model: runtime.model, temperature: runtime.temperature, headers: runtime.headers, params: runtime.params,
-      response_schema: Captain::Runtime::PartSchema, suggestion_tools: suggestion
+      response_schema: Captain::Runtime::PartSchema, suggestion_tools: suggestion?
     ).tap { |agent| agent.assistant_id = actor.id }
+  end
+
+  # Read once on the calling thread (see #prime_run_state); the threads of the parts only read it.
+  def suggestion?
+    return @suggestion if defined?(@suggestion)
+
+    @suggestion = Captain::Runtime::Runner.reply_suggestion?(@context)
+  end
+
+  def part_max_turns
+    suggestion? ? SUGGESTION_PART_MAX_TURNS : PART_MAX_TURNS
   end
 
   def fresh_actor(id)
@@ -373,7 +392,7 @@ class Captain::Runtime::Council
     plan.snapshot[:part_prior] = prior.map { |entry| entry.slice(:text, :status, :acted) }
     part_run = Captain::Runtime::Council::PartRun.new(
       agent: plan.agent, snapshot: plan.snapshot, account: @account, llm_context: @llm_context, callbacks: @shared_callbacks,
-      max_turns: PART_MAX_TURNS
+      max_turns: part_max_turns
     )
     begin
       result = part_run.call(plan.part['fragment'])
@@ -419,7 +438,8 @@ class Captain::Runtime::Council
 
   # The write of a part that ran before the run went stale is kept: the provider call already happened.
   def record_interrupted(plan, part_run)
-    return unless part_run.tracker.acted?
+    # A suggestion part wrote nothing (its cards go with the stopped run): there is nothing to keep.
+    return if suggestion? || !part_run.tracker.acted?
 
     registry.record_result!(plan.part['id'], state: 'done', summary: part_run.tracker.summary, acted: true)
   rescue StandardError => e

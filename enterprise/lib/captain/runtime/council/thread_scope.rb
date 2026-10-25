@@ -11,11 +11,13 @@ class Captain::Runtime::Council::ThreadScope
   # Playground run: a part must never deliver anything outside it.
   CURRENT_ATTRIBUTES = %i[user account account_user request_id contact suppress_runtime_events playground_run_policy].freeze
 
-  # Captured on the calling thread, before any thread starts.
+  # Captured on the calling thread, before any thread starts. The control of a reply suggestion run (its cancel, its deadline and
+  # the approval cards it prepared) is the same object on every thread of the run.
   def self.capture
     new(
       current: CURRENT_ATTRIBUTES.index_with { |name| copy(Current.public_send(name)) },
-      locale: I18n.locale, time_zone: Time.zone, event_context: Llm::EventBus.snapshot_context
+      locale: I18n.locale, time_zone: Time.zone, event_context: Llm::EventBus.snapshot_context,
+      run_control: Captain::ReplySuggestion::RunControl.current
     )
   end
 
@@ -23,20 +25,21 @@ class Captain::Runtime::Council::ThreadScope
     value.respond_to?(:deep_dup) && !value.is_a?(ActiveRecord::Base) ? value.deep_dup : value
   end
 
-  def initialize(current:, locale:, time_zone:, event_context:)
+  def initialize(current:, locale:, time_zone:, event_context:, run_control: nil)
     @current = current
     @locale = locale
     @time_zone = time_zone
     @event_context = event_context
+    @run_control = run_control
   end
 
   # Runs the block on the current thread, which must be a thread of its own: Current is reset when the block ends. The executor
   # gives the thread's database connection back to the pool when the block ends (while no transaction is open on it).
-  def run(executed_by: nil)
+  def run(executed_by: nil, &)
     Rails.application.executor.wrap do
       restore(executed_by)
-      ActiveRecord::Base.uncached do
-        Llm::EventBus.with_context(@event_context) { yield }
+      Captain::ReplySuggestion::RunControl.adopt(@run_control) do
+        ActiveRecord::Base.uncached { Llm::EventBus.with_context(@event_context, &) }
       end
     end
   ensure

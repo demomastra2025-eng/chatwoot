@@ -81,6 +81,18 @@ RSpec.describe Captain::ReplySuggestion::StartService do
       expect(record['assistant_id']).to eq(assistant.id)
     end
 
+    it 'gives a request that the router routes among two or more agents the router budget, and one agent the shorter one' do
+      create(:captain_assistant, account: account, active: true, routing_description: 'Запись к ЛОР-врачам')
+      solo = service.perform.body
+      expect(solo[:budget_seconds]).to eq(Captain::ReplySuggestion::DEFAULT_BUDGET_SECONDS)
+
+      create(:captain_assistant, account: account, active: true, routing_description: 'ЛОР-процедуры')
+      Captain::ReplySuggestion::RequestLocks.release_active(account.id, agent.id, conversation.id, solo[:suggestion_request_id])
+      routed = service.perform.body
+
+      expect(routed[:budget_seconds]).to eq(Captain::ReplySuggestion::ROUTER_BUDGET_SECONDS)
+    end
+
     it 'is the old prompt only when the account has no agent: it is then the only engine' do
       create(:captain_assistant, account: account, active: false)
 

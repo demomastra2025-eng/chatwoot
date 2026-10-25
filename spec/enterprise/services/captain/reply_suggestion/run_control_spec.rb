@@ -67,6 +67,31 @@ RSpec.describe Captain::ReplySuggestion::RunControl do
     end
   end
 
+  describe 'another thread of the same run' do
+    it 'gets the control of the run (its cancel, its deadline and its cards) and gives it back afterwards' do
+      Captain::ReplySuggestion::RequestStore.request_cancel!(request_id)
+      seen = nil
+
+      described_class.with(request_id: request_id, deadline: far_deadline) do |control|
+        Thread.new do
+          described_class.adopt(control) do
+            described_class.register_action('card-of-a-part')
+            seen = begin
+              described_class.checkpoint!(:tool)
+            rescue Captain::ReplySuggestion::RunAborted => e
+              e.kind
+            end
+          end
+          expect(described_class.current).to be_nil
+        end.join
+
+        expect(control.action_ids).to eq(['card-of-a-part'])
+      end
+
+      expect(seen).to eq(:cancelled)
+    end
+  end
+
   describe 'the cards of a run' do
     it 'collects the approval cards the run prepared' do
       described_class.with(request_id: request_id, deadline: far_deadline) do |control|

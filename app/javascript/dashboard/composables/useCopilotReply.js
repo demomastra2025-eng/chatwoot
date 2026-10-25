@@ -29,7 +29,9 @@ const REWRITE_ACTIONS = [
 ];
 
 const REPLY_SUGGESTION_ACTION = 'reply_suggestion';
-const DEFAULT_BUDGET_SECONDS = 60;
+// Until the server tells the budget of the run (60 s for one agent, 120 s
+// when the router chooses among several agents and may call a council).
+const DEFAULT_BUDGET_SECONDS = 120;
 // A new suggestion right after «Отменить» waits this long at most for the
 // cancel to reach the server, so that the cancelled run is not reused.
 const CANCEL_WAIT_MS = 2000;

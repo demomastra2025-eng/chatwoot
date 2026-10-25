@@ -23,6 +23,15 @@ class Captain::ReplySuggestion::RunControl
       ActiveSupport::IsolatedExecutionState[STATE_KEY]
     end
 
+    # The control of the run on another thread of the same run (see Captain::Runtime::Council::ThreadScope); nil sets none.
+    def adopt(control)
+      previous = ActiveSupport::IsolatedExecutionState[STATE_KEY]
+      ActiveSupport::IsolatedExecutionState[STATE_KEY] = control
+      yield
+    ensure
+      ActiveSupport::IsolatedExecutionState[STATE_KEY] = previous
+    end
+
     def checkpoint!(stage)
       current&.checkpoint!(stage)
     end
@@ -37,20 +46,20 @@ class Captain::ReplySuggestion::RunControl
     @request_id = request_id
     @deadline = deadline
     @cancel_checked_at = nil
+    @cancelled = false
     @action_ids = []
+    # The parts of a council may run on threads of their own (see Captain::Runtime::Council::ThreadScope).
+    @lock = Mutex.new
   end
 
   def checkpoint!(stage)
     now = monotonic_now
     raise Captain::ReplySuggestion::RunAborted.new(:deadline, stage) if now >= @deadline
-    return if @cancel_checked_at && now - @cancel_checked_at < Captain::ReplySuggestion::CANCEL_CHECK_INTERVAL
-
-    @cancel_checked_at = now
-    raise Captain::ReplySuggestion::RunAborted.new(:cancelled, stage) if Captain::ReplySuggestion::RequestStore.cancel_requested?(@request_id)
+    raise Captain::ReplySuggestion::RunAborted.new(:cancelled, stage) if cancelled?(now)
   end
 
   def register_action(action_id)
-    @action_ids << action_id.to_s if action_id.present? && @action_ids.exclude?(action_id.to_s)
+    @lock.synchronize { @action_ids << action_id.to_s if action_id.present? && @action_ids.exclude?(action_id.to_s) }
   end
 
   def seconds_left
@@ -58,6 +67,17 @@ class Captain::ReplySuggestion::RunControl
   end
 
   private
+
+  # Redis is asked at most once per CANCEL_CHECK_INTERVAL, whichever thread asks; a cancel once seen stays seen.
+  def cancelled?(now)
+    @lock.synchronize do
+      return true if @cancelled
+      return false if @cancel_checked_at && now - @cancel_checked_at < Captain::ReplySuggestion::CANCEL_CHECK_INTERVAL
+
+      @cancel_checked_at = now
+      @cancelled = Captain::ReplySuggestion::RequestStore.cancel_requested?(@request_id)
+    end
+  end
 
   def monotonic_now
     Process.clock_gettime(Process::CLOCK_MONOTONIC)
