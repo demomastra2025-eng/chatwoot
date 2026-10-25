@@ -62,9 +62,10 @@ class Api::V1::Accounts::TelegramPersonalChannelsController < Api::V1::Accounts:
     render 'api/v1/accounts/inboxes/show'
   end
 
+  # The gateway reports its whole snapshot of the channel, the session string included: it never leaves the server
   def diagnostics
     sync_channel!
-    render json: gateway_client.diagnostics
+    render json: Inbox::RuntimeStatePresenter.telegram_personal_diagnostics(gateway_client.diagnostics)
   end
 
   private

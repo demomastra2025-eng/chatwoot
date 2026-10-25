@@ -286,6 +286,18 @@ RSpec.describe 'Inboxes API', type: :request do
           expect(state['history_sync_checkpoint'].keys).not_to include('dialog_user_ids', 'last_completed_dialog_id')
         end
 
+        # A hash stored before the channel dropped it (Channel::TelegramPersonal::SECRET_RUNTIME_KEYS) is not shown either
+        it 'never shows the hash of a pending Telegram login code, to an administrator or an agent', :aggregate_failures do
+          # rubocop:disable Rails/SkipsModelValidations
+          telegram_inbox.channel.update_column(:runtime_state, telegram_runtime_state.merge('pending_phone_code_hash' => 'stored-code-hash'))
+          # rubocop:enable Rails/SkipsModelValidations
+
+          [admin, agent].each do |user|
+            expect(runtime_state_of(telegram_inbox, user).keys).not_to include('pending_phone_code_hash')
+            expect(response.body).not_to include('stored-code-hash')
+          end
+        end
+
         it 'shows an agent the Telegram state without the login link, the ignored chats or the dialog ids', :aggregate_failures do
           state = runtime_state_of(telegram_inbox, agent)
 
