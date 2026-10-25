@@ -186,6 +186,18 @@ RSpec.describe 'Super Admin Audits', type: :request do
         expect(response.body).to include("Партнёр: №#{partner.id}")
       end
 
+      it 'never shows the secret of a channel stored in an older entry of an inbox', :aggregate_failures do
+        inbox = create(:inbox, account: account)
+        Audited::Audit.create!(auditable: inbox, associated: account, action: 'update',
+                               audited_changes: { 'string_session' => [nil, 'stored-telethon-session'], 'name' => %w[A B] })
+
+        get '/super_admin/audits'
+
+        row = Nokogiri::HTML(response.body).css('tbody tr').find { |tr| tr.text.include?('[FILTERED]') }
+        expect(row.text).to include("##{inbox.id}", 'Изменения (полей: 2)')
+        expect(response.body).not_to include('stored-telethon-session')
+      end
+
       it 'shows an entry that has no object (an unknown e-mail at the sign-in) with the typed e-mail and a dash' do
         Audited::Audit.create!(auditable: nil, action: 'super_admin_login_failed', audited_changes: { 'reason' => 'unknown_email' },
                                user: 'nobody@example.com', comment: 'system')
