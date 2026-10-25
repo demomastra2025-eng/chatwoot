@@ -40,6 +40,19 @@ class Captain::Runtime::DecisionRouter::Smoke
     rows.all?(&:ok)
   end
 
+  # The accounts that route: a channel of theirs (the inbox of an agent) gives the router two or more candidates. Each is checked
+  # with its own key and budget, so a green check means every clinic can route. In the order of their ids.
+  def self.routed_accounts
+    ids = CaptainInbox.includes(:inbox, :captain_assistant).filter_map do |link|
+      next if link.inbox.nil? || link.captain_assistant.nil?
+
+      link.captain_assistant.account_id unless Captain::AgentGraph.new(link.captain_assistant, inbox: link.inbox).solo?
+    rescue StandardError
+      nil
+    end
+    Account.where(id: ids.uniq).order(:id).to_a
+  end
+
   private
 
   def chain_row(model, position)

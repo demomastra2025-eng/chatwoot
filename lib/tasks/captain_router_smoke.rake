@@ -6,22 +6,25 @@
 #
 #   bundle exec rake captain:router_smoke [ACCOUNT_ID=<id>]
 #
-# ACCOUNT_ID: the account the calls are made for (its OpenRouter key and budget); by default the account of the first agent.
-# The monitoring queries for the router are in script/onelink/DECISION_ROUTER_MONITORING.md.
+# By default every account that routes (a channel whose agents give the router two or more candidates, see
+# Captain::Runtime::DecisionRouter::Smoke.routed_accounts) is checked with its own OpenRouter key and budget; ACCOUNT_ID checks one
+# account. The monitoring queries for the router are in script/onelink/DECISION_ROUTER_MONITORING.md.
 namespace :captain do
   desc 'Smoke-check the decision router: one real decision per chain model and the escalation model (prints model, latency, ok/fail)'
   task router_smoke: :environment do
-    account = if ENV['ACCOUNT_ID'].present?
-                Account.find(ENV['ACCOUNT_ID'])
-              else
-                Captain::Assistant.order(:id).first&.account || abort('No account with an agent: pass ACCOUNT_ID')
-              end
-    Llm::Config.initialize!
-    rows = Captain::Runtime::DecisionRouter::Smoke.new(account: account).call
-    puts "Router smoke account_id=#{account.id}"
-    rows.each { |row| puts row }
-    abort('Router smoke failed') unless Captain::Runtime::DecisionRouter::Smoke.ok?(rows)
+    smoke = Captain::Runtime::DecisionRouter::Smoke
+    accounts = ENV['ACCOUNT_ID'].present? ? [Account.find(ENV['ACCOUNT_ID'])] : smoke.routed_accounts
+    abort('No account routes among two or more agents: pass ACCOUNT_ID') if accounts.empty?
 
-    puts 'Router smoke ok'
+    Llm::Config.initialize!
+    failed = accounts.reject do |account|
+      rows = smoke.new(account: account).call
+      puts "Router smoke account_id=#{account.id}"
+      rows.each { |row| puts row }
+      smoke.ok?(rows)
+    end
+    abort("Router smoke failed for account_id=#{failed.map(&:id).join(',')}") if failed.any?
+
+    puts "Router smoke ok accounts=#{accounts.size}"
   end
 end

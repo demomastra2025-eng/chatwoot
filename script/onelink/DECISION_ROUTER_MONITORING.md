@@ -21,9 +21,10 @@ bundle exec rake captain:router_smoke [ACCOUNT_ID=<id>]
 модели эскалации на синтетическом ходе (два выдуманных агента, выдуманное сообщение). Строка на модель: роль, модель, `ok` с
 решением или `fail` с классом ошибки, задержка в мс. Ключи, промпты и тексты не печатаются. Код выхода 1, если хоть одна
 строка `fail`: одна упавшая модель цепочки ещё не останавливает ходы (решает следующая), но её нужно разобрать до того, как
-упадёт следующая. По умолчанию вызовы идут от аккаунта первого агента (его ключ OpenRouter и бюджет); `ACCOUNT_ID` задаёт
-другой. Вызовы записываются как обычные события решений этого аккаунта (`llm.decision.complete`, у эскалации
-`llm.chat.complete`) и тратят его бюджет (доли цента).
+упадёт следующая. По умолчанию проверяется каждый аккаунт, который маршрутизирует (у его канала два и больше агентов-кандидатов),
+от его собственного ключа OpenRouter и бюджета: зелёная проверка значит, что маршрутизировать может каждая клиника; `ACCOUNT_ID`
+проверяет один аккаунт. Вызовы записываются как обычные события решений этого аккаунта (`llm.decision.complete`, у эскалации
+`llm.chat.complete`) и тратят его бюджет (доли цента на аккаунт).
 
 ## 2. Сигналы
 
@@ -42,23 +43,24 @@ GROUP BY 1, 2, 3 ORDER BY 1 DESC;
 ```
 
 Отказы маршрутизатора во всех ходах (живые диалоги и подсказки; `reason`: `decision_chain_unavailable`,
-`escalation_unavailable`, `escalation_invalid`; `models_tried` — какие модели пробовали):
+`escalation_unavailable`, `escalation_invalid`; `models_tried` — какие модели пробовали). `reason` хранится в колонке
+`llm_events.reason`, не в `payload`:
 
 ```sql
-SELECT date_trunc('hour', created_at) AS hour, payload->>'run_source' AS run_source, payload->>'reason' AS reason,
+SELECT date_trunc('hour', created_at) AS hour, payload->>'run_source' AS run_source, reason,
        payload->'models_tried' AS models_tried, count(*)
 FROM llm_events
 WHERE event_name = 'captain.agent.routing_failed' AND created_at > now() - interval '24 hours'
 GROUP BY 1, 2, 3, 4 ORDER BY 1 DESC;
 ```
 
-Какая модель решает, доля эскалаций и задержка (`run_source` `reply_suggestion` — подсказки, `live` — диалоги; `settled`
-`short_reply`/`default` — подсказка не ушла на эскалацию: короткий ответ остался у ведущего агента или ход без услуги
-достался ведущему агенту/якорю):
+Какая модель решает, доля эскалаций и задержка (`run_source` `reply_suggestion` — подсказки, `live` — диалоги;
+`default_to` у подсказки — ответы не назвали ни одного агента, и ход достался ведущему агенту `current` или якорю канала
+`anchor`; такие решения проходят тот же порог уверенности и ту же эскалацию, что и все остальные):
 
 ```sql
 SELECT payload->>'run_source' AS run_source, payload->>'decided_by' AS decided_by, payload->>'chain_position' AS position,
-       payload->>'settled' AS settled, count(*),
+       payload->>'default_to' AS default_to, count(*),
        percentile_cont(0.5) WITHIN GROUP (ORDER BY (payload->>'latency_total_ms')::int) AS p50_ms,
        percentile_cont(0.95) WITHIN GROUP (ORDER BY (payload->>'latency_total_ms')::int) AS p95_ms
 FROM llm_events
@@ -72,6 +74,10 @@ GROUP BY 1, 2, 3, 4 ORDER BY 5 DESC;
 
 ## 3. Бюджет подсказки
 
-Подсказка клиники с двумя и более агентами получает 120 с (`CAPTAIN_SUGGESTION_ROUTER_BUDGET_SECONDS`, 30–180), с одним
-агентом — 60 с (`CAPTAIN_SUGGESTION_BUDGET_SECONDS`). В 120 с помещается консилиум: маршрутизатор (цепочка 6,5 с и эскалация
-15 с), разрезание (4 с), части параллельно (не больше 8 ходов каждая) и редактор (15 с).
+Подсказка клиники с двумя и более агентами начинается со 120 с (`CAPTAIN_SUGGESTION_ROUTER_BUDGET_SECONDS`, 30–180), с одним
+агентом — 60 с (`CAPTAIN_SUGGESTION_BUDGET_SECONDS`). Когда маршрутизатор выбрал одного агента или сотрудника, от решения
+остаётся бюджет одного агента (60 с). Консилиум сохраняет 120 с: его части идут параллельно (без свободного потока — по
+очереди), и у них свой срок — за 18 с до конца подсказки, чтобы успел редактор. Часть, которая не уложилась (медленная модель,
+цепочка зависимых частей, повторный запуск после нового решения маршрутизатора), останавливается как техническая ошибка этой
+части: подсказка отвечает остальными частями и называет менеджеру остановленную. Повторное решение для части «не моё»
+принимается, только пока успевают маршрутизатор и короткий запуск (36,5 с).
