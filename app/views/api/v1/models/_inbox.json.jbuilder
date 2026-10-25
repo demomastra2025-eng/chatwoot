@@ -173,7 +173,7 @@ if resource.telegram_personal?
   json.lifecycle_state resource.channel.try(:lifecycle_state)
   json.last_error resource.channel.try(:last_error)
   json.last_synced_at resource.channel.try(:last_synced_at)
-  json.runtime_state resource.channel.try(:runtime_state_payload)
+  json.runtime_state Inbox::RuntimeStatePresenter.for(resource.channel, administrator: Current.account_user&.administrator? == true)
 end
 
 if resource.weixin?
@@ -183,7 +183,7 @@ if resource.weixin?
   json.lifecycle_state resource.channel.try(:lifecycle_state)
   json.last_error resource.channel.try(:last_error)
   json.last_synced_at resource.channel.try(:last_synced_at)
-  json.runtime_state resource.channel.try(:runtime_state)
+  json.runtime_state Inbox::RuntimeStatePresenter.for(resource.channel, administrator: Current.account_user&.administrator? == true)
 end
 
 if resource.vk_community?
