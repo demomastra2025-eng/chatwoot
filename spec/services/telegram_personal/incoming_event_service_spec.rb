@@ -143,6 +143,21 @@ RSpec.describe TelegramPersonal::IncomingEventService do
         expect(channel.inbox.messages.count).to eq(1)
       end
 
+      # The skip and the importer decide the same way (TelegramPersonal::ChatType): without a chat type, is_group makes a group
+      it 'takes a group without a chat type for a group, never for the private chat of the service account' do
+        group_post = message_payload('message.created', '-100700', chat_type: nil, is_group: true, peer_user_id: '777000',
+                                                                   sender_id: '777000', chat_title: 'Clinic news')
+
+        described_class.new(channel: channel, payload: group_post).perform
+        expect(channel.inbox.messages.count).to eq(0)
+
+        channel.update!(runtime_state: channel.runtime_state_payload.merge('sync_groups' => true))
+        described_class.new(channel: channel, payload: group_post).perform
+
+        expect(channel.inbox.messages.count).to eq(1)
+        expect(channel.inbox.contact_inboxes.pluck(:source_id)).to eq(['-100700'])
+      end
+
       it 'keeps the chat of a person with the same text and a group post forwarded by the service account' do
         channel.update!(runtime_state: channel.runtime_state_payload.merge('sync_groups' => true))
         group_post = message_payload(

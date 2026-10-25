@@ -31,12 +31,13 @@ class TelegramPersonal::IncomingMessageService
     private_chat? || (group_chat? && inbox.channel.respond_to?(:sync_groups?) && inbox.channel.sync_groups?)
   end
 
+  # The same decision as the skip of Telegram's service account (TelegramPersonal::ChatType)
   def private_chat?
-    params[:chat_type].to_s.in?(%w[private user private_chat]) || params[:chat_type].blank?
+    TelegramPersonal::ChatType.private?(params)
   end
 
   def group_chat?
-    params[:chat_type].to_s.in?(%w[group supergroup])
+    TelegramPersonal::ChatType.group?(params)
   end
 
   def find_existing_message
