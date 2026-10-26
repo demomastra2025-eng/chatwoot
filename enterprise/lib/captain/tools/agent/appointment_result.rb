@@ -17,8 +17,9 @@ class Captain::Tools::Agent::AppointmentResult
                               'ask the patient only when two services fit equally.'.freeze
   SERVICE_LIST_PARTIAL = 'The list is partial: search_scheduling_services finds the others.'.freeze
   # A service the clinic system has no code for, named in a booking or a move of a reply suggestion (see ActionApprovalService): no card
-  # was prepared and nothing was written. The agent books without the service (staff choose it). Only the failure of that check is
-  # corrected by the agent: the same code from the write itself (Scheduling::Appointments::UpsertService) stays a technical failure.
+  # was prepared and nothing was written. The agent books without the service (staff choose it). Only the failure of that check carries
+  # this wording: the same code from the write itself (Scheduling::Appointments::UpsertService) is a business answer too, the general
+  # one of INPUT_FAILURE_GUIDANCE (retry without the service or pick another one).
   SERVICE_UNMAPPED_CODE = 'MEDELEMENT_SERVICE_UNMAPPED'.freeze
   SERVICE_UNMAPPED_GUIDANCE = 'That service is not linked to the clinic system, so a booking cannot name it. Retry the same call ' \
                               'without service_id: staff choose the service. If the call without service_id is refused as well (for ' \
@@ -66,6 +67,9 @@ class Captain::Tools::Agent::AppointmentResult
     'INVALID_DATE_RANGE' => 'Choose an end time after the start and keep the search range within 31 days.',
     'INVALID_SERVICE_ID' => 'Use an integer service_id returned by search_scheduling_services.',
     'UNKNOWN_SERVICE' => 'Search the service catalog again and use a returned service_id.',
+    'MEDELEMENT_SERVICE_UNMAPPED' => 'This service is not linked to the clinic\'s MedElement. Retry the call without service_id ' \
+                                     '(the operator will set the service) or choose another service returned by search_scheduling_services; ' \
+                                     'do not retry with the same service_id.',
     'PROVIDER_UNAVAILABLE' => 'Provider availability is unknown. Ask staff to help; do not claim the slot is free or repeat an uncertain write.',
     'INTERNAL_FAILURE' => 'Scheduling could not be completed. Ask staff to help; do not repeat an uncertain provider write.'
   }.freeze
@@ -285,7 +289,8 @@ class Captain::Tools::Agent::AppointmentResult
   private_class_method :off_grid_failure
 
   # A service without a code in the clinic system, refused by the check of a reply suggestion before any card: the agent retries
-  # without the service. The same code raised by the write itself carries no mutation_executed: false and is not corrected here.
+  # without the service. The same code raised by the write itself carries no mutation_executed: false and falls through to the general
+  # answer of INPUT_FAILURE_GUIDANCE.
   def self.service_unmapped_failure(error)
     return unless error.is_a?(::Scheduling::Error) && error.code.to_s == SERVICE_UNMAPPED_CODE
     return unless error.details.to_h.with_indifferent_access[:mutation_executed] == false

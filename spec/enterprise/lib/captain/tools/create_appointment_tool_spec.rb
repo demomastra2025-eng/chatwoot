@@ -347,6 +347,37 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     expect(conversation.messages.outgoing.where(private: false)).to be_empty
   end
 
+  it 'answers a service that is not linked to MedElement as a business failure the agent corrects, and writes nothing' do
+    stub_provider_availability
+    hook_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    create(:integrations_hook, :medelement, account: account, settings: hook_settings)
+    resource = create(
+      :scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 30,
+                            custom_attributes: { 'medelement_specialist_code' => 'specialist-1',
+                                                 'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }] }
+    )
+    contact = create(:contact, account: account, name: 'Aruzhan', last_name: 'Testova', phone_number: '+77011234567')
+    conversation = create(:conversation, account: account, contact: contact, status: :pending)
+    unmapped = create(:scheduling_service, account: account, duration_min: 30)
+    create(:scheduling_work_rule, resource: resource, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60)
+    create(:scheduling_service_price, account: account, service: unmapped, resource: resource, active: true, price: 20_000)
+    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, contact: { id: contact.id } })
+
+    output = tool.perform(tool_context, resource_id: resource.id, service_id: unmapped.id, duration_min: 30,
+                                        starts_at: Time.zone.parse('2026-04-20 09:00:00 +0500').iso8601,
+                                        custom_attributes: { medelement_cabinet_code: 'cabinet-1' })
+
+    expect(JSON.parse(output)).to include(
+      'success' => false, 'code' => 'MEDELEMENT_SERVICE_UNMAPPED', 'error_class' => 'business',
+      'correction' => Captain::Tools::Agent::AppointmentResult::INPUT_FAILURE_GUIDANCE.fetch('MEDELEMENT_SERVICE_UNMAPPED')
+    )
+    expect(Captain::Runtime::ToolFailure.classify(output)).to eq('business')
+    expect(Captain::Runtime::ToolFailure.outcome(output)).to eq('not_executed')
+    expect(account.scheduling_appointments.count).to eq(0)
+    expect(Integrations::Medelement::ProviderCommand.where(account_id: account.id).count).to eq(0)
+    expect_conversation_untouched(conversation)
+  end
+
   describe 'a booking at a start the patient already has with this specialist' do
     let(:resource) { create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 30) }
     let(:contact) { create(:contact, account: account) }

@@ -236,7 +236,8 @@ RSpec.describe Captain::Tools::Agent::AppointmentResult do
       Scheduling::Error.new(code: 'VALIDATION_ERROR', message: 'x', status: :unprocessable_content),
       Scheduling::Error.new(code: 'APPOINTMENT_NOT_FOUND', message: 'x', status: :not_found),
       ArgumentError.new('Record is not available'),
-      Scheduling::Error.new(code: 'INVALID_DATE', message: 'x', status: :unprocessable_content)
+      Scheduling::Error.new(code: 'INVALID_DATE', message: 'x', status: :unprocessable_content),
+      Scheduling::Error.new(code: 'MEDELEMENT_SERVICE_UNMAPPED', message: 'x', status: :unprocessable_content)
     ]
     technical = [
       Scheduling::Error.new(code: 'MEDELEMENT_WRITE_FAILED', message: 'x', status: :unprocessable_content),
@@ -443,12 +444,15 @@ RSpec.describe Captain::Tools::Agent::AppointmentResult do
       expect(Captain::Runtime::ToolFailure.business_answer?(output)).to be(true)
     end
 
-    it 'stays a technical failure when the write itself raised it: the agent does not book again without the service' do
+    it 'gives the write that raised it the general answer, not the wording of the check: the agent picks another service' do
       written = Scheduling::Error.new(code: 'MEDELEMENT_SERVICE_UNMAPPED', message: 'Selected services must be linked to Medelement',
                                       status: :unprocessable_content)
+      payload = described_class.failure(written)
 
-      expect(described_class.failure(written)).to eq(success: false, reason: 'staff_will_help', error_class: 'technical')
-      expect(Captain::Runtime::ToolFailure.technical?(described_class.failure_output(written))).to be(true)
+      expect(payload).to eq(success: false, reason: 'medelement_service_unmapped', code: 'MEDELEMENT_SERVICE_UNMAPPED',
+                            correction: described_class::INPUT_FAILURE_GUIDANCE.fetch('MEDELEMENT_SERVICE_UNMAPPED'), error_class: 'business')
+      expect(payload[:correction]).not_to eq(described_class::SERVICE_UNMAPPED_GUIDANCE)
+      expect(Captain::Runtime::ToolFailure.technical?(described_class.failure_output(written))).to be(false)
     end
   end
 
@@ -474,6 +478,43 @@ RSpec.describe Captain::Tools::Agent::AppointmentResult do
       expect(result).to include(success: false, retryable: false, error: include('nearest_starts'),
                                 data: include(code: 'START_OFF_GRID', nearest_starts: nearest))
       expect(Captain::Runtime::ToolFailure.classify(output)).to eq('business')
+    end
+  end
+
+  describe 'a booking with a service that is not linked to MedElement for a MedElement specialist' do
+    let(:error) do
+      Scheduling::Error.new(code: 'MEDELEMENT_SERVICE_UNMAPPED', message: 'Selected services must be linked to Medelement',
+                            status: :unprocessable_content)
+    end
+
+    it 'is a business answer with a correction for the agent, never a technical staff_will_help failure' do
+      payload = described_class.failure(error)
+
+      expect(payload).to include(success: false, reason: 'medelement_service_unmapped', code: 'MEDELEMENT_SERVICE_UNMAPPED',
+                                 error_class: 'business')
+      expect(payload[:correction]).to include("not linked to the clinic's MedElement", 'without service_id', 'search_scheduling_services')
+      expect(payload.to_json).not_to include('Selected services must be linked')
+    end
+
+    it 'reaches the agent as a failure it can correct in the same run, and the runtime reads it as a business answer' do
+      output = described_class.failure_output(error)
+      result = Captain::ToolResult.normalize(output)
+
+      expect(result).to include(success: false, retryable: false)
+      expect(JSON.parse(output)).to include('code' => 'MEDELEMENT_SERVICE_UNMAPPED', 'error_class' => 'business',
+                                            'correction' => described_class::INPUT_FAILURE_GUIDANCE.fetch('MEDELEMENT_SERVICE_UNMAPPED'))
+      expect(Captain::Runtime::ToolFailure.classify(output)).to eq('business')
+      expect(Captain::Runtime::ToolFailure.business_answer?(output)).to be(true)
+      expect(Captain::Runtime::ToolFailure.outcome(output)).to eq('not_executed')
+    end
+
+    it 'carries the nothing-was-written audit when the error says so' do
+      checked = Scheduling::Error.new(code: 'MEDELEMENT_SERVICE_UNMAPPED', message: 'x', status: :unprocessable_content,
+                                      details: { mutation_executed: false })
+      result = Captain::ToolResult.normalize(described_class.failure_output(checked))
+
+      expect(result).to include(success: false, audit: include(error_class: 'business', failure_stage: 'tool_arguments', mutation_executed: false),
+                                data: include(code: 'MEDELEMENT_SERVICE_UNMAPPED', error_class: 'business'))
     end
   end
 end

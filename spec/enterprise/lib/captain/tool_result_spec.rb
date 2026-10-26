@@ -18,6 +18,15 @@ RSpec.describe Captain::ToolResult do
       expect(described_class.render(payload)).to eq(payload)
     end
 
+    it 'keeps every input failure of the appointment tools a failure when the tool renders it as compact text' do
+      Captain::Tools::Agent::AppointmentResult::INPUT_FAILURE_GUIDANCE.each do |code, correction|
+        payload = JSON.generate(success: false, reason: code.downcase, code: code, correction: correction, error_class: 'business')
+
+        expect(described_class.normalize(payload)).to include(success: false, retryable: false), code
+        expect(described_class.render(payload)).to eq(payload), code
+      end
+    end
+
     it 'wraps plain strings as success messages' do
       result = described_class.normalize('Done')
 
