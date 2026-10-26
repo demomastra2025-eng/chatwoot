@@ -81,13 +81,29 @@ RSpec.describe Captain::Runtime::DecisionRouter do
       expect(router.decide).to have_attributes(key: 'council_84_119', kind: 'council', agent_ids: [84, 119], confidence: 0.46)
     end
 
-    it 'gives staff only when human_handoff is the most probable route_mode, at any probability' do
+    it 'gives staff only when human_handoff is the most probable route_mode, at any probability, for a message that asks for a person' do
       unsure = { 'route_mode' => { 'human_handoff' => 0.45, 'route_agent' => 0.55 } }.merge(includes(84 => 0.7))
       low = { 'route_mode' => { 'human_handoff' => 0.4, 'route_agent' => 0.35, 'council' => 0.25 } }
       answer_chain(chain_answer('human_handoff', probabilities: unsure), chain_answer('human_handoff', confidence: 0.4, probabilities: low))
+      asking = Captain::Runtime::RoutingSnapshot.new(agents: agents, latest_message: 'Соедините с оператором', human_available: true)
+      staff_router = described_class.new(asking, account: account)
 
-      expect(router.decide).to have_attributes(key: 'route_agent_84', kind: 'agent')
-      expect(router.decide).to have_attributes(key: 'human_handoff', kind: 'human', agent_ids: [], confidence: 0.4)
+      expect(staff_router.decide).to have_attributes(key: 'route_agent_84', kind: 'agent')
+      expect(staff_router.decide).to have_attributes(key: 'human_handoff', kind: 'human', agent_ids: [], confidence: 0.4)
+    end
+
+    # Suggestion eval 26.10 (c78-1250261): the first message of a dialog, a question about free times for a child, got human_handoff
+    # (0.71) from the decision model, and the dialog never reached an agent.
+    it 'routes a human_handoff of the model for a question about free times to the most probable agent, which can still hand over' do
+      mode = { 'route_mode' => { 'human_handoff' => 0.71, 'route_agent' => 0.25, 'council' => 0.04 } }
+      answer_chain(chain_answer('human_handoff', probabilities: mode.merge(includes(84 => 0.64, 119 => 0.2, 120 => 0.1))))
+      question = Captain::Runtime::RoutingSnapshot.new(
+        agents: agents, latest_message: 'Есть окно сегодня или завтра для ребёнка к ЛОРу?', human_available: true
+      )
+
+      decision = described_class.new(question, account: account).decide
+
+      expect(decision).to have_attributes(key: 'route_agent_84', kind: 'agent', agent_ids: [84], confidence: 0.71, first_message: true)
     end
 
     it 'routes to the agent with the highest include probability, even when every include answer is no' do

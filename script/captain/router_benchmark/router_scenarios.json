@@ -134,7 +134,12 @@
             { "role": "patient", "text": "Здравствуйте, хочу записаться на УЗИ малого таза" },
             { "role": "agent", "agent_id": 109, "text": "Записали вас на УЗИ малого таза на завтра в 10:00 к Салимовой К.В." },
             { "role": "agent", "text": "Перед приёмом гинеколога нужно сдать анализ крови на гормоны. Записать вас на сдачу завтра в 9:30, до УЗИ?" } ],
-          "message": "Да, давайте", "expected": "route_agent_108" }
+          "message": "Да, давайте", "expected": "route_agent_108" },
+        { "id": "A20", "title": "a plain question about free times for a child as the first message goes to the doctors' agent, never to staff", "current": null, "history": [],
+          "message": "Здравствуйте, у вас на сегодня или завтра есть окно для ребёнка к педиатру?", "expected": "route_agent_77" },
+        { "id": "A21", "trap": "human", "title": "a request for an operator", "current": 77,
+          "history": [ { "role": "agent", "agent_id": 77, "text": "Подскажите, на какой день вам удобно?" } ],
+          "message": "Соедините с оператором", "expected": "human_handoff" }
       ]
     },
     {
@@ -258,7 +263,12 @@
             { "role": "patient", "text": "Да, на пятницу" },
             { "role": "agent", "agent_id": 113, "text": "Записали вас на УЗИ брюшной полости в пятницу в 11:00." },
             { "role": "agent", "text": "По результатам УЗИ можно сразу попасть к гастроэнтерологу: в пятницу есть время в 12:00. Записать вас?" } ],
-          "message": "Иә, жазыңыз", "expected": "route_agent_85" }
+          "message": "Иә, жазыңыз", "expected": "route_agent_85" },
+        { "id": "I20", "title": "a plain question about free times for a child as the first message goes to the doctors' agent, never to staff", "current": null, "history": [],
+          "message": "Здравствуйте, есть окно на сегодня или завтра для ребёнка к детскому неврологу?", "expected": "route_agent_85" },
+        { "id": "I21", "trap": "human", "title": "a request for an operator", "current": 113,
+          "history": [ { "role": "agent", "agent_id": 113, "text": "Подскажите, на какой день вам удобно?" } ],
+          "message": "Соедините с оператором", "expected": "human_handoff" }
       ]
     },
     {
@@ -370,7 +380,15 @@
           "history": [
             { "role": "patient", "text": "Ертеңге «Кукушка» жасатқым келеді" },
             { "role": "agent", "text": "Ертең 17:00-де бос уақыт бар. Ертең 17:00-ге жазайық па?" } ],
-          "message": "Жарайды", "expected": "route_agent_119" }
+          "message": "Жарайды", "expected": "route_agent_119" },
+        { "id": "SZ21", "title": "a plain question about free times for a child as the first message goes to the doctors' agent, never to staff", "current": null, "history": [],
+          "message": "Здравствуйте, у вас на сегодня или завтра есть окно для ребёнка к детскому ЛОРу?", "expected": "route_agent_84" },
+        { "id": "SZ22", "trap": "human", "title": "a request for an operator", "current": 84,
+          "history": [ { "role": "agent", "agent_id": 84, "text": "Подскажите, на какой день вам удобно?" } ],
+          "message": "Соедините с оператором", "expected": "human_handoff" },
+        { "id": "SZ23", "trap": "human", "title": "a Kazakh request for an operator", "current": 84, "language": "kk",
+          "history": [ { "role": "agent", "agent_id": 84, "text": "Қай күні ыңғайлы?" } ],
+          "message": "Оператормен байланыстырыңызшы", "expected": "human_handoff" }
       ]
     }
   ]

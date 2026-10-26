@@ -12,6 +12,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   let!(:doctors) { create(:captain_assistant, account: account, name: 'Врачи', routing_description: 'Запись к ЛОР-врачам', config: tools) }
   let!(:procedures) { create(:captain_assistant, account: account, name: 'Процедуры', routing_description: 'ЛОР-процедуры', config: tools) }
   let(:history) { [{ role: 'user', content: 'Сәлеметсіз бе, ертеңге ЛОР дәрігеріне жазылуға бола ма?' }] }
+  let(:staff_history) { [{ role: 'user', content: 'Соедините меня с оператором, пожалуйста' }] }
   let(:runs) { [] }
   let(:councils) { [] }
   let(:events) { [] }
@@ -86,13 +87,25 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     session.update_routing(actor_id: procedures.id)
     decide('human_handoff', confidence: 0.95)
 
-    response = service.generate_response(message_history: history)
+    response = service.generate_response(message_history: staff_history)
 
     expect(runs).to be_empty
     expect(response).to include('response' => 'conversation_handoff', 'handoff_authorized' => true, 'routing_handoff' => true,
                                 'agent_name' => "assistant_#{procedures.id}", 'agent_id' => procedures.id)
     expect(session.read['current_assistant_id']).to eq(procedures.id)
     expect(session.read['done'].last).to include('tool' => Captain::DoneActions::HANDOFF_TOOL)
+  end
+
+  # Suggestion eval 26.10: the decision model answered human_handoff for a question about free times, the first message of a dialog.
+  it 'runs the most probable agent when the decision model chooses staff for a message that asks for no person' do
+    decide('human_handoff', yes: [doctors.id], confidence: 0.71)
+
+    response = service.generate_response(message_history: history)
+
+    expect(runs).to eq([{ agent: "assistant_#{doctors.id}", input: history.last[:content] }])
+    expect(response).to include('response' => "Ответ assistant_#{doctors.id}", 'agent_id' => doctors.id)
+    expect(response).not_to include('routing_handoff' => true)
+    expect(routed_event).to include('decision_key' => "route_agent_#{doctors.id}", 'kind' => 'agent', 'first_message' => true)
   end
 
   it 'ends the turn through the technical-failure path when every decision model fails' do
@@ -189,7 +202,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     decide('human_handoff', confidence: 0.95)
     suggestion = described_class.new(assistant: doctors, conversation: conversation, source: 'reply_suggestion')
 
-    response = suggestion.generate_response(message_history: history)
+    response = suggestion.generate_response(message_history: staff_history)
 
     expect(runs).to be_empty
     expect(response).to include('response' => '', 'response_mode' => 'human', 'routing_human' => true)

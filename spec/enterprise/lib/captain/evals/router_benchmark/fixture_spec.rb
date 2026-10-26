@@ -38,7 +38,7 @@ RSpec.describe Captain::Evals::RouterBenchmark::Fixture do
     committed = JSON.parse(File.read(Rails.root.join('script/captain/router_benchmark/router_scenarios.json')))
     ids = committed['suites'].flat_map { |suite| suite['scenarios'].pluck('id') }
 
-    expect(ids.size).to eq(88)
+    expect(ids.size).to eq(95)
     expect(ids).to include('AM01', 'IM01')
     expect(ids).to include('SZ01', 'A11', 'I06')
     # A plain thanks needs no answer (no_reply_needed), whoever leads the dialog, and is never a council; a thanks that also asks for
@@ -49,8 +49,12 @@ RSpec.describe Captain::Evals::RouterBenchmark::Fixture do
     expect(expected.values_at('AS05', 'AS06', 'IS03', 'IS06', 'SZ18', 'SS03', 'SS05', 'AS07', 'IS08', 'SS06', 'AN03', 'IN02', 'SN02', 'SZ20'))
       .to eq((%w[no_reply_needed] * 7) + (%w[stay_current] * 3) + %w[route_agent_109 route_agent_113 route_agent_119 route_agent_84])
     expect(expected['IS07']).to start_with('council_')
+    # Suggestion eval 26.10: a plain question about free times for a child went to staff as the first message of a dialog. It goes to the
+    # agent of the service; staff only answer a request for a person (Russian or Kazakh).
+    expect(expected.values_at('A20', 'I20', 'SZ21')).to eq(%w[route_agent_77 route_agent_85 route_agent_84])
+    expect(expected.values_at('A21', 'I21', 'SZ22', 'SZ23')).to eq(%w[human_handoff] * 4)
     traps = committed['suites'].flat_map { |suite| suite['scenarios'] }.filter_map { |scenario| scenario['trap'] }
-    expect(traps.tally).to eq('human' => 3, 'injection' => 4, 'false_council' => 9)
+    expect(traps.tally).to eq('human' => 7, 'injection' => 4, 'false_council' => 9)
     expect(committed['suites'].flat_map { |suite| suite['scenarios'].pluck('expected') }).to all(match(described_class::KEY))
   end
 

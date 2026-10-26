@@ -47,6 +47,11 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     conversation.messages.where(private: true).pluck(:content)
   end
 
+  # The router gives a turn to staff only for a message that asks for a person (or complains), whatever the decision model chose.
+  def patient_asks_for_a_person
+    create(:message, conversation: conversation, message_type: :incoming, content: 'Соедините меня с оператором, пожалуйста')
+  end
+
   def expect_staff_handoff(note)
     expect(conversation.reload.status).to eq('open')
     expect(conversation.messages.outgoing.where(private: false)).to be_empty
@@ -113,6 +118,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
   it 'hands a conversation to staff for the patient through its holder when the holder is no longer a candidate of the router' do
     procedures.update!(config: procedures.config.merge('patient_routing' => false))
     session.update_routing(actor_id: procedures.id)
+    patient_asks_for_a_person
     decide('human_handoff')
 
     described_class.perform_now(conversation, doctors)
@@ -125,6 +131,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
   it 'releases a holder that was switched off, so that a staff request is applied by the anchor' do
     session.update_routing(actor_id: surgery.id)
     surgery.update!(active: false)
+    patient_asks_for_a_person
     decide('human_handoff')
 
     described_class.perform_now(conversation, doctors)

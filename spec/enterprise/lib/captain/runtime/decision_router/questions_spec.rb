@@ -78,7 +78,8 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
     end
 
     it 'takes the route_mode key with the highest probability, the chosen one on a tie or without probabilities' do
-      expect(questions.resolve(answered('route_agent', yes: [30], mode_probabilities: { 'route_agent' => 0.3, 'human_handoff' => 0.7 })))
+      staff = build(3, current: 20, message: 'Соедините с оператором')
+      expect(staff.resolve(answered('route_agent', yes: [30], mode_probabilities: { 'route_agent' => 0.3, 'human_handoff' => 0.7 })))
         .to have_attributes(kind: 'human', key: 'human_handoff', confidence: 0.7)
       expect(questions.resolve(answered('route_agent', yes: [30], mode_probabilities: { 'route_agent' => 0.5, 'human_handoff' => 0.5 })))
         .to have_attributes(key: 'route_agent_30', confidence: 0.5)
@@ -118,8 +119,52 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
       expect(build(3).resolve(answered('council', yes: [20])).key).to eq('route_agent_20')
     end
 
-    it 'gives staff whatever the include answers say' do
-      expect(questions.resolve(answered('human_handoff', yes: [10]))).to have_attributes(kind: 'human', agent_ids: [], key: 'human_handoff')
+    it 'gives staff whatever the include answers say, for a message that asks for a person' do
+      staff = build(3, current: 20, message: 'Дайте мне живого администратора, не хочу переписываться с ботом')
+
+      expect(staff.resolve(answered('human_handoff', yes: [10]))).to have_attributes(kind: 'human', agent_ids: [], key: 'human_handoff')
+    end
+
+    it 'gives staff for a call-back, a complaint, a refund or a legal matter, in Russian and in Kazakh' do
+      ['Перезвоните мне, пожалуйста', 'Это жалоба на врача', 'Верните деньги за приём', 'Подам в суд', 'Оператормен байланыстырыңыз',
+       'Тірі адаммен сөйлескім келеді', 'Шағым айтқым келеді', 'ақшамды қайтарыңыз'].each do |text|
+        resolved = build(3, current: 20, message: text).resolve(answered('human_handoff', yes: [10]))
+
+        expect(resolved).to have_attributes(kind: 'human', key: 'human_handoff'), text
+      end
+    end
+
+    # Suggestion eval 26.10 (Sezim): the decision model answered human_handoff (0.71) for the first message of a dialog, a question
+    # about free times for a child; the dialog never reached an agent. The words did not ask for a person, so an agent answers.
+    describe 'a human_handoff of the model for a message that asks for no person' do
+      let(:plain) { 'Есть окно сегодня или завтра для ребёнка к ЛОРу?' }
+      let(:probabilities) { { 10 => 0.2, 20 => 0.7, 30 => 0.4 } }
+
+      it 'goes to the agent with the highest include probability' do
+        expect(build(3, message: plain).resolve(answered('human_handoff', include_probabilities: probabilities)))
+          .to have_attributes(kind: 'agent', agent_ids: [20], key: 'route_agent_20', confidence: 0.9)
+        expect(build(3, current: 30, message: plain).resolve(answered('human_handoff', include_probabilities: probabilities)).key)
+          .to eq('route_agent_20')
+      end
+
+      it 'is a stay when the current agent is the most probable one' do
+        resolved = build(3, current: 30, message: plain)
+                   .resolve(answered('human_handoff', include_probabilities: { 10 => 0.1, 20 => 0.1, 30 => 0.9 }))
+
+        expect(resolved).to have_attributes(kind: 'stay', agent_ids: [30], key: 'stay_current')
+      end
+
+      it 'prefers the current agent, then the anchor of the channel, then the lower id, when the include answers are all alike' do
+        expect(build(3, current: 20, message: plain).resolve(answered('human_handoff')).key).to eq('stay_current')
+        expect(build(3, suggestion: true, anchor: 30, message: plain).resolve(answered('human_handoff')).key).to eq('route_agent_30')
+        expect(build(3, message: plain).resolve(answered('human_handoff')).key).to eq('route_agent_10')
+      end
+
+      it 'is not checked for a council part, which keeps the word of the model' do
+        part = build(3, current: 10, mode: :singles, message: plain)
+
+        expect(part.resolve(answered('human_handoff', all: [20, 30]))).to have_attributes(kind: 'human', key: 'human_handoff')
+      end
     end
 
     it 'needs no answer for a bare thanks and keeps the current agent of the dialog when there is one' do
