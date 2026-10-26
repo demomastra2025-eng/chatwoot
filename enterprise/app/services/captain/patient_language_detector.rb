@@ -8,6 +8,12 @@ require 'timeout'
 # patient messages and a language wins with more than half of them. The result is saved on the conversation together with the id of the
 # last patient message it was decided for, so a run with no new patient message reuses it with no call at all. A call that fails or
 # runs out of time gives the language the conversation already has, not nothing.
+#
+# The words decide first where they are plain: when the patient's messages after the last clinic message (the turn the reply answers)
+# read as Kazakh by their letters and words (Captain::PatientLanguage::KazakhMarkers: Kazakh-specific letters or clear Kazakh words,
+# even among Russian loanwords), the language is Kazakh and no model is asked. The model counted the last five messages and answered
+# Russian for Kazakh turns that had Russian words or sat after older Russian messages (suggestion eval of 26.10; the model answered
+# Russian every time for the same input), and the draft came out in Russian.
 class Captain::PatientLanguageDetector
   # Rows read to find the last RECENT_MESSAGE_COUNT patient messages that have a text (an image has none).
   MESSAGE_COUNT = 20
@@ -55,6 +61,7 @@ class Captain::PatientLanguageDetector
     saved = saved_attributes
     messages = patient_messages
     return language_of(saved) if messages.empty? || saved[MESSAGE_ID_ATTRIBUTE].to_i == messages.last.first
+    return resolve_choice('kk', messages.last.first, saved) if kazakh_turn?(messages)
 
     model = Llm::Config.model_for(feature: :language_detection, account: @conversation.account, fallback: nil)
     return language_of(saved) if model.blank?
@@ -114,10 +121,21 @@ class Captain::PatientLanguageDetector
     value if Captain::PatientLanguage::NAMES.key?(value)
   end
 
+  # Whether the turn, the patient's messages after the last clinic message, reads as Kazakh by its letters and words alone.
+  def kazakh_turn?(messages)
+    last_reply_id = message_scope.where(message_type: :outgoing, private: false).reorder(id: :desc).limit(1).pick(:id)
+    turn = last_reply_id ? messages.select { |id, _text| id > last_reply_id } : messages
+    Captain::PatientLanguage::KazakhMarkers.kazakh?((turn.presence || messages.last(1)).map(&:last).join("\n"))
+  end
+
+  def message_scope
+    Captain::Conversation::ControlService.messages_scope(@conversation)
+  end
+
   # [[id, text], ...] of the last patient messages that have a text, oldest first. The text of a voice message is its transcription,
   # so a voice message whose transcript arrives later is a new last message with a text and is decided again.
   def patient_messages
-    scope = Captain::Conversation::ControlService.messages_scope(@conversation)
+    scope = message_scope
     rows = scope.where(message_type: :incoming, private: false).reorder(id: :desc).limit(MESSAGE_COUNT).includes(:attachments).to_a.reverse
     rows.filter_map do |message|
       text = message_text(message)

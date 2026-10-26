@@ -138,6 +138,64 @@ RSpec.describe Captain::PatientLanguageDetector do
     end
   end
 
+  # Suggestion eval 26.10: the decision model answered Russian, six times in six for the same input, for Kazakh turns that had a Russian
+  # word in them or came after older Russian messages, and the draft was written in Russian.
+  describe 'a turn that reads as Kazakh by its letters and words' do
+    def clinic_says(text)
+      create(:message, account: account, conversation: conversation, inbox: conversation.inbox, message_type: :outgoing, content: text)
+    end
+
+    before { allow(Llm::Runtime).to receive(:decide) }
+
+    it 'is Kazakh with no call of the model, also after older Russian messages, and is saved with the id of the last message' do
+      patient_says('Здравствуйте, подскажите стоимость приёма')
+      clinic_says('Добрый день! Приём стоит 12 000 ₸.')
+      patient_says('Жақсы 21-не жазып қойыңыз')
+      last = patient_says('Бағасы қанша болады узи?')
+
+      expect(detector.call).to eq('kk')
+      expect(Llm::Runtime).not_to have_received(:decide)
+      expect(saved).to eq('kk')
+      expect(saved(message_id_key)).to eq(last.id)
+      expect(described_class.new(conversation: conversation, assistant: assistant).call).to eq('kk')
+    end
+
+    it 'is Kazakh for a sentence with a Russian word in it, with no model configured at all' do
+      allow(Llm::Config).to receive(:model_for).with(feature: :language_detection, account: account, fallback: nil).and_return(nil)
+      patient_says('Маған врач керек, қанша тұрады')
+
+      expect(detector.call).to eq('kk')
+      expect(Llm::Runtime).not_to have_received(:decide)
+    end
+
+    it 'follows the turn after the last clinic message: Kazakh words before a clinic reply do not make a Russian turn Kazakh' do
+      patient_says('Маған врач керек, қанша тұрады')
+      clinic_says('Сәлеметсіз бе! Приём стоит 12 000 ₸.')
+      patient_says('Спасибо большое, запишите на пятницу')
+      choose('ru')
+
+      expect(detector.call).to eq('ru')
+      expect(Llm::Runtime).to have_received(:decide).once
+      expect(saved).to eq('ru')
+    end
+
+    it 'leaves a Russian text with a Kazakh name or one Kazakh word to the model' do
+      patient_says('Запишите Әлия на 10:00, рахмет')
+      choose('ru')
+
+      expect(detector.call).to eq('ru')
+      expect(Llm::Runtime).to have_received(:decide).once
+    end
+
+    it 'takes the one message of a conversation that has no clinic message yet as the turn' do
+      patient_says('Кешке 7-8 ге бола ма')
+      last = patient_says('Аборт жасатқым келген')
+
+      expect(detector.call).to eq('kk')
+      expect(saved(message_id_key)).to eq(last.id)
+    end
+  end
+
   describe 'the saved decision' do
     it 'is reused with no call while no new patient message has arrived' do
       patient_says('Fake first')
