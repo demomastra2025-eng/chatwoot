@@ -626,7 +626,7 @@ RSpec.describe Captain::Runtime::Runner do
         _, tool_results = suggest(calls)
 
         expect(read_tools['search_available_slots'].calls).to eq(2)
-        expect(tool_results.values_at(5, 8, 11)).to all(start_with(Captain::Runtime::ToolWrapper::REPEATED_READ_NOTE))
+        expect(tool_results.values_at(5, 8, 11)).to all(end_with(Captain::Runtime::ToolWrapper::REPEATED_READ_NOTE))
       end
 
       it 'ends a suggestion that keeps calling with the loop error, not a technical failure, and keeps the cards' do

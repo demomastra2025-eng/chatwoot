@@ -46,8 +46,12 @@ class Captain::Runtime::ToolWrapper
   # A repeated identical read of a reply suggestion is answered from the first result. One repeat of a call is free; every further
   # one counts against the request limits of the loop guard, so a model stuck on one read still stops after a few requests.
   SUGGESTION_FREE_READ_REPEATS = 1
-  REPEATED_READ_NOTE = 'Same call as before in this run, same result as before (below). Do not call it again: finish the draft ' \
-                       'with the results you have.'
+  # The note of such a repeat. A JSON answer carries it in its own fields, so the answer stays JSON and the excerpt that replaces
+  # it later in the history keeps its ids and times (see Captain::Runtime::ToolResultExcerpt); a text answer ends with it.
+  REPEATED_READ_KEY = 'repeated_call'
+  REPEATED_READ_NOTE_KEY = 'repeated_call_note'
+  REPEATED_READ_NOTE = 'Repeated call: the same call already ran in this run and this is its result again. Do not call it again: ' \
+                       'finish the draft with the results you have.'
   SUGGESTION_CARD_WAITING_ERROR = 'NOT prepared: this action already has a card waiting for the operator in this run (data), and ' \
                                   'these new arguments were not prepared. Do not call the tool again. Finish the draft and mention ' \
                                   'only the waiting card; the operator can edit or deny it.'
@@ -633,7 +637,19 @@ class Captain::Runtime::ToolWrapper
 
   # The first result again, with a note that tells the model it already has it.
   def complete_repeated_read(entry)
-    "#{REPEATED_READ_NOTE}\n#{complete_and_render(entry[:result].deep_dup)}"
+    with_repeated_read_note(complete_and_render(entry[:result].deep_dup))
+  end
+
+  # A JSON object gets the note as its first fields, a JSON list goes under `result` next to them, and a text ends with the note.
+  def with_repeated_read_note(rendered)
+    data = JSON.parse(rendered) if rendered.lstrip.start_with?('{', '[')
+    note = { REPEATED_READ_KEY => true, REPEATED_READ_NOTE_KEY => REPEATED_READ_NOTE }
+    return JSON.generate(note.merge(data.except(*note.keys))) if data.is_a?(Hash)
+    return JSON.generate(note.merge('result' => data)) if data.is_a?(Array)
+
+    "#{rendered}\n#{REPEATED_READ_NOTE}"
+  rescue JSON::ParserError
+    "#{rendered}\n#{REPEATED_READ_NOTE}"
   end
 
   def cache_suggestion_read_result(normalized_args, result)

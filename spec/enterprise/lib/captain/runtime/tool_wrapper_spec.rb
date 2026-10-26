@@ -1414,7 +1414,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     it 'answers a repeated identical read from the first result with a note, and counts every repeat after the first one' do
       results = Array.new(described_class::MAX_TOOL_REQUESTS_PER_TOOL + 1) { read_only_wrapper.call(result: 'Mon 17:00, Mon 18:00') }
 
-      repeated = "#{described_class::REPEATED_READ_NOTE}\nMon 17:00, Mon 18:00"
+      repeated = "Mon 17:00, Mon 18:00\n#{described_class::REPEATED_READ_NOTE}"
       expect(results).to eq(['Mon 17:00, Mon 18:00'] + ([repeated] * described_class::MAX_TOOL_REQUESTS_PER_TOOL))
       expect(read_only_tool.calls).to eq(1)
       expect(context_wrapper.context[described_class::TOOL_REQUEST_COUNTS_KEY][:total]).to eq(described_class::MAX_TOOL_REQUESTS_PER_TOOL)
@@ -1426,6 +1426,50 @@ RSpec.describe Captain::Runtime::ToolWrapper do
 
       expect(stopped).to be_a(RubyLLM::Tool::Halt).and(have_attributes(content: include('Tool request limit reached')))
       expect(read_only_tool.calls).to eq(1)
+    end
+
+    # A slot search over 4 KB, as on PROD. The repeat stays JSON, so the excerpt that replaces it in the history after the next step
+    # keeps the slot ids and times, and that excerpt does not invite one more call as the excerpt of a first result does.
+    describe 'a repeated JSON read' do
+      let(:excerpts) { Captain::Runtime::ToolResultExcerpt }
+      let(:slots) do
+        JSON.generate('date' => '2026-10-27', 'slots' => Array.new(80) do |index|
+          { 'id' => "slot-#{index}", 'time' => format('%<hour>02d:%<minute>02d', hour: 8 + (index / 6), minute: (index % 6) * 10),
+            'doctor' => 'Врач Фамилия Имя Отчество' }
+        end)
+      end
+
+      it 'stays parseable, with the note in its fields' do
+        first = read_only_wrapper.call(result: slots)
+        repeated = read_only_wrapper.call(result: slots)
+
+        expect(first).to eq(slots)
+        expect(JSON.parse(repeated)).to eq(
+          { 'repeated_call' => true, 'repeated_call_note' => described_class::REPEATED_READ_NOTE }.merge(JSON.parse(slots))
+        )
+        expect(repeated.bytesize).to be > excerpts::THRESHOLD_BYTES
+        expect(read_only_tool.calls).to eq(1)
+      end
+
+      it 'has an excerpt that keeps the slots and does not ask for another call' do
+        first, repeated = Array.new(2) { read_only_wrapper.call(result: slots) }
+
+        marker, summary = excerpts.excerpt(repeated).split("\n", 2)
+        expect(marker).to eq(excerpts::REPEATED_MARKER)
+        expect(JSON.parse(summary)).to include('repeated_call' => true, 'date' => '2026-10-27')
+        expect(JSON.parse(summary)['slots'].first(2)).to eq([{ 'id' => 'slot-0', 'time' => '08:00', 'doctor' => 'Врач Фамилия Имя Отчество' },
+                                                             { 'id' => 'slot-1', 'time' => '08:10', 'doctor' => 'Врач Фамилия Имя Отчество' }])
+        expect(summary).not_to include(described_class::REPEATED_READ_NOTE)
+        expect(excerpts.excerpt(first)).to start_with("#{excerpts::MARKER}\n")
+      end
+    end
+
+    it 'puts a repeated JSON list under result next to the note' do
+      read_only_wrapper.call(result: '[{"id":"slot-1","time":"17:00"}]')
+
+      expect(JSON.parse(read_only_wrapper.call(result: '[{"id":"slot-1","time":"17:00"}]'))).to eq(
+        'repeated_call' => true, 'repeated_call_note' => described_class::REPEATED_READ_NOTE, 'result' => [{ 'id' => 'slot-1', 'time' => '17:00' }]
+      )
     end
 
     it 'runs the scheduling guard before the read cache: a generic search after a service-specific one is refused' do
