@@ -3,9 +3,13 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Runtime::DecisionRouter::Questions do
-  def snapshot(count, current: nil, human: true, card: 'Услуги агента', suggestion: false, anchor: nil, history: []) # rubocop:disable Metrics/ParameterLists
+  # A dialog in which the clinic asked the patient nothing.
+  def dialog = [{ role: 'clinic', agent_id: 20, text: 'Вы записаны на четверг.' }]
+
+  def snapshot(count, current: nil, human: true, card: 'Услуги агента', suggestion: false, anchor: nil, # rubocop:disable Metrics/ParameterLists
+               history: dialog, message: 'Спасибо!')
     agents = (1..count).map { |id| Captain::Runtime::RoutingSnapshot::Agent.new(id: id * 10, label: "Agent #{id}", card: card) }
-    Captain::Runtime::RoutingSnapshot.new(agents: agents, latest_message: 'Здравствуйте', current_agent_id: current, human_available: human,
+    Captain::Runtime::RoutingSnapshot.new(agents: agents, latest_message: message, current_agent_id: current, human_available: human,
                                           suggestion: suggestion, anchor_agent_id: anchor, recent_messages: history)
   end
 
@@ -34,8 +38,10 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
   it 'offers no_reply_needed for a message that needs no answer, with or without a current agent' do
     description = build(3).to_h['route_mode'][:criteria]['no_reply_needed']
 
-    expect(description).to include('only thanks, says ok or goodbye, greets, or sends an emoji', 'never a council',
-                                   'accepts or declines no offered time or booking')
+    expect(description).to include('only thanks, says ok or goodbye, or sends an emoji', 'never a council',
+                                   'accepts or declines no offered time or booking', 'A greeting opens or resumes the dialog: not this',
+                                   'a thumbs-up that answers a clinic question offering a time or a booking accepts it: not this')
+    expect(description).not_to include('greets')
     expect(build(3, current: 10).mode_keys).to include('no_reply_needed')
   end
 
@@ -116,10 +122,42 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
       expect(questions.resolve(answered('human_handoff', yes: [10]))).to have_attributes(kind: 'human', agent_ids: [], key: 'human_handoff')
     end
 
-    it 'needs no answer whatever the include answers say, and keeps the current agent of the dialog when there is one' do
-      expect(questions.resolve(answered('no_reply_needed', yes: [10, 30])))
-        .to have_attributes(kind: 'no_reply', agent_ids: [20], key: 'no_reply_needed')
+    it 'needs no answer for a bare thanks and keeps the current agent of the dialog when there is one' do
+      expect(questions.resolve(answered('no_reply_needed', yes: [20])))
+        .to have_attributes(kind: 'no_reply', agent_ids: [20], key: 'no_reply_needed', confidence: 0.9)
       expect(build(3).resolve(answered('no_reply_needed'))).to have_attributes(kind: 'no_reply', agent_ids: [])
+      expect(build(3, message: 'Рахмет, сау болыңыз 🙏').resolve(answered('no_reply_needed')).kind).to eq('no_reply')
+    end
+
+    # Review of df3aaff78: no_reply_needed silences the turn, so an answer that contradicts it never ends as no_reply.
+    it 'routes a no_reply_needed with an include answer yes for another agent to the most probable such agent' do
+      asks = build(3, current: 20, message: 'Спасибо! А УЗИ почек сколько стоит?')
+
+      expect(questions.resolve(answered('no_reply_needed', yes: [10, 30], include_probabilities: { 10 => 0.6, 30 => 0.8 })))
+        .to have_attributes(kind: 'agent', key: 'route_agent_30')
+      expect(asks.resolve(answered('no_reply_needed', yes: [10]))).to have_attributes(kind: 'agent', key: 'route_agent_10')
+      expect(build(3).resolve(answered('no_reply_needed', yes: [20]))).to have_attributes(kind: 'agent', key: 'route_agent_20')
+    end
+
+    it 'keeps a no_reply_needed that asks or names something, or answers a clinic question, with the current agent' do
+      offer = [{ role: 'clinic', agent_id: 20, text: 'В четверг свободно 14:00. Записать вас на 14:00?' }]
+
+      ['Спасибо! А УЗИ почек сколько стоит?', 'Хорошо, тогда в 14:00', 'Спасибо, но я ещё подумаю и напишу вам позже'].each do |text|
+        expect(build(3, current: 20, message: text).resolve(answered('no_reply_needed'))).to have_attributes(kind: 'stay', key: 'stay_current')
+      end
+      %w[Ок 👍 Жарайды].each do |text|
+        expect(build(3, current: 20, message: text, history: offer).resolve(answered('no_reply_needed')).key).to eq('stay_current')
+      end
+      expect(build(3, message: 'Ок', history: offer).resolve(answered('no_reply_needed', include_probabilities: { 10 => 0.1, 20 => 0.4 })))
+        .to have_attributes(kind: 'agent', key: 'route_agent_20')
+    end
+
+    # Review of df3aaff78 (router benchmark SZ20): a first «Здравствуйте!» waits for an answer.
+    it 'answers a message that opens the dialog, also when the decision models found it needs no answer' do
+      opening = build(3, message: 'Здравствуйте!', history: [])
+
+      expect(opening.resolve(answered('no_reply_needed', include_probabilities: { 10 => 0.3, 20 => 0.1, 30 => 0.2 })))
+        .to have_attributes(kind: 'agent', key: 'route_agent_10')
     end
 
     it 'has no default of a reply suggestion: the anchor answers only when it is the most probable agent' do

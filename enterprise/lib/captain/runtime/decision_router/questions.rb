@@ -12,17 +12,20 @@
 #   council          the agents whose include probability is 0.5 or more (the three most probable at most); fewer than two: the
 #                    agent with the highest include probability (the current one: a stay)
 #   human_handoff    staff, whatever the include answers say
-#   no_reply_needed  nobody answers in substance, whatever the include answers say: a plain thanks, ok, emoji or greeting that asks
-#                    for nothing and accepts nothing that waits (a suggestion gets no draft; a live turn, a courtesy reply of the
-#                    current agent)
+#   no_reply_needed  nobody answers in substance: a plain thanks, ok, goodbye or emoji that asks for nothing and accepts nothing
+#                    that waits (a suggestion gets no draft; a live turn, a courtesy reply of the current agent). A greeting is not
+#                    one: it opens or resumes the dialog. It is taken only when it is safe (#no_reply_outcome): an include answer yes
+#                    for another agent routes to that agent, and a message that asks or names something (a question mark, a digit,
+#                    more than NO_REPLY_MAX_WORDS words), answers a clinic question or opens the dialog stays with the current agent
+#                    (with none, the most probable agent): a wrong no_reply_needed silences a request
 #   nobody           no listed agent handles it (council parts)
 # A model that gives no probabilities counts its chosen key as the most probable one: a yes is 0.5 to 1 and a no 0 to 0.5 by its
 # confidence (0.5 + confidence / 2 and 0.5 - confidence / 2), so a yes always ranks above a no.
 # Several services of one agent make only that agent "yes", so they never make a council (the anti-false-council rule is also
-# written into the instructions), and a message that needs no answer is no_reply_needed, never a council or a route (the router
-# benchmark of 26.10 sent a plain thanks with no sticky agent to a council: the cards of v2 have no catch-all agent of general
-# questions). The canonical key of an outcome (stay_current, route_agent_<id>, council_<a>_<b>[_<c>], human_handoff, no_reply_needed,
-# nobody) names the decision in events and in the evaluation harness.
+# written into the instructions), and a message that needs no answer is no_reply_needed, never a council (the router benchmark of
+# 26.10 sent a plain thanks with no sticky agent to a council: the cards of v2 have no catch-all agent of general questions). The
+# canonical key of an outcome (stay_current, route_agent_<id>, council_<a>_<b>[_<c>], human_handoff, no_reply_needed, nobody) names
+# the decision in events and in the evaluation harness.
 class Captain::Runtime::DecisionRouter::Questions
   MODE = 'route_mode'
   STAY = 'stay_current'
@@ -40,24 +43,31 @@ class Captain::Runtime::DecisionRouter::Questions
   HUMAN_DESCRIPTION = 'A live staff member answers now: the patient explicitly asks for a person (administrator, operator, manager, ' \
                       '"a human", "not a bot") or refuses to continue with the assistant. Not for complaints, refunds, documents, ' \
                       'results or urgency alone.'
-  NO_REPLY_DESCRIPTION = 'The latest message needs no answer: it only thanks, says ok or goodbye, greets, or sends an emoji. It asks ' \
-                         'nothing, names no service, doctor, date or time, answers no open question, accepts or declines no offered ' \
-                         'time or booking that still waits for an answer of the patient, and gives no personal data. Whoever the current ' \
-                         'agent is; never a council. The include_agent answers do not matter.'
+  NO_REPLY_DESCRIPTION = 'The latest message needs no answer: it only thanks, says ok or goodbye, or sends an emoji, and closes the ' \
+                         'topic. It asks nothing, names no service, doctor, date or time, answers no open question, accepts or declines ' \
+                         'no offered time or booking that still waits for an answer of the patient, and gives no personal data. An ok, ' \
+                         '"хорошо", "жарайды" or a thumbs-up that answers a clinic question offering a time or a booking accepts it: ' \
+                         'not this. A greeting opens or resumes the dialog: not this. Whoever the current agent is; never a council. ' \
+                         "Every include_agent question is no, except the current agent's."
   NOBODY_DESCRIPTION = 'No listed agent handles what this part asks for.'
   # How the most probable key of route_mode is resolved with the include probabilities (#resolve).
   RESOLVERS = { HUMAN => :human_outcome, NO_REPLY => :no_reply_outcome, NOBODY => :nobody_outcome, STAY => :stay_outcome,
                 ROUTE => :route_outcome, COUNCIL => :council_outcome }.freeze
-  # A council takes the agents whose include probability reaches this.
-  COUNCIL_MIN_PROBABILITY = 0.5
+  # An include answer is yes from this probability (a no_reply_needed with a yes for another agent routes to it); a council takes
+  # the agents whose include probability reaches it.
+  YES_PROBABILITY = 0.5
+  # The most words a message that needs no answer has («Спасибо большое, до свидания!»); a longer one says something.
+  NO_REPLY_MAX_WORDS = 6
+  # A question mark or a digit: the message asks or names something (a time, a date, an IIN, a price).
+  NO_REPLY_BREAKERS = /[?？\d]/
   INCLUDE_INSTRUCTIONS = <<~TEXT.squish
     Does the latest patient message ask NOW for a service of this agent (what it handles is written in the yes criterion and in the
     agents of the state)? Answer yes when the message asks for, books, reschedules or cancels a service this agent handles, or asks
     its price, preparation or free times; when it answers an open question of this agent; or, for the current agent only, when it
     asks for nothing new (a time, a name, a date of birth, an IIN, a confirmation, thanks, a greeting). With no current agent, a reply
-    that continues a service the recent messages discuss (a time for it, a confirmation, personal data for its booking) is yes for the
-    agent of that service, and a message that needs no answer (a plain thanks, ok, an emoji, a greeting that asks for nothing and
-    accepts nothing that waits) is no for every agent. When there is a current
+    that continues a service the recent messages discuss (a time for it, a confirmation or an ok to an offered time or booking,
+    personal data for its booking) is yes for the agent of that service, and a message that needs no answer (a plain thanks, ok or
+    emoji that asks for nothing and accepts nothing that waits) is no for every agent. When there is a current
     agent, a general question about the clinic (address, opening hours, parking, contacts, how to pay) is yes only for the current
     agent and no for every other agent, even one whose description lists general clinic questions; with no current agent it is yes
     for the agent whose description lists general clinic questions. A topic that another agent's description names explicitly
@@ -133,9 +143,30 @@ class Captain::Runtime::DecisionRouter::Questions
   def nobody_outcome(_yes) = Outcome.new(kind: 'none', agent_ids: [], key: NOBODY)
 
   # Nothing to answer in substance (a turn, never a council part). The current agent, when one leads the dialog, keeps it: a live
-  # turn runs it for a short courtesy reply or nothing, with no action; a reply suggestion runs no agent.
-  def no_reply_outcome(_yes)
-    Outcome.new(kind: 'no_reply', agent_ids: [current_id].compact, key: NO_REPLY) if @mode == :full
+  # turn runs it for a short courtesy reply or nothing, with no action; a reply suggestion runs no agent. A wrong no_reply silences
+  # a request, so it is taken only when nothing says otherwise: an include answer yes for an agent other than the current one is a
+  # route to the most probable such agent («Спасибо! А УЗИ почек сколько стоит?»), and a message that is no bare thanks, or that
+  # answers a clinic question («Записать вас на 14:00?» - «Ок»), stays with the current agent (with none, the most probable agent).
+  def no_reply_outcome(yes)
+    return unless @mode == :full
+
+    other = top_agent(yes, except: current_id)
+    return agent_outcome(other) if other && yes[other] >= YES_PROBABILITY
+    return stay_outcome(yes) unless courtesy_only?
+
+    Outcome.new(kind: 'no_reply', agent_ids: [current_id].compact, key: NO_REPLY)
+  end
+
+  # A bare thanks, ok, goodbye or emoji in a dialog: no question mark or digit, NO_REPLY_MAX_WORDS words at most, and the last
+  # clinic message asked the patient nothing (an ok to «Записать вас?» accepts the offer). A message that opens the dialog (a first
+  # «Здравствуйте!») always gets an answer.
+  def courtesy_only?
+    return false unless @snapshot.mid_dialog?
+
+    last = @snapshot.recent_messages.last.to_h.with_indifferent_access
+    asked = last[:role].to_s == 'clinic' && last[:text].to_s.match?(/[?？]/)
+    text = @snapshot.latest_message.to_s
+    !asked && !text.match?(NO_REPLY_BREAKERS) && text.split.size <= NO_REPLY_MAX_WORDS
   end
 
   # The current agent; with no current agent, the agent with the highest include probability.
@@ -151,7 +182,7 @@ class Captain::Runtime::DecisionRouter::Questions
   # The agents whose include probability is 0.5 or more (the most probable MAX_COUNCIL_AGENTS); fewer than two: the agent with the
   # highest include probability.
   def council_outcome(yes)
-    members = agent_ids.select { |id| yes[id] >= COUNCIL_MIN_PROBABILITY }.min_by(MAX_COUNCIL_AGENTS) { |id| [-yes[id], id] }.sort
+    members = agent_ids.select { |id| yes[id] >= YES_PROBABILITY }.min_by(MAX_COUNCIL_AGENTS) { |id| [-yes[id], id] }.sort
     return agent_outcome(top_agent(yes)) if members.size < 2 || !council_allowed?
 
     Outcome.new(kind: 'council', agent_ids: members, key: "council_#{members.join('_')}")
@@ -221,8 +252,8 @@ class Captain::Runtime::DecisionRouter::Questions
     "Keep the current agent #{agent.id} (#{agent.label}): everything the patient asks for now is handled by it, or the latest " \
       'message asks for nothing new but continues the dialog (answers its question, gives a time or personal data, accepts or ' \
       'declines what it offered, asks more about the same service). Not when another agent handles what is asked now: that is ' \
-      'route_agent or council, even when the message continues the conversation; not a plain thanks, ok, emoji or greeting that ' \
-      'needs no answer: that is no_reply_needed. Its include_agent question is yes or every include_agent question is no.'
+      'route_agent or council, even when the message continues the conversation; not a plain thanks, ok or emoji that needs no ' \
+      'answer and accepts nothing: that is no_reply_needed. Its include_agent question is yes or every include_agent question is no.'
   end
 
   def route_description

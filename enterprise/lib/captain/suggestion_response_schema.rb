@@ -9,7 +9,8 @@ class Captain::SuggestionResponseSchema < RubyLLM::Schema
                               'an exception to the clinic rules).'.freeze
   OPERATOR_NOTE_DESCRIPTION = 'For the clinic operator, never the patient. With suppress: why no reply is needed. With human: why a ' \
                               'staff member must answer and what is missing. One or two short sentences in the operator language ' \
-                              'named in the platform rules. Empty string with reply.'.freeze
+                              'named in the platform rules. With reply: an empty string, unless the draft leaves a part of the ' \
+                              'request to staff (then name that part).'.freeze
 
   string :patient_language, description: Captain::PatientLanguage::FIELD_DESCRIPTION
   string :response, description: "#{Captain::ResponseSchema::RESPONSE_DESCRIPTION} Empty with suppress or human."

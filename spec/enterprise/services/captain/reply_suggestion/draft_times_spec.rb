@@ -46,6 +46,23 @@ RSpec.describe Captain::ReplySuggestion::DraftTimes do
     expect(described_class.unverified(draft: 'Свободно 19:50 и 20:10.', context: stringified)).to eq(['20:10'])
   end
 
+  # Review of df3aaff78: the patient data of the prompt and the cards of earlier replies are sources the agent read too.
+  it 'accepts the times of the patient data of the prompt and of what the agents already did' do
+    summary = { 'kind' => 'appointments', 'groups' => { 'upcoming' => { 'items' => [{ 'date' => '27.10', 'time' => '10:00' }] } } }
+    with_patient = context.merge(state: { prompt_context: { context_summaries: { appointment: summary } } },
+                                 done_actions: [{ 'tool' => 'create_appointment', 'label' => 'Запись подготовлена', 'text' => 'ЛОР 28.10 в 11:30' }])
+
+    expect(described_class.unverified(draft: 'Ваша запись 27.10 в 10:00 переносится на 28.10 в 19:30.', context: with_patient)).to eq([])
+    expect(described_class.unverified(draft: 'Вместо 11:30 записываю на 19:50.', context: with_patient)).to eq([])
+    expect(described_class.unverified(draft: 'Ваша запись 27.10 в 10:00 переносится на 19:30.', context: context)).to eq(['10:00'])
+  end
+
+  it 'leaves out a time the draft names as a bound, not as an offered start' do
+    draft = 'До 19:00 окон нет, после 14:00 только при 100% предоплате; 20:00-ге дейін бос уақыт жоқ. Свободно в 19:30 и 21:00.'
+
+    expect(described_class.unverified(draft: draft, context: context)).to eq(['21:00'])
+  end
+
   it 'never reads a date or a price as a time' do
     expect(described_class.times('Запись 27.10 в 19:30, 12 000 ₸, кабинет 2:3, 25:00')).to eq(['19:30'])
   end

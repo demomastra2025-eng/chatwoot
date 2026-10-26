@@ -59,11 +59,11 @@ class Captain::Runtime::ToolWrapper
   SUGGESTION_CARD_LIMIT_ERROR = 'NOT prepared: the cards of this action listed in data already wait for the operator in this run, ' \
                                 'and these new arguments were not prepared. Do not call the tool again. Finish the draft and mention ' \
                                 'only the listed cards.'
-  # A turn whose message needs no answer (the router's no_reply_needed: a plain thanks, ok, emoji or greeting; see
+  # A turn whose message needs no answer (the router's no_reply_needed: a plain thanks, ok, goodbye or emoji; see
   # Captain::Runtime::TurnDispatcher). Its agent may write a courtesy reply, but an action tool refuses: in the suggestion eval of
   # 26.10 agents booked visits on a closing «Спасибо».
   ACKNOWLEDGEMENT_TURN_KEY = :routing_acknowledgement
-  ACKNOWLEDGEMENT_ACTION_ERROR = 'NOT done: the latest patient message only thanks, agrees, greets or says goodbye, so no booking, ' \
+  ACKNOWLEDGEMENT_ACTION_ERROR = 'NOT done: the latest patient message only thanks, says ok or says goodbye, so no booking, ' \
                                  'change, cancellation or other action is made for it. Do not call action tools; reply briefly or ' \
                                  'not at all.'
   MAX_IDENTICAL_TOOL_EXECUTIONS = 3

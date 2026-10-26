@@ -251,7 +251,7 @@ class Captain::Assistant::AgentRunnerService
     { 'response' => '', 'response_mode' => 'human', 'response_human_needed' => true, 'operator_note' => note, 'routing_human' => true }
   end
 
-  # The router found that the message needs no answer (a plain thanks, ok, emoji or greeting, see DecisionRouter::Questions): no agent
+  # The router found that the message needs no answer (a plain thanks, ok, goodbye or emoji, see DecisionRouter::Questions): no agent
   # runs, so nothing is drafted or proposed (in the eval of 26.10 agents booked visits on a closing «Спасибо»). The manager sees why
   # there is no draft; routing_no_reply tells the outcome that the router decided it (no agent is named as its author, and the agent
   # that leads the dialog stays the sticky one).

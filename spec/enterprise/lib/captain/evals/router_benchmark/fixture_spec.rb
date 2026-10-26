@@ -38,14 +38,16 @@ RSpec.describe Captain::Evals::RouterBenchmark::Fixture do
     committed = JSON.parse(File.read(Rails.root.join('script/captain/router_benchmark/router_scenarios.json')))
     ids = committed['suites'].flat_map { |suite| suite['scenarios'].pluck('id') }
 
-    expect(ids.size).to eq(82)
+    expect(ids.size).to eq(88)
     expect(ids).to include('AM01', 'IM01')
     expect(ids).to include('SZ01', 'A11', 'I06')
-    # A plain thanks or greeting needs no answer (no_reply_needed), whoever leads the dialog, and is never a council; a thanks that
-    # also asks for two agents' services is a council.
+    # A plain thanks needs no answer (no_reply_needed), whoever leads the dialog, and is never a council; a thanks that also asks for
+    # two agents' services is a council. An ok, a thumbs-up or «Жарайды» to an offered time accepts it, and a first greeting opens the
+    # dialog: neither is no_reply_needed.
     expect(ids).to include('AS06', 'IS06', 'IS07', 'SS05', 'SZ20')
     expected = committed['suites'].flat_map { |suite| suite['scenarios'] }.to_h { |scenario| [scenario['id'], scenario['expected']] }
-    expect(expected.values_at('AS05', 'AS06', 'IS03', 'IS06', 'SZ18', 'SZ20', 'SS03', 'SS05')).to all(eq('no_reply_needed'))
+    expect(expected.values_at('AS05', 'AS06', 'IS03', 'IS06', 'SZ18', 'SS03', 'SS05', 'AS07', 'IS08', 'SS06', 'AN03', 'IN02', 'SN02', 'SZ20'))
+      .to eq((%w[no_reply_needed] * 7) + (%w[stay_current] * 3) + %w[route_agent_109 route_agent_113 route_agent_119 route_agent_84])
     expect(expected['IS07']).to start_with('council_')
     traps = committed['suites'].flat_map { |suite| suite['scenarios'] }.filter_map { |scenario| scenario['trap'] }
     expect(traps.tally).to eq('human' => 3, 'injection' => 4, 'false_council' => 9)

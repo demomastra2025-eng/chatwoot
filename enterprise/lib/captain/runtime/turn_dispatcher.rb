@@ -73,7 +73,7 @@ class Captain::Runtime::TurnDispatcher
     @run_context.activate(actor, context)
   end
 
-  # A live turn that needs no answer (a plain thanks, ok, emoji or greeting): no route, no transfer and no open part changes hands.
+  # A live turn that needs no answer (a plain thanks, ok, goodbye or emoji): no route, no transfer and no open part changes hands.
   def prepare_no_reply(context)
     actor = @graph.find(@decision.agent_id) || @run_context.holder ||
             raise(Captain::Runtime::Runner::AgentNotFoundError, 'No agent holds the conversation')

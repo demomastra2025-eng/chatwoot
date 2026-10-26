@@ -32,6 +32,8 @@ RSpec.describe Captain::SuggestionResponseSchema do
       prompt = system_prompt(assistant.agent(suggestion_tools: true), 'reply_suggestion')
 
       expect(prompt).to include('set response_mode to human', 'set response_mode to suppress', 'operator_note')
+      expect(prompt).to include('When only a part of the request needs staff and the sources answer the rest',
+                                'unless the draft leaves a part of the request to staff: then it names that part.')
       expect(prompt).to include('in russian')
       expect(prompt).not_to include('say that you will clarify the information')
     end

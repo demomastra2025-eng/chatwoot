@@ -170,6 +170,19 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
     end
   end
 
+  # Review of the 26.10 prompts: «сколько стоит МРТ поясницы и какая подготовка?» when only staff names the preparation. The draft
+  # gives the price, and the note tells the manager what to add.
+  context 'when the draft leaves a part of the request to staff' do
+    let(:payload) { reply.merge('operator_note' => ' Подготовку к МРТ поясницы  допишите сами. ', 'unverified_times' => ['19:00']) }
+
+    it 'keeps the draft and shows the note of the agent above it, with the other notes' do
+      expect(outcome).to include(outcome: 'draft', message: reply['response'])
+      expect(outcome[:suggestion_meta]['operator_note']).to eq(
+        "Подготовку к МРТ поясницы допишите сами. #{I18n.t('captain.reply_suggestion.reasons.unverified_times', times: '19:00')}"
+      )
+    end
+  end
+
   describe 'a run the router could not route' do
     def failed_with(reason)
       described_class.new(
