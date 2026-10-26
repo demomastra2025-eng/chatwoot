@@ -1348,22 +1348,35 @@ export default {
       }
     },
     // Esc stops a suggestion that is being prepared and drops a finished one.
-    // It acts when the focus is in the reply box or nowhere, never when it is
-    // in a dialog or another field of the page. The key handler lives on the
-    // document, so a reply box that is gone (no element) must not react.
+    // The key handler lives on the document, so it sees every Esc of the page
+    // and must react only to its own:
+    // - not to an Esc that another handler already took (event.defaultPrevented);
+    // - not to an Esc pressed in a field (the To/CC/BCC inputs use it to leave
+    //   the field);
+    // - a ready draft goes only when the focus is inside the reply box (the
+    //   panel takes the focus when the draft appears), so an Esc that closes
+    //   the gallery or a menu with the focus on the page can never lose it;
+    // - a run in progress is also stopped when nothing has the focus, because
+    //   the editor that had it is gone while the suggestion is prepared.
+    // A reply box that is gone (no element) must not react.
     cancelCopilotOnEscape(event) {
       const root = this.replyEditor;
-      if (!root || !this.copilot.isActive.value) return;
+      if (!root || !this.copilot.isActive.value || event?.defaultPrevented) {
+        return;
+      }
       const target = event?.target;
-      const isNeutral =
+      if (target?.closest?.('input,textarea,select,[contenteditable="true"]')) {
+        return;
+      }
+      const isInside = target instanceof Node && root.contains(target);
+      const isNowhere =
         !target ||
         target === document.body ||
         target === document.documentElement;
-      if (!isNeutral && !root.contains(target)) return;
 
       if (this.copilot.canCancel.value) {
-        this.copilot.cancelGeneration();
-      } else if (this.copilot.canAccept.value) {
+        if (isInside || isNowhere) this.copilot.cancelGeneration();
+      } else if (this.copilot.canAccept.value && isInside) {
         this.copilot.dismiss();
       }
     },

@@ -210,20 +210,90 @@ describe('CopilotEditorSection.vue', () => {
       wrapper.unmount();
 
       mountComponent({
-        pendingActions: [
-          {
-            ...sampleAction,
-            status: 'failed',
-            error_message: 'Время уже занято',
-          },
-        ],
+        pendingActions: [{ ...sampleAction, status: 'failed' }],
       });
-      expect(
-        wrapper.find('[data-test="copilot-action-error"]').text()
-      ).toContain('Время уже занято');
+      expect(wrapper.find('[data-test="copilot-action-error"]').text()).toBe(
+        'Не удалось выполнить действие. Попробуйте ещё раз или сделайте это вручную'
+      );
+      // the manager can try again
       expect(
         wrapper.find('[data-test="copilot-action-approve"]').exists()
       ).toBe(true);
+    });
+
+    // The server's error text is written for the logs and the model: it can
+    // name a tool argument or an integration. The staff never see it.
+    const RAW_ERRORS = [
+      "This service is not linked to the clinic's MedElement. Retry the call without service_id and let the clinic choose the service.",
+      'PG::UniqueViolation: duplicate key value violates unique constraint',
+      'Время уже занято',
+    ];
+
+    it.each(RAW_ERRORS)(
+      'shows one plain line for a failed card and never the server text: %s',
+      raw => {
+        mountComponent({
+          pendingActions: [
+            {
+              ...sampleAction,
+              status: 'failed',
+              error_message: raw,
+              errorMessage: raw,
+            },
+          ],
+        });
+
+        const card = wrapper.get('[data-test="copilot-action-card"]');
+        expect(card.get('[data-test="copilot-action-error"]').text()).toBe(
+          ru.CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_FAILED
+        );
+        expect(card.text()).not.toContain(raw);
+        expect(card.text()).not.toMatch(/service_id|MedElement|PG::/);
+        expect(card.html()).not.toContain(raw);
+        expect(card.html()).not.toMatch(/service_id|MedElement|PG::/);
+        // no Latin word at all (the card is Russian: «AI» is the only one)
+        expect(card.text()).not.toMatch(/[A-Za-z]{3,}/);
+      }
+    );
+
+    it.each([
+      ['ru', ru],
+      ['en', en],
+      ['kk', kk],
+    ])('has a plain failed line in %s', (locale, messages) => {
+      mountComponent(
+        {
+          pendingActions: [
+            {
+              ...sampleAction,
+              status: 'failed',
+              error_message: 'service_id is not linked to MedElement',
+            },
+          ],
+        },
+        locale,
+        messages
+      );
+
+      const line = wrapper.get('[data-test="copilot-action-error"]').text();
+      expect(line).toBe(
+        messages.CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_FAILED
+      );
+      expect(line.length).toBeGreaterThan(20);
+      expect(line).not.toMatch(/service_id|MedElement|tool|agent|API/i);
+    });
+
+    it('shows no error line for a card that is not failed', () => {
+      mountComponent({
+        pendingActions: [
+          { ...sampleAction, status: 'pending', error_message: 'old text' },
+        ],
+      });
+
+      expect(wrapper.find('[data-test="copilot-action-error"]').exists()).toBe(
+        false
+      );
+      expect(wrapper.text()).not.toContain('old text');
     });
 
     it('keeps the cards visible after the text was inserted', () => {

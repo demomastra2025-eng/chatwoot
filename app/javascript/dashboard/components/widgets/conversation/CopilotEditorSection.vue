@@ -100,7 +100,6 @@ const normalizedPendingActions = computed(() => {
         title: String(item.title || '').trim(),
         description: String(item.description || ''),
         details,
-        errorMessage: String(item.error_message || item.errorMessage || ''),
         resultSummary: String(item.result_summary || item.resultSummary || ''),
         loadingState: props.actionLoadingById?.[actionId] || null,
       };
@@ -203,12 +202,14 @@ const onAfterEnter = el => {
               >
                 {{ action.resultSummary }}
               </div>
+              <!-- One plain line: the text the server returns is for the logs
+                   (it can name tools and services), never for the staff -->
               <div
-                v-if="action.status === 'failed' && action.errorMessage"
+                v-if="action.status === 'failed'"
                 class="text-n-ruby-11 font-medium"
                 data-test="copilot-action-error"
               >
-                {{ action.errorMessage }}
+                {{ t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_FAILED') }}
               </div>
             </div>
 

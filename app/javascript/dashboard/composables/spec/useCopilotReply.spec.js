@@ -33,6 +33,13 @@ vi.mock('dashboard/composables', () => ({
   useTrack: vi.fn(),
 }));
 
+// The composable is called outside a component here: the text of an alert is
+// its key, which shows what the staff would be told
+vi.mock('vue-i18n', async importOriginal => ({
+  ...(await importOriginal()),
+  useI18n: () => ({ t: key => key }),
+}));
+
 vi.mock('dashboard/api/captain/tasks', () => ({
   default: {
     approveAction: vi.fn(),
@@ -1449,6 +1456,68 @@ describe('useCopilotReply', () => {
         conversationId: 42,
       });
       expect(copilot.pendingActions.value[0].status).toBe('rejected');
+    });
+
+    describe('when the server fails an action', () => {
+      const RAW =
+        "This service is not linked to the clinic's MedElement. Retry the call without service_id.";
+      const FAILED = 'CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_FAILED';
+      const REJECT_FAILED =
+        'CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_REJECT_FAILED';
+      const action = { ...sampleAction, action_id: 'act-57' };
+
+      it('marks the card failed and tells the staff one plain line, not the server text', async () => {
+        const copilot = create();
+        await startAndReceiveDraft(copilot, { pending_actions: [action] });
+        TasksAPI.approveAction.mockRejectedValueOnce({
+          message: 'Request failed with status code 422',
+          response: {
+            data: {
+              error: RAW,
+              action: { ...action, status: 'failed', error_message: RAW },
+            },
+          },
+        });
+
+        const result = await copilot.approveAction(action);
+
+        expect(result).toBeNull();
+        expect(copilot.pendingActions.value[0].status).toBe('failed');
+        expect(useAlert).toHaveBeenCalledTimes(1);
+        expect(useAlert).toHaveBeenCalledWith(FAILED);
+        expect(copilot.actionLoadingById.value).toEqual({});
+      });
+
+      it('does the same when the server gave no answer at all', async () => {
+        const copilot = create();
+        await startAndReceiveDraft(copilot, { pending_actions: [action] });
+        TasksAPI.approveAction.mockRejectedValueOnce(
+          new Error('Network Error')
+        );
+
+        await copilot.approveAction(action);
+
+        expect(copilot.pendingActions.value[0].status).toBe('failed');
+        expect(copilot.pendingActions.value[0].error_message).toBeUndefined();
+        expect(useAlert).toHaveBeenCalledTimes(1);
+        expect(useAlert).toHaveBeenCalledWith(FAILED);
+      });
+
+      it('tells a plain line when «Запретить» fails, and keeps the card as it was', async () => {
+        const copilot = create();
+        await startAndReceiveDraft(copilot, { pending_actions: [action] });
+        TasksAPI.rejectAction.mockRejectedValueOnce({
+          message: 'Request failed with status code 422',
+          response: { data: { error: RAW } },
+        });
+
+        const result = await copilot.rejectAction(action);
+
+        expect(result).toBeNull();
+        expect(copilot.pendingActions.value[0].status).toBe('pending');
+        expect(useAlert).toHaveBeenCalledTimes(1);
+        expect(useAlert).toHaveBeenCalledWith(REJECT_FAILED);
+      });
     });
 
     it('retains pendingActions after accept() and isolates them per conversation', async () => {

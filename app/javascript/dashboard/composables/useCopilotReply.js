@@ -1,5 +1,6 @@
 import { ref, computed, getCurrentScope, onScopeDispose } from 'vue';
 import { useCaptain } from 'dashboard/composables/useCaptain';
+import { useI18n } from 'vue-i18n';
 import { useAlert, useTrack } from 'dashboard/composables';
 import { CAPTAIN_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
 import {
@@ -196,6 +197,7 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     getReplySuggestionStatus: requestReplySuggestionStatus,
     cancelReplySuggestion: requestCancelReplySuggestion,
   } = useCaptain();
+  const { t } = useI18n();
 
   const showEditor = ref(false);
   const isGenerating = ref(false);
@@ -1262,16 +1264,12 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
       updatePendingActionState(actionId, updated, convKey);
       return updated;
     } catch (error) {
-      const errorMessage =
-        error?.response?.data?.error ||
-        error?.message ||
-        'Не удалось выполнить действие';
+      // What the server says is for the logs: the staff get one plain line
       const failedAction = error?.response?.data?.action || {
         status: 'failed',
-        error_message: errorMessage,
       };
       updatePendingActionState(actionId, failedAction, convKey);
-      useAlert(errorMessage);
+      useAlert(t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_FAILED'));
       return null;
     } finally {
       const next = { ...actionLoadingById.value };
@@ -1317,12 +1315,8 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
       };
       updatePendingActionState(actionId, updated, convKey);
       return updated;
-    } catch (error) {
-      const errorMessage =
-        error?.response?.data?.error ||
-        error?.message ||
-        'Не удалось отклонить действие';
-      useAlert(errorMessage);
+    } catch {
+      useAlert(t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_REJECT_FAILED'));
       return null;
     } finally {
       const next = { ...actionLoadingById.value };

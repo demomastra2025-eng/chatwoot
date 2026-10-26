@@ -369,7 +369,8 @@
         "ACTION_EXECUTING": "Executing…",
         "ACTION_APPROVED": "Approved and executed",
         "ACTION_REJECTED": "Denied",
-        "ACTION_FAILED": "Execution failed"
+        "ACTION_FAILED": "Could not complete the action. Try again or do it by hand",
+        "ACTION_REJECT_FAILED": "Could not deny the action. Try again"
       }
     },
     "VISIBLE_TO_AGENTS": "Private Note: Only visible to you and your team",

@@ -375,12 +375,13 @@ describe('ReplyBox reply suggestion outcomes', () => {
   });
 
   describe('Esc', () => {
-    const pressEsc = (target = document.body) => {
+    const pressEsc = (target = document.body, init = {}) => {
       target.dispatchEvent(
         new KeyboardEvent('keydown', {
           key: 'Escape',
           code: 'Escape',
           bubbles: true,
+          ...init,
         })
       );
       return flushPromises();
@@ -403,13 +404,25 @@ describe('ReplyBox reply suggestion outcomes', () => {
       expect(editor()).not.toBeNull();
     });
 
-    it('drops a ready draft like «Отменить»', async () => {
+    it('cancels a suggestion that is being prepared when the focus is in the reply box', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: state({ status: 'running', result: null }),
+      });
+      wrapper = await mountReplyBox();
+
+      await pressEsc(replyBox());
+
+      expect(mockCancelReplySuggestion).toHaveBeenCalledTimes(1);
+      expect(panel()).toBeNull();
+    });
+
+    it('drops a ready draft like «Отменить» when the focus is in the reply box', async () => {
       mockGetReplySuggestionStatus.mockResolvedValueOnce({
         suggestion: draft(),
       });
       wrapper = await mountReplyBox();
 
-      await pressEsc();
+      await pressEsc(section());
 
       expect(TasksAPI.feedback).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -421,15 +434,83 @@ describe('ReplyBox reply suggestion outcomes', () => {
       expect(section()).toBeNull();
     });
 
-    it('works when the focus is in the reply box', async () => {
+    it('keeps a ready draft when Esc is pressed with the focus on the page', async () => {
       mockGetReplySuggestionStatus.mockResolvedValueOnce({
         suggestion: draft(),
       });
       wrapper = await mountReplyBox();
 
-      await pressEsc(section());
+      // the manager clicked a chat image: the focus is on the body and the
+      // same Esc closes the gallery
+      await pressEsc(document.body);
+      await pressEsc(document.documentElement);
 
-      expect(section()).toBeNull();
+      expect(section()).not.toBeNull();
+      expect(panel()).not.toBeNull();
+      expect(TasksAPI.feedback).not.toHaveBeenCalled();
+      expect(wrapper.vm.copilot.canAccept.value).toBe(true);
+    });
+
+    it('keeps a ready draft when another handler already took the Esc', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: draft(),
+      });
+      wrapper = await mountReplyBox();
+      const takeIt = event => event.preventDefault();
+      document.addEventListener('keydown', takeIt, true);
+
+      await pressEsc(section(), { cancelable: true });
+      document.removeEventListener('keydown', takeIt, true);
+
+      expect(section()).not.toBeNull();
+      expect(TasksAPI.feedback).not.toHaveBeenCalled();
+    });
+
+    it('keeps a running suggestion when another handler already took the Esc', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: state({ status: 'running', result: null }),
+      });
+      wrapper = await mountReplyBox();
+      const takeIt = event => event.preventDefault();
+      document.addEventListener('keydown', takeIt, true);
+
+      await pressEsc(document.body, { cancelable: true });
+      document.removeEventListener('keydown', takeIt, true);
+
+      expect(panel()).not.toBeNull();
+      expect(mockCancelReplySuggestion).not.toHaveBeenCalled();
+    });
+
+    it('keeps a ready draft when Esc is pressed in a field of the reply box', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: draft(),
+      });
+      wrapper = await mountReplyBox();
+      // the CC field of an email reply: Esc only leaves the field
+      const ccInput = document.createElement('input');
+      replyBox().appendChild(ccInput);
+      ccInput.focus();
+
+      await pressEsc(ccInput);
+
+      expect(section()).not.toBeNull();
+      expect(TasksAPI.feedback).not.toHaveBeenCalled();
+      expect(document.activeElement).not.toBe(ccInput);
+    });
+
+    it('keeps a running suggestion when Esc is pressed in a field of the reply box', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: state({ status: 'running', result: null }),
+      });
+      wrapper = await mountReplyBox();
+      const field = document.createElement('div');
+      field.setAttribute('contenteditable', 'true');
+      replyBox().appendChild(field);
+
+      await pressEsc(field);
+
+      expect(panel()).not.toBeNull();
+      expect(mockCancelReplySuggestion).not.toHaveBeenCalled();
     });
 
     it('leaves the suggestion alone when the focus is in another field or dialog', async () => {
@@ -445,6 +526,21 @@ describe('ReplyBox reply suggestion outcomes', () => {
       expect(section()).not.toBeNull();
       expect(TasksAPI.feedback).not.toHaveBeenCalled();
       elsewhere.remove();
+    });
+
+    it('leaves a running suggestion alone when the focus is in a dialog', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: state({ status: 'running', result: null }),
+      });
+      wrapper = await mountReplyBox();
+      const dialog = document.createElement('div');
+      document.body.appendChild(dialog);
+
+      await pressEsc(dialog);
+
+      expect(panel()).not.toBeNull();
+      expect(mockCancelReplySuggestion).not.toHaveBeenCalled();
+      dialog.remove();
     });
 
     it('does nothing when no suggestion is active', async () => {
