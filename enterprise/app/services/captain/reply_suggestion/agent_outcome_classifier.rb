@@ -21,6 +21,10 @@
 #                                                           or a draft that leaves a part of the request to staff (the agent's
 #                                                           operator_note)
 #
+# After these rules, a no_reply (the agent's, the router's or a council's) for patient messages that ask to cancel, move or make a visit
+# («Отмена завтра», «не смогу прийти», «запишите», «болдырмаңыз», «жазылғым келеді», see Captain::PatientIntent) is turned into
+# human_needed with a note of its own: a request is never swallowed by an emoji that came after it.
+#
 # A text never comes out of an outcome other than draft. An outcome of a turn that the router gave to the anchor only because no
 # agent leads the dialog says so (routing_default_to: anchor): its agent does not become the sticky agent (see StickyAgent).
 class Captain::ReplySuggestion::AgentOutcomeClassifier
@@ -41,15 +45,17 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
   PROVIDER_ERROR_PREFIXES = %w[RubyLLM:: Faraday:: Llm:: Net:: Timeout:: OpenSSL:: Errno:: SocketError].freeze
   PART_LIMIT = 160
 
-  def initialize(raw_payload, trace_collector:)
+  # patient_text: the patient's messages that the run answers (the unanswered ones), for the check of a request that no_reply swallowed.
+  def initialize(raw_payload, trace_collector:, patient_text: nil)
     @payload = raw_payload.to_h.with_indifferent_access
     @trace_collector = trace_collector
+    @patient_text = patient_text.to_s
   end
 
   REASONED_OUTCOMES = %w[draft no_reply human_needed].freeze
 
   def perform
-    with_routing_default(classify || draft)
+    with_routing_default(unswallowed(classify || draft))
   end
 
   private
@@ -218,6 +224,18 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
 
   def suggestion_meta
     @suggestion_meta ||= trace_collector.suggestion_meta(payload)
+  end
+
+  # A «no reply» for a message that asks to cancel, move or make a visit swallows the request: the eval of 26.10 answered «Отмена
+  # завтра» (followed by an emoji) with «emoji only». Whatever decided it (the agent, the router, a council), the manager is told to
+  # answer, and the cards and the agent of the run stay with the note. The words are the check (Captain::PatientIntent).
+  def unswallowed(outcome)
+    return outcome unless outcome[:outcome].to_s == 'no_reply' && Captain::PatientIntent.booking_change?(@patient_text)
+
+    Captain::ReplySuggestion::Outcome.human_needed(
+      reason: I18n.t('captain.reply_suggestion.reasons.swallowed_request'), engine: outcome[:engine],
+      reason_source: outcome[:reason_source], **outcome.except(:outcome, :reason, :reason_source, :engine)
+    )
   end
 
   def with_routing_default(outcome)

@@ -278,6 +278,63 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
     end
   end
 
+  # Suggestion eval 26.10 (Sezim): «Отмена завтра», a second message and an emoji; the agent answered «emoji only» and the request to
+  # cancel tomorrow's visit was swallowed.
+  describe 'a request that a no_reply would swallow' do
+    let(:suppressed) do
+      { 'response' => '', 'response_mode' => 'suppress', 'response_suppressed' => true, 'operator_note' => 'Пациент отправил только эмодзи.',
+        'usage' => usage }
+    end
+    let(:swallowed_note) { I18n.t('captain.reply_suggestion.reasons.swallowed_request') }
+
+    def classify(payload, text)
+      described_class.new(payload, trace_collector: trace_collector, patient_text: text).perform
+    end
+
+    it 'turns the no_reply of the agent into human_needed with a note of its own, keeping the agent, the cards and the usage' do
+      result = classify(suppressed, "Отмена завтра\nСегодня уже была на приёме\n🌷")
+
+      expect(result).to include(outcome: 'human_needed', reason: swallowed_note, reason_source: 'agent', engine: 'agent', agent: agent_summary,
+                                pending_actions: [{ 'action_id' => 'a-1' }], usage: usage)
+      expect(swallowed_note).not_to include('эмодзи')
+    end
+
+    it 'does it for a request to move or make a visit in Russian and in Kazakh' do
+      ['Можно перенести на пятницу?', 'Не смогу прийти', 'Запишите на завтра', 'Ертеңгі жазылуды болдырмаңыз', 'Келе алмаймын',
+       'Уақытты ауыстырыңызшы', 'Жазылғым келеді'].each do |text|
+        expect(classify(suppressed, text)).to include(outcome: 'human_needed', reason: swallowed_note), text
+      end
+    end
+
+    it 'does it for the no_reply of the router, which names no agent' do
+      routed = suppressed.merge('routing_no_reply' => true, 'operator_note' => 'Пациент только благодарит.')
+
+      result = classify(routed, 'Отмена завтра')
+
+      expect(result).to include(outcome: 'human_needed', reason: swallowed_note, reason_source: 'router', agent: nil, pending_actions: [])
+    end
+
+    it 'does it for the no_reply of a council, keeping its cards' do
+      council = suppressed.merge('council_turn' => true)
+
+      expect(classify(council, 'Перенесите запись')).to include(outcome: 'human_needed', reason: swallowed_note,
+                                                                 pending_actions: [{ 'action_id' => 'a-1' }])
+    end
+
+    it 'leaves a no_reply for a thanks, an emoji or a goodbye as it is, and the other outcomes of a request as they are' do
+      ['Спасибо!', 'Рахмет', '👍', 'Хорошо, до свидания', '', nil].each do |text|
+        expect(classify(suppressed, text)).to include(outcome: 'no_reply', reason: 'Пациент отправил только эмодзи.'), text.inspect
+      end
+      expect(classify(reply, 'Отмените запись')).to include(outcome: 'draft')
+      human = { 'response' => '', 'response_mode' => 'human', 'operator_note' => 'Решает врач.' }
+      expect(classify(human, 'Отмените запись')).to include(outcome: 'human_needed', reason: 'Решает врач.')
+    end
+
+    it 'does not look at a patient text that was not given' do
+      expect(described_class.new(suppressed, trace_collector: trace_collector).perform).to include(outcome: 'no_reply')
+    end
+  end
+
   describe 'a reply that cannot be given' do
     it 'fails a handoff: a suggestion has no such thing' do
       failure = described_class.new({ 'response' => 'conversation_handoff' }, trace_collector: trace_collector).perform

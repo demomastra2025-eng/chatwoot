@@ -396,6 +396,31 @@ RSpec.describe Captain::ReplySuggestionService do
           expect(result.dig(:agent, 'name')).to eq('Координатор')
         end
 
+        # Suggestion eval 26.10 (Sezim): «Отмена завтра» and an emoji after it got «emoji only» as a no_reply.
+        describe 'that no reply is needed while the patient asks to cancel' do
+          let(:emoji_only) do
+            { 'response' => '', 'response_mode' => 'suppress', 'response_suppressed' => true, 'operator_note' => 'Пациент отправил только эмодзи.',
+              'agent_id' => assistant.id, 'agent_display_name' => assistant.name }
+          end
+
+          it 'tells the manager to answer when the unanswered messages ask for it, whichever message came last' do
+            create(:message, conversation: conversation, message_type: :incoming, content: 'Отмена завтра')
+            create(:message, conversation: conversation, message_type: :incoming, content: '💐🌷')
+            allow(runner_double).to receive(:generate_response).and_return(emoji_only)
+
+            expect(service.perform).to include(outcome: 'human_needed', reason: I18n.t('captain.reply_suggestion.reasons.swallowed_request'))
+          end
+
+          it 'leaves a no_reply as it is when the request was answered before the thanks' do
+            create(:message, conversation: conversation, message_type: :incoming, content: 'Отмена завтра')
+            create(:message, conversation: conversation, message_type: :outgoing, content: 'Отменили, хорошего дня!')
+            create(:message, conversation: conversation, message_type: :incoming, content: 'Спасибо')
+            allow(runner_double).to receive(:generate_response).and_return(emoji_only)
+
+            expect(service.perform).to include(outcome: 'no_reply', reason: 'Пациент отправил только эмодзи.')
+          end
+        end
+
         it 'answers human_needed with the note of the agent' do
           allow(runner_double).to receive(:generate_response).and_return(
             { 'response' => '', 'response_mode' => 'human', 'operator_note' => 'В базе нет ответа про оперирующего ЛОРа.' }

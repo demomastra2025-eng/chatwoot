@@ -583,7 +583,7 @@ module Enterprise::Captain::ReplySuggestionService
     @trace_collector = TraceCollector.new(assistant: assistant, conversation: conversation, user: user, progress_context: @progress_context)
     @trace_collector.broadcast_initial!
 
-    classify_agent_response(run_suggestion_agent(assistant, history))
+    classify_agent_response(run_suggestion_agent(assistant, history), history)
   rescue Captain::Conversation::ControlGenerationStaleError, Timeout::Error
     raise
   rescue StandardError => e
@@ -600,10 +600,19 @@ module Enterprise::Captain::ReplySuggestionService
     end
   end
 
-  def classify_agent_response(raw_response)
-    outcome = Captain::ReplySuggestion::AgentOutcomeClassifier.new(raw_response, trace_collector: @trace_collector).perform
+  def classify_agent_response(raw_response, history = [])
+    outcome = Captain::ReplySuggestion::AgentOutcomeClassifier.new(
+      raw_response, trace_collector: @trace_collector, patient_text: unanswered_patient_text(history)
+    ).perform
     return outcome unless outcome[:outcome] == 'draft' && build_follow_up_context?
 
     outcome.merge(follow_up_context: build_follow_up_context([{ role: 'user', content: formatted_conversation }], outcome))
+  end
+
+  # The patient's messages after the last clinic message: the turn that the suggestion answers (the same as the router's latest
+  # message). Read in the classifier for the words of a request, never stored or logged.
+  def unanswered_patient_text(history)
+    unanswered = Captain::Runtime::RoutingSnapshot.split_history(history).last
+    unanswered.filter_map { |message| Captain::Runtime::RoutingSnapshot.text_of(message[:content]).presence }.join("\n")
   end
 end
