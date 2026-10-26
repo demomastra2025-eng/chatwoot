@@ -45,6 +45,16 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
     expect(build(3, current: 10).mode_keys).to include('no_reply_needed')
   end
 
+  # Router benchmark A23 (26.10, review of the human_handoff gate): «Перестаньте мне писать» was no_reply_needed, which no keyword gate sees.
+  # The gate takes the include answers of a human_handoff as they come, so the models are asked for no agent in it.
+  it 'describes human_handoff with every include answer no and a demand to stop writing, and keeps that demand out of no_reply_needed' do
+    criteria = build(3, current: 10).to_h['route_mode'][:criteria]
+
+    expect(criteria['human_handoff']).to include('refuses to continue with the assistant (asks it to stop writing)',
+                                                 'Every include_agent question is no.')
+    expect(criteria['no_reply_needed']).to include('A demand to stop writing is not this either.')
+  end
+
   it 'offers a council part that was not its owner\'s one agent, staff or nobody, never a council or a stay' do
     expect(build(3, current: 10, mode: :singles).mode_keys).to eq(%w[route_agent human_handoff nobody])
   end
@@ -135,8 +145,9 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
     end
 
     # Suggestion eval 26.10 (Sezim): the decision model answered human_handoff (0.71) for the first message of a dialog, a question
-    # about free times for a child; the dialog never reached an agent. The words did not ask for a person, so an agent answers.
-    describe 'a human_handoff of the model for a message that asks for no person' do
+    # about free times for a child; the dialog never reached an agent. The words did not ask for a person and an agent is a plausible
+    # answer (its include probability is 0.5 or more), so that agent answers.
+    describe 'a human_handoff of the model for a message that asks for no person and that an agent handles' do
       let(:plain) { 'Есть окно сегодня или завтра для ребёнка к ЛОРу?' }
       let(:probabilities) { { 10 => 0.2, 20 => 0.7, 30 => 0.4 } }
 
@@ -154,16 +165,69 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
         expect(resolved).to have_attributes(kind: 'stay', agent_ids: [30], key: 'stay_current')
       end
 
-      it 'prefers the current agent, then the anchor of the channel, then the lower id, when the include answers are all alike' do
-        expect(build(3, current: 20, message: plain).resolve(answered('human_handoff')).key).to eq('stay_current')
-        expect(build(3, suggestion: true, anchor: 30, message: plain).resolve(answered('human_handoff')).key).to eq('route_agent_30')
-        expect(build(3, message: plain).resolve(answered('human_handoff')).key).to eq('route_agent_10')
+      it 'prefers the current agent, then the anchor of the channel, then the lower id, when the plausible agents are all alike' do
+        alike = answered('human_handoff', yes: [10, 20, 30])
+
+        expect(build(3, current: 20, message: plain).resolve(alike).key).to eq('stay_current')
+        expect(build(3, suggestion: true, anchor: 30, message: plain).resolve(alike).key).to eq('route_agent_30')
+        expect(build(3, message: plain).resolve(alike).key).to eq('route_agent_10')
+      end
+
+      it 'takes an include probability of exactly 0.5 for a plausible agent, and a model without probabilities by its yes' do
+        expect(build(3, message: plain).resolve(answered('human_handoff', include_probabilities: { 10 => 0.2, 20 => 0.5, 30 => 0.4 })))
+          .to have_attributes(kind: 'agent', key: 'route_agent_20')
+        expect(build(3, message: plain).resolve(answered('human_handoff', yes: [30]))).to have_attributes(kind: 'agent', key: 'route_agent_30')
       end
 
       it 'is not checked for a council part, which keeps the word of the model' do
         part = build(3, current: 10, mode: :singles, message: plain)
 
         expect(part.resolve(answered('human_handoff', all: [20, 30]))).to have_attributes(kind: 'human', key: 'human_handoff')
+        expect(part.resolve(answered('human_handoff', yes: [20, 30], all: [20, 30]))).to have_attributes(kind: 'human', key: 'human_handoff')
+      end
+    end
+
+    # Review of the human_handoff gate: the keywords cannot know every wording («Можете мне позвонить?», «Админге қосыңыз»), and the gate
+    # sent such a message to an agent that is no answer to it. When no agent is a plausible answer, the staff decision of the model stands.
+    describe 'a human_handoff of the model for a message that no agent is a plausible answer to' do
+      let(:unknown) { 'Мне нужен кто-то, кто решит мой вопрос' }
+
+      it 'gives staff when every include probability is below 0.5, whatever the words say' do
+        expect(Captain::PatientIntent.human_request?(unknown)).to be(false)
+
+        [10, 20, 30].each do |current|
+          resolved = build(3, current: current, message: unknown)
+                     .resolve(answered('human_handoff', include_probabilities: { 10 => 0.1, 20 => 0.45, 30 => 0.3 }))
+
+          expect(resolved).to have_attributes(kind: 'human', agent_ids: [], key: 'human_handoff', confidence: 0.9), "current agent #{current}"
+        end
+      end
+
+      it 'gives staff on the first message of a dialog and in a reply suggestion, and for a model that gave no probabilities' do
+        expect(build(3, message: unknown).resolve(answered('human_handoff'))).to have_attributes(kind: 'human', key: 'human_handoff')
+        expect(build(3, suggestion: true, anchor: 30, message: unknown).resolve(answered('human_handoff')))
+          .to have_attributes(kind: 'human', key: 'human_handoff')
+        expect(build(3, current: 20, message: unknown).resolve(answered('human_handoff'))).to have_attributes(kind: 'human', key: 'human_handoff')
+      end
+
+      it 'gives staff for the wordings of a call, the front desk and the administrator that the first keyword list missed' do
+        ['Можете позвонить?', 'Можете мне позвонить?', 'Можете перезвонить?', 'Позвони мне', 'Свяжите с регистратурой', 'Отдайте мои деньги',
+         'Я недоволен вашим сервисом', 'Перестаньте мне писать', 'operator', 'administrator', 'please call me', 'I want to talk to a manager',
+         'Админге қосыңыз', 'Хочу пожаловаться'].each do |text|
+          resolved = build(3, current: 20, message: text).resolve(answered('human_handoff', yes: [10, 20, 30]))
+
+          expect(resolved).to have_attributes(kind: 'human', key: 'human_handoff'), text
+        end
+      end
+
+      it 'gives staff when there is no agent to ask' do
+        expect(build(0, message: unknown).resolve(answered('human_handoff', all: []))).to have_attributes(kind: 'human', key: 'human_handoff')
+      end
+
+      it 'does not give staff for a message that an agent is a plausible answer to, when the words ask for no person' do
+        resolved = build(3, message: unknown).resolve(answered('human_handoff', include_probabilities: { 10 => 0.1, 20 => 0.8, 30 => 0.3 }))
+
+        expect(resolved).to have_attributes(kind: 'agent', agent_ids: [20], key: 'route_agent_20')
       end
     end
 

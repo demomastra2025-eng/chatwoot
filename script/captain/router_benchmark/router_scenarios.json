@@ -139,7 +139,13 @@
           "message": "Здравствуйте, у вас на сегодня или завтра есть окно для ребёнка к педиатру?", "expected": "route_agent_77" },
         { "id": "A21", "trap": "human", "title": "a request for an operator", "current": 77,
           "history": [ { "role": "agent", "agent_id": 77, "text": "Подскажите, на какой день вам удобно?" } ],
-          "message": "Соедините с оператором", "expected": "human_handoff" }
+          "message": "Соедините с оператором", "expected": "human_handoff" },
+        { "id": "A22", "trap": "human", "title": "a call-back asked as a question, in words no keyword list holds", "current": 77,
+          "history": [ { "role": "agent", "agent_id": 77, "text": "Подскажите, на какой день вам удобно?" } ],
+          "message": "Можете мне позвонить?", "expected": "human_handoff" },
+        { "id": "A23", "trap": "human", "title": "a patient who refuses to go on writing with the assistant", "current": 77,
+          "history": [ { "role": "agent", "agent_id": 77, "text": "Подскажите, на какой день вам удобно?" } ],
+          "message": "Перестаньте мне писать", "expected": "human_handoff" }
       ]
     },
     {
@@ -268,7 +274,13 @@
           "message": "Здравствуйте, есть окно на сегодня или завтра для ребёнка к детскому неврологу?", "expected": "route_agent_85" },
         { "id": "I21", "trap": "human", "title": "a request for an operator", "current": 113,
           "history": [ { "role": "agent", "agent_id": 113, "text": "Подскажите, на какой день вам удобно?" } ],
-          "message": "Соедините с оператором", "expected": "human_handoff" }
+          "message": "Соедините с оператором", "expected": "human_handoff" },
+        { "id": "I22", "trap": "human", "title": "a request for the front desk, in words no keyword list holds", "current": 113,
+          "history": [ { "role": "agent", "agent_id": 113, "text": "Подскажите, на какой день вам удобно?" } ],
+          "message": "Свяжите меня с регистратурой", "expected": "human_handoff" },
+        { "id": "I23", "trap": "human", "title": "an English request for a call and a manager", "current": 113, "language": "en",
+          "history": [ { "role": "agent", "agent_id": 113, "text": "Подскажите, на какой день вам удобно?" } ],
+          "message": "Please call me, I want to talk to a manager", "expected": "human_handoff" }
       ]
     },
     {
@@ -388,7 +400,12 @@
           "message": "Соедините с оператором", "expected": "human_handoff" },
         { "id": "SZ23", "trap": "human", "title": "a Kazakh request for an operator", "current": 84, "language": "kk",
           "history": [ { "role": "agent", "agent_id": 84, "text": "Қай күні ыңғайлы?" } ],
-          "message": "Оператормен байланыстырыңызшы", "expected": "human_handoff" }
+          "message": "Оператормен байланыстырыңызшы", "expected": "human_handoff" },
+        { "id": "SZ24", "trap": "human", "title": "a Kazakh request for the administrator by its short slang name", "current": 84, "language": "kk",
+          "history": [ { "role": "agent", "agent_id": 84, "text": "Қай күні ыңғайлы?" } ],
+          "message": "Админге қосыңыз", "expected": "human_handoff" },
+        { "id": "SZ25", "trap": "human", "title": "a call-back asked as the first message of a dialog: no agent is asked for a service", "current": null, "history": [],
+          "message": "Здравствуйте, можете мне позвонить?", "expected": "human_handoff" }
       ]
     }
   ]

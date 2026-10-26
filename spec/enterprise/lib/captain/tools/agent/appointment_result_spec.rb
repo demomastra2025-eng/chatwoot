@@ -414,6 +414,44 @@ RSpec.describe Captain::Tools::Agent::AppointmentResult do
     end
   end
 
+  # PROD run g1-20261026 (Sezim, accounts 76-78: none of the 28 services is linked to MedElement): the check of the booking card refused
+  # the service with a technical failure, which ended the whole suggestion (c78-1231427, c78-1246840) instead of a retry without it.
+  describe 'a service the clinic system has no code for, refused by the check of a booking card' do
+    let(:error) do
+      Scheduling::Error.new(code: 'MEDELEMENT_SERVICE_UNMAPPED', message: 'Selected services must be linked to Medelement',
+                            status: :unprocessable_content, details: { mutation_executed: false })
+    end
+
+    it 'is a business answer that tells the agent to retry without the service, with nothing written' do
+      payload = described_class.failure(error)
+
+      expect(payload).to include(success: false, reason: 'validation_error', code: 'MEDELEMENT_SERVICE_UNMAPPED', error_class: 'business',
+                                 audit: { mutation_executed: false, failure_stage: 'tool_arguments' })
+      expect(payload[:correction]).to include('without service_id', 'staff choose the service', 'do not book', 'staff will confirm')
+      expect(payload[:correction]).not_to match(/medelement|provider/i)
+    end
+
+    it 'reaches the agent as a failure it can correct in the same run, and the runtime reads it as a business answer' do
+      output = described_class.failure_output(error)
+      result = Captain::ToolResult.normalize(output)
+
+      expect(result).to include(success: false, retryable: false, error: include('without service_id'),
+                                audit: include(error_class: 'business', failure_stage: 'tool_arguments', mutation_executed: false),
+                                data: include(code: 'MEDELEMENT_SERVICE_UNMAPPED'))
+      expect(Captain::Runtime::ToolFailure.classify(output)).to eq('business')
+      expect(Captain::Runtime::ToolFailure.technical?(output)).to be(false)
+      expect(Captain::Runtime::ToolFailure.business_answer?(output)).to be(true)
+    end
+
+    it 'stays a technical failure when the write itself raised it: the agent does not book again without the service' do
+      written = Scheduling::Error.new(code: 'MEDELEMENT_SERVICE_UNMAPPED', message: 'Selected services must be linked to Medelement',
+                                      status: :unprocessable_content)
+
+      expect(described_class.failure(written)).to eq(success: false, reason: 'staff_will_help', error_class: 'technical')
+      expect(Captain::Runtime::ToolFailure.technical?(described_class.failure_output(written))).to be(true)
+    end
+  end
+
   describe 'a booking at a start that is not on the grid of the specialist' do
     let(:nearest) { %w[2026-04-21T14:20:00+05:00 2026-04-21T14:30:00+05:00] }
     let(:error) do

@@ -331,6 +331,21 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
       expect(classify(human, 'Отмените запись')).to include(outcome: 'human_needed', reason: 'Решает врач.')
     end
 
+    # Review of the cancellation guard: the patient thanks the clinic right after it confirmed a cancellation or a move.
+    it 'leaves a no_reply for a thanks that names the cancellation, the move or the visit as done as it is' do
+      ['Спасибо, что перенесли', 'Благодарю за перенос', 'Спасибо за отмену', 'Спасибо, что отменили запись', 'Спасибо, отменили',
+       'Спасибо что передвинули', 'Спасибо, что сдвинули время', 'Рақмет, жазылдым', 'Рақмет, ауыстырғаныңызға'].each do |text|
+        expect(classify(suppressed, text)).to include(outcome: 'no_reply', reason: 'Пациент отправил только эмодзи.'), text
+      end
+    end
+
+    it 'still turns the no_reply of a thanks that comes with a request into human_needed' do
+      ['Спасибо, перенесите на пятницу', 'Спасибо. Отмена завтра', 'Спасибо, что перенесли. Теперь отмените вторую запись',
+       'Рақмет, болдырмаңыз', "Спасибо!\nЗапишите меня на субботу"].each do |text|
+        expect(classify(suppressed, text)).to include(outcome: 'human_needed', reason: swallowed_note), text
+      end
+    end
+
     it 'does not look at a patient text that was not given' do
       expect(described_class.new(suppressed, trace_collector: trace_collector).perform).to include(outcome: 'no_reply')
     end

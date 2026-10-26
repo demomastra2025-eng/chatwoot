@@ -16,6 +16,14 @@ class Captain::Tools::Agent::AppointmentResult
                               'within the clinic window, use the specialist\'s primary consultation service_id); ' \
                               'ask the patient only when two services fit equally.'.freeze
   SERVICE_LIST_PARTIAL = 'The list is partial: search_scheduling_services finds the others.'.freeze
+  # A service the clinic system has no code for, named in a booking or a move of a reply suggestion (see ActionApprovalService): no card
+  # was prepared and nothing was written. The agent books without the service (staff choose it). Only the failure of that check is
+  # corrected by the agent: the same code from the write itself (Scheduling::Appointments::UpsertService) stays a technical failure.
+  SERVICE_UNMAPPED_CODE = 'MEDELEMENT_SERVICE_UNMAPPED'.freeze
+  SERVICE_UNMAPPED_GUIDANCE = 'That service is not linked to the clinic system, so a booking cannot name it. Retry the same call ' \
+                              'without service_id: staff choose the service. If the call without service_id is refused as well (for ' \
+                              'this service or for a missing one), do not book: tell the patient that staff will confirm the visit ' \
+                              'and its service.'.freeze
   # A start that is not on the grid of the specialist's cells (see Scheduling::SlotGrid): the answer carries the starts next to it.
   OFF_GRID_CODE = 'START_OFF_GRID'.freeze
   OFF_GRID_GUIDANCE = 'That start is not on the specialist\'s schedule grid. Offer the patient one of nearest_starts once ' \
@@ -276,6 +284,17 @@ class Captain::Tools::Agent::AppointmentResult
   end
   private_class_method :off_grid_failure
 
+  # A service without a code in the clinic system, refused by the check of a reply suggestion before any card: the agent retries
+  # without the service. The same code raised by the write itself carries no mutation_executed: false and is not corrected here.
+  def self.service_unmapped_failure(error)
+    return unless error.is_a?(::Scheduling::Error) && error.code.to_s == SERVICE_UNMAPPED_CODE
+    return unless error.details.to_h.with_indifferent_access[:mutation_executed] == false
+
+    { success: false, reason: 'validation_error', code: SERVICE_UNMAPPED_CODE, error_class: ERROR_CLASS_BUSINESS,
+      correction: SERVICE_UNMAPPED_GUIDANCE, audit: { mutation_executed: false, failure_stage: 'tool_arguments' } }
+  end
+  private_class_method :service_unmapped_failure
+
   # A start before now: the agent offers a free time from now instead. The failure names the clinic's current time.
   def self.start_in_past_failure(error)
     return unless error.is_a?(::Scheduling::Error) && error.code.to_s == START_IN_PAST_CODE
@@ -289,7 +308,7 @@ class Captain::Tools::Agent::AppointmentResult
 
   # The business answers of a typed scheduling error that the agent corrects in the same run; nil for any other error.
   def self.correctable_failure(error)
-    service_required_failure(error) || off_grid_failure(error) || start_in_past_failure(error)
+    service_required_failure(error) || service_unmapped_failure(error) || off_grid_failure(error) || start_in_past_failure(error)
   end
   private_class_method :correctable_failure
 

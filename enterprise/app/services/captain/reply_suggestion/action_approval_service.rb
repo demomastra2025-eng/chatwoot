@@ -618,10 +618,13 @@ class Captain::ReplySuggestion::ActionApprovalService
 
       return if service.custom_attributes.to_h['medelement_nomenclature_code'].present?
 
+      # Nothing was written (a card is only prepared here), so the agent corrects the call in the same run: it retries without the
+      # service (see AppointmentResult.service_unmapped_failure).
       raise Scheduling::Error.new(
-        code: 'MEDELEMENT_SERVICE_UNMAPPED',
+        code: Captain::Tools::Agent::AppointmentResult::SERVICE_UNMAPPED_CODE,
         message: 'Selected services must be linked to Medelement',
-        status: :unprocessable_content
+        status: :unprocessable_content,
+        details: { mutation_executed: false }
       )
     end
 

@@ -212,6 +212,14 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     expect(described_class.for_tool('create_appointment').params['service_id']).to include('a missing service link never blocks booking')
   end
 
+  # PROD run g1-20261026 (Sezim): no service of the clinic is linked to the clinic system, and a booking card that names one is refused.
+  it 'tells the agent to leave the service out of a booking or a move when the service is not linked to the clinic system' do
+    expect(described_class.for_tool('create_appointment').params['service_id'])
+      .to include('not linked to the clinic system is refused: book without service_id then, staff choose the service')
+    expect(described_class.for_tool('update_appointment').params['service_id'])
+      .to include('not linked to the clinic system is refused: leave service_id out then')
+  end
+
   it 'tells the agent that handoff is for a person or for what only staff can do or answer, after one message for the details staff need' do
     description = described_class.for_tool('handoff').description
 

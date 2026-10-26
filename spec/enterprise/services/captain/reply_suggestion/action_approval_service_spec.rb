@@ -610,6 +610,61 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
 
       expect(JSON.parse(raw)['status']).to eq('pending_operator_approval')
     end
+
+    # PROD run g1-20261026 (Sezim: none of the 28 services is linked to MedElement): the check refused the service with a technical
+    # failure, which ended the whole suggestion (c78-1231427, c78-1246840). It is now an answer the agent corrects by booking without it.
+    describe 'a service that is not linked to the clinic system' do
+      def unlinked = @unlinked ||= create(:scheduling_service, account: account, name: 'Приём ЛОРа', duration_min: 30)
+
+      def refusal(raw) = Captain::ToolResult.normalize(raw)
+
+      it 'refuses a booking that names it with an answer to retry without the service, and prepares no card' do
+        raw = described_class.intercept(
+          tool: create_tool, tool_context: tool_context,
+          arguments: { resource_id: doctor.id, service_id: unlinked.id, starts_at: at(9, 0).iso8601 }
+        )
+
+        expect(refusal(raw)).to include(success: false, error: include('without service_id', 'staff choose the service'),
+                                        audit: include(error_class: 'business', mutation_executed: false),
+                                        data: include(code: 'MEDELEMENT_SERVICE_UNMAPPED', error_class: 'business'))
+        expect(Captain::Runtime::ToolFailure.classify(raw)).to eq('business')
+        expect(pending_count).to eq(0)
+      end
+
+      it 'prepares the card when the agent retries the booking without the service' do
+        raw = described_class.intercept(
+          tool: create_tool, tool_context: tool_context, arguments: { resource_id: doctor.id, starts_at: at(9, 0).iso8601 }
+        )
+
+        expect(JSON.parse(raw)).to include('status' => 'pending_operator_approval')
+        expect(pending_count).to eq(1)
+      end
+
+      it 'refuses a move to it the same way, and prepares the move without it' do
+        appointment = book(doctor, at(11, 0), at(11, 30), contact: contact)
+        token = Captain::Tools::Agent::AppointmentAccess.issue(assistant: assistant, conversation: conversation, appointment: appointment)
+        move = { appointment_id: appointment.id, appointment_access_token: token, patient_confirmed: true, starts_at: at(10, 0).iso8601 }
+        update_tool = Captain::Tools::UpdateAppointmentTool.new(assistant)
+
+        refused = described_class.intercept(tool: update_tool, tool_context: tool_context, arguments: move.merge(service_id: unlinked.id))
+        expect(refusal(refused)).to include(success: false, data: include(code: 'MEDELEMENT_SERVICE_UNMAPPED', error_class: 'business'))
+        expect(pending_count).to eq(0)
+
+        prepared = described_class.intercept(tool: update_tool, tool_context: tool_context, arguments: move)
+        expect(JSON.parse(prepared)).to include('status' => 'pending_operator_approval')
+      end
+
+      it 'does not refuse it for a specialist that is not in the clinic system' do
+        plain_doctor = create(:scheduling_resource, account: account, name: 'Д-р Берик', timezone: 'Asia/Almaty', slot_duration_min: 15)
+        create(:scheduling_work_rule, account: account, resource: plain_doctor, weekday: day.wday, start_minute: 9 * 60, end_minute: 11 * 60)
+        raw = described_class.intercept(
+          tool: create_tool, tool_context: tool_context,
+          arguments: { resource_id: plain_doctor.id, service_id: unlinked.id, starts_at: at(9, 0).iso8601 }
+        )
+
+        expect(JSON.parse(raw)).to include('status' => 'pending_operator_approval')
+      end
+    end
   end
 
   describe '#approve!' do

@@ -23,7 +23,8 @@
 #
 # After these rules, a no_reply (the agent's, the router's or a council's) for patient messages that ask to cancel, move or make a visit
 # («Отмена завтра», «не смогу прийти», «запишите», «болдырмаңыз», «жазылғым келеді», see Captain::PatientIntent) is turned into
-# human_needed with a note of its own: a request is never swallowed by an emoji that came after it.
+# human_needed with a note of its own: a request is never swallowed by an emoji that came after it. A thanks that only names the action
+# as done («Спасибо, что перенесли», «Благодарю за перенос») is no request and stays a no_reply.
 #
 # A text never comes out of an outcome other than draft. An outcome of a turn that the router gave to the anchor only because no
 # agent leads the dialog says so (routing_default_to: anchor): its agent does not become the sticky agent (see StickyAgent).
@@ -228,7 +229,8 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
 
   # A «no reply» for a message that asks to cancel, move or make a visit swallows the request: the eval of 26.10 answered «Отмена
   # завтра» (followed by an emoji) with «emoji only». Whatever decided it (the agent, the router, a council), the manager is told to
-  # answer, and the cards and the agent of the run stay with the note. The words are the check (Captain::PatientIntent).
+  # answer, and the cards and the agent of the run stay with the note. The words are the check (Captain::PatientIntent); a thanks that
+  # only names the cancellation or the move as done is none.
   def unswallowed(outcome)
     return outcome unless outcome[:outcome].to_s == 'no_reply' && Captain::PatientIntent.booking_change?(@patient_text)
 

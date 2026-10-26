@@ -264,11 +264,18 @@ RSpec.describe Captain::Runtime::DecisionRouter do
     expect(instructions).to include('3. A message that needs no answer is no_reply_needed, whoever the current agent is',
                                     'no_reply_needed is never a council and never a route to an agent.',
                                     'stay_current and no_reply_needed - yes for the current agent at most;',
-                                    'human_handoff - the include_agent answers do not matter.')
+                                    'human_handoff - every include_agent answer is no.')
     expect(instructions).not_to include('route_agent to the agent whose description lists general clinic questions, as in rule 6')
     expect(described_class::Questions::INCLUDE_INSTRUCTIONS).to include(
       'a message that needs no answer (a plain thanks, ok or emoji that asks for nothing and accepts nothing that waits) is no for ' \
       'every agent.'
+    )
+  end
+
+  # Router benchmark A23: «Перестаньте мне писать» was no_reply_needed; a demand to stop writing is a refusal to go on with the assistant.
+  it 'tells the decision models that a demand to stop writing is human_handoff, never no_reply_needed' do
+    expect(described_class::INSTRUCTIONS.squish).to include(
+      'refuses to continue with the assistant (for example asks it to stop writing): that is human_handoff, never no_reply_needed.'
     )
   end
 
