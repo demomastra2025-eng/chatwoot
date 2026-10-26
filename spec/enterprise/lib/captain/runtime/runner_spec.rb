@@ -61,6 +61,57 @@ RuntimeRunnerSpecTool = Struct.new(:name, :description) do
   def parameters = {}
 end
 
+# Plays a model that makes the given tool calls one at a time, each in a step of its own, through the tools the runtime bound to the
+# chat, and then answers. A halted call ends the step, as in RubyLLM.
+RuntimeRunnerSpecScriptedChat = Class.new(RuntimeRunnerSpecChat) do
+  def initialize(calls, final_response)
+    super()
+    @calls = calls.dup
+    @final_response = final_response
+  end
+
+  def ask(input)
+    add_message(role: :user, content: input)
+    complete
+  end
+
+  def complete
+    tools = Array(@tools&.dig(:value)).index_by { |tool| tool.name.to_s }
+    until @calls.empty?
+      name, arguments = @calls.shift
+      id = "call_#{messages.size}"
+      add_message(role: :assistant, content: '', tool_calls: { id => RubyLLM::ToolCall.new(id: id, name: name, arguments: arguments) })
+      result = tools.fetch(name).call(arguments)
+      add_message(role: :tool, content: result.is_a?(RubyLLM::Tool::Halt) ? result.content : result.to_s, tool_call_id: id)
+      return result if result.is_a?(RubyLLM::Tool::Halt)
+    end
+    add_message(role: :assistant, content: @final_response)
+  end
+end
+
+# A tool of a clinic agent as the guards of a run see it: a read, or an action that a reply suggestion only proposes to the operator.
+RuntimeRunnerSpecClinicTool = Class.new(Captain::Runtime::Tool) do
+  params(type: 'object', properties: {}, required: [], additionalProperties: true)
+
+  attr_reader :calls
+
+  def initialize(tool_name, action: false)
+    super()
+    @tool_name = tool_name
+    @action = action
+    @calls = 0
+  end
+
+  def name = @tool_name
+  def description = "Spec #{@tool_name}"
+  def metadata = @action ? { risk_level: 'high', idempotent: false } : { read_only: true, risk_level: 'low' }
+
+  def perform(_tool_context, **arguments)
+    @calls += 1
+    "#{@tool_name}: #{arguments.to_json}"
+  end
+end
+
 RSpec.describe Captain::Runtime::Runner do
   subject(:runner) { described_class.new }
 
@@ -443,6 +494,148 @@ RSpec.describe Captain::Runtime::Runner do
       expect(result.error).to be_a(described_class::ToolLoopStopped)
       expect(result.error.message).to eq('Tool request limit reached')
       expect(result.context[Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY]).to be_present
+    end
+
+    # A live conversation that loops is handed to staff; a reply suggestion is a draft for the operator, so it ends with the error
+    # and the runner of the conversation writes the draft from the results so far (AgentRunnerService#finalization_only_retry_response).
+    describe 'a loop in the run of a conversation' do
+      let(:agent) { Captain::Runtime::Agent.new(name: 'assistant_agent') }
+      let(:agent_session) { Captain::Conversation::AgentSession.new(entry: build_stubbed(:captain_assistant)) }
+      let(:terminal_result) do
+        Captain::ToolResult.failure(error: 'Tool request limit reached', retryable: false, audit: { failure_reason: 'tool_request_limit' })
+      end
+      let(:tool_call) do
+        RubyLLM::Message.new(role: :assistant, content: '',
+                             tool_calls: { 'call_1' => RubyLLM::ToolCall.new(id: 'call_1', name: 'search_available_slots', arguments: {}) })
+      end
+
+      def run_conversation(source, response:, **)
+        allow(Llm::Runtime).to receive(:build_chat).and_return(RuntimeRunnerSpecChat.new(ask_response: response, complete_response: response))
+        context = { state: { source: source }, agent_session: agent_session }
+        context[Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY] = { tool_name: 'search_available_slots', result: terminal_result }
+        runner.run(agent, 'Keep searching', context: context, registry: { agent.name => agent }, llm_context: llm_context, account: account, **)
+      end
+
+      it 'is a technical failure of a live conversation: staff take it over' do
+        result = run_conversation('incoming_message', response: RubyLLM::Tool::Halt.new(Captain::ToolResult.render(terminal_result)))
+
+        expect(result.error).to be_a(described_class::TechnicalFailure)
+        expect(result.context[:technical_failure]).to include('reason' => 'tool_loop')
+      end
+
+      it 'ends a reply suggestion with the loop error and no technical failure, so its draft is still written' do
+        result = run_conversation('reply_suggestion', response: RubyLLM::Tool::Halt.new(Captain::ToolResult.render(terminal_result)))
+
+        expect(result.error).to be_a(described_class::ToolLoopStopped)
+        expect(result.context).not_to have_key(:technical_failure)
+      end
+
+      it 'treats the turn limit the same way' do
+        live = run_conversation('incoming_message', response: tool_call, max_turns: 1)
+        suggestion = run_conversation('reply_suggestion', response: tool_call, max_turns: 1)
+
+        expect(live.context[:technical_failure]).to include('reason' => 'max_turns')
+        expect(suggestion.error).to be_a(described_class::MaxTurnsExceeded)
+        expect(suggestion.context).not_to have_key(:technical_failure)
+      end
+    end
+
+    # PROD 26.10 (c94098caa): reply suggestions failed with tool_loop and the operators saw «ИИ не смог подготовить ответ». In a
+    # suggestion an action only prepares an approval card, but the second call of an action was refused as a retry and the fourth
+    # identical slot search hit the attempt limit; either ended the run as a technical failure, which dropped the prepared cards.
+    describe 'the reply suggestion that ended as tool_loop' do
+      let(:agent_session) { Captain::Conversation::AgentSession.new(entry: build_stubbed(:captain_assistant)) }
+      let(:read_tools) do
+        %w[faq_lookup search_appointments search_available_slots search_scheduling_resources get_contact].index_with do |name|
+          RuntimeRunnerSpecClinicTool.new(name)
+        end
+      end
+      let(:action_tools) { %w[cancel_appointment create_task].index_with { |name| RuntimeRunnerSpecClinicTool.new(name, action: true) } }
+      let(:agent) do
+        Captain::Runtime::Agent.new(name: 'assistant_agent', instructions: 'Clinic instructions', tools: read_tools.values + action_tools.values)
+      end
+      # 17 calls: create_task twice, cancel_appointment twice for the same appointment, and the same slot search four times.
+      let(:calls) do
+        slots = { service_id: 7, date: '2026-10-27' }
+        [
+          ['faq_lookup', { query: 'отмена записи' }],
+          ['search_appointments', {}],
+          ['cancel_appointment', { appointment_id: 501, reason: 'Пациентка просит отменить' }],
+          ['search_available_slots', slots],
+          ['create_task', { title: 'Перезвонить Әлие' }],
+          ['search_available_slots', slots],
+          ['create_task', { title: 'Перезвонить Әлие завтра утром' }],
+          ['search_scheduling_resources', { query: 'терапевт' }],
+          ['search_available_slots', slots],
+          ['cancel_appointment', { appointment_id: 501, reason: 'Пациентка заболела' }],
+          ['get_contact', {}],
+          ['search_available_slots', slots],
+          ['search_available_slots', { service_id: 7, date: '2026-10-28' }],
+          ['search_appointments', { status: 'scheduled' }],
+          ['faq_lookup', { query: 'перенос записи' }],
+          ['search_scheduling_resources', { query: 'педиатр' }],
+          ['get_contact', { include: 'appointments' }]
+        ]
+      end
+      let(:draft) { 'Отмену записи и звонок администратора передала на подтверждение.' }
+
+      before do
+        allow(Llm::Models).to receive(:supports?).and_return(true)
+        allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:intercept) do |tool:, tool_context:, arguments:|
+          cards = (tool_context.context[cards_key] ||= [])
+          card = { 'action_id' => "card-#{cards.size + 1}", 'tool_name' => tool.name, 'status' => 'pending', 'title' => tool.name,
+                   'description' => arguments.values.join(', ') }
+          cards << card
+          JSON.generate(success: true, status: 'pending_operator_approval', action_id: card['action_id'], action: tool.name)
+        end
+      end
+
+      def cards_key = Captain::ReplySuggestion::ActionApprovalService::CONTEXT_KEY
+
+      def suggest(calls)
+        chat = RuntimeRunnerSpecScriptedChat.new(calls, draft)
+        allow(Llm::Runtime).to receive(:build_chat).and_return(chat)
+        context = { state: { source: 'reply_suggestion' }, agent_session: agent_session }
+        result = runner.run(agent, 'Отмените мою запись, пожалуйста', context: context, registry: { agent.name => agent },
+                                                                      llm_context: llm_context, account: account)
+        [result, chat.messages.select { |message| message.role == :tool }.map(&:content)]
+      end
+
+      it 'answers all 17 calls and ends with the draft, without a technical failure' do
+        result, tool_results = suggest(calls)
+
+        expect(result.error).to be_nil
+        expect(result.output).to eq(draft)
+        expect(result.context.keys).not_to include(:technical_failure, Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY)
+        expect(result.context.dig(Captain::Runtime::ToolLoopGuard::REQUEST_COUNTS_KEY, :total)).to eq(16)
+        expect(tool_results.size).to eq(17)
+      end
+
+      it 'keeps both approval cards and answers each repeated action with its waiting card' do
+        result, tool_results = suggest(calls)
+
+        expect(result.context[cards_key]).to match(
+          [include('action_id' => 'card-1', 'tool_name' => 'cancel_appointment'), include('action_id' => 'card-2', 'tool_name' => 'create_task')]
+        )
+        expect(Captain::ReplySuggestion::ActionApprovalService).to have_received(:intercept).twice
+        expect(action_tools.values.sum(&:calls)).to eq(0)
+        expect(tool_results.values_at(6, 9)).to all(include('NOT prepared'))
+      end
+
+      it 'answers the repeated slot search from the first result' do
+        _, tool_results = suggest(calls)
+
+        expect(read_tools['search_available_slots'].calls).to eq(2)
+        expect(tool_results.values_at(5, 8, 11)).to all(start_with(Captain::Runtime::ToolWrapper::REPEATED_READ_NOTE))
+      end
+
+      it 'ends a suggestion that keeps calling with the loop error, not a technical failure, and keeps the cards' do
+        result, = suggest(calls + [['search_available_slots', { service_id: 7, date: '2026-10-29' }]])
+
+        expect(result.error).to be_a(described_class::ToolLoopStopped)
+        expect(result.context).not_to have_key(:technical_failure)
+        expect(result.context[cards_key].pluck('action_id')).to eq(%w[card-1 card-2])
+      end
     end
 
     it 'propagates a stale Captain response fence instead of converting it to a provider error' do
