@@ -8,9 +8,9 @@
 # While it waits, the calling thread keeps checking the reply suggestion it runs for (Captain::ReplySuggestion::RunControl): a
 # cancelled or out-of-time suggestion stops at once, not when the decision comes. A turn that no longer needs the decision (a
 # blocked input, a stopped suggestion) abandons it: nothing waits for it, and its thread ends on its own (bounded by the chain
-# budget and the escalation timeout) with its result unread.
+# budget) with its result unread.
 class Captain::Runtime::RoutingRun
-  # Beyond the router's own bounds (the chain budget and the escalation timeout): its database reads and events.
+  # Beyond the router's own bound (the chain budget): its database reads and events.
   WAIT_PADDING_SECONDS = 3
 
   def initialize(router, parallel:)
@@ -88,8 +88,7 @@ class Captain::Runtime::RoutingRun
   end
 
   def wait_seconds
-    settings = Captain::Runtime::DecisionRouter::Settings
-    settings.chain_budget_seconds + settings.escalation_timeout_seconds + WAIT_PADDING_SECONDS
+    Captain::Runtime::DecisionRouter::Settings.chain_budget_seconds + WAIT_PADDING_SECONDS
   end
 
   # Out of time: the turn fails now, and #settle does not wait for the decision a second time.

@@ -2,12 +2,11 @@
 
 # Runs the router benchmark live against OpenRouter: every scenario becomes the same RoutingSnapshot and the same criteria the live
 # router builds. Two modes, one row each:
-#   model     each model of MODELS answers the question alone (one call, no chain, no escalation): raw accuracy and confidence
-#   pipeline  the production decision (Captain::Runtime::DecisionRouter: the platform chain, the thresholds, the bounce guard and,
-#             with ESCALATION=1, the escalation model)
+#   model     each model of MODELS answers the question alone (one call, no chain): raw accuracy and confidence
+#   pipeline  the production decision (Captain::Runtime::DecisionRouter: the platform chain, the most probable answer decides)
 # The cost of every call is read from the recorded llm events of the benchmark account; the run stops at the budget.
 # chain_models runs the pipeline on another chain than the platform one (for example the owner's chain: Mercury Decide, then
-# Microsoft Decision 1, then GPT-6 Luna Decisions), with the same thresholds and escalation.
+# Microsoft Decision 1, then GPT-6 Luna Decisions).
 # fail_models makes the listed decision models fail (at once with fail_mode 'error', after the per-call timeout with 'timeout', as a
 # provider that hangs would), so the pipeline rows show the fallback chain at work: which model answered and at what latency.
 class Captain::Evals::RouterBenchmark::Runner
@@ -27,18 +26,18 @@ class Captain::Evals::RouterBenchmark::Runner
     end
   end
 
-  Row = Struct.new(:suite, :scenario_id, :trap, :run, :mode, :model, :expected, :got, :confidence, :escalated, :escalation_trigger,
-                   :first_choice, :decided_by, :chain_position, :latency_ms, :escalation_ms, :cost_usd, :error, keyword_init: true)
+  # answers: the chosen key of every question.
+  Row = Struct.new(:suite, :scenario_id, :trap, :run, :mode, :model, :expected, :got, :confidence, :answers, :decided_by,
+                   :chain_position, :latency_ms, :cost_usd, :error, keyword_init: true)
 
   # fixture: Captain::Evals::RouterBenchmark::Fixture; account: the (throwaway) account the calls are made for; models: the models
-  # called alone; chain: run the production pipeline; escalation: let the pipeline call the escalation model; only: the scenario ids
-  # to play (all when empty); chain_models, fail_models / fail_mode: see the class comment.
+  # called alone; chain: run the production pipeline; only: the scenario ids to play (all when empty); chain_models, fail_models /
+  # fail_mode: see the class comment.
   def initialize(fixture:, account:, options: {})
     @fixture = fixture
     @account = account
     @models = Array(options[:models])
     @chain = options.fetch(:chain, true)
-    @escalation = options.fetch(:escalation, true)
     @runs = [options.fetch(:runs, 1).to_i, 1].max
     @budget = BigDecimal(options.fetch(:budget_usd, 1).to_s)
     @progress = options[:progress]
@@ -103,28 +102,20 @@ class Captain::Evals::RouterBenchmark::Runner
     record(position, measure { pipeline_row(suite, scenario, run, snapshot) }) if @chain
   end
 
-  # One model alone, the same questions and composition as the production router, no escalation: raw accuracy and confidence.
-  # Answers that contradict each other come back as "inconsistent".
+  # One model alone, the same questions and resolution as the production router: raw accuracy and confidence.
   def model_row(suite, scenario, run, snapshot, model)
     decision = Captain::Runtime::DecisionRouter.new(snapshot, account: @account, observability: observability(suite, scenario),
-                                                              escalate: false, chain_models: [model]).decide
-    row(suite, scenario, run, mode: 'model', model: model, got: decision.key, confidence: decision.first_confidence,
-                              first_choice: decision.first_answers)
+                                                              chain_models: [model]).decide
+    row(suite, scenario, run, mode: 'model', model: model, got: decision.key, confidence: decision.confidence, answers: decision.answers)
   rescue Captain::Runtime::DecisionRouter::UnavailableError, ArgumentError => e
     row(suite, scenario, run, mode: 'model', model: model, error: e.respond_to?(:reason) ? e.reason : e.class.name)
   end
 
   def pipeline_row(suite, scenario, run, snapshot)
     decision = Captain::Runtime::DecisionRouter.new(snapshot, account: @account, observability: observability(suite, scenario),
-                                                              escalate: @escalation, chain_models: @chain_models).decide
-    row(suite, scenario, run, mode: 'pipeline', model: decision.decided_by, got: decision.key, confidence: decision.first_confidence,
-                              escalated: decision.escalated, escalation_trigger: decision.escalation_trigger,
-                              escalation_ms: decision.escalation_ms, first_choice: decision.first_choice, decided_by: decision.decided_by,
-                              chain_position: decision.chain_position)
-  rescue Captain::Runtime::DecisionRouter::UndecidedError => e
-    # The escalation named no agent either: a suggestion goes to the manager (an answer of the pipeline, not a failure).
-    row(suite, scenario, run, mode: 'pipeline', model: "escalation:#{e.models_tried.first}", got: Captain::Evals::RouterBenchmark::Fixture::UNDECIDED,
-                              escalated: true, escalation_trigger: 'undecided', decided_by: "escalation:#{e.models_tried.first}")
+                                                              chain_models: @chain_models).decide
+    row(suite, scenario, run, mode: 'pipeline', model: decision.decided_by, got: decision.key, confidence: decision.confidence,
+                              answers: decision.answers, decided_by: decision.decided_by, chain_position: decision.chain_position)
   rescue Captain::Runtime::DecisionRouter::UnavailableError => e
     row(suite, scenario, run, mode: 'pipeline', model: 'unavailable', error: e.reason)
   end
@@ -160,8 +151,7 @@ class Captain::Evals::RouterBenchmark::Runner
 
   def progress_line(position, result)
     outcome = result.error ? "error #{result.error}" : "got #{result.got} conf #{result.confidence&.round(2) || '-'}"
-    escalated = result.escalated ? ' escalated' : ''
-    "[#{position} run #{result.run}] #{result.scenario_id} #{result.mode} expected #{result.expected} #{outcome}#{escalated} " \
+    "[#{position} run #{result.run}] #{result.scenario_id} #{result.mode} expected #{result.expected} #{outcome} " \
       "#{result.model} pos #{result.chain_position || '-'} #{result.latency_ms}ms"
   end
 

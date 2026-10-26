@@ -11,7 +11,7 @@
 module Captain::ReplySuggestion::Outcome
   OUTCOMES = %w[draft no_reply human_needed failed cancelled].freeze
   REASON_SOURCES = %w[agent safety agent_rule router].freeze
-  # router_unavailable: no decision model (nor the escalation) could choose the agent; council_unavailable: the council the router
+  # router_unavailable: no decision model could choose the agent; council_unavailable: the council the router
   # chose could not be set up.
   FAILURE_CODES = %w[
     timeout provider_error tool_failure tool_loop max_turns invalid_output empty_output agent_unavailable agent_error

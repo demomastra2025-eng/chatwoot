@@ -489,14 +489,13 @@ class Captain::Runtime::Council
     entry.present? && entry[:status] == 'out_of_scope' && !entry[:acted] && !entry[:technical] && reassign_time?
   end
 
-  # Outside a suggestion always; in a suggestion while the router (its chain and its escalation) and a short run of the new owner
+  # Outside a suggestion always; in a suggestion while the router (its chain) and a short run of the new owner
   # still fit before the deadline of the parts. A part that is not decided again stays unresolved and is named to the manager.
   def reassign_time?
     control = Captain::ReplySuggestion::RunControl.current
     return true unless suggestion? && control
 
-    settings = Captain::Runtime::DecisionRouter::Settings
-    control.seconds_left >= settings.chain_budget_seconds + settings.escalation_timeout_seconds(suggestion: true) + SUGGESTION_REASSIGN_RUN_SECONDS
+    control.seconds_left >= Captain::Runtime::DecisionRouter::Settings.chain_budget_seconds + SUGGESTION_REASSIGN_RUN_SECONDS
   end
 
   def reassigned_actor(plan)

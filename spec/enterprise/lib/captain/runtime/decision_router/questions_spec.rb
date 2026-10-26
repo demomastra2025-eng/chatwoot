@@ -13,10 +13,6 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
     described_class.build(snapshot(count, **), instructions: 'ROUTER RULES', mode: mode)
   end
 
-  def answers(mode, yes: [], all: [10, 20, 30])
-    { 'route_mode' => mode }.merge(all.to_h { |id| ["include_agent_#{id}", yes.include?(id) ? 'yes' : 'no'] })
-  end
-
   it 'asks route_mode and one yes/no question per agent in one call, with the card of the agent in its yes criterion' do
     questions = build(3, current: 20, card: 'УЗИ всех видов').to_h
 
@@ -45,7 +41,6 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
 
   it 'offers a council part that was not its owner\'s one agent, staff or nobody, never a council or a stay' do
     expect(build(3, current: 10, mode: :singles).mode_keys).to eq(%w[route_agent human_handoff nobody])
-    expect(build(3, current: 10, mode: :singles).outcome(answers('no_reply_needed'))).to be_nil
   end
 
   it 'keeps every criterion within the limit of the endpoint and stays within its question limit' do
@@ -56,133 +51,98 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
     expect { build(described_class::MAX_AGENTS + 1) }.to raise_error(ArgumentError, /at most/)
   end
 
-  describe '#outcome' do
+  describe '#resolve' do
     let(:questions) { build(3, current: 20) }
 
+    # Answers as the endpoint gives them: a chosen key with its confidence and, when given, the probabilities of the keys.
+    def answer(choice, confidence: 0.9, probabilities: {})
+      Llm::OpenRouterDecisionClient::Answer.new(choice: choice, confidence: confidence, probabilities: probabilities)
+    end
+
+    def answered(mode, yes: [], all: [10, 20, 30], mode_probabilities: {}, include_probabilities: {})
+      { 'route_mode' => answer(mode, probabilities: mode_probabilities) }.merge(all.to_h do |id|
+        probability = include_probabilities[id]
+        probabilities = probability ? { 'yes' => probability, 'no' => (1 - probability).round(4) } : {}
+        ["include_agent_#{id}", answer(yes.include?(id) ? 'yes' : 'no', probabilities: probabilities)]
+      end)
+    end
+
     it 'routes to the one agent that is yes' do
-      expect(questions.outcome(answers('route_agent', yes: [30]))).to have_attributes(kind: 'agent', agent_ids: [30], key: 'route_agent_30')
+      expect(questions.resolve(answered('route_agent', yes: [30]))).to have_attributes(kind: 'agent', agent_ids: [30], key: 'route_agent_30')
     end
 
-    it 'takes a route to the current agent for a stay' do
-      expect(questions.outcome(answers('route_agent', yes: [20]))).to have_attributes(kind: 'stay', agent_ids: [20], key: 'stay_current')
+    it 'takes the route_mode key with the highest probability, the chosen one on a tie or without probabilities' do
+      expect(questions.resolve(answered('route_agent', yes: [30], mode_probabilities: { 'route_agent' => 0.3, 'human_handoff' => 0.7 })))
+        .to have_attributes(kind: 'human', key: 'human_handoff', confidence: 0.7)
+      expect(questions.resolve(answered('route_agent', yes: [30], mode_probabilities: { 'route_agent' => 0.5, 'human_handoff' => 0.5 })))
+        .to have_attributes(key: 'route_agent_30', confidence: 0.5)
+      expect(questions.resolve(answered('route_agent', yes: [30]))).to have_attributes(key: 'route_agent_30', confidence: 0.9)
     end
 
-    it 'keeps the current agent when no other agent is yes' do
-      expect(questions.outcome(answers('stay_current'))).to have_attributes(kind: 'stay', key: 'stay_current')
-      expect(questions.outcome(answers('stay_current', yes: [20]))).to have_attributes(kind: 'stay', key: 'stay_current')
+    it 'routes to the agent with the highest include probability, never the current agent; to it only when no other is left' do
+      expect(questions.resolve(answered('route_agent', yes: [20], include_probabilities: { 10 => 0.3, 20 => 0.9, 30 => 0.4 })).key)
+        .to eq('route_agent_30')
+      expect(questions.resolve(answered('route_agent')).key).to eq('route_agent_10')
+      expect(questions.resolve(answered('route_agent', yes: [10, 30], include_probabilities: { 10 => 0.6, 30 => 0.8 })).key)
+        .to eq('route_agent_30')
+      expect(build(1, current: 10).resolve(answered('route_agent', all: [10]))).to have_attributes(kind: 'stay', key: 'stay_current')
     end
 
-    it 'holds a council of exactly the agents that are yes, two or three, ids ascending' do
-      expect(questions.outcome(answers('council', yes: [30, 10])))
-        .to have_attributes(kind: 'council', agent_ids: [10, 30], key: 'council_10_30')
-      expect(questions.outcome(answers('council', yes: [10, 20, 30])).key).to eq('council_10_20_30')
+    it 'keeps the current agent on stay_current whatever the include answers say, and routes to the top agent without one' do
+      expect(questions.resolve(answered('stay_current', yes: [10]))).to have_attributes(kind: 'stay', agent_ids: [20], key: 'stay_current')
+      expect(build(3).resolve(answered('stay_current', include_probabilities: { 10 => 0.2, 20 => 0.1, 30 => 0.45 })))
+        .to have_attributes(kind: 'agent', key: 'route_agent_30')
+    end
+
+    it 'holds a council of the agents at 0.5 or more, ids ascending, the three most probable at most' do
+      expect(questions.resolve(answered('council', yes: [30, 10]))).to have_attributes(kind: 'council', agent_ids: [10, 30], key: 'council_10_30')
+      expect(questions.resolve(answered('council', yes: [10, 20, 30])).key).to eq('council_10_20_30')
+      four = build(4).resolve(answered('council', all: [10, 20, 30, 40],
+                                                  include_probabilities: { 10 => 0.55, 20 => 0.9, 30 => 0.5, 40 => 0.8 }))
+      expect(four.key).to eq('council_10_20_40')
+    end
+
+    it 'routes a council of fewer than two agents to the most probable agent, a stay when that is the current one' do
+      expect(questions.resolve(answered('council', yes: [30]))).to have_attributes(kind: 'agent', key: 'route_agent_30')
+      expect(questions.resolve(answered('council', yes: [20]))).to have_attributes(kind: 'stay', key: 'stay_current')
+      expect(build(3).resolve(answered('council', include_probabilities: { 10 => 0.1, 20 => 0.3, 30 => 0.2 })).key).to eq('route_agent_20')
+    end
+
+    it 'never takes several services of one agent for a council' do
+      expect(build(3).resolve(answered('council', yes: [20])).key).to eq('route_agent_20')
     end
 
     it 'gives staff whatever the include answers say' do
-      expect(questions.outcome(answers('human_handoff', yes: [10]))).to have_attributes(kind: 'human', agent_ids: [], key: 'human_handoff')
+      expect(questions.resolve(answered('human_handoff', yes: [10]))).to have_attributes(kind: 'human', agent_ids: [], key: 'human_handoff')
     end
 
     it 'needs no answer whatever the include answers say, and keeps the current agent of the dialog when there is one' do
-      expect(questions.outcome(answers('no_reply_needed', yes: [10, 30])))
-        .to have_attributes(kind: 'no_reply', agent_ids: [20], key: 'no_reply_needed', default_to: nil)
-      expect(build(3).outcome(answers('no_reply_needed'))).to have_attributes(kind: 'no_reply', agent_ids: [])
-      expect(build(3, suggestion: true, anchor: 30).outcome(answers('no_reply_needed'), final: true))
-        .to have_attributes(kind: 'no_reply', agent_ids: [], key: 'no_reply_needed')
+      expect(questions.resolve(answered('no_reply_needed', yes: [10, 30])))
+        .to have_attributes(kind: 'no_reply', agent_ids: [20], key: 'no_reply_needed')
+      expect(build(3).resolve(answered('no_reply_needed'))).to have_attributes(kind: 'no_reply', agent_ids: [])
     end
 
-    it 'has no outcome for answers that contradict each other' do
-      expect(questions.outcome(answers('route_agent'))).to be_nil
-      expect(questions.outcome(answers('route_agent', yes: [10, 30]))).to be_nil
-      expect(questions.outcome(answers('council', yes: [30]))).to be_nil
-      expect(questions.outcome(answers('stay_current', yes: [10]))).to be_nil
-      expect(questions.outcome(answers('invented'))).to be_nil
+    it 'has no default of a reply suggestion: the anchor answers only when it is the most probable agent' do
+      suggestion = build(3, suggestion: true, anchor: 30)
+
+      expect(suggestion.resolve(answered('route_agent', include_probabilities: { 10 => 0.4, 20 => 0.1, 30 => 0.2 })).key).to eq('route_agent_10')
     end
 
-    it 'never takes several services of one agent for a council: one agent yes is a route, and a council of one has no outcome' do
-      single = build(3)
+    it 'counts the chosen answer of a model that gave no probabilities as the more probable one, by its confidence' do
+      unsure = { 'route_mode' => answer('council'), 'include_agent_10' => answer('yes', confidence: 0.3),
+                 'include_agent_20' => answer('no', confidence: 0.75), 'include_agent_30' => answer('yes', confidence: nil) }
 
-      expect(single.outcome(answers('route_agent', yes: [20])).key).to eq('route_agent_20')
-      expect(single.outcome(answers('council', yes: [20]))).to be_nil
-    end
-
-    describe 'a reply suggestion whose answers name no agent' do
-      let(:history) { [{ role: 'clinic', text: 'Свободно 14:00 и 15:30. Какое время удобно?' }] }
-
-      it 'stays with the agent that leads the dialog (the sticky agent) only on an explicit stay_current' do
-        questions = build(3, current: 20, suggestion: true, history: history)
-
-        expect(questions.outcome(answers('stay_current'))).to have_attributes(kind: 'stay', agent_ids: [20], key: 'stay_current',
-                                                                              default_to: 'current')
-        expect(questions.outcome(answers('stay_current', yes: [20]))).to have_attributes(kind: 'stay', default_to: nil)
-      end
-
-      it 'has no outcome for route_agent naming no agent while an agent leads the dialog, as in a live turn (it escalates)' do
-        questions = build(3, current: 20, suggestion: true, history: history)
-
-        expect(questions.outcome(answers('route_agent'))).to be_nil
-        expect(questions.outcome(answers('route_agent'), final: true)).to be_nil
-        expect(build(3, current: 20, suggestion: true).outcome(answers('route_agent'))).to be_nil
-        expect(questions.names_no_agent?(answers('route_agent'))).to be(true)
-        expect(questions.names_no_agent?(answers('stay_current'))).to be(true)
-        expect(questions.names_no_agent?(answers('route_agent', yes: [10]))).to be(false)
-        expect(questions.names_no_agent?(answers('human_handoff'))).to be(false)
-      end
-
-      it 'goes to the anchor of the channel on the first message of the dialog while no agent leads it, never as the escalation' do
-        questions = build(3, suggestion: true, anchor: 30)
-
-        expect(questions.outcome(answers('route_agent'))).to have_attributes(kind: 'agent', agent_ids: [30], key: 'route_agent_30',
-                                                                             default_to: 'anchor')
-        expect(questions.outcome(answers('route_agent'), final: true)).to be_nil
-      end
-
-      it 'has no outcome mid-dialog without a sticky agent, neither from the decision models nor from the escalation' do
-        questions = build(3, suggestion: true, anchor: 30, history: history)
-
-        expect(questions.outcome(answers('route_agent'))).to be_nil
-        expect(questions.outcome(answers('route_agent'), final: true)).to be_nil
-        expect(questions.outcome(answers('route_agent', yes: [10]), final: true)).to have_attributes(key: 'route_agent_10', default_to: nil)
-      end
-
-      it 'still has no outcome for answers that contradict each other otherwise' do
-        questions = build(3, suggestion: true, anchor: 30)
-
-        expect(questions.outcome(answers('route_agent', yes: [10, 20]))).to be_nil
-        expect(questions.outcome(answers('council', yes: [10]))).to be_nil
-        expect(questions.outcome(answers('council'))).to be_nil
-      end
-
-      it 'is not a default of a live turn or of a council part' do
-        expect(build(3, current: 20).outcome(answers('route_agent'))).to be_nil
-        expect(build(3, anchor: 30).outcome(answers('route_agent'), final: true)).to be_nil
-        expect(build(3, current: 10, mode: :singles, suggestion: true, anchor: 30).outcome(answers('route_agent'), final: true)).to be_nil
-      end
+      expect(build(3).include_probabilities(unsure)).to eq(10 => 0.65, 20 => 0.125, 30 => 1.0)
+      expect(build(3).resolve(unsure).key).to eq('council_10_30')
+      expect(build(3).include_probabilities('include_agent_10' => answer('no', confidence: nil))).to eq(10 => 0.0, 20 => 0.0, 30 => 0.0)
     end
 
     it 'routes a council part to the agent that is yes, also the current one, or to nobody' do
       part = build(3, current: 10, mode: :singles)
 
-      expect(part.outcome(answers('route_agent', yes: [10]))).to have_attributes(kind: 'agent', key: 'route_agent_10')
-      expect(part.outcome(answers('nobody'))).to have_attributes(kind: 'none', key: 'nobody')
-    end
-  end
-
-  describe '#confidence' do
-    let(:questions) { build(3, current: 20) }
-
-    def answer(choice, confidence) = Llm::OpenRouterDecisionClient::Answer.new(choice: choice, confidence: confidence)
-
-    it 'is the lowest confidence of every answer, route_mode alone for staff, and nothing when one is missing' do
-      all = { 'route_mode' => answer('route_agent', 0.95), 'include_agent_10' => answer('no', 0.9),
-              'include_agent_20' => answer('no', 0.99), 'include_agent_30' => answer('yes', 0.7) }
-      outcome = questions.outcome(all.transform_values(&:choice))
-
-      expect(questions.confidence(all, outcome)).to eq(0.7)
-      human = all.merge('route_mode' => answer('human_handoff', 0.85))
-      expect(questions.confidence(human, questions.outcome(human.transform_values(&:choice)))).to eq(0.85)
-      no_reply = all.merge('route_mode' => answer('no_reply_needed', 0.97))
-      expect(questions.confidence(no_reply, questions.outcome(no_reply.transform_values(&:choice)))).to eq(0.97)
-      expect(questions.confidence(all.merge('include_agent_10' => answer('no', nil)), outcome)).to be_nil
+      expect(part.resolve(answered('route_agent', yes: [10]))).to have_attributes(kind: 'agent', key: 'route_agent_10')
+      expect(part.resolve(answered('nobody'))).to have_attributes(kind: 'none', key: 'nobody')
+      expect(part.resolve(answered('no_reply_needed'))).to be_nil
     end
   end
 

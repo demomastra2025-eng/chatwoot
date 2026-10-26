@@ -2,14 +2,14 @@
 
 # The metrics of a router benchmark run (JSON and Markdown): accuracy per model, suite and expected kind; councils (exact set,
 # participant precision and recall, false and missed councils); staff requests; a kind confusion; calibration by confidence; the
-# production pipeline (escalation rate and accuracy, chain fallbacks, failures); latency; cost; agreement across runs; and the
-# proposed release gate; the trap scenarios, the confidence of wrong answers and the escalation detail (Insights).
+# production pipeline (chain fallbacks, failures, which model answered); latency; cost; agreement across runs; and the proposed
+# release gate; the trap scenarios and the confidence of wrong answers (Insights).
 class Captain::Evals::RouterBenchmark::Report
   CONFIDENCE_BINS = [[0.9, 1.01, '>=0.9'], [0.8, 0.9, '0.8-0.9'], [0.75, 0.8, '0.75-0.8'], [0.0, 0.75, '<0.75']].freeze
-  GATE = { pipeline_accuracy: 0.95, first_model_p90_ms: 1200, escalation_rate: 0.20 }.freeze
+  GATE = { pipeline_accuracy: 0.95, first_model_p90_ms: 1200 }.freeze
   MUST_PASS = %w[SZ01].freeze
   SINGLE_KINDS = %w[agent stay no_reply].freeze
-  TABLE_HEADER = ['| model | accuracy | false councils | missed councils | exact councils | human recall | traps | wrong (caught/unsafe) | ' \
+  TABLE_HEADER = ['| model | accuracy | false councils | missed councils | exact councils | human recall | traps | wrong (low conf/confident) | ' \
                   'p50 ms | p90 ms | errors |', '|---|---|---|---|---|---|---|---|---|---|---|'].freeze
 
   def initialize(rows, fixture: nil, lint: {})
@@ -61,14 +61,9 @@ class Captain::Evals::RouterBenchmark::Report
   end
 
   def pipeline_metrics(rows)
-    escalated = rows.select(&:escalated)
-    insights = Captain::Evals::RouterBenchmark::Insights.new(rows)
     metrics(rows).merge(
-      escalation_rate: ratio(escalated.size, rows.size), escalation_accuracy: accuracy(escalated),
-      escalation_agreement: ratio(escalated.count { |row| row.first_choice == row.got }, escalated.size),
-      escalation_triggers: rows.filter_map(&:escalation_trigger).tally,
       chain_fallbacks: rows.count { |row| row.chain_position.to_i > 1 }, failures_unavailable: rows.count(&:error),
-      escalation_detail: insights.escalation, answered_by: insights.answered_by
+      answered_by: Captain::Evals::RouterBenchmark::Insights.new(rows).answered_by
     )
   end
 
@@ -133,8 +128,7 @@ class Captain::Evals::RouterBenchmark::Report
       traps: metrics[:traps_passed],
       must_pass: pipeline_rows.select { |row| MUST_PASS.include?(row.scenario_id) }.all? { |row| correct?(row) },
       no_false_councils: metrics.dig(:councils, :false_council_rate).to_f.zero?,
-      first_model_p90: first_p90.nil? || first_p90 <= GATE[:first_model_p90_ms],
-      escalation_rate: metrics[:escalation_rate].to_f <= GATE[:escalation_rate]
+      first_model_p90: first_p90.nil? || first_p90 <= GATE[:first_model_p90_ms]
     }
     { checks: checks, verdict: checks.values.all? ? 'PASS' : 'FAIL' }
   end
@@ -161,10 +155,8 @@ class Captain::Evals::RouterBenchmark::Report
   end
 
   def pipeline_lines(pipeline, gate)
-    ['', '## Pipeline', "Escalation rate: #{pct(pipeline[:escalation_rate])}, escalation accuracy: #{pct(pipeline[:escalation_accuracy])}, " \
-                        "first model and escalation agree: #{pct(pipeline[:escalation_agreement])}",
-     "Triggers: #{pipeline[:escalation_triggers]}", "Chain fallbacks: #{pipeline[:chain_fallbacks]}, unavailable: #{pipeline[:failures_unavailable]}",
-     "Escalation detail: #{pipeline[:escalation_detail]}", "Answered by: #{pipeline[:answered_by]}",
+    ['', '## Pipeline', "Chain fallbacks: #{pipeline[:chain_fallbacks]}, unavailable: #{pipeline[:failures_unavailable]}",
+     "Answered by: #{pipeline[:answered_by]}",
      "Failures: #{pipeline[:failures].join('; ').presence || 'none'}", '', "## Gate: #{gate[:verdict]}",
      *gate[:checks].map { |name, passed| "- #{name}: #{passed ? 'pass' : 'FAIL'}" }]
   end
@@ -178,7 +170,7 @@ class Captain::Evals::RouterBenchmark::Report
   def correct?(row) = row.got == row.expected
 
   def wrong_cell(wrong)
-    "#{wrong[:count]} (#{wrong[:inconsistent] + wrong[:low_confidence]}/#{wrong[:unsafe]})"
+    "#{wrong[:count]} (#{wrong[:low_confidence]}/#{wrong[:confident]})"
   end
 
   def trap_cell(traps)

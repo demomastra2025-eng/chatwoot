@@ -378,7 +378,7 @@ module Enterprise::Captain::ReplySuggestionService
     def handle_agent_routed(decision, _context_wrapper = nil)
       @monitor.synchronize do
         decision = decision.to_h.with_indifferent_access
-        @routing = decision.slice(:decision_key, :kind, :decided_by, :confidence, :escalated, :default_to, :escalation_fallback)
+        @routing = decision.slice(:decision_key, :kind, :decided_by, :confidence)
                            .to_h.compact.presence
         # A message that needs no answer runs no agent (see AgentRunnerService#routed_no_reply_suggestion): none is shown at work.
         targets = decision[:kind].to_s == 'no_reply' ? [] : Array(decision[:target_ids]).filter_map { |id| agent_by_id(id) }

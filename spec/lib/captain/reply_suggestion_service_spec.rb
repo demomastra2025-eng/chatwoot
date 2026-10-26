@@ -295,7 +295,7 @@ RSpec.describe Captain::ReplySuggestionService do
           runner_double
         end
         decision = { decision_key: "route_agent_#{specialist.id}", kind: 'agent', target_ids: [specialist.id], from_agent_id: assistant.id,
-                     decided_by: 'inception/mercury-decide', confidence: 0.91, escalated: false }
+                     decided_by: 'inception/mercury-decide', confidence: 0.91 }
         allow(runner_double).to receive(:generate_response) do
           captured_callbacks[:on_agent_routed].call(decision, nil)
           { 'response' => 'Можем записать вас к ЛОРу.', 'agent_id' => specialist.id, 'agent_display_name' => specialist.name }
@@ -304,7 +304,7 @@ RSpec.describe Captain::ReplySuggestionService do
         meta = service.perform[:suggestion_meta]
 
         expect(meta['routing']).to include('decision_key' => "route_agent_#{specialist.id}", 'decided_by' => 'inception/mercury-decide',
-                                           'escalated' => false)
+                                           'confidence' => 0.91)
         expect(meta['handoffs']).to eq([{ 'from' => assistant.name, 'to' => specialist.name, 'reason' => "route_agent_#{specialist.id}" }])
         expect(meta['working_agents'].find { |item| item['name'] == specialist.name }).to include('role' => 'routed')
         expect(captured_callbacks).not_to have_key(:on_agent_handoff)
@@ -319,7 +319,7 @@ RSpec.describe Captain::ReplySuggestionService do
           runner_double
         end
         decision = { decision_key: 'no_reply_needed', kind: 'no_reply', target_ids: [sticky.id], decided_by: 'perplexity/pplx-decider-v1.2',
-                     confidence: 0.97, escalated: true, escalation_fallback: 'escalation_timeout_used_chain' }
+                     confidence: 0.97 }
         note = I18n.t('captain.reply_suggestion.reasons.router_no_reply')
         allow(runner_double).to receive(:generate_response) do
           captured_callbacks[:on_agent_routed].call(decision, nil)
@@ -330,7 +330,7 @@ RSpec.describe Captain::ReplySuggestionService do
         meta = service.instance_variable_get(:@trace_collector).suggestion_meta({})
 
         expect(result).to include(outcome: 'no_reply', reason: note, reason_source: 'router', agent: nil)
-        expect(meta['routing']).to include('kind' => 'no_reply', 'escalation_fallback' => 'escalation_timeout_used_chain')
+        expect(meta['routing']).to include('kind' => 'no_reply', 'confidence' => 0.97)
         expect(Array(meta['working_agents']).pluck('name')).not_to include(sticky.name)
       end
 

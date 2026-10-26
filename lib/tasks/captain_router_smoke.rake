@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 # Post-deploy smoke check of the decision router: one real call per model of the routing chain (CAPTAIN_AGENT_ROUTING_MODELS,
-# built in Perplexity Decider 1.2, then Mercury Decide, then Microsoft Decision 1) and one call of the escalation model, on a
-# synthetic turn. Prints model, latency and ok/fail per row, never a key or a text; exits 1 when a row failed.
+# built in Perplexity Decider 1.2, then Mercury Decide, then Microsoft Decision 1) on a synthetic turn. Prints model, latency and
+# ok/fail per row, never a key or a text; exits 1 when a row failed.
 #
 #   bundle exec rake captain:router_smoke [ACCOUNT_ID=<id>]
 #
@@ -10,7 +10,7 @@
 # Captain::Runtime::DecisionRouter::Smoke.routed_accounts) is checked with its own OpenRouter key and budget; ACCOUNT_ID checks one
 # account. The monitoring queries for the router are in script/onelink/DECISION_ROUTER_MONITORING.md.
 namespace :captain do
-  desc 'Smoke-check the decision router: one real decision per chain model and the escalation model (prints model, latency, ok/fail)'
+  desc 'Smoke-check the decision router: one real decision per chain model (prints model, latency, ok/fail)'
   task router_smoke: :environment do
     smoke = Captain::Runtime::DecisionRouter::Smoke
     accounts = ENV['ACCOUNT_ID'].present? ? [Account.find(ENV['ACCOUNT_ID'])] : smoke.routed_accounts

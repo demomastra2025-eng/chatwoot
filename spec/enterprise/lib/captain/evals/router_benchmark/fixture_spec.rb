@@ -77,13 +77,11 @@ RSpec.describe Captain::Evals::RouterBenchmark::Fixture do
     end.to raise_error(described_class::Invalid)
   end
 
-  it 'lets only a suggestion expect undecided (the escalation names no agent either)' do
-    undecided = { 'suggestion' => true, 'anchor' => 84, 'history' => [{ 'role' => 'agent', 'text' => 'Ждём вас.' }],
-                  'message' => 'Спасибо!', 'expected' => 'undecided' }
+  # The router always names who answers since 26.10 (no escalation that could name nobody).
+  it 'refuses undecided as an expectation' do
+    undecided = { 'suggestion' => true, 'anchor' => 84, 'message' => 'Спасибо!', 'expected' => 'undecided' }
 
-    expect { described_class.new(graphs, scenarios_with(undecided), cards: 'prod') }.not_to raise_error
-    expect { described_class.new(graphs, scenarios_with(undecided.except('suggestion')), cards: 'prod') }
-      .to raise_error(described_class::Invalid, /only a suggestion/)
+    expect { described_class.new(graphs, scenarios_with(undecided), cards: 'prod') }.to raise_error(described_class::Invalid)
   end
 
   def scenarios_with(changes)

@@ -7,32 +7,21 @@
 #
 # One Decisions call asks several questions at once (see Questions: route_mode, and include_agent_<id> yes/no per agent) and goes
 # down the routing chain of decision models (Llm::DecisionChain: a model that fails, times out or answers outside the criteria
-# passes the same questions to the next one). The answers are composed into one outcome. It is used when the answers agree and
-# their confidence reaches the threshold (0.75 for an agent or a council, 0.80 for staff; a missing confidence counts as low).
-# Otherwise - answers that contradict each other, low confidence, or a turn that would bounce straight back to the agent that
-# just passed the conversation on - the same state and the same questions go to the escalation model (Escalation), whose answer
-# is final. When the escalation times out or fails (an error, an answer outside its keys, answers that contradict each other)
-# while the decision models' answers composed into an outcome (stay, an agent, a council, staff, no reply), that outcome is used: it is the
-# decision models' own answer, never a default, and the decision says so (escalation_fallback: the monitoring signal
-# escalation_timeout_used_chain or escalation_error_used_chain of captain.agent.routed). When every decision model fails, or the
-# escalation fails after answers that composed into no outcome, UnavailableError is raised: the caller ends the turn through the
-# existing technical-failure path (the conversation goes to staff), as when OpenRouter is down for generation. A reply suggestion
-# waits for the escalation less, at a lower effort (see Settings): the operator waits for the draft.
+# passes the same questions to the next one). The answers of the model that answered are resolved into one outcome by their
+# probabilities (Questions#resolve): the most probable route_mode decides, the include probabilities say who answers. There is no
+# confidence threshold and no second opinion (the owner's decision of 26.10: the decision models' most probable answer decides; the
+# chain is only for failures and timeouts). When every decision model fails, UnavailableError is raised: the caller ends the turn
+# through the existing technical-failure path (the conversation goes to staff), as when OpenRouter is down for generation.
 #
 # A reply suggestion keeps a dialog with the agent that leads it (the sticky agent, see Captain::ReplySuggestion::StickyAgent): it is
-# the current agent of the turn, so a short reply («Да, на 14:00», an IIN, «Спасибо») can stay with it: an explicit stay_current that
-# names no agent keeps that agent; while no agent leads the dialog, route_agent naming no agent on the first message goes to the
-# anchor of the channel (Questions, default_to). A suggestion meets the same confidence threshold and the same escalation as a live
-# turn, whatever the length of the message (with a shorter timeout and a lower effort), and the same fallback when the escalation
-# fails. An escalation that names no agent raises UndecidedError: the suggestion ends as "staff must answer" with a note of the
-# router (never a silent draft of the anchor).
+# the current agent of the turn, so a short reply («Да, на 14:00», an IIN, «Спасибо») can stay with it (stay_current).
 #
 # A message that needs no answer (a plain thanks, ok, an emoji or a greeting that asks for nothing and accepts nothing that waits)
 # is route_mode no_reply_needed, whoever leads the dialog, and never a council or a route (rule 3 of INSTRUCTIONS): a reply suggestion
 # gets no draft and no agent runs, so nothing is proposed (the manager sees a note); a live turn lets the agent that holds the
 # conversation write a short courtesy reply or nothing, and an action tool refuses on such a turn (ToolWrapper). This is the
-# decision models' and the escalation's own answer, never a code override; a council part that is given such a fragment ends with
-# no_reply_needed (see Captain::Runtime::PartSchema).
+# decision models' own answer, never a code override; a council part that is given such a fragment ends with no_reply_needed (see
+# Captain::Runtime::PartSchema).
 class Captain::Runtime::DecisionRouter
   FEATURE = :agent_routing
   INSTRUCTIONS = <<~TEXT
@@ -52,8 +41,8 @@ class Captain::Runtime::DecisionRouter
     The answers must agree - count the include_agent questions that are yes: stay_current - yes for the current agent at most; route_agent - yes for exactly one agent; council - yes for exactly the two or three agents of the council; human_handoff and no_reply_needed - the include_agent answers do not matter.
   TEXT
 
-  # The router could not decide: every decision model failed, or the escalation failed. reason: decision_chain_unavailable,
-  # escalation_unavailable, escalation_invalid or escalation_undecided. Names and codes only, never a prompt, a provider body or a key.
+  # The router could not decide: every decision model failed (reason decision_chain_unavailable). Names and codes only, never a
+  # prompt, a provider body or a key.
   class UnavailableError < StandardError
     attr_reader :reason, :detail, :models_tried
 
@@ -65,26 +54,13 @@ class Captain::Runtime::DecisionRouter
     end
   end
 
-  class EscalationError < UnavailableError; end
-
-  # The escalation model named no agent either (stay_current or route_agent with every include answer no) and no default applies:
-  # nobody can tell who answers. reason: escalation_undecided. A reply suggestion goes to the manager with a note; a live turn fails
-  # like any other escalation failure.
-  class UndecidedError < EscalationError; end
-
-  # key: the canonical key of the outcome; kind: stay, agent, council, human, no_reply or none (inconsistent only without escalation,
-  # in the evaluation harness); agent_ids: who answers (the participants of a council in ascending order; the current agent of a
-  # no_reply, when one leads the dialog). decided_by: the decision model that answered, or "escalation:<model>". first_*: what the
-  # decision models answered, also when the escalation decided
-  # (first_answers: the chosen key of every question). guard: 'bounce' when the turn would have gone straight back. default_to: a
-  # reply suggestion whose answers named no agent went to the current agent ('current') or to the anchor ('anchor'); such a decision
-  # met the same threshold as any other. escalation_fallback: the escalation ran and timed out (escalation_timeout_used_chain) or
-  # failed (escalation_error_used_chain), and the outcome of the decision models decided; escalation_failure names the failure
-  # ("escalation_unavailable:timeout").
+  # key: the canonical key of the outcome; kind: stay, agent, council, human, no_reply or none (a council part that nobody handles);
+  # agent_ids: who answers (the participants of a council in ascending order; the current agent of a no_reply, when one leads the
+  # dialog). decided_by: the decision model that answered; confidence: the probability of the route_mode key that decided; answers:
+  # the chosen key of every question.
   Decision = Struct.new(
-    :key, :kind, :agent_ids, :decided_by, :confidence, :first_choice, :first_confidence, :first_answers, :first_model, :chain_position,
-    :escalated, :escalation_reason, :escalation_trigger, :guard, :criteria_count, :candidate_count, :first_message,
-    :chain_ms, :escalation_ms, :total_ms, :mode, :default_to, :escalation_fallback, :escalation_failure,
+    :key, :kind, :agent_ids, :decided_by, :confidence, :answers, :chain_position, :criteria_count, :candidate_count, :first_message,
+    :chain_ms, :total_ms, :mode,
     keyword_init: true
   ) do
     def stay? = kind == 'stay'
@@ -98,32 +74,23 @@ class Captain::Runtime::DecisionRouter
 
     def to_event_payload
       {
-        decision_key: key, kind: kind, target_ids: agent_ids, decided_by: decided_by, confidence: confidence,
-        first_choice: first_choice, first_confidence: first_confidence, first_answers: first_answers, first_model: first_model,
-        chain_position: chain_position, escalated: escalated == true, escalation_trigger: escalation_trigger,
-        escalation_reason: escalation_reason, guard: guard, criteria_count: criteria_count, candidate_count: candidate_count,
-        first_message: first_message == true, mode: mode, default_to: default_to, escalation_fallback: escalation_fallback,
-        escalation_failure: escalation_failure, latency_chain_ms: chain_ms, latency_escalation_ms: escalation_ms, latency_total_ms: total_ms
+        decision_key: key, kind: kind, target_ids: agent_ids, decided_by: decided_by, confidence: confidence, first_answers: answers,
+        chain_position: chain_position, criteria_count: criteria_count, candidate_count: candidate_count,
+        first_message: first_message == true, mode: mode, latency_chain_ms: chain_ms, latency_total_ms: total_ms
       }.compact
     end
   end
 
   # snapshot: Captain::Runtime::RoutingSnapshot. request: keywords for every Llm::FeatureRequest of the chain (assistant:,
-  # conversation:). The settings are read here, on the calling thread: #decide may run on a thread of its own. evaluation: for the
-  # evaluation harness only, escalate: false (it reports when the escalation would have run) and chain_models: (one model alone).
-  def initialize(snapshot, account:, observability: {}, request: {}, **evaluation)
+  # conversation:). The settings are read here, on the calling thread: #decide may run on a thread of its own. chain_models: for the
+  # evaluation harness only (the models to ask instead of the platform chain, for example one model alone).
+  def initialize(snapshot, account:, observability: {}, request: {}, chain_models: nil)
     @snapshot = snapshot
     @account = account
     @observability = observability.to_h.compact
     @request = request.to_h.compact
-    @escalate = evaluation.fetch(:escalate, true)
-    @chain_models = evaluation[:chain_models]
-    @min_confidence = Settings.min_confidence
-    @human_min_confidence = Settings.human_min_confidence
+    @chain_models = Array(chain_models).presence
     @chain_budget = Settings.chain_budget_seconds
-    @escalation_timeout = Settings.escalation_timeout_seconds(suggestion: snapshot.suggestion?)
-    @escalation_effort = Settings.escalation_effort(suggestion: snapshot.suggestion?)
-    @bounce_escalation = Settings.bounce_escalation?
   end
 
   # The decision for the whole turn.
@@ -140,29 +107,20 @@ class Captain::Runtime::DecisionRouter
     decide_with(Questions.build(snapshot, instructions: INSTRUCTIONS, mode: :singles), snapshot, mode: 'part')
   end
 
-  # The monitoring signals of a decision that used the outcome of the decision models because the escalation did not answer.
-  ESCALATION_TIMEOUT_SIGNAL = 'escalation_timeout_used_chain'
-  ESCALATION_ERROR_SIGNAL = 'escalation_error_used_chain'
-  # The outcomes of the decision models that stand when the escalation fails (nobody, of a re-decided council part, does not).
-  CHAIN_FALLBACK_KINDS = %w[stay agent council human no_reply].freeze
-
   private
 
   def decide_with(questions, snapshot, mode:)
     started = monotonic_now
-    first = ask_chain(questions, snapshot)
-    choices = first.answers.transform_values(&:choice)
-    outcome = questions.outcome(choices)
-    confidence = questions.confidence(first.answers, outcome)
-    decision = base_decision(questions, snapshot, first, mode).merge(
-      chain_ms: elapsed_ms(started), first_choice: outcome&.key || 'inconsistent', first_confidence: confidence,
-      first_answers: Questions.summary(choices)
-    )
-    trigger = escalation_trigger(outcome, confidence, snapshot)
-    decision[:escalation_trigger] = trigger
-    return escalate(questions, snapshot, decision, { trigger: trigger, outcome: outcome }, started) if trigger && @escalate
+    result = ask_chain(questions, snapshot)
+    outcome = questions.resolve(result.answers)
+    raise UnavailableError.new(reason: 'decision_unresolved', models_tried: [result.model]) unless outcome
 
-    finish(decision.merge(decided_by: first.model, confidence: confidence), outcome, started)
+    Decision.new(
+      key: outcome.key, kind: outcome.kind, agent_ids: outcome.agent_ids, decided_by: result.model, confidence: outcome.confidence,
+      answers: Questions.summary(result.answers.transform_values(&:choice)), chain_position: result.position,
+      criteria_count: questions.size, candidate_count: snapshot.agents.size, first_message: snapshot.first_message?, mode: mode,
+      chain_ms: elapsed_ms(started), total_ms: elapsed_ms(started)
+    )
   end
 
   def ask_chain(questions, snapshot)
@@ -173,79 +131,6 @@ class Captain::Runtime::DecisionRouter
     )
   rescue Llm::DecisionChain::ExhaustedError => e
     raise UnavailableError.new(reason: 'decision_chain_unavailable', models_tried: e.attempts.pluck(:model))
-  end
-
-  # Why the composed answer is not used as it is: the answers contradict each other, a route straight back to the agent that passed
-  # the conversation on in the previous turn, or low (or missing) confidence.
-  def escalation_trigger(outcome, confidence, snapshot)
-    return 'inconsistent' unless outcome
-    return 'bounce' if bounce?(outcome, snapshot)
-
-    threshold = outcome.kind == 'human' ? @human_min_confidence : @min_confidence
-    'low_confidence' unless confidence.is_a?(Numeric) && confidence >= threshold
-  end
-
-  def bounce?(outcome, snapshot)
-    return false unless @bounce_escalation
-
-    source = snapshot.bounce_source
-    source.present? && outcome.kind == 'agent' && outcome.agent_ids == [source]
-  end
-
-  # first: the trigger of the escalation and the outcome the answers of the decision models composed into (nil when they did not
-  # agree).
-  def escalate(questions, snapshot, decision, first, started)
-    escalation = Escalation.new(account: @account, timeout: @escalation_timeout, effort: @escalation_effort,
-                                observability: @observability.merge(escalation_trigger: first[:trigger]))
-    escalation_started = monotonic_now
-    decision = decision.merge(escalated: true, guard: ('bounce' if first[:trigger] == 'bounce'))
-    outcome, answer = escalation_outcome(escalation, questions, snapshot)
-    finish(decision.merge(decided_by: "escalation:#{answer.model}", confidence: nil, escalation_reason: answer.reason,
-                          escalation_ms: elapsed_ms(escalation_started)), outcome, started)
-  rescue UndecidedError
-    raise
-  rescue EscalationError => e
-    raise unless CHAIN_FALLBACK_KINDS.include?(first[:outcome]&.kind)
-
-    chain_fallback(decision.merge(escalation_ms: elapsed_ms(escalation_started)), first[:outcome], e, started)
-  end
-
-  def escalation_outcome(escalation, questions, snapshot)
-    answer = escalation.choose(state: snapshot.to_state, questions: questions, instructions: INSTRUCTIONS)
-    outcome = questions.outcome(answer.choices, final: true)
-    raise escalation_without_outcome(questions, answer) unless outcome
-
-    [outcome, answer]
-  end
-
-  # The escalation timed out or failed, and the answers of the decision models composed into an outcome: that outcome decides the
-  # turn with their confidence, as their own answer (never a default of the code). An escalation that named no agent answered: it
-  # is not a failure, and it still raises UndecidedError.
-  def chain_fallback(decision, outcome, error, started)
-    signal = error.detail == 'timeout' ? ESCALATION_TIMEOUT_SIGNAL : ESCALATION_ERROR_SIGNAL
-    failure = [error.reason, error.detail].compact.join(':')
-    Rails.logger.warn("[CAPTAIN][Router] #{signal} failure=#{failure} key=#{outcome.key} request=#{@observability[:routing_request_id]}")
-    finish(decision.merge(decided_by: decision[:first_model], confidence: decision[:first_confidence], escalation_fallback: signal,
-                          escalation_failure: failure), outcome, started)
-  end
-
-  def escalation_without_outcome(questions, answer)
-    if questions.names_no_agent?(answer.choices)
-      return UndecidedError.new(reason: 'escalation_undecided', detail: 'no_agent', models_tried: [answer.model])
-    end
-
-    EscalationError.new(reason: 'escalation_invalid', detail: 'inconsistent', models_tried: [answer.model])
-  end
-
-  def base_decision(questions, snapshot, first, mode)
-    { first_model: first.model, chain_position: first.position, escalated: false, criteria_count: questions.size,
-      candidate_count: snapshot.agents.size, first_message: snapshot.first_message?, mode: mode }
-  end
-
-  # Without an outcome (only without escalation, in the evaluation harness) the decision says so: kind and key inconsistent.
-  def finish(attributes, outcome, started)
-    Decision.new(**attributes, key: outcome&.key || 'inconsistent', kind: outcome&.kind || 'inconsistent',
-                               agent_ids: outcome&.agent_ids || [], default_to: outcome&.default_to, total_ms: elapsed_ms(started))
   end
 
   def monotonic_now

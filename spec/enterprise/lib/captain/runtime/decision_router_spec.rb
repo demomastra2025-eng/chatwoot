@@ -20,15 +20,20 @@ RSpec.describe Captain::Runtime::DecisionRouter do
   let(:router) { described_class.new(snapshot, account: account, observability: { routing_request_id: 'r-1' }) }
   let(:calls) { [] }
 
-  # What a decision model answered: route_mode and the agents that are yes, each with one confidence (or per question).
-  def chain_answer(mode, yes: [], confidence: 0.93, confidences: {})
-    model = 'perplexity/pplx-decider-v1.2'
+  # What a decision model answered: route_mode and the agents that are yes, each with one confidence, and the probabilities the
+  # model gave per question ({ name => { key => probability } }; none by default).
+  def chain_answer(mode, yes: [], confidence: 0.93, probabilities: {}, model: 'perplexity/pplx-decider-v1.2')
     choices = { 'route_mode' => mode }.merge([84, 119, 120].to_h { |id| ["include_agent_#{id}", yes.include?(id) ? 'yes' : 'no'] })
     answers = choices.to_h do |name, choice|
-      [name, Llm::OpenRouterDecisionClient::Answer.new(choice: choice, confidence: confidences.fetch(name, confidence), probabilities: {})]
+      [name, Llm::OpenRouterDecisionClient::Answer.new(choice: choice, confidence: confidence, probabilities: probabilities.fetch(name, {}))]
     end
     Llm::DecisionChain::Result.new(choice: 'summary', confidence: confidence, probabilities: {}, answers: answers, model: model,
                                    served_model: model, position: 1)
+  end
+
+  # The probabilities of the include questions: { agent id => probability of yes }.
+  def includes(probabilities)
+    probabilities.to_h { |id, yes| ["include_agent_#{id}", { 'yes' => yes, 'no' => (1 - yes).round(4) }] }
   end
 
   def answer_chain(*results)
@@ -38,24 +43,12 @@ RSpec.describe Captain::Runtime::DecisionRouter do
     end
   end
 
-  def escalate_to(choices, reason: 'agent 84 books ENT doctors')
-    escalation = instance_double(described_class::Escalation, choose: described_class::Escalation::Answer.new(
-      choices: choices, reason: reason, model: 'openai/gpt-6-luna'
-    ))
-    allow(described_class::Escalation).to receive(:new).and_return(escalation)
-    escalation
-  end
-
-  def choices(mode, yes: [])
-    { 'route_mode' => mode }.merge([84, 119, 120].to_h { |id| ["include_agent_#{id}", yes.include?(id) ? 'yes' : 'no'] })
-  end
-
-  it 'uses confident answers that agree as the decision' do
+  it 'uses the answers of the decision model as the decision' do
     answer_chain(chain_answer('route_agent', yes: [84]))
 
     expect(router.decide).to have_attributes(key: 'route_agent_84', kind: 'agent', agent_ids: [84], decided_by: 'perplexity/pplx-decider-v1.2',
-                                             confidence: 0.93, escalated: false, criteria_count: 4, candidate_count: 3, first_message: true,
-                                             first_answers: 'route_mode=route_agent include_agent_84=yes include_agent_119=no include_agent_120=no')
+                                             confidence: 0.93, criteria_count: 4, candidate_count: 3, first_message: true, mode: 'turn',
+                                             answers: 'route_mode=route_agent include_agent_84=yes include_agent_119=no include_agent_120=no')
   end
 
   it 'asks the routing chain the questions of the turn in one call, with the state of the turn' do
@@ -72,84 +65,84 @@ RSpec.describe Captain::Runtime::DecisionRouter do
     expect(question[:observability]).to include(routing_request_id: 'r-1', operation: 'captain.agent_routing')
   end
 
-  it 'holds a council of exactly the agents that are yes' do
-    answer_chain(chain_answer('council', yes: [84, 119], confidence: 0.75))
-    expect(described_class::Escalation).not_to receive(:new)
+  # The owner's decision of 26.10: the decision models' most probable answer decides; no threshold, no second opinion.
+  describe 'the most probable answer decides, with no threshold and no escalation' do
+    it 'uses an answer of any confidence as it is, with one call of the chain' do
+      answer_chain(chain_answer('route_agent', yes: [119], confidence: 0.31))
 
-    expect(router.decide).to have_attributes(key: 'council_84_119', kind: 'council', agent_ids: [84, 119], escalated: false)
-  end
+      expect(router.decide).to have_attributes(key: 'route_agent_119', confidence: 0.31)
+      expect(Llm::DecisionChain).to have_received(:decide).once
+    end
 
-  it 'escalates when one answer is below 0.75 and uses the escalation answer' do
-    answer_chain(chain_answer('route_agent', yes: [119], confidences: { 'include_agent_119' => 0.6 }))
-    escalation = escalate_to(choices('route_agent', yes: [84]))
+    it 'takes the route_mode key with the highest probability' do
+      mode = { 'route_mode' => { 'route_agent' => 0.42, 'council' => 0.46, 'human_handoff' => 0.12 } }
+      answer_chain(chain_answer('route_agent', yes: [84], probabilities: mode.merge(includes(84 => 0.81, 119 => 0.62, 120 => 0.05))))
 
-    decision = router.decide
+      expect(router.decide).to have_attributes(key: 'council_84_119', kind: 'council', agent_ids: [84, 119], confidence: 0.46)
+    end
 
-    expect(decision).to have_attributes(key: 'route_agent_84', agent_ids: [84], escalated: true, escalation_trigger: 'low_confidence',
-                                        decided_by: 'escalation:openai/gpt-6-luna', first_choice: 'route_agent_119',
-                                        first_confidence: 0.6, escalation_reason: 'agent 84 books ENT doctors', escalation_fallback: nil)
-    expect(described_class::Escalation).to have_received(:new).with(hash_including(timeout: 15.0, effort: 'high'))
-    expect(escalation).to have_received(:choose) do |state:, questions:, instructions:|
-      expect(state).to eq(snapshot.to_state)
-      expect(questions.to_h).to eq(calls.sole[:question][:questions])
-      expect(instructions).to eq(described_class::INSTRUCTIONS)
+    it 'gives staff only when human_handoff is the most probable route_mode, at any probability' do
+      unsure = { 'route_mode' => { 'human_handoff' => 0.45, 'route_agent' => 0.55 } }.merge(includes(84 => 0.7))
+      low = { 'route_mode' => { 'human_handoff' => 0.4, 'route_agent' => 0.35, 'council' => 0.25 } }
+      answer_chain(chain_answer('human_handoff', probabilities: unsure), chain_answer('human_handoff', confidence: 0.4, probabilities: low))
+
+      expect(router.decide).to have_attributes(key: 'route_agent_84', kind: 'agent')
+      expect(router.decide).to have_attributes(key: 'human_handoff', kind: 'human', agent_ids: [], confidence: 0.4)
+    end
+
+    it 'routes to the agent with the highest include probability, even when every include answer is no' do
+      answer_chain(chain_answer('route_agent', probabilities: includes(84 => 0.32, 119 => 0.41, 120 => 0.08)))
+
+      expect(router.decide).to have_attributes(key: 'route_agent_119', agent_ids: [119])
+    end
+
+    it 'holds a council of the agents whose include probability is 0.5 or more, else routes to the most probable one' do
+      answer_chain(chain_answer('council', yes: [84, 119, 120], probabilities: includes(84 => 0.9, 119 => 0.5, 120 => 0.49)),
+                   chain_answer('council', yes: [120], probabilities: includes(84 => 0.2, 119 => 0.45, 120 => 0.7)))
+
+      expect(router.decide).to have_attributes(key: 'council_84_119', kind: 'council', agent_ids: [84, 119])
+      expect(router.decide).to have_attributes(key: 'route_agent_120', kind: 'agent', agent_ids: [120])
+    end
+
+    it 'reads no threshold or escalation setting of the platform' do
+      create(:installation_config, name: 'CAPTAIN_AGENT_ROUTING_MIN_CONFIDENCE', value: '0.99')
+      create(:installation_config, name: 'CAPTAIN_AGENT_ROUTING_ESCALATION_MODEL', value: 'openai/gpt-6-luna')
+      answer_chain(chain_answer('route_agent', yes: [84], confidence: 0.6))
+
+      expect(router.decide).to have_attributes(key: 'route_agent_84', decided_by: 'perplexity/pplx-decider-v1.2')
     end
   end
 
-  it 'escalates answers that contradict each other, whatever their confidence' do
-    answer_chain(chain_answer('council', yes: [84], confidence: 0.99))
-    escalate_to(choices('route_agent', yes: [84]))
-
-    expect(router.decide).to have_attributes(key: 'route_agent_84', escalated: true, escalation_trigger: 'inconsistent',
-                                             first_choice: 'inconsistent')
-  end
-
-  it 'needs 0.80 for staff and uses a staff decision at 0.80' do
-    answer_chain(chain_answer('human_handoff', confidence: 0.79), chain_answer('human_handoff', confidence: 0.8))
-    escalate_to(choices('route_agent', yes: [84]))
-
-    expect(router.decide).to have_attributes(key: 'route_agent_84', escalated: true)
-    expect(router.decide).to have_attributes(key: 'human_handoff', kind: 'human', agent_ids: [], escalated: false)
-  end
-
-  it 'counts a missing confidence as low' do
-    answer_chain(chain_answer('route_agent', yes: [84], confidence: nil))
-    escalate_to(choices('route_agent', yes: [84]))
-
-    expect(router.decide).to have_attributes(escalated: true, escalation_trigger: 'low_confidence')
-  end
-
-  context 'when the previous turn routed from 84 to the current agent 119' do
+  context 'with a current agent' do
     let(:current) { 119 }
-    let(:trail) { [{ 'kind' => 'agent', 'from' => 84, 'to' => [119] }] }
 
-    it 'sends a confident route straight back to 84 to the escalation model (bounce guard)' do
-      answer_chain(chain_answer('route_agent', yes: [84], confidence: 0.99))
-      escalate_to(choices('route_agent', yes: [84]))
+    it 'never routes to the current agent: route_agent takes the most probable other agent' do
+      answer_chain(chain_answer('route_agent', yes: [119], probabilities: includes(84 => 0.3, 119 => 0.95, 120 => 0.35)))
 
-      expect(router.decide).to have_attributes(key: 'route_agent_84', escalated: true, escalation_trigger: 'bounce', guard: 'bounce')
+      expect(router.decide).to have_attributes(key: 'route_agent_120', agent_ids: [120])
     end
 
-    it 'does not guard a route to another agent' do
-      answer_chain(chain_answer('route_agent', yes: [120], confidence: 0.99))
+    it 'keeps the current agent on stay_current whatever the include answers say' do
+      answer_chain(chain_answer('stay_current', yes: [84], probabilities: includes(84 => 0.8, 119 => 0.1)))
 
-      expect(router.decide).to have_attributes(key: 'route_agent_120', escalated: false, guard: nil)
+      expect(router.decide).to have_attributes(key: 'stay_current', kind: 'stay', agent_ids: [119])
     end
 
-    it 'does not guard when the platform switched the bounce check off' do
-      create(:installation_config, name: 'CAPTAIN_AGENT_ROUTING_BOUNCE_ESCALATION', value: 'off')
-      answer_chain(chain_answer('route_agent', yes: [84], confidence: 0.99))
+    it 'takes a council of one agent that is the current one for a stay' do
+      answer_chain(chain_answer('council', yes: [119], probabilities: includes(84 => 0.2, 119 => 0.9, 120 => 0.1)))
 
-      expect(router.decide).to have_attributes(key: 'route_agent_84', escalated: false)
+      expect(router.decide).to have_attributes(key: 'stay_current', kind: 'stay', agent_ids: [119])
     end
-  end
 
-  it 'reads the thresholds from the platform settings' do
-    create(:installation_config, name: 'CAPTAIN_AGENT_ROUTING_MIN_CONFIDENCE', value: '0.9')
-    answer_chain(chain_answer('route_agent', yes: [84], confidence: 0.85))
-    escalate_to(choices('route_agent', yes: [84]))
+    context 'when the previous turn routed from 84 to it' do
+      let(:trail) { [{ 'kind' => 'agent', 'from' => 84, 'to' => [119] }] }
 
-    expect(router.decide).to have_attributes(escalated: true)
+      it 'uses a route straight back to 84 as it is (no bounce guard)' do
+        answer_chain(chain_answer('route_agent', yes: [84], confidence: 0.99))
+
+        expect(router.decide).to have_attributes(key: 'route_agent_84', agent_ids: [84])
+      end
+    end
   end
 
   it 'raises UnavailableError with the models it tried when every decision model fails' do
@@ -164,78 +157,10 @@ RSpec.describe Captain::Runtime::DecisionRouter do
     end
   end
 
-  def fail_escalation(detail)
-    escalation = instance_double(described_class::Escalation, model: 'openai/gpt-6-luna')
-    allow(escalation).to receive(:choose).and_raise(described_class::EscalationError.new(reason: 'escalation_unavailable', detail: detail))
-    allow(described_class::Escalation).to receive(:new).and_return(escalation)
-    escalation
-  end
+  it 'uses the answer of the next model of the chain when the head failed (the chain falls back inside Llm::DecisionChain)' do
+    answer_chain(chain_answer('route_agent', yes: [120], model: 'inception/mercury-decide').tap { |result| result.position = 2 })
 
-  it 'raises EscalationError when the escalation fails or its answers contradict each other after answers that did not agree' do
-    answer_chain(chain_answer('council', yes: [84], confidence: 0.99), chain_answer('council', yes: [84], confidence: 0.99))
-    fail_escalation('timeout')
-
-    expect { router.decide }.to raise_error(described_class::EscalationError) { |error| expect(error.reason).to eq('escalation_unavailable') }
-
-    escalate_to(choices('council', yes: [84]))
-    expect { router.decide }.to raise_error(described_class::EscalationError) { |error| expect(error.reason).to eq('escalation_invalid') }
-  end
-
-  # Suggestion eval 26.10: two escalations hit the 15 s timeout and the suggestions ended with no draft, while the decision models
-  # had already named the agent (at a low confidence). Their outcome is an answer of the decision models, never a code default.
-  describe 'an escalation that times out or fails after the decision models named an outcome' do
-    it 'uses the outcome of the decision models with their confidence and says so in the event' do
-      answer_chain(chain_answer('route_agent', yes: [84], confidences: { 'include_agent_119' => 0.4 }))
-      fail_escalation('timeout')
-
-      decision = router.decide
-
-      expect(decision).to have_attributes(key: 'route_agent_84', kind: 'agent', agent_ids: [84], decided_by: 'perplexity/pplx-decider-v1.2',
-                                          confidence: 0.4, escalated: true, escalation_trigger: 'low_confidence',
-                                          escalation_fallback: 'escalation_timeout_used_chain',
-                                          escalation_failure: 'escalation_unavailable:timeout', escalation_reason: nil)
-      expect(decision.escalation_ms).to be_a(Integer)
-      expect(decision.to_event_payload).to include(escalation_fallback: 'escalation_timeout_used_chain', escalated: true,
-                                                   escalation_failure: 'escalation_unavailable:timeout', decided_by: 'perplexity/pplx-decider-v1.2')
-    end
-
-    it 'names an error of the escalation apart from its timeout, for a council and for staff alike' do
-      answer_chain(chain_answer('council', yes: [84, 119], confidence: 0.5), chain_answer('human_handoff', confidence: 0.7))
-      fail_escalation('Faraday::ConnectionFailed')
-
-      expect(router.decide).to have_attributes(key: 'council_84_119', kind: 'council', agent_ids: [84, 119],
-                                               escalation_fallback: 'escalation_error_used_chain',
-                                               escalation_failure: 'escalation_unavailable:Faraday::ConnectionFailed')
-      expect(router.decide).to have_attributes(key: 'human_handoff', kind: 'human', escalation_fallback: 'escalation_error_used_chain')
-    end
-
-    it 'uses it when the escalation answered outside its keys or with answers that contradict each other' do
-      answer_chain(chain_answer('route_agent', yes: [119], confidence: 0.5))
-      escalate_to(choices('council', yes: [84]))
-
-      expect(router.decide).to have_attributes(key: 'route_agent_119', escalation_fallback: 'escalation_error_used_chain',
-                                               escalation_failure: 'escalation_invalid:inconsistent')
-    end
-
-    it 'keeps the bounce guard on the decision it uses' do
-      bounced = described_class.new(
-        Captain::Runtime::RoutingSnapshot.new(agents: agents, latest_message: 'Хочу к ЛОРу', current_agent_id: 119, human_available: true,
-                                              trail: [{ 'kind' => 'agent', 'from' => 84, 'to' => [119] }]),
-        account: account
-      )
-      answer_chain(chain_answer('route_agent', yes: [84], confidence: 0.99))
-      fail_escalation('timeout')
-
-      expect(bounced.decide).to have_attributes(key: 'route_agent_84', guard: 'bounce', escalation_trigger: 'bounce',
-                                                escalation_fallback: 'escalation_timeout_used_chain')
-    end
-
-    it 'never replaces an escalation that named no agent: nobody decided' do
-      answer_chain(chain_answer('route_agent', yes: [84], confidence: 0.5))
-      escalate_to(choices('route_agent'))
-
-      expect { router.decide }.to raise_error(described_class::UndecidedError)
-    end
+    expect(router.decide).to have_attributes(key: 'route_agent_120', decided_by: 'inception/mercury-decide', chain_position: 2)
   end
 
   describe 'a message that needs no answer' do
@@ -245,10 +170,9 @@ RSpec.describe Captain::Runtime::DecisionRouter do
     end
 
     it 'is no_reply_needed on route_mode alone, never a council or a route, and keeps the current agent when one leads' do
-      answer_chain(chain_answer('no_reply_needed', yes: [84, 119], confidences: { 'include_agent_84' => 0.2 }))
+      answer_chain(chain_answer('no_reply_needed', yes: [84, 119], confidence: 0.6))
 
-      expect(router.decide).to have_attributes(key: 'no_reply_needed', kind: 'no_reply', agent_ids: [], agent_id: nil, escalated: false,
-                                               confidence: 0.93)
+      expect(router.decide).to have_attributes(key: 'no_reply_needed', kind: 'no_reply', agent_ids: [], agent_id: nil, confidence: 0.6)
       expect(calls.sole[:question][:questions]['route_mode'][:criteria]).to have_key('no_reply_needed')
     end
 
@@ -261,22 +185,14 @@ RSpec.describe Captain::Runtime::DecisionRouter do
         expect(router.decide).to have_attributes(kind: 'no_reply', agent_ids: [119], agent_id: 119, no_reply?: true)
       end
     end
-
-    it 'escalates when unsure and uses the answer of the decision models when the escalation times out' do
-      answer_chain(chain_answer('no_reply_needed', confidence: 0.6))
-      fail_escalation('timeout')
-
-      expect(router.decide).to have_attributes(key: 'no_reply_needed', escalated: true, escalation_fallback: 'escalation_timeout_used_chain')
-    end
   end
 
-  it 'reports the escalation it would run without calling it, and asks one model alone, for the evaluation harness' do
+  it 'asks the models the evaluation harness names instead of the platform chain' do
     answer_chain(chain_answer('council', yes: [119]))
-    expect(described_class::Escalation).not_to receive(:new)
 
-    decision = described_class.new(snapshot, account: account, escalate: false, chain_models: ['typesafe/jev-1.14']).decide
+    decision = described_class.new(snapshot, account: account, chain_models: ['typesafe/jev-1.14']).decide
 
-    expect(decision).to have_attributes(key: 'inconsistent', kind: 'inconsistent', escalation_trigger: 'inconsistent')
+    expect(decision).to have_attributes(key: 'route_agent_119', kind: 'agent')
     expect(calls.sole[:models]).to eq(['typesafe/jev-1.14'])
   end
 
@@ -289,131 +205,27 @@ RSpec.describe Captain::Runtime::DecisionRouter do
                                             recent_messages: history, suggestion: true, anchor_agent_id: 84)
     end
 
-    it 'keeps a confident short reply with the sticky agent without the escalation' do
-      answer_chain(chain_answer('stay_current', yes: [119]))
-      expect(described_class::Escalation).not_to receive(:new)
+    it 'keeps a short reply with the sticky agent, also at a low confidence and when it names no agent' do
+      answer_chain(chain_answer('stay_current', yes: [119]), chain_answer('stay_current', confidence: 0.4))
 
-      expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalated: false, escalation_trigger: nil, default_to: nil)
-    end
-
-    it 'escalates a short reply kept with the sticky agent at a low confidence, as any other turn' do
-      answer_chain(chain_answer('stay_current', yes: [119], confidences: { 'include_agent_84' => 0.3 }))
-      escalate_to(choices('stay_current', yes: [119]))
-
-      expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalated: true, escalation_trigger: 'low_confidence',
-                                               first_confidence: 0.3)
-    end
-
-    it 'gives the escalation of a suggestion its own timeout and effort, and uses the sticky agent the models named past it' do
-      answer_chain(chain_answer('stay_current', yes: [119], confidence: 0.5))
-      fail_escalation('timeout')
-
-      expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalation_fallback: 'escalation_timeout_used_chain')
-      expect(described_class::Escalation).to have_received(:new).with(hash_including(timeout: 10.0, effort: 'medium'))
-    end
-
-    it 'gives an explicit stay_current that names no agent to the sticky agent, and escalates it at a low confidence' do
-      answer_chain(chain_answer('stay_current'), chain_answer('stay_current', confidence: 0.5))
-      escalate_to(choices('stay_current'))
-
-      expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalated: false, default_to: 'current')
-      expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalated: true, escalation_trigger: 'low_confidence',
-                                               default_to: 'current')
-    end
-
-    it 'escalates route_agent naming no agent as inconsistent, and raises UndecidedError when the escalation names none either' do
-      answer_chain(chain_answer('route_agent', confidence: 0.99))
-      escalation = escalate_to(choices('route_agent'))
-
-      expect { router.decide }.to raise_error(described_class::UndecidedError) do |error|
-        expect(error).to have_attributes(reason: 'escalation_undecided', detail: 'no_agent', models_tried: ['openai/gpt-6-luna'])
-        expect(error).to be_a(described_class::EscalationError)
-      end
-      expect(escalation).to have_received(:choose)
+      expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119])
+      expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], confidence: 0.4)
     end
 
     context 'without a sticky agent' do
       let(:sticky) { nil }
 
-      it 'escalates a short reply mid-dialog whose answers name no agent: the escalation finds the agent of the booking' do
-        answer_chain(chain_answer('route_agent', confidence: 0.95))
-        escalation = escalate_to(choices('route_agent', yes: [119]))
+      it 'gives route_agent naming no agent to the most probable agent, never by default to the anchor' do
+        answer_chain(chain_answer('route_agent', probabilities: includes(84 => 0.2, 119 => 0.45, 120 => 0.1)))
 
-        expect(router.decide).to have_attributes(key: 'route_agent_119', agent_ids: [119], escalated: true, escalation_trigger: 'inconsistent',
-                                                 default_to: nil)
-        expect(escalation).to have_received(:choose)
-      end
-
-      it 'never gives the turn to the anchor when the escalation also names no agent: nobody decided' do
-        answer_chain(chain_answer('route_agent', confidence: 0.95))
-        escalate_to(choices('route_agent'))
-
-        expect { router.decide }.to raise_error(described_class::UndecidedError) { |error| expect(error.reason).to eq('escalation_undecided') }
-      end
-
-      context 'with the first message of the dialog' do
-        let(:history) { [] }
-        let(:message) { 'Здравствуйте!' }
-
-        it 'gives confident answers that name no agent to the anchor; an unsure one escalates and is undecided when the escalation names none' do
-          answer_chain(chain_answer('route_agent'), chain_answer('route_agent', confidence: 0.6))
-          escalate_to(choices('route_agent'))
-
-          expect(router.decide).to have_attributes(key: 'route_agent_84', escalated: false, default_to: 'anchor')
-          expect { router.decide }.to raise_error(described_class::UndecidedError)
-        end
-
-        it 'is undecided on the first message after an inconsistent answer when the escalation names no agent' do
-          answer_chain(chain_answer('council', yes: [119], confidence: 0.99))
-          escalate_to(choices('route_agent'))
-
-          expect { router.decide }.to raise_error(described_class::UndecidedError)
-        end
+        expect(router.decide).to have_attributes(key: 'route_agent_119', agent_ids: [119])
       end
     end
-
-    it 'escalates answers that contradict each other and fails when every decision model fails: there is no fallback' do
-      answer_chain(chain_answer('council', yes: [119], confidence: 0.99))
-      escalate_to(choices('stay_current', yes: [119]))
-      expect(router.decide).to have_attributes(escalated: true, escalation_trigger: 'inconsistent')
-
-      allow(Llm::DecisionChain).to receive(:decide).and_raise(
-        Llm::DecisionChain::ExhaustedError.new(feature: :agent_routing, attempts: [{ model: 'perplexity/pplx-decider-v1.2', error_class: 'Timeout' }])
-      )
-      expect { router.decide }.to raise_error(described_class::UnavailableError)
-    end
-
-    it 'says in its event that the answers named no agent and who got the turn' do
-      answer_chain(chain_answer('stay_current'))
-
-      expect(router.decide.to_event_payload).to include(default_to: 'current', escalated: false)
-    end
-
-    describe 'an unsure stay_current that asks for no agent, which the escalation makes a council' do
-      let(:message) { 'Спасибо. А аудиометрию и промывание миндалин можно завтра?' }
-
-      it 'uses the council of the escalation: its answer is final, the turn is not sent back to the sticky agent' do
-        answer_chain(chain_answer('stay_current', confidence: 0.6))
-        escalate_to(choices('council', yes: [84, 119]))
-
-        expect(router.decide).to have_attributes(key: 'council_84_119', kind: 'council', agent_ids: [84, 119], escalated: true,
-                                                 escalation_trigger: 'low_confidence', first_choice: 'stay_current', guard: nil,
-                                                 default_to: nil)
-      end
-    end
-  end
-
-  it 'uses the council of the escalation of a live turn whose first answers asked for no agent' do
-    answer_chain(chain_answer('route_agent', confidence: 0.95))
-    escalate_to(choices('council', yes: [84, 119]))
-
-    expect(router.decide).to have_attributes(key: 'council_84_119', kind: 'council', escalated: true, escalation_trigger: 'inconsistent',
-                                             guard: nil)
   end
 
   # Router benchmark 26.10 (AS06, IS06, SS05): v2 cards have no catch-all agent of general questions, so the old rule (a plain thanks
   # goes to that agent) sent a plain thanks to a council.
-  it 'tells the decision models and the escalation that a message that needs no answer is no_reply_needed, never a council' do
+  it 'tells the decision models that a message that needs no answer is no_reply_needed, never a council' do
     instructions = described_class::INSTRUCTIONS.squish
 
     expect(instructions).to include('3. A message that needs no answer is no_reply_needed, whoever the current agent is',
@@ -457,6 +269,8 @@ RSpec.describe Captain::Runtime::DecisionRouter do
 
     payload = router.decide.to_event_payload
     expect(payload.to_json).not_to include('ЛОР дәрігеріне')
-    expect(payload).to include(decision_key: 'route_agent_84', kind: 'agent', target_ids: [84], escalated: false)
+    expect(payload).to include(decision_key: 'route_agent_84', kind: 'agent', target_ids: [84], decided_by: 'perplexity/pplx-decider-v1.2',
+                               first_answers: start_with('route_mode=route_agent'))
+    expect(payload.keys).not_to include(:escalated, :escalation_trigger, :escalation_fallback, :default_to, :guard)
   end
 end

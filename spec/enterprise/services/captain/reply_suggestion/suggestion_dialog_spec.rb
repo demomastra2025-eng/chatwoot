@@ -5,8 +5,8 @@ require 'rails_helper'
 # «Предложить ответ» end to end: StartService -> GenerateJob -> ReplySuggestionService -> AgentRunnerService -> DecisionRouter, with
 # only the model calls stubbed (the agent runs and the decision chain). It guards the dialog that the suggestions keep across turns:
 # the sticky agent (and what ends its lead: a rejection, a closed notice, a new suggestion over an unused one, a manual reply), the
-# escalation of an unsure router, the anchor default, an undecided router, the budget of one agent and the approval cards of an
-# inserted draft.
+# most probable answer of the router (no threshold, no escalation, no anchor default), the budget of one agent and the approval cards
+# of an inserted draft.
 RSpec.describe 'Reply suggestion dialog' do # rubocop:disable RSpec/DescribeClass
   let(:account) { create(:account) }
   let(:manager) { create(:user, account: account, role: :agent) }
@@ -51,23 +51,20 @@ RSpec.describe 'Reply suggestion dialog' do # rubocop:disable RSpec/DescribeClas
     create(:message, conversation: conversation, account: account, message_type: :outgoing, content: text)
   end
 
-  def decide(mode, yes: [], confidence: 0.92)
+  # The answers of the decision model: route_mode, the agents that are yes and, when given, the probability of yes per agent id.
+  def decide(mode, yes: [], confidence: 0.92, yes_probabilities: {})
     allow(Llm::DecisionChain).to receive(:decide) do |question:, **|
       questions_seen << question
       yes_names = yes.map { |id| "include_agent_#{id}" }
       choices = question[:questions].keys.index_with { |name| yes_names.include?(name) ? 'yes' : 'no' }.merge('route_mode' => mode)
-      answers = choices.transform_values { |choice| Llm::OpenRouterDecisionClient::Answer.new(choice: choice, confidence: confidence) }
+      answers = choices.to_h do |name, choice|
+        probability = yes_probabilities[name.delete_prefix('include_agent_').to_i]
+        probabilities = probability ? { 'yes' => probability, 'no' => 1 - probability } : {}
+        [name, Llm::OpenRouterDecisionClient::Answer.new(choice: choice, confidence: confidence, probabilities: probabilities)]
+      end
       Llm::DecisionChain::Result.new(answers: answers, model: 'perplexity/pplx-decider-v1.2', served_model: 'perplexity/pplx-decider-v1.2',
                                      position: 1)
     end
-  end
-
-  def escalate_to(mode, yes: [])
-    choices = { 'route_mode' => mode }.merge([doctors, procedures].to_h { |item| ["include_agent_#{item.id}", yes.include?(item.id) ? 'yes' : 'no'] })
-    answer = Captain::Runtime::DecisionRouter::Escalation::Answer.new(choices: choices, reason: 'escalated', model: 'openai/gpt-6-luna')
-    escalation = instance_double(Captain::Runtime::DecisionRouter::Escalation, choose: answer)
-    allow(Captain::Runtime::DecisionRouter::Escalation).to receive(:new).and_return(escalation)
-    escalation
   end
 
   def suggest
@@ -105,7 +102,6 @@ RSpec.describe 'Reply suggestion dialog' do # rubocop:disable RSpec/DescribeClas
     clinic_says('Завтра 16:30 или 17:00?')
     patient_says('Да, на 17:00')
     decide('stay_current', yes: [procedures.id])
-    expect(Captain::Runtime::DecisionRouter::Escalation).not_to receive(:new)
     second = suggest
 
     expect(questions_seen.last[:state][:current_agent_id]).to eq(procedures.id)
@@ -113,15 +109,15 @@ RSpec.describe 'Reply suggestion dialog' do # rubocop:disable RSpec/DescribeClas
     expect(runs.pluck(:agent)).to eq(["assistant_#{procedures.id}", "assistant_#{procedures.id}"])
   end
 
-  it 'escalates a short reply that the router keeps with the sticky agent at a low confidence' do
+  it 'keeps a short reply with the sticky agent at a low confidence, with one call of the decision chain' do
     sticky.confirm!(conversation, procedures.id, request_id: 'earlier')
     clinic_says('Завтра 16:30 или 17:00?')
     patient_says('Да, на 17:00')
     decide('stay_current', yes: [procedures.id], confidence: 0.3)
-    escalation = escalate_to('stay_current', yes: [procedures.id])
 
     expect(suggest).to include('status' => 'draft')
-    expect(escalation).to have_received(:choose)
+    expect(Llm::DecisionChain).to have_received(:decide).once
+    expect(runs.pluck(:agent)).to eq(["assistant_#{procedures.id}"])
   end
 
   it 'withdraws the agent of a rejected draft: the agent before it leads the dialog again' do
@@ -135,48 +131,39 @@ RSpec.describe 'Reply suggestion dialog' do # rubocop:disable RSpec/DescribeClas
     expect(sticky.read(conversation)).to eq(doctors.id)
   end
 
-  it 'sends a short reply mid-dialog without a sticky agent to the escalation, and hands it to the manager when that names no agent' do
+  it 'sends a short reply mid-dialog without a sticky agent to the most probable agent, also when no include answer is yes' do
     clinic_says('Завтра 16:30 или 17:00?')
     patient_says('Да, на 17:00')
-    decide('route_agent', confidence: 0.95)
-    escalation = escalate_to('route_agent')
+    decide('route_agent', confidence: 0.95, yes_probabilities: { doctors.id => 0.2, procedures.id => 0.4 })
     allow(Captain::Runtime::RoutingEvents).to receive(:failed).and_call_original
 
     record = suggest
 
-    expect(escalation).to have_received(:choose)
-    expect(Captain::Runtime::RoutingEvents).to have_received(:failed)
-      .with(hash_including(error: having_attributes(reason: 'escalation_undecided')))
     expect(questions_seen.last[:state][:current_agent_id]).to be_nil
-    expect(runs).to be_empty
-    expect(record).to include('status' => 'human_needed')
-    expect(record['result']).to include('reason_source' => 'router',
-                                        'reason' => I18n.t('captain.reply_suggestion.reasons.router_undecided', locale: account.locale))
-    expect(sticky.read(conversation)).to be_nil
+    expect(Captain::Runtime::RoutingEvents).not_to have_received(:failed)
+    expect(record).to include('status' => 'draft')
+    expect(runs.pluck(:agent)).to eq(["assistant_#{procedures.id}"])
+    expect(record.dig('result', 'suggestion_meta', 'routing')).to include('decision_key' => "route_agent_#{procedures.id}")
   end
 
-  it 'gives a confident first-message greeting that names no agent to the anchor, which never becomes sticky' do
-    decide('route_agent', confidence: 0.95)
-    expect(Captain::Runtime::DecisionRouter::Escalation).not_to receive(:new)
+  it 'gives a first message whose answers name no agent to the most probable agent, never by default to the anchor' do
+    decide('route_agent', confidence: 0.95, yes_probabilities: { doctors.id => 0.1, procedures.id => 0.35 })
 
     record = suggest
 
     expect(record).to include('status' => 'draft')
-    expect(record.dig('result', 'suggestion_meta', 'routing')).to include('decision_key' => "route_agent_#{doctors.id}", 'default_to' => 'anchor')
-    feedback(record, 'applied')
-    expect(sticky.read(conversation)).to be_nil
+    expect(record.dig('result', 'suggestion_meta', 'routing')).to include('decision_key' => "route_agent_#{procedures.id}")
+    expect(record.dig('result', 'suggestion_meta', 'routing')).not_to have_key('default_to')
   end
 
-  it 'escalates route_agent naming no agent while a sticky agent leads the dialog, instead of keeping the sticky agent' do
+  it 'routes route_agent naming no agent while a sticky agent leads the dialog to the other agent, never back to the sticky one' do
     sticky.confirm!(conversation, procedures.id, request_id: 'earlier')
     clinic_says('Завтра 16:30 или 17:00?')
     patient_says('А к врачу Ивановой можно?')
     decide('route_agent', confidence: 0.99)
-    escalation = escalate_to('route_agent', yes: [doctors.id])
 
     record = suggest
 
-    expect(escalation).to have_received(:choose)
     expect(record).to include('status' => 'draft')
     expect(runs.pluck(:agent)).to eq(["assistant_#{doctors.id}"])
   end

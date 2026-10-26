@@ -232,7 +232,7 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
     'agent_error'
   end
 
-  # The router could not route the turn (every decision model and the escalation failed), or the council it chose could not be set
+  # The router could not route the turn (every decision model failed), or the council it chose could not be set
   # up: not a failure of a tool of the agent.
   def router_failure_code
     failure = payload[:technical_failure].to_h.with_indifferent_access

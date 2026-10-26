@@ -3,9 +3,8 @@
 # The run state of one patient turn: the durable session, the agents of the channel and the activation of the agent that answers.
 # #prepare reads the session and the history and never chooses an agent: the router decides who answers (see
 # Captain::Runtime::DecisionRouter and Captain::Runtime::TurnDispatcher), and #activate prepares the chosen agent. The assistant
-# the run was started with (`entry`) is the technical anchor of the channel, never a default agent of a live turn (a reply
-# suggestion whose router answers name no agent on the first message of the dialog, or whose escalation names none, is answered by
-# it: see DecisionRouter::Questions; such an answer makes it nobody's sticky agent).
+# the run was started with (`entry`) is the technical anchor of the channel, never a default agent: the router always names who
+# answers (see DecisionRouter::Questions).
 class Captain::AgentRunContext
   # sticky_agent_id: the agent that leads the dialog of a reply suggestion (Captain::ReplySuggestion::StickyAgent); while it is a
   # candidate it is the current agent and the holder of the run, whatever the saved session says.

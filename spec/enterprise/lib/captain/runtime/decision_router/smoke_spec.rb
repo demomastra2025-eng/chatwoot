@@ -16,36 +16,21 @@ RSpec.describe Captain::Runtime::DecisionRouter::Smoke do
     end
   end
 
-  def escalation(answer: nil, error: nil)
-    model = instance_double(Captain::Runtime::DecisionRouter::Escalation, model: 'openai/gpt-6-luna')
-    if error
-      allow(model).to receive(:choose).and_raise(error)
-    else
-      allow(model).to receive(:choose).and_return(answer)
-    end
-    allow(Captain::Runtime::DecisionRouter::Escalation).to receive(:new).and_return(model)
-  end
-
-  def escalated(choices)
-    Captain::Runtime::DecisionRouter::Escalation::Answer.new(choices: choices, reason: 'agent 1 books doctors', model: 'openai/gpt-6-luna')
-  end
-
-  it 'asks every model of the routing chain alone, then the escalation model, and reports each one' do
+  it 'asks every model of the routing chain alone and reports each one, with no escalation model' do
     allow(Llm::DecisionChain).to receive(:decide, &answer_with('route_agent', 1))
-    escalation(answer: escalated('route_mode' => 'route_agent', 'include_agent_1' => 'yes', 'include_agent_2' => 'no'))
 
     rows = smoke.call
 
     expect(calls.pluck(:model)).to eq(Llm::DecisionChain.models(:agent_routing))
     expect(rows.map { |row| [row.role, row.model, row.ok, row.decision] }).to eq(
       [['chain#1', 'perplexity/pplx-decider-v1.2', true, 'route_agent_1'], ['chain#2', 'inception/mercury-decide', true, 'route_agent_1'],
-       ['chain#3', 'microsoft/microsoft-decision-1', true, 'route_agent_1'], ['escalation', 'openai/gpt-6-luna', true, 'route_agent_1']]
+       ['chain#3', 'microsoft/microsoft-decision-1', true, 'route_agent_1']]
     )
     expect(rows).to all(have_attributes(latency_ms: be >= 0))
     expect(described_class.ok?(rows)).to be(true)
   end
 
-  it 'reports a model that fails or answers inconsistently, with the error class only' do
+  it 'reports a model that fails, with the error class only, and resolves a council of one agent into a route' do
     allow(Llm::DecisionChain).to receive(:decide) do |models:, **kwargs|
       if models.sole == 'inception/mercury-decide'
         raise Llm::DecisionChain::ExhaustedError.new(feature: :agent_routing, attempts: [{ model: models.sole, error_class: 'Timeout::Error' }])
@@ -53,13 +38,11 @@ RSpec.describe Captain::Runtime::DecisionRouter::Smoke do
 
       answer_with(models.sole == 'perplexity/pplx-decider-v1.2' ? 'council' : 'route_agent', 2).call(models: models, **kwargs)
     end
-    escalation(error: Captain::Runtime::DecisionRouter::EscalationError.new(reason: 'escalation_unavailable', detail: 'timeout'))
 
     rows = smoke.call
 
-    expect(rows.map { |row| [row.ok, row.error] }).to eq(
-      [[false, 'inconsistent'], [false, 'Llm::DecisionChain::ExhaustedError:Timeout::Error'], [true, nil],
-       [false, 'Captain::Runtime::DecisionRouter::EscalationError:escalation_unavailable']]
+    expect(rows.map { |row| [row.ok, row.decision, row.error] }).to eq(
+      [[true, 'route_agent_2', nil], [false, nil, 'Llm::DecisionChain::ExhaustedError:Timeout::Error'], [true, 'route_agent_2', nil]]
     )
     expect(described_class.ok?(rows)).to be(false)
   end
@@ -78,7 +61,6 @@ RSpec.describe Captain::Runtime::DecisionRouter::Smoke do
 
   it 'prints no key, no prompt and no text of the turn' do
     allow(Llm::DecisionChain).to receive(:decide, &answer_with('route_agent', 1))
-    escalation(answer: escalated('route_mode' => 'route_agent', 'include_agent_1' => 'yes', 'include_agent_2' => 'no'))
 
     printed = smoke.call.map(&:to_s).join("\n")
 

@@ -3,16 +3,12 @@
 # The release questions of a router benchmark run that the plain accuracy does not answer (part of
 # Captain::Evals::RouterBenchmark::Report):
 #   traps          accuracy on the trap scenarios (the "trap" tag of a scenario: human, injection, false_council), which must all pass
-#   wrong_answers  how many wrong answers the production pipeline would catch (their answers contradict each other, or their
-#                  confidence is below the threshold: 0.75, 0.80 for staff; then the escalation decides) and how many are unsafe (a
-#                  consistent and confident wrong answer is used as it is)
-#   escalation     for the production pipeline: how often the escalation model decided, its latency, and whether it fixed or broke
-#                  the answer of the decision models
-#   answered_by    for the production pipeline: which model of the chain (or the escalation) gave the final answer
+#   wrong_answers  how many wrong answers had a low confidence (below 0.75, 0.80 for staff: the probability of the route_mode key
+#                  that decided) and how many were confident; the router uses both as they are (no threshold since 26.10)
+#   answered_by    for the production pipeline: which model of the chain gave the answer
 class Captain::Evals::RouterBenchmark::Insights
   LOW_CONFIDENCE = 0.75
   HUMAN_LOW_CONFIDENCE = 0.80
-  INCONSISTENT = 'inconsistent'
 
   def initialize(rows)
     @rows = Array(rows)
@@ -30,19 +26,8 @@ class Captain::Evals::RouterBenchmark::Insights
 
   def wrong_answers
     wrong = @rows.reject { |row| row.error || correct?(row) }
-    inconsistent = wrong.count { |row| row.got == INCONSISTENT }
-    low = wrong.count { |row| row.got != INCONSISTENT && low_confidence?(row) }
-    { count: wrong.size, inconsistent: inconsistent, low_confidence: low, unsafe: wrong.size - inconsistent - low,
-      caught_share: ratio(inconsistent + low, wrong.size) }
-  end
-
-  # fixed: the decision models were wrong and the escalation right; broke: the other way round; still_wrong: both wrong.
-  def escalation
-    escalated = @rows.select(&:escalated)
-    outcomes = escalated.map { |row| [row.first_choice == row.expected, correct?(row)] }.tally
-    { fired: escalated.size, rate: ratio(escalated.size, @rows.size), fixed: outcomes.fetch([false, true], 0),
-      broke: outcomes.fetch([true, false], 0), still_wrong: outcomes.fetch([false, false], 0),
-      latency: latency(escalated.filter_map(&:escalation_ms)) }
+    low = wrong.count { |row| low_confidence?(row) }
+    { count: wrong.size, low_confidence: low, confident: wrong.size - low }
   end
 
   def answered_by
@@ -60,13 +45,6 @@ class Captain::Evals::RouterBenchmark::Insights
 
   def failures(rows)
     rows.reject { |row| correct?(row) }.map { |row| "#{row.scenario_id}: #{row.expected} -> #{row.got || row.error}" }
-  end
-
-  def latency(values)
-    values = values.sort
-    return {} if values.empty?
-
-    { p50: values[[(values.size * 0.5).ceil - 1, 0].max], p90: values[[(values.size * 0.9).ceil - 1, 0].max], max: values.last }
   end
 
   def ratio(part, whole)

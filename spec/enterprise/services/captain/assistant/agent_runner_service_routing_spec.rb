@@ -235,21 +235,21 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
   end
 
-  # Suggestion eval 26.10: two escalations hit the timeout and the suggestions ended with no draft.
-  it 'runs the agent the decision models named when the escalation times out, and says so in the routed event' do
+  # The owner's decision of 26.10: the decision models' most probable answer decides, with no threshold and no escalation (in the
+  # suggestion eval of 26.10 the escalation was all of the latency the router added, and two escalations left no draft).
+  it 'runs the agent the decision models named at a low confidence, with no other model call' do
     decide('route_agent', yes: [procedures.id], confidence: 0.5)
-    escalation = instance_double(Captain::Runtime::DecisionRouter::Escalation)
-    allow(escalation).to receive(:choose)
-      .and_raise(Captain::Runtime::DecisionRouter::EscalationError.new(reason: 'escalation_unavailable', detail: 'timeout'))
-    allow(Captain::Runtime::DecisionRouter::Escalation).to receive(:new).and_return(escalation)
+    allow(Llm::Runtime).to receive(:build_chat).and_call_original
     suggestion = described_class.new(assistant: doctors, conversation: conversation, source: 'reply_suggestion')
 
     response = suggestion.generate_response(message_history: history)
 
     expect(runs.pluck(:agent)).to eq(["assistant_#{procedures.id}"])
     expect(response['response']).to eq("Ответ assistant_#{procedures.id}")
-    expect(routed_event).to include('escalation_fallback' => 'escalation_timeout_used_chain', 'escalated' => true,
-                                    'decided_by' => 'perplexity/pplx-decider-v1.2')
+    expect(routed_event).to include('decided_by' => 'perplexity/pplx-decider-v1.2', 'confidence' => 0.5)
+    expect(routed_event.keys).not_to include('escalated', 'escalation_fallback')
+    expect(Llm::DecisionChain).to have_received(:decide).once
+    expect(Llm::Runtime).not_to have_received(:build_chat).with(hash_including(feature: :agent_routing_escalation))
     expect(events.map(&:first)).not_to include('captain.agent.routing_failed')
   end
 
@@ -282,7 +282,6 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
     it 'gives the router the sticky agent as the current agent and keeps a confident short reply with it' do
       decide('stay_current', yes: [procedures.id], confidence: 0.92)
-      expect(Captain::Runtime::DecisionRouter::Escalation).not_to receive(:new)
 
       response = suggestion.generate_response(message_history: history)
 
@@ -292,7 +291,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       end
       expect(runs.pluck(:agent)).to eq(["assistant_#{procedures.id}"])
       expect(response).to include('agent_id' => procedures.id)
-      expect(routed_event).to include('decision_key' => 'stay_current', 'escalated' => false, 'run_source' => 'reply_suggestion')
+      expect(routed_event).to include('decision_key' => 'stay_current', 'run_source' => 'reply_suggestion')
     end
 
     it 'leaves the run the budget of one agent once the router chose one agent' do

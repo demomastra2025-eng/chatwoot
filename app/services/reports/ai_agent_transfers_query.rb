@@ -14,7 +14,7 @@ class Reports::AiAgentTransfersQuery
     request_ids = transfers.filter_map(&:request_id).uniq
     handoffs = LlmEvent.where(account_id: @account.id, event_name: 'captain.agent.staff_handoff', request_id: request_ids)
                        .where("payload ->> 'run_source' = 'live'").pluck(:request_id).to_set
-    # The router sends a turn that would bounce straight back to the agent that just passed it on to the escalation model first.
+    # Turns that would have bounced straight back to the agent that just passed them on (the guard of the escalation, until 26.10).
     guards = LlmEvent.where(account_id: @account.id, event_name: 'captain.agent.routed',
                             created_at: @date_range.from_at...@date_range.until_at)
                      .where("payload ->> 'run_source' = 'live'").where("payload ->> 'guard' = 'bounce'")

@@ -5,7 +5,7 @@ require 'rails_helper'
 RSpec.describe Captain::Evals::RouterBenchmark::Report do
   def row(id, expected, got, confidence: 0.9, **extra)
     item = Captain::Evals::RouterBenchmark::Runner::Row.new(suite: 's', scenario_id: id, run: 1, mode: 'pipeline', model: 'm', expected: expected,
-                                                            got: got, confidence: confidence, escalated: false, latency_ms: 400, cost_usd: 0.001)
+                                                            got: got, confidence: confidence, latency_ms: 400, cost_usd: 0.001)
     extra.each { |name, value| item[name] = value }
     item
   end
@@ -24,18 +24,20 @@ RSpec.describe Captain::Evals::RouterBenchmark::Report do
     expect(described_class.new(rows).markdown).to include('| pipeline | 50.0% |')
   end
 
-  it 'reports the traps, the confidence of wrong answers and what the escalation changed' do
+  it 'reports the traps, the confidence of wrong answers and which model of the chain answered' do
     rows = [row('A11', 'route_agent_109', 'route_agent_109', trap: 'false_council'),
             row('A10', 'stay_current', 'route_agent_108', confidence: 0.6, trap: 'injection'),
-            row('A03', 'route_agent_108', 'route_agent_108', escalated: true, first_choice: 'route_agent_77', escalation_ms: 900,
-                                                             decided_by: 'escalation:openai/gpt-6-luna')]
+            row('A12', 'stay_current', 'route_agent_77', confidence: 0.95),
+            row('A03', 'route_agent_108', 'route_agent_108', decided_by: 'inception/mercury-decide', chain_position: 2)]
 
     report = described_class.new(rows).to_h
 
     expect(report[:pipeline][:traps]).to include('false_council' => include(accuracy: 1.0), 'injection' => include(accuracy: 0.0))
-    expect(report[:pipeline][:wrong_answers]).to include(count: 1, inconsistent: 0, low_confidence: 1, unsafe: 0)
-    expect(report[:pipeline][:escalation_detail]).to include(fired: 1, fixed: 1, broke: 0, latency: { p50: 900, p90: 900, max: 900 })
-    expect(report[:pipeline][:answered_by]).to include('escalation:openai/gpt-6-luna (position -)' => 1)
-    expect(report[:gate][:checks][:traps]).to be(false)
+    expect(report[:pipeline][:wrong_answers]).to eq(count: 2, low_confidence: 1, confident: 1)
+    expect(report[:pipeline]).to include(chain_fallbacks: 1)
+    expect(report[:pipeline][:answered_by]).to include('inception/mercury-decide (position 2)' => 1, 'm (position -)' => 3)
+    expect(report[:gate][:checks]).to include(traps: false).and(satisfy { |checks| !checks.key?(:escalation_rate) })
+    expect(described_class.new(rows).markdown).to include('| 2 (1/1) |')
+    expect(described_class.new(rows).markdown).not_to include('Escalation')
   end
 end

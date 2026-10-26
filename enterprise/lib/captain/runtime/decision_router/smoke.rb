@@ -1,12 +1,12 @@
 # frozen_string_literal: true
 
 # The post-deploy smoke check of the router (rake captain:router_smoke). The router is the only way an agent is chosen and has no
-# fallback: when every decision model and the escalation fail, every turn of a clinic with two or more agents fails (and every
-# reply suggestion ends router_unavailable). This check makes ONE real call per model of the routing chain (each model alone,
-# with the same questions the router asks) and one call of the escalation model, on a synthetic turn of two synthetic agents.
+# fallback: when every decision model fails, every turn of a clinic with two or more agents fails (and every reply suggestion
+# ends router_unavailable). This check makes ONE real call per model of the routing chain (each model alone, with the same
+# questions the router asks) on a synthetic turn of two synthetic agents.
 #
 # A row names the model, its role, the latency and ok or the error class. Never a key, a prompt, a provider body or a text: the
-# turn is synthetic and is not printed either. ok means the model answered with answers that compose into one decision.
+# turn is synthetic and is not printed either. ok means the model answered and its answers resolve into one decision.
 class Captain::Runtime::DecisionRouter::Smoke
   Row = Struct.new(:role, :model, :ok, :latency_ms, :decision, :error, keyword_init: true) do
     def to_s
@@ -31,9 +31,9 @@ class Captain::Runtime::DecisionRouter::Smoke
     @questions = Captain::Runtime::DecisionRouter::Questions.build(@snapshot, instructions: Captain::Runtime::DecisionRouter::INSTRUCTIONS)
   end
 
-  # Every row, the chain models first (in chain order), then the escalation model.
+  # Every row, in chain order.
   def call
-    @models.each_with_index.map { |model, index| chain_row(model, index + 1) } + [escalation_row]
+    @models.each_with_index.map { |model, index| chain_row(model, index + 1) }
   end
 
   def self.ok?(rows)
@@ -63,28 +63,15 @@ class Captain::Runtime::DecisionRouter::Smoke
         total_timeout: Captain::Runtime::DecisionRouter::Settings.chain_budget_seconds,
         observability: OBSERVABILITY.merge(decision_criteria_count: @questions.size)
       )
-      @questions.outcome(result.answers.transform_values(&:choice))
+      @questions.resolve(result.answers)
     end
   end
 
-  def escalation_row
-    settings = Captain::Runtime::DecisionRouter::Settings
-    escalation = Captain::Runtime::DecisionRouter::Escalation.new(
-      account: @account, timeout: settings.escalation_timeout_seconds, effort: settings.escalation_effort, observability: OBSERVABILITY
-    )
-    measured('escalation', escalation.model) do
-      answer = escalation.choose(state: @snapshot.to_state, questions: @questions, instructions: Captain::Runtime::DecisionRouter::INSTRUCTIONS)
-      @questions.outcome(answer.choices)
-    end
-  rescue StandardError => e
-    Row.new(role: 'escalation', model: nil, ok: false, error: error_name(e), latency_ms: 0)
-  end
-
-  # The block returns the composed outcome (nil when the answers contradict each other).
+  # The block returns the resolved outcome (nil when the answers resolve into none).
   def measured(role, model)
     started = monotonic_now
     outcome = yield
-    Row.new(role: role, model: model, ok: outcome.present?, decision: outcome&.key, error: ('inconsistent' unless outcome),
+    Row.new(role: role, model: model, ok: outcome.present?, decision: outcome&.key, error: ('unresolved' unless outcome),
             latency_ms: elapsed_ms(started))
   rescue StandardError => e
     Row.new(role: role, model: model, ok: false, error: error_name(e), latency_ms: elapsed_ms(started))
