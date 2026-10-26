@@ -397,28 +397,26 @@ RSpec.describe Captain::ReplySuggestionService do
         end
 
         # Suggestion eval 26.10 (Sezim): «Отмена завтра» and an emoji after it got «emoji only» as a no_reply.
-        describe 'that no reply is needed while the patient asks to cancel' do
-          let(:emoji_only) do
-            { 'response' => '', 'response_mode' => 'suppress', 'response_suppressed' => true, 'operator_note' => 'Пациент отправил только эмодзи.',
-              'agent_id' => assistant.id, 'agent_display_name' => assistant.name }
-          end
+        def emoji_only_no_reply
+          { 'response' => '', 'response_mode' => 'suppress', 'response_suppressed' => true, 'operator_note' => 'Пациент отправил только эмодзи.',
+            'agent_id' => assistant.id, 'agent_display_name' => assistant.name }
+        end
 
-          it 'tells the manager to answer when the unanswered messages ask for it, whichever message came last' do
-            create(:message, conversation: conversation, message_type: :incoming, content: 'Отмена завтра')
-            create(:message, conversation: conversation, message_type: :incoming, content: '💐🌷')
-            allow(runner_double).to receive(:generate_response).and_return(emoji_only)
+        it 'turns a no_reply into human_needed when the unanswered messages ask to cancel, whichever message came last' do
+          create(:message, conversation: conversation, message_type: :incoming, content: 'Отмена завтра')
+          create(:message, conversation: conversation, message_type: :incoming, content: '💐🌷')
+          allow(runner_double).to receive(:generate_response).and_return(emoji_only_no_reply)
 
-            expect(service.perform).to include(outcome: 'human_needed', reason: I18n.t('captain.reply_suggestion.reasons.swallowed_request'))
-          end
+          expect(service.perform).to include(outcome: 'human_needed', reason: I18n.t('captain.reply_suggestion.reasons.swallowed_request'))
+        end
 
-          it 'leaves a no_reply as it is when the request was answered before the thanks' do
-            create(:message, conversation: conversation, message_type: :incoming, content: 'Отмена завтра')
-            create(:message, conversation: conversation, message_type: :outgoing, content: 'Отменили, хорошего дня!')
-            create(:message, conversation: conversation, message_type: :incoming, content: 'Спасибо')
-            allow(runner_double).to receive(:generate_response).and_return(emoji_only)
+        it 'leaves a no_reply as it is when the request was answered before the thanks' do
+          create(:message, conversation: conversation, message_type: :incoming, content: 'Отмена завтра')
+          create(:message, conversation: conversation, message_type: :outgoing, content: 'Отменили, хорошего дня!')
+          create(:message, conversation: conversation, message_type: :incoming, content: 'Спасибо')
+          allow(runner_double).to receive(:generate_response).and_return(emoji_only_no_reply)
 
-            expect(service.perform).to include(outcome: 'no_reply', reason: 'Пациент отправил только эмодзи.')
-          end
+          expect(service.perform).to include(outcome: 'no_reply', reason: 'Пациент отправил только эмодзи.')
         end
 
         it 'answers human_needed with the note of the agent' do

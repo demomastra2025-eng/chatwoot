@@ -1404,11 +1404,12 @@ RSpec.describe Captain::Runtime::ToolWrapper do
 
     # Suggestion eval 26.10, Intermedical: the search listed 14:30 and later and a card was prepared at the 14:20 the patient wrote.
     describe 'a booking at a start that no search of the run returned' do
-      let(:account) { create(:account) }
-      let(:resource) { create(:scheduling_resource, account: account, name: 'Жанат Есен', timezone: 'Asia/Almaty') }
-      let(:booking) { described_class.new(ToolWrapperSpecAppointmentTool.new, context_wrapper) }
-      let(:search_tool) { ToolWrapperSpecSchedulingTool.new }
-      let(:search) { described_class.new(search_tool, context_wrapper) }
+      # Plain methods, not lets: the group above already has many memoized helpers.
+      def account = @account ||= create(:account)
+      def resource = @resource ||= create(:scheduling_resource, account: account, name: 'Жанат Есен', timezone: 'Asia/Almaty')
+      def booking = @booking ||= described_class.new(ToolWrapperSpecAppointmentTool.new, context_wrapper)
+      def search_tool = @search_tool ||= ToolWrapperSpecSchedulingTool.new
+      def search = @search ||= described_class.new(search_tool, context_wrapper)
 
       def answer(*times)
         JSON.generate(success: true, days: [{ resource_id: resource.id, name: resource.name, date: '2026-10-31', times: times, more: 0 }])
@@ -1458,6 +1459,18 @@ RSpec.describe Captain::Runtime::ToolWrapper do
 
         expect(refused).to include('slot_not_searched')
         expect(intercepted).to be_empty
+      end
+
+      it 'holds a booking to a search only for an agent that has the slot search' do
+        context_wrapper.context[:current_agent] = 'booker'
+        context_wrapper.context[:captain_v2_bound_tool_gate] = true
+        context_wrapper.context[:captain_v2_bound_tool_ids_by_agent] = { 'booker' => ['create_appointment'] }
+        arguments = { resource_id: resource.id, starts_at: '2026-10-31T14:20' }
+
+        expect(JSON.parse(call_in_new_batch(booking, **arguments))).to include('status' => 'pending_operator_approval')
+
+        context_wrapper.context[:captain_v2_bound_tool_ids_by_agent] = { 'booker' => %w[create_appointment search_available_slots] }
+        expect(call_in_new_batch(booking, resource_id: resource.id, starts_at: '2026-10-31T15:00')).to include('slot_not_searched')
       end
 
       it 'does not guard a live run, where the tool checks the time itself' do

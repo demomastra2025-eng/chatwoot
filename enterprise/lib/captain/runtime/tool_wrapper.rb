@@ -510,11 +510,20 @@ class Captain::Runtime::ToolWrapper
   # (Captain::ReplySuggestion::SlotSearchGuard). It is refused here, before the call is claimed or its failure remembered, so that
   # the same call after the search the answer names is prepared as usual.
   def unsearched_slot_error(normalized_args)
-    return unless mutating_tool? && reply_suggestion_run?
+    return unless mutating_tool? && reply_suggestion_run? && slot_search_available?
 
     Captain::ReplySuggestion::SlotSearchGuard.refusal(
       tool_name: Captain::Runtime::ToolFailure.canonical_name(@tool.name), arguments: normalized_args, context: context_wrapper_context
     )
+  end
+
+  # An agent that has no slot search cannot search first: its bookings are not held to a search.
+  def slot_search_available?
+    return true unless enforce_bound_tools?
+
+    bound_tool_ids_for_current_agent.any? do |tool_id|
+      Captain::Runtime::ToolFailure.canonical_name(tool_id) == Captain::ReplySuggestion::SearchedSlots::SEARCH_TOOL
+    end
   end
 
   # An action on a turn the router found needs no answer: refused and shown to the agent, the run goes on (ACKNOWLEDGEMENT_TURN_KEY).

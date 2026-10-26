@@ -7,7 +7,8 @@
 # only counted in `more`), so a start that is not listed was not returned, whether it is free or not: the agent searches that exact time
 # (from = to) and the answer lists it.
 class Captain::ReplySuggestion::SearchedSlots
-  READ_TOOLS = %w[search_available_slots get_scheduling_resource_availability].freeze
+  SEARCH_TOOL = 'search_available_slots'
+  READ_TOOLS = [SEARCH_TOOL, 'get_scheduling_resource_availability'].freeze
   # The answer of a tool is JSON in a JSON string, in a result hash: this many levels are opened.
   MAX_DEPTH = 5
   CLOCK = /\A([01]?\d|2[0-3]):([0-5]\d)\z/

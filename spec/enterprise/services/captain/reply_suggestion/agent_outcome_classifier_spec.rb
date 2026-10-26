@@ -317,8 +317,9 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
     it 'does it for the no_reply of a council, keeping its cards' do
       council = suppressed.merge('council_turn' => true)
 
-      expect(classify(council, 'Перенесите запись')).to include(outcome: 'human_needed', reason: swallowed_note,
-                                                                 pending_actions: [{ 'action_id' => 'a-1' }])
+      result = classify(council, 'Перенесите запись')
+
+      expect(result).to include(outcome: 'human_needed', reason: swallowed_note, pending_actions: [{ 'action_id' => 'a-1' }])
     end
 
     it 'leaves a no_reply for a thanks, an emoji or a goodbye as it is, and the other outcomes of a request as they are' do

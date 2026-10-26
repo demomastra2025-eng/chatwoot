@@ -84,9 +84,10 @@ class Captain::ReplySuggestion::SlotSearchGuard
 
   def failure(resource, local)
     exact = local.strftime('%Y-%m-%dT%H:%M')
+    message = format(MESSAGE, time: local.strftime('%H:%M'), date: local.strftime('%Y-%m-%d'), name: resource.name, resource_id: resource.id,
+                              exact: exact)
     Captain::ToolResult.failure(
-      error: format(MESSAGE, time: local.strftime('%H:%M'), date: local.strftime('%Y-%m-%d'), name: resource.name,
-                            resource_id: resource.id, exact: exact),
+      error: message,
       data: { code: FAILURE_REASON, resource_id: resource.id, starts_at: exact, next_tool: 'search_available_slots' },
       retryable: true,
       audit: { failure_stage: 'tool_arguments', failure_reason: FAILURE_REASON, tool_name: @tool_name, mutation_executed: false,

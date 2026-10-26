@@ -7,10 +7,13 @@ RSpec.describe Captain::ReplySuggestion::SlotSearchGuard do
   let(:resource) { create(:scheduling_resource, account: account, name: 'Жанат Есен', timezone: 'Asia/Almaty') }
   let(:cache_key) { Captain::Runtime::ToolWrapper::SUGGESTION_READ_CACHE_KEY }
   let(:searched_times) { %w[14:30 15:00 15:30 16:00 16:30] }
+  let(:searched_day) { { resource_id: resource.id, name: resource.name, date: '2026-10-31', times: searched_times, more: 0 } }
   let(:context) do
-    answer = { duration_min: 30, total: 5, days: [{ resource_id: resource.id, name: resource.name, date: '2026-10-31', times: searched_times, more: 0 }] }
-    { state: { account_id: account.id },
-      cache_key => { 'digest' => { tool: 'search_available_slots', result: { success: true, message: JSON.generate(answer) } } } }
+    answer = { duration_min: 30, total: 5, days: [searched_day] }
+    {
+      :state => { account_id: account.id },
+      cache_key => { 'digest' => { tool: 'search_available_slots', result: { success: true, message: JSON.generate(answer) } } }
+    }
   end
 
   def refusal(tool_name, arguments, run_context = context)
