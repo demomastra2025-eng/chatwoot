@@ -6,8 +6,12 @@
 #   council_<ids>                    the message is cut into one part per participant (CouncilSplitter), the council is accepted
 #                                    with exactly those participants (CouncilPlan) and runs; the current agent keeps the
 #                                    conversation, or the first participant takes it when no agent held it yet
+#   no_reply_needed                  the message needs no answer: the agent that leads the dialog (else the holder of the
+#                                    conversation) keeps it and may write a short courtesy reply or nothing; its action tools
+#                                    refuse on this turn (ToolWrapper::ACKNOWLEDGEMENT_TURN_KEY), and the trail records no route
 #   one agent only                   no decision: the agent of the channel answers
-# A staff request (human_handoff) never reaches the dispatcher: no agent runs for it (see AgentRunnerService).
+# A staff request (human_handoff) never reaches the dispatcher: no agent runs for it (see AgentRunnerService). Neither does
+# no_reply_needed in a reply suggestion: no agent drafts it.
 class Captain::Runtime::TurnDispatcher
   # The council could not be set up (the participants of the split do not match the decision): a failure of the turn.
   class CouncilUnavailable < StandardError; end
@@ -34,6 +38,8 @@ class Captain::Runtime::TurnDispatcher
   def prepare!(context)
     if @decision.nil?
       prepare_single_agent(context)
+    elsif @decision.no_reply?
+      prepare_no_reply(context)
     elsif council?
       prepare_council(context)
     else
@@ -64,6 +70,15 @@ class Captain::Runtime::TurnDispatcher
     Captain::Runtime::RoutingState.new(context).persist!(actor_id: actor.id, trail: { kind: 'agent', from: from_id, to: [actor.id] })
     Captain::Runtime::RoutingEvents.transfer(context: context, from_agent_id: from_id, to_agent_id: actor.id) if from_id.present?
     Captain::Runtime::PartRegistry.new(context).absorb_open_parts!(actor.id)
+    @run_context.activate(actor, context)
+  end
+
+  # A live turn that needs no answer (a plain thanks, ok, emoji or greeting): no route, no transfer and no open part changes hands.
+  def prepare_no_reply(context)
+    actor = @graph.find(@decision.agent_id) || @run_context.holder ||
+            raise(Captain::Runtime::Runner::AgentNotFoundError, 'No agent holds the conversation')
+    Captain::Runtime::RoutingState.new(context).persist!(actor_id: actor.id)
+    context[Captain::Runtime::ToolWrapper::ACKNOWLEDGEMENT_TURN_KEY] = true
     @run_context.activate(actor, context)
   end
 

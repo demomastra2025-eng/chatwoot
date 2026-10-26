@@ -16,6 +16,8 @@ module AccountSettingsSchema
         'captain_default_assistant_id': { 'type': %w[integer null] },
         'scheduling_contact_required': { 'type': %w[boolean null] },
         'scheduling_company_enabled': { 'type': %w[boolean null] },
+        # The latest local start of a visit the clinic takes ("19:00"): the slot search never offers a later start.
+        'scheduling_last_booking_time': { 'type': %w[string null], 'pattern': '^([01][0-9]|2[0-3]):[0-5][0-9]$' },
         'conversation_assignment_policy_id': { 'type': %w[integer null] },
         'conversation_auto_assignment_enabled': { 'type': %w[boolean null] },
         'conversation_assign_on_first_reply_enabled': { 'type': %w[boolean null] },

@@ -41,8 +41,12 @@ RSpec.describe Captain::Evals::RouterBenchmark::Fixture do
     expect(ids.size).to eq(82)
     expect(ids).to include('AM01', 'IM01')
     expect(ids).to include('SZ01', 'A11', 'I06')
-    # A plain thanks or greeting without a current agent goes to one agent; a thanks that also asks for two agents' services is a council.
+    # A plain thanks or greeting needs no answer (no_reply_needed), whoever leads the dialog, and is never a council; a thanks that
+    # also asks for two agents' services is a council.
     expect(ids).to include('AS06', 'IS06', 'IS07', 'SS05', 'SZ20')
+    expected = committed['suites'].flat_map { |suite| suite['scenarios'] }.to_h { |scenario| [scenario['id'], scenario['expected']] }
+    expect(expected.values_at('AS05', 'AS06', 'IS03', 'IS06', 'SZ18', 'SZ20', 'SS03', 'SS05')).to all(eq('no_reply_needed'))
+    expect(expected['IS07']).to start_with('council_')
     traps = committed['suites'].flat_map { |suite| suite['scenarios'] }.filter_map { |scenario| scenario['trap'] }
     expect(traps.tally).to eq('human' => 3, 'injection' => 4, 'false_council' => 9)
     expect(committed['suites'].flat_map { |suite| suite['scenarios'].pluck('expected') }).to all(match(described_class::KEY))

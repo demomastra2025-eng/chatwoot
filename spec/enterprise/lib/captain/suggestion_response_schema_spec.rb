@@ -79,7 +79,23 @@ RSpec.describe Captain::SuggestionResponseSchema do
         'for a booking or a question about a doctor or free times, first search the free times (of the branch\'s doctors of that ' \
           'specialty when no doctor is named) and ask only what they cannot settle.'
       end
-      let(:future_rule) { 'Offer only free times that a slot search of this run returned, all later than Now.' }
+      let(:future_rule) do
+        'Offer only start times that search_available_slots returned in this run, exactly as returned and all later than Now. Opening ' \
+          'hours or a last booking time in the clinic texts ("последняя запись 19:00") are not free times: never offer a time the search ' \
+          'did not return.'
+      end
+      # Suggestion eval 26.10: Intermedical 113 handed catalog prices to staff because the schedule was not confirmed, and agents
+      # booked visits on a closing «Спасибо».
+      let(:price_rule) do
+        'A catalog price is an answer even when the schedule is not confirmed (SCHEDULE_NOT_CONFIRMED, degraded availability) or has no ' \
+          'free times: give the price and say only that the free times will be confirmed; never hand a price question to staff because ' \
+          'of the schedule.'
+      end
+      let(:closing_thanks_rule) do
+        'A thanks, ok or confirmation that closes a topic (after prices or information, a reminder, or a visit already booked or ' \
+          'already prepared) asks for no action: never call create_appointment, update_appointment or cancel_appointment for it; book ' \
+          'only on a clear request or a clear yes to an offered time.'
+      end
       let(:silence_rule) do
         '(only thanks, ok or an emoji with no doctor, service, date, time or question in them, or staff already answered them), set ' \
           'response_mode to suppress'
@@ -89,7 +105,8 @@ RSpec.describe Captain::SuggestionResponseSchema do
       it 'looks up before handing over, searches free times before asking, lists tariffs, asks when unclear and offers searched future times' do
         draft = system_prompt(assistant.agent(suggestion_tools: true), 'reply_suggestion')
 
-        expect(draft).to include(lookup_rule, slots_first_rule, future_rule, silence_rule, thanks_request_rule)
+        expect(draft).to include(lookup_rule, slots_first_rule, future_rule, silence_rule, thanks_request_rule, price_rule,
+                                 closing_thanks_rule)
         expect(draft.scan('search_scheduling_services').size).to eq(1)
         expect(draft).not_to include('For a price, search_scheduling_services before saying no answer is available.')
       end
@@ -99,7 +116,7 @@ RSpec.describe Captain::SuggestionResponseSchema do
           OpenStruct.new(context: { state: { source: 'reply_suggestion' }, part_run: true })
         )
 
-        expect(part).to include(lookup_rule, slots_first_rule, future_rule)
+        expect(part).to include(lookup_rule, slots_first_rule, future_rule, price_rule, closing_thanks_rule)
         expect(part).not_to include(silence_rule, thanks_request_rule)
       end
 
@@ -107,8 +124,12 @@ RSpec.describe Captain::SuggestionResponseSchema do
         live = system_prompt(assistant.agent, 'incoming_message')
 
         expect(live).to include('- For a price, search_scheduling_services before saying no answer is available. For documents and ' \
-                                'certificates, use faq_lookup first.')
-        expect(live).not_to include(lookup_rule, slots_first_rule, future_rule, thanks_request_rule)
+                                'certificates, use faq_lookup first. A catalog price is an answer even when the schedule is not confirmed.',
+                                '- Offer only start times a slot search returned, exactly as returned; opening hours or a last booking ' \
+                                'time in the clinic texts are not free times.',
+                                'A thanks, ok or confirmation that closes a topic (after prices or information, a reminder, or a visit ' \
+                                'already booked) asks for no action: never book, change or cancel anything for it.')
+        expect(live).not_to include(lookup_rule, slots_first_rule, future_rule, thanks_request_rule, price_rule, closing_thanks_rule)
       end
     end
   end

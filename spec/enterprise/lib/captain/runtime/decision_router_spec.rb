@@ -238,6 +238,38 @@ RSpec.describe Captain::Runtime::DecisionRouter do
     end
   end
 
+  describe 'a message that needs no answer' do
+    let(:snapshot) do
+      Captain::Runtime::RoutingSnapshot.new(agents: agents, latest_message: 'хорошо спасибо', current_agent_id: current, human_available: true,
+                                            recent_messages: [{ role: 'clinic', text: 'УЗИ — 8 000 ₸, приём — 10 000 ₸. Записать вас?' }])
+    end
+
+    it 'is no_reply_needed on route_mode alone, never a council or a route, and keeps the current agent when one leads' do
+      answer_chain(chain_answer('no_reply_needed', yes: [84, 119], confidences: { 'include_agent_84' => 0.2 }))
+
+      expect(router.decide).to have_attributes(key: 'no_reply_needed', kind: 'no_reply', agent_ids: [], agent_id: nil, escalated: false,
+                                               confidence: 0.93)
+      expect(calls.sole[:question][:questions]['route_mode'][:criteria]).to have_key('no_reply_needed')
+    end
+
+    context 'with a current agent' do
+      let(:current) { 119 }
+
+      it 'names the current agent, which a live turn lets write a courtesy reply' do
+        answer_chain(chain_answer('no_reply_needed'))
+
+        expect(router.decide).to have_attributes(kind: 'no_reply', agent_ids: [119], agent_id: 119, no_reply?: true)
+      end
+    end
+
+    it 'escalates when unsure and uses the answer of the decision models when the escalation times out' do
+      answer_chain(chain_answer('no_reply_needed', confidence: 0.6))
+      fail_escalation('timeout')
+
+      expect(router.decide).to have_attributes(key: 'no_reply_needed', escalated: true, escalation_fallback: 'escalation_timeout_used_chain')
+    end
+  end
+
   it 'reports the escalation it would run without calling it, and asks one model alone, for the evaluation harness' do
     answer_chain(chain_answer('council', yes: [119]))
     expect(described_class::Escalation).not_to receive(:new)
@@ -379,14 +411,18 @@ RSpec.describe Captain::Runtime::DecisionRouter do
                                              guard: nil)
   end
 
-  it 'tells the decision models and the escalation that a plain thanks without a current agent goes to one agent, never a council' do
-    rule = 'a message that asks for nothing new and continues no service (a plain thanks, ok, an emoji, a greeting)'
+  # Router benchmark 26.10 (AS06, IS06, SS05): v2 cards have no catch-all agent of general questions, so the old rule (a plain thanks
+  # goes to that agent) sent a plain thanks to a council.
+  it 'tells the decision models and the escalation that a message that needs no answer is no_reply_needed, never a council' do
+    instructions = described_class::INSTRUCTIONS.squish
 
-    expect(described_class::INSTRUCTIONS.squish).to include(
-      "#{rule} is route_agent to the agent whose description lists general clinic questions, as in rule 6; it is never a council."
-    )
+    expect(instructions).to include('3. A message that needs no answer is no_reply_needed, whoever the current agent is',
+                                    'It is never a council and never a route to an agent.',
+                                    'human_handoff and no_reply_needed - the include_agent answers do not matter.')
+    expect(instructions).not_to include('route_agent to the agent whose description lists general clinic questions, as in rule 6')
     expect(described_class::Questions::INCLUDE_INSTRUCTIONS).to include(
-      "#{rule} is yes only for the agent whose description lists general clinic questions."
+      'a message that needs no answer (a plain thanks, ok, an emoji, a greeting that asks for nothing and accepts nothing that waits) ' \
+      'is no for every agent.'
     )
   end
 

@@ -15,6 +15,8 @@ en:
         agent_rule: 'An agent rule applied: %{reason}. Please answer the customer yourself.'
         patient_requested_human: The patient asks for a live staff member, please answer yourself.
         router_undecided: The AI could not tell which specialist should answer — please answer yourself.
+        router_no_reply: The patient only thanks, agrees or greets — no reply is needed; nothing was prepared.
+        unverified_times: 'Check the time %{times}: the AI did not find it among the free times it searched.'
         council_unresolved: 'The AI did not resolve part of the request, please answer it yourself: %{parts}.'
         council_technical: 'Part of the request was not done because of a technical error, please answer it yourself: %{parts}.'
         council_unreported: 'An action was prepared for part of the request, but there is no text for the patient; check the card: %{parts}.'

@@ -236,6 +236,25 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       expect(starts(later)).to eq([at(10).iso8601, at(10, 30).iso8601])
     end
 
+    # Suggestion eval 26.10, Sezim (Байтурсынова): «последняя запись 19:00», but the schedule showed 19:30 and 19:50, and a draft offered
+    # 19:00. A clinic with a last booking time never gets a later start offered.
+    it 'offers no start after the last booking time of the clinic, and says which time that is' do
+      account.update!(scheduling_last_booking_time: '10:00')
+
+      payload = search_between(at(9), at(11), service_id: service_record.id)
+
+      expect(starts(payload)).to eq([at(9).iso8601, at(9, 30).iso8601, at(10).iso8601])
+      expect(payload[:last_booking_time]).to eq('10:00')
+      expect(starts(search_between(at(10, 30), at(10, 31), service_id: service_record.id))).to eq([])
+    end
+
+    it 'keeps every start without a last booking time, and accepts only an exact time of day as one' do
+      expect(starts(search_between(at(9), at(11), service_id: service_record.id)).size).to eq(4)
+      expect(perform(resource_ids: [resource.id])).not_to have_key(:last_booking_time)
+      expect(account.update(scheduling_last_booking_time: '19:00:00')).to be(false)
+      expect(account.reload.update(scheduling_last_booking_time: nil)).to be(true)
+    end
+
     it 'returns the named time with a limit of one' do
       expect(starts(search_between(at(10, 30), at(10, 31), service_id: service_record.id, limit: 1))).to eq([at(10, 30).iso8601])
     end

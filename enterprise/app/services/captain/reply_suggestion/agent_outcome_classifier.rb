@@ -11,11 +11,13 @@
 #   5  a council without a text for the patient             human_needed when a part needs staff, else no_reply; the note is
 #                                                           written from what the council left (its approval cards are kept),
 #                                                           or says that no part needed a reply (council_no_reply)
+#      the router found that no answer is needed           no_reply (router): no agent ran, so none is named
 #      the agent answered response_mode suppress           no_reply (operator_note), failed when the note is blank
 #   6  a cancelled response, or a handoff                   failed (invalid_output): a suggestion has neither
 #   7  an empty reply                                       failed (empty_output)
 #   8  otherwise                                            draft; a council that left parts to staff adds the note for the manager
-#                                                           (suggestion_meta operator_note)
+#                                                           (suggestion_meta operator_note), and so does a draft that names a time
+#                                                           its scheduling reads did not find (unverified_times, see DraftTimes)
 #
 # A text never comes out of an outcome other than draft. An outcome of a turn that the router gave to the anchor only because no
 # agent leads the dialog says so (routing_default_to: anchor): its agent does not become the sticky agent (see StickyAgent).
@@ -112,10 +114,18 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
   # 5
   def suppress_outcome
     return unless suppressed?
+    return router_no_reply if payload[:routing_no_reply] == true
 
     meta = suggestion_meta
     Captain::ReplySuggestion::Outcome.no_reply(
       reason: payload[:operator_note], engine: 'agent', reason_source: 'agent', agent: meta['agent'], **cards_of(meta), usage: usage
+    )
+  end
+
+  # The router found that the message needs no answer (a plain thanks, ok, emoji or greeting): no agent ran or proposed anything.
+  def router_no_reply
+    Captain::ReplySuggestion::Outcome.no_reply(
+      reason: payload[:operator_note], engine: 'agent', reason_source: 'router', agent: nil, pending_actions: [], usage: usage
     )
   end
 
@@ -149,10 +159,20 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
     { pending_actions: Array(meta['pending_actions']) }.merge(superseded.any? ? { superseded_action_ids: superseded } : {})
   end
 
-  # A council draft that leaves parts to the manager says so above the draft.
+  # A council draft that leaves parts to the manager says so above the draft, and so does a draft that names a time the run did not
+  # find in its scheduling reads.
   def draft_meta
-    note = council_note
-    note.present? ? suggestion_meta.merge('operator_note' => note) : suggestion_meta
+    note = [council_note, unverified_times_note].compact_blank.join(' ')
+    meta = unverified_times.any? ? suggestion_meta.merge('unverified_times' => unverified_times) : suggestion_meta
+    note.present? ? meta.merge('operator_note' => note) : meta
+  end
+
+  def unverified_times
+    Array(payload[:unverified_times]).map(&:to_s).compact_blank
+  end
+
+  def unverified_times_note
+    I18n.t('captain.reply_suggestion.reasons.unverified_times', times: unverified_times.join(', ')) if unverified_times.any?
   end
 
   # The agent a council leaves the dialog with (see StickyAgent), when it is not the agent the suggestion is attributed to.

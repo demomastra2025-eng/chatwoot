@@ -310,6 +310,30 @@ RSpec.describe Captain::ReplySuggestionService do
         expect(captured_callbacks).not_to have_key(:on_agent_handoff)
       end
 
+      it 'ends a message that needs no answer as no_reply of the router, with no agent shown at work' do
+        sticky = create(:captain_assistant, account: account, name: 'ЛОР-специалист', active: true)
+        runner_double = instance_double(Captain::Assistant::AgentRunnerService)
+        captured_callbacks = nil
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |**kwargs|
+          captured_callbacks = kwargs[:callbacks]
+          runner_double
+        end
+        decision = { decision_key: 'no_reply_needed', kind: 'no_reply', target_ids: [sticky.id], decided_by: 'perplexity/pplx-decider-v1.2',
+                     confidence: 0.97, escalated: true, escalation_fallback: 'escalation_timeout_used_chain' }
+        note = I18n.t('captain.reply_suggestion.reasons.router_no_reply')
+        allow(runner_double).to receive(:generate_response) do
+          captured_callbacks[:on_agent_routed].call(decision, nil)
+          { 'response' => '', 'response_mode' => 'suppress', 'operator_note' => note, 'routing_no_reply' => true, 'agent_id' => assistant.id }
+        end
+
+        result = service.perform
+        meta = service.instance_variable_get(:@trace_collector).suggestion_meta({})
+
+        expect(result).to include(outcome: 'no_reply', reason: note, reason_source: 'router', agent: nil)
+        expect(meta['routing']).to include('kind' => 'no_reply', 'escalation_fallback' => 'escalation_timeout_used_chain')
+        expect(Array(meta['working_agents']).pluck('name')).not_to include(sticky.name)
+      end
+
       it 'preserves outer user_id in Llm::EventBus.with_context across nested contexts' do
         captured_context = nil
         Llm::EventBus.with_context(user_id: agent.id, source: 'reply_suggestion') do

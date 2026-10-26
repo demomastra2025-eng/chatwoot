@@ -59,6 +59,13 @@ class Captain::Runtime::ToolWrapper
   SUGGESTION_CARD_LIMIT_ERROR = 'NOT prepared: the cards of this action listed in data already wait for the operator in this run, ' \
                                 'and these new arguments were not prepared. Do not call the tool again. Finish the draft and mention ' \
                                 'only the listed cards.'
+  # A turn whose message needs no answer (the router's no_reply_needed: a plain thanks, ok, emoji or greeting; see
+  # Captain::Runtime::TurnDispatcher). Its agent may write a courtesy reply, but an action tool refuses: in the suggestion eval of
+  # 26.10 agents booked visits on a closing «Спасибо».
+  ACKNOWLEDGEMENT_TURN_KEY = :routing_acknowledgement
+  ACKNOWLEDGEMENT_ACTION_ERROR = 'NOT done: the latest patient message only thanks, agrees, greets or says goodbye, so no booking, ' \
+                                 'change, cancellation or other action is made for it. Do not call action tools; reply briefly or ' \
+                                 'not at all.'
   MAX_IDENTICAL_TOOL_EXECUTIONS = 3
   MAX_TOOL_EXECUTIONS_PER_TOOL = 12
   MAX_TOOL_REQUESTS_PER_TOOL = Captain::Runtime::ToolLoopGuard::MAX_REQUESTS_PER_TOOL
@@ -493,8 +500,21 @@ class Captain::Runtime::ToolWrapper
   # tools in the same way, so nothing here looks at the part.
   def pre_execution_error(normalized_args)
     bound_tool_error_for_current_agent ||
+      acknowledgement_action_error ||
       tool_safety_error_for(:tool_arguments, normalized_args) ||
       scheduling_context_error(normalized_args)
+  end
+
+  # An action on a turn the router found needs no answer: refused and shown to the agent, the run goes on (ACKNOWLEDGEMENT_TURN_KEY).
+  # The tools that move the conversation (the human handoff, the resolution) are not actions of the clinic system and stay as they are.
+  def acknowledgement_action_error
+    return unless mutating_tool? && !terminal_control_tool? && context_wrapper_context[ACKNOWLEDGEMENT_TURN_KEY] == true
+
+    Captain::ToolResult.failure(
+      error: ACKNOWLEDGEMENT_ACTION_ERROR, data: { status: 'not_done' }, retryable: false,
+      audit: { failure_stage: 'tool_arguments', failure_reason: 'acknowledgement_turn', tool_name: canonical_tool_name,
+               provider_call_blocked: true, mutation_executed: false }
+    )
   end
 
   def scheduling_context_error(normalized_args)
@@ -657,7 +677,10 @@ class Captain::Runtime::ToolWrapper
     return unless result.is_a?(String) || result.is_a?(Hash)
     return if Captain::ToolResult.error?(result)
 
-    suggestion_read_cache[tool_result_cache_digest(normalized_args)] = { result: result.deep_dup }
+    # The tool name: the check of the times a draft offers reads the scheduling results of the run (ReplySuggestion::DraftTimes).
+    suggestion_read_cache[tool_result_cache_digest(normalized_args)] = {
+      result: result.deep_dup, tool: Captain::Runtime::ToolFailure.canonical_name(@tool.name)
+    }
   rescue StandardError
     nil
   end

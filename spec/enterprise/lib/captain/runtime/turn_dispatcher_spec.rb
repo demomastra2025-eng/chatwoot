@@ -70,6 +70,27 @@ RSpec.describe Captain::Runtime::TurnDispatcher do
     end
   end
 
+  describe 'a message that needs no answer (no_reply_needed, a live turn)' do
+    it 'keeps the current agent without a route or a transfer, and marks the turn so that its action tools refuse' do
+      session.update_routing(actor_id: procedures.id)
+      dispatcher(decision('no_reply_needed', 'no_reply', [procedures.id])).prepare!(context)
+
+      saved = session.read
+      expect(saved).to include('current_assistant_id' => procedures.id)
+      expect(saved['routing_trail']).to be_blank
+      expect(context[:current_agent]).to eq("assistant_#{procedures.id}")
+      expect(context[Captain::Runtime::ToolWrapper::ACKNOWLEDGEMENT_TURN_KEY]).to be(true)
+      expect(events.map(&:first)).not_to include('captain.agent.transfer')
+    end
+
+    it 'gives the turn to the agent that holds the conversation when no agent leads the dialog' do
+      dispatcher(decision('no_reply_needed', 'no_reply', [])).prepare!(context)
+
+      expect(context[:current_agent]).to eq("assistant_#{run_context.holder.id}")
+      expect(context[Captain::Runtime::ToolWrapper::ACKNOWLEDGEMENT_TURN_KEY]).to be(true)
+    end
+  end
+
   it 'keeps the current agent on stay_current and runs it' do
     session.update_routing(actor_id: procedures.id)
     dispatcher(decision('stay_current', 'stay', [procedures.id])).prepare!(context)

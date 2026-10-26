@@ -68,7 +68,8 @@ class Scheduling::AvailableSlotSearchService
       total_slots: normalized_slots.length,
       slot_count_scope: 'returned_only',
       availability: availability_payload,
-      availability_note: availability_note
+      availability_note: availability_note,
+      last_booking_time: last_booking_time
     }.compact
     payload.merge(availability_scope_payload)
   end
@@ -203,14 +204,33 @@ class Scheduling::AvailableSlotSearchService
     horizon > @to ? [@to + visit, horizon].min : @to
   end
 
-  # Only starts before `to` are offered; a start at `from` counts even when `to` is equal to `from` (an exact-time check).
+  # Only starts before `to` are offered; a start at `from` counts even when `to` is equal to `from` (an exact-time check). A start
+  # after the clinic's last booking time is never offered (see #last_booking_time).
   def starting_in_window(slots)
     from_at = @from.to_i
     to_at = @to.to_i
     slots.select do |slot|
       starts_at = Time.zone.parse(slot[:starts_at]).to_i
-      starts_at >= from_at && (starts_at < to_at || starts_at == from_at)
+      starts_at >= from_at && (starts_at < to_at || starts_at == from_at) && before_last_booking?(slot)
     end
+  end
+
+  # The latest local start of a visit the clinic takes ("19:00", the account setting scheduling_last_booking_time), or nil. The
+  # schedule of a doctor may show later free starts (19:30, 19:50) that the clinic does not book.
+  def last_booking_time
+    return @last_booking_time if defined?(@last_booking_time)
+
+    value = @account.settings.to_h['scheduling_last_booking_time'].to_s
+    @last_booking_time = (value if value.match?(/\A([01]\d|2[0-3]):[0-5]\d\z/))
+  end
+
+  # The start in the local time of the slot (its ISO offset is the time zone of the specialist).
+  def before_last_booking?(slot)
+    return true if last_booking_time.nil?
+
+    Time.iso8601(slot[:starts_at].to_s).strftime('%H:%M') <= last_booking_time
+  rescue ArgumentError
+    true
   end
 
   def integrated_slots(resource)
@@ -274,7 +294,9 @@ class Scheduling::AvailableSlotSearchService
   def availability_note
     return unless availability_payload[:status] == 'degraded'
 
-    'Не удалось проверить график MedElement; наличие свободного времени неизвестно.'
+    # A price question still has its answer (the eval of 26.10: an agent handed a catalog price to staff because of this note).
+    'Не удалось проверить график MedElement; наличие свободного времени неизвестно. Цены и описание услуг ' \
+      '(search_scheduling_services) от графика не зависят: их можно назвать.'
   end
 
   def availability_resources

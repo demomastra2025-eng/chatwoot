@@ -8,7 +8,7 @@ class Captain::Evals::RouterBenchmark::Report
   CONFIDENCE_BINS = [[0.9, 1.01, '>=0.9'], [0.8, 0.9, '0.8-0.9'], [0.75, 0.8, '0.75-0.8'], [0.0, 0.75, '<0.75']].freeze
   GATE = { pipeline_accuracy: 0.95, first_model_p90_ms: 1200, escalation_rate: 0.20 }.freeze
   MUST_PASS = %w[SZ01].freeze
-  SINGLE_KINDS = %w[agent stay].freeze
+  SINGLE_KINDS = %w[agent stay no_reply].freeze
   TABLE_HEADER = ['| model | accuracy | false councils | missed councils | exact councils | human recall | traps | wrong (caught/unsafe) | ' \
                   'p50 ms | p90 ms | errors |', '|---|---|---|---|---|---|---|---|---|---|---|'].freeze
 
@@ -193,6 +193,7 @@ class Captain::Evals::RouterBenchmark::Report
     case key.to_s
     when 'stay_current' then 'stay'
     when 'human_handoff' then 'human'
+    when 'no_reply_needed' then 'no_reply'
     when /\Aroute_agent_/ then 'agent'
     when /\Acouncil_/ then 'council'
     else 'none'

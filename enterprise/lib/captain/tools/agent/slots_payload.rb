@@ -18,7 +18,8 @@ module Captain::Tools::Agent::SlotsPayload
   # After an empty range: the specialist-days of the nearest free time.
   NEXT_AVAILABLE_DAYS = 3
   DEGRADED_NOTE = 'The MedElement schedule could not be checked, so it is not known whether there is free time. ' \
-                  'Do not tell the patient that there is none.'
+                  'Do not tell the patient that there is none. A price from search_scheduling_services does not depend on the ' \
+                  'schedule: give it.'
 
   module_function
 

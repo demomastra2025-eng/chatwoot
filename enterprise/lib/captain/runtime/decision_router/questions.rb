@@ -1,14 +1,18 @@
 # frozen_string_literal: true
 
 # The questions the router asks in ONE Decisions call for a turn (the format of the owner's benchmark):
-#   route_mode               stay_current | route_agent | council | human_handoff   (a council part: route_agent | human_handoff | nobody)
+#   route_mode               stay_current | route_agent | council | human_handoff | no_reply_needed
+#                            (a council part: route_agent | human_handoff | nobody)
 #   include_agent_<id>       yes | no, one per candidate: does the patient ask NOW for a service of this agent (its card is in "yes")
 # The answers are composed into one outcome (#outcome). They must agree, or there is no outcome (the router escalates):
-#   stay_current   yes for the current agent at most            -> the current agent
-#   route_agent    yes for exactly one agent                     -> that agent (the current one: stay)
-#   council        yes for exactly two or three agents           -> a council of exactly those agents
-#   human_handoff  the include answers do not matter             -> staff
-#   nobody         no listed agent handles it (council parts)    -> nobody
+#   stay_current     yes for the current agent at most          -> the current agent
+#   route_agent      yes for exactly one agent                   -> that agent (the current one: stay)
+#   council          yes for exactly two or three agents         -> a council of exactly those agents
+#   human_handoff    the include answers do not matter           -> staff
+#   no_reply_needed  the include answers do not matter           -> nobody answers in substance: a plain thanks, ok, emoji or greeting
+#                                                                   that asks for nothing and accepts nothing that waits (a suggestion
+#                                                                   gets no draft; a live turn, a courtesy reply of the holder)
+#   nobody           no listed agent handles it (council parts)  -> nobody
 # A reply suggestion (and only a suggestion) has two defaults for answers that name no agent, each for one explicit answer:
 #   stay_current with every include answer no  -> the current agent (the sticky agent of the dialog) keeps the turn
 #   route_agent with every include answer no   -> the anchor of the channel, only on the first message of the dialog, while no agent
@@ -19,14 +23,17 @@
 # has no outcome (#names_no_agent?): the router raises UndecidedError and the suggestion goes to the manager. A default names itself
 # (default_to current or anchor) and meets the same confidence threshold as any other outcome. It is not a fallback for a failure.
 # Several services of one agent make only that agent "yes", so they never make a council (the anti-false-council rule is also
-# written into the instructions). The canonical key of an outcome (stay_current, route_agent_<id>, council_<a>_<b>[_<c>],
-# human_handoff, nobody) names the decision in events and in the evaluation harness.
+# written into the instructions), and a message that needs no answer is no_reply_needed, never a council or a route (the router
+# benchmark of 26.10 sent a plain thanks with no sticky agent to a council: the cards of v2 have no catch-all agent of general
+# questions). The canonical key of an outcome (stay_current, route_agent_<id>, council_<a>_<b>[_<c>], human_handoff, no_reply_needed,
+# nobody) names the decision in events and in the evaluation harness.
 class Captain::Runtime::DecisionRouter::Questions
   MODE = 'route_mode'
   STAY = 'stay_current'
   ROUTE = 'route_agent'
   COUNCIL = 'council'
   HUMAN = 'human_handoff'
+  NO_REPLY = 'no_reply_needed'
   NOBODY = 'nobody'
   YES = 'yes'
   NO = 'no'
@@ -37,18 +44,24 @@ class Captain::Runtime::DecisionRouter::Questions
   HUMAN_DESCRIPTION = 'A live staff member answers now: the patient explicitly asks for a person (administrator, operator, manager, ' \
                       '"a human", "not a bot") or refuses to continue with the assistant. Not for complaints, refunds, documents, ' \
                       'results or urgency alone.'
+  NO_REPLY_DESCRIPTION = 'The latest message needs no answer: it only thanks, says ok or goodbye, greets, or sends an emoji. It asks ' \
+                         'nothing, names no service, doctor, date or time, answers no open question, accepts or declines no offered ' \
+                         'time or booking that still waits for an answer of the patient, and gives no personal data. Whoever the current ' \
+                         'agent is; never a council. The include_agent answers do not matter.'
   NOBODY_DESCRIPTION = 'No listed agent handles what this part asks for.'
   # How the answer of route_mode is composed with the include answers (#outcome).
-  COMPOSERS = { HUMAN => :human_outcome, NOBODY => :nobody_outcome, STAY => :stay_outcome, ROUTE => :route_outcome,
-                COUNCIL => :council_outcome }.freeze
+  COMPOSERS = { HUMAN => :human_outcome, NO_REPLY => :no_reply_outcome, NOBODY => :nobody_outcome, STAY => :stay_outcome,
+                ROUTE => :route_outcome, COUNCIL => :council_outcome }.freeze
+  # Outcomes that rest on route_mode alone: their include answers do not matter.
+  MODE_ONLY_KINDS = %w[human no_reply none].freeze
   INCLUDE_INSTRUCTIONS = <<~TEXT.squish
     Does the latest patient message ask NOW for a service of this agent (what it handles is written in the yes criterion and in the
     agents of the state)? Answer yes when the message asks for, books, reschedules or cancels a service this agent handles, or asks
     its price, preparation or free times; when it answers an open question of this agent; or, for the current agent only, when it
     asks for nothing new (a time, a name, a date of birth, an IIN, a confirmation, thanks, a greeting). With no current agent, a reply
     that continues a service the recent messages discuss (a time for it, a confirmation, personal data for its booking) is yes for the
-    agent of that service, and a message that asks for nothing new and continues no service (a plain thanks, ok, an emoji, a greeting)
-    is yes only for the agent whose description lists general clinic questions. When there is a current
+    agent of that service, and a message that needs no answer (a plain thanks, ok, an emoji, a greeting that asks for nothing and
+    accepts nothing that waits) is no for every agent. When there is a current
     agent, a general question about the clinic (address, opening hours, parking, contacts, how to pay) is yes only for the current
     agent and no for every other agent, even one whose description lists general clinic questions; with no current agent it is yes
     for the agent whose description lists general clinic questions. A topic that another agent's description names explicitly
@@ -109,10 +122,10 @@ class Captain::Runtime::DecisionRouter::Questions
     send(composer, included, final) if composer
   end
 
-  # The confidence of an outcome: the lowest confidence of the answers it rests on (route_mode alone for staff and nobody, every
-  # answer otherwise); nil when one of them has none.
+  # The confidence of an outcome: the lowest confidence of the answers it rests on (route_mode alone for staff, no reply and nobody,
+  # every answer otherwise); nil when one of them has none.
   def confidence(answers, outcome)
-    relevant = %w[human none].include?(outcome&.kind) ? [MODE] : names
+    relevant = MODE_ONLY_KINDS.include?(outcome&.kind) ? [MODE] : names
     values = relevant.map { |name| answers[name]&.confidence }
     values.all?(Numeric) ? values.min : nil
   end
@@ -130,6 +143,12 @@ class Captain::Runtime::DecisionRouter::Questions
 
   def human_outcome(_included, _final) = Outcome.new(kind: 'human', agent_ids: [], key: HUMAN)
   def nobody_outcome(_included, _final) = Outcome.new(kind: 'none', agent_ids: [], key: NOBODY)
+
+  # Nothing to answer in substance (a turn, never a council part). The current agent, when one leads the dialog, keeps it: a live
+  # turn runs it for a short courtesy reply or nothing, with no action; a reply suggestion runs no agent.
+  def no_reply_outcome(_included, _final)
+    Outcome.new(kind: 'no_reply', agent_ids: [current_id].compact, key: NO_REPLY) if @mode == :full
+  end
 
   def stay_outcome(included, _final = nil)
     return unless current_id && (included - [current_id]).empty?
@@ -171,7 +190,8 @@ class Captain::Runtime::DecisionRouter::Questions
   def mode_criteria
     @mode_criteria ||= {
       STAY => (stay_description if current_id), ROUTE => route_description, COUNCIL => (council_description if council_allowed?),
-      HUMAN => (HUMAN_DESCRIPTION if @snapshot.human_available), NOBODY => (NOBODY_DESCRIPTION if @mode == :singles)
+      HUMAN => (HUMAN_DESCRIPTION if @snapshot.human_available), NO_REPLY => (NO_REPLY_DESCRIPTION if @mode == :full),
+      NOBODY => (NOBODY_DESCRIPTION if @mode == :singles)
     }.compact.transform_values { |text| text.squish.first(MAX_DESCRIPTION) }
   end
 
@@ -182,9 +202,10 @@ class Captain::Runtime::DecisionRouter::Questions
   def stay_description
     agent = @snapshot.agent(current_id)
     "Keep the current agent #{agent.id} (#{agent.label}): everything the patient asks for now is handled by it, or the latest " \
-      'message asks for nothing new (answers its question, gives a time or personal data, confirms, thanks, greets, asks more about ' \
-      'the same service). Not when another agent handles what is asked now: that is route_agent or council, even when the message ' \
-      'continues the conversation. Its include_agent question is yes or every include_agent question is no.'
+      'message asks for nothing new but continues the dialog (answers its question, gives a time or personal data, accepts or ' \
+      'declines what it offered, asks more about the same service). Not when another agent handles what is asked now: that is ' \
+      'route_agent or council, even when the message continues the conversation; not a plain thanks, ok, emoji or greeting that ' \
+      'needs no answer: that is no_reply_needed. Its include_agent question is yes or every include_agent question is no.'
   end
 
   def route_description

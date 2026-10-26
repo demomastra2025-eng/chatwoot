@@ -65,7 +65,7 @@ RSpec.describe Captain::Tools::Account::GetSchedulingResourceAvailabilityService
 
     expect(payload['slots']).to be_empty
     expect(payload.dig('availability', 'resources', 0, 'status')).to eq('provider_unavailable')
-    expect(payload['availability_note']).to include('наличие свободного времени неизвестно')
+    expect(payload['availability_note']).to include('наличие свободного времени неизвестно', 'Цены и описание услуг')
     expect(payload.to_s).not_to include('outside_horizon')
   end
 

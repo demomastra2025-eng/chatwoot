@@ -12,7 +12,7 @@
 class Captain::Evals::RouterBenchmark::Fixture
   class Invalid < StandardError; end
 
-  KEY = /\A(?:stay_current|human_handoff|undecided|route_agent_\d+|council_\d+_\d+(?:_\d+)?)\z/
+  KEY = /\A(?:stay_current|human_handoff|no_reply_needed|undecided|route_agent_\d+|council_\d+_\d+(?:_\d+)?)\z/
   UNDECIDED = 'undecided'
   CARD_SOURCES = %w[prod proposed].freeze
 

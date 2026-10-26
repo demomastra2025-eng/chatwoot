@@ -140,6 +140,13 @@ RSpec.describe Captain::Tools::Agent::SlotsPayload do
 
       expect(answer).to include(availability: 'degraded', availability_note: include('Do not tell the patient that there is none'))
     end
+
+    # Suggestion eval 26.10: Intermedical 113 handed catalog prices to staff because the schedule was not confirmed.
+    it 'tells the agent that a price does not depend on an unchecked schedule' do
+      answer = described_class.answer({ slots: [], availability: { status: 'degraded' } })
+
+      expect(answer[:availability_note]).to include('A price from search_scheduling_services does not depend on the schedule: give it.')
+    end
   end
 
   describe '.next_available' do

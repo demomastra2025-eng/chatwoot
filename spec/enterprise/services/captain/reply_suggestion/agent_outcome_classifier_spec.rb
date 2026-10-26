@@ -145,6 +145,31 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
     end
   end
 
+  context 'when the router found that the message needs no answer' do
+    let(:payload) do
+      { 'response' => '', 'response_mode' => 'suppress', 'routing_no_reply' => true, 'agent_id' => 84,
+        'operator_note' => I18n.t('captain.reply_suggestion.reasons.router_no_reply') }
+    end
+
+    it 'is no_reply of the router, with no agent named, no cards and no sticky agent' do
+      expect(outcome).to include(outcome: 'no_reply', reason_source: 'router', agent: nil, pending_actions: [],
+                                 reason: I18n.t('captain.reply_suggestion.reasons.router_no_reply'))
+      expect(Captain::ReplySuggestion::StickyAgent.agent_id_of(outcome)).to be_nil
+    end
+  end
+
+  # Suggestion eval 26.10: a draft offered 19:00 from the clinic text while the slot search returned 19:30 and 19:50.
+  context 'when the draft names a time its scheduling reads did not find' do
+    let(:payload) { reply.merge('unverified_times' => ['19:00']) }
+
+    it 'keeps the draft and tells the manager above it which time to check' do
+      expect(outcome).to include(outcome: 'draft', message: reply['response'])
+      expect(outcome[:suggestion_meta]).to include(
+        'unverified_times' => ['19:00'], 'operator_note' => I18n.t('captain.reply_suggestion.reasons.unverified_times', times: '19:00')
+      )
+    end
+  end
+
   describe 'a run the router could not route' do
     def failed_with(reason)
       described_class.new(

@@ -197,6 +197,62 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     expect(conversation.reload.additional_attributes.to_h).not_to have_key(Captain::Conversation::AgentSession::ATTRIBUTE)
   end
 
+  # Suggestion eval 26.10: a closing «Спасибо» was routed to an agent that then booked a visit; the router benchmark sent a plain
+  # thanks with no sticky agent to a council.
+  describe 'a message that needs no answer (no_reply_needed)' do
+    let(:history) { [{ role: 'assistant', content: 'Вы записаны на завтра в 10:00.' }, { role: 'user', content: 'Спасибо' }] }
+
+    it 'runs no agent in a reply suggestion and tells the manager why there is no draft' do
+      decide('no_reply_needed', confidence: 0.97)
+      suggestion = described_class.new(assistant: doctors, conversation: conversation, source: 'reply_suggestion')
+
+      response = suggestion.generate_response(message_history: history)
+
+      expect(runs).to be_empty
+      expect(councils).to be_empty
+      expect(response).to include('response' => '', 'response_mode' => 'suppress', 'routing_no_reply' => true,
+                                  'operator_note' => I18n.t('captain.reply_suggestion.reasons.router_no_reply'))
+      expect(routed_event).to include('decision_key' => 'no_reply_needed', 'kind' => 'no_reply')
+    end
+
+    it 'lets the agent that holds a live conversation write a courtesy reply, with its action tools refused for the turn' do
+      session.update_routing(actor_id: procedures.id)
+      contexts = []
+      allow(runtime_runner).to receive(:run) do |agent, input, **options|
+        runs << { agent: agent.name, input: input }
+        contexts << options[:context]
+        Captain::Runtime::Result.new(output: { 'response' => 'Пожалуйста!' }, messages: [], usage: nil, error: nil, context: options[:context])
+      end
+      decide('no_reply_needed', confidence: 0.97)
+
+      response = service.generate_response(message_history: history)
+
+      expect(runs.pluck(:agent)).to eq(["assistant_#{procedures.id}"])
+      expect(response).to include('response' => 'Пожалуйста!', 'agent_id' => procedures.id)
+      expect(contexts.sole).to include(Captain::Runtime::ToolWrapper::ACKNOWLEDGEMENT_TURN_KEY => true)
+      expect(session.read).to include('current_assistant_id' => procedures.id)
+      expect(events.map(&:first)).not_to include('captain.agent.transfer')
+    end
+  end
+
+  # Suggestion eval 26.10: two escalations hit the timeout and the suggestions ended with no draft.
+  it 'runs the agent the decision models named when the escalation times out, and says so in the routed event' do
+    decide('route_agent', yes: [procedures.id], confidence: 0.5)
+    escalation = instance_double(Captain::Runtime::DecisionRouter::Escalation)
+    allow(escalation).to receive(:choose)
+      .and_raise(Captain::Runtime::DecisionRouter::EscalationError.new(reason: 'escalation_unavailable', detail: 'timeout'))
+    allow(Captain::Runtime::DecisionRouter::Escalation).to receive(:new).and_return(escalation)
+    suggestion = described_class.new(assistant: doctors, conversation: conversation, source: 'reply_suggestion')
+
+    response = suggestion.generate_response(message_history: history)
+
+    expect(runs.pluck(:agent)).to eq(["assistant_#{procedures.id}"])
+    expect(response['response']).to eq("Ответ assistant_#{procedures.id}")
+    expect(routed_event).to include('escalation_fallback' => 'escalation_timeout_used_chain', 'escalated' => true,
+                                    'decided_by' => 'perplexity/pplx-decider-v1.2')
+    expect(events.map(&:first)).not_to include('captain.agent.routing_failed')
+  end
+
   it 'does not wait for the router when the safety check blocked the input' do
     # The decision takes 5 s: a turn that waited for it would take at least that long.
     allow(Llm::DecisionChain).to receive(:decide) do

@@ -203,6 +203,7 @@ class Captain::Assistant::AgentRunnerService
     # Before the patient language is decided and an agent is called: a cancelled or out-of-time suggestion stops here.
     Captain::ReplySuggestion::RunControl.checkpoint!(:moderation)
     return routed_human_response(context) if @turn_decision&.human?
+    return routed_no_reply_suggestion if @turn_decision&.no_reply? && suggestion_run?
 
     time_phase('dispatch') { turn_dispatcher.prepare!(context) } if @assistant.persisted?
     # The chosen agent (or the acting agent of a council) holds the conversation now: a failure of its run answers as it.
@@ -250,6 +251,16 @@ class Captain::Assistant::AgentRunnerService
   def routed_human_suggestion
     note = I18n.t('captain.reply_suggestion.reasons.patient_requested_human')
     { 'response' => '', 'response_mode' => 'human', 'response_human_needed' => true, 'operator_note' => note, 'routing_human' => true }
+  end
+
+  # The router found that the message needs no answer (a plain thanks, ok, emoji or greeting, see DecisionRouter::Questions): no agent
+  # runs, so nothing is drafted or proposed (in the eval of 26.10 agents booked visits on a closing «Спасибо»). The manager sees why
+  # there is no draft; routing_no_reply tells the outcome that the router decided it (no agent is named as its author, and the agent
+  # that leads the dialog stays the sticky one).
+  def routed_no_reply_suggestion
+    @acting_assistant_id = conversation_holder.id
+    note = I18n.t('captain.reply_suggestion.reasons.router_no_reply')
+    { 'response' => '', 'response_mode' => 'suppress', 'operator_note' => note, 'routing_no_reply' => true }
   end
 
   # Nobody could tell which agent answers (the escalation named none, see DecisionRouter::UndecidedError): no agent drafts, not even
@@ -462,6 +473,7 @@ class Captain::Assistant::AgentRunnerService
       return final_error_response(error, result.context, handoff_tool_called: handoff_tool_called)
     end
 
+    flag_unverified_times!(response, result.context) if suggestion_run? && !council_turn?
     publish_tool_omission_event(response, result.context)
     moderate_output!(response, result.context&.dig(:state, :captain_runtime))
     add_playground_usage(response, result)
@@ -470,6 +482,18 @@ class Captain::Assistant::AgentRunnerService
     blocked_by_moderation_response('Agent output blocked by moderation policy', safety_reason: e.reason)
   rescue Llm::SafetyPolicy::UnavailableError => e
     blocked_by_moderation_response('Agent output blocked because moderation policy is unavailable', safety_reason: e.reason)
+  end
+
+  # A suggestion offers only the times its scheduling reads found (Captain::ReplySuggestion::DraftTimes): any other time is named to
+  # the manager above the draft (see ReplySuggestion::AgentOutcomeClassifier); the draft is not changed.
+  def flag_unverified_times!(response, context)
+    times = Captain::ReplySuggestion::DraftTimes.unverified(draft: response['response'], context: context)
+    return if times.empty?
+
+    response['unverified_times'] = times
+    Rails.logger.info("[CAPTAIN][ReplySuggestion] draft names times its reads did not find count=#{times.size}")
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][ReplySuggestion] draft times not checked error_class=#{e.class.name}")
   end
 
   # The parts this reply answers: the plan of the request, and the actions of earlier runs that the customer was not told about

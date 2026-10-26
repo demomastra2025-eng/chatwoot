@@ -37,7 +37,7 @@ RSpec.describe Captain::Runtime::DecisionRouter::Escalation do
     expect(result.reason.length).to be_between(1, described_class::REASON_LIMIT)
     expect(result.reason).not_to include("\n")
     properties = bound_schemas.first.dig(:schema, :properties)
-    expect(properties['route_mode'][:enum]).to eq(%w[route_agent council human_handoff])
+    expect(properties['route_mode'][:enum]).to eq(%w[route_agent council human_handoff no_reply_needed])
     expect(properties['include_agent_84'][:enum]).to eq(%w[yes no])
     expect(bound_schemas.first.dig(:schema, :required)).to eq(%w[route_mode include_agent_84 include_agent_119 reason])
     expect(Llm::Runtime).to have_received(:build_chat).with(hash_including(feature: :agent_routing_escalation, model: 'openai/gpt-6-luna'))

@@ -1477,8 +1477,9 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     # A slot search over 4 KB, as on PROD. The repeat stays JSON, so the excerpt that replaces it in the history after the next step
     # keeps the slot ids and times, and that excerpt does not invite one more call as the excerpt of a first result does.
     describe 'a repeated JSON read' do
-      let(:excerpts) { Captain::Runtime::ToolResultExcerpt }
-      let(:slots) do
+      def excerpts = Captain::Runtime::ToolResultExcerpt
+
+      def slots
         JSON.generate('date' => '2026-10-27', 'slots' => Array.new(80) do |index|
           { 'id' => "slot-#{index}", 'time' => format('%<hour>02d:%<minute>02d', hour: 8 + (index / 6), minute: (index % 6) * 10),
             'doctor' => 'Врач Фамилия Имя Отчество' }
@@ -1550,6 +1551,44 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       expect(read_only_tool.calls).to eq(2)
       expect(context_wrapper.context).not_to have_key(described_class::SUGGESTION_READ_CACHE_KEY)
       expect(mutating_wrapper.call(title: 'Вторая')).to be_a(RubyLLM::Tool::Halt)
+    end
+  end
+
+  # Suggestion eval 26.10: agents booked visits on a closing «Спасибо». On a turn the router found needs no answer (no_reply_needed)
+  # an action refuses, and the run goes on.
+  describe 'on a turn that needs no answer' do
+    let(:mutating_tool) { ToolWrapperSpecMutatingTool.new }
+    let(:read_only_tool) { ToolWrapperSpecReadOnlyTool.new }
+
+    before { context_wrapper.context[described_class::ACKNOWLEDGEMENT_TURN_KEY] = true }
+
+    it 'refuses an action tool without running it and lets the run go on, while a read still answers' do
+      result = described_class.new(mutating_tool, context_wrapper).call(title: 'Записать на приём')
+
+      expect(result).not_to be_a(RubyLLM::Tool::Halt)
+      expect_tool_error(result, described_class::ACKNOWLEDGEMENT_ACTION_ERROR, retryable: false)
+      expect(mutating_tool.calls).to eq(0)
+      expect(context_wrapper.context).not_to have_key(:technical_failure)
+      expect(described_class.new(read_only_tool, context_wrapper).call(result: 'Mon 17:00')).to eq('Mon 17:00')
+    end
+
+    it 'refuses it in a reply suggestion before any approval card is prepared' do
+      context_wrapper.context[:state][:source] = 'reply_suggestion'
+      allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:intercept)
+
+      result = described_class.new(mutating_tool, context_wrapper).call(title: 'Записать на приём')
+
+      expect_tool_error(result, described_class::ACKNOWLEDGEMENT_ACTION_ERROR, retryable: false)
+      expect(Captain::ReplySuggestion::ActionApprovalService).not_to have_received(:intercept)
+    end
+
+    it 'keeps the name of the tool with a cached read of a reply suggestion, for the check of the times a draft offers' do
+      context_wrapper.context[:state][:source] = 'reply_suggestion'
+
+      described_class.new(read_only_tool, context_wrapper).call(result: 'Mon 17:00')
+
+      expect(context_wrapper.context[described_class::SUGGESTION_READ_CACHE_KEY].values)
+        .to contain_exactly(include(result: 'Mon 17:00', tool: 'tool_wrapper_read_only_spec'))
     end
   end
 

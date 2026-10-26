@@ -22,19 +22,30 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
 
     expect(questions.keys).to eq(%w[route_mode include_agent_10 include_agent_20 include_agent_30])
     expect(questions['route_mode']).to include(instructions: 'ROUTER RULES')
-    expect(questions['route_mode'][:criteria].keys).to eq(%w[stay_current route_agent council human_handoff])
+    expect(questions['route_mode'][:criteria].keys).to eq(%w[stay_current route_agent council human_handoff no_reply_needed])
     expect(questions['include_agent_10'][:criteria].keys).to eq(%w[yes no])
     expect(questions['include_agent_10'][:criteria]['yes']).to include('Agent 10 (Agent 1)', 'УЗИ всех видов')
     expect(questions['include_agent_10'][:instructions]).to include('just in case', 'several services of one agent make only that agent yes')
   end
 
   it 'offers no stay_current on the first message and human_handoff only when staff can take the conversation' do
-    expect(build(3).mode_keys).to eq(%w[route_agent council human_handoff])
-    expect(build(3, current: 10, human: false).mode_keys).to eq(%w[stay_current route_agent council])
+    expect(build(3).mode_keys).to eq(%w[route_agent council human_handoff no_reply_needed])
+    expect(build(3, current: 10, human: false).mode_keys).to eq(%w[stay_current route_agent council no_reply_needed])
+  end
+
+  # Router benchmark 26.10 (AS06, IS06, SS05): a plain thanks with no sticky agent became a council, because the cards of v2 have no
+  # catch-all agent of general questions. A message that needs no answer has an answer of its own.
+  it 'offers no_reply_needed for a message that needs no answer, with or without a current agent' do
+    description = build(3).to_h['route_mode'][:criteria]['no_reply_needed']
+
+    expect(description).to include('only thanks, says ok or goodbye, greets, or sends an emoji', 'never a council',
+                                   'accepts or declines no offered time or booking')
+    expect(build(3, current: 10).mode_keys).to include('no_reply_needed')
   end
 
   it 'offers a council part that was not its owner\'s one agent, staff or nobody, never a council or a stay' do
     expect(build(3, current: 10, mode: :singles).mode_keys).to eq(%w[route_agent human_handoff nobody])
+    expect(build(3, current: 10, mode: :singles).outcome(answers('no_reply_needed'))).to be_nil
   end
 
   it 'keeps every criterion within the limit of the endpoint and stays within its question limit' do
@@ -69,6 +80,14 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
 
     it 'gives staff whatever the include answers say' do
       expect(questions.outcome(answers('human_handoff', yes: [10]))).to have_attributes(kind: 'human', agent_ids: [], key: 'human_handoff')
+    end
+
+    it 'needs no answer whatever the include answers say, and keeps the current agent of the dialog when there is one' do
+      expect(questions.outcome(answers('no_reply_needed', yes: [10, 30])))
+        .to have_attributes(kind: 'no_reply', agent_ids: [20], key: 'no_reply_needed', default_to: nil)
+      expect(build(3).outcome(answers('no_reply_needed'))).to have_attributes(kind: 'no_reply', agent_ids: [])
+      expect(build(3, suggestion: true, anchor: 30).outcome(answers('no_reply_needed'), final: true))
+        .to have_attributes(kind: 'no_reply', agent_ids: [], key: 'no_reply_needed')
     end
 
     it 'has no outcome for answers that contradict each other' do
@@ -161,6 +180,8 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
       expect(questions.confidence(all, outcome)).to eq(0.7)
       human = all.merge('route_mode' => answer('human_handoff', 0.85))
       expect(questions.confidence(human, questions.outcome(human.transform_values(&:choice)))).to eq(0.85)
+      no_reply = all.merge('route_mode' => answer('no_reply_needed', 0.97))
+      expect(questions.confidence(no_reply, questions.outcome(no_reply.transform_values(&:choice)))).to eq(0.97)
       expect(questions.confidence(all.merge('include_agent_10' => answer('no', nil)), outcome)).to be_nil
     end
   end

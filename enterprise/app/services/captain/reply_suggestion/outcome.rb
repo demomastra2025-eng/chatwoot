@@ -4,7 +4,7 @@
 #
 #   draft         a text for the manager to review and insert (a council may add operator_note to suggestion_meta: a part of the
 #                 request that the draft leaves to the manager)
-#   no_reply      the agent decided that no reply is needed; reason: why
+#   no_reply      the agent decided that no reply is needed; reason: why (reason_source router: the router decided it, no agent ran)
 #   human_needed  only a staff member can answer; reason: why (reason_source router: the router decided it, no agent did)
 #   failed        the run did not finish (timeout, provider error ...): there is NO draft, whatever the run had collected
 #   cancelled     the manager cancelled it
