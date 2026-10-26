@@ -154,7 +154,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
       duration = Scheduling::IntegerNumericNormalizer.normalize_or_zero(duration_min, field_name: 'duration_min')
       Scheduling::InputValidation.interval!(starts_at: start_time, ends_at: start_time + duration.minutes)
     end
-    ensure_future_start!(starts_at, start_time)
+    ensure_future_start!(starts_at, start_time, appointment)
     # The validated service is the answer of this method: the callers book with it.
     Scheduling::InputValidation.service!(account: account, value: service_id) unless service_id.nil?
   rescue Scheduling::Error => e
@@ -167,11 +167,15 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
                                 details: { mutation_executed: false })
   end
 
-  # A booking or a move never starts at a time that has passed: nothing is written, and the answer names the clinic's current time
-  # so the agent searches free times from now. starts_at is the local clock of the specialist with its offset (see
-  # #normalize_appointment_times), so the times of the answer are the clinic's. A change without a new start is not checked.
-  def ensure_future_start!(starts_at, start_time)
-    return if starts_at.nil? || start_time > Time.current
+  # A booking or a move by the AI in a patient conversation (the agent's own tools, the approval card of a reply suggestion, an
+  # account tool in the patient scope: the actor is the assistant) never starts at a time that has passed: nothing is written, and
+  # the answer names the clinic's current time so the agent searches free times from now. Staff and Copilot (the actor is a user)
+  # may record a visit that already took place. starts_at is the local clock of the specialist with its offset (see
+  # #normalize_appointment_times), so the times of the answer are the clinic's. A change without a new start, or with the start the
+  # appointment already has, is not checked: it moves nothing.
+  def ensure_future_start!(starts_at, start_time, appointment = nil)
+    return unless actor.is_a?(Captain::Assistant)
+    return if starts_at.nil? || start_time > Time.current || (appointment && same_instant?(starts_at, appointment.starts_at))
 
     local = Time.iso8601(starts_at.to_s)
     now = Time.current.getlocal(local.utc_offset)

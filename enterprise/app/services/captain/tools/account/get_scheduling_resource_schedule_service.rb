@@ -1,6 +1,5 @@
 class Captain::Tools::Account::GetSchedulingResourceScheduleService < Captain::Tools::Account::BaseAccountTool
   include Captain::Tools::Account::SchedulingQueryValidation
-  include Captain::Tools::Account::AgentTimeRange
   MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
 
   def self.name
@@ -21,14 +20,13 @@ class Captain::Tools::Account::GetSchedulingResourceScheduleService < Captain::T
     scheduling_range!(range_from, range_to)
 
     resource = find_resource!(resource_id)
-    # In a patient conversation the schedule starts now: working hours before now are not free time and are not read.
-    present = present_range(range_from, range_to)
-    return formatted_payload(passed_range_payload(resource, range_from, range_to)) unless present
-
-    range_from, range_to = present
     payload = Scheduling::ResourceScheduleService.new(
-      resource: resource, from: range_from, to: range_to,
-      include_breaks: include_breaks, include_holidays: include_holidays, include_time_offs: include_time_offs
+      resource: resource,
+      from: range_from,
+      to: range_to,
+      include_breaks: include_breaks,
+      include_holidays: include_holidays,
+      include_time_offs: include_time_offs
     ).perform
 
     note = provider_note(resource, range_from, range_to)
@@ -44,12 +42,6 @@ class Captain::Tools::Account::GetSchedulingResourceScheduleService < Captain::T
   end
 
   private
-
-  def passed_range_payload(resource, range_from, range_to)
-    { resource: Scheduling::PayloadBuilder.resource(resource), timezone: resource.timezone,
-      range: { from: range_from.iso8601, to: range_to.iso8601 }, days: [], requested_range_status: RANGE_PASSED_STATUS,
-      requested_range_note: range_passed_note('from now, found with search_available_slots.') }
-  end
 
   def template_note(resource)
     sync = Integrations::Medelement::SpecialistWorkRulesSyncService.new(account: account)

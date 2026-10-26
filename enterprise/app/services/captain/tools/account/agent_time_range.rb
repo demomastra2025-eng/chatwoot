@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
-# In a patient conversation (the agent scope) the scheduling tools read only from now on, in the clinic's clock: a free time or
-# working hours before now are never returned. A range that began earlier starts now; a range that ended before now is not read
-# at all and is answered as passed, with the clinic's current time, so the agent says so and offers the nearest free times. Staff
-# and Copilot keep the range they asked for.
+# In a patient conversation (the agent scope) the free-time tools (search_available_slots, get_scheduling_resource_availability)
+# read only from now on, in the clinic's clock: a free time before now is never returned. A range that began earlier starts now; a
+# range that ended before now is not read at all and is answered as passed, with the clinic's current time, so the agent says so
+# and offers the nearest free times. Working hours (get_scheduling_resource_schedule) are not free time: they keep the whole range,
+# so "when does the doctor work" is answered with the real hours. Staff and Copilot keep the range they asked for.
 module Captain::Tools::Account::AgentTimeRange
   RANGE_PASSED_STATUS = 'range_passed'
   RANGE_PASSED_NOTE = 'The requested range ended before now (%<now>s), so nothing in it can be offered or booked. If the patient ' \

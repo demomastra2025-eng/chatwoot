@@ -1,8 +1,9 @@
 require 'rails_helper'
 
-# In a patient conversation the scheduling tools never read or offer a time before now (the clinic's clock), and a booking or a
-# move to a start that has passed is refused with a business answer that names now, on every path that books: the agent's own
-# tools, the approval card of a reply suggestion and Copilot. Staff keep the ranges they ask for. All data is synthetic.
+# In a patient conversation the free-time tools never read or offer a time before now (the clinic's clock), and a booking or a
+# move by the AI to a start that has passed is refused with a business answer that names now: the agent's own tools and the approval
+# card of a reply suggestion. Working hours are not free time and keep the whole range. Staff and Copilot keep the ranges they ask
+# for and may record a visit that already took place. All data is synthetic.
 RSpec.describe 'Scheduling tools and times that have passed' do # rubocop:disable RSpec/DescribeClass
   include ActiveSupport::Testing::TimeHelpers
 
@@ -106,18 +107,20 @@ RSpec.describe 'Scheduling tools and times that have passed' do # rubocop:disabl
   describe 'get_scheduling_resource_schedule' do
     let(:tool_class) { Captain::Tools::Account::GetSchedulingResourceScheduleService }
 
-    it 'answers days that have passed without their working hours, with now' do
-      payload = JSON.parse(agent(tool_class).execute(resource_id: resource.id, from: '2026-04-20T00:00', to: '2026-04-21T00:00'))
-
-      expect(payload).to include('days' => [], 'requested_range_status' => 'range_passed')
-      expect(payload['requested_range_note']).to include(now_label)
-    end
-
-    it 'starts today at now' do
+    it 'gives the whole working hours of today in a patient conversation: working hours are not free time' do
       payload = JSON.parse(agent(tool_class).execute(resource_id: resource.id, from: '2026-04-21T00:00', to: '2026-04-22T00:00'))
 
       expect(payload['days'].pluck('date')).to eq(['2026-04-21'])
-      expect(payload['days'].first['windows']).to eq([{ 'start_at' => '2026-04-21T12:00:00+05:00', 'end_at' => '2026-04-21T18:00:00+05:00' }])
+      expect(payload['days'].first['windows']).to eq([{ 'start_at' => '2026-04-21T09:00:00+05:00', 'end_at' => '2026-04-21T18:00:00+05:00' }])
+      expect(payload).not_to have_key('requested_range_status')
+    end
+
+    it 'gives the working hours of a day that has passed in a patient conversation' do
+      payload = JSON.parse(agent(tool_class).execute(resource_id: resource.id, from: '2026-04-20T00:00', to: '2026-04-21T00:00'))
+
+      expect(payload['days'].pluck('date')).to eq(['2026-04-20'])
+      expect(payload['days'].first['windows'].first['start_at']).to eq('2026-04-20T09:00:00+05:00')
+      expect(payload).not_to have_key('requested_range_status')
     end
 
     it 'keeps the range staff ask for' do
@@ -189,21 +192,40 @@ RSpec.describe 'Scheduling tools and times that have passed' do # rubocop:disabl
       expect(Captain::ReplySuggestion::ActionApprovalService.pending_for(account_id: account.id, conversation_id: conversation.id)).to be_empty
     end
 
-    it 'is refused for Copilot once the operator confirmed it, with the reason in the message' do
-      admin = create(:user, :administrator, account: account)
-      thread = create(:captain_copilot_thread, account: account, user: admin, assistant: assistant)
-      copilot = Captain::Tools::Account::CreateAppointmentService.new(assistant, user: admin, conversation: conversation, copilot_thread: thread)
-      arguments = { resource_id: resource.id, service_id: consultation.id, starts_at: '2026-04-21T11:00:00+05:00' }
+    it 'is refused by an account tool the agent runs in the patient scope' do
+      # As Captain::Tools::Agent::AccountToolAdapter runs it: the account tool's own execute, past the Copilot confirmation gate.
+      execute = agent(Captain::Tools::Account::CreateAppointmentService).method(:execute)
+      execute = execute.super_method if execute.owner == Captain::Tools::Instrumentation && execute.super_method
+      result = execute.call(resource_id: resource.id, service_id: consultation.id, starts_at: '2026-04-21T11:00:00+05:00')
 
-      first = JSON.parse(copilot.execute(**arguments))
-      token = thread.copilot_messages.assistant_thinking.last.message.dig('confirmation_gate', 'confirmation_token')
-      create(:captain_copilot_message, account: account, copilot_thread: thread, message_type: 'user',
-                                       message: { 'content' => "Подтверждаю #{token}" })
-      result = copilot.execute(**arguments)
-
-      expect(first.dig('data', 'confirmation_required')).to be(true)
-      expect(result).to include('has passed (now is Tuesday 2026-04-21 12:00)', 'START_IN_PAST')
+      expect(result).to include('START_IN_PAST', 'now is Tuesday 2026-04-21 12:00')
       expect(account.scheduling_appointments.count).to eq(0)
+    end
+
+    it 'lets staff and Copilot record a visit that already took place' do
+      admin = create(:user, :administrator, account: account)
+      operation = Captain::Tools::Operations::AppointmentOperations.new(assistant: assistant, conversation: conversation, actor: admin)
+
+      expect do
+        operation.send(:validate_booking_inputs!, starts_at: '2026-04-21T11:00:00+05:00', ends_at: nil, duration_min: 30, service_id: nil)
+      end.not_to raise_error
+    end
+
+    it 'lets the agent repeat the start an appointment already has: a change that moves nothing is not refused' do
+      starts_at = Time.zone.parse('2026-04-21 10:00:00 +0500')
+      appointment = create(:scheduling_appointment, account: account, resource: resource, service: consultation, contact: contact,
+                                                    conversation_id: conversation.id, starts_at: starts_at,
+                                                    ends_at: starts_at + 30.minutes, duration_min: 30)
+      operation = Captain::Tools::Operations::AppointmentOperations.new(assistant: assistant, conversation: conversation, actor: assistant)
+
+      expect do
+        operation.send(:validate_booking_inputs!, starts_at: '2026-04-21T10:00:00+05:00', ends_at: nil, duration_min: nil, service_id: nil,
+                                                  appointment: appointment)
+      end.not_to raise_error
+      expect do
+        operation.send(:validate_booking_inputs!, starts_at: '2026-04-21T10:30:00+05:00', ends_at: nil, duration_min: nil, service_id: nil,
+                                                  appointment: appointment)
+      end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('START_IN_PAST') }
     end
   end
 end
