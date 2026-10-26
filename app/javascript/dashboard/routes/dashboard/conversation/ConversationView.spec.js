@@ -7,6 +7,9 @@ import { emitter } from 'shared/helpers/mitt';
 vi.mock('shared/helpers/mitt', () => ({
   emitter: {
     emit: vi.fn(),
+    // The webphone client in the import chain subscribes on load.
+    on: vi.fn(),
+    off: vi.fn(),
   },
 }));
 
@@ -91,6 +94,53 @@ describe('ConversationView', () => {
 
       expect(ConversationView.computed.shouldShowSidebar.call(context)).toBe(
         false
+      );
+    });
+  });
+
+  describe('panes on a phone', () => {
+    const paneContext = (displayType, conversationId) => {
+      const context = {
+        conversationId,
+        uiSettings: { conversation_display_type: displayType },
+      };
+      context.isOnExpandedLayout =
+        ConversationView.computed.isOnExpandedLayout.call(context);
+      return context;
+    };
+
+    it('shows only the open dialog under the expanded layout', () => {
+      const context = paneContext('expanded', 13890);
+
+      expect(context.isOnExpandedLayout).toBe(true);
+      expect(ConversationView.computed.showConversationList.call(context)).toBe(
+        false
+      );
+      expect(ConversationView.computed.showMessageView.call(context)).toBe(
+        true
+      );
+    });
+
+    it('shows only the list under the expanded layout when no dialog is open', () => {
+      const context = paneContext('expanded', 0);
+
+      expect(ConversationView.computed.showConversationList.call(context)).toBe(
+        true
+      );
+      expect(ConversationView.computed.showMessageView.call(context)).toBe(
+        false
+      );
+    });
+
+    it('shows the list and the dialog side by side under the condensed layout', () => {
+      // The desktop layout: a phone must never be left in it.
+      const context = paneContext('condensed', 13890);
+
+      expect(ConversationView.computed.showConversationList.call(context)).toBe(
+        true
+      );
+      expect(ConversationView.computed.showMessageView.call(context)).toBe(
+        true
       );
     });
   });

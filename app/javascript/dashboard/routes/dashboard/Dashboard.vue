@@ -133,22 +133,27 @@ export default {
     },
   },
   watch: {
+    // The layout is a per-user setting shared by every device, so a phone has
+    // to apply the expanded layout when the page loads, not only when the
+    // window later crosses the breakpoint. Otherwise a condensed layout left
+    // by a desktop session shows the list and the open dialog side by side on
+    // a phone. Writes only when the effective layout actually changes.
     isSmallScreen: {
       handler() {
         const { LAYOUT_TYPES } = wootConstants;
         const targetDisplayType =
           window.innerWidth <= wootConstants.SMALL_SCREEN_BREAKPOINT
             ? LAYOUT_TYPES.EXPANDED
-            : this.previouslyUsedDisplayType;
-        if (
-          targetDisplayType &&
-          this.uiSettings?.conversation_display_type !== targetDisplayType
-        ) {
+            : this.previouslyUsedDisplayType || LAYOUT_TYPES.CONDENSED;
+        const currentDisplayType =
+          this.uiSettings?.conversation_display_type || LAYOUT_TYPES.CONDENSED;
+        if (currentDisplayType !== targetDisplayType) {
           this.updateUISettings({
             conversation_display_type: targetDisplayType,
           });
         }
       },
+      immediate: true,
     },
     isTrialPlan: {
       handler(isTrial) {
