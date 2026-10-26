@@ -76,6 +76,29 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
   # Another specialist for a second visit of the same patient.
   def create_endocrinologist = account.scheduling_resources.create!(name: 'Д-р Ли', active: true)
 
+  # The booking cards that one suggestion request prepares in a run of its own, one per list of arguments.
+  def suggest_bookings(request_id, context, *arguments_list)
+    tool = Captain::Tools::CreateAppointmentTool.new(assistant)
+    Captain::ReplySuggestion::RunControl.with(request_id: request_id, deadline: Process.clock_gettime(Process::CLOCK_MONOTONIC) + 60) do
+      arguments_list.map { |arguments| JSON.parse(described_class.intercept(tool: tool, tool_context: context, arguments: arguments)) }
+    end
+  end
+
+  # The tool context of the next suggestion of the conversation: the cards of the earlier one are not its own.
+  def next_suggestion_context
+    Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new(
+      run_context.context.deep_dup.merge(captain_suggestion_pending_actions: [], captain_suggestion_superseded_actions: [])
+    ))
+  end
+
+  def keep_suggestion!(request_id)
+    described_class.keep_for_request!(account_id: account.id, conversation_id: conversation.id, request_id: request_id)
+  end
+
+  def pending_ids(request_id)
+    described_class.pending_for(account_id: account.id, conversation_id: conversation.id, request_id: request_id).pluck('action_id')
+  end
+
   before do
     if defined?(Scheduling::ServicePrice)
       Scheduling::ServicePrice.find_or_create_by!(
@@ -261,6 +284,35 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
         .to contain_exactly(kept['action_id'], kept_other['action_id'])
     ensure
       Current.reset
+    end
+
+    # The model rebuilds the patient from the chat in every suggestion: a relative's later booking may add the birth date or write the
+    # surname apart, and the conversation person may be named in one call and left out in another. The same person is the same
+    # booking, so the kept card is replaced, while another relative with the same specialist and service keeps a card of its own.
+    it 'replaces the kept booking card of the same patient written otherwise, and keeps the card of another relative', :aggregate_failures do
+      args = { resource_id: resource.id, service_id: service_item.id, starts_at: starts_at, ends_at: ends_at }
+      later = { starts_at: later_starts_at, ends_at: later_ends_at }
+      kept_daughter, kept_son, kept_own = suggest_bookings(
+        'request-1', tool_context,
+        args.merge(patient: { first_name: 'Айгуль', last_name: 'Сериккызы' }),
+        args.merge(patient: { first_name: 'Нурлан', last_name: 'Серикулы' }),
+        args
+      )
+      keep_suggestion!('request-1')
+
+      daughter, own = suggest_bookings(
+        'request-2', next_suggestion_context,
+        args.merge(patient: { first_name: 'айгуль', last_name: 'Серик кызы', birth_date: '2015-03-01' }, **later),
+        args.merge(patient: { first_name: 'Иван', last_name: 'Петров' }, **later)
+      )
+
+      expect([kept_daughter, kept_son, kept_own].map { |card| card['message'] }.grep(/It replaces/)).to be_empty
+      expect(daughter['message']).to include("It replaces «Записать на приём» (create_appointment: #{kept_daughter['summary']}): that card")
+      expect(own['message']).to include("It replaces «Записать на приём» (create_appointment: #{kept_own['summary']}): that card")
+      expect(own['message']).not_to include(kept_son['summary'])
+      expect(described_class.fetch_record(kept_daughter['action_id'])).to include('status' => 'rejected', 'superseded_by' => daughter['action_id'])
+      expect(described_class.fetch_record(kept_own['action_id'])).to include('status' => 'rejected', 'superseded_by' => own['action_id'])
+      expect(pending_ids('request-2')).to contain_exactly(daughter['action_id'], own['action_id'], kept_son['action_id'])
     end
 
     it 'withdraws only a card that the run itself prepared' do
@@ -707,6 +759,45 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
 
       expect(rejected['status']).to eq('rejected')
       expect(described_class.pending_for(account_id: account.id, conversation_id: conversation.id)).to be_empty
+    end
+
+    context 'with a booking card that replaced the kept card of an earlier suggestion' do
+      # The 10:00 card of a sent draft (request-1), and the 11:30 card of the next suggestion (request-2) that replaced it.
+      def kept_and_corrected
+        args = { resource_id: resource.id, service_id: service_item.id, starts_at: starts_at, ends_at: ends_at }
+        kept = suggest_bookings('request-1', tool_context, args).first
+        keep_suggestion!('request-1')
+        [kept, suggest_bookings('request-2', next_suggestion_context, args.merge(starts_at: later_starts_at, ends_at: later_ends_at)).first]
+      end
+
+      # The agent read "is 11:30 free too?" as a change, and the panel showed only the 11:30 card. The manager denies it before the
+      # draft is inserted: the 10:00 booking the patient was told about waits for the operator again instead of being silently gone.
+      it 'gives the kept card back when the operator denies the card before its draft reached the patient', :aggregate_failures do
+        kept, corrected = kept_and_corrected
+        expect(pending_ids('request-2')).to eq([corrected['action_id']])
+
+        approval_service.reject!(action_id: corrected['action_id'])
+
+        expect(described_class.fetch_record(corrected['action_id'])).to include('status' => 'rejected', 'rejected_by_id' => user.id)
+        expect(described_class.fetch_record(kept['action_id'])).to include('status' => 'pending', 'kept_at' => be_present)
+        expect(described_class.fetch_record(kept['action_id']).keys).not_to include('superseded_by', 'rejected_reason', 'rejected_at')
+        expect(pending_ids('request-3')).to eq([kept['action_id']])
+      end
+
+      # The manager sent the 11:30 draft, so the patient read 11:30 last: denying that card does not bring 10:00 back.
+      it 'keeps the replaced card withdrawn when the operator denies a kept card', :aggregate_failures do
+        kept, corrected = kept_and_corrected
+        keep_suggestion!('request-2')
+
+        approval_service.reject!(action_id: corrected['action_id'])
+
+        expect(described_class.fetch_record(kept['action_id'])).to include(
+          'status' => 'rejected', 'rejected_reason' => 'superseded_by_later_booking', 'superseded_by' => corrected['action_id']
+        )
+        expect(pending_ids('request-3')).to be_empty
+        expect { approval_service.approve!(action_id: kept['action_id']) }
+          .to raise_error(described_class::InvalidStateError, /replaced by a corrected card/)
+      end
     end
   end
 end

@@ -54,6 +54,11 @@ class Captain::ReplySuggestion::ActionApprovalService
   # A kept card of an earlier suggestion that a corrected booking replaced (see supersede_kept!).
   KEPT_SUPERSEDED_REASON = 'superseded_by_later_booking'
   SUPERSEDED_REASONS = [SUPERSEDED_REASON, KEPT_SUPERSEDED_REASON].freeze
+  # The letters a patient's name is compared by (see name_letters).
+  NAME_LETTER_FOLDS = {
+    'ё' => 'е', 'ә' => 'а', 'ғ' => 'г', 'қ' => 'к', 'ң' => 'н', 'ө' => 'о', 'ұ' => 'у', 'ү' => 'у', 'һ' => 'х', 'і' => 'и', 'ь' => '', 'ъ' => ''
+  }.freeze
+  NAME_LETTER_PATTERN = Regexp.union(NAME_LETTER_FOLDS.keys)
 
   class Error < StandardError; end
   class NotFoundError < Error; end
@@ -196,9 +201,10 @@ class Captain::ReplySuggestion::ActionApprovalService
       end
     end
 
-    # The kept cards that a booking card replaced come back when that card goes without the operator acting on it (its suggestion did
-    # not finish, was dismissed or gave way to a new one, or a corrected card of its run replaced it): the draft the patient read still
-    # stands. A kept card that changed since (the operator acted on it, another card replaced it) stays as it is.
+    # The kept cards that a booking card replaced come back when that card goes before its draft reached the patient (its suggestion
+    # did not finish, was dismissed or gave way to a new one, a corrected card of its run replaced it, or the operator denied it, see
+    # reject!): the draft the patient read still stands. A kept card that changed since (the operator acted on it, another card
+    # replaced it) stays as it is.
     def restore_replaced_kept!(record)
       Array(record['replaced_kept_ids']).each do |kept_id|
         kept = fetch_record(kept_id)
@@ -278,7 +284,7 @@ class Captain::ReplySuggestion::ActionApprovalService
 
       record = build_or_reuse_proposal(
         context: context, state: state, assistant: assistant, account: account, conversation: conversation, tool_id: tool_id,
-        arguments: normalized_args, booking_key: booking_key(normalized_args, booking)
+        arguments: normalized_args, booking_key: booking_key(booking)
       )
       proposal_result(record, context, replaces)
     end
@@ -293,14 +299,46 @@ class Captain::ReplySuggestion::ActionApprovalService
       render_interception_result(record, context, replaced)
     end
 
-    # One booking is one patient with one specialist and one service (as the booking resolves them): a booking at another date or
-    # time with the same three is a corrected booking, and its card replaces the earlier one; another specialist or service is
-    # another booking with a card of its own. The patient is the person the booking names, or else the person of the conversation.
-    def booking_key(arguments, booking)
-      return if booking[:resource_id].blank?
+    # One booking is one patient with one specialist and one service (as the booking resolves them, see booking_person): a booking at
+    # another date or time with the same three is a corrected booking, and its card replaces the earlier one; another patient,
+    # specialist or service is another booking with a card of its own.
+    def booking_key(booking)
+      return if booking[:resource_id].blank? || booking[:person].blank?
 
-      person = Captain::Runtime::OperationTarget.person(arguments[:patient])
-      Digest::SHA256.hexdigest(JSON.generate([person, booking[:resource_id].to_s, booking[:service_id].to_s]))
+      Digest::SHA256.hexdigest(JSON.generate([booking[:person], booking[:resource_id].to_s, booking[:service_id].to_s]))
+    end
+
+    # The patient of a booking as the booking resolves it, so that the same person is the same booking whatever details the model
+    # passes this time (it rebuilds them from the chat in every suggestion): the person of the conversation when no patient is passed,
+    # when the patient's card is the conversation contact or when the patient's name is the contact's; any other patient by first and
+    # last name in letters only. The birth date, the IIN and the middle name are left out, and so is a card found by the IIN: a
+    # corrected booking of the same relative may add or drop them.
+    def booking_person(patient, patient_id:, conversation:)
+      contact_person = "contact:#{conversation&.contact_id}"
+      return contact_person if patient.blank? || (patient_id.present? && patient_id == conversation&.contact_id)
+
+      names = patient.to_h.deep_symbolize_keys
+      return contact_person if patient_id.blank? && conversation_person?(names, conversation&.contact)
+
+      "name:#{name_letters(names[:first_name])} #{name_letters(names[:last_name])}"
+    end
+
+    # Whether the patient a booking names is the person of the conversation: the first and last name of the contact's card, or both
+    # among the words of the contact's name (a contact named "Иван Петров" with no last name of its own).
+    def conversation_person?(names, contact)
+      person = [name_letters(names[:first_name]), name_letters(names[:last_name])]
+      return false if contact.blank? || person.any?(&:blank?)
+
+      recorded = Integrations::Medelement::AppointmentPatientIdentity.contact_names(contact)
+      return true if person == [name_letters(recorded['first_name']), name_letters(recorded['last_name'])]
+
+      (person - [contact.name, contact.last_name].join(' ').split.map { |word| name_letters(word) }).empty?
+    end
+
+    # A name in lower-case letters only, with the Kazakh letters and ё written as the Russian ones and no soft or hard sign, so that
+    # "Серик кызы", "Сериккызы" and "Серікқызы" are one surname.
+    def name_letters(value)
+      value.to_s.unicode_normalize(:nfc).downcase.gsub(/[^\p{L}]/, '').gsub(NAME_LETTER_PATTERN, NAME_LETTER_FOLDS)
     end
 
     # The booking cards of the run (not the kept cards it lists) of the same booking as the new card.
@@ -394,7 +432,7 @@ class Captain::ReplySuggestion::ActionApprovalService
       business_failure(e.message, reason: 'validation_error')
     end
 
-    # booking: filled with the specialist and the service a valid booking resolves to (see booking_key).
+    # booking: filled with the patient, the specialist and the service a valid booking resolves to (see booking_key).
     def validate_domain_call(tool_id:, assistant:, account:, conversation:, state:, arguments:, booking: {})
       case tool_id
       when 'create_appointment'
@@ -449,8 +487,8 @@ class Captain::ReplySuggestion::ActionApprovalService
         duration_min: arguments[:duration_min], service: service
       )
 
-      booking[:resource_id] = resource.id
-      booking[:service_id] = service&.id
+      booking.merge!(person: booking_person(arguments[:patient], patient_id: patient_id, conversation: conversation),
+                     resource_id: resource.id, service_id: service&.id)
       nil
     rescue StandardError => e
       Captain::Tools::Agent::AppointmentResult.failure_output(e, account: account)
@@ -1041,12 +1079,19 @@ class Captain::ReplySuggestion::ActionApprovalService
       record['rejected_by_id'] = @user&.id
       record['rejected_by_name'] = @user&.name
       self.class.store_record!(record)
+      restore_kept_after_denial!(record)
       publish_approval_event(record, outcome: REJECTED_STATUS)
       self.class.public_payload(record)
     end
   end
 
   private
+
+  # A denied card whose draft the manager never inserted or sent gives back the kept card it replaced: the patient read that time, and
+  # nothing else would book it. A denied kept card was the time the patient read last, so the card it replaced stays withdrawn.
+  def restore_kept_after_denial!(record)
+    self.class.restore_replaced_kept!(record) unless self.class.kept?(record)
+  end
 
   def load_authorized_record!(action_id)
     record = self.class.fetch_record(action_id)
