@@ -10,6 +10,12 @@ module Captain::Runtime::DecisionRouter::Settings
   # The slowest escalation of the router benchmark took 9.1 s; 15 s leaves it room.
   ESCALATION_TIMEOUT_SECONDS = 15.0
   ESCALATION_EFFORT = 'high'
+  # A reply suggestion: the operator waits for the draft. In the suggestion eval of 26.10 the escalation ran in 35% of the routed
+  # turns (p50 4.7 s, p90 7.9 s at high effort), it was all of the latency the router added (p50 8.8 -> 11.7 s), and it agreed
+  # with the decision models in 34 of the 35 low-confidence turns; two escalations hit 15 s and left no draft. Past this timeout the
+  # outcome of the decision models decides (DecisionRouter#chain_fallback).
+  SUGGESTION_ESCALATION_TIMEOUT_SECONDS = 10.0
+  SUGGESTION_ESCALATION_EFFORT = 'medium'
   EFFORTS = %w[low medium high].freeze
   OFF_VALUES = %w[off 0 false disabled no].freeze
 
@@ -27,13 +33,23 @@ module Captain::Runtime::DecisionRouter::Settings
     milliseconds('CAPTAIN_AGENT_ROUTING_CHAIN_BUDGET_MS', CHAIN_BUDGET_SECONDS, max: 15)
   end
 
-  def escalation_timeout_seconds
-    milliseconds('CAPTAIN_AGENT_ROUTING_ESCALATION_TIMEOUT_MS', ESCALATION_TIMEOUT_SECONDS, max: 60)
+  # suggestion: the escalation of a reply suggestion (CAPTAIN_AGENT_ROUTING_SUGGESTION_ESCALATION_TIMEOUT_MS), else of a live turn.
+  def escalation_timeout_seconds(suggestion: false)
+    return milliseconds('CAPTAIN_AGENT_ROUTING_ESCALATION_TIMEOUT_MS', ESCALATION_TIMEOUT_SECONDS, max: 60) unless suggestion
+
+    milliseconds('CAPTAIN_AGENT_ROUTING_SUGGESTION_ESCALATION_TIMEOUT_MS', SUGGESTION_ESCALATION_TIMEOUT_SECONDS, max: 60)
   end
 
-  def escalation_effort
-    value = read('CAPTAIN_AGENT_ROUTING_ESCALATION_EFFORT').to_s.strip.downcase
-    EFFORTS.include?(value) ? value : ESCALATION_EFFORT
+  # suggestion: the escalation of a reply suggestion (CAPTAIN_AGENT_ROUTING_SUGGESTION_ESCALATION_EFFORT, high gives the effort of a
+  # live turn back), else of a live turn.
+  def escalation_effort(suggestion: false)
+    name, default = if suggestion
+                      ['CAPTAIN_AGENT_ROUTING_SUGGESTION_ESCALATION_EFFORT', SUGGESTION_ESCALATION_EFFORT]
+                    else
+                      ['CAPTAIN_AGENT_ROUTING_ESCALATION_EFFORT', ESCALATION_EFFORT]
+                    end
+    value = read(name).to_s.strip.downcase
+    EFFORTS.include?(value) ? value : default
   end
 
   def bounce_escalation?

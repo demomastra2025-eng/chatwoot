@@ -87,7 +87,8 @@ RSpec.describe Captain::Runtime::DecisionRouter do
 
     expect(decision).to have_attributes(key: 'route_agent_84', agent_ids: [84], escalated: true, escalation_trigger: 'low_confidence',
                                         decided_by: 'escalation:openai/gpt-6-luna', first_choice: 'route_agent_119',
-                                        first_confidence: 0.6, escalation_reason: 'agent 84 books ENT doctors')
+                                        first_confidence: 0.6, escalation_reason: 'agent 84 books ENT doctors', escalation_fallback: nil)
+    expect(described_class::Escalation).to have_received(:new).with(hash_including(timeout: 15.0, effort: 'high'))
     expect(escalation).to have_received(:choose) do |state:, questions:, instructions:|
       expect(state).to eq(snapshot.to_state)
       expect(questions.to_h).to eq(calls.sole[:question][:questions])
@@ -163,16 +164,78 @@ RSpec.describe Captain::Runtime::DecisionRouter do
     end
   end
 
-  it 'raises EscalationError when the escalation fails or its answers contradict each other' do
-    answer_chain(chain_answer('route_agent', yes: [84], confidence: 0.4), chain_answer('route_agent', yes: [84], confidence: 0.4))
-    escalation = instance_double(described_class::Escalation)
-    allow(escalation).to receive(:choose).and_raise(described_class::EscalationError.new(reason: 'escalation_unavailable'))
+  def fail_escalation(detail)
+    escalation = instance_double(described_class::Escalation, model: 'openai/gpt-6-luna')
+    allow(escalation).to receive(:choose).and_raise(described_class::EscalationError.new(reason: 'escalation_unavailable', detail: detail))
     allow(described_class::Escalation).to receive(:new).and_return(escalation)
+    escalation
+  end
+
+  it 'raises EscalationError when the escalation fails or its answers contradict each other after answers that did not agree' do
+    answer_chain(chain_answer('council', yes: [84], confidence: 0.99), chain_answer('council', yes: [84], confidence: 0.99))
+    fail_escalation('timeout')
 
     expect { router.decide }.to raise_error(described_class::EscalationError) { |error| expect(error.reason).to eq('escalation_unavailable') }
 
     escalate_to(choices('council', yes: [84]))
     expect { router.decide }.to raise_error(described_class::EscalationError) { |error| expect(error.reason).to eq('escalation_invalid') }
+  end
+
+  # Suggestion eval 26.10: two escalations hit the 15 s timeout and the suggestions ended with no draft, while the decision models
+  # had already named the agent (at a low confidence). Their outcome is an answer of the decision models, never a code default.
+  describe 'an escalation that times out or fails after the decision models named an outcome' do
+    it 'uses the outcome of the decision models with their confidence and says so in the event' do
+      answer_chain(chain_answer('route_agent', yes: [84], confidences: { 'include_agent_119' => 0.4 }))
+      fail_escalation('timeout')
+
+      decision = router.decide
+
+      expect(decision).to have_attributes(key: 'route_agent_84', kind: 'agent', agent_ids: [84], decided_by: 'perplexity/pplx-decider-v1.2',
+                                          confidence: 0.4, escalated: true, escalation_trigger: 'low_confidence',
+                                          escalation_fallback: 'escalation_timeout_used_chain',
+                                          escalation_failure: 'escalation_unavailable:timeout', escalation_reason: nil)
+      expect(decision.escalation_ms).to be_a(Integer)
+      expect(decision.to_event_payload).to include(escalation_fallback: 'escalation_timeout_used_chain', escalated: true,
+                                                   escalation_failure: 'escalation_unavailable:timeout', decided_by: 'perplexity/pplx-decider-v1.2')
+    end
+
+    it 'names an error of the escalation apart from its timeout, for a council and for staff alike' do
+      answer_chain(chain_answer('council', yes: [84, 119], confidence: 0.5), chain_answer('human_handoff', confidence: 0.7))
+      fail_escalation('Faraday::ConnectionFailed')
+
+      expect(router.decide).to have_attributes(key: 'council_84_119', kind: 'council', agent_ids: [84, 119],
+                                               escalation_fallback: 'escalation_error_used_chain',
+                                               escalation_failure: 'escalation_unavailable:Faraday::ConnectionFailed')
+      expect(router.decide).to have_attributes(key: 'human_handoff', kind: 'human', escalation_fallback: 'escalation_error_used_chain')
+    end
+
+    it 'uses it when the escalation answered outside its keys or with answers that contradict each other' do
+      answer_chain(chain_answer('route_agent', yes: [119], confidence: 0.5))
+      escalate_to(choices('council', yes: [84]))
+
+      expect(router.decide).to have_attributes(key: 'route_agent_119', escalation_fallback: 'escalation_error_used_chain',
+                                               escalation_failure: 'escalation_invalid:inconsistent')
+    end
+
+    it 'keeps the bounce guard on the decision it uses' do
+      bounced = described_class.new(
+        Captain::Runtime::RoutingSnapshot.new(agents: agents, latest_message: 'Хочу к ЛОРу', current_agent_id: 119, human_available: true,
+                                              trail: [{ 'kind' => 'agent', 'from' => 84, 'to' => [119] }]),
+        account: account
+      )
+      answer_chain(chain_answer('route_agent', yes: [84], confidence: 0.99))
+      fail_escalation('timeout')
+
+      expect(bounced.decide).to have_attributes(key: 'route_agent_84', guard: 'bounce', escalation_trigger: 'bounce',
+                                                escalation_fallback: 'escalation_timeout_used_chain')
+    end
+
+    it 'never replaces an escalation that named no agent: nobody decided' do
+      answer_chain(chain_answer('route_agent', yes: [84], confidence: 0.5))
+      escalate_to(choices('route_agent'))
+
+      expect { router.decide }.to raise_error(described_class::UndecidedError)
+    end
   end
 
   it 'reports the escalation it would run without calling it, and asks one model alone, for the evaluation harness' do
@@ -207,6 +270,14 @@ RSpec.describe Captain::Runtime::DecisionRouter do
 
       expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalated: true, escalation_trigger: 'low_confidence',
                                                first_confidence: 0.3)
+    end
+
+    it 'gives the escalation of a suggestion its own timeout and effort, and uses the sticky agent the models named past it' do
+      answer_chain(chain_answer('stay_current', yes: [119], confidence: 0.5))
+      fail_escalation('timeout')
+
+      expect(router.decide).to have_attributes(key: 'stay_current', agent_ids: [119], escalation_fallback: 'escalation_timeout_used_chain')
+      expect(described_class::Escalation).to have_received(:new).with(hash_including(timeout: 10.0, effort: 'medium'))
     end
 
     it 'gives an explicit stay_current that names no agent to the sticky agent, and escalates it at a low confidence' do

@@ -7,8 +7,9 @@ require 'timeout'
 # contradicted each other, or when the turn would bounce straight back. It answers every question with one of its keys, plus a
 # short reason, as structured output; the router composes the answers exactly as for a decision model, and the result is final.
 # It never sees what the decision models answered, so it cannot anchor on it. Any failure (an error, the timeout, an answer
-# outside the keys) raises Captain::Runtime::DecisionRouter::EscalationError: the turn ends through the technical-failure path,
-# the same as when every decision model failed.
+# outside the keys) raises Captain::Runtime::DecisionRouter::EscalationError: the router then uses the outcome the decision models'
+# answers composed into (DecisionRouter#chain_fallback), and without one the turn ends through the technical-failure path, the same
+# as when every decision model failed.
 class Captain::Runtime::DecisionRouter::Escalation
   FEATURE = :agent_routing_escalation
   REASON_LIMIT = 200

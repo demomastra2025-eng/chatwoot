@@ -496,7 +496,7 @@ class Captain::Runtime::Council
     return true unless suggestion? && control
 
     settings = Captain::Runtime::DecisionRouter::Settings
-    control.seconds_left >= settings.chain_budget_seconds + settings.escalation_timeout_seconds + SUGGESTION_REASSIGN_RUN_SECONDS
+    control.seconds_left >= settings.chain_budget_seconds + settings.escalation_timeout_seconds(suggestion: true) + SUGGESTION_REASSIGN_RUN_SECONDS
   end
 
   def reassigned_actor(plan)
