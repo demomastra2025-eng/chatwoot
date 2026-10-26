@@ -106,7 +106,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact, status: :pending)
     create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
-    starts_at = Time.zone.now.change(hour: 10)
+    starts_at = Time.zone.now.change(hour: 10) + 1.day
     appointment = nil
     upsert = instance_double(Scheduling::Appointments::UpsertService)
     allow(upsert).to receive(:persisted_appointment) { appointment }
@@ -139,8 +139,10 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact, status: :pending)
     create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+    starts_at = Time.zone.now.change(hour: 10) + 1.day
     appointment = create(
       :scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation, service: nil,
+                               starts_at: starts_at, ends_at: starts_at + 30.minutes,
                                custom_attributes: { Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => 'provider_status_unknown' }
     )
     expect(Scheduling::Appointments::UpsertService).not_to receive(:new)

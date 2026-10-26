@@ -20,6 +20,10 @@ class Captain::Tools::Agent::AppointmentResult
   OFF_GRID_CODE = 'START_OFF_GRID'.freeze
   OFF_GRID_GUIDANCE = 'That start is not on the specialist\'s schedule grid. Offer the patient one of nearest_starts once ' \
                       'search_available_slots (from = that start) shows it is free, and book that start exactly.'.freeze
+  # A booking or a move to a start that has passed (see AppointmentOperations#ensure_future_start!): nothing was written.
+  START_IN_PAST_CODE = 'START_IN_PAST'.freeze
+  START_IN_PAST_GUIDANCE = 'That start has passed (now is %<now>s). Search free times from now with search_available_slots, offer the ' \
+                           'patient one of the returned times and book that time.'.freeze
   # The two answers of "nothing was changed" (the statuses of Captain::ToolResult::NO_CHANGE_STATUSES) and their result line.
   STATUS_UNCHANGED = 'unchanged'.freeze
   STATUS_ALREADY_BOOKED = 'already_booked'.freeze
@@ -272,8 +276,25 @@ class Captain::Tools::Agent::AppointmentResult
   end
   private_class_method :off_grid_failure
 
+  # A start before now: the agent offers a free time from now instead. The failure names the clinic's current time.
+  def self.start_in_past_failure(error)
+    return unless error.is_a?(::Scheduling::Error) && error.code.to_s == START_IN_PAST_CODE
+
+    now = error.details.to_h.with_indifferent_access[:now].presence || 'later than that start'
+    { success: false, reason: 'validation_error', code: START_IN_PAST_CODE, error_class: ERROR_CLASS_BUSINESS,
+      next_tool: 'search_available_slots', correction: format(START_IN_PAST_GUIDANCE, now: now),
+      audit: { mutation_executed: false, failure_stage: 'tool_arguments' } }
+  end
+  private_class_method :start_in_past_failure
+
+  # The business answers of a typed scheduling error that the agent corrects in the same run; nil for any other error.
+  def self.correctable_failure(error)
+    service_required_failure(error) || off_grid_failure(error) || start_in_past_failure(error)
+  end
+  private_class_method :correctable_failure
+
   def self.failure(error, account: nil)
-    answer = required_custom_field_failure(error, account) || service_required_failure(error) || off_grid_failure(error)
+    answer = required_custom_field_failure(error, account) || correctable_failure(error)
     return answer if answer
 
     code = error.respond_to?(:code) ? error.code.to_s : ''

@@ -1,5 +1,6 @@
 class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Account::BaseAccountTool
   include Captain::Tools::Account::SchedulingQueryValidation
+  include Captain::Tools::Account::AgentTimeRange
   NEXT_AVAILABLE_LOOKAHEAD_DAYS = 7
   # The note of an empty range on a day without reception: the agent says so and offers the days of next_available.
   NO_RECEPTION_NOTE = 'There is no reception on the requested day by the schedule (it is not a working day). Tell the patient ' \
@@ -66,13 +67,13 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
     range_from = scheduling_datetime(from, field_name: 'from')
     range_to = scheduling_datetime(to, field_name: 'to')
     scheduling_range!(range_from, range_to, allow_equal: true)
-    return [range_from, range_to] unless agent_scope?
+    # The patient is never offered a time that has passed: a range that began earlier starts now. A range that ended before now
+    # keeps its bounds and is not searched (see #passed_range_answer).
+    present_range(range_from, range_to) || [range_from, range_to]
+  end
 
-    # The patient is never offered a time that has passed: a range that began earlier starts now.
-    now = Time.current.in_time_zone(range_from.time_zone)
-    return [range_from, range_to] unless range_from < now && (range_to > now || range_from.to_date == now.to_date)
-
-    [now, [range_to, now].max]
+  def range_passed?(search_params)
+    agent_scope? && search_params[:to] <= Time.current
   end
 
   # Retryable: the same search with resource_ids of a chosen specialist answers it.
@@ -101,11 +102,20 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
 
   # Every free start of the range (a day is not cut at a count), grouped by specialist and day into the compact answer.
   def agent_answer(search_params, limit)
+    return passed_range_answer(search_params) if range_passed?(search_params)
+
     payload = Scheduling::CompleteSlotSearchService.new(**search_params).perform
     publish_service_match(payload)
     answer = Captain::Tools::Agent::SlotsPayload.answer(payload, days_limit: limit)
     answer = answer.merge(empty_range_fields(payload, search_params)) if payload[:total_slots].to_i.zero?
     compact_payload(answer)
+  end
+
+  # A range that ended before now has nothing to offer: it is not searched, and the answer carries the nearest free days from now.
+  def passed_range_answer(search_params)
+    answer = { service_id: search_params[:service_id], total: 0, days: [], requested_range_status: RANGE_PASSED_STATUS,
+               requested_range_note: range_passed_note('from next_available.') }
+    compact_payload(answer.compact.merge(next_available_fields(search_params)))
   end
 
   def empty_range_fields(payload, search_params)
@@ -118,9 +128,9 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
     { requested_range_status: 'no_reception_scheduled', requested_range_note: NO_RECEPTION_NOTE }
   end
 
-  # After an empty range: the nearest specialist-days with free time in the week that follows it.
+  # After an empty range: the nearest specialist-days with free time in the week that follows it, never before now.
   def next_available_fields(search_params)
-    next_from = [search_params[:to], search_params[:from] + 1.minute].max
+    next_from = [search_params[:to], search_params[:from] + 1.minute, Time.current.in_time_zone(search_params[:from].time_zone)].max
     lookahead = Scheduling::CompleteSlotSearchService.new(
       **search_params, from: next_from, to: next_from + NEXT_AVAILABLE_LOOKAHEAD_DAYS.days
     ).perform
