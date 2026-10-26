@@ -255,6 +255,54 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       expect(account.reload.update(scheduling_last_booking_time: nil)).to be(true)
     end
 
+    # Suggestion eval 26.10, Sezim (Сыганак): the branch takes its last booking at 13:40 on Saturdays and 18:40 on weekdays, but the
+    # Saturday schedule runs to 15:00, and a draft offered 14:40 on a Saturday. One time for the account could not say both.
+    context 'with a last booking time per weekday' do
+      def saturday(hour, minute = 0)
+        time_zone.local(2026, 4, 25, hour, minute, 0)
+      end
+
+      before { create(:scheduling_work_rule, account: account, resource: resource, weekday: 6, start_minute: 9 * 60, end_minute: 15 * 60) }
+
+      it 'offers no start after the limit of the weekday of the slot, and keeps the default on the other weekdays' do
+        account.update!(scheduling_last_booking_time: '10:00', scheduling_last_booking_time_by_weekday: { 'sat' => '13:40' })
+
+        monday = search_between(at(9), at(11), service_id: service_record.id)
+        sat = search_between(saturday(9), saturday(15), service_id: service_record.id)
+
+        expect(starts(monday)).to eq([at(9).iso8601, at(9, 30).iso8601, at(10).iso8601])
+        expect(starts(sat).last).to eq(saturday(13, 30).iso8601)
+        expect(starts(sat)).not_to include(saturday(14).iso8601, saturday(14, 30).iso8601)
+        expect(sat).to include(last_booking_time: '10:00', last_booking_time_by_weekday: { 'sat' => '13:40' })
+      end
+
+      it 'limits only the listed weekday when the account has no default, and lets a null weekday go on to its schedule' do
+        account.update!(scheduling_last_booking_time_by_weekday: { 'sat' => '12:00', 'mon' => nil })
+
+        expect(starts(search_between(saturday(9), saturday(15), service_id: service_record.id)).last).to eq(saturday(12).iso8601)
+        expect(starts(search_between(at(9), at(11), service_id: service_record.id)).size).to eq(4)
+        account.update!(scheduling_last_booking_time: '09:30')
+        expect(starts(search_between(at(9), at(11), service_id: service_record.id)).size).to eq(4)
+        expect(starts(search_between(saturday(9), saturday(15), service_id: service_record.id)).last).to eq(saturday(12).iso8601)
+      end
+
+      it 'accepts only a time of day for a weekday of the week' do
+        expect(account.update(scheduling_last_booking_time_by_weekday: { 'sat' => '13:40', 'sun' => nil })).to be(true)
+        expect(account.update(scheduling_last_booking_time_by_weekday: { 'sat' => '25:00' })).to be(false)
+        expect(account.update(scheduling_last_booking_time_by_weekday: { 'saturday' => '13:40' })).to be(false)
+        expect(account.update(scheduling_last_booking_time_by_weekday: nil)).to be(true)
+      end
+    end
+
+    # Suggestion eval 26.10: the answer holds only the starts whose whole visit fits into the working window, so the end of a visit is
+    # never after the end of the window.
+    it 'never offers a start whose visit would end after the working window' do
+      payload = search_between(at(9), at(11), duration_min: 50)
+
+      expect(starts(payload)).to eq([at(9).iso8601, at(9, 30).iso8601, at(10).iso8601])
+      expect(payload[:slots].map { |slot| Time.iso8601(slot[:ends_at]) }).to all(be <= at(11))
+    end
+
     it 'returns the named time with a limit of one' do
       expect(starts(search_between(at(10, 30), at(10, 31), service_id: service_record.id, limit: 1))).to eq([at(10, 30).iso8601])
     end

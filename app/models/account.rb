@@ -80,6 +80,7 @@ class Account < ApplicationRecord
   store_accessor :settings, :captain_auto_resolve_mode
   store_accessor :settings, :conversation_status_reason_config
   store_accessor :settings, :scheduling_contact_required, :scheduling_company_enabled, :scheduling_last_booking_time
+  store_accessor :settings, :scheduling_last_booking_time_by_weekday
   store_accessor :settings, :conversation_assignment_policy_id
   store_accessor :settings, :conversation_auto_assignment_enabled, :conversation_assign_on_first_reply_enabled
   include AccountCaptainAutoResolve

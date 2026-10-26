@@ -17,6 +17,10 @@ module Captain::Tools::Agent::SlotsPayload
   MAX_DAYS = 31
   # After an empty range: the specialist-days of the nearest free time.
   NEXT_AVAILABLE_DAYS = 3
+  # Said once when a day lists fewer starts than it has: a time that is not listed may be free (the eval of 26.10: a draft called 11:40
+  # taken because the day listed 11:20 and 12:10 and counted 17 more).
+  TIMES_NOTE = 'times are a sample of the free starts; a time that is not listed may be free. To know whether one time is free, ' \
+               'search that exact time (from = to) and call it taken only when that search returns no start.'
   DEGRADED_NOTE = 'The MedElement schedule could not be checked, so it is not known whether there is free time. ' \
                   'Do not tell the patient that there is none. A price from search_scheduling_services does not depend on the ' \
                   'schedule: give it.'
@@ -34,7 +38,8 @@ module Captain::Tools::Agent::SlotsPayload
       duration_min: duration,
       total: slots.size,
       days: listed.map { |day| duration ? day.except(:duration_min) : day },
-      more_days: (days.size - listed.size if days.size > listed.size)
+      more_days: (days.size - listed.size if days.size > listed.size),
+      times_note: (TIMES_NOTE if listed.any? { |day| day[:more].to_i.positive? })
     }.merge(degraded(payload)).compact
   end
 

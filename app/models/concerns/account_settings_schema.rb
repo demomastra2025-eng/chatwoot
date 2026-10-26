@@ -18,6 +18,15 @@ module AccountSettingsSchema
         'scheduling_company_enabled': { 'type': %w[boolean null] },
         # The latest local start of a visit the clinic takes ("19:00"): the slot search never offers a later start.
         'scheduling_last_booking_time': { 'type': %w[string null], 'pattern': '^([01][0-9]|2[0-3]):[0-5][0-9]$' },
+        # The latest start of a visit on a weekday that differs from scheduling_last_booking_time ({ "sat": "13:40", "sun": "14:00" });
+        # a null day has no limit.
+        'scheduling_last_booking_time_by_weekday': {
+          'type': %w[object null],
+          'properties': %i[sun mon tue wed thu fri sat].index_with do |_day|
+            { 'type': %w[string null], 'pattern': '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+          end,
+          'additionalProperties': false
+        },
         'conversation_assignment_policy_id': { 'type': %w[integer null] },
         'conversation_auto_assignment_enabled': { 'type': %w[boolean null] },
         'conversation_assign_on_first_reply_enabled': { 'type': %w[boolean null] },

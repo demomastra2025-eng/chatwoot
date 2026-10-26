@@ -101,8 +101,18 @@ RSpec.describe Captain::Tools::Agent::SlotsPayload do
       answer = described_class.answer(payload)
 
       expect(answer).to include(service_id: 12, duration_min: 30, total: 60)
-      expect(answer.keys).to eq(%i[service_id duration_min total days])
+      expect(answer.keys).to eq(%i[service_id duration_min total days times_note])
       expect(answer[:days].first.keys).to eq(%i[resource_id name date times more])
+    end
+
+    # Suggestion eval 26.10: a draft called 11:40 taken because the day listed 11:20 and 12:10 and counted 17 more.
+    it 'says once that the times are a sample when a day has more starts than it lists, and nothing when every start is listed' do
+      expect(described_class.answer(payload)[:times_note]).to eq(described_class::TIMES_NOTE)
+      expect(described_class::TIMES_NOTE).to include('a time that is not listed may be free', 'search that exact time (from = to)')
+
+      few = described_class.answer({ slots: day(7, monday, from: 9, to: 10, step: 20), requested_service_id: 12, duration_min: 30 })
+      expect(few[:days].first[:more]).to eq(0)
+      expect(few).not_to have_key(:times_note)
     end
 
     it 'lists the first specialist-days up to the limit and counts the others' do

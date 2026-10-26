@@ -1402,6 +1402,74 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       expect(context_wrapper.context[superseded_key]).to be_blank
     end
 
+    # Suggestion eval 26.10, Intermedical: the search listed 14:30 and later and a card was prepared at the 14:20 the patient wrote.
+    describe 'a booking at a start that no search of the run returned' do
+      let(:account) { create(:account) }
+      let(:resource) { create(:scheduling_resource, account: account, name: 'Жанат Есен', timezone: 'Asia/Almaty') }
+      let(:booking) { described_class.new(ToolWrapperSpecAppointmentTool.new, context_wrapper) }
+      let(:search_tool) { ToolWrapperSpecSchedulingTool.new }
+      let(:search) { described_class.new(search_tool, context_wrapper) }
+
+      def answer(*times)
+        JSON.generate(success: true, days: [{ resource_id: resource.id, name: resource.name, date: '2026-10-31', times: times, more: 0 }])
+      end
+
+      before { context_wrapper.context[:state][:account_id] = account.id }
+
+      it 'refuses the call without preparing a card or claiming the action, and prepares the same call after the exact search',
+         :aggregate_failures do
+        search_tool.result = answer('14:30', '15:00')
+        search.call(resource_ids: [resource.id.to_s])
+        arguments = { resource_id: resource.id, starts_at: '2026-10-31T14:20' }
+
+        refused = call_in_new_batch(booking, **arguments)
+
+        expect(refused).not_to be_a(RubyLLM::Tool::Halt)
+        expect(refused).to start_with('ERROR:')
+        expect(JSON.parse(refused.delete_prefix('ERROR: '))).to include('retryable' => true)
+        expect(refused).to include('slot_not_searched', 'from = to = 2026-10-31T14:20')
+        expect(intercepted).to be_empty
+        expect(context_wrapper.context[described_class::MUTATING_TOOL_EXECUTIONS_KEY].to_h).to be_empty
+        expect(context_wrapper.context[described_class::TOOL_FAILURE_CACHE_KEY].to_h).to be_empty
+
+        search_tool.result = answer('14:20')
+        search.call(resource_ids: [resource.id.to_s], service_id: 99)
+        prepared = JSON.parse(call_in_new_batch(booking, **arguments))
+
+        expect(prepared).to include('status' => 'pending_operator_approval')
+        expect(intercepted.size).to eq(1)
+      end
+
+      it 'prepares a booking at a start that the search listed, at once' do
+        search_tool.result = answer('14:30', '15:00')
+        search.call(resource_ids: [resource.id.to_s])
+
+        prepared = JSON.parse(call_in_new_batch(booking, resource_id: resource.id, starts_at: '2026-10-31T15:00'))
+
+        expect(prepared).to include('status' => 'pending_operator_approval')
+        expect(intercepted.size).to eq(1)
+      end
+
+      it 'refuses a move to such a start in the same way' do
+        appointment = create(:scheduling_appointment, account: account, resource: resource, starts_at: Time.zone.parse('2026-10-30T10:00:00+05:00'))
+        move = described_class.new(ToolWrapperSpecAppointmentTool.new(tool_name: 'update_appointment'), context_wrapper)
+
+        refused = call_in_new_batch(move, appointment_id: appointment.id, starts_at: '2026-10-31T14:20')
+
+        expect(refused).to include('slot_not_searched')
+        expect(intercepted).to be_empty
+      end
+
+      it 'does not guard a live run, where the tool checks the time itself' do
+        context_wrapper.context[:state][:source] = 'incoming_message'
+
+        result = call_in_new_batch(booking, resource_id: resource.id, starts_at: '2026-10-31T14:20')
+
+        expect(result).not_to include('slot_not_searched')
+        expect(intercepted).to be_empty
+      end
+    end
+
     it 'keeps a booking card when the booking that should replace it is refused' do
       booking = described_class.new(ToolWrapperSpecAppointmentTool.new, context_wrapper)
       call_in_new_batch(booking, resource_id: 7, service_id: 3, starts_at: '2026-10-26T10:00')

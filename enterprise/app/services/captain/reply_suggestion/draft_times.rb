@@ -25,8 +25,9 @@ module Captain::ReplySuggestion::DraftTimes
     search_available_slots get_scheduling_resource_availability get_scheduling_resource_schedule search_appointments get_appointment
     list_my_appointments get_my_contact get_contact get_appointment_provider_status
   ].freeze
-  # Fields of a read that name a time which is no free time (see Scheduling::AvailableSlotSearchService#last_booking_time).
-  IGNORED_KEYS = %w[last_booking_time].freeze
+  # Fields of a read that name a time which is no free time (see Scheduling::AvailableSlotSearchService#last_booking_time and
+  # #last_booking_time_by_weekday).
+  IGNORED_KEYS = %w[last_booking_time last_booking_time_by_weekday].freeze
 
   module_function
 

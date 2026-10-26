@@ -76,6 +76,17 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
   # Another specialist for a second visit of the same patient.
   def create_endocrinologist = account.scheduling_resources.create!(name: 'Д-р Ли', active: true)
 
+  # The slot searches that a run made before it books: through the tool wrapper a booking card is prepared only for a start that a
+  # search of the run returned (Captain::ReplySuggestion::SlotSearchGuard). Each pair is a specialist and an ISO start.
+  def found_in_search!(*starts)
+    days = starts.map do |specialist, time|
+      local = Time.zone.parse(time).in_time_zone(specialist.timezone)
+      { resource_id: specialist.id, date: local.strftime('%Y-%m-%d'), times: [local.strftime('%H:%M')], more: 0 }
+    end
+    run_context.context[Captain::Runtime::ToolWrapper::SUGGESTION_READ_CACHE_KEY] =
+      { 'search' => { tool: 'search_available_slots', result: { success: true, days: days } } }
+  end
+
   # The booking cards that one suggestion request prepares in a run of its own, one per list of arguments.
   def suggest_bookings(request_id, context, *arguments_list)
     tool = Captain::Tools::CreateAppointmentTool.new(assistant)
@@ -184,6 +195,7 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
        :aggregate_failures do
       wrapper = Captain::Runtime::ToolWrapper.new(create_tool, run_context)
       first_args = { resource_id: resource.id, service_id: service_item.id, starts_at: starts_at, ends_at: ends_at }
+      found_in_search!([resource, starts_at], [resource, later_starts_at])
 
       first = JSON.parse(wrapper.call(first_args))
       second = JSON.parse(wrapper.call(first_args.merge(starts_at: later_starts_at, ends_at: later_ends_at)))
@@ -216,9 +228,11 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
       thyroid_ultrasound = account.scheduling_services.create!(name: 'УЗИ щитовидной железы', duration_min: 30, base_price: 8_000, active: true)
       wrapper = Captain::Runtime::ToolWrapper.new(create_tool, run_context)
       first_args = { resource_id: resource.id, service_id: service_item.id, starts_at: starts_at, ends_at: ends_at }
+      endocrinologist = create_endocrinologist
+      found_in_search!([resource, starts_at], [endocrinologist, starts_at], [resource, later_starts_at])
 
       first = JSON.parse(wrapper.call(first_args))
-      other_doctor = JSON.parse(wrapper.call(first_args.merge(resource_id: create_endocrinologist.id)))
+      other_doctor = JSON.parse(wrapper.call(first_args.merge(resource_id: endocrinologist.id)))
       later_args = { starts_at: later_starts_at, ends_at: later_ends_at }
       other_service = JSON.parse(wrapper.call(first_args.merge(service_id: thyroid_ultrasound.id, **later_args)))
 
@@ -691,6 +705,7 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
     it 'refuses to approve a booking card that a corrected booking replaced, and books the corrected one' do
       wrapper = Captain::Runtime::ToolWrapper.new(create_tool, run_context)
       args = { resource_id: resource.id, service_id: service_item.id, starts_at: starts_at, ends_at: ends_at }
+      found_in_search!([resource, starts_at], [resource, later_starts_at])
       replaced = JSON.parse(wrapper.call(args))
       corrected = JSON.parse(wrapper.call(args.merge(starts_at: later_starts_at, ends_at: later_ends_at)))
       tool_double = instance_double(Captain::Tools::CreateAppointmentTool, name: 'create_appointment')

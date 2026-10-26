@@ -502,7 +502,19 @@ class Captain::Runtime::ToolWrapper
     bound_tool_error_for_current_agent ||
       acknowledgement_action_error ||
       tool_safety_error_for(:tool_arguments, normalized_args) ||
-      scheduling_context_error(normalized_args)
+      scheduling_context_error(normalized_args) ||
+      unsearched_slot_error(normalized_args)
+  end
+
+  # A booking or a move that a reply suggestion prepares starts at a time that the slot search of the run returned for that specialist
+  # (Captain::ReplySuggestion::SlotSearchGuard). It is refused here, before the call is claimed or its failure remembered, so that
+  # the same call after the search the answer names is prepared as usual.
+  def unsearched_slot_error(normalized_args)
+    return unless mutating_tool? && reply_suggestion_run?
+
+    Captain::ReplySuggestion::SlotSearchGuard.refusal(
+      tool_name: Captain::Runtime::ToolFailure.canonical_name(@tool.name), arguments: normalized_args, context: context_wrapper_context
+    )
   end
 
   # An action on a turn the router found needs no answer: refused and shown to the agent, the run goes on (ACKNOWLEDGEMENT_TURN_KEY).

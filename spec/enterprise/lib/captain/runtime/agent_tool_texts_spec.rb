@@ -92,12 +92,24 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     expect(described_class.for_tool('create_appointment').hidden_params).to contain_exactly('crm_deal_id', 'crm_pipeline_id')
   end
 
-  it 'tells the agent to call create_appointment and update_appointment directly for an exact time: the tool checks it' do
-    sentence = 'If the patient named an exact time, call this tool directly: it checks the time and says if it is taken'
+  # Suggestion eval 26.10: a card was prepared at a time the search did not list. A reply suggestion refuses a start no search of the run
+  # returned (Captain::ReplySuggestion::SlotSearchGuard), so the texts send an exact time to the search first.
+  it 'tells the agent to search an exact time first and to call create_appointment and update_appointment only with a start a search returned' do
+    sentence = 'If the patient named an exact time, first call search_available_slots with resource_ids of the specialist and from = to = ' \
+               'that time, and call this tool only with a start that a search of this run returned'
 
-    expect(described_class.for_tool('create_appointment').description).to include(sentence)
-    expect(described_class.for_tool('update_appointment').description).to include(sentence)
+    expect(described_class.for_tool('create_appointment').description).to include(sentence, 'offer 2-3 free times from a search of that day')
+    expect(described_class.for_tool('update_appointment').description)
+      .to include(sentence, 'keep the existing appointment unchanged and offer 2-3 free times from a search of that day')
+    expect(described_class.for_tool('create_appointment').description).not_to include('call this tool directly')
     expect(described_class.for_tool('update_appointment').description).not_to match(/free first|check .* is free/i)
+  end
+
+  it 'says that the times of the free-slot search are a sample: a time that is not listed may be free, searched exactly before it is called taken' do
+    description = described_class.for_tool('search_available_slots').description
+
+    expect(description).to include('a time that is not listed may still be free (more > 0)', 'search that exact time (from = to)',
+                                   'call it taken only when that search returns no start')
   end
 
   it 'makes the start of a booking or a move the time the patient named or chose, and sends a day or a part of a day to the free slots' do

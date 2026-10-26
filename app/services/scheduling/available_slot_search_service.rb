@@ -1,5 +1,8 @@
 class Scheduling::AvailableSlotSearchService
   MAX_LIMIT = 100
+  # The keys of scheduling_last_booking_time_by_weekday, indexed by Time#wday.
+  WEEKDAY_KEYS = %w[sun mon tue wed thu fri sat].freeze
+  LAST_BOOKING_PATTERN = /\A([01]\d|2[0-3]):[0-5]\d\z/
   MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
   # Raised only for the Playground snapshot catalog, which still names the services of each specialist; the clinic catalog
   # never requires a service-price link.
@@ -69,7 +72,8 @@ class Scheduling::AvailableSlotSearchService
       slot_count_scope: 'returned_only',
       availability: availability_payload,
       availability_note: availability_note,
-      last_booking_time: last_booking_time
+      last_booking_time: last_booking_time,
+      last_booking_time_by_weekday: last_booking_time_by_weekday.presence
     }.compact
     payload.merge(availability_scope_payload)
   end
@@ -220,15 +224,33 @@ class Scheduling::AvailableSlotSearchService
   def last_booking_time
     return @last_booking_time if defined?(@last_booking_time)
 
-    value = @account.settings.to_h['scheduling_last_booking_time'].to_s
-    @last_booking_time = (value if value.match?(/\A([01]\d|2[0-3]):[0-5]\d\z/))
+    @last_booking_time = valid_last_booking_time(@account.settings.to_h['scheduling_last_booking_time'])
   end
 
-  # The start in the local time of the slot (its ISO offset is the time zone of the specialist).
-  def before_last_booking?(slot)
-    return true if last_booking_time.nil?
+  # The latest start of a weekday that differs from last_booking_time, { 'sat' => '13:40', 'sun' => '14:00' } (the account setting
+  # scheduling_last_booking_time_by_weekday, keys sun mon tue wed thu fri sat). A weekday with a null value has no limit; a weekday
+  # that is not listed keeps last_booking_time. A clinic that books later on weekdays than on Saturday needs both: the eval of
+  # 26.10 offered 14:40 on a Saturday of a branch whose last booking is 13:40 on Saturdays.
+  def last_booking_time_by_weekday
+    @last_booking_time_by_weekday ||= begin
+      configured = @account.settings.to_h['scheduling_last_booking_time_by_weekday']
+      configured = {} unless configured.is_a?(Hash)
+      configured.stringify_keys.slice(*WEEKDAY_KEYS).select { |_day, value| value.nil? || valid_last_booking_time(value) }
+    end
+  end
 
-    Time.iso8601(slot[:starts_at].to_s).strftime('%H:%M') <= last_booking_time
+  def valid_last_booking_time(value)
+    value = value.to_s
+    value if value.match?(LAST_BOOKING_PATTERN)
+  end
+
+  # The start in the local time of the slot (its ISO offset is the time zone of the specialist), against the limit of its weekday.
+  def before_last_booking?(slot)
+    return true if last_booking_time.nil? && last_booking_time_by_weekday.empty?
+
+    start = Time.iso8601(slot[:starts_at].to_s)
+    limit = last_booking_time_by_weekday.fetch(WEEKDAY_KEYS[start.wday], last_booking_time)
+    limit.nil? || start.strftime('%H:%M') <= limit
   rescue ArgumentError
     true
   end

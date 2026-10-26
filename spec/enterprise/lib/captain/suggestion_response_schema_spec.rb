@@ -84,7 +84,16 @@ RSpec.describe Captain::SuggestionResponseSchema do
       let(:future_rule) do
         'Offer only start times that search_available_slots returned in this run, exactly as returned and all later than Now. Opening ' \
           'hours or a last booking time in the clinic texts ("последняя запись 19:00") are not free times: never offer a time the search ' \
-          'did not return.'
+          'did not return. Name a date only with the times the search returned for that very date. Never say that a time is taken, not ' \
+          'free or has no window unless search_available_slots for that exact time (from = to) returned no start in this run: the times ' \
+          'of a day are a sample (more counts the rest), so a time missing from the list may be free.'
+      end
+      # Suggestion eval 26.10: a card was prepared at 14:20 while the search listed 14:30 and later.
+      let(:exact_time_rule) do
+        'For an exact time (one the patient named, or chose from times an earlier reply offered), first call search_available_slots with ' \
+          "the specialist's resource_ids and from = to = that time; when it returns that start and all required details are known, call " \
+          'the booking or reschedule tool with exactly that start to queue the operator approval card, and draft the reply with the ' \
+          'exact date, time and specialist. The platform refuses a booking or a move to a start that no search of this run returned.'
       end
       # Suggestion eval 26.10: Intermedical 113 handed catalog prices to staff because the schedule was not confirmed, and agents
       # booked visits on a closing «Спасибо».
@@ -107,8 +116,8 @@ RSpec.describe Captain::SuggestionResponseSchema do
       it 'looks up before handing over, searches free times before asking, lists tariffs, asks when unclear and offers searched future times' do
         draft = system_prompt(assistant.agent(suggestion_tools: true), 'reply_suggestion')
 
-        expect(draft).to include(lookup_rule, slots_first_rule, future_rule, silence_rule, thanks_request_rule, price_rule,
-                                 closing_thanks_rule)
+        expect(draft).to include(lookup_rule, slots_first_rule, future_rule, exact_time_rule, silence_rule, thanks_request_rule,
+                                 price_rule, closing_thanks_rule)
         expect(draft.scan('search_scheduling_services').size).to eq(1)
         expect(draft).not_to include('For a price, search_scheduling_services before saying no answer is available.')
       end
@@ -118,7 +127,7 @@ RSpec.describe Captain::SuggestionResponseSchema do
           OpenStruct.new(context: { state: { source: 'reply_suggestion' }, part_run: true })
         )
 
-        expect(part).to include(lookup_rule, slots_first_rule, future_rule, price_rule, closing_thanks_rule)
+        expect(part).to include(lookup_rule, slots_first_rule, future_rule, exact_time_rule, price_rule, closing_thanks_rule)
         expect(part).not_to include(silence_rule, thanks_request_rule)
       end
 
@@ -131,7 +140,8 @@ RSpec.describe Captain::SuggestionResponseSchema do
                                 'time in the clinic texts are not free times.',
                                 'A thanks, ok or confirmation that closes a topic (after prices or information, a reminder, or a visit ' \
                                 'already booked) asks for no action: never book, change or cancel anything for it.')
-        expect(live).not_to include(lookup_rule, slots_first_rule, future_rule, thanks_request_rule, price_rule, closing_thanks_rule)
+        expect(live).not_to include(lookup_rule, slots_first_rule, future_rule, exact_time_rule, thanks_request_rule, price_rule,
+                                    closing_thanks_rule)
       end
     end
   end
