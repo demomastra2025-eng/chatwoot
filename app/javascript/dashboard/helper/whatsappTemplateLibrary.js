@@ -371,21 +371,28 @@ export const sortWhatsAppTemplates = templates => {
 
 const TEMPLATE_IN_REVIEW_STATUSES = ['PENDING', 'IN_APPEAL'];
 
-// How many templates WhatsApp is still reviewing. They are counted by name,
-// the way the templates page lists them (one card per name, all languages).
-export const countWhatsAppTemplatesInReview = templates => {
-  const namesInReview = (Array.isArray(templates) ? templates : [])
+// Templates are counted by name, the way the templates page lists them (one
+// card per name, all languages).
+const countTemplateNamesWithStatus = (templates, statuses) => {
+  const names = (Array.isArray(templates) ? templates : [])
     .filter(
       template =>
         template?.name &&
-        TEMPLATE_IN_REVIEW_STATUSES.includes(
-          String(template.status || '').toUpperCase()
-        )
+        statuses.includes(String(template.status || '').toUpperCase())
     )
     .map(template => template.name);
 
-  return new Set(namesInReview).size;
+  return new Set(names).size;
 };
+
+// How many templates WhatsApp is still reviewing.
+export const countWhatsAppTemplatesInReview = templates =>
+  countTemplateNamesWithStatus(templates, TEMPLATE_IN_REVIEW_STATUSES);
+
+// How many templates WhatsApp has approved, whether or not a conversation can
+// use them (an admin may hide some; surveys and some formats are not sendable).
+export const countApprovedWhatsAppTemplates = templates =>
+  countTemplateNamesWithStatus(templates, ['APPROVED']);
 
 export const getTemplateStatusTone = status => {
   const normalizedStatus = String(status || '').toUpperCase();

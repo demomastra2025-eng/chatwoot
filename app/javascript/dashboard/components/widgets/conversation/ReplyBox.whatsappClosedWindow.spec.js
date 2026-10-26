@@ -34,6 +34,8 @@ const ContentTemplatesStub = {
 };
 
 const mockChat = ref(null);
+// every message the reply box tries to send ends up here
+const sendMessageAction = vi.fn(() => Promise.resolve({}));
 
 vi.mock('activestorage', () => ({ start: vi.fn() }));
 
@@ -117,6 +119,17 @@ const TWILIO_INBOX = {
 };
 const WEB_INBOX = { id: INBOX_ID, channel_type: 'Channel::WebWidget' };
 const API_INBOX = { id: INBOX_ID, channel_type: 'Channel::Api' };
+// 360dialog is the WhatsApp provider called «default»
+const DIALOG_360_INBOX = {
+  id: INBOX_ID,
+  channel_type: 'Channel::Whatsapp',
+  provider: 'default',
+};
+const INSTAGRAM_INBOX_ID = 300;
+const INSTAGRAM_INBOX = {
+  id: INSTAGRAM_INBOX_ID,
+  channel_type: 'Channel::Instagram',
+};
 
 const chatOf = canReply => ({
   id: 42,
@@ -126,7 +139,7 @@ const chatOf = canReply => ({
   additional_attributes: {},
 });
 
-const buildStore = (inbox, messageTemplates) =>
+const buildStore = (inbox, messageTemplates, otherInboxes = []) =>
   createStore({
     getters: {
       getSelectedChat: () => mockChat.value,
@@ -149,6 +162,7 @@ const buildStore = (inbox, messageTemplates) =>
       'draftMessages/set': vi.fn(),
       'draftMessages/delete': vi.fn(),
       'draftMessages/get': vi.fn(),
+      createPendingMessageAndSend: sendMessageAction,
     },
     modules: {
       // the real inboxes module: which templates are sendable is its rule
@@ -158,7 +172,10 @@ const buildStore = (inbox, messageTemplates) =>
           ...(typeof inboxes.state === 'function'
             ? inboxes.state()
             : inboxes.state),
-          records: [{ ...inbox, message_templates: messageTemplates }],
+          records: [
+            { ...inbox, message_templates: messageTemplates },
+            ...otherInboxes,
+          ],
         }),
       },
     },
@@ -168,12 +185,14 @@ const mountReplyBox = async ({
   inbox = CLOUD_INBOX,
   canReply = false,
   messageTemplates = [],
+  chat = chatOf(canReply),
+  otherInboxes = [],
 } = {}) => {
-  mockChat.value = chatOf(canReply);
+  mockChat.value = chat;
   const wrapper = shallowMount(ReplyBox, {
     attachTo: document.body,
     global: {
-      plugins: [buildStore(inbox, messageTemplates)],
+      plugins: [buildStore(inbox, messageTemplates, otherInboxes)],
       directives: { 'on-clickaway': {} },
       stubs: {
         NextButton: NextButtonStub,
@@ -304,6 +323,182 @@ describe('ReplyBox with a closed WhatsApp window', () => {
     });
   });
 
+  describe('360dialog WhatsApp', () => {
+    it('shows the line, the button and the empty state, with no settings link', async () => {
+      wrapper = await mountReplyBox({
+        inbox: DIALOG_360_INBOX,
+        messageTemplates: THREE_PENDING,
+      });
+
+      expect(calmLine().textContent).toContain(FOOTER.WHATSAPP_TEMPLATE_ONLY);
+      expect(editor()).toBeNull();
+      expect(templateButton().textContent).toContain(FOOTER.TEMPLATE_BUTTON);
+      expect(sendButton()).toBeNull();
+
+      templateButton().click();
+      await flushPromises();
+
+      expect(wrapper.vm.showWhatsAppTemplatesModal).toBe(true);
+      expect(emptyState().textContent).toContain(PICKER.NO_APPROVED_TEMPLATES);
+      expect(emptyState().textContent).toContain(
+        PICKER.TEMPLATES_IN_REVIEW.replace('{count}', '3')
+      );
+      // the templates page exists only for WhatsApp Cloud inboxes
+      expect(
+        find('[data-test-id="whatsapp-templates-settings-link"]')
+      ).toBeNull();
+    });
+  });
+
+  describe('approved templates that a conversation cannot send', () => {
+    it('does not say that nothing is approved', async () => {
+      wrapper = await mountReplyBox({
+        messageTemplates: [
+          {
+            ...template('hidden_offer', 'APPROVED'),
+            visible_in_conversation_picker: false,
+          },
+          template('reminder_24h', 'PENDING'),
+        ],
+      });
+
+      templateButton().click();
+      await flushPromises();
+
+      expect(emptyState().textContent).toContain(PICKER.NO_TEMPLATES_TO_SEND);
+      expect(emptyState().textContent).not.toContain(
+        PICKER.NO_APPROVED_TEMPLATES
+      );
+      expect(document.body.textContent).not.toContain('hidden_offer');
+    });
+  });
+
+  describe('a multi-channel dialog', () => {
+    // WhatsApp needs a template; Instagram next to it can still take text
+    const threadChat = {
+      id: 42,
+      inbox_id: INBOX_ID,
+      is_communication_thread: true,
+      communication_thread_id: 'thread-1',
+      can_reply: true,
+      meta: { sender: { id: 5 } },
+      additional_attributes: {},
+      messages: [],
+      channels: [
+        {
+          channel: 'Channel::Whatsapp',
+          inbox_id: INBOX_ID,
+          conversation_id: 42,
+          can_reply: false,
+          can_send_text: false,
+          requires_template: true,
+        },
+        {
+          channel: 'Channel::Instagram',
+          inbox_id: INSTAGRAM_INBOX_ID,
+          conversation_id: 43,
+          can_reply: true,
+          can_send_text: true,
+        },
+      ],
+    };
+    const mountThread = async selectedConversationId => {
+      const mounted = await mountReplyBox({
+        chat: threadChat,
+        messageTemplates: THREE_PENDING,
+        otherInboxes: [INSTAGRAM_INBOX],
+      });
+      await mounted.setData({
+        selectedReplyConversationId: selectedConversationId,
+      });
+      await flushPromises();
+      return mounted;
+    };
+
+    it('asks for a template on the WhatsApp channel and keeps the channel menu', async () => {
+      wrapper = await mountThread('42');
+
+      expect(calmLine()).not.toBeNull();
+      expect(editor()).toBeNull();
+      expect(templateButton()).not.toBeNull();
+      expect(sendButton()).toBeNull();
+      // the menu to switch to Instagram stays attached to the button
+      expect(find('.reply-channel-menu__toggle')).not.toBeNull();
+
+      templateButton().click();
+      await flushPromises();
+
+      expect(wrapper.vm.showWhatsAppTemplatesModal).toBe(true);
+      expect(emptyState().textContent).toContain(PICKER.NO_APPROVED_TEMPLATES);
+    });
+
+    it('lets the agent write freely on the open Instagram channel', async () => {
+      wrapper = await mountThread('43');
+
+      expect(calmLine()).toBeNull();
+      expect(editor()).not.toBeNull();
+      expect(templateButton()).toBeNull();
+      expect(sendButton()).not.toBeNull();
+      expect(find('.reply-channel-menu__toggle')).not.toBeNull();
+    });
+  });
+
+  describe('sending while only a template is allowed', () => {
+    it('does not send typed text', async () => {
+      wrapper = await mountReplyBox({ messageTemplates: THREE_PENDING });
+      await wrapper.setData({ message: 'Здравствуйте!' });
+
+      await wrapper.vm.onSendReply();
+      await flushPromises();
+
+      expect(sendMessageAction).not.toHaveBeenCalled();
+    });
+
+    it('does not send an attachment', async () => {
+      wrapper = await mountReplyBox({ messageTemplates: THREE_PENDING });
+      await wrapper.setData({
+        attachedFiles: [
+          { currentChatId: 42, resource: {}, isPrivate: false, thumb: '' },
+        ],
+      });
+
+      await wrapper.vm.onSendReply();
+      await flushPromises();
+
+      expect(sendMessageAction).not.toHaveBeenCalled();
+    });
+
+    // the control: the same steps do reach the send action once the window is
+    // open, so the two tests above fail for the right reason
+    it('does send typed text when the window is open', async () => {
+      wrapper = await mountReplyBox({ canReply: true });
+      await wrapper.setData({ message: 'Здравствуйте!' });
+
+      await wrapper.vm.onSendReply();
+      await flushPromises();
+
+      expect(sendMessageAction).toHaveBeenCalledTimes(1);
+    });
+
+    it('still sends the template the agent chose', async () => {
+      wrapper = await mountReplyBox({
+        messageTemplates: [template('order_update', 'APPROVED')],
+      });
+
+      await wrapper.vm.onSendWhatsAppReply({
+        message: 'order_update body',
+        templateParams: { name: 'order_update', language: 'ru' },
+      });
+      await flushPromises();
+
+      expect(sendMessageAction).toHaveBeenCalledTimes(1);
+      expect(sendMessageAction.mock.calls[0][1]).toMatchObject({
+        conversationId: 42,
+        message: 'order_update body',
+      });
+    });
+  });
+
   describe('the note tab', () => {
     it('keeps the editor for an internal note', async () => {
       wrapper = await mountReplyBox({ messageTemplates: THREE_PENDING });
@@ -363,6 +558,38 @@ describe('ReplyBox with a closed WhatsApp window', () => {
       expect(sendButton()).not.toBeNull();
       expect(templateButton()).toBeNull();
       expect(iconTemplateButton()).toBeNull();
+    });
+
+    it.each([
+      ['Instagram', INSTAGRAM_INBOX],
+      ['Facebook', { channel_type: 'Channel::FacebookPage' }],
+      ['Telegram', { channel_type: 'Channel::Telegram' }],
+    ])(
+      'does not turn a closed %s window into a template-only reply box',
+      async (_name, inbox) => {
+        wrapper = await mountReplyBox({
+          inbox: { ...inbox, id: INBOX_ID },
+          canReply: false,
+          messageTemplates: THREE_PENDING,
+        });
+
+        expect(calmLine()).toBeNull();
+        expect(templateButton()).toBeNull();
+        expect(iconTemplateButton()).toBeNull();
+        expect(editor()).not.toBeNull();
+      }
+    );
+
+    it('keeps WhatsApp Web (personal) as it was, with a closed window', async () => {
+      wrapper = await mountReplyBox({
+        inbox: { id: INBOX_ID, channel_type: 'Channel::WhatsappWeb' },
+        canReply: false,
+        messageTemplates: THREE_PENDING,
+      });
+
+      expect(calmLine()).toBeNull();
+      expect(templateButton()).toBeNull();
+      expect(editor()).not.toBeNull();
     });
 
     it('keeps the disabled editor of an API inbox with a closed window', async () => {

@@ -260,7 +260,7 @@
       "CLICK_HERE": "Click here to update",
       "WHATSAPP_TEMPLATES": "Whatsapp Templates",
       "TEMPLATE_BUTTON": "Template",
-      "WHATSAPP_TEMPLATE_ONLY": "The customer has not written in the last 24 hours — WhatsApp only lets you start with a template."
+      "WHATSAPP_TEMPLATE_ONLY": "The customer has not written in this conversation in the last 24 hours — WhatsApp only lets you start with a template."
     },
     "REPLYBOX": {
       "REPLY": "Reply",

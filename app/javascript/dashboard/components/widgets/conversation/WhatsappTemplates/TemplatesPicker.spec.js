@@ -74,9 +74,14 @@ describe('TemplatesPicker', () => {
       ])
     );
 
+    // WhatsApp did approve it, so the sentence must not say nothing is approved
     expect(wrapper.text()).toContain(
+      'WHATSAPP_TEMPLATES.PICKER.NO_TEMPLATES_TO_SEND'
+    );
+    expect(wrapper.text()).not.toContain(
       'WHATSAPP_TEMPLATES.PICKER.NO_APPROVED_TEMPLATES'
     );
+    expect(wrapper.text()).not.toContain('automation_only');
   });
 
   it('lists only approved templates, never one WhatsApp has not approved', () => {

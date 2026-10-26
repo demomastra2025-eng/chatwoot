@@ -280,9 +280,6 @@ export default {
     },
 
     replyWindowBannerMessage() {
-      if (this.isAWhatsAppChannel) {
-        return this.$t('CONVERSATION.TWILIO_WHATSAPP_CAN_REPLY');
-      }
       if (this.isAPIInbox) {
         const { additional_attributes: additionalAttributes = {} } = this.inbox;
         if (additionalAttributes) {
@@ -305,9 +302,6 @@ export default {
       if (this.isAFacebookInbox || this.isAnInstagramChannel) {
         return REPLY_POLICY.FACEBOOK;
       }
-      if (this.isAWhatsAppCloudChannel) {
-        return REPLY_POLICY.WHATSAPP_CLOUD;
-      }
       if (this.isATiktokChannel) {
         return REPLY_POLICY.TIKTOK;
       }
@@ -317,11 +311,7 @@ export default {
       return '';
     },
     replyWindowLinkText() {
-      if (
-        this.isAWhatsAppChannel ||
-        this.isAFacebookInbox ||
-        this.isAnInstagramChannel
-      ) {
+      if (this.isAFacebookInbox || this.isAnInstagramChannel) {
         return this.$t('CONVERSATION.24_HOURS_WINDOW');
       }
       if (this.isATiktokChannel) {
@@ -365,6 +355,9 @@ export default {
       return (
         !this.currentChat?.can_reply &&
         !this.isAVoiceChannel &&
+        // A WhatsApp conversation explains its closed window in the reply box
+        // itself (one line and the template button), not in a second alert.
+        !this.isAWhatsAppChannel &&
         !this.hasCommunicationThreadReplyableChannel
       );
     },

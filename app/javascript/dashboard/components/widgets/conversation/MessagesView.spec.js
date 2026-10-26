@@ -159,6 +159,32 @@ describe('MessagesView', () => {
     ).toBe(true);
   });
 
+  // The reply box already explains a closed WhatsApp window with one line and
+  // the template button, so the red alert above the chat would say it twice.
+  it('does not repeat a closed WhatsApp window in the alert banner', () => {
+    expect(
+      MessagesView.computed.shouldShowReplyWindowBanner.call({
+        currentChat: { can_reply: false },
+        isAVoiceChannel: false,
+        isAWhatsAppChannel: true,
+        hasCommunicationThreadReplyableChannel: false,
+      })
+    ).toBe(false);
+  });
+
+  it('keeps the alert banner for other channels with a closed window', () => {
+    // Instagram, Facebook and WhatsApp Web are not WhatsApp API channels
+    expect(
+      MessagesView.computed.shouldShowReplyWindowBanner.call({
+        currentChat: { can_reply: false },
+        isAVoiceChannel: false,
+        isAWhatsAppChannel: false,
+        isAnInstagramChannel: true,
+        hasCommunicationThreadReplyableChannel: false,
+      })
+    ).toBe(true);
+  });
+
   describe('#onScrollToMessage', () => {
     const buildContext = overrides => ({
       $nextTick: callback => callback(),

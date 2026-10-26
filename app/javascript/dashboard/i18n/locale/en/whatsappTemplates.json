@@ -17,6 +17,7 @@
       "MEDIA_CONTENT": "Media Content",
       "MEDIA_CONTENT_FALLBACK": "media content",
       "NO_APPROVED_TEMPLATES": "No approved templates.",
+      "NO_TEMPLATES_TO_SEND": "No templates to send.",
       "TEMPLATES_IN_REVIEW": "Templates under WhatsApp review: {count}.",
       "OPEN_TEMPLATES_SETTINGS": "WhatsApp templates",
       "REFRESH_BUTTON": "Refresh templates",

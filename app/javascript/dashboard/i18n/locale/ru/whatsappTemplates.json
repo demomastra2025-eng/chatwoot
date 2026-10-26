@@ -17,6 +17,7 @@
       "MEDIA_CONTENT": "Медиа",
       "MEDIA_CONTENT_FALLBACK": "медиа",
       "NO_APPROVED_TEMPLATES": "Нет одобренных шаблонов.",
+      "NO_TEMPLATES_TO_SEND": "Нет шаблонов для отправки.",
       "TEMPLATES_IN_REVIEW": "Шаблоны на проверке у WhatsApp: {count}.",
       "OPEN_TEMPLATES_SETTINGS": "Шаблоны WhatsApp",
       "REFRESH_BUTTON": "Обновить шаблоны",

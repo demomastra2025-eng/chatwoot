@@ -16,7 +16,7 @@
       "CATEGORY": "Категория",
       "MEDIA_CONTENT": "Медиа",
       "MEDIA_CONTENT_FALLBACK": "медиа",
-      "NO_TEMPLATES_AVAILABLE": "Шаблоны Twilio недоступны. Нажмите \"Обновить\" для синхронизации шаблонов из Twilio.",
+      "NO_TEMPLATES_AVAILABLE": "Нет шаблонов для отправки.",
       "REFRESH_BUTTON": "Обновить шаблоны",
       "REFRESH_SUCCESS": "Обновление шаблонов запущено. Обновление может занять несколько минут.",
       "REFRESH_ERROR": "Не удалось обновить шаблоны. Попробуйте ещё раз.",

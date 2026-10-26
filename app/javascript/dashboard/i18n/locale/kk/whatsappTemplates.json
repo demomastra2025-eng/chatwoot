@@ -1,12 +1,12 @@
 {
   "WHATSAPP_TEMPLATES": {
     "MODAL": {
-      "TITLE": "Whatsapp Templates",
-      "SUBTITLE": "Select the whatsapp template you want to send",
+      "TITLE": "WhatsApp шаблондары",
+      "SUBTITLE": "Жібергіңіз келетін WhatsApp шаблонын таңдаңыз",
       "TEMPLATE_SELECTED_SUBTITLE": "Configure template: {templateName}"
     },
     "PICKER": {
-      "SEARCH_PLACEHOLDER": "Search Templates",
+      "SEARCH_PLACEHOLDER": "Шаблондарды іздеу",
       "NO_TEMPLATES_FOUND": "No templates found for",
       "SELECT_LANGUAGE": "Choose a language version before continuing.",
       "HEADER": "Header",
@@ -17,9 +17,10 @@
       "MEDIA_CONTENT": "Media Content",
       "MEDIA_CONTENT_FALLBACK": "media content",
       "NO_APPROVED_TEMPLATES": "Мақұлданған шаблон жоқ.",
+      "NO_TEMPLATES_TO_SEND": "Жіберуге шаблон жоқ.",
       "TEMPLATES_IN_REVIEW": "WhatsApp тексерісіндегі шаблондар: {count}.",
       "OPEN_TEMPLATES_SETTINGS": "WhatsApp шаблондары",
-      "REFRESH_BUTTON": "Refresh templates",
+      "REFRESH_BUTTON": "Шаблондарды жаңарту",
       "REFRESH_SUCCESS": "Templates refresh initiated. It may take a couple of minutes to update.",
       "REFRESH_ERROR": "Failed to refresh templates. Please try again.",
       "LABELS": {

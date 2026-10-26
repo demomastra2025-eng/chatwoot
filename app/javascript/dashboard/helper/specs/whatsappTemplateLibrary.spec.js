@@ -1,5 +1,6 @@
 import {
   buildWhatsAppTemplatePayload,
+  countApprovedWhatsAppTemplates,
   countWhatsAppTemplatesInReview,
   createEmptyCarouselCard,
   createEmptyWhatsAppTemplateForm,
@@ -384,6 +385,32 @@ describe('whatsappTemplateLibrary', () => {
         countWhatsAppTemplatesInReview([
           { name: 'offer', status: 'APPROVED' },
           { status: 'PENDING' },
+          null,
+        ])
+      ).toBe(0);
+    });
+  });
+
+  describe('#countApprovedWhatsAppTemplates', () => {
+    it('counts the approved templates once per name, whatever else they are', () => {
+      expect(
+        countApprovedWhatsAppTemplates([
+          { name: 'offer', language: 'ru', status: 'APPROVED' },
+          { name: 'offer', language: 'kk', status: 'approved' },
+          { name: 'customer_satisfaction_survey', status: 'APPROVED' },
+          { name: 'hello', status: 'PENDING' },
+          { name: 'old', status: 'REJECTED' },
+        ])
+      ).toBe(2);
+    });
+
+    it('is zero when nothing is approved or the list is not loaded', () => {
+      expect(countApprovedWhatsAppTemplates([])).toBe(0);
+      expect(countApprovedWhatsAppTemplates(undefined)).toBe(0);
+      expect(
+        countApprovedWhatsAppTemplates([
+          { name: 'hello', status: 'PENDING' },
+          { status: 'APPROVED' },
           null,
         ])
       ).toBe(0);

@@ -81,6 +81,26 @@ describe('WhatsApp templates empty state', () => {
     );
   });
 
+  it('does not claim nothing is approved when approved templates cannot be sent', () => {
+    // approved, but hidden from conversations / the survey template: WhatsApp
+    // did approve them, so «нет одобренных» would be untrue
+    const wrapper = mountEmptyState({
+      inbox: cloudInbox([
+        {
+          ...template('hidden_offer', 'APPROVED'),
+          visible_in_conversation_picker: false,
+        },
+        template('customer_satisfaction_survey', 'APPROVED'),
+        template('hello', 'PENDING'),
+      ]),
+    });
+
+    expect(wrapper.find('p').text()).toBe(
+      'WHATSAPP_TEMPLATES.PICKER.NO_TEMPLATES_TO_SEND WHATSAPP_TEMPLATES.PICKER.TEMPLATES_IN_REVIEW|1'
+    );
+    expect(wrapper.text()).not.toContain('NO_APPROVED_TEMPLATES');
+  });
+
   it('counts a template once even when it waits in several languages', () => {
     const wrapper = mountEmptyState({
       inbox: cloudInbox([

@@ -5,7 +5,10 @@ import { useMapGetter } from 'dashboard/composables/store';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { frontendURL } from 'dashboard/helper/URLHelper';
-import { countWhatsAppTemplatesInReview } from 'dashboard/helper/whatsappTemplateLibrary';
+import {
+  countApprovedWhatsAppTemplates,
+  countWhatsAppTemplatesInReview,
+} from 'dashboard/helper/whatsappTemplateLibrary';
 
 // What the template lists show when nothing can be sent yet: a plain sentence,
 // how many templates WhatsApp is still reviewing, and a way to the templates
@@ -27,8 +30,19 @@ const isFeatureEnabledonAccount = useMapGetter(
   'accounts/isFeatureEnabledonAccount'
 );
 
+const templates = computed(() => getWhatsAppTemplates.value?.(props.inboxId));
+
 const inReviewCount = computed(() =>
-  countWhatsAppTemplatesInReview(getWhatsAppTemplates.value?.(props.inboxId))
+  countWhatsAppTemplatesInReview(templates.value)
+);
+
+// «Нет одобренных» is true only when WhatsApp approved nothing. Approved
+// templates that a conversation cannot send (hidden by an admin, the survey
+// template, an unsupported format) get the plain «нет шаблонов для отправки».
+const headline = computed(() =>
+  countApprovedWhatsAppTemplates(templates.value)
+    ? t('WHATSAPP_TEMPLATES.PICKER.NO_TEMPLATES_TO_SEND')
+    : t('WHATSAPP_TEMPLATES.PICKER.NO_APPROVED_TEMPLATES')
 );
 
 // The templates page exists only for WhatsApp Cloud inboxes, and the inbox
@@ -60,7 +74,7 @@ const templatesSettingsUrl = computed(() => {
 <template>
   <div class="flex flex-col gap-2" data-test-id="whatsapp-templates-empty">
     <p class="mb-0 text-sm text-n-slate-11">
-      {{ t('WHATSAPP_TEMPLATES.PICKER.NO_APPROVED_TEMPLATES') }}
+      {{ headline }}
       <template v-if="inReviewCount">
         {{
           t('WHATSAPP_TEMPLATES.PICKER.TEMPLATES_IN_REVIEW', {
