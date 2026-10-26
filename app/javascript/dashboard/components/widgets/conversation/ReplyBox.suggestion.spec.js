@@ -387,33 +387,45 @@ describe('ReplyBox reply suggestion outcomes', () => {
       return flushPromises();
     };
 
-    it('cancels a suggestion that is being prepared', async () => {
+    it.each([
+      ['on the reply box', () => replyBox()],
+      ['on the panel of the run', () => section()],
+    ])(
+      'cancels a suggestion that is being prepared when the focus is %s',
+      async (_where, targetOf) => {
+        mockGetReplySuggestionStatus.mockResolvedValueOnce({
+          suggestion: state({ status: 'running', result: null }),
+        });
+        wrapper = await mountReplyBox();
+        expect(panel()).not.toBeNull();
+
+        await pressEsc(targetOf());
+
+        expect(mockCancelReplySuggestion).toHaveBeenCalledTimes(1);
+        expect(mockCancelReplySuggestion).toHaveBeenCalledWith({
+          conversationId: 42,
+          suggestionRequestId: 'sr-42',
+        });
+        expect(panel()).toBeNull();
+        expect(editor()).not.toBeNull();
+      }
+    );
+
+    it('keeps a running suggestion when Esc is pressed with the focus on the page', async () => {
       mockGetReplySuggestionStatus.mockResolvedValueOnce({
         suggestion: state({ status: 'running', result: null }),
       });
       wrapper = await mountReplyBox();
+
+      // the manager clicked a chat image: the focus is on the body and the
+      // same Esc closes the gallery
+      await pressEsc(document.body);
+      await pressEsc(document.documentElement);
+      await pressEsc(document);
+
+      expect(mockCancelReplySuggestion).not.toHaveBeenCalled();
       expect(panel()).not.toBeNull();
-
-      await pressEsc();
-
-      expect(mockCancelReplySuggestion).toHaveBeenCalledWith({
-        conversationId: 42,
-        suggestionRequestId: 'sr-42',
-      });
-      expect(panel()).toBeNull();
-      expect(editor()).not.toBeNull();
-    });
-
-    it('cancels a suggestion that is being prepared when the focus is in the reply box', async () => {
-      mockGetReplySuggestionStatus.mockResolvedValueOnce({
-        suggestion: state({ status: 'running', result: null }),
-      });
-      wrapper = await mountReplyBox();
-
-      await pressEsc(replyBox());
-
-      expect(mockCancelReplySuggestion).toHaveBeenCalledTimes(1);
-      expect(panel()).toBeNull();
+      expect(wrapper.vm.copilot.canCancel.value).toBe(true);
     });
 
     it('drops a ready draft like «Отменить» when the focus is in the reply box', async () => {
@@ -444,6 +456,7 @@ describe('ReplyBox reply suggestion outcomes', () => {
       // same Esc closes the gallery
       await pressEsc(document.body);
       await pressEsc(document.documentElement);
+      await pressEsc(document);
 
       expect(section()).not.toBeNull();
       expect(panel()).not.toBeNull();
@@ -503,14 +516,34 @@ describe('ReplyBox reply suggestion outcomes', () => {
         suggestion: state({ status: 'running', result: null }),
       });
       wrapper = await mountReplyBox();
+      // the CC field of an email reply, and a rich text field
+      const ccInput = document.createElement('input');
+      replyBox().appendChild(ccInput);
       const field = document.createElement('div');
       field.setAttribute('contenteditable', 'true');
       replyBox().appendChild(field);
 
+      await pressEsc(ccInput);
       await pressEsc(field);
 
       expect(panel()).not.toBeNull();
       expect(mockCancelReplySuggestion).not.toHaveBeenCalled();
+    });
+
+    it('keeps both states when Esc is pressed in a field inside the panel of the draft', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: draft(),
+      });
+      wrapper = await mountReplyBox();
+      const select = document.createElement('select');
+      const textarea = document.createElement('textarea');
+      section().append(select, textarea);
+
+      await pressEsc(select);
+      await pressEsc(textarea);
+
+      expect(section()).not.toBeNull();
+      expect(TasksAPI.feedback).not.toHaveBeenCalled();
     });
 
     it('leaves the suggestion alone when the focus is in another field or dialog', async () => {
@@ -564,6 +597,68 @@ describe('ReplyBox reply suggestion outcomes', () => {
 
       expect(wrapper.vm.showEmojiPicker).toBe(false);
       expect(section()).not.toBeNull();
+    });
+  });
+
+  describe('Enter', () => {
+    const pressEnter = target => {
+      target.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Enter',
+          code: 'Enter',
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+      return flushPromises();
+    };
+    let sendSpy;
+
+    beforeEach(() => {
+      sendSpy = vi
+        .spyOn(ReplyBox.methods, 'onSendReply')
+        .mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      sendSpy.mockRestore();
+    });
+
+    it('sends the reply from the editor as before when no suggestion is shown', async () => {
+      wrapper = await mountReplyBox();
+      wrapper.vm.isFocused = true;
+
+      await pressEnter(replyBox());
+
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not send the hidden editor text while a draft is shown', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: draft(),
+      });
+      wrapper = await mountReplyBox();
+      // the panel holds the focus, so the reply box counts as focused
+      wrapper.vm.isFocused = true;
+
+      await pressEnter(section());
+
+      expect(sendSpy).not.toHaveBeenCalled();
+      expect(section()).not.toBeNull();
+      expect(wrapper.vm.copilot.canAccept.value).toBe(true);
+    });
+
+    it('does not send the hidden editor text while a suggestion is prepared', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: state({ status: 'running', result: null }),
+      });
+      wrapper = await mountReplyBox();
+      wrapper.vm.isFocused = true;
+
+      await pressEnter(section());
+
+      expect(sendSpy).not.toHaveBeenCalled();
+      expect(panel()).not.toBeNull();
     });
   });
 

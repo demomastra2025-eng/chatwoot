@@ -632,6 +632,26 @@ describe('CopilotEditorSection.vue', () => {
       expect(stageText()).toContain('AI анализирует…');
     });
 
+    it('takes the focus when it is shown, so that Esc cancels the run at once', () => {
+      working({ liveProgress: progressOf('thinking') });
+
+      // the editor that had the focus is gone: the focus would be on the page
+      expect(document.activeElement).toBe(
+        wrapper.get('[data-test="copilot-live-progress"]').element
+      );
+    });
+
+    it('does not take the focus from a field the manager is typing in', () => {
+      const input = document.createElement('input');
+      document.body.appendChild(input);
+      input.focus();
+
+      working({ liveProgress: progressOf('thinking') });
+
+      expect(document.activeElement).toBe(input);
+      input.remove();
+    });
+
     it('is replaced by the draft at once when the result arrives', async () => {
       working({ liveProgress: progressOf('thinking') });
       expect(wrapper.find('[data-test="copilot-live-progress"]').exists()).toBe(

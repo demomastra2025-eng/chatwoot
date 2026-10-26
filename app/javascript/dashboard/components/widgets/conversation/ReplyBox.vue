@@ -932,7 +932,9 @@ export default {
         },
         Enter: {
           action: e => {
-            if (this.isAValidEvent('enter')) {
+            // While a suggestion is on screen the editor is hidden: a bare
+            // Enter (the panel can hold the focus) must not send its old text
+            if (!this.copilot.isActive.value && this.isAValidEvent('enter')) {
               this.onSendReply();
               e.preventDefault();
             }
@@ -1349,15 +1351,14 @@ export default {
     },
     // Esc stops a suggestion that is being prepared and drops a finished one.
     // The key handler lives on the document, so it sees every Esc of the page
-    // and must react only to its own:
-    // - not to an Esc that another handler already took (event.defaultPrevented);
-    // - not to an Esc pressed in a field (the To/CC/BCC inputs use it to leave
+    // and acts only on its own:
+    // - only an Esc pressed inside the reply box counts. The panel of a draft
+    //   and the glow of a run take the focus when they appear, so the focus is
+    //   there; an Esc with the focus on the page (it closes the gallery or a
+    //   menu) is not ours and can never lose a draft or a run;
+    // - not an Esc pressed in a field (the To/CC/BCC inputs use it to leave
     //   the field);
-    // - a ready draft goes only when the focus is inside the reply box (the
-    //   panel takes the focus when the draft appears), so an Esc that closes
-    //   the gallery or a menu with the focus on the page can never lose it;
-    // - a run in progress is also stopped when nothing has the focus, because
-    //   the editor that had it is gone while the suggestion is prepared.
+    // - not an Esc that another handler already took (event.defaultPrevented).
     // A reply box that is gone (no element) must not react.
     cancelCopilotOnEscape(event) {
       const root = this.replyEditor;
@@ -1365,18 +1366,14 @@ export default {
         return;
       }
       const target = event?.target;
-      if (target?.closest?.('input,textarea,select,[contenteditable="true"]')) {
+      if (!(target instanceof Element) || !root.contains(target)) return;
+      if (target.closest('input,textarea,select,[contenteditable="true"]')) {
         return;
       }
-      const isInside = target instanceof Node && root.contains(target);
-      const isNowhere =
-        !target ||
-        target === document.body ||
-        target === document.documentElement;
 
       if (this.copilot.canCancel.value) {
-        if (isInside || isNowhere) this.copilot.cancelGeneration();
-      } else if (this.copilot.canAccept.value && isInside) {
+        this.copilot.cancelGeneration();
+      } else if (this.copilot.canAccept.value) {
         this.copilot.dismiss();
       }
     },

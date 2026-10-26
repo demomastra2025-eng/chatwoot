@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useMessageFormatter } from 'shared/composables/useMessageFormatter';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
@@ -122,14 +122,28 @@ const onRejectAction = action => {
   emit('rejectAction', action.raw);
 };
 
-// The panel takes the focus when it appears, so that Ctrl+Enter (insert) and
-// Esc (cancel) work at once, unless the manager is already typing elsewhere.
-const onAfterEnter = el => {
-  emit('contentReady');
+// The panel of a draft and the glow of a run take the focus when they appear,
+// so that Ctrl+Enter (insert) and Esc (cancel) work at once: the reply box
+// reacts to an Esc pressed inside it, never to one with the focus on the page.
+// They do not take it when the manager is already typing elsewhere.
+const takeFocus = el => {
   const active = document.activeElement;
   if (active && active !== document.body && !el?.contains?.(active)) return;
   el?.focus?.({ preventScroll: true });
 };
+
+const onAfterEnter = el => {
+  emit('contentReady');
+  takeFocus(el);
+};
+
+// A run that is already shown when this section mounts (the manager asked for
+// a suggestion, the editor with the focus went away) appears without a
+// transition, so the glow takes the focus here.
+const workingState = ref(null);
+onMounted(() => {
+  if (props.isGeneratingContent) takeFocus(workingState.value?.$el);
+});
 </script>
 
 <template>
@@ -334,6 +348,7 @@ const onAfterEnter = el => {
     <CopilotWorkingState
       v-else-if="isGeneratingContent"
       key="loading-state"
+      ref="workingState"
       class="outline-none"
       tabindex="-1"
       :progress="liveProgress"
