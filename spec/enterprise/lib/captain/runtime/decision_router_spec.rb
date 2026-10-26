@@ -285,6 +285,38 @@ RSpec.describe Captain::Runtime::DecisionRouter do
 
       expect(router.decide.to_event_payload).to include(default_to: 'current', escalated: false)
     end
+
+    describe 'an unsure stay_current that asks for no agent, which the escalation makes a council' do
+      let(:message) { 'Спасибо. А аудиометрию и промывание миндалин можно завтра?' }
+
+      it 'uses the council of the escalation: its answer is final, the turn is not sent back to the sticky agent' do
+        answer_chain(chain_answer('stay_current', confidence: 0.6))
+        escalate_to(choices('council', yes: [84, 119]))
+
+        expect(router.decide).to have_attributes(key: 'council_84_119', kind: 'council', agent_ids: [84, 119], escalated: true,
+                                                 escalation_trigger: 'low_confidence', first_choice: 'stay_current', guard: nil,
+                                                 default_to: nil)
+      end
+    end
+  end
+
+  it 'uses the council of the escalation of a live turn whose first answers asked for no agent' do
+    answer_chain(chain_answer('route_agent', confidence: 0.95))
+    escalate_to(choices('council', yes: [84, 119]))
+
+    expect(router.decide).to have_attributes(key: 'council_84_119', kind: 'council', escalated: true, escalation_trigger: 'inconsistent',
+                                             guard: nil)
+  end
+
+  it 'tells the decision models and the escalation that a plain thanks without a current agent goes to one agent, never a council' do
+    rule = 'a message that asks for nothing new and continues no service (a plain thanks, ok, an emoji, a greeting)'
+
+    expect(described_class::INSTRUCTIONS.squish).to include(
+      "#{rule} is route_agent to the agent whose description lists general clinic questions, as in rule 6; it is never a council."
+    )
+    expect(described_class::Questions::INCLUDE_INSTRUCTIONS).to include(
+      "#{rule} is yes only for the agent whose description lists general clinic questions."
+    )
   end
 
   describe '#redecide for a council part that was not its owner\'s' do

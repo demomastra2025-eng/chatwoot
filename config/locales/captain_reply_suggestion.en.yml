@@ -19,3 +19,4 @@ en:
         council_technical: 'Part of the request was not done because of a technical error, please answer it yourself: %{parts}.'
         council_unreported: 'An action was prepared for part of the request, but there is no text for the patient; check the card: %{parts}.'
         council_no_text: The AI council prepared no text for the patient. Check the prepared actions or answer yourself.
+        council_no_reply: The patient's messages need no reply (only thanks, ok or a greeting).

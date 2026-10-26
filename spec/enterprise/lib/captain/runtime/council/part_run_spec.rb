@@ -96,6 +96,59 @@ RSpec.describe Captain::Runtime::Council::PartRun do
     expect(part_run.call('x')[:technical]).to include('reason' => 'time_up')
   end
 
+  describe 'a part that used up its turns or was stopped by the loop guard while it was still working' do
+    let(:history) { [{ role: 'user', content: 'Сколько стоит МРТ поясницы?' }, { role: 'assistant', content: 'search_scheduling_services' }] }
+    let(:stopped_context) { snapshot.merge(conversation_history: history) }
+
+    # The runs in order: the run of the part, then the call without tools when there is one.
+    def stub_runs(*results)
+      allow(Captain::Runtime::Runner).to receive(:new).and_return(runner)
+      allow(runner).to receive(:run) do |_agent, _input, **options|
+        run_callbacks << options
+        results.shift || raise('no more runs')
+      end
+    end
+
+    def stopped(error_class)
+      Captain::Runtime::Result.new(output: nil, error: error_class.new('stopped'), context: stopped_context)
+    end
+
+    context 'when the part runs in a reply suggestion' do
+      let(:snapshot) { { part_run: true, state: { assistant_id: 2, source: 'reply_suggestion' } } }
+
+      it 'writes its result from what its tools returned in one more call without tools, and the council gets that answer' do
+        [Captain::Runtime::Runner::MaxTurnsExceeded, Captain::Runtime::Runner::ToolLoopStopped].each do |error_class|
+          run_callbacks.clear
+          stub_runs(stopped(error_class), Captain::Runtime::Result.new(output: answer, context: stopped_context))
+
+          result = part_run.call('Сколько стоит МРТ поясницы?')
+
+          expect(run_callbacks.size).to eq(2)
+          expect(run_callbacks.last).to include(context: stopped_context, max_turns: 1, finalization_only: true, continue_from_history: true)
+          expect(result).to include(technical: nil, output: include('status' => 'answered', 'customer_text' => answer['customer_text']))
+        end
+      end
+
+      it 'stays a technical failure that names the turn limit when that call fails too' do
+        stub_runs(stopped(Captain::Runtime::Runner::MaxTurnsExceeded),
+                  Captain::Runtime::Result.new(output: nil, error: Captain::ReplySuggestion::RunControl::PartTimeUp.new(:turn), context: {}))
+
+        result = part_run.call('x')
+
+        expect(result).to include(output: nil, technical: include('kind' => 'technical', 'reason' => 'max_turns'))
+      end
+    end
+
+    it 'is a technical failure at once outside a suggestion' do
+      stub_runs(stopped(Captain::Runtime::Runner::MaxTurnsExceeded))
+
+      result = part_run.call('x')
+
+      expect(run_callbacks.size).to eq(1)
+      expect(result[:technical]).to include('reason' => 'max_turns')
+    end
+  end
+
   it 'has no answer for an output that is not a structured result' do
     ['not json', { 'status' => 'done' }, nil, { 'customer_text' => 'x' }].each do |output|
       stub_run(output: output)

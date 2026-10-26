@@ -1,6 +1,11 @@
 require 'rails_helper'
 
 RSpec.describe 'Public appointment input error contracts' do
+  include ActiveSupport::Testing::TimeHelpers
+
+  # The day before the starts of the examples: a start that has passed is refused on its own (START_IN_PAST).
+  around { |example| travel_to(Time.zone.parse('2026-10-11 12:00:00 +0500')) { example.run } }
+
   let(:account) { create(:account).tap { |record| record.enable_features!('scheduling') } }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:contact) { create(:contact, account: account) }

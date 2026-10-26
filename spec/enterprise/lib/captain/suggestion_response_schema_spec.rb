@@ -67,6 +67,50 @@ RSpec.describe Captain::SuggestionResponseSchema do
       expect(prompt).not_to include('operator_note')
       expect(prompt).not_to include('response_mode to human')
     end
+
+    describe 'the rules of a suggestion before it hands over, asks or stays silent' do
+      let(:lookup_rule) do
+        '- Before you decide that the sources have no answer, call the tools the clinic instructions and this request need: ' \
+          'search_available_slots for a doctor, a booking or free times, search_scheduling_services for a price, faq_lookup for documents ' \
+          'and certificates. When they return several tariffs or prices, list each with its condition instead of handing over; when it ' \
+          'is unclear which service or visit the patient means, ask the patient.'
+      end
+      let(:slots_first_rule) do
+        'for a booking or a question about a doctor or free times, first search the free times (of the branch\'s doctors of that ' \
+          'specialty when no doctor is named) and ask only what they cannot settle.'
+      end
+      let(:future_rule) { 'Offer only free times that a slot search of this run returned, all later than Now.' }
+      let(:silence_rule) do
+        '(only thanks, ok or an emoji with no doctor, service, date, time or question in them, or staff already answered them), set ' \
+          'response_mode to suppress'
+      end
+      let(:thanks_request_rule) { 'A thanks that also names a doctor, a service, a date, a time or a question is a request: answer it.' }
+
+      it 'looks up before handing over, searches free times before asking, lists tariffs, asks when unclear and offers searched future times' do
+        draft = system_prompt(assistant.agent(suggestion_tools: true), 'reply_suggestion')
+
+        expect(draft).to include(lookup_rule, slots_first_rule, future_rule, silence_rule, thanks_request_rule)
+        expect(draft.scan('search_scheduling_services').size).to eq(1)
+        expect(draft).not_to include('For a price, search_scheduling_services before saying no answer is available.')
+      end
+
+      it 'gives a council part the same lookups but no rule to stay silent (a part has its own status for that)' do
+        part = assistant.agent(suggestion_tools: true).get_system_prompt(
+          OpenStruct.new(context: { state: { source: 'reply_suggestion' }, part_run: true })
+        )
+
+        expect(part).to include(lookup_rule, slots_first_rule, future_rule)
+        expect(part).not_to include(silence_rule, thanks_request_rule)
+      end
+
+      it 'leaves the rules of a live turn as they are' do
+        live = system_prompt(assistant.agent, 'incoming_message')
+
+        expect(live).to include('- For a price, search_scheduling_services before saying no answer is available. For documents and ' \
+                                'certificates, use faq_lookup first.')
+        expect(live).not_to include(lookup_rule, slots_first_rule, future_rule, thanks_request_rule)
+      end
+    end
   end
 
   describe Llm::CaptainResponseContentNormalizer do

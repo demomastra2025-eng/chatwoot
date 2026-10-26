@@ -34,6 +34,7 @@
 # own words (one agent or staff, the first owner excluded) and runs once more with the agent it chose. No model names an agent.
 class Captain::Runtime::Council
   UNRESOLVED_STATES = %w[open unknown].freeze
+  NO_REPLY_STATUS = Captain::Runtime::PartSchema::NO_REPLY_STATUS
   HANDOFF_REASON = 'council_unresolved'
   TECHNICAL_HANDOFF_REASON = 'council_technical_failure'
   PART_SEPARATOR = "\n\n"
@@ -65,6 +66,7 @@ class Captain::Runtime::Council
     :pending_human_handoff, :pending_response_cancellation,
     :part_plan, :part_plan_processed,
     :technical_failure, :council_handoff, :council_note, :council_untold_part_ids, :council_contributors, :council_patient_language,
+    :council_no_reply, :council_part_statuses,
     :__otel_tracing,
     :__llm_event_bus,
     Captain::Runtime::ToolLoopGuard::REQUEST_COUNTS_KEY, Captain::Runtime::ToolLoopGuard::TERMINAL_STOP_KEY,
@@ -551,6 +553,8 @@ class Captain::Runtime::Council
                   when 'answered' then answered_state(output, text, base)
                   when 'needs_information' then information_state(output, text, base)
                   when 'out_of_scope' then [base[:acted] ? 'unknown' : 'open', text]
+                  # A thanks, an ok or a greeting needs no answer: nothing for the patient, nothing for staff.
+                  when NO_REPLY_STATUS then [base[:acted] ? 'done' : 'answered', '']
                   else ['unknown', text]
                   end
     { status: output['status'], state: state, text: text, questions: output['questions'], sources: output['sources'],
@@ -697,9 +701,7 @@ class Captain::Runtime::Council
   # a failed turn for a part: without a text it hands the failed parts to the manager (council_handoff, technical) and keeps the
   # approval cards of the other parts.
   def assemble(entries)
-    @context.delete(:council_handoff)
-    @context.delete(:council_note)
-    @context.delete(:council_patient_language)
+    reset_reply_state(entries)
     failures = entries.filter_map { |entry| entry[:technical] }
     shown = entries.select { |entry| told?(entry) }
     return no_reply(failures, entries) if failed_turn?(shown, failures)
@@ -715,6 +717,20 @@ class Captain::Runtime::Council
     mark_handed_to_staff(entries) if handoff
     staff_note(entries, unresolved, handoff: handoff)
     reply
+  end
+
+  # What an earlier assembly of the run left is cleared. Every part has its final status here (the reply is assembled only after
+  # every part ended, see #execute): the suggestion trace shows it, so a part that stopped without a result of its own (out of
+  # time, out of turns, a crash) is never shown as still running. A council whose every part needs no answer says so.
+  def reset_reply_state(entries)
+    %i[council_handoff council_note council_patient_language council_no_reply].each { |key| @context.delete(key) }
+    @context[:council_part_statuses] = entries.map { |entry| part_status(entry) }
+    @context[:council_no_reply] = true if entries.any? && entries.all? { |entry| entry[:status] == NO_REPLY_STATUS && !entry[:acted] }
+  end
+
+  def part_status(entry)
+    { 'id' => entry[:id], 'status' => (entry[:status].presence || entry[:state]).to_s,
+      'stop_reason' => entry[:technical].to_h['reason'].presence }.compact
   end
 
   # No part has a text and a part failed technically: a live turn ends as a failed turn; a reply suggestion never does.

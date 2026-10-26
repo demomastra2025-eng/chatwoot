@@ -49,6 +49,17 @@ RSpec.describe Captain::Runtime::Runner do
     expect(result.error).to be_nil
   end
 
+  it 'gives a reply suggestion the final status of every part, and says when no part needed a reply' do
+    statuses = [{ 'id' => 'p1', 'status' => 'no_reply_needed' }, { 'id' => 'p2', 'status' => 'no_reply_needed' }]
+    allow(council).to receive(:run).and_return('')
+
+    suggestion = run_council(context: { state: { source: 'reply_suggestion' }, council_part_statuses: statuses, council_no_reply: true })
+    live = run_council(context: { council_part_statuses: statuses, council_no_reply: true })
+
+    expect(suggestion.output).to eq(response: '', response_mode: 'suppress', reasoning: '', council_parts: statuses, council_no_reply: true)
+    expect(live.output).to eq(response: '', response_mode: 'suppress', reasoning: '')
+  end
+
   it 'ends as a failed turn when no part has a text and a part failed technically' do
     allow(council).to receive(:run).and_return('')
 

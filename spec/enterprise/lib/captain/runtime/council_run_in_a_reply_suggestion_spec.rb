@@ -182,5 +182,45 @@ RSpec.describe Captain::Runtime::Council, '#run in a reply suggestion' do
       expect(context[:council_handoff]).to include(technical: true, failed_parts: ['Запрос 1', 'Запрос 2', 'Запрос 3'])
     end
   end
+
+  describe 'a part that needs no reply (a thanks, an ok)' do
+    let(:no_reply) do
+      answered('').merge(output: { 'patient_language' => 'Russian', 'status' => 'no_reply_needed', 'customer_text' => '', 'questions' => [],
+                                   'sources' => [], 'reasoning' => '' })
+    end
+
+    it 'sends nothing and hands nothing to staff when no part needs a reply, and says so' do
+      %w[part-1 part-2 part-3].each { |id| part_outputs[id] = no_reply }
+
+      reply = in_suggestion_run(30) { council.run(parts) }
+
+      expect(reply).to eq('')
+      expect(context).not_to have_key(:council_handoff)
+      expect(context[:council_no_reply]).to be(true)
+      expect(context[:parts].pluck('state')).to all(eq('answered'))
+    end
+
+    it 'answers the other parts without the thanks and without staff' do
+      part_outputs['part-2'] = no_reply
+
+      reply = in_suggestion_run(30) { council.run(parts) }
+
+      expect(reply).to eq('Единый ответ.')
+      expect(Captain::Runtime::CouncilEditor).to have_received(:new).once
+      expect(context).not_to have_key(:council_handoff)
+      expect(context).not_to have_key(:council_no_reply)
+    end
+  end
+
+  it 'gives every part its final status for the manager, also a part that stopped without a result of its own' do
+    part_outputs['part-3'] = answered('').merge(output: nil, technical: { 'kind' => 'technical', 'reason' => 'max_turns' })
+
+    in_suggestion_run(30) { council.run(parts) }
+
+    expect(context[:council_part_statuses]).to eq([{ 'id' => 'part-1', 'status' => 'answered' }, { 'id' => 'part-2', 'status' => 'answered' },
+                                                   { 'id' => 'part-3', 'status' => 'unavailable', 'stop_reason' => 'max_turns' }])
+    expect(context[:council_part_statuses].pluck('status')).not_to include('running')
+    expect(context[:council_handoff]).to include(technical: true, failed_parts: ['Запрос 3'])
+  end
 end
 # rubocop:enable RSpec/VerifiedDoubles

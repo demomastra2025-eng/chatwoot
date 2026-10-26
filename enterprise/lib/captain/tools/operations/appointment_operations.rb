@@ -8,6 +8,9 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   UNCHANGED_INTEGER_FIELDS = %i[resource_id service_id duration_min].freeze
   UNCHANGED_TIME_FIELDS = %i[starts_at ends_at].freeze
   UNCHANGED_TEXT_FIELDS = %i[appointment_type client_comment].freeze
+  # A start before now (see #ensure_future_start!): "Monday 2026-10-26 14:05" in the clinic's clock.
+  START_IN_PAST_CODE = Captain::Tools::Agent::AppointmentResult::START_IN_PAST_CODE
+  START_LABEL_FORMAT = '%A %Y-%m-%d %H:%M'.freeze
 
   def cancel_current_appointment(appointment_id: nil, appointment_access_token: nil, patient_confirmed: false)
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
@@ -151,6 +154,8 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
       duration = Scheduling::IntegerNumericNormalizer.normalize_or_zero(duration_min, field_name: 'duration_min')
       Scheduling::InputValidation.interval!(starts_at: start_time, ends_at: start_time + duration.minutes)
     end
+    ensure_future_start!(starts_at, start_time, appointment)
+    # The validated service is the answer of this method: the callers book with it.
     Scheduling::InputValidation.service!(account: account, value: service_id) unless service_id.nil?
   rescue Scheduling::Error => e
     # This boundary only parses arguments and reads the catalog. No local or
@@ -160,6 +165,28 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   rescue ArgumentError => e
     raise Scheduling::Error.new(code: 'INVALID_DURATION', message: e.message, status: :unprocessable_entity,
                                 details: { mutation_executed: false })
+  end
+
+  # A booking or a move by the AI in a patient conversation (the agent's own tools, the approval card of a reply suggestion, an
+  # account tool in the patient scope: the actor is the assistant) never starts at a time that has passed: nothing is written, and
+  # the answer names the clinic's current time so the agent searches free times from now. Staff and Copilot (the actor is a user)
+  # may record a visit that already took place. starts_at is the local clock of the specialist with its offset (see
+  # #normalize_appointment_times), so the times of the answer are the clinic's. A change without a new start, or with the start the
+  # appointment already has, is not checked: it moves nothing.
+  def ensure_future_start!(starts_at, start_time, appointment = nil)
+    return unless actor.is_a?(Captain::Assistant)
+    return if starts_at.nil? || start_time > Time.current || (appointment && same_instant?(starts_at, appointment.starts_at))
+
+    local = Time.iso8601(starts_at.to_s)
+    now = Time.current.getlocal(local.utc_offset)
+    raise Scheduling::Error.new(
+      code: START_IN_PAST_CODE, status: :unprocessable_content,
+      message: "The start #{local.strftime(START_LABEL_FORMAT)} has passed (now is #{now.strftime(START_LABEL_FORMAT)})",
+      details: { field: 'starts_at', reason: 'start_in_past', now: now.strftime(START_LABEL_FORMAT), next_tool: 'search_available_slots' }
+    )
+  rescue ArgumentError
+    raise Scheduling::Error.new(code: START_IN_PAST_CODE, status: :unprocessable_content, message: 'The start has passed',
+                                details: { field: 'starts_at', reason: 'start_in_past', next_tool: 'search_available_slots' })
   end
 
   def imported_appointment?(appointment)

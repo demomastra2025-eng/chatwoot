@@ -91,11 +91,20 @@ class Captain::Runtime::Runner
       return finalize_run(nil, wrapper, acting_agent, output: nil, error: error)
     end
 
+    context[:current_agent] = acting_agent.name
+    finalize_run(nil, wrapper, acting_agent, output: council_output(context, answer))
+  end
+
+  def council_output(context, answer)
     output = answer.blank? ? { response: '', response_mode: 'suppress', reasoning: '' } : { response: answer, reasoning: '' }
     # The language the owners of the parts wrote in goes to the logs with the reply; delivery does not read it.
     output[:patient_language] = context[:council_patient_language] if context[:council_patient_language].present?
-    context[:current_agent] = acting_agent.name
-    finalize_run(nil, wrapper, acting_agent, output: output)
+    return output unless self.class.reply_suggestion?(context)
+
+    # What the manager is shown of a council suggestion: the final status of every part (see Council#reset_reply_state), and that
+    # no part needed an answer (a thanks, an ok) when the reply is empty for that reason.
+    output.merge(council_parts: context[:council_part_statuses].presence,
+                 council_no_reply: (true if answer.blank? && context[:council_no_reply])).compact
   end
 
   def build_session(starting_agent, input, options)

@@ -9,7 +9,8 @@
 #   4  the router sent the turn to staff                    human_needed (router): no agent is named as its author
 #      the agent answered response_mode human              human_needed (operator_note), failed when the note is blank
 #   5  a council without a text for the patient             human_needed when a part needs staff, else no_reply; the note is
-#                                                           written from what the council left (its approval cards are kept)
+#                                                           written from what the council left (its approval cards are kept),
+#                                                           or says that no part needed a reply (council_no_reply)
 #      the agent answered response_mode suppress           no_reply (operator_note), failed when the note is blank
 #   6  a cancelled response, or a handoff                   failed (invalid_output): a suggestion has neither
 #   7  an empty reply                                       failed (empty_output)
@@ -94,12 +95,18 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
     return unless payload[:council_turn] == true && suppressed?
 
     meta = suggestion_meta
-    note = payload[:operator_note].presence || council_note.presence || I18n.t('captain.reply_suggestion.reasons.council_no_text')
+    note = payload[:operator_note].presence || council_note.presence || council_silence_reason
     attributes = { reason: note, engine: 'agent', reason_source: 'agent', agent: meta['agent'], **cards_of(meta), usage: usage }
                  .merge(lead_agent)
     return Captain::ReplySuggestion::Outcome.human_needed(**attributes) if payload[:council_handoff].present?
 
     Captain::ReplySuggestion::Outcome.no_reply(**attributes)
+  end
+
+  # Every part of the council answered that it needs no reply (a thanks, an ok), or the council left only its cards.
+  def council_silence_reason
+    key = payload[:council_no_reply] == true ? 'council_no_reply' : 'council_no_text'
+    I18n.t("captain.reply_suggestion.reasons.#{key}")
   end
 
   # 5

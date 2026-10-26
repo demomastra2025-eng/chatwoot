@@ -168,10 +168,24 @@ module Enterprise::Captain::ReplySuggestionService
       @council_parts.values.filter_map { |part| part['agent'] }.uniq { |agent| agent['id'] || agent['name'] }
     end
 
-    def council_snapshot
+    # payload: the answer of the run; a council answer carries the status every part ended with (council_parts), which replaces the
+    # status shown while it ran, so a part that stopped without a result of its own is never shown as still running.
+    def council_snapshot(payload = nil)
       return if @council_parts.empty?
 
+      settle_council_parts!(payload)
       { 'active' => true, 'parts' => @council_parts.values.map(&:dup) }
+    end
+
+    def settle_council_parts!(payload)
+      Array(payload.to_h.with_indifferent_access[:council_parts]).each do |final|
+        final = final.to_h.with_indifferent_access
+        entry = @council_parts[final[:id].to_s]
+        next if entry.blank? || final[:status].blank?
+
+        entry['status'] = final[:status].to_s
+        entry['stop_reason'] = final[:stop_reason].to_s if final[:stop_reason].present?
+      end
     end
 
     def sanitize_text(value)
@@ -262,7 +276,7 @@ module Enterprise::Captain::ReplySuggestionService
           'agent' => responder,
           'working_agents' => @working_agents.presence,
           'council_contributors' => resolve_council_contributors(payload).presence,
-          'council' => council_snapshot,
+          'council' => council_snapshot(payload),
           'handoffs' => @handoffs.presence,
           'routing' => @routing,
           'pending_actions' => resolve_pending_actions(payload).presence,

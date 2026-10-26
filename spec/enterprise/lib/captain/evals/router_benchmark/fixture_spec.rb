@@ -38,11 +38,13 @@ RSpec.describe Captain::Evals::RouterBenchmark::Fixture do
     committed = JSON.parse(File.read(Rails.root.join('script/captain/router_benchmark/router_scenarios.json')))
     ids = committed['suites'].flat_map { |suite| suite['scenarios'].pluck('id') }
 
-    expect(ids.size).to eq(77)
+    expect(ids.size).to eq(82)
     expect(ids).to include('AM01', 'IM01')
     expect(ids).to include('SZ01', 'A11', 'I06')
+    # A plain thanks or greeting without a current agent goes to one agent; a thanks that also asks for two agents' services is a council.
+    expect(ids).to include('AS06', 'IS06', 'IS07', 'SS05', 'SZ20')
     traps = committed['suites'].flat_map { |suite| suite['scenarios'] }.filter_map { |scenario| scenario['trap'] }
-    expect(traps.tally).to eq('human' => 3, 'injection' => 4, 'false_council' => 6)
+    expect(traps.tally).to eq('human' => 3, 'injection' => 4, 'false_council' => 9)
     expect(committed['suites'].flat_map { |suite| suite['scenarios'].pluck('expected') }).to all(match(described_class::KEY))
   end
 

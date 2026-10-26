@@ -1,5 +1,6 @@
 class Captain::Tools::Account::GetSchedulingResourceAvailabilityService < Captain::Tools::Account::BaseAccountTool
   include Captain::Tools::Account::SchedulingQueryValidation
+  include Captain::Tools::Account::AgentTimeRange
   MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
 
   def self.name
@@ -23,6 +24,11 @@ class Captain::Tools::Account::GetSchedulingResourceAvailabilityService < Captai
 
     resource = find_resource!(resource_id)
     service_record = scheduling_service!(service_id)
+    # In a patient conversation the free windows start now; a range that ended before now is not read.
+    present = present_range(range_from, range_to)
+    return formatted_payload(passed_range_payload(resource)) unless present
+
+    range_from, range_to = present
     payload = availability_payload(resource, service_record, service_id, range_from, range_to, duration_min, limit)
 
     formatted_payload(with_provider_note(resource, range_from, range_to, payload.merge(availability_metadata(resource, service_record))))
@@ -35,6 +41,11 @@ class Captain::Tools::Account::GetSchedulingResourceAvailabilityService < Captai
   end
 
   private
+
+  def passed_range_payload(resource)
+    { resource: Scheduling::PayloadBuilder.resource(resource), timezone: resource.timezone, slots: [], total_slots: 0,
+      requested_range_status: RANGE_PASSED_STATUS, requested_range_note: range_passed_note('from now, found with search_available_slots.') }
+  end
 
   def availability_payload(resource, service_record, service_id, range_from, range_to, duration_min, limit)
     if Scheduling::ResourceHoursPolicy.new(resource: resource).provider_hours?

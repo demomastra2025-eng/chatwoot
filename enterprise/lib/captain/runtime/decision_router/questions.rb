@@ -47,7 +47,8 @@ class Captain::Runtime::DecisionRouter::Questions
     its price, preparation or free times; when it answers an open question of this agent; or, for the current agent only, when it
     asks for nothing new (a time, a name, a date of birth, an IIN, a confirmation, thanks, a greeting). With no current agent, a reply
     that continues a service the recent messages discuss (a time for it, a confirmation, personal data for its booking) is yes for the
-    agent of that service. When there is a current
+    agent of that service, and a message that asks for nothing new and continues no service (a plain thanks, ok, an emoji, a greeting)
+    is yes only for the agent whose description lists general clinic questions. When there is a current
     agent, a general question about the clinic (address, opening hours, parking, contacts, how to pay) is yes only for the current
     agent and no for every other agent, even one whose description lists general clinic questions; with no current agent it is yes
     for the agent whose description lists general clinic questions. A topic that another agent's description names explicitly
