@@ -1,149 +1,79 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import {
-  STAGE,
-  STAGE_VIEW,
-} from 'dashboard/composables/captain/suggestionStages';
+  MODE_FRAMES,
+  paintFrame,
+  resolvePreset,
+} from './vendor/thinkingOrbsEngine';
 
-// A soft blue-teal glow that tells «AI is working» without words. Drawn on a
-// canvas, no dependencies. The stage only changes the pace and the weight of
-// the colours (smoothly, the shape never jumps).
-const props = defineProps({
-  stage: { type: String, default: STAGE.ANALYZING },
-});
-
+// A turning globe of dots that tells «AI is working» without words. The dots
+// are computed and painted by the thinking-orbs engine (vendored, MIT). It is
+// the same globe at the same pace for every stage: the sentence next to it
+// says what the step is.
+const STATE = 'searching';
+// The engine draws on a grid of 64 units; the canvas scales it to its size.
+const GRID = 64;
 // Drawn at this logical size; CSS shows it at 84 px (68 px on a phone).
 const SIZE = 84;
-const STATIC_PHASE = 1.7;
-
-// Weights of the four glows per hue
-const HUE_WEIGHTS = {
-  blue: [1, 0.5, 0.55, 0.45],
-  teal: [0.62, 1, 0.6, 0.5],
-  sky: [0.58, 0.6, 1, 0.85],
-  pale: [0.8, 0.55, 0.8, 1],
-};
-
-// Four glows drifting along their own orbits inside the circle
-const BLOBS = [
-  { rgb: '30,120,255', ax: 0.61, ay: 0.47, shift: 0, reach: 0.95 },
-  { rgb: '0,200,170', ax: 0.43, ay: 0.67, shift: 2.1, reach: 0.85 },
-  { rgb: '90,190,255', ax: 0.77, ay: 0.39, shift: 4, reach: 0.8 },
-  { rgb: '170,225,255', ax: 0.53, ay: 0.71, shift: 1.2, reach: 0.7 },
-];
+const START_PHASE = 1.7;
+// «Reduce motion» in the system: the globe does not freeze, it turns at half
+// speed.
+const REDUCED_PACE = 0.5;
+// The product blue, when the theme colour cannot be read
+const FALLBACK_TINT = { r: 8, g: 109, b: 224 };
 
 const canvas = ref(null);
 
 let ctx = null;
-let mix = [...HUE_WEIGHTS.blue];
-let tempo = 1;
-let phase = STATIC_PHASE;
+let ratio = 1;
+let preset = null;
+let theme = { dark: false, tint: FALLBACK_TINT };
+let phase = START_PHASE;
+let pace = 1;
 let lastTick = 0;
 let frameId = 0;
 let onScreen = true;
-let reducedMotion = false;
 let intersection = null;
 let motionQuery = null;
 let themeWatcher = null;
 
-const targetOf = () => {
-  const view = STAGE_VIEW[props.stage] || STAGE_VIEW[STAGE.ANALYZING];
-  return { weights: HUE_WEIGHTS[view.hue], tempo: view.tempo };
+// Dark mode is a class on the page; --blue-11 holds the product blue of the
+// current theme as «r g b»
+const readTheme = () => {
+  const parts = getComputedStyle(document.body)
+    .getPropertyValue('--blue-11')
+    .trim()
+    .split(/\s+/)
+    .map(Number);
+  const [r, g, b] = parts;
+  const known = parts.length === 3 && parts.every(Number.isFinite);
+  return {
+    dark: document.body.classList.contains('dark'),
+    tint: known ? { r, g, b } : FALLBACK_TINT,
+  };
 };
-
-const isDark = () => document.body.classList.contains('dark');
 
 const paint = () => {
-  if (!ctx) return;
-  const dark = isDark();
-  const center = SIZE / 2;
-  const radius = SIZE * 0.38 * (1 + 0.018 * Math.sin(phase * 1.3));
-
-  ctx.clearRect(0, 0, SIZE, SIZE);
-
-  const halo = ctx.createRadialGradient(
-    center,
-    center,
-    radius * 0.9,
-    center,
-    center,
-    SIZE * 0.5
+  if (!ctx || !preset) return;
+  const scale = SIZE / GRID;
+  ctx.setTransform(ratio * scale, 0, 0, ratio * scale, 0, 0);
+  ctx.clearRect(0, 0, GRID, GRID);
+  const frame = MODE_FRAMES[preset.mode](
+    GRID,
+    phase * preset.speed,
+    preset.opts
   );
-  halo.addColorStop(0, dark ? 'rgba(70,150,255,.22)' : 'rgba(60,150,255,.10)');
-  halo.addColorStop(1, 'rgba(60,150,255,0)');
-  ctx.fillStyle = halo;
-  ctx.fillRect(0, 0, SIZE, SIZE);
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(center, center, radius, 0, Math.PI * 2);
-  ctx.clip();
-  ctx.fillStyle = dark ? '#0e1d3a' : '#e9f1fb';
-  ctx.fillRect(0, 0, SIZE, SIZE);
-
-  ctx.globalCompositeOperation = dark ? 'screen' : 'source-over';
-  BLOBS.forEach((blob, index) => {
-    const x = center + Math.cos(phase * blob.ax + blob.shift) * radius * 0.55;
-    const y =
-      center + Math.sin(phase * blob.ay + blob.shift * 1.3) * radius * 0.55;
-    const glow = ctx.createRadialGradient(x, y, 0, x, y, radius * blob.reach);
-    const weight = dark ? Math.min(1, mix[index] * 1.15) : mix[index];
-    glow.addColorStop(0, `rgba(${blob.rgb},${weight})`);
-    glow.addColorStop(0.6, `rgba(${blob.rgb},${weight * 0.35})`);
-    glow.addColorStop(1, `rgba(${blob.rgb},0)`);
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, SIZE, SIZE);
-  });
-  ctx.globalCompositeOperation = 'source-over';
-
-  const sheen = ctx.createLinearGradient(
-    0,
-    center - radius,
-    0,
-    center + radius
-  );
-  sheen.addColorStop(
-    0,
-    dark ? 'rgba(255,255,255,.22)' : 'rgba(255,255,255,.34)'
-  );
-  sheen.addColorStop(0.5, 'rgba(255,255,255,0)');
-  sheen.addColorStop(1, dark ? 'rgba(0,10,30,.12)' : 'rgba(10,40,110,.16)');
-  ctx.fillStyle = sheen;
-  ctx.fillRect(0, 0, SIZE, SIZE);
-  ctx.restore();
-
-  if (dark) {
-    ctx.strokeStyle = 'rgba(160,200,255,.26)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(center, center, radius - 0.5, 0, Math.PI * 2);
-    ctx.stroke();
-  }
+  paintFrame(ctx, frame, theme.dark, theme.tint);
 };
 
-const snapToStage = () => {
-  const target = targetOf();
-  mix = [...target.weights];
-  tempo = target.tempo;
-};
-
-const ease = deltaSeconds => {
-  const target = targetOf();
-  const k = 1 - Math.exp(-deltaSeconds * 2.6);
-  mix = mix.map((value, index) => value + (target.weights[index] - value) * k);
-  tempo += (target.tempo - tempo) * k;
-};
-
-const canAnimate = () =>
-  Boolean(ctx) && !reducedMotion && onScreen && !document.hidden;
+const canAnimate = () => Boolean(ctx) && onScreen && !document.hidden;
 
 const frame = now => {
   frameId = 0;
   if (!canAnimate()) return;
   const delta = Math.min(0.05, (now - lastTick) / 1000);
   lastTick = now;
-  ease(delta);
-  phase += delta * tempo;
+  phase += delta * pace;
   paint();
   frameId = requestAnimationFrame(frame);
 };
@@ -153,7 +83,8 @@ const stopLoop = () => {
   frameId = 0;
 };
 
-// Runs only while the orb can be seen: on screen, tab visible, motion allowed
+// Runs only while the orb can be seen: on screen and the tab visible. The
+// motion preference only sets the pace, it never stops the globe.
 const syncLoop = () => {
   if (!canAnimate()) {
     stopLoop();
@@ -164,18 +95,8 @@ const syncLoop = () => {
   frameId = requestAnimationFrame(frame);
 };
 
-const repaintStill = () => {
-  if (reducedMotion) {
-    snapToStage();
-    phase = STATIC_PHASE;
-    paint();
-  }
-};
-
 const onMotionChange = () => {
-  reducedMotion = Boolean(motionQuery?.matches);
-  repaintStill();
-  syncLoop();
+  pace = motionQuery?.matches ? REDUCED_PACE : 1;
 };
 
 const onVisibilityChange = () => syncLoop();
@@ -184,13 +105,13 @@ onMounted(() => {
   ctx = canvas.value?.getContext?.('2d') || null;
   if (!ctx) return;
 
-  const ratio = Math.min(2, window.devicePixelRatio || 1);
+  preset = resolvePreset(STATE, GRID);
+  ratio = Math.min(2, window.devicePixelRatio || 1);
   canvas.value.width = Math.round(SIZE * ratio);
   canvas.value.height = Math.round(SIZE * ratio);
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
   motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') || null;
-  reducedMotion = Boolean(motionQuery?.matches);
+  onMotionChange();
   motionQuery?.addEventListener?.('change', onMotionChange);
 
   if (typeof IntersectionObserver !== 'undefined') {
@@ -206,9 +127,11 @@ onMounted(() => {
 
   document.addEventListener('visibilitychange', onVisibilityChange);
 
+  theme = readTheme();
   if (typeof MutationObserver !== 'undefined') {
-    // A theme switch repaints a still orb; a moving one repaints every frame
+    // A theme switch repaints a paused orb; a moving one repaints every frame
     themeWatcher = new MutationObserver(() => {
+      theme = readTheme();
       if (!frameId) paint();
     });
     themeWatcher.observe(document.body, {
@@ -217,18 +140,13 @@ onMounted(() => {
     });
   }
 
-  snapToStage();
   paint();
   syncLoop();
 });
 
-watch(
-  () => props.stage,
-  () => repaintStill()
-);
-
 onBeforeUnmount(() => {
   stopLoop();
+  ctx = null;
   intersection?.disconnect();
   themeWatcher?.disconnect();
   motionQuery?.removeEventListener?.('change', onMotionChange);
@@ -262,11 +180,6 @@ onBeforeUnmount(() => {
   display: block;
   width: 100%;
   height: 100%;
-  filter: drop-shadow(0 7px 12px rgb(30 110 255 / 0.2));
-}
-
-:global(.dark) .ai-orb__canvas {
-  filter: drop-shadow(0 7px 12px rgb(20 90 230 / 0.38));
 }
 
 @keyframes ai-orb-in {
@@ -277,12 +190,6 @@ onBeforeUnmount(() => {
   to {
     opacity: 1;
     transform: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ai-orb {
-    animation: none;
   }
 }
 </style>

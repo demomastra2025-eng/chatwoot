@@ -31,48 +31,23 @@ export const STAGE = Object.freeze({
 
 const KEY_PREFIX = 'CONVERSATION.REPLYBOX.COPILOT_STAGE';
 
-// text: the i18n key of the sentence. hue and tempo only tune the orb (blue is
-// the calm default, teal is looking things up, sky is the schedule, pale is
-// putting the text together); tempo is the speed of its glow.
+// text: the i18n key of the sentence. The orb next to it is the same for every
+// stage; only the sentence says what the step is.
 export const STAGE_VIEW = Object.freeze({
-  [STAGE.QUEUED]: { text: `${KEY_PREFIX}.QUEUED`, hue: 'blue', tempo: 0.55 },
-  [STAGE.ANALYZING]: {
-    text: `${KEY_PREFIX}.ANALYZING`,
-    hue: 'blue',
-    tempo: 1,
-  },
-  [STAGE.KNOWLEDGE]: {
-    text: `${KEY_PREFIX}.KNOWLEDGE`,
-    hue: 'teal',
-    tempo: 1.2,
-  },
-  [STAGE.SERVICES]: {
-    text: `${KEY_PREFIX}.SERVICES`,
-    hue: 'teal',
-    tempo: 1.2,
-  },
-  [STAGE.SPECIALIST]: {
-    text: `${KEY_PREFIX}.SPECIALIST`,
-    hue: 'sky',
-    tempo: 1.2,
-  },
-  [STAGE.SLOTS]: { text: `${KEY_PREFIX}.SLOTS`, hue: 'sky', tempo: 1.45 },
-  [STAGE.PATIENT]: { text: `${KEY_PREFIX}.PATIENT`, hue: 'teal', tempo: 1.1 },
-  [STAGE.WEB]: { text: `${KEY_PREFIX}.WEB`, hue: 'sky', tempo: 1.2 },
-  [STAGE.BOOKING]: { text: `${KEY_PREFIX}.BOOKING`, hue: 'sky', tempo: 1 },
-  [STAGE.STAFF]: { text: `${KEY_PREFIX}.STAFF`, hue: 'blue', tempo: 1 },
-  [STAGE.COUNCIL]: { text: `${KEY_PREFIX}.COUNCIL`, hue: 'teal', tempo: 1.25 },
-  [STAGE.COUNCIL_EDIT]: {
-    text: `${KEY_PREFIX}.COUNCIL_EDIT`,
-    hue: 'pale',
-    tempo: 1,
-  },
-  [STAGE.TOOL]: { text: `${KEY_PREFIX}.TOOL`, hue: 'blue', tempo: 1.1 },
-  [STAGE.DRAFTING]: {
-    text: `${KEY_PREFIX}.DRAFTING`,
-    hue: 'pale',
-    tempo: 0.9,
-  },
+  [STAGE.QUEUED]: { text: `${KEY_PREFIX}.QUEUED` },
+  [STAGE.ANALYZING]: { text: `${KEY_PREFIX}.ANALYZING` },
+  [STAGE.KNOWLEDGE]: { text: `${KEY_PREFIX}.KNOWLEDGE` },
+  [STAGE.SERVICES]: { text: `${KEY_PREFIX}.SERVICES` },
+  [STAGE.SPECIALIST]: { text: `${KEY_PREFIX}.SPECIALIST` },
+  [STAGE.SLOTS]: { text: `${KEY_PREFIX}.SLOTS` },
+  [STAGE.PATIENT]: { text: `${KEY_PREFIX}.PATIENT` },
+  [STAGE.WEB]: { text: `${KEY_PREFIX}.WEB` },
+  [STAGE.BOOKING]: { text: `${KEY_PREFIX}.BOOKING` },
+  [STAGE.STAFF]: { text: `${KEY_PREFIX}.STAFF` },
+  [STAGE.COUNCIL]: { text: `${KEY_PREFIX}.COUNCIL` },
+  [STAGE.COUNCIL_EDIT]: { text: `${KEY_PREFIX}.COUNCIL_EDIT` },
+  [STAGE.TOOL]: { text: `${KEY_PREFIX}.TOOL` },
+  [STAGE.DRAFTING]: { text: `${KEY_PREFIX}.DRAFTING` },
 });
 
 export const SLOW_HINT_TEXT_KEY = `${KEY_PREFIX}.SLOW`;

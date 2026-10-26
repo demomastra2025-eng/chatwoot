@@ -1,3 +1,6 @@
 app/javascript/vendor/vue-cal/**
 # stylesheets are not JavaScript: ESLint cannot parse them (the release gate passes changed .scss files explicitly)
 **/*.scss
+
+# Vendored third-party code (thinking-orbs, MIT): the AI orb engine
+app/javascript/dashboard/components/widgets/conversation/copilot/vendor/**

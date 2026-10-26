@@ -363,11 +363,11 @@ describe('suggestionStages: the stage of a progress event', () => {
 describe('suggestionStages: the texts', () => {
   const stages = Object.values(STAGE);
 
-  it('has a view for every stage with a hue and a tempo for the orb', () => {
+  it('has a view for every stage, and the view is only the sentence', () => {
     expect(Object.keys(STAGE_VIEW).sort()).toEqual([...stages].sort());
     stages.forEach(stage => {
-      expect(['blue', 'teal', 'sky', 'pale']).toContain(STAGE_VIEW[stage].hue);
-      expect(STAGE_VIEW[stage].tempo).toBeGreaterThan(0);
+      // the orb is the same for every stage: nothing in the view tunes it
+      expect(Object.keys(STAGE_VIEW[stage])).toEqual(['text']);
     });
   });
 

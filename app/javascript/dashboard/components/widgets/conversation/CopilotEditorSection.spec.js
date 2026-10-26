@@ -6,13 +6,13 @@ import en from 'dashboard/i18n/locale/en/conversation.json';
 import kk from 'dashboard/i18n/locale/kk/conversation.json';
 import ru from 'dashboard/i18n/locale/ru/conversation.json';
 import CopilotEditorSection from './CopilotEditorSection.vue';
+import workingStateSource from './copilot/CopilotWorkingState.vue?raw';
 
 // Swap the content at once instead of waiting for a CSS transition
 const PassThroughStub = { inheritAttrs: false, template: '<slot />' };
 
 const AiOrbStub = {
-  props: ['stage'],
-  template: '<span data-test="ai-orb" :data-stage="stage" />',
+  template: '<span data-test="ai-orb" />',
 };
 
 const step = (tool, event, extra = {}) => ({
@@ -517,7 +517,7 @@ describe('CopilotEditorSection.vue', () => {
       vi.useRealTimers();
     });
 
-    it('shows the glow and one plain sentence', () => {
+    it('shows the orb and one plain sentence', () => {
       working({ liveProgress: progressOf('thinking') });
 
       expect(wrapper.find('[data-test="ai-orb"]').exists()).toBe(true);
@@ -531,9 +531,11 @@ describe('CopilotEditorSection.vue', () => {
       working({ liveProgress: null });
 
       expect(stageText()).toBe('AI анализирует…');
-      expect(wrapper.get('[data-test="ai-orb"]').attributes('data-stage')).toBe(
-        'analyzing'
-      );
+      expect(
+        wrapper
+          .get('[data-test="copilot-live-progress"]')
+          .attributes('data-stage')
+      ).toBe('analyzing');
     });
 
     it('says the request waits in the queue', () => {
@@ -626,10 +628,125 @@ describe('CopilotEditorSection.vue', () => {
       vi.advanceTimersByTime(29000);
       await nextTick();
 
-      expect(wrapper.get('[data-test="copilot-slow-hint"]').text()).toBe(
-        'Это занимает чуть дольше обычного…'
-      );
+      const hint = wrapper.get('[data-test="copilot-slow-hint"]');
+      expect(hint.text()).toBe('Это занимает чуть дольше обычного…');
+      // the calm second line has no effects
+      expect(hint.classes().join(' ')).not.toMatch(/ai-text/);
       expect(stageText()).toContain('AI анализирует…');
+    });
+
+    describe('the sentence', () => {
+      const sentence = () => wrapper.get('[data-test="copilot-stage-text"]');
+
+      it('shimmers and is revealed when it appears, and stays the plain sentence', () => {
+        working({ liveProgress: progressOf('thinking') });
+
+        expect(sentence().classes()).toEqual(
+          expect.arrayContaining(['ai-text', 'ai-text--enter'])
+        );
+        // one text node: the effect is CSS only, nothing is split or wrapped
+        expect(sentence().element.children).toHaveLength(0);
+        expect(sentence().text()).toBe('AI анализирует…');
+        const status = wrapper.get('[data-test="copilot-stage"]');
+        expect(status.attributes('role')).toBe('status');
+        expect(status.attributes('aria-live')).toBe('polite');
+        expect(status.text()).toBe('AI анализирует…');
+      });
+
+      it('takes the reveal class off and puts it back on every stage change', async () => {
+        working({ liveProgress: progressOf('thinking') });
+        const el = sentence().element;
+        const remove = vi.spyOn(el.classList, 'remove');
+        const add = vi.spyOn(el.classList, 'add');
+
+        vi.advanceTimersByTime(800);
+        await wrapper.setProps({
+          liveProgress: progressOf('tool_running', [
+            step('faq_lookup', 'start'),
+          ]),
+        });
+        await nextTick();
+
+        expect(stageText()).toBe('AI проверяет базу знаний…');
+        expect(remove).toHaveBeenCalledTimes(1);
+        expect(remove).toHaveBeenCalledWith('ai-text--enter');
+        expect(add).toHaveBeenCalledTimes(1);
+        expect(add).toHaveBeenCalledWith('ai-text--enter');
+        expect(remove.mock.invocationCallOrder[0]).toBeLessThan(
+          add.mock.invocationCallOrder[0]
+        );
+        expect(el.classList.contains('ai-text--enter')).toBe(true);
+        // the same element, changed in place: no swap, no fade between two
+        expect(sentence().element).toBe(el);
+        expect(wrapper.get('[data-test="copilot-stage"]').text()).toBe(
+          'AI проверяет базу знаний…'
+        );
+
+        vi.advanceTimersByTime(800);
+        await wrapper.setProps({
+          liveProgress: progressOf('tool_running', [
+            step('faq_lookup', 'start'),
+            step('faq_lookup', 'complete'),
+            step('search_scheduling_services', 'start'),
+          ]),
+        });
+        await nextTick();
+
+        expect(stageText()).toBe('AI уточняет услуги и цены…');
+        expect(remove).toHaveBeenCalledTimes(2);
+        expect(add).toHaveBeenCalledTimes(2);
+      });
+
+      it('does not reveal again for a new event of the same step', async () => {
+        working({ liveProgress: progressOf('thinking') });
+        const remove = vi.spyOn(sentence().element.classList, 'remove');
+
+        await wrapper.setProps({ liveProgress: progressOf('thinking') });
+        await nextTick();
+
+        expect(stageText()).toBe('AI анализирует…');
+        expect(remove).not.toHaveBeenCalled();
+      });
+
+      it('reveals the sentence of a run that waits in the queue as well', async () => {
+        working({ liveProgress: null });
+        const remove = vi.spyOn(sentence().element.classList, 'remove');
+
+        vi.advanceTimersByTime(800);
+        await wrapper.setProps({ isQueued: true });
+        await nextTick();
+
+        expect(stageText()).toBe('AI скоро начнёт…');
+        expect(remove).toHaveBeenCalledWith('ai-text--enter');
+      });
+
+      it('never freezes under reduced motion: slower, still moving', () => {
+        const style = workingStateSource.slice(
+          workingStateSource.indexOf('<style scoped>')
+        );
+        const reduced = style.slice(
+          style.indexOf('@media (prefers-reduced-motion: reduce)'),
+          style.indexOf('/* High contrast')
+        );
+
+        expect(reduced).toContain('animation-duration: 4.8s;');
+        expect(reduced).toContain('animation-duration: 4.8s, 1.2s;');
+        expect(reduced).not.toMatch(/animation(-name)?:\s*none/);
+        // the motion is written once at full speed; reduced motion only
+        // lengthens it
+        expect(style).toContain('ai-shimmer 2.4s linear infinite');
+        expect(style).toContain('ai-reveal 0.75s');
+      });
+
+      it('takes its colours from the theme tokens, never from violet', () => {
+        const style = workingStateSource.slice(
+          workingStateSource.indexOf('<style scoped>')
+        );
+
+        expect(style).toContain('var(--slate-11)');
+        expect(style).toContain('var(--blue-11)');
+        expect(style).not.toMatch(/violet|purple|iris/i);
+      });
     });
 
     it('takes the focus when it is shown, so that Esc cancels the run at once', () => {
@@ -657,6 +774,9 @@ describe('CopilotEditorSection.vue', () => {
       expect(wrapper.find('[data-test="copilot-live-progress"]').exists()).toBe(
         true
       );
+      // jsdom queues its own selectionchange timer when the run takes the
+      // focus: let it run, so that only the timers of the stages are counted
+      vi.advanceTimersByTime(1);
 
       await wrapper.setProps({
         isGeneratingContent: false,
