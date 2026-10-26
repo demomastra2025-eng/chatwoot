@@ -1635,6 +1635,121 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     end
   end
 
+  # PROD 27.10 (7f87f16e9): the model asked for five service searches in ONE step, the fifth was over the budget of four, and its
+  # refusal ended the tool loop: the step that writes the draft never came, and a second call without tools (8 s) wrote it instead.
+  # The first refusal of a run is the result of the call; only a refusal in a later step ends the run.
+  describe 'a refusal of the loop guard in a reply suggestion' do
+    let(:read_only_tool) { ToolWrapperSpecReadOnlyTool.new }
+    let(:read_only_wrapper) { described_class.new(read_only_tool, context_wrapper) }
+    let(:search_tool) { ToolWrapperSpecReadOnlyTool.new(tool_name: 'search_scheduling_services') }
+    let(:search_wrapper) { described_class.new(search_tool, context_wrapper) }
+
+    before { context_wrapper.context[:state][:source] = 'reply_suggestion' }
+
+    def budget = Captain::Runtime::ToolLoopGuard::MAX_REQUESTS_BY_TOOL.fetch('search_scheduling_services')
+    def budget_error = 'Scheduling service search budget exceeded. Use the available service results.'
+    def stop_key = described_class::TERMINAL_TOOL_STOP_KEY
+
+    # A step of the model: the assistant message whose tool calls run together (ChatFactory.track_tool_call_batches!).
+    def model_step(id)
+      context_wrapper.context[:captain_v2_current_tool_batch_id] = id
+    end
+
+    def search_over_the_budget
+      model_step('step-1')
+      Array.new(budget + 1) { |index| search_wrapper.call(result: "search #{index}") }
+    end
+
+    it 'is the result of the call in the first step: the calls after it run and the run goes on' do
+      results = search_over_the_budget
+      later = read_only_wrapper.call(result: 'contact')
+
+      expect(results.first(budget)).to eq(Array.new(budget) { |index| "search #{index}" })
+      expect(results.last).not_to be_a(RubyLLM::Tool::Halt)
+      expect_tool_error(results.last, budget_error, retryable: false)
+      expect(later).to eq('contact')
+      expect(search_tool.calls).to eq(budget)
+      expect(context_wrapper.context).not_to have_key(stop_key)
+      refusal = events.reverse.find { |event| event.first == :complete && event[1] == 'search_scheduling_services' }
+      expect(refusal[2]).to include(success: false, audit: include(failure_reason: 'tool_budget_exceeded'))
+    end
+
+    it 'refuses every further call over the budget in that step the same way' do
+      results = search_over_the_budget
+      results << search_wrapper.call(result: 'search again')
+
+      results.last(2).each { |result| expect_tool_error(result, budget_error, retryable: false) }
+      expect(search_tool.calls).to eq(budget)
+      expect(context_wrapper.context).not_to have_key(stop_key)
+    end
+
+    it 'ends the run when the model asks for more in a later step, and keeps the rest of that step stopped' do
+      search_over_the_budget
+      model_step('step-2')
+
+      stopped = search_wrapper.call(result: 'one more search')
+
+      expect(stopped).to be_a(RubyLLM::Tool::Halt)
+      expect_tool_error(stopped, budget_error, retryable: false)
+      expect(context_wrapper.context[stop_key]).to include(tool_name: 'search_scheduling_services')
+      expect(read_only_wrapper.call(result: 'contact')).to be_a(RubyLLM::Tool::Halt)
+      expect(read_only_tool.calls).to eq(0)
+    end
+
+    it 'lets a tool that is within its own budget run in a later step' do
+      search_over_the_budget
+      model_step('step-2')
+
+      expect(read_only_wrapper.call(result: 'contact')).to eq('contact')
+      expect(context_wrapper.context).not_to have_key(stop_key)
+    end
+
+    it 'is a first strike for the budget of the whole run, and a stop in a later step' do
+      wrappers = Array.new(3) { |index| described_class.new(ToolWrapperSpecReadOnlyTool.new(tool_name: "read_tool_#{index}"), context_wrapper) }
+      model_step('step-1')
+      described_class::MAX_TOOL_REQUESTS_PER_RUN.times { |index| wrappers.fetch(index % 3).call(result: "lookup #{index}") }
+
+      over_the_run = wrappers.first.call(result: 'one request too many')
+      model_step('step-2')
+      stopped = wrappers.second.call(result: 'and another one')
+
+      expect(over_the_run).not_to be_a(RubyLLM::Tool::Halt)
+      expect_tool_error(over_the_run, 'Tool request limit reached. Stop calling tools and answer using the available results.', retryable: false)
+      expect(stopped).to be_a(RubyLLM::Tool::Halt)
+    end
+
+    it 'is a first strike for the attempt limit of an identical failing call' do
+      failure = Captain::ToolResult.failure(error: 'Temporary provider timeout', retryable: true)
+      model_step('step-1')
+      described_class::MAX_IDENTICAL_TOOL_EXECUTIONS.times { read_only_wrapper.call(result: failure) }
+
+      refused = read_only_wrapper.call(result: failure)
+      model_step('step-2')
+      stopped = read_only_wrapper.call(result: failure)
+
+      expect(refused).not_to be_a(RubyLLM::Tool::Halt)
+      expect_tool_error(refused, 'Tool execution attempt limit reached. Change the arguments or stop calling this tool.', retryable: false)
+      expect(stopped).to be_a(RubyLLM::Tool::Halt)
+      expect(read_only_tool.calls).to eq(described_class::MAX_IDENTICAL_TOOL_EXECUTIONS)
+    end
+
+    it 'ends the run at once when the steps cannot be told apart' do
+      results = Array.new(budget + 1) { |index| search_wrapper.call(result: "search #{index}") }
+
+      expect(results.last).to be_a(RubyLLM::Tool::Halt)
+      expect(context_wrapper.context).to have_key(stop_key)
+    end
+
+    it 'still ends a live run at the first refusal' do
+      context_wrapper.context[:state][:source] = 'incoming_message'
+
+      results = search_over_the_budget
+
+      expect(results.last).to be_a(RubyLLM::Tool::Halt)
+      expect(context_wrapper.context).to have_key(stop_key)
+    end
+  end
+
   # Suggestion eval 26.10: agents booked visits on a closing «Спасибо». On a turn the router found needs no answer (no_reply_needed)
   # an action refuses, and the run goes on.
   describe 'on a turn that needs no answer' do

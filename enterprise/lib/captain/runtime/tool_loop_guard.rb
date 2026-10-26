@@ -3,6 +3,8 @@
 class Captain::Runtime::ToolLoopGuard
   REQUEST_COUNTS_KEY = :captain_v2_tool_request_counts
   TERMINAL_STOP_KEY = :captain_v2_terminal_tool_stop
+  # The model step (tool-call batch) in which the guard first refused a call of the run, see #first_strike?.
+  WARNED_BATCH_KEY = :captain_v2_tool_loop_warned_batch
   MAX_REQUESTS_PER_TOOL = 6
   MAX_REQUESTS_PER_RUN = 16
   MAX_COORDINATION_REQUESTS = 64
@@ -41,6 +43,20 @@ class Captain::Runtime::ToolLoopGuard
         result: result.deep_dup,
         stopped_at: Time.current.iso8601
       }
+    end
+  end
+
+  # The first refusal of a run is a warning, never the end of it: true when no refusal came before, or when the earlier one was in
+  # the same model step (one assistant message with its tool calls, identified by batch_id). The model gets the refusal as the
+  # result of the call and writes its answer in its next step; a refusal in a later step is the second one (false), and the caller
+  # ends the run. A step that cannot be told apart (no batch_id) is never a first strike.
+  def first_strike?(batch_id)
+    return false if batch_id.blank?
+
+    @context_wrapper.tool_loop_guard_mutex.synchronize do
+      warned = context[WARNED_BATCH_KEY] || context[WARNED_BATCH_KEY.to_s]
+      context[WARNED_BATCH_KEY] = batch_id if warned.blank?
+      warned.blank? || warned == batch_id
     end
   end
 

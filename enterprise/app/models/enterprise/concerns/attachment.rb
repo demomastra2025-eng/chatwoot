@@ -4,6 +4,7 @@ module Enterprise::Concerns::Attachment
   included do
     after_create_commit :enqueue_audio_transcription
     after_create_commit :enqueue_document_parsing
+    after_create_commit :enqueue_image_description
   end
 
   private
@@ -23,5 +24,16 @@ module Enterprise::Concerns::Attachment
     return unless Messages::DocumentParsingService.parseable_attachment?(self)
 
     Messages::DocumentParsingJob.perform_later(id)
+  end
+
+  # An image of a conversation with an AI agent is described when it arrives, not when an agent needs it (a reply suggestion waited
+  # 11.7 s for one on PROD): see Messages::ImageDescriptionService.
+  def enqueue_image_description
+    return unless Messages::ImageDescriptionService.enabled_for?(self)
+
+    Messages::ImageDescriptionJob.perform_later(id)
+  rescue StandardError => e
+    # The image of a message is never lost over its description: a run describes it when it needs it.
+    Rails.logger.warn("[CAPTAIN][ImageDescription] not queued attachment_id=#{id} error_class=#{e.class.name}")
   end
 end
