@@ -20,6 +20,10 @@
 # anchor of the channel (Questions, default_to). A suggestion meets the same confidence threshold and the same escalation as a live
 # turn, whatever the length of the message, and a failure still fails. An escalation that names no agent raises UndecidedError: the
 # suggestion ends as "staff must answer" with a note of the router (never a silent draft of the anchor).
+#
+# A plain thanks, ok or greeting is never a council: with a current agent it stays with that agent, with none it goes to the agent
+# of general clinic questions (rule 3 of INSTRUCTIONS). This is the decision models' and the escalation's own rule, never a code
+# override of an answer; a council part that is given such a fragment ends with no_reply_needed (see Captain::Runtime::PartSchema).
 class Captain::Runtime::DecisionRouter
   FEATURE = :agent_routing
   INSTRUCTIONS = <<~TEXT
@@ -30,7 +34,7 @@ class Captain::Runtime::DecisionRouter
     Decide in this order:
     1. What does the patient ask for NOW? Read latest_message; use recent_messages only to resolve references (this, it, then, at 14:00, yes, a name, a date of birth, an IIN, a phone number). Services mentioned only as already done or as background do not count.
     2. Give every requested service or question to the agent whose description covers it. When two descriptions could fit, the one that names the topic explicitly wins (insurance, OSMS attachment, documents, complaints, refunds, a procedure, an operation). The price, preparation, free times, booking, rescheduling and cancelling of a service belong to the agent that provides that service. A complaint, a refund or a document about a past visit belongs to the agent whose description lists it, not to the agent that booked the visit.
-    3. An answer to an open question belongs to the agent that asked it. A message that asks for nothing new - it answers the current agent's question, chooses a time, gives personal data, confirms, declines, thanks or greets - stays with the current agent. With no current agent (current_agent_id null), such a message that continues a service recent_messages discuss (a time for it, a confirmation, personal data for its booking) belongs to the agent of that service.
+    3. An answer to an open question belongs to the agent that asked it. A message that asks for nothing new - it answers the current agent's question, chooses a time, gives personal data, confirms, declines, thanks or greets - stays with the current agent. With no current agent (current_agent_id null), such a message that continues a service recent_messages discuss (a time for it, a confirmation, personal data for its booking) belongs to the agent of that service, and a message that asks for nothing new and continues no service (a plain thanks, ok, an emoji, a greeting) is route_agent to the agent whose description lists general clinic questions, as in rule 6; it is never a council.
     4. If everything requested belongs to the current agent, or nothing new is requested, the answer is stay_current. If everything requested belongs to ONE other agent, it is route_agent - also when the message continues the conversation ("good, then book me ...") or the current agent spoke about that service before. Several services of one agent are one agent, never a council: three ultrasounds, five lab tests, two doctors of the doctors' agent, a price and a booking.
     5. Choose council only when the patient asks now for services that belong to two or three DIFFERENT agents, and say yes for exactly those agents - no more, no fewer, never an agent added "just in case". When the patient asks for a complete check-up or for all steps of one problem in one visit without naming each service (for example tests, an ultrasound and a doctor for one organ), count each kind of service it needs.
     6. A general question about the clinic itself (address, opening hours, parking, contacts, how to pay) is stay_current when there is a current agent, and then only the current agent is yes; with no current agent it is route_agent to the agent whose description lists general clinic questions.
@@ -62,8 +66,7 @@ class Captain::Runtime::DecisionRouter
   # key: the canonical key of the outcome; kind: stay, agent, council, human or none (inconsistent only without escalation, in the
   # evaluation harness); agent_ids: who answers (the participants of a council in ascending order). decided_by: the decision model
   # that answered, or "escalation:<model>". first_*: what the decision models answered, also when the escalation decided
-  # (first_answers: the chosen key of every question). guard: 'bounce' when the turn would have gone straight back; 'no_request'
-  # when the escalation answered council for a message the decision models found asking for no agent's service. default_to: a
+  # (first_answers: the chosen key of every question). guard: 'bounce' when the turn would have gone straight back. default_to: a
   # reply suggestion whose answers named no agent went to the current agent ('current') or to the anchor ('anchor'); such a decision
   # met the same threshold as any other.
   Decision = Struct.new(
@@ -138,7 +141,7 @@ class Captain::Runtime::DecisionRouter
     )
     trigger = escalation_trigger(outcome, confidence, snapshot)
     decision[:escalation_trigger] = trigger
-    return escalate(questions, snapshot, decision, started, choices) if trigger && @escalate
+    return escalate(questions, snapshot, decision, trigger, started) if trigger && @escalate
 
     finish(decision.merge(decided_by: first.model, confidence: confidence), outcome, started)
   end
@@ -170,11 +173,7 @@ class Captain::Runtime::DecisionRouter
     source.present? && outcome.kind == 'agent' && outcome.agent_ids == [source]
   end
 
-  # first_choices: what the decision models answered. A council needs services of two or three agents: when the decision models
-  # said that the latest message asks for no agent's service (a thanks, an ok, a greeting) and the escalation still answered council,
-  # the turn takes the stay or anchor path instead (guard no_request, see Questions#no_request_outcome).
-  def escalate(questions, snapshot, decision, started, first_choices)
-    trigger = decision[:escalation_trigger]
+  def escalate(questions, snapshot, decision, trigger, started)
     escalation = Escalation.new(account: @account, timeout: @escalation_timeout, effort: @escalation_effort,
                                 observability: @observability.merge(escalation_trigger: trigger))
     escalation_started = monotonic_now
@@ -182,11 +181,9 @@ class Captain::Runtime::DecisionRouter
     outcome = questions.outcome(answer.choices, final: true)
     raise escalation_without_outcome(questions, answer) unless outcome
 
-    no_request = questions.no_request_outcome(first_choices) if outcome.kind == 'council'
-    guard = no_request ? 'no_request' : ('bounce' if trigger == 'bounce')
     finish(decision.merge(decided_by: "escalation:#{answer.model}", confidence: nil, escalated: true, escalation_reason: answer.reason,
-                          guard: guard, escalation_ms: elapsed_ms(escalation_started)),
-           no_request || outcome, started)
+                          guard: ('bounce' if trigger == 'bounce'), escalation_ms: elapsed_ms(escalation_started)),
+           outcome, started)
   end
 
   def escalation_without_outcome(questions, answer)

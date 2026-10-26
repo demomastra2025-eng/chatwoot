@@ -286,46 +286,37 @@ RSpec.describe Captain::Runtime::DecisionRouter do
       expect(router.decide.to_event_payload).to include(default_to: 'current', escalated: false)
     end
 
-    describe 'a thanks that the decision models find asking for no agent, which the escalation makes a council' do
-      let(:message) { 'Хорошо, спасибо' }
+    describe 'an unsure stay_current that asks for no agent, which the escalation makes a council' do
+      let(:message) { 'Спасибо. А аудиометрию и промывание миндалин можно завтра?' }
 
-      it 'stays with the sticky agent instead of the council' do
-        answer_chain(chain_answer('stay_current', confidence: 0.5))
+      it 'uses the council of the escalation: its answer is final, the turn is not sent back to the sticky agent' do
+        answer_chain(chain_answer('stay_current', confidence: 0.6))
         escalate_to(choices('council', yes: [84, 119]))
 
-        expect(router.decide).to have_attributes(key: 'stay_current', kind: 'stay', agent_ids: [119], escalated: true, guard: 'no_request',
-                                                 default_to: 'current', first_choice: 'stay_current')
-      end
-
-      context 'without a sticky agent' do
-        let(:sticky) { nil }
-
-        it 'goes to the anchor instead of the council, and its event says why' do
-          answer_chain(chain_answer('route_agent', confidence: 0.95))
-          escalate_to(choices('council', yes: [84, 119]))
-
-          decision = router.decide
-
-          expect(decision).to have_attributes(key: 'route_agent_84', kind: 'agent', agent_ids: [84], escalated: true, guard: 'no_request',
-                                              default_to: 'anchor', escalation_trigger: 'inconsistent')
-          expect(decision.to_event_payload).to include(guard: 'no_request', decision_key: 'route_agent_84')
-        end
-
-        it 'keeps the council when the decision models asked for services of two agents' do
-          answer_chain(chain_answer('route_agent', yes: [84, 119], confidence: 0.95))
-          escalate_to(choices('council', yes: [84, 119]))
-
-          expect(router.decide).to have_attributes(key: 'council_84_119', kind: 'council', escalated: true, guard: nil)
-        end
+        expect(router.decide).to have_attributes(key: 'council_84_119', kind: 'council', agent_ids: [84, 119], escalated: true,
+                                                 escalation_trigger: 'low_confidence', first_choice: 'stay_current', guard: nil,
+                                                 default_to: nil)
       end
     end
   end
 
-  it 'keeps the council of a live turn whose answers ask for no agent when there is no current agent to stay with' do
+  it 'uses the council of the escalation of a live turn whose first answers asked for no agent' do
     answer_chain(chain_answer('route_agent', confidence: 0.95))
     escalate_to(choices('council', yes: [84, 119]))
 
-    expect(router.decide).to have_attributes(key: 'council_84_119', kind: 'council', guard: nil)
+    expect(router.decide).to have_attributes(key: 'council_84_119', kind: 'council', escalated: true, escalation_trigger: 'inconsistent',
+                                             guard: nil)
+  end
+
+  it 'tells the decision models and the escalation that a plain thanks without a current agent goes to one agent, never a council' do
+    rule = 'a message that asks for nothing new and continues no service (a plain thanks, ok, an emoji, a greeting)'
+
+    expect(described_class::INSTRUCTIONS.squish).to include(
+      "#{rule} is route_agent to the agent whose description lists general clinic questions, as in rule 6; it is never a council."
+    )
+    expect(described_class::Questions::INCLUDE_INSTRUCTIONS).to include(
+      "#{rule} is yes only for the agent whose description lists general clinic questions."
+    )
   end
 
   describe '#redecide for a council part that was not its owner\'s' do
