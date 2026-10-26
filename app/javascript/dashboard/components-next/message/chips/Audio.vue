@@ -639,7 +639,7 @@ watchEffect(() => {
       @error="onNativeAudioError"
     />
 
-    <template v-if="hasTranscript">
+    <div v-if="hasTranscript" class="flex flex-col gap-[3px] w-full">
       <button
         v-if="collapseTranscript"
         type="button"
@@ -663,11 +663,11 @@ watchEffect(() => {
       <div
         v-if="isTranscriptVisible"
         :id="transcriptId"
-        class="text-n-slate-12 p-3 text-sm rounded-lg w-full break-words"
+        class="text-ds-caption italic text-n-slate-11 w-full break-words"
         data-testid="audio-transcript"
       >
         {{ attachmentRef.transcribedText }}
       </div>
-    </template>
+    </div>
   </div>
 </template>

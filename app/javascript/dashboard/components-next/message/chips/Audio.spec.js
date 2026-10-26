@@ -396,6 +396,44 @@ describe('Audio chip playback', () => {
       );
     });
 
+    it('sets the transcript close under its toggle, small and in italics', async () => {
+      withContainerWidth(0);
+      const chip = mountChip({ transcribedText: TRANSCRIPT });
+      await flushPromises();
+
+      await transcriptToggle(chip).trigger('click');
+
+      const body = transcriptBody(chip);
+      const classes = body.classes();
+      // 12.5 px italic, the secondary ink colour
+      expect(classes).toEqual(
+        expect.arrayContaining(['text-ds-caption', 'italic', 'text-n-slate-11'])
+      );
+      // no padding around the text: 3 px above it, nothing below
+      expect(classes.filter(name => /^p[a-z]?-/.test(name))).toEqual([]);
+      expect(classes).not.toContain('text-sm');
+      expect(classes).not.toContain('text-n-slate-12');
+      // the toggle and the text sit in one group with a 3 px gap
+      const group = body.element.parentElement;
+      expect(group.classList.contains('gap-[3px]')).toBe(true);
+      expect(group.contains(transcriptToggle(chip).element)).toBe(true);
+    });
+
+    it('keeps the compact look when the transcript is always shown (call accordion)', async () => {
+      withContainerWidth(0);
+      const chip = mountChip(
+        { transcribedText: TRANSCRIPT },
+        { collapseTranscript: false }
+      );
+      await flushPromises();
+
+      expect(transcriptToggle(chip).exists()).toBe(false);
+      expect(transcriptBody(chip).text()).toBe(TRANSCRIPT);
+      expect(transcriptBody(chip).classes()).toEqual(
+        expect.arrayContaining(['text-ds-caption', 'italic'])
+      );
+    });
+
     it('does not start playback when the toggle is used', async () => {
       withContainerWidth(0);
       const chip = mountChip({ transcribedText: TRANSCRIPT });

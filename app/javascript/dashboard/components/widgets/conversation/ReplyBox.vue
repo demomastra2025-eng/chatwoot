@@ -911,8 +911,14 @@ export default {
     getKeyboardEvents() {
       return {
         Escape: {
-          action: () => {
-            this.hideEmojiPicker();
+          action: event => {
+            // Esc closes the emoji picker first; only a bare Esc then cancels
+            // the AI suggestion
+            if (this.showEmojiPicker) {
+              this.hideEmojiPicker();
+              return;
+            }
+            this.cancelCopilotOnEscape(event);
           },
           allowOnFocusedInput: true,
         },
@@ -1341,6 +1347,26 @@ export default {
         this.toggleEmojiPicker();
       }
     },
+    // Esc stops a suggestion that is being prepared and drops a finished one.
+    // It acts when the focus is in the reply box or nowhere, never when it is
+    // in a dialog or another field of the page. The key handler lives on the
+    // document, so a reply box that is gone (no element) must not react.
+    cancelCopilotOnEscape(event) {
+      const root = this.replyEditor;
+      if (!root || !this.copilot.isActive.value) return;
+      const target = event?.target;
+      const isNeutral =
+        !target ||
+        target === document.body ||
+        target === document.documentElement;
+      if (!isNeutral && !root.contains(target)) return;
+
+      if (this.copilot.canCancel.value) {
+        this.copilot.cancelGeneration();
+      } else if (this.copilot.canAccept.value) {
+        this.copilot.dismiss();
+      }
+    },
     onTypingOn() {
       this.toggleTyping('on');
     },
@@ -1746,15 +1772,9 @@ export default {
           :stale="copilot.suggestionStale.value"
           :engine="copilot.suggestionEngine.value"
           :is-queued="copilot.isQueued.value"
-          :placeholder="
-            $t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.REFINE_PLACEHOLDER')
-          "
           @focus="onFocus"
           @blur="onBlur"
-          @clear-selection="clearEditorSelection"
-          @close="copilot.showEditor.value = false"
           @content-ready="copilot.setContentReady"
-          @send="copilot.sendFollowUp"
           @approve-action="copilot.approveAction"
           @reject-action="copilot.rejectAction"
         />
@@ -1834,9 +1854,6 @@ export default {
         :is-generating-content="copilot.isButtonDisabled.value"
         :is-generating="copilot.isGenerating.value"
         :can-cancel="copilot.canCancel.value"
-        :is-queued="copilot.isQueued.value"
-        :elapsed-seconds="copilot.elapsedSeconds.value"
-        :budget-seconds="copilot.suggestionTiming.value.budgetSeconds"
         @submit="onSubmitCopilotReply"
         @cancel="copilot.cancelGeneration"
         @reject="copilot.dismiss"

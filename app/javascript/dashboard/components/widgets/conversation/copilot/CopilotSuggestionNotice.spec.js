@@ -33,19 +33,21 @@ const notice = (overrides = {}) => ({
   ...overrides,
 });
 
-const text = wrapper => wrapper.get('[data-test="copilot-notice-text"]').text();
+const title = wrapper =>
+  wrapper.get('[data-test="copilot-notice-title"]').text();
+const reason = wrapper =>
+  wrapper.get('[data-test="copilot-notice-reason"]').text();
 
 describe('CopilotSuggestionNotice', () => {
-  it('says why no reply is needed, with the reason after the title', () => {
+  it('says that no reply is needed, with the reason on the second line', () => {
     const wrapper = mountNotice({ notice: notice() });
 
-    expect(text(wrapper)).toBe(
-      'ИИ считает, что ответ не нужен: Пациент только поблагодарил, вопросов нет.'
-    );
+    expect(title(wrapper)).toBe('Ответ не нужен');
+    expect(reason(wrapper)).toBe('Пациент только поблагодарил, вопросов нет.');
     expect(wrapper.attributes('data-kind')).toBe('no_reply');
   });
 
-  it('says why a staff member is needed', () => {
+  it('says «Нужен сотрудник» without a colon and gives the reason below', () => {
     const wrapper = mountNotice({
       notice: notice({
         kind: 'human_needed',
@@ -53,13 +55,12 @@ describe('CopilotSuggestionNotice', () => {
       }),
     });
 
-    expect(text(wrapper)).toBe(
-      'Нужен сотрудник: В базе нет данных, кто оперирует ЛОР.'
-    );
+    expect(title(wrapper)).toBe('Нужен сотрудник');
+    expect(reason(wrapper)).toBe('В базе нет данных, кто оперирует ЛОР.');
     expect(wrapper.attributes('data-kind')).toBe('human_needed');
   });
 
-  it('shows only a short status for a failed run, with «Повторить»', async () => {
+  it('says «Не удалось подготовить ответ» with one calm line and «Повторить»', async () => {
     const wrapper = mountNotice({
       notice: notice({
         kind: 'failed',
@@ -69,10 +70,8 @@ describe('CopilotSuggestionNotice', () => {
       }),
     });
 
-    expect(text(wrapper)).toBe('ИИ не смог подготовить ответ');
-    expect(wrapper.find('[data-test="copilot-notice-reason"]').exists()).toBe(
-      false
-    );
+    expect(title(wrapper)).toBe('Не удалось подготовить ответ');
+    expect(reason(wrapper)).toBe('Попробуйте ещё раз или ответьте сами.');
     const retry = wrapper.get('[data-test="copilot-notice-retry"]');
     expect(retry.text()).toBe('Повторить');
 
@@ -80,6 +79,19 @@ describe('CopilotSuggestionNotice', () => {
     expect(wrapper.emitted('retry')).toHaveLength(1);
     expect(wrapper.emitted('dismiss')).toBeUndefined();
   });
+
+  it.each(['router_unavailable', 'council_unavailable'])(
+    'does not mention agents or routing when the failure is %s',
+    reasonCode => {
+      const wrapper = mountNotice({
+        notice: notice({ kind: 'failed', reason: null, reasonCode }),
+      });
+
+      expect(title(wrapper)).toBe('Не удалось подготовить ответ');
+      expect(reason(wrapper)).toBe('Попробуйте ещё раз или ответьте сами.');
+      expect(wrapper.text()).not.toMatch(/агент|маршрутиз|консилиум|router/i);
+    }
+  );
 
   it('does not offer a retry when the run cannot be retried', () => {
     const wrapper = mountNotice({ notice: notice({ canRetry: false }) });
@@ -107,9 +119,8 @@ describe('CopilotSuggestionNotice', () => {
       }),
     });
 
-    expect(text(wrapper)).toBe(
-      'Подсказка ИИ недоступна Лимит ИИ-ответов исчерпан.'
-    );
+    expect(title(wrapper)).toBe('Подсказка недоступна');
+    expect(reason(wrapper)).toBe('Лимит ИИ-ответов исчерпан.');
   });
 
   it('explains the voice limitation from the locale when the server sent no text', () => {
@@ -121,23 +132,27 @@ describe('CopilotSuggestionNotice', () => {
       }),
     });
 
-    expect(text(wrapper)).toContain(
+    expect(reason(wrapper)).toContain(
       'В звонке нельзя отправить текст. Откройте чат клиента в мессенджере'
     );
   });
 
-  it('names the agent that made the decision', () => {
+  it('shows no line for an unavailable suggestion that has no reason at all', () => {
     const wrapper = mountNotice({
-      notice: notice({ agent: { id: 84, name: 'Сезім', avatarUrl: '' } }),
+      notice: notice({ kind: 'unavailable', reason: null, reasonCode: null }),
     });
 
-    expect(wrapper.get('[data-test="copilot-notice-agent"]').text()).toBe(
-      'Решение агента Сезім'
+    expect(title(wrapper)).toBe('Подсказка недоступна');
+    expect(wrapper.find('[data-test="copilot-notice-reason"]').exists()).toBe(
+      false
     );
   });
 
-  it('says that the router decided a staff request, and names no agent', () => {
-    const wrapper = mountNotice({
+  it('names no agent and no router, whoever made the decision', () => {
+    const byAgent = mountNotice({
+      notice: notice({ agent: { id: 84, name: 'Сезім', avatarUrl: '' } }),
+    });
+    const byRouter = mountNotice({
       notice: notice({
         kind: 'human_needed',
         reason: 'Пациент просит живого сотрудника — ответьте ему сами.',
@@ -146,22 +161,14 @@ describe('CopilotSuggestionNotice', () => {
       }),
     });
 
-    expect(wrapper.get('[data-test="copilot-notice-agent"]').text()).toBe(
-      'Решение маршрутизации ИИ'
+    expect(byAgent.text()).not.toContain('Сезім');
+    expect(byAgent.text()).not.toContain('Решение агента');
+    expect(byAgent.find('[data-test="copilot-notice-agent"]').exists()).toBe(
+      false
     );
-  });
-
-  it.each([
-    ['router_unavailable', 'ИИ не смог сейчас выбрать агента'],
-    ['council_unavailable', 'ИИ не смог сейчас собрать агентов'],
-  ])('explains the failure %s in a short sentence', (reasonCode, sentence) => {
-    const wrapper = mountNotice({
-      notice: notice({ kind: 'failed', reason: null, reasonCode }),
-    });
-
-    expect(text(wrapper)).toContain('ИИ не смог подготовить ответ');
-    expect(wrapper.get('[data-test="copilot-notice-reason"]').text()).toContain(
-      sentence
+    expect(byRouter.text()).not.toContain('маршрутизации');
+    expect(byRouter.find('[data-test="copilot-notice-agent"]').exists()).toBe(
+      false
     );
   });
 
@@ -178,22 +185,31 @@ describe('CopilotSuggestionNotice', () => {
   });
 
   it('renders the reason as plain text and never interprets HTML', () => {
-    const reason = '<img src=x onerror="alert(1)"><b>важно</b>';
-    const wrapper = mountNotice({ notice: notice({ reason }) });
+    const reasonText = '<img src=x onerror="alert(1)"><b>важно</b>';
+    const wrapper = mountNotice({ notice: notice({ reason: reasonText }) });
 
     expect(wrapper.find('img').exists()).toBe(false);
     expect(wrapper.find('b').exists()).toBe(false);
-    expect(wrapper.get('[data-test="copilot-notice-reason"]').text()).toBe(
-      reason
-    );
+    expect(reason(wrapper)).toBe(reasonText);
   });
 
   it('falls back to a neutral reason when the agent gave none', () => {
     const wrapper = mountNotice({ notice: notice({ reason: '  ' }) });
 
-    expect(text(wrapper)).toBe(
-      'ИИ считает, что ответ не нужен: причина не указана'
-    );
+    expect(title(wrapper)).toBe('Ответ не нужен');
+    expect(reason(wrapper)).toBe('Причина не указана.');
+  });
+
+  it('is a neutral card: only the icon in its circle carries a colour', () => {
+    const staff = mountNotice({ notice: notice({ kind: 'human_needed' }) });
+    const failed = mountNotice({ notice: notice({ kind: 'failed' }) });
+
+    [staff, failed].forEach(wrapper => {
+      expect(wrapper.classes().join(' ')).not.toMatch(/amber|ruby|iris/);
+      expect(wrapper.classes()).toContain('bg-n-solid-1');
+    });
+    expect(staff.get('span').classes().join(' ')).toContain('amber');
+    expect(failed.get('span').classes().join(' ')).toContain('ruby');
   });
 
   it('has no control that inserts, copies or sends the text', () => {
@@ -220,13 +236,13 @@ describe('CopilotSuggestionNotice', () => {
   ])('titles in %s', (locale, messages) => {
     const { NOTICE } = messages.CONVERSATION.REPLYBOX.COPILOT_SUGGESTION;
 
-    it('has the texts of the router failures and of the router decision', () => {
-      expect(NOTICE.ROUTER_LABEL).toBeTruthy();
-      expect(NOTICE.FAILED_REASONS.ROUTER_UNAVAILABLE).toBeTruthy();
-      expect(NOTICE.FAILED_REASONS.COUNCIL_UNAVAILABLE).toBeTruthy();
+    it('has no texts of the router, of an agent decision or of a council failure', () => {
+      expect(NOTICE.ROUTER_LABEL).toBeUndefined();
+      expect(NOTICE.AGENT_LABEL).toBeUndefined();
+      expect(NOTICE.FAILED_REASONS).toBeUndefined();
       expect(
         messages.CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.ROUTING
-      ).toBeTruthy();
+      ).toBeUndefined();
     });
 
     it.each([
@@ -234,15 +250,29 @@ describe('CopilotSuggestionNotice', () => {
       ['human_needed', NOTICE.HUMAN_NEEDED_TITLE],
       ['failed', NOTICE.FAILED_TITLE],
       ['unavailable', NOTICE.UNAVAILABLE_TITLE],
-    ])('uses the %s title', (kind, title) => {
+    ])('uses the %s title', (kind, expected) => {
       const wrapper = mountNotice(
         { notice: notice({ kind, reason: null, canRetry: true }) },
         locale,
         messages
       );
 
-      expect(text(wrapper)).toContain(title);
+      expect(title(wrapper)).toBe(expected);
+      expect(expected).not.toMatch(/:$/);
       expect(wrapper.text()).not.toContain('COPILOT_SUGGESTION');
+    });
+
+    it('has the one calm line for a failure and the retry label', () => {
+      const wrapper = mountNotice(
+        { notice: notice({ kind: 'failed', reason: null, canRetry: true }) },
+        locale,
+        messages
+      );
+
+      expect(reason(wrapper)).toBe(NOTICE.FAILED_BODY);
+      expect(wrapper.get('[data-test="copilot-notice-retry"]').text()).toBe(
+        NOTICE.RETRY
+      );
     });
   });
 });

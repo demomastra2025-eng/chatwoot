@@ -19,20 +19,12 @@ const NextButtonStub = {
 // Stand-ins for the heavy children. They keep the props ReplyBox passes and
 // the events it listens to, so the wiring of the reply box is what is tested.
 const CopilotReplyBottomPanelStub = {
-  props: [
-    'isGeneratingContent',
-    'isGenerating',
-    'canCancel',
-    'isQueued',
-    'elapsedSeconds',
-    'budgetSeconds',
-  ],
+  props: ['isGeneratingContent', 'isGenerating', 'canCancel'],
   emits: ['submit', 'cancel', 'reject'],
   template: `<div
     data-test="copilot-panel"
     :data-generating="String(isGenerating)"
     :data-can-cancel="String(canCancel)"
-    :data-queued="String(isQueued)"
   >
     <button data-test="panel-cancel" @click="$emit('cancel')" />
     <button data-test="panel-reject" @click="$emit('reject')" />
@@ -40,9 +32,9 @@ const CopilotReplyBottomPanelStub = {
   </div>`,
 };
 const CopilotEditorSectionStub = {
-  props: ['generatedContent', 'placeholder', 'stale', 'engine'],
+  props: ['generatedContent', 'stale', 'engine', 'isQueued'],
   template:
-    '<div data-test="copilot-section" :data-placeholder="placeholder" :data-stale="String(stale)">{{ generatedContent }}</div>',
+    '<div data-test="copilot-section" :data-queued="String(isQueued)" :data-stale="String(stale)">{{ generatedContent }}</div>',
 };
 const PassThroughStub = { inheritAttrs: false, template: '<slot />' };
 const MessageEditorStub = { template: '<div data-test="message-editor" />' };
@@ -308,7 +300,8 @@ describe('ReplyBox reply suggestion outcomes', () => {
     expect(panel()).not.toBeNull();
     expect(panel().getAttribute('data-generating')).toBe('true');
     expect(panel().getAttribute('data-can-cancel')).toBe('true');
-    expect(panel().getAttribute('data-queued')).toBe('true');
+    // and the section knows that the run waits in the queue
+    expect(section().getAttribute('data-queued')).toBe('true');
   });
 
   it('cancels a running suggestion from the bottom panel', async () => {
@@ -340,15 +333,12 @@ describe('ReplyBox reply suggestion outcomes', () => {
     expect(section().textContent).toContain(
       'Здравствуйте! Завтра в 10:00 есть окно.'
     );
-    expect(section().getAttribute('data-placeholder')).toBe(
-      'CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.REFINE_PLACEHOLDER'
-    );
     expect(section().getAttribute('data-stale')).toBe('true');
     expect(panel().getAttribute('data-generating')).toBe('false');
     expect(editor()).toBeNull();
   });
 
-  it('inserts the draft into the message only on «Вставить и редактировать»', async () => {
+  it('inserts the draft into the message only on «Вставить»', async () => {
     mockGetReplySuggestionStatus.mockResolvedValueOnce({ suggestion: draft() });
     wrapper = await mountReplyBox();
     expect(wrapper.vm.message).toBe('');
@@ -365,7 +355,7 @@ describe('ReplyBox reply suggestion outcomes', () => {
     expect(panel()).toBeNull();
   });
 
-  it('rejects the draft from «Отклонить» without a second form', async () => {
+  it('drops the draft from «Отменить» without a second form', async () => {
     mockGetReplySuggestionStatus.mockResolvedValueOnce({ suggestion: draft() });
     wrapper = await mountReplyBox();
 
@@ -382,6 +372,103 @@ describe('ReplyBox reply suggestion outcomes', () => {
     expect(section()).toBeNull();
     expect(editor()).not.toBeNull();
     expect(find('input[type="text"]')).toBeNull();
+  });
+
+  describe('Esc', () => {
+    const pressEsc = (target = document.body) => {
+      target.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Escape',
+          code: 'Escape',
+          bubbles: true,
+        })
+      );
+      return flushPromises();
+    };
+
+    it('cancels a suggestion that is being prepared', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: state({ status: 'running', result: null }),
+      });
+      wrapper = await mountReplyBox();
+      expect(panel()).not.toBeNull();
+
+      await pressEsc();
+
+      expect(mockCancelReplySuggestion).toHaveBeenCalledWith({
+        conversationId: 42,
+        suggestionRequestId: 'sr-42',
+      });
+      expect(panel()).toBeNull();
+      expect(editor()).not.toBeNull();
+    });
+
+    it('drops a ready draft like «Отменить»', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: draft(),
+      });
+      wrapper = await mountReplyBox();
+
+      await pressEsc();
+
+      expect(TasksAPI.feedback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          suggestionRequestId: 'sr-42',
+          outcome: 'dismissed',
+        })
+      );
+      expect(wrapper.vm.message).toBe('');
+      expect(section()).toBeNull();
+    });
+
+    it('works when the focus is in the reply box', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: draft(),
+      });
+      wrapper = await mountReplyBox();
+
+      await pressEsc(section());
+
+      expect(section()).toBeNull();
+    });
+
+    it('leaves the suggestion alone when the focus is in another field or dialog', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: draft(),
+      });
+      wrapper = await mountReplyBox();
+      const elsewhere = document.createElement('div');
+      document.body.appendChild(elsewhere);
+
+      await pressEsc(elsewhere);
+
+      expect(section()).not.toBeNull();
+      expect(TasksAPI.feedback).not.toHaveBeenCalled();
+      elsewhere.remove();
+    });
+
+    it('does nothing when no suggestion is active', async () => {
+      wrapper = await mountReplyBox();
+
+      await pressEsc();
+
+      expect(mockCancelReplySuggestion).not.toHaveBeenCalled();
+      expect(TasksAPI.feedback).not.toHaveBeenCalled();
+      expect(editor()).not.toBeNull();
+    });
+
+    it('closes the emoji picker first and keeps the suggestion', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: draft(),
+      });
+      wrapper = await mountReplyBox();
+      wrapper.vm.showEmojiPicker = true;
+
+      await pressEsc();
+
+      expect(wrapper.vm.showEmojiPicker).toBe(false);
+      expect(section()).not.toBeNull();
+    });
   });
 
   it('never carries a suggestion of one conversation into another', async () => {

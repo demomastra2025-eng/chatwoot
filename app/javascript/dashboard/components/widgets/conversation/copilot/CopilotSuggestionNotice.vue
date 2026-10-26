@@ -7,6 +7,7 @@ import { REPLY_SUGGESTION_NOTICE_KIND as KIND } from 'dashboard/composables/capt
 
 // A notice is information for the manager, never a draft: it has no text to
 // insert, copy or send. It is rendered above the reply box, outside the editor.
+// It says what happened in plain words: no agent, router or tool is named.
 const props = defineProps({
   notice: { type: Object, required: true },
   stale: { type: Boolean, default: false },
@@ -16,26 +17,23 @@ const emit = defineEmits(['dismiss', 'retry']);
 
 const { t } = useI18n();
 
+// The card is neutral; only the icon in its circle carries the colour
 const VIEW_BY_KIND = {
   [KIND.NO_REPLY]: {
     icon: 'i-lucide-message-square-off',
-    card: 'bg-n-alpha-2 outline-n-weak',
-    iconClass: 'text-n-slate-11',
+    circle: 'bg-n-alpha-2 text-n-slate-11',
   },
   [KIND.HUMAN_NEEDED]: {
     icon: 'i-lucide-user-round',
-    card: 'bg-n-amber-3 outline-n-amber-5',
-    iconClass: 'text-n-amber-11',
+    circle: 'bg-n-amber-3 text-n-amber-11',
   },
   [KIND.FAILED]: {
     icon: 'i-lucide-circle-alert',
-    card: 'bg-n-ruby-3 outline-n-ruby-5',
-    iconClass: 'text-n-ruby-11',
+    circle: 'bg-n-ruby-3 text-n-ruby-11',
   },
   [KIND.UNAVAILABLE]: {
     icon: 'i-lucide-info',
-    card: 'bg-n-alpha-2 outline-n-weak',
-    iconClass: 'text-n-slate-11',
+    circle: 'bg-n-alpha-2 text-n-slate-11',
   },
 };
 
@@ -64,121 +62,86 @@ const title = computed(() => {
   }
 });
 
-// The agent's own words follow the title: «ИИ считает, что ответ не нужен: …»
+// The words of the decision follow the title: why no reply is needed, why a
+// staff member is.
 const isDecision = computed(
   () =>
     props.notice.kind === KIND.NO_REPLY ||
     props.notice.kind === KIND.HUMAN_NEEDED
 );
 
-// Failures the manager can understand: the router could not choose the agent,
-// or the council it chose could not be set up.
-const failedReason = computed(() => {
-  if (props.notice.kind !== KIND.FAILED) return '';
-  if (props.notice.reasonCode === 'router_unavailable') {
-    return t(
-      'CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.FAILED_REASONS.ROUTER_UNAVAILABLE'
-    );
-  }
-  if (props.notice.reasonCode === 'council_unavailable') {
-    return t(
-      'CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.FAILED_REASONS.COUNCIL_UNAVAILABLE'
-    );
-  }
-  return '';
-});
-
 const body = computed(() => {
   if (reasonText.value) return reasonText.value;
-  if (isDecision.value)
+  if (isDecision.value) {
     return t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.NO_REASON');
+  }
+  if (props.notice.kind === KIND.FAILED) {
+    return t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.FAILED_BODY');
+  }
   if (props.notice.reasonCode === 'voice_channel_unsupported') {
     return t(
       'CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.UNAVAILABLE_REASONS.VOICE_CHANNEL_UNSUPPORTED'
     );
   }
-  return failedReason.value;
-});
-
-// A real space between the title and the reason: template whitespace between
-// two spans is dropped by the compiler.
-const reasonLine = computed(() => ` ${body.value}`);
-
-const agentName = computed(() => props.notice.agent?.name || '');
-
-// Who decided: the router (a staff request is nobody's among the agents), or
-// the agent that answered.
-const decidedBy = computed(() => {
-  if (props.notice.reasonSource === 'router') {
-    return t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.ROUTER_LABEL');
-  }
-  if (!agentName.value) return '';
-  return t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.AGENT_LABEL', {
-    agent: agentName.value,
-  });
+  return '';
 });
 </script>
 
 <template>
   <div
-    class="mx-2 mb-2 flex items-start gap-2 rounded-xl px-3 py-2.5 outline outline-1 -outline-offset-1"
-    :class="view.card"
+    class="mx-2 mb-2 flex items-start gap-3 rounded-xl border border-n-weak bg-n-solid-1 py-3 pl-3.5 pr-2 shadow-sm"
     role="status"
     data-test="copilot-suggestion-notice"
     :data-kind="notice.kind"
   >
-    <Icon
-      :icon="view.icon"
-      class="mt-0.5 size-4 shrink-0"
-      :class="view.iconClass"
-    />
-    <div class="min-w-0 flex-1 space-y-0.5">
+    <span
+      class="grid size-[30px] shrink-0 place-items-center rounded-full"
+      :class="view.circle"
+    >
+      <Icon :icon="view.icon" class="size-4" />
+    </span>
+    <div class="min-w-0 flex-1 pt-px">
       <p
-        class="mb-0 text-sm text-n-slate-12 break-words"
-        data-test="copilot-notice-text"
+        class="mb-0 break-words text-sm font-medium leading-snug text-n-slate-12"
+        data-test="copilot-notice-title"
       >
-        <span class="font-medium">{{ title }}</span>
-        <span v-if="body" data-test="copilot-notice-reason">{{
-          reasonLine
-        }}</span>
+        {{ title }}
       </p>
       <p
-        v-if="decidedBy"
-        class="mb-0 text-xs text-n-slate-11"
-        data-test="copilot-notice-agent"
+        v-if="body"
+        class="mb-0 mt-0.5 break-words text-[13px] leading-normal text-n-slate-11"
+        data-test="copilot-notice-reason"
       >
-        {{ decidedBy }}
+        {{ body }}
       </p>
       <p
         v-if="stale"
-        class="mb-0 text-xs text-n-amber-11"
+        class="mb-0 mt-1 text-xs text-n-amber-11"
         data-test="copilot-notice-stale"
       >
         {{ t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.STALE_WARNING') }}
       </p>
+      <div v-if="notice.canRetry" class="mt-2.5 flex gap-1">
+        <NextButton
+          :label="t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.RETRY')"
+          variant="faded"
+          color="slate"
+          size="sm"
+          data-test="copilot-notice-retry"
+          @click="emit('retry')"
+        />
+      </div>
     </div>
-    <div class="flex shrink-0 items-center gap-1">
-      <NextButton
-        v-if="notice.canRetry"
-        :label="t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.RETRY')"
-        slate
-        faded
-        xs
-        data-test="copilot-notice-retry"
-        @click="emit('retry')"
-      />
-      <NextButton
-        icon="i-lucide-x"
-        slate
-        ghost
-        xs
-        :aria-label="
-          t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.DISMISS')
-        "
-        :title="t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.DISMISS')"
-        data-test="copilot-notice-dismiss"
-        @click="emit('dismiss')"
-      />
-    </div>
+    <NextButton
+      icon="i-lucide-x"
+      variant="ghost"
+      color="slate"
+      size="xs"
+      class="-mt-0.5 shrink-0"
+      :aria-label="t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.DISMISS')"
+      :title="t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.NOTICE.DISMISS')"
+      data-test="copilot-notice-dismiss"
+      @click="emit('dismiss')"
+    />
   </div>
 </template>

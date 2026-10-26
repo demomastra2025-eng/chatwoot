@@ -59,9 +59,7 @@ const executeCopilotAction = (action, data) => {
           class="!mb-0"
           @focus="() => {}"
           @blur="() => {}"
-          @clear-selection="() => {}"
           @content-ready="copilot.setContentReady"
-          @send="copilot.sendFollowUp"
         />
         <Editor
           v-else

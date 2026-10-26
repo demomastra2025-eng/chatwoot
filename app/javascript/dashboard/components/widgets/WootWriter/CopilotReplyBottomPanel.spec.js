@@ -6,10 +6,12 @@ import kk from 'dashboard/i18n/locale/kk/conversation.json';
 import ru from 'dashboard/i18n/locale/ru/conversation.json';
 import CopilotReplyBottomPanel from './CopilotReplyBottomPanel.vue';
 
-// A plain button that renders the label: the global NextButton stub drops it
+// A plain button that renders the label and keeps what the tests look at: the
+// global NextButton stub drops the label
 const NextButtonStub = {
-  props: ['label'],
-  template: '<button type="button">{{ label }}</button>',
+  props: ['label', 'variant', 'color', 'size'],
+  template:
+    '<button type="button" :data-variant="variant" :data-color="color">{{ label }}</button>',
 };
 
 const mountPanel = (props = {}, locale = 'ru', messages = ru) =>
@@ -23,49 +25,68 @@ const mountPanel = (props = {}, locale = 'ru', messages = ru) =>
     },
   });
 
-const left = wrapper => wrapper.get('[data-test="copilot-panel-left"]');
-const accept = wrapper => wrapper.get('[data-test="copilot-panel-accept"]');
-const progress = wrapper =>
-  wrapper.find('[data-test="copilot-panel-progress"]');
+const insert = wrapper => wrapper.find('[data-test="copilot-panel-accept"]');
+const cancel = wrapper => wrapper.find('[data-test="copilot-panel-cancel"]');
+const labels = wrapper =>
+  wrapper.findAll('button').map(button => button.text());
 
 describe('CopilotReplyBottomPanel', () => {
   describe('after the draft is ready', () => {
-    it('offers «Вставить и редактировать» and «Отклонить», not the old «Принять»', () => {
+    it('offers only «Вставить» and «Отменить»', () => {
       const wrapper = mountPanel();
 
-      expect(accept(wrapper).text()).toMatch(
-        /^Вставить и редактировать\s+\(.+\)$/
+      expect(labels(wrapper)).toEqual(['Вставить', 'Отменить']);
+      ['Обновить', 'Отклонить', 'Принять', 'Редактировать', 'Закрыть'].forEach(
+        word => expect(wrapper.text()).not.toContain(word)
       );
-      expect(left(wrapper).text()).toBe('Отклонить');
-      expect(wrapper.text()).not.toContain('Принять');
-      expect(wrapper.text()).not.toContain('Отменить');
     });
 
-    it('emits submit from the insert button and reject from the left button', async () => {
+    it('makes «Вставить» the blue main button', () => {
       const wrapper = mountPanel();
 
-      await accept(wrapper).trigger('click');
-      await left(wrapper).trigger('click');
+      expect(insert(wrapper).attributes('data-variant')).toBe('solid');
+      expect(insert(wrapper).attributes('data-color')).toBe('blue');
+      expect(wrapper.html()).not.toMatch(/iris|violet|purple/);
+    });
+
+    it('keeps the shortcut out of the label and in the tooltip', () => {
+      const wrapper = mountPanel();
+
+      expect(insert(wrapper).text()).toBe('Вставить');
+      expect(insert(wrapper).attributes('title')).toMatch(
+        /^Вставить в поле ответа \(.+\)$/
+      );
+    });
+
+    it('emits submit from «Вставить» and reject from «Отменить»', async () => {
+      const wrapper = mountPanel();
+
+      await insert(wrapper).trigger('click');
+      await cancel(wrapper).trigger('click');
 
       expect(wrapper.emitted('submit')).toHaveLength(1);
       expect(wrapper.emitted('reject')).toHaveLength(1);
       expect(wrapper.emitted('cancel')).toBeUndefined();
     });
 
-    it('disables the insert button while the draft is not ready', () => {
+    it('disables «Вставить» while the draft is still animating in', () => {
       const wrapper = mountPanel({ isGeneratingContent: true });
 
-      expect(accept(wrapper).attributes('disabled')).toBeDefined();
+      expect(insert(wrapper).attributes('disabled')).toBeDefined();
+      expect(cancel(wrapper).attributes('disabled')).toBeUndefined();
     });
 
-    it('does not show a counter once the draft is ready', () => {
-      const wrapper = mountPanel({ elapsedSeconds: 12 });
+    it('shows no counter, no timer and no queue text', () => {
+      const wrapper = mountPanel({ elapsedSeconds: 12, budgetSeconds: 60 });
 
-      expect(progress(wrapper).exists()).toBe(false);
+      expect(wrapper.text()).not.toMatch(/\d/);
+      expect(
+        wrapper.find('[data-test="copilot-panel-progress"]').exists()
+      ).toBe(false);
     });
   });
 
-  describe('while the suggestion is being generated', () => {
+  describe('while the suggestion is being prepared', () => {
     const generating = (props = {}) =>
       mountPanel({
         isGenerating: true,
@@ -74,48 +95,33 @@ describe('CopilotReplyBottomPanel', () => {
         ...props,
       });
 
-    it('shows an enabled «Отменить» that emits cancel', async () => {
+    it('offers only «Отменить», with no disabled «Вставить»', () => {
       const wrapper = generating();
 
-      expect(left(wrapper).text()).toBe('Отменить');
-      expect(left(wrapper).attributes('disabled')).toBeUndefined();
-      expect(wrapper.text()).not.toContain('Отклонить');
+      expect(labels(wrapper)).toEqual(['Отменить']);
+      expect(insert(wrapper).exists()).toBe(false);
+    });
 
-      await left(wrapper).trigger('click');
+    it('emits cancel, not reject', async () => {
+      const wrapper = generating();
+
+      await cancel(wrapper).trigger('click');
 
       expect(wrapper.emitted('cancel')).toHaveLength(1);
       expect(wrapper.emitted('reject')).toBeUndefined();
+      expect(wrapper.emitted('submit')).toBeUndefined();
     });
 
-    it('keeps the insert button disabled and labelled', () => {
-      const wrapper = generating();
-
-      expect(accept(wrapper).attributes('disabled')).toBeDefined();
-      expect(accept(wrapper).text()).toContain('Вставить и редактировать');
-    });
-
-    it('disables the cancel button when the request cannot be cancelled', () => {
+    it('disables «Отменить» when the request cannot be cancelled', () => {
       const wrapper = generating({ canCancel: false });
 
-      expect(left(wrapper).attributes('disabled')).toBeDefined();
+      expect(cancel(wrapper).attributes('disabled')).toBeDefined();
     });
 
-    it('shows the elapsed time against the budget', () => {
-      const wrapper = generating({ elapsedSeconds: 12, budgetSeconds: 60 });
+    it('shows no counter and no queue text, only the glow above says what happens', () => {
+      const wrapper = generating({ isQueued: true, elapsedSeconds: 12 });
 
-      expect(progress(wrapper).text()).toBe('12 с из ~60 с');
-    });
-
-    it('shows that the request is queued', () => {
-      const wrapper = generating({ isQueued: true, elapsedSeconds: null });
-
-      expect(progress(wrapper).text()).toBe('В очереди…');
-    });
-
-    it('shows no progress text before the first timing is known', () => {
-      const wrapper = generating({ elapsedSeconds: null });
-
-      expect(progress(wrapper).exists()).toBe(false);
+      expect(wrapper.text()).toBe('Отменить');
     });
   });
 
@@ -124,19 +130,19 @@ describe('CopilotReplyBottomPanel', () => {
     ['en', en],
     ['kk', kk],
   ])('labels in %s', (locale, messages) => {
-    const labels = messages.CONVERSATION.REPLYBOX.COPILOT_SUGGESTION;
+    const texts = messages.CONVERSATION.REPLYBOX.COPILOT_SUGGESTION;
 
-    it('uses the translated insert, cancel and reject labels', () => {
+    it('uses the translated insert and cancel labels', () => {
+      const readyWrapper = mountPanel({}, locale, messages);
       const generatingWrapper = mountPanel(
         { isGenerating: true },
         locale,
         messages
       );
-      const readyWrapper = mountPanel({}, locale, messages);
 
-      expect(left(generatingWrapper).text()).toBe(labels.CANCEL);
-      expect(left(readyWrapper).text()).toBe(labels.REJECT);
-      expect(accept(readyWrapper).text()).toContain(labels.INSERT_AND_EDIT);
+      expect(labels(readyWrapper)).toEqual([texts.INSERT, texts.CANCEL]);
+      expect(labels(generatingWrapper)).toEqual([texts.CANCEL]);
+      expect(insert(readyWrapper).attributes('title')).toContain('(');
       expect(readyWrapper.text()).not.toContain('COPILOT_SUGGESTION');
     });
   });
