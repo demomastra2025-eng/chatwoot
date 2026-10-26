@@ -27,7 +27,7 @@ class Messages::ImageDescriptionService
       return false unless attachment&.image? && switched_on?
 
       message = attachment.message
-      describable_message?(message) && ai_images_enabled?(message.account) && agent_inbox?(message.inbox)
+      describable_message?(message) && agent_inbox?(message.inbox) && ai_images_enabled?(message.account)
     end
 
     private
@@ -38,14 +38,19 @@ class Messages::ImageDescriptionService
 
     def describable_message?(message)
       return false if message.blank? || message.private? || MESSAGE_TYPES.exclude?(message.message_type.to_s)
-      return false if ActiveModel::Type::Boolean.new.cast(message.content_attributes.to_h['imported_history'])
+      return false if imported_history?(message)
 
       message.created_at.present? && message.created_at > MAX_MESSAGE_AGE.ago
     end
 
+    def imported_history?(message)
+      attributes = message.content_attributes
+      attributes.respond_to?(:to_h) && ActiveModel::Type::Boolean.new.cast(attributes.to_h['imported_history']) == true
+    end
+
     def ai_images_enabled?(account)
-      account.present? && account.feature_enabled?('captain_integration') && account.captain_quota_available? &&
-        Captain::AccountSettings.new(account).section('understanding')['images']
+      account.present? && account.feature_enabled?('captain_integration') &&
+        Captain::AccountSettings.new(account).section('understanding')['images'] && account.captain_quota_available?
     end
 
     def agent_inbox?(inbox)
