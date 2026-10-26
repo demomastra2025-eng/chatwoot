@@ -95,4 +95,75 @@ RSpec.describe Captain::Assistant::AgentRunnerService, '#generate_response in a 
       expect(mock_runner).not_to have_received(:run)
     end
   end
+
+  # A reply suggestion that the loop guard stopped is no technical failure (see Captain::Runtime::Runner#staff_takeover_run?): the draft
+  # is written from the results so far in one call without tools, and the approval cards the run prepared stay with it.
+  describe 'a run that the loop guard stops' do
+    let(:card) do
+      { 'action_id' => 'card-1', 'tool_name' => 'create_task', 'status' => 'pending', 'title' => 'Создать задачу',
+        'description' => 'Задача: Перезвонить пациенту' }
+    end
+    let(:stopped_context) do
+      history = [
+        { role: :user, content: 'Перезвоните мне, пожалуйста' },
+        { role: :assistant, content: '', tool_calls: [{ id: 'call_1', name: 'create_task', arguments: { title: 'Перезвонить' } }] },
+        { role: :tool, content: '{"success":true,"status":"pending_operator_approval"}', tool_call_id: 'call_1' }
+      ]
+      { current_agent: assistant.agent_name, conversation_history: history, captain_suggestion_pending_actions: [card] }.tap do |context|
+        context[Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY] = { tool_name: 'search_available_slots', result: { success: false } }
+      end
+    end
+    let(:runs) { [] }
+
+    def loop_error = Captain::Runtime::Runner::ToolLoopStopped.new('Tool request limit reached')
+    def draft = 'Передала просьбу перезвонить, администратор свяжется с вами.'
+
+    def run_returns(*results)
+      allow(mock_runner).to receive(:run) do |input, context:, max_turns:, runtime_options:|
+        runs << { input: input, context: context, max_turns: max_turns, runtime_options: runtime_options }
+        results[runs.size - 1] || results.last
+      end
+    end
+
+    def agent_result(output:, context: stopped_context, error: nil)
+      instance_double(Captain::Runtime::Result, output: output, context: context, error: error)
+    end
+
+    def suggest
+      service.generate_response(message_history: [{ role: 'user', content: 'Перезвоните мне, пожалуйста' }])
+    end
+
+    it 'writes the draft from the results so far in one call without tools and keeps the approval cards' do
+      run_returns(agent_result(output: nil, error: loop_error), agent_result(output: { 'response' => draft, 'response_mode' => 'reply' }))
+
+      result = suggest
+
+      expect(runs.size).to eq(2)
+      expect(runs.second[:runtime_options]).to include(finalization_only: true, continue_from_history: true)
+      expect(result).to include('response' => draft, 'finalization_only_retry' => true, 'pending_actions' => [card])
+      expect(result).not_to include('error_class', 'technical_failure')
+    end
+
+    it 'gives the operator a note with the cards when only staff can answer' do
+      run_returns(
+        agent_result(output: nil, error: loop_error),
+        agent_result(output: { 'response' => '', 'response_mode' => 'human', 'operator_note' => 'Нужно решение врача.' })
+      )
+
+      expect(suggest).to include('response' => '', 'response_mode' => 'human', 'response_human_needed' => true,
+                                 'operator_note' => 'Нужно решение врача.', 'pending_actions' => [card])
+    end
+
+    it 'treats the turn limit the same way' do
+      context = stopped_context.except(Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY)
+                               .merge(captain_v2_completed_tool_results: [{ tool_name: 'search_available_slots', success: true }])
+      run_returns(
+        agent_result(output: 'Conversation ended: Exceeded maximum turns: 10', context: context,
+                     error: Captain::Runtime::Runner::MaxTurnsExceeded.new('Exceeded maximum turns: 10')),
+        agent_result(output: { 'response' => draft, 'response_mode' => 'reply' }, context: context)
+      )
+
+      expect(suggest).to include('response' => draft, 'finalization_only_retry' => true, 'pending_actions' => [card])
+    end
+  end
 end

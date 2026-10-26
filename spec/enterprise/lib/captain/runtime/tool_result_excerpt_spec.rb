@@ -128,6 +128,34 @@ RSpec.describe Captain::Runtime::ToolResultExcerpt do
 
       expect(described_class.excerpt(text).bytesize).to be <= described_class::BUDGET_BYTES + described_class::MARKER.bytesize + 1
     end
+
+    # The repeat of a read in a reply suggestion (Captain::Runtime::ToolWrapper#with_repeated_read_note) already told the model not
+    # to call the tool again: its excerpt keeps the data and says the same, without the note itself.
+    describe 'of a repeated read of a reply suggestion' do
+      let(:note) { Captain::Runtime::ToolWrapper::REPEATED_READ_NOTE }
+
+      it 'keeps the data of a JSON answer and does not invite another call' do
+        text = JSON.generate({ 'repeated_call' => true, 'repeated_call_note' => note }.merge(JSON.parse(compact_services_result)))
+        result = described_class.excerpt(text)
+
+        expect(result).to start_with("#{described_class::REPEATED_MARKER}\n")
+        expect(summary_of(text)).to include('repeated_call' => true, 'total_count' => 23, 'next_offset' => 10)
+        expect(summary_of(text)['services'].first).to include('id' => 1, 'name' => 'Прием врача консультация вариант 1', 'price' => 16_000)
+        expect(result).not_to include(note)
+      end
+
+      it 'keeps a text answer without the note' do
+        text = "Slots: #{'Mon 17:00, ' * 10}\n#{note}"
+
+        expect(described_class.excerpt(text)).to eq("#{described_class::REPEATED_MARKER}\nSlots: #{('Mon 17:00, ' * 10).strip}")
+      end
+
+      it 'is not shortened again' do
+        excerpt = described_class.excerpt(JSON.generate('repeated_call' => true, 'rows' => Array.new(500) { |index| index }))
+
+        expect(described_class.shortenable?(tool_message("#{excerpt}#{' ' * described_class::THRESHOLD_BYTES}"))).to be(false)
+      end
+    end
   end
 
   describe '.shorten_consumed!' do

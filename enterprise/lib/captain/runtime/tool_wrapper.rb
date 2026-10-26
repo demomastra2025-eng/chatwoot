@@ -46,8 +46,12 @@ class Captain::Runtime::ToolWrapper
   # A repeated identical read of a reply suggestion is answered from the first result. One repeat of a call is free; every further
   # one counts against the request limits of the loop guard, so a model stuck on one read still stops after a few requests.
   SUGGESTION_FREE_READ_REPEATS = 1
-  REPEATED_READ_NOTE = 'Same call as before in this run, same result as before (below). Do not call it again: finish the draft ' \
-                       'with the results you have.'
+  # The note of such a repeat. A JSON answer carries it in its own fields, so the answer stays JSON and the excerpt that replaces
+  # it later in the history keeps its ids and times (see Captain::Runtime::ToolResultExcerpt); a text answer ends with it.
+  REPEATED_READ_KEY = 'repeated_call'
+  REPEATED_READ_NOTE_KEY = 'repeated_call_note'
+  REPEATED_READ_NOTE = 'Repeated call: the same call already ran in this run and this is its result again. Do not call it again: ' \
+                       'finish the draft with the results you have.'
   # A repeat of an action with other arguments in a reply suggestion is a new approval card (nothing ran). A change or a cancellation
   # keeps one card per appointment, and a booking one card per patient, specialist and service: a corrected card replaces the earlier
   # one. Any other card, a booking with another specialist or service too, counts against this many cards of the claim in a run.
@@ -625,13 +629,27 @@ class Captain::Runtime::ToolWrapper
   def counted_request?(repeated_read)
     return true if repeated_read.nil?
 
-    repeated_read[:repeats] = repeated_read[:repeats].to_i + 1
-    repeated_read[:repeats] > SUGGESTION_FREE_READ_REPEATS
+    @context_wrapper.tool_loop_guard_mutex.synchronize do
+      repeated_read[:repeats] = repeated_read[:repeats].to_i + 1
+      repeated_read[:repeats] > SUGGESTION_FREE_READ_REPEATS
+    end
   end
 
   # The first result again, with a note that tells the model it already has it.
   def complete_repeated_read(entry)
-    "#{REPEATED_READ_NOTE}\n#{complete_and_render(entry[:result].deep_dup)}"
+    with_repeated_read_note(complete_and_render(entry[:result].deep_dup))
+  end
+
+  # A JSON object gets the note as its first fields, a JSON list goes under `result` next to them, and a text ends with the note.
+  def with_repeated_read_note(rendered)
+    data = JSON.parse(rendered) if rendered.lstrip.start_with?('{', '[')
+    note = { REPEATED_READ_KEY => true, REPEATED_READ_NOTE_KEY => REPEATED_READ_NOTE }
+    return JSON.generate(note.merge(data.except(*note.keys))) if data.is_a?(Hash)
+    return JSON.generate(note.merge('result' => data)) if data.is_a?(Array)
+
+    "#{rendered}\n#{REPEATED_READ_NOTE}"
+  rescue JSON::ParserError
+    "#{rendered}\n#{REPEATED_READ_NOTE}"
   end
 
   def cache_suggestion_read_result(normalized_args, result)

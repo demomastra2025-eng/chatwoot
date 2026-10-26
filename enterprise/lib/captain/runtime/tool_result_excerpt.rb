@@ -13,6 +13,9 @@ module Captain::Runtime::ToolResultExcerpt
   # A result of at most this many bytes is cheap to read again and stays as it is.
   THRESHOLD_BYTES = 4096
   MARKER = 'Result shortened after use; call the tool again if you need details.'
+  # A repeated read of a reply suggestion (Captain::Runtime::ToolWrapper#with_repeated_read_note) already told the model not to call
+  # the tool again: its excerpt says the same instead of inviting one more call, and the note itself is left out of the summary.
+  REPEATED_MARKER = 'Result shortened after use; this was already a repeated call of this run, so do not call the tool again.'
   # The summary never exceeds this many bytes. The rows kept drop step by step until it fits: [rows of a list, rows of a list nested
   # inside a row (the specialists of a service, its price links)].
   BUDGET_BYTES = 2000
@@ -46,15 +49,24 @@ module Captain::Runtime::ToolResultExcerpt
     return false unless message.role == :tool
 
     text = message.content
-    text.is_a?(String) && text.bytesize > THRESHOLD_BYTES && !text.start_with?(MARKER)
+    text.is_a?(String) && text.bytesize > THRESHOLD_BYTES && !text.start_with?(MARKER, REPEATED_MARKER)
   end
 
   def excerpt(text)
-    "#{MARKER}\n#{summary(text)}"
+    data = parse(text)
+    return "#{MARKER}\n#{summary(text, data)}" unless repeated_read?(text, data)
+
+    text = text.delete_suffix(Captain::Runtime::ToolWrapper::REPEATED_READ_NOTE).rstrip if data.nil?
+    "#{REPEATED_MARKER}\n#{summary(text, data)}"
   end
 
-  def summary(text)
-    data = parse(text)
+  def repeated_read?(text, data)
+    return data[Captain::Runtime::ToolWrapper::REPEATED_READ_KEY] == true if data.is_a?(Hash)
+
+    data.nil? && text.end_with?(Captain::Runtime::ToolWrapper::REPEATED_READ_NOTE)
+  end
+
+  def summary(text, data = parse(text))
     return plain_summary(text) if data.nil?
 
     ROW_LIMITS.each do |limits|
@@ -124,7 +136,7 @@ module Captain::Runtime::ToolResultExcerpt
   end
 
   def noise_key?(key)
-    NOISE_KEYS.include?(key) || key.to_s.start_with?(NOISE_PREFIX)
+    NOISE_KEYS.include?(key) || key.to_s.start_with?(NOISE_PREFIX) || key == Captain::Runtime::ToolWrapper::REPEATED_READ_NOTE_KEY
   end
 
   # false is an answer (active: false); nil, an empty text and an empty list or object say nothing.
