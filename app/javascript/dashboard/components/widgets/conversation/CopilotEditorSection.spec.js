@@ -7,6 +7,7 @@ import kk from 'dashboard/i18n/locale/kk/conversation.json';
 import ru from 'dashboard/i18n/locale/ru/conversation.json';
 import CopilotEditorSection from './CopilotEditorSection.vue';
 import workingStateSource from './copilot/CopilotWorkingState.vue?raw';
+import sectionSource from './CopilotEditorSection.vue?raw';
 
 // Swap the content at once instead of waiting for a CSS transition
 const PassThroughStub = { inheritAttrs: false, template: '<slot />' };
@@ -350,6 +351,257 @@ describe('CopilotEditorSection.vue', () => {
       });
       await kept.find('[data-test="copilot-action-approve"]').trigger('click');
       expect(kept.emitted('approveAction')).toEqual([[corrected]]);
+    });
+  });
+
+  describe('a card that was decided or closed', () => {
+    const EN = en.CONVERSATION.REPLYBOX.COPILOT_TRACE;
+    const KK = kk.CONVERSATION.REPLYBOX.COPILOT_TRACE;
+    const RU = ru.CONVERSATION.REPLYBOX.COPILOT_TRACE;
+    const approved = { ...sampleAction, status: 'approved' };
+
+    it('shows the result line of an approved card, and «Готово» when there is none', () => {
+      mountComponent({
+        pendingActions: [{ ...approved, result_summary: 'Д-р Смит — 10:00' }],
+      });
+      const withResult = wrapper.get('[data-test="copilot-action-card"]');
+      expect(
+        withResult.get('[data-test="copilot-action-result-summary"]').text()
+      ).toBe('Д-р Смит — 10:00');
+      expect(withResult.text()).not.toContain('Готово');
+      wrapper.unmount();
+
+      mountComponent({ pendingActions: [approved] });
+      const card = wrapper.get('[data-test="copilot-action-card"]');
+      expect(
+        card.get('[data-test="copilot-action-approved-badge"]').text()
+      ).toBe('Готово');
+      expect(
+        card.find('[data-test="copilot-action-result-summary"]').exists()
+      ).toBe(false);
+      // nothing to press any more
+      expect(card.find('[data-test="copilot-action-approve"]').exists()).toBe(
+        false
+      );
+      expect(card.find('[data-test="copilot-action-reject"]').exists()).toBe(
+        false
+      );
+    });
+
+    it.each([
+      ['ru', ru, RU],
+      ['en', en, EN],
+      ['kk', kk, KK],
+    ])('says «Готово» in %s', (locale, messages, trace) => {
+      mountComponent({ pendingActions: [approved] }, locale, messages);
+
+      expect(
+        wrapper.get('[data-test="copilot-action-approved-badge"]').text()
+      ).toBe(trace.ACTION_DONE);
+      expect(trace.ACTION_DONE.length).toBeGreaterThan(1);
+    });
+
+    it('shows nothing of a card that has left, and no empty panel', () => {
+      mountComponent({
+        showCopilotEditor: false,
+        pendingActions: [
+          { ...approved, dismissed: true },
+          {
+            ...sampleAction,
+            action_id: 'act-102',
+            status: 'rejected',
+            dismissed: true,
+          },
+        ],
+      });
+
+      expect(wrapper.find('[data-test="copilot-action-card"]').exists()).toBe(
+        false
+      );
+      expect(
+        wrapper.find('[data-test="copilot-pending-actions"]').exists()
+      ).toBe(false);
+      expect(wrapper.find('[data-test="copilot-editor-panel"]').exists()).toBe(
+        false
+      );
+    });
+
+    it('keeps the draft when its last card has left', () => {
+      mountComponent({
+        pendingActions: [{ ...approved, dismissed: true }],
+      });
+
+      expect(wrapper.find('[data-test="copilot-draft"]').exists()).toBe(true);
+      expect(wrapper.find('[data-test="copilot-action-card"]').exists()).toBe(
+        false
+      );
+    });
+
+    it('never brings a card back from the draft meta or the live progress', () => {
+      mountComponent({
+        pendingActions: [
+          { ...sampleAction, status: 'rejected', dismissed: true },
+        ],
+        suggestionMeta: { pending_actions: [sampleAction] },
+        liveProgress: { pending_actions: [sampleAction] },
+      });
+
+      expect(wrapper.find('[data-test="copilot-action-card"]').exists()).toBe(
+        false
+      );
+    });
+
+    describe('the close button of a failed card', () => {
+      const closeOf = card => card.find('[data-test="copilot-action-close"]');
+
+      it('closes a failed card and nothing else', async () => {
+        const failed = { ...sampleAction, status: 'failed' };
+        mountComponent({ pendingActions: [failed] });
+
+        const close = closeOf(wrapper);
+        expect(close.exists()).toBe(true);
+        expect(close.attributes('aria-label')).toBe('Закрыть');
+        expect(close.text()).toBe('');
+
+        await close.trigger('click');
+
+        expect(wrapper.emitted('closeAction')).toEqual([[failed]]);
+        expect(wrapper.emitted('approveAction')).toBeUndefined();
+        expect(wrapper.emitted('rejectAction')).toBeUndefined();
+      });
+
+      it.each(['pending', 'executing', 'approved', 'rejected'])(
+        'is not on a %s card',
+        status => {
+          mountComponent({ pendingActions: [{ ...sampleAction, status }] });
+
+          expect(closeOf(wrapper).exists()).toBe(false);
+        }
+      );
+
+      it('waits while the card is busy', () => {
+        mountComponent({
+          pendingActions: [{ ...sampleAction, status: 'failed' }],
+          actionLoadingById: { 'act-101': 'approving' },
+        });
+
+        expect(closeOf(wrapper).attributes('disabled')).toBeDefined();
+      });
+
+      it.each([
+        ['en', en, EN],
+        ['kk', kk, KK],
+      ])('is labelled in %s', (locale, messages, trace) => {
+        mountComponent(
+          { pendingActions: [{ ...sampleAction, status: 'failed' }] },
+          locale,
+          messages
+        );
+
+        expect(closeOf(wrapper).attributes('aria-label')).toBe(
+          trace.ACTION_CLOSE
+        );
+      });
+    });
+
+    it('fades a card out when it leaves, and shortens the fade under reduced motion', () => {
+      const group = sectionSource.match(/<TransitionGroup[\s\S]*?>/)[0];
+
+      expect(group).toContain('v-if=');
+      expect(group).toMatch(/leave-active-class="[^"]*duration-200/);
+      expect(group).toMatch(
+        /leave-active-class="[^"]*motion-reduce:duration-100/
+      );
+      expect(group).toContain('motion-reduce:translate-y-0');
+      expect(group).toContain('motion-reduce:scale-100');
+    });
+  });
+
+  describe('the line of a suggestion with only actions', () => {
+    const note = () => wrapper.find('[data-test="copilot-actions-only-note"]');
+
+    it('is shown above the cards when there is no draft', () => {
+      mountComponent({
+        showCopilotEditor: false,
+        actionsOnly: true,
+        pendingActions: [sampleAction],
+      });
+
+      expect(note().text()).toBe(
+        'AI предлагает только действия — ответ пациенту не нужен.'
+      );
+      expect(note().attributes('role')).toBe('status');
+      const html = wrapper.html();
+      expect(html.indexOf('copilot-actions-only-note')).toBeLessThan(
+        html.indexOf('copilot-pending-actions')
+      );
+      expect(wrapper.find('[data-test="copilot-draft"]').exists()).toBe(false);
+    });
+
+    it('is not shown with a draft', () => {
+      mountComponent({
+        showCopilotEditor: true,
+        actionsOnly: true,
+        pendingActions: [sampleAction],
+      });
+
+      expect(note().exists()).toBe(false);
+    });
+
+    it('is not shown when the run did not say that only actions are needed', () => {
+      mountComponent({
+        showCopilotEditor: false,
+        actionsOnly: false,
+        pendingActions: [sampleAction],
+      });
+
+      expect(note().exists()).toBe(false);
+    });
+
+    it('goes together with the cards: no cards, no line', () => {
+      mountComponent({
+        showCopilotEditor: false,
+        actionsOnly: true,
+        pendingActions: [{ ...sampleAction, dismissed: true }],
+      });
+
+      expect(note().exists()).toBe(false);
+    });
+
+    it('stays while the decided cards are still shown', () => {
+      mountComponent({
+        showCopilotEditor: false,
+        actionsOnly: true,
+        pendingActions: [{ ...sampleAction, status: 'rejected' }],
+      });
+
+      expect(note().exists()).toBe(true);
+    });
+
+    it.each([
+      ['ru', ru, 'AI предлагает только действия — ответ пациенту не нужен.'],
+      ['kk', kk, 'AI тек әрекеттерді ұсынады — пациентке жауап қажет емес.'],
+      [
+        'en',
+        en,
+        'AI suggests actions only — no reply to the patient is needed.',
+      ],
+    ])('is written in %s', (locale, messages, text) => {
+      mountComponent(
+        {
+          showCopilotEditor: false,
+          actionsOnly: true,
+          pendingActions: [sampleAction],
+        },
+        locale,
+        messages
+      );
+
+      expect(note().text()).toBe(text);
+      expect(text).toBe(
+        messages.CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.ACTIONS_ONLY
+      );
+      expect(note().text()).not.toMatch(/agent|агент|council|консилиум/i);
     });
   });
 

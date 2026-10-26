@@ -19,12 +19,13 @@ const NextButtonStub = {
 // Stand-ins for the heavy children. They keep the props ReplyBox passes and
 // the events it listens to, so the wiring of the reply box is what is tested.
 const CopilotReplyBottomPanelStub = {
-  props: ['isGeneratingContent', 'isGenerating', 'canCancel'],
+  props: ['isGeneratingContent', 'isGenerating', 'canCancel', 'actionsOnly'],
   emits: ['submit', 'cancel', 'reject'],
   template: `<div
     data-test="copilot-panel"
     :data-generating="String(isGenerating)"
     :data-can-cancel="String(canCancel)"
+    :data-actions-only="String(actionsOnly)"
   >
     <button data-test="panel-cancel" @click="$emit('cancel')" />
     <button data-test="panel-reject" @click="$emit('reject')" />
@@ -32,9 +33,21 @@ const CopilotReplyBottomPanelStub = {
   </div>`,
 };
 const CopilotEditorSectionStub = {
-  props: ['generatedContent', 'stale', 'engine', 'isQueued'],
-  template:
-    '<div data-test="copilot-section" :data-queued="String(isQueued)" :data-stale="String(stale)">{{ generatedContent }}</div>',
+  props: [
+    'generatedContent',
+    'stale',
+    'engine',
+    'isQueued',
+    'actionsOnly',
+    'pendingActions',
+  ],
+  template: `<div
+    data-test="copilot-section"
+    :data-queued="String(isQueued)"
+    :data-stale="String(stale)"
+    :data-actions-only="String(actionsOnly)"
+    :data-cards="(pendingActions || []).filter(card => !card.dismissed).map(card => card.action_id).join(',')"
+  >{{ generatedContent }}</div>`,
 };
 const PassThroughStub = { inheritAttrs: false, template: '<slot />' };
 const MessageEditorStub = { template: '<div data-test="message-editor" />' };
@@ -659,6 +672,212 @@ describe('ReplyBox reply suggestion outcomes', () => {
 
       expect(sendSpy).not.toHaveBeenCalled();
       expect(panel()).not.toBeNull();
+    });
+  });
+
+  describe('a suggestion with only actions', () => {
+    const cardOf = id => ({
+      action_id: id,
+      tool_name: 'create_task',
+      status: 'pending',
+      title: 'Создать задачу',
+    });
+    const withCards = (status = 'no_reply', ids = ['act-1', 'act-2']) =>
+      state({
+        status,
+        result: {
+          reason: 'Пациент только поблагодарил, вопросов нет.',
+          reason_source: 'agent',
+          agent: null,
+          pending_actions: ids.map(cardOf),
+        },
+      });
+    const sectionCards = () => section().getAttribute('data-cards');
+    const sendPanel = () => find('[data-test="reply-panel"]');
+
+    beforeEach(() => {
+      // the server answers every «Запретить» with the rejected card
+      TasksAPI.rejectAction.mockImplementation(({ actionId }) =>
+        Promise.resolve({
+          data: {
+            ok: true,
+            status: 'rejected',
+            action: { ...cardOf(actionId), status: 'rejected' },
+          },
+        })
+      );
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('puts the cards in place of the editor and offers only «Отменить»', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: withCards(),
+      });
+
+      wrapper = await mountReplyBox();
+
+      expect(notice()).not.toBeNull();
+      expect(section().getAttribute('data-actions-only')).toBe('true');
+      expect(sectionCards()).toBe('act-1,act-2');
+      expect(panel().getAttribute('data-actions-only')).toBe('true');
+      expect(panel().getAttribute('data-can-cancel')).toBe('true');
+      expect(editor()).toBeNull();
+      expect(sendPanel()).toBeNull();
+    });
+
+    it('«Отменить» declines every card, closes the panel and brings the editor back', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: withCards(),
+      });
+      wrapper = await mountReplyBox();
+
+      await click('[data-test="panel-reject"]');
+
+      expect(TasksAPI.rejectAction.mock.calls.map(([args]) => args)).toEqual([
+        { actionId: 'act-1', conversationId: 42 },
+        { actionId: 'act-2', conversationId: 42 },
+      ]);
+      expect(section()).toBeNull();
+      expect(panel()).toBeNull();
+      expect(editor()).not.toBeNull();
+      expect(sendPanel()).not.toBeNull();
+      // it is not a dropped draft: the notice stays with its own «Скрыть»
+      expect(notice()).not.toBeNull();
+      expect(TasksAPI.feedback).not.toHaveBeenCalled();
+    });
+
+    it('shows a decided card for 1.5 s, then the editor is back', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: withCards('no_reply', ['act-1']),
+      });
+      wrapper = await mountReplyBox();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      await wrapper.vm.copilot.rejectAction(cardOf('act-1'));
+      await flushPromises();
+
+      // decided, but still shown: nothing left to cancel
+      expect(sectionCards()).toBe('act-1');
+      expect(panel().getAttribute('data-can-cancel')).toBe('false');
+      expect(editor()).toBeNull();
+
+      vi.advanceTimersByTime(1499);
+      await flushPromises();
+      expect(section()).not.toBeNull();
+
+      vi.advanceTimersByTime(1);
+      await flushPromises();
+      expect(section()).toBeNull();
+      expect(panel()).toBeNull();
+      expect(editor()).not.toBeNull();
+      expect(sendPanel()).not.toBeNull();
+    });
+
+    it('keeps the editor and the send panel when a staff reply is needed', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: withCards('human_needed'),
+      });
+
+      wrapper = await mountReplyBox();
+
+      expect(notice().getAttribute('data-kind')).toBe('human_needed');
+      expect(section().getAttribute('data-actions-only')).toBe('false');
+      expect(sectionCards()).toBe('act-1,act-2');
+      expect(panel()).toBeNull();
+      expect(editor()).not.toBeNull();
+      expect(sendPanel()).not.toBeNull();
+    });
+
+    it('keeps the cards beside the editor after the text of a draft was inserted', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: {
+          ...draft(),
+          result: { ...draft().result, pending_actions: [cardOf('act-1')] },
+        },
+      });
+      wrapper = await mountReplyBox();
+
+      await click('[data-test="panel-submit"]');
+
+      expect(wrapper.vm.message).toBe(
+        'Здравствуйте! Завтра в 10:00 есть окно.'
+      );
+      expect(sectionCards()).toBe('act-1');
+      expect(section().getAttribute('data-actions-only')).toBe('false');
+      expect(panel()).toBeNull();
+      expect(editor()).not.toBeNull();
+      expect(sendPanel()).not.toBeNull();
+    });
+
+    it('declines the cards of a draft with «Отменить» too', async () => {
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: {
+          ...draft(),
+          result: {
+            ...draft().result,
+            pending_actions: [cardOf('act-1'), cardOf('act-2')],
+          },
+        },
+      });
+      wrapper = await mountReplyBox();
+
+      await click('[data-test="panel-reject"]');
+
+      expect(TasksAPI.rejectAction.mock.calls.map(([args]) => args)).toEqual([
+        { actionId: 'act-1', conversationId: 42 },
+        { actionId: 'act-2', conversationId: 42 },
+      ]);
+      expect(TasksAPI.feedback).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'dismissed' })
+      );
+      expect(section()).toBeNull();
+      expect(editor()).not.toBeNull();
+    });
+
+    it('does not send the hidden editor text and ignores Esc', async () => {
+      const sendSpy = vi
+        .spyOn(ReplyBox.methods, 'onSendReply')
+        .mockImplementation(() => {});
+      mockGetReplySuggestionStatus.mockResolvedValueOnce({
+        suggestion: withCards(),
+      });
+      wrapper = await mountReplyBox();
+      wrapper.vm.isFocused = true;
+
+      section().dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Enter',
+          code: 'Enter',
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+      section().dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Enter',
+          code: 'Enter',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+      section().dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Escape',
+          code: 'Escape',
+          bubbles: true,
+        })
+      );
+      await flushPromises();
+
+      expect(sendSpy).not.toHaveBeenCalled();
+      // Esc is too easy to press to refuse prepared actions by it
+      expect(TasksAPI.rejectAction).not.toHaveBeenCalled();
+      expect(sectionCards()).toBe('act-1,act-2');
+      sendSpy.mockRestore();
     });
   });
 

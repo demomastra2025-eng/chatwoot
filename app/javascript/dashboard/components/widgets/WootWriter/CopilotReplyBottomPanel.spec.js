@@ -125,6 +125,45 @@ describe('CopilotReplyBottomPanel', () => {
     });
   });
 
+  describe('when the run left only actions and no draft', () => {
+    const actionsOnly = (props = {}) =>
+      mountPanel({ actionsOnly: true, canCancel: true, ...props });
+
+    it('offers only «Отменить», with no «Вставить»', () => {
+      const wrapper = actionsOnly();
+
+      expect(labels(wrapper)).toEqual(['Отменить']);
+      expect(insert(wrapper).exists()).toBe(false);
+      expect(cancel(wrapper).attributes('disabled')).toBeUndefined();
+    });
+
+    it('emits reject, which declines the actions, not cancel', async () => {
+      const wrapper = actionsOnly();
+
+      await cancel(wrapper).trigger('click');
+
+      expect(wrapper.emitted('reject')).toHaveLength(1);
+      expect(wrapper.emitted('cancel')).toBeUndefined();
+      expect(wrapper.emitted('submit')).toBeUndefined();
+    });
+
+    it('disables «Отменить» when no action is left to decline', () => {
+      const wrapper = actionsOnly({ canCancel: false });
+
+      expect(cancel(wrapper).attributes('disabled')).toBeDefined();
+    });
+
+    it('is the same button as that of a draft', () => {
+      const draftWrapper = mountPanel();
+      const actionsWrapper = actionsOnly();
+
+      expect(cancel(actionsWrapper).text()).toBe(cancel(draftWrapper).text());
+      expect(cancel(actionsWrapper).attributes('data-variant')).toBe(
+        cancel(draftWrapper).attributes('data-variant')
+      );
+    });
+  });
+
   describe.each([
     ['ru', ru],
     ['en', en],

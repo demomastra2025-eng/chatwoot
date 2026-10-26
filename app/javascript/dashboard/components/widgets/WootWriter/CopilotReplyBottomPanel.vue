@@ -19,6 +19,12 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  // The run left only actions and no draft: only «Отменить» is offered, and it
+  // declines the actions (`reject`); `canCancel` tells whether any is left
+  actionsOnly: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 // «Отменить» of a finished draft is `reject`: the draft is dropped
@@ -31,6 +37,11 @@ const insertTooltip = computed(() =>
   t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.INSERT_TOOLTIP', {
     shortcut: shortcutKey.value,
   })
+);
+
+const hasInsert = computed(() => !props.isGenerating && !props.actionsOnly);
+const cancelDisabled = computed(
+  () => (props.isGenerating || props.actionsOnly) && !props.canCancel
 );
 
 const handleCancel = () => {
@@ -49,7 +60,7 @@ const handleSubmit = () => {
 <template>
   <div class="flex items-center gap-2 px-3 pb-2.5 pt-0">
     <NextButton
-      v-if="!isGenerating"
+      v-if="hasInsert"
       :label="t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.INSERT')"
       variant="solid"
       color="blue"
@@ -64,7 +75,7 @@ const handleSubmit = () => {
       :variant="isGenerating ? 'ghost' : 'faded'"
       color="slate"
       size="sm"
-      :disabled="isGenerating && !canCancel"
+      :disabled="cancelDisabled"
       data-test="copilot-panel-cancel"
       @click="handleCancel"
     />

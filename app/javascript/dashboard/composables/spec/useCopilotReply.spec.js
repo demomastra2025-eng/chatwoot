@@ -1548,6 +1548,324 @@ describe('useCopilotReply', () => {
     });
   });
 
+  describe('cards leave the panel', () => {
+    const LINGER = 1500;
+    const cardsOf = ids => ids.map(id => ({ ...sampleAction, action_id: id }));
+    const idsOf = list => list.map(item => item.action_id);
+    const answer = (status, id, extra = {}) => ({
+      data: {
+        ok: true,
+        status,
+        action: { ...sampleAction, action_id: id, status, ...extra },
+      },
+    });
+    // the server answers every «Запретить» with the rejected card
+    const rejectEverything = () =>
+      TasksAPI.rejectAction.mockImplementation(({ actionId }) =>
+        Promise.resolve(answer('rejected', actionId))
+      );
+    // lets the answers of the server arrive without moving the fake clock
+    const flush = () => vi.advanceTimersByTimeAsync(0);
+
+    // The run left only cards: no text for the patient
+    const receiveCardsOnly = async (
+      copilot,
+      ids,
+      status = 'no_reply',
+      resultOverrides = {}
+    ) => {
+      mockStartReplySuggestion.mockResolvedValueOnce({
+        state: suggestionState(),
+      });
+      await copilot.startReplySuggestion();
+      emitResult(
+        noticeState(status, {
+          pending_actions: cardsOf(ids),
+          ...resultOverrides,
+        })
+      );
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      TasksAPI.rejectAction.mockReset();
+      TasksAPI.approveAction.mockReset();
+    });
+
+    it('keeps an approved card for 1.5 s with its result, then takes it off', async () => {
+      const copilot = create();
+      await startAndReceiveDraft(copilot, {
+        pending_actions: cardsOf(['act-1', 'act-2']),
+      });
+      TasksAPI.approveAction.mockResolvedValueOnce(
+        answer('approved', 'act-1', { result_summary: 'Д-р Смит — 10:00' })
+      );
+
+      await copilot.approveAction(cardsOf(['act-1'])[0]);
+
+      expect(copilot.visibleActions.value[0]).toMatchObject({
+        action_id: 'act-1',
+        status: 'approved',
+        result_summary: 'Д-р Смит — 10:00',
+      });
+      vi.advanceTimersByTime(LINGER - 1);
+      expect(idsOf(copilot.visibleActions.value)).toEqual(['act-1', 'act-2']);
+
+      vi.advanceTimersByTime(1);
+      expect(idsOf(copilot.visibleActions.value)).toEqual(['act-2']);
+      // the card is only marked: nothing can bring it back
+      expect(copilot.pendingActions.value[0]).toMatchObject({
+        action_id: 'act-1',
+        dismissed: true,
+      });
+    });
+
+    it('does the same with a denied card', async () => {
+      const copilot = create();
+      await startAndReceiveDraft(copilot, {
+        pending_actions: cardsOf(['act-1']),
+      });
+      TasksAPI.rejectAction.mockResolvedValueOnce(answer('rejected', 'act-1'));
+
+      await copilot.rejectAction(cardsOf(['act-1'])[0]);
+
+      expect(copilot.visibleActions.value[0].status).toBe('rejected');
+      vi.advanceTimersByTime(LINGER);
+      expect(copilot.visibleActions.value).toEqual([]);
+      expect(copilot.openActions.value).toEqual([]);
+    });
+
+    it('keeps a failed card until the manager closes it', async () => {
+      const copilot = create();
+      await startAndReceiveDraft(copilot, {
+        pending_actions: cardsOf(['act-1']),
+      });
+      TasksAPI.approveAction.mockRejectedValueOnce(new Error('Network Error'));
+
+      await copilot.approveAction(cardsOf(['act-1'])[0]);
+      vi.advanceTimersByTime(60000);
+
+      expect(copilot.visibleActions.value[0].status).toBe('failed');
+      expect(copilot.openActions.value).toHaveLength(1);
+
+      copilot.closeAction(copilot.visibleActions.value[0]);
+
+      expect(copilot.visibleActions.value).toEqual([]);
+      expect(TasksAPI.rejectAction).not.toHaveBeenCalled();
+    });
+
+    it('lets a failed card be approved again and leave after its result', async () => {
+      const copilot = create();
+      await startAndReceiveDraft(copilot, {
+        pending_actions: cardsOf(['act-1']),
+      });
+      TasksAPI.approveAction
+        .mockRejectedValueOnce(new Error('Network Error'))
+        .mockResolvedValueOnce(answer('approved', 'act-1'));
+
+      await copilot.approveAction(cardsOf(['act-1'])[0]);
+      await copilot.approveAction(cardsOf(['act-1'])[0]);
+      vi.advanceTimersByTime(LINGER);
+
+      expect(copilot.visibleActions.value).toEqual([]);
+    });
+
+    it('stops the waiting cards when the owner goes away', async () => {
+      const copilot = create();
+      await startAndReceiveDraft(copilot, {
+        pending_actions: cardsOf(['act-1']),
+      });
+      TasksAPI.approveAction.mockResolvedValueOnce(answer('approved', 'act-1'));
+      await copilot.approveAction(cardsOf(['act-1'])[0]);
+      expect(vi.getTimerCount()).toBe(1);
+
+      scopes.splice(0).forEach(scope => scope.stop());
+
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    describe('when the run left only cards', () => {
+      it('takes the place of the editor while a card waits for a decision', async () => {
+        const copilot = create();
+
+        await receiveCardsOnly(copilot, ['act-1', 'act-2']);
+
+        expect(copilot.suggestionPhase.value).toBe('notice');
+        expect(copilot.isActive.value).toBe(false);
+        expect(copilot.isActionsOnly.value).toBe(true);
+        expect(copilot.editorTransitionKey.value).toBe('copilot');
+        expect(idsOf(copilot.openActions.value)).toEqual(['act-1', 'act-2']);
+      });
+
+      it('goes back to the editor when the last card has left', async () => {
+        const copilot = create();
+        await receiveCardsOnly(copilot, ['act-1', 'act-2']);
+        TasksAPI.approveAction.mockResolvedValueOnce(
+          answer('approved', 'act-1')
+        );
+        TasksAPI.rejectAction.mockResolvedValueOnce(
+          answer('rejected', 'act-2')
+        );
+
+        await copilot.approveAction(cardsOf(['act-1'])[0]);
+        await copilot.rejectAction(cardsOf(['act-2'])[0]);
+
+        // both decided, both still shown for a moment: nothing to cancel any more
+        expect(copilot.openActions.value).toEqual([]);
+        expect(copilot.isActionsOnly.value).toBe(true);
+
+        vi.advanceTimersByTime(LINGER);
+
+        expect(copilot.visibleActions.value).toEqual([]);
+        expect(copilot.isActionsOnly.value).toBe(false);
+        expect(copilot.editorTransitionKey.value).toBe('rich');
+        // the notice above the reply box has its own «Скрыть»
+        expect(copilot.suggestionPhase.value).toBe('notice');
+        expect(copilot.suggestionNotice.value.kind).toBe('no_reply');
+      });
+
+      it('«Отменить» declines every undecided card and closes the panel', async () => {
+        const copilot = create();
+        await receiveCardsOnly(copilot, ['act-1', 'act-2', 'act-3']);
+        rejectEverything();
+        // act-1 was decided a moment ago and still waits to leave
+        await copilot.rejectAction(cardsOf(['act-1'])[0]);
+        TasksAPI.rejectAction.mockClear();
+
+        copilot.dismiss();
+        await flush();
+
+        expect(TasksAPI.rejectAction.mock.calls.map(([args]) => args)).toEqual([
+          { actionId: 'act-2', conversationId: 42 },
+          { actionId: 'act-3', conversationId: 42 },
+        ]);
+        expect(copilot.visibleActions.value).toEqual([]);
+        expect(copilot.isActionsOnly.value).toBe(false);
+        // no waiting card is left behind
+        expect(vi.getTimerCount()).toBe(0);
+        // the notice and the run stay: it is not a dropped draft
+        expect(copilot.suggestionPhase.value).toBe('notice');
+        expect(TasksAPI.feedback).not.toHaveBeenCalled();
+      });
+
+      it('keeps a card the server could not decline, with the alert', async () => {
+        const copilot = create();
+        await receiveCardsOnly(copilot, ['act-1', 'act-2']);
+        TasksAPI.rejectAction
+          .mockResolvedValueOnce(answer('rejected', 'act-1'))
+          .mockRejectedValueOnce(new Error('Network Error'));
+
+        copilot.dismiss();
+        await flush();
+
+        expect(idsOf(copilot.visibleActions.value)).toEqual(['act-2']);
+        expect(copilot.visibleActions.value[0].status).toBe('pending');
+        expect(copilot.isActionsOnly.value).toBe(true);
+        expect(useAlert).toHaveBeenCalledWith(
+          'CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_REJECT_FAILED'
+        );
+      });
+
+      it('lets a failed card stay open for «Отменить» too', async () => {
+        const copilot = create();
+        await receiveCardsOnly(copilot, ['act-1']);
+        TasksAPI.approveAction.mockRejectedValueOnce(new Error('offline'));
+        await copilot.approveAction(cardsOf(['act-1'])[0]);
+        rejectEverything();
+
+        copilot.dismiss();
+        await flush();
+
+        expect(TasksAPI.rejectAction).toHaveBeenCalledTimes(1);
+        expect(copilot.visibleActions.value).toEqual([]);
+      });
+
+      it('is over when the notice is hidden: the cards stay beside the editor', async () => {
+        const copilot = create();
+        await receiveCardsOnly(copilot, ['act-1']);
+
+        copilot.dismissNotice();
+
+        expect(copilot.isActionsOnly.value).toBe(false);
+        expect(idsOf(copilot.visibleActions.value)).toEqual(['act-1']);
+      });
+    });
+
+    describe('when the editor must stay', () => {
+      it('keeps it when a staff reply is needed, the cards are decided one by one', async () => {
+        const copilot = create();
+
+        await receiveCardsOnly(copilot, ['act-1'], 'human_needed');
+
+        expect(copilot.suggestionNotice.value.kind).toBe('human_needed');
+        expect(copilot.isActionsOnly.value).toBe(false);
+        expect(copilot.editorTransitionKey.value).toBe('rich');
+        expect(idsOf(copilot.visibleActions.value)).toEqual(['act-1']);
+
+        TasksAPI.rejectAction.mockResolvedValueOnce(
+          answer('rejected', 'act-1')
+        );
+        await copilot.rejectAction(cardsOf(['act-1'])[0]);
+        vi.advanceTimersByTime(LINGER);
+        expect(copilot.visibleActions.value).toEqual([]);
+      });
+
+      it('keeps it when the text of the draft was inserted and the cards remain', async () => {
+        const copilot = create();
+        await startAndReceiveDraft(copilot, {
+          pending_actions: cardsOf(['act-1']),
+        });
+
+        copilot.accept();
+
+        expect(copilot.isActionsOnly.value).toBe(false);
+        expect(idsOf(copilot.visibleActions.value)).toEqual(['act-1']);
+      });
+    });
+
+    describe('«Отменить» of a draft', () => {
+      it('declines the cards that wait for a decision and drops the draft', async () => {
+        const copilot = create();
+        await startAndReceiveDraft(copilot, {
+          pending_actions: cardsOf(['act-1', 'act-2']),
+        });
+        rejectEverything();
+
+        copilot.dismiss();
+        await flush();
+
+        expect(TasksAPI.rejectAction.mock.calls.map(([args]) => args)).toEqual([
+          { actionId: 'act-1', conversationId: 42 },
+          { actionId: 'act-2', conversationId: 42 },
+        ]);
+        expect(copilot.showEditor.value).toBe(false);
+        expect(copilot.pendingActions.value).toEqual([]);
+        expect(TasksAPI.feedback).toHaveBeenCalledWith(
+          expect.objectContaining({ outcome: 'dismissed' })
+        );
+      });
+
+      it('leaves the cards that were decided already alone', async () => {
+        const copilot = create();
+        await startAndReceiveDraft(copilot, {
+          pending_actions: cardsOf(['act-1', 'act-2']),
+        });
+        TasksAPI.approveAction.mockResolvedValueOnce(
+          answer('approved', 'act-1')
+        );
+        await copilot.approveAction(cardsOf(['act-1'])[0]);
+        rejectEverything();
+
+        copilot.dismiss();
+        await flush();
+
+        expect(TasksAPI.rejectAction.mock.calls.map(([args]) => args)).toEqual([
+          { actionId: 'act-2', conversationId: 42 },
+        ]);
+      });
+    });
+  });
+
   describe('synchronous actions', () => {
     it('keeps rewrite working without touching the suggestion state', async () => {
       const copilot = create();

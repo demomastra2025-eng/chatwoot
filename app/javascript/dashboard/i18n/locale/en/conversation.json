@@ -289,6 +289,7 @@
         "CANCEL": "Cancel",
         "STALE_WARNING": "New customer messages arrived after this request. Check that the reply is still relevant.",
         "LEGACY_ENGINE": "Prepared without the schedule and the knowledge base",
+        "ACTIONS_ONLY": "AI suggests actions only — no reply to the patient is needed.",
         "NOTICE": {
           "NO_REPLY_TITLE": "No reply needed",
           "HUMAN_NEEDED_TITLE": "A staff member is needed",
@@ -371,6 +372,8 @@
         "ACTION_EXECUTING": "Executing…",
         "ACTION_APPROVED": "Approved and executed",
         "ACTION_REJECTED": "Denied",
+        "ACTION_DONE": "Done",
+        "ACTION_CLOSE": "Close",
         "ACTION_FAILED": "Could not complete the action. Try again or do it by hand",
         "ACTION_REJECT_FAILED": "Could not deny the action. Try again"
       }
