@@ -99,6 +99,15 @@ RSpec.describe Captain::Runtime::ToolFailure do
         expect(described_class.classify(conflict)).to eq('business')
       end
 
+      it 'takes a MedElement service that is not linked for a business answer, by its code alone' do
+        bare = Captain::ToolResult.failure_output(error: 'Not linked', data: { code: 'MEDELEMENT_SERVICE_UNMAPPED' }, retryable: false)
+        text = JSON.generate(success: false, reason: 'medelement_service_unmapped', code: 'MEDELEMENT_SERVICE_UNMAPPED')
+
+        expect(described_class.business_codes).to include('medelement_service_unmapped')
+        expect([bare, text].map { |result| described_class.classify(result) }).to all(eq('business'))
+        expect(described_class.outcome(text)).to eq('not_executed')
+      end
+
       it 'treats the results of the Playground policy as answers' do
         blocked = Captain::ToolResult.failure(error: 'Review and confirm this exact real action in Playground', retryable: false,
                                               data: { code: 'playground_confirmation_required', delivered: false })

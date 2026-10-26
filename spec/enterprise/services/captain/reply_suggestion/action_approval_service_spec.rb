@@ -580,6 +580,37 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
       end
     end
 
+    # A service without a MedElement nomenclature code cannot be booked for a MedElement specialist: the agent corrects the call in the
+    # same run (a business failure), so the suggestion still ends with a draft instead of an error.
+    it 'answers a service that is not linked to MedElement with a business failure that corrects the call, and prepares no card' do
+      unmapped = create(:scheduling_service, account: account, name: 'Консультация терапевта', duration_min: 30)
+
+      raw = described_class.intercept(
+        tool: create_tool, tool_context: tool_context,
+        arguments: { resource_id: doctor.id, service_id: unmapped.id, starts_at: at(9, 0).iso8601 }
+      )
+      result = JSON.parse(raw)
+
+      expect(result).to include('success' => false, 'code' => 'MEDELEMENT_SERVICE_UNMAPPED', 'error_class' => 'business',
+                                'correction' => Captain::Tools::Agent::AppointmentResult::INPUT_FAILURE_GUIDANCE.fetch('MEDELEMENT_SERVICE_UNMAPPED'))
+      expect(result).not_to include('status', 'action_id')
+      expect(Captain::Runtime::ToolFailure.classify(raw)).to eq('business')
+      expect(pending_count).to eq(0)
+    end
+
+    it 'still prepares a card for the same unlinked service when the specialist is not linked to MedElement' do
+      unmapped = create(:scheduling_service, account: account, name: 'Консультация терапевта', duration_min: 30)
+      plain_doctor = create(:scheduling_resource, account: account, name: 'Д-р Берик', timezone: 'Asia/Almaty', slot_duration_min: 15)
+
+      raw = described_class.intercept(
+        tool: create_tool, tool_context: tool_context,
+        arguments: { resource_id: plain_doctor.id, service_id: unmapped.id, starts_at: at(9, 0).iso8601 }
+      )
+
+      expect(JSON.parse(raw)).to include('status' => 'pending_operator_approval')
+      expect(pending_count).to eq(1)
+    end
+
     it 'sizes a change of the service by the same length' do
       pair(doctor, median: 10)
       appointment = book(doctor, at(11, 0), at(11, 30), contact: contact)

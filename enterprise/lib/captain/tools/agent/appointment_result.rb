@@ -58,6 +58,9 @@ class Captain::Tools::Agent::AppointmentResult
     'INVALID_DATE_RANGE' => 'Choose an end time after the start and keep the search range within 31 days.',
     'INVALID_SERVICE_ID' => 'Use an integer service_id returned by search_scheduling_services.',
     'UNKNOWN_SERVICE' => 'Search the service catalog again and use a returned service_id.',
+    'MEDELEMENT_SERVICE_UNMAPPED' => 'This service is not linked to the clinic\'s MedElement. Retry the call without service_id ' \
+                                     '(the operator will set the service) or choose another service returned by search_scheduling_services; ' \
+                                     'do not retry with the same service_id.',
     'PROVIDER_UNAVAILABLE' => 'Provider availability is unknown. Ask staff to help; do not claim the slot is free or repeat an uncertain write.',
     'INTERNAL_FAILURE' => 'Scheduling could not be completed. Ask staff to help; do not repeat an uncertain provider write.'
   }.freeze
