@@ -225,6 +225,12 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
                                   pending_actions: [{ 'action_id' => 'a-1' }])
       end
 
+      it 'is no_reply that says no reply is needed when no part needed one (a thanks), never a staff answer' do
+        result = described_class.new(silent.merge('council_no_reply' => true), trace_collector: trace_collector).perform
+
+        expect(result).to include(outcome: 'no_reply', reason_source: 'agent', reason: I18n.t('captain.reply_suggestion.reasons.council_no_reply'))
+      end
+
       it 'is human_needed when a part needs a staff reply' do
         result = described_class.new(silent.merge('council_handoff' => handoff), trace_collector: trace_collector).perform
 

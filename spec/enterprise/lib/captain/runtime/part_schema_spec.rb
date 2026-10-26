@@ -11,7 +11,7 @@ RSpec.describe Captain::Runtime::PartSchema do
   it 'offers the status as an enum of the statuses that the run of a part understands, so the provider offers no other value' do
     status = described_class.new.to_json_schema.with_indifferent_access.dig(:schema, :properties, :status)
 
-    expect(status[:enum]).to eq(%w[answered needs_information out_of_scope unavailable])
+    expect(status[:enum]).to eq(%w[answered needs_information out_of_scope unavailable no_reply_needed])
     expect(status[:enum]).to eq(Captain::Runtime::Council::PartRun::STATUSES)
   end
 

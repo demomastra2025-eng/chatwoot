@@ -62,7 +62,8 @@ class Captain::Runtime::DecisionRouter
   # key: the canonical key of the outcome; kind: stay, agent, council, human or none (inconsistent only without escalation, in the
   # evaluation harness); agent_ids: who answers (the participants of a council in ascending order). decided_by: the decision model
   # that answered, or "escalation:<model>". first_*: what the decision models answered, also when the escalation decided
-  # (first_answers: the chosen key of every question). guard: 'bounce' when the turn would have gone straight back. default_to: a
+  # (first_answers: the chosen key of every question). guard: 'bounce' when the turn would have gone straight back; 'no_request'
+  # when the escalation answered council for a message the decision models found asking for no agent's service. default_to: a
   # reply suggestion whose answers named no agent went to the current agent ('current') or to the anchor ('anchor'); such a decision
   # met the same threshold as any other.
   Decision = Struct.new(
@@ -137,7 +138,7 @@ class Captain::Runtime::DecisionRouter
     )
     trigger = escalation_trigger(outcome, confidence, snapshot)
     decision[:escalation_trigger] = trigger
-    return escalate(questions, snapshot, decision, trigger, started) if trigger && @escalate
+    return escalate(questions, snapshot, decision, started, choices) if trigger && @escalate
 
     finish(decision.merge(decided_by: first.model, confidence: confidence), outcome, started)
   end
@@ -169,7 +170,11 @@ class Captain::Runtime::DecisionRouter
     source.present? && outcome.kind == 'agent' && outcome.agent_ids == [source]
   end
 
-  def escalate(questions, snapshot, decision, trigger, started)
+  # first_choices: what the decision models answered. A council needs services of two or three agents: when the decision models
+  # said that the latest message asks for no agent's service (a thanks, an ok, a greeting) and the escalation still answered council,
+  # the turn takes the stay or anchor path instead (guard no_request, see Questions#no_request_outcome).
+  def escalate(questions, snapshot, decision, started, first_choices)
+    trigger = decision[:escalation_trigger]
     escalation = Escalation.new(account: @account, timeout: @escalation_timeout, effort: @escalation_effort,
                                 observability: @observability.merge(escalation_trigger: trigger))
     escalation_started = monotonic_now
@@ -177,9 +182,11 @@ class Captain::Runtime::DecisionRouter
     outcome = questions.outcome(answer.choices, final: true)
     raise escalation_without_outcome(questions, answer) unless outcome
 
+    no_request = questions.no_request_outcome(first_choices) if outcome.kind == 'council'
+    guard = no_request ? 'no_request' : ('bounce' if trigger == 'bounce')
     finish(decision.merge(decided_by: "escalation:#{answer.model}", confidence: nil, escalated: true, escalation_reason: answer.reason,
-                          guard: ('bounce' if trigger == 'bounce'), escalation_ms: elapsed_ms(escalation_started)),
-           outcome, started)
+                          guard: guard, escalation_ms: elapsed_ms(escalation_started)),
+           no_request || outcome, started)
   end
 
   def escalation_without_outcome(questions, answer)

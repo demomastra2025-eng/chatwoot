@@ -100,6 +100,17 @@ class Captain::Runtime::DecisionRouter::Questions
     [STAY, ROUTE].include?(choices[MODE]) && agent_ids.none? { |id| choices[include_name(id)] == YES }
   end
 
+  # The decision models answered that the latest message asks for no agent's service (every include answer no, and not staff): a
+  # thanks, an ok or a greeting is never a council (see DecisionRouter#escalate). It stays with the current agent, or in a reply
+  # suggestion goes to the anchor of the channel, whose agent may answer that no reply is needed; nil when neither exists or the
+  # answers asked for a service.
+  def no_request_outcome(choices)
+    return unless @mode == :full && asks_for_nothing?(choices.to_h.transform_keys(&:to_s))
+    return Outcome.new(kind: 'stay', agent_ids: [current_id], key: STAY, default_to: ('current' if suggestion_default?)) if current_id
+
+    anchor_outcome
+  end
+
   # The outcome of the answers ({ name => key }), or nil when they do not agree. final: the answers of the escalation model.
   def outcome(choices, final: false)
     choices = choices.to_h.transform_keys(&:to_s)
@@ -151,10 +162,18 @@ class Captain::Runtime::DecisionRouter::Questions
   def idle_outcome(final)
     return unless suggestion_default? && current_id.nil? && !final && !@snapshot.mid_dialog?
 
-    anchor = @snapshot.anchor_agent_id
-    return unless anchor
+    anchor_outcome
+  end
 
-    Outcome.new(kind: 'agent', agent_ids: [anchor], key: "route_agent_#{anchor}", default_to: 'anchor')
+  # The anchor of the channel, which answers a reply suggestion while no agent leads the dialog; nil outside a suggestion.
+  def anchor_outcome
+    anchor = @snapshot.anchor_agent_id if suggestion_default?
+    Outcome.new(kind: 'agent', agent_ids: [anchor], key: "route_agent_#{anchor}", default_to: 'anchor') if anchor
+  end
+
+  # Not staff, and no include answer is yes: the patient asks for no agent's service.
+  def asks_for_nothing?(choices)
+    choices[MODE] != HUMAN && agent_ids.none? { |id| choices[include_name(id)] == YES }
   end
 
   def suggestion_default?

@@ -11,6 +11,12 @@
 class Captain::Runtime::Council::PartRun
   STATUSES = Captain::Runtime::PartSchema::STATUSES
   SUMMARY_LIMIT = 300
+  # The run of a part stopped while it was still working (see #finish_without_tools), and the reason a technical failure names.
+  STOPPED_WHILE_WORKING = [Captain::Runtime::Runner::MaxTurnsExceeded, Captain::Runtime::Runner::ToolLoopStopped].freeze
+  RUN_ERROR_REASONS = {
+    'Captain::ReplySuggestion::RunControl::PartTimeUp' => 'time_up', 'Captain::Runtime::Runner::MaxTurnsExceeded' => 'max_turns',
+    'Captain::Runtime::Runner::ToolLoopStopped' => 'tool_loop'
+  }.freeze
 
   # Counts what the tools of one run did. It belongs to one run and one thread.
   class Tracker
@@ -79,10 +85,8 @@ class Captain::Runtime::Council::PartRun
   # the run did up to that point.
   def call(fragment)
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    result = Captain::Runtime::Runner.new.run(
-      @agent, fragment, context: @snapshot, account: @account, llm_context: @llm_context, max_turns: @max_turns,
-                        callbacks: tracked_callbacks
-    )
+    result = run(fragment, context: @snapshot, max_turns: @max_turns)
+    result = finish_without_tools(fragment, result) if stopped_while_working?(result)
     outcome(result, ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round)
   end
 
@@ -113,6 +117,31 @@ class Captain::Runtime::Council::PartRun
 
   private
 
+  def run(fragment, context:, max_turns:, **)
+    Captain::Runtime::Runner.new.run(
+      @agent, fragment, context: context, account: @account, llm_context: @llm_context, max_turns: max_turns,
+                        callbacks: tracked_callbacks, **
+    )
+  end
+
+  # A part of a reply suggestion that used up its turns, or that the loop guard stopped, was still working: its tools returned
+  # results but it wrote no answer. It writes its result from them in one more call without tools, as a single agent's suggestion
+  # does (AgentRunnerService#finalization_only_retry_response), so the council never assembles the reply without the part's own
+  # answer for want of a turn. When that call fails as well (the deadline of the parts, an error), the part stays a technical
+  # failure that the manager is told about. Outside a suggestion such a run hands the conversation to staff (Runner#run).
+  def finish_without_tools(fragment, result)
+    final = run(fragment, context: result.context || @snapshot, max_turns: 1, finalization_only: true, continue_from_history: true)
+    final.error ? result : final
+  rescue Captain::Conversation::ControlGenerationStaleError
+    raise
+  rescue StandardError
+    result
+  end
+
+  def stopped_while_working?(result)
+    STOPPED_WHILE_WORKING.any? { |error_class| result.error.is_a?(error_class) } && Captain::Runtime::Runner.reply_suggestion?(@snapshot)
+  end
+
   def tracked_callbacks
     merged = @callbacks.to_h.transform_values { |list| Array(list).dup }
     (merged[:tool_complete] ||= []) << ->(tool_name, result, *) { @tracker.tool_complete(tool_name, result) }
@@ -140,9 +169,10 @@ class Captain::Runtime::Council::PartRun
     }
   end
 
-  # A part of a suggestion that reached the deadline of the parts (see Captain::ReplySuggestion::RunControl#for_parts) is out of time.
+  # A part of a suggestion that reached the deadline of the parts (see Captain::ReplySuggestion::RunControl#for_parts) is out of time;
+  # one that used up its turns or was stopped by the loop guard says so too.
   def run_error_reason(error)
-    error.is_a?(Captain::ReplySuggestion::RunControl::PartTimeUp) ? 'time_up' : 'run_error'
+    RUN_ERROR_REASONS.fetch(error.class.name, 'run_error')
   end
 
   # What the main run must know about the tools this run called (retry safety, error fallbacks, attachments). The appointment

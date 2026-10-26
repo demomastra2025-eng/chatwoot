@@ -285,6 +285,47 @@ RSpec.describe Captain::Runtime::DecisionRouter do
 
       expect(router.decide.to_event_payload).to include(default_to: 'current', escalated: false)
     end
+
+    describe 'a thanks that the decision models find asking for no agent, which the escalation makes a council' do
+      let(:message) { 'Хорошо, спасибо' }
+
+      it 'stays with the sticky agent instead of the council' do
+        answer_chain(chain_answer('stay_current', confidence: 0.5))
+        escalate_to(choices('council', yes: [84, 119]))
+
+        expect(router.decide).to have_attributes(key: 'stay_current', kind: 'stay', agent_ids: [119], escalated: true, guard: 'no_request',
+                                                 default_to: 'current', first_choice: 'stay_current')
+      end
+
+      context 'without a sticky agent' do
+        let(:sticky) { nil }
+
+        it 'goes to the anchor instead of the council, and its event says why' do
+          answer_chain(chain_answer('route_agent', confidence: 0.95))
+          escalate_to(choices('council', yes: [84, 119]))
+
+          decision = router.decide
+
+          expect(decision).to have_attributes(key: 'route_agent_84', kind: 'agent', agent_ids: [84], escalated: true, guard: 'no_request',
+                                              default_to: 'anchor', escalation_trigger: 'inconsistent')
+          expect(decision.to_event_payload).to include(guard: 'no_request', decision_key: 'route_agent_84')
+        end
+
+        it 'keeps the council when the decision models asked for services of two agents' do
+          answer_chain(chain_answer('route_agent', yes: [84, 119], confidence: 0.95))
+          escalate_to(choices('council', yes: [84, 119]))
+
+          expect(router.decide).to have_attributes(key: 'council_84_119', kind: 'council', escalated: true, guard: nil)
+        end
+      end
+    end
+  end
+
+  it 'keeps the council of a live turn whose answers ask for no agent when there is no current agent to stay with' do
+    answer_chain(chain_answer('route_agent', confidence: 0.95))
+    escalate_to(choices('council', yes: [84, 119]))
+
+    expect(router.decide).to have_attributes(key: 'council_84_119', kind: 'council', guard: nil)
   end
 
   describe '#redecide for a council part that was not its owner\'s' do

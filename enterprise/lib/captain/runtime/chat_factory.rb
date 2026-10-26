@@ -147,6 +147,8 @@ class Captain::Runtime::ChatFactory
         - Book or move an appointment only to a date and clock time that the patient wrote or chose from the times you offered. For a
           day or a part of a day alone ("Monday morning", "tomorrow") offer 2-3 free times spread over it and wait for the choice.
         - If the part is not your responsibility, call no action tool: answer out_of_scope.
+        - If the part needs no answer (only thanks, ok, an emoji or a greeting, with no doctor, service, date, time or question), call
+          no tool: end with status no_reply_needed and an empty customer_text.
         - Say only what your tool results show: what was done, for whom, the date and time as returned. If a result says that the
           confirmation is pending, say that the request was sent and the confirmation will follow. Never claim an action that no tool
           performed, and never repeat one that your results, the dialogue or the data below show as done.
@@ -170,7 +172,8 @@ class Captain::Runtime::ChatFactory
           * information needed: the exact question; after something was done, first what was done, then the question as the last sentence;
           * a result stops you (a taken slot, a patient who was not found): say it plainly and ask what the patient prefers;
           * unresolvable (your tools returned nothing usable, also after one retry with other words): one honest sentence that says so. #{unresolved}
-        - status: answered (the part is answered or its action is done), needs_information, out_of_scope or unavailable.
+        - status: answered (the part is answered or its action is done), needs_information, out_of_scope, unavailable or
+          no_reply_needed.
         - questions: every question that customer_text contains, word for word, as its last sentences (for example "#{PART_CUES[:question]}").
           A question that is only listed here is never asked.
         - sources: tool names, document titles, or "instructions" for facts from your own instructions.
