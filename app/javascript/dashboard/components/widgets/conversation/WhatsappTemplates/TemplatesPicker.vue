@@ -12,6 +12,7 @@ import {
   matchesWhatsAppTemplateSearch,
 } from 'dashboard/helper/whatsappTemplateLibrary';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
+import TemplatesEmptyState from './TemplatesEmptyState.vue';
 import { useI18n } from 'vue-i18n';
 
 const props = defineProps({
@@ -289,11 +290,10 @@ const refreshTemplates = async () => {
             <strong>{{ query }}</strong>
           </p>
         </div>
-        <div v-else-if="!groupedTemplateMessages.length" class="space-y-4">
-          <p class="text-n-slate-11">
-            {{ t('WHATSAPP_TEMPLATES.PICKER.NO_TEMPLATES_AVAILABLE') }}
-          </p>
-        </div>
+        <TemplatesEmptyState
+          v-else-if="!groupedTemplateMessages.length"
+          :inbox-id="inboxId"
+        />
       </div>
     </div>
   </div>

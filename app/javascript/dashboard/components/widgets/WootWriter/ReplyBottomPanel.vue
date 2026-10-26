@@ -182,6 +182,12 @@ export default {
       type: Boolean,
       default: false,
     },
+    // A WhatsApp conversation whose 24-hour window is closed: the only way to
+    // write is a template, so the template button takes the place of «Отправить».
+    isTemplateOnly: {
+      type: Boolean,
+      default: false,
+    },
   },
   emits: [
     'toggleInsertArticle',
@@ -645,6 +651,14 @@ export default {
     toggleInsertArticle() {
       this.$emit('toggleInsertArticle');
     },
+    openTemplates() {
+      // Twilio WhatsApp keeps its templates apart from the other WhatsApp ones
+      this.$emit(
+        this.enableContentTemplates
+          ? 'selectContentTemplate'
+          : 'selectWhatsappTemplate'
+      );
+    },
 
     async toggleCaptainForConversation() {
       if (this.isTogglingCaptain) return;
@@ -808,7 +822,7 @@ export default {
       />
 
       <NextButton
-        v-if="enableWhatsAppTemplates"
+        v-if="enableWhatsAppTemplates && !isTemplateOnly"
         v-tooltip.top-end="$t('CONVERSATION.FOOTER.WHATSAPP_TEMPLATES')"
         icon="i-ph-whatsapp-logo"
         slate
@@ -817,7 +831,7 @@ export default {
         @click="$emit('selectWhatsappTemplate')"
       />
       <NextButton
-        v-if="enableContentTemplates"
+        v-if="enableContentTemplates && !isTemplateOnly"
         v-tooltip.top-end="'Content Templates'"
         icon="i-ph-whatsapp-logo"
         slate
@@ -879,6 +893,20 @@ export default {
             showReplyChannelMenu ? 'ltr:rounded-r-none rtl:rounded-l-none' : ''
           "
           @click="initiateWhatsappCall"
+        />
+        <NextButton
+          v-else-if="isTemplateOnly"
+          :label="$t('CONVERSATION.FOOTER.TEMPLATE_BUTTON')"
+          icon="i-ph-whatsapp-logo"
+          type="button"
+          sm
+          color="blue"
+          class="reply-send-button flex-shrink-0"
+          data-test-id="reply-template-button"
+          :class="
+            showReplyChannelMenu ? 'ltr:rounded-r-none rtl:rounded-l-none' : ''
+          "
+          @click="openTemplates"
         />
         <NextButton
           v-else

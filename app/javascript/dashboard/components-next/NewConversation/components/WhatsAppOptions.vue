@@ -6,6 +6,7 @@ import { useMapGetter } from 'dashboard/composables/store';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import WhatsappTemplate from './WhatsappTemplate.vue';
+import TemplatesEmptyState from 'dashboard/components/widgets/conversation/WhatsappTemplates/TemplatesEmptyState.vue';
 
 const props = defineProps({
   inboxId: {
@@ -106,7 +107,13 @@ const handleSendMessage = template => {
         </p>
       </div>
       <template v-if="filteredTemplates.length === 0">
-        <p class="pt-2 w-full text-sm text-n-slate-11">
+        <!-- Nothing approved at all: the same explanation as in a conversation. -->
+        <TemplatesEmptyState
+          v-if="!whatsAppTemplateMessages.length"
+          :inbox-id="inboxId"
+          class="pt-2 w-full"
+        />
+        <p v-else class="pt-2 w-full text-sm text-n-slate-11">
           {{ t('COMPOSE_NEW_CONVERSATION.FORM.WHATSAPP_OPTIONS.EMPTY_STATE') }}
         </p>
       </template>

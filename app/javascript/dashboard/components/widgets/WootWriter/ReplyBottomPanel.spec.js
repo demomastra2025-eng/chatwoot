@@ -757,4 +757,92 @@ describe('ReplyBottomPanel', () => {
     expect(voiceCallButtons[0].props('icon')).toBe('');
     expect(wrapper.find('button[type="submit"]').exists()).toBe(false);
   });
+
+  describe('when the WhatsApp window is closed (template only)', () => {
+    const closedWindow = props => ({
+      isCommunicationThread: false,
+      showCommunicationChannelSelector: false,
+      activeReplyChannel: null,
+      inbox: { id: 272, channel_type: 'Channel::Whatsapp' },
+      isEditorDisabled: true,
+      isTemplateOnly: true,
+      ...props,
+    });
+    const templateButton = wrapper =>
+      wrapper.find('[data-test-id="reply-template-button"]');
+
+    it('puts the labelled template button where «Отправить» was', async () => {
+      const wrapper = mountComponent(
+        closedWindow({ enableWhatsAppTemplates: true })
+      );
+
+      expect(wrapper.find('button[type="submit"]').exists()).toBe(false);
+      expect(templateButton(wrapper).exists()).toBe(true);
+      expect(templateButton(wrapper).text()).toContain(
+        'CONVERSATION.FOOTER.TEMPLATE_BUTTON'
+      );
+      expect(templateButton(wrapper).attributes('disabled')).toBeUndefined();
+      // not a second small icon button next to it
+      expect(wrapper.findAll('[data-icon="i-ph-whatsapp-logo"]')).toHaveLength(
+        1
+      );
+
+      await templateButton(wrapper).trigger('click');
+      expect(wrapper.emitted('selectWhatsappTemplate')).toHaveLength(1);
+      expect(wrapper.emitted('selectContentTemplate')).toBeUndefined();
+    });
+
+    it('opens the Twilio templates when the inbox is Twilio WhatsApp', async () => {
+      const wrapper = mountComponent(
+        closedWindow({
+          enableContentTemplates: true,
+          inbox: { id: 272, channel_type: 'Channel::TwilioSms' },
+        })
+      );
+
+      await templateButton(wrapper).trigger('click');
+
+      expect(wrapper.emitted('selectContentTemplate')).toHaveLength(1);
+      expect(wrapper.emitted('selectWhatsappTemplate')).toBeUndefined();
+    });
+
+    it('keeps the choice of the reply channel next to the template button', () => {
+      const wrapper = mountComponent(
+        closedWindow({
+          enableWhatsAppTemplates: true,
+          isCommunicationThread: true,
+          showCommunicationChannelSelector: true,
+          activeReplyChannel: whatsappChannel,
+        })
+      );
+
+      expect(templateButton(wrapper).exists()).toBe(true);
+      expect(wrapper.find('.reply-channel-menu__toggle').exists()).toBe(true);
+    });
+
+    it('leaves the usual send panel alone while the window is open', async () => {
+      const wrapper = mountComponent(
+        closedWindow({
+          isEditorDisabled: false,
+          isTemplateOnly: false,
+          enableWhatsAppTemplates: true,
+        })
+      );
+
+      expect(templateButton(wrapper).exists()).toBe(false);
+      expect(wrapper.find('button[type="submit"]').exists()).toBe(true);
+
+      const smallTemplateButton = wrapper.find(
+        '[data-icon="i-ph-whatsapp-logo"]'
+      );
+      expect(smallTemplateButton.exists()).toBe(true);
+      // an icon only, without the word «Шаблон»
+      expect(smallTemplateButton.text()).not.toContain(
+        'CONVERSATION.FOOTER.TEMPLATE_BUTTON'
+      );
+
+      await smallTemplateButton.trigger('click');
+      expect(wrapper.emitted('selectWhatsappTemplate')).toHaveLength(1);
+    });
+  });
 });

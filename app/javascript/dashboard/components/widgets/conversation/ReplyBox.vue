@@ -233,6 +233,13 @@ export default {
     },
     showWhatsappTemplates() {
       if (this.isCommunicationCallReplyAction) return false;
+      if (this.isPrivate) return false;
+      // The window is closed, so a template is the only way to write. The
+      // button stays even while no template is approved yet: the picker says
+      // why its list is empty. (Twilio WhatsApp has its own templates button.)
+      if (this.isWhatsappTemplateOnly && !this.isATwilioWhatsAppChannel) {
+        return true;
+      }
       // We support templates for API channels if someone updates templates manually via API
       // That's why we don't explicitly check for channel type here.
       // Same list as the picker: templates an admin hid from conversations
@@ -240,7 +247,7 @@ export default {
       const templates = this.$store.getters[
         'inboxes/getConversationWhatsAppTemplates'
       ](this.inboxId);
-      return !!(templates && templates.length) && !this.isPrivate;
+      return !!(templates && templates.length);
     },
     showContentTemplates() {
       if (this.isCommunicationCallReplyAction) return false;
@@ -589,6 +596,16 @@ export default {
         (this.isAWhatsAppChannel || this.isAPIInbox) &&
         !this.isOnPrivateNote &&
         !this.selectedChannelCanSendText
+      );
+    },
+    // A WhatsApp conversation (Cloud or Twilio) whose 24-hour window is closed:
+    // free text is blocked and a conversation can only be started with a
+    // template. The reply area then says so instead of showing an empty editor.
+    isWhatsappTemplateOnly() {
+      return (
+        this.isAWhatsAppChannel &&
+        this.isEditorDisabled &&
+        !this.isEditingMessage
       );
     },
   },
@@ -1788,8 +1805,26 @@ export default {
           @approve-action="copilot.approveAction"
           @reject-action="copilot.rejectAction"
         />
+        <!-- Closed WhatsApp window: one calm line instead of an empty editor -->
+        <div
+          v-if="
+            isWhatsappTemplateOnly &&
+            !copilot.isActive.value &&
+            !showAudioRecorderEditor
+          "
+          class="flex items-start gap-2 py-3 text-sm text-n-slate-11"
+          data-test-id="whatsapp-template-only-notice"
+        >
+          <span
+            class="i-lucide-clock-3 mt-0.5 size-4 flex-shrink-0"
+            aria-hidden="true"
+          />
+          <p class="mb-0">
+            {{ $t('CONVERSATION.FOOTER.WHATSAPP_TEMPLATE_ONLY') }}
+          </p>
+        </div>
         <WootMessageEditor
-          v-if="!copilot.isActive.value && !showAudioRecorderEditor"
+          v-else-if="!copilot.isActive.value && !showAudioRecorderEditor"
           ref="messageEditor"
           v-model="message"
           :conversation-id="conversationId"
@@ -1881,6 +1916,7 @@ export default {
         :is-send-disabled="isReplyButtonDisabled"
         :is-note="isPrivate"
         :is-editor-disabled="isEditorDisabled"
+        :is-template-only="isWhatsappTemplateOnly"
         :on-file-upload="onFileUpload"
         :on-send="onSendReply"
         :contact-id="voiceCallContactId"

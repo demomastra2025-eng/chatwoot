@@ -234,7 +234,9 @@
       "MESSAGE_SIGNATURE_NOT_CONFIGURED": "Message signature is not configured, please configure it in profile settings.",
       "COPILOT_MSG_INPUT": "Give copilot additional prompts, or ask anything else... Press enter to send follow-up",
       "CLICK_HERE": "Click here to update",
-      "WHATSAPP_TEMPLATES": "Whatsapp Templates"
+      "WHATSAPP_TEMPLATES": "Whatsapp Templates",
+      "TEMPLATE_BUTTON": "Шаблон",
+      "WHATSAPP_TEMPLATE_ONLY": "Клиент соңғы 24 сағатта жазбаған — WhatsApp тек шаблонмен бастауға рұқсат береді."
     },
     "REPLYBOX": {
       "REPLY": "Reply",

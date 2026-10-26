@@ -1,5 +1,6 @@
 import {
   buildWhatsAppTemplatePayload,
+  countWhatsAppTemplatesInReview,
   createEmptyCarouselCard,
   createEmptyWhatsAppTemplateForm,
   extractSequentialTemplateVariables,
@@ -359,6 +360,33 @@ describe('whatsappTemplateLibrary', () => {
           ({ name }) => name
         )
       ).toEqual(['alpha', 'zeta']);
+    });
+  });
+
+  describe('#countWhatsAppTemplatesInReview', () => {
+    it('counts the templates WhatsApp is still reviewing, once per name', () => {
+      expect(
+        countWhatsAppTemplatesInReview([
+          { name: 'reminder', language: 'ru', status: 'PENDING' },
+          { name: 'reminder', language: 'kk', status: 'pending' },
+          { name: 'hello', language: 'ru', status: 'IN_APPEAL' },
+          { name: 'offer', language: 'ru', status: 'APPROVED' },
+          { name: 'old', language: 'ru', status: 'REJECTED' },
+        ])
+      ).toBe(2);
+    });
+
+    it('is zero when nothing is in review or the list is not loaded', () => {
+      expect(countWhatsAppTemplatesInReview([])).toBe(0);
+      expect(countWhatsAppTemplatesInReview(undefined)).toBe(0);
+      expect(countWhatsAppTemplatesInReview(null)).toBe(0);
+      expect(
+        countWhatsAppTemplatesInReview([
+          { name: 'offer', status: 'APPROVED' },
+          { status: 'PENDING' },
+          null,
+        ])
+      ).toBe(0);
     });
   });
 });
