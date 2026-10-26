@@ -48,6 +48,11 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  // The run found that no reply is needed and prepared only actions
+  actionsOnly: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits([
@@ -56,6 +61,7 @@ const emit = defineEmits([
   'contentReady',
   'approveAction',
   'rejectAction',
+  'closeAction',
 ]);
 
 const { t } = useI18n();
@@ -85,8 +91,11 @@ const normalizedPendingActions = computed(() => {
     ].map(String)
   );
 
+  // A card that left the panel (its result was shown, or it was closed) is
+  // filtered out; it stays in the list so that nothing brings it back.
   return rawList
     .filter(item => item && (item.action_id || item.actionId))
+    .filter(item => !item.dismissed)
     .filter(item => !superseded.has(String(item.action_id || item.actionId)))
     .map(item => {
       const actionId = String(item.action_id || item.actionId);
@@ -121,6 +130,16 @@ const onApproveAction = action => {
 const onRejectAction = action => {
   emit('rejectAction', action.raw);
 };
+
+const onCloseAction = action => {
+  emit('closeAction', action.raw);
+};
+
+// «Готово» tells that the action is done when the server gave no result line
+const approvedLabel = action =>
+  action.resultSummary
+    ? t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_APPROVED')
+    : t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_DONE');
 
 // The panel of a draft and the glow of a run take the focus when they appear,
 // so that Ctrl+Enter (insert) and Esc (cancel) work at once: the reply box
@@ -169,9 +188,27 @@ onMounted(() => {
       @focus="emit('focus')"
       @blur="emit('blur')"
     >
-      <div
+      <p
+        v-if="
+          actionsOnly && !showCopilotEditor && normalizedPendingActions.length
+        "
+        class="mb-0 px-1 text-xs text-n-slate-11"
+        role="status"
+        data-test="copilot-actions-only-note"
+      >
+        {{ t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.ACTIONS_ONLY') }}
+      </p>
+
+      <!-- A decided card leaves after its result was shown: it fades out
+           (a shorter fade without movement under reduced motion) -->
+      <TransitionGroup
         v-if="normalizedPendingActions.length"
+        tag="div"
         class="space-y-1.5"
+        leave-active-class="transition-all duration-200 ease-in motion-reduce:duration-100"
+        leave-from-class="opacity-100 translate-y-0 scale-100"
+        leave-to-class="opacity-0 translate-y-2 scale-[0.98] motion-reduce:translate-y-0 motion-reduce:scale-100"
+        move-class="transition-transform duration-200 motion-reduce:transition-none"
         data-test="copilot-pending-actions"
       >
         <div
@@ -291,9 +328,7 @@ onMounted(() => {
                 data-test="copilot-action-approved-badge"
               >
                 <Icon icon="i-lucide-check-circle-2" class="size-3.5" />
-                <span>
-                  {{ t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_APPROVED') }}
-                </span>
+                <span>{{ approvedLabel(action) }}</span>
               </span>
               <span
                 v-else-if="action.status === 'rejected'"
@@ -305,10 +340,25 @@ onMounted(() => {
                   {{ t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_REJECTED') }}
                 </span>
               </span>
+              <!-- A failed card stays until the manager closes it -->
+              <button
+                v-if="action.status === 'failed'"
+                type="button"
+                class="inline-flex size-6 items-center justify-center rounded-md text-n-slate-11 hover:enabled:bg-n-alpha-2 hover:enabled:text-n-slate-12 disabled:opacity-50"
+                :title="t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_CLOSE')"
+                :aria-label="
+                  t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_CLOSE')
+                "
+                :disabled="Boolean(action.loadingState)"
+                data-test="copilot-action-close"
+                @click="onCloseAction(action)"
+              >
+                <Icon icon="i-lucide-x" class="size-3.5" />
+              </button>
             </div>
           </div>
         </div>
-      </div>
+      </TransitionGroup>
 
       <p
         v-if="showCopilotEditor && operatorNote"

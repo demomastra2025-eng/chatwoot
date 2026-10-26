@@ -41,6 +41,8 @@ const CANCEL_WAIT_MS = 2000;
 const WATCHDOG_MIN_MS = 15000;
 const WATCHDOG_GRACE_MS = 20000;
 const TICK_INTERVAL_MS = 1000;
+// A card the manager decided shows its result this long, then leaves the panel.
+const DECIDED_ACTION_LINGER_MS = 1500;
 
 const PHASE = REPLY_SUGGESTION_PHASE;
 const STATUS = REPLY_SUGGESTION_STATUS;
@@ -49,6 +51,11 @@ const NOTICE_KIND = REPLY_SUGGESTION_NOTICE_KIND;
 const IN_FLIGHT_PHASES = [PHASE.REQUESTING, PHASE.QUEUED, PHASE.GENERATING];
 const WAITING_PHASES = [PHASE.QUEUED, PHASE.GENERATING];
 const SETTLED_PHASES = [PHASE.DRAFT, PHASE.NOTICE];
+
+// «Разрешено» / «Отклонено»: the manager's decision is made and recorded.
+function isDecidedAction(item) {
+  return item?.status === 'approved' || item?.status === 'rejected';
+}
 
 function recordCopilotFeedback(payload) {
   if (typeof TasksAPI?.feedback !== 'function') return;
@@ -243,6 +250,8 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
   let pendingCancel = null;
   let tickTimer = null;
   let watchdogTimer = null;
+  // Cards that were decided and wait to leave the panel: `conversation:action`.
+  const actionCloseTimers = new Map();
 
   const conversationId = computed(
     () => captainConversationId?.value ?? currentChat.value?.id
@@ -264,11 +273,36 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
   });
 
   const isActive = computed(() => showEditor.value || isGenerating.value);
+
+  // The cards on the panel: a card the manager closed (or that left after its
+  // result was shown) stays in the list, marked, so that a later merge or the
+  // cards of the draft meta never bring it back.
+  const visibleActions = computed(() =>
+    pendingActions.value.filter(
+      item => item && (item.action_id || item.actionId) && !item.dismissed
+    )
+  );
+  // Cards that still wait for the manager: not decided yet (a failed one can
+  // be tried again or denied).
+  const openActions = computed(() =>
+    visibleActions.value.filter(item => !isDecidedAction(item))
+  );
+  // The run found that no reply is needed and only prepared actions: the cards
+  // take the place of the editor until each is decided or all are cancelled.
+  // A staff reply is needed (human_needed) or the text was inserted already:
+  // the manager still writes, so the editor stays.
+  const isActionsOnly = computed(
+    () =>
+      !isActive.value &&
+      suggestionPhase.value === PHASE.NOTICE &&
+      suggestionNotice.value?.kind === NOTICE_KIND.NO_REPLY &&
+      visibleActions.value.length > 0
+  );
   const isButtonDisabled = computed(
     () => isGenerating.value || !isContentReady.value
   );
   const editorTransitionKey = computed(() =>
-    isActive.value ? 'copilot' : 'rich'
+    isActive.value || isActionsOnly.value ? 'copilot' : 'rich'
   );
 
   const isSuggestionInFlight = computed(() =>
@@ -716,6 +750,8 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     emitter.off(BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_RESULT, handleResultEvent);
     emitter.off(BUS_EVENTS.WEBSOCKET_RECONNECT_COMPLETED, handleReconnect);
     stopTimers();
+    // eslint-disable-next-line no-use-before-define
+    clearActionCloseTimers();
   }
 
   // Listen from creation until the owner goes away: a result can arrive while
@@ -964,9 +1000,19 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
   }
 
   /**
-   * «Отклонить»: drops the generated content and tells the server.
+   * «Отменить» of the panel. With a draft it drops the generated content, tells
+   * the server and declines the cards that wait for a decision. When the run
+   * left only cards (no text for the patient) it declines them and closes the
+   * panel; the notice above the reply box stays, it has its own «Скрыть».
    */
   function dismiss() {
+    if (isActionsOnly.value) {
+      // eslint-disable-next-line no-use-before-define
+      declineAndCloseActions();
+      return;
+    }
+    // eslint-disable-next-line no-use-before-define
+    declineOpenActions();
     const id = suggestionRequestId.value;
     trackDismissal();
     if (id) ignoredRequestIds.add(id);
@@ -1224,6 +1270,45 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     };
   }
 
+  // ---------------------------------------------------------------------
+  // Cards leave the panel: after their result was shown, or when closed
+  // ---------------------------------------------------------------------
+  function actionCloseKey(actionId, convKey) {
+    return `${convKey}:${actionId}`;
+  }
+
+  /**
+   * Takes a card off the panel at once. It stays in the list, marked, so that a
+   * later merge never brings it back.
+   */
+  function closeAction(actionItem, targetConvKey = null) {
+    const actionId =
+      typeof actionItem === 'string'
+        ? actionItem
+        : actionItem?.action_id || actionItem?.actionId;
+    if (!actionId) return;
+    const convKey = targetConvKey || activeConversationKey.value;
+    const timerKey = actionCloseKey(actionId, convKey);
+    clearTimeout(actionCloseTimers.get(timerKey));
+    actionCloseTimers.delete(timerKey);
+    updatePendingActionState(actionId, { dismissed: true }, convKey);
+  }
+
+  // A decided card shows its result for a moment, then leaves by itself.
+  function scheduleActionClose(actionId, convKey) {
+    const timerKey = actionCloseKey(actionId, convKey);
+    clearTimeout(actionCloseTimers.get(timerKey));
+    actionCloseTimers.set(
+      timerKey,
+      setTimeout(() => closeAction(actionId, convKey), DECIDED_ACTION_LINGER_MS)
+    );
+  }
+
+  function clearActionCloseTimers() {
+    actionCloseTimers.forEach(timer => clearTimeout(timer));
+    actionCloseTimers.clear();
+  }
+
   /**
    * Approves and executes a pending action proposed by the agent in reply_suggestion.
    * @param {Object|string} actionItem - The action object or action_id string
@@ -1262,6 +1347,7 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
         status: response?.data?.status || 'approved',
       };
       updatePendingActionState(actionId, updated, convKey);
+      if (isDecidedAction(updated)) scheduleActionClose(actionId, convKey);
       return updated;
     } catch (error) {
       // What the server says is for the logs: the staff get one plain line
@@ -1314,6 +1400,7 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
         status: response?.data?.status || 'rejected',
       };
       updatePendingActionState(actionId, updated, convKey);
+      if (isDecidedAction(updated)) scheduleActionClose(actionId, convKey);
       return updated;
     } catch {
       useAlert(t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_REJECT_FAILED'));
@@ -1323,6 +1410,32 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
       delete next[actionId];
       actionLoadingById.value = next;
     }
+  }
+
+  /**
+   * Declines the cards that wait for a decision, each through rejectAction. A
+   * card the server is executing is left alone.
+   * @returns {Promise<Array>} What rejectAction returned for each card
+   */
+  function declineOpenActions() {
+    return Promise.all(
+      openActions.value
+        .filter(item => item.status !== 'executing')
+        .map(item => rejectAction(item))
+    );
+  }
+
+  /**
+   * «Отменить» when the run left only cards: declines them and closes the
+   * panel at once, also the cards that wait to leave after their result. A card
+   * the server could not decline stays, with the alert.
+   */
+  async function declineAndCloseActions() {
+    const convKey = activeConversationKey.value;
+    await declineOpenActions();
+    (pendingActionsByConversation.value[convKey] || [])
+      .filter(item => !item.dismissed && isDecidedAction(item))
+      .forEach(item => closeAction(item, convKey));
   }
 
   /**
@@ -1389,6 +1502,8 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     captainTrace,
     suggestionMeta,
     pendingActions,
+    visibleActions,
+    openActions,
     actionLoadingById,
     liveProgress,
     requestId,
@@ -1403,6 +1518,7 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     elapsedSeconds,
 
     isActive,
+    isActionsOnly,
     isButtonDisabled,
     isQueued,
     canCancel,
@@ -1424,6 +1540,7 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     sendFollowUp,
     approveAction,
     rejectAction,
+    closeAction,
     accept,
   };
 }

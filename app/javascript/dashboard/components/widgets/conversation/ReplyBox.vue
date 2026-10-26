@@ -228,7 +228,7 @@ export default {
         !this.isPrivate &&
         this.inboxHasFeature(INBOX_FEATURES.REPLY_TO) &&
         !this.is360DialogWhatsAppChannel &&
-        !this.copilot.isActive.value
+        !this.isCopilotPanelOpen
       );
     },
     showWhatsappTemplates() {
@@ -572,7 +572,13 @@ export default {
       );
     },
     isDefaultEditorMode() {
-      return !this.showAudioRecorderEditor && !this.copilot.isActive.value;
+      return !this.showAudioRecorderEditor && !this.isCopilotPanelOpen;
+    },
+    // The AI panel takes the place of the editor: a suggestion is being
+    // prepared or shown as a draft, or the run left only actions (no text for
+    // the patient) and they wait for the manager
+    isCopilotPanelOpen() {
+      return this.copilot.isActive.value || this.copilot.isActionsOnly.value;
     },
     // «ИИ считает, что ответ не нужен» / «Нужен сотрудник» / «ИИ не смог…»:
     // information above the reply box, never text for the editor.
@@ -934,7 +940,7 @@ export default {
           action: e => {
             // While a suggestion is on screen the editor is hidden: a bare
             // Enter (the panel can hold the focus) must not send its old text
-            if (!this.copilot.isActive.value && this.isAValidEvent('enter')) {
+            if (!this.isCopilotPanelOpen && this.isAValidEvent('enter')) {
               this.onSendReply();
               e.preventDefault();
             }
@@ -946,7 +952,10 @@ export default {
             if (this.copilot.isActive.value && this.isFocused) {
               // Nothing to insert while a suggestion is still generating
               if (this.copilot.canAccept.value) this.onSubmitCopilotReply();
-            } else if (this.isAValidEvent('cmd_enter')) {
+            } else if (
+              !this.isCopilotPanelOpen &&
+              this.isAValidEvent('cmd_enter')
+            ) {
               this.onSendReply();
             }
           },
@@ -1769,7 +1778,7 @@ export default {
         />
         <CopilotEditorSection
           v-if="
-            (copilot.isActive.value || copilot.pendingActions.value.length) &&
+            (copilot.isActive.value || copilot.visibleActions.value.length) &&
             !showAudioRecorderEditor
           "
           :show-copilot-editor="copilot.showEditor.value"
@@ -1782,14 +1791,16 @@ export default {
           :stale="copilot.suggestionStale.value"
           :engine="copilot.suggestionEngine.value"
           :is-queued="copilot.isQueued.value"
+          :actions-only="copilot.isActionsOnly.value"
           @focus="onFocus"
           @blur="onBlur"
           @content-ready="copilot.setContentReady"
           @approve-action="copilot.approveAction"
           @reject-action="copilot.rejectAction"
+          @close-action="copilot.closeAction"
         />
         <WootMessageEditor
-          v-if="!copilot.isActive.value && !showAudioRecorderEditor"
+          v-if="!isCopilotPanelOpen && !showAudioRecorderEditor"
           ref="messageEditor"
           v-model="message"
           :conversation-id="conversationId"
@@ -1859,11 +1870,16 @@ export default {
       leave-to-class="opacity-0 translate-y-2 scale-[0.98]"
     >
       <CopilotReplyBottomPanel
-        v-if="copilot.isActive.value"
+        v-if="isCopilotPanelOpen"
         key="copilot-bottom-panel"
         :is-generating-content="copilot.isButtonDisabled.value"
         :is-generating="copilot.isGenerating.value"
-        :can-cancel="copilot.canCancel.value"
+        :actions-only="copilot.isActionsOnly.value"
+        :can-cancel="
+          copilot.isActionsOnly.value
+            ? copilot.openActions.value.length > 0
+            : copilot.canCancel.value
+        "
         @submit="onSubmitCopilotReply"
         @cancel="copilot.cancelGeneration"
         @reject="copilot.dismiss"
