@@ -16,6 +16,7 @@ import { useAlert } from 'dashboard/composables';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useMapGetter } from 'dashboard/composables/store';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
+import SchedulingMedelementPatientsAPI from 'dashboard/api/scheduling/medelementPatients';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
@@ -118,6 +119,10 @@ import {
 } from 'dashboard/stores/scheduling/providerCommands';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 import { parseIinMetadata } from 'dashboard/stores/scheduling/iin';
+import {
+  useMedelementPatientSearch,
+  visibleRemotePatients,
+} from '../composables/useMedelementPatientSearch';
 import {
   buildContactableInboxesList,
   fetchContactableInboxes,
@@ -1023,6 +1028,7 @@ const inlineContactLastNameMessage = computed(() => {
 const inlineContactPhoneMessage = computed(() => {
   if (
     isInlineContactMedelementContext.value &&
+    !formStore.isProviderPatientCodeLinked &&
     !isKazakhstanE164Phone(formStore.form.clientPhone)
   ) {
     return t('SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_PHONE_REQUIRED');
@@ -1033,6 +1039,7 @@ const inlineContactPhoneMessage = computed(() => {
 const needsProviderPatientPhoneInput = computed(
   () =>
     formStore.isProviderPatientIdentity &&
+    !formStore.isProviderPatientCodeLinked &&
     !isSelectedAppointmentProviderOwned.value &&
     !isKazakhstanE164Phone(formStore.selectedContact?.phone)
 );
@@ -1807,7 +1814,7 @@ watch(
   }
 );
 
-const handleContactSelect = rawContactId => {
+function handleContactSelect(rawContactId) {
   if (formStore.ui.isSaving || formStore.form.patientContactId) return;
   const contactId =
     rawContactId === '__create_new_contact__' ? '' : rawContactId;
@@ -1849,7 +1856,46 @@ const handleContactSelect = rawContactId => {
       formStore.inlineContactSnapshot = null;
     }
   }
-};
+}
+
+const medelementSearch = useMedelementPatientSearch({
+  enabled: computed(() =>
+    Boolean(calendarStore.payload?.medelementPatientSearchEnabled)
+  ),
+  search: async (query, signal) => {
+    const { data } =
+      await SchedulingMedelementPatientsAPI.searchMedelementPatients(
+        query,
+        signal
+      );
+    return normalizePayload(data);
+  },
+  importPatient: async token => {
+    const { data } =
+      await SchedulingMedelementPatientsAPI.importMedelementPatient(token);
+    return normalizePayload(data);
+  },
+  onImported: contact => {
+    formStore.contacts = [
+      contact,
+      ...formStore.contacts.filter(item => item.id !== contact.id),
+    ];
+    handleContactSelect(contact.id);
+    contactSelectorFieldRef.value?.close();
+  },
+});
+const remoteContactOptions = computed(() => {
+  return visibleRemotePatients(
+    medelementSearch.patients.value,
+    contactOptions.value
+  ).map(patient => ({
+    ...patient,
+    birthDate: patient.birthDate?.split('-').reverse().join('.') || '',
+    iinMasked: patient.iinMasked
+      ? `${t('SCHEDULING.PATIENT_SEARCH.IIN_LABEL')} ${patient.iinMasked}`
+      : '',
+  }));
+});
 
 const handleContactDropdownOpen = async () => {
   if (formStore.ui.isSaving || formStore.ui.isLoadingContacts) return;
@@ -1868,7 +1914,10 @@ const updateInlineContactField = (field, value) => {
   if (!formStore.ui.isSaving) inlineContactForm[field] = value;
 };
 const searchAppointmentContacts = query => {
-  if (!formStore.ui.isSaving) return formStore.searchContacts(query);
+  if (!formStore.ui.isSaving) {
+    medelementSearch.query(query);
+    return formStore.searchContacts(query);
+  }
   return null;
 };
 
@@ -3039,6 +3088,34 @@ onMounted(async () => {
                           isSelectedAppointmentInMedelement
                         "
                         :options="contactOptions"
+                        :remote-options="remoteContactOptions"
+                        :remote-title="$t('SCHEDULING.PATIENT_SEARCH.TITLE')"
+                        :remote-loading="medelementSearch.loading.value"
+                        :remote-error="
+                          medelementSearch.error.value ||
+                          medelementSearch.importError.value
+                        "
+                        :remote-truncated="medelementSearch.truncated.value"
+                        :remote-loading-label="
+                          $t('SCHEDULING.PATIENT_SEARCH.LOADING')
+                        "
+                        :remote-error-label="
+                          medelementSearch.importError.value
+                            ? $t('SCHEDULING.PATIENT_SEARCH.IMPORT_ERROR')
+                            : $t('SCHEDULING.PATIENT_SEARCH.SEARCH_ERROR')
+                        "
+                        :remote-truncated-label="
+                          $t('SCHEDULING.PATIENT_SEARCH.TRUNCATED')
+                        "
+                        :remote-phone-label="
+                          $t('SCHEDULING.PATIENT_SEARCH.PHONE_KNOWN')
+                        "
+                        :remote-hint="
+                          medelementSearch.hint.value
+                            ? $t('SCHEDULING.PATIENT_SEARCH.INVALID_IIN')
+                            : ''
+                        "
+                        :remote-busy-token="medelementSearch.busyToken.value"
                         use-api-results
                         dropdown-align="end"
                         :dropdown-min-width="405"
@@ -3052,6 +3129,8 @@ onMounted(async () => {
                         "
                         @open="handleContactDropdownOpen"
                         @search="searchAppointmentContacts"
+                        @close="medelementSearch.clear"
+                        @select-remote="medelementSearch.select"
                         @update:model-value="handleContactSelect"
                       />
                     </div>

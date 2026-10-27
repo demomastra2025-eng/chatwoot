@@ -33,7 +33,14 @@ import resetPassword from './resetPassword.json';
 import search from './search.json';
 // Scheduling intentionally uses the complete Russian catalog until a full
 // Kazakh translation is available, avoiding partial keys and raw fallbacks.
-import scheduling from '../ru/scheduling.json';
+import russianScheduling from '../ru/scheduling.json';
+import kazakhScheduling from './scheduling.json';
+const scheduling = {
+  SCHEDULING: {
+    ...russianScheduling.SCHEDULING,
+    PATIENT_SEARCH: kazakhScheduling.SCHEDULING.PATIENT_SEARCH,
+  },
+};
 import setNewPassword from './setNewPassword.json';
 import settings from './settings.json';
 import whatsappUsage from './whatsappUsage.json';

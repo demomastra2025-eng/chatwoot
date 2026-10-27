@@ -16,6 +16,17 @@ const props = defineProps({
     validator: value =>
       value.every(option => 'value' in option && 'label' in option),
   },
+  remoteOptions: { type: Array, default: () => [] },
+  remoteTitle: { type: String, default: '' },
+  remoteLoading: { type: Boolean, default: false },
+  remoteError: { type: Boolean, default: false },
+  remoteTruncated: { type: Boolean, default: false },
+  remoteLoadingLabel: { type: String, default: '' },
+  remoteErrorLabel: { type: String, default: '' },
+  remoteTruncatedLabel: { type: String, default: '' },
+  remotePhoneLabel: { type: String, default: '' },
+  remoteHint: { type: String, default: '' },
+  remoteBusyToken: { type: String, default: '' },
   placeholder: { type: String, default: '' },
   modelValue: { type: [String, Number], default: '' },
   disabled: { type: Boolean, default: false },
@@ -45,7 +56,14 @@ const props = defineProps({
   clampSelectedLabel: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['create', 'open', 'update:modelValue', 'search']);
+const emit = defineEmits([
+  'create',
+  'open',
+  'close',
+  'selectRemote',
+  'update:modelValue',
+  'search',
+]);
 
 const { t } = useI18n();
 const slots = useSlots();
@@ -211,11 +229,13 @@ const selectOption = option => {
   }
   open.value = false;
   search.value = '';
+  emit('close');
 };
 
 const closeDropdown = () => {
   open.value = false;
   search.value = '';
+  emit('close');
 };
 
 const createOption = value => {
@@ -254,7 +274,7 @@ const toggleDropdown = () => {
   openDropdown();
 };
 
-defineExpose({ open: openDropdown });
+defineExpose({ open: openDropdown, close: closeDropdown });
 
 watch(
   () => props.modelValue,
@@ -405,6 +425,17 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
         :open="open"
         :inline="inlineDropdown"
         :options="filteredOptions"
+        :remote-options="remoteOptions"
+        :remote-title="remoteTitle"
+        :remote-loading="remoteLoading"
+        :remote-error="remoteError"
+        :remote-truncated="remoteTruncated"
+        :remote-loading-label="remoteLoadingLabel"
+        :remote-error-label="remoteErrorLabel"
+        :remote-truncated-label="remoteTruncatedLabel"
+        :remote-phone-label="remotePhoneLabel"
+        :remote-hint="remoteHint"
+        :remote-busy-token="remoteBusyToken"
         :search-placeholder="searchPlaceholder"
         :show-search-input="!searchInTrigger"
         :empty-state="emptyState"
@@ -414,6 +445,7 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
         :selected-label-preview="selectedLabelPreview"
         @create="createOption"
         @search="emit('search', $event)"
+        @select-remote="emit('selectRemote', $event)"
         @select="selectOption"
       />
 

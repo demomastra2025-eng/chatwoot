@@ -1,5 +1,19 @@
 {
   "SCHEDULING": {
+    "PATIENT_SEARCH": {
+      "TITLE": "Найдено в МедЭлементе",
+      "LOADING": "Ищем пациентов…",
+      "SEARCH_ERROR": "МедЭлемент не ответил, повторите",
+      "IMPORT_ERROR": "Не удалось добавить пациента. Повторите поиск.",
+      "TRUNCATED": "Показаны первые 20. Уточните запрос.",
+      "IIN_LABEL": "ИИН",
+      "PHONE_KNOWN": "Телефон указан",
+      "INVALID_IIN": "Проверьте ИИН",
+      "MEDELEMENT_PATIENT_SEARCH_UNAVAILABLE": "МедЭлемент не ответил, повторите",
+      "MEDELEMENT_PATIENT_TOKEN_INVALID": "Повторите поиск пациента",
+      "MEDELEMENT_PATIENT_UNAVAILABLE": "Сейчас не удалось добавить пациента. Повторите позже.",
+      "SCHEDULING_PROVIDER_NOT_CONFIGURED": "Поиск пациентов пока недоступен"
+    },
     "APPOINTMENT_SOURCE": {
       "manual": "Вручную",
       "medelement": "MedElement",

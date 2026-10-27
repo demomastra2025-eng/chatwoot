@@ -1,5 +1,19 @@
 {
   "SCHEDULING": {
+    "PATIENT_SEARCH": {
+      "TITLE": "MedElement жүйесінен табылды",
+      "LOADING": "Пациенттерді іздеп жатырмыз…",
+      "SEARCH_ERROR": "MedElement жауап бермеді, қайталап көріңіз",
+      "IMPORT_ERROR": "Пациентті қосу мүмкін болмады. Қайта іздеңіз.",
+      "TRUNCATED": "Алғашқы 20 пациент көрсетілді. Іздеуді нақтылаңыз.",
+      "IIN_LABEL": "ЖСН",
+      "PHONE_KNOWN": "Телефоны көрсетілген",
+      "INVALID_IIN": "ЖСН-ді тексеріңіз",
+      "MEDELEMENT_PATIENT_SEARCH_UNAVAILABLE": "MedElement жауап бермеді, қайталап көріңіз",
+      "MEDELEMENT_PATIENT_TOKEN_INVALID": "Пациентті қайта іздеңіз",
+      "MEDELEMENT_PATIENT_UNAVAILABLE": "Қазір пациентті қосу мүмкін болмады. Кейінірек қайталаңыз.",
+      "SCHEDULING_PROVIDER_NOT_CONFIGURED": "Пациенттерді іздеу әзірге қолжетімсіз"
+    },
     "APPOINTMENT_SOURCE": {
       "manual": "Қолмен",
       "medelement": "MedElement",
