@@ -1,16 +1,19 @@
 # frozen_string_literal: true
 
-# The free starts that the slot reads of one reply suggestion run returned (search_available_slots, get_scheduling_resource_availability),
-# read from the cache of the reads of the run (see Captain::Runtime::ToolWrapper#cache_suggestion_read_result). A start counts as
-# returned when the answer the agent read lists it for that specialist: a time of a specialist-day of the compact answer ({ resource_id,
-# date, times, more }, also under next_available) or a slot with its own start. The times of a day are a sample (at most five, the rest
-# only counted in `more`), so a start that is not listed was not returned, whether it is free or not: the agent searches that exact time
-# (from = to) and the answer lists it.
+# The free starts that the slot reads of one reply suggestion run returned (search_available_slots, search_booking_options,
+# get_scheduling_resource_availability), read from the cache of the reads of the run (see
+# Captain::Runtime::ToolWrapper#cache_suggestion_read_result). A start counts as returned when the answer the agent read lists it
+# for that specialist: a time of a specialist-day of the compact answer ({ resource_id, date, times, more }, also under
+# next_available) or a slot with its own start. The times of a day are a sample (at most five, the rest only counted in `more`), so
+# a start that is not listed was not returned, whether it is free or not: the agent searches that exact time (from = to) and the
+# answer lists it.
 class Captain::ReplySuggestion::SearchedSlots
   SEARCH_TOOL = 'search_available_slots'
-  READ_TOOLS = [SEARCH_TOOL, 'get_scheduling_resource_availability'].freeze
-  # The answer of a tool is JSON in a JSON string, in a result hash: this many levels are opened.
-  MAX_DEPTH = 5
+  # search_booking_options lists the days of the same search in the same form ({ resource_id, name, date, times, more }).
+  READ_TOOLS = [SEARCH_TOOL, 'search_booking_options', 'get_scheduling_resource_availability'].freeze
+  # The answer of a tool is JSON in a JSON string, in a result hash: this many levels are opened (the days of the booking search lie
+  # five levels deep in the JSON string of the result, six in a result hash).
+  MAX_DEPTH = 7
   CLOCK = /\A([01]?\d|2[0-3]):([0-5]\d)\z/
 
   def initialize(context)

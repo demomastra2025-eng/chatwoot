@@ -539,6 +539,7 @@ class Captain::Runtime::ToolWrapper
   end
 
   def scheduling_context_error(normalized_args)
+    return remember_booking_search_service_context(normalized_args) if canonical_tool_name == 'search_booking_options'
     return unless canonical_tool_name == 'search_available_slots'
 
     @context_wrapper.tool_loop_guard_mutex.synchronize do
@@ -560,6 +561,13 @@ class Captain::Runtime::ToolWrapper
         }
       )
     end
+  end
+
+  # The booking search with services is a service-specific scheduling read as well: a free-time search without a service after it is
+  # the generic search that the guard above refuses.
+  def remember_booking_search_service_context(normalized_args)
+    remember_service_specific_scheduling! if normalized_args[:services].present?
+    nil
   end
 
   def positive_service_id?(value)
@@ -586,7 +594,7 @@ class Captain::Runtime::ToolWrapper
 
   def canonical_tool_name
     name = @tool.name.to_s
-    %w[search_available_slots search_scheduling_resources search_scheduling_services].find do |candidate|
+    %w[search_available_slots search_booking_options search_scheduling_resources search_scheduling_services].find do |candidate|
       name == candidate || name.end_with?("__#{candidate}") || name.end_with?(":#{candidate}")
     end || name
   end

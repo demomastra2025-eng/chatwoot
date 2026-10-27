@@ -34,7 +34,7 @@ class Captain::AssistantPrompt
       @prompt_state, bound_tool_ids: bound_tool_ids, time_zone: time_zone
     )
     variables = texts.merge(now_text: now_text, patient_lines: patient_lines)
-    @suggestion ? variables.merge(operator_language: operator_language) : variables
+    @suggestion ? variables.merge(operator_language: operator_language, booking_search: booking_search?) : variables
   end
 
   private
@@ -42,6 +42,12 @@ class Captain::AssistantPrompt
   # The language the clinic operator reads: the notes of a reply suggestion (operator_note) are written in it.
   def operator_language
     @assistant.account&.locale_english_name.presence || 'russian'
+  end
+
+  # A reply suggestion of an agent that searches free times also has the booking search (Captain::Assistant#filter_agent_tools), and
+  # the rules send it there first.
+  def booking_search?
+    Array(bound_tool_ids).include?(Captain::Assistant::SLOT_SEARCH_TOOL_ID)
   end
 
   # The tools of this run; nil when the context does not say (every @ mention is then its function name, no number is shown).

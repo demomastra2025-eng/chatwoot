@@ -265,6 +265,38 @@ RSpec.describe Captain::AssistantPrompt do
     expect(moscow[:instruction]).to eq('Due 12.10.2026 23:30.')
   end
 
+  describe 'the booking search of a reply suggestion' do
+    def suggestion_variables(tool_ids)
+      described_class.new(assistant: assistant, context: context.merge(runtime_tool_ids: tool_ids), state: {}, prompt_state: {},
+                          suggestion: true).variables
+    end
+
+    def stable_rules(variables)
+      template_variables = variables.merge(reply_suggestion_mode: true, council_part: false, prompt_section: 'stable', faq_enabled: false,
+                                           human_handoff_enabled: false)
+      Captain::PromptRenderer.render('assistant', template_variables.with_indifferent_access)
+    end
+
+    it 'is on for an agent that searches free times, and the rules send a booking question to it first' do
+      variables = suggestion_variables(%w[search_available_slots faq_lookup])
+
+      expect(variables[:booking_search]).to be(true)
+      expect(stable_rules(variables)).to include('call search_booking_options first', 'slots_service_id',
+                                                 'found by the same search as search_available_slots: offer those times exactly as listed')
+    end
+
+    it 'is off for an agent without a free-time search, and the rules name no tool it does not have' do
+      variables = suggestion_variables(%w[faq_lookup])
+
+      expect(variables[:booking_search]).to be(false)
+      expect(stable_rules(variables)).not_to include('search_booking_options')
+    end
+
+    it 'is no variable of the prompt of a conversation' do
+      expect(variables(state: {})).not_to have_key(:booking_search)
+    end
+  end
+
   it 'never changes the run state it reads' do
     state = { runtime_clock: clock, prompt_context: { contact: contact } }
     before = Marshal.load(Marshal.dump(state))

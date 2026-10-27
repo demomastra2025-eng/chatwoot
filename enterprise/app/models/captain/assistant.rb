@@ -62,6 +62,8 @@ class Captain::Assistant < ApplicationRecord
   MESSAGE_MODE_AI = 'ai'
   MESSAGE_MODES = [MESSAGE_MODE_STATIC, MESSAGE_MODE_AI].freeze
   HANDOFF_TOOL_ID = 'handoff'
+  SLOT_SEARCH_TOOL_ID = 'search_available_slots'
+  BOOKING_OPTIONS_TOOL_ID = 'search_booking_options'
   CRM_DEAL_PIPELINE_COMPANION_TOOL_IDS = %w[list_deal_pipelines list_deal_stages].freeze
   CRM_DEAL_READ_COMPANION_TOOL_IDS = %w[get_deal search_deals].freeze
   CRM_DEAL_PIPELINE_AWARE_TOOL_IDS = %w[get_deal search_deals create_deal update_deal transition_deal_stage].freeze
@@ -804,6 +806,24 @@ class Captain::Assistant < ApplicationRecord
   end
 
   private
+
+  # A reply suggestion answers a booking question with one call (search_booking_options: the services, their specialists and the free
+  # times) instead of three model steps, so an agent that searches free times gets that search too. It is bound to reply suggestion
+  # runs only: the conversation and the Playground keep the tools the clinic selected.
+  def filter_agent_tools(tools, read_only_tools: false, suggestion_tools: false)
+    filtered = super
+    return filtered unless suggestion_tools && !read_only_tools
+
+    filtered + booking_options_tools(filtered)
+  end
+
+  def booking_options_tools(tools)
+    names = tools.map { |tool| tool.name.to_s }
+    return [] if names.exclude?(SLOT_SEARCH_TOOL_ID) || names.include?(BOOKING_OPTIONS_TOOL_ID)
+
+    definition = Captain::ToolCatalog.available_tools_for_ids(self, Captain::ToolAccess::SCOPE_AGENT, [BOOKING_OPTIONS_TOOL_ID]).first
+    Array(definition && Captain::ToolCatalog.build_tool(definition, assistant: self, scope_name: Captain::ToolAccess::SCOPE_AGENT))
+  end
 
   def faq_responses_visible?
     Captain::AssistantResponse.approved.visible_to_assistant(id).exists?

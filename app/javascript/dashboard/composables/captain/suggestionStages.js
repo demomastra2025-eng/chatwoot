@@ -67,6 +67,7 @@ const STAGE_BY_TOOL = new Map(
       'list_scheduling_resources',
     ],
     [STAGE.SLOTS]: [
+      'search_booking_options',
       'search_available_slots',
       'get_scheduling_resource_availability',
       'get_scheduling_resource_schedule',

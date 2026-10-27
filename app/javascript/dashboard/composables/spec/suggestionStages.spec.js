@@ -91,6 +91,7 @@ describe('suggestionStages: the stage of a progress event', () => {
         'list_scheduling_resources',
       ],
       [STAGE.SLOTS]: [
+        'search_booking_options',
         'search_available_slots',
         'get_scheduling_resource_availability',
         'get_scheduling_resource_schedule',

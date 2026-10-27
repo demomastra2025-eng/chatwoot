@@ -39,6 +39,14 @@ RSpec.describe Captain::ReplySuggestion::DraftTimes do
     expect(described_class.unverified(draft: 'Ждём вас в 19:00.', context: without_search)).to eq([])
   end
 
+  it 'checks a run that searched free times with the booking search, whose days are a source of times' do
+    days = JSON.generate('results' => [{ 'days' => [{ 'resource_id' => 5, 'date' => '2026-10-27', 'times' => %w[18:00 19:30] }] }])
+    booking_search = { captain_v2_completed_tool_names: %w[search_booking_options] }
+                     .merge(cache_key => { 'd' => { result: days, tool: 'search_booking_options' } })
+
+    expect(described_class.unverified(draft: 'Свободно 19:30, или в 19:00.', context: booking_search)).to eq(['19:00'])
+  end
+
   it 'reads a context with string keys and results kept as data' do
     stringified = { 'captain_v2_completed_tool_names' => ['search_available_slots'],
                     cache_key.to_s => { 'd' => { 'result' => JSON.parse(slots), 'tool' => 'search_available_slots' } } }

@@ -533,7 +533,7 @@ RSpec.describe Captain::Assistant, type: :model do
 
     it 'keeps every shared built-in agent tool available in the assistant catalog' do
       # These client-scoped tools act on the customer of the current conversation, which the assistant scope does not have.
-      client_scoped_tool_ids = %w[get_my_contact update_my_contact list_my_deals]
+      client_scoped_tool_ids = %w[get_my_contact update_my_contact list_my_deals search_booking_options]
       missing_tool_ids = assistant.available_tool_ids - assistant.available_assistant_tool_ids
 
       expect(missing_tool_ids).to match_array(client_scoped_tool_ids)
