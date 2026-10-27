@@ -128,15 +128,20 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     expect(described_class.for_tool('search_available_slots').description).to include('to offer the patient free slots')
   end
 
-  # Suggestion eval 27.10 (c76-1231671): the list covers the patients linked to the contact, and an empty list proves nothing.
-  it 'says that list_my_appointments covers the linked patients and that an empty list never means that there is nothing to cancel' do
+  # Suggestion eval 27.10 (c76-1231671): the list covers the visits booked from the chat (a child, a relative), and an empty list proves nothing.
+  it 'says that list_my_appointments covers the visits booked from this chat and that an empty list never means that there is nothing to cancel' do
     list = described_class.for_tool('list_my_appointments').description
 
-    expect(list).to include('the patients linked to this contact', 'names that patient (patient_name)',
+    expect(list).to include('booked from this chat', 'names that patient as patient_name and carries the token',
                             'does not prove that there is no appointment', 'never tell the patient that there is nothing to cancel')
-    expect(described_class.for_tool('search_appointments').description)
-      .to include('lists the appointments of the current patient and of the patients linked to this contact, each with its token',
-                  'a patient that list_my_appointments does not show')
+    expect(list).not_to include('linked to this contact')
+    search = described_class.for_tool('search_appointments').description
+    expect(search).to include('lists the appointments booked from this chat, each with its token (the same ones list_my_appointments shows)',
+                              'a patient that list does not show', 'An empty result does not prove that there is no appointment')
+    %w[get_appointment update_appointment cancel_appointment].each do |tool_id|
+      expect(described_class.for_tool(tool_id).params['appointment_access_token'])
+        .to eq("Another patient's appointment: token from the latest list_my_appointments or search_appointments.")
+    end
   end
 
   # Suggestion eval 27.10 (c74-1245386): a payment phone number the patient sent was read as the ID number.
@@ -148,10 +153,12 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
   end
 
   # Suggestion eval 27.10 (c74-1245884): a search for earlier or later times started from tomorrow and skipped the free times of today.
-  it 'tells the agent to start a search of free slots today when no day is named, never from tomorrow' do
+  it 'tells the agent to start a search of free slots today when no day is named, and later only on a day the patient named' do
     from = described_class.for_tool('search_available_slots').params['from']
 
-    expect(from).to include("pass today's date: the free times of today that are later than now are returned too", 'never start from tomorrow')
+    expect(from).to include("pass today's date: the free times of today that are later than now are returned too",
+                            'start later only on the day the patient named')
+    expect(from).not_to include('never start from tomorrow')
   end
 
   it 'names the patient of create_appointment positively: the person the appointment is for when it is not the person in the conversation' do

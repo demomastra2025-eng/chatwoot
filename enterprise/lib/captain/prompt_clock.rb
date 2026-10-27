@@ -30,6 +30,15 @@ class Captain::PromptClock
     today (сегодня, бүгін) = %<today>s, tomorrow (завтра, ертең) = %<tomorrow>s, the day after tomorrow (послезавтра) = %<after>s.
   LINE
 
+  # The same for a message sent after midnight (before NIGHT_ENDS_AT_HOUR): the patient who writes at that hour often means the day that has
+  # already begun by "tomorrow", so the line gives both dates and the one line does not contradict the night line.
+  MESSAGE_NIGHT_LINE = <<~LINE.squish.freeze
+    Patient's last message was sent %<sent>s, %<time>s (%<ago>s), after midnight. Read its relative days from that day, never from the
+    clock above: today (сегодня, бүгін) = %<today>s, tomorrow (завтра, ертең) = %<today>s or %<tomorrow>s (after midnight "tomorrow" may mean
+    the same day), the day after tomorrow (послезавтра) = %<tomorrow>s or %<after>s. For such a day offer free slots with the full date
+    and book after the patient picks one.
+  LINE
+
   class << self
     # "Monday, 12 October 2026 (2026-10-12), 12:34, Almaty (UTC+5). Tomorrow: Tuesday, 13 October 2026 (2026-10-13)." or nil when
     # the clock holds no usable time.
@@ -44,15 +53,16 @@ class Captain::PromptClock
     # One more line for the hours after midnight, when "today" and "tomorrow" are ambiguous. It names the date of today, so the
     # model reads "tomorrow" as that date or as the one after it by the patient's words and offers times with the full date; nil
     # at any other time and without a usable clock. When the patient's last message (message_sent_at of the clock) was sent after
-    # midnight and is answered later (in the morning of the same day, or on a later day), the hour of that message decides instead,
-    # and the line names the time and the day it was sent: the message being answered carries no send stamp of its own.
+    # midnight and is answered later in the morning of the same day, the hour of that message decides instead, and the line names the
+    # time and the day it was sent: the message being answered carries no send stamp of its own. A message of an earlier day is
+    # written out by #message_line, with both readings of its tomorrow.
     def night_line(runtime_clock)
       local, = local_clock(runtime_clock)
       return if local.blank?
 
       sent = message_time(runtime_clock, local.time_zone)
       return format(NIGHT_LINE, today: local.strftime(LONG_DATE_FORMAT)) if night?(local) && !earlier_day?(sent, local)
-      return unless night_message?(sent, local)
+      return unless night_message?(sent, local) && !earlier_day?(sent, local)
 
       format(NIGHT_MESSAGE_LINE, time: sent.strftime('%H:%M'), day: sent.strftime(LONG_DATE_FORMAT))
     end
@@ -60,7 +70,8 @@ class Captain::PromptClock
     # "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago). Read its relative days from that day,
     # never from the clock above: today (...) = Saturday, 24 October 2026 (2026-10-24), tomorrow (...) = Sunday, 25 October 2026
     # (2026-10-25), the day after tomorrow (...) = ..." when the message being answered (message_sent_at of the clock) was sent on an
-    # earlier day than now; nil when it was sent today or is unknown.
+    # earlier day than now; nil when it was sent today or is unknown. A message sent after midnight gets both readings of tomorrow
+    # (MESSAGE_NIGHT_LINE), so the night line has no second word to say about it.
     def message_line(runtime_clock)
       local, = local_clock(runtime_clock)
       return if local.blank?
@@ -69,9 +80,10 @@ class Captain::PromptClock
       return if sent.nil? || sent.to_date >= local.to_date
 
       days = (local.to_date - sent.to_date).to_i
-      format(MESSAGE_LINE, sent: sent.strftime(LONG_DATE_FORMAT), time: sent.strftime('%H:%M'), ago: days == 1 ? 'yesterday' : "#{days} days ago",
-                           today: sent.strftime(LONG_DATE_FORMAT), tomorrow: (sent + 1.day).strftime(LONG_DATE_FORMAT),
-                           after: (sent + 2.days).strftime(LONG_DATE_FORMAT))
+      template = night?(sent) ? MESSAGE_NIGHT_LINE : MESSAGE_LINE
+      format(template, sent: sent.strftime(LONG_DATE_FORMAT), time: sent.strftime('%H:%M'), ago: days == 1 ? 'yesterday' : "#{days} days ago",
+                       today: sent.strftime(LONG_DATE_FORMAT), tomorrow: (sent + 1.day).strftime(LONG_DATE_FORMAT),
+                       after: (sent + 2.days).strftime(LONG_DATE_FORMAT))
     end
 
     # "[Sat 24.10 09:50]": the send time of a message (a time or an ISO 8601 string) in the given zone; nil without a usable time.

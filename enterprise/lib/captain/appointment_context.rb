@@ -3,12 +3,13 @@ class Captain::AppointmentContext
   STATUSES = %w[scheduled completed cancelled no_show any].freeze
   DEFAULT_LIMIT = 10
   MAX_LIMIT = 20
-  # Said with an empty list: the list covers this contact and the patients linked to it, and nothing else, so an empty answer is no
-  # proof that the patient has no booking (the agent of the eval of 27.10 told patients that there was nothing to cancel).
-  NOTHING_FOUND_NOTE = 'No appointment matched for this patient and the patients linked to this contact. That does not prove the ' \
-                       'patient has no appointment: it may be booked on another phone or under another name. Never tell the patient ' \
-                       'that there is no appointment or nothing to cancel. Ask for the IIN of the patient and look it up with ' \
-                       'search_appointments, or leave the request to staff and say that a staff member will check.'.freeze
+  # Said with an empty result of any appointment lookup (this list, search_appointments): the lookups cover the visits booked from this
+  # chat, or the exact details the agent gave, and nothing else, so an empty answer is no proof that the patient has no booking (the
+  # agent of the eval of 27.10 told patients that there was nothing to cancel).
+  NOTHING_FOUND_NOTE = 'Nothing matched. That does not prove the patient has no appointment: it may be booked on another phone, under ' \
+                       'another name or in the clinic system only. Never tell the patient that there is no appointment or nothing to ' \
+                       'cancel. If you have not looked the visit up with search_appointments yet (the details it takes are in its ' \
+                       'description), do that; otherwise leave the request to staff and say that a staff member will check.'.freeze
 
   def initialize(account:, conversation: nil, contact_id: nil)
     @account = account
@@ -27,27 +28,29 @@ class Captain::AppointmentContext
          .where('COALESCE(patient_contact_id, contact_id) = ?', @contact_id)
   end
 
-  # The appointments of the contact and of every patient linked to it: a child or a relative booked from this chat, a patient card
-  # that shares the number (Scheduling::PatientContextQuery, the circle the staff's patient selector shows). What the agent looks
-  # up (list_my_appointments, search_appointments) covers the whole family: a lookup of the contact's own card alone told a patient
-  # who asked to cancel the visit of a child that there was nothing to cancel. A booking made from outside that circle, also one
-  # that names the contact as its patient, stays out. A change of the appointment of another patient still needs its task token and
-  # the patient's confirmation (AppointmentAccess).
-  def linked_appointments
+  # The appointments booked from this contact's chat, for any patient: the contact's own and those of a child or a relative the contact
+  # booked, also a visit imported for the contact's chat (MedElement receptions are routed to the chat contact, as the reminders
+  # are). What the agent looks up (list_my_appointments, search_appointments) covers them: a lookup of the contact's own card alone told
+  # a patient who asked to cancel the visit of a child that there was nothing to cancel. The visits of a patient who books from their
+  # own chat stay out, also when this contact once booked for that patient (a phone match is no patient identity: their history is
+  # theirs, and it takes their IIN to find a visit of theirs). A change of the appointment of another patient still needs its task
+  # token and the patient's confirmation (AppointmentAccess).
+  def booked_appointments
     scope = @account.scheduling_appointments
     return scope.none if @conversation && @conversation.account_id != @account.id
+    return scope.none unless @account.contacts.exists?(id: @contact_id)
 
-    ids = patient_contact_ids
-    scope.where(contact_id: ids)
-         .where('COALESCE(scheduling_appointments.patient_contact_id, scheduling_appointments.contact_id) IN (?)', ids)
+    scope.where(contact_id: @contact_id)
   end
 
-  # The contact and the patients linked to it; empty when the contact is not one of the account.
-  def patient_contact_ids
-    @patient_contact_ids ||= begin
-      contact = @account.contacts.find_by(id: @contact_id)
-      contact ? Scheduling::PatientContextQuery.new(account: @account, contact: contact).patient_ids : []
-    end
+  # The local starts ("HH:MM") of the upcoming appointments booked from this chat, for the check that a short answer of the patient is
+  # no acceptance of a time the clinic offered (Captain::Runtime::AgreedVisit).
+  def upcoming_booked_clocks(now: Time.current, limit: MAX_LIMIT)
+    visits = booked_appointments.where.not(status: 'cancelled').where('ends_at > ?', now).order(:starts_at, :id).limit(limit)
+    visits.includes(:resource).map do |appointment|
+      zone = Captain::ContextFields.appointment_timezone_for(appointment, @account)
+      appointment.starts_at.in_time_zone(zone).strftime('%H:%M')
+    end.uniq
   end
 
   def nearest(now: Time.current)
@@ -158,7 +161,7 @@ class Captain::AppointmentContext
   end
 
   def filtered_appointments(status:, from:, to:, doctor:)
-    scope = linked_appointments
+    scope = booked_appointments
     scope = scope.where(status: %w[scheduled confirmed]) if status == 'scheduled'
     scope = scope.where(status: status) unless %w[any scheduled].include?(status)
     scope = scope.where('starts_at >= ?', day_start(from)) if from

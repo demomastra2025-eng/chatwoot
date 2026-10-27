@@ -462,7 +462,7 @@ class Captain::Assistant::AgentRunnerService
       return final_error_response(error, result.context, handoff_tool_called: handoff_tool_called)
     end
 
-    flag_draft_times!(response, result.context) if suggestion_run? && !council_turn?
+    flag_draft!(response, result.context) if suggestion_run? && !council_turn?
     publish_tool_omission_event(response, result.context)
     moderate_output!(response, result.context&.dig(:state, :captain_runtime))
     add_playground_usage(response, result)
@@ -474,22 +474,25 @@ class Captain::Assistant::AgentRunnerService
   end
 
   # A suggestion offers only the times its scheduling reads found, each under the specialist whose list holds it
-  # (Captain::ReplySuggestion::DraftTimes): any other time, and a time under the name of another specialist, is named to the manager
-  # above the draft (see ReplySuggestion::AgentOutcomeClassifier); the draft is not changed.
-  def flag_draft_times!(response, context)
+  # (Captain::ReplySuggestion::DraftTimes), says that a visit is cancelled or moved only when the run called the tool that does it, and
+  # never that the patient has no appointment (Captain::ReplySuggestion::DraftClaims): any other time, a time under the name of another
+  # specialist and such a claim are named to the manager above the draft (see ReplySuggestion::AgentOutcomeClassifier); the draft is
+  # not changed.
+  def flag_draft!(response, context)
     draft = response['response']
-    flag_times!(response, 'unverified_times') { Captain::ReplySuggestion::DraftTimes.unverified(draft: draft, context: context) }
-    flag_times!(response, 'misattributed_times') { Captain::ReplySuggestion::DraftSpecialists.misattributed(draft: draft, context: context) }
+    flag_kind!(response, 'unverified_times') { Captain::ReplySuggestion::DraftTimes.unverified(draft: draft, context: context) }
+    flag_kind!(response, 'misattributed_times') { Captain::ReplySuggestion::DraftSpecialists.misattributed(draft: draft, context: context) }
+    flag_kind!(response, 'unsupported_claims') { Captain::ReplySuggestion::DraftClaims.unsupported(draft: draft, context: context) }
   end
 
-  def flag_times!(response, key)
-    times = yield
-    return if times.empty?
+  def flag_kind!(response, key)
+    flagged = yield
+    return if flagged.empty?
 
-    response[key] = times
-    Rails.logger.info("[CAPTAIN][ReplySuggestion] draft times flagged kind=#{key} count=#{times.size}")
+    response[key] = flagged
+    Rails.logger.info("[CAPTAIN][ReplySuggestion] draft flagged kind=#{key} count=#{flagged.size}")
   rescue StandardError => e
-    Rails.logger.warn("[CAPTAIN][ReplySuggestion] draft times not checked kind=#{key} error_class=#{e.class.name}")
+    Rails.logger.warn("[CAPTAIN][ReplySuggestion] draft not checked kind=#{key} error_class=#{e.class.name}")
   end
 
   # The parts this reply answers: the plan of the request, and the actions of earlier runs that the customer was not told about

@@ -52,6 +52,20 @@ RSpec.describe Captain::PatientIntent do
       ].each { |text| expect(described_class.booking_change?(text)).to be(true), text }
     end
 
+    # Review of quality-fixes-1 (H2): a refusal to come was a no_reply once «буду» was a courtesy, and the safety net did not know it.
+    it 'sees a refusal to come in the other words patients use, also behind a thanks' do
+      [
+        'Спасибо, не буду', 'Не буду', 'Мы не будем', 'Не получится прийти', 'Спасибо, не получается', 'Не пойду', 'Не пойдём',
+        'Не выйдет завтра', 'Не могу прийти', 'Мы не можем приехать', 'Рахмет, келмеймін'
+      ].each { |text| expect(described_class.booking_change?(text)).to be(true), text }
+    end
+
+    it 'does not take a confirmation that the patient will come, or a word that only holds the letters, for a request' do
+      ['Спасибо, буду', 'Хорошо, придём', 'Рахмет, келемін', 'Буду ждать', 'Будем рады', 'Принял, буду'].each do |text|
+        expect(described_class.booking_change?(text)).to be(false), text
+      end
+    end
+
     it 'does not leave a thanks unchecked: without a thanks word the past tense of the action is still a mention of it' do
       expect(described_class.booking_change?('Вы отменили мою запись?')).to be(true)
       expect(described_class.booking_change?('Запись перенесли, а мне никто не сказал')).to be(true)
@@ -110,6 +124,17 @@ RSpec.describe Captain::PatientIntent do
     end
 
     # The eval of 26.10: the decision model sent this to staff, and the dialog never reached an agent.
+    # Review of quality-fixes-1 (L2): the wordings of a request for a person that the first lists did not hold.
+    it 'sees a request for a person with no operator word, in Russian and in English' do
+      ['Есть кто живой?', 'Тут есть кто живой', 'Хочу обсудить с врачом лично', 'Можно поговорить с доктором лично?',
+       'Лично с врачом хочу', 'I want a person', 'Is anybody there?', 'anyone alive?'].each do |text|
+        expect(described_class.human_request?(text)).to be(true), text
+      end
+      ['Я живу рядом', 'Приду лично завтра', 'Это личный вопрос', 'A personal question'].each do |text|
+        expect(described_class.human_request?(text)).to be(false), text
+      end
+    end
+
     it 'sees nothing in a plain question about free times, a doctor, a price or a booking' do
       [
         'Есть окно сегодня или завтра для ребёнка к ЛОРу?', 'Есть окно на сегодня или завтра для ребёнка?',
@@ -124,6 +149,39 @@ RSpec.describe Captain::PatientIntent do
         'Болит позвоночник', 'Позвонок смещён, нужен невролог', 'Я позвоню позже', 'Звон в ушах уже неделю', 'Хочу сделать ботокс',
         'Роботизированная операция есть?', 'Добро пожаловать', 'Hello, is there a free time tomorrow?', 'Thank you', 'Сколько стоит ботулотоксин?'
       ].each { |text| expect(described_class.human_request?(text)).to be(false), text.inspect }
+    end
+  end
+
+  describe 'the words of a short answer' do
+    it 'sees a thanks, an acceptance and a confirmation that the patient will come' do
+      %w[Спасибо Рахмет Рақмет Thanks].each { |text| expect(described_class.thanks?(text)).to be(true), text }
+      %w[Да Ок ОК Окей Хорошо Подходит Давайте Жарайды Иә Yes Okay].each do |text|
+        expect(described_class.accepts?(text)).to be(true), text
+      end
+      ['Буду', 'Спасибо, придём', 'Приеду', 'Рахмет, келемін', 'Барамыз'].each do |text|
+        expect(described_class.confirms_visit?(text)).to be(true), text
+      end
+      ['Спасибо', 'Здравствуйте', 'Сколько стоит?', 'Дата', 'Окно'].each do |text|
+        expect(described_class.accepts?(text)).to be(false), text
+        expect(described_class.confirms_visit?(text)).to be(false), text
+      end
+    end
+
+    it 'sees a question put in words, with no question mark' do
+      ['Спасибо, буду. Адрес какой', 'Рахмет, қашан келемін', 'Во сколько приём', 'Можно позже', 'Где вы находитесь', 'Есть ли окно',
+       'Келемін, адрес қайда'].each { |text| expect(described_class.question?(text)).to be(true), text }
+      ['Спасибо, буду', 'Рахмет', 'Спасибо, что приняли', 'Ок', 'Хорошо, до свидания'].each do |text|
+        expect(described_class.question?(text)).to be(false), text
+      end
+    end
+
+    it 'sees a time or a date, and gives the clock times alone' do
+      ['Завтра в 10:00', 'есть окно в четверг', '25 октября', '24.10', 'в 10 часов', 'Ертең', 'Дүйсенбіде'].each do |text|
+        expect(described_class.names_time?(text)).to be(true), text
+      end
+      ['Здравствуйте', 'УЗИ стоит 8000 тенге', 'Ок', nil].each { |text| expect(described_class.names_time?(text)).to be(false), text.inspect }
+      expect(described_class.clock_times('Окна: 9:30, 10:00 и 14.30; 12.10 тоже; в 25:00 нет; 10:00 снова')).to eq(%w[09:30 10:00])
+      expect(described_class.clock_times(nil)).to eq([])
     end
   end
 

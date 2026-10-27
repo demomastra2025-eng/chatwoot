@@ -33,6 +33,13 @@ class Captain::Tools::Agent::AppointmentResult
   START_IN_PAST_CODE = 'START_IN_PAST'.freeze
   START_IN_PAST_GUIDANCE = 'That start has passed (now is %<now>s). Search free times from now with search_available_slots, offer the ' \
                            'patient one of the returned times and book that time.'.freeze
+  # An imported appointment (MedElement) that cannot be cancelled or changed from here (Scheduling::Appointments::MutationGuard): it was
+  # found, so the agent neither looks it up again nor says that nothing is booked; it hands the request to staff naming the visit.
+  READ_ONLY_CODE = 'APPOINTMENT_READ_ONLY'.freeze
+  READ_ONLY_GUIDANCE = 'This appointment belongs to the clinic system, which does not allow this change from here (cancelling it, ' \
+                       'or changing more than its time). Nothing was changed: do not tell the patient it is cancelled or moved and ' \
+                       'do not ask the patient for more details or look it up again. Hand the request to staff, naming this visit ' \
+                       '(date, time, specialist) and that the change was refused.'.freeze
   # The two answers of "nothing was changed" (the statuses of Captain::ToolResult::NO_CHANGE_STATUSES) and their result line.
   STATUS_UNCHANGED = 'unchanged'.freeze
   STATUS_ALREADY_BOOKED = 'already_booked'.freeze
@@ -317,11 +324,18 @@ class Captain::Tools::Agent::AppointmentResult
   end
   private_class_method :correctable_failure
 
+  def self.read_only_failure
+    { success: false, reason: 'validation_error', code: READ_ONLY_CODE, correction: READ_ONLY_GUIDANCE, error_class: ERROR_CLASS_BUSINESS }
+  end
+  private_class_method :read_only_failure
+
   def self.failure(error, account: nil)
     answer = required_custom_field_failure(error, account) || correctable_failure(error)
     return answer if answer
 
     code = error.respond_to?(:code) ? error.code.to_s : ''
+    return read_only_failure if code == READ_ONLY_CODE
+
     if code.blank? && !error.is_a?(ArgumentError) && !error.is_a?(ActiveRecord::RecordInvalid) && !error.is_a?(ActiveRecord::RecordNotFound)
       code = 'INTERNAL_FAILURE'
     end

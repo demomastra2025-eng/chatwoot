@@ -8,21 +8,13 @@ class Scheduling::PatientContextQuery
   end
 
   def patients
-    account.contacts.where(id: linked_ids).order(:id).to_a.sort_by { |card| card.id == contact.id ? 0 : 1 }
-  end
-
-  # The ids of the contact and of every patient linked to it (see #patients), without loading the cards.
-  def patient_ids
-    account.contacts.where(id: linked_ids).pluck(:id)
+    ids = [contact.id] + appointment_patient_ids + shared_patient_ids + recorded_patient_ids
+    account.contacts.where(id: ids.uniq).order(:id).to_a.sort_by { |card| card.id == contact.id ? 0 : 1 }
   end
 
   private
 
   attr_reader :account, :contact
-
-  def linked_ids
-    ([contact.id] + appointment_patient_ids + shared_patient_ids + recorded_patient_ids).uniq
-  end
 
   def appointment_patient_ids
     account.scheduling_appointments.where(contact_id: contact.id).where.not(patient_contact_id: nil).distinct.pluck(:patient_contact_id)

@@ -3,14 +3,16 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Runtime::DecisionRouter::Questions do
-  # A dialog in which the clinic asked the patient nothing.
+  # A dialog in which the clinic asked the patient nothing, and the visit it states is the one the contact has.
   def dialog = [{ role: 'clinic', agent_id: 20, text: 'Вы записаны на четверг.' }]
 
+  def booked = Captain::Runtime::AgreedVisit.new(times: ['10:00'])
+
   def snapshot(count, current: nil, human: true, card: 'Услуги агента', suggestion: false, anchor: nil, # rubocop:disable Metrics/ParameterLists
-               history: dialog, message: 'Спасибо!')
+               history: dialog, message: 'Спасибо!', visit: booked)
     agents = (1..count).map { |id| Captain::Runtime::RoutingSnapshot::Agent.new(id: id * 10, label: "Agent #{id}", card: card) }
     Captain::Runtime::RoutingSnapshot.new(agents: agents, latest_message: message, current_agent_id: current, human_available: human,
-                                          suggestion: suggestion, anchor_agent_id: anchor, recent_messages: history)
+                                          suggestion: suggestion, anchor_agent_id: anchor, recent_messages: history, visit: visit)
   end
 
   def build(count, mode: :full, **)
@@ -47,11 +49,12 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
 
   # Suggestion eval 27.10 (c76-1205215, c78-1186457, c77-1198258): after a time was agreed (a voice note of the operator had no text)
   # the patient wrote «Ок Рахмет / Принял / Буду» and the agent started the booking again.
-  it 'describes a bare confirmation of an agreed visit as no_reply_needed, also after a clinic voice note whose words are unknown' do
+  it 'describes a bare confirmation of an agreed visit as no_reply_needed, but not after a clinic voice note whose words are unknown' do
     description = build(3).to_h['route_mode'][:criteria]['no_reply_needed']
 
     expect(description).to include('A thanks, ok or "буду", "придём", "келемін" that only confirms a visit or a time the clinic already ' \
-                                   'agreed, booked or confirmed (also in a clinic voice note whose words are unknown) closes the topic: this.',
+                                   'agreed, booked or confirmed closes the topic: this, but not after a clinic voice note whose words ' \
+                                   'are unknown.',
                                    'A greeting opens or resumes the dialog: not this',
                                    'a thumbs-up that answers a clinic question offering a time or a booking accepts it: not this')
     expect(description.length).to be <= described_class::MAX_DESCRIPTION
@@ -224,16 +227,70 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
       expect(build(3, message: 'Рахмет, сау болыңыз 🙏').resolve(answered('no_reply_needed')).kind).to eq('no_reply')
     end
 
-    # Suggestion eval 27.10: a voice note of the clinic has no text, so the last clinic message asks nothing; a confirmation of the
-    # visit after it is a courtesy, a question about it is not.
-    it 'takes a no_reply_needed for a bare confirmation after a clinic voice note, and keeps a question about it with the agent' do
+    # Suggestion eval 27.10: a voice note of the clinic has no text, so the last clinic message asks nothing. Review of quality-fixes-1
+    # (M1): what the patient answers to it may accept or decline anything in it, so nothing is closed after it: the agent or staff answer.
+    it 'never takes a no_reply_needed after a clinic voice note whose words are unknown' do
       voice = [{ role: 'clinic', agent_id: 20, text: Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE }]
 
-      ['Ок Рахмет Принял Буду', 'Спасибо, буду', 'Рахмет, келемін'].each do |text|
+      ['Ок Рахмет Принял Буду', 'Спасибо, буду', 'Рахмет, келемін', 'Да', 'Спасибо', 'А во сколько?'].each do |text|
         expect(build(3, current: 20, message: text, history: voice).resolve(answered('no_reply_needed')))
-          .to have_attributes(kind: 'no_reply', agent_ids: [20], key: 'no_reply_needed'), text
+          .to have_attributes(kind: 'stay', key: 'stay_current'), text
       end
-      expect(build(3, current: 20, message: 'А во сколько?', history: voice).resolve(answered('no_reply_needed')).key).to eq('stay_current')
+      expect(build(3, message: 'Спасибо, буду', history: voice).resolve(answered('no_reply_needed', include_probabilities: { 10 => 0.1, 20 => 0.4 })))
+        .to have_attributes(kind: 'agent', key: 'route_agent_20')
+    end
+
+    # Review of quality-fixes-1 (H2): «спасибо, буду» is a courtesy, «спасибо, не буду» is a cancellation. The words of the cancellation
+    # are checked in the router, as they are in the classifier.
+    it 'keeps a refusal to come, and any other cancellation behind a thanks, with the current agent' do
+      ['Спасибо, не буду', 'Не получится', 'Рахмет, келмеймін', 'Спасибо, не пойду', 'Не могу прийти', 'Спасибо. Отмена'].each do |text|
+        expect(build(3, current: 20, message: text).resolve(answered('no_reply_needed'))).to have_attributes(kind: 'stay', key: 'stay_current'), text
+      end
+    end
+
+    # Review of quality-fixes-1 (L6): a question without a question mark is no bare thanks.
+    it 'keeps a question put in words, with no question mark, with the current agent' do
+      ['Спасибо, буду. Адрес какой', 'Рахмет, қашан келемін', 'Спасибо, можно позже', 'Ок где вы находитесь'].each do |text|
+        expect(build(3, current: 20, message: text).resolve(answered('no_reply_needed'))).to have_attributes(kind: 'stay', key: 'stay_current'), text
+      end
+    end
+
+    # Review of quality-fixes-1 (M1): staff offered a time without a question mark; a yes accepts it, and nothing is booked by a silence.
+    describe 'a short answer to a time that the clinic offered' do
+      let(:offer) { [{ role: 'clinic', agent_id: 20, text: 'Есть окно завтра в 14:00.' }] }
+      let(:reminder) { [{ role: 'clinic', agent_id: 20, text: 'Напоминаем: завтра в 10:00 у вас приём. Ждём вас.' }] }
+      let(:no_visit) { Captain::Runtime::AgreedVisit::NONE }
+
+      it 'is an acceptance, so the current agent answers it, whether or not the contact has another visit' do
+        ['Да, подходит', 'Ок', 'Хорошо', 'Жарайды', 'Давайте'].each do |text|
+          [booked, no_visit].each do |visit|
+            expect(build(3, current: 20, message: text, history: offer, visit: visit).resolve(answered('no_reply_needed')))
+              .to have_attributes(kind: 'stay', key: 'stay_current'), text
+          end
+        end
+      end
+
+      it 'is a courtesy after the reminder of a visit the contact has, and not after the same words when nothing is agreed' do
+        ['Ок', 'Хорошо', 'Спасибо, буду', 'Хорошо, придём', 'Рахмет, келемін'].each do |text|
+          expect(build(3, current: 20, message: text, history: reminder).resolve(answered('no_reply_needed')))
+            .to have_attributes(kind: 'no_reply', key: 'no_reply_needed'), text
+          expect(build(3, current: 20, message: text, history: reminder, visit: no_visit).resolve(answered('no_reply_needed')).kind)
+            .to eq('stay'), text
+        end
+      end
+
+      it 'is a courtesy, with a booking card that waits for approval, after the time the card was prepared for' do
+        pending_card = Captain::Runtime::AgreedVisit.new(pending: true)
+
+        expect(build(3, current: 20, message: 'Спасибо, буду', history: offer, visit: pending_card).resolve(answered('no_reply_needed')).kind)
+          .to eq('no_reply')
+      end
+
+      it 'does not stop a plain thanks, which accepts nothing' do
+        thanks = build(3, current: 20, message: 'Спасибо!', history: offer, visit: no_visit)
+
+        expect(thanks.resolve(answered('no_reply_needed')).kind).to eq('no_reply')
+      end
     end
 
     # Review of df3aaff78: no_reply_needed silences the turn, so an answer that contradicts it never ends as no_reply.

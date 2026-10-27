@@ -65,7 +65,8 @@ RSpec.describe Captain::ReplySuggestion::HistoryBuilder do
       add_voice_note(:incoming)
 
       expect(history.pluck(:content)).to eq([described_class::STAFF_VOICE_NOTE, described_class::PATIENT_VOICE_NOTE])
-      expect(described_class::STAFF_VOICE_NOTE).to include('clinic staff', 'its words are not available to you')
+      expect(described_class::STAFF_VOICE_NOTE).to include('a staff member', 'its words are not available to you')
+      expect(described_class::STAFF_VOICE_NOTE).not_to include('clinic')
     end
 
     it 'keeps the placeholder for a message with nothing in it' do

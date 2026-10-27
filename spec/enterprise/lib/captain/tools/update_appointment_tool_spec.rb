@@ -227,7 +227,9 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
 
     result = tool.perform(tool_context, client_comment: 'Changed by Captain')
 
-    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'validation_error', 'error_class' => 'business')
+    # The answer says that the visit was found and refused, so the agent hands it to staff naming the visit (review of quality-fixes-1, M3).
+    expect(JSON.parse(result)).to include('success' => false, 'reason' => 'validation_error', 'error_class' => 'business',
+                                          'code' => 'APPOINTMENT_READ_ONLY', 'correction' => include('Hand the request to staff'))
     expect(appointment.reload.client_comment).to be_nil
   end
 

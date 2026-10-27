@@ -1,6 +1,39 @@
 require 'rails_helper'
 
 RSpec.describe Scheduling::IinValidator do
+  describe '.in_use?' do
+    it 'is true for an account whose contact attributes hold an IIN, false for any other account and for none' do
+      account = create(:account)
+      account.enable_features!('scheduling')
+
+      expect(described_class.in_use?(account)).to be(false)
+      expect(described_class.in_use?(nil)).to be(false)
+      create(:custom_attribute_definition, account: account, attribute_key: 'iin', attribute_model: :conversation_attribute)
+      create(:custom_attribute_definition, account: create(:account), attribute_key: 'iin', attribute_model: :contact_attribute)
+      expect(described_class.in_use?(account)).to be(false)
+      create(:custom_attribute_definition, account: account, attribute_key: 'iin', attribute_model: :contact_attribute)
+      expect(described_class.in_use?(account)).to be(true)
+    end
+  end
+
+  describe '.require_valid_in!' do
+    it 'checks the identifier and the iin of the custom attributes, given as a hash with symbol or string keys or as JSON text' do
+      expect(described_class.require_valid_in!(identifier: ' 900101 300027')).to eq('900101300027')
+      expect(described_class.require_valid_in!(custom_attributes: { iin: '900101300027', vip: true })).to be_nil
+      expect(described_class.require_valid_in!(custom_attributes: { 'iin' => '900101300027' }, identifier: '900101300027')).to eq('900101300027')
+      expect(described_class.require_valid_in!(custom_attributes: '{"iin": "900101300027"}')).to be_nil
+      expect(described_class.require_valid_in!(custom_attributes: 'not json')).to be_nil
+      expect(described_class.require_valid_in!).to be_nil
+    end
+
+    it 'refuses a wrong iin of the custom attributes even when the identifier is right' do
+      [{ iin: '87011234567' }, { 'iin' => 'abc' }, '{"iin": "900101300028"}'].each do |attributes|
+        expect { described_class.require_valid_in!(identifier: '900101300027', custom_attributes: attributes) }
+          .to raise_error(Scheduling::Error, /Invalid IIN/), attributes.inspect
+      end
+    end
+  end
+
   describe '.require_valid!' do
     it 'gives the digits of an IIN of 12 digits with the check digit, whatever the spaces and dashes' do
       expect(described_class.require_valid!('900101300027')).to eq('900101300027')

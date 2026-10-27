@@ -51,11 +51,11 @@ class Captain::Tools::Agent::PatientScope
     scope.where(contact_id: contact_id).where('COALESCE(patient_contact_id, contact_id) = ?', contact_id)
   end
 
-  # What search_appointments lists: the appointments of the patient and of the patients linked to this contact (a child, a relative),
-  # each with the task token that a change of the appointment of another patient needs (see Captain::AppointmentContext). An ID alone
+  # What search_appointments lists: the appointments booked from this chat for any patient (a child, a relative), each with the task
+  # token that a change of the appointment of another patient needs (see Captain::AppointmentContext#booked_appointments). An ID alone
   # still reaches only the patient's own appointments (#appointments).
-  def linked_appointments
-    Captain::AppointmentContext.new(account: @assistant.account, conversation: conversation, contact_id: contact_id).linked_appointments
+  def booked_appointments
+    Captain::AppointmentContext.new(account: @assistant.account, conversation: conversation, contact_id: contact_id).booked_appointments
   end
 
   def appointments_with_access(params)

@@ -10,14 +10,20 @@ en:
         quota_exceeded: The AI reply limit is used up.
         forbidden: You do not have access to this conversation.
         not_found: Suggestion not found.
+      claims:
+        cancelled: that a visit is cancelled
+        moved: that a visit is moved
+        no_appointment: that there is no appointment or nothing to cancel
       reasons:
         safety_blocked: The safety check stopped the AI reply, please answer the customer yourself.
         agent_rule: 'An agent rule applied: %{reason}. Please answer the customer yourself.'
         patient_requested_human: The patient asks for a live staff member, please answer yourself.
         router_no_reply: The patient only thanks or says goodbye — no reply is needed; nothing was prepared.
         swallowed_request: The patient asks to cancel, move or make a booking, but the AI decided that no reply is needed. Check the message and answer yourself.
+        unsafe_silence: The patient answers an offer or a time of the clinic, or a voice note of staff whose words the AI does not know, or confirms a visit that is not booked, but the AI decided that no reply is needed. Check the message and answer yourself.
         unverified_times: 'Check the time %{times}: the AI did not find it among the free times it searched.'
         misattributed_times: 'Check the specialist for %{times}: in the search results this time belongs to another specialist, not the one named.'
+        unsupported_claims: 'Check the draft: it says %{claims}, but the AI did not do that or find it, and its lookups cover the visits booked from this chat only.'
         council_unresolved: 'The AI did not resolve part of the request, please answer it yourself: %{parts}.'
         council_technical: 'Part of the request was not done because of a technical error, please answer it yourself: %{parts}.'
         council_unreported: 'An action was prepared for part of the request, but there is no text for the patient; check the card: %{parts}.'

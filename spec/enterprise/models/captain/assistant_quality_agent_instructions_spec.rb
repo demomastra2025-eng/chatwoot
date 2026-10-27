@@ -3,8 +3,9 @@
 require 'rails_helper'
 
 # The platform rules of the patient agent that came out of the suggestion eval of 27.10 (28 bad answers in 125 cases, 16 of them real,
-# 13 of those curable without a change of model). The rules are the same for every business: they name no clinic, no doctor and no
-# service. What each rule says is pinned here, for the prompt of a reply suggestion and for the live one.
+# 13 of those curable without a change of model) and of the review of quality-fixes-1. The rules are the same for every business: they
+# name no clinic, no doctor and no service, and the rules about an IIN are written only for the accounts that identify patients by it
+# (their contact attributes hold an IIN). What each rule says is pinned here, for the prompt of a reply suggestion and for the live one.
 RSpec.describe Captain::Assistant, '#agent_instructions' do
   let(:account) { create(:account) }
   let(:assistant) { create(:captain_assistant, account: account) }
@@ -17,6 +18,11 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
     instance_double(Captain::Runtime::RunContext, context: { state: state })
   end
 
+  def council_part
+    instance_double(Captain::Runtime::RunContext,
+                    context: { part_run: true, state: { source: 'reply_suggestion', runtime_clock: clock } })
+  end
+
   # The platform rules of the agent (the first block of its instructions).
   def suggestion_rules
     assistant.agent_instructions(run_context('reply_suggestion')).split("\n\n").first
@@ -26,38 +32,78 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
     assistant.agent_instructions(run_context(nil)).split("\n\n").first
   end
 
+  def part_rules
+    assistant.agent_instructions(council_part).split("\n\n").first
+  end
+
+  # The account identifies its patients by an IIN: a contact attribute holds it.
+  def give_patients_an_iin
+    create(:custom_attribute_definition, account: account, attribute_key: 'iin', attribute_model: :contact_attribute)
+  end
+
   describe 'a cancellation or a move of a visit' do
-    it 'covers the linked patients in the lookups and says what to do when the visit is not found, in a suggestion' do
-      expect(suggestion_rules).to include(
-        'list_my_appointments shows the appointments of the patient and of the patients linked to this contact (a child, a relative; ' \
-        'the card of another patient names that patient). To change or cancel the appointment of another patient, take its token from ' \
-        'search_appointments (without an IIN it lists the same appointments; with an IIN it finds one that is not shown).',
-        'Say that an appointment is cancelled or moved only from a tool result (the rule above), and never that there is no appointment, ' \
-        'that nothing is booked or that there is nothing to cancel',
-        'a lookup covers this contact and its linked patients only',
-        'first ask for the patient\'s IIN and search with search_appointments',
-        'hand the request to staff: do not draft a reply, set response_mode to human, leave response empty and write in operator_note ' \
+    let(:list_rule) do
+      'list_my_appointments shows the appointments booked from this chat: the patient\'s own and those of a child or a relative booked ' \
+        'here (the card of another patient names that patient and carries its token). To change or cancel the appointment of another ' \
+        'patient, take its token from list_my_appointments or search_appointments'
+    end
+    let(:never_rule) do
+      'Say that an appointment is cancelled or moved only from a tool result (the rule above), and never that there is no appointment, ' \
+        'that nothing is booked or that there is nothing to cancel: a lookup covers the visits booked from this chat only. When the ' \
+        'patient asks to cancel or move a visit and your lookups did not find it (an empty list or not_found), '
+    end
+    let(:refused_rule) do
+      'When the visit was found but the tool refused the change (for example because the appointment belongs to the clinic system and ' \
+        'cannot be changed from here), do not ask for anything more: hand the request to staff the same way, naming that visit (date, ' \
+        'time, specialist) and that the change was refused.'
+    end
+    let(:to_staff) do
+      'hand the request to staff: do not draft a reply, set response_mode to human, leave response empty and write in operator_note ' \
         'which visit the patient meant and that the booking was not found.'
+    end
+
+    it 'gives the appointments booked from this chat, with the token of another patient\'s, and says what to do when the visit is not found' do
+      expect(suggestion_rules).to include(list_rule, never_rule + to_staff, refused_rule)
+      expect(suggestion_rules).not_to include('linked to this contact', 'linked patients')
+    end
+
+    # Review of quality-fixes-1 (M5): asking for an IIN is a rule of the accounts that identify patients by it; the others hand the visit over.
+    it 'asks for the IIN of the patient and searches with it before handing the visit over only where the account has patients with an IIN' do
+      expect(suggestion_rules).not_to include('IIN')
+      expect(live_rules).not_to include('IIN')
+
+      give_patients_an_iin
+
+      expect(suggestion_rules).to include(
+        "#{list_rule} (without an IIN it lists the same appointments; with an IIN it finds one that is not shown).",
+        "#{never_rule}first ask for the patient's IIN and search with search_appointments; when that finds nothing or the patient has " \
+        "not given it, #{to_staff}"
       )
+      expect(live_rules).to include('first ask for the patient\'s IIN and search with search_appointments; when that finds nothing or ' \
+                                    'the patient has not given it, hand the request to staff by the handoff rule below.')
+    end
+
+    # Review of quality-fixes-1 (M3): a visit that was found and refused is not a visit to look up again.
+    it 'sends a visit that the tool refused to staff, naming that visit, without a look-up for it first' do
+      give_patients_an_iin
+
+      expect(suggestion_rules).to include(refused_rule)
+      expect(live_rules).to include('When the visit was found but the tool refused the change (for example because the appointment ' \
+                                    'belongs to the clinic system and cannot be changed from here), do not ask for anything more: hand ' \
+                                    'the request to staff by the handoff rule below, naming that visit and that the change was refused.')
     end
 
     it 'sends a part of a council to staff by the rules of its part, not by response_mode' do
-      part = instance_double(Captain::Runtime::RunContext,
-                             context: { part_run: true, state: { source: 'reply_suggestion', runtime_clock: clock } })
-
-      rules = assistant.agent_instructions(part).split("\n\n").first
-
-      expect(rules).to include('hand the request to staff: end your part as the rules of your part below say, naming which visit the ' \
-                               'patient meant and that the booking was not found.')
-      expect(rules).not_to include('response_mode', 'operator_note')
+      expect(part_rules).to include(never_rule + 'hand the request to staff: end your part as the rules of your part below say, naming ' \
+                                                 'which visit the patient meant and that the booking was not found.')
+      expect(part_rules).not_to include('response_mode', 'operator_note')
     end
 
     it 'never lets a live agent tell the patient that there is nothing to cancel, and hands the request over by the handoff rule' do
       expect(live_rules).to include(
-        'list_my_appointments shows the appointments of the patient and of the patients linked to this contact',
+        'list_my_appointments shows the appointments booked from this chat',
         'Never tell the patient that there is no appointment, that nothing is booked or that there is nothing to cancel',
-        'first ask for the patient\'s IIN and search with search_appointments; when that finds nothing or the patient has not given it, ' \
-        'hand the request to staff by the handoff rule below.'
+        'your lookups did not find it (an empty list or not_found), hand the request to staff by the handoff rule below.'
       )
     end
 
@@ -65,35 +111,40 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
       allow(assistant).to receive(:selected_agent_tool_ids).and_return(%w[faq_lookup])
 
       expect(live_rules).to include('say that you could not find the booking and that staff will check it.')
+      expect(live_rules).to include('say that staff will make the change.')
       expect(live_rules).not_to include('handoff rule below')
     end
   end
 
   # Suggestion eval 27.10 (c76-1205215, c78-1186457, c77-1198258): after an agreed time (the voice notes of the operator had no text)
-  # the patient wrote «Принял / Буду» and the agent booked the same time again, asked for the data again or greeted.
+  # the patient wrote «Принял / Буду» and the agent booked the same time again, asked for the data again or greeted. Review of
+  # quality-fixes-1 (M1): a silence is safe only after a visit that exists; an unknown voice note is answered by staff.
   describe 'a bare confirmation after an agreed time and the voice notes of staff' do
-    it 'tells a suggestion to stay silent for a thanks, ok or confirmation of attendance and never to settle again what a voice note may have' do
+    let(:voice_note) { Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE }
+
+    it 'tells a suggestion to stay silent for a thanks, ok or confirmation of a visit that exists, and to leave a voice note to staff' do
       expect(suggestion_rules).to include(
-        '- A voice note of staff in the history shows its transcript as text, or the line "[Voice note of the clinic staff; its words are ' \
-        'not available to you]" when it has none.',
-        'never offer or book again what it may have settled, and when the patient\'s message depends on what it said, leave the reply to ' \
-        'staff (response_mode human, operator_note naming the voice note).',
+        "- A voice note of staff in the history shows its transcript as text, or the line \"#{voice_note}\" when it has none.",
+        'never offer or book again what it may have settled.',
+        'When the patient\'s message follows a voice note without a transcript (a thanks, an ok, a yes, a confirmation), leave the reply ' \
+        'to staff: response_mode human, operator_note naming the voice note; never suppress it.',
         'A thanks, ok or confirmation that the patient will come ("спасибо, буду", "хорошо, придём", "рахмет, келемін") after a time or a ' \
-        'visit that the history shows as agreed, booked, confirmed or reminded, or after such a voice note, needs no reply: set ' \
-        'response_mode to suppress; never answer it with a greeting alone, a new booking or a question for data already given.'
+        'visit that the history shows in a message or a transcript as agreed, booked, confirmed or reminded, while the patient has an ' \
+        'upcoming appointment or a booking that waits for approval, needs no reply: set response_mode to suppress; never answer it with a ' \
+        'greeting alone, a new booking or a question for data already given.',
+        'A yes or ok to a time that staff offered, which is not the time of an appointment the patient has, accepts it: book that time.'
       )
     end
 
-    it 'names the exact line the history builder writes for a voice note without a transcript' do
-      expect(suggestion_rules).to include(Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE)
+    it 'names the exact line the history builder writes for a voice note without a transcript, in neutral words' do
+      expect(suggestion_rules).to include(voice_note)
+      expect(voice_note).to eq('[Voice note of a staff member; its words are not available to you]')
+      expect(voice_note).not_to include('clinic')
     end
 
     it 'keeps the voice note rule out of the live prompt and the council parts, and widens the no-action rule of the live prompt' do
-      part = instance_double(Captain::Runtime::RunContext,
-                             context: { part_run: true, state: { source: 'reply_suggestion', runtime_clock: clock } })
-
-      expect(live_rules).not_to include('Voice note of the clinic staff')
-      expect(assistant.agent_instructions(part).split("\n\n").first).not_to include('Voice note of the clinic staff')
+      expect(live_rules).not_to include('Voice note of a staff member')
+      expect(part_rules).not_to include('Voice note of a staff member')
       expect(live_rules).to include('(after prices or information, a reminder, a time already agreed, or a visit already booked), also ' \
                                     'one that says the patient will come ("спасибо, буду", "рахмет, келемін"), asks for no action')
     end
@@ -119,7 +170,8 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
   end
 
   # Suggestion eval 27.10 (c74-1245386): a payment phone number the patient sent was read as the ID number, and a card was raised to
-  # write it into the card of the patient.
+  # write it into the card of the patient. Review of quality-fixes-1 (M5): the rule is written for the accounts that have patients with
+  # an IIN (a contact attribute "iin"), not for every business.
   describe 'the IIN' do
     let(:iin_rule) do
       '- An IIN is 12 digits. Never take another number the patient sent (a phone number, a payment or card number) for the IIN, and ' \
@@ -127,12 +179,17 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
     end
 
     it 'is 12 digits and never another number the patient sent, in a suggestion, in a live run and in a council part' do
-      part = instance_double(Captain::Runtime::RunContext,
-                             context: { part_run: true, state: { source: 'reply_suggestion', runtime_clock: clock } })
+      give_patients_an_iin
 
       expect(suggestion_rules).to include(iin_rule)
       expect(live_rules).to include(iin_rule)
-      expect(assistant.agent_instructions(part).split("\n\n").first).to include(iin_rule)
+      expect(part_rules).to include(iin_rule)
+    end
+
+    it 'is not written for an account whose contacts have no IIN attribute' do
+      expect(suggestion_rules).not_to include(iin_rule)
+      expect(live_rules).not_to include(iin_rule)
+      expect(part_rules).not_to include(iin_rule)
     end
   end
 
@@ -154,10 +211,7 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
     end
 
     it 'gives a council part the same rule' do
-      part = instance_double(Captain::Runtime::RunContext,
-                             context: { part_run: true, state: { source: 'reply_suggestion', runtime_clock: clock } })
-
-      expect(assistant.agent_instructions(part).split("\n\n").first).to include(time_rule)
+      expect(part_rules).to include(time_rule)
     end
   end
 
@@ -170,16 +224,18 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
         'are written out for the last message); if the day the patient meant has passed, say so and offer the nearest free times with ' \
         'full dates.'
     end
+    # Review of quality-fixes-1 (M6): later only on a day the patient named; a notice before a visit comes from the clinic instructions.
     let(:search_rule) do
       '- Search free times from today: when the patient names no day, or asks for the nearest, an earlier or a later time, start the ' \
         'search today (from = today\'s date; the free times of today that are later than Now are offered too) and offer a later day ' \
-        'only when today has none; never start the search from tomorrow.'
+        'only when today has none; start the search later than today only on a day the patient named. A minimum notice before a visit ' \
+        'or a ban on same-day booking comes from the clinic instructions, never from you.'
     end
 
     it 'reads the days of every patient message from the day it was sent, and starts a search today, in a suggestion and in a live run' do
       [suggestion_rules, live_rules].each do |rules|
         expect(rules).to include(day_rule, search_rule)
-        expect(rules).not_to include('not from Now;')
+        expect(rules).not_to include('not from Now;', 'never start the search from tomorrow')
       end
     end
 

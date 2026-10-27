@@ -19,14 +19,18 @@
 #                                                           (suggestion_meta operator_note), and so does a draft that names a time
 #                                                           its scheduling reads did not find (unverified_times, see DraftTimes) or
 #                                                           gives a time under the name of a specialist whose list does not hold it
-#                                                           (misattributed_times, see DraftSpecialists)
+#                                                           (misattributed_times, see DraftSpecialists), says that a visit is cancelled
+#                                                           or moved when the run did not do it, or that the patient has no appointment
+#                                                           (unsupported_claims, see DraftClaims)
 #                                                           or a draft that leaves a part of the request to staff (the agent's
 #                                                           operator_note)
 #
 # After these rules, a no_reply (the agent's, the router's or a council's) for patient messages that ask to cancel, move or make a visit
-# («Отмена завтра», «не смогу прийти», «запишите», «болдырмаңыз», «жазылғым келеді», see Captain::PatientIntent) is turned into
+# («Отмена завтра», «не смогу прийти», «не буду», «запишите», «болдырмаңыз», «жазылғым келеді», see Captain::PatientIntent) is turned into
 # human_needed with a note of its own: a request is never swallowed by an emoji that came after it. A thanks that only names the action
-# as done («Спасибо, что перенесли», «Благодарю за перенос») is no request and stays a no_reply.
+# as done («Спасибо, что перенесли», «Благодарю за перенос») is no request and stays a no_reply. The same turn into human_needed (another
+# note) for a short answer that accepts a time the clinic offered, follows a voice note of staff whose words are unknown, or confirms a
+# visit that nobody agreed (Captain::SilenceCheck).
 #
 # A text never comes out of an outcome other than draft. An outcome of a turn that the router gave to the anchor only because no
 # agent leads the dialog says so (routing_default_to: anchor): its agent does not become the sticky agent (see StickyAgent).
@@ -49,10 +53,14 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
   PART_LIMIT = 160
 
   # patient_text: the patient's messages that the run answers (the unanswered ones), for the check of a request that no_reply swallowed.
-  def initialize(raw_payload, trace_collector:, patient_text: nil)
+  # last_clinic and visit (Captain::Runtime::AgreedVisit): the last message of the clinic and the visit the conversation agreed, for the
+  # check of a silence about an offer or a confirmation (Captain::SilenceCheck); without visit that check is not made.
+  def initialize(raw_payload, trace_collector:, patient_text: nil, last_clinic: nil, visit: nil)
     @payload = raw_payload.to_h.with_indifferent_access
     @trace_collector = trace_collector
     @patient_text = patient_text.to_s
+    @last_clinic = last_clinic
+    @visit = visit
   end
 
   REASONED_OUTCOMES = %w[draft no_reply human_needed].freeze
@@ -228,12 +236,25 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
   # answer, and the cards and the agent of the run stay with the note. The words are the check (Captain::PatientIntent); a thanks that
   # only names the cancellation or the move as done is none.
   def unswallowed(outcome)
-    return outcome unless outcome[:outcome].to_s == 'no_reply' && Captain::PatientIntent.booking_change?(@patient_text)
+    return outcome unless outcome[:outcome].to_s == 'no_reply'
+
+    key = swallowed_reason_key
+    return outcome unless key
 
     Captain::ReplySuggestion::Outcome.human_needed(
-      reason: I18n.t('captain.reply_suggestion.reasons.swallowed_request'), engine: outcome[:engine],
+      reason: I18n.t("captain.reply_suggestion.reasons.#{key}"), engine: outcome[:engine],
       reason_source: outcome[:reason_source], **outcome.except(:outcome, :reason, :reason_source, :engine)
     )
+  end
+
+  # Why a no_reply is not taken: the patient asks to cancel, move or make a visit, or answers an offer, a voice note of staff whose words
+  # are unknown, or a visit nobody agreed with a short courtesy (Captain::SilenceCheck). The router and the agent both decide a
+  # silence, so the check is made here, on their outcome.
+  def swallowed_reason_key
+    return 'swallowed_request' if Captain::PatientIntent.booking_change?(@patient_text)
+    return unless @visit && Captain::SilenceCheck.unsafe_reason(text: @patient_text, last_clinic: @last_clinic, visit: @visit)
+
+    'unsafe_silence'
   end
 
   def with_routing_default(outcome)

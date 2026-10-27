@@ -45,6 +45,17 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
     expect(other.id).not_to eq(own.id)
   end
 
+  # Review of quality-fixes-1 (M4): an empty search proves nothing, it may be booked from another phone, so the agent is told not to say so.
+  it 'tells the agent that an empty search is no proof that there is nothing to cancel' do
+    payload = JSON.parse(call_tool('search_appointments'))
+
+    expect(payload).to include('success' => true, 'appointments' => [])
+    expect(payload.fetch('note')).to eq(Captain::AppointmentContext::NOTHING_FOUND_NOTE)
+
+    create(:scheduling_appointment, account: account, contact: contact, conversation: conversation)
+    expect(JSON.parse(call_tool('search_appointments'))).not_to have_key('note')
+  end
+
   it 'keeps provider status unavailable to the customer agent even for an own command' do
     own = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation)
     foreign = create(:scheduling_appointment, account: account, contact: other_contact)
@@ -60,9 +71,9 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
     expect(definition.assistant_tool_class).to eq(Captain::Tools::Account::GetAppointmentProviderStatusService)
   end
 
-  # Suggestion eval 27.10 (c76-1231671): a patient the same caller booked (a child) belongs to the family of the contact, so the
-  # appointment search lists that patient with a task token; an ID alone still reaches the contact's own appointments only.
-  it 'lists the patient the same caller booked with a task token, and still hides a contact outside the linked patients' do
+  # Suggestion eval 27.10 (c76-1231671): a visit the caller booked from this chat for a child is listed by the appointment search with a
+  # task token; an ID alone still reaches the contact's own appointments only.
+  it 'lists the visit the same caller booked for another patient with a task token, and still hides a visit booked from another chat' do
     own = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation)
     family = create(:scheduling_appointment, account: account, contact: contact, patient_contact: other_contact,
                                            conversation: conversation, client_name: 'Patient Beta')
@@ -84,6 +95,26 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
     token = lookup.fetch('appointments').sole.fetch('appointment_access_token')
     expect(JSON.parse(call_tool('get_appointment', appointment_id: foreign.id, appointment_access_token: token)))
       .to include('success' => true, 'appointment_id' => foreign.id)
+  end
+
+  # Review of quality-fixes-1 (H1): a patient the caller once booked, who books from their own chat, keeps their history to themselves. A
+  # phone match is no patient identity; it takes their IIN (or full name, specialist and day) to find a visit of theirs.
+  it 'does not expose another clinical patient merely because the same caller once booked them' do
+    resource = create(:scheduling_resource, account: account)
+    booked = create(:scheduling_appointment, account: account, contact: contact, patient_contact: other_contact, resource: resource,
+                                             client_name: 'Patient Beta', starts_at: 3.days.from_now)
+    own_visit = create(:scheduling_appointment, account: account, contact: other_contact, patient_contact: other_contact,
+                                                resource: resource, client_name: 'Patient Beta', starts_at: 4.days.from_now)
+    history = create(:scheduling_appointment, account: account, contact: other_contact, patient_contact: other_contact, resource: resource,
+                                              client_name: 'Patient Beta', status: 'completed', starts_at: 30.days.ago)
+
+    search = JSON.parse(call_tool('search_appointments'))
+
+    expect(search.fetch('appointments').pluck('appointment_id')).to eq([booked.id])
+    expect(JSON.parse(call_tool('search_appointments', status: 'completed')).fetch('appointments')).to be_empty
+    [own_visit.id, history.id].each do |id|
+      expect(JSON.parse(call_tool('get_appointment', appointment_id: id))).to eq('success' => false, 'reason' => 'not_found')
+    end
   end
 
   it 'allows a specifically identified family appointment without granting the rest of their history' do

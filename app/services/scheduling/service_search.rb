@@ -15,14 +15,16 @@ class Scheduling::ServiceSearch
   WHOLE_WORDS = %w[без до от].freeze
   # A letter, as a range of code points: it does not depend on the locale of the database.
   NOT_LETTER = '[^а-яa-z0-9]'.freeze
+  # The tokens are compared folded (the Kazakh letters read as the Russian ones, see Scheduling::SearchText), so a pattern with a Kazakh
+  # word is written in folded letters: «тіс» is «тис» and «белдің» is «белдин».
   TOKEN_ALIASES = {
     /\Aмрт\z/i => ['мрт', 'магнитно резонансная томография'],
     /\Aузи\z/i => ['узи', 'ультразвуковое исследование'],
     /\Aше(я|и)\z|\Aшей/i => %w[шея шеи шей],
-    /\Aт[іi]с\z/i => %w[стоматолог кариес зуб],
+    /\Aт[иi]с\z/i => %w[стоматолог кариес зуб],
     /\Aемдеу\z/i => %w[лечение кариес консультация стоматолог],
     /\Aстоматолог/i => %w[стоматолог кариес зуб],
-    /\Aбел(ге|дің)?\z/i => %w[поясничного поясница],
+    /\Aбел(ге|дин)?\z/i => %w[поясничного поясница],
     /\Aчекап\z|\Aчек-ап\z/i => %w[чек-ап чекап пакет осмотр]
   }.freeze
 

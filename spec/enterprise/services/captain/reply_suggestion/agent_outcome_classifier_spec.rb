@@ -368,6 +368,69 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
     end
   end
 
+  # Review of quality-fixes-1 (M1): the router and the agent both decide a silence; the check of the words and the facts is made on their
+  # outcome (Captain::SilenceCheck). A yes to a time staff offered, an answer to a voice note nobody can read, and a confirmation of a
+  # visit nobody agreed are not swallowed.
+  describe 'a silence about an offer, a voice note of staff whose words are unknown, or a visit nobody agreed' do
+    let(:suppressed) do
+      { 'response' => '', 'response_mode' => 'suppress', 'response_suppressed' => true, 'operator_note' => 'Пациент только благодарит.',
+        'usage' => usage }
+    end
+    let(:note) { I18n.t('captain.reply_suggestion.reasons.unsafe_silence') }
+    let(:none) { Captain::Runtime::AgreedVisit::NONE }
+    let(:booked) { Captain::Runtime::AgreedVisit.new(times: ['10:00']) }
+
+    def classify(payload, text, last_clinic:, visit:)
+      described_class.new(payload, trace_collector: trace_collector, patient_text: text, last_clinic: last_clinic, visit: visit).perform
+    end
+
+    it 'turns the no_reply of the agent into human_needed for a yes to a time that staff offered, keeping the agent and the cards' do
+      result = classify(suppressed, 'Да, подходит', last_clinic: 'Есть окно завтра в 14:00.', visit: booked)
+
+      expect(result).to include(outcome: 'human_needed', reason: note, reason_source: 'agent', engine: 'agent', agent: agent_summary,
+                                pending_actions: [{ 'action_id' => 'a-1' }], usage: usage)
+    end
+
+    it 'does it for the no_reply of the router, which names no agent, and for the one of a council' do
+      routed = suppressed.merge('routing_no_reply' => true)
+
+      expect(classify(routed, 'Ок', last_clinic: 'Есть окно завтра в 14:00.', visit: none))
+        .to include(outcome: 'human_needed', reason: note, reason_source: 'router', agent: nil, pending_actions: [])
+      expect(classify(suppressed.merge('council_turn' => true), 'Спасибо, буду', last_clinic: 'Ждём вас завтра', visit: none))
+        .to include(outcome: 'human_needed', reason: note, pending_actions: [{ 'action_id' => 'a-1' }])
+    end
+
+    it 'does it for any answer to a voice note of staff without a transcript, and for a confirmation when nothing is booked' do
+      voice = Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE
+
+      ['Спасибо', 'Ок', 'Рахмет, келемін'].each do |text|
+        expect(classify(suppressed, text, last_clinic: voice, visit: booked)).to include(outcome: 'human_needed', reason: note), text
+      end
+      expect(classify(suppressed, 'Спасибо, буду', last_clinic: 'Ваша стоимость 8000 тенге.', visit: none))
+        .to include(outcome: 'human_needed', reason: note)
+    end
+
+    it 'keeps the no_reply of a confirmation of the visit the contact has, of a plain thanks and of a reminder acknowledged' do
+      reminder = 'Напоминаем: завтра в 10:00 у вас приём.'
+
+      [['Спасибо, буду', reminder], ['Ок', reminder], ['Хорошо, придём', reminder], ['Спасибо!', 'Есть окно завтра в 14:00.'],
+       ['Спасибо', 'УЗИ почек стоит 8000 тенге.']].each do |text, last_clinic|
+        expect(classify(suppressed, text, last_clinic: last_clinic, visit: booked)).to include(outcome: 'no_reply'), text
+      end
+    end
+
+    it 'does not make the check without the facts of the dialog, and leaves the other outcomes as they are' do
+      expect(described_class.new(suppressed, trace_collector: trace_collector, patient_text: 'Да, подходит').perform).to include(outcome: 'no_reply')
+      expect(classify(reply, 'Да, подходит', last_clinic: 'Есть окно завтра в 14:00.', visit: none)).to include(outcome: 'draft')
+    end
+
+    it 'keeps the note of a request to cancel when both apply' do
+      result = classify(suppressed, 'Спасибо, не буду', last_clinic: 'Напоминаем: завтра в 10:00 у вас приём.', visit: booked)
+
+      expect(result).to include(outcome: 'human_needed', reason: I18n.t('captain.reply_suggestion.reasons.swallowed_request'))
+    end
+  end
+
   describe 'a reply that cannot be given' do
     it 'fails a handoff: a suggestion has no such thing' do
       failure = described_class.new({ 'response' => 'conversation_handoff' }, trace_collector: trace_collector).perform

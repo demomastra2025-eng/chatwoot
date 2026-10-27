@@ -102,6 +102,26 @@ RSpec.describe Captain::Tools::CancelAppointmentTool do
     expect(visit.reload.status).to eq('cancelled')
   end
 
+  # Review of quality-fixes-1 (M3): list_my_appointments gives the token of a visit it lists for another patient, so one access rule serves
+  # both lookups: the token and the confirmation of the patient.
+  it 'cancels a visit that list_my_appointments lists for another patient with its token and the confirmation' do
+    child = create(:contact, account: account, name: 'Test Son')
+    visit = create(:scheduling_appointment, account: account, contact: contact, patient_contact: child, client_name: 'Test Son')
+    listing = JSON.parse(Captain::Tools::Agent::AccountToolAdapter.new(assistant, tool_id: 'list_my_appointments').execute(
+                           Struct.new(:state, :context).new({ conversation: { id: conversation.id } }, {}), status: 'scheduled'
+                         ))
+    token = listing.fetch('appointments').sole.fetch('appointment_access_token')
+    tool = described_class.new(assistant)
+
+    expect(JSON.parse(tool.execute(tool_context, appointment_id: visit.id))).to include('success' => false)
+    expect(JSON.parse(tool.execute(tool_context, appointment_id: visit.id, appointment_access_token: token))).to include('success' => false)
+    expect(visit.reload.status).to eq('scheduled')
+
+    confirmed = JSON.parse(tool.execute(tool_context, appointment_id: visit.id, appointment_access_token: token, patient_confirmed: true))
+    expect(confirmed).to include('success' => true, 'appointment_id' => visit.id)
+    expect(visit.reload.status).to eq('cancelled')
+  end
+
   it 'requires both task access and confirmation for a family appointment already linked to this chat' do
     patient = create(:contact, account: account)
     selected = create(:scheduling_appointment, account: account, contact: contact,

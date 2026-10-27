@@ -1,8 +1,17 @@
 module Scheduling::IinValidator
   module_function
 
+  ATTRIBUTE_KEY = 'iin'.freeze
   FIRST_WEIGHTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].freeze
   SECOND_WEIGHTS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 1, 2].freeze
+
+  # Whether the account identifies its patients by an IIN: its contact attributes hold one (the "iin" attribute that the clinic-system
+  # setup creates, Integrations::Medelement::ContactCustomAttributesSetupService, or the clinic made itself). The rules and the checks
+  # that ask a patient for an IIN or refuse a wrong one apply there only; the contacts of any other account keep whatever identifier
+  # their website or CRM gives them. The feature flag of scheduling says nothing: it is on for every new account.
+  def in_use?(account)
+    account.present? && account.custom_attribute_definitions.contact_attribute.exists?(attribute_key: ATTRIBUTE_KEY)
+  end
 
   def iin_like?(value)
     normalize(value).to_s.length == 12
@@ -53,8 +62,24 @@ module Scheduling::IinValidator
     )
   end
 
+  # The IIN a tool call would write to a patient card: the identifier, and the iin of the custom attributes (a hash or its JSON text).
+  # Both must be an IIN (see #require_valid!), so a wrong value cannot be written the other way round. Returns the identifier as the
+  # digits only, nil when the call writes none.
+  def require_valid_in!(identifier: nil, custom_attributes: nil)
+    attributes = custom_attributes.is_a?(String) ? parsed_attributes(custom_attributes) : custom_attributes.to_h
+    require_valid!(attributes.with_indifferent_access[:iin])
+    require_valid!(identifier)
+  end
+
+  def parsed_attributes(text)
+    parsed = JSON.parse(text)
+    parsed.is_a?(Hash) ? parsed : {}
+  rescue JSON::ParserError
+    {}
+  end
+
   def weighted_checksum(digits, weights)
     weights.each_with_index.sum { |weight, index| digits[index] * weight } % 11
   end
-  private_class_method :weighted_checksum
+  private_class_method :weighted_checksum, :parsed_attributes
 end

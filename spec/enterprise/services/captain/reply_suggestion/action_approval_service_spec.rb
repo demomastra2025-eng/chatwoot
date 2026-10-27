@@ -178,7 +178,13 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
         described_class.pending_for(account_id: account.id, conversation_id: conversation.id)
       end
 
+      def give_patients_an_iin
+        create(:custom_attribute_definition, account: account, attribute_key: 'iin', attribute_model: :contact_attribute)
+      end
+
       it 'prepares no card for a phone number or any other text, and says why' do
+        give_patients_an_iin
+
         ['87011234567', '+7 701 123 45 67', '900101300028', 'абв'].each do |value|
           result = described_class.intercept(tool: update_tool, tool_context: tool_context, arguments: { identifier: value })
 
@@ -188,7 +194,28 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
         expect(pending_cards).to be_empty
       end
 
+      # Review of quality-fixes-1 (L3): the iin of the custom attributes is the same number written the other way.
+      it 'prepares no card for a phone number written as the iin of the custom attributes' do
+        give_patients_an_iin
+
+        result = described_class.intercept(tool: update_tool, tool_context: tool_context,
+                                           arguments: { custom_attributes: { iin: '87011234567' } })
+
+        expect(result).to include(success: false)
+        expect(result[:error]).to include('Invalid IIN')
+        expect(pending_cards).to be_empty
+      end
+
+      # Review of quality-fixes-1 (M5): an account whose contacts have no IIN attribute keeps whatever identifier its contacts have.
+      it 'checks nothing for an account whose contacts have no IIN attribute' do
+        result = JSON.parse(described_class.intercept(tool: update_tool, tool_context: tool_context, arguments: { identifier: 'customer-77' }))
+
+        expect(result).to include('status' => 'pending_operator_approval')
+      end
+
       it 'prepares the card for an IIN of 12 digits with the check digit' do
+        give_patients_an_iin
+
         result = JSON.parse(described_class.intercept(tool: update_tool, tool_context: tool_context, arguments: { identifier: '900101300027' }))
 
         expect(result).to include('status' => 'pending_operator_approval')

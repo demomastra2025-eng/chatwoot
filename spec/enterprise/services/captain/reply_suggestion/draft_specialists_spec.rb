@@ -57,6 +57,36 @@ RSpec.describe Captain::ReplySuggestion::DraftSpecialists do
     expect(misattributed('В 09:00 у Князовой, а ещё в 11:00.')).to eq([])
   end
 
+  # Review of quality-fixes-1 (L1): the order of names and times was decided once per sentence, so the time that follows an «а» went to the
+  # name before it.
+  it 'reads a sentence clause by clause: a clause that starts with a name and a clause that starts with a time have their own order' do
+    expect(misattributed('Князова Жанат в 09:00, а 11:00 у Турешевой Акбаян.')).to eq([])
+    expect(misattributed('У Князовой 09:00, но 11:00 у Турешевой.')).to eq([])
+    expect(misattributed('У Князовой 09:00, а у Турешевой 09:00.')).to eq([{ 'name' => 'Турешева Акбаян', 'time' => '09:00' }])
+    expect(misattributed('Князова Жанат в 11:00, а 09:00 у Турешевой.'))
+      .to eq([{ 'name' => 'Князова Жанат', 'time' => '11:00' }, { 'name' => 'Турешева Акбаян', 'time' => '09:00' }])
+  end
+
+  it 'does not take the name the draft addresses the patient with for a specialist' do
+    gynecologists = context_of(read({ days: [named_day(131, 'Князова Мария', '09:00'), named_day(120, 'Турешева Акбаян', '11:00')] }))
+
+    expect(misattributed('Мария, есть 11:00 у Турешевой.', gynecologists)).to eq([])
+    expect(misattributed('Добрый день, Мария! У Турешевой 11:00.', gynecologists)).to eq([])
+    expect(misattributed('Здравствуйте, Мария, 11:00 свободно у Турешевой.', gynecologists)).to eq([])
+    # a name that a time follows at once lists the time under it
+    expect(misattributed('Мария, 11:00; Акбаян, 09:00', gynecologists))
+      .to eq([{ 'name' => 'Князова Мария', 'time' => '11:00' }, { 'name' => 'Турешева Акбаян', 'time' => '09:00' }])
+  end
+
+  it 'does not name the time of a booking the patient has, which the draft gives to say where the patient is booked' do
+    booking = read({ appointments: [{ id: 5, status: 'scheduled', date: '30.10.2026', time: '11:00', doctor: 'Князова Жанат' }] },
+                   tool: 'list_my_appointments')
+    context = context_of(read({ days: [named_day(131, 'Князова Жанат', '09:00'), named_day(120, 'Турешева Акбаян', '11:00')] }), booking)
+
+    expect(misattributed('Вы записаны к Князовой на 11:00. У Турешевой тоже есть 11:00.', context)).to eq([])
+    expect(misattributed('Вы записаны к Князовой на 11:00. У Турешевой тоже есть 11:00.')).to eq([{ 'name' => 'Князова Жанат', 'time' => '11:00' }])
+  end
+
   it 'leaves alone a name that fits two specialists, and a run that read no list of times' do
     alike = context_of(read({ days: [named_day(131, 'Жанат Князова', '09:00'), named_day(120, 'Жанат Турешева', '11:00')] }))
 

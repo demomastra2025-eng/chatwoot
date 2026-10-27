@@ -21,12 +21,14 @@ class Captain::Runtime::RoutingSnapshot
   Agent = Struct.new(:id, :label, :card, keyword_init: true)
 
   attr_reader :clinic, :patient_language, :current_agent_id, :agents, :recent_messages, :latest_message, :open_questions,
-              :visited_agent_ids, :trail, :human_available, :source, :anchor_agent_id
+              :visited_agent_ids, :trail, :human_available, :source, :anchor_agent_id, :visit
 
   # agents: [Agent] (required); latest_message (required); clinic, patient_language, current_agent_id, recent_messages,
   # open_questions, visited_agent_ids, trail (the last routing decisions, oldest first: { 'kind', 'from', 'to' => [ids] }),
   # human_available, source. suggestion: the turn of a reply suggestion; anchor_agent_id: the anchor of its channel, which answers
-  # a suggestion whose answers name no agent while no agent leads the dialog (see DecisionRouter::Questions).
+  # a suggestion whose answers name no agent while no agent leads the dialog (see DecisionRouter::Questions). visit: the visit the
+  # conversation has agreed (Captain::Runtime::AgreedVisit; none when absent), which a silence about a confirmation needs
+  # (Captain::SilenceCheck).
   def initialize(**attributes)
     @agents = Array(attributes.fetch(:agents))
     @latest_message = attributes.fetch(:latest_message).to_s.strip.first(LATEST_LIMIT)
@@ -35,6 +37,7 @@ class Captain::Runtime::RoutingSnapshot
     @human_available = attributes[:human_available] == true
     @source = attributes[:source].to_s.presence || 'live'
     @suggestion = attributes[:suggestion] == true
+    @visit = attributes[:visit] || Captain::Runtime::AgreedVisit::NONE
     assign_conversation(attributes)
   end
 
@@ -90,7 +93,7 @@ class Captain::Runtime::RoutingSnapshot
     self.class.new(agents: @agents.reject { |item| Array(without).include?(item.id) }, latest_message: latest_message, clinic: @clinic,
                    patient_language: @patient_language, current_agent_id: @current_agent_id, recent_messages: @recent_messages,
                    open_questions: @open_questions, visited_agent_ids: @visited_agent_ids, trail: @trail,
-                   human_available: @human_available, source: @source, suggestion: @suggestion)
+                   human_available: @human_available, source: @source, suggestion: @suggestion, visit: @visit)
   end
 
   private
@@ -129,7 +132,7 @@ class Captain::Runtime::RoutingSnapshot
     end
 
     # context: the prepared run context (see Captain::AgentRunContext#prepare). options: clinic, patient_language, human_available,
-    # anchor_agent_id (a reply suggestion).
+    # anchor_agent_id (a reply suggestion), visit.
     def from_context(context, candidates:, **)
       earlier, unanswered = split_history(context[:conversation_history])
       source = context.dig(:state, :source).to_s.presence || 'live'
@@ -157,7 +160,8 @@ class Captain::Runtime::RoutingSnapshot
           latest_message: scenario[:message].to_s, open_questions: Array(scenario[:open_questions]).map(&:symbolize_keys),
           visited_agent_ids: messages.filter_map { |message| message[:agent_id] }.reverse.uniq.reverse, trail: Array(scenario[:trail]),
           human_available: scenario.fetch(:human_available, true) != false, source: 'benchmark',
-          suggestion: scenario.key?(:sticky) || scenario[:suggestion] == true, anchor_agent_id: scenario[:anchor])
+          suggestion: scenario.key?(:sticky) || scenario[:suggestion] == true, anchor_agent_id: scenario[:anchor],
+          visit: Captain::Runtime::AgreedVisit.new(times: scenario[:visit_times], pending: scenario[:visit_pending]))
     end
 
     def public_message?(message)

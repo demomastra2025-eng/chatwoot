@@ -21,9 +21,11 @@
 #   no_reply_needed  nobody answers in substance: a plain thanks, ok, goodbye or emoji that asks for nothing and accepts nothing
 #                    that waits (a suggestion gets no draft; a live turn, a courtesy reply of the current agent). A greeting is not
 #                    one: it opens or resumes the dialog. It is taken only when it is safe (#no_reply_outcome): an include answer yes
-#                    for another agent routes to that agent, and a message that asks or names something (a question mark, a digit,
-#                    more than NO_REPLY_MAX_WORDS words), answers a clinic question or opens the dialog stays with the current agent
-#                    (with none, the most probable agent): a wrong no_reply_needed silences a request
+#                    for another agent routes to that agent, and a message that asks or names something (a question mark, a digit, a
+#                    question word, more than NO_REPLY_MAX_WORDS words, a request to cancel or move a visit), answers a clinic question,
+#                    accepts a time the clinic offered, confirms a visit that nobody agreed, follows a clinic voice note whose words are
+#                    unknown (Captain::SilenceCheck) or opens the dialog stays with the current agent (with none, the most probable
+#                    agent): a wrong no_reply_needed silences a request
 #   nobody           no listed agent handles it (council parts)
 # A model that gives no probabilities counts its chosen key as the most probable one: a yes is 0.5 to 1 and a no 0 to 0.5 by its
 # confidence (0.5 + confidence / 2 and 0.5 - confidence / 2), so a yes always ranks above a no.
@@ -54,7 +56,7 @@ class Captain::Runtime::DecisionRouter::Questions
                          'no offered time or booking that still waits for an answer of the patient, and gives no personal data. An ok, ' \
                          '"хорошо", "жарайды" or a thumbs-up that answers a clinic question offering a time or a booking accepts it: ' \
                          'not this. A thanks, ok or "буду", "придём", "келемін" that only confirms a visit or a time the clinic already ' \
-                         'agreed, booked or confirmed (also in a clinic voice note whose words are unknown) closes the topic: this. ' \
+                         'agreed, booked or confirmed closes the topic: this, but not after a clinic voice note whose words are unknown. ' \
                          'A greeting opens or resumes the dialog: not this. A demand to stop writing is not this either. ' \
                          'Whoever the current agent is; never a council. ' \
                          "Every include_agent question is no, except the current agent's."
@@ -178,16 +180,22 @@ class Captain::Runtime::DecisionRouter::Questions
     Outcome.new(kind: 'no_reply', agent_ids: [current_id].compact, key: NO_REPLY)
   end
 
-  # A bare thanks, ok, goodbye or emoji in a dialog: no question mark or digit, NO_REPLY_MAX_WORDS words at most, and the last
-  # clinic message asked the patient nothing (an ok to «Записать вас?» accepts the offer). A message that opens the dialog (a first
-  # «Здравствуйте!») always gets an answer.
+  # A bare thanks, ok, goodbye or emoji in a dialog: no question mark, digit or question word, NO_REPLY_MAX_WORDS words at most, no
+  # request to cancel, move or make a visit («спасибо, не буду»), and the last clinic message asked the patient nothing (an ok to
+  # «Записать вас?» accepts the offer). The facts the models cannot decide are checked by Captain::SilenceCheck: a confirmation that
+  # the patient will come needs a visit to confirm, an acceptance of a time that the clinic offered is not a courtesy, and a clinic voice
+  # note whose words are unknown is answered by staff or the agent. A message that opens the dialog (a first «Здравствуйте!») always
+  # gets an answer.
   def courtesy_only?
     return false unless @snapshot.mid_dialog?
 
     last = @snapshot.recent_messages.last.to_h.with_indifferent_access
-    asked = last[:role].to_s == 'clinic' && last[:text].to_s.match?(/[?？]/)
+    clinic = last[:role].to_s == 'clinic' ? last[:text].to_s : nil
     text = @snapshot.latest_message.to_s
-    !asked && !text.match?(NO_REPLY_BREAKERS) && text.split.size <= NO_REPLY_MAX_WORDS
+    return false if clinic&.match?(/[?？]/) || text.match?(NO_REPLY_BREAKERS) || text.split.size > NO_REPLY_MAX_WORDS
+    return false if Captain::PatientIntent.booking_change?(text) || Captain::PatientIntent.question?(text)
+
+    Captain::SilenceCheck.unsafe_reason(text: text, last_clinic: clinic, visit: @snapshot.visit).nil?
   end
 
   # The current agent; with no current agent, the agent with the highest include probability.

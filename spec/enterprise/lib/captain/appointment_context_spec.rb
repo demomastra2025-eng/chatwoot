@@ -82,14 +82,14 @@ RSpec.describe Captain::AppointmentContext do
 
   # Suggestion eval 27.10 (c76-1231671, c43-1220644, c77-1221272, c78-1218989): the visit to cancel was a child's, booked from the
   # parent's chat, and the lookup covered only the contact's own card, so the draft said there was nothing to cancel.
-  describe 'the patients linked to the contact' do
+  describe 'the visits booked from this chat for another patient' do
     let(:child) { create(:contact, account: account, name: 'Айя') }
 
     it 'lists a visit booked from this chat for another patient and names that patient on its card' do
       own = appointment(starts_at: 1.hour.from_now)
       child_visit = appointment(starts_at: 1.day.from_now, patient_contact: child, client_name: 'Ким Айя Ерлановна')
 
-      expect(context.linked_appointments.pluck(:id)).to contain_exactly(own.id, child_visit.id)
+      expect(context.booked_appointments.pluck(:id)).to contain_exactly(own.id, child_visit.id)
       cards = context.list(status: 'scheduled').fetch(:appointments)
       expect(cards.find { |card| card[:id] == child_visit.id }).to include(patient_name: 'Ким Айя Ерлановна')
       expect(cards.find { |card| card[:id] == own.id }).not_to have_key(:patient_name)
@@ -108,18 +108,25 @@ RSpec.describe Captain::AppointmentContext do
       expect(context.compact_summary[:groups].flat_map { |group| group[:items] }.pluck(:id)).to eq([own.id])
     end
 
-    it 'lists the visits of a patient card recorded as one of the contact, booked from the card own chat' do
-      sibling = create(:contact, account: account, name: 'Дина',
-                                 custom_attributes: { Scheduling::PatientContextQuery::CONTACT_IDS_KEY => [contact.id] })
-      visit = create(:scheduling_appointment, account: account, contact: sibling, patient_contact: sibling, resource: resource,
-                                              starts_at: 2.days.from_now, ends_at: 2.days.from_now + 30.minutes, client_name: 'Дина')
+    # Review of quality-fixes-1 (H1): the circle of the patient selector (the patients this contact ever booked, the cards recorded as
+    # its own, the cards that share its number) is no proof of identity. A patient who books from their own chat keeps their history
+    # from the contact who once booked them, and from a card recorded as the contact's own: it takes their IIN to find a visit of theirs.
+    it 'does not show the history of a patient who books from their own chat, also when this contact once booked that patient' do
+      adult = create(:contact, account: account, name: 'Дина',
+                               custom_attributes: { Scheduling::PatientContextQuery::CONTACT_IDS_KEY => [contact.id] })
+      booked_once = appointment(starts_at: 3.days.from_now, patient_contact: adult, client_name: 'Дина')
+      create(:scheduling_appointment, account: account, contact: adult, patient_contact: adult, resource: resource, client_name: 'Дина',
+                                      starts_at: 5.days.from_now, ends_at: 5.days.from_now + 30.minutes)
+      create(:scheduling_appointment, account: account, contact: adult, patient_contact: adult, resource: resource, client_name: 'Дина',
+                                      status: 'completed', starts_at: 40.days.ago, ends_at: 40.days.ago + 30.minutes)
 
       expect(context.appointments.count).to eq(0)
-      expect(context.linked_appointments.pluck(:id)).to eq([visit.id])
-      expect(context.list.fetch(:appointments).sole).to include(id: visit.id, patient_name: 'Дина')
+      expect(context.booked_appointments.pluck(:id)).to eq([booked_once.id])
+      expect(context.list.fetch(:appointments).pluck(:id)).to eq([booked_once.id])
+      expect(context.list(status: 'completed')).to include(total: 0, appointments: [])
     end
 
-    it 'does not widen the circle to a contact that only shares the account, or to another account' do
+    it 'does not widen to a contact that only shares the account, to a visit that names the contact as the patient, or to another account' do
       stranger = create(:contact, account: account)
       create(:scheduling_appointment, account: account, contact: stranger, patient_contact: child, resource: resource,
                                       starts_at: 1.day.from_now, ends_at: 1.day.from_now + 30.minutes)
@@ -129,12 +136,36 @@ RSpec.describe Captain::AppointmentContext do
       create(:scheduling_appointment, account: foreign_account, contact: create(:contact, account: foreign_account),
                                       starts_at: 3.hours.from_now)
 
-      expect(context.linked_appointments.count).to eq(0)
+      expect(context.booked_appointments.count).to eq(0)
       expect(context.list).to include(total: 0, appointments: [])
+    end
+
+    it 'is empty for a contact of another account and for a conversation of another account' do
+      foreign = described_class.new(account: create(:account), contact_id: contact.id)
+      appointment(starts_at: 1.day.from_now)
+
+      expect(foreign.booked_appointments.count).to eq(0)
+      expect(foreign.list).to include(total: 0, appointments: [])
     end
   end
 
-  # The list covers the contact and the patients linked to it only, so an empty list proves nothing: it says so to the agent.
+  # The starts the check of a silence compares an offered time with (Captain::Runtime::AgreedVisit).
+  describe '#upcoming_booked_clocks' do
+    it 'gives the local starts of the upcoming visits booked from this chat, a cancelled and a past one left out' do
+      appointment(starts_at: Time.zone.parse('2026-10-10 05:00:00 UTC'))
+      appointment(starts_at: Time.zone.parse('2026-10-11 09:30:00 UTC'), patient_contact: create(:contact, account: account))
+      appointment(starts_at: Time.zone.parse('2026-10-12 05:00:00 UTC'), status: 'cancelled')
+      appointment(starts_at: Time.zone.parse('2026-10-08 05:00:00 UTC'), status: 'completed')
+
+      expect(context.upcoming_booked_clocks).to eq(%w[10:00 14:30])
+    end
+
+    it 'is empty without a visit' do
+      expect(context.upcoming_booked_clocks).to eq([])
+    end
+  end
+
+  # The list covers the visits booked from this chat only, so an empty list proves nothing: it says so to the agent.
   it 'tells the agent that an empty list is no proof that the patient has no appointment' do
     expect(context.list).to include(total: 0, appointments: [], note: described_class::NOTHING_FOUND_NOTE)
     expect(context.list(status: 'scheduled', date_from: '2026-10-10')).to include(note: described_class::NOTHING_FOUND_NOTE)

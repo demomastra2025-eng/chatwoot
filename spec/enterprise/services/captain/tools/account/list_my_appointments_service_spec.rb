@@ -33,7 +33,7 @@ RSpec.describe Captain::Tools::Account::ListMyAppointmentsService do
 
   # Suggestion eval 27.10 (c76-1231671): a parent asked to cancel the visit of a child that was booked from the parent's chat; the
   # lookup returned the parent's own cards only and both drafts told the patient there was nothing to cancel.
-  it 'returns the appointments of the patients linked to the contact and names the patient on each of them' do
+  it 'returns the appointments booked from this chat for another patient, names the patient and gives the token that a change needs' do
     child = create(:contact, account: account, name: 'Айя')
     own = create(:scheduling_appointment, account: account, contact: contact, starts_at: 2.days.from_now)
     child_visit = create(:scheduling_appointment, account: account, contact: contact, patient_contact: child, client_name: 'Ким Айя',
@@ -43,8 +43,27 @@ RSpec.describe Captain::Tools::Account::ListMyAppointmentsService do
 
     expect(payload).to include('success' => true, 'total' => 2)
     cards = payload.fetch('appointments').index_by { |card| card['id'] }
-    expect(cards.fetch(child_visit.id)).to include('patient_name' => 'Ким Айя', 'status' => 'scheduled')
+    expect(cards.fetch(child_visit.id)).to include('patient_name' => 'Ким Айя', 'status' => 'scheduled', 'appointment_access_token' => be_present)
     expect(cards.fetch(own.id)).not_to have_key('patient_name')
+    expect(cards.fetch(own.id)).not_to have_key('appointment_access_token')
+    expect(Captain::Tools::Agent::AppointmentAccess.resolve(token: cards.fetch(child_visit.id).fetch('appointment_access_token'),
+                                                            assistant: assistant, conversation: conversation,
+                                                            appointment_id: child_visit.id)).to eq(child_visit)
+  end
+
+  # Review of quality-fixes-1 (H1): the circle of the patient selector is no proof of identity.
+  it 'does not list the visits of a patient who books from their own chat, also when this contact once booked that patient' do
+    adult = create(:contact, account: account, name: 'Дина')
+    booked_once = create(:scheduling_appointment, account: account, contact: contact, patient_contact: adult, client_name: 'Дина',
+                                                  starts_at: 3.days.from_now)
+    create(:scheduling_appointment, account: account, contact: adult, patient_contact: adult, client_name: 'Дина', starts_at: 5.days.from_now)
+    create(:scheduling_appointment, account: account, contact: adult, patient_contact: adult, client_name: 'Дина', status: 'completed',
+                                    starts_at: 40.days.ago, ends_at: 40.days.ago + 30.minutes)
+
+    payload = call_tool
+
+    expect(payload.fetch('appointments').pluck('id')).to eq([booked_once.id])
+    expect(call_tool(status: 'completed')).to include('total' => 0, 'appointments' => [])
   end
 
   it 'tells the agent that nothing found is no proof of the absence of a booking, so it never says there is nothing to cancel' do

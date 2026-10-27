@@ -11,7 +11,7 @@ class Captain::ReplySuggestion::HistoryBuilder
   # operator's voice notes had no transcript, the agent saw "Message without content", started the booking again and asked for
   # data the patient had given, when the patient only thanked). A transcript, when there is one, is the text of the message.
   PATIENT_VOICE_NOTE = '[Voice message of the patient; its words are not available to you]'
-  STAFF_VOICE_NOTE = '[Voice note of the clinic staff; its words are not available to you]'
+  STAFF_VOICE_NOTE = '[Voice note of a staff member; its words are not available to you]'
 
   pattr_initialize [:account!, :conversation!, :assistant!]
 

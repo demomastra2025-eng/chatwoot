@@ -33,11 +33,22 @@ class Captain::AssistantPrompt
         clinic_context: @context[:clinic_context] },
       @prompt_state, bound_tool_ids: bound_tool_ids, time_zone: time_zone
     )
-    variables = texts.merge(now_text: now_text, patient_lines: patient_lines)
-    @suggestion ? variables.merge(operator_language: operator_language) : variables
+    variables = texts.merge(now_text: now_text, patient_lines: patient_lines, iin_enabled: iin_enabled?)
+    @suggestion ? variables.merge(operator_language: operator_language, staff_voice_note: staff_voice_note) : variables
   end
 
   private
+
+  # The rules about the IIN of a patient (ask for it, 12 digits) are written only where the account identifies patients by it: its
+  # contact attributes hold an IIN (Scheduling::IinValidator.in_use?).
+  def iin_enabled?
+    Scheduling::IinValidator.in_use?(@assistant.account)
+  end
+
+  # The line the history shows for a voice note of staff without a transcript (Captain::ReplySuggestion::HistoryBuilder).
+  def staff_voice_note
+    Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE
+  end
 
   # The language the clinic operator reads: the notes of a reply suggestion (operator_note) are written in it.
   def operator_language

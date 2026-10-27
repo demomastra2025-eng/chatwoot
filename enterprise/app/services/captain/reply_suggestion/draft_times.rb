@@ -25,11 +25,24 @@ module Captain::ReplySuggestion::DraftTimes
     search_available_slots get_scheduling_resource_availability get_scheduling_resource_schedule search_appointments get_appointment
     list_my_appointments get_my_contact get_contact get_appointment_provider_status
   ].freeze
+  # The reads that name the appointments of the patient: the time of a booking the patient has.
+  APPOINTMENT_TOOLS = %w[list_my_appointments get_appointment search_appointments get_appointment_provider_status].freeze
   # Fields of a read that name a time which is no free time (see Scheduling::AvailableSlotSearchService#last_booking_time and
   # #last_booking_time_by_weekday).
   IGNORED_KEYS = %w[last_booking_time last_booking_time_by_weekday].freeze
 
   module_function
+
+  # The times of the bookings the patient has, from the appointment reads of the run and the patient data of the prompt (the appointment
+  # summary, the actions already done): a draft names them to say where the patient is booked, not to offer them.
+  def booked_times(context)
+    context = context.to_h
+    reads = value(context, Captain::Runtime::ToolWrapper::SUGGESTION_READ_CACHE_KEY).to_h.values.filter_map do |entry|
+      entry = entry.to_h.with_indifferent_access
+      read_text(entry[:result]) if APPOINTMENT_TOOLS.include?(entry[:tool].to_s)
+    end
+    (reads + prompt_texts(context)).flat_map { |text| times(text) }.uniq
+  end
 
   # The times of the draft ("19:00") that the run did not find; empty when the run searched no free times.
   def unverified(draft:, context:)

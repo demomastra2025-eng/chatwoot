@@ -18,12 +18,13 @@ class Captain::Tools::Agent::AppointmentLookup
     from, to = range
     scope = scope.where('starts_at >= ? AND starts_at < ?', from, to)
     records = scope.order(:starts_at, :id).limit(MAX_RESULTS + 1).to_a
-    {
+    payload = {
       success: true,
       appointments: records.first(MAX_RESULTS).map { |appointment| result(appointment) },
       has_more: records.size > MAX_RESULTS,
       clarification_required: records.size > MAX_RESULTS
     }
+    records.empty? ? payload.merge(note: Captain::AppointmentContext::NOTHING_FOUND_NOTE) : payload
   end
 
   private

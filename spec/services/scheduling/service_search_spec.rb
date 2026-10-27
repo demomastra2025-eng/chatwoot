@@ -68,6 +68,29 @@ RSpec.describe Scheduling::ServiceSearch do
     end
   end
 
+  # Review of quality-fixes-1 (M2): the tokens of a query are compared folded («тіс» is «тис», «белдің» is «белдин»), and the patterns of
+  # these two Kazakh words were written with the Kazakh letters, so the dentist and the lumbar aliases never fired.
+  describe 'the Kazakh words that stand for a Russian specialty or a part of the body' do
+    before do
+      create_service('Консультация стоматолога')
+      create_service('МРТ поясничного отдела')
+      create_service('УЗИ почек')
+    end
+
+    it 'finds the services of the dentist by the Kazakh word for a tooth, with or without the Kazakh letter' do
+      %w[тіс тис Тіс].each { |query| expect(names(query)).to eq(['Консультация стоматолога']), query }
+    end
+
+    it 'finds the lumbar services by the Kazakh word for the lower back and its endings, with or without the Kazakh letters' do
+      %w[бел белге белдің белдин БЕЛДІҢ].each { |query| expect(names(query)).to eq(['МРТ поясничного отдела']), query }
+    end
+
+    it 'does not take a longer word for the alias' do
+      expect(names('белгі')).to be_empty
+      expect(names('тістер')).not_to include('Консультация стоматолога')
+    end
+  end
+
   describe 'ranking before the page limit' do
     it 'puts a name match above category matches that sort earlier alphabetically' do
       60.times { |index| create_service("Анализ #{index}", category: 'МРТ кисти') }

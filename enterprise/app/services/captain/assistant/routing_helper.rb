@@ -26,7 +26,8 @@ module Captain::Assistant::RoutingHelper
     @routing_request_id = SecureRandom.uuid
     @routing_snapshot = Captain::Runtime::RoutingSnapshot.from_context(
       context, candidates: graph.candidate_rows, clinic: @assistant.account&.name, patient_language: saved_patient_language,
-               human_available: routing_human_available?, anchor_agent_id: (@assistant.id if suggestion_run?)
+               human_available: routing_human_available?, anchor_agent_id: (@assistant.id if suggestion_run?),
+               visit: Captain::Runtime::AgreedVisit.for(@conversation)
     )
     @router = Captain::Runtime::DecisionRouter.new(@routing_snapshot, account: @assistant.account,
                                                                       observability: routing_observability(context),
