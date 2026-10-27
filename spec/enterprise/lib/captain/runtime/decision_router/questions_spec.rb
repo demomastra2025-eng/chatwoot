@@ -245,7 +245,7 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
           .to have_attributes(kind: 'stay', key: 'stay_current'), text
       end
       expect(build(3, message: 'Спасибо, буду', history: voice).resolve(answered('no_reply_needed', include_probabilities: { 10 => 0.1, 20 => 0.4 })))
-        .to have_attributes(kind: 'no_reply')
+        .to have_attributes(kind: 'agent', agent_ids: [20], key: 'route_agent_20')
     end
 
     # The history writes the send time in front of every message ("[Wed 28.10 12:53] Спасибо"): its digits are no word of the patient, and
