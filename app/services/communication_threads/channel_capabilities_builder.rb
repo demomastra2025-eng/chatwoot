@@ -16,6 +16,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     Channel::Sms Channel::TwilioSms Channel::Email Channel::Api Channel::WebWidget
   ].freeze
   UNLINKED_CHANNEL_LAST = 'Channel::Voice'
+  ONLY_AFTER_THE_PERSON_WROTE = %w[Channel::WhatsappWeb Channel::Telegram].freeze
   INITIALIZE_OPTION_KEYS = %i[
     contact available_inboxes include_unlinked deduplicate_linked preferred_status
     unread_counts last_incoming_message_timestamps last_seen_timestamps
@@ -78,7 +79,8 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
   # ContactInbox). A phone number is that identity for WhatsApp, SMS and calls, an email for email, the Telegram id for Telegram;
   # Instagram, Facebook, TikTok and Line need a chat that the person has opened. A channel that needs a phone or an email the
   # person lacks is still listed, disabled with the reason; a channel that is not reachable by nature is not listed at all.
-  # WhatsApp Web is a personal number: it is offered only to someone who has already written there.
+  # WhatsApp Web is a personal number and a Telegram bot cannot write to someone who never opened it: both are offered only to
+  # someone who has already written there (a contact_inbox exists).
   def unlinked_channels
     linked_inbox_ids = links.map(&:inbox_id)
     inboxes = available_inboxes.reject { |inbox| linked_inbox_ids.include?(inbox.id) }
@@ -105,7 +107,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
   end
 
   def offered_first?(inbox)
-    inbox.channel_type != 'Channel::WhatsappWeb' || contact_inbox_by_inbox_id.key?(inbox.id)
+    ONLY_AFTER_THE_PERSON_WROTE.exclude?(inbox.channel_type) || contact_inbox_by_inbox_id.key?(inbox.id)
   end
 
   def build_linked_channel(link)

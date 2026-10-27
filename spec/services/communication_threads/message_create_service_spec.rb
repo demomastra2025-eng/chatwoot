@@ -79,6 +79,50 @@ RSpec.describe CommunicationThreads::MessageCreateService do
       expect(service.communication_thread.conversations).to contain_exactly(service.conversation)
     end
 
+    it 'has made the thread and its link before the message is created, so a second send that waits for the lock finds them', :aggregate_failures do
+      seen = nil
+      allow(Messages::MessageBuilder).to receive(:new).and_wrap_original do |original, user, conversation, params|
+        seen = [CommunicationThread.exists?(contact_id: contact.id), CommunicationThreadConversation.exists?(conversation_id: conversation.id)]
+        original.call(user, conversation, params)
+      end
+
+      build_service(start_params).perform
+
+      expect(seen).to eq([true, true])
+    end
+
+    it 'sends the next message into the conversation the first one made, in an inbox that allows several per person', :aggregate_failures do
+      api_inbox.update!(lock_to_single_conversation: false)
+
+      first = build_service(start_params)
+      first.perform
+      second = build_service(start_params)
+
+      expect { second.perform }.not_to change(Conversation, :count)
+      expect(second.conversation).to eq(first.conversation)
+    end
+
+    it 'leaves a conversation of another number of the person alone when the screen names the number', :aggregate_failures do
+      api_inbox.update!(lock_to_single_conversation: false)
+      first = build_service(start_params)
+      first.perform
+      other_number = create(:contact_inbox, contact: contact, inbox: api_inbox)
+
+      second = build_service(start_params(target_contact_inbox_id: other_number.id))
+
+      expect { second.perform }.to change(Conversation, :count).by(1)
+      expect(second.conversation.contact_inbox_id).to eq(other_number.id)
+    end
+
+    it 'opens the conversation in the hands of the sender: no bot takes it and nobody waits for a reply', :aggregate_failures do
+      create(:integrations_hook, :dialogflow, account: account, inbox: api_inbox)
+
+      service = build_service(start_params(content: 'Remember the insurance', private: true))
+      service.perform
+
+      expect(service.conversation).to have_attributes(status: 'open', waiting_since: nil)
+    end
+
     it 'leaves nothing behind when the send is refused', :aggregate_failures do
       whatsapp_inbox = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
       create(:inbox_member, user: agent, inbox: whatsapp_inbox)

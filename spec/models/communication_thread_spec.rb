@@ -18,6 +18,20 @@ RSpec.describe CommunicationThread do
     it { is_expected.to validate_presence_of(:contact_id) }
   end
 
+  describe '.of_person' do
+    let(:account) { create(:account).tap { |record| record.enable_features!('communication_threads') } }
+
+    it 'finds the thread of the person and no other', :aggregate_failures do
+      conversation = create(:conversation, account: account)
+      thread = conversation.reload.communication_thread
+      stranger = create(:contact, account: account)
+
+      expect(described_class.of_person(account_id: account.id, contact_id: conversation.contact_id)).to eq(thread)
+      expect(described_class.of_person(account_id: account.id, contact_id: stranger.id)).to be_nil
+      expect(described_class.of_person(account_id: create(:account).id, contact_id: conversation.contact_id)).to be_nil
+    end
+  end
+
   describe '.snoozed_until_for' do
     let(:account) { create(:account) }
     let(:contact) { create(:contact, account: account) }

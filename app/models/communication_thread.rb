@@ -51,6 +51,12 @@ class CommunicationThread < ApplicationRecord
   validates :contact_id, presence: true
   validates :display_id, presence: true, uniqueness: { scope: :account_id }
 
+  # The thread of a person. There is one per person (the resolver keeps it so); where an old duplicate is still there, every reader
+  # takes the same one: the one with the latest activity, then the oldest.
+  def self.of_person(account_id:, contact_id:)
+    where(account_id: account_id, contact_id: contact_id).order(Arel.sql('last_activity_at DESC NULLS LAST'), id: :asc).first
+  end
+
   # Earliest wake-up time among the snoozed channels of a person. Channels snoozed "until the next reply" have no time.
   def self.snoozed_until_for(conversations)
     Array(conversations).filter_map { |conversation| conversation.snoozed_until if conversation&.snoozed? }.min

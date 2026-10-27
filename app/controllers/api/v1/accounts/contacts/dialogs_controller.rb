@@ -51,7 +51,7 @@ class Api::V1::Accounts::Contacts::DialogsController < Api::V1::Accounts::Contac
   # The dialog the user can open: a thread that exists but whose conversations are all hidden from this user is no dialog
   # for him, and the first message joins that thread through the resolver as for any other channel.
   def accessible_thread
-    thread = CommunicationThread.find_by(account_id: Current.account.id, contact_id: @contact.id)
+    thread = CommunicationThread.of_person(account_id: Current.account.id, contact_id: @contact.id)
     thread if thread.present? && accessible_links_for(thread).exists?
   end
 

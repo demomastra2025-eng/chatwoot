@@ -6,7 +6,9 @@
 # The send runs in one transaction under the lock of the person (CommunicationThreads::PersonLock), so
 # - a refused send (a template is missing, the channel cannot be reached, the number belongs to someone else) leaves no
 #   ContactInbox, conversation, thread or message behind;
-# - two staff members who write to the same person at the same moment end up in one dialog;
+# - two staff members who write to the same person at the same moment end up in one dialog: the conversation, its thread and
+#   its link are all made inside the transaction, so the second one finds them when it gets the lock and writes into that
+#   conversation instead of starting another one (whatever the inbox says about keeping one conversation per person);
 # - the same echo_id (the key of one bubble of the screen) is answered with the message it created, never with a second one.
 class CommunicationThreads::MessageCreateService
   # code: what the screen shows in plain words, see the ru texts PERSON_DIALOG.ERRORS (nil: an unexpected message).
@@ -41,7 +43,7 @@ class CommunicationThreads::MessageCreateService
     end
 
     @conversation = @message.conversation
-    @communication_thread = person_thread || thread_made_for!(@conversation)
+    @communication_thread = person_thread!
     @message
   end
 
@@ -59,14 +61,11 @@ class CommunicationThreads::MessageCreateService
   end
 
   def person_thread
-    CommunicationThread.find_by(account_id: contact.account_id, contact_id: contact.id)
+    CommunicationThread.of_person(account_id: contact.account_id, contact_id: contact.id)
   end
 
-  # The resolver builds the thread when a conversation is made; a conversation that existed before its thread did (the inbox keeps
-  # one conversation per person) gets it here, by the same resolver.
-  def thread_made_for!(conversation)
-    conversation.refresh_communication_thread!
-    CommunicationThread.find_by!(account_id: contact.account_id, contact_id: contact.id)
+  def person_thread!
+    person_thread || raise(ActiveRecord::RecordNotFound, "No communication thread for contact #{contact.id}")
   end
 
   def message_for_echo_id
@@ -80,16 +79,33 @@ class CommunicationThreads::MessageCreateService
            .reorder(:id).first
   end
 
+  # The conversation the message goes into: the one the channel names, else (the channel was chosen as "none here yet") the one the
+  # dialog already has in that inbox, which another send made a moment ago, else none and the message starts one.
   def selected_conversation
-    return if selected_conversation_display_id.blank?
+    if selected_conversation_display_id.present?
+      return Conversation.where(account_id: contact.account_id, id: accessible_links.select(:conversation_id))
+                         .find_by!(display_id: selected_conversation_display_id)
+    end
 
-    Conversation.where(account_id: contact.account_id, id: accessible_links.select(:conversation_id))
-                .find_by!(display_id: selected_conversation_display_id)
+    linked_conversation_in_selected_inbox
+  end
+
+  # The dialog's own conversation in the inbox (and, when the screen named the number, for that number): the one in front when the
+  # person has several there, see Conversations::CommunicationThreadResolver.front_first.
+  def linked_conversation_in_selected_inbox
+    inbox_id = selected_inbox_id || selected_contact_inbox&.inbox_id
+    return if inbox_id.blank?
+
+    links = accessible_links.where(inbox_id: inbox_id)
+    links = links.where(contact_inbox_id: selected_contact_inbox.id) if selected_contact_inbox
+    Conversations::CommunicationThreadResolver.front_first(
+      Conversation.where(account_id: contact.account_id, id: links.select(:conversation_id)).to_a
+    ).first
   end
 
   # A conversation in a channel the person has none in yet. Under the lock the thread is either there (the conversation joins it,
-  # with its status, assignee and team) or not (the conversation starts the dialog: the resolver builds the thread and the link
-  # when the transaction commits, before the caller renders anything).
+  # with its status, assignee and team) or not (the conversation starts the dialog). Either way the thread and the link are made
+  # now, inside the transaction (the resolver takes the lock again, which the same connection may), not after its commit.
   def start_conversation!
     raise Error.new('Contact is blocked', code: 'contact_blocked') if contact.blocked?
 
@@ -99,13 +115,18 @@ class CommunicationThreads::MessageCreateService
       contact_inbox: contact_inbox,
       started_by: current_user
     ).perform
-    link_conversation!(conversation) if communication_thread.present?
+    join_dialog!(conversation)
+  end
+
+  def join_dialog!(conversation)
+    conversation.refresh_communication_thread!
+    @communication_thread = person_thread
     conversation
   end
 
   def selected_inbox
     inbox_id = selected_inbox_id || selected_contact_inbox&.inbox_id
-    raise Error.new('Reply channel inbox_id is required', code: 'channel_unavailable') if inbox_id.blank?
+    raise Error.new('Reply channel inbox_id is required', code: 'no_reachable_channel') if inbox_id.blank?
 
     accessible_inboxes.find(inbox_id)
   end
@@ -137,12 +158,22 @@ class CommunicationThreads::MessageCreateService
     source_id = resolver.resolved_source_id
     raise Error.new('Selected channel cannot be reached for this contact', code: 'channel_unavailable') if source_id.blank?
 
+    ensure_person_wrote_there!(inbox)
     contact_inbox = Reminders::PatientSubjectGuard.own_contact_inbox(inbox: inbox, contact: contact, source_id: source_id) { resolver.perform }
     return contact_inbox if contact_inbox.present?
 
     raise foreign_chat_identity_error(inbox, source_id)
   rescue ActionController::ParameterMissing => e
     raise Error.new(e.message, code: 'channel_unavailable')
+  end
+
+  # WhatsApp Web (a personal number) and a Telegram bot do not write first to someone who never wrote there: the screen does not
+  # offer them (see CommunicationThreads::ChannelCapabilitiesBuilder), and a request that names one is refused the same way.
+  def ensure_person_wrote_there!(inbox)
+    return unless CommunicationThreads::ChannelCapabilitiesBuilder::ONLY_AFTER_THE_PERSON_WROTE.include?(inbox.channel_type)
+    return if inbox.contact_inboxes.exists?(contact_id: contact.id)
+
+    raise Error.new('This channel can only answer a person who has written there', code: 'channel_unavailable')
   end
 
   def foreign_chat_identity_error(inbox, source_id)
@@ -194,19 +225,6 @@ class CommunicationThreads::MessageCreateService
     return communication_thread.status if communication_thread.present? && CommunicationThread.statuses.key?(communication_thread.status)
 
     'open'
-  end
-
-  def link_conversation!(conversation)
-    CommunicationThreadConversation.find_or_create_by!(account_id: communication_thread.account_id, conversation_id: conversation.id) do |link|
-      link.communication_thread = communication_thread
-      link.inbox_id = conversation.inbox_id
-      link.contact_inbox_id = conversation.contact_inbox_id
-      link.primary = false
-    end
-    communication_thread.association(:communication_thread_conversations).reset
-    communication_thread.association(:conversations).reset
-    conversation.association(:communication_thread).reset
-    conversation.association(:communication_thread_conversation).reset
   end
 
   def validate_send_capability!

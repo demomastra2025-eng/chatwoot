@@ -129,6 +129,28 @@ RSpec.describe 'Contact dialog API', type: :request do
       expect(response.parsed_body['shared_phone_holder']).to eq('id' => holder.id, 'name' => 'Aigul')
     end
 
+    it 'lists the WhatsApp of a card without a number as disabled and asking for no template', :aggregate_failures do
+      child = create(:contact, account: account, name: 'Child', phone_number: nil)
+
+      get dialog_path(child), headers: headers, as: :json
+
+      whatsapp = response.parsed_body['channels'].find { |channel| channel['inbox_id'] == whatsapp_inbox.id }
+      expect(whatsapp).to include(
+        'requires_template' => false, 'can_reply' => false, 'can_send_text' => false,
+        'disabled' => true, 'disabled_reason' => 'missing_contact_phone_number'
+      )
+    end
+
+    it 'does not offer a Telegram bot to a person who never wrote to it, with a Telegram id or without', :aggregate_failures do
+      telegram_inbox = create(:channel_telegram, account: account).inbox
+      create(:inbox_member, user: agent, inbox: telegram_inbox)
+      contact.update!(additional_attributes: { 'social_telegram_user_id' => '555000111' })
+
+      get dialog_path, headers: headers, as: :json
+
+      expect(response.parsed_body['channels'].pluck('inbox_id')).not_to include(telegram_inbox.id)
+    end
+
     it 'reports a blocked contact' do
       contact.update!(blocked: true)
 
@@ -282,15 +304,61 @@ RSpec.describe 'Contact dialog API', type: :request do
       expect(row_counts).to eq(before_counts)
     end
 
-    it 'writes first on Telegram by the Telegram id of the person, without a chat identity from the client', :aggregate_failures do
-      telegram_inbox = create(:channel_telegram, account: account).inbox
-      contact.update!(additional_attributes: { 'social_telegram_user_id' => '555000111' })
+    context 'with a Telegram bot' do
+      let(:telegram_inbox) { create(:channel_telegram, account: account).inbox }
 
-      post_message({ channel_key: "inbox:#{telegram_inbox.id}", echo_id: echo_id, content: 'Hello from the clinic' })
+      before do
+        create(:inbox_member, user: agent, inbox: telegram_inbox)
+        contact.update!(additional_attributes: { 'social_telegram_user_id' => '555000111' })
+      end
+
+      it 'does not write first to a person who never wrote to the bot, and leaves no row behind', :aggregate_failures do
+        before_counts = row_counts
+
+        post_message({ channel_key: "inbox:#{telegram_inbox.id}", echo_id: echo_id, content: 'Hello from the clinic' })
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body).to include('code' => 'channel_unavailable')
+        expect(row_counts).to eq(before_counts)
+      end
+
+      it 'writes to a person who has written to the bot, by their Telegram id', :aggregate_failures do
+        create(:contact_inbox, contact: contact, inbox: telegram_inbox, source_id: '555000111')
+
+        post_message({ channel_key: "inbox:#{telegram_inbox.id}", echo_id: echo_id, content: 'Hello from the clinic' })
+
+        expect(response).to have_http_status(:success)
+        expect(Message.last.conversation.additional_attributes).to include('chat_id' => '555000111')
+      end
+    end
+
+    it 'puts the send into the conversation the dialog got in that inbox a moment ago, whatever the inbox setting', :aggregate_failures do
+      whatsapp_inbox.update!(lock_to_single_conversation: false)
+
+      post_message(start_params)
+      post_message(start_params(echo_id: SecureRandom.uuid, content: 'Second'))
 
       expect(response).to have_http_status(:success)
-      expect(ContactInbox.find_by(inbox_id: telegram_inbox.id)).to have_attributes(contact_id: contact.id, source_id: '555000111')
-      expect(Message.last.conversation.additional_attributes).to include('chat_id' => '555000111')
+      expect(row_counts).to include(conversations: 1, threads: 1, links: 1, messages: 2)
+    end
+
+    it 'does not start a conversation in a bot or AI status: it is open and nobody waits for a reply', :aggregate_failures do
+      create(:integrations_hook, :dialogflow, account: account, inbox: whatsapp_inbox)
+
+      post_message(start_params)
+
+      conversation = Message.last.conversation
+      expect(conversation).to have_attributes(status: 'open', waiting_since: nil)
+    end
+
+    it 'says there is no channel for a note when the screen has none to name', :aggregate_failures do
+      before_counts = row_counts
+
+      post_message({ echo_id: echo_id, content: 'Remember', private: true })
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include('code' => 'no_reachable_channel')
+      expect(row_counts).to eq(before_counts)
     end
 
     it 'starts the dialog with a private note on the empty screen', :aggregate_failures do

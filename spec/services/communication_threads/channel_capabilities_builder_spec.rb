@@ -297,12 +297,16 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
         )
       end
 
-      it 'offers Telegram only to a person who has a Telegram id', :aggregate_failures do
+      it 'offers a Telegram bot only to a person who has already written to it: a bot cannot write first', :aggregate_failures do
         telegram_inbox = create(:channel_telegram, account: account).inbox
         person = create(:contact, account: account, additional_attributes: { 'social_telegram_user_id' => '555000111' })
 
-        expect(unlinked_channels([telegram_inbox], person: person).pluck(:inbox_id)).to eq([telegram_inbox.id])
+        expect(unlinked_channels([telegram_inbox], person: person).pluck(:inbox_id)).to be_empty
         expect(unlinked_channels([telegram_inbox]).pluck(:inbox_id)).to be_empty
+
+        create(:contact_inbox, contact: person, inbox: telegram_inbox, source_id: '555000111')
+
+        expect(unlinked_channels([telegram_inbox], person: person).pluck(:inbox_id)).to eq([telegram_inbox.id])
       end
 
       it 'offers WhatsApp Web only to a person who has already written there', :aggregate_failures do
@@ -322,6 +326,14 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
         channel = unlinked_channels([whatsapp_inbox], person: person).first
 
         expect(channel).to include(inbox_id: whatsapp_inbox.id, can_send_text: false, disabled: true, disabled_reason: 'missing_contact_phone_number')
+      end
+
+      it 'asks for no template from a channel that cannot reach the person: a template does not give them a number', :aggregate_failures do
+        person = create(:contact, account: account, phone_number: nil)
+
+        channel = unlinked_channels([whatsapp_inbox], person: person).first
+
+        expect(channel).to include(requires_template: false, can_reply: false, can_send_text: false, can_send_attachments: false)
       end
 
       it 'calls from a voice inbox when the person has a phone number' do

@@ -73,6 +73,23 @@ describe ConversationBuilder do
         expect(start.assignee).to eq(staff)
       end
 
+      it 'is open and in the hands of the staff member even in an inbox with a bot, and nobody waits for a reply', :aggregate_failures do
+        create(:integrations_hook, :dialogflow, account: account, inbox: api_inbox)
+
+        conversation = start
+
+        expect(conversation).to have_attributes(status: 'open', waiting_since: nil)
+      end
+
+      it 'does not change what happens to a conversation the person started: the bot has it and a reply is awaited', :aggregate_failures do
+        create(:integrations_hook, :dialogflow, account: account, inbox: api_inbox)
+
+        conversation = described_class.new(contact_inbox: contact_api_inbox, params: {}).perform
+
+        expect(conversation.status).to eq('pending')
+        expect(conversation.waiting_since).to be_present
+      end
+
       it 'leaves the assignment to the owner of the person', :aggregate_failures do
         owner = create(:user, account: account, role: :agent)
         contact.update!(owner: owner)

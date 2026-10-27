@@ -4,8 +4,9 @@
 # follows is delivered and announced as usual. The assignee is the owner of the person when he works in this inbox,
 # otherwise the staff member. The flag skip_runtime_events is set on this record only (Current.suppress_runtime_events
 # would also stop the delivery of the message) and a fresh instance is returned, so the flag does not leak into the later
-# updates of the conversation, see Reminders::ConversationResolver. With #perform, when the inbox keeps one conversation per
-# person and one exists, it is reused and nothing is created.
+# updates of the conversation, see Reminders::ConversationResolver. The conversation is open and in the hands of the staff
+# member (no bot or AI takes it over, see Conversation#started_by_staff) and nobody waits for a reply yet. With #perform, when
+# the inbox keeps one conversation per person and one exists, it is reused and nothing is created.
 class ConversationBuilder
   pattr_initialize [:params!, :contact_inbox!, { started_by: nil }]
 
@@ -38,6 +39,7 @@ class ConversationBuilder
   def create_silently!
     conversation = ::Conversation.new(conversation_params.merge(dialog_defaults))
     conversation.skip_runtime_events = true
+    conversation.started_by_staff = true
     conversation.assignee = started_by if conversation.assignee_id.blank? && !conversation.contact_owner_assignable_to_conversation?
     conversation.save!
     ::Conversation.find(conversation.id)

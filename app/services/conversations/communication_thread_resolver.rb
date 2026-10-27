@@ -108,9 +108,7 @@ class Conversations::CommunicationThreadResolver # rubocop:disable Metrics/Class
     linked_thread = raw_communication_thread
     return linked_thread if linked_thread&.account_id == conversation.account_id && linked_thread.contact_id == conversation.contact_id
 
-    CommunicationThread.where(account_id: conversation.account_id, contact_id: conversation.contact_id)
-                       .order(Arel.sql('last_activity_at DESC NULLS LAST'), id: :asc)
-                       .first
+    CommunicationThread.of_person(account_id: conversation.account_id, contact_id: conversation.contact_id)
   end
 
   def raw_communication_thread
