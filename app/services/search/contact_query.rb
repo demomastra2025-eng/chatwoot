@@ -62,9 +62,10 @@ class Search::ContactQuery
   end
 
   def all_words_in_name_parts(table)
-    Arel::Nodes::Grouping.new(words.map do |word|
+    word_conditions = words.map do |word|
       Arel::Nodes::Grouping.new(name_part_matches(table, word).reduce { |combined, node| combined.or(node) })
-    end.reduce { |combined, node| combined.and(node) })
+    end
+    Arel::Nodes::Grouping.new(word_conditions.reduce { |combined, node| combined.and(node) })
   end
 
   # "е" and "ё" are the same letter: a text with either is looked for as a regular expression that accepts both.
