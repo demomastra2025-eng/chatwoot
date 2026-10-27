@@ -584,7 +584,7 @@ RSpec.describe 'MedElement boundary for local appointment statuses' do
       )
       allow(client).to receive(:get_receptions).with(
         company_cabinet_code: 'cabinet-1', specialist_code: 'specialist-1',
-        begin_datetime: provider_time(starts_at), end_datetime: provider_time(ends_at), skip: 0
+        begin_datetime: '21.03.2026 00:00:00', end_datetime: '22.03.2026 00:00:00', skip: 0
       ).and_return([listed_reception(active: 1, removed: 0)])
       # The provider slot is checked when the cancelled appointment is reopened.
       allow(service).to receive(:validate_availability!)
