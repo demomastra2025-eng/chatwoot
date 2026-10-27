@@ -131,6 +131,14 @@ RSpec.describe Search::ContactQuery do
       expect(found_names('ғалымқызы')).to eq(['Әлия'])
       expect(found_names('Куаныш')).to be_empty
     end
+
+    it 'folds every Kazakh Cyrillic letter in both case directions' do
+      { 'Ә' => 'ә', 'Ғ' => 'ғ', 'Қ' => 'қ', 'Ң' => 'ң', 'Ө' => 'ө', 'Ұ' => 'ұ', 'Ү' => 'ү', 'Һ' => 'һ', 'І' => 'і' }.each do |upper, lower|
+        create(:contact, account: account, name: 'Аян', last_name: "#{upper}бек", middle_name: "#{lower}хан")
+        expect(found_names("#{lower}бек")).to eq(['Аян'])
+        expect(found_names("#{upper}ХАН")).to eq(['Аян'])
+      end
+    end
   end
 
   describe 'е and ё' do
