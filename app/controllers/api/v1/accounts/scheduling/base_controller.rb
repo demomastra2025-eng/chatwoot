@@ -16,6 +16,13 @@ class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseCon
 
   private
 
+  def ensure_patient_context_employee!
+    return if Current.user.is_a?(User) && Current.account.users.exists?(id: Current.user.id)
+
+    raise Scheduling::Error.new(code: 'PATIENT_CONTEXT_EMPLOYEE_REQUIRED', message: 'Patient context requires an account employee',
+                                status: :forbidden)
+  end
+
   def with_scheduling_actor
     previous_actor = Current.executed_by
     Current.executed_by = Current.user if Current.user.present?

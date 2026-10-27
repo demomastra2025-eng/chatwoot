@@ -13,16 +13,16 @@ class Integrations::Medelement::ContactResolverService
     @organization_id = organization_id
   end
 
-  def sync_patient!(patient_code, preferred_contact: nil, prefetched_patient: :not_prefetched)
+  def sync_patient!(patient_code, preferred_contact: nil, prefetched_patient: :not_prefetched, require_verified_card: false)
     validate_preferred_contact!(preferred_contact)
     existing_contact = preferred_contact || find_by_patient_code(patient_code)
-    return existing_contact if fresh?(existing_contact)
+    return existing_contact if use_fresh_contact?(existing_contact, require_verified_card)
 
     patient, patient_code, existing_contact = fetch_or_resolve_patient(patient_code, existing_contact, prefetched_patient)
-    return existing_contact if patient.blank?
+    return verified_fallback(existing_contact, require_verified_card) if patient.blank?
 
     validate_patient!(patient, expected_patient_code: patient_code)
-    return existing_contact if provider_read_models_conflict?(patient_code, patient, existing_contact)
+    return verified_fallback(existing_contact, require_verified_card) if provider_read_models_conflict?(patient_code, patient, existing_contact)
 
     upsert_contact(patient, preferred_contact: preferred_contact)
   end
@@ -65,6 +65,14 @@ class Integrations::Medelement::ContactResolverService
   private
 
   attr_reader :account, :client, :conflict_tracker, :organization_id
+
+  def use_fresh_contact?(contact, require_verified_card)
+    !require_verified_card && fresh?(contact)
+  end
+
+  def verified_fallback(contact, require_verified_card)
+    contact unless require_verified_card
+  end
 
   def validate_preferred_contact!(preferred_contact)
     return if preferred_contact.blank? || preferred_contact.account_id == account.id

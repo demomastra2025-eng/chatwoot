@@ -61,8 +61,9 @@ class Integrations::Medelement::RequestRateLimiter
   # rubocop:enable Metrics/ParameterLists
 
   # Waits for the next free slot of this request type. The operation is the MedElement endpoint the request goes to.
-  def wait!(operation: nil, write: false)
-    delay_ms = reserve_delay_ms(operation, write ? MAX_INLINE_WRITE_WAIT_MS : MAX_INLINE_WAIT_MS)
+  def wait!(operation: nil, write: false, max_wait_ms: nil)
+    default_wait = write ? MAX_INLINE_WRITE_WAIT_MS : MAX_INLINE_WAIT_MS
+    delay_ms = reserve_delay_ms(operation, [max_wait_ms || default_wait, default_wait].min)
     raise BusyError.new(operation: lane_name(operation), retry_after_ms: -delay_ms, write: write) if delay_ms.negative?
     return unless delay_ms.positive?
 

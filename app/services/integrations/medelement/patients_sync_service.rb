@@ -9,7 +9,7 @@ class Integrations::Medelement::PatientsSyncService
     )
   end
 
-  def sync_patient_codes(patient_codes, prefetched_patients: {}, preloaded_contacts: nil)
+  def sync_patient_codes(patient_codes, prefetched_patients: {}, preloaded_contacts: nil, require_verified_card: false)
     codes = Array(patient_codes).filter_map { |code| code.to_s.presence }.uniq
     return {} if codes.empty?
 
@@ -17,11 +17,9 @@ class Integrations::Medelement::PatientsSyncService
     codes.each_with_object({}) do |patient_code, result|
       existing = contacts_by_code[patient_code]
       prefetched = prefetched_patients.key?(patient_code) ? prefetched_patients[patient_code] : :not_prefetched
-      result[patient_code] = resolver.sync_patient!(
-        patient_code,
-        preferred_contact: existing,
-        prefetched_patient: prefetched
-      )
+      options = { preferred_contact: existing, prefetched_patient: prefetched }
+      options[:require_verified_card] = true if require_verified_card
+      result[patient_code] = resolver.sync_patient!(patient_code, **options)
     end
   end
 

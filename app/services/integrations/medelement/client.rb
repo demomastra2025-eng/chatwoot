@@ -48,8 +48,8 @@ class Integrations::Medelement::Client
   MAX_TIMETABLE_DAYS = 7
 
   # retry_profile: :command for a caller that has someone waiting for the answer (see Request).
-  def initialize(configuration:, retry_profile: nil)
-    @request = Integrations::Medelement::Request.new(configuration: configuration, retry_profile: retry_profile)
+  def initialize(configuration:, retry_profile: nil, deadline: nil)
+    @request = Integrations::Medelement::Request.new(configuration: configuration, retry_profile: retry_profile, deadline: deadline)
   end
 
   def get_patient(patient_code:)
@@ -70,6 +70,11 @@ class Integrations::Medelement::Client
 
   def search_patients_by_iin(iin:, skip: 0)
     indexed_patient_search([['iin[]', iin.to_s], ['skip', skip]])
+  end
+
+  def search_patients_by_name(lastname:, name: nil, middlename: nil, skip: 0)
+    pairs = { lastname: lastname, name: name, middlename: middlename }.filter_map { |key, value| [key, value] if value.present? }
+    indexed_patient_search(pairs << ['skip', skip])
   end
 
   def search_patients_by_codes(patient_codes:, skip: 0)

@@ -46,13 +46,6 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
 
   private
 
-  def ensure_patient_context_employee!
-    return if Current.user.is_a?(User) && Current.account.users.exists?(id: Current.user.id)
-
-    raise Scheduling::Error.new(code: 'PATIENT_CONTEXT_EMPLOYEE_REQUIRED', message: 'Patient context requires an account employee',
-                                status: :forbidden)
-  end
-
   def patient_payload(card)
     selectable = Contacts::SharedPhone.card_identity_recorded?(card) || Scheduling::IinValidator.valid?(card.custom_attributes.to_h['medelement_iin'])
     owner_patient = card.id == @contact.id && card.custom_attributes.to_h['medelement_patient_code'].present? &&

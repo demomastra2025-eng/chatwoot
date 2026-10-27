@@ -19,7 +19,7 @@ Rails.application.config.filter_parameters += [/\A(?:code|signup_nonce)\z/]
 
 # Text typed into a search box (a name, a phone number, a word from a conversation) is personal data and must not be
 # written to the request log. Exact key match only: a partial match on "q" or "search" would hide unrelated keys.
-Rails.application.config.filter_parameters += [/\A(?:q|search|query|search_query)\z/]
+Rails.application.config.filter_parameters += [/\A(?:q|search|query|search_query)\z/, :query]
 
 # Regex to filter all occurrences of 'token' in keys except for 'website_token'
 filter_regex = /\A(?!.*\bwebsite_token\b).*token/i

@@ -15,5 +15,20 @@ if ENV['SENTRY_DSN'].present?
 
     # to track post data in sentry
     config.send_default_pii = true unless disable_pii
+
+    # Indexed patient lookups carry an IIN, phone or name in the provider URL.
+    # Drop those outbound HTTP records rather than retaining their query strings.
+    patient_lookup_path = '/doctor/v1/patients'
+    config.before_breadcrumb = lambda do |breadcrumb, _hint|
+      values = [breadcrumb.message, *breadcrumb.data.to_h.values]
+      breadcrumb unless values.any? { |value| value.to_s.include?(patient_lookup_path) }
+    end
+    config.before_send_transaction = lambda do |event, _hint|
+      event.spans.reject! do |span|
+        values = [span[:description], span['description'], *span.fetch(:data, {}).to_h.values, *span.fetch('data', {}).to_h.values]
+        values.any? { |value| value.to_s.include?(patient_lookup_path) }
+      end
+      event
+    end
   end
 end

@@ -206,6 +206,9 @@ Rails.application.routes.draw do
           resources :dashboard_apps, only: [:index, :show, :create, :update, :destroy]
 
           namespace :scheduling do
+            resources :medelement_patients, only: [:create] do
+              post :search, on: :collection
+            end
             resource :calendar, only: [:show], controller: 'calendar'
             resource :availability, only: [:show], controller: 'availability'
             resources :resources, only: [:index, :show, :create, :update, :destroy] do

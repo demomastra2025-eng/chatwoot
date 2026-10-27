@@ -2,10 +2,16 @@ class Api::V1::Accounts::Scheduling::CalendarController < Api::V1::Accounts::Sch
   ALLOWED_VIEWS = %w[day week month list].freeze
 
   def show
+    render_payload(Scheduling::PayloadBuilder.calendar(calendar_result).merge(medelement_patient_search_enabled: medelement_patient_search_enabled?))
+  end
+
+  private
+
+  def calendar_result
     from = parse_datetime_param!(params[:from], field_name: 'from')
     to = parse_datetime_param!(params[:to], field_name: 'to')
     ensure_ascending_range!(from, to)
-    result = Scheduling::CalendarViewService.new(
+    Scheduling::CalendarViewService.new(
       account: Current.account,
       view: resolved_view,
       from: from,
@@ -16,11 +22,11 @@ class Api::V1::Accounts::Scheduling::CalendarController < Api::V1::Accounts::Sch
       custom_attribute_filters: custom_attribute_filters_param,
       filters: appointment_filters
     ).perform
-
-    render_payload(Scheduling::PayloadBuilder.calendar(result))
   end
 
-  private
+  def medelement_patient_search_enabled?
+    Integrations::Hook.exists?(account: Current.account, app_id: 'medelement', status: Integrations::Hook.statuses[:enabled])
+  end
 
   def appointment_filters
     {

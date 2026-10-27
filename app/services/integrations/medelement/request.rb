@@ -17,9 +17,12 @@ class Integrations::Medelement::Request
     randomizer: ->(minimum, maximum) { Kernel.rand(minimum..maximum) },
     rate_limiter: nil,
     clock: nil,
-    retry_profile: nil
+    retry_profile: nil,
+    deadline: nil
   )
     @configuration = configuration
+    @retry_profile = retry_profile
+    @deadline = deadline
     limiter = rate_limiter || Integrations::Medelement::RequestRateLimiter.new(
       integrator_key: configuration.integrator_key,
       account_login: configuration.company_login,
@@ -32,6 +35,8 @@ class Integrations::Medelement::Request
       sleeper: sleeper,
       randomizer: randomizer,
       clock: clock,
+      deadline: deadline,
+      slot_wait_ms: (1000 if retry_profile.to_s == 'lookup'),
       **retry_options_for(retry_profile)
     )
   end
@@ -109,7 +114,10 @@ class Integrations::Medelement::Request
 
   # A latency-sensitive caller (a command with someone waiting) retries a failing read only briefly.
   def retry_options_for(profile)
-    profile.to_s == 'command' ? Integrations::Medelement::RequestRetryPolicy::COMMAND_PROFILE : {}
+    return Integrations::Medelement::RequestRetryPolicy::COMMAND_PROFILE if profile.to_s == 'command'
+    return Integrations::Medelement::RequestRetryPolicy::LOOKUP_PROFILE if profile.to_s == 'lookup'
+
+    {}
   end
 
   def perform_indexed_get(uri, request)
@@ -117,8 +125,8 @@ class Integrations::Medelement::Request
       uri.host,
       uri.port,
       use_ssl: true,
-      open_timeout: REQUEST_TIMEOUT,
-      read_timeout: REQUEST_TIMEOUT
+      open_timeout: interactive_timeout,
+      read_timeout: interactive_timeout
     ) { |http| http.request(request) }
   end
 
@@ -139,11 +147,18 @@ class Integrations::Medelement::Request
         password: configuration.password
       },
       headers: headers(body.present?),
-      timeout: REQUEST_TIMEOUT
+      timeout: interactive_timeout
     }
     options[:query] = query if query.present?
     options[:body] = body if body.present?
     options
+  end
+
+  def interactive_timeout
+    return REQUEST_TIMEOUT unless @retry_profile.to_s == 'lookup'
+
+    @deadline&.check!
+    [@deadline&.remaining || 2, 2].min
   end
 
   def validate_provider_scope!(payload)
