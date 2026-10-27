@@ -182,6 +182,19 @@ RSpec.describe AutomationRules::AppointmentMovedToAnotherDayService do
     expect { perform }.not_to(change { account.reminders.where(response_action: 'confirm_appointment').count })
   end
 
+  it 'keeps a materialized deferred touch that has not been delivered yet' do
+    enrollment = two_hour_enrollments.first
+    reminder = enrollment.touch_occurrence_claims.first.reminder
+    reminder.update_columns(status: Reminder.statuses[:pending], completed_at: nil) # rubocop:disable Rails/SkipsModelValidations
+    move_to_another_day(days: 3)
+
+    expect { perform }.not_to change(TouchPlanEnrollment, :count)
+    expect(enrollment.reload).to be_completed
+    expect(reminder.reload).to be_pending
+    expect(Reminders::ExecutionScheduleGuard.new(reminder: reminder).perform).to eq(:stop)
+    expect(reminder.reload.scheduled_at).to eq(starts_at + 3.days - 2.hours)
+  end
+
   it 'plans nothing for an appointment that is no longer active' do
     move_to_another_day(days: 3)
     appointment.update_columns(status: 'cancelled') # rubocop:disable Rails/SkipsModelValidations

@@ -88,13 +88,16 @@ class AutomationRules::TouchActionService
     ).perform
   end
 
-  # Whether the touch of this rule action has still to go out for the record: an open touch, or a deferred enrollment that has
-  # not delivered yet. Such a touch follows the record by itself and must not be made a second time.
+  # A deferred enrollment is completed as soon as its touch is materialized, even before delivery. Its open touch still
+  # follows the appointment and must not be made a second time.
   def touch_pending?(action_id)
     existing_event_touch(action_id.presence || 'create_touch', nil).present? ||
       account.touch_plan_enrollments.exists?(
         automation_rule: rule, source_action_id: action_id.to_s, remindable: record, status: %w[active paused]
-      )
+      ) || account.touch_plan_enrollments
+                  .where(automation_rule: rule, source_action_id: action_id.to_s, remindable: record, status: 'completed')
+                  .joins(touch_occurrence_claims: :reminder)
+                  .exists?(reminders: { status: Reminder::OPEN_STATUSES })
   end
 
   private
