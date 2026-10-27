@@ -37,7 +37,7 @@ class Captain::Tools::Account::UpdateCaptainInboxAutoReplyModeService < Captain:
   private
 
   def captain_inbox_for!(inbox)
-    inbox.captain_inbox || raise(ArgumentError, 'Inbox is not connected to a Captain assistant')
+    inbox.captain_inbox || raise(ArgumentError, 'The AI is not set up for this inbox')
   end
 
   def normalized_auto_reply_mode(value)
@@ -56,8 +56,8 @@ class Captain::Tools::Account::UpdateCaptainInboxAutoReplyModeService < Captain:
         channel_type: inbox.display_channel_type
       },
       captain: {
-        assistant_id: captain_inbox.captain_assistant_id,
-        assistant_name: captain_inbox.captain_assistant&.name,
+        ai_enabled: captain_inbox.ai_enabled?,
+        voice_assistant_id: (captain_inbox.captain_assistant_id if inbox.channel_type == 'Channel::Voice'),
         auto_reply_mode: inbox.channel_type == 'Channel::Voice' ? captain_inbox.auto_reply_mode : account.captain_reply_time_mode,
         auto_reply_allowed_now: captain_inbox.auto_reply_allowed_now?,
         reply_to_open_conversations: captain_inbox.reply_to_open_conversations?

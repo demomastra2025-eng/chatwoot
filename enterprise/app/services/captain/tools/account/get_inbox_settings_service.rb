@@ -70,11 +70,14 @@ class Captain::Tools::Account::GetInboxSettingsService < Captain::Tools::Account
   def captain_inbox_payload(captain_inbox)
     return { enabled: false } if captain_inbox.blank?
 
+    voice = captain_inbox.inbox.channel_type == 'Channel::Voice'
     {
-      enabled: captain_inbox.ai_enabled? || captain_inbox.inbox.channel_type == 'Channel::Voice',
-      assistant_id: captain_inbox.captain_assistant_id,
-      assistant_name: captain_inbox.captain_assistant&.name,
-      auto_reply_mode: captain_inbox.inbox.channel_type == 'Channel::Voice' ? captain_inbox.auto_reply_mode : account.captain_reply_time_mode,
+      enabled: captain_inbox.ai_enabled? || voice,
+      ai_enabled: captain_inbox.ai_enabled?,
+      # A text channel names no agent (the router picks one among the enabled agents); a voice number names its voice agent.
+      voice_assistant_id: (captain_inbox.captain_assistant_id if voice),
+      voice_assistant_name: (captain_inbox.captain_assistant&.name if voice),
+      auto_reply_mode: voice ? captain_inbox.auto_reply_mode : account.captain_reply_time_mode,
       auto_reply_allowed_now: captain_inbox.auto_reply_allowed_now?,
       reply_to_open_conversations: captain_inbox.reply_to_open_conversations?
     }

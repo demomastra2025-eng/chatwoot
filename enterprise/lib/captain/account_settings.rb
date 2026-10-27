@@ -49,6 +49,11 @@ class Captain::AccountSettings
     @section_defaults.fetch(key).deep_merge(@account.settings.to_h.fetch(KEY, {}).to_h.deep_stringify_keys.fetch(key, {}))
   end
 
+  # How long the AI waits for more messages of a customer before it answers (0: it answers each message at once).
+  def message_collapse_window_seconds
+    section('conversation')['message_collapse_window_seconds'].to_i
+  end
+
   def update!(patch)
     patch = patch.to_unsafe_h if patch.respond_to?(:to_unsafe_h)
     patch = patch.deep_stringify_keys if patch.is_a?(Hash)

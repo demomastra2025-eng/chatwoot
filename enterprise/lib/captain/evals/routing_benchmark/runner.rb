@@ -167,7 +167,7 @@ class Captain::Evals::RoutingBenchmark::Runner
 
   def run_dialogue(workspace, dialogue, path:, run_index:)
     conversation = Current.with_runtime_events_suppressed { workspace.conversation_for(dialogue) }
-    verify_silent_handoff(workspace, dialogue, conversation)
+    verify_silent_handoff(conversation)
     history = []
     scorer = Captain::Evals::RoutingBenchmark::Scorer.new(
       account: workspace.account, conversation: conversation, directory: workspace.directory,
@@ -193,10 +193,10 @@ class Captain::Evals::RoutingBenchmark::Runner
   # The handoff of the benchmark is silent: the text checks are not put to a handoff turn, so the account's handoff notice must be
   # blank, or a patient would read a sentence that nothing checked. The notice is asked for the way the response builder asks
   # without a model call (generate: false); it is checked once per run, on the first conversation.
-  def verify_silent_handoff(workspace, dialogue, conversation)
+  def verify_silent_handoff(conversation)
     return unless @silent_handoff.nil?
 
-    notice = Captain::CustomerNoticeService.new(conversation: conversation, assistant: workspace.entry_agent(dialogue), kind: :handoff, generate: false)
+    notice = Captain::CustomerNoticeService.new(conversation: conversation, kind: :handoff, generate: false)
     @silent_handoff = notice.text.nil?
   rescue StandardError => e
     @silent_handoff_error = e.class.name
@@ -207,25 +207,24 @@ class Captain::Evals::RoutingBenchmark::Runner
   # plan hands to another agent can run under another request id inside the same turn.
   def run_turn(workspace, dialogue, turn, conversation, history, scorer)
     account = workspace.account
-    entry = workspace.entry_agent(dialogue)
     staff_owned = conversation.reload.status.to_s == 'open'
     before = record_snapshot(account)
     before_state = record_state(account)
-    routing_before = routing_state(conversation, entry)
+    routing_before = routing_state(conversation)
     last_event_id = LlmEvent.where(account_id: account.id).maximum(:id).to_i
     audit_cursor = Captain::Evals::RoutingBenchmark::ToolTrace.cursor(account)
     incoming = create_incoming!(conversation, turn.fetch('customer'))
     history << { role: 'user', content: incoming.content }
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     response = Captain::Assistant::AgentRunnerService.new(
-      assistant: entry, conversation: conversation, source: 'benchmark'
+      scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation, source: 'benchmark'
     ).generate_response(message_history: history)
     latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
     events = LlmEvent.where(account_id: account.id).where('id > ?', last_event_id).order(:id).to_a
     tool_calls = Captain::Evals::RoutingBenchmark::ToolTrace.build(
       events: events, audits: Captain::Evals::RoutingBenchmark::ToolTrace.audits_after(account, audit_cursor), agent_names: agent_names(workspace)
     )
-    routing = { before: routing_before, after: routing_state(conversation, entry) }
+    routing = { before: routing_before, after: routing_state(conversation) }
     scored = scorer.call(turn: turn, response: response, events: events, before: before, before_state: before_state, tool_calls: tool_calls,
                          routing: routing)
     scored = judge_turn(account, dialogue, turn, response, scored, history, tool_calls) if judge_turn?(dialogue, turn, scored)
@@ -233,7 +232,7 @@ class Captain::Evals::RoutingBenchmark::Runner
     # window after the newest event, so a call left out here would never be counted against the budget.
     cost = provider_cost(LlmEvent.where(account_id: account.id).where('id > ?', last_event_id).order(:id).to_a)
     @spent += cost
-    after_turn(entry, conversation, history, response, scored)
+    after_turn(conversation, history, response, scored)
     scored = scored.merge(warnings: Array(scored[:warnings]) + (staff_owned && !turn['staff'] ? [STAFF_OWNED_WARNING] : []))
     scored = scored.merge(blocked: true) if staff_owned && !turn['staff']
     scored.merge(latency_ms: latency_ms, cost_usd: cost.to_f, expectation: turn['expect'],
@@ -241,11 +240,11 @@ class Captain::Evals::RoutingBenchmark::Runner
   end
 
   # What the response builder does after a reply: the history of the model, the delivery of the parts, the handoff.
-  def after_turn(entry, conversation, history, response, scored)
+  def after_turn(conversation, history, response, scored)
     text = public_reply(response, scored)
     if text
       history << { role: 'assistant', content: text, agent_name: response['agent_name'] }
-      record_part_delivery(entry, conversation, response, text)
+      record_part_delivery(conversation, response, text)
     end
     hand_over(conversation) if staff_owned_after?(response, scored)
   end
@@ -265,13 +264,13 @@ class Captain::Evals::RoutingBenchmark::Runner
   end
 
   # ResponseBuilderJob#record_part_delivery: the reply is a delivery of every part it reports, of the version it reported.
-  def record_part_delivery(entry, conversation, response, text)
+  def record_part_delivery(conversation, response, text)
     refs = Array(response['part_refs'])
     return if refs.empty?
 
     @delivery_sequence = @delivery_sequence.to_i + 1
     delivery_id = -@delivery_sequence
-    Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation).change do |data|
+    Captain::Conversation::AgentSession.new(conversation: conversation).change do |data|
       refs.each do |ref|
         part = Array(data['parts']).find { |item| item['id'] == ref['id'] && item['version'].to_i == ref['version'].to_i }
         next unless part
@@ -288,9 +287,9 @@ class Captain::Evals::RoutingBenchmark::Runner
   end
 
   # The agent that holds the conversation and how often the routing changed, from the durable session of the conversation.
-  def routing_state(conversation, entry)
+  def routing_state(conversation)
     session = conversation.reload.additional_attributes.to_h['captain_agent_session'].to_h
-    { current_assistant_id: session['current_assistant_id'] || entry.id, routing_revision: session['routing_revision'].to_i,
+    { current_assistant_id: session['current_assistant_id'], routing_revision: session['routing_revision'].to_i,
       routing_trail: Array(session['routing_trail']).presence }.compact
   end
 

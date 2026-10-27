@@ -11,6 +11,9 @@ class Reminders::CaptainGeneratedMessageService
     Do not include explanations, metadata, labels, markdown fences, or internal reasoning.
   TEXT
 
+  # The agent that writes the touch is switched off (or deleted): the touch fails, visibly, and nothing else writes it.
+  AGENT_DISABLED = 'agent_disabled: the agent that writes this touch is switched off'.freeze
+
   attr_reader :reminder, :conversation, :mode
 
   def initialize(reminder:, conversation:, mode: :touch)
@@ -68,15 +71,10 @@ class Reminders::CaptainGeneratedMessageService
 
   def resolve_base_assistant!
     assistant_id = reminder.metadata['captain_assistant_id'].presence
+    raise ArgumentError, 'Captain assistant is not configured for this touch' if assistant_id.blank?
 
-    assistant =
-      if assistant_id.present?
-        conversation.account.captain_assistants.find_by(id: assistant_id)
-      else
-        conversation.inbox&.captain_assistant
-      end
-
-    raise ArgumentError, 'Captain assistant is not configured for this touch' if assistant.blank?
+    assistant = conversation.account.captain_assistants.find_by(id: assistant_id)
+    raise ArgumentError, AGENT_DISABLED unless assistant&.entry_eligible?
 
     assistant
   end
@@ -122,7 +120,7 @@ class Reminders::CaptainGeneratedMessageService
 
     messages.map do |message|
       payload = {
-        content: Captain::OpenAiMessageBuilderService.new(message: message, assistant: assistant).generate_content,
+        content: Captain::OpenAiMessageBuilderService.new(message: message).generate_content,
         role: message.message_type == 'incoming' ? 'user' : 'assistant'
       }
       payload[:agent_name] = message.additional_attributes['agent_name'] if message.additional_attributes&.dig('agent_name').present?

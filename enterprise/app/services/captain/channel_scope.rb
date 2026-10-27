@@ -21,9 +21,14 @@ class Captain::ChannelScope
       new(account: account, inbox: inbox, kind: :voice, voice_agent: voice_agent_of(inbox))
     end
 
+    # The whole AI of the workspace, with no channel: what writes a campaign or a touch, and what the Playground tries out.
+    def for_workspace(account)
+      new(account: account, kind: :workspace)
+    end
+
     # The Playground tries out the whole AI of the workspace; a voice channel gives the agent of that number alone.
     def for_playground(account, inbox = nil)
-      return new(account: account, kind: :workspace) if inbox.nil?
+      return for_workspace(account) if inbox.nil?
 
       for_inbox(inbox, account: account)
     end

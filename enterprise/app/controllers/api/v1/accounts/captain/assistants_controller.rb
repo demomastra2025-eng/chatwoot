@@ -39,27 +39,19 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
 
   def create
     attributes = assistant_create_params
-    Current.account.with_lock do
-      @assistant = account_assistants.create!(attributes)
-      save_assistant_inbox_ids!
-    end
+    Current.account.with_lock { @assistant = account_assistants.create!(attributes) }
   rescue ActiveRecord::RecordInvalid => e
     render_profile_validation_error_or_raise(e)
-  rescue Captain::ChannelMatrix::Invalid => e
-    render json: { errors: e.errors }, status: :unprocessable_content
   end
 
   def update
     attributes = assistant_update_params
     Current.account.with_lock do
       @assistant.update!(attributes)
-      save_assistant_inbox_ids!
       cancel_captain_follow_ups_if_disabled!
     end
   rescue ActiveRecord::RecordInvalid => e
     render_profile_validation_error_or_raise(e)
-  rescue Captain::ChannelMatrix::Invalid => e
-    render json: { errors: e.errors }, status: :unprocessable_content
   end
 
   def avatar
@@ -70,30 +62,24 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     end
   end
 
+  # Any agent can be deleted. Deleting the voice agent of a number takes that number's AI away (its routing policy is cleared).
   def destroy
-    destroyed = Current.account.with_lock { @assistant.destroy }
-    if destroyed
+    if Current.account.with_lock { @assistant.destroy }
       head :no_content
-    elsif @assistant.errors.of_kind?(:base, I18n.t('captain.channel_matrix.default_agent_in_use'))
-      render_default_agent_in_use
-    elsif @assistant.errors.of_kind?(:base, I18n.t('captain.channel_matrix.main_agent_in_use'))
-      render_main_agent_in_use
     else
       render json: { errors: @assistant.errors.full_messages }, status: :unprocessable_content
     end
   end
 
+  # Only the internal assistant has a playground of its own. The customer-facing AI has one for the whole workspace
+  # (Api::V1::Accounts::Captain::PlaygroundController): no agent is the start agent of it.
   def playground
-    @playground_test_overrides, invalid_override = playground_test_overrides
-    return render json: { error: 'unsupported_playground_setting', field: invalid_override }, status: :unprocessable_entity if invalid_override
+    return render_not_found_error('Resource could not be found') unless @assistant.internal_assistant?
 
-    response = @assistant.internal_assistant? ? copilot_playground_response : agent_playground_response
+    unsupported_field = %i[test_model test_temperature test_thinking_effort].find { |field| playground_params[field].present? }
+    return render json: { error: 'unsupported_playground_setting', field: unsupported_field }, status: :unprocessable_entity if unsupported_field
 
-    render json: response
-  rescue Captain::Playground::SessionStore::Busy, Captain::Playground::SessionStore::Stale => e
-    render json: { error: 'playground_session_conflict', message: e.message }, status: :conflict
-  rescue Pundit::NotAuthorizedError
-    render json: { error: 'playground_live_forbidden' }, status: :forbidden
+    render json: copilot_playground_response
   rescue ArgumentError, ActiveRecord::RecordInvalid => e
     render json: { error: 'invalid_playground_scenario', message: e.message }, status: :unprocessable_entity
   rescue Rack::Timeout::RequestTimeoutException, Rack::Timeout::RequestTimeoutError => e
@@ -181,7 +167,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   # An internal assistant's playground runs the retired employee Copilot chat
-  # (Captain::Copilot::ChatService). The customer-facing agent playground stays.
+  # (Captain::Copilot::ChatService).
   def ensure_internal_playground_available
     return unless @assistant.internal_assistant?
     return if Captain::Copilot::ChatAvailability.enabled?
@@ -193,18 +179,15 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     @account_assistants ||= Captain::Assistant.for_account(Current.account.id).with_attached_avatar
   end
 
-  # Safety checks are one workspace-wide setting (Captain::AccountSettings), not
-  # an agent setting, and the agents a channel can transfer to come from the
-  # channel grid. config.safety_settings and handoff_agent_ids are therefore
-  # not permitted here: a legacy client may still send them, they are ignored
-  # and the stored legacy data is left as it is.
+  # Safety checks are one workspace-wide setting (Captain::AccountSettings), not an agent setting, and an agent has no channel list or
+  # transfer list (every enabled agent is a peer in every text channel). config.safety_settings and the old channel and transfer
+  # lists are therefore not permitted here: a legacy client may still send them, they are ignored.
   def assistant_params
     permitted = params.require(:assistant).permit(
       :name,
       :description,
       :usage_mode,
       :active,
-      :channel_scope,
       :routing_description,
       config: ASSISTANT_CONFIG_FIELDS
     )
@@ -271,52 +254,9 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def render_profile_validation_error_or_raise(error)
-    return render_main_agent_in_use if error.record.errors.of_kind?(:base, I18n.t('captain.channel_matrix.main_agent_in_use'))
-    return render_default_agent_in_use if error.record.errors.of_kind?(:base, I18n.t('captain.channel_matrix.default_agent_in_use'))
-
     raise error unless error.record.errors.of_kind?(:config, :fish_voice_invalid_reference)
 
     render json: { error: 'fish_voice_invalid_reference' }, status: :unprocessable_content
-  end
-
-  def render_main_agent_in_use
-    ids = CaptainInbox.where(captain_assistant_id: @assistant.id, ai_enabled: true).joins(:inbox)
-                      .where.not(inboxes: { channel_type: 'Channel::Voice' }).order(:inbox_id).pluck(:inbox_id)
-    error = { inbox_id: nil, assistant_id: @assistant.id, inbox_ids: ids, code: 'MAIN_AGENT_IN_USE',
-              message: I18n.t('captain.channel_matrix.main_agent_in_use') }
-    render json: { errors: [error] }, status: :unprocessable_content
-  end
-
-  def render_default_agent_in_use
-    error = { inbox_id: nil, assistant_id: @assistant.id, code: 'INVALID_DEFAULT',
-              message: I18n.t('captain.channel_matrix.default_agent_in_use') }
-    render json: { errors: [error] }, status: :unprocessable_content
-  end
-
-  def save_assistant_inbox_ids!
-    input = params.dig(:assistant, :inbox_ids)
-    input = @assistant.selected_inbox_ids unless params[:assistant].key?(:inbox_ids)
-    input = [] if @assistant.channel_scope == 'all'
-
-    ids = input.map { |value| value.to_i if value.to_s.match?(/\A[1-9]\d*\z/) } if input.is_a?(Array)
-    valid_ids = Current.account.inboxes.where.not(channel_type: 'Channel::Voice').where(id: ids).pluck(:id)
-    if ids.nil? || ids.any?(&:nil?) || valid_ids.sort != ids.uniq.sort
-      error = { inbox_id: nil, assistant_id: @assistant.id, code: 'INVALID_CHANNEL',
-                message: I18n.t('captain.channel_matrix.invalid_channel') }
-      raise Captain::ChannelMatrix::Invalid, [error]
-    end
-
-    enabled_main_ids = CaptainInbox.where(captain_assistant_id: @assistant.id, ai_enabled: true)
-                                   .joins(:inbox).where.not(inboxes: { channel_type: 'Channel::Voice' }).pluck(:inbox_id)
-    if @assistant.channel_scope == 'selected' && (enabled_main_ids - ids).any?
-      error = { inbox_id: nil, assistant_id: @assistant.id, inbox_ids: enabled_main_ids - ids,
-                code: 'MAIN_AGENT_IN_USE', message: I18n.t('captain.channel_matrix.main_agent_in_use') }
-      raise Captain::ChannelMatrix::Invalid, [error]
-    end
-
-    current_ids = @assistant.selected_inbox_ids
-    (ids - current_ids).each { |inbox_id| @assistant.agent_channels.create!(account: Current.account, inbox_id: inbox_id) }
-    @assistant.agent_channels.where(inbox_id: current_ids - ids).delete_all
   end
 
   def merge_optional_config_param!(permitted, field_name, voice_settings: false)
@@ -355,105 +295,8 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       :test_model,
       :test_temperature,
       :test_thinking_effort,
-      :playground_mode,
-      :playground_session_id,
-      :playground_action,
-      :real_data_read, :real_data_write, :approval_id, :approval_digest,
-      :inbox_id,
-      :live_inbox_id,
-      :external_delivery_enabled,
-      :controlled_test_number,
-      scenario: {},
       message_history: [:role, :content, :agent_name]
     )
-  end
-
-  def agent_playground_response
-    attributes = playground_params
-    mode = attributes[:playground_mode].presence || 'workspace'
-    action = attributes[:playground_action].presence || 'message'
-    raise ArgumentError, 'Invalid Playground action' unless %w[message session reset permissions confirm].include?(action)
-    raise ArgumentError, 'The Playground caller always stays synthetic' if attributes[:conversation_id].present?
-
-    if ActiveModel::Type::Boolean.new.cast(attributes[:external_delivery_enabled])
-      raise ArgumentError,
-            'External delivery is unavailable in Playground'
-    end
-
-    session = Captain::Playground::Session.new(
-      assistant: @assistant, account: Current.account, user: Current.user, mode: mode, session_id: attributes[:playground_session_id]
-    )
-    if action == 'permissions'
-      raise ArgumentError, 'A Playground session is required' if attributes[:playground_session_id].blank?
-
-      permissions = session.set_permissions!(read: attributes[:real_data_read], write: attributes[:real_data_write])
-      return { playground: { session_id: attributes[:playground_session_id], mode: 'workspace',
-                             real_data_read: permissions['read'], real_data_write: permissions['write'], action_previews: [] } }
-    end
-    session.with_lock(
-      reset: action == 'reset', scenario_input: attributes[:scenario]&.to_h,
-      inbox_id: attributes[:inbox_id].presence || attributes[:live_inbox_id], delivery_enabled: attributes[:external_delivery_enabled],
-      delivery_target: attributes[:controlled_test_number]
-    ) do
-      if action == 'confirm'
-        result = Captain::Playground::ActionApproval.new(session).confirm(id: attributes[:approval_id], digest: attributes[:approval_digest])
-        next result.merge(playground: session.payload)
-      end
-      next { playground: session.payload } unless action == 'message'
-
-      options = { assistant: @assistant, source: 'playground', playground_session: session }
-      options[:test_overrides] = @playground_test_overrides if @playground_test_overrides.present?
-      response = Captain::Assistant::AgentRunnerService.new(**options).generate_response(
-        message_history: session.history_with(attributes[:message_content])
-      )
-      session.record_turn(attributes[:message_content], response)
-      response.merge('playground' => session.payload, 'delivery' => Captain::Playground::ReplyDelivery.new(session).perform(response))
-    end
-  end
-
-  def playground_test_overrides
-    attributes = playground_params
-    if @assistant.internal_assistant?
-      unsupported_field = %i[test_model test_temperature test_thinking_effort].find do |field|
-        attributes[field].present?
-      end
-      return [nil, unsupported_field] if unsupported_field
-    end
-
-    effective_model = @assistant.resolved_agent_model
-    overrides = {}
-
-    if attributes[:test_model].present?
-      requested_model = Llm::Models.canonical_model_name(attributes[:test_model])
-      selectable_models = Llm::Models.curated_model_names_for(:assistant, account: Current.account)
-      selectable_models += [@assistant.model, Llm::Config.model_for(feature: :assistant, account: Current.account)].compact_blank
-      unless selectable_models.include?(requested_model) && Llm::Models.valid_model_for?(:assistant, requested_model, account: Current.account)
-        return [nil, 'test_model']
-      end
-
-      effective_model = requested_model
-      overrides[:model] = requested_model
-    end
-
-    if attributes.key?(:test_temperature)
-      temperature = Float(attributes[:test_temperature])
-      return [nil, 'test_temperature'] unless temperature.finite? && temperature.between?(0.0, 1.0)
-      return [nil, 'test_temperature'] unless Llm::Models.supports_temperature?(effective_model, account: Current.account)
-
-      overrides[:temperature] = temperature
-    end
-
-    if attributes[:test_thinking_effort].present?
-      effort = attributes[:test_thinking_effort].to_s
-      return [nil, 'test_thinking_effort'] unless Llm::RuntimePolicy::THINKING_EFFORTS.include?(effort)
-      return [nil, 'test_thinking_effort'] unless Llm::Models.reasoning_efforts_for(effective_model, account: Current.account).include?(effort)
-
-      overrides[:thinking_effort] = effort
-    end
-
-    [overrides, nil]
-  rescue ArgumentError, TypeError
-    [nil, 'test_temperature']
   end
 
   def copilot_playground_response

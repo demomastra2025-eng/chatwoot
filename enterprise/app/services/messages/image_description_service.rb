@@ -54,9 +54,9 @@ class Messages::ImageDescriptionService
         Captain::AccountSettings.new(account).section('understanding')['images'] && account.captain_quota_available?
     end
 
+    # A text channel of a workspace with at least one enabled agent: the AI may read what the patient sends there.
     def agent_inbox?(inbox)
-      assistant = inbox&.captain_assistant
-      assistant.present? && assistant.works_on_inbox?(inbox)
+      inbox.present? && inbox.channel_type != CaptainInbox::VOICE_CHANNEL_TYPE && inbox.account.captain_assistants.entry_eligible.exists?
     end
   end
 

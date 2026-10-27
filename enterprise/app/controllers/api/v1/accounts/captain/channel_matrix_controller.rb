@@ -9,7 +9,7 @@ class Api::V1::Accounts::Captain::ChannelMatrixController < Api::V1::Accounts::B
   end
 
   def update
-    render json: matrix.update!(params.to_unsafe_h.slice('default_main_assistant_id', 'channels', 'assistants'))
+    render json: matrix.update!(params.to_unsafe_h.slice('channels'))
   rescue Captain::ChannelMatrix::Invalid => e
     render json: { errors: e.errors }, status: :unprocessable_content
   rescue ActiveRecord::RecordInvalid

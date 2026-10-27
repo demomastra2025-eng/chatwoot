@@ -1,6 +1,6 @@
 namespace :onelink do
   namespace :captain_settings do
-    desc 'Copy the main agent settings into account settings once per account (idempotent)'
+    desc 'Copy the settings of the most recently changed enabled agent into account settings once per account (idempotent)'
     task backfill: :environment do
       Account.find_each do |account|
         next unless Captain::AccountSettingsBackfill.backfill!(account)
@@ -21,7 +21,7 @@ namespace :onelink do
       end
     end
 
-    desc 'Print agent IDs and names of settings that differ from the main agent, without private values'
+    desc 'Print agent IDs and names of settings that differ from the reference agent, without private values'
     task conflicts: :environment do
       Account.find_each do |account|
         Captain::AccountSettingsBackfill.conflicts(account).each { |conflict| puts conflict.to_json }

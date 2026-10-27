@@ -664,7 +664,7 @@ class Captain::ContextFields
     def communication_thread_accessible_inboxes(account:, assistant:, actor:, accessible_inboxes:)
       return Array(accessible_inboxes) if accessible_inboxes
 
-      return assistant.inboxes.where(account_id: account.id).includes(:channel).to_a if assistant.present?
+      return agent_thread_inboxes(account, assistant) if assistant.present?
 
       if actor.present? && actor.respond_to?(:id)
         account_user = AccountUser.find_by(account_id: account.id, user_id: actor.id)
@@ -675,6 +675,11 @@ class Captain::ContextFields
       end
 
       nil
+    end
+
+    # An external agent works across every channel of its workspace: it sees the person's thread in all of them.
+    def agent_thread_inboxes(account, assistant)
+      assistant.external_agent? ? account.inboxes.includes(:channel).to_a : []
     end
 
     def communication_thread_access_scope_present?(actor:, accessible_inboxes:, **)

@@ -31,7 +31,7 @@ class Captain::Evals::RoutingBenchmark::Fixture
   COUNCIL_VALUES = [true, false, 'any'].freeze
   # The keys of the rows of the workspace (the workspace builder reads these and nothing else).
   ROW_KEYS = {
-    'channels' => %w[key entry_agent], 'knowledge' => %w[agent question answer], 'contacts' => %w[key name],
+    'channels' => %w[key], 'knowledge' => %w[agent question answer], 'contacts' => %w[key name],
     'resources' => %w[key name timezone], 'services' => %w[key name duration_min base_price resources],
     'slots' => %w[resource weekday start_minute end_minute], 'appointments' => %w[resource service contact starts_at], 'deals' => %w[title]
   }.freeze
@@ -78,7 +78,7 @@ class Captain::Evals::RoutingBenchmark::Fixture
         reject_unknown_keys!(row, allowed, "workspace.#{key}")
       end
     end
-    channel_keys = validate_channels!(names)
+    channel_keys = validate_channels!
     contact_keys = validate_contacts!
     validate_calendar_keys!
     validate_workspace_records!(names, contact_keys)
@@ -113,12 +113,11 @@ class Captain::Evals::RoutingBenchmark::Fixture
     tools
   end
 
-  def validate_channels!(names)
-    channels = workspace.fetch('channels', [{ 'key' => 'default', 'entry_agent' => names.first }])
+  def validate_channels!
+    channels = workspace.fetch('channels', [{ 'key' => 'default' }])
     channels.each do |channel|
       require_hash!(channel, 'channel')
       require_string!(channel['key'], 'channel.key')
-      raise Invalid, 'Channel entry agent is unknown' unless names.include?(channel['entry_agent'])
     end
     keys = channels.pluck('key')
     raise Invalid, 'Channel keys must be unique' unless keys.uniq == keys

@@ -43,8 +43,9 @@ class Campaigns::CaptainGeneratedMessageService
   private
 
   def resolve_base_assistant!
-    assistant = campaign.captain_assistant || conversation.inbox&.captain_assistant
+    assistant = campaign.captain_assistant
     raise ArgumentError, 'Captain assistant is not configured for this campaign' if assistant.blank?
+    raise ArgumentError, 'The agent that writes this campaign is switched off' unless assistant.entry_eligible?
 
     assistant
   end
@@ -94,7 +95,7 @@ class Campaigns::CaptainGeneratedMessageService
 
     messages.map do |message|
       payload = {
-        content: Captain::OpenAiMessageBuilderService.new(message: message, assistant: assistant).generate_content,
+        content: Captain::OpenAiMessageBuilderService.new(message: message).generate_content,
         role: message.message_type == 'incoming' ? 'user' : 'assistant'
       }
       payload[:agent_name] = message.additional_attributes['agent_name'] if message.additional_attributes&.dig('agent_name').present?

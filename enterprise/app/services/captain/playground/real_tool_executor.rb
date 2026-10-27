@@ -90,15 +90,13 @@ class Captain::Playground::RealToolExecutor
       target
     end
     { delegate: delegate, arguments: arguments, target: snapshot, records: records, conversation: conversation,
-      actor_id: @session.assistant.id, entry_assistant_id: @session.entry_assistant.id }
+      actor_id: @session.assistant.id }
   end
 
   def execute(tool_id, arguments, prepared: nil)
     prepared ||= prepare(tool_id, arguments)
     @session.validate_active_agent!
-    unless prepared[:actor_id] == @session.assistant.id && prepared[:entry_assistant_id] == @session.entry_assistant.id
-      raise ArgumentError, 'The acting agent changed; review a new preview'
-    end
+    raise ArgumentError, 'The acting agent changed; review a new preview' unless prepared[:actor_id] == @session.assistant.id
     if read?(tool_id)
       raise ArgumentError, 'Reading real data is disabled' unless @session.read_enabled?
       return ActiveRecord::Base.connected_to(role: :writing, prevent_writes: true) { execute_prepared(tool_id, prepared) }
@@ -107,8 +105,7 @@ class Captain::Playground::RealToolExecutor
     ActiveRecord::Base.transaction do
       prepared.fetch(:records).values.uniq.sort_by { |record| [record.class.name, record.id] }.each(&:lock!)
       fresh = prepare(tool_id, prepared.fetch(:arguments))
-      unless fresh[:actor_id] == prepared[:actor_id] && fresh[:entry_assistant_id] == prepared[:entry_assistant_id] &&
-             fresh[:target].deep_stringify_keys == prepared[:target].deep_stringify_keys
+      unless fresh[:actor_id] == prepared[:actor_id] && fresh[:target].deep_stringify_keys == prepared[:target].deep_stringify_keys
         raise ArgumentError, 'The target or payload changed; review a new preview'
       end
       unless Outbound::PlaygroundMutationPolicy.authorized_action?(Current.playground_run_policy)

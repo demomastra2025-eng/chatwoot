@@ -67,11 +67,15 @@ class Captain::Assistant::PromptPreviewService
     }
   end
 
-  # The agents of the channels where this agent works (the channel grid), not a stored per-agent list.
+  # The other enabled agents of the workspace: every one of them is a peer in every text channel.
   def scenario_previews = peers.map { |agent| scenario_preview(agent) }
 
   def peers
-    @peers ||= assistant.channel_peers
+    @peers ||= if assistant.entry_eligible?
+                 assistant.account.captain_assistants.entry_eligible.where.not(id: assistant.id).order(:id).to_a
+               else
+                 []
+               end
   end
 
   def allowed_copilot_tools

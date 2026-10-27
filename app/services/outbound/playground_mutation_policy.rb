@@ -41,29 +41,25 @@ class Outbound::PlaygroundMutationPolicy
       user = User.find_by(id: payload[:user_id])
       assistant = Captain::Assistant.find_by(id: payload[:assistant_id], account_id: account&.id)
       return false unless account && user && assistant && account.account_users.exists?(user_id: user.id)
-      entry_id = payload[:entry_assistant_id].presence || assistant.id
-      entry = Captain::Assistant.find_by(id: entry_id, account_id: account.id)
-      return false unless entry
-
       # The agent whose tools make the action: the active agent of the session, or the owner of a council part (see ActionApproval).
       actor = acting_agent(payload, assistant, account)
       return false unless actor
       return false unless Captain::Playground::ToolSelection.include?(actor, payload[:tool])
       return false unless operator_authorized?(account, user, actor, payload)
 
-      store = Captain::Playground::SessionStore.new(account: account, user: user, assistant: entry)
+      store = Captain::Playground::SessionStore.new(account: account, user: user)
       permissions = store.permissions(session_id: payload[:session_id])
       return false unless permissions['read'] == true && permissions['write'] == true && permissions['generation'] == payload[:generation]
 
       session = store.read(session_id: payload[:session_id])
-      return false unless session && (session['active_assistant_id'].presence || entry.id).to_i == assistant.id
+      return false unless session && session['active_assistant_id'].to_i == assistant.id
       inbox = account.inboxes.find_by(id: session['inbox_id']) if session['inbox_id'].present?
       return false if session['inbox_id'].present? && inbox.blank?
-      graph = Captain::AgentGraph.new(entry, inbox: inbox)
+      graph = Captain::AgentGraph.new(Captain::ChannelScope.for_playground(account, inbox))
       return false unless graph.find(assistant.id) && (actor.id == assistant.id || graph.find(actor.id))
       action = Array(session&.dig('action_previews')).find { |item| item['id'] == payload[:action_id] }
       binding = { 'session_id' => payload[:session_id], 'mode' => 'workspace', 'account_id' => account.id,
-                  'user_id' => user.id, 'entry_assistant_id' => entry.id, 'assistant_id' => assistant.id }
+                  'user_id' => user.id, 'assistant_id' => assistant.id }
       action && %w[executing completed].include?(action['status']) && action['digest'] == payload[:action_digest] &&
         action['binding'] == binding && (action['actor_id'].presence || assistant.id).to_i == actor.id &&
         action['tool'] == payload[:tool] && action['arguments'] == payload[:arguments].to_h.deep_stringify_keys &&

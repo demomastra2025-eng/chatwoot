@@ -5,17 +5,17 @@ class Captain::Playground::Session
   MAX_MESSAGE_LENGTH = 12_000
   LIVE_WARNING = 'Разрешены изменения реальных данных. Каждое действие требует отдельного подтверждения.'.freeze
 
-  attr_reader :assistant, :entry_assistant, :account, :user, :data, :scenario, :namespace, :store
+  # assistant: the agent that answers now (the router picks it each turn; nil before the first one). The Playground tries out the whole
+  # AI of the workspace, or of the channel the user picked: it has no start agent.
+  attr_reader :assistant, :account, :user, :data, :scenario, :namespace, :store
 
-  def initialize(assistant:, account:, user:, mode: 'workspace', session_id: nil)
+  def initialize(account:, user:, mode: 'workspace', session_id: nil)
     raise ArgumentError, 'Legacy Live Playground is unavailable; reset the session' if mode.to_s == 'live'
 
     @account = account
     @user = user
-    @entry_assistant = account.captain_assistants.entry_eligible.find_by(id: account.captain_default_assistant_id) || assistant
-    @assistant = @entry_assistant
     @requested_id = session_id.presence
-    @store = Captain::Playground::SessionStore.new(account: account, user: user, assistant: @entry_assistant, mode: mode)
+    @store = Captain::Playground::SessionStore.new(account: account, user: user, mode: mode)
   end
 
   def mode = 'workspace'
@@ -24,12 +24,20 @@ class Captain::Playground::Session
   def conversation = nil
   def deep_dup = self
 
-  # Choosing a channel makes the active external colleagues available.
-  # Without a channel the workspace main agent works alone.
+  # Choosing a channel gives the agents of that channel (a text channel: every enabled agent; a voice number: its voice agent alone).
+  # Without a channel the enabled agents of the workspace work as in a text channel.
   def routing_inbox
     return if data.to_h['inbox_id'].blank?
 
     account.inboxes.find_by(id: data['inbox_id'])
+  end
+
+  def scope
+    Captain::ChannelScope.for_playground(account, routing_inbox)
+  end
+
+  def graph
+    Captain::AgentGraph.new(scope)
   end
 
   def with_lock(reset: false, scenario_input: nil, inbox_id: nil, **)
@@ -64,22 +72,19 @@ class Captain::Playground::Session
   end
 
   def context_reference
-    { session_id: id, mode: mode, account_id: account.id, user_id: user.id,
-      entry_assistant_id: entry_assistant.id, assistant_id: @reference_assistant_id || assistant.id }
+    { session_id: id, mode: mode, account_id: account.id, user_id: user.id, assistant_id: @reference_assistant_id || assistant&.id }
   end
 
   # The same session, with the owner of a council part as the acting agent. The part's owner is not the agent that holds the
-  # conversation, so it passes the checks of the session as itself (it must still be reachable from the entry agent), while the
+  # conversation, so it passes the checks of the session as itself (it must still be an enabled agent of the channel), while the
   # session keeps its active agent and the references of the run. Data, ledger and scenario are the session's own.
   def acting_as(actor_id)
     ensure_membership!
     actor = account.captain_assistants.find_by(id: actor_id)
     raise Pundit::NotAuthorizedError, 'Agent belongs to another workspace' unless actor
-    unless Captain::AgentGraph.new(entry_assistant, inbox: routing_inbox).find(actor.id)
-      raise Pundit::NotAuthorizedError, 'Agent is disabled or no longer reachable from the Playground entry agent'
-    end
+    raise Pundit::NotAuthorizedError, 'Agent is disabled or not an agent of this Playground channel' unless graph.find(actor.id)
 
-    dup.tap { |view| view.part_view!(actor, reference_assistant_id: @reference_assistant_id || assistant.id) }
+    dup.tap { |view| view.part_view!(actor, reference_assistant_id: @reference_assistant_id || assistant&.id) }
   end
 
   def part_view!(actor, reference_assistant_id:)
@@ -93,10 +98,7 @@ class Captain::Playground::Session
     ensure_membership!
     raise Pundit::NotAuthorizedError, 'Agent belongs to another workspace' unless actor.account_id == account.id
 
-    entry_assistant.reload
-    unless Captain::AgentGraph.new(entry_assistant, inbox: routing_inbox).find(actor.id)
-      raise Pundit::NotAuthorizedError, 'Agent is disabled or no longer reachable from the Playground entry agent'
-    end
+    raise Pundit::NotAuthorizedError, 'Agent is disabled or not an agent of this Playground channel' unless graph.find(actor.id)
 
     @assistant = actor
     data['active_assistant_id'] = actor.id
@@ -106,13 +108,12 @@ class Captain::Playground::Session
 
   def validate_active_agent!
     ensure_membership!
-    entry_assistant.reload
-    assistant.reload unless assistant.equal?(entry_assistant)
-    # The owner of a council part is not the session's active agent; it only has to be reachable from the entry agent.
-    active = @part_view || data.fetch('active_assistant_id', entry_assistant.id).to_i == assistant.id
-    unless active && Captain::AgentGraph.new(entry_assistant, inbox: routing_inbox).find(assistant.id)
-      raise Pundit::NotAuthorizedError, 'Agent is disabled or no longer reachable from the Playground entry agent'
-    end
+    raise Pundit::NotAuthorizedError, 'No agent is active in this Playground session' if assistant.nil?
+
+    assistant.reload
+    # The owner of a council part is not the session's active agent; it only has to be an enabled agent of the channel.
+    active = @part_view || data['active_assistant_id'].to_i == assistant.id
+    raise Pundit::NotAuthorizedError, 'Agent is disabled or not an agent of this Playground channel' unless active && graph.find(assistant.id)
 
     assistant
   end
@@ -129,7 +130,7 @@ class Captain::Playground::Session
     raise ArgumentError, 'Playground source is required' unless state.to_h.with_indifferent_access[:source] == 'playground'
 
     actor_id = state.to_h.with_indifferent_access[:assistant_id]
-    raise ArgumentError, 'Playground acting agent changed' if actor_id.present? && actor_id.to_i != assistant.id
+    raise ArgumentError, 'Playground acting agent changed' if actor_id.present? && actor_id.to_i != assistant&.id
 
     validate_active_agent!
   end
@@ -137,7 +138,7 @@ class Captain::Playground::Session
   def run_policy
     @run_policy ||= Outbound::PlaygroundDeliveryPolicy.issue(
       mode: mode, run_id: SecureRandom.uuid, session_id: id, account_id: account.id,
-      user_id: user.id, entry_assistant_id: entry_assistant.id, assistant_id: assistant.id, delivery_enabled: false
+      user_id: user.id, assistant_id: assistant&.id, delivery_enabled: false
     )
   end
 
@@ -152,7 +153,8 @@ class Captain::Playground::Session
   def record_turn(message, response)
     response = response.to_h.deep_stringify_keys
     history = history_with(message)
-    history << { role: 'assistant', content: response['response'].to_s.first(MAX_MESSAGE_LENGTH), agent_name: response['agent_name'] }.compact
+    history << { role: 'assistant', content: response['response'].to_s.first(MAX_MESSAGE_LENGTH), agent_name: response['agent_name'],
+                 agent_id: response['agent_id'], agent_display_name: response['agent_display_name'] }.compact
     data['history'] = history.last(MAX_HISTORY)
     data['history'].shift(2) while JSON.generate(data['history']).bytesize > 160_000
   end
@@ -177,8 +179,7 @@ class Captain::Playground::Session
     @data = new_data if fresh
     @namespace = Captain::Playground::SyntheticNamespace.new(id)
     @scenario = Captain::Playground::Scenario.new(data['scenario'])
-    active_id = data['active_assistant_id'].to_i
-    @assistant = active_id == entry_assistant.id ? entry_assistant : (account.captain_assistants.find_by(id: active_id) || entry_assistant)
+    @assistant = account.captain_assistants.find_by(id: data['active_assistant_id'].to_i) if data['active_assistant_id'].present?
     @run_policy = nil
     scenario.apply(namespace.decode(scenario_input), mode: mode) if scenario_input.present?
     if scenario_input.present?
@@ -197,7 +198,7 @@ class Captain::Playground::Session
     end
     { 'id' => SecureRandom.uuid, 'version' => 2, 'mode' => mode,
       'scenario' => Captain::Playground::Scenario.default(timezone: account.reporting_timezone).merge('custom_fields' => configuration),
-      'history' => [], 'action_previews' => [], 'active_assistant_id' => entry_assistant.id }
+      'history' => [], 'action_previews' => [] }
   end
 
   def select_routing_inbox!(inbox_id)
@@ -207,19 +208,18 @@ class Captain::Playground::Session
     raise ArgumentError, 'Playground channel is not available' unless inbox
     return if data['inbox_id'].to_i == inbox.id
 
-    # Switching channels starts again from the main agent. The previous
-    # channel's task state is dropped and pending previews are revoked.
+    # Switching channels starts again with no agent: the router picks one. The previous channel's task state is dropped and pending
+    # previews are revoked.
     data['inbox_id'] = inbox.id
-    data['active_assistant_id'] = entry_assistant.id
+    data.delete('active_assistant_id')
     data.delete(Captain::Conversation::AgentSession::ATTRIBUTE)
     Array(data['action_previews']).each { |preview| preview['status'] = 'revoked' if preview['status'] == 'pending' }
-    @assistant = entry_assistant
+    @assistant = nil
     @run_policy = nil
   end
 
   def ensure_membership!
     raise Pundit::NotAuthorizedError, 'Workspace membership is required' unless account.account_users.exists?(user_id: user.id)
-    raise Pundit::NotAuthorizedError, 'Assistant belongs to another workspace' unless assistant.account_id == account.id
-    raise Pundit::NotAuthorizedError, 'Entry agent belongs to another workspace' unless entry_assistant.account_id == account.id
+    raise Pundit::NotAuthorizedError, 'Assistant belongs to another workspace' unless assistant.nil? || assistant.account_id == account.id
   end
 end
