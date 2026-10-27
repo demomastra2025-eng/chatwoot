@@ -460,7 +460,6 @@ workspace:
       model: openai/gpt-6-luna
   channels:
     - key: api
-      entry_agent: Регистратор
   knowledge:
     - agent: Регистратор # omit for shared FAQ
       question: Когда приём?
