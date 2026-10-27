@@ -35,6 +35,16 @@ RSpec.describe Captain::ImageReading::Router do
       end
     end
 
+    # The wording and the threshold were measured together on PROD (see the comment of the class). A change of either one needs a new
+    # measurement, and this example then changes with it.
+    it 'asks the question that was measured with the threshold of 0.3' do
+      expect(described_class::THRESHOLD).to eq(0.3)
+      expect(described_class::QUESTION).to eq('Is anything on this image written by hand? Pick exactly one.')
+      expect(described_class::QUESTION_CRITERIA['handwriting']).to start_with('Handwritten text anywhere on the image')
+      expect(described_class::QUESTION_CRITERIA['handwriting']).to include('printed form or other document filled in or marked by hand')
+      expect(described_class::QUESTION_CRITERIA['no_handwriting']).to start_with('Printed or typed text only, or no text')
+    end
+
     it 'names no kind of business in the question' do
       words = [described_class::QUESTION, described_class::STATE_TEXT, *described_class::QUESTION_CRITERIA.values].join(' ')
 
