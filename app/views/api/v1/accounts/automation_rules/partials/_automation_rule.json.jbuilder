@@ -7,4 +7,5 @@ json.conditions automation_rule.conditions
 json.actions automation_rule.actions
 json.created_on automation_rule.created_at.to_i
 json.active automation_rule.active?
+json.calendar_managed automation_rule.calendar_managed?
 json.files automation_rule.file_base_data if automation_rule.files.any?

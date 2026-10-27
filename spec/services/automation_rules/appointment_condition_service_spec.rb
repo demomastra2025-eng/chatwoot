@@ -20,6 +20,19 @@ RSpec.describe AutomationRules::AppointmentConditionService do
     expect(described_class.new(rule, appointment).perform).to be(true)
   end
 
+  it 'matches the specialist on the appointment' do
+    rule = create(
+      :automation_rule, account: account, event_name: 'appointment_created',
+                        conditions: [{ attribute_key: 'resource_id', filter_operator: 'equal_to',
+                                       values: [appointment.resource_id.to_s], query_operator: nil }],
+                        actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/visits'] }]
+    )
+
+    expect(described_class.new(rule, appointment).perform).to be(true)
+    rule.conditions.first['values'] = [create(:scheduling_resource, account: account).id.to_s]
+    expect(described_class.new(rule, appointment).perform).to be(false)
+  end
+
   it 'matches source text conditions' do
     rule = create(
       :automation_rule,

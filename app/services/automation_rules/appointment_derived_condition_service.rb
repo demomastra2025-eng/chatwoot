@@ -1,7 +1,7 @@
 class AutomationRules::AppointmentDerivedConditionService
   CABINET_CODE_KEY = AutomationRules::AppointmentFieldCatalog::CABINET_CODE_KEY
   CONTACT_KEY = AutomationRules::ContactCondition::KEY
-  FIELD_KEYS = ['starts_at_weekday', 'starts_at_time', 'service_id', CABINET_CODE_KEY, CONTACT_KEY].freeze
+  FIELD_KEYS = ['starts_at_weekday', 'starts_at_time', 'service_id', 'resource_id', CABINET_CODE_KEY, CONTACT_KEY].freeze
 
   def initialize(rule, appointment)
     @rule = rule
@@ -16,6 +16,10 @@ class AutomationRules::AppointmentDerivedConditionService
       evaluate_time(condition, operator)
     when 'service_id'
       evaluate_service(condition, operator)
+    when 'resource_id'
+      values = normalize_values(condition['values'])
+      matches = values.include?(appointment.resource_id.to_s)
+      { 'equal_to' => matches, 'not_equal_to' => !matches }.fetch(operator, false)
     when CABINET_CODE_KEY
       evaluate_cabinet(condition, operator)
     when CONTACT_KEY

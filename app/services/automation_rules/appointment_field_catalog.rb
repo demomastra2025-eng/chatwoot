@@ -44,6 +44,10 @@ class AutomationRules::AppointmentFieldCatalog
       field_type: 'service',
       operators: %w[equal_to not_equal_to contains_only not_contains_only]
     },
+    'resource_id' => {
+      field_type: 'resource',
+      operators: %w[equal_to not_equal_to]
+    },
     # The code MedElement stamps on an appointment; the prefix is reserved, so no custom field can shadow it.
     CABINET_CODE_KEY => {
       field_type: 'cabinet',
@@ -126,6 +130,8 @@ class AutomationRules::AppointmentFieldCatalog
       normalized_values.one? && normalized_values.first.to_s.match?(TIME_OF_DAY_PATTERN)
     when 'service_id'
       service_values_supported?(normalized_values)
+    when 'resource_id'
+      resource_values_supported?(normalized_values)
     when CABINET_CODE_KEY
       cabinet_values_supported?(normalized_values)
     else
@@ -166,5 +172,12 @@ class AutomationRules::AppointmentFieldCatalog
 
     unique_ids = ids.uniq
     account.scheduling_services.where(id: unique_ids).count == unique_ids.length
+  end
+
+  def resource_values_supported?(values)
+    ids = values.filter_map { |value| self.class.normalize_service_id(value) }
+    return false if ids.blank? || ids.length != values.length
+
+    account.scheduling_resources.where(id: ids.uniq).count == ids.uniq.length
   end
 end

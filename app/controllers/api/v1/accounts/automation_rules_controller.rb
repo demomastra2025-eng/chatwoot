@@ -3,6 +3,7 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
 
   before_action :check_authorization
   before_action :fetch_automation_rule, only: [:show, :update, :destroy, :clone]
+  before_action :ensure_calendar_management, only: [:update, :destroy, :clone]
 
   def index
     @automation_rules = Current.account.automation_rules
@@ -15,6 +16,7 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
     return render_could_not_create_error(error) if error
 
     @automation_rule = Current.account.automation_rules.new(automation_rules_permit)
+    @automation_rule.calendar_managed = ActiveModel::Type::Boolean.new.cast(params[:calendar_managed])
     @automation_rule.actions = actions
     @automation_rule.conditions = params[:conditions]
 
@@ -53,7 +55,7 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
   end
 
   def clone
-    automation_rule = Current.account.automation_rules.find_by(id: params[:automation_rule_id])
+    automation_rule = @automation_rule
     new_rule = automation_rule.dup
     new_rule.save!
     @automation_rule = new_rule
@@ -67,6 +69,14 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
   end
 
   private
+
+  def ensure_calendar_management
+    return unless @automation_rule.calendar_managed?
+
+    return if action_name == 'update' && ActiveModel::Type::Boolean.new.cast(params[:calendar_context])
+
+    head :forbidden
+  end
 
   def automation_rules_permit
     params.permit(

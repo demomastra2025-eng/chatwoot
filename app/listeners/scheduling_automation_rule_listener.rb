@@ -43,6 +43,10 @@ class SchedulingAutomationRuleListener < BaseListener
     process_appointment_event(event, 'appointment_completed')
   end
 
+  def appointment_no_show(event)
+    process_appointment_event(event, 'appointment_no_show')
+  end
+
   private
 
   def appointment_rescheduled?(event)
