@@ -28,4 +28,14 @@ RSpec.describe Enterprise::Captain::ReplySuggestionService::TraceCollector do
     expect(parts).to match([include('id' => 'p1', 'status' => 'needs_information'),
                             include('id' => 'p2', 'status' => 'unavailable', 'stop_reason' => 'max_turns')])
   end
+
+  it 'counts what the run read at its start instead of with tools, and the outcome event carries it' do
+    expect(collector.stats).not_to include(:preloaded)
+
+    collector.callbacks[:on_suggestion_preload].call('parts' => %w[card appointments], 'ms' => 12)
+
+    expect(collector.stats).to include(preloaded: %w[card appointments], preload_ms: 12)
+    event = Captain::ReplySuggestion::OutcomeEvent.fill!({}, { 'created_at' => Time.current.iso8601 }, { outcome: 'draft' }, stats: collector.stats)
+    expect(event).to include('preloaded' => %w[card appointments], 'preload_ms' => 12)
+  end
 end

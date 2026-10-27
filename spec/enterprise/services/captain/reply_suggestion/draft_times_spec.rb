@@ -65,6 +65,15 @@ RSpec.describe Captain::ReplySuggestion::DraftTimes do
     expect(described_class.unverified(draft: 'Ваша запись 27.10 в 10:00 переносится на 19:30.', context: context)).to eq(['10:00'])
   end
 
+  it 'accepts the times of the appointments the run read at its start, and not those of the FAQ matches it also holds' do
+    preload = { card: { first_name: 'Айгуль' }, appointments: [{ id: 55, date: '28.10.2026', time: '10:00' }],
+                faq: [{ question: 'Часы', answer: 'Работаем до 21:00' }] }
+    with_preload = context.merge(suggestion_preload: preload)
+
+    expect(described_class.unverified(draft: 'Ваша запись на 10:00 остаётся.', context: with_preload)).to eq([])
+    expect(described_class.unverified(draft: 'Свободно в 21:00.', context: with_preload)).to eq(['21:00'])
+  end
+
   it 'leaves out a time the draft names as a bound, not as an offered start' do
     draft = 'До 19:00 окон нет, после 14:00 только при 100% предоплате; 20:00-ге дейін бос уақыт жоқ. Свободно в 19:30 и 21:00.'
 

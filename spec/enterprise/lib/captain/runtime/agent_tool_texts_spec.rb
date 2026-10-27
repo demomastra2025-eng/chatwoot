@@ -270,6 +270,12 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     expect(entry.description.split.size).to be < 180
   end
 
+  it 'tells the agent that the Patient block may already hold the card and the upcoming appointments that these tools read' do
+    expect(described_class.for_tool('get_my_contact').description).to include('unless the Patient block already has the card')
+    expect(described_class.for_tool('list_my_appointments').description)
+      .to include('When the Patient block already lists the upcoming appointments, call it only for other dates, past or cancelled appointments')
+  end
+
   it 'has no entry for a tool that is not part of the file' do
     expect(described_class.for_tool('no_such_tool')).to be_nil
   end

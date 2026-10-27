@@ -32,6 +32,8 @@ class Captain::Assistant::AgentRunnerService
   MCP_TOOL_ID_PREFIX = 'mcp__'.freeze
   ZERO_COMPLETION_BLANK_RETRY = 'blank_response_retry'.freeze
   ZERO_COMPLETION_FINALIZATION_RETRY = 'finalization_only_retry'.freeze
+  # What a reply suggestion reads at its start (see #preload_suggestion_context), as the outcome event names it.
+  PRELOAD_PARTS = %i[card appointments].freeze
 
   class BlankResponseError < StandardError; end
 
@@ -208,11 +210,36 @@ class Captain::Assistant::AgentRunnerService
     time_phase('dispatch') { turn_dispatcher.prepare!(context) } if @assistant.persisted?
     # The chosen agent (or the acting agent of a council) holds the conversation now: a failure of its run answers as it.
     @acting_assistant_id = context[:acting_assistant_id] if context[:acting_assistant_id]
+    time_phase('preload') { preload_suggestion_context(context) }
     time_phase('run_agent_with_retries') { run_agent_with_blank_response_retries(message_to_process, context) }
   rescue Captain::Runtime::DecisionRouter::UnavailableError => e
     routing_failure_response(e, context)
   rescue Captain::Runtime::TurnDispatcher::CouncilUnavailable => e
     council_unavailable_response(e, context)
+  end
+
+  # What a reply suggestion reads once at its start instead of with tools, so that the model spends no step on it: the patient card and
+  # the upcoming appointments of the patient circle (Captain::ReplySuggestion::PatientPreload), for the agents that have the tools that
+  # read them. It goes to the prompt through the run context (Concerns::Agentable). The tools stay for everything else. A preload that
+  # fails is dropped with a log line: the agent then reads with its tools as it did before.
+  def preload_suggestion_context(context)
+    return unless suggestion_run? && @assistant.persisted? && @conversation
+
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    preload = Captain::ReplySuggestion::PatientPreload.build(
+      assistant: @assistant, conversation: @conversation, tool_ids: preload_tool_ids(context)
+    )
+    context[:suggestion_preload] = preload if preload.present?
+    elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+    @callbacks[:on_suggestion_preload]&.call('parts' => PRELOAD_PARTS.select { |part| preload.key?(part) }.map(&:to_s), 'ms' => elapsed_ms)
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][ReplySuggestion] preload skipped error_class=#{e.class.name}")
+  end
+
+  # The tools of the agent that answers, or of every participant of a council.
+  def preload_tool_ids(context)
+    ids = @turn_decision&.council? ? Array(@turn_decision.agent_ids) : [context[:acting_assistant_id] || @acting_assistant_id || @assistant.id]
+    ids.flat_map { |id| Array(agent_run_context.graph.find(id)&.allowed_agent_tool_ids) }.uniq
   end
 
   # A routed reply suggestion starts with the time of a council (Captain::ReplySuggestion.budget_seconds(router: true)); when the

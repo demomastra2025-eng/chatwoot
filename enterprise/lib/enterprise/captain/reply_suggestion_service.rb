@@ -227,6 +227,7 @@ module Enterprise::Captain::ReplySuggestionService
       @broadcaster = Captain::ReplySuggestion::Broadcaster.new(user: user)
       @turns = 0
       @tools_called = 0
+      @preload = nil
       @monitor = Monitor.new
       @council_parts = {}
       @tool_trace_steps = []
@@ -248,7 +249,8 @@ module Enterprise::Captain::ReplySuggestionService
         on_tool_progress: method(:handle_tool_progress),
         on_tool_complete: method(:handle_tool_complete),
         on_agent_routed: method(:handle_agent_routed),
-        on_llm_call_complete: method(:handle_llm_call_complete)
+        on_llm_call_complete: method(:handle_llm_call_complete),
+        on_suggestion_preload: method(:handle_suggestion_preload)
       }
     end
 
@@ -258,7 +260,10 @@ module Enterprise::Captain::ReplySuggestionService
 
     # Counters for the outcome event.
     def stats
-      @monitor.synchronize { { tools_called: @tools_called, turns: @turns, handoffs_count: @handoffs.size } }
+      @monitor.synchronize do
+        { tools_called: @tools_called, turns: @turns, handoffs_count: @handoffs.size, preloaded: @preload&.fetch('parts', nil).presence,
+          preload_ms: @preload&.fetch('ms', nil) }.compact
+      end
     end
 
     def captain_trace(payload)
@@ -301,6 +306,12 @@ module Enterprise::Captain::ReplySuggestionService
         end
         broadcast_progress!
       end
+    end
+
+    # What the run read at its start instead of with tools: { 'parts' => ['card', 'appointments', ...], 'ms' => n } (see
+    # Captain::ReplySuggestion::PatientPreload). It is counted in the outcome event.
+    def handle_suggestion_preload(preload)
+      @monitor.synchronize { @preload = preload.to_h.stringify_keys }
     end
 
     def handle_tool_start(tool_name, args = nil, context_wrapper = nil)

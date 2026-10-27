@@ -21,7 +21,7 @@ tools:
     hidden_params: []
 
   list_my_appointments:
-    description: "The current patient's own appointments, latest date first. Call it for 'my appointments' and to get the appointment ID before rescheduling or cancelling; for upcoming ones use status scheduled with date_from today, or the day the patient's message was sent when it was earlier."
+    description: "The current patient's own appointments, latest date first. Call it for 'my appointments' and to get the appointment ID before rescheduling or cancelling; for upcoming ones use status scheduled with date_from today, or the day the patient's message was sent when it was earlier. When the Patient block already lists the upcoming appointments, call it only for other dates, past or cancelled appointments."
     params:
       status: "scheduled, completed, cancelled, no_show or any (default any)."
       date_from: "First date, YYYY-MM-DD."
@@ -166,7 +166,7 @@ tools:
     hidden_params: []
 
   get_my_contact:
-    description: "Show the current patient's card: first, last and middle name, IIN, birth date, gender, phone, email. Call it to see what is on file before asking the patient for a detail."
+    description: "Show the current patient's card: first, last and middle name, IIN, birth date, gender, phone, email. Call it to see what is on file before asking the patient for a detail, unless the Patient block already has the card."
     params: {}
     hidden_params: []
 

@@ -297,6 +297,62 @@ RSpec.describe Captain::AssistantPrompt do
     end
   end
 
+  describe 'what a reply suggestion read at its start' do
+    let(:card) { { id: 7, first_name: 'Айгуль', last_name: 'Ахметова', phone_number: '+77010000001' } }
+    let(:appointments) do
+      [{ id: 55, status: 'scheduled', date: '28.10.2026', time: '10:00', doctor: 'Доктор А', service: 'УЗИ', own: true },
+       { status: 'scheduled', date: '29.10.2026', time: '11:30', doctor: 'Доктор Б', service: 'Приём', own: false, for: 'Ерлан Ахметов', id: 56 }]
+    end
+    let(:preload) { { card: card, appointments: appointments, appointments_total: 2 } }
+
+    def patient_lines(tool_ids, preload: self.preload, suggestion: true)
+      described_class.new(assistant: assistant, context: context.merge(runtime_tool_ids: tool_ids), state: {}, prompt_state: {},
+                          suggestion: suggestion, preload: preload).variables[:patient_lines]
+    end
+
+    it 'gives the card and the appointments to an agent that has the tools that would have read them' do
+      lines = patient_lines(%w[get_my_contact list_my_appointments cancel_appointment])
+
+      expect(lines.first).to eq("Patient card on file (data; get_my_contact returns the same): #{JSON.generate(card)}.")
+      expect(lines.second).to start_with('Upcoming appointments of the patient and of the patients on the same phone, soonest first (data): ')
+      expect(lines.second).to include('{"id":55,"status":"scheduled","date":"28.10.2026","time":"10:00","doctor":"Доктор А","service":"УЗИ"}')
+    end
+
+    it 'names an appointment of another patient of the phone by name, with no id that the tools of the agent do not act on' do
+      line = patient_lines(%w[get_my_contact list_my_appointments cancel_appointment]).second
+
+      expect(line).to include('{"for":"Ерлан Ахметов","status":"scheduled","date":"29.10.2026","time":"11:30","doctor":"Доктор Б","service":"Приём"}')
+      expect(line).to include('find it first with search_appointments')
+    end
+
+    it 'shows an appointment id only when a tool bound for the run takes it' do
+      line = patient_lines(%w[get_my_contact list_my_appointments]).second
+
+      expect(line).not_to include('"id"')
+    end
+
+    it 'gives the card only to an agent with get_my_contact and the appointments only to an agent with list_my_appointments' do
+      expect(patient_lines(%w[get_my_contact]).join).to include('Patient card on file')
+      expect(patient_lines(%w[get_my_contact]).join).not_to include('Upcoming appointments')
+      expect(patient_lines(%w[list_my_appointments]).join).not_to include('Patient card')
+      expect(patient_lines(%w[faq_lookup])).to eq([])
+    end
+
+    it 'says that there is nothing upcoming, and counts the appointments it does not list' do
+      empty = { card: card, appointments: [], appointments_total: 0 }
+      more = { appointments: appointments, appointments_total: 9 }
+
+      expect(patient_lines(%w[list_my_appointments], preload: empty)).to eq(
+        ['Upcoming appointments of the patient and of the patients on the same phone (data): none.']
+      )
+      expect(patient_lines(%w[list_my_appointments], preload: more).first).to end_with('7 more are not listed: list_my_appointments gives them.')
+    end
+
+    it 'is no part of the prompt of a conversation' do
+      expect(patient_lines(%w[get_my_contact list_my_appointments], suggestion: false)).to eq([])
+    end
+  end
+
   it 'never changes the run state it reads' do
     state = { runtime_clock: clock, prompt_context: { contact: contact } }
     before = Marshal.load(Marshal.dump(state))

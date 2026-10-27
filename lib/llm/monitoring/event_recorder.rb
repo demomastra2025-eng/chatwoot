@@ -68,7 +68,7 @@ class Llm::Monitoring::EventRecorder
     user_id user_name decision_choice decision_confidence decision_chain_position decision_chain_length
     copilot_action suggestion_outcome edited_before_send follow_up_count
     generated_reply_preview final_reply_preview message_id
-    engine reason_source reason_preview total_ms budget_ms detail suggestion_request_id handoffs_count stale
+    engine reason_source reason_preview total_ms budget_ms detail suggestion_request_id handoffs_count stale preloaded preload_ms
     suggestion_text final_text suggestion_text_truncated final_text_truncated initial_suggestion_text
     next_message_id next_message_delay_seconds based_on_message_id
     decision_key kind target_ids decided_by confidence first_choice first_confidence first_answers first_model chain_position escalated

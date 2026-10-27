@@ -93,7 +93,14 @@ module Captain::ReplySuggestion::DraftTimes
   # Captain::AssistantPrompt#patient_lines) and the actions the agents already did in this conversation (Captain::DoneActions).
   def prompt_texts(context)
     prompt_context = value(value(context, :state).to_h, :prompt_context)
-    [prompt_context, value(context, :done_actions)].compact_blank.map { |data| read_text(data) }
+    [prompt_context, value(context, :done_actions), patient_preload(context)].compact_blank.map { |data| read_text(data) }
+  end
+
+  # The patient card and the upcoming appointments that the run read at its start (Captain::ReplySuggestion::PatientPreload): reads of
+  # the patient, as get_my_contact and list_my_appointments are. The FAQ matches it also holds are knowledge texts, no source of times.
+  def patient_preload(context)
+    preload = value(context, :suggestion_preload).to_h
+    { card: value(preload, :card), appointments: value(preload, :appointments) }.compact
   end
 
   def value(hash, key)

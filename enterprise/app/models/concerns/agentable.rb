@@ -38,7 +38,8 @@ module Concerns::Agentable
       suggestion = (state[:source] || state['source']).to_s == 'reply_suggestion'
       enhanced_context[:patient_language] = context&.context&.[](:patient_language)
       return compact_agent_instructions(
-        enhanced_context, state, prompt_state, part: part, suggestion: suggestion, done: Captain::DoneActions.for_run(context&.context)
+        enhanced_context, state, prompt_state, part: part, suggestion: suggestion, done: Captain::DoneActions.for_run(context&.context),
+                                               preload: (context&.context&.[](:suggestion_preload) if suggestion)
       )
     end
 
@@ -111,11 +112,11 @@ module Concerns::Agentable
 
   # The run of a council part (part: true) has no handoff tool: the rules do not tell it to hand over, and the texts name only the tools
   # it gets (Captain::AssistantPrompt). Staff take a part over structurally, after the council.
-  def compact_agent_instructions(enhanced_context, state, prompt_state, part: false, suggestion: false, done: nil)
+  def compact_agent_instructions(enhanced_context, state, prompt_state, part: false, suggestion: false, done: nil, preload: nil) # rubocop:disable Metrics/ParameterLists
     variables = time_agent_phase('prompt_variables') do
       Captain::AssistantPrompt.new(
         assistant: self, context: enhanced_context, state: state, prompt_state: prompt_state,
-        part: part, suggestion: suggestion, done: done
+        part: part, suggestion: suggestion, done: done, preload: preload
       ).variables
     end
     variables = variables.merge(human_handoff_enabled: false) if part || suggestion

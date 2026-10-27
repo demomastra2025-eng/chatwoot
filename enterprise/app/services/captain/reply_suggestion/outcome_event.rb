@@ -29,7 +29,7 @@ module Captain::ReplySuggestion::OutcomeEvent
         'current_agent' => outcome.dig(:agent, 'name'), 'stage' => outcome[:stage], 'detail' => outcome[:detail],
         'error_class' => outcome[:error_class], 'total_ms' => total_ms(state), 'stale' => stale?(state)
       )
-      event.merge!(stats.to_h.stringify_keys.slice('tools_called', 'turns', 'handoffs_count'))
+      event.merge!(stats.to_h.stringify_keys.slice('tools_called', 'turns', 'handoffs_count', 'preloaded', 'preload_ms'))
       event.compact!
       event
     end
