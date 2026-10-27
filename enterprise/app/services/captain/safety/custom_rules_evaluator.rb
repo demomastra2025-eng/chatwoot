@@ -21,20 +21,20 @@ class Captain::Safety::CustomRulesEvaluator
     @clock = clock
   end
 
-  def evaluate(assistant:, direction:, text:, context: {})
+  # The rules are one workspace setting (Captain::AccountSettings), the same for every agent: they belong to the account.
+  def evaluate(account:, direction:, text:, context: {})
     @direction = direction.to_s
     @model = nil
     @started_at = nil
     return unavailable(:invalid_direction) unless Captain::Safety::CustomRulesConfig::DIRECTIONS.include?(@direction)
-    return result(:allowed, reason: :inactive_assistant) unless assistant.active?
 
-    rules = configured_rules(assistant)
+    rules = configured_rules(account)
     return unavailable(:invalid_configuration) if rules.nil?
 
     rules = rules.select { |rule| rule['enabled'] && rule['direction'] == @direction }
     return result(:allowed, reason: :no_enabled_rules) if rules.empty?
 
-    evaluate_rules(assistant, rules, text, context)
+    evaluate_rules(account, rules, text, context)
   rescue Captain::Safety::CustomRulesStructuredOutputEngine::UnavailableError => e
     unavailable(e.code, error: e)
   rescue StandardError => e
@@ -43,14 +43,14 @@ class Captain::Safety::CustomRulesEvaluator
 
   private
 
-  def evaluate_rules(assistant, rules, text, context)
+  def evaluate_rules(account, rules, text, context)
     return unavailable(:invalid_text) unless text.is_a?(String)
     return unavailable(:text_too_long) if text.length > MAX_TEXT_LENGTH
 
     safe_context = validated_context(context)
     return unavailable(:invalid_context) if safe_context.nil?
 
-    engine, @model = @engine ? [@engine, @engine.model] : engine_for(assistant.account)
+    engine, @model = @engine ? [@engine, @engine.model] : engine_for(account)
     @started_at = @clock.call
     payload = response_payload(engine.select(model: @model, rules: rules, direction: @direction, text: text, context: safe_context))
     return unavailable(:invalid_response) unless valid_selection?(payload, rules)
@@ -68,8 +68,8 @@ class Captain::Safety::CustomRulesEvaluator
     [chat_engine, model]
   end
 
-  def configured_rules(assistant)
-    rules = assistant.account_settings.runtime_rules
+  def configured_rules(account)
+    rules = Captain::AccountSettings.new(account).runtime_rules
     Captain::Safety::CustomRulesConfig.errors(rules).empty? ? rules : nil
   end
 

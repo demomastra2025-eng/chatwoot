@@ -8,7 +8,7 @@
 class Captain::ReplySuggestion::HistoryBuilder
   FALLBACK_USER_PROMPT = 'Suggest the next reply for the customer based on the conversation and context.'
 
-  pattr_initialize [:account!, :conversation!, :assistant!]
+  pattr_initialize [:account!, :conversation!]
 
   def perform
     messages = history_messages
@@ -23,7 +23,7 @@ class Captain::ReplySuggestion::HistoryBuilder
   private
 
   def history_messages
-    limit = assistant.history_message_limit_value
+    limit = Captain::Assistant::HISTORY_MESSAGE_LIMIT
     scope = Captain::Conversation::ControlService
             .messages_scope(conversation)
             .where(message_type: [:incoming, :outgoing])
@@ -41,7 +41,7 @@ class Captain::ReplySuggestion::HistoryBuilder
   end
 
   def message_builder(message, budget: nil, descriptions: nil)
-    Captain::OpenAiMessageBuilderService.new(message: message, assistant: assistant, budget: budget, image_descriptions: descriptions)
+    Captain::OpenAiMessageBuilderService.new(message: message, budget: budget, image_descriptions: descriptions)
   end
 
   # sent_at: the runner writes each message after its send time and gives the time of the message being answered to the prompt

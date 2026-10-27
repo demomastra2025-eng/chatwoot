@@ -225,11 +225,11 @@ class Captain::Runtime::DecisionRouter::Questions
     (agent_ids - [except]).min_by { |id| [-yes[id], id] }
   end
 
-  # The agent with the highest include probability; on a tie the agent that leads the dialog, then the anchor of the channel (a reply
-  # suggestion), then the lower id. Only plausible agents are asked for (a human_handoff of the model with no include of 0.5 or more is
-  # staff, see #human_outcome), so a tie is a model that is as sure of several agents.
+  # The agent with the highest include probability; on a tie the agent that leads the dialog, then the lower id. Only plausible agents
+  # are asked for (a human_handoff of the model with no include of 0.5 or more is staff, see #human_outcome), so a tie is a model that
+  # is as sure of several agents.
   def likeliest_agent(yes)
-    agent_ids.min_by { |id| [-yes[id], id == current_id ? 0 : 1, id == @snapshot.anchor_agent_id ? 0 : 1, id] }
+    agent_ids.min_by { |id| [-yes[id], id == current_id ? 0 : 1, id] }
   end
 
   # The key of route_mode with the highest probability: the chosen key on a tie or when the model gave no probabilities.

@@ -32,8 +32,10 @@ class Captain::Tools::Agent::PatientScope
 
   attr_reader :conversation
 
-  def initialize(assistant:, conversation:)
+  # assistant: the agent that acts (it binds the appointment access tokens). A read of the patient's own records needs the account only.
+  def initialize(conversation:, assistant: nil, account: assistant&.account)
     @assistant = assistant
+    @account = account
     @conversation = conversation
   end
 
@@ -41,11 +43,11 @@ class Captain::Tools::Agent::PatientScope
     return @contact_id if defined?(@contact_id)
     return @contact_id = nil if conversation&.contact_id.blank?
 
-    @contact_id = @assistant.account.contacts.where(id: conversation&.contact_id).pick(:id)
+    @contact_id = @account.contacts.where(id: conversation&.contact_id).pick(:id)
   end
 
   def appointments
-    scope = @assistant.account.scheduling_appointments
+    scope = @account.scheduling_appointments
     return scope.none if contact_id.blank?
 
     scope.where(contact_id: contact_id).where('COALESCE(patient_contact_id, contact_id) = ?', contact_id)
@@ -59,22 +61,22 @@ class Captain::Tools::Agent::PatientScope
       conversation: conversation, appointment_id: params[:appointment_id]
     )
     deny!(tool: 'appointment', kind: 'appointment') unless appointment
-    appointments.or(@assistant.account.scheduling_appointments.where(id: appointment.id))
+    appointments.or(@account.scheduling_appointments.where(id: appointment.id))
   end
 
   def deals
-    scope = @assistant.account.crm_deals
+    scope = @account.crm_deals
     return scope.none if contact_id.blank?
 
-    scope.where(id: ::Crm::DealContact.where(account_id: @assistant.account_id, contact_id: contact_id).select(:deal_id))
+    scope.where(id: ::Crm::DealContact.where(account_id: @account.id, contact_id: contact_id).select(:deal_id))
   end
 
   def contacts
-    @assistant.account.contacts.where(id: contact_id)
+    @account.contacts.where(id: contact_id)
   end
 
   def conversations
-    scope = @assistant.account.conversations
+    scope = @account.conversations
     return scope.none if contact_id.blank?
 
     scope.where(contact_id: contact_id)
@@ -105,7 +107,7 @@ class Captain::Tools::Agent::PatientScope
     when 'create_appointment'
       require_id!(deals, params[:crm_deal_id], tool: tool, kind: 'deal') if params[:crm_deal_id].present?
       if params[:crm_pipeline_id].present?
-        require_id!(@assistant.account.crm_pipelines, params[:crm_pipeline_id], tool: tool, kind: 'pipeline')
+        require_id!(@account.crm_pipelines, params[:crm_pipeline_id], tool: tool, kind: 'pipeline')
       end
     when 'update_appointment', 'cancel_appointment'
       if params[:appointment_id].present?
@@ -200,12 +202,12 @@ class Captain::Tools::Agent::PatientScope
   end
 
   def require_conversation_id!(id, tool:)
-    target = @assistant.account.conversations.find_by(display_id: id) || @assistant.account.conversations.find_by(id: id)
+    target = @account.conversations.find_by(display_id: id) || @account.conversations.find_by(id: id)
     deny!(tool: tool, kind: 'conversation') unless target&.id == conversation&.id
   end
 
   def conversation_messages
-    ::Message.where(account_id: @assistant.account_id, conversation_id: conversation&.id)
+    ::Message.where(account_id: @account.id, conversation_id: conversation&.id)
   end
 
   def ensure_current_contact!(tool)
@@ -217,7 +219,7 @@ class Captain::Tools::Agent::PatientScope
   def publish_denial(tool, kind)
     Llm::EventBus.publish(
       'llm.captain.tool.denied',
-      feature: 'assistant', tool_name: tool, account_id: @assistant.account_id,
+      feature: 'assistant', tool_name: tool, account_id: @account.id,
       conversation_id: conversation&.id, contact_id: contact_id,
       id_kind: kind, outcome: 'denied'
     )
@@ -245,7 +247,7 @@ class Captain::Tools::Agent::PatientScope
   end
 
   def authorize_confirmation_request!(tool, id)
-    requests = ConfirmationRequest.where(account_id: @assistant.account_id, conversation_id: conversation.id)
+    requests = ConfirmationRequest.where(account_id: @account.id, conversation_id: conversation.id)
     request = selected_confirmation_request(requests, id)
     return if request.blank? && tool == 'get_confirmation_request' && id.blank?
 

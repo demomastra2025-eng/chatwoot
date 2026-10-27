@@ -21,7 +21,6 @@ class Captain::Runtime::RoutingState
     fence = state[:captain_response_fence]
     return revision if fence.blank? || actor_id.nil?
 
-    fence[:entry_assistant_id] = state[:entry_assistant_id]
     fence[:routing_revision] = revision
     revision
   end

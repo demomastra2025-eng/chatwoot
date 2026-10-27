@@ -9,9 +9,10 @@
 # of a customer whose Captain quota is used up) passes generate: false and gets
 # the fallback text at once.
 class Captain::SystemHandoffMessageService
-  def initialize(conversation:, assistant:, reason_label: nil, generate: true)
+  # agent: the agent the notice is sent as, when one holds the conversation; with none it is sent as the AI itself.
+  def initialize(conversation:, agent: nil, reason_label: nil, generate: true)
     @conversation = conversation
-    @assistant = assistant
+    @agent = agent
     @reason_label = reason_label
     @generate = generate
   end
@@ -31,7 +32,7 @@ class Captain::SystemHandoffMessageService
         message_type: :outgoing,
         account_id: conversation.account_id,
         inbox_id: conversation.inbox_id,
-        sender: assistant,
+        sender: agent,
         content: text,
         preserve_waiting_since: true
       )
@@ -44,11 +45,11 @@ class Captain::SystemHandoffMessageService
 
   def notice
     @notice ||= Captain::CustomerNoticeService.new(
-      conversation: conversation, assistant: assistant, kind: :handoff, reason_label: reason_label, generate: generate
+      conversation: conversation, agent: agent, kind: :handoff, reason_label: reason_label, generate: generate
     )
   end
 
   private
 
-  attr_reader :conversation, :assistant, :reason_label, :generate
+  attr_reader :conversation, :agent, :reason_label, :generate
 end

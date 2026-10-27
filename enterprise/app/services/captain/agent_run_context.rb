@@ -2,40 +2,35 @@
 
 # The run state of one patient turn: the durable session, the agents of the channel and the activation of the agent that answers.
 # #prepare reads the session and the history and never chooses an agent: the router decides who answers (see
-# Captain::Runtime::DecisionRouter and Captain::Runtime::TurnDispatcher), and #activate prepares the chosen agent. The assistant
-# the run was started with (`entry`) is the technical anchor of the channel, never a default agent: the router always names who
-# answers (see DecisionRouter::Questions).
+# Captain::Runtime::DecisionRouter and Captain::Runtime::TurnDispatcher), and #activate prepares the chosen agent. The run belongs to
+# a channel (Captain::ChannelScope), not to an agent: there is no default agent, the router always names who answers (see
+# DecisionRouter::Questions).
 class Captain::AgentRunContext
   # sticky_agent_id: the agent that leads the dialog of a reply suggestion (Captain::ReplySuggestion::StickyAgent); while it is a
   # candidate it is the current agent and the holder of the run, whatever the saved session says.
-  def initialize(entry:, conversation: nil, playground: nil, fence: {}, ephemeral_session: false, sticky_agent_id: nil) # rubocop:disable Metrics/ParameterLists
-    @entry = entry
+  def initialize(scope:, conversation: nil, playground: nil, fence: {}, ephemeral_session: false, sticky_agent_id: nil) # rubocop:disable Metrics/ParameterLists
+    @scope = scope
     @conversation = conversation
     @playground = playground
     @sticky_agent_id = sticky_agent_id.presence&.to_i
-    @graph = Captain::AgentGraph.new(
-      entry,
-      inbox: conversation&.inbox || playground&.routing_inbox,
-      standalone: conversation.nil? && playground.nil?
-    )
-    session_options = { entry: entry, conversation: conversation, playground: playground, fence: fence }
+    @graph = Captain::AgentGraph.new(scope)
+    session_options = { conversation: conversation, playground: playground, fence: fence }
     session_options[:ephemeral] = true if ephemeral_session
     @session = Captain::Conversation::AgentSession.new(**session_options)
   end
 
   # graph: the agents of the channel. holder: the agent that holds the conversation as the response builder checks it
   # (Captain::Conversation::AgentOwnership), set by #prepare: the sticky agent of a reply suggestion while it is a candidate, else
-  # the saved holder while it is an agent of the channel (a candidate of the router or not), else the anchor. Every response that
-  # no chosen agent produced (a blocked input, a router failure, a council that could not be set up, a staff request, a custom
-  # input rule) answers as the holder; otherwise the response builder drops it as stale.
-  attr_reader :graph, :holder
+  # the saved holder while it is an agent of the channel (a candidate of the router or not), else nobody. Every response that no
+  # chosen agent produced (a blocked input, a router failure, a council that could not be set up, a staff request, a custom input
+  # rule) answers as the holder; with no holder it is sent as the AI itself, with no agent named.
+  attr_reader :graph, :holder, :scope
 
   def prepare(context)
     context.delete(:captain_faq_outcome)
     context[:agent_request_id] ||= SecureRandom.uuid
     @playground_overrides = context.fetch(:state, {}).slice(:playground_thinking_effort)
     saved = @session.read
-    raise ArgumentError, 'The entry agent is disabled' unless graph.find(@entry.id)
 
     sticky = sticky_candidate
     @holder = sticky || holder_of(saved)
@@ -50,11 +45,10 @@ class Captain::AgentRunContext
     context[:parts] = saved['parts'] || []
     # What the agents already did in this conversation (see Captain::DoneActions): the prompt of every agent that takes the turn.
     context[:done_actions] = Array(saved['done'])
-    close_handed_off_history!(context, current || @entry)
-    context[:state][:entry_assistant_id] = @entry.id
+    close_handed_off_history!(context, current || holder)
     context[:state][:agent_graph_ids] = graph.candidates.map(&:id)
     # A lone agent needs no decision: it answers, and it is prepared now.
-    activate(graph.candidates.first, context) if graph.solo?
+    activate(graph.candidates.first, context) if graph.solo? && graph.candidates.any?
     context
   end
 
@@ -84,11 +78,8 @@ class Captain::AgentRunContext
 
   # The agents of the channel as runtime agents, built lazily: only the agent that answers builds its tools.
   def runtime_agents(overrides: {})
-    shared_options = overrides.to_h.symbolize_keys.slice(:read_only_tools, :suggestion_tools)
     graph.candidates.map do |actor|
-      # Playground model controls affect the agent that is being tried out; in a live run there are none.
-      options = playground_target?(actor) ? overrides : shared_options
-      Captain::Runtime::LazyAgent.new(actor, options: options).tap do |runtime_agent|
+      Captain::Runtime::LazyAgent.new(actor, options: overrides.to_h.symbolize_keys).tap do |runtime_agent|
         runtime_agent.context_preparer = ->(wrapper) { activate(actor, wrapper.context) }
       end
     end
@@ -96,17 +87,17 @@ class Captain::AgentRunContext
 
   private
 
-  # A saved holder that is no longer an agent of the channel at all (switched off, removed) is released in the session: the
-  # conversation is then the anchor's for the response builder, until the router gives it to an agent.
+  # A saved holder that is no longer an agent of the channel at all (switched off, removed) is released in the session: nobody holds
+  # the conversation then, until the router gives it to an agent. The rest of the session stays.
   def holder_of(saved)
     saved_id = saved['current_assistant_id'].presence&.to_i
-    return @entry unless saved_id
+    return unless saved_id
 
     found = graph.find(saved_id)
     return found if found
 
     @session.release_holder(saved_id)
-    @entry
+    nil
   end
 
   # The sticky agent of a reply suggestion, when it is a candidate of this channel (an agent of another inbox of the person's thread
@@ -130,10 +121,10 @@ class Captain::AgentRunContext
     nil
   end
 
-  # The Playground thinking-effort control belongs to the agent the user is trying out: the assistant the session was opened with.
+  # The Playground thinking-effort control applies to whichever agent answers.
   def apply_playground_effort(state, actor, previous_id, prior_runtime)
     state.delete(:playground_thinking_effort)
-    return unless playground_target?(actor)
+    return unless @playground
     return keep_playground_effort(state, actor.id == previous_id, prior_runtime) unless @playground_overrides&.key?(:playground_thinking_effort)
 
     state[:playground_thinking_effort] = @playground_overrides[:playground_thinking_effort]
@@ -145,10 +136,6 @@ class Captain::AgentRunContext
     return unless @playground && same_agent && prior_runtime&.key?('assistant_thinking_effort')
 
     state[:captain_runtime]['assistant_thinking_effort'] = prior_runtime['assistant_thinking_effort']
-  end
-
-  def playground_target?(actor)
-    actor.id == @entry.id
   end
 
   # A silent handoff leaves no public assistant reply in the transcript. When the conversation returns to the AI on a later
@@ -169,7 +156,11 @@ class Captain::AgentRunContext
 
     reason = handoff.to_h['text'].to_s
     note = reason.present? ? "Запрос передан специалистам: #{reason}." : 'Запрос передан специалистам.'
-    context[:conversation_history] = history + [{ role: :assistant, content: note, agent_name: actor.agent_name }]
+    context[:conversation_history] = history + [handoff_note_message(note, actor)]
+  end
+
+  def handoff_note_message(note, actor)
+    { role: :assistant, content: note, agent_name: actor&.agent_name }.compact
   end
 
   def public_history(history)

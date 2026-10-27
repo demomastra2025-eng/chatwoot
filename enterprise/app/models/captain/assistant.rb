@@ -33,6 +33,8 @@ class Captain::Assistant < ApplicationRecord
   self.ignored_columns += %w[channel_scope]
   INTERNAL_ASSISTANT_INBOX_ERROR = 'Internal assistants cannot be connected to channels. Disconnect connected channels first.'
   DESCRIPTION_MAX_LENGTH = 20_000
+  # How many recent messages of a conversation an agent reads.
+  HISTORY_MESSAGE_LIMIT = 40
   RULES_CONFIG_KEY = 'rules'
   RULE_TYPE_SYSTEM = 'system'
   RULE_TYPE_RESPONSE_GUIDELINE = 'response_guideline'
@@ -715,7 +717,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def history_message_limit_value
-    40
+    HISTORY_MESSAGE_LIMIT
   end
 
   def auto_reply_on_last_incoming_enabled?

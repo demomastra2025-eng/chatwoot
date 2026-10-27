@@ -11,9 +11,9 @@ class Captain::Conversation::AgentSession
   TRAIL_LIMIT = 3
   BLOCKED = { 'status' => 'blocked', 'reason' => 'mutation_retry_blocked' }.freeze
 
-  def initialize(entry:, conversation: nil, playground: nil, fence: {}, ephemeral: false)
-    @entry, @playground = entry, playground
-    @conversation = ::Conversation.where(account_id: entry.account_id).find(conversation.id) if conversation && !playground
+  def initialize(conversation: nil, playground: nil, fence: {}, ephemeral: false)
+    @playground = playground
+    @conversation = ::Conversation.where(account_id: conversation.account_id).find(conversation.id) if conversation && !playground
     @fence = fence.to_h.symbolize_keys
     @ephemeral_mode = ephemeral
   end
@@ -29,7 +29,7 @@ class Captain::Conversation::AgentSession
             @ephemeral
           end
     data = raw.to_h.deep_stringify_keys
-    data = fresh unless compatible?(data)
+    data = fresh if data.blank?
     @task_revision ||= data['task_revision'].to_i
     refresh_epoch(data).deep_dup
   end
@@ -40,7 +40,7 @@ class Captain::Conversation::AgentSession
         ensure_current!
         attributes = @conversation.additional_attributes.to_h.deep_dup
         data = attributes[ATTRIBUTE].to_h.deep_stringify_keys
-        data = fresh unless compatible?(data)
+        data = fresh if data.blank?
         refresh_epoch(data)
         result = yield(data)
         attributes[ATTRIBUTE] = data
@@ -70,7 +70,7 @@ class Captain::Conversation::AgentSession
     @conversation.with_lock do
       attributes = @conversation.additional_attributes.to_h.deep_dup
       data = attributes[ATTRIBUTE].to_h.deep_stringify_keys
-      next unless compatible?(data)
+      next if data.blank?
 
       result = yield(data)
       attributes[ATTRIBUTE] = data
@@ -100,8 +100,8 @@ class Captain::Conversation::AgentSession
   end
 
   # The agent that held the conversation is no longer an agent of the channel (switched off, removed): the conversation has no
-  # holder again (the router chooses among all agents; the response builder reads the channel's anchor), and the routing
-  # revision moves on, so a reply or a follow-up of that agent is dropped.
+  # holder again (the router chooses among all agents), and the routing revision moves on, so a reply or a follow-up of that agent
+  # is dropped. The rest of the session (parts, done actions, routing trail) stays.
   def release_holder(actor_id)
     change do |data|
       expected = @task_revision || data['task_revision'].to_i
@@ -196,10 +196,6 @@ class Captain::Conversation::AgentSession
     data['routing_trail'] = (Array(data['routing_trail']) + [trail.deep_stringify_keys]).last(TRAIL_LIMIT)
   end
 
-  def compatible?(data)
-    data['entry_assistant_id'] == @entry.id
-  end
-
   def remember_done(data, done)
     data['done'] = Captain::DoneActions.remember(data['done'], done.deep_stringify_keys)
   end
@@ -257,9 +253,9 @@ class Captain::Conversation::AgentSession
   end
 
   # A new conversation has no agent yet: the router chooses among all agents of the clinic on the first message (there is no main
-  # agent). entry_assistant_id is the technical anchor of the channel (the assistant the inbox is bound to), not an agent role.
+  # agent). A session saved by an earlier release may carry the old anchor key: it is ignored, and the session is kept.
   def fresh
-    { 'entry_assistant_id' => @entry.id, 'current_assistant_id' => nil, 'routing_revision' => 0, 'task_revision' => 0,
+    { 'current_assistant_id' => nil, 'routing_revision' => 0, 'task_revision' => 0,
       'epoch' => epoch, 'parts' => [], 'operations' => {}, 'routing_trail' => [] }
   end
 
@@ -272,9 +268,8 @@ class Captain::Conversation::AgentSession
 
   def ensure_current!
     Captain::Conversation::RunFenceService.new(
-      assistant: @entry,
-      state: { account_id: @entry.account_id, assistant_id: @entry.id,
-               conversation: { id: @conversation.id }, captain_response_fence: @fence }
+      assistant: nil,
+      state: { account_id: @conversation.account_id, conversation: { id: @conversation.id }, captain_response_fence: @fence }
     ).ensure_current!
   end
 

@@ -1,8 +1,11 @@
+# Tells whether a run of the AI is still current. The run belongs to a channel (Captain::ChannelScope), not to an agent: it goes stale
+# when the channel is switched off or its AI is off, a human answers, the conversation changes, or the acting agent (state[:assistant_id],
+# none for an output that no agent produced) is switched off or taken out of the channel. Turning off another agent never stales a run.
 class Captain::Conversation::RunFenceService
   STALE_CHECKS = {
     assistant_missing: :assistant_missing?,
     conversation_missing: :conversation_missing?,
-    assistant_changed: :assistant_changed?,
+    channel_changed: :channel_changed?,
     agent_routing_changed: :agent_routing_changed?,
     human_response_committed: :human_response_committed?,
     control_generation_changed: :control_generation_changed?,
@@ -12,6 +15,7 @@ class Captain::Conversation::RunFenceService
     buffer_state_changed: :buffer_state_changed?
   }.freeze
 
+  # assistant: the acting agent, nil when no agent acts (the state carries no assistant_id either).
   def initialize(assistant:, state:, stage: 'tool_execution')
     @assistant = assistant
     @state = state.to_h.with_indifferent_access
@@ -38,39 +42,45 @@ class Captain::Conversation::RunFenceService
   end
 
   def assistant_missing?
-    return true if assistant.blank?
+    return false if acting_agent_id.blank?
 
     # Another request can disable an actor while inference is still running.
     # Neither the loaded actor nor the request query cache is authoritative here.
     Captain::Assistant.uncached do
-      !Captain::Assistant.where(account_id: state[:account_id], id: assistant.id, active: true).exists?
+      !Captain::Assistant.exists?(account_id: state[:account_id], id: acting_agent_id, active: true)
     end
+  end
+
+  def acting_agent_id
+    @acting_agent_id ||= (assistant&.id || state[:assistant_id]).presence&.to_i
   end
 
   def conversation_missing?
     conversation.blank?
   end
 
-  def assistant_changed?
-    entry = Captain::Assistant.uncached do
+  # The channel is switched off (or its AI is off), or the acting agent is no longer an enabled agent of the channel.
+  def channel_changed?
+    Captain::Assistant.uncached do
       inbox = conversation.inbox.reload
-      inbox.captain_assistant if inbox.captain_active?
+      next true unless inbox.captain_active?
+
+      acting_agent_id.present? && !agent_in_channel?(inbox)
     end
-    return true if entry.blank? || entry.id != entry_assistant_id || !entry.active?
-    return false if assistant.id == entry_assistant_id
-
-    Captain::Assistant.uncached { !Captain::AgentGraph.new(entry, inbox: conversation.inbox).find(assistant.id) }
   end
 
-  def entry_assistant_id
-    state[:entry_assistant_id].presence&.to_i || assistant.id
+  def agent_in_channel?(inbox)
+    scope = Captain::ChannelScope.for_inbox(inbox, account: conversation.account)
+    Captain::AgentGraph.new(scope).find(acting_agent_id).present?
   end
 
+  # The fence of a turn that the router decided carries the routing revision (see Captain::Runtime::RoutingState): the agent that
+  # holds the conversation and the revision must still be the ones the run started with.
   def agent_routing_changed?
-    return false unless state[:entry_assistant_id].present? && fence.key?(:routing_revision)
+    return false unless acting_agent_id.present? && fence.key?(:routing_revision)
 
     session = conversation.reload.additional_attributes.to_h[Captain::Conversation::AgentSession::ATTRIBUTE].to_h
-    session['current_assistant_id'].to_i != assistant.id || session['routing_revision'].to_i != fence[:routing_revision].to_i
+    session['current_assistant_id'].to_i != acting_agent_id || session['routing_revision'].to_i != fence[:routing_revision].to_i
   end
 
   def human_response_committed?
@@ -129,7 +139,6 @@ class Captain::Conversation::RunFenceService
     return true if fence[:buffer_token].blank?
 
     current_buffer_state[:token] == fence[:buffer_token] &&
-      current_buffer_state[:assistant_id].to_i == entry_assistant_id &&
       current_buffer_state[:last_message_id].to_i == fence[:last_message_id].to_i &&
       current_buffer_state[:control_generation].to_i == fence[:control_generation].to_i
   end

@@ -59,8 +59,10 @@ class Captain::OutcomeReasonConfig
   end
   private_class_method :normalize_reason, :ensure_other_fallback
 
-  def initialize(assistant, source: :account)
+  # assistant: the agent the outcome is attributed to; nil when no agent acted (the AI itself), then account is given.
+  def initialize(assistant = nil, source: :account, account: assistant&.account)
     @assistant = assistant
+    @account = account
     @source = source
   end
 
@@ -120,8 +122,8 @@ class Captain::OutcomeReasonConfig
     metadata = {
       outcome_reason_id: reason['id'],
       outcome_reason_type: canonical_type(type),
-      assistant_id: assistant.id
-    }
+      assistant_id: assistant&.id
+    }.compact
     metadata[:outcome_reason_explanation] = explanation.to_s.squish.truncate(1000) if explanation.present?
 
     {
@@ -133,19 +135,19 @@ class Captain::OutcomeReasonConfig
   end
 
   def pending_transition_options(type, explanation: nil, signal: nil)
-    metadata = { outcome_reason_type: canonical_type(type), assistant_id: assistant.id }
+    metadata = { outcome_reason_type: canonical_type(type), assistant_id: assistant&.id }.compact
     metadata[:outcome_reason_explanation] = explanation.to_s.squish.truncate(1000) if explanation.present?
-    metadata[:outcome_signal] = signal if signal == 'faq_no_answer' && assistant.faq_enabled? && assistant.handoff_enabled?
+    metadata[:outcome_signal] = signal if signal == 'faq_no_answer' && assistant&.faq_enabled? && assistant.handoff_enabled?
     { audit: { reason_override: pending_label, metadata: metadata } }
   end
 
   def pending_label
-    I18n.t('captain.outcome_reasons.pending', locale: assistant.account.locale, default: 'Reason is being classified')
+    I18n.t('captain.outcome_reasons.pending', locale: account.locale, default: 'Reason is being classified')
   end
 
   private
 
-  attr_reader :assistant
+  attr_reader :assistant, :account
 
   def source_settings
     return account_reasons unless @source == :assistant
@@ -160,7 +162,7 @@ class Captain::OutcomeReasonConfig
   end
 
   def account_reasons
-    handoff = assistant.account_settings.section('handoff')
+    handoff = Captain::AccountSettings.new(account).section('handoff')
     TYPES.each_with_object({}) do |type, result|
       result[reason_key(type)] = Array(handoff[reason_key(type)]).map do |reason|
         { 'id' => reason['id'], 'label' => reason['label'], 'active' => reason['enabled'] }
@@ -174,8 +176,8 @@ class Captain::OutcomeReasonConfig
       saved = configured.find { |reason| reason['id'] == id }
       label = saved&.fetch('label')
       label = nil if id == 'other' && label.to_s.casecmp?(DEFAULT_OTHER_LABEL)
-      label ||= I18n.t("captain.outcome_reasons.#{id}", locale: assistant.account.locale, default: id.humanize)
-      locked = id == 'other' || (id == 'faq_no_answer' && assistant.faq_enabled? && assistant.handoff_enabled?)
+      label ||= I18n.t("captain.outcome_reasons.#{id}", locale: account.locale, default: id.humanize)
+      locked = id == 'other' || (id == 'faq_no_answer' && assistant&.faq_enabled? && assistant.handoff_enabled?)
       active = locked || (saved ? saved['active'] : id != 'faq_no_answer')
       { 'id' => id, 'label' => label, 'active' => active, 'removable' => false, 'locked' => locked }
     end
@@ -186,7 +188,7 @@ class Captain::OutcomeReasonConfig
   end
 
   def legacy_settings
-    normalized = Conversations::StatusReasonConfig.new(assistant.account).normalized_settings
+    normalized = Conversations::StatusReasonConfig.new(account).normalized_settings
     TYPES.index_with do |type|
       status = type == 'completion' ? 'resolved' : 'open'
       options = Array(normalized.dig(status, 'options'))

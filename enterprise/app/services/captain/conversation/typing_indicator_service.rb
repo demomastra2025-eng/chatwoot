@@ -1,15 +1,15 @@
 class Captain::Conversation::TypingIndicatorService
-  def self.turn_on(conversation:, assistant:)
-    new(conversation: conversation, assistant: assistant).turn_on
+  # The typing indicator is shown as the AI, never as an agent: the channel has no agent of its own.
+  def self.turn_on(conversation:)
+    new(conversation: conversation).turn_on
   end
 
-  def self.turn_off(conversation:, assistant:)
-    new(conversation: conversation, assistant: assistant).turn_off
+  def self.turn_off(conversation:)
+    new(conversation: conversation).turn_off
   end
 
-  def initialize(conversation:, assistant:)
+  def initialize(conversation:)
     @conversation = conversation
-    @assistant = assistant || resolve_assistant
   end
 
   def turn_on
@@ -23,19 +23,13 @@ class Captain::Conversation::TypingIndicatorService
   private
 
   def toggle(status)
-    return if @conversation.blank? || @assistant.blank?
+    return if @conversation.blank?
 
     ::Conversations::TypingStatusManager.new(
       @conversation,
-      @assistant,
+      Captain::AiActor.instance,
       typing_status: status,
       is_private: true
     ).toggle_typing_status
-  end
-
-  def resolve_assistant
-    return if @conversation.blank?
-
-    ::CaptainInbox.find_by(inbox_id: @conversation.inbox_id)&.captain_assistant
   end
 end

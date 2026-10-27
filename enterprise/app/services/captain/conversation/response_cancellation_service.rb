@@ -1,9 +1,8 @@
 class Captain::Conversation::ResponseCancellationService
   STATE_TTL = 10.minutes
 
-  def initialize(conversation:, assistant:, actor: nil)
+  def initialize(conversation:, actor: nil)
     @conversation = conversation
-    @assistant = assistant
     @actor = actor
   end
 
@@ -28,7 +27,6 @@ class Captain::Conversation::ResponseCancellationService
     {
       account_id: @conversation.account_id,
       conversation_id: @conversation.id,
-      assistant_id: @assistant.id,
       control_generation: control_generation,
       status_transition_id: @conversation.status_transitions.maximum(:id).to_i,
       last_message_id: buffer&.dig('last_message_id').presence || last_incoming_message_id,
@@ -60,11 +58,11 @@ class Captain::Conversation::ResponseCancellationService
   private
 
   def valid_scope?
-    @conversation.present? && @assistant.present? && @conversation.account_id == @assistant.account_id
+    @conversation.present?
   end
 
   def snapshot_belongs_to_scope?(payload)
-    payload[:account_id] == @conversation.account_id && payload[:conversation_id] == @conversation.id && payload[:assistant_id] == @assistant.id
+    payload[:account_id] == @conversation.account_id && payload[:conversation_id] == @conversation.id
   end
 
   def state_matches?(state, buffer_token: nil, expected_last_message_id: nil, expected_control_generation: nil, expected_status_transition_id: nil)
@@ -77,8 +75,7 @@ class Captain::Conversation::ResponseCancellationService
   end
 
   def state_belongs_to_scope?(state)
-    state.present? && state['assistant_id'].to_i == @assistant.id &&
-      epoch_matches?(state, 'account_id', @conversation.account_id) && epoch_matches?(state, 'conversation_id', @conversation.id)
+    state.present? && epoch_matches?(state, 'account_id', @conversation.account_id) && epoch_matches?(state, 'conversation_id', @conversation.id)
   end
 
   def token_matches?(state, token)
@@ -116,10 +113,7 @@ class Captain::Conversation::ResponseCancellationService
   end
 
   def clear_typing_indicator
-    Captain::Conversation::TypingIndicatorService.turn_off(
-      conversation: @conversation,
-      assistant: @assistant
-    )
+    Captain::Conversation::TypingIndicatorService.turn_off(conversation: @conversation)
   end
 
   def state_key

@@ -1,9 +1,8 @@
 class Captain::Conversation::BufferedResponseSchedulerService
   STATE_TTL_BUFFER = 10.minutes
 
-  def initialize(conversation:, assistant:, message:, attachment_wait_time: 0.seconds)
+  def initialize(conversation:, message:, attachment_wait_time: 0.seconds)
     @conversation = conversation
-    @assistant = assistant
     @message = message
     @attachment_wait_time = attachment_wait_time
   end
@@ -16,7 +15,7 @@ class Captain::Conversation::BufferedResponseSchedulerService
 
     Rails.logger.info(
       '[CAPTAIN][BufferedResponse] Scheduled response builder ' \
-      "conversation_id=#{@conversation.id} assistant_id=#{@assistant.id} " \
+      "conversation_id=#{@conversation.id} " \
       "message_id=#{@message.id} wait_seconds=#{effective_wait_seconds}"
     )
 
@@ -24,7 +23,6 @@ class Captain::Conversation::BufferedResponseSchedulerService
       .set(wait: effective_wait_seconds.seconds)
       .perform_later(
         @conversation,
-        @assistant,
         buffer_token: token,
         expected_last_message_id: @message.id
       )
@@ -33,7 +31,7 @@ class Captain::Conversation::BufferedResponseSchedulerService
   private
 
   def collapse_window_seconds
-    @assistant.message_collapse_window_seconds_value
+    Captain::AccountSettings.new(@conversation.account).message_collapse_window_seconds
   end
 
   def effective_wait_seconds
@@ -47,7 +45,6 @@ class Captain::Conversation::BufferedResponseSchedulerService
   def state_payload(token, control_generation)
     {
       token: token,
-      assistant_id: @assistant.id,
       last_message_id: @message.id,
       control_generation: control_generation
     }
