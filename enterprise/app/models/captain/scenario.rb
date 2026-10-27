@@ -67,7 +67,7 @@ class Captain::Scenario < ApplicationRecord
       title: title,
       global_system_instruction: Llm::Config.global_agent_system_prompt,
       instructions: resolved_instructions,
-      faq_enabled: assistant.faq_enabled? && available_prompt_tools.pluck(:id).include?('faq_lookup'),
+      faq_enabled: assistant.faq_enabled? && assistant.faq_entries? && available_prompt_tools.pluck(:id).include?('faq_lookup'),
       human_handoff_enabled: assistant.handoff_enabled? && available_prompt_tools.pluck(:id).include?('handoff'),
       runtime_tool_ids: available_prompt_tools.pluck(:id),
       scenarios: sibling_handoff_scenarios,

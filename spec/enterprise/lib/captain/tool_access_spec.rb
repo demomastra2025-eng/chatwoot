@@ -84,6 +84,7 @@ RSpec.describe Captain::ToolAccess do
 
   describe '.allowed_tool_ids_for' do
     it 'resolves only the requested scope' do
+      create(:captain_assistant_response, assistant: assistant, account: account)
       assistant.config = {
         'tool_access' => {
           Captain::ToolAccess::SCOPE_AGENT => {
@@ -103,10 +104,21 @@ RSpec.describe Captain::ToolAccess do
 
       expect(ids).to eq(['faq_lookup'])
     end
+
+    it 'leaves out the FAQ lookup of an agent that has no FAQ entries, also when the clinic selected it' do
+      assistant.config = { 'tool_access' => { Captain::ToolAccess::SCOPE_AGENT => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } } }
+      allow(assistant).to receive(:available_agent_tools).and_return([{ id: 'faq_lookup' }])
+
+      ids = described_class.allowed_tool_ids_for(assistant, Captain::ToolAccess::SCOPE_AGENT, fallback_ids: ['faq_lookup'])
+
+      expect(ids).to eq([])
+    end
   end
 
   describe 'the shared read layer' do
     let(:only_handoff) { { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['handoff'] } } } }
+
+    before { create(:captain_assistant_response, assistant: assistant, account: account) }
 
     def agent_tool_ids(record)
       described_class.allowed_tool_ids_for(record, Captain::ToolAccess::SCOPE_AGENT, fallback_ids: [])
@@ -146,6 +158,17 @@ RSpec.describe Captain::ToolAccess do
 
       expect(agent_tool_ids(assistant)).to include('faq_lookup')
       expect(agent_tool_ids(assistant)).not_to include('search_scheduling_services')
+    end
+
+    it 'leaves out the FAQ lookup of an agent that has no FAQ entries: every call would only answer «nothing found»' do
+      account.enable_features!('scheduling')
+      assistant.update!(config: only_handoff)
+      Captain::AssistantResponse.where(assistant_id: assistant.id).destroy_all
+      assistant.reload
+
+      expect(agent_tool_ids(assistant)).not_to include('faq_lookup')
+      expect(agent_tool_ids(assistant)).to include('handoff', 'search_scheduling_services')
+      expect(described_class.shared_read_tool_ids_for(assistant, assistant.available_tool_ids)).to eq(['search_scheduling_services'])
     end
 
     it 'leaves out the FAQ lookup where the platform has the FAQ off for the agent' do

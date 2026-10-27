@@ -106,6 +106,7 @@ RSpec.describe Captain::LegacyScenarioConversionService do
   end
 
   it 'preserves mentioned private notes without enabling unchecked capability tools' do
+    create(:captain_assistant_response, assistant: parent, account: parent.account)
     parent.update_columns(config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['handoff'] } } })
     scenario.update_columns(instruction: 'Use [FAQ](tool://faq_lookup) and [Private note](tool://add_private_note).',
                             tools: %w[faq_lookup add_private_note cancel_response])

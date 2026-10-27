@@ -6,6 +6,9 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
   let(:account) { create(:account) }
   let(:assistant) { create(:captain_assistant, account: account, description: 'Handle billing questions only.') }
 
+  # The FAQ lookup is bound to an agent that has FAQ entries.
+  before { create(:captain_assistant_response, assistant: assistant, account: account) }
+
   describe '#preview' do
     it 'strictly compiles main, copilot and routed prompts with the rules and the instruction, and no glossary' do
       assistant.update!(description: 'Use [Name](field://contact.name) and [@FAQ](tool://faq_lookup).')
