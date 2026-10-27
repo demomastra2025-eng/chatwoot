@@ -364,24 +364,60 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     expect(appointment.reload.conversation_id).to be_nil
   end
 
-  it 'preserves a locally confirmed appointment while the provider reception remains active' do
-    appointment = create(
-      :scheduling_appointment,
-      account: account,
-      resource: resource,
-      status: 'confirmed',
-      source: 'medelement',
-      external_ref: service.external_ref_for(reception['RECEPTION_CODE'])
-    )
+  describe 'a locally confirmed appointment while the provider reception remains active' do
+    let!(:appointment) do
+      create(
+        :scheduling_appointment,
+        account: account,
+        resource: resource,
+        status: 'confirmed',
+        source: 'medelement',
+        external_ref: service.external_ref_for(reception['RECEPTION_CODE']),
+        starts_at: import_context[:starts_at],
+        ends_at: import_context[:ends_at]
+      )
+    end
 
-    service.upsert!(
-      resource: resource,
-      contact: nil,
-      reception: reception,
-      import_context: import_context
-    )
+    def import(context)
+      service.upsert!(resource: resource, contact: nil, reception: reception, import_context: context)
+    end
 
-    expect(appointment.reload.status).to eq('confirmed')
+    it 'is preserved' do
+      import(import_context)
+
+      expect(appointment.reload.status).to eq('confirmed')
+    end
+
+    it 'is preserved when MedElement moves the reception within the same day' do
+      import(import_context.merge(starts_at: import_context[:starts_at] + 2.hours, ends_at: import_context[:ends_at] + 2.hours))
+
+      expect(appointment.reload).to have_attributes(status: 'confirmed', starts_at: import_context[:starts_at] + 2.hours)
+    end
+
+    it 'asks for a new confirmation when MedElement moves the reception to another day' do
+      # The real case: the patient confirmed the reminder for 19.10 15:30 (Almaty), staff moved the reception to 27.10 15:30.
+      appointment.update_columns(starts_at: Time.utc(2026, 10, 19, 10, 30), ends_at: Time.utc(2026, 10, 19, 11, 0)) # rubocop:disable Rails/SkipsModelValidations
+      moved = import_context.merge(starts_at: Time.utc(2026, 10, 27, 10, 30), ends_at: Time.utc(2026, 10, 27, 11, 0))
+
+      import(moved)
+
+      expect(appointment.reload).to have_attributes(
+        status: 'scheduled', attendance_confirmed_at: nil, starts_at: moved[:starts_at], ends_at: moved[:ends_at]
+      )
+    end
+
+    it 'keeps asking for the new date on the following syncs, and keeps a confirmation given for it' do
+      appointment.update_columns(starts_at: Time.utc(2026, 10, 19, 10, 30), ends_at: Time.utc(2026, 10, 19, 11, 0)) # rubocop:disable Rails/SkipsModelValidations
+      moved = import_context.merge(starts_at: Time.utc(2026, 10, 27, 10, 30), ends_at: Time.utc(2026, 10, 27, 11, 0))
+      import(moved)
+
+      import(moved)
+      expect(appointment.reload.status).to eq('scheduled')
+
+      appointment.update!(status: 'confirmed')
+      import(moved)
+      expect(appointment.reload.status).to eq('confirmed')
+    end
   end
 
   it 'completes a locally confirmed appointment when the provider reception becomes inactive' do
@@ -478,9 +514,11 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
       service.upsert!(resource: resource, contact: nil, reception: received, import_context: import_context)
     end
 
+    # On the day the reception is on: a confirmation does not survive a move to another day (see Scheduling::Appointment).
     def appointment_with(status, code = reception['RECEPTION_CODE'], **attributes)
       create(:scheduling_appointment, account: account, resource: resource, source: 'medelement', status: status,
-                                      external_ref: service.external_ref_for(code), **attributes)
+                                      external_ref: service.external_ref_for(code),
+                                      starts_at: import_context[:starts_at], ends_at: import_context[:ends_at], **attributes)
     end
 
     it 'imports a new appointment as scheduled, not as completed' do

@@ -99,6 +99,7 @@ class Scheduling::Appointment < ApplicationRecord
   before_validation :inherit_contact_owner
   before_validation :assign_duration_min
   before_validation :mark_local_medelement_cancellation, on: :update
+  before_save :reset_confirmation_when_moved_to_another_day, unless: :new_record?
   after_update :capture_updated_changes_for_commit
   after_save :stamp_crm_appointment_delivery_policy
   before_destroy :cancel_deferred_touch_enrollments, prepend: true
@@ -169,7 +170,28 @@ class Scheduling::Appointment < ApplicationRecord
     @medelement_provider_reconciled = true
   end
 
+  # Whether the start now falls on another calendar day than previous_starts_at, in the timezone of the specialist (the one the
+  # calendar and the availability use). A change of the time within one day is not a move to another day.
+  def moved_to_another_day_from?(previous_starts_at)
+    return false if previous_starts_at.blank? || starts_at.blank?
+
+    zone = ActiveSupport::TimeZone[resource.timezone] || Time.zone
+    previous_starts_at.in_time_zone(zone).to_date != starts_at.in_time_zone(zone).to_date
+  end
+
   private
+
+  # A confirmation answers one visit date. The patient has not agreed to the date the visit is moved to, so a confirmed
+  # appointment becomes scheduled again and asks for a new confirmation. A move within the same day keeps it; an appointment
+  # that is saved as confirmed by this very change (a status change in the same save) is the staff confirming the new date.
+  # This runs for every save, so a calendar edit, the API, the AI tools, a provider command and the MedElement import all end up here.
+  def reset_confirmation_when_moved_to_another_day
+    return unless will_save_change_to_starts_at? && status == 'confirmed' && !will_save_change_to_status?
+    return unless moved_to_another_day_from?(starts_at_in_database)
+
+    self.status = 'scheduled'
+    self.attendance_confirmed_at = nil
+  end
 
   def mark_local_medelement_cancellation
     return clear_medelement_local_only_cancellation if status != 'cancelled'

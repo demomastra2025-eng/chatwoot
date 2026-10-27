@@ -945,4 +945,47 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       client_name: 'Айжан Касымова Ерлановна'
     )
   end
+
+  describe 'moving a confirmed appointment' do
+    include ActiveSupport::Testing::TimeHelpers
+
+    around { |example| travel_to(Time.utc(2026, 11, 2, 3)) { example.run } }
+
+    let(:starts_at) { Time.utc(2026, 11, 20, 5) } # 10:00 on 20.11 in Almaty
+    let(:appointment) do
+      create(:scheduling_appointment, account: account, resource: resource, status: 'confirmed',
+                                      starts_at: starts_at, ends_at: starts_at + 30.minutes)
+    end
+
+    before do
+      account.enable_features!('scheduling')
+      (0..6).each { |weekday| create(:scheduling_work_rule, resource: resource, weekday: weekday) }
+    end
+
+    it 'asks for a new confirmation when the appointment moves to another day' do
+      perform(starts_at: (starts_at + 1.day).iso8601)
+
+      expect(appointment.reload).to have_attributes(status: 'scheduled', starts_at: starts_at + 1.day)
+    end
+
+    it 'asks again even when the request repeats the current status together with the new date' do
+      perform(starts_at: (starts_at + 1.day).iso8601, status: 'confirmed')
+
+      expect(appointment.reload.status).to eq('scheduled')
+    end
+
+    it 'keeps the confirmation when only the time of the same day changes' do
+      perform(starts_at: (starts_at + 2.hours).iso8601)
+
+      expect(appointment.reload).to have_attributes(status: 'confirmed', starts_at: starts_at + 2.hours)
+    end
+
+    it 'keeps what the staff confirms in the same request that moves a scheduled appointment' do
+      appointment.update!(status: 'scheduled')
+
+      perform(starts_at: (starts_at + 1.day).iso8601, status: 'confirmed')
+
+      expect(appointment.reload).to have_attributes(status: 'confirmed', starts_at: starts_at + 1.day)
+    end
+  end
 end

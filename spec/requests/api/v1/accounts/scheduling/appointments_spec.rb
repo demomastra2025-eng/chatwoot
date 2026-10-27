@@ -128,6 +128,27 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(appointment.reload).to have_attributes(starts_at: later, ends_at: later + 30.minutes)
   end
 
+  it 'keeps a confirmed appointment confirmed for a move within the day and asks again for a move to another day' do
+    stub_local_availability
+    appointment = create(:scheduling_appointment, account: account, resource: resource, contact: contact, service: service,
+                                                  status: 'confirmed', starts_at: booking_day, ends_at: booking_day + 30.minutes)
+    later_today = booking_day + 2.hours
+
+    patch "#{path}/#{appointment.id}", params: { starts_at: later_today.iso8601, ends_at: (later_today + 30.minutes).iso8601 },
+                                       headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'status')).to eq('confirmed')
+
+    next_day = booking_day + 1.day
+    patch "#{path}/#{appointment.id}", params: { starts_at: next_day.iso8601, ends_at: (next_day + 30.minutes).iso8601 },
+                                       headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'status')).to eq('scheduled')
+    expect(appointment.reload.status).to eq('scheduled')
+  end
+
   def stub_local_availability
     result = Scheduling::AvailabilityService::Result.new(available: true)
     availability = instance_double(Scheduling::AvailabilityService, availability_result: result)

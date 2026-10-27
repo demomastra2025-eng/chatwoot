@@ -32,7 +32,10 @@ class SchedulingAutomationRuleListener < BaseListener
 
   def appointment_updated(event)
     process_appointment_event(event, 'appointment_updated')
-    process_appointment_event(event, 'appointment_rescheduled') if appointment_rescheduled?(event)
+    return unless appointment_rescheduled?(event)
+
+    process_appointment_event(event, 'appointment_rescheduled')
+    process_move_to_another_day(event)
   end
 
   def appointment_cancelled(event)
@@ -47,6 +50,25 @@ class SchedulingAutomationRuleListener < BaseListener
 
   def appointment_rescheduled?(event)
     event.data[:changed_attributes].to_h.keys.intersect?(RESCHEDULED_ATTRIBUTE_KEYS)
+  end
+
+  # The appointment model drops the confirmation of a visit that moves to another day; the rules that plan the reminders of a
+  # booking plan them again for the new date.
+  def process_move_to_another_day(event)
+    return if performed_by_automation?(event)
+
+    appointment, account = extract_appointment_and_account(event)
+    return unless appointment.present? && account.present?
+
+    live_appointment = account.scheduling_appointments.find_by(id: appointment.id)
+    previous_starts_at = event.data[:changed_attributes].to_h['starts_at']&.first
+    return unless live_appointment&.moved_to_another_day_from?(previous_starts_at)
+
+    AutomationRules::AppointmentMovedToAnotherDayService.new(
+      account: account,
+      appointment: live_appointment,
+      rules: matching_rules_for_event('appointment_created', account, live_appointment, nil)
+    ).perform
   end
 
   def process_appointment_event(event, event_name)

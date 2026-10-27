@@ -41,6 +41,21 @@ RSpec.describe Scheduling::AppointmentDialogStatusContextBuilder do
       expect(direct_appointment.reload.status).to eq('confirmed')
     end
 
+    it 'follows a confirmed appointment that was moved to another day: the chip shows scheduled again until it is confirmed anew' do
+      contact = create(:contact, account: account)
+      conversation = create(:conversation, account: account, contact: contact)
+      starts_at = Time.utc(2026, 10, 19, 10, 30)
+      appointment = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation, status: 'confirmed',
+                                                    starts_at: starts_at, ends_at: starts_at + 30.minutes)
+      expect(builder.for_conversations([conversation])[conversation.id]).to eq([{ status: 'confirmed', count: 1 }])
+
+      appointment.update!(starts_at: starts_at + 8.days, ends_at: starts_at + 8.days + 30.minutes)
+      expect(builder.for_conversations([conversation])[conversation.id]).to eq([{ status: 'scheduled', count: 1 }])
+
+      appointment.update!(status: 'confirmed')
+      expect(builder.for_conversations([conversation])[conversation.id]).to eq([{ status: 'confirmed', count: 1 }])
+    end
+
     it 'returns nothing when scheduling is disabled' do
       account.disable_features!('scheduling')
       conversation = create(:conversation, account: account)

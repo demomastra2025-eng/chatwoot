@@ -129,6 +129,67 @@ RSpec.describe SchedulingAutomationRuleListener do
     end
   end
 
+  describe 'appointment_updated move to another day' do
+    let!(:created_rule) do
+      create(
+        :automation_rule,
+        account: account,
+        event_name: 'appointment_created',
+        conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }],
+        actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/appointments'] }]
+      )
+    end
+    let(:moved_service) { instance_double(AutomationRules::AppointmentMovedToAnotherDayService, perform: true) }
+
+    def updated_event(previous_starts_at, **extra)
+      Events::Base.new(
+        'appointment_updated', Time.zone.now,
+        appointment: appointment, changed_attributes: { 'starts_at' => [previous_starts_at, appointment.starts_at] }, **extra
+      )
+    end
+
+    before { allow(AutomationRules::AppointmentMovedToAnotherDayService).to receive(:new).and_return(moved_service) }
+
+    it 'hands the matching booking rules to the service when the start moves to another day' do
+      listener.appointment_updated(updated_event(appointment.starts_at - 1.day))
+
+      expect(AutomationRules::AppointmentMovedToAnotherDayService).to have_received(:new).with(
+        account: account, appointment: appointment, rules: [created_rule]
+      )
+      expect(moved_service).to have_received(:perform)
+    end
+
+    it 'does nothing for a change of the time within the same day' do
+      listener.appointment_updated(updated_event(appointment.starts_at - 1.hour))
+
+      expect(AutomationRules::AppointmentMovedToAnotherDayService).not_to have_received(:new)
+    end
+
+    it 'does nothing when only the specialist changes' do
+      listener.appointment_updated(
+        Events::Base.new('appointment_updated', Time.zone.now, appointment: appointment, changed_attributes: { 'resource_id' => [1, 2] })
+      )
+
+      expect(AutomationRules::AppointmentMovedToAnotherDayService).not_to have_received(:new)
+    end
+
+    it 'does nothing for an update written by an automation rule' do
+      listener.appointment_updated(updated_event(appointment.starts_at - 1.day, performed_by: created_rule))
+
+      expect(AutomationRules::AppointmentMovedToAnotherDayService).not_to have_received(:new)
+    end
+
+    it 'hands over only the booking rules that match the appointment' do
+      allow(condition_service).to receive(:perform).and_return(false)
+
+      listener.appointment_updated(updated_event(appointment.starts_at - 1.day))
+
+      expect(AutomationRules::AppointmentMovedToAnotherDayService).to have_received(:new).with(
+        account: account, appointment: appointment, rules: []
+      )
+    end
+  end
+
   describe 'integration flow' do
     before do
       clear_enqueued_jobs

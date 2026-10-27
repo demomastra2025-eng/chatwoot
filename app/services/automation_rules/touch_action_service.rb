@@ -97,6 +97,15 @@ class AutomationRules::TouchActionService
     ).perform
   end
 
+  # Whether the touch of this rule action has still to go out for the record: an open touch, or a deferred enrollment that has
+  # not delivered yet. Such a touch follows the record by itself and must not be made a second time.
+  def touch_pending?(action_id)
+    existing_event_touch(action_id.presence || 'create_touch', nil).present? ||
+      account.touch_plan_enrollments.exists?(
+        automation_rule: rule, source_action_id: action_id.to_s, remindable: record, status: %w[active paused]
+      )
+  end
+
   private
 
   def find_or_create_event_touch(params, action_key, action_signature)
