@@ -32,7 +32,6 @@ describe('AppointmentNotifications', () => {
 
     expect(SchedulingAppointmentsAPI.notifications).toHaveBeenCalledWith(17);
     expect(wrapper.text()).toContain('SCHEDULING.NOTIFICATIONS.PATIENT_TITLE');
-    expect(wrapper.text()).toContain('SCHEDULING.NOTIFICATIONS.PATIENT_TITLE');
     expect(wrapper.text()).toContain('SCHEDULING.NOTIFICATIONS.PLANNED');
     expect(wrapper.text()).toContain('SCHEDULING.NOTIFICATIONS.SENT');
     expect(wrapper.text()).toContain('SCHEDULING.NOTIFICATIONS.SKIPPED');
