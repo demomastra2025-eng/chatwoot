@@ -60,20 +60,12 @@ class Reminders::EnrollmentScheduleService
   end
 
   def materialized_due_at(definition)
-    params = definition.with_indifferent_access
-    probe = Reminder.new(
+    Reminders::RelativeScheduleProbe.new(
       account: enrollment.account,
       remindable: enrollment.remindable,
-      timing_mode: params[:timing_mode],
-      relative_anchor: params[:relative_anchor],
-      relative_offset_seconds: params[:relative_offset_seconds],
-      relative_time_mode: params[:relative_time_mode],
-      relative_time_of_day: params[:relative_time_of_day],
-      timezone: params[:timezone].presence || 'UTC'
-    )
-    probe.created_at = enrollment.activated_at
-    probe.send(:materialize_schedule)
-    probe.scheduled_at
+      definition: definition,
+      created_at: enrollment.activated_at
+    ).due_at
   end
 
   def stable_step_key(definition)

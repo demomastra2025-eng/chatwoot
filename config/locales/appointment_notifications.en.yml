@@ -1,0 +1,4 @@
+en:
+  appointment_notifications:
+    schedule_override: 'Set a notification time or remove the manual time setting.'
+    empty_field: 'The field “%{field}” is empty for %{share}%% of upcoming visits. Choose another field for the notification.'

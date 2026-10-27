@@ -27,6 +27,11 @@ import {
   findSemanticVariableByToken,
 } from 'dashboard/helper/appointmentTemplatePresets';
 import { extractSingleTemplateFieldReference } from 'dashboard/helper/templateFieldReferences';
+import {
+  appointmentFieldIds,
+  blockingFieldStats,
+  fetchAppointmentFieldFill,
+} from 'dashboard/helper/appointmentFieldFill';
 
 const { t } = useI18n();
 const store = useStore();
@@ -43,9 +48,11 @@ const isSyncingTemplates = ref(false);
 const savingPresetKey = ref('');
 const templatePackDialogRef = ref(null);
 const createTemplateDialogRef = ref(null);
+const fieldStats = ref([]);
 
-const browserTimezone =
-  Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Almaty';
+const accountTimezone = computed(
+  () => currentAccount.value?.workspace_working_hours_timezone || 'Asia/Almaty'
+);
 
 const createDefaultPresetDraft = preset => ({
   enabled: false,
@@ -202,14 +209,62 @@ const ensureDefaultBindingsForPreset = preset => {
   const updated = { ...state.variableBindings };
   vars.forEach((varKey, idx) => {
     if (!updated[varKey]) {
-      const defaultSemanticKey =
-        preset.defaultVariableOrder[idx] ||
-        APPOINTMENT_SEMANTIC_VARIABLES[0].key;
-      updated[varKey] = defaultSemanticKey;
+      const defaultSemanticKey = preset.defaultVariableOrder[idx];
+      if (defaultSemanticKey) updated[varKey] = defaultSemanticKey;
     }
   });
   state.variableBindings = updated;
 };
+
+const mappedFieldIds = preset => {
+  const state = presetStates[preset.key];
+  return appointmentFieldIds(
+    getTemplateBodyVars(getSelectedTemplateForPreset(preset.key)).map(
+      varKey => {
+        const semantic = APPOINTMENT_SEMANTIC_VARIABLES.find(
+          item => item.key === state.variableBindings?.[varKey]
+        );
+        return semantic?.fieldId ? `field://${semantic.fieldId}` : '';
+      }
+    )
+  );
+};
+
+const missingBindings = preset =>
+  getTemplateBodyVars(getSelectedTemplateForPreset(preset.key)).some(
+    varKey => !presetStates[preset.key].variableBindings?.[varKey]
+  );
+
+const blockedFields = preset =>
+  blockingFieldStats(fieldStats.value, mappedFieldIds(preset));
+
+const fieldWarning = (preset, varKey) => {
+  const semantic = APPOINTMENT_SEMANTIC_VARIABLES.find(
+    item => item.key === presetStates[preset.key].variableBindings?.[varKey]
+  );
+  const stat = blockedFields(preset).find(
+    item => item.field_id === semantic?.fieldId
+  );
+  return stat
+    ? t('SCHEDULING.REMINDERS.ERRORS.FIELD_EMPTY_WARNING', {
+        share: Math.round(stat.share * 100),
+      })
+    : '';
+};
+
+watch(
+  () => APPOINTMENT_REMINDER_PRESETS.flatMap(mappedFieldIds).sort().join(','),
+  async value => {
+    try {
+      fieldStats.value = await fetchAppointmentFieldFill(
+        currentAccount.value?.id,
+        value ? value.split(',') : []
+      );
+    } catch {
+      fieldStats.value = [];
+    }
+  }
+);
 
 const resolveSemanticKeyFromStoredParam = rawVal => {
   const fieldRef = extractSingleTemplateFieldReference(rawVal);
@@ -439,8 +494,10 @@ const buildAutomationRulePayload = preset => {
   const bodyVars = getTemplateBodyVars(template);
   const bodyProcessedParams = {};
   bodyVars.forEach(varKey => {
-    const semKey =
-      state.variableBindings?.[varKey] || APPOINTMENT_SEMANTIC_VARIABLES[0].key;
+    const semKey = state.variableBindings?.[varKey];
+    if (!semKey) {
+      throw new Error(t('SCHEDULING.REMINDERS.ERRORS.FIELD_REQUIRED'));
+    }
     bodyProcessedParams[varKey] = buildFieldReferenceForSemanticKey(semKey);
   });
 
@@ -486,7 +543,7 @@ const buildAutomationRulePayload = preset => {
               : '',
             repeat_mode: 'once',
             target_inbox_id: selectedInboxId.value,
-            timezone: browserTimezone,
+            timezone: accountTimezone.value,
             response_action: canConfirm ? 'confirm_appointment' : '',
             response_button_index: canConfirm ? 0 : '',
             template_params: {
@@ -507,10 +564,24 @@ const buildAutomationRulePayload = preset => {
 const savePreset = async preset => {
   if (!selectedInboxId.value) {
     useAlert(t('SCHEDULING.REMINDERS.ERRORS.INBOX_REQUIRED'));
-    return;
+    return false;
   }
 
+  if (missingBindings(preset)) {
+    useAlert(t('SCHEDULING.REMINDERS.ERRORS.FIELD_REQUIRED'));
+    return false;
+  }
+  let saved = false;
   try {
+    fieldStats.value = await fetchAppointmentFieldFill(
+      currentAccount.value?.id,
+      mappedFieldIds(preset)
+    );
+    if (blockedFields(preset).length) {
+      const share = Math.round(blockedFields(preset)[0].share * 100);
+      useAlert(t('SCHEDULING.REMINDERS.ERRORS.FIELD_EMPTY_WARNING', { share }));
+      return false;
+    }
     savingPresetKey.value = preset.key;
     const payload = buildAutomationRulePayload(preset);
     const existingRule = ruleByPresetKey.value.get(preset.key);
@@ -523,24 +594,33 @@ const savePreset = async preset => {
     } else {
       await store.dispatch('automations/create', payload);
     }
+    saved = true;
 
     await store.dispatch('automations/get');
     useAlert(t('SCHEDULING.REMINDERS.SAVE_SUCCESS'));
+    return true;
   } catch (error) {
     useAlert(error.message || t('SCHEDULING.REMINDERS.SAVE_ERROR'));
+    return saved;
   } finally {
     savingPresetKey.value = '';
   }
 };
 
 const handleTogglePreset = async (preset, nextEnabled) => {
+  if (nextEnabled && (missingBindings(preset) || blockedFields(preset).length))
+    return;
+  const previousEnabled = presetStates[preset.key].enabled;
   presetStates[preset.key].enabled = nextEnabled;
   const template = getSelectedTemplateForPreset(preset.key);
   if (!template) {
+    presetStates[preset.key].enabled = previousEnabled;
     expandedPresetKey.value = preset.key;
     return;
   }
-  await savePreset(preset);
+  if (!(await savePreset(preset))) {
+    presetStates[preset.key].enabled = previousEnabled;
+  }
 };
 
 onMounted(() => {
@@ -703,6 +783,11 @@ onMounted(() => {
               <div class="flex items-center gap-3" @click.stop>
                 <Switch
                   :model-value="presetStates[preset.key].enabled"
+                  :disabled="
+                    !presetStates[preset.key].enabled &&
+                    (missingBindings(preset) ||
+                      blockedFields(preset).length > 0)
+                  "
                   @update:model-value="val => handleTogglePreset(preset, val)"
                 />
                 <button
@@ -826,6 +911,12 @@ onMounted(() => {
                           :options="semanticFieldOptions"
                           input-like
                         />
+                        <p
+                          v-if="fieldWarning(preset, varKey)"
+                          class="mb-0 text-xs text-n-ruby-11 break-words"
+                        >
+                          {{ fieldWarning(preset, varKey) }}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -839,7 +930,11 @@ onMounted(() => {
                         automationUIFlags.isCreating ||
                         automationUIFlags.isUpdating
                       "
-                      :disabled="!presetStates[preset.key].templateKey"
+                      :disabled="
+                        !presetStates[preset.key].templateKey ||
+                        missingBindings(preset) ||
+                        blockedFields(preset).length > 0
+                      "
                       @click="savePreset(preset)"
                     />
                   </div>

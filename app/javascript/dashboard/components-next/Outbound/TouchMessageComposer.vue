@@ -165,6 +165,10 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  appointmentFieldStats: {
+    type: Array,
+    default: () => [],
+  },
   useAiAuthoring: {
     type: Boolean,
     default: false,
@@ -400,6 +404,7 @@ defineExpose({
           :key="`${templateName}-${templateLanguage}`"
           :template="selectedTemplate"
           :initial-processed-params="templateParams"
+          :appointment-field-stats="appointmentFieldStats"
         />
       </div>
 

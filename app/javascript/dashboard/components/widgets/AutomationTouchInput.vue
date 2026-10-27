@@ -24,6 +24,11 @@ import {
   canUseFixedRelativeTimeForUnit,
 } from 'dashboard/components-next/Outbound/touchTiming';
 import { detectTouchTextMode } from 'dashboard/components-next/Outbound/touchTextMode';
+import {
+  appointmentFieldIds,
+  blockingFieldStats,
+  fetchAppointmentFieldFill,
+} from 'dashboard/helper/appointmentFieldFill';
 import { reminderErrorMessage } from 'dashboard/components-next/Outbound/reminderErrors';
 import {
   getTemplateBodyPreview,
@@ -38,8 +43,7 @@ import {
   toDateTimeInputValue,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
 
-const BROWSER_TIMEZONE =
-  Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+const DEFAULT_TIMEZONE = 'Asia/Almaty';
 
 const DEFAULT_TOUCH_PARAMS = {
   action_type: 'send_message',
@@ -58,7 +62,7 @@ const DEFAULT_TOUCH_PARAMS = {
   template_params: {},
   text_mode: 'static',
   timing_mode: 'relative',
-  timezone: BROWSER_TIMEZONE,
+  timezone: DEFAULT_TIMEZONE,
   auto_cancel_on_incoming: false,
   post_delivery_action: '',
   response_action: '',
@@ -136,6 +140,7 @@ export default {
       isUploadingAttachment: false,
       isDraggingAttachment: false,
       localAttachmentDetails: {},
+      fieldStats: [],
     };
   },
   computed: {
@@ -143,7 +148,26 @@ export default {
       allInboxes: 'inboxes/getAllInboxes',
       cannedMessages: 'getCannedResponses',
       getFilteredWhatsAppTemplates: 'inboxes/getFilteredWhatsAppTemplates',
+      getAccount: 'accounts/getAccount',
     }),
+    accountTimezone() {
+      return (
+        this.getAccount?.(Number(this.$route?.params?.accountId))
+          ?.workspace_working_hours_timezone || DEFAULT_TIMEZONE
+      );
+    },
+    mappedAppointmentFields() {
+      if (this.entityKey !== 'appointment') return [];
+      return appointmentFieldIds([
+        this.normalizedValue.body,
+        JSON.stringify(
+          this.normalizedValue.template_params?.processed_params || {}
+        ),
+      ]);
+    },
+    blockedAppointmentFields() {
+      return blockingFieldStats(this.fieldStats, this.mappedAppointmentFields);
+    },
     entityKey() {
       if (this.eventName?.startsWith('appointment_')) return 'appointment';
       if (this.eventName?.startsWith('deal_')) return 'deal';
@@ -177,7 +201,7 @@ export default {
         ...normalizedRaw,
         attachments: normalizeArray(normalizedRaw?.attachments),
         template_params: clone(normalizedRaw?.template_params || {}),
-        timezone: normalizedRaw?.timezone || BROWSER_TIMEZONE,
+        timezone: this.accountTimezone,
       };
       const relativeTime = normalizeRelativeTimeForUnit({
         relativeTimeMode: value.relative_time_mode,
@@ -405,7 +429,7 @@ export default {
         return this.normalizedValue.timezone;
       },
       set(value) {
-        this.emitValue({ timezone: value || BROWSER_TIMEZONE });
+        this.emitValue({ timezone: value || this.accountTimezone });
       },
     },
     autoCancelOnIncoming: {
@@ -778,6 +802,25 @@ export default {
   mounted() {
     this.$store.dispatch('getCannedResponse', { searchKey: '' });
   },
+  watch: {
+    mappedAppointmentFields: {
+      immediate: true,
+      async handler(fieldIds) {
+        if (!fieldIds.length) {
+          this.fieldStats = [];
+          return;
+        }
+        try {
+          this.fieldStats = await fetchAppointmentFieldFill(
+            Number(this.$route?.params?.accountId),
+            fieldIds
+          );
+        } catch {
+          this.fieldStats = [];
+        }
+      },
+    },
+  },
   methods: {
     cleanPayload(payload) {
       const cleaned = {
@@ -787,7 +830,10 @@ export default {
           .map(normalizeAttachmentId)
           .filter(Boolean),
         template_params: clone(payload.template_params || {}),
-        timezone: payload.timezone || BROWSER_TIMEZONE,
+        timezone:
+          this.entityKey === 'appointment'
+            ? this.accountTimezone
+            : payload.timezone || DEFAULT_TIMEZONE,
       };
 
       delete cleaned.delay_minutes;
@@ -1083,6 +1129,7 @@ export default {
           :active-content-tab-index="activeContentTabIndex"
           allow-ai-authoring
           :attachments="touchAttachments"
+          :appointment-field-stats="fieldStats"
           :available-field-scopes="availableFieldScopes"
           :available-variable-prefixes="availableVariablePrefixes"
           :body="body"
@@ -1142,6 +1189,17 @@ export default {
             />
           </template>
         </TouchMessageComposer>
+        <p
+          v-for="stat in isChannelTemplate ? [] : blockedAppointmentFields"
+          :key="stat.field_id"
+          class="mb-0 text-xs text-n-ruby-11 break-words"
+        >
+          {{
+            $t('SCHEDULING.REMINDERS.ERRORS.FIELD_EMPTY_WARNING', {
+              share: Math.round(stat.share * 100),
+            })
+          }}
+        </p>
 
         <div
           v-if="canConfigureAppointmentConfirmation"

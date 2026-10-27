@@ -311,7 +311,6 @@ export const APPOINTMENT_REMINDER_PRESETS = [
       'appointment_date',
       'appointment_time',
       'specialist_name',
-      'service_name',
     ],
   },
   {
@@ -332,7 +331,6 @@ export const APPOINTMENT_REMINDER_PRESETS = [
       'appointment_date',
       'appointment_time',
       'specialist_name',
-      'service_name',
     ],
   },
   {
@@ -373,7 +371,6 @@ export const APPOINTMENT_REMINDER_PRESETS = [
       'appointment_date',
       'appointment_time',
       'specialist_name',
-      'service_name',
     ],
   },
   {
@@ -393,7 +390,6 @@ export const APPOINTMENT_REMINDER_PRESETS = [
       'client_name',
       'appointment_time',
       'specialist_name',
-      'service_name',
     ],
   },
   {
@@ -409,7 +405,7 @@ export const APPOINTMENT_REMINDER_PRESETS = [
     supportsConfirmation: false,
     supportsDayBeforeTime: false,
     supportsReviewDelay: true,
-    defaultVariableOrder: ['client_name', 'specialist_name', 'service_name'],
+    defaultVariableOrder: ['client_name', 'specialist_name'],
   },
 ];
 
@@ -423,7 +419,7 @@ const buildLanguageSection = (presetKey, lang, options) => {
   const includeCompany = Boolean(options.includeCompany && companyName);
   const includeDateTime = options.includeDateTime !== false;
   const includeSpecialist = options.includeSpecialist !== false;
-  const includeService = options.includeService !== false;
+  const includeService = options.includeService === true;
 
   const lines = [];
 

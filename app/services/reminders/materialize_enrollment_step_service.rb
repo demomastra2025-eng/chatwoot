@@ -1,5 +1,5 @@
 class Reminders::MaterializeEnrollmentStepService
-  GRACE_WINDOW = 5.minutes
+  GRACE_WINDOW = Reminders::MissedAutomationTouchPolicy::GRACE_WINDOW
 
   attr_reader :enrollment, :now
 
@@ -34,12 +34,27 @@ class Reminders::MaterializeEnrollmentStepService
     schedule = Reminders::EnrollmentScheduleService.new(enrollment: enrollment)
     return cancel_terminal!(schedule) if schedule.terminal_remindable?
 
+    process_schedule(schedule)
+  end
+
+  def process_schedule(schedule)
     step = schedule.next_step
     return complete_enrollment! if step.blank?
     return reschedule_enrollment!(step) if step.due_at > now
-    return skip_missed!(step, schedule) if step.due_at < now - GRACE_WINDOW
+    return skip_missed!(step, schedule) if missed_step?(step)
 
     materialize!(step, schedule)
+  end
+
+  def missed_step?(step)
+    return true if step.due_at < now - GRACE_WINDOW
+    return false unless enrollment.automation_rule_id.present? && enrollment.remindable.is_a?(Scheduling::Appointment)
+
+    probe = Reminders::RelativeScheduleProbe.new(
+      account: enrollment.account, remindable: enrollment.remindable,
+      definition: step.definition, created_at: enrollment.activated_at
+    )
+    Reminders::MissedAutomationTouchPolicy.new(reminder: probe.reminder, now: now).missed?
   end
 
   def process_inactive_enrollment

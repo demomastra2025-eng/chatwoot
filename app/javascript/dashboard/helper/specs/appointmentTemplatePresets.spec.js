@@ -14,6 +14,17 @@ import {
 } from '../whatsappTemplateLibrary';
 
 describe('appointmentTemplatePresets', () => {
+  it('leaves service out of every default binding and generated template', () => {
+    expect(
+      APPOINTMENT_REMINDER_PRESETS.every(
+        preset => !preset.defaultVariableOrder.includes('service_name')
+      )
+    ).toBe(true);
+    const drafts = buildAppointmentTemplatePackDrafts({ languageMode: 'ru' });
+    expect(drafts.every(draft => !draft.bodyText.includes('{{услуга}}'))).toBe(
+      true
+    );
+  });
   describe('#serializeSemanticTemplateText', () => {
     it('converts universal semantic variables into sequential Meta placeholders with examples and field:// bindings', () => {
       const result = serializeSemanticTemplateText(

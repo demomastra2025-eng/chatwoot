@@ -150,6 +150,12 @@ const SUPPORTED_OUTBOUND_CHANNEL_TYPES = [
 const { t } = useI18n();
 const store = useStore();
 const currentAccountId = useMapGetter('getCurrentAccountId');
+const getAccount = useMapGetter('accounts/getAccount');
+const accountTimezone = computed(
+  () =>
+    getAccount.value?.(Number(currentAccountId.value))
+      ?.workspace_working_hours_timezone || 'Asia/Almaty'
+);
 const cannedResponses = useMapGetter('getCannedResponses');
 const getAllInboxes = useMapGetter('inboxes/getAllInboxes');
 const getFilteredWhatsAppTemplates = useMapGetter(
@@ -199,7 +205,7 @@ const form = reactive({
   templateName: '',
   templateParams: {},
   timingMode: 'relative',
-  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+  timezone: accountTimezone.value,
   useAiAuthoring: false,
 });
 
@@ -1098,7 +1104,7 @@ const resetForm = () => {
   form.templateName = '';
   form.templateParams = {};
   form.timingMode = 'relative';
-  form.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  form.timezone = accountTimezone.value;
   form.useAiAuthoring = false;
   hydrateAttachments([]);
   clearTargetSelection();
@@ -1163,7 +1169,10 @@ const hydrateForm = () => {
     props.touch.template_params?.processed_params || {}
   );
   form.timingMode = props.touch.timing_mode || 'absolute';
-  form.timezone = props.touch.timezone || form.timezone;
+  form.timezone =
+    props.touch.remindable_type === 'Scheduling::Appointment'
+      ? accountTimezone.value
+      : props.touch.timezone || form.timezone;
   form.useAiAuthoring = props.touch.text_mode === 'agent';
   hydrateAttachments(props.touch.attachments);
   hydrateTargetSelection();
@@ -1256,7 +1265,10 @@ const buildPayload = () => {
           target_conversation_id: null,
         }
       : {}),
-    timezone: form.timezone,
+    timezone:
+      form.remindableType === 'Scheduling::Appointment'
+        ? accountTimezone.value
+        : form.timezone,
     timing_mode: form.timingMode,
     ...(form.timingMode === 'absolute'
       ? {

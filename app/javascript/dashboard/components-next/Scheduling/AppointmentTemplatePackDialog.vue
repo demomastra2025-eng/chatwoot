@@ -53,7 +53,7 @@ const options = reactive({
   greetByName: true,
   includeDateTime: true,
   includeSpecialist: true,
-  includeService: true,
+  includeService: false,
   confirmationDayBefore: true,
   includeLocationUrl: false,
   locationUrl: '',
@@ -534,7 +534,9 @@ defineExpose({
         >
           <div class="space-y-3 lg:col-span-7">
             <div class="flex items-center justify-between gap-2">
-              <p class="mb-0 text-xs font-semibold uppercase tracking-wide text-n-slate-11">
+              <p
+                class="mb-0 text-xs font-semibold uppercase tracking-wide text-n-slate-11"
+              >
                 {{ t('SCHEDULING.REMINDERS.PACK_MODAL.EDIT_TEMPLATE_TITLE') }}
               </p>
               <button
@@ -594,7 +596,9 @@ defineExpose({
                 >
                   <span class="i-lucide-plus size-3" />
                   <span>{{ t(semVar.labelKey, semVar.defaultLabel) }}</span>
-                  <span class="font-mono text-[10px] opacity-70">{{ semVar.token }}</span>
+                  <span class="font-mono text-[10px] opacity-70">{{
+                    semVar.token
+                  }}</span>
                 </button>
               </div>
             </div>
@@ -603,7 +607,9 @@ defineExpose({
               <TextArea
                 data-testid="pack-template-body-input"
                 :model-value="activePreviewDraft.bodyText"
-                :label="t('SCHEDULING.REMINDERS.PACK_MODAL.TEMPLATE_BODY_LABEL')"
+                :label="
+                  t('SCHEDULING.REMINDERS.PACK_MODAL.TEMPLATE_BODY_LABEL')
+                "
                 auto-height
                 @update:model-value="updateActiveDraftBody"
               />
@@ -674,8 +680,12 @@ defineExpose({
               </div>
             </div>
 
-            <div class="mt-3 flex items-center justify-between text-[11px] text-n-slate-11">
-              <span class="font-mono truncate">{{ activePreviewDraft.name }}</span>
+            <div
+              class="mt-3 flex items-center justify-between text-[11px] text-n-slate-11"
+            >
+              <span class="font-mono truncate">{{
+                activePreviewDraft.name
+              }}</span>
             </div>
           </div>
         </div>

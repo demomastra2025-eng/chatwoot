@@ -13,6 +13,7 @@ import { useVuelidate } from '@vuelidate/core';
 import { requiredIf } from '@vuelidate/validators';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
+import { appointmentFieldIds } from 'dashboard/helper/appointmentFieldFill';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -33,6 +34,10 @@ import {
 } from 'dashboard/helper/templateHelper';
 
 const props = defineProps({
+  appointmentFieldStats: {
+    type: Array,
+    default: () => [],
+  },
   initialProcessedParams: {
     type: Object,
     default: () => ({}),
@@ -53,6 +58,12 @@ const emit = defineEmits(['sendMessage', 'resetTemplate', 'back']);
 const { t } = useI18n();
 
 const processedParams = ref({});
+const blockingStatFor = value => {
+  const [fieldId] = appointmentFieldIds([value]);
+  return props.appointmentFieldStats.find(
+    stat => stat.field_id === fieldId && stat.blocking
+  );
+};
 const mediaFileInputRef = ref(null);
 const isUploadingMedia = ref(false);
 const selectedMediaFileName = ref('');
@@ -486,7 +497,7 @@ defineExpose({
         <div
           v-for="variable in headerParamEntries"
           :key="`header-${variable.key}`"
-          class="flex items-center mb-2.5"
+          class="flex flex-col min-w-0 mb-2.5"
         >
           <TemplateParamInput
             v-model="processedParams.header[variable.key]"
@@ -498,6 +509,19 @@ defineExpose({
               })
             "
           />
+          <p
+            v-if="blockingStatFor(processedParams.header[variable.key])"
+            class="mb-0 text-xs text-n-ruby-11 break-words"
+          >
+            {{
+              t('SCHEDULING.REMINDERS.ERRORS.FIELD_EMPTY_WARNING', {
+                share: Math.round(
+                  blockingStatFor(processedParams.header[variable.key]).share *
+                    100
+                ),
+              })
+            }}
+          </p>
         </div>
       </div>
 
@@ -584,7 +608,7 @@ defineExpose({
         <div
           v-for="variable in bodyParamEntries"
           :key="`body-${variable.key}`"
-          class="flex items-center mb-2.5"
+          class="flex flex-col min-w-0 mb-2.5"
         >
           <TemplateParamInput
             v-model="processedParams.body[variable.key]"
@@ -596,6 +620,19 @@ defineExpose({
               })
             "
           />
+          <p
+            v-if="blockingStatFor(processedParams.body[variable.key])"
+            class="mb-0 text-xs text-n-ruby-11 break-words"
+          >
+            {{
+              t('SCHEDULING.REMINDERS.ERRORS.FIELD_EMPTY_WARNING', {
+                share: Math.round(
+                  blockingStatFor(processedParams.body[variable.key]).share *
+                    100
+                ),
+              })
+            }}
+          </p>
         </div>
       </div>
 

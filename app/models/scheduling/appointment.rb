@@ -105,6 +105,7 @@ class Scheduling::Appointment < ApplicationRecord
   before_destroy :cancel_deferred_touch_enrollments, prepend: true
   after_create_commit :dispatch_created_event
   after_update_commit :dispatch_updated_events
+  after_update_commit :retime_visit_touches
   after_update_commit :sync_deferred_touch_enrollments
   after_commit :sync_contact_owner_from_owner, if: :saved_change_to_owner_id?
 
@@ -217,6 +218,14 @@ class Scheduling::Appointment < ApplicationRecord
     Reminders::SyncEnrollmentService.new(remindable: self).perform
   end
 
+  def retime_visit_touches
+    return unless (@retime_changes_for_commit || saved_changes).keys.intersect?(%w[starts_at ends_at resource_id status])
+
+    Reminders::RetimeVisitTouchesService.new(appointment: self).perform
+  ensure
+    @retime_changes_for_commit = nil
+  end
+
   def cancel_deferred_touch_enrollments
     Reminders::SyncEnrollmentService.new(remindable: self).cancel_before_destroy!
   end
@@ -227,9 +236,11 @@ class Scheduling::Appointment < ApplicationRecord
 
   def capture_updated_changes_for_commit
     @updated_changes_for_commit ||= {}
+    @retime_changes_for_commit ||= {}
     saved_changes.each do |attribute, (previous_value, current_value)|
       original_value = @updated_changes_for_commit.key?(attribute) ? @updated_changes_for_commit.dig(attribute, 0) : previous_value
       @updated_changes_for_commit[attribute] = [original_value, current_value]
+      @retime_changes_for_commit[attribute] = [original_value, current_value]
     end
   end
 
