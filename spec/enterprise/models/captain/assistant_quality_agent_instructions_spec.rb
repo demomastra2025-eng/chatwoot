@@ -118,6 +118,24 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
     end
   end
 
+  # Suggestion eval 27.10 (c74-1245386): a payment phone number the patient sent was read as the ID number, and a card was raised to
+  # write it into the card of the patient.
+  describe 'the IIN' do
+    let(:iin_rule) do
+      '- An IIN is 12 digits. Never take another number the patient sent (a phone number, a payment or card number) for the IIN, and ' \
+        'never write one to a card; when the IIN is needed and not known, ask for it.'
+    end
+
+    it 'is 12 digits and never another number the patient sent, in a suggestion, in a live run and in a council part' do
+      part = instance_double(Captain::Runtime::RunContext,
+                             context: { part_run: true, state: { source: 'reply_suggestion', runtime_clock: clock } })
+
+      expect(suggestion_rules).to include(iin_rule)
+      expect(live_rules).to include(iin_rule)
+      expect(assistant.agent_instructions(part).split("\n\n").first).to include(iin_rule)
+    end
+  end
+
   # Suggestion eval 27.10 (c43-1233247, c76-1195118, c74-1233747): a draft said it could not check a time it had not searched, one asked
   # the patient for the doctor when a search of the time names the doctors who have it, one gave the times of a gynecologist under the
   # name of the other.

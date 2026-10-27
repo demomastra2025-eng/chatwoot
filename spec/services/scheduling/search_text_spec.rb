@@ -5,6 +5,31 @@ RSpec.describe Scheduling::SearchText do
     described_class.normalize(text, max_length: nil)
   end
 
+  # Suggestion eval 27.10 (c43-1201845): the search for the doctor by the Kazakh spelling of her name found nobody, while the Russian
+  # spelling found her. Patients write Kazakh on a Russian keyboard, and the catalog is written either way.
+  describe 'the Kazakh letters' do
+    it 'reads each Kazakh letter as the Russian letter it is written with, in any case' do
+      expect(described_class.normalize('ӘҚҢҒҮҰӨІҺ әқңғүұөіһ')).to eq('акнгууоих акнгууоих')
+    end
+
+    it 'gives one text for the two spellings of a name, a specialty or a service' do
+      expect(described_class.normalize('Қасымова Әлия')).to eq(described_class.normalize('Касымова Алия'))
+      expect(described_class.normalize('Ұлттық ЖҮРЕК орталығы')).to eq(described_class.normalize('Улттык журек орталыгы'))
+      expect(described_class.normalize('Гинеколог Ғалымжан')).to eq('гинеколог галымжан')
+    end
+
+    it 'keeps ё as е and leaves the other Cyrillic and Latin letters as they were' do
+      expect(described_class.normalize('Артём ыбырай Smith')).to eq('артем ыбырай smith')
+    end
+
+    it 'gives the SQL twin of the same folding for a column' do
+      sql = described_class.fold_sql('scheduling_resources.name')
+
+      expect(sql).to eq("translate(LOWER(scheduling_resources.name), 'ёәқңғүұөіһ', 'еакнгууоих')")
+      expect(described_class::FOLD_FROM.length).to eq(described_class::FOLD_TO.length)
+    end
+  end
+
   describe '.words' do
     it 'keeps every word: short words, prepositions, digits, roman numerals, one-letter codes and decimals' do
       expect(described_class.words('мрт с контрастом 3 тл')).to eq(%w[мрт с контрастом 3 тл])

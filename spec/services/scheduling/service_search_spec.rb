@@ -47,6 +47,27 @@ RSpec.describe Scheduling::ServiceSearch do
     end
   end
 
+  # Suggestion eval 27.10: the Kazakh spelling of a name or a service is the Russian spelling with the letters of Kazakh.
+  describe 'the Kazakh letters' do
+    before do
+      create_service('Жүктілік тесті')
+      create_service('Гинеколог қабылдауы')
+      create_service('УЗИ почек')
+    end
+
+    it 'finds a service by either spelling, whichever way it is stored' do
+      expect(names('Жүктілік тесті')).to eq(['Жүктілік тесті'])
+      expect(names('Жуктилик тести')).to eq(['Жүктілік тесті'])
+      expect(names('Гинеколог кабылдауы')).to eq(['Гинеколог қабылдауы'])
+      expect(names('гинеколог қабылдау')).to eq(['Гинеколог қабылдауы'])
+    end
+
+    it 'does not widen a Russian search' do
+      expect(names('УЗИ почек')).to eq(['УЗИ почек'])
+      expect(names('почек')).to eq(['УЗИ почек'])
+    end
+  end
+
   describe 'ranking before the page limit' do
     it 'puts a name match above category matches that sort earlier alphabetically' do
       60.times { |index| create_service("Анализ #{index}", category: 'МРТ кисти') }

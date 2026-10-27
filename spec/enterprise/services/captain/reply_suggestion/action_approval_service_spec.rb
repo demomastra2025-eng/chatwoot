@@ -165,6 +165,37 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
       expect(run_context.context[described_class::CONTEXT_KEY].size).to eq(1)
     end
 
+    # Suggestion eval 27.10 (c74-1245386): a payment phone number the patient sent was read as the ID number, and a card was raised to
+    # write it. A card that writes the IIN is prepared only for an IIN.
+    context 'with a card that writes the IIN of the patient' do
+      let(:assistant) do
+        create(:captain_assistant, account: account, name: 'Координатор', active: true,
+                                   config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => %w[update_contact] } } })
+      end
+      let(:update_tool) { Captain::Tools::UpdateContactTool.new(assistant) }
+
+      def pending_cards
+        described_class.pending_for(account_id: account.id, conversation_id: conversation.id)
+      end
+
+      it 'prepares no card for a phone number or any other text, and says why' do
+        ['87011234567', '+7 701 123 45 67', '900101300028', 'абв'].each do |value|
+          result = described_class.intercept(tool: update_tool, tool_context: tool_context, arguments: { identifier: value })
+
+          expect(result).to include(success: false)
+          expect(result[:error]).to include('Invalid IIN'), value
+        end
+        expect(pending_cards).to be_empty
+      end
+
+      it 'prepares the card for an IIN of 12 digits with the check digit' do
+        result = JSON.parse(described_class.intercept(tool: update_tool, tool_context: tool_context, arguments: { identifier: '900101300027' }))
+
+        expect(result).to include('status' => 'pending_operator_approval')
+        expect(pending_cards.size).to eq(1)
+      end
+    end
+
     # A contact update read as a booking once made a draft say "the booking waits for the administrator" with no booking card.
     it 'tells the agent exactly what waits for the operator and which cards the run prepared' do
       account.enable_features!('crm', 'crm_tasks')

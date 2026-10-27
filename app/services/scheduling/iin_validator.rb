@@ -37,6 +37,22 @@ module Scheduling::IinValidator
     )
   end
 
+  # The IIN a patient-facing agent may write to a card: 12 digits with the check digit, as the digits only. Anything else is refused,
+  # a phone number included (the eval of 27.10: a payment phone number the patient sent was read as the ID number and a card was raised
+  # to update it, because the tool took any text). Nil and blank are no IIN to write: the caller leaves the field alone.
+  def require_valid!(value)
+    return if value.to_s.strip.empty?
+
+    normalized = normalize(value)
+    return normalized if valid?(normalized)
+
+    raise Scheduling::Error.new(
+      code: 'INVALID_IIN',
+      message: 'Invalid IIN: an IIN is 12 digits with a check digit, a phone number is not an IIN; ask the patient for the IIN',
+      status: :unprocessable_content
+    )
+  end
+
   def weighted_checksum(digits, weights)
     weights.each_with_index.sum { |weight, index| digits[index] * weight } % 11
   end

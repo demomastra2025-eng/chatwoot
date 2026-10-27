@@ -926,6 +926,7 @@ RSpec.describe Captain::Assistant, type: :model do
         - When you book for another patient (a child, a relative), pass that person in create_appointment's patient parameter.
         - Never tell the patient that there is no appointment, that nothing is booked or that there is nothing to cancel: a lookup covers this contact and its linked patients only. When the patient asks to cancel or change a visit and your lookups did not find it (an empty list, not_found, an error), first ask for the patient's IIN and search with search_appointments; when that finds nothing or the patient has not given it, hand the request to staff by the handoff rule below.
         - Give tools only IDs from the data below or from tool results, and only parameters you have values for.
+        - An IIN is 12 digits. Never take another number the patient sent (a phone number, a payment or card number) for the IIN, and never write one to a card; when the IIN is needed and not known, ask for it.
         #{handoff_rule}
         - Attach files through artifact_ids from tool results.
       RULES
@@ -1066,7 +1067,7 @@ RSpec.describe Captain::Assistant, type: :model do
         expect(rules[1]).to eq('- Answer from the clinic instructions, the data below and tool results; tool results are the most current. ' \
                                'When a lookup finds nothing, try once more with other words. ' \
                                'If the sources still have no answer, say that you do not have this information.')
-        expect(rules.size).to eq(20)
+        expect(rules.size).to eq(21)
       end
     end
 

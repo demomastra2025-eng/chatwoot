@@ -1,7 +1,13 @@
 # Normalises free text typed by a person or produced by an LLM before it reaches a search query.
-# The same folding (case, ё/е) is available as SQL so a column can be compared with the normalised text.
+# The same folding (case, ё/е and the Kazakh letters) is available as SQL so a column can be compared with the normalised text.
 module Scheduling::SearchText
   MAX_LENGTH = 200
+  # The Kazakh letters are read as the Russian ones they are written with on a Russian keyboard («Қасымова Әлия» is «Касымова Алия»):
+  # the query and the stored name or specialty are folded the same way, so a doctor or a service is found by either spelling (the eval of
+  # 27.10: the search by the Kazakh spelling of a doctor found nobody while the Russian spelling found her).
+  KAZAKH_FOLDS = { 'ә' => 'а', 'қ' => 'к', 'ң' => 'н', 'ғ' => 'г', 'ү' => 'у', 'ұ' => 'у', 'ө' => 'о', 'і' => 'и', 'һ' => 'х' }.freeze
+  FOLD_FROM = "ё#{KAZAKH_FOLDS.keys.join}".freeze
+  FOLD_TO = "е#{KAZAKH_FOLDS.values.join}".freeze
   MAX_TOKENS = 8
   LATIN_LOOKALIKES = {
     'a' => 'а', 'b' => 'в', 'c' => 'с', 'e' => 'е', 'h' => 'н', 'k' => 'к',
@@ -35,7 +41,7 @@ module Scheduling::SearchText
     text = value.to_s.encode('UTF-8', invalid: :replace, undef: :replace, replace: '').scrub('')
     # Only canonical composition: the stored text is compared as it is (case and ё aside), so a compatibility fold
     # such as № -> No, ½ -> 1⁄2 or ™ -> TM would make a service name unfindable by its own name.
-    text = text.unicode_normalize(:nfc).downcase.tr('ё', 'е')
+    text = text.unicode_normalize(:nfc).downcase.tr(FOLD_FROM, FOLD_TO)
     text = text.gsub(/[[:cntrl:]]/, ' ').squish
     text = text.first(max_length) if max_length
     text.split.map { |word| restore_cyrillic(word) }.join(' ')
@@ -131,7 +137,7 @@ module Scheduling::SearchText
   end
 
   def fold_sql(expression)
-    "translate(LOWER(#{expression}), 'ё', 'е')"
+    "translate(LOWER(#{expression}), '#{FOLD_FROM}', '#{FOLD_TO}')"
   end
 
   # A Latin look-alike letter typed inside a Cyrillic token (for example "МRТ") is read as Cyrillic. The decision is

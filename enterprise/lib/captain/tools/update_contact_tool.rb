@@ -7,11 +7,12 @@ class Captain::Tools::UpdateContactTool < Captain::Tools::BasePublicTool
   param :custom_attributes, type: 'object', desc: 'Optional custom attributes object', required: false
 
   def perform(tool_context, name: nil, email: nil, phone_number: nil, identifier: nil, custom_attributes: nil)
+    # The identifier of a patient is the IIN: 12 digits, never a phone number or any other text.
     contact = operations(tool_context.state).update_current_contact(
       name: name,
       email: email,
       phone_number: phone_number,
-      identifier: identifier,
+      identifier: Scheduling::IinValidator.require_valid!(identifier),
       custom_attributes: custom_attributes
     )
 

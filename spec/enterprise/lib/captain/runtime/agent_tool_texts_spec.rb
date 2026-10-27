@@ -139,6 +139,14 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
                   'a patient that list_my_appointments does not show')
   end
 
+  # Suggestion eval 27.10 (c74-1245386): a payment phone number the patient sent was read as the ID number.
+  it 'says that the IIN is 12 digits with the check digit and never a phone number, for the identifier and the iin of the card' do
+    expect(described_class.for_tool('update_contact').params['identifier'])
+      .to include('IIN: 12 digits with the check digit', 'Never a phone number or any other number the patient sent for another purpose')
+    expect(described_class.for_tool('update_my_contact').params['iin'])
+      .to include('IIN: 12 digits with the check digit', 'Never a phone number or any other number the patient sent for another purpose')
+  end
+
   # Suggestion eval 27.10 (c74-1245884): a search for earlier or later times started from tomorrow and skipped the free times of today.
   it 'tells the agent to start a search of free slots today when no day is named, never from tomorrow' do
     from = described_class.for_tool('search_available_slots').params['from']
