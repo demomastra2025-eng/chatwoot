@@ -272,6 +272,18 @@ RSpec.describe Captain::Runtime::DecisionRouter do
     )
   end
 
+  # Suggestion eval 27.10 (c76-1205215, c78-1186457): «Ок Рахмет / Принял / Буду» after an agreed time was answered with a new booking.
+  it 'tells the decision models that a confirmation of an agreed visit, also after an unreadable clinic voice note, is no_reply_needed' do
+    instructions = described_class::INSTRUCTIONS.squish
+
+    expect(instructions).to include(
+      'So does a confirmation that the patient will come or that a time suits ("спасибо, буду", "хорошо, придём", "рахмет, келемін") ' \
+      'sent after the clinic stated that a visit or a time is agreed, booked, confirmed or reminded, also in a voice note of the clinic ' \
+      'whose words are unknown ("[Voice note of the clinic staff; its words are not available to you]").',
+      'a short reply to it - "ок", "хорошо", "да", "давайте", "жарайды", "иә", a thumbs-up - accepts the offer'
+    )
+  end
+
   # Router benchmark A23: «Перестаньте мне писать» was no_reply_needed; a demand to stop writing is a refusal to go on with the assistant.
   it 'tells the decision models that a demand to stop writing is human_handoff, never no_reply_needed' do
     expect(described_class::INSTRUCTIONS.squish).to include(

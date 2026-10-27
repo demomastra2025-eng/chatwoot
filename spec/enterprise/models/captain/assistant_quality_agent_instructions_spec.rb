@@ -69,6 +69,36 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
     end
   end
 
+  # Suggestion eval 27.10 (c76-1205215, c78-1186457, c77-1198258): after an agreed time (the voice notes of the operator had no text)
+  # the patient wrote «Принял / Буду» and the agent booked the same time again, asked for the data again or greeted.
+  describe 'a bare confirmation after an agreed time and the voice notes of staff' do
+    it 'tells a suggestion to stay silent for a thanks, ok or confirmation of attendance and never to settle again what a voice note may have' do
+      expect(suggestion_rules).to include(
+        '- A voice note of staff in the history shows its transcript as text, or the line "[Voice note of the clinic staff; its words are ' \
+        'not available to you]" when it has none.',
+        'never offer or book again what it may have settled, and when the patient\'s message depends on what it said, leave the reply to ' \
+        'staff (response_mode human, operator_note naming the voice note).',
+        'A thanks, ok or confirmation that the patient will come ("спасибо, буду", "хорошо, придём", "рахмет, келемін") after a time or a ' \
+        'visit that the history shows as agreed, booked, confirmed or reminded, or after such a voice note, needs no reply: set ' \
+        'response_mode to suppress; never answer it with a greeting alone, a new booking or a question for data already given.'
+      )
+    end
+
+    it 'names the exact line the history builder writes for a voice note without a transcript' do
+      expect(suggestion_rules).to include(Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE)
+    end
+
+    it 'keeps the voice note rule out of the live prompt and the council parts, and widens the no-action rule of the live prompt' do
+      part = instance_double(Captain::Runtime::RunContext,
+                             context: { part_run: true, state: { source: 'reply_suggestion', runtime_clock: clock } })
+
+      expect(live_rules).not_to include('Voice note of the clinic staff')
+      expect(assistant.agent_instructions(part).split("\n\n").first).not_to include('Voice note of the clinic staff')
+      expect(live_rules).to include('(after prices or information, a reminder, a time already agreed, or a visit already booked), also ' \
+                                    'one that says the patient will come ("спасибо, буду", "рахмет, келемін"), asks for no action')
+    end
+  end
+
   # Suggestion eval 27.10 (c77-1167712, c78-1194483, c74-1245884): "tomorrow 09:00" written the day before was offered for the wrong
   # day because the model counted from the clock; a search for earlier or later times started from tomorrow and skipped today's.
   describe 'the days a patient names and where a search of free times starts' do

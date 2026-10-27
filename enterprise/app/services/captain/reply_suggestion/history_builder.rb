@@ -7,6 +7,11 @@
 # (Captain::Conversation::HistoryBudget).
 class Captain::ReplySuggestion::HistoryBuilder
   FALLBACK_USER_PROMPT = 'Suggest the next reply for the customer based on the conversation and context.'
+  # A voice note with no transcript: the agent reads that it exists and that its words are not known (suggestion eval 27.10: the
+  # operator's voice notes had no transcript, the agent saw "Message without content", started the booking again and asked for
+  # data the patient had given, when the patient only thanked). A transcript, when there is one, is the text of the message.
+  PATIENT_VOICE_NOTE = '[Voice message of the patient; its words are not available to you]'
+  STAFF_VOICE_NOTE = '[Voice note of the clinic staff; its words are not available to you]'
 
   pattr_initialize [:account!, :conversation!, :assistant!]
 
@@ -48,12 +53,20 @@ class Captain::ReplySuggestion::HistoryBuilder
   # clock (see Captain::Assistant::RunPayloadHelper#stamped_content): a suggestion often answers a message of an earlier day.
   def history_entry(message, budget, descriptions)
     entry = {
-      content: message_builder(message, budget: budget, descriptions: descriptions).generate_content,
+      content: entry_content(message, budget, descriptions),
       role: message.message_type == 'incoming' ? 'user' : 'assistant',
       sent_at: message.created_at
     }
     agent_name = message.additional_attributes.to_h['agent_name'].presence
     entry[:agent_name] = agent_name if agent_name.present?
     entry
+  end
+
+  def entry_content(message, budget, descriptions)
+    content = message_builder(message, budget: budget, descriptions: descriptions).generate_content
+    return content unless content == Captain::OpenAiMessageBuilderService::EMPTY_CONTENT
+    return content unless message.attachments.any? { |item| item.file_type == 'audio' }
+
+    message.message_type == 'incoming' ? PATIENT_VOICE_NOTE : STAFF_VOICE_NOTE
   end
 end

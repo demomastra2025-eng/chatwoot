@@ -45,6 +45,18 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
     expect(build(3, current: 10).mode_keys).to include('no_reply_needed')
   end
 
+  # Suggestion eval 27.10 (c76-1205215, c78-1186457, c77-1198258): after a time was agreed (a voice note of the operator had no text)
+  # the patient wrote «Ок Рахмет / Принял / Буду» and the agent started the booking again.
+  it 'describes a bare confirmation of an agreed visit as no_reply_needed, also after a clinic voice note whose words are unknown' do
+    description = build(3).to_h['route_mode'][:criteria]['no_reply_needed']
+
+    expect(description).to include('A thanks, ok or "буду", "придём", "келемін" that only confirms a visit or a time the clinic already ' \
+                                   'agreed, booked or confirmed (also in a clinic voice note whose words are unknown) closes the topic: this.',
+                                   'A greeting opens or resumes the dialog: not this',
+                                   'a thumbs-up that answers a clinic question offering a time or a booking accepts it: not this')
+    expect(description.length).to be <= described_class::MAX_DESCRIPTION
+  end
+
   # Router benchmark A23 (26.10, review of the human_handoff gate): «Перестаньте мне писать» was no_reply_needed, which no keyword gate sees.
   # The gate takes the include answers of a human_handoff as they come, so the models are asked for no agent in it.
   it 'describes human_handoff with every include answer no and a demand to stop writing, and keeps that demand out of no_reply_needed' do
@@ -236,6 +248,18 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
         .to have_attributes(kind: 'no_reply', agent_ids: [20], key: 'no_reply_needed', confidence: 0.9)
       expect(build(3).resolve(answered('no_reply_needed'))).to have_attributes(kind: 'no_reply', agent_ids: [])
       expect(build(3, message: 'Рахмет, сау болыңыз 🙏').resolve(answered('no_reply_needed')).kind).to eq('no_reply')
+    end
+
+    # Suggestion eval 27.10: a voice note of the clinic has no text, so the last clinic message asks nothing; a confirmation of the
+    # visit after it is a courtesy, a question about it is not.
+    it 'takes a no_reply_needed for a bare confirmation after a clinic voice note, and keeps a question about it with the agent' do
+      voice = [{ role: 'clinic', agent_id: 20, text: Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE }]
+
+      ['Ок Рахмет Принял Буду', 'Спасибо, буду', 'Рахмет, келемін'].each do |text|
+        expect(build(3, current: 20, message: text, history: voice).resolve(answered('no_reply_needed')))
+          .to have_attributes(kind: 'no_reply', agent_ids: [20], key: 'no_reply_needed'), text
+      end
+      expect(build(3, current: 20, message: 'А во сколько?', history: voice).resolve(answered('no_reply_needed')).key).to eq('stay_current')
     end
 
     # Review of df3aaff78: no_reply_needed silences the turn, so an answer that contradicts it never ends as no_reply.

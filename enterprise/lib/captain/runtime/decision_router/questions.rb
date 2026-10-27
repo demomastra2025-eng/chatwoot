@@ -53,7 +53,9 @@ class Captain::Runtime::DecisionRouter::Questions
                          'topic. It asks nothing, names no service, doctor, date or time, answers no open question, accepts or declines ' \
                          'no offered time or booking that still waits for an answer of the patient, and gives no personal data. An ok, ' \
                          '"хорошо", "жарайды" or a thumbs-up that answers a clinic question offering a time or a booking accepts it: ' \
-                         'not this. A greeting opens or resumes the dialog: not this. A demand to stop writing is not this either. ' \
+                         'not this. A thanks, ok or "буду", "придём", "келемін" that only confirms a visit or a time the clinic already ' \
+                         'agreed, booked or confirmed (also in a clinic voice note whose words are unknown) closes the topic: this. ' \
+                         'A greeting opens or resumes the dialog: not this. A demand to stop writing is not this either. ' \
                          'Whoever the current agent is; never a council. ' \
                          "Every include_agent question is no, except the current agent's."
   NOBODY_DESCRIPTION = 'No listed agent handles what this part asks for.'
