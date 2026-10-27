@@ -31,6 +31,7 @@ import SchedulingCalendarGrid from 'dashboard/components-next/Scheduling/Schedul
 import SchedulingCustomFieldAdvancedFilter from 'dashboard/components-next/Scheduling/SchedulingCustomFieldAdvancedFilter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingAppointmentTimeFields from 'dashboard/components-next/Scheduling/SchedulingAppointmentTimeFields.vue';
+import AppointmentNotifications from 'dashboard/components-next/Scheduling/AppointmentNotifications.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
 import SchedulingMoneyInput from 'dashboard/components-next/Scheduling/SchedulingMoneyInput.vue';
@@ -3714,6 +3715,13 @@ onMounted(async () => {
                     />
                   </div>
                 </div>
+                <AppointmentNotifications
+                  v-if="
+                    formStore.mode === 'edit' &&
+                    formStore.selectedAppointment?.id
+                  "
+                  :appointment-id="formStore.selectedAppointment.id"
+                />
               </fieldset>
             </div>
           </aside>

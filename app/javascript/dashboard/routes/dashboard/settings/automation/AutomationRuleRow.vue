@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { useRoute } from 'vue-router';
 import { messageStamp } from 'shared/helpers/timeHelper';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ToggleSwitch from 'dashboard/components-next/switch/Switch.vue';
@@ -17,6 +18,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['toggle', 'edit', 'delete', 'clone']);
+const route = useRoute();
 
 const readableDate = date => messageStamp(date, 'LLL d, yyyy');
 const readableDateWithTime = date => messageStamp(date, 'LLL d, yyyy hh:mm a');
@@ -50,7 +52,15 @@ const automationActive = computed({
       </BaseTableCell>
 
       <BaseTableCell>
-        <ToggleSwitch v-model="automationActive" />
+        <ToggleSwitch
+          v-if="!automation.calendar_managed"
+          v-model="automationActive"
+        />
+        <span v-else>{{
+          automation.active
+            ? $t('SCHEDULING.NOTIFICATIONS.ENABLED')
+            : $t('SCHEDULING.NOTIFICATIONS.DISABLED')
+        }}</span>
       </BaseTableCell>
 
       <BaseTableCell :title="readableDateWithTime(automation.created_on)">
@@ -61,7 +71,19 @@ const automationActive = computed({
 
       <BaseTableCell align="end">
         <div class="flex gap-3 justify-end flex-shrink-0">
+          <router-link
+            v-if="automation.calendar_managed"
+            :to="{
+              name: 'scheduling_notifications',
+              params: { accountId: route.params.accountId },
+              query: { rule: automation.id },
+            }"
+            class="text-n-brand text-sm"
+          >
+            {{ $t('SCHEDULING.NOTIFICATIONS.OPEN_CALENDAR') }}
+          </router-link>
           <Button
+            v-if="!automation.calendar_managed"
             v-tooltip.top="$t('AUTOMATION.FORM.EDIT')"
             icon="i-woot-edit-pen"
             slate
@@ -70,6 +92,7 @@ const automationActive = computed({
             @click="$emit('edit', automation)"
           />
           <Button
+            v-if="!automation.calendar_managed"
             v-tooltip.top="$t('AUTOMATION.CLONE.TOOLTIP')"
             icon="i-woot-clone"
             sm
@@ -78,6 +101,7 @@ const automationActive = computed({
             @click="$emit('clone', automation)"
           />
           <Button
+            v-if="!automation.calendar_managed"
             v-tooltip.top="$t('AUTOMATION.FORM.DELETE')"
             :is-loading="loading"
             icon="i-woot-bin"
