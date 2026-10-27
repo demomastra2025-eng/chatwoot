@@ -20,8 +20,14 @@ class Captain::OpenAiMessageBuilderService
     ['received at', %i[received_at receivedAt]]
   ].freeze
 
-  # image_descriptions: { attachment_id => description }, made beforehand (see Captain::ReplySuggestion::ImageDescriber). With it every
-  # image is described from that map, never by a call made here, and the budget limits only the images sent as pixels.
+  # The agent never receives an image, neither its pixels nor a link to it: only the text of the image, made by a program and said to
+  # be possibly inaccurate (Captain::ImageReading::Prompt.agent_text). A link in the prompt cost a provider a fetch at every step of a
+  # run (about 4 s each on PROD 27.10), and the library that builds the prompt downloaded the image only to learn its type.
+  #
+  # image_descriptions: { attachment_id => description }, made beforehand (see Captain::ReplySuggestion::ImageDescriber): every image
+  # is then described from that map, never by a call made here. Without it the description kept on the attachment is used, and an
+  # image that has none yet is described once now (Captain::ImageRecognitionService); the history budget limits how many images a
+  # run may describe by a new call, and a description that already exists costs nothing.
   def initialize(message:, assistant: nil, budget: nil, image_descriptions: nil)
     @message = message
     @assistant = assistant
@@ -131,9 +137,30 @@ class Captain::OpenAiMessageBuilderService
     ).perform
   end
 
-  def image_description_part(attachment, image_url)
-    description = recognize_image(attachment, image_url)
-    text_part("Image attachment: #{description}") if description.present?
+  def image_text_part(description)
+    return if description.blank?
+    return text_part("Image attachment: #{description}") if description == Captain::ImageRecognitionService::FALLBACK_DESCRIPTION
+
+    text_part(Captain::ImageReading::Prompt.agent_text(description))
+  end
+
+  # The text of an image: the map made beforehand, else the description kept on the attachment (it stays when an administrator purges
+  # the file), else a new one.
+  def image_description(attachment, image_url)
+    made = @image_descriptions && @image_descriptions[attachment.id].to_s.strip
+    made.presence || kept_description(attachment) || new_description(attachment, image_url)
+  end
+
+  def kept_description(attachment)
+    attachment.meta.to_h[Captain::ImageRecognitionService::CACHE_KEY].to_s.strip.presence
+  end
+
+  # With a map made beforehand nothing is described here; otherwise the budget limits the calls of a run.
+  def new_description(attachment, image_url)
+    return if @image_descriptions || image_url.blank?
+    return if @budget && !@budget.include_image?
+
+    recognize_image(attachment, image_url)
   end
 
   def attachment_parts(attachments)
@@ -161,24 +188,12 @@ class Captain::OpenAiMessageBuilderService
         next
       end
 
-      url = get_attachment_url(attachment)
-      parts.concat(attachment_image_parts(attachment, url)) if url.present?
+      parts.concat(attachment_image_parts(attachment, get_attachment_url(attachment)))
     end.compact
   end
 
   def attachment_image_parts(attachment, url)
-    return described_image_parts(attachment, url) if @image_descriptions
-    return [] if @budget && !@budget.include_image?
-
-    [image_url_part(url), image_description_part(attachment, url)]
-  end
-
-  def described_image_parts(attachment, url)
-    parts = []
-    parts << image_url_part(url) if @budget.nil? || @budget.include_image?
-    description = @image_descriptions[attachment.id].to_s.strip
-    parts << text_part("Image attachment: #{description}") if description.present?
-    parts
+    [image_text_part(image_description(attachment, url))].compact
   end
 
   def sticker_or_gif_attachment?(attachment)
@@ -195,10 +210,6 @@ class Captain::OpenAiMessageBuilderService
     return true if attachment.respond_to?(:additional_attributes) && attachment.additional_attributes.to_h['file_purged'] == true
 
     attachment.meta.to_h['file_purged'] == true
-  end
-
-  def image_url_part(url)
-    { type: 'image_url', image_url: { url: url } }
   end
 
   def get_attachment_url(attachment)

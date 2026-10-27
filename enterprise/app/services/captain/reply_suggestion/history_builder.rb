@@ -2,9 +2,9 @@
 
 # The conversation history the agent of a reply suggestion receives, in the OpenAI message format.
 #
-# Every image of the history is described (parallel and cached, see ImageDescriber), so the agent knows what each image shows.
-# The pixels themselves go to the model for the newest images only, within the same budget as a live run
-# (Captain::Conversation::HistoryBudget).
+# Every image of the history is described (parallel and cached, see ImageDescriber), so the agent knows what each image shows. The
+# agent receives that text only, never the pixels or a link to the image (see Captain::OpenAiMessageBuilderService). The budget
+# (Captain::Conversation::HistoryBudget) limits the text of the documents.
 class Captain::ReplySuggestion::HistoryBuilder
   FALLBACK_USER_PROMPT = 'Suggest the next reply for the customer based on the conversation and context.'
 
@@ -14,7 +14,7 @@ class Captain::ReplySuggestion::HistoryBuilder
     messages = history_messages
     descriptions = describe_images(messages)
     budget = Captain::Conversation::HistoryBudget.new
-    # Newest first: the budget of images is spent on the latest messages. Then back to the order of the conversation.
+    # Newest first: the budget of the documents is spent on the latest messages. Then back to the order of the conversation.
     history = messages.reverse.map { |message| history_entry(message, budget, descriptions) }.reverse
     history << { role: 'user', content: FALLBACK_USER_PROMPT } if history.none? { |entry| entry[:role] == 'user' }
     history

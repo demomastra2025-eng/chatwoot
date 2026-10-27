@@ -10,6 +10,15 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
     allow(Captain::ImageRecognitionService).to receive(:new).and_return(image_recognition_service)
   end
 
+  # What an agent reads for an image: the text of the image said to be automatic, never the image or a link to it.
+  def described(text = 'Recognized image content')
+    { type: 'text', text: "Image attachment (automatic description, it may be inaccurate): #{text}" }
+  end
+
+  def image_parts_in(content)
+    Array(content).select { |part| part.is_a?(Hash) && part[:type] == 'image_url' }
+  end
+
   describe '#generate_content' do
     context 'when message has only text content' do
       it 'returns the text content directly' do
@@ -192,8 +201,12 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         result = service.generate_content
         expect(result).to be_an(Array)
         expect(result).to include({ type: 'text', text: 'Hello world' })
-        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } })
-        expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
+        expect(result).to include(described)
+        expect(image_parts_in(result)).to be_empty
+      end
+
+      it 'carries no link to the image anywhere' do
+        expect(service.generate_content.to_json).not_to include('example.com')
       end
     end
 
@@ -205,14 +218,8 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         attachment.save!
       end
 
-      it 'returns image URL and recognized image text without original text' do
-        result = service.generate_content
-        expect(result).to eq(
-          [
-            { type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } },
-            { type: 'text', text: 'Image attachment: Recognized image content' }
-          ]
-        )
+      it 'returns the recognized image text only, as text, without the image' do
+        expect(service.generate_content).to eq(described[:text])
       end
     end
   end
@@ -227,10 +234,9 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         attachment.save!
       end
 
-      it 'includes image parts' do
+      it 'includes the image text and no image part' do
         result = service.send(:attachment_parts, attachments)
-        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } })
-        expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
+        expect(result).to eq([described])
       end
     end
 
@@ -345,8 +351,8 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         expect(Messages::AudioTranscriptionService).not_to receive(:new)
 
         result = service.send(:attachment_parts, attachments)
-        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } })
-        expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
+        expect(image_parts_in(result)).to be_empty
+        expect(result).to include(described)
         expect(result).to include({ type: 'text', text: 'Audio text' })
         expect(result).to include({ type: 'text', text: 'User has shared an attachment' })
       end
@@ -369,16 +375,15 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         attachment
       end
 
-      it 'returns image parts for all valid images' do
+      it 'returns the text of every valid image and no image part' do
         image1 # trigger creation
         image2 # trigger creation
 
         image_attachments = message.attachments.where(file_type: :image)
         result = service.send(:image_parts, image_attachments)
 
-        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image1.jpg' } })
-        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image2.jpg' } })
-        expect(result.count { |part| part == { type: 'text', text: 'Image attachment: Recognized image content' } }).to eq(2)
+        expect(image_parts_in(result)).to be_empty
+        expect(result.count(described)).to eq(2)
       end
     end
 
@@ -401,15 +406,8 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       disabled_result = described_class.new(message: message, assistant: disabled_assistant)
                                        .send(:image_parts, image_attachments)
 
-      expect(legacy_result).to include(
-        { type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } }
-      )
-      expect(legacy_result).to include(
-        { type: 'text', text: 'Image attachment: Recognized image content' }
-      )
-      expect(disabled_result).to include(
-        { type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } }
-      )
+      expect(legacy_result).to eq([described])
+      expect(disabled_result).to eq([described])
     end
 
     context 'with sticker or gif image attachments' do
@@ -426,7 +424,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         expect(result).to eq([{ type: 'text', text: 'User shared a sticker' }])
       end
 
-      it 'skips purged image attachments so expired URLs are not sent' do
+      it 'does not describe a purged image attachment by a new call: its expired URL is not used' do
         message.attachments.create!(
           account: message.account,
           file_type: :image,
@@ -437,6 +435,20 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         result = service.send(:image_parts, message.attachments.where(file_type: :image))
 
         expect(result).to eq([])
+        expect(Captain::ImageRecognitionService).not_to have_received(:new)
+      end
+
+      it 'still tells what a purged image showed when its description was kept' do
+        message.attachments.create!(
+          account: message.account,
+          file_type: :image,
+          external_url: 'https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=expired',
+          meta: { 'file_purged' => true, 'image_recognition_description' => 'Квитанция на 12 000' }
+        )
+
+        result = service.send(:image_parts, message.attachments.where(file_type: :image))
+
+        expect(result).to eq([described('Квитанция на 12 000')])
       end
     end
 
@@ -595,17 +607,75 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
     end
 
-    describe '#image_description_part' do
-      let(:attachment) do
-        attachment = message.attachments.build(account_id: message.account_id, file_type: :image, external_url: 'https://example.com/image.jpg')
-        attachment.save!
-        attachment
+    describe '#image_text_part' do
+      it 'says that the text of an image is an automatic description that may be inaccurate' do
+        expect(service.send(:image_text_part, 'Recognized image content')).to eq(described)
       end
 
-      it 'returns recognized image text part format' do
-        result = service.send(:image_description_part, attachment, 'https://example.com/image.jpg')
-        expect(result).to eq({ type: 'text', text: 'Image attachment: Recognized image content' })
+      it 'leaves the plain note of an unavailable recognition as it is: it describes nothing' do
+        note = Captain::ImageRecognitionService::FALLBACK_DESCRIPTION
+
+        expect(service.send(:image_text_part, note)).to eq({ type: 'text', text: "Image attachment: #{note}" })
       end
+
+      it 'has nothing to say about an empty description' do
+        expect(service.send(:image_text_part, '  ')).to be_nil
+      end
+    end
+  end
+
+  describe 'a live run: no map made beforehand' do
+    let(:message) { create(:message, content: 'Вот снимки') }
+    let(:attachments) do
+      %w[a b c].map do |name|
+        message.attachments.create!(account_id: message.account_id, file_type: :image, external_url: "https://example.com/#{name}.jpg")
+      end
+    end
+
+    it 'uses the description kept on the attachment and calls nobody' do
+      attachments.each { |attachment| attachment.update!(meta: { 'image_recognition_description' => "Из кеша #{attachment.id}" }) }
+
+      content = described_class.new(message: message, budget: Captain::Conversation::HistoryBudget.new).generate_content
+
+      expect(image_parts_in(content)).to be_empty
+      attachments.each { |attachment| expect(content).to include(described("Из кеша #{attachment.id}")) }
+      expect(Captain::ImageRecognitionService).not_to have_received(:new)
+    end
+
+    it 'describes an image that has no description yet, once, and sends the text' do
+      attachments.first
+
+      content = described_class.new(message: message).generate_content
+
+      expect(Captain::ImageRecognitionService).to have_received(:new).with(
+        hash_including(account: message.account, attachment: attachments.first, image_url: attachments.first.external_url)
+      )
+      expect(image_parts_in(content)).to be_empty
+      expect(content).to include(described)
+    end
+
+    it 'limits the new calls of a run by the history budget, and costs nothing for a description that exists' do
+      attachments.first.update!(meta: { 'image_recognition_description' => 'Старое' })
+      attachments.second
+      attachments.third
+      budget = Captain::Conversation::HistoryBudget.new
+      stub_const('Captain::Conversation::HistoryBudget::MAX_IMAGES', 1)
+
+      content = described_class.new(message: message, budget: budget).generate_content
+
+      # the first image is kept; of the two new ones the budget allows a single call
+      expect(Captain::ImageRecognitionService).to have_received(:new).once
+      expect(content.count { |part| part[:type] == 'text' && part[:text].start_with?('Image attachment') }).to eq(2)
+      expect(image_parts_in(content)).to be_empty
+    end
+
+    it 'does not touch the network to learn the type of an image' do
+      attachments.first
+      stub_request(:any, /example\.com/)
+
+      described_class.new(message: message).generate_content
+
+      expect(a_request(:any, /example\.com/)).not_to have_been_made
     end
   end
 
@@ -639,30 +709,30 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
     it 'describes every image from the given map and never calls image recognition itself' do
       attachments
       expect(Captain::ImageRecognitionService).not_to receive(:new)
-      described = described_class.new(message: message, image_descriptions: descriptions)
+      builder = described_class.new(message: message, image_descriptions: descriptions)
 
-      content = described.generate_content
+      content = builder.generate_content
 
-      expect(content.count { |part| part[:type] == 'image_url' }).to eq(3)
-      attachments.each { |attachment| expect(content).to include({ type: 'text', text: "Image attachment: Описание #{attachment.id}" }) }
+      expect(image_parts_in(content)).to be_empty
+      attachments.each { |attachment| expect(content).to include(described("Описание #{attachment.id}")) }
     end
 
-    it 'spends the budget of images on the pixels only: older images keep their description' do
+    it 'does not spend the budget of images: every image keeps its description, none is sent as pixels' do
       attachments
       budget = Captain::Conversation::HistoryBudget.new
-      described = described_class.new(message: message, budget: budget, image_descriptions: descriptions)
+      builder = described_class.new(message: message, budget: budget, image_descriptions: descriptions)
 
-      content = described.generate_content
+      content = builder.generate_content
 
-      expect(content.count { |part| part[:type] == 'image_url' }).to eq(Captain::Conversation::HistoryBudget::MAX_IMAGES)
-      expect(content.count { |part| part[:type] == 'text' && part[:text].start_with?('Image attachment:') }).to eq(3)
+      expect(image_parts_in(content)).to be_empty
+      expect(content.count { |part| part[:type] == 'text' && part[:text].start_with?('Image attachment') }).to eq(3)
     end
 
     it 'leaves an image without a description part when none was made' do
       attachments
-      described = described_class.new(message: message, image_descriptions: {})
+      builder = described_class.new(message: message, image_descriptions: {})
 
-      expect(described.generate_content.count { |part| part[:type] == 'text' && part[:text].start_with?('Image attachment:') }).to eq(0)
+      expect(builder.generate_content).to eq('Вот снимки')
     end
   end
 end

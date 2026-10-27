@@ -3,6 +3,8 @@
 class Captain::Conversation::HistoryBudget
   MAX_TEXT_BYTES = 16_000 # Conservative approximation of about 8,000 text tokens.
   MAX_DOCUMENT_BYTES = 8_000 # About 4,000 document text tokens.
+  # How many images of the history a run may describe by a new call (a description that already exists is free). The agent never
+  # receives the pixels of an image, only its description: see Captain::OpenAiMessageBuilderService.
   MAX_IMAGES = 2
 
   def initialize
