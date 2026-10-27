@@ -179,6 +179,26 @@ describe('SchedulingSelectField', () => {
     width.mockRestore();
   });
 
+  it('starts ArrowUp navigation at the last remote patient', async () => {
+    const patient = { token: 'opaque', fullName: 'Қуаныш Аян' };
+    const wrapper = mountComponent({ remoteOptions: [patient] });
+    wrapper.vm.open();
+    await wrapper.vm.$nextTick();
+
+    const input = document.body.querySelector(
+      '.dashboard-combobox-dropdown input'
+    );
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })
+    );
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    );
+
+    expect(wrapper.emitted('selectRemote')).toEqual([[patient]]);
+    wrapper.unmount();
+  });
+
   it('keeps local options visible when the remote search fails', async () => {
     const wrapper = mountComponent({
       remoteTitle: 'Найдено в МедЭлементе',

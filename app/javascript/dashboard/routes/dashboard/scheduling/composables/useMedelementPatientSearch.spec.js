@@ -60,6 +60,7 @@ describe('MedElement patient picker search', () => {
     expect(patientSearchKind('Ая Аян Болат')).toBe('name');
     expect(patientSearchKind('Ая Аян Болат Ұлан')).toBe('');
     expect(patientSearchKind('Аян 123')).toBe('');
+    expect(patientSearchKind('Қуа\u200Bныш')).toBe('name');
   });
 
   it('debounces three fast edits into one request and ignores the same text twice', async () => {
@@ -70,6 +71,9 @@ describe('MedElement patient picker search', () => {
     state.query('Аян');
     state.query('Аян Қ');
     state.query('Аян Қуаныш');
+    await vi.advanceTimersByTimeAsync(400);
+    expect(search).toHaveBeenCalledTimes(1);
+    state.query('Аян\u200B Қуаныш');
     await vi.advanceTimersByTimeAsync(400);
     expect(search).toHaveBeenCalledTimes(1);
     state.query('Аян Қуаныш');

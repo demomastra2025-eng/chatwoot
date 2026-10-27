@@ -2,11 +2,17 @@ import { computed, onBeforeUnmount, ref } from 'vue';
 import { isValidPatientIin } from 'dashboard/stores/scheduling/iin';
 import { isKazakhstanE164Phone } from 'dashboard/stores/scheduling/appointmentForm';
 
-export const patientSearchKind = raw => {
-  const text = String(raw || '')
+const cleanPatientSearchText = raw =>
+  String(raw || '')
     .normalize('NFC')
+    .replace(/\s+/gu, ' ')
+    .replace(/[\p{Cc}\p{Cf}]/gu, '')
     .trim()
-    .replace(/\s+/g, ' ');
+    .slice(0, 200)
+    .trim();
+
+export const patientSearchKind = raw => {
+  const text = cleanPatientSearchText(raw);
   const digits = text.replace(/[\s-]/g, '');
   if (/^[\d\s-]+$/.test(text) && /^\d{12}$/.test(digits)) {
     return isValidPatientIin(digits) ? 'iin' : '';
@@ -63,10 +69,7 @@ export const useMedelementPatientSearch = ({
   };
 
   const query = raw => {
-    const text = String(raw || '')
-      .normalize('NFC')
-      .trim()
-      .replace(/\s+/g, ' ');
+    const text = cleanPatientSearchText(raw);
     if (!enabled.value || !patientSearchKind(text)) {
       clear();
       const digits = text.replace(/[\s-]/g, '');

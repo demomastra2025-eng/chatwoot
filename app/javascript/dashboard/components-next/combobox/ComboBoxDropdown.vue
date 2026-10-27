@@ -93,9 +93,14 @@ const onKeydown = event => {
   if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     event.preventDefault();
     const offset = event.key === 'ArrowDown' ? 1 : -1;
-    activeIndex.value =
-      (activeIndex.value + offset + selectable.value.length) %
-      selectable.value.length;
+    if (activeIndex.value < 0) {
+      activeIndex.value =
+        event.key === 'ArrowDown' ? 0 : selectable.value.length - 1;
+    } else {
+      activeIndex.value =
+        (activeIndex.value + offset + selectable.value.length) %
+        selectable.value.length;
+    }
   } else if (event.key === 'Enter' && activeIndex.value >= 0) {
     event.preventDefault();
     const selected = selectable.value[activeIndex.value];
