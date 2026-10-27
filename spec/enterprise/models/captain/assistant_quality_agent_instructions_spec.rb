@@ -99,6 +99,25 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
     end
   end
 
+  # Suggestion eval 27.10 (c43-1214353, c78-1250261): a request for the personal number of a doctor was handed to staff although the
+  # rules of the clinic answer it (no personal numbers, contacts through the registry), and a plain question about a booking was sent
+  # to staff by the router.
+  describe 'a request that a rule of the clinic covers' do
+    it 'gives a rule that refuses the request as the answer, and hands over only when no source covers it or a person is asked for' do
+      expect(suggestion_rules).to include(
+        '- A rule of the clinic instructions that covers the request is an answer, also a rule that refuses it (the personal number of a ' \
+        'staff member is not given, a service is not provided): give that answer with what the clinic offers instead, and do not hand ' \
+        'the request to staff. Hand over only when no source covers the request, or when the patient asks for a person, complains, asks ' \
+        'for a refund or raises a legal matter.'
+      )
+      expect(live_rules).to include(
+        '- A rule of the clinic instructions that covers the request is an answer, also a rule that refuses it (the personal number of a ' \
+        'staff member is not given, a service is not provided): give that answer with what the clinic offers instead of handing the ' \
+        'request over.'
+      )
+    end
+  end
+
   # Suggestion eval 27.10 (c43-1233247, c76-1195118, c74-1233747): a draft said it could not check a time it had not searched, one asked
   # the patient for the doctor when a search of the time names the doctors who have it, one gave the times of a gynecologist under the
   # name of the other.

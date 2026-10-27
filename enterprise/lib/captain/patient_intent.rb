@@ -12,9 +12,9 @@
 #   human_request?   the message asks for a person, an operator, an administrator or a call-back, or is a complaint, a refund, a demand
 #                    to stop writing or a legal matter («соедините с оператором», «можете позвонить?», «хочу пожаловаться», «отдайте мои
 #                    деньги», «перестаньте мне писать», «шағым», «админге қосыңыз», «please call me»). The router takes a human_handoff of
-#                    the decision model for such a message whatever the include answers say; for any other message it takes it only when
-#                    no agent is a plausible answer (see Captain::Runtime::DecisionRouter::Questions): the eval of 26.10 sent a question
-#                    about free times for a child, the first message of a dialog, to staff.
+#                    the decision model for such a message whatever the include answers say; for any other message the most probable agent
+#                    answers (see Captain::Runtime::DecisionRouter::Questions): the evals of 26.10 and 27.10 sent a question about free
+#                    times for a child, the first message of a dialog, to staff.
 #
 # The text is compared in lower case with the Kazakh letters folded to the Russian ones (ә→а, ғ→г, қ→к, ң→н, ө→о, ұ→ү→у, һ→х, і→и),
 # because patients write Kazakh on a Russian keyboard without them. A stem matches at the start of a word, with any ending.
@@ -49,8 +49,8 @@ module Captain::PatientIntent
   ].freeze
 
   # A person, an operator, an administrator, a call-back, a complaint, a refund or a legal matter (the stems are folded). A message that
-  # carries one of them asks for staff whatever the include answers of the router say; a message that carries none may still ask for
-  # staff (the router then asks whether any agent is a plausible answer), so the list leans to the words patients really use.
+  # carries one of them asks for staff whatever the include answers of the router say; a message that carries none goes to an agent,
+  # which can still end with human_needed, so the list leans to the words patients really use.
   HUMAN_STEMS = [
     # Russian: a person, an operator, an administrator, the front desk, a manager
     'оператор', 'админ', 'менеджер', 'сотрудник', 'консультант', 'регистратур', 'ресепш', 'руководител', 'директор', 'главврач',

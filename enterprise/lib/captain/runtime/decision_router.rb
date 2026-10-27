@@ -10,11 +10,11 @@
 # passes the same questions to the next one). The answers of the model that answered are resolved into one outcome by their
 # probabilities (Questions#resolve): the most probable route_mode decides, the include probabilities say who answers. There is no
 # confidence threshold and no second opinion (the owner's decision of 26.10: the decision models' most probable answer decides; the
-# chain is only for failures and timeouts). The one check on that answer is human_handoff: it is taken for a message that asks for a
-# person, an operator or a call-back or is a complaint, a refund or a legal matter (the words), and for any message that no agent is a
-# plausible answer for (every include probability is below 0.5); when some agent is plausible and the words ask for no person, the most
-# probable agent answers (see Questions). When every decision model fails, UnavailableError is raised: the caller ends the turn
-# through the existing technical-failure path (the conversation goes to staff), as when OpenRouter is down for generation.
+# chain is only for failures and timeouts). The one check on that answer is human_handoff: it is taken only for a message that asks for a
+# person, an operator or a call-back or is a complaint, a refund or a legal matter (the words); for any other message the most probable
+# agent answers and can still end with human_needed (see Questions). When every decision model fails, UnavailableError is raised: the
+# caller ends the turn through the existing technical-failure path (the conversation goes to staff), as when OpenRouter is down for
+# generation.
 #
 # A reply suggestion keeps a dialog with the agent that leads it (the sticky agent, see Captain::ReplySuggestion::StickyAgent): it is
 # the current agent of the turn, so a short reply («Да, на 14:00», an IIN, «Спасибо») can stay with it (stay_current).

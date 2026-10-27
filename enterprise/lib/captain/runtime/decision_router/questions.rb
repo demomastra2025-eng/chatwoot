@@ -11,13 +11,13 @@
 #   route_agent      the agent with the highest include probability other than the current agent
 #   council          the agents whose include probability is 0.5 or more (the three most probable at most); fewer than two: the
 #                    agent with the highest include probability (the current one: a stay)
-#   human_handoff    staff, whatever the include answers say, when the latest message asks for a person, an operator or a call-back
-#                    or is a complaint, a refund or a legal matter (Captain::PatientIntent.human_request?), and also when no agent is
-#                    a plausible answer (every include probability is below 0.5: no agent handles what is asked, so the model's staff
-#                    decision stands, also for a wording the keywords do not know); a message that asks for no person and that some
-#                    agent handles (include 0.5 or more) goes to the most probable agent, which can still end with human_needed (the
-#                    eval of 26.10 sent a question about free times for a child, the first message of a dialog, to staff, and it never
-#                    reached an agent). A council part is not checked
+#   human_handoff    staff, whatever the include answers say, only when the latest message asks for a person, an operator or a
+#                    call-back or is a complaint, a refund or a legal matter (Captain::PatientIntent.human_request?), or when there is
+#                    no agent to ask. Any other message goes to the agent with the highest include probability, which can still end
+#                    with human_needed. A human_handoff is asked with every include answer no, so those answers say nothing about
+#                    whether an agent fits (the eval of 26.10 sent a question about free times for a child to staff, and the eval of
+#                    27.10 did it again, with every include probability below 0.5: a plain question about a booking never goes to
+#                    staff). A council part is not checked
 #   no_reply_needed  nobody answers in substance: a plain thanks, ok, goodbye or emoji that asks for nothing and accepts nothing
 #                    that waits (a suggestion gets no draft; a live turn, a courtesy reply of the current agent). A greeting is not
 #                    one: it opens or resumes the dialog. It is taken only when it is safe (#no_reply_outcome): an include answer yes
@@ -150,21 +150,18 @@ class Captain::Runtime::DecisionRouter::Questions
 
   def nobody_outcome(_yes) = Outcome.new(kind: 'none', agent_ids: [], key: NOBODY)
 
-  # Staff take the turn when the words say the patient asks for a person or complains, or when no agent is a plausible answer (every
-  # include probability is below YES_PROBABILITY: «Можете мне позвонить?», a wording no keyword list can cover, asks for no service
-  # of any agent). Only when some agent is plausible (the first message of a dialog asking for free times for a child: the doctors'
-  # agent is yes) and the words ask for no person, that agent with the highest include probability answers, and it can still end with
-  # human_needed. A council part keeps the model's word.
+  # Staff take the turn only when the words say the patient asks for a person or complains (a refund, a legal matter), or when there is
+  # no agent to ask. The include answers of a human_handoff are all no by the instructions of the call, so they cannot tell whether an
+  # agent fits: any other message goes to the agent with the highest include probability (the first message of a dialog asking for free
+  # times for a child, a question about a booking), and that agent can still end with human_needed when only staff can answer. A
+  # council part keeps the model's word.
   def human_outcome(yes)
-    return Outcome.new(kind: 'human', agent_ids: [], key: HUMAN) if @mode != :full || human_requested? || nobody_plausible?(yes)
+    return Outcome.new(kind: 'human', agent_ids: [], key: HUMAN) if @mode != :full || human_requested? || agent_ids.empty?
 
     agent_outcome(likeliest_agent(yes))
   end
 
   def human_requested? = Captain::PatientIntent.human_request?(@snapshot.latest_message)
-
-  # No agent has an include probability of YES_PROBABILITY or more (also when there is no agent to ask).
-  def nobody_plausible?(yes) = yes.values.none? { |probability| probability >= YES_PROBABILITY }
 
   # Nothing to answer in substance (a turn, never a council part). The current agent, when one leads the dialog, keeps it: a live
   # turn runs it for a short courtesy reply or nothing, with no action; a reply suggestion runs no agent. A wrong no_reply silences
@@ -228,8 +225,7 @@ class Captain::Runtime::DecisionRouter::Questions
   end
 
   # The agent with the highest include probability; on a tie the agent that leads the dialog, then the anchor of the channel (a reply
-  # suggestion), then the lower id. Only plausible agents are asked for (a human_handoff of the model with no include of 0.5 or more is
-  # staff, see #human_outcome), so a tie is a model that is as sure of several agents.
+  # suggestion), then the lower id. A tie is a model that is as sure of several agents (or of none: a human_handoff of the model).
   def likeliest_agent(yes)
     agent_ids.min_by { |id| [-yes[id], id == current_id ? 0 : 1, id == @snapshot.anchor_agent_id ? 0 : 1, id] }
   end

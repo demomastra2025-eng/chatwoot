@@ -156,38 +156,42 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
       end
     end
 
-    # Suggestion eval 26.10 (Sezim): the decision model answered human_handoff (0.71) for the first message of a dialog, a question
-    # about free times for a child; the dialog never reached an agent. The words did not ask for a person and an agent is a plausible
-    # answer (its include probability is 0.5 or more), so that agent answers.
-    describe 'a human_handoff of the model for a message that asks for no person and that an agent handles' do
+    # The review of the human_handoff gate (26.10) kept staff for a human_handoff that no agent fits (every include probability below
+    # 0.5). Suggestion eval 27.10 (c78-1250261): a human_handoff is asked with every include answer no, so those probabilities say
+    # nothing about whether an agent fits, and a plain question about a children's ENT, the first message of a dialog, went to staff in
+    # both runs. Staff take the turn for the words of a person, a complaint, a refund or a legal matter, and for no agent to ask.
+    describe 'a human_handoff of the model for a message that asks for no person, whatever the include probabilities' do
       let(:plain) { 'Есть окно сегодня или завтра для ребёнка к ЛОРу?' }
-      let(:probabilities) { { 10 => 0.2, 20 => 0.7, 30 => 0.4 } }
+      let(:unknown) { 'Мне нужен кто-то, кто решит мой вопрос' }
+      let(:below_half) { { 10 => 0.1, 20 => 0.45, 30 => 0.3 } }
 
-      it 'goes to the agent with the highest include probability' do
-        expect(build(3, message: plain).resolve(answered('human_handoff', include_probabilities: probabilities)))
-          .to have_attributes(kind: 'agent', agent_ids: [20], key: 'route_agent_20', confidence: 0.9)
-        expect(build(3, current: 30, message: plain).resolve(answered('human_handoff', include_probabilities: probabilities)).key)
-          .to eq('route_agent_20')
+      it 'goes to the agent with the highest include probability, also when every include probability is below 0.5' do
+        expect(Captain::PatientIntent.human_request?(plain)).to be(false)
+        expect(Captain::PatientIntent.human_request?(unknown)).to be(false)
+
+        [plain, unknown].each do |text|
+          expect(build(3, message: text).resolve(answered('human_handoff', include_probabilities: below_half)))
+            .to have_attributes(kind: 'agent', agent_ids: [20], key: 'route_agent_20', confidence: 0.9)
+          expect(build(3, current: 30, message: text).resolve(answered('human_handoff', include_probabilities: below_half)).key)
+            .to eq('route_agent_20')
+          expect(build(3, current: 20, message: text).resolve(answered('human_handoff', include_probabilities: below_half)))
+            .to have_attributes(kind: 'stay', agent_ids: [20], key: 'stay_current')
+        end
       end
 
-      it 'is a stay when the current agent is the most probable one' do
-        resolved = build(3, current: 30, message: plain)
-                   .resolve(answered('human_handoff', include_probabilities: { 10 => 0.1, 20 => 0.1, 30 => 0.9 }))
-
-        expect(resolved).to have_attributes(kind: 'stay', agent_ids: [30], key: 'stay_current')
-      end
-
-      it 'prefers the current agent, then the anchor of the channel, then the lower id, when the plausible agents are all alike' do
+      it 'prefers the current agent, then the anchor of the channel, then the lower id, when the agents are all alike or none fits' do
         alike = answered('human_handoff', yes: [10, 20, 30])
+        none = answered('human_handoff')
 
         expect(build(3, current: 20, message: plain).resolve(alike).key).to eq('stay_current')
         expect(build(3, suggestion: true, anchor: 30, message: plain).resolve(alike).key).to eq('route_agent_30')
         expect(build(3, message: plain).resolve(alike).key).to eq('route_agent_10')
+        expect(build(3, message: plain).resolve(none).key).to eq('route_agent_10')
+        expect(build(3, suggestion: true, anchor: 30, message: plain).resolve(none).key).to eq('route_agent_30')
+        expect(build(3, current: 20, message: plain).resolve(none).key).to eq('stay_current')
       end
 
-      it 'takes an include probability of exactly 0.5 for a plausible agent, and a model without probabilities by its yes' do
-        expect(build(3, message: plain).resolve(answered('human_handoff', include_probabilities: { 10 => 0.2, 20 => 0.5, 30 => 0.4 })))
-          .to have_attributes(kind: 'agent', key: 'route_agent_20')
+      it 'takes a model that gave no probabilities by its yes' do
         expect(build(3, message: plain).resolve(answered('human_handoff', yes: [30]))).to have_attributes(kind: 'agent', key: 'route_agent_30')
       end
 
@@ -197,32 +201,8 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
         expect(part.resolve(answered('human_handoff', all: [20, 30]))).to have_attributes(kind: 'human', key: 'human_handoff')
         expect(part.resolve(answered('human_handoff', yes: [20, 30], all: [20, 30]))).to have_attributes(kind: 'human', key: 'human_handoff')
       end
-    end
 
-    # Review of the human_handoff gate: the keywords cannot know every wording («Можете мне позвонить?», «Админге қосыңыз»), and the gate
-    # sent such a message to an agent that is no answer to it. When no agent is a plausible answer, the staff decision of the model stands.
-    describe 'a human_handoff of the model for a message that no agent is a plausible answer to' do
-      let(:unknown) { 'Мне нужен кто-то, кто решит мой вопрос' }
-
-      it 'gives staff when every include probability is below 0.5, whatever the words say' do
-        expect(Captain::PatientIntent.human_request?(unknown)).to be(false)
-
-        [10, 20, 30].each do |current|
-          resolved = build(3, current: current, message: unknown)
-                     .resolve(answered('human_handoff', include_probabilities: { 10 => 0.1, 20 => 0.45, 30 => 0.3 }))
-
-          expect(resolved).to have_attributes(kind: 'human', agent_ids: [], key: 'human_handoff', confidence: 0.9), "current agent #{current}"
-        end
-      end
-
-      it 'gives staff on the first message of a dialog and in a reply suggestion, and for a model that gave no probabilities' do
-        expect(build(3, message: unknown).resolve(answered('human_handoff'))).to have_attributes(kind: 'human', key: 'human_handoff')
-        expect(build(3, suggestion: true, anchor: 30, message: unknown).resolve(answered('human_handoff')))
-          .to have_attributes(kind: 'human', key: 'human_handoff')
-        expect(build(3, current: 20, message: unknown).resolve(answered('human_handoff'))).to have_attributes(kind: 'human', key: 'human_handoff')
-      end
-
-      it 'gives staff for the wordings of a call, the front desk and the administrator that the first keyword list missed' do
+      it 'gives staff for the wordings of a person, a call, the front desk and the administrator, a complaint, a refund and a legal matter' do
         ['Можете позвонить?', 'Можете мне позвонить?', 'Можете перезвонить?', 'Позвони мне', 'Свяжите с регистратурой', 'Отдайте мои деньги',
          'Я недоволен вашим сервисом', 'Перестаньте мне писать', 'operator', 'administrator', 'please call me', 'I want to talk to a manager',
          'Админге қосыңыз', 'Хочу пожаловаться'].each do |text|
@@ -234,12 +214,6 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
 
       it 'gives staff when there is no agent to ask' do
         expect(build(0, message: unknown).resolve(answered('human_handoff', all: []))).to have_attributes(kind: 'human', key: 'human_handoff')
-      end
-
-      it 'does not give staff for a message that an agent is a plausible answer to, when the words ask for no person' do
-        resolved = build(3, message: unknown).resolve(answered('human_handoff', include_probabilities: { 10 => 0.1, 20 => 0.8, 30 => 0.3 }))
-
-        expect(resolved).to have_attributes(kind: 'agent', agent_ids: [20], key: 'route_agent_20')
       end
     end
 
