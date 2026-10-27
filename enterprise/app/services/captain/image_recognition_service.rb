@@ -116,9 +116,11 @@ class Captain::ImageRecognitionService < Llm::BaseAiService
     nil
   end
 
-  # The cache as the database has it now (the attachment in memory may be older than a description made meanwhile).
+  # The cache as the database has it now (the attachment in memory may be older than a description made meanwhile). Never through the
+  # query cache: a job runs inside the Rails executor, which switches it on, and it would give a waiter the blank it read first for as
+  # long as the job lasts, whatever the other process has written since. The waiter would then describe the image a second time.
   def fresh_description
-    meta = Attachment.where(id: attachment.id).pick(:meta)
+    meta = Attachment.uncached { Attachment.where(id: attachment.id).pick(:meta) }
     meta.to_h[CACHE_KEY].to_s.strip.presence
   end
 
