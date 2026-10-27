@@ -290,6 +290,7 @@
         "STALE_WARNING": "New customer messages arrived after this request. Check that the reply is still relevant.",
         "LEGACY_ENGINE": "Prepared without the schedule and the knowledge base",
         "ACTIONS_ONLY": "AI suggests actions only — no reply to the patient is needed.",
+        "WRITING": "AI is writing the reply…",
         "NOTICE": {
           "NO_REPLY_TITLE": "No reply needed",
           "HUMAN_NEEDED_TITLE": "A staff member is needed",

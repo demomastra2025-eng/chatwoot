@@ -13,8 +13,8 @@ class Captain::SuggestionResponseSchema < RubyLLM::Schema
                               'request to staff (then name that part).'.freeze
 
   string :patient_language, description: Captain::PatientLanguage::FIELD_DESCRIPTION
-  string :response, description: "#{Captain::ResponseSchema::RESPONSE_DESCRIPTION} Empty with suppress or human."
   string :response_mode, enum: RESPONSE_MODES, description: RESPONSE_MODE_DESCRIPTION
+  string :response, description: "#{Captain::ResponseSchema::RESPONSE_DESCRIPTION} Empty with suppress or human."
   string :operator_note, description: OPERATOR_NOTE_DESCRIPTION
   string :reasoning, description: Captain::ResponseSchema::REASONING_DESCRIPTION
   array :artifact_ids, of: :string, description: Captain::ResponseSchema::ARTIFACT_IDS_DESCRIPTION

@@ -5,6 +5,7 @@
 # dashboard event; from Sidekiq this works because cable uses the Redis adapter.
 class Captain::ReplySuggestion::Broadcaster
   PROGRESS_EVENT = 'captain.reply_suggestion.progress'
+  PREVIEW_EVENT = 'captain.reply_suggestion.preview'
   RESULT_EVENT = 'captain.reply_suggestion.result'
 
   def initialize(user:)
@@ -13,6 +14,12 @@ class Captain::ReplySuggestion::Broadcaster
 
   def progress(data)
     broadcast(PROGRESS_EVENT, data)
+  end
+
+  # The text of the draft so far, while the model is still writing it (see Captain::ReplySuggestion::DraftStream). It is never
+  # stored: the result event carries the draft, and a preview that the result does not confirm is dropped by the dashboard.
+  def preview(data)
+    broadcast(PREVIEW_EVENT, data)
   end
 
   # Once per request, for every outcome (draft, no_reply, human_needed, failed, cancelled). `record` is the final request record.

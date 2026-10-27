@@ -17,21 +17,23 @@ class Llm::ChatClient
       end
     end
 
-    def ask(chat, content, model: nil, observability: nil, account: nil)
+    # A block makes the call stream: RubyLLM gives it each chunk as the provider sends it, and the call still returns the complete
+    # message (with the tool loop of the chat run to its end), checked and normalized like the message of a call without a block.
+    def ask(chat, content, model: nil, observability: nil, account: nil, &)
       observe_chat_request(chat, model: model, observability: observability) do
-        perform_ask(chat, content, model: model, account: account)
+        perform_ask(chat, content, model: model, account: account, &)
       end
     end
 
-    def complete(chat, model: nil, observability: nil)
+    def complete(chat, model: nil, observability: nil, &)
       observe_chat_request(chat, model: model, observability: observability) do
         Llm::StructuredOutputPolicy.execute(chat: chat) do
-          chat.complete
+          chat.complete(&)
         rescue Faraday::ResourceNotFound
           raise unless strip_missing_attachments_from_chat!(chat)
 
           Rails.logger.warn('[Llm::ChatClient] Attachment URL returned 404 during complete; retrying without attachments')
-          chat.complete
+          chat.complete(&)
         end
       end
     end
@@ -93,11 +95,11 @@ class Llm::ChatClient
       error.message.to_s
     end
 
-    def perform_ask(chat, content, model:, account: nil)
+    def perform_ask(chat, content, model:, account: nil, &)
       Llm::StructuredOutputPolicy.execute(chat: chat) do
         messages_before = chat.respond_to?(:messages) && chat.messages.is_a?(Array) ? chat.messages.length : nil
         begin
-          ask_with_content(chat, content, model: model, account: account)
+          ask_with_content(chat, content, model: model, account: account, &)
         rescue Faraday::ResourceNotFound
           had_content_attachments = content.is_a?(RubyLLM::Content) && content.attachments.present?
           if messages_before && chat.respond_to?(:messages) && chat.messages.is_a?(Array)
@@ -108,24 +110,24 @@ class Llm::ChatClient
 
           Rails.logger.warn('[Llm::ChatClient] Attachment URL returned 404 during ask; retrying without attachments')
           fallback_text = content.is_a?(RubyLLM::Content) ? content.text.to_s.presence || 'Message without content' : content
-          chat.ask(fallback_text)
+          chat.ask(fallback_text, &)
         end
       end
     end
 
-    def ask_with_content(chat, content, model:, account: nil)
+    def ask_with_content(chat, content, model:, account: nil, &)
       if content.is_a?(RubyLLM::Content)
         attachments = content.attachments.filter_map { |attachment| attachment_source(attachment) }
         if attachments.any?
           Llm::CapabilityPolicy.ensure_input_supported!(model: resolved_model_name(chat, model), content: content, account: account)
         end
         if attachments.any?
-          chat.ask(content.text, with: attachments)
+          chat.ask(content.text, with: attachments, &)
         else
-          chat.ask(content.text)
+          chat.ask(content.text, &)
         end
       else
-        chat.ask(content)
+        chat.ask(content, &)
       end
     end
 

@@ -154,11 +154,12 @@ class Captain::Runtime::Runner
   def execute_turn(session)
     emit_agent_thinking(session)
     options = chat_request_options(session)
+    stream = answer_stream(session)
 
     response = if first_turn?(session) && !session[:input_already_in_history]
-                 Llm::Runtime.ask(session[:chat], session[:input], **options)
+                 Llm::Runtime.ask(session[:chat], session[:input], **options, &stream)
                else
-                 Llm::Runtime.complete(session[:chat], **options)
+                 Llm::Runtime.complete(session[:chat], **options, &stream)
                end
 
     track_usage(response, session[:context_wrapper])
@@ -169,6 +170,14 @@ class Captain::Runtime::Runner
       session[:context_wrapper]
     )
     response
+  end
+
+  # The pieces of the answer go to whoever listens (a reply suggestion shows the first words of the draft while the rest is written).
+  # The chat was built to stream when a listener exists (see ChatFactory), so both ask for it by the same rule.
+  def answer_stream(session)
+    return unless Captain::Runtime::AnswerStream.enabled?(session[:context_wrapper])
+
+    Captain::Runtime::AnswerStream.consumer(session[:current_agent].name, session[:context_wrapper])
   end
 
   def chat_request_options(session)

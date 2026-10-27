@@ -1054,4 +1054,236 @@ describe('CopilotEditorSection.vue', () => {
       expect(stageText()).toBe(expected);
     });
   });
+
+  describe('while the AI writes the draft', () => {
+    const writing = (props = {}, locale = 'ru', messages = ru) =>
+      mountComponent(
+        {
+          showCopilotEditor: false,
+          generatedContent: '',
+          pendingActions: [],
+          isGeneratingContent: true,
+          liveProgress: progressOf('thinking'),
+          streamingText: 'Здравствуйте, Анна! Приём стоит 8000 тенге.',
+          ...props,
+        },
+        locale,
+        messages
+      );
+    const draft = () => wrapper.get('[data-test="copilot-draft"]');
+
+    it('shows the text so far in the panel of the draft, in place of the sentence about the step', () => {
+      writing();
+
+      expect(draft().text()).toContain(
+        'Здравствуйте, Анна! Приём стоит 8000 тенге.'
+      );
+      expect(draft().attributes('data-streaming')).toBe('true');
+      expect(draft().attributes('aria-busy')).toBe('true');
+      expect(wrapper.find('[data-test="copilot-live-progress"]').exists()).toBe(
+        false
+      );
+      expect(wrapper.find('[data-test="copilot-stage-text"]').exists()).toBe(
+        false
+      );
+    });
+
+    it('looks like the final draft: the same typography, plus the dot of a text that is still written', () => {
+      writing();
+      const text = draft().get('.prose-sm');
+
+      expect(text.classes()).toEqual(
+        expect.arrayContaining([
+          'text-sm',
+          'font-normal',
+          'leading-relaxed',
+          'text-n-slate-12',
+          'ai-writing',
+        ])
+      );
+    });
+
+    it('tells a screen reader once that the AI is writing, in the language of the interface', () => {
+      writing();
+      const status = wrapper.get('[data-test="copilot-draft-writing"]');
+
+      expect(status.attributes('role')).toBe('status');
+      expect(status.classes()).toContain('sr-only');
+      expect(status.text()).toBe('AI пишет ответ…');
+
+      wrapper.unmount();
+      writing({}, 'en', en);
+      expect(wrapper.get('[data-test="copilot-draft-writing"]').text()).toBe(
+        'AI is writing the reply…'
+      );
+
+      wrapper.unmount();
+      writing({}, 'kk', kk);
+      expect(wrapper.get('[data-test="copilot-draft-writing"]').text()).toBe(
+        'AI жауап жазып жатыр…'
+      );
+    });
+
+    it('grows with the text', async () => {
+      writing({ streamingText: 'Здравствуйте, Анна!' });
+
+      await wrapper.setProps({
+        streamingText: 'Здравствуйте, Анна! Приём стоит 8000 тенге.',
+      });
+
+      expect(draft().text()).toContain('Приём стоит 8000 тенге.');
+    });
+
+    it('keeps the cards back until the draft is final', async () => {
+      writing({ pendingActions: [sampleAction] });
+
+      expect(
+        wrapper.find('[data-test="copilot-pending-actions"]').exists()
+      ).toBe(false);
+      expect(
+        wrapper.find('[data-test="copilot-action-approve"]').exists()
+      ).toBe(false);
+
+      await wrapper.setProps({
+        isGeneratingContent: false,
+        showCopilotEditor: true,
+        generatedContent: 'Приём стоит 8000 тенге.',
+        streamingText: '',
+      });
+
+      expect(
+        wrapper.find('[data-test="copilot-action-approve"]').exists()
+      ).toBe(true);
+    });
+
+    it('changes nothing on screen but the text when the final draft arrives: the same panel, no dot, no fade', async () => {
+      writing();
+      const panel = wrapper.get('[data-test="copilot-editor-panel"]').element;
+      const box = draft().element;
+
+      await wrapper.setProps({
+        isGeneratingContent: false,
+        showCopilotEditor: true,
+        generatedContent: 'Здравствуйте, Анна! Приём стоит 8000 тенге.',
+        streamingText: '',
+      });
+
+      expect(wrapper.get('[data-test="copilot-editor-panel"]').element).toBe(
+        panel
+      );
+      expect(draft().element).toBe(box);
+      expect(draft().text()).toBe(
+        'Здравствуйте, Анна! Приём стоит 8000 тенге.'
+      );
+      expect(draft().attributes('data-streaming')).toBeUndefined();
+      expect(draft().attributes('aria-busy')).toBe('false');
+      expect(draft().get('.prose-sm').classes()).not.toContain('ai-writing');
+      expect(wrapper.find('[data-test="copilot-draft-writing"]').exists()).toBe(
+        false
+      );
+    });
+
+    it('goes back to the sentence about the step when what was written is taken back', async () => {
+      writing();
+
+      await wrapper.setProps({ streamingText: '' });
+
+      expect(wrapper.find('[data-test="copilot-draft"]').exists()).toBe(false);
+      expect(wrapper.get('[data-test="copilot-stage-text"]').text()).toBe(
+        'AI анализирует…'
+      );
+    });
+
+    it('does not open the panel for a text of blanks', () => {
+      writing({ streamingText: '  \n ' });
+
+      expect(wrapper.find('[data-test="copilot-draft"]').exists()).toBe(false);
+      expect(wrapper.find('[data-test="copilot-live-progress"]').exists()).toBe(
+        true
+      );
+    });
+
+    it('does not show a text for a draft that is ready, whatever the stream says', () => {
+      mountComponent({ streamingText: 'Старый текст' });
+
+      expect(draft().text()).toBe('Можем записать вас к Д-ру Смиту на 10:00.');
+      expect(draft().attributes('data-streaming')).toBeUndefined();
+    });
+
+    describe('a long text', () => {
+      const scrollBox = ({ scrollHeight = 600, clientHeight = 224 } = {}) => {
+        const el = draft().element;
+        Object.defineProperty(el, 'scrollHeight', {
+          configurable: true,
+          value: scrollHeight,
+        });
+        Object.defineProperty(el, 'clientHeight', {
+          configurable: true,
+          value: clientHeight,
+        });
+        return el;
+      };
+
+      it('stays at its end while it grows', async () => {
+        writing();
+        const el = scrollBox();
+
+        await wrapper.setProps({
+          streamingText: 'Здравствуйте, Анна! Ещё текст',
+        });
+        await nextTick();
+
+        expect(el.scrollTop).toBe(600);
+      });
+
+      it('stays where the manager scrolled to read', async () => {
+        writing();
+        const el = scrollBox();
+        el.scrollTop = 0;
+        await draft().trigger('scroll');
+
+        await wrapper.setProps({
+          streamingText: 'Здравствуйте, Анна! Ещё текст',
+        });
+        await nextTick();
+
+        expect(el.scrollTop).toBe(0);
+      });
+
+      it('shows the final draft from its start', async () => {
+        writing();
+        const el = scrollBox();
+        el.scrollTop = 376;
+
+        await wrapper.setProps({
+          isGeneratingContent: false,
+          showCopilotEditor: true,
+          generatedContent: 'Здравствуйте, Анна! Приём стоит 8000 тенге.',
+          streamingText: '',
+        });
+        await nextTick();
+
+        expect(el.scrollTop).toBe(0);
+      });
+    });
+
+    describe('the dot at the end of the text', () => {
+      const style = sectionSource.slice(
+        sectionSource.indexOf('<style scoped>')
+      );
+
+      it('pulses in the blue of the interface, slower under reduced motion, and never stops', () => {
+        expect(style).toContain('rgb(var(--blue-9))');
+        expect(style).toContain('animation: ai-writing-pulse 1.2s');
+        const reduced = style.slice(
+          style.indexOf('@media (prefers-reduced-motion: reduce)'),
+          style.indexOf('/* High contrast')
+        );
+
+        expect(reduced).toContain('animation-duration: 2.4s;');
+        expect(reduced).not.toMatch(/animation(-name)?:\s*none/);
+        expect(style).not.toMatch(/violet|purple|iris/i);
+      });
+    });
+  });
 });

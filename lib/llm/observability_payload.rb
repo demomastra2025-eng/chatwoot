@@ -74,7 +74,7 @@ class Llm::ObservabilityPayload
       data = provider_response_body(response)
       usage = data['usage'].is_a?(Hash) ? data['usage'] : {}
 
-      payload['prompt_tokens'] = integer_value(usage['prompt_tokens']) || payload['prompt_tokens']
+      payload['prompt_tokens'] = provider_prompt_tokens(usage, data, response) || payload['prompt_tokens']
       payload['completion_tokens'] = integer_value(usage['completion_tokens']) || payload['completion_tokens']
       payload['total_tokens'] = integer_value(usage['total_tokens']) || compact_sum(payload['prompt_tokens'], payload['completion_tokens'])
       payload['thinking_tokens'] = integer_value(usage.dig('completion_tokens_details', 'reasoning_tokens')) || payload['thinking_tokens']
@@ -217,6 +217,15 @@ class Llm::ObservabilityPayload
       response.public_send(method_name) if response.respond_to?(method_name)
     end
 
+    # The prompt of the provider's usage. A streamed answer has no body with it: RubyLLM's input tokens leave out the cached ones,
+    # which the provider counts in the prompt, so with them the prompt is the one a complete response reports.
+    def provider_prompt_tokens(usage, data, response)
+      return integer_value(usage['prompt_tokens']) if data.present?
+
+      counts = %i[input_tokens cached_tokens cache_creation_tokens].filter_map { |method_name| token_value(response, method_name) }
+      counts.sum if counts.any?
+    end
+
     def provider_response_body(response)
       raw = response.raw if response.respond_to?(:raw)
       body = raw.respond_to?(:body) ? raw.body : raw
@@ -324,6 +333,9 @@ class Llm::ObservabilityPayload
       end
       raw_response = response.raw if response.respond_to?(:raw)
       sources << raw_response.body if raw_response.respond_to?(:body)
+      # A streamed answer has no body to read (the chunks were consumed as they came); OpenRouter names the generation in the
+      # x-generation-id header of every response, which is how the cost of a streamed call is found later.
+      sources << raw_response.headers if raw_response.respond_to?(:headers)
       sources
     end
 

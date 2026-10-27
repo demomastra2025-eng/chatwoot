@@ -8,6 +8,7 @@ module Captain::Assistant::RunnerCallbacksHelper
     runner = add_tool_complete_callback(runner) if @callbacks[:on_tool_complete]
     runner = add_llm_call_complete_callback(runner) if @callbacks[:on_llm_call_complete]
     runner = add_llm_step_callback(runner) if @callbacks[:on_llm_step]
+    runner = add_answer_delta_callback(runner) if @callbacks[:on_answer_delta]
     runner
   end
 
@@ -66,6 +67,14 @@ module Captain::Assistant::RunnerCallbacksHelper
       @callbacks[:on_llm_call_complete].call(*args)
     rescue StandardError => e
       Rails.logger.warn "[Captain] Callback error for llm_call_complete: #{e.message}"
+    end
+  end
+
+  def add_answer_delta_callback(runner)
+    runner.on_answer_delta do |*args|
+      @callbacks[:on_answer_delta].call(*args)
+    rescue StandardError => e
+      Rails.logger.warn "[Captain] Callback error for answer_delta: #{e.class}"
     end
   end
 end

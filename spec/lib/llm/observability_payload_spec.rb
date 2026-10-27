@@ -85,6 +85,29 @@ RSpec.describe Llm::ObservabilityPayload do
       expect(payload.to_json).not_to include('PRIVATE_DRAFT', 'PRIVATE_REASONING', 'PRIVATE_USAGE', 'choices', 'raw')
     end
 
+    it 'finds the generation of a streamed answer in the headers of the response: the stream leaves no body to read' do
+      raw = Faraday::Response.new(status: 200, body: '', response_headers: { 'X-Generation-Id' => 'gen-streamed-1', 'cf-ray' => 'abc' })
+      response = RubyLLM::Message.new(role: :assistant, content: 'PRIVATE_DRAFT', input_tokens: 70, output_tokens: 13, cached_tokens: 30,
+                                      raw: raw)
+
+      payload = described_class.attach_provider_chat_response!({ 'provider' => 'openrouter' }, response)
+
+      # the prompt counts the cached tokens too, as the usage of a complete response does
+      expect(payload).to include('openrouter_generation_id' => 'gen-streamed-1', 'prompt_tokens' => 100, 'completion_tokens' => 13,
+                                 'total_tokens' => 113, 'cached_tokens' => 30)
+      expect(payload).not_to have_key('estimated_cost')
+      expect(payload.to_json).not_to include('PRIVATE_DRAFT', 'cf-ray')
+    end
+
+    it 'still prefers the id in the body of a complete response' do
+      raw = Faraday::Response.new(status: 200, body: { 'id' => 'gen-from-body' }, response_headers: { 'x-generation-id' => 'gen-from-header' })
+      response = RubyLLM::Message.new(role: :assistant, content: 'Done', input_tokens: 5, output_tokens: 2, raw: raw)
+
+      payload = described_class.attach_provider_chat_response!({ 'provider' => 'openrouter' }, response)
+
+      expect(payload['openrouter_generation_id']).to eq('gen-from-body')
+    end
+
     it 'preserves explicit zero cost and leaves missing or malformed cost unknown' do
       response = RubyLLM::Message.new(role: :assistant, content: 'Done', input_tokens: 5, output_tokens: 2,
                                      raw: Struct.new(:body).new({ 'usage' => { 'cost' => 0 } }))

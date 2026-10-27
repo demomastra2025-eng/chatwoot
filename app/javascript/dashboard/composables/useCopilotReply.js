@@ -216,6 +216,10 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
   const pendingActionsByConversation = ref({});
   const actionLoadingById = ref({});
   const liveProgress = ref(null);
+  // The draft so far, while the AI is still writing it (cable preview events).
+  // It is only a look ahead: the result replaces it, and anything that ends or
+  // resets the run clears it. Never kept, never inserted.
+  const streamingText = ref('');
   const abortController = ref(null);
   const requestId = ref(null);
   const lastAcceptedMeta = ref(null);
@@ -242,6 +246,9 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
   // Runs the manager cancelled, dismissed, applied or replaced. Late events
   // for them are dropped, so a finished suggestion never comes back.
   const ignoredRequestIds = new Set();
+  // The number of the last preview taken for the run: an older one that
+  // arrives late is dropped.
+  let lastPreviewSeq = 0;
   // Bumped whenever local state is cleared; async continuations compare it to
   // know that the conversation or the user's intent changed while they waited.
   let epoch = 0;
@@ -446,8 +453,14 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     }
   }
 
+  function clearStreamingText() {
+    streamingText.value = '';
+    lastPreviewSeq = 0;
+  }
+
   function resetSuggestionState() {
     stopTimers();
+    clearStreamingText();
     suggestionPhase.value = PHASE.IDLE;
     suggestionRequestId.value = null;
     suggestionNotice.value = null;
@@ -489,6 +502,9 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     // The owner is read first: once the id is set the run is "tracked" and the
     // owner would be the (still empty) tracked conversation.
     const owner = ownerConversation();
+    if (suggestionRequestId.value !== state.suggestion_request_id) {
+      clearStreamingText();
+    }
     suggestionRequestId.value = state.suggestion_request_id;
     trackedConversationId.value = owner;
     currentAction.value = REPLY_SUGGESTION_ACTION;
@@ -538,6 +554,7 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     captainTrace.value = null;
     suggestionMeta.value = null;
     liveProgress.value = null;
+    clearStreamingText();
     setPhase(PHASE.NOTICE);
   }
 
@@ -568,7 +585,11 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
       return;
     }
     const cameFromGenerating = isGenerating.value;
+    // The panel already shows the draft as it was written: the final text takes
+    // its place in the same panel, with no transition to wait for.
+    const wasWritten = Boolean(streamingText.value.trim());
     adoptRequest(state);
+    clearStreamingText();
     generatedContent.value = message;
     followUpContext.value = result.follow_up_context ?? null;
     // The final trace only: the live progress trace is a partial view.
@@ -587,7 +608,7 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     showEditor.value = true;
     // The editor transition marks content ready after a live run; a draft
     // that appears without a generating state has no transition to wait for.
-    isContentReady.value = !cameFromGenerating;
+    isContentReady.value = !cameFromGenerating || wasWritten;
     setPhase(PHASE.DRAFT);
     if (!restored) {
       useTrack(
@@ -731,6 +752,25 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     });
   }
 
+  // The AI is writing the draft: show what it has written so far. A preview
+  // belongs to the run this composable follows (the progress events start
+  // following a run, a preview never does) and only counts while the run is
+  // generating. Each preview carries the whole text so far, so a missed one
+  // costs nothing; the number puts a late one out of play.
+  function handlePreviewEvent(data) {
+    if (!data?.suggestion_request_id) return;
+    if (data.suggestion_request_id !== suggestionRequestId.value) return;
+    if (!shouldAcceptEvent(data)) return;
+    if (suggestionPhase.value !== PHASE.GENERATING) return;
+    if (!sameConversation(data.conversation_id, trackedConversationId.value))
+      return;
+
+    const seq = Number(data.seq);
+    if (!Number.isSafeInteger(seq) || seq <= lastPreviewSeq) return;
+    lastPreviewSeq = seq;
+    streamingText.value = typeof data.text === 'string' ? data.text : '';
+  }
+
   function handleResultEvent(state) {
     if (!shouldAcceptEvent(state)) return;
     applySuggestionState(state);
@@ -747,6 +787,10 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
       BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_PROGRESS,
       handleProgressEvent
     );
+    emitter.off(
+      BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_PREVIEW,
+      handlePreviewEvent
+    );
     emitter.off(BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_RESULT, handleResultEvent);
     emitter.off(BUS_EVENTS.WEBSOCKET_RECONNECT_COMPLETED, handleReconnect);
     stopTimers();
@@ -757,6 +801,7 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
   // Listen from creation until the owner goes away: a result can arrive while
   // nothing is generating locally (second tab, returning to the chat).
   emitter.on(BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_PROGRESS, handleProgressEvent);
+  emitter.on(BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_PREVIEW, handlePreviewEvent);
   emitter.on(BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_RESULT, handleResultEvent);
   emitter.on(BUS_EVENTS.WEBSOCKET_RECONNECT_COMPLETED, handleReconnect);
   if (getCurrentScope()) {
@@ -1506,6 +1551,7 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     openActions,
     actionLoadingById,
     liveProgress,
+    streamingText,
     requestId,
     lastAcceptedMeta,
 

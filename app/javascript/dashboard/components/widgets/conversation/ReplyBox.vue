@@ -1869,6 +1869,7 @@ export default {
           :generated-content="copilot.generatedContent.value"
           :suggestion-meta="copilot.suggestionMeta.value"
           :live-progress="copilot.liveProgress.value"
+          :streaming-text="copilot.streamingText.value"
           :pending-actions="copilot.pendingActions.value"
           :action-loading-by-id="copilot.actionLoadingById.value"
           :stale="copilot.suggestionStale.value"

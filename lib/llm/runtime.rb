@@ -20,24 +20,27 @@ class Llm::Runtime
       ).build_chat_legacy(**legacy_options)
     end
 
-    def ask(chat, content, **options)
+    # A block makes the call stream: it gets each chunk of the answer as the provider sends it (the chat is built with stream: true).
+    def ask(chat, content, **options, &)
       provider = options.delete(:provider) || :openrouter
       account = options[:account]
       provider_runtime(provider: provider, account: account).ask(
         chat,
         content,
         model: options[:model],
-        observability: options[:observability]
+        observability: options[:observability],
+        &
       )
     end
 
-    def complete(chat, **options)
+    def complete(chat, **options, &)
       provider = options.delete(:provider) || :openrouter
       account = options[:account]
       provider_runtime(provider: provider, account: account).complete(
         chat,
         model: options[:model],
-        observability: options[:observability]
+        observability: options[:observability],
+        &
       )
     end
 

@@ -19,6 +19,8 @@ class Captain::Runtime::Instrumentation
         )
 
         Captain::Runtime::CallbackManager::EVENT_TYPES.each do |event|
+          next unless callbacks.respond_to?(:"on_#{event}")
+
           runner.public_send(:"on_#{event}") { |*args| callbacks.public_send(:"on_#{event}", *args) }
         end
 
