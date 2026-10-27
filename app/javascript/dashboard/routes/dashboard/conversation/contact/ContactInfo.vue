@@ -621,11 +621,13 @@ export default {
     </div>
     <div
       v-if="dealOpen"
-      class="fixed inset-0 z-[140] flex justify-end bg-black/35"
+      class="fixed inset-0 z-[140] flex items-center justify-center bg-black/35 p-3"
       role="dialog"
       :aria-label="$t('CONTACT_PANEL.ACTION_DEAL')"
     >
-      <div class="h-full w-full max-w-[36rem] bg-n-solid-2 shadow-xl">
+      <div
+        class="h-[min(90vh,48rem)] w-full max-w-[36rem] overflow-hidden rounded-xl bg-n-solid-2 shadow-xl"
+      >
         <CrmConversationDealsSidebar
           ref="dealSidebar"
           :current-chat="currentChat"
