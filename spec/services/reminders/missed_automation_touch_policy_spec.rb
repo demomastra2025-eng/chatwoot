@@ -41,11 +41,18 @@ RSpec.describe Reminders::MissedAutomationTouchPolicy do
     end
 
     it 'skips a before-visit message after the appointment starts even within grace' do
-      reminder.relative_offset_seconds = -2.hours.to_i
+      reminder.relative_offset_seconds = -1.minute.to_i
       reminder.scheduled_at = now - 1.minute
       appointment.starts_at = now
 
       expect(described_class.new(reminder: reminder, now: now).skip_reason).to eq(described_class::STARTED_REASON)
+    end
+
+    it 'keeps the late reason when a before-visit message is both overdue and past the visit start' do
+      reminder.relative_offset_seconds = -2.hours.to_i
+      appointment.starts_at = now - 1.hour
+
+      expect(described_class.new(reminder: reminder, now: now).skip_reason).to eq(described_class::CANCEL_REASON)
     end
 
     it 'does not cancel a touch after delivery was materialized' do

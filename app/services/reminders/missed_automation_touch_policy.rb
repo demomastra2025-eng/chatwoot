@@ -37,11 +37,10 @@ class Reminders::MissedAutomationTouchPolicy
     return unless Reminder::OPEN_STATUSES.include?(reminder.status) && !reminder.delivery_materialized?
     return unless automation_visit_touch?
 
-    visit_reason = before_visit_reason
-    return visit_reason if visit_reason
+    return CLOSED_REASON if closed_before_visit?
+    return CANCEL_REASON if late?
 
-    due_at = recomputed_due_at
-    CANCEL_REASON if due_at.present? && due_at < now - GRACE_WINDOW
+    STARTED_REASON if started_before_visit?
   end
 
   def automation_visit_touch?
@@ -93,13 +92,17 @@ class Reminders::MissedAutomationTouchPolicy
     reminder.relative_anchor == 'appointment.starts_at' && reminder.relative_offset_seconds.to_i.negative?
   end
 
-  def before_visit_reason
-    return unless before_visit?
+  def closed_before_visit?
+    before_visit? && reminder.remindable.status.in?(%w[completed no_show cancelled])
+  end
 
-    appointment = reminder.remindable
-    return CLOSED_REASON if appointment.status.in?(%w[completed no_show cancelled])
+  def late?
+    due_at = recomputed_due_at
+    due_at.present? && due_at < now - GRACE_WINDOW
+  end
 
-    STARTED_REASON if appointment.starts_at <= now
+  def started_before_visit?
+    before_visit? && reminder.remindable.starts_at <= now
   end
 
   def log_cancellation

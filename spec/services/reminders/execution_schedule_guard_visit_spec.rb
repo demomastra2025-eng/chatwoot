@@ -17,6 +17,6 @@ RSpec.describe Reminders::ExecutionScheduleGuard do
 
     expect(described_class.new(reminder: touch.reload).perform).to eq(described_class::STOP)
     expect(touch.reload).to be_cancelled
-    expect(touch.last_error).to eq(Reminders::MissedAutomationTouchPolicy::STARTED_REASON)
+    expect(touch.last_error).to eq(Reminders::MissedAutomationTouchPolicy::CANCEL_REASON)
   end
 end
