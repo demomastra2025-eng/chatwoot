@@ -160,7 +160,7 @@ RSpec.describe Captain::Assistant, type: :model do
         'Next: Thu 15.10.2026 10:30, «Приём терапевта (первичный)», Иванов Алексей Петрович. ' \
         'All: upcoming: Thu 15.10.2026 10:30, «Приём терапевта (первичный)», Иванов Алексей Петрович; no past or cancelled appointments.'
       )
-      expect(rendered).not_to include('"id"', 'Остальные записи', 'list_my_appointments', 'нет записей')
+      expect(rendered).not_to include('"id"', 'Остальные записи', 'нет записей')
     end
   end
 

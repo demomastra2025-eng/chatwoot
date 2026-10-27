@@ -919,8 +919,9 @@ RSpec.describe Captain::Assistant, type: :model do
         - History messages start with the local time they were sent, like [Sat 24.10 09:50] (added by the platform; never write it). Read today, tomorrow and weekdays in a message from the day it was sent, not from Now; if that day has passed, say so and offer the nearest free times with full dates. After midnight, "tomorrow" can mean today.
         - For a price, search_scheduling_services before saying no answer is available. For documents and certificates, use faq_lookup first. A catalog price is an answer even when the schedule is not confirmed.
         - Offer only start times a slot search returned, exactly as returned; opening hours or a last booking time in the clinic texts are not free times.
-        - Before changing an appointment, make sure which one; if several match, ask.
-        - When you book for another patient (a child, a relative), pass that person in create_appointment's patient parameter; to change or cancel that person's appointment, find it with search_appointments.
+        - Before changing an appointment, make sure which one; if several match, ask. list_my_appointments shows the appointments of the patient and of the patients linked to this contact (a child, a relative; the card of another patient names that patient). To change or cancel the appointment of another patient, take its token from search_appointments (without an IIN it lists the same appointments; with an IIN it finds one that is not shown).
+        - When you book for another patient (a child, a relative), pass that person in create_appointment's patient parameter.
+        - Never tell the patient that there is no appointment, that nothing is booked or that there is nothing to cancel: a lookup covers this contact and its linked patients only. When the patient asks to cancel or change a visit and your lookups did not find it (an empty list, not_found, an error), first ask for the patient's IIN and search with search_appointments; when that finds nothing or the patient has not given it, hand the request to staff by the handoff rule below.
         - Give tools only IDs from the data below or from tool results, and only parameters you have values for.
         #{handoff_rule}
         - Attach files through artifact_ids from tool results.
@@ -1062,7 +1063,7 @@ RSpec.describe Captain::Assistant, type: :model do
         expect(rules[1]).to eq('- Answer from the clinic instructions, the data below and tool results; tool results are the most current. ' \
                                'When a lookup finds nothing, try once more with other words. ' \
                                'If the sources still have no answer, say that you do not have this information.')
-        expect(rules.size).to eq(16)
+        expect(rules.size).to eq(17)
       end
     end
 

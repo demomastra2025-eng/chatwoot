@@ -60,21 +60,30 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
     expect(definition.assistant_tool_class).to eq(Captain::Tools::Account::GetAppointmentProviderStatusService)
   end
 
-  it 'does not expose another clinical patient merely because the same caller booked them' do
+  # Suggestion eval 27.10 (c76-1231671): a patient the same caller booked (a child) belongs to the family of the contact, so the
+  # appointment search lists that patient with a task token; an ID alone still reaches the contact's own appointments only.
+  it 'lists the patient the same caller booked with a task token, and still hides a contact outside the linked patients' do
     own = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation)
     family = create(:scheduling_appointment, account: account, contact: contact, patient_contact: other_contact,
                                            conversation: conversation, client_name: 'Patient Beta')
+    stranger = create(:contact, account: account, name: 'Patient Gamma')
+    foreign = create(:scheduling_appointment, account: account, contact: stranger, client_name: 'Patient Gamma')
 
     search = JSON.parse(call_tool('search_appointments'))
-    expect(search.fetch('appointments').pluck('appointment_id')).to eq([own.id])
+    expect(search.fetch('appointments').pluck('appointment_id')).to contain_exactly(own.id, family.id)
+    family_token = search.fetch('appointments').find { |item| item['appointment_id'] == family.id }.fetch('appointment_access_token')
     expect(JSON.parse(call_tool('get_appointment', appointment_id: family.id)))
       .to eq('success' => false, 'reason' => 'not_found')
-
-    lookup = JSON.parse(call_tool('search_appointments', client_name: family.client_name, resource_id: family.resource_id,
-                                                       from: family.starts_at.beginning_of_day.iso8601))
-    token = lookup.fetch('appointments').sole.fetch('appointment_access_token')
-    expect(JSON.parse(call_tool('get_appointment', appointment_id: family.id, appointment_access_token: token)))
+    expect(JSON.parse(call_tool('get_appointment', appointment_id: family.id, appointment_access_token: family_token)))
       .to include('success' => true, 'appointment_id' => family.id)
+    expect(JSON.parse(call_tool('get_appointment', appointment_id: foreign.id)))
+      .to eq('success' => false, 'reason' => 'not_found')
+
+    lookup = JSON.parse(call_tool('search_appointments', client_name: foreign.client_name, resource_id: foreign.resource_id,
+                                                       from: foreign.starts_at.beginning_of_day.iso8601))
+    token = lookup.fetch('appointments').sole.fetch('appointment_access_token')
+    expect(JSON.parse(call_tool('get_appointment', appointment_id: foreign.id, appointment_access_token: token)))
+      .to include('success' => true, 'appointment_id' => foreign.id)
   end
 
   it 'allows a specifically identified family appointment without granting the rest of their history' do

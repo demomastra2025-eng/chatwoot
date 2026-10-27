@@ -128,6 +128,17 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     expect(described_class.for_tool('search_available_slots').description).to include('to offer the patient free slots')
   end
 
+  # Suggestion eval 27.10 (c76-1231671): the list covers the patients linked to the contact, and an empty list proves nothing.
+  it 'says that list_my_appointments covers the linked patients and that an empty list never means that there is nothing to cancel' do
+    list = described_class.for_tool('list_my_appointments').description
+
+    expect(list).to include('the patients linked to this contact', 'names that patient (patient_name)',
+                            'does not prove that there is no appointment', 'never tell the patient that there is nothing to cancel')
+    expect(described_class.for_tool('search_appointments').description)
+      .to include('lists the appointments of the current patient and of the patients linked to this contact, each with its token',
+                  'a patient that list_my_appointments does not show')
+  end
+
   it 'names the patient of create_appointment positively: the person the appointment is for when it is not the person in the conversation' do
     entry = described_class.for_tool('create_appointment')
 

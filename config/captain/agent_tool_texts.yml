@@ -21,7 +21,7 @@ tools:
     hidden_params: []
 
   list_my_appointments:
-    description: "The current patient's own appointments, latest date first. Call it for 'my appointments' and to get the appointment ID before rescheduling or cancelling; for upcoming ones use status scheduled with date_from today, or the day the patient's message was sent when it was earlier."
+    description: "The appointments of the current patient and of the patients linked to this contact (a child, a relative), latest date first; an appointment of another patient names that patient (patient_name). Call it for 'my appointments' and to get the appointment ID before rescheduling or cancelling; for upcoming ones use status scheduled with date_from today, or the day the patient's message was sent when it was earlier. An empty list does not prove that there is no appointment: follow its note and never tell the patient that there is nothing to cancel."
     params:
       status: "scheduled, completed, cancelled, no_show or any (default any)."
       date_from: "First date, YYYY-MM-DD."
@@ -32,7 +32,7 @@ tools:
     hidden_params: []
 
   search_appointments:
-    description: "Find another patient's appointment (a child, a relative) by IIN, or by full name + specialist ID + appointment day. Results carry an access token for that appointment. For the patient's own appointments use list_my_appointments."
+    description: "Get the access token of an appointment: changing or cancelling the appointment of another patient needs it. Without IIN or name it lists the appointments of the current patient and of the patients linked to this contact, each with its token. For a patient that list_my_appointments does not show (a child or a relative booked by someone else or on another phone) pass the IIN, or the full name + specialist ID + appointment day."
     params:
       client_name: "Another patient's full name in the order first, last, middle name (middle if they have one)."
       client_identifier: "Exact IIN, 12 digits; alone it finds upcoming appointments (90 days)."

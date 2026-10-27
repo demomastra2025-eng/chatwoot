@@ -14,7 +14,7 @@ RSpec.describe Captain::Tools::Account::ListMyAppointmentsService do
     JSON.parse(adapter.execute(tool_context, **arguments))
   end
 
-  it 'returns only the current contact appointments across conversations' do
+  it 'returns the appointments of the current contact across conversations, without the data of the system' do
     own = create(:scheduling_appointment, account: account, contact: contact, external_ref: 'private-command')
     another_channel = create(:conversation, account: account, contact: contact)
     other_own = create(:scheduling_appointment, account: account, contact: contact, patient_contact: contact,
@@ -22,7 +22,6 @@ RSpec.describe Captain::Tools::Account::ListMyAppointmentsService do
     other_contact = create(:contact, account: account)
     create(:scheduling_appointment, account: account, contact: other_contact, conversation: conversation)
     create(:scheduling_appointment, account: account, contact: other_contact, patient_contact: contact)
-    create(:scheduling_appointment, account: account, contact: contact, patient_contact: other_contact, conversation: conversation)
     create(:scheduling_appointment, account: create(:account))
 
     payload = call_tool
@@ -30,6 +29,29 @@ RSpec.describe Captain::Tools::Account::ListMyAppointmentsService do
     expect(payload.fetch('appointments').pluck('id')).to contain_exactly(own.id, other_own.id)
     expect(payload.fetch('appointments').first.keys).to match_array(%w[id status date time doctor service])
     expect(payload.to_json).not_to include('private-command', 'payment_status', 'client_phone')
+  end
+
+  # Suggestion eval 27.10 (c76-1231671): a parent asked to cancel the visit of a child that was booked from the parent's chat; the
+  # lookup returned the parent's own cards only and both drafts told the patient there was nothing to cancel.
+  it 'returns the appointments of the patients linked to the contact and names the patient on each of them' do
+    child = create(:contact, account: account, name: 'Айя')
+    own = create(:scheduling_appointment, account: account, contact: contact, starts_at: 2.days.from_now)
+    child_visit = create(:scheduling_appointment, account: account, contact: contact, patient_contact: child, client_name: 'Ким Айя',
+                                                  starts_at: 1.day.from_now, ends_at: 1.day.from_now + 30.minutes)
+
+    payload = call_tool(status: 'scheduled')
+
+    expect(payload).to include('success' => true, 'total' => 2)
+    cards = payload.fetch('appointments').index_by { |card| card['id'] }
+    expect(cards.fetch(child_visit.id)).to include('patient_name' => 'Ким Айя', 'status' => 'scheduled')
+    expect(cards.fetch(own.id)).not_to have_key('patient_name')
+  end
+
+  it 'tells the agent that nothing found is no proof of the absence of a booking, so it never says there is nothing to cancel' do
+    payload = call_tool(status: 'scheduled')
+
+    expect(payload).to include('success' => true, 'total' => 0, 'appointments' => [])
+    expect(payload.fetch('note')).to include('does not prove', 'Never tell the patient', 'nothing to cancel', 'search_appointments', 'staff')
   end
 
   it 'returns neutral failures for invalid filters and a missing contact' do

@@ -82,6 +82,26 @@ RSpec.describe Captain::Tools::CancelAppointmentTool do
     expect(selected.reload.client_comment).to eq('Family request')
   end
 
+  # Suggestion eval 27.10 (c76-1231671): the visit to cancel is a child's, booked from the parent's chat. search_appointments lists it
+  # with a task token (the same appointments as list_my_appointments); with that token and the patient's confirmation it is cancelled.
+  it 'cancels a linked patient appointment with the token that search_appointments lists for it and the confirmation' do
+    child = create(:contact, account: account, name: 'Test Son')
+    visit = create(:scheduling_appointment, account: account, contact: contact, patient_contact: child, client_name: 'Test Son')
+    search_context = Struct.new(:state, :context).new({ conversation: { id: conversation.id } }, {})
+    listing = JSON.parse(Captain::Tools::Agent::AccountToolAdapter.new(assistant, tool_id: 'search_appointments').execute(search_context))
+    listed = listing.fetch('appointments').sole
+    tool = described_class.new(assistant)
+
+    expect(listed.fetch('appointment_id')).to eq(visit.id)
+    token = listed.fetch('appointment_access_token')
+    expect(JSON.parse(tool.execute(tool_context, appointment_id: visit.id, appointment_access_token: token))).to include('success' => false)
+    expect(visit.reload.status).to eq('scheduled')
+
+    confirmed = JSON.parse(tool.execute(tool_context, appointment_id: visit.id, appointment_access_token: token, patient_confirmed: true))
+    expect(confirmed).to include('success' => true, 'appointment_id' => visit.id)
+    expect(visit.reload.status).to eq('cancelled')
+  end
+
   it 'requires both task access and confirmation for a family appointment already linked to this chat' do
     patient = create(:contact, account: account)
     selected = create(:scheduling_appointment, account: account, contact: contact,

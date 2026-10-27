@@ -34,7 +34,7 @@ class Captain::Tools::Account::SearchAppointmentsService < Captain::Tools::Accou
                  end
     resource_id = verified_optional_record_id(resource_id, scope: account.scheduling_resources, field_name: 'resource_id')
 
-    appointments = (patient_scope ? patient_scope.appointments : account.scheduling_appointments).includes(
+    appointments = (patient_scope ? patient_scope.linked_appointments : account.scheduling_appointments).includes(
       :resource,
       :service,
       :company,
