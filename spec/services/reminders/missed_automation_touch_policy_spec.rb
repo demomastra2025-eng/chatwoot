@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe Reminders::MissedAutomationTouchPolicy do
   let(:now) { Time.zone.parse('2026-08-22 10:00') }
-  let(:appointment) { Scheduling::Appointment.new(source: 'medelement') }
+  let(:appointment) { Scheduling::Appointment.new(source: 'manual', starts_at: now + 1.hour, status: 'scheduled') }
   let(:metadata) { { 'touch_source' => 'automation' } }
   let(:scheduled_at) { now - 6.minutes }
   let(:reminder) do
@@ -10,6 +10,7 @@ RSpec.describe Reminders::MissedAutomationTouchPolicy do
       status: 'processing',
       timing_mode: 'relative',
       relative_anchor: 'appointment.starts_at',
+      relative_offset_seconds: -(1.hour + 6.minutes).to_i,
       scheduled_at: scheduled_at,
       metadata: metadata,
       remindable: appointment
@@ -17,23 +18,34 @@ RSpec.describe Reminders::MissedAutomationTouchPolicy do
   end
 
   describe '#missed?' do
-    it 'marks a MedElement appointment automation touch missed after the grace window' do
+    it 'marks an appointment automation touch missed after the grace window regardless of source' do
       expect(described_class.new(reminder: reminder, now: now)).to be_missed
     end
 
     it 'keeps the touch eligible at the grace-window boundary' do
       reminder.scheduled_at = now - described_class::GRACE_WINDOW
+      reminder.relative_offset_seconds = -(1.hour + described_class::GRACE_WINDOW).to_i
 
       expect(described_class.new(reminder: reminder, now: now)).not_to be_missed
     end
 
-    it 'does not affect manual appointments or non-automation touches' do
-      appointment.source = 'manual'
-      expect(described_class.new(reminder: reminder, now: now)).not_to be_missed
+    it 'uses the live visit time when the stored time is stale after a later move' do
+      appointment.starts_at = now + 2.hours
 
-      appointment.source = 'medelement'
+      expect(described_class.new(reminder: reminder, now: now)).not_to be_missed
+    end
+
+    it 'does not affect non-automation touches' do
       reminder.metadata = {}
       expect(described_class.new(reminder: reminder, now: now)).not_to be_missed
+    end
+
+    it 'skips a before-visit message after the appointment starts even within grace' do
+      reminder.relative_offset_seconds = -2.hours.to_i
+      reminder.scheduled_at = now - 1.minute
+      appointment.starts_at = now
+
+      expect(described_class.new(reminder: reminder, now: now).skip_reason).to eq(described_class::STARTED_REASON)
     end
 
     it 'does not cancel a touch after delivery was materialized' do

@@ -40,7 +40,8 @@ class Reminders::SyncRemindableService
     touch.assign_attributes(sync_attributes_for(touch))
     clear_stale_target_routes(touch)
     Reminders::TargetRouteResolver.new(reminder: touch).perform
-    touch.scheduled_at_will_change! if touch.relative_schedule_stale?
+    visit_notification = Reminders::MissedAutomationTouchPolicy.new(reminder: touch).automation_visit_touch?
+    touch.scheduled_at_will_change! if touch.relative_schedule_stale? && !visit_notification
     persist_sync!(touch) if touch.changed?
   end
 

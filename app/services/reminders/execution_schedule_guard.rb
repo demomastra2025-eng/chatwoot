@@ -3,7 +3,7 @@ class Reminders::ExecutionScheduleGuard
   STOP = :stop
   MISSED_RELATIVE_SCHEDULE = 'Skipped relative touch because its scheduled time had already passed when it was created.'.freeze
   INVALID_DEFERRED_ENROLLMENT = 'Skipped deferred touch because its enrollment or source entity is no longer active.'.freeze
-  DEFERRED_GRACE_WINDOW = 5.minutes
+  DEFERRED_GRACE_WINDOW = Reminders::MissedAutomationTouchPolicy::GRACE_WINDOW
 
   def initialize(reminder:)
     @reminder = reminder
@@ -16,6 +16,7 @@ class Reminders::ExecutionScheduleGuard
 
     reminder.remindable.reload
     refresh_schedule_if_anchor_changed!
+    return STOP if Reminders::MissedAutomationTouchPolicy.new(reminder: reminder).cancel_if_missed!
     return stop_for_missed_schedule! if missed_relative_schedule?
     return stop_for_rescheduled_touch! if reminder.scheduled_at&.future?
 
@@ -42,6 +43,8 @@ class Reminders::ExecutionScheduleGuard
   end
 
   def missed_relative_schedule?
+    return false if Reminders::MissedAutomationTouchPolicy.new(reminder: reminder).automation_visit_touch?
+
     if deferred_enrollment? && reminder.scheduled_at.present?
       return false if materialized_deferred_schedule_unchanged?
 
