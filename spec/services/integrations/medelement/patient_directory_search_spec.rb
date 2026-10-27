@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Integrations::Medelement::PatientDirectorySearch do
-  let(:account) { create(:account) }
+  let(:account) { create(:account).tap { |record| record.enable_features!('scheduling') } }
   let(:user) { create(:user, account: account, role: :agent) }
   let(:hook) { create(:integrations_hook, :medelement, account: account) }
   let(:client) { instance_double(Integrations::Medelement::Client) }
@@ -93,7 +93,7 @@ RSpec.describe Integrations::Medelement::PatientDirectorySearch do
     allow(client).to receive(:search_patients_by_name).and_return([row])
     token = service.search('Қуаныш')[:patients].first[:token]
     other_user = create(:user, account: account, role: :agent)
-    other_account = create(:account)
+    other_account = create(:account).tap { |record| record.enable_features!('scheduling') }
     other_hook = create(:integrations_hook, :medelement, account: other_account)
 
     [
