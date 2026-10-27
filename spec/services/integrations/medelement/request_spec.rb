@@ -40,7 +40,7 @@ RSpec.describe Integrations::Medelement::Request do
 
       expect(provider_request).to have_been_requested.twice
       expect(rate_limiter).to have_received(:wait!).with(operation: 'patient search', write: false, max_wait_ms: 1000).twice
-      expect(sleeps).to eq([0.5])
+      expect(sleeps).to eq([0.25])
     end
 
     it 'does not retry a timetable rate limit when the caller opts out' do

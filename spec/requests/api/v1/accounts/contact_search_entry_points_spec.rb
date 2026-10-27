@@ -66,7 +66,7 @@ RSpec.describe 'Contact search entry points', type: :request do
 
   describe 'GET /api/v1/accounts/:id/search/contacts (the global search)' do
     it 'finds a structured surname' do
-      patient = create(:contact, account: account, name: 'Аян', last_name: 'Қуаныш')
+      patient = create(:contact, account: account, name: 'Аян', last_name: 'Қуаныш', contact_type: :lead)
       get "/api/v1/accounts/#{account.id}/search/contacts", params: { q: 'ҚУАНЫШ' }, headers: headers, as: :json
       expect(returned_ids).to eq([patient.id])
     end

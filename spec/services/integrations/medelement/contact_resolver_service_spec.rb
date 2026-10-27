@@ -610,8 +610,8 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
 
   it 'applies an explicit prefetched card even when the linked contact is fresh' do
     contact = create(:contact, account: account, name: 'Old', custom_attributes: {
-      'medelement_patient_code' => patient_code, 'medelement_last_synced_at' => Time.current.iso8601
-    })
+                       'medelement_patient_code' => patient_code, 'medelement_last_synced_at' => Time.current.iso8601
+                     })
     allow(client).to receive(:get_patient)
 
     resolved = service.sync_patient!(patient_code, prefetched_patient: patient_payload, require_verified_card: true)
@@ -632,8 +632,8 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
 
   it 'does not return a stale linked contact when explicit card verification fails' do
     contact = create(:contact, account: account, name: 'Old', custom_attributes: {
-      'medelement_patient_code' => patient_code, 'medelement_last_synced_at' => Time.current.iso8601
-    })
+                       'medelement_patient_code' => patient_code, 'medelement_last_synced_at' => Time.current.iso8601
+                     })
     allow(client).to receive(:search_patients_by_codes).with(patient_codes: [patient_code]).and_return([])
 
     resolved = service.sync_patient!(patient_code, prefetched_patient: patient_payload, require_verified_card: true)
