@@ -67,4 +67,18 @@ RSpec.describe 'Scheduling MedElement patients API', type: :request do
 
     expect(response).to have_http_status(:unauthorized)
   end
+
+  it 'requires search and import inputs in a JSON body' do
+    expect(client).not_to receive(:search_patients_by_name)
+    expect(client).not_to receive(:get_patient)
+
+    post "#{path}/search?query=Faker", headers: headers, as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+
+    post "#{path}/search", params: { query: 'Faker' }, headers: headers
+    expect(response).to have_http_status(:unprocessable_content)
+
+    post "#{path}?token=fake-token", headers: headers, as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+  end
 end
