@@ -226,6 +226,38 @@ export const formatSchedulingErrorMessage = (error, t) => {
   };
   const missingFields = resolveMissingFieldLabels(payload);
 
+  if (
+    ['SLOT_CONFLICT', 'APPOINTMENT_SLOT_UNAVAILABLE'].includes(payload.code) &&
+    payload.details?.busy
+  ) {
+    try {
+      const { busy, freeStarts, free_starts: snakeStarts } = payload.details;
+      const timeZone = payload.details.timeZone || payload.details.time_zone;
+      const clock = value =>
+        new Intl.DateTimeFormat('en-GB', {
+          timeZone,
+          hour: '2-digit',
+          minute: '2-digit',
+          hourCycle: 'h23',
+        }).format(new Date(value));
+      const from = clock(busy.startsAt || busy.starts_at);
+      const to = clock(busy.endsAt || busy.ends_at);
+      const starts = freeStarts ?? snakeStarts;
+      if (Array.isArray(starts)) {
+        return starts.length
+          ? t('SCHEDULING.ERRORS.BUSY_WITH_FREE_STARTS', {
+              from,
+              to,
+              starts: starts.map(clock).join(', '),
+            })
+          : t('SCHEDULING.ERRORS.BUSY_NO_FREE_STARTS', { from, to });
+      }
+      return t('SCHEDULING.ERRORS.BUSY_UNKNOWN_FREE_STARTS', { from, to });
+    } catch {
+      // Invalid optional hint data leaves the established refusal text intact.
+    }
+  }
+
   if (payload.code === 'APPOINTMENT_PAYMENT_REQUIRES_FIELDS') {
     return translateOrFallback(
       t,

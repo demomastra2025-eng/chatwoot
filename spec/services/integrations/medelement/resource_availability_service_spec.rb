@@ -41,6 +41,37 @@ RSpec.describe Integrations::Medelement::ResourceAvailabilityService do
     )
   end
 
+  it 'requests complete provider days while filtering overlapping, adjacent, removed and excluded receptions locally' do
+    resource.update!(custom_attributes: resource.custom_attributes.merge(
+      'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+    ))
+    receptions = [
+      { 'RECEPTION_CODE' => 'busy', 'STARTTIME' => '07.09.2026 09:30:00',
+        'ENDTIME' => '07.09.2026 10:00:00', 'REMOVED' => 0 },
+      { 'RECEPTION_CODE' => 'removed', 'STARTTIME' => '07.09.2026 10:00:00',
+        'ENDTIME' => '07.09.2026 10:30:00', 'REMOVED' => 1 },
+      { 'RECEPTION_CODE' => 'current', 'STARTTIME' => '07.09.2026 10:00:00',
+        'ENDTIME' => '07.09.2026 10:30:00', 'REMOVED' => 0 }
+    ]
+    allow(client).to receive(:get_receptions) do |**options|
+      start_date = Date.strptime(options.fetch(:begin_datetime), '%d.%m.%Y %H:%M:%S')
+      end_date = Date.strptime(options.fetch(:end_datetime), '%d.%m.%Y %H:%M:%S')
+      receptions.select { |row| (start_date...end_date).cover?(Date.strptime(row.fetch('STARTTIME'), '%d.%m.%Y %H:%M:%S')) }
+    end
+    candidates = [
+      { resource_id: resource.id, starts_at: '2026-09-07T09:30:00+05:00', ends_at: '2026-09-07T10:00:00+05:00' },
+      { resource_id: resource.id, starts_at: '2026-09-07T10:00:00+05:00', ends_at: '2026-09-07T10:30:00+05:00' }
+    ]
+
+    result = described_class.new(resource: resource, from: from_time, to: to_time, slots: candidates,
+                                 client: client, exclude_reception_code: 'current').perform
+
+    expect(result.slots.map { |slot| slot.fetch(:starts_at) }).to eq(['2026-09-07T10:00:00+05:00'])
+    expect(client).to have_received(:get_receptions).with(hash_including(
+                                                            begin_datetime: '07.09.2026 00:00:00', end_datetime: '08.09.2026 00:00:00'
+                                                          ))
+  end
+
   it 'distinguishes an internal failure from a provider outage without offering slots' do
     allow(client).to receive(:timetable).and_raise(StandardError, 'PRIVATE internal details')
 
@@ -88,6 +119,7 @@ RSpec.describe Integrations::Medelement::ResourceAvailabilityService do
 
     expect(result.slots).to all(include(medelement_cabinet_code: 'cabinet-1'))
   end
+
   it 'uses split timetable reads for a live search longer than seven calendar days' do
     payload = (Date.new(2026, 9, 7)..Date.new(2026, 9, 15)).to_h do |date|
       [date.strftime('%d.%m.%Y'), { 'specialistWorkingHours' => 'day off', 'timetable' => [] }]

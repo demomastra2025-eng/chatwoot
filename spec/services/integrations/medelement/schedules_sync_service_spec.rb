@@ -37,6 +37,10 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
     { 'timetable' => [], 'specialistWorkingHours' => 'day off' }
   end
 
+  def clinic_day_off
+    { 'timetable' => [], 'clinicWorkingHours' => 'day off' }
+  end
+
   def working_row(day, value: true)
     {
       'start' => day.strftime('%d.%m.%Y 09:00'),
@@ -277,6 +281,31 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
     expect(stored.reload).to have_attributes(status: 'empty_confirmed', consecutive_empty_count: 2, windows: [])
   end
 
+  it 'confirms a clinic day off after two reads using the existing empty-day rule' do
+    resource
+    stub_timetable { |starts_on:, ends_on:, **| answer(starts_on, ends_on) { clinic_day_off } }
+
+    sync
+    stored = Integrations::Medelement::ScheduleDay.find_by!(resource: resource, date: date)
+    expect(stored).to have_attributes(status: 'empty_unconfirmed', consecutive_empty_count: 1)
+
+    resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_last_seen_at' => (now + 1.hour).iso8601))
+    sync(at: now + 1.hour)
+    expect(stored.reload).to have_attributes(status: 'empty_confirmed', consecutive_empty_count: 2, windows: [])
+  end
+
+  it 'treats a clinic day-off marker with working rows as a working day' do
+    resource
+    stub_timetable do |starts_on:, ends_on:, **|
+      answer(starts_on, ends_on) do |day|
+        working_day(day).merge('clinicWorkingHours' => 'day off')
+      end
+    end
+
+    sync
+    expect(Integrations::Medelement::ScheduleDay.find_by!(resource: resource, date: date)).to have_attributes(status: 'confirmed')
+  end
+
   it 'splits mixed range days and leaves empty-hours, reversed-hours and missing days unverified' do
     resource
     stub_timetable do |starts_on:, ends_on:, **|
@@ -367,7 +396,45 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
     stub_timetable { raise error }
 
     expect { sync(at: now + 1.hour) }.to raise_error(error)
-    expect(stored.reload).to have_attributes(status: 'unverified', windows: old_windows, source_checked_at: now)
+    expect(stored.reload).to have_attributes(status: 'confirmed', windows: old_windows,
+                                             source_checked_at: now, last_attempted_at: now + 1.hour)
+  end
+
+  [429, 500].each do |status|
+    it "keeps a confirmed day and backs off after an API #{status} failure" do
+      resource
+      stub_timetable { |starts_on:, ends_on:, **| answer(starts_on, ends_on) { |day| working_day(day) } }
+      sync
+      stored = Integrations::Medelement::ScheduleDay.find_by!(resource: resource, date: date)
+      windows = stored.windows
+      resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_last_seen_at' => (now + 1.hour).iso8601))
+      stub_timetable { raise Integrations::Medelement::Client::ApiError.new('Unavailable', status: status) }
+
+      status == 429 ? sync(at: now + 1.hour) : (expect { sync(at: now + 1.hour) }.to raise_error(Integrations::Medelement::Client::ApiError))
+      expect(stored.reload).to have_attributes(status: 'confirmed', windows: windows, source_checked_at: now,
+                                               last_attempted_at: now + 1.hour)
+      expect(sync(at: now + 1.hour + 14.minutes)).to include(request_count: 0)
+
+      stub_timetable { |starts_on:, ends_on:, **| answer(starts_on, ends_on) { |day| working_day(day) } }
+      expect(sync(at: now + 1.hour + 15.minutes)).to include(request_count: 1)
+      expect(stored.reload).to have_attributes(status: 'confirmed', source_checked_at: now + 1.hour + 15.minutes)
+    end
+  end
+
+  it 'keeps a confirmed empty day and its empty count after an API failure' do
+    resource
+    stub_timetable { |starts_on:, ends_on:, **| answer(starts_on, ends_on) { clinic_day_off } }
+    sync
+    resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_last_seen_at' => (now + 1.hour).iso8601))
+    sync(at: now + 1.hour)
+    stored = Integrations::Medelement::ScheduleDay.find_by!(resource: resource, date: date)
+    resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_last_seen_at' => (now + 2.hours).iso8601))
+    stub_timetable { raise Integrations::Medelement::Client::ApiError.new('Unavailable', status: 500) }
+
+    expect { sync(at: now + 2.hours) }.to raise_error(Integrations::Medelement::Client::ApiError)
+    expect(stored.reload).to have_attributes(status: 'empty_confirmed', consecutive_empty_count: 2,
+                                             windows: [], source_checked_at: now + 1.hour,
+                                             last_attempted_at: now + 2.hours)
   end
 
   it 'skips inactive, stale and foreign-account doctors' do

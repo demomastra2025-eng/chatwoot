@@ -475,20 +475,22 @@ class Scheduling::Appointments::UpsertService
 
   def availability_service
     policy = Scheduling::ResourceHoursPolicy.new(resource: appointment.resource)
+    from_at = appointment.starts_at.beginning_of_day - 1.day
+    to_at = appointment.ends_at.end_of_day + 1.day
     Scheduling::AvailabilityService.new(
       resource: appointment.resource,
-      from: appointment.starts_at.beginning_of_day - 1.day,
-      to: appointment.ends_at.end_of_day + 1.day,
+      from: from_at,
+      to: to_at,
       holidays: account.scheduling_holidays.ordered.to_a,
       workday_overrides: appointment.resource.workday_overrides
                                     .where(date: (appointment.starts_at.to_date - 2)..(appointment.ends_at.to_date + 2)).to_a,
       time_offs: account.scheduling_time_offs
                         .where(resource_id: [nil, appointment.resource_id])
-                        .where('starts_at < ? AND ends_at > ?', appointment.ends_at, appointment.starts_at)
+                        .where('starts_at < ? AND ends_at > ?', to_at, from_at)
                         .to_a,
       appointments: account.scheduling_appointments
                            .where(resource_id: appointment.resource_id)
-                           .where('starts_at < ? AND ends_at > ?', appointment.ends_at, appointment.starts_at)
+                           .where('starts_at < ? AND ends_at > ?', to_at, from_at)
                            .to_a,
       ignore_appointment_id: appointment.id,
       **policy.availability_options(@provider_working_windows)
@@ -1293,16 +1295,25 @@ class Scheduling::Appointments::UpsertService
       return result.slots.first.to_h.with_indifferent_access[:medelement_cabinet_code].to_s.presence
     end
 
-    raise provider_availability_error(result)
+    raise provider_availability_error(result, resource, projected)
   end
 
-  def provider_availability_error(result)
+  def provider_availability_error(result, resource, projected)
     provider_unavailable = result.status != 'fresh'
+    details = { provider_reason: result.reason, provider_checked_at: result.checked_at.iso8601(6) }.compact
+    if !provider_unavailable && result.occupied_intervals.present?
+      conflict_details = Scheduling::SlotConflictDetails.for_provider(
+        resource: resource, interval: [projected.starts_at, projected.ends_at],
+        windows: @provider_working_windows, receptions: result.occupied_intervals,
+        ignore_appointment_id: appointment.id
+      )
+      details.merge!(conflict_details)
+    end
     Scheduling::Error.new(
       code: provider_unavailable ? 'MEDELEMENT_AVAILABILITY_UNVERIFIED' : 'APPOINTMENT_SLOT_UNAVAILABLE',
       message: provider_unavailable ? 'Medelement availability could not be verified' : 'Appointment slot is unavailable in Medelement',
       status: provider_unavailable ? :service_unavailable : :conflict,
-      details: { provider_reason: result.reason, provider_checked_at: result.checked_at.iso8601(6) }.compact
+      details: details
     )
   end
 

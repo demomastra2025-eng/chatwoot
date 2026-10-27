@@ -712,11 +712,15 @@ export const useSchedulingAppointmentFormStore = defineStore(
         contact,
         isCurrentContext = () => true
       ) {
+        const phoneOnly =
+          Object.keys(contact).length === 1 &&
+          Object.prototype.hasOwnProperty.call(contact, 'phone');
         if (
           this.ui.isSaving ||
           (this.isProviderPatientIdentity &&
             !this.form.patientContactId &&
-            !this.selectedContact) ||
+            !this.selectedContact &&
+            !phoneOnly) ||
           !isCurrentContext()
         )
           return null;
@@ -737,9 +741,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
           this.form.patientContactId === patientId &&
           this.form.contactId === ownerId &&
           this.inlineContactEditVersion === version;
-        const values = inlineContactPayload(contact, isPatientCard);
+        const values = phoneOnly
+          ? { phone: contact.phone }
+          : inlineContactPayload(contact, isPatientCard);
         const candidateValues = { ...values };
-        if (this.inlineContactSnapshot) {
+        if (this.inlineContactSnapshot && !phoneOnly) {
           ['last_name', 'middle_name'].forEach(field => {
             if (
               !(field in candidateValues) &&
@@ -749,15 +755,16 @@ export const useSchedulingAppointmentFormStore = defineStore(
             }
           });
         }
-        const dirtyValues = this.inlineContactSnapshot
-          ? Object.fromEntries(
-              Object.entries(candidateValues).filter(
-                ([field, value]) =>
-                  field !== 'resource_id' &&
-                  value !== this.inlineContactSnapshot[field]
+        const dirtyValues =
+          this.inlineContactSnapshot && !phoneOnly
+            ? Object.fromEntries(
+                Object.entries(candidateValues).filter(
+                  ([field, value]) =>
+                    field !== 'resource_id' &&
+                    value !== this.inlineContactSnapshot[field]
+                )
               )
-            )
-          : candidateValues;
+            : candidateValues;
         if (
           ['first_name', 'last_name', 'middle_name', 'full_name'].some(
             field => field in dirtyValues
@@ -805,7 +812,10 @@ export const useSchedulingAppointmentFormStore = defineStore(
             updatedContact,
             ...this.contacts.filter(item => item.id !== updatedContact.id),
           ];
-          if (isPatientCard) this.applyPatientContact(updatedContact);
+          if (phoneOnly) {
+            this.selectedContact = updatedContact;
+            this.form.clientPhone = updatedContact.phone || '';
+          } else if (isPatientCard) this.applyPatientContact(updatedContact);
           else this.applyContact(updatedContact);
           return updatedContact;
         } catch (error) {

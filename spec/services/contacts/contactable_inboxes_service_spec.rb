@@ -41,6 +41,16 @@ describe Contacts::ContactableInboxesService do
   let!(:sms_inbox) { create(:inbox, channel: create(:channel_sms, account: account), account: account) }
 
   describe '#get' do
+    it 'offers WhatsApp as soon as a contact gains a phone' do
+      contact.update!(phone_number: nil)
+      expect(described_class.new(contact: contact).get.pluck(:inbox)).not_to include(whatsapp_web_inbox)
+
+      contact.update!(phone_number: '+77010000001')
+      expect(described_class.new(contact: contact.reload).get).to include(
+        { source_id: '77010000001', inbox: whatsapp_web_inbox }
+      )
+    end
+
     it 'returns the contactable inboxes for the contact' do
       contactable_inboxes = described_class.new(contact: contact).get
 

@@ -13,6 +13,13 @@ class Integrations::Medelement::SchedulesSyncService
   SPECIALIST_CODE_KEY = Integrations::Medelement::SpecialistsSyncService::SPECIALIST_CODE_KEY
   LAST_SEEN_AT_KEY = Integrations::Medelement::SpecialistsSyncService::LAST_SEEN_AT_KEY
 
+  def self.refresh_interval(offset)
+    return NEAR_REFRESH if offset < 2
+    return FAR_REFRESH if offset < 14
+
+    LONG_REFRESH
+  end
+
   def initialize(hook:, client:, configuration:, now: Time.current)
     @hook = hook
     @client = client
@@ -93,18 +100,19 @@ class Integrations::Medelement::SchedulesSyncService
     return false if retry_backoff?(stored)
 
     checked_at = stored&.source_checked_at
-    refresh_interval = if offset < 2
-                         NEAR_REFRESH
-                       elsif offset < 14
-                         FAR_REFRESH
-                       else
-                         LONG_REFRESH
-                       end
+    refresh_interval = self.class.refresh_interval(offset)
     checked_at.nil? || checked_at <= now - refresh_interval
   end
 
   def retry_backoff?(stored)
-    return false unless stored&.status == 'unverified' && stored.last_attempted_at
+    return false unless stored&.last_attempted_at
+
+    if stored.status.in?(%w[confirmed empty_confirmed])
+      return false unless stored.source_checked_at && stored.last_attempted_at > stored.source_checked_at
+
+      return stored.last_attempted_at > now - FAILURE_BACKOFF
+    end
+    return false unless stored.status == 'unverified'
 
     exponent = (stored.consecutive_empty_count - 1).clamp(0, 5)
     delay = [FAILURE_BACKOFF * (2**exponent), MAX_FAILURE_BACKOFF].min
@@ -169,20 +177,34 @@ class Integrations::Medelement::SchedulesSyncService
       kind == :unverified ? mark_unverified(resource, date, stored) : persist_day(resource, date, stored, windows, day)
     end
   rescue Integrations::Medelement::Client::ApiError
-    days.each { |_day_resource, date, stored| mark_unverified(resource, date, stored) }
+    record_api_failure(days, resource)
     raise
+  end
+
+  def record_api_failure(days, resource)
+    days.each do |_day_resource, date, stored|
+      if stored&.status.in?(%w[confirmed empty_confirmed])
+        stored.update!(last_attempted_at: now)
+      else
+        mark_unverified(resource, date, stored)
+      end
+    end
   end
 
   def classify_day(day, date)
     rows = timetable_rows(day)
     return [:unverified, nil] unless rows
-    return [:day_off, []] if rows.empty? && day['specialistWorkingHours'] == 'day off'
+    return [:day_off, []] if rows.empty? && day_off_marker?(day)
     return [:unverified, nil] if rows.empty? || !valid_working_hours?(day['specialistWorkingHours'], date)
 
     windows = normalized_windows(rows, date)
     return [:unverified, nil] if windows.nil? || windows.empty?
 
     [:working, windows]
+  end
+
+  def day_off_marker?(day)
+    day['specialistWorkingHours'] == 'day off' || day['clinicWorkingHours'] == 'day off'
   end
 
   def valid_working_hours?(hours, date)

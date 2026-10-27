@@ -172,6 +172,44 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
     expect(response_body['code']).to eq('IIN_REQUIRED')
   end
 
+  it 'saves only a phone on a linked patient without an IIN and dispatches the user update' do
+    contact = create(:contact, account: account, name: 'Patient', last_name: 'Surname', phone_number: nil,
+                               custom_attributes: { 'medelement_patient_code' => 'patient-1' })
+
+    patch "#{path}/#{contact.id}", params: { phone: '87010000001', resource_id: medelement_resource.id },
+                                   headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok), response_body.inspect
+    expect(contact.reload.phone_number).to eq('+77010000001')
+    expect(EventDispatcherJob).to have_been_enqueued.with(
+      'contact.updated', anything,
+      hash_including(contact: contact, performed_by: agent, changed_attributes: hash_including('phone_number' => anything))
+    )
+  end
+
+  it 'rejects an invalid linked-patient phone before saving it' do
+    contact = create(:contact, account: account, phone_number: nil,
+                               custom_attributes: { 'medelement_patient_code' => 'patient-1' })
+
+    patch "#{path}/#{contact.id}", params: { phone: '+441234567890' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('MEDELEMENT_PATIENT_PHONE_INVALID')
+    expect(contact.reload.phone_number).to be_blank
+  end
+
+  it 'rejects a phone already owned by another account contact' do
+    create(:contact, account: account, phone_number: '+77010000001')
+    contact = create(:contact, account: account, phone_number: nil,
+                               custom_attributes: { 'medelement_patient_code' => 'patient-1' })
+
+    patch "#{path}/#{contact.id}", params: { phone: '87010000001' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('CONTACT_PHONE_TAKEN')
+    expect(contact.reload.phone_number).to be_blank
+  end
+
   it 'does not apply Medelement identity requirements to an ordinary contact update' do
     contact = create(:contact, account: account, name: 'Patient')
 

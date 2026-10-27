@@ -39,6 +39,7 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
     @contact.assign_attributes(contact_attributes)
     @contact.custom_attributes = contact_custom_attributes(@contact)
     validate_required_contact_fields!
+    validate_phone_update!
     @contact.save!
 
     render_payload(Scheduling::PayloadBuilder.contact(@contact))
@@ -215,6 +216,7 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
   end
 
   def validate_required_contact_fields!
+    return if action_name == 'update' && phone_only_update?
     return if action_name == 'update' && !contact_identity_update?
 
     validate_required_iin!
@@ -244,6 +246,39 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
 
   def contact_identity_update?
     %w[first_name last_name middle_name full_name phone phone_number iin].any? { |key| params.key?(key) }
+  end
+
+  def phone_only_update?
+    (params.key?(:phone) || params.key?(:phone_number)) &&
+      %w[first_name last_name middle_name full_name name iin identifier birth_date gender custom_attributes company_id].none? do |key|
+        params.key?(key)
+      end
+  end
+
+  def validate_phone_update!
+    return unless phone_change_requested?
+    return if shared_phone_matches_contact?(normalize_phone(params[:phone].presence || params[:phone_number]))
+
+    validate_provider_phone!
+    validate_unique_phone!
+  end
+
+  def phone_change_requested?
+    params.key?(:phone) || params.key?(:phone_number)
+  end
+
+  def validate_provider_phone!
+    return unless provider_managed_contact? && !@contact.phone_number.to_s.match?(/\A\+7\d{10}\z/)
+
+    raise Scheduling::Error.new(code: 'MEDELEMENT_PATIENT_PHONE_INVALID', message: 'Invalid Kazakhstan phone number',
+                                status: :unprocessable_content)
+  end
+
+  def validate_unique_phone!
+    return if @contact.phone_number.blank? || !@contact.will_save_change_to_phone_number?
+    return unless Current.account.contacts.where(phone_number: @contact.phone_number).where.not(id: @contact.id).exists?
+
+    raise Scheduling::Error.new(code: 'CONTACT_PHONE_TAKEN', message: 'Phone number belongs to another contact', status: :conflict)
   end
 
   def medelement_identity_required?

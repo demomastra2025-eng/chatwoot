@@ -27,6 +27,28 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
     allow(client).to receive(:search_patients_by_codes).with(patient_codes: [patient_code]).and_return([patient_payload])
   end
 
+  it 'keeps a newly entered local phone when the provider card still has no phone' do
+    contact = create(:contact, account: account, name: 'Local', phone_number: '+77010000001',
+                               custom_attributes: { 'medelement_patient_code' => patient_code })
+    card = patient_payload.except('PATIENT_PHONE_2_STR', 'PATIENT_PHONE_3_STR', 'IIN')
+    allow(client).to receive(:search_patients_by_codes).with(patient_codes: [patient_code]).and_return([card])
+
+    expect { service.sync_patient_payload!(card, preferred_contact: contact) }
+      .not_to have_enqueued_job(Integrations::Medelement::OutboundChangeJob)
+    expect(contact.reload.phone_number).to eq('+77010000001')
+    expect(contact.custom_attributes[Contacts::SharedPhone::MEDELEMENT_PHONE_KEY]).to eq('')
+  end
+
+  it 'keeps the same local phone when the provider card catches up with the write' do
+    contact = create(:contact, account: account, name: 'Local', phone_number: primary_phone,
+                               custom_attributes: { 'medelement_patient_code' => patient_code })
+
+    expect { service.sync_patient_payload!(patient_payload, preferred_contact: contact) }
+      .not_to have_enqueued_job(Integrations::Medelement::OutboundChangeJob)
+    expect(contact.reload.phone_number).to eq(primary_phone)
+    expect(contact.custom_attributes[Contacts::SharedPhone::MEDELEMENT_PHONE_KEY]).to eq(primary_phone)
+  end
+
   it 'creates a contact and stores Medelement metadata', :aggregate_failures do
     allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
 
