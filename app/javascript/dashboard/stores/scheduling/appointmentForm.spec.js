@@ -1310,6 +1310,43 @@ describe('useSchedulingAppointmentFormStore', () => {
     expect(store.validationErrors.clientPhone).toBe('');
   });
 
+  it('allows an identified patient with no phone while a new patient still needs one', () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openCreate();
+    store.setRequirements({
+      medelementIdentityRequired: true,
+      medelementPhoneRequired: true,
+    });
+    store.applyContact({
+      id: 91,
+      fullName: 'Қуаныш Аян',
+      firstName: 'Аян',
+      lastName: 'Қуаныш',
+      phone: '',
+      customAttributes: { medelement_patient_code: 'fake-patient-1' },
+    });
+    store.updateField('resourceId', 7);
+    store.updateField('startsAt', '2026-10-28T10:00');
+    store.updateField('endsAt', '2026-10-28T10:30');
+    expect(store.isProviderPatientCodeLinked).toBe(true);
+    expect(store.validationErrors.clientPhone).toBe('');
+    expect(store.validationErrors.clientLastName).toBe('');
+
+    store.applyContact({
+      id: 92,
+      fullName: 'Аян',
+      firstName: 'Аян',
+      phone: '',
+    });
+    expect(store.isProviderPatientCodeLinked).toBe(false);
+    expect(store.validationErrors.clientPhone).toBe(
+      'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_PHONE_REQUIRED'
+    );
+    expect(store.validationErrors.clientLastName).toBe(
+      'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_LAST_NAME_REQUIRED'
+    );
+  });
+
   it('requires a last name only for MedElement appointments', () => {
     const store = useSchedulingAppointmentFormStore();
 

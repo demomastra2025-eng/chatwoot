@@ -379,9 +379,10 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
 
   def snapshot_phone_numbers
     stored_patient = command.request_snapshot['patient'].to_h
+    fallback_phone = command.contact&.phone_number if command.request_snapshot['provider_patient_code'].blank?
     values = command.request_snapshot['patient_phone_numbers'].presence ||
              stored_patient['phone_numbers'].presence ||
-             Array(stored_patient['phone_number'].presence || command.contact&.phone_number)
+             Array(stored_patient['phone_number'].presence || fallback_phone)
     values.filter_map { |value| Integrations::Medelement::PhoneNumber.normalize(value) }.uniq
   end
 
@@ -424,6 +425,7 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
 
   def record_phone_warning!(patient)
     phone_numbers = snapshot_phone_numbers
+    return if linked_without_phone?(phone_numbers)
     raise deterministic_error('patient_phone_missing') if phone_numbers.empty?
 
     provider_phones = Integrations::Medelement::PhoneNumber.patient_phones(patient)
@@ -437,6 +439,10 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
     command.update!(
       execution_state: command.execution_state.except('patient_action').merge('warnings' => warnings)
     )
+  end
+
+  def linked_without_phone?(phone_numbers)
+    phone_numbers.empty? && command.request_snapshot['provider_patient_code'].present?
   end
 
   def sync_contact!(patient)

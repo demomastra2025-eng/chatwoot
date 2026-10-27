@@ -128,6 +128,8 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
   end
 
   def patient_phone_number
+    return optional_linked_phone if linked_reception?
+
     if appointment_patient_owned? && operation.in?(PATIENT_PHONE_OPERATIONS)
       return Integrations::Medelement::PatientContactBinding.provider_phone(appointment, authored_phone: appointment_attribute('client_phone'))
     end
@@ -193,12 +195,25 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
 
   def patient_phone_numbers
     return [] unless operation.in?(PATIENT_PHONE_OPERATIONS)
+
+    return Array(optional_linked_phone) if linked_reception?
     return [patient_phone_number] if appointment_patient_owned?
 
     return Array(patient_phone_number) if contact_desired_attributes.key?('phone_number')
 
     contact_phones = frozen_contact_phones
     operation == 'create_reception' && appointment_attribute('client_phone').present? ? [patient_phone_number] : contact_phones
+  end
+
+  def linked_reception?
+    patient_code.present? && operation.in?(%w[create_reception move_reception])
+  end
+
+  def optional_linked_phone
+    card = appointment&.patient_contact || contact
+    return unless card&.custom_attributes.to_h['medelement_patient_code'].to_s == patient_code.to_s
+
+    Integrations::Medelement::PhoneNumber.normalize(card.phone_number)
   end
 
   def patient_payload_required?

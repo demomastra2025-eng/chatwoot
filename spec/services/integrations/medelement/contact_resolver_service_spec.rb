@@ -215,7 +215,8 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
     expect(account.contacts.count).to eq(2)
     expect(run.observed_conflicts.find_by(conflict_type: 'phone_owned_by_another_contact')).to have_attributes(
       status: 'open',
-      details: hash_including('contact_id' => first_result.id, 'conflicting_contact_id' => conflicting_contact.id)
+      details: hash_including('contact_id' => first_result.id, 'conflicting_contact_id' => conflicting_contact.id,
+                              'provider_phone_last4' => primary_phone.last(4))
     )
   end
 
@@ -619,6 +620,14 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
     expect(resolved.id).to eq(contact.id)
     expect(resolved.reload.name).to eq('Светлана')
     expect(resolved.phone_number).to eq(primary_phone)
+  end
+
+  it 'returns the same contact on repeated explicit imports' do
+    first = service.sync_patient!(patient_code, prefetched_patient: patient_payload, require_verified_card: true)
+    second = service.sync_patient!(patient_code, prefetched_patient: patient_payload, require_verified_card: true)
+
+    expect(second.id).to eq(first.id)
+    expect(account.contacts.where("custom_attributes ->> 'medelement_patient_code' = ?", patient_code).count).to eq(1)
   end
 
   it 'does not return a stale linked contact when explicit card verification fails' do

@@ -217,7 +217,7 @@ class Scheduling::Appointments::UpsertService
   def validate_provider_draft!(services)
     name_keys = %i[client_first_name client_last_name]
     incomplete_medelement_patient! if name_keys.any? { |key| params.key?(key) && params[key].to_s.strip.blank? }
-    validate_medelement_phone!(params[:client_phone]) if params.key?(:client_phone)
+    validate_draft_phone! if params.key?(:client_phone)
     service_ids = services.map(&:id)
     return if service_ids.empty?
 
@@ -624,7 +624,7 @@ class Scheduling::Appointments::UpsertService
 
     incomplete_medelement_patient! if appointment.client_first_name.blank? || appointment.client_last_name.blank?
 
-    validate_medelement_phone!
+    validate_medelement_phone! unless identified_medelement_patient?
     validate_medelement_services!
   end
 
@@ -678,6 +678,21 @@ class Scheduling::Appointments::UpsertService
       message: 'A Kazakhstan phone number is required for Medelement',
       status: :unprocessable_content
     )
+  end
+
+  def validate_draft_phone!
+    validate_medelement_phone!(params[:client_phone]) unless identified_medelement_patient?
+  end
+
+  def identified_medelement_patient?
+    patient = if params[:patient_contact_id].present?
+                account.contacts.find_by(id: params[:patient_contact_id])
+              elsif params[:contact_id].present?
+                account.contacts.find_by(id: params[:contact_id])
+              else
+                appointment.patient_contact || appointment.contact
+              end
+    patient&.custom_attributes.to_h['medelement_patient_code'].present?
   end
 
   def validate_medelement_services!
