@@ -132,6 +132,18 @@ RSpec.describe AutomationRules::AppointmentMovedToAnotherDayService do
     expect(two_hour_enrollments.map(&:status)).to eq(['completed'])
   end
 
+  it 'plans the touch as for a new booking when the time before the visit has already passed: it is skipped, not sent late', :aggregate_failures do
+    travel_to Time.utc(2026, 11, 20, 12, 0) # the day before the new date is 20.11 15:00 in Almaty (10:00 UTC), two hours ago
+    move_to_another_day(days: 1)
+
+    perform
+
+    confirmation = automation_touches(confirmation_action_id).last
+    expect(confirmation.scheduled_at).to eq(Time.utc(2026, 11, 20, 10, 0))
+    expect(Reminders::ExecutionScheduleGuard.new(reminder: confirmation).perform).to eq(Reminders::ExecutionScheduleGuard::STOP)
+    expect(confirmation.reload).to be_cancelled
+  end
+
   it 'plans a deferred reminder again for the new date and retires the finished enrollment' do
     old_enrollment = two_hour_enrollments.first
     move_to_another_day(days: 3)

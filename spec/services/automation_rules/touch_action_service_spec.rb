@@ -916,4 +916,39 @@ RSpec.describe AutomationRules::TouchActionService do
       expect(unrelated_touch.reload).to be_pending
     end
   end
+
+  describe '#touch_pending?' do
+    let(:appointment) { create(:scheduling_appointment, account: account, starts_at: 2.days.from_now, ends_at: 2.days.from_now + 30.minutes) }
+    let(:appointment_service) { described_class.new(rule: rule, account: account, record: appointment, entity_kind: 'appointment') }
+    let(:action_id) { SecureRandom.uuid }
+
+    def make_touch(id = action_id)
+      appointment_service.create_touch({ body: 'Reminder', delay_minutes: 30 }, action_id: id)
+    end
+
+    it 'is false while the action has made no touch for the record' do
+      expect(appointment_service.touch_pending?(action_id)).to be(false)
+    end
+
+    it 'is true while the touch of the action is open' do
+      make_touch
+
+      expect(appointment_service.touch_pending?(action_id)).to be(true)
+    end
+
+    it 'is false once the touch of the action has gone out or was cancelled' do
+      touch = make_touch
+      touch.update_columns(status: Reminder.statuses[:completed]) # rubocop:disable Rails/SkipsModelValidations
+      expect(appointment_service.touch_pending?(action_id)).to be(false)
+
+      touch.update_columns(status: Reminder.statuses[:cancelled]) # rubocop:disable Rails/SkipsModelValidations
+      expect(appointment_service.touch_pending?(action_id)).to be(false)
+    end
+
+    it 'does not mix up the touches of two actions of the rule' do
+      make_touch(SecureRandom.uuid)
+
+      expect(appointment_service.touch_pending?(action_id)).to be(false)
+    end
+  end
 end
