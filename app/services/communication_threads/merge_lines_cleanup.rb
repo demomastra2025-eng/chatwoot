@@ -14,28 +14,30 @@ require 'json'
 # - restore: puts the lines of a backup file back with their ids, skipping those that exist and those of a conversation that is
 #   gone. A dry run unless apply.
 #
-# Only activity messages whose text is one of the two templates in one of the three languages. They were written in the language
-# of the account, an account in any other language got the Russian text (the default locale and the fallback of production).
+# Only activity messages whose text is one of the two lines in one of the three languages. They were written in the language of
+# the account, an account in any other language got the Russian text (the default locale and the fallback of production).
 # This is the only place that still has the texts: the locale keys went away with the code that used them.
 class CommunicationThreads::MergeLinesCleanup
   class Refused < StandardError; end
 
-  PLACEHOLDER = '%{channel}'
-  TEMPLATES = [
-    'Объединено: звонок из канала «%{channel}»',
-    'Объединено: диалог из канала «%{channel}»',
-    'Merged: call from channel "%{channel}"',
-    'Merged: dialog from channel "%{channel}"',
-    'Біріктірілді: «%{channel}» арнасынан қоңырау',
-    'Біріктірілді: «%{channel}» арнасынан диалог'
+  # The text before and after the name of the merged channel, the name being anything.
+  LINES = [
+    ['Объединено: звонок из канала «', '»'],
+    ['Объединено: диалог из канала «', '»'],
+    ['Merged: call from channel "', '"'],
+    ['Merged: dialog from channel "', '"'],
+    ['Біріктірілді: «', '» арнасынан қоңырау'],
+    ['Біріктірілді: «', '» арнасынан диалог']
   ].freeze
+  RESTORE_STATES = %i[to_restore already_present conversation_missing].freeze
   BACKUP_FORMAT = 'onelink_merge_lines_backup'
   BACKUP_VERSION = 1
+  REQUIRED_COLUMNS = %w[id account_id inbox_id conversation_id created_at updated_at].freeze
   BATCH_SIZE = 500
 
-  # The lines of every account: activity messages with one of the templates, the channel name being anything.
+  # The lines of every account.
   def self.scope
-    patterns = TEMPLATES.map { |template| template.split(PLACEHOLDER, -1).map { |part| Message.sanitize_sql_like(part) }.join('%') }
+    patterns = LINES.map { |before, after| "#{Message.sanitize_sql_like(before)}%#{Message.sanitize_sql_like(after)}" }
     Message.unscoped.activity.where(Array.new(patterns.size, 'messages.content LIKE ?').join(' OR '), *patterns)
   end
 
@@ -60,14 +62,12 @@ class CommunicationThreads::MergeLinesCleanup
 
   def restore(file, apply:)
     rows = read_backup(file)
-    present = Message.unscoped.where(id: rows.pluck('id')).pluck(:id).to_set
-    conversations = Conversation.where(id: rows.pluck('conversation_id')).pluck(:id).to_set
-    todo = rows.reject { |row| present.include?(row['id']) || !conversations.include?(row['conversation_id']) }
-    print_restore(rows, todo, present, conversations)
-    summary = { mode: apply ? 'restored' : 'restore_dry_run', in_file: rows.size, to_restore: todo.size,
-                already_present: rows.count { |row| present.include?(row['id']) },
-                conversation_missing: rows.count { |row| !conversations.include?(row['conversation_id']) } }
-    finish(summary.merge(restored: apply ? insert(todo) : 0))
+    state = restore_classifier(rows)
+    rows.group_by { |row| row['account_id'] }.sort.each do |account_id, lines|
+      @out.puts({ account_id: account_id, **restore_counts(lines, state) }.to_json)
+    end
+    restored = apply ? insert_rows(rows.select { |row| state.call(row) == :to_restore }) : 0
+    finish({ mode: apply ? 'restored' : 'restore_dry_run', **restore_counts(rows, state), restored: restored })
   end
 
   private
@@ -81,14 +81,6 @@ class CommunicationThreads::MergeLinesCleanup
       times = lines.map(&:created_at)
       @out.puts({ account_id: account_id, messages: lines.size, conversations: lines.map(&:conversation_id).uniq.size,
                   first_created_at: times.min.utc.iso8601, last_created_at: times.max.utc.iso8601 }.to_json)
-    end
-  end
-
-  def print_restore(rows, todo, present, conversations)
-    rows.group_by { |row| row['account_id'] }.sort.each do |account_id, lines|
-      @out.puts({ account_id: account_id, in_file: lines.size, to_restore: (lines & todo).size,
-                  already_present: lines.count { |row| present.include?(row['id']) },
-                  conversation_missing: lines.count { |row| !conversations.include?(row['conversation_id']) } }.to_json)
     end
   end
 
@@ -125,30 +117,50 @@ class CommunicationThreads::MergeLinesCleanup
     end
 
     rows = document['messages']
-    unless rows.is_a?(Array) && rows.size == document['count'] && rows.all? { |row| restorable_row?(row) }
-      raise Refused, "#{file} is damaged: its lines do not match its count or are not activity messages"
-    end
+    raise Refused, "#{file} is damaged: its lines do not match its count or are not activity messages" unless valid_rows?(rows, document['count'])
 
     rows
   rescue Errno::ENOENT, JSON::ParserError => e
     raise Refused, "#{file} cannot be read: #{e.class}"
   end
 
-  def restorable_row?(row)
-    row.is_a?(Hash) && row['message_type'] == 'activity' &&
-      %w[id account_id inbox_id conversation_id created_at updated_at].all? { |key| row[key].present? }
+  def valid_rows?(rows, count)
+    rows.is_a?(Array) && rows.size == count && rows.all? do |row|
+      row.is_a?(Hash) && row['message_type'] == 'activity' && REQUIRED_COLUMNS.all? { |column| row[column].present? }
+    end
   end
 
   def delete_lines(messages)
     deleted = 0
     Message.transaction do
       messages.each_slice(BATCH_SIZE) { |slice| deleted += self.class.scope.where(id: slice.map(&:id)).delete_all }
-      raise Refused, "Only #{deleted} of #{messages.size} lines matched at the delete: they changed during the run, nothing was deleted" if deleted != messages.size
+      if deleted != messages.size
+        raise Refused, "Only #{deleted} of #{messages.size} lines matched at the delete: they changed during the run, nothing was deleted"
+      end
     end
     deleted
   end
 
-  def insert(rows)
-    Message.transaction { rows.each_slice(BATCH_SIZE).sum { |slice| Message.insert_all(slice, returning: %w[id]).rows.size } }
+  # What a restore does with a line of the file: puts it back, finds it there already, or has no conversation to put it into.
+  def restore_classifier(rows)
+    present = Message.unscoped.where(id: rows.pluck('id')).pluck(:id).to_set
+    alive = Conversation.where(id: rows.pluck('conversation_id')).pluck(:id).to_set
+    lambda do |row|
+      if present.include?(row['id']) then :already_present
+      elsif alive.include?(row['conversation_id']) then :to_restore
+      else :conversation_missing
+      end
+    end
+  end
+
+  def restore_counts(rows, state)
+    { in_file: rows.size, **RESTORE_STATES.index_with(0).merge(rows.map(&state).tally) }
+  end
+
+  # insert_all on purpose: the lines come back with their ids and the times they had, and no callback, event or thread refresh runs.
+  def insert_rows(rows)
+    Message.transaction do
+      rows.each_slice(BATCH_SIZE).sum { |slice| Message.insert_all(slice, returning: %w[id]).rows.size } # rubocop:disable Rails/SkipsModelValidations
+    end
   end
 end

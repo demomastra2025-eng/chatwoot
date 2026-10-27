@@ -23,7 +23,7 @@ RSpec.describe CommunicationThreads::MergeLinesCleanup do
   end
 
   def lines_in_output
-    out.string.lines.map { |line| JSON.parse(line) if line.start_with?('{') }.compact
+    out.string.lines.filter_map { |line| JSON.parse(line) if line.start_with?('{') }
   end
 
   after { FileUtils.remove_entry(backup_dir) }

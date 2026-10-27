@@ -264,7 +264,7 @@ RSpec.describe CommunicationThreads::SingleOpenDialogService do
       expect(statuses(whatsapp, voice)).to eq(%w[open resolved])
       expect(voice.status_transitions.order(:id).last.metadata['single_open_dialog']).to eq('kept_conversation_id' => whatsapp.id)
       expect(CommunicationThreadConversation.where(communication_thread_id: thread.id).pluck(:conversation_id))
-        .to match_array([whatsapp.id, voice.id])
+        .to contain_exactly(whatsapp.id, voice.id)
     end
 
     it 'writes no activity message when a messenger dialog is merged either, in any language of the account', :aggregate_failures do
