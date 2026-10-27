@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe AutomationRule do
-  let(:account) { create(:account) }
+  let(:account) { create(:account).tap { |record| record.enable_features!('scheduling') } }
 
   def build_rule(params, active: false)
     build(:automation_rule, account: account, event_name: 'appointment_created', active: active,

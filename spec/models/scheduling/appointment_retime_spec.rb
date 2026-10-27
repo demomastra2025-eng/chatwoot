@@ -3,8 +3,11 @@ require 'rails_helper'
 RSpec.describe Scheduling::Appointment do
   it 'recomputes automation reminders after a resource change through the model callback' do
     account = create(:account)
-    appointment = create(:scheduling_appointment, account: account, starts_at: 2.days.from_now, ends_at: 2.days.from_now + 30.minutes)
-    touch = create(:reminder, account: account, remindable: appointment, timing_mode: 'relative',
+    conversation = create(:conversation, account: account)
+    appointment = create(:scheduling_appointment, account: account, contact: conversation.contact,
+                                                  conversation: conversation, starts_at: 2.days.from_now,
+                                                  ends_at: 2.days.from_now + 30.minutes)
+    touch = create(:reminder, account: account, remindable: appointment, touch_conversation: conversation, timing_mode: 'relative',
                               relative_anchor: 'appointment.starts_at', relative_offset_seconds: -1.hour.to_i,
                               scheduled_at: nil, metadata: { 'touch_source' => 'automation' })
     resource = create(:scheduling_resource, account: account)

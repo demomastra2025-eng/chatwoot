@@ -16,17 +16,20 @@ RSpec.describe 'Appointment automation notification rules', type: :request do
   end
 
   it 'normalizes old client timing on create, update, and clone' do
-    post "/api/v1/accounts/#{account.id}/automation_rules", params: params, headers: admin.create_new_auth_token
+    headers = admin.create_new_auth_token
+    post "/api/v1/accounts/#{account.id}/automation_rules", params: params, headers: headers
     expect(response).to have_http_status(:success)
     rule = account.automation_rules.order(:id).last
     expect(rule.actions.first['action_params'].first).not_to have_key('manual_schedule_override')
     expect(rule.actions.first['action_params'].first['timezone']).to eq(account.workspace_working_hours_timezone)
 
-    put "/api/v1/accounts/#{account.id}/automation_rules/#{rule.id}", params: params, headers: admin.create_new_auth_token
+    headers = headers.merge(response.headers.slice('access-token', 'client', 'uid'))
+    put "/api/v1/accounts/#{account.id}/automation_rules/#{rule.id}", params: params, headers: headers
     expect(response).to have_http_status(:success)
     expect(rule.reload.actions.first['action_params'].first).not_to have_key('manual_schedule_override')
 
-    post "/api/v1/accounts/#{account.id}/automation_rules/#{rule.id}/clone", headers: admin.create_new_auth_token
+    headers = headers.merge(response.headers.slice('access-token', 'client', 'uid'))
+    post "/api/v1/accounts/#{account.id}/automation_rules/#{rule.id}/clone", headers: headers
     expect(response).to have_http_status(:success)
     expect(account.automation_rules.order(:id).last.actions.first['action_params'].first['timezone']).to eq(
       account.workspace_working_hours_timezone

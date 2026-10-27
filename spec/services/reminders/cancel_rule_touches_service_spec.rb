@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Reminders::CancelRuleTouchesService do
-  let(:account) { create(:account) }
+  let(:account) { create(:account).tap { |record| record.enable_features!('scheduling') } }
   let(:rule) do
     create(:automation_rule, account: account, active: true, event_name: 'appointment_created', conditions: [],
                              actions: [{ action_name: 'create_touch', action_params: {
@@ -9,15 +9,16 @@ RSpec.describe Reminders::CancelRuleTouchesService do
                                relative_offset_seconds: -3600
                              } }])
   end
+  let(:conversation) { create(:conversation, account: account) }
   let(:appointment) do
-    create(:scheduling_appointment, account: account, starts_at: 2.days.from_now, ends_at: 2.days.from_now + 30.minutes)
+    create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation,
+                                    starts_at: 2.days.from_now, ends_at: 2.days.from_now + 30.minutes)
   end
 
   def rule_touch(target_rule = rule, body: 'Visit')
-    create(:reminder, account: account, remindable: appointment, body: body, metadata: {
-             'touch_source' => 'automation', Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY => target_rule.id,
-             Reminder::AUTOMATION_ACTION_KEY => target_rule.actions.first['action_id']
-           })
+    create(:reminder, account: account, remindable: appointment, touch_conversation: conversation, body: body).tap do |touch|
+      touch.mark_automation_provenance!(target_rule, action_key: target_rule.actions.first['action_id'])
+    end
   end
 
   it 'cancels a direct open reminder immediately when its rule turns off' do
@@ -38,7 +39,8 @@ RSpec.describe Reminders::CancelRuleTouchesService do
 
   it 'does not cancel a delivery-materialized processing reminder' do
     touch = rule_touch
-    touch.update!(status: :processing, metadata: touch.metadata.merge(Reminder::DELIVERY_MATERIALIZED_MESSAGE_ID_KEY => 123))
+    touch.update!(status: :processing)
+    touch.mark_delivery_materialized!(123)
     rule.update!(active: false)
     expect(touch.reload).to be_processing
   end

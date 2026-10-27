@@ -2,13 +2,15 @@ require 'rails_helper'
 
 RSpec.describe Reminders::RetimeVisitTouchesService do
   let(:account) { create(:account) }
+  let(:conversation) { create(:conversation, account: account) }
   let(:appointment) do
-    create(:scheduling_appointment, account: account, starts_at: 2.days.from_now, ends_at: 2.days.from_now + 30.minutes)
+    create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation,
+                                    starts_at: 2.days.from_now, ends_at: 2.days.from_now + 30.minutes)
   end
 
   def visit_touch(offset: -2.hours.to_i, anchor: 'appointment.starts_at', **attributes)
     create(
-      :reminder, account: account, remindable: appointment, timing_mode: 'relative',
+      :reminder, account: account, remindable: appointment, touch_conversation: conversation, timing_mode: 'relative',
                  relative_anchor: anchor, relative_offset_seconds: offset, scheduled_at: nil,
                  metadata: { 'touch_source' => 'automation' }, **attributes
     )
