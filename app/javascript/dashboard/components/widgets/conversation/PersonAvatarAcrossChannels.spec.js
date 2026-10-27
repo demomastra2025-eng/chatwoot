@@ -41,6 +41,9 @@ vi.mock('dashboard/composables/store', async () => {
   return {
     useStore: () => mocks.store,
     useMapGetter: key => computed(() => mocks.store.getters[key]),
+    useStoreGetters: () => ({
+      getUISettings: computed(() => mocks.store.getters.getUISettings || {}),
+    }),
   };
 });
 vi.mock('vuex', async importOriginal => ({
