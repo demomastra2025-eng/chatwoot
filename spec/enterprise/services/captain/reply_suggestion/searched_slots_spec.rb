@@ -86,4 +86,46 @@ RSpec.describe Captain::ReplySuggestion::SearchedSlots do
     expect(returned?(context_with(['search_available_slots', nil]))).to be(false)
     expect(described_class.new({}).searched?).to be(false)
   end
+
+  # Suggestion eval 27.10 (c74-1233747): the free times of one gynecologist were given under the name of the other.
+  describe '#specialists' do
+    def named_day(resource_id, name, date, *times)
+      { resource_id: resource_id, name: name, date: date, times: times, more: 0 }
+    end
+
+    it 'names every specialist of the answer with the times listed for that specialist, of any day, in order' do
+      days = [named_day(131, 'Князова Жанат', '2026-10-30', '10:30', '09:00'), named_day(120, 'Турешева Акбаян', '2026-10-30', '09:00'),
+              named_day(131, 'Князова Жанат', '2026-10-31', '12:00')]
+      later = [named_day(120, 'Турешева Акбаян', '2026-11-02', '08:30')]
+      context = context_with(['search_available_slots', search_result(days: days, next_available: later)])
+
+      expect(described_class.new(context).specialists).to eq(
+        131 => { name: 'Князова Жанат', times: %w[09:00 10:30 12:00] }, 120 => { name: 'Турешева Акбаян', times: %w[08:30 09:00] }
+      )
+    end
+
+    it 'reads the slots that carry their own start and the name of their specialist, in the clock of the specialist' do
+      slots = [{ resource_id: 217, resource_name: 'Смит', starts_at: '2026-10-31T09:30:00Z', timezone: almaty },
+               { resource_id: 217, resource_name: 'Смит', starts_at: '2026-10-31T15:00:00+05:00' }]
+      context = context_with(['get_scheduling_resource_availability', { success: true, message: JSON.generate(slots: slots) }])
+
+      expect(described_class.new(context).specialists).to eq(217 => { name: 'Смит', times: %w[14:30 15:00] })
+    end
+
+    it 'knows a specialist of the catalog by name, with no times, and takes no name from a read that is no catalog' do
+      catalog = { success: true, message: JSON.generate(resources: [{ id: 128, name: 'Агабек А.', specialty: 'ЛОР' }]) }
+      other = { success: true, message: JSON.generate(resources: [{ id: 129, name: 'Не каталог' }]) }
+      context = context_with(['search_scheduling_resources', catalog], ['get_my_contact', other],
+                             ['search_available_slots', search_result(days: [named_day(131, 'Князова Жанат', '2026-10-30', '09:00')])])
+
+      specialists = described_class.new(context).specialists
+
+      expect(specialists[128]).to eq(name: 'Агабек А.', times: [])
+      expect(specialists.keys).to contain_exactly(128, 131)
+    end
+
+    it 'is empty for a run that read nothing' do
+      expect(described_class.new({}).specialists).to eq({})
+    end
+  end
 end

@@ -17,6 +17,7 @@ en:
         router_no_reply: The patient only thanks or says goodbye — no reply is needed; nothing was prepared.
         swallowed_request: The patient asks to cancel, move or make a booking, but the AI decided that no reply is needed. Check the message and answer yourself.
         unverified_times: 'Check the time %{times}: the AI did not find it among the free times it searched.'
+        misattributed_times: 'Check the specialist for %{times}: in the search results this time belongs to another specialist, not the one named.'
         council_unresolved: 'The AI did not resolve part of the request, please answer it yourself: %{parts}.'
         council_technical: 'Part of the request was not done because of a technical error, please answer it yourself: %{parts}.'
         council_unreported: 'An action was prepared for part of the request, but there is no text for the patient; check the card: %{parts}.'

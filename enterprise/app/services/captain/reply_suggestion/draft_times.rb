@@ -12,7 +12,7 @@
 # replies, so a corrected booking may name the time it replaces), the dialog and the patient's message. A knowledge or FAQ text
 # is not a schedule, so a time that only such a text names is still named to the manager. A time the draft names as a bound («до
 # 19:00 окон нет», «после 14:00 только при предоплате», «19:00-ге дейін») offers nothing and is not checked. A council is not
-# checked: its parts read in runs of their own.
+# checked: its parts read in runs of their own. A time under the name of the wrong specialist is Captain::ReplySuggestion::DraftSpecialists.
 module Captain::ReplySuggestion::DraftTimes
   # 9:30, 09:30 and 09:30:00 (an ISO start); never part of a longer number or of a date.
   TIME = /(?<![\d:])([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?(?![\d:])/
@@ -45,11 +45,15 @@ module Captain::ReplySuggestion::DraftTimes
 
   # The times of the draft that are no bound («до 19:00», «после 14:00»).
   def offered_times(text)
-    text = text.to_s
+    offered_time_matches(text.to_s).map(&:last).uniq
+  end
+
+  # [position in the text, "09:30"] of every offered time of the text (no bound), in the order of the text.
+  def offered_time_matches(text)
     text.to_enum(:scan, TIME).filter_map do
       match = Regexp.last_match
-      clock(match[1], match[2]) unless bound?(text, match)
-    end.uniq
+      [match.begin(0), clock(match[1], match[2])] unless bound?(text, match)
+    end
   end
 
   def bound?(text, match)

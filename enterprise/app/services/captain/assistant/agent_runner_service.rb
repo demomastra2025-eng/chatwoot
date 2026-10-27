@@ -462,7 +462,7 @@ class Captain::Assistant::AgentRunnerService
       return final_error_response(error, result.context, handoff_tool_called: handoff_tool_called)
     end
 
-    flag_unverified_times!(response, result.context) if suggestion_run? && !council_turn?
+    flag_draft_times!(response, result.context) if suggestion_run? && !council_turn?
     publish_tool_omission_event(response, result.context)
     moderate_output!(response, result.context&.dig(:state, :captain_runtime))
     add_playground_usage(response, result)
@@ -473,16 +473,23 @@ class Captain::Assistant::AgentRunnerService
     blocked_by_moderation_response('Agent output blocked because moderation policy is unavailable', safety_reason: e.reason)
   end
 
-  # A suggestion offers only the times its scheduling reads found (Captain::ReplySuggestion::DraftTimes): any other time is named to
-  # the manager above the draft (see ReplySuggestion::AgentOutcomeClassifier); the draft is not changed.
-  def flag_unverified_times!(response, context)
-    times = Captain::ReplySuggestion::DraftTimes.unverified(draft: response['response'], context: context)
+  # A suggestion offers only the times its scheduling reads found, each under the specialist whose list holds it
+  # (Captain::ReplySuggestion::DraftTimes): any other time, and a time under the name of another specialist, is named to the manager
+  # above the draft (see ReplySuggestion::AgentOutcomeClassifier); the draft is not changed.
+  def flag_draft_times!(response, context)
+    draft = response['response']
+    flag_times!(response, 'unverified_times') { Captain::ReplySuggestion::DraftTimes.unverified(draft: draft, context: context) }
+    flag_times!(response, 'misattributed_times') { Captain::ReplySuggestion::DraftSpecialists.misattributed(draft: draft, context: context) }
+  end
+
+  def flag_times!(response, key)
+    times = yield
     return if times.empty?
 
-    response['unverified_times'] = times
-    Rails.logger.info("[CAPTAIN][ReplySuggestion] draft names times its reads did not find count=#{times.size}")
+    response[key] = times
+    Rails.logger.info("[CAPTAIN][ReplySuggestion] draft times flagged kind=#{key} count=#{times.size}")
   rescue StandardError => e
-    Rails.logger.warn("[CAPTAIN][ReplySuggestion] draft times not checked error_class=#{e.class.name}")
+    Rails.logger.warn("[CAPTAIN][ReplySuggestion] draft times not checked kind=#{key} error_class=#{e.class.name}")
   end
 
   # The parts this reply answers: the plan of the request, and the actions of earlier runs that the customer was not told about

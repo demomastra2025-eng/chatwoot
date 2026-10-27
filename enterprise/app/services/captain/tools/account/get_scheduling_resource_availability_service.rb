@@ -30,6 +30,7 @@ class Captain::Tools::Account::GetSchedulingResourceAvailabilityService < Captai
 
     range_from, range_to = present
     payload = availability_payload(resource, service_record, service_id, range_from, range_to, duration_min, limit)
+    payload = named_slots(payload, resource) if agent_scope?
 
     formatted_payload(with_provider_note(resource, range_from, range_to, payload.merge(availability_metadata(resource, service_record))))
   rescue StandardError => e
@@ -41,6 +42,14 @@ class Captain::Tools::Account::GetSchedulingResourceAvailabilityService < Captai
   end
 
   private
+
+  # In a patient conversation every slot carries the name of its specialist, as a day of search_available_slots does: a time is never
+  # read without whose it is (the eval of 27.10: the times of one specialist were given under the name of another).
+  def named_slots(payload, resource)
+    return payload unless payload[:slots].is_a?(Array)
+
+    payload.merge(slots: payload[:slots].map { |slot| slot.is_a?(Hash) ? { resource_name: resource.name }.merge(slot) : slot })
+  end
 
   def passed_range_payload(resource)
     { resource: Scheduling::PayloadBuilder.resource(resource), timezone: resource.timezone, slots: [], total_slots: 0,

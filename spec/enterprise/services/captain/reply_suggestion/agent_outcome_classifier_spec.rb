@@ -170,6 +170,23 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
     end
   end
 
+  # Suggestion eval 27.10 (c74-1233747): the free times of one gynecologist were given under the name of the other.
+  context 'when the draft gives a time under the name of a specialist whose list does not hold it' do
+    let(:payload) do
+      reply.merge('misattributed_times' => [{ 'name' => 'Князова Жанат', 'time' => '11:00' }, { 'name' => '', 'time' => '12:00' }],
+                  'unverified_times' => ['19:00'])
+    end
+
+    it 'keeps the draft and tells the manager above it which time to check and the name it was given' do
+      expected = [I18n.t('captain.reply_suggestion.reasons.unverified_times', times: '19:00'),
+                  I18n.t('captain.reply_suggestion.reasons.misattributed_times', times: '11:00 (Князова Жанат)')].join(' ')
+
+      expect(outcome).to include(outcome: 'draft', message: reply['response'])
+      expect(outcome[:suggestion_meta]).to include('misattributed_times' => [{ 'name' => 'Князова Жанат', 'time' => '11:00' }],
+                                                   'operator_note' => expected)
+    end
+  end
+
   # Review of the 26.10 prompts: «сколько стоит МРТ поясницы и какая подготовка?» when only staff names the preparation. The draft
   # gives the price, and the note tells the manager what to add.
   context 'when the draft leaves a part of the request to staff' do

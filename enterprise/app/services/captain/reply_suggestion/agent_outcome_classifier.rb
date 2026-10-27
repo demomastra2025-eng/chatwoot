@@ -17,7 +17,9 @@
 #   7  an empty reply                                       failed (empty_output)
 #   8  otherwise                                            draft; a council that left parts to staff adds the note for the manager
 #                                                           (suggestion_meta operator_note), and so does a draft that names a time
-#                                                           its scheduling reads did not find (unverified_times, see DraftTimes)
+#                                                           its scheduling reads did not find (unverified_times, see DraftTimes) or
+#                                                           gives a time under the name of a specialist whose list does not hold it
+#                                                           (misattributed_times, see DraftSpecialists)
 #                                                           or a draft that leaves a part of the request to staff (the agent's
 #                                                           operator_note)
 #
@@ -169,25 +171,19 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
   end
 
   # A council draft that leaves parts to the manager says so above the draft, and so do a draft of an agent that leaves a part of the
-  # request to staff and a draft that names a time the run did not find in its scheduling reads.
+  # request to staff, a draft that names a time the run did not find in its scheduling reads and a draft that gives a time under the
+  # name of a specialist whose list does not hold it (see DraftTimeNotes).
   def draft_meta
-    note = [agent_draft_note, council_note, unverified_times_note].compact_blank.join(' ')
-    meta = unverified_times.any? ? suggestion_meta.merge('unverified_times' => unverified_times) : suggestion_meta
+    times = Captain::ReplySuggestion::DraftTimeNotes.new(payload)
+    note = [agent_draft_note, council_note, times.note].compact_blank.join(' ')
+    meta = suggestion_meta.merge(times.meta)
     note.present? ? meta.merge('operator_note' => note) : meta
-  end
-
-  def unverified_times
-    Array(payload[:unverified_times]).map(&:to_s).compact_blank
   end
 
   # A draft that answers only a part of the request names the part a staff member must add (the agent's operator_note, see the
   # platform rules of a suggestion): «сколько стоит МРТ поясницы и какая подготовка?» when only staff names that preparation.
   def agent_draft_note
     payload[:operator_note].to_s.squish.presence unless payload[:council_turn]
-  end
-
-  def unverified_times_note
-    I18n.t('captain.reply_suggestion.reasons.unverified_times', times: unverified_times.join(', ')) if unverified_times.any?
   end
 
   # The agent a council leaves the dialog with (see StickyAgent), when it is not the agent the suggestion is attributed to.

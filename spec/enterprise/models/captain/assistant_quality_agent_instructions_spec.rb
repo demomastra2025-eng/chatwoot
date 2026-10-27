@@ -99,6 +99,31 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
     end
   end
 
+  # Suggestion eval 27.10 (c43-1233247, c76-1195118, c74-1233747): a draft said it could not check a time it had not searched, one asked
+  # the patient for the doctor when a search of the time names the doctors who have it, one gave the times of a gynecologist under the
+  # name of the other.
+  describe 'a time alone and the name under which a time is given' do
+    let(:time_rule) do
+      '- A time alone (a time the patient named, or "which doctor has 11:40?") is a question about free times: search that exact time ' \
+        '(from = to) across the specialists of the specialty or service, all of them when none is named, and answer with those who have ' \
+        'it free; never ask the patient to name the specialist while a search can tell, and never say that you cannot check a time ' \
+        'before you searched it. Write each time under the name of the specialist whose search result lists it, and never give the ' \
+        'times of one specialist under the name of another.'
+    end
+
+    it 'searches a time alone across the specialists and gives each time under the specialist whose result lists it, in both prompts' do
+      expect(suggestion_rules).to include(time_rule)
+      expect(live_rules).to include(time_rule)
+    end
+
+    it 'gives a council part the same rule' do
+      part = instance_double(Captain::Runtime::RunContext,
+                             context: { part_run: true, state: { source: 'reply_suggestion', runtime_clock: clock } })
+
+      expect(assistant.agent_instructions(part).split("\n\n").first).to include(time_rule)
+    end
+  end
+
   # Suggestion eval 27.10 (c77-1167712, c78-1194483, c74-1245884): "tomorrow 09:00" written the day before was offered for the wrong
   # day because the model counted from the clock; a search for earlier or later times started from tomorrow and skipped today's.
   describe 'the days a patient names and where a search of free times starts' do

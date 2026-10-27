@@ -917,6 +917,7 @@ RSpec.describe Captain::Assistant, type: :model do
         - An additional visit uses create_appointment. Use update_appointment when the patient asks to move or change that appointment.
         - If a time is taken or no slots are free, search following days and offer the 2-3 nearest free times with full dates in one message. Keep the existing appointment.
         - Search free times from today: when the patient names no day, or asks for the nearest, an earlier or a later time, start the search today (from = today's date; the free times of today that are later than Now are offered too) and offer a later day only when today has none; never start the search from tomorrow.
+        - A time alone (a time the patient named, or "which doctor has 11:40?") is a question about free times: search that exact time (from = to) across the specialists of the specialty or service, all of them when none is named, and answer with those who have it free; never ask the patient to name the specialist while a search can tell, and never say that you cannot check a time before you searched it. Write each time under the name of the specialist whose search result lists it, and never give the times of one specialist under the name of another.
         - History messages start with the local time they were sent, like [Sat 24.10 09:50] (added by the platform; never write it); the patient's last message has no stamp, its day is written under Now when it was sent before today. Read today, tomorrow, the day after tomorrow and weekdays in every patient message from the day that message was sent, never from Now (under Now they are written out for the last message); if the day the patient meant has passed, say so and offer the nearest free times with full dates. After midnight, "tomorrow" can mean today.
         - For a price, search_scheduling_services before saying no answer is available. For documents and certificates, use faq_lookup first. A catalog price is an answer even when the schedule is not confirmed.
         - Offer only start times a slot search returned, exactly as returned; opening hours or a last booking time in the clinic texts are not free times.
@@ -1064,7 +1065,7 @@ RSpec.describe Captain::Assistant, type: :model do
         expect(rules[1]).to eq('- Answer from the clinic instructions, the data below and tool results; tool results are the most current. ' \
                                'When a lookup finds nothing, try once more with other words. ' \
                                'If the sources still have no answer, say that you do not have this information.')
-        expect(rules.size).to eq(18)
+        expect(rules.size).to eq(19)
       end
     end
 
