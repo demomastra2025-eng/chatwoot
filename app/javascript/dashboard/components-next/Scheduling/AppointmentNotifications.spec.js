@@ -26,7 +26,7 @@ describe('AppointmentNotifications', () => {
     });
     const wrapper = mount(AppointmentNotifications, {
       props: { appointmentId: 17 },
-      global: { mocks: { $t: key => key } },
+      global: { mocks: { $t: key => key }, stubs: { RouterLink: true } },
     });
     await flushPromises();
 
@@ -39,5 +39,53 @@ describe('AppointmentNotifications', () => {
       'SCHEDULING.NOTIFICATIONS.REASONS.APPOINTMENT_STARTED'
     );
     expect(wrapper.text()).not.toContain('provider_timeout');
+  });
+
+  it('shows the rule, delivery state and a link to the existing message', async () => {
+    SchedulingAppointmentsAPI.notifications.mockResolvedValue({
+      data: {
+        payload: [
+          {
+            id: 5,
+            rule_name: 'Напоминание',
+            status: 'pending',
+            delivery_stage: 'materialized',
+            message_status: 'read',
+            message_id: 21,
+            conversation_id: 12,
+          },
+          {
+            id: 6,
+            rule_name: 'Приём',
+            status: 'completed',
+            delivery_stage: 'materialized',
+            message_status: 'delivered',
+          },
+        ],
+      },
+    });
+    const wrapper = mount(AppointmentNotifications, {
+      props: { appointmentId: 17 },
+      global: {
+        mocks: { $t: key => key, $route: { params: { accountId: 1 } } },
+        stubs: {
+          RouterLink: {
+            name: 'RouterLink',
+            props: ['to'],
+            template: '<a><slot /></a>',
+          },
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Напоминание');
+    expect(wrapper.text()).toContain('SCHEDULING.NOTIFICATIONS.READ');
+    expect(wrapper.text()).toContain('SCHEDULING.NOTIFICATIONS.DELIVERED');
+    expect(wrapper.findComponent({ name: 'RouterLink' }).props('to')).toEqual({
+      name: 'inbox_conversation',
+      params: { accountId: 1, conversation_id: 12 },
+      query: { messageId: 21 },
+    });
   });
 });

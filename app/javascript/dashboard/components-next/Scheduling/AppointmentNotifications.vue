@@ -22,12 +22,18 @@ const knownReasons = new Set([
 const stateKey = item => {
   if (item.status === 'cancelled' || item.status === 'skipped')
     return 'SKIPPED';
+  if (item.message_status === 'failed') return 'NOT_DELIVERED';
+  if (item.message_status === 'read') return 'READ';
+  if (item.message_status === 'delivered') return 'DELIVERED';
+  if (item.message_status === 'sent') return 'SENT';
   if (
     item.status === 'failed' ||
     item.delivery_stage === 'failed' ||
     item.delivery_stage === 'template_rejected'
   )
     return 'NOT_DELIVERED';
+  if (item.delivery_stage === 'read') return 'READ';
+  if (item.delivery_stage === 'delivered') return 'DELIVERED';
   if (item.status === 'completed') return 'SENT';
   return 'PLANNED';
 };
@@ -69,7 +75,7 @@ watch(
     data-testid="appointment-notifications"
   >
     <h3 class="mb-2 text-sm font-semibold">
-      {{ $t('SCHEDULING.NOTIFICATIONS.TITLE') }}
+      {{ $t('SCHEDULING.NOTIFICATIONS.APPOINTMENT_TITLE') }}
     </h3>
     <p v-if="!loading && !items.length" class="m-0 text-sm text-n-slate-11">
       {{ $t('SCHEDULING.NOTIFICATIONS.NO_ITEMS') }}
@@ -80,10 +86,26 @@ watch(
         :key="item.id"
         class="flex flex-wrap justify-between gap-2 text-sm"
       >
-        <span
-          >{{ $t(`SCHEDULING.NOTIFICATIONS.${stateKey(item)}`)
-          }}<span v-if="reason(item)"> · {{ reason(item) }}</span></span
-        >
+        <span>
+          <template v-if="item.rule_name"
+            ><span class="font-medium">{{ item.rule_name }} · </span></template
+          >
+          {{ $t(`SCHEDULING.NOTIFICATIONS.${stateKey(item)}`) }}
+          <span v-if="reason(item)"> · {{ reason(item) }}</span>
+          <RouterLink
+            v-if="item.message_id && item.conversation_id"
+            class="ml-2 text-n-brand"
+            :to="{
+              name: 'inbox_conversation',
+              params: {
+                accountId: $route.params.accountId,
+                conversation_id: item.conversation_id,
+              },
+              query: { messageId: item.message_id },
+            }"
+            >{{ $t('SCHEDULING.NOTIFICATIONS.OPEN_MESSAGE') }}</RouterLink
+          >
+        </span>
         <time v-if="item.scheduled_at" :datetime="item.scheduled_at">{{
           formatDate(item.scheduled_at)
         }}</time>
