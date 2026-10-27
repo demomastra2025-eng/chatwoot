@@ -48,6 +48,15 @@ const mocks = vi.hoisted(() => ({
         },
       ],
     },
+    {
+      id: 3,
+      name: 'Visit status automation',
+      event_name: 'appointment_updated',
+      active: true,
+      calendar_managed: false,
+      conditions: [],
+      actions: [{ action_name: 'send_webhook_event', action_params: [] }],
+    },
   ],
 }));
 vi.mock('vue-i18n', async importOriginal => ({
@@ -91,6 +100,10 @@ describe('SchedulingNotificationsPage', () => {
 
     expect(wrapper.text()).toContain('Visit reminder');
     expect(wrapper.text()).toContain('Existing notice');
+    expect(wrapper.text()).toContain('Visit status automation');
+    expect(wrapper.text()).toContain(
+      'SCHEDULING.NOTIFICATIONS.MANAGE_IN_AUTOMATIONS'
+    );
     expect(wrapper.text()).toContain(
       'SCHEDULING.NOTIFICATIONS.ADOPTION_REQUIRED'
     );

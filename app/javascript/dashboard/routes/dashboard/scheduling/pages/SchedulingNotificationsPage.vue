@@ -38,11 +38,10 @@ const draft = reactive({});
 const L = key => t(`SCHEDULING.NOTIFICATIONS.${key}`);
 const eventLabel = key => L(`EVENTS.${key.toUpperCase()}`);
 const notificationRules = computed(() =>
-  (allRules.value || []).filter(
-    rule =>
-      APPOINTMENT_NOTIFICATION_EVENTS.some(
-        event => event.eventName === rule.event_name
-      ) && rule.actions?.some(action => action.action_name === 'create_touch')
+  (allRules.value || []).filter(rule =>
+    APPOINTMENT_NOTIFICATION_EVENTS.some(
+      event => event.eventName === rule.event_name
+    )
   )
 );
 const missingPresets = computed(() => presetRows(notificationRules.value));
@@ -419,7 +418,7 @@ onMounted(async () => {
             </p>
           </div>
           <span v-if="!rule.calendar_managed" class="text-sm text-n-amber-11">{{
-            L('ADOPTION_REQUIRED')
+            L(firstTouch(rule) ? 'ADOPTION_REQUIRED' : 'MANAGE_IN_AUTOMATIONS')
           }}</span>
           <template v-else>
             <button type="button" class="text-n-brand" @click="newDraft(rule)">
