@@ -761,7 +761,9 @@ class Account < ApplicationRecord
 
   def normalize_default_settings
     self.settings = (settings || {}).dup
-    settings['audio_transcriptions'] = false if settings['audio_transcriptions'].nil?
+    settings['audio_transcriptions'] = true if settings['audio_transcriptions'].nil?
+    # Call transcription follows audio_transcriptions while unset; new accounts start with it off.
+    settings['call_transcriptions'] = false if new_record? && settings['call_transcriptions'].nil?
   end
 
   def validate_reporting_timezone

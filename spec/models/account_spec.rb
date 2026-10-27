@@ -204,18 +204,24 @@ RSpec.describe Account do
     end
 
     context 'when using store_accessor' do
-      it 'defaults audio_transcriptions to false when settings are empty' do
-        expect(account.audio_transcriptions).to eq(false)
-        expect(account.settings['audio_transcriptions']).to eq(false)
-        expect(account.call_transcriptions).to be_nil
+      it 'defaults audio_transcriptions to true and call_transcriptions to false when settings are empty' do
+        expect(account.audio_transcriptions).to eq(true)
+        expect(account.settings['audio_transcriptions']).to eq(true)
+        expect(account.call_transcriptions).to eq(false)
         expect(account.call_transcriptions_enabled?).to be(false)
       end
 
-      it 'normalizes nil audio_transcriptions to false' do
+      it 'normalizes nil audio_transcriptions to true' do
         account.update!(settings: account.settings.merge('audio_transcriptions' => nil))
 
-        expect(account.reload.audio_transcriptions).to eq(false)
-        expect(account.settings['audio_transcriptions']).to eq(false)
+        expect(account.reload.audio_transcriptions).to eq(true)
+        expect(account.settings['audio_transcriptions']).to eq(true)
+      end
+
+      it 'keeps an explicit audio_transcriptions false' do
+        account.update!(audio_transcriptions: false)
+
+        expect(account.reload.audio_transcriptions_enabled?).to be(false)
       end
 
       it 'preserves legacy call transcription behavior until the dedicated setting is saved' do
