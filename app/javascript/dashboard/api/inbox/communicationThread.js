@@ -18,6 +18,49 @@ const singleFlightListRequest = (key, fetch) => {
   return request;
 };
 
+// The body of a message of a person's dialog: the same for a message into a thread and for the first message of a person who
+// has no thread yet (api/personDialog.js).
+export const buildDialogMessageData = ({
+  conversation_id: conversationId,
+  message,
+  private: isPrivate,
+  contentAttributes,
+  echo_id: echoId,
+  files,
+  ccEmails = '',
+  bccEmails = '',
+  toEmails = '',
+  mailSubject = '',
+  templateParams,
+  channelKey,
+  targetInboxId,
+  inboxId,
+  targetContactInboxId,
+  contactInboxId,
+  contentKind,
+}) =>
+  buildCreatePayload({
+    message,
+    isPrivate,
+    contentAttributes,
+    echoId,
+    files,
+    ccEmails,
+    bccEmails,
+    toEmails,
+    mailSubject,
+    templateParams,
+    extraParams: {
+      conversation_id: conversationId,
+      channel_key: channelKey,
+      target_inbox_id: targetInboxId,
+      inbox_id: inboxId,
+      target_contact_inbox_id: targetContactInboxId,
+      contact_inbox_id: contactInboxId,
+      content_kind: contentKind,
+    },
+  });
+
 class CommunicationThreadApi extends ApiClient {
   constructor() {
     super('communication_threads', { accountScoped: true });
@@ -262,52 +305,11 @@ class CommunicationThreadApi extends ApiClient {
     });
   }
 
-  createMessage(
-    threadId,
-    {
-      conversation_id: conversationId,
-      message,
-      private: isPrivate,
-      contentAttributes,
-      echo_id: echoId,
-      files,
-      ccEmails = '',
-      bccEmails = '',
-      toEmails = '',
-      mailSubject = '',
-      templateParams,
-      channelKey,
-      targetInboxId,
-      inboxId,
-      targetContactInboxId,
-      contactInboxId,
-      contentKind,
-    }
-  ) {
+  createMessage(threadId, message) {
     return axios({
       method: 'post',
       url: `${this.url}/${threadId}/messages`,
-      data: buildCreatePayload({
-        message,
-        isPrivate,
-        contentAttributes,
-        echoId,
-        files,
-        ccEmails,
-        bccEmails,
-        toEmails,
-        mailSubject,
-        templateParams,
-        extraParams: {
-          conversation_id: conversationId,
-          channel_key: channelKey,
-          target_inbox_id: targetInboxId,
-          inbox_id: inboxId,
-          target_contact_inbox_id: targetContactInboxId,
-          contact_inbox_id: contactInboxId,
-          content_kind: contentKind,
-        },
-      }),
+      data: buildDialogMessageData(message),
     });
   }
 }

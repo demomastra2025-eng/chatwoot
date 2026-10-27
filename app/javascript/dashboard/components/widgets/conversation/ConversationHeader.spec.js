@@ -11,6 +11,10 @@ import { snoozedReopenTime } from 'dashboard/helper/snoozeHelpers';
 const storeState = vi.hoisted(() => ({
   selectedChat: { id: 7, status: 'open' },
 }));
+const routeState = vi.hoisted(() => ({
+  name: 'communication_thread_conversation',
+}));
+const listUrl = vi.hoisted(() => vi.fn());
 
 const translationMessages = {
   ...chatlistRu,
@@ -45,13 +49,16 @@ vi.mock('./components/SLACardLabel.vue', () => ({
 }));
 
 vi.mock('dashboard/helper/URLHelper', () => ({
-  conversationListPageURL: () => '/app/accounts/530/communication_threads',
+  conversationListPageURL: (...args) => {
+    listUrl(...args);
+    return '/app/accounts/530/communication_threads';
+  },
   frontendURL: path => `/app/${path}`,
 }));
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({
-    name: 'communication_thread_conversation',
+    name: routeState.name,
     params: { communication_thread_id: 7 },
     query: { status: 'open' },
   }),
@@ -131,6 +138,8 @@ const mountComponent = props =>
 describe('ConversationHeader', () => {
   afterEach(() => {
     storeState.selectedChat = { id: 7, status: 'open' };
+    routeState.name = 'communication_thread_conversation';
+    listUrl.mockClear();
     window.sessionStorage.clear();
     window.history.replaceState({}, '', '/');
   });
@@ -330,5 +339,49 @@ describe('ConversationHeader', () => {
     expect(statuses.html()).toContain('text-n-amber-11');
     expect(identityRow.exists()).toBe(true);
     expect(identityRow.text()).toContain('+770****1122');
+  });
+
+  describe('the empty dialog of a person', () => {
+    const draftChat = {
+      id: 'draft-5',
+      is_draft: true,
+      person_contact_id: 5,
+      is_communication_thread: true,
+      status: null,
+      meta: { sender: { id: 1, name: 'Аружан' } },
+      channels: [],
+    };
+
+    it('shows the person, with no status and no actions of a conversation', () => {
+      storeState.selectedChat = draftChat;
+      const wrapper = mountComponent({ chat: draftChat });
+
+      expect(wrapper.text()).toContain('Аружан');
+      expect(wrapper.find('[data-test-id="more-actions"]').exists()).toBe(
+        false
+      );
+      expect(
+        wrapper
+          .find('[data-test-id="conversation-header-title-row"] .rounded-full')
+          .exists()
+      ).toBe(false);
+    });
+
+    it('keeps the actions of a conversation on a dialog that exists', () => {
+      const wrapper = mountComponent();
+
+      expect(wrapper.find('[data-test-id="more-actions"]').exists()).toBe(true);
+    });
+
+    it('goes back to the list of threads from the route of a person', () => {
+      routeState.name = 'communication_thread_contact';
+      storeState.selectedChat = draftChat;
+
+      mountComponent({ chat: draftChat, showBackButton: true });
+
+      expect(listUrl).toHaveBeenCalledWith(
+        expect.objectContaining({ communicationThread: true })
+      );
+    });
   });
 });

@@ -215,6 +215,7 @@ export const getConversationDashboardRoute = routeName => {
     case 'conversation_through_inbox':
       return 'inbox_dashboard';
     case 'communication_thread_conversation':
+    case 'communication_thread_contact':
       return 'communication_threads_dashboard';
     default:
       return null;

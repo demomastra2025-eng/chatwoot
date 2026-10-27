@@ -6,6 +6,7 @@ import { resolveChatContactId } from 'dashboard/components-next/CRM/crmConversat
 import SchedulingConversationPatientSelector from 'dashboard/components-next/Scheduling/SchedulingConversationPatientSelector.vue';
 import {
   conversationPatientContextKey,
+  isDraftPatientContextKey,
   patientContactId,
   useConversationPatientContextStore,
 } from 'dashboard/stores/scheduling/patientContext';
@@ -50,6 +51,8 @@ const patientContextKey = computed(() =>
   })
 );
 const chatContactId = computed(() => resolveChatContactId(props.currentChat));
+// A person without a dialog: only what belongs to the person is shown, nothing that belongs to a conversation.
+const isDraft = computed(() => Boolean(props.currentChat?.is_draft));
 const patientContextEnabled = computed(
   () =>
     appointmentsAvailable.value &&
@@ -61,6 +64,15 @@ const patientEntry = computed(
 const selectedPatient = computed(() =>
   patientStore.selectedPatient(patientContextKey.value)
 );
+// The first message made the dialog: the card of the patient that was selected for the empty dialog stays selected.
+watch(patientContextKey, (newKey, oldKey) => {
+  if (!newKey || !oldKey || newKey === oldKey) return;
+  if (!isDraftPatientContextKey(oldKey) || isDraftPatientContextKey(newKey)) {
+    return;
+  }
+  const previous = patientStore.selectedPatient(oldKey);
+  if (previous?.id) patientStore.rememberSelection(newKey, previous.id);
+});
 watch(
   () => [
     patientContextKey.value,
@@ -113,13 +125,16 @@ const sidebarSizeClass =
 const activeReplyChannel = computed(
   () => props.currentChat?.active_reply_channel || {}
 );
-const activeConversationId = computed(
-  () =>
+const activeConversationId = computed(() => {
+  // A person without a dialog has no conversation: the id of the screen ('draft-5') must not reach any request.
+  if (isDraft.value) return '';
+  return (
     activeReplyChannel.value?.conversation_id ||
     props.currentChat?.active_reply_channel_conversation_id ||
     props.currentChat?.conversation_ids?.[0] ||
     props.currentChat?.id
-);
+  );
+});
 const activeInboxId = computed(
   () =>
     activeReplyChannel.value?.inbox_id ||
@@ -234,7 +249,7 @@ const closeAppointmentsSidebar = () => {
           />
         </template>
       </ContactPanel>
-      <div v-if="activeTab === 'deals'" class="min-w-0 flex-1">
+      <div v-if="activeTab === 'deals' && !isDraft" class="min-w-0 flex-1">
         <CrmConversationDealsSidebar
           :current-chat="currentChat"
           @close="closeDealsSidebar"

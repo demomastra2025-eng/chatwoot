@@ -1436,4 +1436,128 @@ describe('MessagesView', () => {
       expect(dispatch).toHaveBeenCalledWith('markMessagesRead', { id: 11 });
     });
   });
+
+  describe('the empty dialog of a person', () => {
+    const draft = {
+      id: 'draft-5',
+      is_draft: true,
+      person_contact_id: 5,
+      is_communication_thread: true,
+      messages: [],
+    };
+
+    it('shows the empty screen of the person only while the draft has no message', () => {
+      const withNothing = { isDraft: true, currentChat: draft };
+      const withBubble = {
+        isDraft: true,
+        currentChat: { ...draft, messages: [{ id: 'echo-1' }] },
+      };
+      const realThread = {
+        isDraft: false,
+        currentChat: { id: 7, messages: [] },
+      };
+
+      expect(
+        MessagesView.computed.showPersonDialogEmptyState.call(withNothing)
+      ).toBe(true);
+      expect(
+        MessagesView.computed.showPersonDialogEmptyState.call(withBubble)
+      ).toBe(false);
+      expect(
+        MessagesView.computed.showPersonDialogEmptyState.call(realThread)
+      ).toBe(false);
+    });
+
+    it('marks nothing read, because nothing exists on the server to mark', () => {
+      const dispatch = vi.fn();
+
+      MessagesView.methods.makeMessagesRead.call({
+        isDraft: true,
+        currentChat: draft,
+        $store: { dispatch },
+      });
+
+      expect(dispatch).not.toHaveBeenCalled();
+    });
+
+    it('asks for no label suggestions', async () => {
+      const getLabelSuggestions = vi.fn();
+      const context = {
+        isDraft: true,
+        currentChat: draft,
+        labelSuggestions: ['x'],
+        getLabelSuggestions,
+        captainTasksEnabled: true,
+        isLabelSuggestionFeatureEnabled: true,
+        isLabelSuggestionDismissed: vi.fn(),
+      };
+
+      await MessagesView.methods.fetchSuggestions.call(context);
+
+      expect(context.labelSuggestions).toEqual([]);
+      expect(getLabelSuggestions).not.toHaveBeenCalled();
+      expect(context.isLabelSuggestionDismissed).not.toHaveBeenCalled();
+    });
+
+    it('loads no older history', async () => {
+      const dispatch = vi.fn();
+
+      await MessagesView.methods.fetchPreviousMessages.call({
+        isDraft: true,
+        currentChat: { ...draft, dataFetched: true, messages: [{ id: 'a' }] },
+        $store: { dispatch },
+      });
+
+      expect(dispatch).not.toHaveBeenCalled();
+    });
+
+    it('keeps the scroll and the editor when the first message made the dialog', () => {
+      const context = {
+        fetchSuggestions: vi.fn(),
+        resetOpenedUnreadMessages: vi.fn(),
+        resetReplyEditorHeight: vi.fn(),
+        conversationHistoryGeneration: 0,
+        hasUserScrolled: true,
+      };
+
+      MessagesView.watch.currentChat.call(
+        context,
+        {
+          id: 77,
+          is_communication_thread: true,
+          contact_id: 5,
+          meta: { sender: { id: 5 } },
+        },
+        draft
+      );
+
+      expect(context.hasUserScrolled).toBe(true);
+      expect(context.resetReplyEditorHeight).not.toHaveBeenCalled();
+      expect(context.conversationHistoryGeneration).toBe(0);
+    });
+
+    it('resets as for any other switch when the draft is followed by a thread of someone else', () => {
+      const context = {
+        fetchSuggestions: vi.fn(),
+        resetOpenedUnreadMessages: vi.fn(),
+        resetReplyEditorHeight: vi.fn(),
+        conversationHistoryGeneration: 0,
+        hasUserScrolled: true,
+      };
+
+      MessagesView.watch.currentChat.call(
+        context,
+        {
+          id: 88,
+          is_communication_thread: true,
+          contact_id: 6,
+          meta: { sender: { id: 6 } },
+        },
+        draft
+      );
+
+      expect(context.hasUserScrolled).toBe(false);
+      expect(context.resetReplyEditorHeight).toHaveBeenCalled();
+    });
+  });
 });

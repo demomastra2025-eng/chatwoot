@@ -8,6 +8,8 @@ import { BUS_EVENTS } from '../../../../shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 import { CONTENT_TYPES } from 'dashboard/components-next/message/constants.js';
 import {
+  PERSON_DIALOG_CHAT_TYPE,
+  personDialogChatId,
   buildCommunicationChannelFromRealtimePayload,
   buildCommunicationChannelFromMessage,
   getCommunicationThreadDisplayInboxId,
@@ -46,6 +48,9 @@ const state = {
   currentInbox: null,
   selectedChatId: null,
   selectedChatType: null,
+  // The dialog of a person who has none yet: { contactId, contact, channels, messages, sharedPhoneHolder, blocked }. It is never
+  // a row of allConversations, so it is in no list, count or unread total, and nothing of it is stored on the server.
+  personDialog: null,
   appliedFilters: [],
   contextMenuChatId: null,
   contextMenuChatType: null,
@@ -569,6 +574,43 @@ export const mutations = {
   [types.CLEAR_CURRENT_CHAT_WINDOW](_state) {
     _state.selectedChatId = null;
     _state.selectedChatType = null;
+    _state.personDialog = null;
+  },
+
+  [types.SET_PERSON_DIALOG](_state, personDialog) {
+    _state.personDialog = {
+      messages: [],
+      ...personDialog,
+    };
+    _state.selectedChatId = personDialogChatId(personDialog.contactId);
+    _state.selectedChatType = PERSON_DIALOG_CHAT_TYPE;
+  },
+
+  // The draft stops being the open chat: the first message made a thread (the caller selects it first) or the screen was left.
+  [types.CLEAR_PERSON_DIALOG](_state) {
+    _state.personDialog = null;
+    if (_state.selectedChatType === PERSON_DIALOG_CHAT_TYPE) {
+      _state.selectedChatId = null;
+      _state.selectedChatType = null;
+    }
+  },
+
+  // A bubble of the draft: pending, then sent or failed. A retry has the same echo_id, so it replaces its own bubble.
+  [types.UPSERT_PERSON_DIALOG_MESSAGE](_state, message) {
+    if (!_state.personDialog) return;
+
+    const messages = [...(_state.personDialog.messages || [])];
+    const index = messages.findIndex(
+      item =>
+        String(item.id) === String(message.id) ||
+        (message.echo_id && String(item.echo_id) === String(message.echo_id))
+    );
+    if (index === -1) {
+      messages.push(message);
+    } else {
+      messages[index] = message;
+    }
+    _state.personDialog.messages = messages;
   },
 
   [types.SET_PREVIOUS_CONVERSATIONS](_state, { id, data, conversationType }) {

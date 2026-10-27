@@ -196,6 +196,7 @@ export default {
     'selectReplyChannel',
     'selectDirectReplyAction',
     'toggleQuotedReply',
+    'callInitiated',
   ],
   setup(props) {
     const { setSignatureFlagForInbox, fetchSignatureFlagFromUISettings } =
@@ -809,6 +810,7 @@ export default {
         slate
         faded
         sm
+        @call-initiated="$emit('callInitiated', $event)"
       />
       <NextButton
         v-if="showQuotedReplyToggle"
@@ -879,6 +881,7 @@ export default {
           :class="
             showReplyChannelMenu ? 'ltr:rounded-r-none rtl:rounded-l-none' : ''
           "
+          @call-initiated="$emit('callInitiated', $event)"
         />
         <NextButton
           v-else-if="isWhatsappCallReplyAction"

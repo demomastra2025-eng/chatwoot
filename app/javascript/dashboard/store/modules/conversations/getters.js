@@ -7,7 +7,11 @@ import {
   getUserRole,
 } from '../../../helper/permissionsHelper';
 import camelcaseKeys from 'camelcase-keys';
-import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
+import {
+  PERSON_DIALOG_CHAT_TYPE,
+  buildPersonDialogChat,
+  isCommunicationThread,
+} from 'dashboard/helper/communicationThreadHelper';
 import { getUnreadIncomingMessages } from 'dashboard/helper/conversationHelper';
 
 const conversationStoreType = conversation =>
@@ -94,7 +98,15 @@ const getters = {
 
     return sortConversations(filteredConversations, chatSortFilter);
   },
-  getSelectedChat: ({ selectedChatId, selectedChatType, allConversations }) => {
+  getSelectedChat: ({
+    selectedChatId,
+    selectedChatType,
+    allConversations,
+    personDialog,
+  }) => {
+    if (selectedChatType === PERSON_DIALOG_CHAT_TYPE) {
+      return buildPersonDialogChat(personDialog);
+    }
     const selectedChat = allConversations.find(conversation =>
       selectedChatMatches(conversation, selectedChatId, selectedChatType)
     );

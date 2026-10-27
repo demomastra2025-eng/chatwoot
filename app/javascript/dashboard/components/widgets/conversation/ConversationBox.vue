@@ -113,7 +113,8 @@ export default {
   },
   methods: {
     fetchLabels() {
-      if (!this.currentChat.id) {
+      // The dialog of a person who has none yet has no labels on the server to read.
+      if (!this.currentChat.id || this.currentChat.is_draft) {
         return;
       }
       const isCommunicationThread = Boolean(

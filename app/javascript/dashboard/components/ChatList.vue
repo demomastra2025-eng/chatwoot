@@ -564,6 +564,7 @@ function conversationNavigationQuery(overrides = {}) {
 const normalizeListRouteName = routeName => {
   const detailToListMap = {
     communication_thread_conversation: 'communication_threads_dashboard',
+    communication_thread_contact: 'communication_threads_dashboard',
     inbox_conversation: 'home',
     conversation_through_inbox: 'inbox_dashboard',
     conversations_through_label: 'label_conversations',

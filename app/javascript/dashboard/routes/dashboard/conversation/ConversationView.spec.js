@@ -237,4 +237,153 @@ describe('ConversationView', () => {
       expect(context.$store.dispatch).not.toHaveBeenCalledWith('portals/index');
     });
   });
+
+  describe('the dialog of a person', () => {
+    const personContext = (overrides = {}) => {
+      const context = {
+        personContactId: 5,
+        conversationId: 0,
+        currentChat: {},
+        $route: { params: { accountId: 3 }, query: { patientContactId: '8' } },
+        $router: { replace: vi.fn() },
+        $store: { dispatch: vi.fn() },
+        $t: key => key,
+        ...overrides,
+      };
+      Object.assign(context, {
+        isChatOfPerson: ConversationView.methods.isChatOfPerson.bind(context),
+        isOpenThreadOfPerson:
+          ConversationView.methods.isOpenThreadOfPerson.bind(context),
+        replaceRouteWithPromotedThread:
+          ConversationView.methods.replaceRouteWithPromotedThread.bind(context),
+        openPersonDialog:
+          ConversationView.methods.openPersonDialog.bind(context),
+      });
+      return context;
+    };
+
+    it('shows the dialog and not the list under the expanded layout', () => {
+      const context = {
+        personContactId: 5,
+        conversationId: 0,
+        uiSettings: { conversation_display_type: 'expanded' },
+      };
+      context.isOnExpandedLayout =
+        ConversationView.computed.isOnExpandedLayout.call(context);
+
+      expect(ConversationView.computed.showConversationList.call(context)).toBe(
+        false
+      );
+      expect(ConversationView.computed.showMessageView.call(context)).toBe(
+        true
+      );
+    });
+
+    it('opens the dialog of the person instead of looking for a conversation', () => {
+      const context = personContext();
+
+      ConversationView.methods.setActiveChat.call(context);
+
+      expect(context.$store.dispatch).toHaveBeenCalledWith('openPersonDialog', {
+        contactId: 5,
+      });
+    });
+
+    it('goes on to the thread when the person already has a dialog and keeps the query', async () => {
+      const context = personContext();
+      context.$store.dispatch.mockResolvedValue({ communicationThreadId: 77 });
+
+      await context.openPersonDialog();
+
+      expect(context.$router.replace).toHaveBeenCalledWith({
+        name: 'communication_thread_conversation',
+        params: { accountId: 3, communication_thread_id: 77 },
+        query: { patientContactId: '8' },
+      });
+    });
+
+    it('stays on the empty screen of a person who has no dialog', async () => {
+      const context = personContext();
+      context.$store.dispatch.mockResolvedValue({
+        communicationThreadId: null,
+      });
+
+      await context.openPersonDialog();
+
+      expect(context.$router.replace).not.toHaveBeenCalled();
+    });
+
+    it('does not read the draft again when it is the open chat, so failed bubbles stay', async () => {
+      const context = personContext({
+        currentChat: { id: 'draft-5', is_draft: true, person_contact_id: 5 },
+      });
+
+      await context.openPersonDialog();
+
+      expect(context.$store.dispatch).not.toHaveBeenCalled();
+    });
+
+    it('ignores the answer for a person the screen has already left', async () => {
+      const context = personContext();
+      context.$store.dispatch.mockImplementation(async () => {
+        context.personContactId = 9;
+        return { communicationThreadId: 77 };
+      });
+
+      await context.openPersonDialog();
+
+      expect(context.$router.replace).not.toHaveBeenCalled();
+    });
+
+    it('replaces the address when the first message made the thread of the person', () => {
+      const context = personContext({
+        currentChat: {
+          id: 77,
+          is_communication_thread: true,
+          contact_id: 5,
+          meta: { sender: { id: 5 } },
+        },
+      });
+
+      context.replaceRouteWithPromotedThread();
+
+      expect(context.$router.replace).toHaveBeenCalledWith({
+        name: 'communication_thread_conversation',
+        params: { accountId: 3, communication_thread_id: 77 },
+        query: { patientContactId: '8' },
+      });
+    });
+
+    it('does not replace the address for the draft or for a thread of another person', () => {
+      const draft = personContext({
+        currentChat: { id: 'draft-5', is_draft: true, person_contact_id: 5 },
+      });
+      draft.replaceRouteWithPromotedThread();
+
+      const other = personContext({
+        currentChat: {
+          id: 88,
+          is_communication_thread: true,
+          contact_id: 6,
+          meta: { sender: { id: 6 } },
+        },
+      });
+      other.replaceRouteWithPromotedThread();
+
+      expect(draft.$router.replace).not.toHaveBeenCalled();
+      expect(other.$router.replace).not.toHaveBeenCalled();
+    });
+
+    it('does not clear the open draft of the person when the list of chats changes', () => {
+      const context = personContext({
+        currentChat: { id: 'draft-5', is_draft: true, person_contact_id: 5 },
+      });
+
+      ConversationView.methods.setActiveChat.call(context);
+
+      expect(context.$store.dispatch).not.toHaveBeenCalledWith(
+        'clearSelectedState'
+      );
+    });
+  });
 });

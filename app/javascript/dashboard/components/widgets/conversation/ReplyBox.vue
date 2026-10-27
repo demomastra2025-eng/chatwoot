@@ -64,7 +64,9 @@ import {
   isCommunicationChannelReplyable,
   isCommunicationThread,
   isCommunicationVoiceChannel,
+  isDraftDialog,
 } from 'dashboard/helper/communicationThreadHelper';
+import { personDialogErrorText } from 'dashboard/helper/personDialogHelper';
 
 import { LOCAL_STORAGE_KEYS } from 'dashboard/constants/localStorage';
 import { LocalStorage } from 'shared/helpers/localStorage';
@@ -94,6 +96,8 @@ export default {
     CopilotSuggestionNotice,
   },
   mixins: [inboxMixin, fileUploadMixin, keyboardEventListenerMixins],
+  // The screen tells the empty dialog of a person which channel is selected here, see PersonDialogEmptyState.
+  inject: { replyChannelState: { default: null } },
   emits: ['toggleEditorSize', 'update:popOutReplyBox'],
   setup() {
     const {
@@ -183,6 +187,10 @@ export default {
     },
     isCommunicationThreadConversation() {
       return isCommunicationThread(this.currentChat);
+    },
+    // The dialog of a person who has none yet: its first message makes the dialog, and nothing of it exists on the server.
+    isDraft() {
+      return isDraftDialog(this.currentChat);
     },
     communicationChannels() {
       return getCommunicationReplyChannels(this.currentChat?.channels || []);
@@ -496,6 +504,8 @@ export default {
         : false;
     },
     conversationId() {
+      // A draft has no conversation: no request may carry its screen id.
+      if (this.isDraft) return null;
       if (!this.isCommunicationThreadConversation) {
         return this.currentChat.id;
       }
@@ -662,12 +672,18 @@ export default {
     conversationIdByRoute(conversationId, oldConversationId) {
       if (conversationId !== oldConversationId) {
         this.selectedDirectReplyAction = COMMUNICATION_CHANNEL_ACTIONS.MESSAGE;
+        if (this.isPromotedFrom(oldConversationId)) {
+          // The first message made the dialog: it is the same screen, so what is typed stays and the draft's stored text goes.
+          this.discardStoredDraftOf(oldConversationId);
+          return;
+        }
         this.setToDraft(oldConversationId, this.replyType);
         this.getFromDraft();
         this.resetRecorderAndClearAttachments();
       }
     },
-    selectedReplyConversationId() {
+    selectedReplyConversationId(channelKey) {
+      if (this.replyChannelState) this.replyChannelState.key = channelKey;
       this.syncReplyModeWithSelectedChannel();
       this.setCCAndToEmailsFromLastChat();
       this.fetchAndSetReplyTo();
@@ -740,7 +756,19 @@ export default {
   methods: {
     syncCopilotSuggestion() {
       this.copilot.detach();
+      // A person with no dialog has no conversation to prepare a suggestion for.
+      if (this.isDraft) return;
       this.copilot.restoreForConversation();
+    },
+    isPromotedFrom(previousChatId) {
+      return String(previousChatId).startsWith('draft-') && !this.isDraft;
+    },
+    discardStoredDraftOf(previousChatId) {
+      Object.values(REPLY_EDITOR_MODES).forEach(mode => {
+        this.$store.dispatch('draftMessages/delete', {
+          key: this.getDraftKey(previousChatId, mode),
+        });
+      });
     },
     syncSelectedReplyChannel(conversation = this.currentChat) {
       if (!isCommunicationThread(conversation)) {
@@ -1264,9 +1292,19 @@ export default {
         });
       } catch (error) {
         const errorMessage =
-          error?.response?.data?.error || this.$t('CONVERSATION.MESSAGE_ERROR');
+          personDialogErrorText(error, (key, params) => this.$t(key, params)) ||
+          error?.response?.data?.error ||
+          this.$t('CONVERSATION.MESSAGE_ERROR');
         useAlert(errorMessage);
       }
+    },
+    // A call from the empty dialog of a person made the dialog: the draft becomes it.
+    onCallInitiated(response) {
+      if (!this.isDraft) return;
+      this.$store.dispatch('promotePersonDialog', {
+        contactId: this.currentChat.person_contact_id,
+        communicationThreadId: response?.communication_thread_id,
+      });
     },
     async updateExistingMessage(content) {
       try {
@@ -1733,7 +1771,7 @@ export default {
         showAudioRecorderEditor
       "
       :is-editor-disabled="isEditorDisabled"
-      show-copilot-actions
+      :show-copilot-actions="!isDraft"
       :is-message-length-reaching-threshold="isMessageLengthReachingThreshold"
       :characters-remaining="charactersRemaining"
       :editor-content="message"
@@ -1957,6 +1995,7 @@ export default {
         :toggle-emoji-picker="toggleEmojiPicker"
         :message="message"
         :new-conversation-modal-active="newConversationModalActive"
+        @call-initiated="onCallInitiated"
         @select-whatsapp-template="openWhatsappTemplateModal"
         @select-content-template="openContentTemplateModal"
         @toggle-quoted-reply="toggleQuotedReply"

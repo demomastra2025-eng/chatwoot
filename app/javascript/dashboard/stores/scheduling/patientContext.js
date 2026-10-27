@@ -10,9 +10,21 @@ export const patientContactId = value => {
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 };
 
+export const DRAFT_CONTEXT_KIND = 'person';
+
+export const isDraftPatientContextKey = key =>
+  String(key || '').split(':')[2] === DRAFT_CONTEXT_KIND;
+
 export const conversationPatientContextKey = ({ accountId, userId, chat }) => {
   const account = patientContactId(accountId);
   const user = patientContactId(userId);
+  // The dialog of a person who has none yet is known by the person.
+  if (chat?.is_draft) {
+    const person = patientContactId(chat.person_contact_id);
+    return account && user && person
+      ? `${account}:${user}:${DRAFT_CONTEXT_KIND}:${person}`
+      : '';
+  }
   const dialog = patientContactId(
     chat?.display_id || chat?.displayId || chat?.id
   );

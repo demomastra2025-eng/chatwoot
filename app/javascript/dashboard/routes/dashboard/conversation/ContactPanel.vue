@@ -43,6 +43,8 @@ const currentChat = useMapGetter('getSelectedChat');
 const attributesList = useMapGetter('attributes/getAttributes');
 const attributesUIFlags = useMapGetter('attributes/getUIFlags');
 const conversationId = computed(() => props.conversationId);
+// A person without a dialog has no conversation to act on, no macros to run on it and no files shared in it yet.
+const isDraft = computed(() => Boolean(currentChat.value?.is_draft));
 
 const channelType = computed(() => currentChat.value.meta?.channel);
 
@@ -135,7 +137,7 @@ onMounted(() => {
         >
           <template #item="{ element }">
             <div
-              v-if="element.name === 'conversation_actions'"
+              v-if="element.name === 'conversation_actions' && !isDraft"
               class="conversation--actions px-2 py-1 text-sm"
             >
               <ConversationAction
@@ -168,7 +170,7 @@ onMounted(() => {
               </AccordionItem>
             </div>
             <woot-feature-toggle
-              v-else-if="element.name === 'macros'"
+              v-else-if="element.name === 'macros' && !isDraft"
               feature-key="macros"
             >
               <AccordionItem
@@ -196,7 +198,7 @@ onMounted(() => {
                 />
               </AccordionItem>
             </div>
-            <div v-else-if="element.name === 'shared_files'">
+            <div v-else-if="element.name === 'shared_files' && !isDraft">
               <AccordionItem
                 :title="$t('CONVERSATION_SIDEBAR.ACCORDION.SHARED_FILES')"
                 :is-open="isContactSidebarItemOpen('is_shared_files_open')"
