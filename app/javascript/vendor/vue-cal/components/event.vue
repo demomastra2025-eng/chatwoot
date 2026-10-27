@@ -315,13 +315,17 @@ const onMousedown = e => {
 
   if (!currentEventEl) return;
 
+  // Only the primary mouse button (or a touch) can press an event: no resizing with right/middle click.
+  if (e.type === 'mousedown' && e.button !== 0) return;
+
   // If the event target is the resizer, set the resizing flag.
   touch.fromResizer = domEvent.target?.closest('.vuecal__event-resizer');
 
-  if (touch.fromResizer) {
-    suppressNextClick = true;
-    if (clickTimeout) clickTimeout = clearTimeout(clickTimeout);
-  }
+  // The click ending a press on the resizer never reaches the event (it is stopped on the resizer),
+  // so decide on every press whether the next click on the event must be ignored.
+  suppressNextClick = !!touch.fromResizer;
+  if (touch.fromResizer && clickTimeout)
+    clickTimeout = clearTimeout(clickTimeout);
 
   // Cache getBoundingClientRect calls for better performance.
   const now = Date.now();

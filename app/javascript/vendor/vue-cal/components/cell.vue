@@ -543,6 +543,9 @@ const onCellClick = () => {
 const onMousedown = e => {
   const isTouchEvent = e.type === 'touchstart'
 
+  // Only the primary mouse button (or a touch) can start dragging to create an event.
+  if (!isTouchEvent && e.button !== 0) return
+
   // On touch devices, wait for 500ms then trigger event creation.
   if (isTouchEvent) {
     touch.canTouchAndDrag = false
@@ -566,6 +569,7 @@ const onMousedown = e => {
 
   document.addEventListener(isTouchEvent ? 'touchmove' : 'mousemove', onDocMousemove, { passive: !isTouchEvent })
   document.addEventListener(isTouchEvent ? 'touchend' : 'mouseup', onDocMouseup, { once: true })
+  document.addEventListener('touchcancel', onDocMouseup, { once: true })
 
   touch.holdTimer = setTimeout(() => {
     touch.holding = true
@@ -577,6 +581,13 @@ const onMousedown = e => {
 const onDocMousemove = e => {
   const isTouchEvent = e.type === 'touchmove'
   const isHzl = config.horizontal
+
+  // The mouse button is no longer held (its release never reached the page): cancel the creation
+  // instead of letting the placeholder follow the pointer.
+  if (!isTouchEvent && !(e.buttons & 1)) {
+    onDocMouseup(e)
+    return
+  }
 
   // For touch events, if the 500ms hasn't passed yet, cancel event creation and allow scrolling.
   if (isTouchEvent && !touch.canTouchAndDrag) {
@@ -625,8 +636,12 @@ const onDocMousemove = e => {
 }
 
 const onDocMouseup = async e => {
-  const isTouchEvent = e.type === 'touchend'
-  document.removeEventListener(isTouchEvent ? 'touchmove' : 'mousemove', onDocMousemove, { passive: false })
+  // Release every document listener of the gesture, whatever ended it.
+  document.removeEventListener('mousemove', onDocMousemove)
+  document.removeEventListener('touchmove', onDocMousemove)
+  document.removeEventListener('mouseup', onDocMouseup)
+  document.removeEventListener('touchend', onDocMouseup)
+  document.removeEventListener('touchcancel', onDocMouseup)
 
   // Clean up touch and drag timer
   if (touch.touchAndDragTimer) {
@@ -639,7 +654,8 @@ const onDocMouseup = async e => {
     cellEventListeners.value['drag-end']?.({ e, cell: cellInfo.value, cursor: cursorInfo.value, view })
     globalTouchState.isDraggingCell = false // Add a CSS class on wrapper while dragging.
 
-    if (config.editableEvents.create && touch.canTouchAndDrag) {
+    // Only a release creates the event: a cancelled drag (mouse button lost, touch cancelled) does not.
+    if (config.editableEvents.create && touch.canTouchAndDrag && ['mouseup', 'touchend'].includes(e.type)) {
       awaitingEventCreation.value = true
       await createEventIfAllowed(e)
       awaitingEventCreation.value = false
