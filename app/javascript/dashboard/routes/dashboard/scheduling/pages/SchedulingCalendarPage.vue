@@ -3,6 +3,7 @@ import {
   computed,
   onBeforeUnmount,
   onMounted,
+  provide,
   reactive,
   readonly,
   ref,
@@ -14,12 +15,14 @@ import { useRoute, useRouter } from 'vue-router';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useAlert } from 'dashboard/composables';
 import { useUISettings } from 'dashboard/composables/useUISettings';
-import { useMapGetter } from 'dashboard/composables/store';
+import { useMapGetter, useStore } from 'dashboard/composables/store';
+import { PERSON_DIALOG_OPENER } from 'dashboard/composables/useOpenPersonDialog';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
 import CrmDealConversationPanel from 'dashboard/components-next/CRM/CrmDealConversationPanel.vue';
+import PersonDialogActions from 'dashboard/components-next/Contacts/PersonDialogActions.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import AppointmentDealSelector from 'dashboard/components-next/CRM/AppointmentDealSelector.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
@@ -118,10 +121,7 @@ import {
 } from 'dashboard/stores/scheduling/providerCommands';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 import { parseIinMetadata } from 'dashboard/stores/scheduling/iin';
-import {
-  buildContactableInboxesList,
-  fetchContactableInboxes,
-} from 'dashboard/components-next/NewConversation/helpers/composeConversationHelper.js';
+import {} from 'dashboard/components-next/NewConversation/helpers/composeConversationHelper.js';
 
 const { t, locale } = useI18n();
 const calendarStore = useSchedulingCalendarStore();
@@ -185,17 +185,11 @@ const isAppointmentLoading = ref(false);
 const appointmentPageError = ref(null);
 const isCalendarLoaded = ref(false);
 let appointmentOpenGeneration = 0;
+// The person the appointment's chat is held with. Their dialog is opened by the panel itself, see CrmDealConversationPanel.
 const appointmentConversationDraft = reactive({
   contactId: '',
-  contactableInboxes: [],
-  contextRequestId: 0,
-  isCreating: false,
-  isLoadingInboxes: false,
 });
-const appointmentContactableInboxesByContactId = ref({});
 const appointmentConversationContactCreateRequested = ref(false);
-let appointmentConversationCreateRequestId = 0;
-let appointmentConversationDisposed = false;
 
 const inlineContactForm = reactive({
   birthDate: '',
@@ -883,13 +877,6 @@ const appointmentCommunicationThreadId = computed(
 const appointmentCommunicationThreadDisplayId = computed(
   () => appointmentConversationTarget.value.communicationThreadDisplayId
 );
-const hasAppointmentConversationTarget = computed(
-  () =>
-    !!appointmentCommunicationThreadDisplayId.value ||
-    !!appointmentCommunicationThreadId.value ||
-    !!appointmentChatConversationDisplayId.value ||
-    !!appointmentChatConversationId.value
-);
 
 const appointmentConversationContacts = computed(() => {
   const contactId = Number(formStore.form.contactId);
@@ -927,6 +914,21 @@ const openPatientDialog = () => {
     is_scheduling_appointments_panel_open: true,
   });
   router.push(patientDialogRoute.value);
+};
+const store = useStore();
+// «Написать» in the drawer opens the chat beside the appointment (on the appointment page: its «Чат» tab) and does not leave the page.
+const openAppointmentChat = () => {
+  showAppointmentConversationPanel.value = true;
+  if (isAppointmentPage.value) appointmentPageTab.value = 'chat';
+};
+provide(PERSON_DIALOG_OPENER, openAppointmentChat);
+// A call from the drawer made the dialog of the person: the chat beside the appointment shows it.
+const handleAppointmentCallInitiated = response => {
+  openAppointmentChat();
+  store.dispatch('promotePersonDialog', {
+    contactId: formStore.form.contactId,
+    communicationThreadId: response?.communication_thread_id,
+  });
 };
 const canManageAppointmentConversation = computed(
   () =>
@@ -1167,148 +1169,37 @@ const loadPage = async () => {
 };
 
 const resetAppointmentConversationDraft = () => {
-  appointmentConversationDraft.contextRequestId += 1;
   const contactId = Number(formStore.form.contactId);
   appointmentConversationDraft.contactId =
     Number.isFinite(contactId) && contactId > 0 ? contactId : '';
-  appointmentConversationDraft.contactableInboxes =
-    (!hasAppointmentConversationTarget.value &&
-      appointmentConversationDraft.contactId &&
-      appointmentContactableInboxesByContactId.value[
-        appointmentConversationDraft.contactId
-      ]) ||
-    [];
-  appointmentConversationDraft.isCreating = false;
-  appointmentConversationDraft.isLoadingInboxes = false;
 };
 
 const setAppointmentConversationContact = contactId => {
   const normalizedContactId = Number(contactId);
-  appointmentConversationDraft.contextRequestId += 1;
   appointmentConversationDraft.contactId =
     Number.isFinite(normalizedContactId) && normalizedContactId > 0
       ? normalizedContactId
       : '';
-  appointmentConversationDraft.contactableInboxes = [];
-  appointmentConversationDraft.isLoadingInboxes = false;
-  return appointmentConversationDraft.contextRequestId;
 };
 
-const loadAppointmentConversationInboxes = async contextRequestId => {
-  appointmentConversationDraft.contactableInboxes = [];
-  const contactId = appointmentConversationDraft.contactId;
-  if (!contactId) return;
-
-  const cachedInboxes =
-    appointmentContactableInboxesByContactId.value[contactId];
-  if (cachedInboxes) {
-    if (contextRequestId === appointmentConversationDraft.contextRequestId) {
-      appointmentConversationDraft.contactableInboxes = cachedInboxes;
-    }
-    return;
-  }
-
-  appointmentConversationDraft.isLoadingInboxes = true;
-
-  try {
-    const contactableInboxes = buildContactableInboxesList(
-      await fetchContactableInboxes(contactId)
-    );
-    appointmentContactableInboxesByContactId.value = {
-      ...appointmentContactableInboxesByContactId.value,
-      [contactId]: contactableInboxes,
-    };
-    if (contextRequestId === appointmentConversationDraft.contextRequestId) {
-      appointmentConversationDraft.contactableInboxes = contactableInboxes;
-    }
-  } catch {
-    if (contextRequestId === appointmentConversationDraft.contextRequestId) {
-      appointmentConversationDraft.contactableInboxes = [];
-      useAlert(t('SCHEDULING.CONVERSATION_PLACEHOLDER.INBOXES_LOAD_ERROR'));
-    }
-  } finally {
-    if (contextRequestId === appointmentConversationDraft.contextRequestId) {
-      appointmentConversationDraft.isLoadingInboxes = false;
-    }
-  }
-};
-
-const loadAppointmentConversationContext = async contactId => {
-  if (
-    hasAppointmentConversationTarget.value &&
-    Number(contactId) === Number(formStore.form.contactId)
-  ) {
-    return [];
-  }
-
-  const contextRequestId = setAppointmentConversationContact(contactId);
-
-  if (!appointmentConversationDraft.contactId) return [];
-
-  await loadAppointmentConversationInboxes(contextRequestId);
-  return [];
-};
-
-const createAppointmentConversation = async ({ contactId, inbox }) => {
+// The first message, call or note of the person made their dialog in the panel: the appointment is read again, so it shows the
+// same chat after a reload and the panel does not flip back to the empty screen.
+const handleAppointmentDialogCreated = async ({ contactId }) => {
   const appointmentId = Number(formStore.recordId);
-  if (
-    appointmentConversationDraft.isCreating ||
-    !canManageAppointmentConversation.value ||
-    !Number.isFinite(appointmentId) ||
-    appointmentId <= 0 ||
-    !inbox
-  ) {
-    return;
-  }
-
   const normalizedContactId = Number(contactId);
-  const inboxId = Number(inbox.value || inbox.id);
-  if (
-    !Number.isFinite(normalizedContactId) ||
-    normalizedContactId <= 0 ||
-    !Number.isFinite(inboxId) ||
-    inboxId <= 0
-  ) {
-    return;
-  }
-
-  const contextRequestId = appointmentConversationDraft.contextRequestId;
-  const isCurrentContext = () =>
-    !appointmentConversationDisposed &&
-    contextRequestId === appointmentConversationDraft.contextRequestId &&
-    Number(formStore.recordId) === appointmentId &&
-    Number(formStore.form.contactId) === normalizedContactId;
-  appointmentConversationCreateRequestId += 1;
-  const createRequestId = appointmentConversationCreateRequestId;
-  appointmentConversationDraft.isCreating = true;
+  if (!Number.isFinite(appointmentId) || appointmentId <= 0) return;
 
   try {
-    await formStore.createAndLinkConversation(
-      {
-        appointmentId,
-        contactId: normalizedContactId,
-        inbox,
-      },
+    await formStore.refreshAfterDialog(
+      { appointmentId, contactId: normalizedContactId },
       calendarStore,
-      isCurrentContext
+      () =>
+        !calendarDisposed &&
+        Number(formStore.recordId) === appointmentId &&
+        Number(formStore.form.contactId) === normalizedContactId
     );
-    if (!isCurrentContext()) return;
-    resetAppointmentConversationDraft();
-    showAppointmentConversationPanel.value = true;
-    useAlert(t('SCHEDULING.CONVERSATION_PLACEHOLDER.CREATED'));
   } catch (error) {
-    if (isCurrentContext()) {
-      useAlert(
-        error?.response
-          ? formatErrorMessage(error)
-          : error?.message ||
-              t('SCHEDULING.CONVERSATION_PLACEHOLDER.CREATE_ERROR')
-      );
-    }
-  } finally {
-    if (createRequestId === appointmentConversationCreateRequestId) {
-      appointmentConversationDraft.isCreating = false;
-    }
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -1585,7 +1476,6 @@ const syncCalendarContextToAppointment = appointment => {
 };
 
 const openEditAppointment = appointment => {
-  const wasAlreadyOpen = formStore.isOpen;
   formStore.openEdit(appointment);
   appointmentPageTab.value = 'appointment';
   resetAppointmentConversationDraft();
@@ -1593,14 +1483,6 @@ const openEditAppointment = appointment => {
   showAppointmentConversationPanel.value = true;
   contactEditorMode.value = null;
   formStore.inlineContactSnapshot = null;
-  if (
-    wasAlreadyOpen &&
-    !hasAppointmentConversationTarget.value &&
-    formStore.form.contactId &&
-    !appointmentConversationDraft.contactableInboxes.length
-  ) {
-    loadAppointmentConversationContext(formStore.form.contactId);
-  }
 };
 
 const openAppointmentPage = appointment => {
@@ -2529,9 +2411,6 @@ onBeforeUnmount(() => {
   providerCommandsStore.ui.operationId += 1;
   providerCommandsStore.ui.isExecuting = false;
   providerCommandsStore.ui.error = null;
-  appointmentConversationDisposed = true;
-  appointmentConversationDraft.contextRequestId += 1;
-  appointmentConversationCreateRequestId += 1;
   handleDrawerClose();
 });
 
@@ -2915,17 +2794,19 @@ onMounted(async () => {
                 </span>
               </span>
 
-              <Button
+              <PersonDialogActions
                 v-if="
-                  !isAppointmentPage &&
-                  canOpenAppointmentConversation &&
-                  !shouldShowAppointmentConversationPanel
+                  canOpenAppointmentConversation && formStore.form.contactId
                 "
-                size="sm"
-                color="slate"
-                variant="ghost"
-                icon="i-lucide-message-circle"
-                @click="showAppointmentConversationPanel = true"
+                :contact-id="formStore.form.contactId"
+                :phone="
+                  formStore.selectedContact?.phone || formStore.form.clientPhone
+                "
+                :show-write="
+                  isAppointmentPage || !shouldShowAppointmentConversationPanel
+                "
+                icon-only
+                @call-initiated="handleAppointmentCallInitiated"
               />
               <Button
                 size="sm"
@@ -3729,13 +3610,8 @@ onMounted(async () => {
             :conversation-id="appointmentChatConversationId"
             :conversation-display-id="appointmentChatConversationDisplayId"
             :contacts="appointmentConversationContacts"
-            :contactable-inboxes="
-              appointmentConversationDraft.contactableInboxes
-            "
             :selected-contact-id="appointmentConversationDraft.contactId"
             :can-manage="canManageAppointmentConversation"
-            :is-creating-conversation="appointmentConversationDraft.isCreating"
-            :is-loading-inboxes="appointmentConversationDraft.isLoadingInboxes"
             load-error-i18n-key="SCHEDULING.CONVERSATION_PLACEHOLDER.LOAD_ERROR"
             placeholder-i18n-prefix="SCHEDULING.CONVERSATION_PLACEHOLDER"
             :show-appointments="false"
@@ -3745,9 +3621,9 @@ onMounted(async () => {
             "
             @add-contact="handleAppointmentConversationAddContact"
             @close="closeAppointmentConversationPanel"
-            @create-conversation="createAppointmentConversation"
+            @dialog-created="handleAppointmentDialogCreated"
             @open-full-screen="openPatientDialog"
-            @select-contact="loadAppointmentConversationContext"
+            @select-contact="setAppointmentConversationContact"
           />
         </div>
       </div>

@@ -80,9 +80,6 @@ vi.mock('dashboard/api/companies', () => ({
 vi.mock('dashboard/api/contacts', () => ({
   default: { get: vi.fn(), getCommunicationThreads: vi.fn(), show: vi.fn() },
 }));
-vi.mock('dashboard/api/conversations', () => ({
-  default: { create: vi.fn(), get: vi.fn() },
-}));
 vi.mock('dashboard/composables', () => ({ useAlert: vi.fn() }));
 vi.mock('dashboard/composables/usePolicy', () => ({
   usePolicy: () => ({ checkPermissions: () => true }),
@@ -116,7 +113,6 @@ vi.mock('dashboard/stores/crm/references', () => ({
 }));
 
 import CrmDealsAPI from 'dashboard/api/crm/deals';
-import ConversationAPI from 'dashboard/api/conversations';
 import ContactAPI from 'dashboard/api/contacts';
 import CompanyAPI from 'dashboard/api/companies';
 import { useAlert } from 'dashboard/composables';
@@ -209,7 +205,6 @@ beforeEach(() => {
   ContactAPI.get.mockResolvedValue(response([]));
   ContactAPI.show.mockReset();
   CompanyAPI.get.mockResolvedValue(response([]));
-  ConversationAPI.create.mockReset();
   ContactAPI.getCommunicationThreads
     .mockReset()
     .mockResolvedValue(response([{ id: 41, timestamp: 1 }]));
@@ -433,7 +428,7 @@ it('switches between card and chat on narrow screens without changing route', as
   );
 });
 
-it('keeps the deal URL after creating a dialog from its chat panel', async () => {
+it('keeps the deal URL and links the contact when the first message made the dialog in its chat panel', async () => {
   runtime.routeParams.dealId = '11';
   CrmDealsAPI.show.mockResolvedValueOnce(response(deal(11)));
   CrmDealsAPI.update.mockResolvedValueOnce(
@@ -444,23 +439,20 @@ it('keeps the deal URL after creating a dialog from its chat panel', async () =>
     })
   );
   ContactAPI.show.mockResolvedValue(response({ id: 7, name: 'Test' }));
-  ConversationAPI.create.mockResolvedValueOnce({
-    data: { display_id: 185, id: 11963 },
-  });
 
   const { state } = await mountPage();
-  await state.createDealConversation({ contactId: 7, inbox: { id: 9 } });
+  await state.handleDealDialogCreated({
+    communicationThreadId: 41,
+    contactId: 7,
+  });
 
-  expect(ConversationAPI.create).toHaveBeenCalled();
   // Only the contact link is saved, never the rest of the card.
   expect(CrmDealsAPI.update).toHaveBeenCalledExactlyOnceWith(11, {
     contact_ids: [7],
     lock_version: 1,
     primary_contact_id: 7,
   });
-  expect(state.dealConversationDraft.communicationThreadDisplayId).toBe(41);
-  expect(state.linkedConversationId).toBe(11963);
-  expect(state.linkedConversationDisplayId).toBe('185');
+  expect(state.dealConversationDraft.communicationThreadDisplayId).toBe('41');
   expect(runtime.routerPush).not.toHaveBeenCalled();
 });
 
@@ -651,7 +643,6 @@ it('keeps a failed conversation-context lookup out of the empty placeholder', as
     'CRM.DEALS.CONVERSATION_PLACEHOLDER.THREADS_LOAD_ERROR'
   );
   expect(state.dealConversationDraft.communicationThreadDisplayId).toBe('');
-  expect(state.dealConversationDraft.contactableInboxes).toEqual([]);
 
   ContactAPI.getCommunicationThreads.mockResolvedValueOnce(
     response([{ id: 42, timestamp: 2 }])
@@ -682,27 +673,6 @@ it('does not cache an older same-contact conversation-context response', async (
 
   expect(ContactAPI.getCommunicationThreads).toHaveBeenCalledTimes(2);
   expect(state.dealConversationDraft.communicationThreadDisplayId).toBe(42);
-});
-
-it('stops conversation creation after the deal editor closes', async () => {
-  const { state } = await mountPage();
-  const pending = deferred();
-  state.selectedDeal = deal(1);
-  state.drawerOpen = true;
-  ConversationAPI.create.mockReturnValueOnce(pending.promise);
-
-  const creating = state.createDealConversation({
-    contactId: 9,
-    inbox: { id: 3, value: 3 },
-  });
-  state.closeDrawer();
-  pending.resolve(response({ id: 11 }));
-  await creating;
-
-  expect(CrmDealsAPI.update).not.toHaveBeenCalled();
-  expect(state.showLinkedConversationPanel).toBe(false);
-  expect(state.dealConversationDraft.isCreating).toBe(false);
-  expect(useAlert).not.toHaveBeenCalled();
 });
 
 it('rolls a rejected board move back with its stage counts', async () => {
@@ -1687,23 +1657,19 @@ it('waits for the way back to refresh a board that changed under a deal page', a
   expect(state.isDealListLoaded).toBe(true);
 });
 
-it('keeps a created dialog on screen when linking its contact fails', async () => {
+it('keeps the dialog on screen when linking its contact fails', async () => {
   runtime.routeParams.dealId = '11';
   CrmDealsAPI.show.mockResolvedValueOnce(response(deal(11)));
   CrmDealsAPI.update.mockRejectedValueOnce(new Error('contact link rejected'));
-  ConversationAPI.create.mockResolvedValueOnce({
-    data: { display_id: 185, id: 11963 },
-  });
   const { state } = await mountPage();
   state.form.title = 'Unsaved draft title';
 
-  await state.createDealConversation({ contactId: 7, inbox: { id: 9 } });
+  await state.handleDealDialogCreated({
+    communicationThreadId: 41,
+    contactId: 7,
+  });
 
-  expect(ConversationAPI.create).toHaveBeenCalledTimes(1);
-  expect(state.dealConversationDraft.createdConversationId).toBe(11963);
-  expect(state.linkedConversationId).toBe(11963);
-  expect(state.linkedConversationDisplayId).toBe('185');
-  expect(state.dealConversationDraft.isCreating).toBe(false);
+  expect(state.dealConversationDraft.communicationThreadDisplayId).toBe('41');
   // The unsaved title is not part of the contact link.
   expect(CrmDealsAPI.update).toHaveBeenCalledExactlyOnceWith(11, {
     contact_ids: [7],
@@ -1712,9 +1678,6 @@ it('keeps a created dialog on screen when linking its contact fails', async () =
   });
   expect(useAlert).toHaveBeenCalledWith(
     'CRM.DEALS.CONVERSATION_PLACEHOLDER.LINK_FAILED'
-  );
-  expect(useAlert).not.toHaveBeenCalledWith(
-    'CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'
   );
   expect(state.form.title).toBe('Unsaved draft title');
 });
@@ -1729,25 +1692,19 @@ it('does not save the deal again when its contact is already linked', async () =
     })
   );
   ContactAPI.show.mockResolvedValue(response({ id: 7, name: 'Test' }));
-  ConversationAPI.create.mockResolvedValueOnce({
-    data: { display_id: 185, id: 11963 },
-  });
   const { state } = await mountPage();
   expect(state.selectedDeal.id).toBe(11);
 
-  await state.createDealConversation({ contactId: 7, inbox: { id: 9 } });
+  await state.handleDealDialogCreated({
+    communicationThreadId: 41,
+    contactId: 7,
+  });
 
-  expect(ConversationAPI.create).toHaveBeenCalledTimes(1);
   expect(CrmDealsAPI.update).not.toHaveBeenCalled();
   expect(state.dealConversationDraft).toMatchObject({
     contactId: 7,
-    createdConversationDisplayId: 185,
-    createdConversationId: 11963,
+    communicationThreadDisplayId: '41',
   });
-  expect(state.linkedConversationId).toBe(11963);
-  expect(useAlert).toHaveBeenCalledWith(
-    'CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'
-  );
 });
 
 it('builds an empty amount as no amount instead of 0', async () => {

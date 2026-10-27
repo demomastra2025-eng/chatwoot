@@ -15,7 +15,7 @@ import {
 vi.mock('dashboard/api/scheduling/appointments', () => ({
   default: {
     create: vi.fn(),
-    createConversation: vi.fn(),
+    show: vi.fn(),
     delete: vi.fn(),
     update: vi.fn(),
     cancel: vi.fn(),
@@ -1456,7 +1456,7 @@ describe('useSchedulingAppointmentFormStore', () => {
     expect(store.buildPayload()).not.toHaveProperty('conversation_id');
   });
 
-  it('atomically creates and links a conversation without closing the drawer', async () => {
+  it('reads the appointment again after the dialog was made, without closing the drawer', async () => {
     const store = useSchedulingAppointmentFormStore();
     const calendarStore = {
       syncAppointment: vi.fn(),
@@ -1469,7 +1469,7 @@ describe('useSchedulingAppointmentFormStore', () => {
       resourceId: 3,
       startsAt: '2026-03-09T10:00:00.000Z',
     });
-    SchedulingAppointmentsAPI.createConversation.mockResolvedValue({
+    SchedulingAppointmentsAPI.show.mockResolvedValue({
       data: {
         payload: {
           contact_id: 7,
@@ -1480,23 +1480,12 @@ describe('useSchedulingAppointmentFormStore', () => {
       },
     });
 
-    const appointment = await store.createAndLinkConversation(
-      {
-        contactId: 7,
-        inbox: { contactInboxId: 91, sourceId: 'source-7', value: 3 },
-      },
+    const appointment = await store.refreshAfterDialog(
+      { contactId: 7 },
       calendarStore
     );
 
-    expect(SchedulingAppointmentsAPI.createConversation).toHaveBeenCalledWith(
-      11,
-      {
-        contact_id: 7,
-        contact_inbox_id: 91,
-        inbox_id: 3,
-        source_id: 'source-7',
-      }
-    );
+    expect(SchedulingAppointmentsAPI.show).toHaveBeenCalledWith(11);
     expect(calendarStore.syncAppointment).toHaveBeenCalledWith(appointment);
     expect(store.selectedAppointment).toEqual(appointment);
     expect(store.form).toMatchObject({
@@ -1507,7 +1496,7 @@ describe('useSchedulingAppointmentFormStore', () => {
     expect(store.isOpen).toBe(true);
   });
 
-  it('does not overwrite a different appointment opened while dialog linking is in flight', async () => {
+  it('does not overwrite a different appointment opened while the appointment is read again', async () => {
     const store = useSchedulingAppointmentFormStore();
     const calendarStore = {
       syncAppointment: vi.fn(),
@@ -1521,14 +1510,14 @@ describe('useSchedulingAppointmentFormStore', () => {
       resourceId: 3,
       startsAt: '2026-03-09T10:00:00.000Z',
     });
-    SchedulingAppointmentsAPI.createConversation.mockReturnValue(
+    SchedulingAppointmentsAPI.show.mockReturnValue(
       new Promise(resolve => {
         resolveCreateConversation = resolve;
       })
     );
 
-    const linkPromise = store.createAndLinkConversation(
-      { appointmentId: 11, contactId: 7, inbox: { value: 3 } },
+    const linkPromise = store.refreshAfterDialog(
+      { appointmentId: 11, contactId: 7 },
       calendarStore,
       () => false
     );
@@ -1552,21 +1541,13 @@ describe('useSchedulingAppointmentFormStore', () => {
 
     await linkPromise;
 
-    expect(SchedulingAppointmentsAPI.createConversation).toHaveBeenCalledWith(
-      11,
-      {
-        contact_id: 7,
-        contact_inbox_id: undefined,
-        inbox_id: 3,
-        source_id: undefined,
-      }
-    );
+    expect(SchedulingAppointmentsAPI.show).toHaveBeenCalledWith(11);
     expect(calendarStore.syncAppointment).not.toHaveBeenCalled();
     expect(store.selectedAppointment).toMatchObject({ id: 12, contactId: 8 });
     expect(store.form).toMatchObject({ contactId: 8 });
   });
 
-  it('does not restore a stale contact changed while dialog creation is in flight', async () => {
+  it('does not restore a stale contact changed while the appointment is read again', async () => {
     const store = useSchedulingAppointmentFormStore();
     const calendarStore = { syncAppointment: vi.fn() };
     let resolveCreateConversation;
@@ -1578,14 +1559,14 @@ describe('useSchedulingAppointmentFormStore', () => {
       resourceId: 3,
       startsAt: '2026-03-09T10:00:00.000Z',
     });
-    SchedulingAppointmentsAPI.createConversation.mockReturnValue(
+    SchedulingAppointmentsAPI.show.mockReturnValue(
       new Promise(resolve => {
         resolveCreateConversation = resolve;
       })
     );
 
-    const linkPromise = store.createAndLinkConversation(
-      { appointmentId: 11, contactId: 7, inbox: { value: 3 } },
+    const linkPromise = store.refreshAfterDialog(
+      { appointmentId: 11, contactId: 7 },
       calendarStore,
       () => false
     );
@@ -1643,21 +1624,21 @@ describe('useSchedulingAppointmentFormStore', () => {
       resourceId: 3,
       startsAt: '2026-03-09T10:00:00.000Z',
     });
-    SchedulingAppointmentsAPI.createConversation.mockImplementation(
+    SchedulingAppointmentsAPI.show.mockImplementation(
       () =>
         new Promise(resolve => {
           resolvers.push(resolve);
         })
     );
 
-    const firstRequest = store.createAndLinkConversation(
-      { appointmentId: 11, contactId: 7, inbox: { value: 3 } },
+    const firstRequest = store.refreshAfterDialog(
+      { appointmentId: 11, contactId: 7 },
       calendarStore,
       () => activeRequest === 1
     );
     activeRequest = 2;
-    const secondRequest = store.createAndLinkConversation(
-      { appointmentId: 11, contactId: 7, inbox: { value: 3 } },
+    const secondRequest = store.refreshAfterDialog(
+      { appointmentId: 11, contactId: 7 },
       calendarStore,
       () => activeRequest === 2
     );

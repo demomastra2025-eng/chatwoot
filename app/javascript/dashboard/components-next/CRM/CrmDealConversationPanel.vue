@@ -21,6 +21,7 @@ import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
 import { useUISettings } from 'dashboard/composables/useUISettings';
+import { PERSON_DIALOG_OPENER } from 'dashboard/composables/useOpenPersonDialog';
 
 const props = defineProps({
   sourceDealId: {
@@ -47,10 +48,6 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
-  contactableInboxes: {
-    type: Array,
-    default: () => [],
-  },
   contextLoadError: {
     type: [Object, String],
     default: null,
@@ -60,18 +57,6 @@ const props = defineProps({
     default: '',
   },
   canManage: {
-    type: Boolean,
-    default: false,
-  },
-  isCreatingConversation: {
-    type: Boolean,
-    default: false,
-  },
-  isLoadingInboxes: {
-    type: Boolean,
-    default: false,
-  },
-  isLoadingCommunicationThread: {
     type: Boolean,
     default: false,
   },
@@ -108,7 +93,7 @@ const props = defineProps({
 const emit = defineEmits([
   'addContact',
   'close',
-  'createConversation',
+  'dialogCreated',
   'openFullScreen',
   'retryContext',
   'selectContact',
@@ -160,8 +145,10 @@ const ui = reactive({
   isLoading: false,
 });
 const activationRequestId = ref(0);
+// The person the dialog is held with when the deal or the appointment has no linked chat yet: their thread when they have one,
+// else the empty screen of a draft. Nothing is made until the first message, call or note.
 const selectedPlaceholderContactId = ref('');
-const selectedInboxId = ref('');
+const personThreadDisplayId = ref(0);
 
 const normalizePositiveNumber = value => {
   const normalizedValue = Number(String(value || '').replace(/[^\d]/g, ''));
@@ -185,8 +172,13 @@ const normalizedConversationDisplayId = computed(() =>
 const normalizedCommunicationThreadId = computed(() =>
   normalizePositiveNumber(props.communicationThreadId)
 );
-const normalizedCommunicationThreadDisplayId = computed(() =>
+const normalizedCommunicationThreadDisplayIdFromProps = computed(() =>
   normalizePositiveNumber(props.communicationThreadDisplayId)
+);
+const normalizedCommunicationThreadDisplayId = computed(
+  () =>
+    normalizedCommunicationThreadDisplayIdFromProps.value ||
+    personThreadDisplayId.value
 );
 const isCommunicationThreadTarget = computed(
   () =>
@@ -207,17 +199,18 @@ const chatApiId = computed(() =>
     : conversationApiId.value
 );
 const hasLinkedChat = computed(() => !!chatApiId.value);
+// The deal or the appointment itself points at a chat; otherwise the panel opens the dialog of the person on its own.
+const isLinkedByParent = computed(
+  () =>
+    !!normalizedCommunicationThreadDisplayIdFromProps.value ||
+    !!normalizedCommunicationThreadId.value ||
+    !!normalizedConversationDisplayId.value ||
+    !!normalizedConversationId.value
+);
 const contactOptions = computed(() =>
   props.contacts.map(contact => ({
     label: contact.label || contact.name || String(contact.id || ''),
     value: contact.id || contact.value,
-  }))
-);
-const inboxOptions = computed(() =>
-  props.contactableInboxes.map(inbox => ({
-    icon: inbox.icon,
-    label: inbox.label || inbox.name || String(inbox.id || inbox.value || ''),
-    value: inbox.value || inbox.id,
   }))
 );
 const conversationByDisplayId = computed(() => {
@@ -276,7 +269,18 @@ const activeChat = computed(() =>
     : activeConversation.value
 );
 
+// A person without a dialog opens as the draft of a dialog; a person with one opens that dialog.
+const draftOfSelectedPerson = computed(
+  () =>
+    !hasLinkedChat.value &&
+    !!currentChat.value?.is_draft &&
+    String(currentChat.value.person_contact_id) ===
+      String(selectedPlaceholderContactId.value)
+);
+
 const isConversationReady = computed(() => {
+  // The empty screen of the person is ready as soon as it is open.
+  if (draftOfSelectedPerson.value) return true;
   const currentChatId = normalizePositiveNumber(currentChat.value?.id);
   const currentChatDisplayId = resolvedConversationDisplayId(currentChat.value);
   const currentChatThreadId = normalizePositiveNumber(
@@ -343,45 +347,45 @@ const clearConversationState = () => {
 };
 
 const closePanel = () => emit('close');
-const selectedContact = computed(() =>
-  props.contacts.find(
-    contact =>
-      Number(contact.id || contact.value) ===
-      Number(selectedPlaceholderContactId.value)
-  )
-);
-const selectedInbox = computed(() =>
-  props.contactableInboxes.find(
-    inbox => Number(inbox.value || inbox.id) === Number(selectedInboxId.value)
-  )
-);
-const canCreateConversation = computed(
-  () =>
-    props.canManage &&
-    !props.contextLoadError &&
-    !!selectedPlaceholderContactId.value &&
-    !!selectedInboxId.value &&
-    !props.isCreatingConversation &&
-    !props.isLoadingInboxes &&
-    !props.isLoadingCommunicationThread
-);
-
 const updateSelectedContact = contactId => {
   selectedPlaceholderContactId.value = contactId || '';
-  selectedInboxId.value = '';
+  personThreadDisplayId.value = 0;
+  store.dispatch('clearSelectedState');
   emit('selectContact', selectedPlaceholderContactId.value);
 };
 
-const createConversation = () => {
-  if (!canCreateConversation.value) return;
+let personDialogRequestId = 0;
+const openPersonDialogForSelectedContact = async () => {
+  const contactId = selectedPlaceholderContactId.value;
+  if (!contactId || hasLinkedChat.value || !isChatDisplayed.value) return;
+  if (draftOfSelectedPerson.value) return;
 
-  emit('createConversation', {
-    contact: selectedContact.value,
-    contactId: selectedPlaceholderContactId.value,
-    inbox: selectedInbox.value,
-    inboxId: selectedInboxId.value,
-  });
+  personDialogRequestId += 1;
+  const requestId = personDialogRequestId;
+  ui.error = null;
+  ui.isLoading = true;
+  try {
+    const result = await store.dispatch('openPersonDialog', { contactId });
+    if (requestId !== personDialogRequestId || !result) return;
+    if (result.communicationThreadId) {
+      personThreadDisplayId.value = normalizePositiveNumber(
+        result.communicationThreadId
+      );
+    }
+  } catch (error) {
+    if (requestId === personDialogRequestId) ui.error = error;
+  } finally {
+    if (requestId === personDialogRequestId) ui.isLoading = false;
+  }
 };
+
+// «Написать» inside the panel (for a child: the one the number belongs to) opens the dialog in the panel, not on a page of its own.
+provide(PERSON_DIALOG_OPENER, contactId => {
+  personThreadDisplayId.value = 0;
+  selectedPlaceholderContactId.value = contactId;
+  store.dispatch('clearSelectedState');
+  return openPersonDialogForSelectedContact();
+});
 
 const contextLoadErrorDescription = computed(() =>
   typeof props.contextLoadError === 'string'
@@ -401,6 +405,14 @@ const resetPanelState = () => {
 
 const activateConversation = async () => {
   if (!isChatDisplayed.value || !chatApiId.value) {
+    return;
+  }
+  // The chat is already the open one (a draft that just became the dialog): nothing to open again.
+  if (
+    isConversationReady.value &&
+    currentChat.value?.dataFetched !== undefined
+  ) {
+    ui.isLoading = false;
     return;
   }
 
@@ -454,6 +466,7 @@ const activateConversation = async () => {
 const handleAfterLeave = () => {
   resetPanelState();
   clearConversationState();
+  personThreadDisplayId.value = 0;
 };
 
 watch(
@@ -479,18 +492,38 @@ watch(
 );
 
 watch(
-  inboxOptions,
-  options => {
-    if (hasLinkedChat.value) return;
-
-    const currentInboxId = Number(selectedInboxId.value);
-    const optionIds = options.map(option => Number(option.value));
-
-    if (!optionIds.includes(currentInboxId)) {
-      selectedInboxId.value = optionIds[0] || '';
-    }
-  },
+  [selectedPlaceholderContactId, isChatDisplayed, hasLinkedChat],
+  () => openPersonDialogForSelectedContact(),
   { immediate: true }
+);
+
+// The first message, call or note made the dialog: this panel and the page behind it follow it.
+watch(
+  () => currentChat.value?.id,
+  () => {
+    const chat = currentChat.value;
+    if (
+      !selectedPlaceholderContactId.value ||
+      !chat?.id ||
+      chat.is_draft ||
+      !chat.is_communication_thread ||
+      String(chat.contact_id ?? chat.meta?.sender?.id) !==
+        String(selectedPlaceholderContactId.value)
+    ) {
+      return;
+    }
+    const threadId = normalizePositiveNumber(chat.id);
+    if (!threadId || personThreadDisplayId.value === threadId) return;
+    if (normalizedCommunicationThreadDisplayIdFromProps.value === threadId) {
+      return;
+    }
+
+    personThreadDisplayId.value = threadId;
+    emit('dialogCreated', {
+      communicationThreadId: threadId,
+      contactId: selectedPlaceholderContactId.value,
+    });
+  }
 );
 
 watch(
@@ -509,7 +542,7 @@ watch(
     if (wasVisible && (previousApiId !== apiId || wasThread !== isThread)) {
       invalidateActivation();
       resetPanelState();
-      clearConversationState();
+      if (!isConversationReady.value) clearConversationState();
     }
 
     activateConversation();
@@ -586,6 +619,17 @@ onBeforeUnmount(() => {
               @click="emit('openFullScreen')"
             />
           </header>
+          <div
+            v-if="!isLinkedByParent && contactOptions.length > 1"
+            class="border-b border-n-weak bg-n-surface-1 px-4 py-2"
+          >
+            <SchedulingSelectField
+              :label="placeholderText('CONTACT')"
+              :model-value="selectedPlaceholderContactId"
+              :options="contactOptions"
+              @update:model-value="updateSelectedContact"
+            />
+          </div>
           <SchedulingErrorState
             v-if="!hasLinkedChat && contextLoadError"
             class="m-4"
@@ -595,7 +639,7 @@ onBeforeUnmount(() => {
           />
 
           <div
-            v-else-if="!hasLinkedChat"
+            v-else-if="!hasLinkedChat && !contactOptions.length"
             class="flex h-full flex-1 items-center justify-center px-6 py-8"
           >
             <div class="grid w-full max-w-md gap-5 text-center">
@@ -610,49 +654,16 @@ onBeforeUnmount(() => {
                   {{ placeholderText('TITLE') }}
                 </h3>
                 <p class="text-sm leading-6 text-n-slate-11">
-                  {{
-                    contactOptions.length
-                      ? placeholderText('DESCRIPTION')
-                      : placeholderText('NO_CONTACT_DESCRIPTION')
-                  }}
+                  {{ placeholderText('NO_CONTACT_DESCRIPTION') }}
                 </p>
               </div>
 
-              <div v-if="!contactOptions.length" class="flex justify-center">
+              <div class="flex justify-center">
                 <Button
                   :label="placeholderText('ADD_CONTACT')"
                   icon="i-lucide-user-plus"
                   :disabled="!canManage"
                   @click="emit('addContact')"
-                />
-              </div>
-
-              <div v-else class="grid gap-3 text-left">
-                <SchedulingSelectField
-                  :label="placeholderText('CONTACT')"
-                  :model-value="selectedPlaceholderContactId"
-                  :options="contactOptions"
-                  :disabled="isCreatingConversation"
-                  @update:model-value="updateSelectedContact"
-                />
-                <SchedulingSelectField
-                  :label="placeholderText('INBOX')"
-                  :model-value="selectedInboxId"
-                  :options="inboxOptions"
-                  :disabled="
-                    isCreatingConversation ||
-                    isLoadingInboxes ||
-                    isLoadingCommunicationThread
-                  "
-                  :empty-state="placeholderText('NO_INBOXES')"
-                  @update:model-value="selectedInboxId = $event"
-                />
-                <Button
-                  :label="placeholderText('CREATE_DIALOG')"
-                  icon="i-lucide-message-square-plus"
-                  :is-loading="isCreatingConversation"
-                  :disabled="!canCreateConversation"
-                  @click="createConversation"
                 />
               </div>
             </div>
