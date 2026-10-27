@@ -86,7 +86,7 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
   end
 
   it 'hides the include_inactive options of the catalog tools, search_by of the specialist search and the deal links of create_appointment' do
-    expect(described_class.for_tool('search_scheduling_services').hidden_params).to eq(%w[include_inactive])
+    expect(described_class.for_tool('search_scheduling_services').hidden_params).to eq(%w[include_inactive offset])
     expect(described_class.for_tool('list_scheduling_resources').hidden_params).to eq(%w[include_inactive])
     expect(described_class.for_tool('search_scheduling_resources').hidden_params).to eq(%w[include_inactive search_by])
     expect(described_class.for_tool('create_appointment').hidden_params).to contain_exactly('crm_deal_id', 'crm_pipeline_id')
@@ -200,7 +200,7 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     expect(resources.description).to include('Start here for any booking or slot question', 'then use the ID with search_available_slots',
                                              'A service link is never needed to find or book a specialist')
     expect(resources.params['service_id']).to include('Optional', 'leave it out')
-    expect(services.description).to include('Call it for a price question, or to get a service_id to pass on',
+    expect(services.description).to include('Put every service of the request in queries', 'ONE call', 'not_in_catalog',
                                             'To book, find the specialist first with search_scheduling_resources')
     expect(services.description).not_to include('before searching slots or booking a named service')
     expect(slots.description).to include('find the specialist first with search_scheduling_resources',

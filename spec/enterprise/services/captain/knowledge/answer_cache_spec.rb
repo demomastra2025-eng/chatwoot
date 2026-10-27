@@ -41,6 +41,14 @@ RSpec.describe Captain::Knowledge::AnswerCache do
     )
   end
 
+  it 'remembers which model made the vector of the query, so that a vector of another model is never compared with a query of this one' do
+    upsert_installation_config('CAPTAIN_EMBEDDING_MODEL', 'google/gemini-embedding-001')
+
+    described_class.new(account: account, assistant: assistant, query: 'Refund policy').write(payload)
+
+    expect(Captain::KnowledgeAnswerCacheEntry.last.embedding_model).to eq('google/gemini-embedding-001')
+  end
+
   it 'versions the source fingerprint to invalidate entries from older retrieval algorithms' do
     cache = described_class.new(account: account, assistant: assistant, query: 'Refund policy')
     legacy_fingerprint = Digest::SHA256.hexdigest(

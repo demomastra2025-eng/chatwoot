@@ -9,14 +9,21 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:tool) { described_class.new(assistant, user: user) }
 
-  before { account.enable_features!('scheduling') }
+  before do
+    account.enable_features!('scheduling')
+    stub_embedder(account, 'почек' => unit_vector(0))
+  end
 
   def create_service(name, **attributes)
-    create(:scheduling_service, account: account, name: name, **attributes)
+    create(:scheduling_service, account: account, name: name, **attributes).tap { |record| index_service(record, vector_at(0, 0.9)) }
   end
 
   def search(**arguments)
     JSON.parse(tool.execute(**arguments))
+  end
+
+  def first_service(payload)
+    payload['results'].first['services'].first
   end
 
   describe 'price rows' do
@@ -37,8 +44,7 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
       bad_link = create(:scheduling_service_price, account: account, service: service_record, resource: local_resource, active: true)
       bad_link.update_columns(resource_id: mismatched_resource.id) # rubocop:disable Rails/SkipsModelValidations
 
-      payload = search(query: 'УЗИ почек')
-      prices = payload['services'].first['prices']
+      prices = first_service(search(queries: ['почек']))['prices']
 
       expect(prices.pluck('id')).to eq([active.id])
       expect(prices.pluck('account_id')).to eq([account.id])
@@ -48,7 +54,7 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
     it 'finds the service with its base price and no rows when the account has no links at all' do
       service_record.update!(base_price: 9_000)
 
-      found = search(query: 'УЗИ почек')['services'].first
+      found = first_service(search(queries: ['почек']))
 
       expect(found).to include('id' => service_record.id, 'base_price' => 9_000, 'prices' => [])
     end
@@ -56,7 +62,7 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
     it 'returns an empty list for a service whose links are all inactive' do
       create(:scheduling_service_price, account: account, service: service_record, resource: resource, active: false)
 
-      expect(search(query: 'УЗИ почек')['services'].first['prices']).to eq([])
+      expect(first_service(search(queries: ['почек']))['prices']).to eq([])
     end
   end
 end

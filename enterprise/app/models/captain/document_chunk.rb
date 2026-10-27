@@ -8,6 +8,7 @@
 #  content_sha256       :string           not null
 #  embedding            :vector(1536)
 #  embedding_error      :text
+#  embedding_model      :string
 #  embedding_status     :integer          default("pending"), not null
 #  embedding_updated_at :datetime
 #  created_at           :datetime         not null

@@ -4,6 +4,7 @@
 #
 #  id         :bigint           not null, primary key
 #  embedding  :vector(1536)
+#  embedding_model :string
 #  term       :text             not null
 #  created_at :datetime         not null
 #  updated_at :datetime         not null

@@ -171,6 +171,14 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
       expect(described_class.for(feature: :editor, model: 'openai/gpt-5.4-mini').models).to eq(%w[openai/gpt-5.4-mini openai/gpt-4.1-mini])
     end
 
+    it 'never falls back to another model for embeddings: vectors of two models cannot be compared' do
+      profile = described_class.for(feature: :embedding, model: 'google/gemini-embedding-001')
+
+      expect(profile.models).to eq(['google/gemini-embedding-001'])
+      expect(profile.fallback_models).to eq([])
+      expect(described_class.for(feature: :help_center_search, model: 'google/gemini-embedding-001').models).to eq(['google/gemini-embedding-001'])
+    end
+
     it 'never lists more models than OpenRouter accepts in one request' do
       expect(described_class::MAX_MODELS).to eq(3)
       Llm::OpenRouterRoutingProfile::FALLBACK_MODELS.each_key do |feature|

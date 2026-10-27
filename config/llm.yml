@@ -330,6 +330,25 @@ models:
     supported_embedding_dimensions: [1536]
     supports_embedding_dimension_override: true
     supports_embedding_input_type: true
+  # The platform embedding model. Its answer has 3072 numbers by default; every request asks for 1536 (the vector(1536) columns)
+  # and a response of any other size is refused (Llm::OpenRouterEmbeddingClient). A model that can give 1536 numbers is added
+  # here only after it was checked to do so; there is no other list of embedding models.
+  google/gemini-embedding-001:
+    provider: openrouter
+    display_name: 'Gemini Embedding 001'
+    credit_multiplier: 1
+    type: embedding
+    capabilities: [embedding, text_input]
+    source: static_openrouter_default
+    context_length: 20000
+    input_modalities: [text]
+    output_modalities: [embeddings]
+    supported_parameters: [dimensions, input_type]
+    embedding_dimensions: 3072
+    requested_embedding_dimensions: 1536
+    supported_embedding_dimensions: [768, 1536, 3072]
+    supports_embedding_dimension_override: true
+    supports_embedding_input_type: true
 
 features:
   editor:
@@ -487,8 +506,8 @@ features:
       ]
     default: openai/gpt-6-luna
   help_center_search:
-    models: [text-embedding-3-small]
-    default: text-embedding-3-small
+    models: [google/gemini-embedding-001, text-embedding-3-small]
+    default: google/gemini-embedding-001
   knowledge_rerank:
     models: []
     default:

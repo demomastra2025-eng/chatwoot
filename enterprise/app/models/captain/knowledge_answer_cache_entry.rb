@@ -4,6 +4,7 @@
 #
 #  id                 :bigint           not null, primary key
 #  embedding          :vector(1536)
+#  embedding_model    :string
 #  expires_at         :datetime
 #  hit_count          :integer          default(0), not null
 #  last_hit_at        :datetime

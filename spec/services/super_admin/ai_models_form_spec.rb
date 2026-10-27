@@ -194,11 +194,11 @@ RSpec.describe SuperAdmin::AiModelsForm do
 
   describe 'the model of the knowledge base search' do
     it 'is not changed without the confirmation, and says why' do
-      result = form('CAPTAIN_EMBEDDING_MODEL' => 'text-embedding-3-small', 'CAPTAIN_OPENROUTER_ENDPOINT' => '')
+      result = form('CAPTAIN_EMBEDDING_MODEL' => 'google/gemini-embedding-001', 'CAPTAIN_OPENROUTER_ENDPOINT' => '')
       expect(result).to be_valid
 
       stored_values = { 'CAPTAIN_EMBEDDING_MODEL' => 'openai/text-embedding-3-large' }
-      refused = form({ 'CAPTAIN_EMBEDDING_MODEL' => 'text-embedding-3-small' }, stored_values: stored_values)
+      refused = form({ 'CAPTAIN_EMBEDDING_MODEL' => 'google/gemini-embedding-001' }, stored_values: stored_values)
 
       expect(refused).not_to be_valid
       expect(refused.errors['CAPTAIN_EMBEDDING_MODEL'].first).to include('Я понимаю последствия', 'переиндексируют')
@@ -209,16 +209,16 @@ RSpec.describe SuperAdmin::AiModelsForm do
 
       it 'is saved' do
         stored_values = { 'CAPTAIN_EMBEDDING_MODEL' => 'openai/text-embedding-3-large' }
-        result = form({ 'CAPTAIN_EMBEDDING_MODEL' => 'text-embedding-3-small' }, stored_values: stored_values)
+        result = form({ 'CAPTAIN_EMBEDDING_MODEL' => 'google/gemini-embedding-001' }, stored_values: stored_values)
 
         expect(result).to be_valid
-        expect(changed(result)).to eq('CAPTAIN_EMBEDDING_MODEL' => 'text-embedding-3-small')
+        expect(changed(result)).to eq('CAPTAIN_EMBEDDING_MODEL' => 'google/gemini-embedding-001')
       end
     end
 
     it 'is not asked for again when the model in force stays the same' do
-      expect(form({ 'CAPTAIN_EMBEDDING_MODEL' => 'text-embedding-3-small' }, stored_values: {})).to be_valid
-      expect(form({ 'CAPTAIN_EMBEDDING_MODEL' => '' }, stored_values: { 'CAPTAIN_EMBEDDING_MODEL' => 'text-embedding-3-small' })).to be_valid
+      expect(form({ 'CAPTAIN_EMBEDDING_MODEL' => 'google/gemini-embedding-001' }, stored_values: {})).to be_valid
+      expect(form({ 'CAPTAIN_EMBEDDING_MODEL' => '' }, stored_values: { 'CAPTAIN_EMBEDDING_MODEL' => 'google/gemini-embedding-001' })).to be_valid
     end
   end
 

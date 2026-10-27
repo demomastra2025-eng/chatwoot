@@ -6,6 +6,7 @@ class Captain::Tools::Account::FaqLookupService < Captain::Tools::Account::BaseA
   CACHE_FETCH_TIMEOUT_SECONDS = 3
   SEMANTIC_LOOKUP_TIMEOUT_SECONDS = 8
   TOTAL_LOOKUP_TIMEOUT_SECONDS = 12
+  # Distance 0.3 = cosine similarity 0.7, calibrated for google/gemini-embedding-001 at 1536 numbers, see Captain::Tools::FaqLookupTool.
   SEMANTIC_DISTANCE_THRESHOLD = 0.3
   SEMANTIC_SIMILARITY_THRESHOLD = 1.0 - SEMANTIC_DISTANCE_THRESHOLD
 

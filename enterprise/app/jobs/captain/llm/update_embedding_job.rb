@@ -4,8 +4,10 @@ class Captain::Llm::UpdateEmbeddingJob < ApplicationJob
   def perform(record, content, input_type: Captain::Llm::EmbeddingService::SEARCH_DOCUMENT_INPUT_TYPE)
     account_id = record.account_id
     embedding_service = Captain::Llm::EmbeddingService.new(account_id: account_id)
+    return if embedding_current?(record, content, embedding_service)
+
     embedding = embedding_service.get_embedding(content, input_type: input_type)
-    return unless update_embedding_success(record, embedding, expected_content: content)
+    return unless update_embedding_success(record, embedding, expected_content: content, embedding_service: embedding_service)
 
     log_embedding_success(record, content, embedding, input_type, embedding_service.embedding_model)
   rescue Captain::Llm::EmbeddingService::EmbeddingsError => e
@@ -22,14 +24,33 @@ class Captain::Llm::UpdateEmbeddingJob < ApplicationJob
 
   private
 
-  def update_embedding_success(record, embedding, expected_content:)
+  # A row that remembers the checksum of its embedded text keeps its vector when the text and the model are still the same: a save that
+  # did not change the text (or a repeated request) costs no call to the model.
+  def embedding_current?(record, content, embedding_service)
+    return false unless record.respond_to?(:embedding_checksum) && record.embedding_checksum.present? && record.embedding.present?
+
+    record.embedding_checksum == Captain::Llm::EmbeddingService.checksum(content) &&
+      record.embedding_model == embedding_service.embedding_model
+  end
+
+  def update_embedding_success(record, embedding, expected_content:, embedding_service:)
     with_current_embedding_content(record, expected_content) do
+      attributes = { embedding: embedding }.merge(embedding_source_attributes(record, expected_content, embedding_service))
       if record.respond_to?(:embedding_status=)
-        record.update!(embedding: embedding, embedding_status: :indexed, embedding_error: nil, embedding_updated_at: Time.current)
+        record.update!(attributes.merge(embedding_status: :indexed, embedding_error: nil, embedding_updated_at: Time.current))
       else
-        record.update!(embedding: embedding)
+        record.update!(attributes)
       end
     end
+  end
+
+  # Which model made the vector (and, where the table keeps it, the checksum of the text): a vector of another model is never
+  # compared with a query of this one, see Captain::Llm::EmbeddingReindexService.
+  def embedding_source_attributes(record, content, embedding_service)
+    attributes = {}
+    attributes[:embedding_model] = embedding_service.embedding_model if record.respond_to?(:embedding_model=)
+    attributes[:embedding_checksum] = Captain::Llm::EmbeddingService.checksum(content) if record.respond_to?(:embedding_checksum=)
+    attributes
   end
 
   def update_embedding_failure(record, error, expected_content:)

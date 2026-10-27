@@ -26,8 +26,8 @@ module Captain::Playground::SchedulingCatalogTools
 
   def scheduling_services
     records = @data['services'].select { |record| record['active'] }
-    query = @args['query'].presence || @args['name'].presence
-    records = records.select { |record| record['name'].downcase.include?(query.downcase) } if query
+    queries = Array(@args['queries'].presence || @args['query'].presence || @args['name'].presence).map { |query| query.to_s.downcase }
+    records = records.select { |record| queries.any? { |query| record['name'].downcase.include?(query) } } if queries.any?
     if @args['resource_id']
       resource = resource!(@args['resource_id'])
       records = records.select { |record| resource['service_ids'].include?(record['id']) }

@@ -7,6 +7,8 @@
 #  documentable_type :string
 #  edited            :boolean          default(FALSE), not null
 #  embedding         :vector(1536)
+#  embedding_checksum :string
+#  embedding_model   :string
 #  question          :string           not null
 #  status            :integer          default("approved"), not null
 #  visibility        :integer          default("general"), not null

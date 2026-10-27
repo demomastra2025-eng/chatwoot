@@ -91,13 +91,13 @@ tools:
     hidden_params: []
 
   search_scheduling_services:
-    description: "Find a service and its prices in the clinic catalog. Call it for a price question, or to get a service_id to pass on. To book, find the specialist first with search_scheduling_resources. Each entry has the service id, name, base price, and its specialists as id plus name when recorded (a specialist's own price in brackets only when it differs from the base price). Search here for a price before saying it is unavailable. It needs a query: without one nothing is listed."
+    description: "Find clinic services and their prices. Put every service of the request in queries, one string per mention, in ONE call. Each mention gets its best matches with a score, best first. not_in_catalog means no service is close: say so, do not offer another one. Use the exact catalog name in replies and bookings; ask the patient only when several results fit equally. To book, find the specialist first with search_scheduling_resources."
     params:
-      query: "Service words in dictionary form, as the catalog writes them."
-      limit: "Max services, up to 10."
-      offset: "next_offset from the previous result; or add words to query."
+      queries: "Service mentions, one string each (a name, an abbreviation or the patient's words). All services of the request in one list."
+      limit: "Max services per mention, up to 10."
     hidden_params:
       - include_inactive
+      - offset
 
   search_available_slots:
     description: "List free slots in a date range, earliest first. Call it to offer the patient free slots; the start the patient chooses goes to create_appointment or update_appointment. Pass resource_ids of the chosen specialist (find the specialist first with search_scheduling_resources); service_id is optional and only sets the visit length. A service_id alone searches the specialists recorded for it, and the tool asks for resource_ids when none is recorded. The result lists specialist-days as {resource_id, name, date, times, more}: times are free starts of that day in clinic time (HH:MM, up to 5 spread over the day), more counts the other free starts of that day, and more_days says how many further specialist-days were left out. The times are a sample, not every free start: a time that is not listed may still be free (more > 0), so to know whether one given time is free search that exact time (from = to) and call it taken only when that search returns no start. To book a start pass date + \"T\" + time (for example 2026-04-20T11:00) as starts_at, or an exact ISO start from a tool result; there is no starts_at field to copy. Offer 2-3 slots spread over the period, not neighbouring starts."

@@ -10,6 +10,10 @@
 #  description       :text
 #  direction         :string
 #  duration_min      :integer          default(30), not null
+#  embedded_at       :datetime
+#  embedding         :vector(1536)
+#  embedding_checksum :string
+#  embedding_model   :string
 #  name              :string           not null
 #  service_type      :string
 #  created_at        :datetime         not null
@@ -28,6 +32,10 @@
 #
 
 class Scheduling::Service < ApplicationRecord
+  # The vector of the service search (1536 numbers, about 12 KB a row) is written and searched by SQL only, see Scheduling::ServiceIndex:
+  # a service read for a list, a booking or the lexical package search must not carry it.
+  self.ignored_columns += %w[embedding]
+
   belongs_to :account
 
   has_many :appointments, class_name: 'Scheduling::Appointment', dependent: :nullify, inverse_of: :service
@@ -41,6 +49,8 @@ class Scheduling::Service < ApplicationRecord
               in: Scheduling::Constants::MIN_DURATION_MINUTES..Scheduling::Constants::MAX_DURATION_MINUTES
             }
 
+  after_commit :refresh_embedding_later, on: %i[create update]
+
   scope :ordered, -> { order(:name, :id) }
   scope :active, -> { where(active: true) }
 
@@ -48,5 +58,17 @@ class Scheduling::Service < ApplicationRecord
   # length comes from the visit history (see Scheduling::VisitDuration).
   def medelement_service?
     custom_attributes.to_h['medelement_nomenclature_code'].to_s.strip.present?
+  end
+
+  private
+
+  # A save whose embedded text (name, aliases, category) is the one of the stored vector costs nothing: a MedElement catalog sync saves
+  # every service and changes only its last-seen mark. Saves in a burst share one delayed job per account.
+  def refresh_embedding_later
+    return if embedding_checksum.present? && embedding_checksum == Scheduling::ServiceIndex.checksum(self)
+
+    Scheduling::ServiceEmbeddingJob.enqueue(account_id)
+  rescue StandardError => e
+    Rails.logger.warn("[Scheduling::Service] embedding refresh not queued for service #{id}: #{e.class}: #{e.message}")
   end
 end

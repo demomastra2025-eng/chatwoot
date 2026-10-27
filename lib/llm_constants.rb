@@ -2,7 +2,7 @@
 
 module LlmConstants
   DEFAULT_MODEL = 'gpt-5.4'
-  DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small'
+  DEFAULT_EMBEDDING_MODEL = 'google/gemini-embedding-001'
   PDF_PROCESSING_MODEL = 'gpt-4.1-mini'
 
   OPENAI_API_ENDPOINT = 'https://api.openai.com'

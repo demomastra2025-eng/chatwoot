@@ -33,6 +33,59 @@ RSpec.describe Captain::Llm::UpdateEmbeddingJob do
     expect(chunk.embedding_updated_at).to be_present
   end
 
+  describe 'which model made the vector' do
+    let(:embedding) { Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.2) }
+    let(:embedding_service) { instance_double(Captain::Llm::EmbeddingService, embedding_model: 'google/gemini-embedding-001') }
+    let(:response) { create(:captain_assistant_response, account: account, assistant: assistant, question: 'Where?', answer: 'Here') }
+    let(:content) { 'Where?: Here' }
+
+    before { allow(Captain::Llm::EmbeddingService).to receive(:new).with(account_id: account.id).and_return(embedding_service) }
+
+    it 'stores the model name and the checksum of the text with the vector of an FAQ' do
+      allow(embedding_service).to receive(:get_embedding).and_return(embedding)
+
+      described_class.perform_now(response, content)
+
+      expect(response.reload).to have_attributes(embedding_model: 'google/gemini-embedding-001',
+                                                 embedding_checksum: Captain::Llm::EmbeddingService.checksum(content))
+    end
+
+    it 'stores the model name with the vector of a knowledge chunk' do
+      allow(embedding_service).to receive(:get_embedding).and_return(embedding)
+
+      described_class.perform_now(chunk, chunk.content)
+
+      expect(chunk.reload.embedding_model).to eq('google/gemini-embedding-001')
+    end
+
+    it 'does not call the model for an FAQ whose text and model are those of its vector' do
+      response.update_columns(embedding_model: 'google/gemini-embedding-001', embedding_checksum: Captain::Llm::EmbeddingService.checksum(content)) # rubocop:disable Rails/SkipsModelValidations
+      expect(embedding_service).not_to receive(:get_embedding)
+
+      described_class.perform_now(response, content)
+    end
+
+    it 'calls the model again when the text changed or the vector was made by another model' do
+      allow(embedding_service).to receive(:get_embedding).and_return(embedding)
+      response.update_columns(embedding_model: 'google/gemini-embedding-001', # rubocop:disable Rails/SkipsModelValidations
+                              embedding_checksum: Captain::Llm::EmbeddingService.checksum('Old: text'))
+      described_class.perform_now(response, content)
+      expect(embedding_service).to have_received(:get_embedding).once
+
+      response.update_columns(embedding_model: 'text-embedding-3-large') # rubocop:disable Rails/SkipsModelValidations
+      described_class.perform_now(response, content)
+      expect(embedding_service).to have_received(:get_embedding).twice
+      expect(response.reload.embedding_model).to eq('google/gemini-embedding-001')
+    end
+
+    it 'ignores spacing when it compares the text with the checksum' do
+      response.update_columns(embedding_model: 'google/gemini-embedding-001', embedding_checksum: Captain::Llm::EmbeddingService.checksum(content)) # rubocop:disable Rails/SkipsModelValidations
+      expect(embedding_service).not_to receive(:get_embedding)
+
+      described_class.perform_now(response, "Where?:   Here\n")
+    end
+  end
+
   it 'does not store an embedding for stale content' do
     embedding = Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.2)
     service = instance_double(Captain::Llm::EmbeddingService)

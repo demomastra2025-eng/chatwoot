@@ -76,6 +76,10 @@ module Redis::RedisKeys
   AUTO_ASSIGNMENT_LEGACY_DRAIN = 'AUTO_ASSIGNMENT_JOB::%<inbox_id>d::LEGACY_DRAIN'.freeze
   REMINDER_DELIVERY_MUTEX = 'REMINDER_DELIVERY::%<reminder_id>d'.freeze
 
+  ## Scheduling service embeddings
+  # Set while a (delayed) refresh of the service vectors of an account is queued: later saves of that account join it
+  SCHEDULING_SERVICE_EMBEDDING_QUEUED = 'SCHEDULING_SERVICE_EMBEDDING::%<account_id>d::QUEUED'.freeze
+
   ## Account Email Rate Limiting
   ACCOUNT_OUTBOUND_EMAIL_COUNT_KEY = 'OUTBOUND_EMAIL_COUNT::%<account_id>d::%<date>s'.freeze
 end

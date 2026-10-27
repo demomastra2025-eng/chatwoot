@@ -113,8 +113,9 @@ class Scheduling::ServiceSearch
     @indexed_scope ||= Scheduling::Service.from(scope.select(Arel.sql(indexed_columns_sql)).offset(0), :scheduling_services)
   end
 
+  # The columns of the model, not "*": the vector of the service search is not part of the model and must not be copied by this subquery.
   def indexed_columns_sql
-    "scheduling_services.*, #{search_text_sql} AS #{SEARCH_TEXT}, " \
+    "#{Scheduling::Service.column_names.map { |column| "scheduling_services.#{column}" }.join(', ')}, #{search_text_sql} AS #{SEARCH_TEXT}, " \
       "to_tsvector('russian', LEFT(#{search_text_sql}, #{FTS_TEXT_LIMIT})) AS #{SEARCH_VECTOR}"
   end
 

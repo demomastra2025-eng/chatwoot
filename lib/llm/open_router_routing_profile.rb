@@ -59,7 +59,8 @@ class Llm::OpenRouterRoutingProfile
     'image_recognition' => %w[openai/gpt-5.4-mini openai/gpt-5.4],
     'audio_transcription' => %w[openai/gpt-4o-mini-transcribe openai/gpt-audio-mini],
     'moderation' => %w[openai/gpt-oss-safeguard-20b],
-    'embedding' => %w[text-embedding-3-small],
+    # Vectors of two models cannot be compared: an embedding request never falls back to another model.
+    'embedding' => [],
     'knowledge_rerank' => []
   }.freeze
   LUNA_PRIMARY_MODEL = 'openai/gpt-6-luna'

@@ -61,6 +61,7 @@ class Captain::Knowledge::AnswerCache
     }
     embedding = safe_query_embedding
     attributes[:embedding] = embedding if embedding.present? || entry.new_record?
+    attributes[:embedding_model] = Captain::Llm::EmbeddingService.embedding_model(account: account) if embedding.present?
     attributes
   end
 
