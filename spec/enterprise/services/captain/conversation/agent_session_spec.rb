@@ -3,13 +3,13 @@ require 'rails_helper'
 RSpec.describe Captain::Conversation::AgentSession do
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }
-  let(:assistant) { create(:captain_assistant, account: account) }
+  let!(:assistant) { create(:captain_assistant, account: account) }
   let(:conversation) do
-    create(:captain_inbox, inbox: inbox, captain_assistant: assistant, reply_to_open_conversations: false)
+    create(:captain_inbox, inbox: inbox, reply_to_open_conversations: false)
     create(:conversation, account: account, inbox: inbox, status: :pending)
   end
   let(:session) do
-    described_class.new(entry: assistant, conversation: conversation,
+    described_class.new(conversation: conversation,
                         fence: { control_generation: conversation.captain_control_generation })
   end
 
@@ -17,7 +17,7 @@ RSpec.describe Captain::Conversation::AgentSession do
 
   # The agent that acts holds the conversation (the router gave it the turn): a part of its own is checked against it.
   def hold_conversation!
-    holder = described_class.new(entry: assistant, conversation: conversation)
+    holder = described_class.new(conversation: conversation)
     holder.update_routing(actor_id: assistant.id) if holder.read['current_assistant_id'].nil?
   end
 
@@ -26,7 +26,7 @@ RSpec.describe Captain::Conversation::AgentSession do
   end
 
   def stored_operations
-    described_class.new(entry: assistant, conversation: conversation).read.fetch('operations')
+    described_class.new(conversation: conversation).read.fetch('operations')
   end
 
   def store_part(version)
@@ -119,7 +119,7 @@ RSpec.describe Captain::Conversation::AgentSession do
     end
 
     def stored_done
-      described_class.new(entry: assistant, conversation: conversation).read['done']
+      described_class.new(conversation: conversation).read['done']
     end
 
     it 'keeps the line of an action that happened, newest first, and five lines at most' do

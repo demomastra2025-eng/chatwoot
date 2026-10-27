@@ -1,13 +1,12 @@
 class Captain::ReplyNotificationContext
-  def self.for(account:, conversation:, incoming_message_id:, assistant:)
-    new(account: account, conversation: conversation, incoming_message_id: incoming_message_id, assistant: assistant).perform
+  def self.for(account:, conversation:, incoming_message_id:)
+    new(account: account, conversation: conversation, incoming_message_id: incoming_message_id).perform
   end
 
-  def initialize(account:, conversation:, incoming_message_id:, assistant:)
+  def initialize(account:, conversation:, incoming_message_id:)
     @account = account
     @conversation = conversation
     @incoming_message_id = incoming_message_id
-    @assistant = assistant
   end
 
   def perform
@@ -95,7 +94,7 @@ class Captain::ReplyNotificationContext
          end
     return if id.blank?
 
-    scope = Captain::Tools::Agent::PatientScope.new(assistant: @assistant, conversation: @conversation)
+    scope = Captain::Tools::Agent::PatientScope.new(account: @account, conversation: @conversation)
     scope.appointments.includes(:resource, :service).find_by(id: id)
   end
 end

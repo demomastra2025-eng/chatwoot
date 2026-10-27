@@ -19,13 +19,6 @@ class Messages::DocumentParsingService
         Captain::AccountSettings.new(account).section('understanding')['documents']
     end
 
-    def reading_enabled_for?(assistant, account: nil)
-      account ||= assistant&.account
-      return enabled_for_account?(account) unless assistant.present?
-
-      enabled_for_account?(account) && assistant.account_settings.section('understanding')['documents']
-    end
-
     def parseable_attachment?(attachment)
       return false unless supported_attachment?(attachment)
       return true if local_text_supported_attachment?(attachment)

@@ -39,8 +39,9 @@ RSpec.describe UnifyWorkspaceStaffAndAssignment do
     second = create(:captain_assistant, account: account)
     first_inbox = create(:inbox, account: account)
     second_inbox = create(:inbox, account: account)
-    create(:captain_inbox, inbox: first_inbox, captain_assistant: first, ai_enabled: true)
-    create(:captain_inbox, inbox: second_inbox, captain_assistant: second, ai_enabled: false)
+    # The text channels of that time named their agent.
+    CaptainInbox.new(inbox: first_inbox, captain_assistant_id: first.id, ai_enabled: true).save!(validate: false)
+    CaptainInbox.new(inbox: second_inbox, captain_assistant_id: second.id, ai_enabled: false).save!(validate: false)
     2.times do
       conversation = create(:conversation, account: account, inbox: second_inbox)
       create(:message, account: account, inbox: second_inbox, conversation: conversation,
@@ -48,12 +49,13 @@ RSpec.describe UnifyWorkspaceStaffAndAssignment do
     end
 
     UnifyCaptainTextRouting.new.up
-    expect(account.reload.captain_default_assistant_id).to eq(second.id)
+    expect(account.reload.settings['captain_default_assistant_id']).to eq(second.id)
     expect(first_inbox.reload.captain_inbox.captain_assistant_id).to eq(second.id)
     expect(second_inbox.reload.captain_inbox).to be_ai_enabled
 
     # A rerun must not switch on a channel disabled after the backfill.
-    second_inbox.captain_inbox.update!(ai_enabled: false)
+    # The row still names an agent, as it did when the migration ran: it is written without the validation of today.
+    second_inbox.captain_inbox.update_columns(ai_enabled: false) # rubocop:disable Rails/SkipsModelValidations
     UnifyCaptainTextRouting.new.up
     expect(second_inbox.reload.captain_inbox).not_to be_ai_enabled
   end
@@ -64,7 +66,7 @@ RSpec.describe UnifyWorkspaceStaffAndAssignment do
     UnifyCaptainTextRouting.new.up
 
     expect(account.reload.settings['workspace_timezone']).to eq('UTC')
-    expect(account.captain_default_assistant_id).to be_nil
+    expect(account.settings['captain_default_assistant_id']).to be_nil
     expect(account.settings['captain_ai_routing_migrated']).to be(true)
   end
 end

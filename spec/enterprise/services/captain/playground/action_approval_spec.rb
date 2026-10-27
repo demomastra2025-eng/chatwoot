@@ -5,7 +5,7 @@ RSpec.describe Captain::Playground::ActionApproval do
   let(:user) { create(:user, account: account, role: :administrator) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:inbox) { create(:inbox, account: account) }
-  let(:session) { Captain::Playground::Session.new(account: account, user: user, assistant: assistant) }
+  let(:session) { Captain::Playground::Session.new(account: account, user: user) }
   let(:deal) { create(:crm_deal, account: account) }
 
   before { allow(assistant).to receive(:allowed_agent_tool_ids).and_return(%w[update_deal]) }
@@ -14,6 +14,8 @@ RSpec.describe Captain::Playground::ActionApproval do
   def with_preview(inbox_id: nil)
     session.with_lock(inbox_id: inbox_id) do |workspace|
       workspace.set_permissions!(read: true, write: true)
+      # The router gave the turn to this agent: the Playground has no start agent.
+      workspace.activate_agent!(assistant)
       service = described_class.new(workspace)
       preview = service.preview('update_deal', deal_id: deal.id, title: 'Confirmed title')
       yield workspace, service, preview
@@ -93,7 +95,7 @@ RSpec.describe Captain::Playground::ActionApproval do
     end
   end
 
-  it 'cannot confirm the entry agent preview after another agent becomes active' do
+  it 'cannot confirm the preview of one agent after another agent becomes active' do
     destination = create(:captain_assistant, account: account)
     with_preview(inbox_id: inbox.id) do |workspace, service, preview|
       workspace.activate_agent!(destination)
@@ -110,13 +112,14 @@ RSpec.describe Captain::Playground::ActionApproval do
       workspace.activate_agent!(destination)
       service = described_class.new(workspace)
       preview = service.preview('update_deal', deal_id: deal.id, title: 'Destination title')
-      expect(preview['binding']).to include('assistant_id' => destination.id, 'entry_assistant_id' => assistant.id)
+      expect(preview['binding']).to include('assistant_id' => destination.id)
+      expect(preview['binding']).not_to have_key('entry_assistant_id')
       expect(service.instance_variable_get(:@executor)).not_to receive(:execute)
 
       destination.update!(active: false)
       expect { service.confirm(id: preview['id'], digest: preview['digest']) }.to raise_error(Pundit::NotAuthorizedError)
       destination.update!(active: true)
-      # Routing is the grid of the chosen channel (its active external agents), not a stored list of the entry agent.
+      # Routing is the grid of the chosen channel (its enabled external agents).
       destination.update!(usage_mode: 'internal_assistant')
       expect { service.confirm(id: preview['id'], digest: preview['digest']) }.to raise_error(Pundit::NotAuthorizedError)
     end
@@ -126,7 +129,7 @@ RSpec.describe Captain::Playground::ActionApproval do
     let(:owner) { create(:captain_assistant, account: account) }
 
     before do
-      # The owner is reachable as an agent of the chosen channel (the sessions below work on one), not by a stored list of the entry agent.
+      # The owner is an agent of the chosen channel (the sessions below work on one).
       # Only the owner has the tool in its profile; the record that the session loads for the owner is a fresh one.
       allow(assistant).to receive(:allowed_agent_tool_ids).and_return([])
       allow_any_instance_of(Captain::Assistant).to receive(:allowed_agent_tool_ids) { |agent| agent.id == owner.id ? %w[update_deal] : [] }
@@ -135,10 +138,12 @@ RSpec.describe Captain::Playground::ActionApproval do
     it 'records the owner in the preview, keeps the references of the session, and confirms the action as the owner' do
       session.with_lock(inbox_id: inbox.id) do |workspace|
         workspace.set_permissions!(read: true, write: true)
+        workspace.activate_agent!(assistant)
         preview = described_class.new(workspace.acting_as(owner.id)).preview('update_deal', deal_id: deal.id, title: 'Owner title')
 
         expect(preview).to include('actor_id' => owner.id)
-        expect(preview['binding']).to include('assistant_id' => assistant.id, 'entry_assistant_id' => assistant.id)
+        expect(preview['binding']).to include('assistant_id' => assistant.id)
+        expect(preview['binding']).not_to have_key('entry_assistant_id')
 
         result = described_class.new(workspace).confirm(id: preview['id'], digest: preview['digest'])
 
@@ -152,6 +157,7 @@ RSpec.describe Captain::Playground::ActionApproval do
       allow(assistant).to receive(:allowed_agent_tool_ids).and_return(%w[update_deal])
       session.with_lock(inbox_id: inbox.id) do |workspace|
         workspace.set_permissions!(read: true, write: true)
+        workspace.activate_agent!(assistant)
         preview = described_class.new(workspace.acting_as(owner.id)).preview('update_deal', deal_id: deal.id, title: 'Owner title')
         preview['actor_id'] = assistant.id
 
@@ -175,11 +181,12 @@ RSpec.describe Captain::Playground::ActionApproval do
     end
   end
 
-  it 'does not grant a destination the entry agent selected tool list' do
+  it 'does not grant a destination the selected tool list of the agent that was active before' do
     destination = create(:captain_assistant, account: account)
     allow(destination).to receive(:allowed_agent_tool_ids).and_return([])
     session.with_lock(inbox_id: inbox.id) do |workspace|
       workspace.set_permissions!(read: true, write: true)
+      workspace.activate_agent!(assistant)
       workspace.activate_agent!(destination)
       expect do
         described_class.new(workspace).preview('update_deal', deal_id: deal.id, title: 'Unselected action')

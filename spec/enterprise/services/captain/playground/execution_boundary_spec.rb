@@ -4,18 +4,19 @@ RSpec.describe Captain::Playground::ExecutionBoundary do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account, role: :administrator) }
   let(:assistant) { create(:captain_assistant, account: account) }
-  let(:session) { Captain::Playground::Session.new(account: account, user: user, assistant: assistant) }
+  let(:session) { Captain::Playground::Session.new(account: account, user: user) }
   before { account.enable_features!('scheduling', 'crm_deals', 'crm_tasks') }
   after { Current.reset }
 
   def tool_context(workspace)
-    runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, source: 'playground', playground_session: workspace)
+    runner = Captain::Assistant::AgentRunnerService.new(scope: workspace.scope, source: 'playground', playground_session: workspace)
     state = runner.send(:build_state)
     Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new({ state: state, playground_session: workspace }))
   end
 
   it 'builds synthetic runtime state without looking up native conversations, including when real read is enabled' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       workspace.set_permissions!(read: true, write: false)
       expect(account).not_to receive(:conversations)
       context = tool_context(workspace)
@@ -29,6 +30,7 @@ RSpec.describe Captain::Playground::ExecutionBoundary do
 
   it 'intercepts the production account adapter before native lookup, delegate or audit' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       adapter = Captain::Tools::Agent::AccountToolAdapter.new(assistant, tool_id: 'search_appointments')
       expect(adapter).not_to receive(:execute)
       expect(Captain::ToolExecutionAuditService).not_to receive(:record)
@@ -41,6 +43,7 @@ RSpec.describe Captain::Playground::ExecutionBoundary do
 
   it 'denies a substituted account, session or source before the native tool' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       tool = Captain::Tools::UpdateContactTool.new(assistant)
       expect(tool).not_to receive(:execute)
       context = tool_context(workspace)
@@ -56,7 +59,7 @@ RSpec.describe Captain::Playground::ExecutionBoundary do
     assistant
     user
     counts = [Contact.count, Conversation.count, Message.count]
-    expect { Captain::Playground::Session.new(account: account, user: user, assistant: assistant, mode: 'live') }
+    expect { Captain::Playground::Session.new(account: account, user: user, mode: 'live') }
       .to raise_error(ArgumentError, /Legacy Live/)
     expect([Contact.count, Conversation.count, Message.count]).to eq(counts)
   end
@@ -75,6 +78,7 @@ RSpec.describe Captain::Playground::ExecutionBoundary do
 
   it 'blocks builtin external providers even after both real-data permissions are enabled' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       workspace.set_permissions!(read: true, write: true)
       Captain::Playground::ToolSupport::EXTERNAL_TOOLS.each do |id|
         definition = Captain::ToolRegistry.definition_for(id)

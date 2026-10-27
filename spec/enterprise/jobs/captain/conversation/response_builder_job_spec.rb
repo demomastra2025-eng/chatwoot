@@ -3,7 +3,7 @@ require 'rails_helper'
 RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
   let(:account) { create(:account, custom_attributes: { plan_name: 'startups' }) }
   let(:inbox) { create(:inbox, account: account) }
-  let(:assistant) { create(:captain_assistant, account: account) }
+  let!(:assistant) { create(:captain_assistant, account: account) }
 
   # The handoff message is one account-level Captain setting shared by every agent.
   def save_account_handoff_message(enabled: true, mode: 'fixed', text: '', instruction: '')
@@ -18,8 +18,10 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
     before do
       account.enable_features!('captain_integration', 'captain_tasks')
-      create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+      create(:captain_inbox, inbox: inbox)
       create(:message, conversation: conversation, content: 'Hello', message_type: :incoming)
+      # These older cases exercise a conversation already held by the agent. New conversations start without a holder.
+      Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
       allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(agent_runner_service)
       allow(agent_runner_service).to receive(:generate_response).and_return({ 'response' => 'Hey, welcome to Captain V2' })
       allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_on)
@@ -30,9 +32,125 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       inbox.captain_inbox.update!(ai_enabled: false)
       job = described_class.new
       job.instance_variable_set(:@conversation, conversation)
-      job.instance_variable_set(:@assistant, assistant)
+      job.instance_variable_set(:@response_assistant, assistant)
 
       expect(job.send(:conversation_eligible_for_response?)).to be false
+    end
+
+    describe 'the job belongs to the channel, not to an agent' do
+      before do
+        Captain::Conversation::AgentSession.new(conversation: conversation).release_holder(assistant.id)
+      end
+
+      def hold_as(agent)
+        Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: agent.id)
+      end
+
+      def answered_by(agent, text = 'Hello from the agent')
+        allow(agent_runner_service).to receive(:generate_response) do
+          hold_as(agent)
+          { 'response' => text, 'agent_id' => agent.id, 'agent_name' => "assistant_#{agent.id}" }
+        end
+      end
+
+      it 'runs with no agent argument and sends the reply as the agent the router chose' do
+        answered_by(assistant)
+
+        described_class.perform_now(conversation)
+
+        reply = conversation.messages.outgoing.where(private: false).last
+        expect(reply).to have_attributes(content: 'Hello from the agent', sender: assistant)
+        expect(reply.additional_attributes).to include('captain_ai_reply' => { 'assistant_id' => assistant.id })
+      end
+
+      it 'still runs a job that an earlier release queued with an agent argument, and ignores that agent' do
+        other = create(:captain_assistant, account: account)
+        answered_by(other)
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.messages.outgoing.where(private: false).last).to have_attributes(content: 'Hello from the agent', sender: other)
+      end
+
+      it 'builds the runner for the channel scope and names no agent' do
+        answered_by(assistant)
+        options = nil
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |**arguments|
+          options = arguments
+          agent_runner_service
+        end
+
+        described_class.perform_now(conversation)
+
+        expect(options).to include(scope: an_instance_of(Captain::ChannelScope), conversation: conversation)
+        expect(options).not_to have_key(:assistant)
+        expect(options[:scope]).to have_attributes(kind: :text, inbox: inbox)
+      end
+
+      it 'sends a reply that no agent wrote as the AI itself while nobody holds the conversation' do
+        allow(agent_runner_service).to receive(:generate_response).and_return('response' => 'The AI answers by itself')
+
+        described_class.perform_now(conversation)
+
+        reply = conversation.messages.outgoing.where(private: false).last
+        expect(reply).to have_attributes(content: 'The AI answers by itself', sender: nil)
+        expect(reply.additional_attributes).not_to have_key('agent_name')
+        expect(reply.additional_attributes.to_h['captain_ai_reply'].to_h).not_to have_key('assistant_id')
+      end
+
+      it 'tells the customer about the handoff as the AI itself, with no agent named, when the router failed and nobody holds the conversation' do
+        save_account_handoff_message(mode: 'fixed', text: 'Staff will answer you soon')
+        allow(agent_runner_service).to receive(:generate_response)
+          .and_return('response' => Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE)
+
+        described_class.perform_now(conversation)
+
+        expect(conversation.reload).to be_open
+        notice = conversation.messages.outgoing.where(private: false).last
+        expect(notice).to have_attributes(content: 'Staff will answer you soon', sender: nil)
+        expect(notice.additional_attributes.to_h).not_to include('agent_name', 'agentName')
+        expect(conversation.messages.where(private: true).where.not(sender_id: nil)).to be_empty
+      end
+
+      it 'sends nothing when the channel was switched off after the job was queued' do
+        answered_by(assistant)
+        inbox.captain_inbox.update!(ai_enabled: false)
+
+        described_class.perform_now(conversation)
+
+        expect(conversation.messages.outgoing).to be_empty
+      end
+
+      it 'sends nothing when every agent was switched off after the job was queued' do
+        answered_by(assistant)
+        Captain::Assistant.where(account_id: account.id).find_each { |agent| agent.update!(active: false) }
+
+        described_class.perform_now(conversation)
+
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
+      end
+
+      it 'sends the reply when another agent was switched off after the job was queued: only the channel and the acting agent count' do
+        other = create(:captain_assistant, account: account)
+        answered_by(assistant)
+        other.update!(active: false)
+
+        described_class.perform_now(conversation)
+
+        expect(conversation.messages.outgoing.where(private: false).last).to have_attributes(sender: assistant)
+      end
+
+      it 'sends nothing when the agent that wrote the reply was switched off after the job was queued' do
+        allow(agent_runner_service).to receive(:generate_response) do
+          hold_as(assistant)
+          assistant.update!(active: false)
+          { 'response' => 'Too late', 'agent_id' => assistant.id }
+        end
+
+        described_class.perform_now(conversation)
+
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
+      end
     end
 
     def create_sendable_document(name: 'Price list', filename: 'price-list.pdf')
@@ -100,7 +218,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         )
       )
       job = described_class.new
-      job.instance_variable_set(:@assistant, assistant)
+      job.instance_variable_set(:@conversation, conversation)
+      job.instance_variable_set(:@response_assistant, assistant)
       job.instance_variable_set(:@response, {
                                   'handoff_outcome_reason_id' => 'technical_queue',
                                   'handoff_status_reason' => 'Support'
@@ -145,13 +264,13 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         }
       )
       part_ref = { 'id' => SecureRandom.uuid, 'version' => 1 }
-      Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation).change do |session|
+      Captain::Conversation::AgentSession.new(conversation: conversation).change do |session|
         session['parts'] = [part_ref.merge('executor_agent_id' => assistant.id, 'state' => 'answered')]
       end
       reply = create(:message, conversation: conversation, sender: assistant, message_type: :outgoing, content: 'Done')
       job = described_class.new
       job.instance_variable_set(:@conversation, conversation)
-      job.instance_variable_set(:@assistant, assistant)
+      job.instance_variable_set(:@response_assistant, assistant)
       job.instance_variable_set(:@response, { 'part_refs' => [part_ref] })
 
       expect(Captain::Conversation::FollowUpJob).to receive(:schedule!).with(
@@ -165,7 +284,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     it 'records the version of the part with each delivery, so that the action of a follow-up version is not hidden by an earlier question' do
       part_id = SecureRandom.uuid
       question = { 'message_id' => 1, 'content' => 'На какое время вас записать?', 'at' => Time.current.iso8601, 'version' => 1 }
-      session = Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation)
+      session = Captain::Conversation::AgentSession.new(conversation: conversation)
       session.change do |data|
         data['parts'] = [{ 'id' => part_id, 'version' => 2, 'executor_agent_id' => assistant.id, 'state' => 'done', 'acted' => true,
                            'delivered' => [question] }]
@@ -174,7 +293,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       reply = create(:message, conversation: conversation, sender: assistant, message_type: :outgoing, content: 'Вы записаны на 11:00.')
       job = described_class.new
       job.instance_variable_set(:@conversation, conversation)
-      job.instance_variable_set(:@assistant, assistant)
+      job.instance_variable_set(:@response_assistant, assistant)
       job.instance_variable_set(:@response, { 'part_refs' => [{ 'id' => part_id, 'version' => 2 }] })
 
       job.send(:record_part_delivery, reply)
@@ -186,7 +305,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
     it 'uses Captain::Assistant::AgentRunnerService with runtime callbacks' do
       expect(Captain::Assistant::AgentRunnerService).to receive(:new).with(
-        assistant: assistant,
+        scope: an_instance_of(Captain::ChannelScope),
         conversation: conversation,
         incoming_message_id: conversation.messages.incoming.last.id,
         callbacks: hash_including(
@@ -210,12 +329,10 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       described_class.perform_now(conversation, assistant)
 
       expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_on).with(
-        conversation: conversation,
-        assistant: assistant
+        conversation: conversation
       ).at_least(:once)
       expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_off).with(
-        conversation: conversation,
-        assistant: assistant
+        conversation: conversation
       ).once
     end
 
@@ -306,7 +423,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(agent_runner_service).to receive(:generate_response).with(
         message_history: [
           { content: 'Question from WhatsApp', role: 'user', sent_at: sent_time },
-          { content: 'Earlier Captain answer', role: 'assistant', sent_at: sent_time },
+          { content: 'Earlier Captain answer', role: 'assistant', agent_name: "assistant_#{assistant.id}", sent_at: sent_time },
           { content: 'Hello', role: 'user', sent_at: sent_time }
         ]
       )
@@ -318,7 +435,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       thread = create(:communication_thread, account: account, contact: conversation.contact)
       channels = [conversation] + Array.new(2) do
         sibling_inbox = create(:inbox, account: account)
-        expect(sibling_inbox.captain_inbox.captain_assistant_id).to eq(assistant.id)
+        create(:captain_inbox, inbox: sibling_inbox)
         create(:conversation, account: account, inbox: sibling_inbox, contact: conversation.contact, status: :pending)
       end
       channels.each do |candidate|
@@ -369,8 +486,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(agent_runner_service).to receive(:generate_response).with(
         message_history: [
           { content: 'Original question', role: 'user', sent_at: sent_time },
-          { content: 'Earlier Captain reply', role: 'assistant', sent_at: sent_time },
-          { content: 'Static follow-up', role: 'assistant', sent_at: sent_time },
+          { content: 'Earlier Captain reply', role: 'assistant', agent_name: "assistant_#{assistant.id}", sent_at: sent_time },
+          { content: 'Static follow-up', role: 'assistant', agent_name: "assistant_#{assistant.id}", sent_at: sent_time },
           { content: 'I still have a question', role: 'user', sent_at: sent_time }
         ]
       )
@@ -771,7 +888,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       last_incoming_message_id = conversation.messages.incoming.last.id
 
       allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |**kwargs|
-        expect(kwargs[:assistant]).to eq(assistant)
+        expect(kwargs[:scope]).to have_attributes(inbox: inbox, kind: :text)
         expect(kwargs[:conversation]).to eq(conversation)
         callbacks = kwargs[:callbacks]
         agent_runner_service
@@ -779,8 +896,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       allow(agent_runner_service).to receive(:generate_response) do
         Captain::Conversation::ResponseCancellationService.new(
-          conversation: conversation,
-          assistant: assistant
+          conversation: conversation
         ).perform(reason: 'Manager stopped the response')
         callbacks[:on_tool_start].call('lookup_order')
         { 'response' => 'This late answer must be ignored' }
@@ -791,12 +907,10 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end.not_to(change { conversation.messages.count })
 
       expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_on).with(
-        conversation: conversation,
-        assistant: assistant
+        conversation: conversation
       ).once
       expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_off).with(
-        conversation: conversation,
-        assistant: assistant
+        conversation: conversation
       ).at_least(:once)
     end
 
@@ -805,8 +919,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       allow(agent_runner_service).to receive(:generate_response) do
         Captain::Conversation::ResponseCancellationService.new(
-          conversation: conversation,
-          assistant: assistant
+          conversation: conversation
         ).perform(reason: 'Manager stopped the response')
         raise StandardError, 'provider failed after cancellation'
       end
@@ -1033,9 +1146,10 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     it 'splits several response attachments into sequential WhatsApp messages' do
       whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
       whatsapp_inbox = whatsapp_channel.inbox
-      expect(whatsapp_inbox.captain_inbox.captain_assistant_id).to eq(assistant.id)
+      create(:captain_inbox, inbox: whatsapp_inbox)
       whatsapp_conversation = create(:conversation, inbox: whatsapp_inbox, account: account, status: :pending)
       create(:message, conversation: whatsapp_conversation, content: 'вышли файлы', message_type: :incoming)
+      Captain::Conversation::AgentSession.new(conversation: whatsapp_conversation).update_routing(actor_id: assistant.id)
       whatsapp_conversation.update!(status: :pending)
 
       first_document = create_sendable_document(name: 'First', filename: 'first.pdf')
@@ -2231,7 +2345,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.reload.status).to eq('open')
         expect(conversation.captain_handoff_applied_at).to be_present
         expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_off)
-          .with(conversation: conversation, assistant: assistant).at_least(:once)
+          .with(conversation: conversation).at_least(:once)
       end
 
       it 'creates a private note for agents without leaking provider error details' do
@@ -2589,12 +2703,13 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     let(:mock_message_builder) { instance_double(Captain::OpenAiMessageBuilderService) }
 
     before do
-      create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+      create(:captain_inbox, inbox: inbox)
       create(:message, conversation: conversation, content: 'Hello with image', message_type: :incoming)
+      Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
       allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(agent_runner_service)
       # History content is built against the shared history budget (history preset).
       allow(Captain::OpenAiMessageBuilderService).to receive(:new)
-        .with(message: anything, assistant: assistant, budget: kind_of(Captain::Conversation::HistoryBudget))
+        .with(message: anything, budget: kind_of(Captain::Conversation::HistoryBudget))
         .and_return(mock_message_builder)
       allow(mock_message_builder).to receive(:generate_content).and_return('Hello with image')
       allow(agent_runner_service).to receive(:generate_response).and_return({ 'response' => 'Test response' })
@@ -2704,7 +2819,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       it 'does not inherit handoff fields from a polluted failed response' do
         job = described_class.new
-        job.send(:initialize_response_context, conversation, assistant, nil, conversation.messages.incoming.last.id, 0)
+        job.send(:initialize_response_context, conversation, nil, conversation.messages.incoming.last.id, 0)
         job.instance_variable_set(
           :@response,
           {
@@ -2755,7 +2870,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     let(:agent_runner_service) { instance_double(Captain::Assistant::AgentRunnerService) }
 
     before do
-      create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+      create(:captain_inbox, inbox: inbox)
       create(:message, conversation: conversation, content: 'Hello', message_type: :incoming)
       allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(agent_runner_service)
     end

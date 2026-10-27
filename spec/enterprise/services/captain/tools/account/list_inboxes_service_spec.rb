@@ -3,17 +3,17 @@ require 'rails_helper'
 RSpec.describe Captain::Tools::Account::ListInboxesService do
   let(:account) { create(:account) }
   let(:user) { create(:user, :administrator, account: account) }
-  let(:assistant) { create(:captain_assistant, account: account, name: 'Support AI') }
+  let!(:assistant) { create(:captain_assistant, account: account, name: 'Support AI') }
   let(:service) { described_class.new(assistant, user: user) }
 
-  it 'returns account-scoped inbox metadata without cross-account inboxes' do
+  it 'returns account-scoped inbox metadata without cross-account inboxes', :aggregate_failures do
     inbox = create(:inbox, account: account, name: 'WhatsApp Sales', business_name: 'Sales')
     member = create(:user, account: account, name: 'Operator One')
     create(:inbox_member, inbox: inbox, user: member)
     policy = create(:assignment_policy, account: account, name: 'Sales routing')
     create(:inbox_assignment_policy, inbox: inbox, assignment_policy: policy)
     account.update!(conversation_assignment_policy_id: policy.id)
-    create(:captain_inbox, inbox: inbox, captain_assistant: assistant, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
+    create(:captain_inbox, inbox: inbox, ai_enabled: true, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
     create(:inbox, account: create(:account), name: 'Other account')
 
     payload = JSON.parse(service.execute(query: 'sales', include_members: true, limit: 10))
@@ -35,11 +35,12 @@ RSpec.describe Captain::Tools::Account::ListInboxesService do
     )
     expect(payload['inboxes'].first['captain']).to include(
       'enabled' => true,
-      'assistant_id' => assistant.id,
-      'assistant_name' => 'Support AI',
+      'ai_enabled' => true,
       'auto_reply_mode' => CaptainInbox::AUTO_REPLY_ALWAYS,
       'auto_reply_allowed_now' => true
     )
+    # A text channel names no agent: the AI picks one among the enabled agents of the workspace.
+    expect(payload['inboxes'].first['captain']).not_to include('assistant_id', 'assistant_name', 'voice_assistant_id')
     expect(payload['inboxes'].first['members']).to contain_exactly(
       include('id' => member.id, 'name' => 'Operator One'),
       include('id' => user.id)

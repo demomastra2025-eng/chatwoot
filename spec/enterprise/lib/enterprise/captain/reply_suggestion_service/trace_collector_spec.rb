@@ -7,9 +7,9 @@ require 'rails_helper'
 RSpec.describe Enterprise::Captain::ReplySuggestionService::TraceCollector do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
-  let(:assistant) { create(:captain_assistant, account: account) }
+  let!(:assistant) { create(:captain_assistant, account: account) }
   let(:conversation) { create(:conversation, account: account) }
-  let(:collector) { described_class.new(assistant: assistant, conversation: conversation, user: user) }
+  let(:collector) { described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation, user: user) }
 
   def part_context(id)
     OpenStruct.new(context: { part_run: true, active_part_id: id, state: { assistant_id: assistant.id },

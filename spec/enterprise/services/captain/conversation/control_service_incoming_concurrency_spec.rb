@@ -61,7 +61,7 @@ RSpec.describe Captain::Conversation::ControlService do
     account = create(:account)
     conversation = create(:conversation, account: account, status: :pending)
     assistant = create(:captain_assistant, account: account, usage_mode: 'external_agent')
-    create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+    create(:captain_inbox, inbox: conversation.inbox)
     thread = create(:communication_thread, account: account, contact: conversation.contact)
     create(:communication_thread_conversation, communication_thread: thread, conversation: conversation)
     conversation.association(:communication_thread_conversation).reset

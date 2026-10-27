@@ -5,8 +5,8 @@ RSpec.describe MessageTemplates::HookExecutionService do
   let(:inbox) { create(:inbox, account: account) }
   let(:contact) { create(:contact, account: account) }
   let(:conversation) { create(:conversation, inbox: inbox, account: account, contact: contact, status: :pending) }
-  let(:assistant) { create(:captain_assistant, account: account) }
-  let!(:captain_inbox) { create(:captain_inbox, captain_assistant: assistant, inbox: inbox) }
+  let!(:assistant) { create(:captain_assistant, account: account) }
+  let!(:captain_inbox) { create(:captain_inbox, inbox: inbox) }
 
   before do
     # The collapse window is a workspace AI setting (default 15 s = buffered scheduling); 0 selects the direct scheduling path.
@@ -45,16 +45,45 @@ RSpec.describe MessageTemplates::HookExecutionService do
 
       it 'schedules captain response job for incoming messages on pending conversations' do
         expect(Captain::Conversation::TypingIndicatorService).to receive(:turn_on).with(
-          conversation: conversation,
-          assistant: assistant
+          conversation: conversation
         )
         expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later).with(
           conversation,
-          assistant,
           hash_including(expected_last_message_id: kind_of(Integer))
         )
 
         create(:message, conversation: conversation, message_type: :incoming, account: account)
+      end
+
+      it 'schedules the job without naming an agent while any agent is on, whichever other agent is off' do
+        create(:captain_assistant, account: account, active: false)
+        expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later).with(
+          conversation,
+          hash_including(expected_last_message_id: kind_of(Integer))
+        )
+
+        create(:message, conversation: conversation, message_type: :incoming, account: account)
+      end
+
+      it 'schedules nothing and opens the conversation for people when every agent is switched off' do
+        Captain::Assistant.where(account_id: account.id).find_each { |agent| agent.update!(active: false) }
+        inbox.reload
+        expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
+
+        create(:message, conversation: conversation, message_type: :incoming, account: account)
+
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
+      end
+
+      it 'schedules nothing for a channel that is switched off, even when agents are on' do
+        captain_inbox.update!(ai_enabled: false)
+        inbox.reload
+        expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
+
+        create(:message, conversation: conversation, message_type: :incoming, account: account)
+
+        expect(conversation.reload.status).to eq('open')
       end
 
       it 'schedules captain response within business hours when auto-reply mode is working_hours' do
@@ -62,7 +91,6 @@ RSpec.describe MessageTemplates::HookExecutionService do
 
         expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later).with(
           conversation,
-          assistant,
           hash_including(expected_last_message_id: kind_of(Integer))
         )
 
@@ -74,8 +102,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
 
         expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
         expect(Captain::Conversation::TypingIndicatorService).to receive(:turn_off).with(
-          conversation: conversation,
-          assistant: assistant
+          conversation: conversation
         )
 
         create(:message, conversation: conversation, message_type: :incoming, account: account)
@@ -153,7 +180,6 @@ RSpec.describe MessageTemplates::HookExecutionService do
 
         expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later).with(
           conversation,
-          assistant,
           hash_including(expected_last_message_id: kind_of(Integer))
         )
 
@@ -202,7 +228,6 @@ RSpec.describe MessageTemplates::HookExecutionService do
 
         expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later).with(
           conversation,
-          assistant,
           hash_including(expected_last_message_id: kind_of(Integer))
         )
 
@@ -243,7 +268,6 @@ RSpec.describe MessageTemplates::HookExecutionService do
       it 'schedules captain response job regardless of time' do
         expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later).with(
           conversation,
-          assistant,
           hash_including(expected_last_message_id: kind_of(Integer))
         )
 
@@ -279,8 +303,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
       it 'hands the conversation to people within business hours when quota is exceeded' do
         expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
         expect(Captain::Conversation::TypingIndicatorService).to receive(:turn_off).with(
-          conversation: conversation,
-          assistant: assistant
+          conversation: conversation
         )
 
         create(:message, conversation: conversation, message_type: :incoming, account: account)
@@ -398,10 +421,10 @@ RSpec.describe MessageTemplates::HookExecutionService do
         channel_inbox = channel.reload.inbox
         channel_contact = create(:contact, account: channel_account)
         Captain::AccountSettings.new(channel_account).update!('conversation' => { 'message_collapse_window_seconds' => 3 })
-        channel_assistant = create(:captain_assistant, account: channel_account)
+        create(:captain_assistant, account: channel_account)
         scheduler = instance_double(Captain::Conversation::BufferedResponseSchedulerService, perform: true)
 
-        create(:captain_inbox, captain_assistant: channel_assistant, inbox: channel_inbox)
+        create(:captain_inbox, inbox: channel_inbox)
         channel_conversation = create(
           :conversation,
           inbox: channel_inbox,
@@ -413,7 +436,6 @@ RSpec.describe MessageTemplates::HookExecutionService do
         expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
         expect(Captain::Conversation::BufferedResponseSchedulerService).to receive(:new).with(
           conversation: channel_conversation,
-          assistant: channel_assistant,
           message: kind_of(Message),
           attachment_wait_time: 0.seconds
         ).and_return(scheduler)
@@ -597,7 +619,6 @@ RSpec.describe MessageTemplates::HookExecutionService do
     it 'schedules captain response job for incoming messages on pending campaign conversations' do
       expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later).with(
         campaign_conversation,
-        assistant,
         hash_including(expected_last_message_id: kind_of(Integer))
       )
 

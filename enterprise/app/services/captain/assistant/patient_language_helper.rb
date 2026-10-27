@@ -20,7 +20,7 @@ module Captain::Assistant::PatientLanguageHelper
     @language_detector = nil
     return unless @conversation
 
-    @language_detector = Captain::PatientLanguageDetector.new(conversation: @conversation, assistant: @assistant)
+    @language_detector = Captain::PatientLanguageDetector.new(conversation: @conversation)
     @language_thread = spawn_language_thread(@language_detector) if parallel_language_detection?
   rescue StandardError => e
     Rails.logger.warn("[CAPTAIN][PatientLanguage] not started error_class=#{e.class.name}")

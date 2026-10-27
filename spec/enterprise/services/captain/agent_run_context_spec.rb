@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe Captain::AgentRunContext do
   let(:account) { create(:account) }
-  let(:entry) do
+  let!(:entry) do
     create(:captain_assistant, account: account, description: 'ENTRY PRIVATE PROMPT', routing_description: 'Общие вопросы о клинике',
                                config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['handoff'] } } })
   end
@@ -13,7 +13,7 @@ RSpec.describe Captain::AgentRunContext do
   end
   let(:conversation) { create(:conversation, account: account) }
   let(:context) { { state: { account_id: account.id, assistant_id: entry.id }, conversation_history: [] } }
-  let(:session) { Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation) }
+  let(:session) { Captain::Conversation::AgentSession.new(conversation: conversation) }
 
   after { Current.executed_by = nil }
   before { account.enable_features!('scheduling') }
@@ -21,33 +21,35 @@ RSpec.describe Captain::AgentRunContext do
   it 'does not repeat input checks when an agent is activated' do
     expect(Captain::Safety::CustomRulesRuntime).not_to receive(:check_input!)
 
-    runtime = described_class.new(entry: entry)
+    runtime = described_class.new(scope: Captain::ChannelScope.for_workspace(entry.account))
     runtime.prepare(context)
     runtime.activate(specialist, context)
     runtime.activate(entry, context)
   end
 
   it 'builds one lazy runtime agent per candidate, with no transfers between them' do
-    agents = described_class.new(entry: entry, conversation: conversation).runtime_agents
+    agents = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation).runtime_agents
 
     expect(agents.map(&:name)).to contain_exactly("assistant_#{entry.id}", "assistant_#{specialist.id}")
     expect(agents).to all(satisfy { |agent| !agent.respond_to?(:handoff_agents) })
   end
 
   it 'chooses no agent when it prepares the run: a new conversation has none, the router decides' do
-    described_class.new(entry: entry, conversation: conversation).prepare(context)
+    runtime = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation)
+    runtime.prepare(context)
 
+    expect(runtime.holder).to be_nil
     expect(context).to include(routing_current_agent_id: nil, routing_trail: [])
     expect(context.keys).not_to include(:current_agent, :acting_assistant_id, :agent_tasks)
     expect(context[:agent_graph].pluck(:id)).to contain_exactly(entry.id, specialist.id)
     expect(context[:state][:agent_graph_ids]).to contain_exactly(entry.id, specialist.id)
-    expect(context[:state][:entry_assistant_id]).to eq(entry.id)
+    expect(context[:state]).not_to have_key(:entry_assistant_id)
   end
 
   it 'gives the router the agent that holds the conversation and the trail of the last decisions' do
     session.update_routing(actor_id: specialist.id, trail: { 'kind' => 'agent', 'to' => [specialist.id] })
 
-    described_class.new(entry: entry, conversation: conversation.reload).prepare(context)
+    described_class.new(scope: Captain::ChannelScope.for_conversation(conversation.reload), conversation: conversation.reload).prepare(context)
 
     expect(context[:routing_current_agent_id]).to eq(specialist.id)
     expect(context[:routing_trail]).to eq([{ 'kind' => 'agent', 'to' => [specialist.id] }])
@@ -57,23 +59,23 @@ RSpec.describe Captain::AgentRunContext do
     session.update_routing(actor_id: specialist.id)
     specialist.update!(active: false)
 
-    runtime = described_class.new(entry: entry.reload, conversation: conversation.reload)
+    runtime = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation.reload), conversation: conversation.reload)
     runtime.prepare(context)
 
     expect(context[:routing_current_agent_id]).to be_nil
-    # Released in the session: the response builder reads the anchor until the router gives the conversation to an agent.
-    expect(runtime.holder).to eq(entry)
+    # Released in the session: nobody holds the conversation (the AI answers as itself) until the router gives it to an agent.
+    expect(runtime.holder).to be_nil
     expect(session.read).to include('current_assistant_id' => nil, 'routing_revision' => 2)
   end
 
   it 'names the agent that holds the conversation as its holder, also when the router may no longer choose it' do
-    runtime = described_class.new(entry: entry, conversation: conversation)
+    runtime = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation)
     runtime.prepare(context)
-    expect(runtime.holder).to eq(entry)
+    expect(runtime.holder).to be_nil
 
     session.update_routing(actor_id: specialist.id)
-    specialist.update!(config: specialist.config.merge('patient_routing' => false))
-    runtime = described_class.new(entry: entry, conversation: conversation.reload)
+    specialist.update!(routing_description: '')
+    runtime = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation.reload), conversation: conversation.reload)
     runtime.prepare(context)
 
     expect(context[:routing_current_agent_id]).to be_nil
@@ -84,7 +86,7 @@ RSpec.describe Captain::AgentRunContext do
   it 'prepares the one agent of a channel at once: there is nothing to decide' do
     specialist.update!(active: false)
 
-    described_class.new(entry: entry, conversation: conversation).prepare(context)
+    described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation).prepare(context)
 
     expect(context[:agent_graph]).to eq([])
     expect(context[:current_agent]).to eq("assistant_#{entry.id}")
@@ -92,17 +94,17 @@ RSpec.describe Captain::AgentRunContext do
     expect(context[:state][:agent_graph_ids]).to eq([entry.id])
   end
 
-  it 'gives a run without a channel a single agent' do
-    runtime = described_class.new(entry: entry)
+  it 'gives a run without a channel (the Playground) every enabled agent of the workspace' do
+    runtime = described_class.new(scope: Captain::ChannelScope.for_workspace(entry.account))
 
-    expect(runtime.runtime_agents.map(&:name)).to eq(["assistant_#{entry.id}"])
+    expect(runtime.runtime_agents.map(&:name)).to contain_exactly("assistant_#{entry.id}", "assistant_#{specialist.id}")
     runtime.prepare(context)
-    expect(context[:agent_graph]).to eq([])
-    expect(context[:state][:agent_graph_ids]).to eq([entry.id])
+    expect(context[:agent_graph].pluck(:id)).to contain_exactly(entry.id, specialist.id)
+    expect(context[:state][:agent_graph_ids]).to contain_exactly(entry.id, specialist.id)
   end
 
   it 'preserves the specialist own prompt' do
-    runtime = described_class.new(entry: entry, conversation: conversation)
+    runtime = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation)
     runtime.prepare(context)
     runtime.activate(specialist, context)
     prompt = specialist.agent_instructions(Captain::Runtime::RunContext.new(context))
@@ -117,24 +119,24 @@ RSpec.describe Captain::AgentRunContext do
     end
 
     before do
-      Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation).change { |data| data['done'] = [booked] }
+      Captain::Conversation::AgentSession.new(conversation: conversation).change { |data| data['done'] = [booked] }
       context[:agent_request_id] = 'run-1'
     end
 
     it 'gives the run the list that the session kept' do
-      described_class.new(entry: entry, conversation: conversation).prepare(context)
+      described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation).prepare(context)
 
       expect(context[:done_actions]).to eq([booked])
     end
 
     it 'gives a run of a new conversation an empty list' do
-      described_class.new(entry: entry, conversation: create(:conversation, account: account)).prepare(context)
+      described_class.new(scope: Captain::ChannelScope.for_workspace(account), conversation: create(:conversation, account: account)).prepare(context)
 
       expect(context[:done_actions]).to eq([])
     end
 
     it 'shows the agent that takes the turn what was done earlier and what was done in reply to this message' do
-      runtime = described_class.new(entry: entry, conversation: conversation)
+      runtime = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation)
       runtime.prepare(context)
       runtime.activate(specialist, context)
       moved = { 'tool' => 'update_appointment', 'label' => 'Rescheduled', 'text' => 'Терапевт Нурланова Асель, now Thu 15.10.2026 11:00',
@@ -153,10 +155,10 @@ RSpec.describe Captain::AgentRunContext do
     # The history writes every earlier message after its send time; the handoff record keeps the text alone.
     it 'closes the handed-off message of an earlier turn although the history shows it after its send time' do
       handoff = Captain::DoneActions.handoff_entry(reason: 'Нужен врач', request: 'request:earlier', user_message: 'Болит уже три дня')
-      Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation).change { |data| data['done'] = [booked, handoff] }
+      Captain::Conversation::AgentSession.new(conversation: conversation).change { |data| data['done'] = [booked, handoff] }
       context[:conversation_history] = [{ role: :user, content: '[Sat 24.10 09:50] Болит уже три дня' }]
 
-      described_class.new(entry: entry, conversation: conversation).prepare(context)
+      described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation).prepare(context)
 
       expect(context[:conversation_history].last).to include(role: :assistant)
       expect(context[:conversation_history].last[:content]).to start_with('Запрос передан специалистам')
@@ -176,7 +178,7 @@ RSpec.describe Captain::AgentRunContext do
 
     it 'gives an agent of a multi-agent channel its own tools and prompt only: no plan, no transfer, no colleagues' do
       create(:captain_assistant_response, assistant: entry, account: entry.account)
-      runtime = described_class.new(entry: entry, conversation: conversation)
+      runtime = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation)
       runtime.prepare(context)
       runtime.activate(entry, context)
       run_context = Captain::Runtime::RunContext.new(context)
@@ -191,10 +193,9 @@ RSpec.describe Captain::AgentRunContext do
     end
   end
 
-  it 'takes every active text-channel agent regardless of stored handoff lists or legacy channel links' do
-    entry.update!(handoff_agent_ids: [])
-    outsider = create(:captain_assistant, account: account, channel_scope: 'selected', routing_description: 'Анализы')
-    runtime = described_class.new(entry: entry, conversation: conversation)
+  it 'takes every enabled agent of the workspace in a text channel' do
+    outsider = create(:captain_assistant, account: account, routing_description: 'Анализы')
+    runtime = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation)
 
     expect(runtime.runtime_agents.map(&:assistant_id)).to eq([entry.id, specialist.id, outsider.id].sort)
     expect(runtime.graph.find(outsider.id)).to eq(outsider)
@@ -202,14 +203,14 @@ RSpec.describe Captain::AgentRunContext do
 
   it 'leaves an agent without a routing description out of the candidates' do
     undescribed = create(:captain_assistant, account: account)
-    runtime = described_class.new(entry: entry, conversation: conversation)
+    runtime = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation)
 
     expect(runtime.graph.candidates.map(&:id)).to contain_exactly(entry.id, specialist.id)
     expect(runtime.graph.find(undescribed.id)).to eq(undescribed)
   end
 
   it 'materializes only the agent that answers' do
-    runtime = described_class.new(entry: entry, conversation: conversation)
+    runtime = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation)
     agents = runtime.runtime_agents
     expect(agents).to all(be_a(Captain::Runtime::LazyAgent))
     expect(agents.any? { |agent| agent.instance_variable_defined?(:@materialized) }).to be(false)
@@ -219,7 +220,7 @@ RSpec.describe Captain::AgentRunContext do
   end
 
   it 'retains public dialogue while removing peer tool payloads and private reasoning' do
-    runtime = described_class.new(entry: entry)
+    runtime = described_class.new(scope: Captain::ChannelScope.for_workspace(entry.account))
     runtime.prepare(context)
     context[:conversation_history] = [
       { role: :user, content: 'Book for tomorrow' },
@@ -233,25 +234,36 @@ RSpec.describe Captain::AgentRunContext do
                                                  ])
   end
 
-  it 'gives the selected playground reasoning override to the agent being tried out only' do
-    runtime = described_class.new(entry: entry)
+  it 'gives the selected playground reasoning override to whichever agent answers: the Playground has no start agent' do
+    user = create(:user, account: account, role: :administrator)
+    Captain::Playground::Session.new(account: account, user: user).with_lock do |workspace|
+      runtime = described_class.new(scope: workspace.scope, playground: workspace)
+      context[:state][:playground_thinking_effort] = 'none'
+      runtime.prepare(context)
+
+      [entry, specialist, entry].each do |actor|
+        runtime.activate(actor, context)
+
+        expect(context[:state][:playground_thinking_effort]).to eq('none')
+        expect(context[:state][:captain_runtime]['assistant_thinking_effort']).to eq('none')
+      end
+    end
+  end
+
+  it 'gives no reasoning override outside the Playground' do
+    runtime = described_class.new(scope: Captain::ChannelScope.for_workspace(entry.account))
     context[:state][:playground_thinking_effort] = 'none'
     runtime.prepare(context)
 
     runtime.activate(entry, context)
-    expect(context[:state][:playground_thinking_effort]).to eq('none')
 
-    runtime.activate(specialist, context)
     expect(context[:state]).not_to have_key(:playground_thinking_effort)
-
-    runtime.activate(entry, context)
-    expect(context[:state][:playground_thinking_effort]).to eq('none')
-    expect(context[:state][:captain_runtime]['assistant_thinking_effort']).to eq('none')
   end
 
   describe 'the sticky agent of a reply suggestion' do
     let(:suggestion) do
-      described_class.new(entry: entry, conversation: conversation, ephemeral_session: true, sticky_agent_id: specialist.id)
+      described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation,
+                          ephemeral_session: true, sticky_agent_id: specialist.id)
     end
 
     it 'is the current agent and the holder while the saved session has none' do
@@ -265,25 +277,28 @@ RSpec.describe Captain::AgentRunContext do
     it 'comes before a stale holder of the saved session' do
       session.update_routing(actor_id: entry.id)
 
-      runtime = described_class.new(entry: entry, conversation: conversation.reload, ephemeral_session: true,
-                                    sticky_agent_id: specialist.id)
+      runtime = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation.reload), conversation: conversation.reload,
+                                    ephemeral_session: true, sticky_agent_id: specialist.id)
       runtime.prepare(context)
 
       expect(context[:routing_current_agent_id]).to eq(specialist.id)
     end
 
     it 'is ignored when it is not a candidate of the channel (an agent of another inbox of the thread)' do
-      runtime = described_class.new(entry: entry, conversation: conversation, ephemeral_session: true, sticky_agent_id: entry.id + 10_000)
+      runtime = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation,
+                                    ephemeral_session: true, sticky_agent_id: entry.id + 10_000)
       runtime.prepare(context)
 
       expect(context[:routing_current_agent_id]).to be_nil
-      expect(runtime.holder).to eq(entry)
+      expect(runtime.holder).to be_nil
     end
   end
 
-  it 'retains the standalone internal-agent path' do
+  it 'never lets an internal assistant take part in a run of the workspace' do
     entry.update!(usage_mode: 'internal_assistant')
-    expect(Captain::AgentGraph.new(entry).agents).to eq([entry])
-    expect(Captain::AgentGraph.new(entry).candidates).to eq([entry])
+    graph = Captain::AgentGraph.new(Captain::ChannelScope.for_workspace(account))
+
+    expect(graph.agents).to eq([specialist])
+    expect(graph.candidates).to eq([specialist])
   end
 end

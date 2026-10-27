@@ -154,7 +154,8 @@ RSpec.describe 'Captain safety settings', type: :request do
       agents.each do |agent|
         agent = Captain::Assistant.find(agent.id)
         engine = instance_double(Captain::Safety::CustomRulesStructuredOutputEngine, model: 'openai/gpt-6-luna', select: { rule_id: 'emergency' })
-        input = Captain::Safety::CustomRulesEvaluator.new(engine: engine).evaluate(assistant: agent, direction: 'input', text: 'There is a fire!')
+        input = Captain::Safety::CustomRulesEvaluator.new(engine: engine)
+                                                     .evaluate(account: account.reload, direction: 'input', text: 'There is a fire!')
 
         expect(input).to have_attributes(status: :matched, rule_id: 'emergency', action: 'handoff', message: inbound_rule[:message])
         expect(engine).to have_received(:select).with(hash_including(direction: 'input', rules: [hash_including('id' => 'emergency')]))
@@ -170,8 +171,8 @@ RSpec.describe 'Captain safety settings', type: :request do
       update_settings(custom_rules: [outbound_rule])
       engine = instance_double(Captain::Safety::CustomRulesStructuredOutputEngine, model: 'openai/gpt-6-luna', select: { rule_id: 'no_promises' })
 
-      agent = Captain::Assistant.find(assistant.id)
-      output = Captain::Safety::CustomRulesEvaluator.new(engine: engine).evaluate(assistant: agent, direction: 'output', text: 'Guaranteed.')
+      output = Captain::Safety::CustomRulesEvaluator.new(engine: engine)
+                                                    .evaluate(account: account.reload, direction: 'output', text: 'Guaranteed.')
 
       expect(output).to have_attributes(status: :allowed, reason: :no_enabled_rules)
       expect(engine).not_to have_received(:select)

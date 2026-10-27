@@ -6,7 +6,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
   around { |example| travel_to(Time.utc(2026, 4, 19, 12)) { example.run } }
 
   let(:account) { create(:account) }
-  let(:assistant) { create(:captain_assistant, account: account) }
+  let!(:assistant) { create(:captain_assistant, account: account) }
   let(:tool) { described_class.new(assistant) }
 
   before do
@@ -40,7 +40,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
   it 'returns a typed nonretryable technical failure instead of confirming an unknown provider booking' do
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact, status: :pending)
-    create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+    create(:captain_inbox, inbox: conversation.inbox)
     appointment = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation)
     operations = instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment, already_booked_appointment: nil)
     outcome = instance_double(Captain::Tools::ProviderBookingOutcomeService)
@@ -64,7 +64,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
   it 'returns a technical failure when receipt verification raises unexpectedly after local creation' do
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact, status: :pending)
-    create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+    create(:captain_inbox, inbox: conversation.inbox)
     appointment = create(
       :scheduling_appointment, account: account, contact: contact, conversation: conversation,
                                custom_attributes: { Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => 'pending' }
@@ -83,7 +83,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
   it 'returns a business failure the agent can act on when the provider slot is taken' do
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact, status: :pending)
-    create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+    create(:captain_inbox, inbox: conversation.inbox)
     appointment = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation)
     operations = instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment, already_booked_appointment: nil)
     outcome = instance_double(Captain::Tools::ProviderBookingOutcomeService)
@@ -105,7 +105,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     resource = create(:scheduling_resource, account: account, custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact, status: :pending)
-    create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+    create(:captain_inbox, inbox: conversation.inbox)
     starts_at = Time.zone.now.change(hour: 10) + 1.day
     appointment = nil
     upsert = instance_double(Scheduling::Appointments::UpsertService)
@@ -138,7 +138,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     resource = create(:scheduling_resource, account: account, custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact, status: :pending)
-    create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+    create(:captain_inbox, inbox: conversation.inbox)
     starts_at = Time.zone.now.change(hour: 10) + 1.day
     appointment = create(
       :scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation, service: nil,
@@ -158,7 +158,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
   it 'returns a technical superseded error and leaves the conversation alone' do
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact, status: :pending)
-    create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+    create(:captain_inbox, inbox: conversation.inbox)
     resource = create(:scheduling_resource, account: account, custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
     appointment = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation, resource: resource)
     command = Integrations::Medelement::ProviderCommand.create!(

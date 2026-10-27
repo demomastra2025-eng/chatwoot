@@ -1,13 +1,11 @@
 import { defineStore } from 'pinia';
 import CaptainChannelMatrixAPI from 'dashboard/api/captain/channelMatrix';
-import {
-  extractMatrixErrors,
-  isTextChannel,
-} from 'dashboard/helper/captainChannelMatrix';
+import { extractMatrixErrors } from 'dashboard/helper/captainChannelMatrix';
 
-// Text channels × AI agents (GET/PATCH captain/channel_matrix, admin only).
-// Consumers call fetch() only for administrators. The payload is kept raw;
-// pages build their own editable draft with toMatrixDraft().
+// The text channels where the AI replies by itself, and the agents of the
+// workspace (GET/PATCH captain/channel_matrix, admin only). A channel names no
+// agent. Consumers call fetch() only for administrators. The payload is kept
+// raw; pages build their own editable draft.
 
 const MATRIX_CACHE_TTL_MS = 30_000;
 const fetchFlightsByStore = new WeakMap();
@@ -26,8 +24,6 @@ const flightsFor = store => {
 
 const isMatrixPayload = data =>
   Boolean(data) && typeof data === 'object' && Array.isArray(data.channels);
-
-const isTextChannelRow = channel => isTextChannel(channel?.channel_type);
 
 // One GET for one account. Never throws: a 403 (non-admin) or a network
 // error only sets the fetch error flag.
@@ -67,11 +63,6 @@ export const useCaptainChannelMatrixStore = defineStore(
 
     getters: {
       getMatrix: state => state.matrix,
-      getChannels: state =>
-        (state.matrix?.channels || []).filter(isTextChannelRow),
-      getAssistants: state => state.matrix?.assistants || [],
-      getDefaultMainAssistantId: state =>
-        state.matrix?.default_main_assistant_id ?? null,
       getUIFlags: state => state.uiFlags,
     },
 

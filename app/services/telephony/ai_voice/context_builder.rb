@@ -50,6 +50,7 @@ class Telephony::AiVoice::ContextBuilder
 
   def perform
     ensure_call_ref!
+    ensure_voice_agent_enabled!
     session = call_session || create_call_session!
     @call_session ||= session
     tools = tool_catalog
@@ -120,6 +121,16 @@ class Telephony::AiVoice::ContextBuilder
 
   def runtime_engine
     params['runtime_engine'].presence || params['runtimeEngine'].presence
+  end
+
+  # A call has no router: the number names its voice agent, and the AI answers only while that agent is switched on. When it is off,
+  # no context is given and the call goes the way its routing policy sends calls the AI cannot take (staff).
+  def ensure_voice_agent_enabled!
+    assigned = inbox_captain_assistant || routing_policy&.captain_assistant
+    return if assigned.blank? || assigned.entry_eligible?
+
+    raise Telephony::Error.new(code: 'VOICE_AGENT_DISABLED', message: 'The voice agent of this number is switched off',
+                               status: :unprocessable_content)
   end
 
   def ensure_call_ref!

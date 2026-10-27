@@ -28,6 +28,7 @@ class Captain::Evals::RoutingBenchmark::Workspace
 
   def create!
     @account = Account.create!(name: "Benchmark #{SecureRandom.uuid}", locale: 'ru',
+                               limits: { non_web_inboxes: ChatwootApp.max_limit },
                                internal_attributes: { 'captain_benchmark_source' => true })
     @account.enable_features!(*FEATURES)
     create_agents!
@@ -59,11 +60,6 @@ class Captain::Evals::RoutingBenchmark::Workspace
     contact_inbox = ContactInbox.create!(contact: contact, inbox: inbox, source_id: SecureRandom.uuid)
     Conversation.create!(account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox,
                          status: :pending, additional_attributes: { 'captain_benchmark_source' => true })
-  end
-
-  def entry_agent(dialogue)
-    inbox = channels.fetch(dialogue['channel'] || channels.keys.first)
-    CaptainInbox.find_by!(inbox: inbox).captain_assistant
   end
 
   def self.faq_embedding_cache
@@ -98,8 +94,7 @@ class Captain::Evals::RoutingBenchmark::Workspace
     knowledge + names
   end
 
-  # Who can hand a request to whom comes from the channel grid, not from a list per agent: every agent works in
-  # all channels (the default scope), so each benchmark channel has the whole team and its entry agent first.
+  # Every agent works in every channel and the router picks among them: a benchmark channel has the whole team and no agent of its own.
   def create_agents!
     data.fetch('agents').each do |row|
       config = { 'model' => @model, 'thinking_effort' => @reasoning,
@@ -112,13 +107,12 @@ class Captain::Evals::RoutingBenchmark::Workspace
   end
 
   def create_channels!
-    rows = data.fetch('channels', [{ 'key' => 'default', 'entry_agent' => agents.keys.first }])
+    rows = data.fetch('channels', [{ 'key' => 'default' }])
     rows.each do |row|
       key = row.fetch('key')
-      actor = agents.fetch(row.fetch('entry_agent'))
       channel = Channel::Api.create!(account: account, webhook_url: nil)
       inbox = Inbox.create!(account: account, name: "Benchmark #{key}", channel: channel)
-      CaptainInbox.create!(captain_assistant: actor, inbox: inbox)
+      CaptainInbox.create!(inbox: inbox, ai_enabled: true)
       channels[key] = inbox
     end
   end

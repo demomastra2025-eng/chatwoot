@@ -13,8 +13,8 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:inbox) { create(:inbox, account: account, enable_auto_assignment: true, enable_email_collect: false) }
   let(:contact) { create(:contact, account: account) }
-  let(:assistant) { create(:captain_assistant, account: account) }
-  let!(:captain_inbox) { create(:captain_inbox, captain_assistant: assistant, inbox: inbox) }
+  let!(:assistant) { create(:captain_assistant, account: account) }
+  let!(:captain_inbox) { create(:captain_inbox, inbox: inbox) }
   let(:transfer_text) { 'Transferring to another agent for further assistance.' }
 
   before do
@@ -208,7 +208,7 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
     end
 
     def model_output(conversation, output)
-      runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, conversation: conversation)
+      runner = Captain::Assistant::AgentRunnerService.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation)
       runner.send(:process_agent_result, Struct.new(:output, :context, :error).new(output, { current_agent: 'assistant' }, nil))
     end
 
@@ -253,7 +253,7 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
   describe 'a Captain turn stopped by moderation' do
     it 'm: hands the conversation to people when the safety policy blocks or cannot check the turn' do
       working_hours!(open: true)
-      runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, conversation: pending_conversation!)
+      runner = Captain::Assistant::AgentRunnerService.new(scope: Captain::ChannelScope.for_inbox(inbox), conversation: pending_conversation!)
       [
         'Agent input blocked by moderation policy',
         'Agent output blocked because moderation policy is unavailable'
@@ -389,7 +389,7 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
     end
 
     def runtime_runner(conversation)
-      Captain::Assistant::AgentRunnerService.new(assistant: assistant, conversation: conversation)
+      Captain::Assistant::AgentRunnerService.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation)
     end
 
     def quota_used_up!(conversation)

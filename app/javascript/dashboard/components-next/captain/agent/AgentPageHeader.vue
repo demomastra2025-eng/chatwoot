@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { useAlert } from 'dashboard/composables';
-import { useStore } from 'dashboard/composables/store';
+import { useMapGetter, useStore } from 'dashboard/composables/store';
 import CaptainAssistantAPI from 'dashboard/api/captain/assistant';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -11,7 +11,9 @@ import Switch from 'dashboard/components-next/switch/Switch.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import DropdownMenu from 'dashboard/components-next/dropdown-menu/DropdownMenu.vue';
 import AgentDeleteDialog from './AgentDeleteDialog.vue';
+import AgentSwitchOffDialog from './AgentSwitchOffDialog.vue';
 import { useAgentActiveToggle } from './useAgentActiveToggle';
+import { switchOffWarnings } from './agentSwitchOff';
 import { AGENT_DESCRIPTION_MAX_LENGTH } from './agentDraft';
 
 // Agent page header: breadcrumb, avatar (changed at once), inline name and
@@ -36,8 +38,12 @@ const route = useRoute();
 const router = useRouter();
 const store = useStore();
 const { setActive, isToggling } = useAgentActiveToggle();
+const agents = useMapGetter('captainAssistants/getRecords');
+const inboxes = useMapGetter('inboxes/getInboxes');
 
 const deleteDialogRef = ref(null);
+const switchOffDialogRef = ref(null);
+const switchOffText = ref('');
 const showMenu = ref(false);
 const avatarPreview = ref('');
 const isAvatarBusy = ref(false);
@@ -104,14 +110,36 @@ const isActive = computed(() =>
 );
 const isActiveToggling = computed(() => isToggling(props.assistant?.id));
 
-const handleActiveChange = async value => {
-  if (!props.canEdit) return;
+const applyActive = async value => {
   pendingActive.value = Boolean(value);
   try {
     await setActive(props.assistant, Boolean(value));
   } finally {
     pendingActive.value = null;
   }
+};
+
+// Every agent has the same switch. Switching one off asks first when it
+// answers the calls of a number, or when it is the last one that is on.
+const handleActiveChange = async value => {
+  if (!props.canEdit) return;
+  if (value) {
+    await applyActive(true);
+    return;
+  }
+
+  const warnings = switchOffWarnings({
+    agent: props.assistant,
+    agents: agents.value || [],
+    inboxes: inboxes.value || [],
+  }).map(warning => t(warning.key, warning.params));
+  if (!warnings.length) {
+    await applyActive(false);
+    return;
+  }
+
+  switchOffText.value = warnings.join(' ');
+  switchOffDialogRef.value?.open();
 };
 
 const refreshAssistant = () =>
@@ -327,6 +355,12 @@ const handleMenuAction = ({ action }) => {
       </div>
     </div>
 
+    <AgentSwitchOffDialog
+      v-if="canEdit"
+      ref="switchOffDialogRef"
+      :description="switchOffText"
+      @confirm="applyActive(false)"
+    />
     <AgentDeleteDialog
       v-if="canEdit"
       ref="deleteDialogRef"

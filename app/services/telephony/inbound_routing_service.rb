@@ -1380,6 +1380,8 @@ class Telephony::InboundRoutingService
   end
 
   def resolved_ai_app_ref
+    return unless voice_agent_enabled?
+
     @resolved_ai_app_ref ||= if server_voice_agent_runtime_request?
                                server_voice_agent_app_ref
                              elsif direct_onelink_ai_runtime_request?
@@ -1389,7 +1391,16 @@ class Telephony::InboundRoutingService
                              end
   end
 
+  # A call has no router: the number names its voice agent. While that agent is switched off the AI does not answer the number, and
+  # the call goes the way the policy sends calls the AI cannot take. A number with no agent assigned keeps its AI app as before.
+  def voice_agent_enabled?
+    agent = routing_policy&.captain_assistant
+    agent.blank? || agent.entry_eligible?
+  end
+
   def server_voice_agent_app_ref
+    return unless voice_agent_enabled?
+
     @server_voice_agent_app_ref ||= routing_policy&.effective_ai_app_ref.presence || runtime_app_ref
   end
 

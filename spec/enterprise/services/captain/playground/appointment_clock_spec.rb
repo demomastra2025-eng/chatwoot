@@ -12,7 +12,7 @@ RSpec.describe Captain::Playground::Session, 'appointment clocks through tools a
       }
     })
   end
-  let(:session) { described_class.new(account: account, user: user, assistant: assistant) }
+  let(:session) { described_class.new(account: account, user: user) }
 
   around do |example|
     Time.use_zone('UTC') { travel_to(Time.utc(2026, 10, 11)) { example.run } }
@@ -58,6 +58,7 @@ RSpec.describe Captain::Playground::Session, 'appointment clocks through tools a
       baseline = business_counts
       session_id = appointment_id = nil
       session.with_lock do |workspace|
+        workspace.activate_agent!(assistant)
         configure_synthetic_clock(workspace)
         session_id = workspace.id
         scenario = workspace.payload[:scenario]
@@ -70,7 +71,8 @@ RSpec.describe Captain::Playground::Session, 'appointment clocks through tools a
         expect(Time.iso8601(result.dig('appointment', 'ends_at'))).to eq(Time.utc(2026, 10, 13, 9, 30))
       end
 
-      described_class.new(account: account, user: user, assistant: assistant, session_id: session_id).with_lock do |workspace|
+      described_class.new(account: account, user: user, session_id: session_id).with_lock do |workspace|
+        workspace.activate_agent!(assistant)
         result = invoke(workspace, 'get_appointment', appointment_id: appointment_id)
         expect(result).to include('success' => true, 'local_time' => '14:00')
         expect(Time.iso8601(result.dig('appointment', 'starts_at'))).to eq(Time.utc(2026, 10, 13, 9))
@@ -82,6 +84,7 @@ RSpec.describe Captain::Playground::Session, 'appointment clocks through tools a
       session
       baseline = business_counts
       session.with_lock do |workspace|
+        workspace.activate_agent!(assistant)
         configure_synthetic_clock(workspace)
         found = invoke(workspace, 'search_appointments', client_identifier: '150101500011').fetch('appointments').first
         result = invoke(workspace, 'update_appointment', appointment_id: found.fetch('appointment_id'),
@@ -101,6 +104,7 @@ RSpec.describe Captain::Playground::Session, 'appointment clocks through tools a
       session
       baseline = business_counts
       session.with_lock do |workspace|
+        workspace.activate_agent!(assistant)
         configure_synthetic_clock(workspace)
         scenario = workspace.payload[:scenario]
         arguments = { resource_id: scenario[:resources].first['id'], service_id: scenario[:services].first['id'] }
@@ -139,6 +143,7 @@ RSpec.describe Captain::Playground::Session, 'appointment clocks through tools a
         ).once.and_call_original
 
         session.with_lock do |workspace|
+          workspace.activate_agent!(assistant)
           workspace.set_permissions!(read: true, write: true)
           approval = Captain::Playground::ActionApproval.new(workspace)
           preview = approval.preview('update_appointment', input.merge(appointment_id: appointment.id))
@@ -182,6 +187,7 @@ RSpec.describe Captain::Playground::Session, 'appointment clocks through tools a
           original = appointment.attributes
           expect(Scheduling::Appointments::UpsertService).not_to receive(:new)
           session.with_lock do |workspace|
+            workspace.activate_agent!(assistant)
             workspace.set_permissions!(read: true, write: true)
             expect do
               Captain::Playground::ActionApproval.new(workspace).preview('update_appointment', appointment_id: appointment.id, starts_at: clock)

@@ -8,7 +8,7 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
   let!(:captain_assistant) { create(:captain_assistant, account: inbox.account) }
 
   before do
-    create(:captain_inbox, inbox: inbox, captain_assistant: captain_assistant)
+    create(:captain_inbox, inbox: inbox)
     stub_const('Limits::BULK_ACTIONS_LIMIT', 3)
     inbox.account.update!(auto_resolve_after: 60)
     inbox.reload

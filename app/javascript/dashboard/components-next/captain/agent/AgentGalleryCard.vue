@@ -3,18 +3,12 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
-import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 
 const props = defineProps({
   assistant: {
     type: Object,
     required: true,
-  },
-  // eslint-disable-next-line vue/no-unused-properties
-  stats: {
-    type: Object,
-    default: null,
   },
   canToggle: {
     type: Boolean,
@@ -24,25 +18,35 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
-  isMain: { type: Boolean, default: false },
+  // How many agents are switched on in the workspace: with two or more, the
+  // AI chooses among them by their description.
+  enabledCount: { type: Number, default: 0 },
 });
 
-const emit = defineEmits(['open', 'toggleActive', 'makeMain']);
+const emit = defineEmits(['open', 'toggleActive']);
 
 const { t } = useI18n();
 
-// The value the admin just picked, shown until the save settles. When it
-// fails the parent keeps the stored value and the switch falls back to it.
+// The value the admin just picked, shown while the save runs (the parent
+// marks the card as `toggling`). When it fails, or when the parent asks for a
+// confirmation first, the switch stays on the stored value.
 const pendingActive = ref(null);
 
 const storedActive = computed(() => props.assistant?.active !== false);
 const isActive = computed(() =>
-  pendingActive.value === null ? storedActive.value : pendingActive.value
+  props.toggling && pendingActive.value !== null
+    ? pendingActive.value
+    : storedActive.value
 );
 
 const agentName = computed(() => props.assistant?.name || '');
 const routingDescription = computed(() =>
   String(props.assistant?.routing_description || '').trim()
+);
+
+// A switched-on agent without a description is never chosen when several agents are on.
+const hintsNoCard = computed(
+  () => isActive.value && !routingDescription.value && props.enabledCount >= 2
 );
 
 const statusLabel = computed(() =>
@@ -107,30 +111,12 @@ watch(storedActive, () => {
           >
             {{ statusLabel }}
           </span>
-          <span
-            v-if="isMain"
-            class="flex items-center gap-1 text-body-main text-n-amber-11"
-            data-testid="agent-main-label"
-          >
-            <Icon icon="i-lucide-star" class="size-4 fill-current" />
-            {{ t('CAPTAIN.GALLERY.CARD.MAIN') }}
-          </span>
         </div>
       </div>
       <div v-if="canToggle" class="flex shrink-0 items-center gap-2">
-        <button
-          v-if="!isMain && isActive"
-          type="button"
-          class="inline-flex size-7 items-center justify-center rounded-lg text-n-slate-11 transition-colors hover:bg-n-alpha-2 hover:text-n-amber-11"
-          :aria-label="t('CAPTAIN.GALLERY.CARD.MAKE_MAIN')"
-          data-testid="agent-make-main"
-          @click.stop="emit('makeMain')"
-        >
-          <Icon icon="i-lucide-star" class="size-4" />
-        </button>
         <Switch
           :model-value="isActive"
-          :disabled="toggling || isMain"
+          :disabled="toggling"
           :aria-label="t('CAPTAIN.ASSISTANTS.ROUTING.ACTIVE')"
           data-testid="agent-active-switch"
           @update:model-value="handleToggle"
@@ -148,10 +134,15 @@ watch(storedActive, () => {
     </p>
     <p
       v-else
-      class="mb-0 text-body-para text-n-slate-10"
+      class="mb-0 text-body-para"
+      :class="hintsNoCard ? 'text-n-amber-11' : 'text-n-slate-10'"
       data-testid="agent-description-hint"
     >
-      {{ t('CAPTAIN.GALLERY.CARD.NO_DESCRIPTION') }}
+      {{
+        hintsNoCard
+          ? t('CAPTAIN.GALLERY.CARD.NO_CARD_HINT')
+          : t('CAPTAIN.GALLERY.CARD.NO_DESCRIPTION')
+      }}
     </p>
   </div>
 </template>

@@ -1,11 +1,10 @@
 require 'rails_helper'
 
 RSpec.describe Captain::ReplySuggestion::HistoryBuilder do
-  subject(:history) { described_class.new(account: account, conversation: conversation, assistant: assistant).perform }
+  subject(:history) { described_class.new(account: account, conversation: conversation).perform }
 
   let(:account) { create(:account) }
   let(:conversation) { create(:conversation, account: account, inbox: create(:inbox, account: account)) }
-  let(:assistant) { create(:captain_assistant, account: account, active: true) }
 
   def add_message(type, content, **attributes)
     create(:message, conversation: conversation, account: account, message_type: type, content: content, **attributes)
@@ -47,8 +46,8 @@ RSpec.describe Captain::ReplySuggestion::HistoryBuilder do
     expect(history.last).to eq(role: 'user', content: described_class::FALLBACK_USER_PROMPT)
   end
 
-  it 'keeps only the latest messages the assistant is set to read' do
-    allow(assistant).to receive(:history_message_limit_value).and_return(2)
+  it 'keeps only the latest messages the AI reads: the limit is the same for every agent' do
+    stub_const('Captain::Assistant::HISTORY_MESSAGE_LIMIT', 2)
     %w[первое второе третье].each { |text| add_message(:incoming, text) }
 
     expect(history.pluck(:content)).to eq(%w[второе третье])
@@ -115,8 +114,8 @@ RSpec.describe Captain::ReplySuggestion::HistoryBuilder do
       expect(description_texts(result.first)).to eq([automatic('Уже описано')])
     end
 
-    it 'does not describe images when the assistant does not read images' do
-      allow(assistant).to receive(:account_settings).and_return(instance_double(Captain::AccountSettings, section: { 'images' => false }))
+    it 'does not describe images when the workspace setting says the AI does not read images' do
+      Captain::AccountSettings.new(account).update!('understanding' => { 'images' => false })
       expect(Captain::ReplySuggestion::ImageDescriber).not_to receive(:new)
 
       expect(history.pluck(:content)).to eq(['Первый снимок', 'Второй снимок', 'Третий снимок'])

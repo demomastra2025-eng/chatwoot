@@ -44,9 +44,16 @@ class Captain::Assistant::AgentRunnerService
     end
   end
 
+  # scope: the channel the run belongs to (Captain::ChannelScope). The router picks the agent among its enabled agents; the run
+  # belongs to the channel, never to an agent.
+  # assistant: one agent that runs alone, with no channel, router or durable session (the writer of a touch or a campaign message, the
+  # tool context of an action a manager approved). Exactly one of the two is given.
   # request_id: the id the llm events of the run share when the caller has one (a reply suggestion request).
-  def initialize(assistant:, conversation: nil, callbacks: {}, source: nil, response_fence: nil, test_overrides: {}, playground_session: nil,
-                 deal: nil, incoming_message_id: nil, request_id: nil)
+  def initialize(scope: nil, assistant: nil, conversation: nil, callbacks: {}, source: nil, response_fence: nil, test_overrides: {},
+                 playground_session: nil, deal: nil, incoming_message_id: nil, request_id: nil)
+    raise ArgumentError, 'A run belongs to a channel scope or to one agent' unless scope.present? ^ assistant.present?
+
+    @scope = scope
     @assistant = assistant
     @request_id = request_id.presence
     @conversation = conversation
@@ -108,9 +115,8 @@ class Captain::Assistant::AgentRunnerService
     return response if response['response_suppressed'] || response['response_cancelled']
     return response if ['conversation_handoff', PROVIDER_ERROR_RESPONSE, 'response_cancelled'].include?(response['response'])
 
-    actor = custom_guardrail_actor(@acting_assistant_id)
     Captain::Safety::CustomRulesRuntime.check_output!(
-      assistant: actor, context: @custom_guardrail_context.to_h, response: response
+      account: account, agent_id: acting_agent_id, context: @custom_guardrail_context.to_h, response: response
     )
   rescue Captain::Safety::CustomRulesRuntime::HandoffRequired => e
     @acting_assistant_id = e.assistant_id
@@ -119,10 +125,19 @@ class Captain::Assistant::AgentRunnerService
     blocked_by_moderation_response('Revised agent output blocked by safety policy', safety_reason: e.reason)
   end
 
-  def custom_guardrail_actor(actor_id)
-    return @assistant unless @assistant.persisted?
+  def account
+    @scope ? @scope.account : @assistant.account
+  end
 
-    agent_run_context.graph.find(actor_id) || @assistant
+  # A run in a channel (the router picks the agent); a run of one given agent has no graph, router or session.
+  def graph_run?
+    @scope.present?
+  end
+
+  # The agent the answer is attributed to: the one that acted, or the agent of a run alone. nil: the AI itself (no agent holds the
+  # conversation and none produced the output).
+  def acting_agent_id
+    @acting_assistant_id || @assistant&.id
   end
 
   def generate_response_in_runtime_cache(message_history)
@@ -147,7 +162,7 @@ class Captain::Assistant::AgentRunnerService
     return false if @source.to_s == 'playground'
     return false unless Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: @conversation).nil?
 
-    actors = @assistant.persisted? ? agent_run_context.graph.agents : [@assistant]
+    actors = graph_run? ? agent_run_context.graph.agents : [@assistant]
     mcp_tool_reference?(actors.map do |actor|
       [actor.config, actor.description, actor.response_guidelines, actor.guardrails]
     end)
@@ -197,6 +212,8 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def routed_turn(message_to_process, context)
+    return no_agent_response(context) if nobody_can_answer?
+
     @turn_decision = time_phase('routing_await') { await_routing(context) }
     limit_suggestion_budget(@turn_decision)
     check_custom_input_rules!(message_to_process, context)
@@ -205,7 +222,7 @@ class Captain::Assistant::AgentRunnerService
     return routed_human_response(context) if @turn_decision&.human?
     return routed_no_reply_suggestion if @turn_decision&.no_reply? && suggestion_run?
 
-    time_phase('dispatch') { turn_dispatcher.prepare!(context) } if @assistant.persisted?
+    time_phase('dispatch') { turn_dispatcher.prepare!(context) } if graph_run?
     # The chosen agent (or the acting agent of a council) holds the conversation now: a failure of its run answers as it.
     @acting_assistant_id = context[:acting_assistant_id] if context[:acting_assistant_id]
     time_phase('run_agent_with_retries') { run_agent_with_blank_response_retries(message_to_process, context) }
@@ -213,6 +230,17 @@ class Captain::Assistant::AgentRunnerService
     routing_failure_response(e, context)
   rescue Captain::Runtime::TurnDispatcher::CouncilUnavailable => e
     council_unavailable_response(e, context)
+  end
+
+  # Every agent of the channel is off, or several are on and none has a card to be chosen by (see Captain::AgentGraph#unavailable_reason):
+  # nobody answers, and the turn ends through the technical-failure path (the conversation goes to staff with a note of the code).
+  def nobody_can_answer?
+    graph_run? && agent_run_context.graph.candidates.empty?
+  end
+
+  def no_agent_response(context)
+    reason = agent_run_context.graph.unavailable_reason
+    technical_failure_response({ 'kind' => Captain::Runtime::ToolFailure::TECHNICAL, 'tool' => 'agent_router', 'reason' => reason.to_s }, context)
   end
 
   # A routed reply suggestion starts with the time of a council (Captain::ReplySuggestion.budget_seconds(router: true)); when the
@@ -228,21 +256,22 @@ class Captain::Assistant::AgentRunnerService
   # (saved and activated): the failure answers as it; else the holder still has the conversation.
   def council_unavailable_response(error, context)
     Rails.logger.warn("[CAPTAIN][Router] council unavailable: #{error.message}")
-    @acting_assistant_id = context[:acting_assistant_id] || conversation_holder.id
+    @acting_assistant_id = context[:acting_assistant_id] || conversation_holder&.id
     technical_failure_response({ 'kind' => Captain::Runtime::ToolFailure::TECHNICAL, 'tool' => 'agent_router', 'reason' => 'council_unavailable' },
                                context)
   end
 
-  # The patient asks for a live staff member: no agent runs. The agent that holds the conversation hands it over; the response
-  # builder applies the handoff (status, the clinic's notice, a staff note). In a reply suggestion the operator is told to answer.
+  # The patient asks for a live staff member: no agent runs. The agent that holds the conversation (the AI itself when nobody holds it)
+  # hands it over; the response builder applies the handoff (status, the clinic's notice, a staff note). In a reply suggestion the
+  # operator is told to answer.
   def routed_human_response(context)
     actor = conversation_holder
-    @acting_assistant_id = actor.id
-    reason = I18n.with_locale(@assistant.account&.locale || I18n.default_locale) { I18n.t('captain.coordination.patient_requested_human') }
+    @acting_assistant_id = actor&.id
+    reason = I18n.with_locale(account.locale || I18n.default_locale) { I18n.t('captain.coordination.patient_requested_human') }
     return routed_human_suggestion if suggestion_run?
 
     record_routed_handoff(context, reason)
-    human_handoff_response({ reason: reason }, actor.agent_name).merge('routing_handoff' => true)
+    human_handoff_response({ reason: reason }, actor&.agent_name).merge('routing_handoff' => true)
   end
 
   # The router decided it, not an agent: routing_human tells the outcome so (no agent is named as its author).
@@ -256,7 +285,7 @@ class Captain::Assistant::AgentRunnerService
   # there is no draft; routing_no_reply tells the outcome that the router decided it (no agent is named as its author, and the agent
   # that leads the dialog stays the sticky one).
   def routed_no_reply_suggestion
-    @acting_assistant_id = conversation_holder.id
+    @acting_assistant_id = conversation_holder&.id
     note = I18n.t('captain.reply_suggestion.reasons.router_no_reply')
     { 'response' => '', 'response_mode' => 'suppress', 'operator_note' => note, 'routing_no_reply' => true }
   end
@@ -315,9 +344,9 @@ class Captain::Assistant::AgentRunnerService
       agent_runner = runner
       context[:patient_language] = patient_language unless context.key?(:patient_language)
       options = { context: context, max_turns: max_turns_for_run,
-                  runtime_options: { llm_context: llm_context_for_run, account: @assistant.account }.merge(runtime_options) }
+                  runtime_options: { llm_context: llm_context_for_run, account: account }.merge(runtime_options) }
       # A temporary (unsaved) assistant has no channel and no router: it runs alone.
-      next agent_runner.run(message_to_process, **options) unless @assistant.persisted?
+      next agent_runner.run(message_to_process, **options) unless graph_run?
 
       turn_dispatcher.run(agent_runner, message_to_process, **options)
     end
@@ -352,7 +381,7 @@ class Captain::Assistant::AgentRunnerService
   def publish_blank_response_retry(result, attempt)
     current_agent = result.context&.dig(:current_agent)
     Rails.logger.warn(
-      "[Captain V2] Retrying blank assistant response for assistant=#{@assistant.id} " \
+      "[Captain V2] Retrying blank assistant response for assistant=#{acting_agent_id} " \
       "conversation=#{@conversation&.id} agent=#{current_agent} attempt=#{attempt}"
     )
     Llm::EventBus.publish(
@@ -529,7 +558,7 @@ class Captain::Assistant::AgentRunnerService
   def log_agent_result(result)
     error = result.respond_to?(:error) ? result.error : nil
     Rails.logger.info(
-      "[Captain V2] Agent result assistant_id=#{@assistant.id} conversation_id=#{@conversation&.id} " \
+      "[Captain V2] Agent result assistant_id=#{acting_agent_id} conversation_id=#{@conversation&.id} " \
       "current_agent=#{result.context&.dig(:current_agent)} output_type=#{result.output.class.name} error_class=#{error&.class&.name}"
     )
   end
@@ -626,7 +655,7 @@ class Captain::Assistant::AgentRunnerService
     raise
   rescue StandardError => e
     Rails.logger.warn(
-      "[Captain V2] Finalization-only retry failed for assistant=#{@assistant.id} " \
+      "[Captain V2] Finalization-only retry failed for assistant=#{acting_agent_id} " \
       "conversation=#{@conversation&.id}: #{e.class.name}: #{e.message}"
     )
     publish_finalization_only_retry_event(error, context, status: 'failed', retry_error: e, duration_ms: elapsed_ms(started_at))
@@ -889,7 +918,7 @@ class Captain::Assistant::AgentRunnerService
     response['artifact_ids'] = sanitized_ids
     Rails.logger.warn(
       '[Captain V2] Dropped model artifact_ids not exposed by completed tool results ' \
-      "assistant=#{@assistant.id} conversation=#{@conversation&.id} " \
+      "assistant=#{acting_agent_id} conversation=#{@conversation&.id} " \
       "requested=#{artifact_ids.size} kept=#{sanitized_ids.size} completed_tools=#{completed_tool_names(context).size}"
     )
   end
@@ -989,12 +1018,16 @@ class Captain::Assistant::AgentRunnerService
 
   def build_state
     state = {
-      account_id: @assistant.account_id,
-      assistant_id: @assistant.id,
-      assistant_config: @assistant.config,
+      account_id: account.id,
       captain_runtime: runtime_preferences_for_run,
-      captain_scheduling_grounding_guard_enabled: @assistant.account.feature_enabled?('captain_scheduling_grounding_guard')
+      captain_scheduling_grounding_guard_enabled: account.feature_enabled?('captain_scheduling_grounding_guard')
     }
+    # The agent of a run alone is known up front. In a channel the router chooses it, and its activation sets everything that is the
+    # agent's own (its configuration, preferences and prompt context, see Captain::AgentRunContext#activate).
+    if @assistant
+      state[:assistant_id] = @assistant.id
+      state[:assistant_config] = @assistant.config
+    end
     state[:source] = @source if @source.present?
     state[:playground_thinking_effort] = @test_overrides[:thinking_effort] if @source == 'playground' && @test_overrides.key?(:thinking_effort)
     state[:captain_control_generation] = @response_fence[:control_generation] if @response_fence.key?(:control_generation)
@@ -1007,7 +1040,7 @@ class Captain::Assistant::AgentRunnerService
       time_phase('build_conversation_state') { build_conversation_state(state) } if @conversation
       state.merge!(@playground_session.state) if @playground_session
     end
-    state[:prompt_context] = time_phase('prompt_context_state') { @assistant.prompt_context_state(state) }
+    state[:prompt_context] = time_phase('prompt_context_state') { @assistant.prompt_context_state(state) } if @assistant
     state
   end
 
@@ -1062,8 +1095,7 @@ class Captain::Assistant::AgentRunnerService
     state.merge!(base_conversation_state)
     state[:contact] = slice_attrs(@conversation.contact, Captain::ContextFields::CONTACT_STATE_ATTRIBUTES) if @conversation.contact
     reply_notification = Captain::ReplyNotificationContext.for(
-      account: @assistant.account, conversation: @conversation, incoming_message_id: @incoming_message_id,
-      assistant: @assistant
+      account: account, conversation: @conversation, incoming_message_id: @incoming_message_id
     )
     state[:conversation][:reply_notification] = reply_notification if reply_notification.present?
     add_related_record_state(state)
@@ -1100,22 +1132,27 @@ class Captain::Assistant::AgentRunnerService
 
   def add_related_record_state(state)
     state[:communication_thread] = Captain::ContextFields.communication_thread_state_for(
-      account: @assistant.account,
+      account: account,
       conversation: @conversation,
-      assistant: @assistant
+      accessible_inboxes: thread_accessible_inboxes
     )
-    state[:deal] = Captain::ContextFields.deal_state_for(account: @assistant.account, conversation: @conversation, deal: scoped_event_deal)
-    state[:task] = Captain::ContextFields.task_state_for(account: @assistant.account, conversation: @conversation)
+    state[:deal] = Captain::ContextFields.deal_state_for(account: account, conversation: @conversation, deal: scoped_event_deal)
+    state[:task] = Captain::ContextFields.task_state_for(account: account, conversation: @conversation)
     state[:appointment] = Captain::ContextFields.appointment_state_for(
-      account: @assistant.account, conversation: @conversation, patient_scope: true
+      account: account, conversation: @conversation, patient_scope: true
     )
     state[:campaign] = slice_attrs(@conversation.campaign, CAMPAIGN_STATE_ATTRIBUTES) if @conversation.campaign
     state[:contact_inbox] = slice_attrs(@conversation.contact_inbox, CONTACT_INBOX_STATE_ATTRIBUTES) if @conversation.contact_inbox
   end
 
+  # The AI works across every channel of its workspace: it sees the person's thread in all of them (there is no per-agent channel list).
+  def thread_accessible_inboxes
+    account.inboxes.includes(:channel).to_a if account.feature_enabled?('communication_threads')
+  end
+
   def scoped_event_deal
-    return unless @event_deal&.account_id == @assistant.account_id
-    return unless Captain::DealContext.new(account: @assistant.account, conversation: @conversation).deals.exists?(id: @event_deal.id)
+    return unless @event_deal&.account_id == account.id
+    return unless Captain::DealContext.new(account: account, conversation: @conversation).deals.exists?(id: @event_deal.id)
 
     @event_deal
   end
@@ -1131,14 +1168,14 @@ class Captain::Assistant::AgentRunnerService
       temperature_override: @test_overrides[:temperature],
       suggestion_tools: (true if suggestion_run?)
     }.compact
-    return [@assistant.agent(**agent_options)] unless @assistant.persisted?
+    return [@assistant.agent(**agent_options)] unless graph_run?
 
     agent_run_context.runtime_agents(overrides: agent_options)
   end
 
   def agent_run_context
     @agent_run_context ||= begin
-      options = { entry: @assistant, conversation: @conversation, playground: @playground_session, fence: @response_fence }
+      options = { scope: @scope, conversation: @conversation, playground: @playground_session, fence: @response_fence }
       if suggestion_run?
         options[:ephemeral_session] = true
         # The agent that leads the dialog of the suggestions (the saved session has none while the AI only suggests).
@@ -1153,8 +1190,8 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def runtime_preferences_for_run
-    preferences = Captain::AssistantSafetyPreferences.for(assistant: @assistant, feature: :assistant)
-    saved_effort = @assistant.config.to_h['thinking_effort'].presence
+    preferences = Captain::AssistantSafetyPreferences.for(assistant: @assistant, feature: :assistant, account: account)
+    saved_effort = @assistant&.config.to_h['thinking_effort'].presence
     preferences = preferences.merge('assistant_thinking_effort' => saved_effort) if saved_effort
     return preferences unless @source == 'playground' && @test_overrides.key?(:thinking_effort)
 
@@ -1172,9 +1209,10 @@ class Captain::Assistant::AgentRunnerService
     return response unless response.is_a?(Hash)
 
     response = response.merge('captain_request_id' => @captain_request_id) if @captain_request_id.present?
-    return response unless @assistant.persisted?
+    return response unless graph_run?
 
-    actor = agent_run_context.graph.find(@acting_assistant_id || @assistant.id)
+    # No agent produced the output (nobody holds the conversation): it is the AI itself, and names no agent.
+    actor = agent_run_context.graph.find(@acting_assistant_id) if @acting_assistant_id
     response.merge('agent_id' => actor&.id, 'agent_display_name' => actor&.name)
   end
 
@@ -1197,10 +1235,6 @@ class Captain::Assistant::AgentRunnerService
       'completion_tokens' => usage.output_tokens.to_i,
       'total_tokens' => total
     }
-  end
-
-  def enabled_scenarios
-    @enabled_scenarios ||= @assistant.scenarios.enabled.to_a
   end
 
   def install_instrumentation(runner)
@@ -1243,7 +1277,7 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def add_usage_metadata_callback(runner)
-    handoff_tool_name = Captain::Tools::HandoffTool.new(@assistant).name
+    handoff_tool_name = Captain::Tools::HandoffTool.new(nil).name
 
     # This callback feeds ResponseBuilderJob and blank-response retry safety even when OTEL is disabled.
     runner.on_tool_complete do |tool_name, tool_result, context_wrapper|
@@ -1283,12 +1317,14 @@ class Captain::Assistant::AgentRunnerService
   def track_completed_tool_result(tool_name, tool_result, context_wrapper)
     normalized = Captain::ToolResult.normalize(tool_result)
     context_wrapper.context[:captain_v2_completed_tool_results] ||= []
-    context_wrapper.context[:captain_v2_completed_tool_results] << completed_tool_result_record(tool_name, normalized)
+    context_wrapper.context[:captain_v2_completed_tool_results] << completed_tool_result_record(
+      tool_name, normalized, context_wrapper.context.dig(:state, :assistant_id)
+    )
     context_wrapper.context[:captain_v2_completed_tool_results] =
       context_wrapper.context[:captain_v2_completed_tool_results].last(MAX_COMPLETED_TOOL_RESULT_RECORDS)
   end
 
-  def completed_tool_result_record(tool_name, normalized_result)
+  def completed_tool_result_record(tool_name, normalized_result, actor_id)
     {
       tool_name: tool_name.to_s,
       success: !Captain::ToolResult.error?(normalized_result),
@@ -1296,11 +1332,11 @@ class Captain::Assistant::AgentRunnerService
       data_type: tool_payload_type(normalized_result[:data]),
       message_type: tool_payload_type(normalized_result[:message]),
       error_type: tool_payload_type(normalized_result[:error]),
-      appointment_evidence: appointment_evidence(tool_name, normalized_result)
+      appointment_evidence: appointment_evidence(tool_name, normalized_result, actor_id)
     }.compact
   end
 
-  def appointment_evidence(tool_name, normalized_result)
+  def appointment_evidence(tool_name, normalized_result, actor_id)
     canonical_name = APPOINTMENT_MUTATION_TOOL_NAMES.find do |name|
       tool_name.to_s == name || tool_name.to_s.end_with?("__#{name}") || tool_name.to_s.end_with?(":#{name}")
     end
@@ -1310,7 +1346,7 @@ class Captain::Assistant::AgentRunnerService
     return if canonical_name.blank?
 
     if !@playground_session&.trial? && canonical_name == 'update_appointment' && payload[:success] && payload[:appointment_id].present?
-      return provider_move_evidence(payload)
+      return provider_move_evidence(payload, actor_id)
     end
 
     appointment = payload[:appointment].to_h.with_indifferent_access
@@ -1338,14 +1374,14 @@ class Captain::Assistant::AgentRunnerService
     }.compact
   end
 
-  def provider_move_evidence(payload)
-    appointment = @assistant.account.scheduling_appointments.find_by(id: payload[:appointment_id])
+  def provider_move_evidence(payload, actor_id)
+    appointment = account.scheduling_appointments.find_by(id: payload[:appointment_id])
     return if appointment.blank?
 
     command = Integrations::Medelement::ProviderCommand.where(
-      account_id: @assistant.account_id, appointment_id: appointment.id, operation: 'move_reception'
+      account_id: account.id, appointment_id: appointment.id, operation: 'move_reception'
     ).order(created_at: :desc, id: :desc).first
-    return if command.blank? || command.request_snapshot.dig('actor', 'id').to_s != @assistant.id.to_s
+    return if command.blank? || command.request_snapshot.dig('actor', 'id').to_s != actor_id.to_s
 
     {
       action: 'update_appointment', appointment_id: appointment.id,
@@ -1501,7 +1537,7 @@ class Captain::Assistant::AgentRunnerService
       feature: :assistant,
       stage: :input,
       content: input_with_unanswered_messages(message_to_process, context),
-      account: @assistant.account,
+      account: account,
       preferences: context.dig(:state, :captain_runtime)
     )
     nil
@@ -1512,14 +1548,16 @@ class Captain::Assistant::AgentRunnerService
   end
 
   # The custom input rules are one workspace setting (Captain::AccountSettings), the same for every agent: they are checked once,
-  # before the decision is applied, as the agent that holds the conversation, so that a rule's handoff names the agent the session
-  # names (the response builder drops any other). A staff request runs none (no agent answers). Zero cost without rules.
+  # before the decision is applied, for the agent that holds the conversation, so that a rule's handoff names the agent the session
+  # names (the response builder drops any other), or none when nobody holds it. A staff request runs none (no agent answers). Zero cost
+  # without rules.
   def check_custom_input_rules!(message_to_process, context)
     return if @turn_decision&.human?
 
-    actor = custom_guardrail_actor(conversation_holder.id)
-    @acting_assistant_id = actor.id
-    Captain::Safety::CustomRulesRuntime.check_input!(assistant: actor, context: context, text: message_to_process)
+    @acting_assistant_id = conversation_holder&.id
+    Captain::Safety::CustomRulesRuntime.check_input!(
+      account: account, agent_id: @acting_assistant_id, context: context, text: message_to_process
+    )
   end
 
   def moderate_output!(response, runtime_preferences)
@@ -1527,7 +1565,7 @@ class Captain::Assistant::AgentRunnerService
       feature: :assistant,
       stage: :output,
       content: response['response'],
-      account: @assistant.account,
+      account: account,
       preferences: runtime_preferences
     )
   end
@@ -1539,7 +1577,7 @@ class Captain::Assistant::AgentRunnerService
     duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
     if duration_ms >= 250
       Rails.logger.info(
-        "[CAPTAIN][Timing] assistant_id=#{@assistant&.id} conversation_id=#{@conversation&.id} " \
+        "[CAPTAIN][Timing] assistant_id=#{acting_agent_id} conversation_id=#{@conversation&.id} " \
         "phase=#{name} duration_ms=#{duration_ms}"
       )
     end

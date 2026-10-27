@@ -29,7 +29,7 @@ RSpec.describe Captain::Runtime::ChatFactory do
   end
 
   it 'binds only the agent\'s own tools in a multi-agent run and tells it nothing about the other agents' do
-    run_context = Captain::AgentRunContext.new(entry: doctors, conversation: conversation)
+    run_context = Captain::AgentRunContext.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation)
     context = run_context.prepare({ state: { account_id: account.id, assistant_id: doctors.id }, conversation_history: [] })
     run_context.activate(procedures, context)
     agent = Captain::Runtime::Agent.new(name: "assistant_#{procedures.id}", instructions: 'Ты — ИИ-специалист кабинета процедур.',

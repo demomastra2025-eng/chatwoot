@@ -362,7 +362,7 @@ RSpec.describe Captain::Runtime::Runner do
     # and the runner of the conversation writes the draft from the results so far (AgentRunnerService#finalization_only_retry_response).
     describe 'a loop in the run of a conversation' do
       let(:agent) { Captain::Runtime::Agent.new(name: 'assistant_agent') }
-      let(:agent_session) { Captain::Conversation::AgentSession.new(entry: build_stubbed(:captain_assistant)) }
+      let(:agent_session) { Captain::Conversation::AgentSession.new }
       let(:terminal_result) do
         Captain::ToolResult.failure(error: 'Tool request limit reached', retryable: false, audit: { failure_reason: 'tool_request_limit' })
       end
@@ -406,7 +406,7 @@ RSpec.describe Captain::Runtime::Runner do
     # suggestion an action only prepares an approval card, but the second call of an action was refused as a retry and the fourth
     # identical slot search hit the attempt limit; either ended the run as a technical failure, which dropped the prepared cards.
     describe 'the reply suggestion that ended as tool_loop' do
-      let(:agent_session) { Captain::Conversation::AgentSession.new(entry: build_stubbed(:captain_assistant)) }
+      let(:agent_session) { Captain::Conversation::AgentSession.new }
       let(:read_tools) do
         %w[faq_lookup search_appointments search_available_slots search_scheduling_resources get_contact].index_with do |name|
           RuntimeRunnerSpecClinicTool.new(name)

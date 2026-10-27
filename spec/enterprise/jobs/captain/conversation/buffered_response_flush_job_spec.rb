@@ -3,13 +3,13 @@ require 'rails_helper'
 RSpec.describe Captain::Conversation::BufferedResponseFlushJob, type: :job do
   let(:account) { create(:account, custom_attributes: { plan_name: 'startups' }) }
   let(:inbox) { create(:inbox, account: account) }
-  let(:assistant) { create(:captain_assistant, account: account) }
+  let!(:assistant) { create(:captain_assistant, account: account) }
   let(:conversation) { create(:conversation, inbox: inbox, account: account, status: :pending) }
   let(:state_key) { format(Redis::Alfred::CAPTAIN_MESSAGE_BUFFER_STATE, conversation_id: conversation.id) }
   let(:lock_key) { format(Redis::Alfred::CAPTAIN_MESSAGE_BUFFER_LOCK, conversation_id: conversation.id) }
 
   before do
-    create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+    create(:captain_inbox, inbox: inbox)
   end
 
   after do
@@ -70,12 +70,44 @@ RSpec.describe Captain::Conversation::BufferedResponseFlushJob, type: :job do
 
     expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_now).with(
       conversation,
-      assistant,
       buffer_token: latest_token,
       expected_last_message_id: latest_message.id
     )
 
-    described_class.perform_now(conversation_id: conversation.id, assistant_id: assistant.id, token: latest_token)
+    described_class.perform_now(conversation_id: conversation.id, token: latest_token)
+  end
+
+  it 'still runs a flush that an earlier release queued with an agent id, and ignores that agent' do
+    latest_message = create(:message, conversation: conversation, content: 'Latest', message_type: :incoming)
+    latest_token = SecureRandom.uuid
+    Redis::Alfred.set(state_key, { token: latest_token, assistant_id: assistant.id, last_message_id: latest_message.id }.to_json,
+                      ex: 10.minutes.to_i)
+
+    expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_now).with(
+      conversation,
+      buffer_token: latest_token,
+      expected_last_message_id: latest_message.id
+    )
+
+    described_class.perform_now(conversation_id: conversation.id, assistant_id: assistant.id + 1000, token: latest_token)
+  end
+
+  it 'answers whichever agent is on: the buffer belongs to the channel, so switching off the agent it started with does not stop it' do
+    other = create(:captain_assistant, account: account)
+    latest_message = create(:message, conversation: conversation, content: 'Latest', message_type: :incoming)
+    latest_token = SecureRandom.uuid
+    Redis::Alfred.set(state_key, { token: latest_token, assistant_id: assistant.id, last_message_id: latest_message.id }.to_json,
+                      ex: 10.minutes.to_i)
+    assistant.update!(active: false)
+
+    expect(other).to be_active
+    expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_now).with(
+      conversation,
+      buffer_token: latest_token,
+      expected_last_message_id: latest_message.id
+    )
+
+    described_class.perform_now(conversation_id: conversation.id, token: latest_token)
   end
 
   it 'clears the current buffer state without answering when the conversation is open and open replies are disabled' do

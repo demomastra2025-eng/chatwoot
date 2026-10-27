@@ -92,7 +92,7 @@
         "ERROR": "Қате"
       },
       "CHIPS": {
-        "CAPTAIN": "AI: {name}",
+        "CAPTAIN": "AI",
         "AUTO_ASSIGNMENT": "Автобөлу",
         "WORKING_HOURS": "Жұмыс уақыты",
         "GREETING": "Сәлемдесу",

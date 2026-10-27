@@ -15,31 +15,24 @@ const channelMatrixAPI = (await import('dashboard/api/captain/channelMatrix'))
 const { useCaptainChannelMatrixStore } = await import('./channelMatrix');
 let accountId = '1';
 
-const matrixPayload = (overrides = {}) => ({
-  default_main_assistant_id: 12,
-  channels: [
-    {
-      inbox_id: 5,
-      name: 'WhatsApp',
-      channel_type: 'Channel::Whatsapp',
-      ai_enabled: true,
-      main_assistant_id: 12,
-      assistant_ids: [12],
-      auto_reply_mode: 'always',
-    },
-    {
-      inbox_id: 9,
-      name: 'Calls',
-      channel_type: 'Channel::Voice',
-      ai_enabled: true,
-      main_assistant_id: 12,
-      assistant_ids: [12],
-      auto_reply_mode: 'always',
-    },
-  ],
-  assistants: [{ id: 12, name: 'Admin', active: true, channel_scope: 'all' }],
+const channelRow = (overrides = {}) => ({
+  inbox_id: 5,
+  name: 'WhatsApp',
+  channel_type: 'Channel::Whatsapp',
+  ai_enabled: true,
+  auto_reply_mode: 'always',
   ...overrides,
 });
+
+const matrixPayload = (overrides = {}) => ({
+  channels: [channelRow()],
+  assistants: [
+    { id: 12, name: 'Admin', active: true, has_card: true, avatar_url: null },
+  ],
+  ...overrides,
+});
+
+const firstAssistantId = store => store.getMatrix?.assistants?.[0]?.id;
 
 const deferred = () => {
   let resolve;
@@ -67,16 +60,15 @@ describe('Captain channel matrix store', () => {
     vi.restoreAllMocks();
   });
 
-  it('loads the matrix and exposes text channels only', async () => {
+  it('loads the matrix: channels and agents, with no main agent', async () => {
     getMock.mockResolvedValue({ data: matrixPayload() });
     const store = useCaptainChannelMatrixStore();
 
     const matrix = await store.fetch();
 
-    expect(matrix.default_main_assistant_id).toBe(12);
-    expect(store.getChannels.map(channel => channel.inbox_id)).toEqual([5]);
-    expect(store.getAssistants).toHaveLength(1);
-    expect(store.getDefaultMainAssistantId).toBe(12);
+    expect(matrix.channels.map(channel => channel.inbox_id)).toEqual([5]);
+    expect(matrix.assistants).toHaveLength(1);
+    expect(Object.keys(matrix).sort()).toEqual(['assistants', 'channels']);
     expect(store.getUIFlags).toMatchObject({
       isFetching: false,
       fetchError: false,
@@ -132,10 +124,10 @@ describe('Captain channel matrix store', () => {
     expect(getMock).toHaveBeenCalledTimes(2);
 
     request.resolve({
-      data: matrixPayload({ default_main_assistant_id: 30 }),
+      data: matrixPayload({ assistants: [{ id: 30, active: true }] }),
     });
     await pending;
-    expect(store.getDefaultMainAssistantId).toBe(30);
+    expect(firstAssistantId(store)).toBe(30);
   });
 
   it('ignores a slow response for a previous account', async () => {
@@ -146,29 +138,32 @@ describe('Captain channel matrix store', () => {
 
     accountId = '2';
     getMock.mockResolvedValueOnce({
-      data: matrixPayload({ default_main_assistant_id: 30 }),
+      data: matrixPayload({ assistants: [{ id: 30, active: true }] }),
     });
     await store.fetch();
 
     accountOne.resolve({ data: matrixPayload() });
     await accountOneRequest;
 
-    expect(store.getDefaultMainAssistantId).toBe(30);
+    expect(firstAssistantId(store)).toBe(30);
   });
 
-  it('saves with one PATCH and applies the returned matrix', async () => {
+  it('saves the channel switches with one PATCH and applies the returned matrix', async () => {
     getMock.mockResolvedValue({ data: matrixPayload() });
-    const saved = matrixPayload({ default_main_assistant_id: 15 });
+    const saved = matrixPayload({
+      channels: [channelRow({ ai_enabled: false })],
+    });
     updateMock.mockResolvedValue({ data: saved });
     const store = useCaptainChannelMatrixStore();
     await store.fetch();
 
-    const result = await store.save({ default_main_assistant_id: 15 });
+    const patch = { channels: [{ inbox_id: 5, ai_enabled: false }] };
+    const result = await store.save(patch);
 
     expect(updateMock).toHaveBeenCalledTimes(1);
-    expect(updateMock).toHaveBeenCalledWith({ default_main_assistant_id: 15 });
+    expect(updateMock).toHaveBeenCalledWith(patch);
     expect(result).toEqual({ ok: true, matrix: saved });
-    expect(store.getDefaultMainAssistantId).toBe(15);
+    expect(store.getMatrix.channels[0].ai_enabled).toBe(false);
     expect(store.getUIFlags.isSaving).toBe(false);
   });
 
@@ -181,14 +176,14 @@ describe('Captain channel matrix store', () => {
     getMock.mockReturnValueOnce(slowGet.promise);
     const refresh = store.fetch({ force: true });
     updateMock.mockResolvedValue({
-      data: matrixPayload({ default_main_assistant_id: 15 }),
+      data: matrixPayload({ assistants: [{ id: 15, active: true }] }),
     });
-    await store.save({ default_main_assistant_id: 15 });
+    await store.save({ channels: [{ inbox_id: 5, ai_enabled: true }] });
 
     slowGet.resolve({ data: matrixPayload() });
     await refresh;
 
-    expect(store.getDefaultMainAssistantId).toBe(15);
+    expect(firstAssistantId(store)).toBe(15);
   });
 
   it('returns the 422 errors and keeps the current matrix', async () => {
@@ -197,8 +192,8 @@ describe('Captain channel matrix store', () => {
       {
         inbox_id: 5,
         assistant_id: null,
-        code: 'MAIN_AGENT_REQUIRED',
-        message: 'Choose a main agent',
+        code: 'INVALID_CHANNEL',
+        message: 'Channel not found',
       },
     ];
     updateMock.mockRejectedValue({
@@ -208,12 +203,12 @@ describe('Captain channel matrix store', () => {
     await store.fetch();
 
     const result = await store.save({
-      channels: [{ inbox_id: 5, ai_enabled: true, main_assistant_id: null }],
+      channels: [{ inbox_id: 5, ai_enabled: true }],
     });
 
     expect(result).toEqual({ ok: false, errors });
     expect(store.errors).toEqual(errors);
-    expect(store.getDefaultMainAssistantId).toBe(12);
+    expect(firstAssistantId(store)).toBe(12);
     expect(store.getUIFlags.isSaving).toBe(false);
   });
 });

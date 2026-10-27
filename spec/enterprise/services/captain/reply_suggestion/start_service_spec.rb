@@ -17,6 +17,10 @@ RSpec.describe Captain::ReplySuggestion::StartService do
     account.enable_features!('captain_integration', 'captain_tasks')
   end
 
+  def start_for(user)
+    described_class.new(account: account, user: user, conversation: conversation, conversation_display_id: conversation.display_id).perform
+  end
+
   def unavailable_events
     LlmEvent.where(event_name: 'captain.reply_suggestion.complete', status: 'unavailable')
   end
@@ -101,14 +105,37 @@ RSpec.describe Captain::ReplySuggestion::StartService do
   end
 
   describe 'the engine' do
-    it 'is the agent when the account has one that can take the conversation' do
-      assistant = create(:captain_assistant, account: account, active: true)
+    it 'is the agent when the account has an enabled agent; the request names no agent, the router or the only agent answers' do
+      create(:captain_assistant, account: account, active: true)
 
       body = service.perform.body
       record = Captain::ReplySuggestion::RequestStore.fetch_raw(body[:suggestion_request_id])
 
       expect(body[:engine]).to eq('agent')
-      expect(record['assistant_id']).to eq(assistant.id)
+      expect(record).not_to have_key('assistant_id')
+    end
+
+    it 'does not depend on a channel row or on a default agent: the channel needs no AI switch for a suggestion' do
+      create(:captain_assistant, account: account, active: true)
+
+      expect(inbox.captain_inbox).to be_nil
+      expect(service.perform.http_status).to eq(:accepted)
+    end
+
+    it 'is the agent while any agent is on, whichever agent is off' do
+      create(:captain_assistant, account: account, active: false)
+      create(:captain_assistant, account: account, active: true)
+
+      expect(service.perform.body[:engine]).to eq('agent')
+    end
+
+    it 'gives three enabled agents with cards the router: a routed request with the longer budget' do
+      3.times { |index| create(:captain_assistant, account: account, active: true, routing_description: "Card #{index}") }
+
+      body = service.perform.body
+
+      expect(body[:engine]).to eq('agent')
+      expect(body[:budget_seconds]).to eq(Captain::ReplySuggestion::ROUTER_BUDGET_SECONDS)
     end
 
     it 'gives a request that the router routes among two or more agents the router budget, and one agent the shorter one' do
@@ -123,8 +150,12 @@ RSpec.describe Captain::ReplySuggestion::StartService do
       expect(routed[:budget_seconds]).to eq(Captain::ReplySuggestion::ROUTER_BUDGET_SECONDS)
     end
 
-    it 'is the old prompt only when the account has no agent: it is then the only engine' do
-      create(:captain_assistant, account: account, active: false)
+    it 'is the old prompt only when the account has no external agent at all: it is then the only engine' do
+      expect(service.perform.body[:engine]).to eq('legacy_prompt')
+    end
+
+    it 'is the old prompt for an account with an internal assistant only (the Workspace MCP account)' do
+      create(:captain_assistant, account: account, usage_mode: 'internal_assistant')
 
       expect(service.perform.body[:engine]).to eq('legacy_prompt')
     end
@@ -229,6 +260,43 @@ RSpec.describe Captain::ReplySuggestion::StartService do
   end
 
   describe 'the rejections' do
+    it 'is 422 no_active_agent when the account has agents and every one is switched off: no old prompt takes their place' do
+      create(:captain_assistant, account: account, active: false)
+      create(:captain_assistant, account: account, active: false)
+
+      result = nil
+      expect { result = service.perform }.not_to have_enqueued_job(Captain::ReplySuggestion::GenerateJob)
+
+      expect(result.http_status).to eq(:unprocessable_content)
+      expect(result.body).to include(error: I18n.t('captain.reply_suggestion.errors.no_active_agent'), error_code: 'no_active_agent')
+      expect(unavailable_events.pluck(:reason)).to eq(['no_active_agent'])
+    end
+
+    it 'is 422 no_routing_cards when two or more agents are on and none has a card to be chosen by' do
+      create(:captain_assistant, account: account, active: true)
+      create(:captain_assistant, account: account, active: true)
+
+      result = nil
+      expect { result = service.perform }.not_to have_enqueued_job(Captain::ReplySuggestion::GenerateJob)
+
+      expect(result.http_status).to eq(:unprocessable_content)
+      expect(result.body).to include(error_code: 'no_routing_cards')
+      expect(unavailable_events.pluck(:reason)).to eq(['no_routing_cards'])
+    end
+
+    it 'starts again as soon as one agent has a card, and as soon as only one agent is on' do
+      first = create(:captain_assistant, account: account, active: true)
+      second = create(:captain_assistant, account: account, active: true)
+      expect(service.perform.body).to include(error_code: 'no_routing_cards')
+
+      first.update!(routing_description: 'Запись к врачам')
+      expect(start_for(create(:user, account: account, role: :agent)).http_status).to eq(:accepted)
+
+      first.update!(routing_description: '')
+      second.update!(active: false)
+      expect(start_for(create(:user, account: account, role: :agent)).http_status).to eq(:accepted)
+    end
+
     it 'is 422 voice_channel_unsupported for a voice conversation: no job, no state, one unavailable event' do
       allow(conversation.inbox).to receive(:channel_type).and_return('Channel::Voice')
 

@@ -16,7 +16,7 @@ RSpec.describe Captain::Runtime::Council do
   let(:results) { {} }
   let(:actors) { { 1 => actor(1, writer: true), 2 => actor(2, writer: false), 3 => actor(3, writer: true) } }
   let(:graph) do
-    instance_double(Captain::AgentGraph, entry: actors[1], inbox: nil, agents: actors.values).tap do |item|
+    instance_double(Captain::AgentGraph, inbox: nil, agents: actors.values).tap do |item|
       allow(item).to receive(:find) { |id| actors[id] }
     end
   end
@@ -194,7 +194,7 @@ RSpec.describe Captain::Runtime::Council do
     end
 
     it 'gives only a writer the durable session, so that its actions are protected from being repeated' do
-      session = Captain::Conversation::AgentSession.new(entry: create(:captain_assistant))
+      session = Captain::Conversation::AgentSession.new
       context[:agent_session] = session
       items = parts
       results.merge!('part-0' => ran(booked, acted: true), 'part-1' => ran('МРТ стоит 15000 тенге.'))

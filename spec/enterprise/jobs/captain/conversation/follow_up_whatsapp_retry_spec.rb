@@ -44,7 +44,8 @@ RSpec.describe 'Captain follow-up WhatsApp retry dispatch', type: :job do
         }
       }
     )
-    create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+    create(:captain_inbox, inbox: inbox)
+    Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
     incoming = create(
       :message,
       account: account,

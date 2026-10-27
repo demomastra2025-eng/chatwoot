@@ -126,27 +126,49 @@ describe('AgentGalleryCard', () => {
     expect(wrapper.find('[data-testid="agent-status"]').exists()).toBe(false);
   });
 
-  it('marks the starred agent and prevents switching it off', () => {
-    const wrapper = mountCard({ canToggle: true, isMain: true });
+  it('has no main agent: no label, no star, and the switch works for every agent', () => {
+    const wrapper = mountCard({ canToggle: true, enabledCount: 1 });
 
-    expect(wrapper.find('[data-testid="agent-main-label"]').text()).toBe(
-      'CAPTAIN.GALLERY.CARD.MAIN'
+    expect(wrapper.find('[data-testid="agent-main-label"]').exists()).toBe(
+      false
     );
-    expect(
-      wrapper.find('[data-testid="agent-active-switch"]').attributes('disabled')
-    ).toBeDefined();
     expect(wrapper.find('[data-testid="agent-make-main"]').exists()).toBe(
       false
     );
+    expect(wrapper.text()).not.toContain('CAPTAIN.GALLERY.CARD.MAIN');
+    expect(
+      wrapper.find('[data-testid="agent-active-switch"]').attributes('disabled')
+    ).toBeUndefined();
   });
 
-  it('can star another active agent without opening its card', async () => {
-    const wrapper = mountCard({ canToggle: true });
+  it('keeps the switch off only while the save runs', () => {
+    const wrapper = mountCard({ canToggle: true, toggling: true });
 
-    await wrapper.find('[data-testid="agent-make-main"]').trigger('click');
+    expect(
+      wrapper.find('[data-testid="agent-active-switch"]').attributes('disabled')
+    ).toBeDefined();
+  });
 
-    expect(wrapper.emitted('makeMain')).toHaveLength(1);
-    expect(wrapper.emitted('open')).toBeUndefined();
+  it('hints that the AI will not pick a switched-on agent without a description when several agents are on', () => {
+    const blank = { ...assistant, routing_description: '' };
+
+    const several = mountCard({ assistant: blank, enabledCount: 2 });
+    expect(several.find('[data-testid="agent-description-hint"]').text()).toBe(
+      'CAPTAIN.GALLERY.CARD.NO_CARD_HINT'
+    );
+
+    const alone = mountCard({ assistant: blank, enabledCount: 1 });
+    expect(alone.find('[data-testid="agent-description-hint"]').text()).toBe(
+      'CAPTAIN.GALLERY.CARD.NO_DESCRIPTION'
+    );
+
+    const off = mountCard({
+      assistant: { ...blank, active: false },
+      enabledCount: 2,
+    });
+    expect(off.find('[data-testid="agent-description-hint"]').text()).toBe(
+      'CAPTAIN.GALLERY.CARD.NO_DESCRIPTION'
+    );
   });
 
   it('opens the agent on a click or Enter on the card', async () => {

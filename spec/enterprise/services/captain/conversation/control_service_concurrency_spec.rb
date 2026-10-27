@@ -265,7 +265,7 @@ RSpec.describe Captain::Conversation::ControlService do
     conversation.update!(status: :open)
     thread = create(:communication_thread, account: records.fetch(:account), contact: conversation.contact)
     sibling = create(:conversation, account: records.fetch(:account), contact: conversation.contact, status: :pending)
-    CaptainInbox.find_or_initialize_by(inbox: sibling.inbox).update!(captain_assistant: conversation.inbox.captain_assistant)
+    CaptainInbox.find_or_create_by!(inbox: sibling.inbox)
     [conversation, sibling].each do |candidate|
       create(:communication_thread_conversation, communication_thread: thread, conversation: candidate)
       candidate.association(:communication_thread_conversation).reset
@@ -278,8 +278,8 @@ RSpec.describe Captain::Conversation::ControlService do
   def create_race_records
     account = create(:account)
     inbox = create(:inbox, account: account)
-    assistant = create(:captain_assistant, account: account)
-    create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+    create(:captain_assistant, account: account)
+    create(:captain_inbox, inbox: inbox)
     conversation = create(:conversation, account: account, inbox: inbox, status: :pending)
     trigger_message = create(:message, conversation: conversation, message_type: :incoming)
 

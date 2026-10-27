@@ -46,7 +46,8 @@ RSpec.describe 'Captain follow-up and TouchPlan scheduling', type: :job do
     inbox = create(:inbox, account: account)
     conversation = create(:conversation, account: account, inbox: inbox, status: :pending)
     assistant = create(:captain_assistant, account: account, config: follow_up_config)
-    create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+    create(:captain_inbox, inbox: inbox)
+    Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
     incoming = create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :incoming, content: 'Hello')
     anchor = create_ai_anchor(account, inbox, conversation, assistant)
     { conversation: conversation, assistant: assistant, anchor: anchor, incoming: incoming }

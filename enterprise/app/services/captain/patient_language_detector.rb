@@ -50,9 +50,8 @@ class Captain::PatientLanguageDetector
                  'punctuation, emoji, names, IIN, medical abbreviations or a bare one-word confirmation (yes/ok/good).'
   }.freeze
 
-  def initialize(conversation:, assistant:)
+  def initialize(conversation:)
     @conversation = conversation
-    @assistant = assistant
   end
 
   # The language code of the conversation ('ru', 'kk', 'en') or nil. With no new patient message since the last decision it is the
@@ -89,7 +88,7 @@ class Captain::PatientLanguageDetector
   def decide(texts, model, saved)
     Timeout.timeout(TIMEOUT_SECONDS) do
       Llm::Runtime.decide(
-        feature: :language_detection, account: @conversation.account, assistant: @assistant,
+        feature: :language_detection, account: @conversation.account,
         conversation: @conversation, model: model, input: decision_input(texts, saved),
         options: { decision_criteria: CRITERIA, decision_instructions: INSTRUCTIONS },
         observability: { operation: 'captain.language_detection', conversation_id: @conversation.id }

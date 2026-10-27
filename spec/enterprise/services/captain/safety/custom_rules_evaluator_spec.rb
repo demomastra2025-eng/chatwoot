@@ -10,22 +10,20 @@ RSpec.describe Captain::Safety::CustomRulesEvaluator do
   end
   let(:rules) { [rule] }
   let(:account_settings) { instance_double(Captain::AccountSettings, runtime_rules: rules) }
-  let(:assistant) do
-    instance_double(Captain::Assistant, active?: true, account: account, account_settings: account_settings,
-                                       config: { 'safety_settings' => { 'moderation_enabled' => false, 'custom_rules' => rules } })
-  end
   let(:engine) { instance_double(Captain::Safety::CustomRulesStructuredOutputEngine, model: 'openai/gpt-6-luna', select: { rule_id: 'urgent_1' }) }
   let(:clock) { -> { 100.0 } }
   let(:evaluator) { described_class.new(engine: engine, clock: clock) }
 
+  before { allow(Captain::AccountSettings).to receive(:new).with(account).and_return(account_settings) }
+
   def evaluate(text: 'I need help.', direction: 'input', context: {})
-    evaluator.evaluate(assistant: assistant, direction: direction, text: text, context: context)
+    evaluator.evaluate(account: account, direction: direction, text: text, context: context)
   end
 
   it 'maps a selected ID to the saved action and approved message independently of provider moderation' do
     times = [100.0, 100.25]
     timed_evaluator = described_class.new(engine: engine, clock: -> { times.shift })
-    result = timed_evaluator.evaluate(assistant: assistant, direction: 'input', text: 'Help.', context: {})
+    result = timed_evaluator.evaluate(account: account, direction: 'input', text: 'Help.', context: {})
 
     expect(result).to have_attributes(status: :matched, rule_id: 'urgent_1', action: 'handoff', message: rule['message'],
                                      direction: 'input', model: 'openai/gpt-6-luna', latency_ms: 250)
@@ -38,7 +36,7 @@ RSpec.describe Captain::Safety::CustomRulesEvaluator do
     allow(Llm::Runtime).to receive(:decide).and_return(Llm::OpenRouterDecisionClient::Result.new(choice: 'urgent_1'))
     expect(Llm::Runtime).not_to receive(:build_chat)
 
-    result = described_class.new(clock: clock).evaluate(assistant: assistant, direction: 'input', text: 'I need help.')
+    result = described_class.new(clock: clock).evaluate(account: account, direction: 'input', text: 'I need help.')
 
     expect(result).to have_attributes(status: :matched, rule_id: 'urgent_1', action: 'handoff', message: rule['message'],
                                      model: 'openai/gpt-6-luna-decisions')
@@ -48,21 +46,13 @@ RSpec.describe Captain::Safety::CustomRulesEvaluator do
     expect(Captain::Safety::CustomRulesStructuredOutputEngine).to receive(:new).with(account: account).and_return(engine)
     expect(Llm::Runtime).not_to receive(:decide)
 
-    expect(described_class.new(clock: clock).evaluate(assistant: assistant, direction: 'input', text: 'Hello.')).to be_matched
+    expect(described_class.new(clock: clock).evaluate(account: account, direction: 'input', text: 'Hello.')).to be_matched
   end
 
   it 'returns allowed only for an explicit none selection' do
     allow(engine).to receive(:select).and_return('{"rule_id":"none"}')
 
     expect(evaluate).to have_attributes(status: :allowed, rule_id: nil, action: nil, message: nil)
-  end
-
-  it 'does not invoke an engine for an inactive assistant' do
-    allow(assistant).to receive(:active?).and_return(false)
-    expect(engine).not_to receive(:model)
-    expect(engine).not_to receive(:select)
-
-    expect(evaluate).to have_attributes(status: :allowed, reason: :inactive_assistant, latency_ms: 0)
   end
 
   [[], [{ 'enabled' => false }], [{ 'direction' => 'output', 'action' => 'rewrite' }]].each do |overrides|

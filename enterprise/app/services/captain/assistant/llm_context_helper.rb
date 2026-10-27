@@ -6,7 +6,7 @@ module Captain::Assistant::LlmContextHelper
   def llm_context_for_run
     overrides = Llm::Models.providers.keys.each_with_object({}) do |provider_name, result|
       api_key = runtime_api_key(provider_name)
-      api_base = Llm::Config.api_base(provider_name, account: @assistant.account)
+      api_base = Llm::Config.api_base(provider_name, account: account)
       next if api_key.blank? && api_base.blank?
 
       result[provider_name] = {
@@ -16,10 +16,10 @@ module Captain::Assistant::LlmContextHelper
     end
     return nil if overrides.blank?
 
-    Llm::Config.context(overrides: overrides, account: @assistant.account)
+    Llm::Config.context(overrides: overrides, account: account)
   end
 
   def runtime_api_key(provider_name)
-    Llm::Config.api_key(provider_name, account: @assistant.account)
+    Llm::Config.api_key(provider_name, account: account)
   end
 end

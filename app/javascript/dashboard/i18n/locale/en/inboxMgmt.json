@@ -92,7 +92,7 @@
         "ERROR": "Error"
       },
       "CHIPS": {
-        "CAPTAIN": "AI: {name}",
+        "CAPTAIN": "AI",
         "AUTO_ASSIGNMENT": "Auto assignment",
         "WORKING_HOURS": "Working hours",
         "GREETING": "Greeting",

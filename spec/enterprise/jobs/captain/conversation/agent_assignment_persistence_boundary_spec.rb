@@ -8,8 +8,7 @@ RSpec.describe 'Captain final persistence assignment boundary', type: :job do
 
   let(:account) { create(:account, auto_resolve_after: 60, custom_attributes: { plan_name: 'startups' }) }
   let(:inbox) { create(:inbox, account: account) }
-  let(:entry) { create(:captain_assistant, account: account) }
-  let(:actor) { create(:captain_assistant, account: account) }
+  let!(:actor) { create(:captain_assistant, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, status: :pending) }
 
   around do |example|
@@ -30,11 +29,10 @@ RSpec.describe 'Captain final persistence assignment boundary', type: :job do
         'handoff_message' => { 'enabled' => true, 'mode' => 'fixed', 'text' => 'Specialist transfer' }
       }
     )
-    create(:captain_inbox, inbox: inbox, captain_assistant: entry)
-    entry.update!(handoff_agent_ids: [actor.id])
+    create(:captain_inbox, inbox: inbox)
     create(:message, conversation: conversation, sender: conversation.contact,
                      message_type: :incoming, skip_runtime_events: true)
-    Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation).update_routing(actor_id: actor.id)
+    Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: actor.id)
     conversation.update_column(:last_activity_at, 2.hours.ago)
     allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_on)
     allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
@@ -72,15 +70,15 @@ RSpec.describe 'Captain final persistence assignment boundary', type: :job do
   # Commit the competing CaptainInbox writer precisely before final lock
   # acquisition. Its own before_save takes the same advisory lock; no timing
   # delays are needed, and the writer runs on a separate PostgreSQL connection.
-  def reassign_before_final_lock(replacement)
-    reassigned = false
+  def switch_channel_off_before_final_lock
+    switched_off = false
     allow(Telephony::AiVoice::AssistantAssignmentLock).to receive(:acquire!).and_wrap_original do |original, inbox_id|
-      unless reassigned || Thread.current[:captain_assignment_writer]
-        reassigned = true
+      unless switched_off || Thread.current[:captain_assignment_writer]
+        switched_off = true
         writer = Thread.new do
           ActiveRecord::Base.connection_pool.with_connection do
             Thread.current[:captain_assignment_writer] = true
-            CaptainInbox.find_by!(inbox_id: inbox_id).update!(captain_assistant: replacement)
+            CaptainInbox.find_by!(inbox_id: inbox_id).update!(ai_enabled: false)
           end
         end
         Timeout.timeout(10) { writer.value }
@@ -103,14 +101,13 @@ RSpec.describe 'Captain final persistence assignment boundary', type: :job do
     expect(writer_can_acquire?).to be(true)
   end
 
-  it 'rereads completion ownership after a channel assignment commits before final acquisition' do
-    replacement = create(:captain_assistant, account: account)
+  it 'rereads the channel after it is switched off and commits before final acquisition of a completion' do
     job = completion_job
-    reassign_before_final_lock(replacement)
+    switch_channel_off_before_final_lock
 
     job.perform(inbox)
 
-    expect(CaptainInbox.find_by!(inbox_id: inbox.id).captain_assistant_id).to eq(replacement.id)
+    expect(CaptainInbox.find_by!(inbox_id: inbox.id)).not_to be_ai_enabled
     expect(conversation.reload).to be_pending
     expect(conversation.messages.outgoing).to be_empty
     expect(writer_can_acquire?).to be(true)
@@ -123,20 +120,19 @@ RSpec.describe 'Captain final persistence assignment boundary', type: :job do
       original.call(**arguments)
     end
 
-    job.perform(conversation, entry)
+    job.perform(conversation)
 
     expect(conversation.messages.outgoing.where(private: false).last).to have_attributes(content: 'Specialist answer', sender: actor)
     expect(writer_can_acquire?).to be(true)
   end
 
-  it 'rereads reply ownership after a channel assignment commits before final acquisition' do
-    replacement = create(:captain_assistant, account: account)
+  it 'rereads the channel after it is switched off and commits before final acquisition of a reply' do
     job = response_job('response' => 'Stale specialist answer')
-    reassign_before_final_lock(replacement)
+    switch_channel_off_before_final_lock
 
-    job.perform(conversation, entry)
+    job.perform(conversation)
 
-    expect(CaptainInbox.find_by!(inbox_id: inbox.id).captain_assistant_id).to eq(replacement.id)
+    expect(CaptainInbox.find_by!(inbox_id: inbox.id)).not_to be_ai_enabled
     expect(conversation.messages.outgoing).to be_empty
     expect(writer_can_acquire?).to be(true)
   end
@@ -148,7 +144,7 @@ RSpec.describe 'Captain final persistence assignment boundary', type: :job do
       original.call(*arguments)
     end
 
-    job.perform(conversation, entry)
+    job.perform(conversation)
 
     expect(conversation.reload).to be_open
     expect(conversation.messages.outgoing.where(private: false).last).to have_attributes(content: 'Specialist transfer', sender: actor)
@@ -162,7 +158,7 @@ RSpec.describe 'Captain final persistence assignment boundary', type: :job do
       original.call(*arguments)
     end
 
-    job.perform(conversation, entry)
+    job.perform(conversation)
 
     expect(conversation.reload).to be_open
     expect(conversation.messages.outgoing.where(private: false).last).to have_attributes(content: 'Specialist transfer', sender: actor)

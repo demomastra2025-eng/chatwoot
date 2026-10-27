@@ -5,7 +5,7 @@ describe CaptainListener do
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }
   let(:user) { create(:user, account: account) }
-  let(:assistant) { create(:captain_assistant, account: account, config: { feature_memory: true, feature_faq: true }) }
+  let!(:assistant) { create(:captain_assistant, account: account, config: { feature_memory: true, feature_faq: true }) }
 
   describe '#conversation_resolved' do
     let(:conversation) { create(:conversation, account: account, inbox: inbox, assignee: user) }
@@ -14,7 +14,17 @@ describe CaptainListener do
     let(:event) { Events::Base.new(event_name, Time.zone.now, conversation: conversation) }
 
     before do
-      create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+      create(:captain_inbox, inbox: inbox)
+      # The agent the router gave the conversation to holds it, and owns what is learned from it.
+      Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
+    end
+
+    it 'learns nothing from a conversation that nobody holds: the knowledge belongs to an agent' do
+      Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: nil)
+      Captain::AccountSettings.new(account).update!('faq' => { 'generate_from_resolved' => true })
+      expect(Captain::Llm::ConversationFaqService).not_to receive(:new)
+
+      listener.conversation_resolved(event)
     end
 
     it 'does not run notes or FAQ generation when the text channel is disabled' do
@@ -66,8 +76,7 @@ describe CaptainListener do
       let(:specialist) { create(:captain_assistant, account: account, config: { feature_memory: true, feature_faq: true }) }
 
       before do
-        assistant.update!(handoff_agent_ids: [specialist.id])
-        Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation).update_routing(actor_id: specialist.id)
+        Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: specialist.id)
       end
 
       it 'uses the specialist knowledge ownership with account FAQ generation enabled' do
@@ -89,7 +98,7 @@ describe CaptainListener do
         listener.conversation_resolved(event)
       end
 
-      it 'does not fall back to entry knowledge ownership when the specialist is inactive' do
+      it 'does not fall back to another agent knowledge ownership when the specialist is inactive' do
         specialist.update!(active: false)
         expect(Captain::Llm::ContactNotesService).not_to receive(:new)
         expect(Captain::Llm::ConversationFaqService).not_to receive(:new)
@@ -97,8 +106,8 @@ describe CaptainListener do
         listener.conversation_resolved(event)
       end
 
-      it 'does not fall back to entry knowledge ownership when the specialist is no longer reachable' do
-        assistant.update!(handoff_agent_ids: [])
+      it 'does not fall back to another agent knowledge ownership when the specialist is no longer an agent of the channel' do
+        specialist.update_column(:usage_mode, 'internal_assistant') # rubocop:disable Rails/SkipsModelValidations
         expect(Captain::Llm::ContactNotesService).not_to receive(:new)
         expect(Captain::Llm::ConversationFaqService).not_to receive(:new)
 

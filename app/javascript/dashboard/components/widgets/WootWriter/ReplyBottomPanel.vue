@@ -543,7 +543,7 @@ export default {
       if (!isCaptainEnabledOnAccount) return false;
 
       return Boolean(
-        this.captainConversationId && this.captainInbox?.captain_assistant?.id
+        this.captainConversationId && this.captainInbox?.captain_ai_enabled
       );
     },
     showVoiceCallButton() {

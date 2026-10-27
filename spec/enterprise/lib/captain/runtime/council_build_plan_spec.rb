@@ -23,7 +23,7 @@ RSpec.describe Captain::Runtime::Council, '#build_plan' do
       captain_v2_current_input: 'дочка Аружан Серикова, 03.05.2020, на справку запишите в среду 14-го в 10:00'
     }
   end
-  let(:runtime) { Captain::AgentRunContext.new(entry: entry, conversation: conversation) }
+  let(:runtime) { Captain::AgentRunContext.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation) }
   let(:council) { described_class.new(context: context, graph: runtime.graph, account: account) }
   let(:part) do
     { 'id' => 'part-1', 'version' => 1, 'executor_agent_id' => specialist.id, 'relation' => 'independent', 'state' => 'open',

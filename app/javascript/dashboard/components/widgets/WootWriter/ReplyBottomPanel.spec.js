@@ -189,7 +189,7 @@ describe('ReplyBottomPanel', () => {
       {
         conversationId: 11,
         isCommunicationThread: false,
-        inbox: { id: 101, captain_assistant: { id: 5, name: 'Captain' } },
+        inbox: { id: 101, captain_ai_enabled: true },
       },
       {
         captainEnabled: true,
@@ -222,7 +222,7 @@ describe('ReplyBottomPanel', () => {
       {
         conversationId: 11,
         isCommunicationThread: false,
-        inbox: { id: 101, captain_assistant: { id: 5, name: 'Captain' } },
+        inbox: { id: 101, captain_ai_enabled: true },
       },
       {
         captainEnabled: true,
@@ -280,7 +280,7 @@ describe('ReplyBottomPanel', () => {
           11: { id: 11, status: 'open', meta: { assignee: null } },
         },
         inboxes: {
-          101: { id: 101, captain_assistant: { id: 5, name: 'Captain' } },
+          101: { id: 101, captain_ai_enabled: true },
         },
         actions,
       }
@@ -326,7 +326,7 @@ describe('ReplyBottomPanel', () => {
           11: { id: 11, status: 'open', meta: { assignee: null } },
         },
         inboxes: {
-          101: { id: 101, captain_assistant: { id: 5, name: 'Captain' } },
+          101: { id: 101, captain_ai_enabled: true },
         },
         actions,
       }
@@ -367,8 +367,8 @@ describe('ReplyBottomPanel', () => {
           22: { id: 22, status: 'pending', meta: { assignee: currentUser } },
         },
         inboxes: {
-          101: { id: 101, captain_assistant: { id: 5, name: 'Captain' } },
-          202: { id: 202, captain_assistant: { id: 6, name: 'Captain 2' } },
+          101: { id: 101, captain_ai_enabled: true },
+          202: { id: 202, captain_ai_enabled: true },
         },
         actions,
       }
@@ -412,7 +412,7 @@ describe('ReplyBottomPanel', () => {
           22: { id: 22, status: 'pending', meta: { assignee: null } },
         },
         inboxes: {
-          202: { id: 202, captain_assistant: { id: 6, name: 'Captain 2' } },
+          202: { id: 202, captain_ai_enabled: true },
         },
         actions: { toggleStatus },
       }
@@ -449,7 +449,7 @@ describe('ReplyBottomPanel', () => {
           22: { id: 22, status: 'open', meta: { assignee: null } },
         },
         inboxes: {
-          202: { id: 202, captain_assistant: { id: 6, name: 'Captain 2' } },
+          202: { id: 202, captain_ai_enabled: true },
         },
       }
     );
@@ -470,7 +470,7 @@ describe('ReplyBottomPanel', () => {
         conversationId: 999,
         isCommunicationThread: true,
         activeReplyChannel: whatsappChannel,
-        inbox: { id: 999, captain_assistant: { id: 55 } },
+        inbox: { id: 999, captain_ai_enabled: true },
       },
       {
         captainEnabled: true,

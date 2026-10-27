@@ -6,13 +6,12 @@ RSpec.describe 'Captain follow-up agent ownership', type: :job do
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, status: :pending) }
-  let(:entry) { create(:captain_assistant, account: account, config: follow_up_config('Entry follow-up')) }
+  let!(:entry) { create(:captain_assistant, account: account, config: follow_up_config('Entry follow-up')) }
   let(:actor) { create(:captain_assistant, account: account, config: follow_up_config('Specialist follow-up')) }
 
   before do
     account.enable_features!('captain_integration', 'captain_tasks')
-    create(:captain_inbox, inbox: inbox, captain_assistant: entry)
-    entry.update!(handoff_agent_ids: [actor.id])
+    create(:captain_inbox, inbox: inbox)
     create(:message, conversation: conversation, message_type: :incoming, content: 'Can you help?')
     evaluator = instance_double(Captain::ConversationCompletionEvaluator, perform: { evaluated: true, complete: false })
     allow(Captain::ConversationCompletionEvaluator).to receive(:new).and_return(evaluator)
@@ -32,7 +31,7 @@ RSpec.describe 'Captain follow-up agent ownership', type: :job do
   end
 
   def route_to(assistant)
-    Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation).update_routing(actor_id: assistant.id)
+    Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
   end
 
   def anchor_for(assistant, candidate: conversation)
@@ -79,9 +78,8 @@ RSpec.describe 'Captain follow-up agent ownership', type: :job do
     reminder = schedule_for(actor, anchor: anchor)
 
     expect(actor.inboxes).to be_empty
-    expect(reminder.metadata['captain_follow_up']).to include(
-      'assistant_id' => actor.id, 'entry_assistant_id' => entry.id, 'routing_revision' => 1
-    )
+    expect(reminder.metadata['captain_follow_up']).to include('assistant_id' => actor.id, 'routing_revision' => 1)
+    expect(reminder.metadata['captain_follow_up']).not_to have_key('entry_assistant_id')
     message = materialize(reminder, actor, anchor)
     expect(message.content).to eq('Specialist follow-up')
     expect(message.sender).to eq(actor)
@@ -110,17 +108,28 @@ RSpec.describe 'Captain follow-up agent ownership', type: :job do
     expect(message.reload).to be_failed
   end
 
-  it 'accepts an unstamped legacy entry chain only before any transfer' do
+  it 'does not accept an unstamped legacy chain once the router has given the conversation to an agent' do
+    route_to(entry)
     anchor = anchor_for(entry)
     reminder = schedule_for(entry, anchor: anchor)
     metadata = reminder.metadata.deep_dup
     metadata['captain_follow_up'].except!('routing_revision', 'entry_assistant_id')
     reminder.update_column(:metadata, metadata) # rubocop:disable Rails/SkipsModelValidations
 
-    expect(current?(reminder, entry, anchor)).to be(true)
-    route_to(actor)
-    route_to(entry)
     expect(current?(reminder, entry, anchor)).to be(false)
+  end
+
+  it 'reads a chain stamped with the former entry agent and judges it by the holder and the routing revision only' do
+    route_to(actor)
+    anchor = anchor_for(actor)
+    reminder = schedule_for(actor, anchor: anchor)
+    metadata = reminder.metadata.deep_dup
+    metadata['captain_follow_up']['entry_assistant_id'] = entry.id
+    reminder.update_column(:metadata, metadata) # rubocop:disable Rails/SkipsModelValidations
+
+    expect(current?(reminder, actor, anchor)).to be(true)
+    entry.update!(active: false)
+    expect(current?(reminder, actor, anchor)).to be(true)
   end
 
   %w[transfer deactivate remove_membership].each do |change|
@@ -147,7 +156,7 @@ RSpec.describe 'Captain follow-up agent ownership', type: :job do
   it 'keeps a part-bound follow-up eligible after another channel member becomes the owner' do
     route_to(actor)
     part_id = SecureRandom.uuid
-    session = Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation)
+    session = Captain::Conversation::AgentSession.new(conversation: conversation)
     session.change do |data|
       data['parts'] = [{ 'id' => part_id, 'version' => 1, 'executor_agent_id' => actor.id,
                          'state' => 'answered', 'delivered' => [] }]
@@ -166,7 +175,7 @@ RSpec.describe 'Captain follow-up agent ownership', type: :job do
 
   it 'keeps sibling physical reminders when one conversation changes while shared human control revokes their delivery' do
     sibling_inbox = create(:inbox, account: account)
-    CaptainInbox.find_or_create_by!(inbox: sibling_inbox) { |ci| ci.captain_assistant = entry }
+    CaptainInbox.find_or_create_by!(inbox: sibling_inbox)
     sibling = create(:conversation, account: account, inbox: sibling_inbox, contact: conversation.contact, status: :pending)
     thread = create(:communication_thread, account: account, contact: conversation.contact)
     [conversation, sibling].each do |candidate|
@@ -175,6 +184,8 @@ RSpec.describe 'Captain follow-up agent ownership', type: :job do
       candidate.association(:communication_thread).reset
     end
     create(:message, conversation: sibling, message_type: :incoming, skip_runtime_events: true)
+    route_to(entry)
+    Captain::Conversation::AgentSession.new(conversation: sibling).update_routing(actor_id: entry.id)
     own_anchor = anchor_for(entry)
     sibling_anchor = anchor_for(entry, candidate: sibling)
     own_reminder = schedule_for(entry, anchor: own_anchor)

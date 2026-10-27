@@ -197,17 +197,16 @@ class Captain::Runtime::Council
     suggestion? ? SUGGESTION_PART_MAX_TURNS : PART_MAX_TURNS
   end
 
+  # The agent as the channel has it now (an agent switched off meanwhile is gone). Records of its own: the agents built here may be
+  # used on other threads and must not share the records of the run.
   def fresh_actor(id)
-    entry = Captain::Assistant.find_by(id: @graph.entry.id, account_id: @account.id)
-    return unless entry
-
-    Captain::AgentGraph.new(entry, inbox: fresh_inbox).find(id)
+    Captain::AgentGraph.new(fresh_scope).find(id)
   end
 
-  # A record of its own: the agents built here may be used on other threads and must not share the record of the run.
-  def fresh_inbox
+  def fresh_scope
     shared = @graph.inbox
-    (Inbox.find_by(id: shared.id, account_id: @account.id) if shared.respond_to?(:id)) || shared
+    inbox = (Inbox.find_by(id: shared.id, account_id: @account.id) if shared.respond_to?(:id))
+    inbox ? Captain::ChannelScope.for_inbox(inbox, account: @account) : Captain::ChannelScope.new(account: @account, kind: :workspace)
   end
 
   def part_snapshot(actor, part, writer)

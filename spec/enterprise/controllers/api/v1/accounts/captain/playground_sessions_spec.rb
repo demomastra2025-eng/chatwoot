@@ -4,7 +4,7 @@ RSpec.describe 'Captain Playground sessions', type: :request do
   let(:account) { create(:account) }
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:agent) { create(:user, account: account, role: :agent) }
-  let(:assistant) { create(:captain_assistant, account: account) }
+  let!(:assistant) { create(:captain_assistant, account: account) }
   let(:runner) { instance_double(Captain::Assistant::AgentRunnerService, generate_response: { response: 'Server reply' }) }
   let(:auth_headers_by_user) { {} }
   before { allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner) }
@@ -13,7 +13,7 @@ RSpec.describe 'Captain Playground sessions', type: :request do
   def request_playground(attributes = nil, user: admin, **fields)
     attributes ||= fields
     headers = auth_headers_by_user[user.id] ||= user.create_new_auth_token
-    post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground", params: attributes, headers: headers, as: :json
+    post "/api/v1/accounts/#{account.id}/captain/playground", params: attributes, headers: headers, as: :json
     %w[access-token token-type client expiry uid].each { |key| headers[key] = response.headers[key] if response.headers[key].present? }
     JSON.parse(response.body, symbolize_names: true)
   end
@@ -31,7 +31,7 @@ RSpec.describe 'Captain Playground sessions', type: :request do
     expect(result.dig(:playground, :scenario, :contact, :id)).to be_negative
     expect(runner).to have_received(:generate_response).with(message_history: [{ role: 'user', content: 'Current question' }])
     expect(Captain::Assistant::AgentRunnerService).to have_received(:new).with(
-      assistant: assistant, source: 'playground', playground_session: an_instance_of(Captain::Playground::Session)
+      scope: an_instance_of(Captain::ChannelScope), source: 'playground', playground_session: an_instance_of(Captain::Playground::Session)
     )
   end
 

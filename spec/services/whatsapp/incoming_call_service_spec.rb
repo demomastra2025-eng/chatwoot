@@ -199,6 +199,7 @@ RSpec.describe Whatsapp::IncomingCallService do
     end
 
     it 'routes an inbound call for an open conversation to the operator UI' do
+      channel.update!(provider_config: channel.provider_config.merge('ai_voice_enabled' => true))
       create(:captain_inbox, inbox: inbox, captain_assistant: create(:captain_assistant, account: account))
       contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: '15551234567')
       conversation.update!(contact_inbox: contact_inbox, status: 'open')

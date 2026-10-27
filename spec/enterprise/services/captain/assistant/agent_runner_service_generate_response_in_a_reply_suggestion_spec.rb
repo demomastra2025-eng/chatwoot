@@ -3,12 +3,15 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Assistant::AgentRunnerService, '#generate_response in a reply suggestion' do
-  let(:service) { described_class.new(assistant: assistant, conversation: conversation, source: source, request_id: request_id) }
+  let(:service) do
+    described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation, source: source,
+                        request_id: request_id)
+  end
 
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: create(:contact, account: account)) }
-  let(:assistant) { create(:captain_assistant, account: account) }
+  let!(:assistant) { create(:captain_assistant, account: account) }
   let(:source) { 'reply_suggestion' }
   let(:request_id) { SecureRandom.uuid }
   let(:message_history) { [{ role: 'user', content: 'Спасибо!' }] }
@@ -61,7 +64,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService, '#generate_response in a 
     end
 
     it 'is a new id otherwise' do
-      anonymous = described_class.new(assistant: assistant, conversation: conversation, source: source)
+      anonymous = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation, source: source)
 
       expect(anonymous.generate_response(message_history: message_history)['captain_request_id']).to match(/\A\h{8}(-\h{4}){3}-\h{12}\z/)
     end

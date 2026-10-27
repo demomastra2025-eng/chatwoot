@@ -3,7 +3,7 @@ require 'rails_helper'
 RSpec.describe Captain::Tools::Account::UpdateCaptainInboxAutoReplyModeService do
   let(:account) { create(:account) }
   let(:user) { create(:user, :administrator, account: account) }
-  let(:assistant) { create(:captain_assistant, account: account, name: 'Support AI') }
+  let!(:assistant) { create(:captain_assistant, account: account, name: 'Support AI') }
   let(:service) { described_class.new(assistant, user: user) }
 
   before do
@@ -16,39 +16,39 @@ RSpec.describe Captain::Tools::Account::UpdateCaptainInboxAutoReplyModeService d
 
   it 'updates the workspace text auto-reply mode while keeping the legacy channel value' do
     inbox = create(:inbox, account: account, name: 'Support')
-    captain_inbox = create(:captain_inbox, inbox: inbox, captain_assistant: assistant, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
+    captain_inbox = create(:captain_inbox, inbox: inbox, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
 
     payload = JSON.parse(service.execute(inbox_id: inbox.id, auto_reply_mode: CaptainInbox::AUTO_REPLY_OUTSIDE_WORKING_HOURS))
 
     expect(payload['action']).to eq('update_captain_inbox_auto_reply_mode')
     expect(payload['inbox']).to include('id' => inbox.id, 'name' => 'Support')
     expect(payload['captain']).to include(
-      'assistant_id' => assistant.id,
-      'assistant_name' => 'Support AI',
       'auto_reply_mode' => CaptainInbox::AUTO_REPLY_OUTSIDE_WORKING_HOURS,
       'auto_reply_allowed_now' => false,
       'reply_to_open_conversations' => false
     )
+    # A text channel names no agent: the AI picks one among the enabled agents of the workspace.
+    expect(payload['captain']).not_to include('assistant_id', 'assistant_name')
     expect(account.reload.captain_reply_time_mode).to eq(CaptainInbox::AUTO_REPLY_OUTSIDE_WORKING_HOURS)
     expect(captain_inbox.reload.auto_reply_mode).to eq(CaptainInbox::AUTO_REPLY_ALWAYS)
   end
 
-  it 'allows account admins to update a same-account inbox connected to another Captain assistant' do
-    other_assistant = create(:captain_assistant, account: account, name: 'Sales AI')
+  it 'allows account admins to update the auto-reply mode of any same-account inbox, whichever agents the workspace has' do
+    create(:captain_assistant, account: account, name: 'Sales AI')
     inbox = create(:inbox, account: account, name: 'Sales')
-    captain_inbox = create(:captain_inbox, inbox: inbox, captain_assistant: other_assistant, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
+    captain_inbox = create(:captain_inbox, inbox: inbox, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
 
     payload = JSON.parse(service.execute(inbox_id: inbox.id, auto_reply_mode: CaptainInbox::AUTO_REPLY_WORKING_HOURS))
 
-    expect(payload.dig('captain', 'assistant_id')).to eq(other_assistant.id)
-    expect(payload.dig('captain', 'assistant_name')).to eq('Sales AI')
+    expect(payload.dig('captain', 'auto_reply_mode')).to eq(CaptainInbox::AUTO_REPLY_WORKING_HOURS)
     expect(account.reload.captain_reply_time_mode).to eq(CaptainInbox::AUTO_REPLY_WORKING_HOURS)
     expect(captain_inbox.reload.auto_reply_mode).to eq(CaptainInbox::AUTO_REPLY_ALWAYS)
   end
 
   it 'rejects inboxes outside the assistant account' do
     other_inbox = create(:inbox, account: create(:account))
-    create(:captain_inbox, inbox: other_inbox, captain_assistant: create(:captain_assistant, account: other_inbox.account))
+    create(:captain_assistant, account: other_inbox.account)
+    create(:captain_inbox, inbox: other_inbox)
 
     result = service.execute(inbox_id: other_inbox.id, auto_reply_mode: CaptainInbox::AUTO_REPLY_WORKING_HOURS)
 
@@ -57,7 +57,7 @@ RSpec.describe Captain::Tools::Account::UpdateCaptainInboxAutoReplyModeService d
 
   it 'rejects invalid auto-reply modes' do
     inbox = create(:inbox, account: account)
-    captain_inbox = create(:captain_inbox, inbox: inbox, captain_assistant: assistant, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
+    captain_inbox = create(:captain_inbox, inbox: inbox, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
 
     result = service.execute(inbox_id: inbox.id, auto_reply_mode: 'never')
 
@@ -70,7 +70,7 @@ RSpec.describe Captain::Tools::Account::UpdateCaptainInboxAutoReplyModeService d
     agent = create(:user, account: account)
     service = described_class.new(assistant, user: agent)
     inbox = create(:inbox, account: account)
-    captain_inbox = create(:captain_inbox, inbox: inbox, captain_assistant: assistant, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
+    captain_inbox = create(:captain_inbox, inbox: inbox, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
 
     result = service.execute(inbox_id: inbox.id, auto_reply_mode: CaptainInbox::AUTO_REPLY_WORKING_HOURS)
 
@@ -81,7 +81,7 @@ RSpec.describe Captain::Tools::Account::UpdateCaptainInboxAutoReplyModeService d
   it 'does not mutate until the backend confirmation gate permits execution' do
     allow(Captain::Tools::ToolConfirmationGate).to receive(:new).and_call_original
     inbox = create(:inbox, account: account)
-    captain_inbox = create(:captain_inbox, inbox: inbox, captain_assistant: assistant, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
+    captain_inbox = create(:captain_inbox, inbox: inbox, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
 
     payload = JSON.parse(service.execute(inbox_id: inbox.id, auto_reply_mode: CaptainInbox::AUTO_REPLY_WORKING_HOURS))
 

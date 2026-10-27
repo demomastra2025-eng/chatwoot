@@ -17,15 +17,15 @@ class Captain::Tools::Account::CreateCaptainKnowledgeEntryService < Captain::Too
   def execute(question:, answer:, assistant_id: nil, status: nil, visibility: nil, document_id: nil, **kwargs)
     ensure_account_administrator!
 
-    entry_assistant = find_captain_assistant!(assistant_id) if assistant_id.present?
+    owner_assistant = find_captain_assistant!(assistant_id) if assistant_id.present?
     attributes = {
-      assistant: entry_assistant,
+      assistant: owner_assistant,
       account: account,
       question: question,
       answer: answer,
       status: status.presence || 'approved',
       visibility: normalize_knowledge_visibility(visibility),
-      documentable: document_id.present? ? find_document_for_assistant!(document_id, entry_assistant) : @user
+      documentable: document_id.present? ? find_document_for_assistant!(document_id, owner_assistant) : @user
     }
     attributes[:allowed_assistant_ids] = kwargs[:allowed_assistant_ids] if kwargs.key?(:allowed_assistant_ids)
     entry = Captain::AssistantResponse.create!(attributes)

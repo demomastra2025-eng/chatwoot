@@ -70,6 +70,7 @@ Rails.application.routes.draw do
           end
           namespace :captain do
             resource :channel_matrix, only: [:show, :update], controller: 'channel_matrix'
+            resource :playground, only: [:create], controller: 'playground'
             resource :settings, only: [:show, :update]
             resources :fish_voices, only: [:index, :show, :create, :destroy]
             resource :observability, only: [:show], controller: 'observability' do
@@ -91,7 +92,6 @@ Rails.application.routes.draw do
                 get :tools
                 get :context_fields
               end
-              resources :inboxes, only: [:index, :create, :destroy], param: :inbox_id
               resources :scenarios
             end
             resources :assistant_responses

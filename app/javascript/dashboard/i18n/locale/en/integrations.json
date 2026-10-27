@@ -554,10 +554,6 @@
       "SCENARIO_EDITOR": "Scenario records",
       "SCENARIO_APPLY": "Apply scenario",
       "USE_PROFILE_SETTINGS": "Use saved profile settings",
-      "CHANNEL": "Channel",
-      "CHANNEL_NONE": "No channel (single agent)",
-      "CHANNEL_NONE_HINT": "The agent answers alone and hands the dialogue to nobody.",
-      "CHANNEL_GRID_HINT": "Handoffs and council work with the agents of this channel from the Channels grid.",
       "ACTION_PREVIEW": "Review real change",
       "ACTION_TARGET": "Exact target",
       "ACTION_PAYLOAD": "Requested change",
@@ -2537,7 +2533,7 @@
       },
       "ROUTING": {
         "ACTIVE": "Agent enabled",
-        "ACTIVE_HELP": "Disabled agents do not receive new conversations or handoffs.",
+        "ACTIVE_HELP": "A disabled agent neither replies nor suggests replies.",
         "DESCRIPTION": "When to contact this agent",
         "DESCRIPTION_PLACEHOLDER": "Briefly describe what this agent can help with.",
         "NO_AGENTS": "No available agents",
@@ -3789,18 +3785,6 @@
           "ERROR_MESSAGE": "There was an error updating open conversation reply setting. Please try again."
         }
       },
-      "CHANNEL_SETTINGS": {
-        "TITLE": "AI agent for this inbox",
-        "DESCRIPTION": "Choose an AI agent for “{inboxName}” and configure the auto-reply mode.",
-        "ASSISTANT": {
-          "LABEL": "Main agent",
-          "NO_AGENT": "Not selected"
-        },
-        "EMPTY_TITLE": "No available AI agents",
-        "EMPTY_DESCRIPTION": "Create an external AI agent in AI employees before connecting it to this inbox.",
-        "SAVE_SUCCESS": "Channel settings saved",
-        "SAVE_ERROR": "Could not save channel settings"
-      },
       "OPTIONS": {
         "DISCONNECT": "Disconnect"
       },
@@ -3883,13 +3867,6 @@
         "CURRENT_MARK": "current",
         "PLATFORM_DEFAULT": "Platform default model",
         "PROVIDER_WORD": "model provider"
-      },
-      "CHANNELS": {
-        "TITLE": "Channels",
-        "ALL": "All channels",
-        "MAIN_IN": "Main agent in: {channels}",
-        "NONE": "The agent does not work in any channel",
-        "CONFIGURE": "Configure"
       },
       "FOLLOW_UPS": {
         "TITLE": "Follow-ups",
@@ -4012,38 +3989,18 @@
     },
     "CHANNEL_MATRIX": {
       "TITLE": "Channels",
-      "DESCRIPTION": "Which AI agents work in each text channel and which one is the main agent: the main agent answers first and hands the conversation over to the other agents of the channel. If a channel has a single agent, it works alone: no handoffs and no council.",
-      "DEFAULT_MAIN_LABEL": "Default main agent for new channels",
-      "DEFAULT_MAIN_HINT": "Becomes the main agent when AI is turned on in a channel that has no main agent yet.",
-      "DEFAULT_MAIN_NONE": "Not selected",
-      "CHANNEL_COLUMN": "Channel",
-      "AI": "AI",
+      "DESCRIPTION": "Choose the channels where AI replies on its own. For every message AI picks the right agent among the enabled ones.",
       "AI_TOGGLE": "AI in “{channel}”",
-      "WORKS_HERE": "works here",
-      "WORKS_HERE_LABEL": "{agent} works in “{channel}”",
-      "MAIN": "Main agent",
-      "MAKE_MAIN": "Make main agent",
-      "MAIN_INACTIVE": "A disabled agent cannot be the main agent",
-      "MAIN_NONE": "Not selected",
-      "MAIN_MISSING_HINT": "Choose a main agent, otherwise AI will not reply in this channel.",
-      "SCOPE_ALL": "all channels",
-      "SCOPE_SELECTED": "selected",
-      "SCOPE_MENU": "Where {agent} works",
-      "MENU_ALL": "All channels, including new ones",
-      "MENU_SELECTED": "Selected channels only",
-      "INACTIVE": "disabled",
-      "AGENTS_LABEL": "Agents in the channel",
-      "VOICE_NOTE": "Calls: the voice agent is configured separately",
       "EMPTY": "There are no text channels yet. Connect a channel in settings and it will appear here.",
       "NO_AGENTS": "There are no AI agents yet. Create one on the Agents page.",
       "LOAD_ERROR": "Could not load the channels. Refresh the page.",
       "SAVE": "Save",
       "SAVED": "Channels saved",
       "SAVE_ERROR": "Could not save. Fix the marked rows and save again.",
-      "LEAVE_CONFIRM": "You have unsaved changes. Leave without saving?",
       "CHANNEL_SWITCH": "AI replies",
       "DISABLE_ALL": "Disable all channels",
-      "ENABLE_ALL": "Enable all channels"
+      "ENABLE_ALL": "Enable all channels",
+      "NO_ACTIVE_AGENTS": "All agents are off: AI neither replies nor suggests replies. Turn on at least one agent."
     },
     "CHAT_AVATARS": {
       "COUNCIL_CAPTION": "Council reply: {names}",
@@ -4054,18 +4011,14 @@
       "NEW_TILE": "New agent",
       "CARD": {
         "NO_DESCRIPTION": "Add a description",
-        "CHANNELS_LINE": "Main in channels: {main} · Channels: {total}",
-        "ALL_CHANNELS": "Main in channels: {main} · All channels",
-        "NO_CHANNELS": "Not working on any channel",
-        "MAIN": "Main",
-        "MAKE_MAIN": "Make main"
+        "NO_CARD_HINT": "AI will not pick this agent: fill in “What the agent does”."
       },
       "CREATE": {
         "TITLE": "New agent",
         "NAME_LABEL": "Name",
         "NAME_PLACEHOLDER": "For example, Receptionist",
         "NAME_ERROR": "Enter the agent name",
-        "DESCRIPTION_LABEL": "What it does and when to hand over to it",
+        "DESCRIPTION_LABEL": "What the agent does",
         "DESCRIPTION_PLACEHOLDER": "For example: books patients for appointments and answers questions about prices",
         "DESCRIPTION_ERROR_REQUIRED": "Describe what the agent does and when to hand a conversation over to it",
         "DESCRIPTION_ERROR_MAX": "The description is too long. Maximum characters: {max}",
@@ -4074,14 +4027,20 @@
         "SUBMIT": "Create",
         "SUCCESS": "Agent created",
         "ERROR": "Could not create the agent. Please try again.",
-        "AVATAR_ERROR": "The agent was created, but the avatar could not be uploaded."
+        "AVATAR_ERROR": "The agent was created, but the avatar could not be uploaded.",
+        "DESCRIPTION_HINT": "AI uses this to decide which agent answers."
       },
       "ERRORS": {
-        "MAIN_AGENT_IN_USE": "This agent is the main agent in channels: {channels}. First choose another main agent on the Channels page.",
         "TOGGLE_FAILED": "Could not change the agent status. Please try again."
       },
       "DISABLE_ALL_AGENTS": "Disable all agents",
-      "ENABLE_ALL_AGENTS": "Enable all agents"
+      "ENABLE_ALL_AGENTS": "Enable all agents",
+      "CONFIRM_DISABLE_TITLE": "Turn off the agent?",
+      "CONFIRM_DISABLE_ACTION": "Turn off",
+      "CONFIRM_DISABLE_LAST": "This is the last enabled agent. AI will stop replying and suggesting replies. Turn it off?",
+      "CONFIRM_DISABLE_VOICE": "This agent answers calls to {numbers}. Once it is off, calls go to staff. Turn it off?",
+      "CONFIRM_DISABLE_ALL": "Turn off all agents? AI will stop replying and suggesting replies.",
+      "CONFIRM_DELETE_VOICE": "This agent answers calls to {numbers}: once it is deleted, calls go to staff."
     },
     "NAV": {
       "GROUP": "AI agents",

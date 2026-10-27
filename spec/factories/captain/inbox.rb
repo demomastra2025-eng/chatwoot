@@ -1,14 +1,8 @@
 FactoryBot.define do
+  # A text channel row holds the channel settings only (it names no agent). A voice number names its voice agent.
   factory :captain_inbox, class: 'CaptainInbox' do
-    association :captain_assistant, factory: :captain_assistant
     association :inbox
     ai_enabled { true }
-
-    after(:create) do |assignment|
-      account = assignment.inbox.account
-      if assignment.ai_enabled? && assignment.inbox.channel_type != 'Channel::Voice' && account.captain_default_assistant_id.blank?
-        account.update!(captain_default_assistant_id: assignment.captain_assistant_id)
-      end
-    end
+    captain_assistant { association(:captain_assistant, account: inbox.account) if inbox.channel_type == 'Channel::Voice' }
   end
 end

@@ -16,11 +16,11 @@ class Conversations::PermissionFilterService
 
   private
 
+  # An external agent works on every channel of its workspace (there is no per-agent channel list); an internal assistant has none.
   def conversations_for_captain_assistant
-    scoped_inboxes = user.inboxes.where(account_id: account.id)
-    return conversations.none if scoped_inboxes.blank?
+    return conversations.none unless user.external_agent? && user.account_id == account.id
 
-    conversations.where(inbox: scoped_inboxes)
+    conversations.where(account_id: account.id)
   end
 
   def captain_assistant_actor?

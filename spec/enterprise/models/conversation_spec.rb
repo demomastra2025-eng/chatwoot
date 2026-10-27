@@ -117,7 +117,8 @@ RSpec.describe Conversation, locale: :en, type: :model do
 
     before do
       account.update!(limits: account.limits.merge('captain_tokens' => 100, 'captain_responses' => 100))
-      create(:captain_inbox, inbox: inbox, captain_assistant: create(:captain_assistant, account: account))
+      create(:captain_assistant, account: account)
+      create(:captain_inbox, inbox: inbox)
     end
 
     it 'keeps a resolved conversation with the notification marker resolved' do

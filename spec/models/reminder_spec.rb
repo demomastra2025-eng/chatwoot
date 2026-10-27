@@ -1106,4 +1106,50 @@ RSpec.describe Reminder do
       expect(reminder.errors[:repeat_mode]).to include('is only supported for absolute touches')
     end
   end
+
+  describe 'the agent that writes an AI touch' do
+    let(:account) { create(:account) }
+    let(:conversation) { create(:conversation, account: account) }
+    let!(:first_agent) { create(:captain_assistant, account: account, routing_description: 'Doctors') }
+    let!(:second_agent) { create(:captain_assistant, account: account, routing_description: 'Lab tests') }
+
+    def ai_touch(metadata: {}, text_mode: :agent)
+      build(:reminder, account: account, touch_conversation: conversation, conversation: conversation, remindable: conversation,
+                       text_mode: text_mode, body: nil, instructions: 'Remind about the lab results', metadata: metadata)
+    end
+
+    it 'is picked by the router from the instruction when staff made the touch, and stored once' do
+      expect(Captain::Routing::WriterPicker).to receive(:pick)
+        .with(account: account, instruction: 'Remind about the lab results', source: 'touch').once.and_return(second_agent)
+      touch = ai_touch
+
+      touch.send(:pick_captain_writer)
+
+      expect(touch.metadata).to include('captain_assistant_id' => second_agent.id)
+    end
+
+    it 'is the agent that made the touch when an agent made it: the router is not asked' do
+      expect(Captain::Routing::WriterPicker).not_to receive(:pick)
+      touch = ai_touch(metadata: { 'captain_assistant_id' => first_agent.id })
+
+      touch.send(:pick_captain_writer)
+
+      expect(touch.metadata['captain_assistant_id']).to eq(first_agent.id)
+    end
+
+    it 'is nobody when no agent can be chosen: nothing stands in for it' do
+      allow(Captain::Routing::WriterPicker).to receive(:pick).and_return(nil)
+      touch = ai_touch
+
+      touch.send(:pick_captain_writer)
+
+      expect(touch.metadata).not_to have_key('captain_assistant_id')
+    end
+
+    it 'is not asked for a touch with a fixed text' do
+      expect(Captain::Routing::WriterPicker).not_to receive(:pick)
+
+      ai_touch(text_mode: :static).send(:pick_captain_writer)
+    end
+  end
 end

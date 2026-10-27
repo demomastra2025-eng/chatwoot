@@ -68,7 +68,7 @@ class Captain::Tools::Account::CaptainAssistantAdminTool < Captain::Tools::Accou
       selected_assistant_tool_ids: assistant.selected_assistant_tool_ids,
       selected_context_field_ids: assistant.selected_context_field_ids,
       scenarios_count: assistant.scenarios.count,
-      connected_inboxes_count: assistant.captain_inboxes.count
+      voice_inboxes_count: assistant.captain_inboxes.count
     }
   end
 

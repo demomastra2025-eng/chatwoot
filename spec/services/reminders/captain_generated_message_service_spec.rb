@@ -51,6 +51,58 @@ RSpec.describe Reminders::CaptainGeneratedMessageService do
       end.not_to change(Captain::Assistant, :count)
     end
 
+    describe 'the agent that writes the touch' do
+      let(:account) { create(:account) }
+      let(:conversation) { create(:conversation, account: account) }
+      let!(:writer) { create(:captain_assistant, account: account) }
+      let!(:colleague) { create(:captain_assistant, account: account) }
+      let(:reminder) do
+        build(:reminder, account: account, remindable: conversation, text_mode: :agent,
+                         instructions: 'Follow up', metadata: { 'captain_assistant_id' => writer.id })
+      end
+
+      it 'is the agent stored with the touch, whichever other agents the workspace has' do
+        runner = instance_double(Captain::Assistant::AgentRunnerService, generate_response: { response: 'Written by the stored agent' })
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner)
+
+        result = described_class.new(reminder: reminder, conversation: conversation).perform
+
+        expect(result).to include(assistant: writer, content: 'Written by the stored agent')
+      end
+
+      it 'fails with agent_disabled when that agent is switched off, and no other agent writes the touch' do
+        writer.update!(active: false)
+        expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
+
+        expect { described_class.new(reminder: reminder, conversation: conversation).perform }
+          .to raise_error(ArgumentError, described_class::AGENT_DISABLED)
+        expect(colleague.reload).to be_active
+      end
+
+      it 'fails with agent_disabled when that agent was deleted' do
+        writer.destroy!
+        expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
+
+        expect { described_class.new(reminder: reminder, conversation: conversation).perform }
+          .to raise_error(ArgumentError, described_class::AGENT_DISABLED)
+      end
+
+      it 'fails with agent_disabled when that agent is not an external agent any more' do
+        writer.update!(usage_mode: 'internal_assistant')
+
+        expect { described_class.new(reminder: reminder, conversation: conversation).perform }
+          .to raise_error(ArgumentError, described_class::AGENT_DISABLED)
+      end
+
+      it 'does not choose a writer for a touch that names none: the writer is chosen when the touch is made' do
+        reminder.metadata = {}
+        expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
+
+        expect { described_class.new(reminder: reminder, conversation: conversation).perform }
+          .to raise_error(ArgumentError, 'Captain assistant is not configured for this touch')
+      end
+    end
+
     context 'when the runtime returns an undeliverable result' do
       let(:account) { create(:account) }
       let(:conversation) { create(:conversation, account: account) }

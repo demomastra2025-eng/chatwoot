@@ -58,7 +58,8 @@ describe Campaigns::OneoffConversationBuilder do
 
       it 'keeps a new outbound campaign conversation resolved even when the inbox has an active Captain bot' do
         account.update!(limits: account.limits.merge('captain_tokens' => 100, 'captain_responses' => 100))
-        create(:captain_inbox, inbox: inbox, captain_assistant: create(:captain_assistant, account: account))
+        create(:captain_assistant, account: account)
+        create(:captain_inbox, inbox: inbox)
 
         expect(inbox.reload).to be_active_bot
 
@@ -101,7 +102,7 @@ describe Campaigns::OneoffConversationBuilder do
 
       it 'preserves waiting_since on reused pending conversations for AI-authored campaign messages' do
         assistant = create(:captain_assistant, account: account, name: 'Sales AI')
-        create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+        create(:captain_inbox, inbox: inbox)
         campaign.update!(message: '', instructions: 'Write a short follow-up', text_mode: :agent)
         existing_contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: '77001234567')
         existing_conversation = create(
@@ -271,11 +272,7 @@ describe Campaigns::OneoffConversationBuilder do
 
       it 'generates and sends message content as the configured AI agent when the campaign uses agent mode' do
         assistant = create(:captain_assistant, account: account, name: 'Sales AI')
-        create(
-          :captain_inbox,
-          inbox: email_channel.inbox,
-          captain_assistant: assistant
-        )
+        create(:captain_inbox, inbox: email_channel.inbox)
         campaign.update!(message: '', instructions: 'Write a short follow-up', text_mode: :agent)
         generator = instance_double(
           Campaigns::CaptainGeneratedMessageService,

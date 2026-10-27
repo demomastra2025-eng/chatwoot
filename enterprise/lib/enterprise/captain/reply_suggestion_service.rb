@@ -5,15 +5,15 @@ module Enterprise::Captain::ReplySuggestionService
   module AgentCatalogHelpers
     private
 
-    # The anchor answers a channel of one agent; with two or more agents nobody is active until the router chose (the anchor is
-    # not "thinking" while the router decides).
-    def init_agent_catalog!(assistant)
-      @assistant = assistant
+    # The only agent answers a channel of one agent; with two or more agents nobody is active until the router chose (no agent is
+    # "thinking" while the router decides).
+    def init_agent_catalog!(scope)
+      @scope = scope
       @agents_by_id = {}
       @agents_by_name = {}
       @working_agents = []
       @routed = index_agents! > 1
-      @active_agent = summary_for(@assistant) unless @routed
+      @active_agent = summary_for(@sole_candidate) unless @routed
     end
 
     def activate_agent!(actor, role: nil)
@@ -59,26 +59,10 @@ module Enterprise::Captain::ReplySuggestionService
 
     # Returns how many candidates the router chooses among (0 or 1: there is no decision).
     def index_agents!
-      graph = agent_graph
-      graph_actors(graph).each { |actor| register_actor(actor) }
-      candidate_count(graph)
-    end
-
-    def agent_graph
-      Captain::AgentGraph.new(@assistant, inbox: @conversation&.inbox) if @assistant.persisted?
-    rescue StandardError
-      nil
-    end
-
-    def graph_actors(graph)
-      actors = graph ? graph.agents : [@assistant]
-      (Array(actors) + [@assistant]).compact.uniq(&:id)
-    rescue StandardError
-      [@assistant].compact
-    end
-
-    def candidate_count(graph)
-      graph ? graph.candidates.size : 0
+      graph = Captain::AgentGraph.new(@scope)
+      graph.agents.each { |actor| register_actor(actor) }
+      @sole_candidate = graph.candidates.first
+      graph.candidates.size
     rescue StandardError
       0
     end
@@ -220,7 +204,7 @@ module Enterprise::Captain::ReplySuggestionService
     include CouncilTrackerHelpers
 
     # progress_context: { suggestion_request_id:, conversation_id: (the id the client sent), started_at:, deadline_at:, budget_seconds: }
-    def initialize(assistant:, conversation:, user:, progress_context: nil)
+    def initialize(scope:, conversation:, user:, progress_context: nil)
       @conversation = conversation
       @user = user
       @progress_context = progress_context
@@ -236,7 +220,7 @@ module Enterprise::Captain::ReplySuggestionService
       @pending_actions = []
       @superseded_action_ids = []
       @reasoning = nil
-      init_agent_catalog!(assistant)
+      init_agent_catalog!(scope)
       # While the router decides who answers, the manager sees that, and no agent.
       @phase = @routed ? 'routing' : 'thinking'
     end
@@ -527,19 +511,22 @@ module Enterprise::Captain::ReplySuggestionService
   end
 
   # The engine of the request, chosen when it starts (StartService) and never changed by the run: a request for the agent does not
-  # fall back to the old prompt. The assistant found here (the assistant of the inbox, else the account default, else the first one
-  # that can take the conversation) is the technical anchor of the run only: the router decides which agent drafts the suggestion.
+  # fall back to the old prompt. The agent engine runs for a text conversation of a workspace that has external agents; no agent is
+  # named in the request: the router decides which of the enabled agents drafts the suggestion. A workspace with no external agent at
+  # all keeps the old one-shot prompt.
   def suggestion_engine
-    assistant = anchor_assistant_for_suggestion
-    assistant ? { engine: 'agent', assistant_id: assistant.id } : super
+    agent_engine? ? { engine: 'agent', assistant_id: nil } : super
   end
 
+  # nil, or the code of the precondition that stops the request: AI off, no key, no quota, every agent switched off (no_active_agent),
+  # or several agents on and none with a competence card to be chosen by (no_routing_cards).
   def start_error_code
     code = super
     return code if code == :disabled
     return :quota_exceeded unless responses_available?
+    return code if code
 
-    code
+    suggestion_graph&.unavailable_reason if agent_engine?
   end
 
   def run_stats
@@ -549,41 +536,40 @@ module Enterprise::Captain::ReplySuggestionService
   private
 
   def perform_reply_suggestion
-    chosen = @engine.present? ? { engine: @engine, assistant_id: @assistant_id } : suggestion_engine
-    return super unless chosen[:engine] == 'agent'
+    chosen = @engine.presence || suggestion_engine[:engine]
+    return super unless chosen == 'agent'
 
-    assistant = account.captain_assistants.entry_eligible.find_by(id: chosen[:assistant_id])
-    return Captain::ReplySuggestion::Outcome.failed('agent_unavailable') unless assistant
+    reason = suggestion_graph.unavailable_reason
+    return Captain::ReplySuggestion::Outcome.failed(reason.to_s) if reason
 
-    perform_agent_reply_suggestion(assistant)
+    perform_agent_reply_suggestion(suggestion_scope)
   end
 
-  def anchor_assistant_for_suggestion
-    return if conversation.blank? || conversation.inbox&.channel_type == 'Channel::Voice'
+  def agent_engine?
+    return false if conversation.blank? || conversation.inbox&.channel_type == CaptainInbox::VOICE_CHANNEL_TYPE
 
-    inbox_assistant = conversation.inbox&.captain_assistant
-    return inbox_assistant if inbox_assistant&.entry_eligible?
-
-    default_account_assistant
+    account.captain_assistants.external_agent.exists?
   end
 
-  def default_account_assistant
-    default_id = account.captain_default_assistant_id
-    default_assistant = account.captain_assistants.entry_eligible.find_by(id: default_id) if default_id.present?
-    default_assistant || account.captain_assistants.entry_eligible.order(:id).first
+  def suggestion_scope
+    @suggestion_scope ||= Captain::ChannelScope.for_conversation(conversation)
+  end
+
+  def suggestion_graph
+    Captain::AgentGraph.new(suggestion_scope) if conversation.present?
   end
 
   # Whatever happens, the answer is an outcome of the agent: a draft, no reply, a human, or a failure. A run that is cancelled or out
   # of time raises (RunAborted, Timeout::Error) and the job turns that into its outcome.
-  def perform_agent_reply_suggestion(assistant)
+  def perform_agent_reply_suggestion(scope)
     return Captain::ReplySuggestion::Outcome.failed('api_key_missing') unless api_key_configured?
 
-    history = Captain::ReplySuggestion::HistoryBuilder.new(account: account, conversation: conversation, assistant: assistant).perform
+    history = Captain::ReplySuggestion::HistoryBuilder.new(account: account, conversation: conversation).perform
     Captain::ReplySuggestion::RunControl.checkpoint!(:history)
-    @trace_collector = TraceCollector.new(assistant: assistant, conversation: conversation, user: user, progress_context: @progress_context)
+    @trace_collector = TraceCollector.new(scope: scope, conversation: conversation, user: user, progress_context: @progress_context)
     @trace_collector.broadcast_initial!
 
-    classify_agent_response(run_suggestion_agent(assistant, history), history)
+    classify_agent_response(run_suggestion_agent(scope, history), history)
   rescue Captain::Conversation::ControlGenerationStaleError, Timeout::Error
     raise
   rescue StandardError => e
@@ -591,10 +577,10 @@ module Enterprise::Captain::ReplySuggestionService
     Captain::ReplySuggestion::Outcome.failed('internal_error', error_class: e.class.name, detail: e.message.to_s.truncate(200))
   end
 
-  def run_suggestion_agent(assistant, history)
+  def run_suggestion_agent(scope, history)
     Llm::EventBus.with_context(user_id: user&.id) do
       Captain::Assistant::AgentRunnerService.new(
-        assistant: assistant, conversation: conversation, source: 'reply_suggestion', callbacks: @trace_collector.callbacks,
+        scope: scope, conversation: conversation, source: 'reply_suggestion', callbacks: @trace_collector.callbacks,
         request_id: @request_id
       ).generate_response(message_history: history)
     end

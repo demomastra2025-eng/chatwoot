@@ -11,7 +11,7 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
       { 'delay_seconds' => 60, 'mode' => 'static', 'message' => "Follow-up #{index + 1}" }
     end
   end
-  let(:assistant) do
+  let!(:assistant) do
     create(
       :captain_assistant,
       account: account,
@@ -33,7 +33,8 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
 
   before do
     account.enable_features!('captain_integration', 'captain_tasks')
-    create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+    create(:captain_inbox, inbox: inbox)
+    Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
     create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :incoming, content: 'Can you help me?')
   end
 
@@ -141,7 +142,7 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
       expect { scheduled_step(anchor: employee_anchor) }.not_to change(Reminder, :count)
 
       other_inbox = create(:inbox, account: account)
-      CaptainInbox.find_or_create_by!(inbox: other_inbox) { |ci| ci.captain_assistant = assistant }
+      CaptainInbox.find_or_create_by!(inbox: other_inbox)
       mismatched_inbox_anchor = create(
         :message,
         account: account,
@@ -162,7 +163,7 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
       internal_inbox = create(:inbox, account: account)
       internal_inbox.captain_inbox&.destroy!
       internal_conversation = create(:conversation, account: account, inbox: internal_inbox, status: :pending)
-      create(:captain_inbox, captain_assistant: internal_assistant, inbox: internal_inbox)
+      create(:captain_inbox, inbox: internal_inbox)
       internal_assistant.update_column(:usage_mode, 'internal_assistant') # rubocop:disable Rails/SkipsModelValidations
       create(
         :message,
@@ -198,7 +199,7 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
       foreign_inbox = create(:inbox, account: foreign_account)
       foreign_conversation = create(:conversation, account: foreign_account, inbox: foreign_inbox, status: :open)
       foreign_assistant = create(:captain_assistant, account: foreign_account)
-      create(:captain_inbox, captain_assistant: foreign_assistant, inbox: foreign_inbox)
+      create(:captain_inbox, inbox: foreign_inbox)
       foreign_anchor = create(
         :message,
         account: foreign_account,

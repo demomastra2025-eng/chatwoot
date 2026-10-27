@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
   playgroundSession: vi.fn(),
   playgroundPermissions: vi.fn(),
   confirmPlaygroundAction: vi.fn(),
-  show: vi.fn(),
   fetch: vi.fn(),
   getModelsForFeature: vi.fn(),
   getSelectedModelForFeature: vi.fn(),
@@ -17,8 +16,6 @@ const mocks = vi.hoisted(() => ({
   assistants: [],
   assistantUIFlags: { fetchingList: false },
   dispatch: vi.fn(),
-  matrix: null,
-  matrixFetch: vi.fn(),
 }));
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key, te: () => true }),
@@ -43,17 +40,16 @@ vi.mock('dashboard/composables/store', () => ({
     },
   }),
 }));
-vi.mock('dashboard/api/captain/assistant', () => ({ default: mocks }));
+vi.mock('dashboard/api/captain/playground', () => ({
+  default: {
+    message: (...args) => mocks.playground(...args),
+    session: (...args) => mocks.playgroundSession(...args),
+    permissions: (...args) => mocks.playgroundPermissions(...args),
+    confirmAction: (...args) => mocks.confirmPlaygroundAction(...args),
+  },
+}));
 vi.mock('dashboard/store/captain/preferences', () => ({
   useCaptainConfigStore: () => mocks,
-}));
-vi.mock('dashboard/store/captain/channelMatrix', () => ({
-  useCaptainChannelMatrixStore: () => ({
-    get getMatrix() {
-      return mocks.matrix;
-    },
-    fetch: mocks.matrixFetch,
-  }),
 }));
 const button = {
   name: 'NextButton',
@@ -107,7 +103,7 @@ const deferred = () => {
 };
 const mountPlayground = ({ realMessages = false } = {}) =>
   mount(AssistantPlayground, {
-    props: { assistantId: 4, accountId: 74 },
+    props: { accountId: 74 },
     global: {
       directives: {
         'dompurify-html': (el, binding) => {
@@ -162,27 +158,12 @@ beforeEach(() => {
   mocks.uiFlags.fetchError = false;
   mocks.assistants = [];
   mocks.assistantUIFlags = { fetchingList: false };
-  mocks.matrix = null;
   mocks.inboxes = [
     { id: 7, name: 'WhatsApp клиники', channel_type: 'Channel::Whatsapp' },
     { id: 8, name: 'Telegram клиники', channel_type: 'Channel::Telegram' },
     { id: 9, name: 'Телефон', channel_type: 'Channel::Voice' },
   ];
   mocks.fetch.mockResolvedValue();
-  mocks.show.mockResolvedValue({
-    data: {
-      id: 4,
-      usage_mode: 'external_agent',
-      channel_scope: 'all',
-      inbox_ids: [],
-      config: {},
-      playground_model: {
-        id: 'provider/model',
-        supports_temperature: true,
-        reasoning_efforts: ['low', 'high'],
-      },
-    },
-  });
   mocks.getModelsForFeature.mockReturnValue([
     {
       id: 'provider/model',
@@ -318,7 +299,6 @@ describe('one Playground workspace', () => {
       wrapper.find('[data-test="playground-write-warning"]').exists()
     ).toBe(true);
     expect(mocks.playgroundPermissions).toHaveBeenLastCalledWith({
-      assistantId: 4,
       sessionId: 'session-1',
       read: true,
       write: true,
@@ -330,7 +310,6 @@ describe('one Playground workspace', () => {
       false
     );
     expect(mocks.playgroundPermissions).toHaveBeenLastCalledWith({
-      assistantId: 4,
       sessionId: 'session-1',
       read: false,
       write: false,
@@ -396,7 +375,6 @@ describe('one Playground workspace', () => {
       wrapper.get('[data-test="playground-message-input"]').element.disabled
     ).toBe(false);
     expect(mocks.playgroundPermissions).toHaveBeenLastCalledWith({
-      assistantId: 4,
       sessionId: 'session-1',
       read: false,
       write: false,
@@ -432,7 +410,6 @@ describe('one Playground workspace', () => {
       .trigger('click');
     await flushPromises();
     expect(mocks.confirmPlaygroundAction).toHaveBeenCalledExactlyOnceWith({
-      assistantId: 4,
       sessionId: 'session-1',
       approval: approval(),
     });
@@ -469,7 +446,6 @@ describe('one Playground workspace', () => {
     const reset = wrapper.vm.resetConversation();
     await flushPromises();
     expect(mocks.playgroundPermissions).toHaveBeenLastCalledWith({
-      assistantId: 4,
       sessionId: 'session-1',
       read: false,
       write: false,
@@ -494,7 +470,7 @@ describe('one Playground workspace', () => {
     wrapper.unmount();
   });
 
-  it('does not reset while revocation is unresolved and discards responses for a former assistant', async () => {
+  it('does not reset while revocation is unresolved and discards responses for a former workspace', async () => {
     const turn = deferred();
     mocks.playground.mockReturnValue(turn.promise);
     const wrapper = mountPlayground();
@@ -505,16 +481,16 @@ describe('one Playground workspace', () => {
     expect(mocks.playgroundSession).toHaveBeenCalledTimes(1);
     await wrapper.vm.setPermissions(false, false);
     await send(wrapper);
-    await wrapper.setProps({ assistantId: 5 });
+    await wrapper.setProps({ accountId: 75 });
     await flushPromises();
     turn.resolve({
       data: {
-        response: 'Old assistant',
+        response: 'Old workspace',
         playground: payload({ real_data_read: true, real_data_write: true }),
       },
     });
     await flushPromises();
-    expect(wrapper.text()).not.toContain('Old assistant');
+    expect(wrapper.text()).not.toContain('Old workspace');
     expect(
       wrapper
         .get('[data-test="playground-real-read"]')
@@ -575,7 +551,6 @@ describe('one Playground workspace', () => {
     await send(wrapper, 'With the profile model');
     expect(mocks.playground).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        assistantId: 4,
         testOptions: { model: '', temperature: 1, thinkingEffort: 'high' },
       })
     );
@@ -591,7 +566,6 @@ describe('one Playground workspace', () => {
     await send(wrapper, 'With the fast model');
     expect(mocks.playground).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        assistantId: 4,
         testOptions: {
           model: 'provider/fast',
           temperature: null,
@@ -725,9 +699,7 @@ describe('one Playground workspace', () => {
 
   it('starts session initialization in parallel with settings and enables input before model catalog finishes', async () => {
     const settingsGate = deferred();
-    const showGate = deferred();
     mocks.fetch.mockReturnValueOnce(settingsGate.promise);
-    mocks.show.mockReturnValueOnce(showGate.promise);
     mocks.playgroundSession.mockResolvedValueOnce({
       data: {
         playground: payload({
@@ -737,6 +709,7 @@ describe('one Playground workspace', () => {
               content: 'Welcome back',
               agent_id: 4,
               agent_name: 'assistant_4',
+              agent_display_name: 'Coordinator Bot',
             },
           ],
         }),
@@ -745,27 +718,8 @@ describe('one Playground workspace', () => {
 
     const wrapper = mountPlayground({ realMessages: true });
     expect(mocks.playgroundSession).toHaveBeenCalledTimes(1);
-    expect(mocks.show).toHaveBeenCalledTimes(1);
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
 
-    await flushPromises();
-    expect(
-      wrapper.get('[data-test="playground-message-input"]').element.disabled
-    ).toBe(true);
-
-    showGate.resolve({
-      data: {
-        id: 4,
-        name: 'Coordinator Bot',
-        usage_mode: 'external_agent',
-        config: {},
-        playground_model: {
-          id: 'provider/model',
-          supports_temperature: true,
-          reasoning_efforts: ['low', 'high'],
-        },
-      },
-    });
     await flushPromises();
 
     expect(
@@ -806,14 +760,12 @@ describe('one Playground workspace', () => {
     wrapper.unmount();
   });
 
-  it('pre-warms model metadata on the Sandbox page and resolves the main agent from inbox links before the channel matrix finishes', async () => {
+  it('pre-warms model metadata on the Sandbox page and opens the Playground with no start agent', async () => {
     mocks.assistants = [
-      { id: 15, name: 'Sub Agent', active: true, main_in_inbox_ids: [] },
-      { id: 4, name: 'Main Agent', active: true, main_in_inbox_ids: [7] },
+      { id: 15, name: 'Sub Agent', active: true },
+      { id: 4, name: 'Other Agent', active: false },
     ];
-    mocks.matrix = null;
     mocks.dispatch.mockResolvedValue();
-    mocks.matrixFetch.mockResolvedValue();
 
     const wrapper = mount(PlaygroundIndex, {
       global: {
@@ -836,8 +788,35 @@ describe('one Playground workspace', () => {
 
     expect(mocks.dispatch).toHaveBeenCalledWith('captainAssistants/get');
     expect(mocks.fetch).toHaveBeenCalledWith({ clientMetadataOnly: true });
-    expect(mocks.matrixFetch).toHaveBeenCalledTimes(1);
-    expect(wrapper.get('[data-test="mounted-playground"]').text()).toBe('4');
+    // No start agent: the page passes no agent id to the Playground.
+    expect(wrapper.get('[data-test="mounted-playground"]').text()).toBe('');
+    wrapper.unmount();
+  });
+
+  it('shows only a sentence on the Sandbox page when the workspace has no agent', async () => {
+    mocks.assistants = [];
+    mocks.dispatch.mockResolvedValue();
+
+    const wrapper = mount(PlaygroundIndex, {
+      global: {
+        stubs: {
+          PageLayout: {
+            props: ['isFetching'],
+            template: '<div><slot name="body" /></div>',
+          },
+          CaptainPaywall: true,
+          AssistantPlayground: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="playground-empty"]').exists()).toBe(
+      true
+    );
+    expect(
+      wrapper.find('[data-testid="captain-playground-page"]').exists()
+    ).toBe(false);
     wrapper.unmount();
   });
 });

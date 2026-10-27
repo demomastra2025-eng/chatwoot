@@ -64,7 +64,7 @@ class Campaign < ApplicationRecord
   validate :prevent_terminal_campaign_from_update, on: :update
   validate :sender_must_belong_to_account
   validate :captain_assistant_must_belong_to_account
-  validate :captain_assistant_must_be_connected_to_inbox
+  validate :captain_assistant_must_be_enabled_agent
   validate :inbox_must_belong_to_account
   validate :validate_ai_authoring_availability
   validate :validate_official_whatsapp_delivery_policy
@@ -96,7 +96,7 @@ class Campaign < ApplicationRecord
   end
 
   before_validation :normalize_text_mode
-  before_validation :assign_captain_assistant_from_inbox
+  before_validation :pick_captain_assistant
   before_validation :ensure_correct_campaign_attributes
   after_commit :set_display_id, unless: :display_id?
   after_destroy_commit :enqueue_audience_import_cleanup
@@ -260,12 +260,14 @@ class Campaign < ApplicationRecord
     errors.add(:captain_assistant_id, 'must belong to the same account as the campaign')
   end
 
-  def captain_assistant_must_be_connected_to_inbox
+  # The writer is an enabled agent of the workspace, checked when it is chosen (a later switch-off shows when the campaign is sent).
+  def captain_assistant_must_be_enabled_agent
     return unless agent?
-    return if captain_assistant.blank? || inbox.blank?
-    return if captain_assistant.inboxes.exists?(id: inbox_id)
+    return if captain_assistant.blank?
+    return unless new_record? || will_save_change_to_captain_assistant_id?
+    return if captain_assistant.entry_eligible?
 
-    errors.add(:captain_assistant_id, 'must be configured for the campaign inbox')
+    errors.add(:captain_assistant_id, 'must be an enabled AI agent')
   end
 
   def validate_ai_authoring_availability
@@ -278,7 +280,7 @@ class Campaign < ApplicationRecord
 
     return if captain_assistant.present?
 
-    errors.add(:inbox_id, 'must have a configured AI assistant')
+    errors.add(:captain_assistant_id, 'no enabled AI agent can write this campaign')
   end
 
   def validate_official_whatsapp_delivery_policy
@@ -325,12 +327,14 @@ class Campaign < ApplicationRecord
     errors.add(:template_params, e.message)
   end
 
-  def assign_captain_assistant_from_inbox
+  # The router picks the writer from the instruction of the campaign, once, when the campaign becomes an AI-authored one; the chosen
+  # agent is stored, and a campaign that names a writer keeps it.
+  def pick_captain_assistant
     return unless agent?
     return if captain_assistant.present?
-    return unless inbox.respond_to?(:captain_assistant)
+    return unless defined?(Captain::Routing::WriterPicker) && account.present?
 
-    self.captain_assistant = inbox.captain_assistant
+    self.captain_assistant = Captain::Routing::WriterPicker.pick(account: account, instruction: instructions, source: 'campaign')
   end
 
   def prevent_terminal_campaign_from_update

@@ -219,7 +219,9 @@ defineExpose({ dialogRef });
         :label="t('CAPTAIN.GALLERY.CREATE.DESCRIPTION_LABEL')"
         :placeholder="t('CAPTAIN.GALLERY.CREATE.DESCRIPTION_PLACEHOLDER')"
         :max-length="DESCRIPTION_MAX_LENGTH"
-        :message="descriptionError"
+        :message="
+          descriptionError || t('CAPTAIN.GALLERY.CREATE.DESCRIPTION_HINT')
+        "
         :message-type="descriptionError ? 'error' : 'info'"
         show-character-count
         auto-height

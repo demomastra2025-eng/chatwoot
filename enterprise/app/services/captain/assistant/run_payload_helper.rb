@@ -11,14 +11,14 @@ module Captain::Assistant::RunPayloadHelper
     }
     # A caller with an id of its own (a reply suggestion request) gives it to the run: all llm events of the run share it.
     context[:agent_request_id] = @request_id if @request_id.present?
-    @assistant.persisted? ? agent_run_context.prepare(context) : context
+    graph_run? ? agent_run_context.prepare(context) : context
   end
 
   def captain_session_id
     thread_id = @conversation&.communication_thread&.id
-    return "#{@assistant.account_id}_thread_#{thread_id}" if thread_id.present?
+    return "#{account.id}_thread_#{thread_id}" if thread_id.present?
 
-    "#{@assistant.account_id}_#{@conversation&.display_id}"
+    "#{account.id}_#{@conversation&.display_id}"
   end
 
   def extract_last_user_message(message_history)

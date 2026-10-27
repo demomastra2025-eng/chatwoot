@@ -11,16 +11,16 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
   let(:inbox) { create(:inbox, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, status: :pending) }
   let(:tools) { { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => %w[create_appointment handoff] } } } }
-  # The channel's anchor (Сезім Богенбай 84) and two peers (procedures 119, surgery 120).
+  # Three peers of one workspace (the clinic of Сезім Богенбай): none is a default agent.
   let!(:doctors) { create(:captain_assistant, account: account, name: 'Врачи', routing_description: 'Приём ЛОР-врачей', config: tools) }
   let!(:procedures) { create(:captain_assistant, account: account, name: 'Процедуры', routing_description: 'ЛОР-процедуры', config: tools) }
   let!(:surgery) { create(:captain_assistant, account: account, name: 'Хирургия', routing_description: 'ЛОР-операции', config: tools) }
-  let(:session) { Captain::Conversation::AgentSession.new(entry: doctors, conversation: conversation) }
+  let(:session) { Captain::Conversation::AgentSession.new(conversation: conversation) }
   let(:runtime_runner) { instance_double(Captain::Runtime::Runner) }
 
   before do
     account.enable_features!('captain_integration', 'captain_tasks')
-    create(:captain_inbox, inbox: inbox, captain_assistant: doctors)
+    create(:captain_inbox, inbox: inbox)
     create(:message, conversation: conversation, message_type: :incoming, content: 'Сәлеметсіз бе, ертеңге ЛОР дәрігеріне жазылуға бола ма?')
     allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_on)
     allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
@@ -111,12 +111,12 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     described_class.perform_now(conversation, doctors)
 
     expect_staff_handoff(described_class::CUSTOM_GUARDRAIL_HANDOFF_NOTE)
-    expect(Captain::Safety::CustomRulesEvaluator).to have_received(:evaluate).with(hash_including(assistant: procedures, direction: 'input')).once
+    expect(Captain::Safety::CustomRulesEvaluator).to have_received(:evaluate).with(hash_including(account: account, direction: 'input')).once
     expect(session.read['current_assistant_id']).to eq(procedures.id)
   end
 
   it 'hands a conversation to staff for the patient through its holder when the holder is no longer a candidate of the router' do
-    procedures.update!(config: procedures.config.merge('patient_routing' => false))
+    procedures.update!(routing_description: '')
     session.update_routing(actor_id: procedures.id)
     patient_asks_for_a_person
     decide('human_handoff')
@@ -128,7 +128,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     expect(session.read['current_assistant_id']).to eq(procedures.id)
   end
 
-  it 'releases a holder that was switched off, so that a staff request is applied by the anchor' do
+  it 'releases a holder that was switched off, so that a staff request is applied by the AI itself, with no agent named' do
     session.update_routing(actor_id: surgery.id)
     surgery.update!(active: false)
     patient_asks_for_a_person
@@ -138,5 +138,18 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
     expect(conversation.reload.status).to eq('open')
     expect(session.read).to include('current_assistant_id' => nil, 'routing_revision' => 2)
+    expect(conversation.messages.where(private: true).where.not(sender_id: nil)).to be_empty
+  end
+
+  it 'asks staff to fill agent descriptions when no enabled agent has a routing card' do
+    [doctors, procedures, surgery].each { |agent| agent.update!(routing_description: '') }
+
+    described_class.perform_now(conversation)
+
+    notice = I18n.with_locale(account.locale) { I18n.t('captain.reply_suggestion.errors.no_routing_cards') }
+    expect(conversation.reload.status).to eq('open')
+    expect(staff_notes).to include(notice)
+    expect(conversation.messages.outgoing.where(private: false)).to be_empty
+    expect(runtime_runner).not_to have_received(:run)
   end
 end

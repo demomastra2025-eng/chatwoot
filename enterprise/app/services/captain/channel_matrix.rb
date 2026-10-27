@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-# Workspace routing editor. The historical agent/channel membership rows stay in
-# storage, but only the workspace main agent and each text channel's switch run.
+# Workspace routing editor: which text channels the AI answers by itself. Every agent is a peer with its own on/off switch (the agents
+# page); a channel names no agent, because the router picks the agent among the enabled ones for each message.
 class Captain::ChannelMatrix
   class Invalid < StandardError
     attr_reader :errors
@@ -17,12 +17,9 @@ class Captain::ChannelMatrix
   end
 
   def payload
-    agents = account.captain_assistants.external_agent.order(:id).to_a
-    main_id = account.captain_default_assistant_id&.to_i
     {
-      default_main_assistant_id: main_id,
-      channels: channel_rows(agents, main_id),
-      assistants: assistant_rows(agents)
+      channels: channel_rows,
+      assistants: assistant_rows
     }
   end
 
@@ -30,7 +27,6 @@ class Captain::ChannelMatrix
     data = input.respond_to?(:to_unsafe_h) ? input.to_unsafe_h : input.to_h
     data = data.deep_stringify_keys
     account.with_lock do
-      update_main!(data['default_main_assistant_id']) if data.key?('default_main_assistant_id')
       update_channels!(data['channels']) if data.key?('channels')
     end
     payload
@@ -41,40 +37,22 @@ class Captain::ChannelMatrix
   attr_reader :account
 
   def text_inboxes
-    @text_inboxes ||= account.inboxes.where.not(channel_type: 'Channel::Voice').order(:id).to_a
+    @text_inboxes ||= account.inboxes.where.not(channel_type: CaptainInbox::VOICE_CHANNEL_TYPE).order(:id).to_a
   end
 
-  def channel_rows(agents, main_id)
+  def channel_rows
     links = CaptainInbox.where(inbox_id: text_inboxes.map(&:id)).index_by(&:inbox_id)
-    active_ids = agents.select(&:entry_eligible?).map(&:id)
     text_inboxes.map do |inbox|
       { inbox_id: inbox.id, name: inbox.name, channel_type: inbox.channel_type,
-        ai_enabled: links[inbox.id]&.ai_enabled? || false, main_assistant_id: main_id,
-        assistant_ids: active_ids, auto_reply_mode: account.captain_reply_time_mode }
+        ai_enabled: links[inbox.id]&.ai_enabled? || false, auto_reply_mode: account.captain_reply_time_mode }
     end
   end
 
-  def assistant_rows(agents)
-    agents.map do |agent|
-      { id: agent.id, name: agent.name, avatar_url: agent.avatar_url,
-        routing_description: agent.routing_description, active: agent.active?,
-        channel_scope: 'all', inbox_ids: [] }
-    end
-  end
-
-  def update_main!(value)
-    id = Integer(value, exception: false)
-    assistant = account.captain_assistants.entry_eligible.find_by(id: id)
-    invalid!('INVALID_DEFAULT') unless assistant
-
-    account.update!(captain_default_assistant_id: assistant.id)
-    text_inboxes.each do |inbox|
-      link = CaptainInbox.find_by(inbox_id: inbox.id)
-      if link
-        link.update!(captain_assistant: assistant) if link.captain_assistant_id != assistant.id
-      else
-        CaptainInbox.create!(inbox: inbox, captain_assistant: assistant, ai_enabled: false)
-      end
+  # has_card: the agent has a «what the agent does» description, which the router chooses by.
+  def assistant_rows
+    account.captain_assistants.external_agent.order(:id).map do |agent|
+      { id: agent.id, name: agent.name, avatar_url: agent.avatar_url, active: agent.active?,
+        has_card: agent.routing_description.to_s.strip.present? }
     end
   end
 
@@ -97,14 +75,13 @@ class Captain::ChannelMatrix
     save_channel_switch!(inbox, enabled)
   end
 
+  # A channel with no row has its auto reply off; switching it on creates the row, which holds the channel settings only.
   def save_channel_switch!(inbox, enabled)
     link = CaptainInbox.find_by(inbox_id: inbox.id)
     return link.update!(ai_enabled: enabled) if link
     return unless enabled
 
-    main = account.captain_assistants.entry_eligible.find_by(id: account.captain_default_assistant_id)
-    invalid!('MAIN_AGENT_REQUIRED', inbox_id: inbox.id) unless main
-    CaptainInbox.create!(inbox: inbox, captain_assistant: main, ai_enabled: true)
+    CaptainInbox.create!(inbox: inbox, ai_enabled: true)
   end
 
   def invalid!(code, inbox_id: nil)

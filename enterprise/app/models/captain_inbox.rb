@@ -7,7 +7,7 @@
 #  reply_to_open_conversations :boolean          default(FALSE), not null
 #  created_at                  :datetime         not null
 #  updated_at                  :datetime         not null
-#  captain_assistant_id        :bigint           not null
+#  captain_assistant_id        :bigint
 #  inbox_id                    :bigint           not null
 #
 # Indexes
@@ -16,7 +16,13 @@
 #  index_captain_inboxes_on_captain_assistant_id_and_inbox_id  (captain_assistant_id,inbox_id) UNIQUE
 #  index_captain_inboxes_on_inbox_id                           (inbox_id)
 #
+# The AI settings of one channel. A text channel row holds the channel settings only (ai_enabled, auto_reply_mode,
+# reply_to_open_conversations) and no agent: which agent answers is decided by the router among the enabled agents of the workspace
+# (see Captain::ChannelScope). A number whose calls the AI answers (a voice channel, or a WhatsApp number with AI voice on) names the
+# agent that answers them, because a call has no router.
 class CaptainInbox < ApplicationRecord
+  VOICE_CHANNEL_TYPE = 'Channel::Voice'.freeze
+  WHATSAPP_CHANNEL_TYPE = 'Channel::Whatsapp'.freeze
   AUTO_REPLY_ALWAYS = 'always'.freeze
   AUTO_REPLY_WORKING_HOURS = 'working_hours'.freeze
   AUTO_REPLY_OUTSIDE_WORKING_HOURS = 'outside_working_hours'.freeze
@@ -27,24 +33,28 @@ class CaptainInbox < ApplicationRecord
   ].freeze
   DEFAULT_AUTO_REPLY_MODE = AUTO_REPLY_ALWAYS
 
+  # The channels where the AI may answer by itself: a voice number whose agent is enabled, or a text channel that is switched on in a
+  # workspace where the AI is on and at least one external agent is enabled (the router picks among the enabled agents).
   scope :enabled_for_runtime, lambda {
     joins(inbox: :account).where(<<~SQL.squish)
-      inboxes.channel_type = 'Channel::Voice' OR
-      (captain_inboxes.ai_enabled = TRUE AND
-       COALESCE(accounts.settings #>> '{captain_agent_settings,routing,ai_enabled}', 'true') <> 'false' AND
-       accounts.settings ->> 'captain_default_assistant_id' = captain_inboxes.captain_assistant_id::text)
+      (inboxes.channel_type = 'Channel::Voice' AND EXISTS (
+         SELECT 1 FROM captain_assistants voice_agents
+         WHERE voice_agents.id = captain_inboxes.captain_assistant_id AND voice_agents.account_id = inboxes.account_id
+           AND voice_agents.active = TRUE AND voice_agents.usage_mode = 'external_agent')) OR
+      (inboxes.channel_type <> 'Channel::Voice' AND captain_inboxes.ai_enabled = TRUE AND
+       COALESCE(accounts.settings #>> '{captain_agent_settings,routing,ai_enabled}', 'true') <> 'false' AND EXISTS (
+         SELECT 1 FROM captain_assistants agents
+         WHERE agents.account_id = inboxes.account_id AND agents.active = TRUE AND agents.usage_mode = 'external_agent'))
     SQL
   }
 
-  belongs_to :captain_assistant, class_name: 'Captain::Assistant'
+  belongs_to :captain_assistant, class_name: 'Captain::Assistant', optional: true
   belongs_to :inbox
 
   validates :inbox_id, uniqueness: true
   validates :auto_reply_mode, inclusion: { in: AUTO_REPLY_MODES }
-  validate :assistant_belongs_to_inbox_account
-  validate :new_entry_assistant_is_eligible
-  validate :enabled_text_main_agent_is_member
-  validate :enabled_text_main_agent_is_active
+  validate :agent_only_on_a_channel_that_takes_calls
+  validate :voice_channel_has_an_eligible_agent
 
   before_validation :set_default_auto_reply_mode
 
@@ -58,6 +68,15 @@ class CaptainInbox < ApplicationRecord
     includes(inbox: :channel).find_each(&:sync_voice_routing_policy!)
   end
 
+  # The AI answers the calls of this number, so the row names the agent for them: a phone number, or a WhatsApp number with AI voice
+  # on. Every other channel is text only and names no agent.
+  def answers_calls_with_ai?
+    return true if voice_channel?
+
+    inbox&.channel_type == WHATSAPP_CHANNEL_TYPE &&
+      ActiveModel::Type::Boolean.new.cast(inbox.channel&.provider_config.to_h['ai_voice_enabled']) == true
+  end
+
   def auto_reply_allowed_now?
     return legacy_voice_auto_reply_allowed_now? if inbox&.channel_type == 'Channel::Voice'
     return false unless ai_enabled?
@@ -67,7 +86,6 @@ class CaptainInbox < ApplicationRecord
 
   def text_auto_reply_allowed_now?
     return false unless inbox.account.captain_ai_enabled?
-    return false unless inbox.account.captain_default_assistant_id.to_i == captain_assistant_id
 
     mode = inbox.account.captain_reply_time_mode
     return true if mode == AUTO_REPLY_ALWAYS
@@ -102,31 +120,29 @@ class CaptainInbox < ApplicationRecord
 
   private
 
-  def assistant_belongs_to_inbox_account
-    return if captain_assistant&.account_id == inbox&.account_id
-
-    errors.add(:captain_assistant, 'must belong to the channel workspace')
+  def voice_channel?
+    inbox&.channel_type == VOICE_CHANNEL_TYPE
   end
 
-  def new_entry_assistant_is_eligible
+  def agent_only_on_a_channel_that_takes_calls
+    return if captain_assistant_id.blank?
+
+    unless answers_calls_with_ai?
+      errors.add(:captain_assistant, 'is set only on a number whose calls the AI answers: a text channel has no agent')
+      return
+    end
+
+    errors.add(:captain_assistant, 'must belong to the channel workspace') unless captain_assistant&.account_id == inbox.account_id
+  end
+
+  def voice_channel_has_an_eligible_agent
+    return unless voice_channel?
+    return errors.add(:captain_assistant, :blank) if captain_assistant.blank?
+    return errors.add(:captain_assistant, 'must belong to the channel workspace') unless captain_assistant.account_id == inbox.account_id
     return unless new_record? || will_save_change_to_captain_assistant_id?
-    return if captain_assistant&.entry_eligible?
+    return if captain_assistant.entry_eligible?
 
     errors.add(:captain_assistant, 'must be an active external agent')
-  end
-
-  def enabled_text_main_agent_is_member
-    return unless ai_enabled? && inbox&.channel_type != 'Channel::Voice' && captain_assistant&.entry_eligible?
-    return if captain_assistant.works_on_inbox?(inbox)
-
-    errors.add(:captain_assistant, I18n.t('captain.channel_matrix.main_agent_not_member'))
-  end
-
-  def enabled_text_main_agent_is_active
-    return unless ai_enabled? && inbox&.channel_type != 'Channel::Voice'
-    return if captain_assistant&.entry_eligible?
-
-    errors.add(:captain_assistant, I18n.t('captain.channel_matrix.main_agent_inactive'))
   end
 
   def lock_voice_assistant_assignment!

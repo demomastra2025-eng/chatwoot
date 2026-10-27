@@ -4,7 +4,7 @@ RSpec.describe Captain::Playground::ToolExecutor, 'native rules through the prod
   let(:account) { create(:account) }
   let(:user) { create(:user, :administrator, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
-  let(:session) { Captain::Playground::Session.new(account: account, user: user, assistant: assistant) }
+  let(:session) { Captain::Playground::Session.new(account: account, user: user) }
 
   before do
     account.enable_features!('crm_tasks', 'crm_deals', 'scheduling')
@@ -67,6 +67,7 @@ RSpec.describe Captain::Playground::ToolExecutor, 'native rules through the prod
     expect(Notification).not_to receive(:create!)
     expect(account).not_to receive(:users)
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       data = workspace.scenario.data
       data['staff'] = [{ 'id' => 1801, 'name' => 'Scenario operator', 'email' => 'operator@example.test', 'type' => 'User' }]
       conversation_id = handle(workspace, :conversation_id, data['conversation']['id'])
@@ -96,6 +97,7 @@ RSpec.describe Captain::Playground::ToolExecutor, 'native rules through the prod
   it 'does not offer a stored staff row of the removed Agent Bots for assignment' do
     assistant
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       data = workspace.scenario.data
       data['staff'] = [{ 'id' => 1802, 'name' => 'Former bot', 'email' => 'bot@example.test', 'type' => 'AgentBot' }]
       conversation_id = handle(workspace, :conversation_id, data['conversation']['id'])
@@ -114,6 +116,7 @@ RSpec.describe Captain::Playground::ToolExecutor, 'native rules through the prod
     expect(Messages::MessageBuilder).not_to receive(:new)
     expect(SendReplyJob).not_to receive(:perform_later)
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       data = workspace.scenario.data
       data['inbox'] = { 'channel_type' => 'Channel::Whatsapp', 'channel' => { 'provider' => 'whatsapp_cloud' } }
       data['channel_templates'] = [{ 'id' => 1801, 'name' => 'visit_ready', 'language' => 'ru', 'status' => 'APPROVED',
@@ -141,6 +144,7 @@ RSpec.describe Captain::Playground::ToolExecutor, 'native rules through the prod
     expect(Reminders::CreateService).not_to receive(:new)
     expect(SendReplyJob).not_to receive(:perform_later)
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       workspace.set_permissions!(read: true, write: true)
       scheduled = 2.days.from_now.change(usec: 0).iso8601
       created = result(workspace, 'create_touch', body: 'Scenario reminder', scheduled_at: scheduled, timezone: 'Asia/Almaty')
@@ -163,6 +167,7 @@ RSpec.describe Captain::Playground::ToolExecutor, 'native rules through the prod
   it 'rejects native invalid touch content and recurrence and materializes relative fixed wall-clock time from JSON' do
     travel_to(Time.utc(2026, 10, 10, 10)) do
       session.with_lock do |workspace|
+        workspace.activate_agent!(assistant)
         operation = Captain::Tools::Operations::TouchOperations.new(assistant: assistant)
         expect { operation.send(:validate_touch_content!, body: '', content_kind: 'free_text', template_params: {}, attachments_present: false) }
           .to raise_error(ArgumentError) { |error| expect(call(workspace, 'create_touch', body: '', relative_offset_minutes: 30)).to include(error.message) }
@@ -181,6 +186,7 @@ RSpec.describe Captain::Playground::ToolExecutor, 'native rules through the prod
 
   it 'uses native bulk-cancellation eligibility and cancels matching JSON enrollments without disturbing materialized delivery' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       first = result(workspace, 'create_touch', body: 'First', scheduled_at: 2.days.from_now.iso8601)
       result(workspace, 'create_touch', body: 'Already sent', scheduled_at: 3.days.from_now.iso8601)
       data = workspace.scenario.data
@@ -203,6 +209,7 @@ RSpec.describe Captain::Playground::ToolExecutor, 'native rules through the prod
     expect(SendReplyJob).not_to receive(:perform_later)
     expect(Channel::Telegram).not_to receive(:find)
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       data = workspace.scenario.data
       data['inbox'] = { 'channel_type' => 'Channel::Telegram' }
       data['messages'] = [{ 'id' => 1801, 'content' => 'Original', 'message_type' => 'outgoing', 'private' => false,
@@ -224,6 +231,7 @@ RSpec.describe Captain::Playground::ToolExecutor, 'native rules through the prod
     expect(Crm::TaskCatalogs::Provisioner).not_to receive(:new)
     expect(account).not_to receive(:crm_task_types)
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       first = result(workspace, 'create_task', title: '  Scenario task  ', due_at: 2.days.from_now.iso8601)
       expect(first['task_id']).to be_negative
       expect(first.dig('task', 'title')).to eq('Scenario task')
@@ -256,6 +264,7 @@ RSpec.describe Captain::Playground::ToolExecutor, 'native rules through the prod
 
   it 'enforces configured production pipeline movement rules before mutating a synthetic deal' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       data = workspace.scenario.data
       data['pipelines'].first['restrict_stage_skipping'] = true
       id = handle(workspace, :deal_id, data['deals'].first['id'])

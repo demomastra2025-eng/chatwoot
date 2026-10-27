@@ -12,25 +12,26 @@ module Captain::Assistant::RoutingHelper
 
   private
 
-  # Builds the state and starts the decision. Nothing is started for a clinic with one agent (or a run without a stored assistant).
+  # Builds the state and starts the decision. Nothing is started for a clinic with one agent (or a run of one agent alone).
   # Until the decision is applied, the turn answers as the agent that holds the conversation (Captain::AgentRunContext#holder): a
-  # blocked input, a router failure or a staff request then names the agent the session names, as the response builder requires.
+  # blocked input, a router failure or a staff request then names the agent the session names, as the response builder requires, or
+  # no agent when nobody holds the conversation (the AI itself).
   def start_routing(context)
     reset_routing_state
-    return unless @assistant.persisted?
+    return unless graph_run?
 
-    @acting_assistant_id = conversation_holder.id
+    @acting_assistant_id = conversation_holder&.id
     graph = agent_run_context.graph
     return if graph.solo?
 
     @routing_request_id = SecureRandom.uuid
     @routing_snapshot = Captain::Runtime::RoutingSnapshot.from_context(
-      context, candidates: graph.candidate_rows, clinic: @assistant.account&.name, patient_language: saved_patient_language,
-               human_available: routing_human_available?, anchor_agent_id: (@assistant.id if suggestion_run?)
+      context, candidates: graph.candidate_rows, clinic: account&.name, patient_language: saved_patient_language,
+               human_available: routing_human_available?
     )
-    @router = Captain::Runtime::DecisionRouter.new(@routing_snapshot, account: @assistant.account,
+    @router = Captain::Runtime::DecisionRouter.new(@routing_snapshot, account: account,
                                                                       observability: routing_observability(context),
-                                                                      request: { assistant: @assistant, conversation: @conversation }.compact)
+                                                                      request: { conversation: @conversation }.compact)
     @routing_run = Captain::Runtime::RoutingRun.new(@router, parallel: parallel_routing?)
   end
 
@@ -59,7 +60,7 @@ module Captain::Assistant::RoutingHelper
 
   def turn_dispatcher
     @turn_dispatcher ||= Captain::Runtime::TurnDispatcher.new(
-      graph: agent_run_context.graph, run_context: agent_run_context, account: @assistant.account,
+      graph: agent_run_context.graph, run_context: agent_run_context, account: account,
       routing: { decision: @turn_decision, router: @router, snapshot: @routing_snapshot, request_id: @routing_request_id }
     )
   end
@@ -70,11 +71,11 @@ module Captain::Assistant::RoutingHelper
                                context)
   end
 
-  # The agent that holds the conversation (see Captain::AgentRunContext#holder); a temporary assistant holds its own run.
+  # The agent that holds the conversation (see Captain::AgentRunContext#holder), nil when nobody does; the agent of a run alone holds it.
   def conversation_holder
-    return @assistant unless @assistant.persisted?
+    return @assistant unless graph_run?
 
-    agent_run_context.holder || @assistant
+    agent_run_context.holder
   end
 
   def reset_routing_state
@@ -98,21 +99,25 @@ module Captain::Assistant::RoutingHelper
   end
 
   # Staff can take the conversation: a reply suggestion always offers it (the operator answers); a conversation when the agent that
-  # would hand it over (the agent that holds the conversation) may hand conversations to staff.
+  # would hand it over may hand conversations to staff: the agent that holds the conversation, else any agent of the channel.
   def routing_human_available?
     return true if suggestion_run?
     return false unless @conversation || @playground_session
 
-    actor = conversation_holder
-    actor.handoff_enabled? && Array(actor.selected_agent_tool_ids).include?('handoff')
+    actors = [conversation_holder].compact.presence || agent_run_context.graph.candidates
+    actors.any? { |actor| staff_handoff_allowed?(actor) }
   rescue StandardError
     false
+  end
+
+  def staff_handoff_allowed?(actor)
+    actor.handoff_enabled? && Array(actor.selected_agent_tool_ids).include?('handoff')
   end
 
   def routing_observability(context)
     state = context[:state] || {}
     conversation = state[:conversation] || {}
-    { account_id: state[:account_id], assistant_id: @assistant.id, conversation_record_id: conversation[:id],
+    { account_id: state[:account_id], assistant_id: acting_agent_id, conversation_record_id: conversation[:id],
       conversation_display_id: conversation[:display_id], channel_type: state[:channel_type], source: state[:source],
       session_id: context[:session_id], routing_request_id: @routing_request_id }.compact
   end

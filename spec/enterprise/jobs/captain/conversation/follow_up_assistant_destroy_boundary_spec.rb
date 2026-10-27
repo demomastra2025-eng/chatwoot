@@ -57,7 +57,8 @@ RSpec.describe 'Captain follow-up assistant deletion boundary', type: :job do
         }
       }
     )
-    create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+    create(:captain_inbox, inbox: inbox)
+    Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
     incoming = create(
       :message,
       account: account,
@@ -130,25 +131,16 @@ RSpec.describe 'Captain follow-up assistant deletion boundary', type: :job do
     end
     Timeout.timeout(10) { provider_entered.pop }
 
-    destroy_lock_attempted = Queue.new
+    destroy_started = Queue.new
     destroy_finished = Queue.new
-    allow(Telephony::AiVoice::AssistantAssignmentLock).to receive(:acquire!).and_wrap_original do |original, inbox_id|
-      destroy_lock_attempted << inbox_id if Thread.current[:assistant_destroying]
-      original.call(inbox_id)
-    end
-    # A main agent of a channel with AI enabled cannot be deleted (channel rules),
-    # so the deletion switches AI off on its channel in the same transaction. That
-    # write takes the same inbox assignment lock as the destroy itself.
+    # Any agent can be deleted, a text channel names none. The deletion waits for the account lock that the delivery holds until
+    # the provider has answered.
     destroy_thread = in_thread do
-      Thread.current[:assistant_destroying] = true
-      Captain::Assistant.transaction do
-        CaptainInbox.find_by!(captain_assistant_id: assistant.id).update!(ai_enabled: false)
-        assistant.account.update_columns(settings: assistant.account.settings.to_h.except('captain_default_assistant_id'))
-        Captain::Assistant.find(assistant.id).destroy!
-      end
+      destroy_started << true
+      Captain::Assistant.find(assistant.id).destroy!
       destroy_finished << true
     end
-    Timeout.timeout(10) { destroy_lock_attempted.pop }
+    Timeout.timeout(10) { destroy_started.pop }
     sleep 0.15
     expect(destroy_finished).to be_empty
     expect(destroy_thread).to be_alive

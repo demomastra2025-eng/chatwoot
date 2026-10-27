@@ -92,7 +92,7 @@
         "ERROR": "Ошибка"
       },
       "CHIPS": {
-        "CAPTAIN": "ИИ: {name}",
+        "CAPTAIN": "AI",
         "AUTO_ASSIGNMENT": "Автораспределение",
         "WORKING_HOURS": "Рабочие часы",
         "GREETING": "Приветствие",

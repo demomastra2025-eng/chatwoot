@@ -148,7 +148,11 @@ describe('CreateAgentDialog', () => {
     const wrapper = mountDialog();
 
     expect(nameField(wrapper).props('message')).toBe('');
-    expect(descriptionField(wrapper).props('message')).toBe('');
+    // Before the first submit the field only explains what the description is for.
+    expect(descriptionField(wrapper).props()).toMatchObject({
+      message: 'CAPTAIN.GALLERY.CREATE.DESCRIPTION_HINT',
+      messageType: 'info',
+    });
 
     await submit(wrapper);
 

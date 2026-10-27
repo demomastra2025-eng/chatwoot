@@ -26,11 +26,11 @@ RSpec.describe Message do
 
   describe '#mark_pending_conversation_as_open_for_human_response' do
     let(:conversation) { create(:conversation, status: :pending) }
-    let(:captain_assistant) { create(:captain_assistant, account: conversation.account) }
+    before { create(:captain_assistant, account: conversation.account) }
     let(:auto_open_activity_content) { I18n.t('conversations.activity.captain.auto_opened_after_agent_reply') }
 
     before do
-      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: captain_assistant)
+      create(:captain_inbox, inbox: conversation.inbox)
       allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
     end
 
@@ -87,7 +87,7 @@ RSpec.describe Message do
       thread = create(:communication_thread, account: conversation.account, contact: conversation.contact)
       sibling = create(:conversation, account: conversation.account, contact: conversation.contact, status: :pending)
       sibling.inbox.captain_inbox&.destroy!
-      create(:captain_inbox, inbox: sibling.inbox, captain_assistant: captain_assistant)
+      create(:captain_inbox, inbox: sibling.inbox)
       [conversation, sibling].each do |candidate|
         create(:communication_thread_conversation, communication_thread: thread, conversation: candidate)
         candidate.association(:communication_thread_conversation).reset
@@ -101,7 +101,7 @@ RSpec.describe Message do
       create(:message, message_type: :outgoing, conversation: conversation)
 
       [[conversation, incoming], [sibling, sibling_incoming]].each do |candidate, candidate_incoming|
-        service = Captain::Conversation::ResponseCancellationService.new(conversation: candidate, assistant: captain_assistant)
+        service = Captain::Conversation::ResponseCancellationService.new(conversation: candidate)
         expect(service.cancelled?(expected_last_message_id: candidate_incoming.id, expected_control_generation: 0,
                                   expected_status_transition_id: 0)).to be true
         other_incoming = candidate == conversation ? sibling_incoming : incoming
@@ -153,8 +153,7 @@ RSpec.describe Message do
       create(:message, message_type: :outgoing, conversation: conversation)
 
       expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_off).with(
-        conversation: conversation,
-        assistant: captain_assistant
+        conversation: conversation
       )
     end
 
@@ -209,7 +208,7 @@ RSpec.describe Message do
   end
 
   describe '#activate_captain_human_control_for_human_response' do
-    let(:captain_assistant) { create(:captain_assistant, account: conversation.account) }
+    before { create(:captain_assistant, account: conversation.account) }
 
     before { allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off) }
 
@@ -248,7 +247,7 @@ RSpec.describe Message do
     end
 
     it 'locks a Captain conversation without swapping its cached inbox and channel' do
-      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: captain_assistant)
+      create(:captain_inbox, inbox: conversation.inbox)
       inbox = conversation.inbox
       channel = inbox.channel
       allow(conversation).to receive(:reload).and_call_original
@@ -265,7 +264,7 @@ RSpec.describe Message do
       sibling = create(:conversation, account: conversation.account, contact: conversation.contact, status: :pending)
       conversation.inbox.captain_inbox&.destroy!
       sibling.inbox.captain_inbox&.destroy!
-      create(:captain_inbox, inbox: sibling.inbox, captain_assistant: captain_assistant)
+      create(:captain_inbox, inbox: sibling.inbox)
       thread = link_thread(conversation, sibling)
       cached_thread = conversation.communication_thread
       inbox = conversation.inbox
@@ -444,13 +443,12 @@ RSpec.describe Message do
     it 'keeps an active linked Captain conversation pending and schedules its response' do
       # The collapse window is a workspace setting (default 15 s, buffered scheduling); 0 selects the direct scheduling path.
       Captain::AccountSettings.new(conversation.account).update!('conversation' => { 'message_collapse_window_seconds' => 0 })
-      assistant = create(:captain_assistant, account: conversation.account)
-      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+      create(:captain_assistant, account: conversation.account)
+      create(:captain_inbox, inbox: conversation.inbox)
       conversation.inbox.reload
 
       expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later).with(
         conversation,
-        assistant,
         hash_including(expected_last_message_id: kind_of(Integer))
       )
 
@@ -462,8 +460,8 @@ RSpec.describe Message do
     end
 
     it 'keeps a runtime-suppressed public reply from opening a linked Captain conversation' do
-      assistant = create(:captain_assistant, account: conversation.account)
-      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+      create(:captain_assistant, account: conversation.account)
+      create(:captain_inbox, inbox: conversation.inbox)
       conversation.inbox.reload
       message = employee_message(conversation)
       message.skip_runtime_events = true
@@ -474,8 +472,8 @@ RSpec.describe Message do
     end
 
     it 'preserves the linked Captain schedule-off path for staff' do
-      assistant = create(:captain_assistant, account: conversation.account)
-      captain_inbox = create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+      create(:captain_assistant, account: conversation.account)
+      captain_inbox = create(:captain_inbox, inbox: conversation.inbox)
       conversation.inbox.update!(working_hours_enabled: true)
       current_hours = conversation.inbox.working_hours.find_by(
         day_of_week: Time.current.in_time_zone(conversation.inbox.timezone).wday
@@ -532,14 +530,14 @@ RSpec.describe Message do
     end
 
     it 'rechecks a Captain link that was removed after its association was cached' do
-      assistant = create(:captain_assistant, account: conversation.account)
+      create(:captain_assistant, account: conversation.account)
       inbox = conversation.inbox
-      link = create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+      link = create(:captain_inbox, inbox: inbox)
       inbox.reload
-      expect(inbox.captain_assistant).to eq(assistant)
+      expect(inbox.captain_inbox).to eq(link)
 
       CaptainInbox.find(link.id).destroy!
-      expect(inbox.captain_assistant).to eq(assistant)
+      expect(inbox.captain_inbox).to eq(link)
       persist_without_delivery(customer_message(conversation))
 
       expect(conversation.reload).to be_open
@@ -667,7 +665,7 @@ RSpec.describe Message do
       conversation.account.enable_features!('communication_threads')
       assistant = create(:captain_assistant, account: conversation.account)
       sibling = create(:conversation, account: conversation.account, contact: conversation.contact, status: :pending)
-      create(:captain_inbox, inbox: sibling.inbox, captain_assistant: assistant)
+      create(:captain_inbox, inbox: sibling.inbox)
       sibling.inbox.reload
       thread = link_thread(conversation, sibling)
 
@@ -689,7 +687,7 @@ RSpec.describe Message do
 
       expect(conversation.reload).to be_open
       expect(sibling.reload).to be_pending
-      expect(sibling.inbox.reload.captain_assistant).to eq(assistant)
+      expect(sibling.inbox.reload.captain_active?).to be(true)
       expect(thread.reload.captain_control_generation).to eq(1)
       expect do
         Captain::Conversation::RunFenceService.new(assistant: assistant, state: state).ensure_current!
@@ -727,8 +725,8 @@ RSpec.describe Message do
       conversation.account.enable_features!('communication_threads')
       sibling = create(:conversation, account: conversation.account, contact: conversation.contact, status: :open)
       thread = link_thread(conversation, sibling)
-      assistant = create(:captain_assistant, account: conversation.account)
-      captain_inbox = create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+      create(:captain_assistant, account: conversation.account)
+      captain_inbox = create(:captain_inbox, inbox: conversation.inbox)
       message = employee_message(conversation)
 
       allow(message).to receive(:orphan_pending_handoff_trigger?).and_wrap_original do |predicate|
@@ -752,8 +750,8 @@ RSpec.describe Message do
     end
 
     it 'clears linked takeover state when the same message is retried after rollback' do
-      assistant = create(:captain_assistant, account: conversation.account)
-      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+      create(:captain_assistant, account: conversation.account)
+      create(:captain_inbox, inbox: conversation.inbox)
       message = employee_message(conversation)
       message.skip_send_reply = true
       captured_services = []
@@ -779,8 +777,8 @@ RSpec.describe Message do
     it 'does not open an API orphan on a public reply when its thread has a linked Captain sibling' do
       conversation.account.enable_features!('communication_threads')
       sibling = create(:conversation, account: conversation.account, contact: conversation.contact, status: :pending)
-      assistant = create(:captain_assistant, account: conversation.account)
-      CaptainInbox.find_or_create_by!(inbox: sibling.inbox) { |ci| ci.captain_assistant = assistant }
+      create(:captain_assistant, account: conversation.account)
+      CaptainInbox.find_or_create_by!(inbox: sibling.inbox)
       api_inbox = create(:channel_api, account: conversation.account).inbox
       api_inbox.captain_inbox&.destroy!
       api_conversation = create(
@@ -805,8 +803,8 @@ RSpec.describe Message do
     it 'does not open an orphan for an imported public external echo when its thread has a linked Captain sibling' do
       conversation.account.enable_features!('communication_threads')
       sibling = create(:conversation, account: conversation.account, contact: conversation.contact, status: :pending)
-      assistant = create(:captain_assistant, account: conversation.account)
-      create(:captain_inbox, inbox: sibling.inbox, captain_assistant: assistant)
+      create(:captain_assistant, account: conversation.account)
+      create(:captain_inbox, inbox: sibling.inbox)
       link_thread(conversation, sibling)
       message = employee_message(
         conversation,
@@ -827,9 +825,9 @@ RSpec.describe Message do
 
     it 'opens an orphan staff-reply target without changing its linked Captain sibling' do
       conversation.account.enable_features!('communication_threads')
-      assistant = create(:captain_assistant, account: conversation.account)
+      create(:captain_assistant, account: conversation.account)
       sibling = create(:conversation, account: conversation.account, contact: conversation.contact, status: :pending)
-      create(:captain_inbox, inbox: sibling.inbox, captain_assistant: assistant)
+      create(:captain_inbox, inbox: sibling.inbox)
       incoming = customer_message(sibling)
       incoming.skip_runtime_events = true
       persist_without_delivery(incoming)
@@ -839,7 +837,6 @@ RSpec.describe Message do
 
       cancellation = Captain::Conversation::ResponseCancellationService.new(
         conversation: sibling,
-        assistant: assistant,
         actor: employee
       )
       expect(conversation.reload).to be_open

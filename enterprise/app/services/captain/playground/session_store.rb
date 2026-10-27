@@ -8,11 +8,11 @@ class Captain::Playground::SessionStore
   class Busy < StandardError; end
   class Stale < StandardError; end
 
-  def initialize(account:, user:, assistant:, mode: 'workspace')
+  # One Playground session per user and workspace (the earlier v2 sessions, kept per agent, expire by their TTL).
+  def initialize(account:, user:, mode: 'workspace')
     raise ArgumentError, 'Legacy Playground sessions must be reset' unless %w[workspace trial].include?(mode.to_s)
-    raise ArgumentError, 'Assistant belongs to another workspace' unless assistant.account_id == account.id
 
-    @key = "captain:playground:v2:#{account.id}:#{user.id}:#{assistant.id}"
+    @key = "captain:playground:v3:#{account.id}:#{user.id}"
   end
 
   def with_lock

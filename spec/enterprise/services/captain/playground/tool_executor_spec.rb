@@ -4,7 +4,7 @@ RSpec.describe Captain::Playground::ToolExecutor do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account, role: :administrator) }
   let(:assistant) { create(:captain_assistant, account: account) }
-  let(:session) { Captain::Playground::Session.new(account: account, user: user, assistant: assistant) }
+  let(:session) { Captain::Playground::Session.new(account: account, user: user) }
 
   before do
     account.enable_features!('scheduling', 'crm_deals', 'crm_tasks')
@@ -23,11 +23,13 @@ RSpec.describe Captain::Playground::ToolExecutor do
   it 'persists contact and deal changes so subsequent turns and reads see the same values' do
     id = nil
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       id = trial.id
       expect(invoke(trial, 'update_contact', name: 'Caller edited').dig(:contact, :name)).to eq('Caller edited')
       expect(invoke(trial, 'update_deal', deal_id: 501, title: 'Changed deal', amount: '200.00')[:amount]).to eq(200)
     end
-    Captain::Playground::Session.new(account: account, user: user, assistant: assistant, session_id: id).with_lock do |trial|
+    Captain::Playground::Session.new(account: account, user: user, session_id: id).with_lock do |trial|
+      trial.activate_agent!(assistant)
       expect(invoke(trial, 'get_contact', contact_id: 101).dig(:contact, :name)).to eq('Caller edited')
       expect(invoke(trial, 'get_deal', deal_id: 501).dig(:deal, :title)).to eq('Changed deal')
       expect(invoke(trial, 'update_deal', deal_id: 501, amount: '200.50')[:success]).to be(false)
@@ -41,6 +43,7 @@ RSpec.describe Captain::Playground::ToolExecutor do
     expect(Messages::MessageBuilder).not_to receive(:new)
     before_counts = [Scheduling::Appointment.count, Contact.count, Message.count]
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       start = (Time.iso8601(trial.scenario.data['appointments'].first['starts_at']) + 1.hour).iso8601
       result = invoke(trial, 'create_appointment', resource_id: 701, service_id: 801, starts_at: start)
       expect(result).to include(success: true, status: 'created', simulated: true)
@@ -54,6 +57,7 @@ RSpec.describe Captain::Playground::ToolExecutor do
 
   it 'finds the son by exact IIN, requires confirmation, changes only his appointment, and preserves the mother caller' do
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       result = invoke(trial, 'search_appointments', client_identifier: '150101500011')
       found = result[:appointments].first
       expect(found).to include(appointment_id: 601, patient_name: 'Тимур Садыков')
@@ -74,6 +78,7 @@ RSpec.describe Captain::Playground::ToolExecutor do
 
   it 'keeps a child appointment private despite sharing the caller conversation and invalidates grants after a change' do
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       appointment = trial.scenario.data['appointments'].first
       appointment.merge!('contact_id' => 101, 'conversation_id' => 201)
       expect(invoke(trial, 'search_appointments')[:appointments]).to eq([])
@@ -90,6 +95,7 @@ RSpec.describe Captain::Playground::ToolExecutor do
 
   it 'requires matching recorded names and birth date to reuse a synthetic patient with an exact IIN' do
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       start = (Time.iso8601(trial.scenario.data['appointments'].first['starts_at']) + 1.hour).iso8601
       arguments = { resource_id: 701, service_id: 801, starts_at: start }
       patient = { first_name: 'Тимур', last_name: 'Садыков', iin: '150101500011', birth_date: '2015-01-01' }
@@ -109,6 +115,7 @@ RSpec.describe Captain::Playground::ToolExecutor do
   it 'creates a distinct clinical card without IIN and reuses only its identical creation request' do
     expect(Scheduling::PatientContactCreationService).not_to receive(:new)
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       start = (Time.iso8601(trial.scenario.data['appointments'].first['starts_at']) + 1.hour).iso8601
       patient = { first_name: 'Тимур', last_name: 'Садыков', birth_date: '2015-01-01' }
       result = invoke(trial, 'create_appointment', resource_id: 701, service_id: 801, starts_at: start, patient: patient)
@@ -131,6 +138,7 @@ RSpec.describe Captain::Playground::ToolExecutor do
     id = nil
     task_id = nil
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       id = trial.id
       task = invoke(trial, 'create_task', title: 'Позвонить маме', activity_type: 'call', priority: 'high')
       task_id = task[:task_id]
@@ -139,7 +147,8 @@ RSpec.describe Captain::Playground::ToolExecutor do
       expect(invoke(trial, 'change_task_status', status_code: 'done').dig(:task, :completed_at)).to be_present
       expect(invoke(trial, 'update_task', task_id: task_id, outcome: 'invented')[:success]).to be(false)
     end
-    Captain::Playground::Session.new(account: account, user: user, assistant: assistant, session_id: id).with_lock do |trial|
+    Captain::Playground::Session.new(account: account, user: user, session_id: id).with_lock do |trial|
+      trial.activate_agent!(assistant)
       expect(invoke(trial, 'get_task', task_id: task_id).dig(:task, :status_code)).to eq('done')
       expect(invoke(trial, 'search_tasks', assignee_id: 999)[:success]).to be(false)
       expect(invoke(trial, 'change_task_status', status_code: 'invented')[:success]).to be(false)
@@ -148,6 +157,7 @@ RSpec.describe Captain::Playground::ToolExecutor do
 
   it 'moves a deal by the configured stage order and rejects moving before the first stage' do
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       expect(invoke(trial, 'transition_deal_stage', deal_id: 501, stage_action: 'previous')[:success]).to be(false)
       moved = invoke(trial, 'transition_deal_stage', deal_id: 501, stage_action: 'next')
       expect(moved.dig(:previous_stage, :id)).to eq(911)
@@ -161,6 +171,7 @@ RSpec.describe Captain::Playground::ToolExecutor do
     expect(Confirmations::CreateService).not_to receive(:new)
     expect(Messages::MessageBuilder).not_to receive(:new)
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       arguments = { title: 'Подтвердите запись', body: 'Подтвердите время', idempotency_key: 'booking-confirmation',
                     subject_type: 'Crm::Deal', subject_id: 501 }
       first = invoke(trial, 'request_confirmation', **arguments)
@@ -177,6 +188,7 @@ RSpec.describe Captain::Playground::ToolExecutor do
 
   it 'preserves profile restrictions in Trial despite an administrator launching the session' do
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       expect(invoke(trial, 'get_conversation', conversation_id: 201)[:success]).to be(false)
       expect(invoke(trial, 'complete_task', task_id: 1)[:success]).to be(false)
       expect(invoke(trial, 'search_conversations', status: 'open').dig(:conversations, 0, :contact_id)).to eq(101)
@@ -186,6 +198,7 @@ RSpec.describe Captain::Playground::ToolExecutor do
 
   it 'fails closed for network, custom, and unknown tools and for guessed cross-patient IDs' do
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       %w[web_search custom_http_tool mcp__remote__write].each do |name|
         result = invoke(trial, name)
         expect(Captain::ToolResult.error?(Captain::ToolResult.normalize(result))).to be(true)
@@ -198,6 +211,7 @@ RSpec.describe Captain::Playground::ToolExecutor do
 
   it 'uses the runtime wrapper boundary before any actual tool delegate or tool audit' do
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       tool = Captain::Tools::UpdateContactTool.new(assistant)
       expect(tool).not_to receive(:execute)
       expect(Captain::ToolExecutionAuditService).not_to receive(:record)
@@ -214,6 +228,7 @@ RSpec.describe Captain::Playground::ToolExecutor do
     tool = Captain::Tools::UpdateContactTool.new(assistant)
     expect(tool).not_to receive(:execute)
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       state = trial.state.merge(source: 'playground', account_id: account.id, assistant_id: assistant.id)
       unbound = Captain::Runtime::RunContext.new({ state: state, playground_session: trial,
                                                  captain_v2_bound_tool_gate: true, captain_v2_bound_tool_ids: [] })

@@ -66,7 +66,7 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
 
   # The closing notice is prepared outside the conversation lock because the notice model can take seconds.
   def notice_for(conversation, assistant)
-    notice = Captain::CustomerNoticeService.new(conversation: conversation, assistant: assistant, kind: :resolution)
+    notice = Captain::CustomerNoticeService.new(conversation: conversation, agent: assistant, kind: :resolution)
     notice.prepare
   rescue StandardError => e
     Rails.logger.warn("[CAPTAIN][CustomerNotice] could not prepare a notice: #{e.class.name}")
@@ -112,14 +112,15 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     Time.now.utc - auto_resolve_after.minutes
   end
 
+  # Closing a conversation is a workspace setting (handoff.auto_completion_enabled), the same for every agent. The conversation is
+  # closed as the agent that holds it, or as the AI itself when nobody does.
   def auto_completion_context(conversation)
-    ownership = Captain::Conversation::AgentOwnership.new(conversation: conversation)
-    assistant = ownership.current_assistant
-    return unless assistant&.auto_completion_enabled?
+    return unless auto_completion_enabled?(conversation.account)
 
+    ownership = Captain::Conversation::AgentOwnership.new(conversation: conversation)
     {
-      assistant: assistant,
-      fence: handoff_fence(conversation).merge(entry_assistant_id: ownership.entry.id, routing_revision: ownership.routing_revision)
+      assistant: ownership.current_assistant,
+      fence: handoff_fence(conversation).merge(routing_revision: ownership.routing_revision)
     }
   end
 
@@ -132,17 +133,27 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
         Telephony::AiVoice::AssistantAssignmentLock.acquire!(conversation.inbox_id)
         ownership = Captain::Conversation::AgentOwnership.new(conversation: conversation, assistant: context[:assistant])
         fence = context[:fence]
-        next unless ownership.current?(expected_entry_id: fence[:entry_assistant_id],
-                                       expected_revision: fence[:routing_revision], enforce_revision: true)
+        next unless holder_unchanged?(ownership, context[:assistant], fence[:routing_revision])
         next unless control_fence_current?(conversation, fence) && still_resolvable_after_evaluation?(conversation)
+        # The workspace switch is read again: staff may have turned the completion off while the evaluation ran.
+        next unless auto_completion_enabled?(conversation.account)
 
         assistant = ownership.current_assistant
-        next unless assistant&.auto_completion_enabled?
-
         Current.executed_by = assistant
         yield assistant
       end
     end
+  end
+
+  def auto_completion_enabled?(account)
+    Captain::AccountSettings.new(account).section('handoff')['auto_completion_enabled']
+  end
+
+  # The same agent still holds the conversation at the same routing revision, or still nobody does.
+  def holder_unchanged?(ownership, assistant, routing_revision)
+    return ownership.current_actor_id.blank? && ownership.routing_revision == routing_revision.to_i if assistant.blank?
+
+    ownership.current?(expected_revision: routing_revision, enforce_revision: true)
   end
 
   def control_fence_current?(conversation, fence)

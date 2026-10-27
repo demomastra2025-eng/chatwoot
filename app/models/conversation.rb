@@ -312,10 +312,10 @@ class Conversation < ApplicationRecord
 
   def ai_pending_handler_present?(fresh_inbox: false)
     return false if group_conversation?
-    return inbox_active_bot? || inbox_captain_assistant_present? unless fresh_inbox
+    return inbox_active_bot? || inbox_ai_runtime_enabled? unless fresh_inbox
 
     fresh_inbox_record = ::Inbox.find_by(id: inbox_id)
-    fresh_inbox_record&.active_bot? || inbox_captain_assistant_present?
+    fresh_inbox_record&.active_bot? || inbox_ai_runtime_enabled?
   end
 
   def group_conversation?
@@ -519,14 +519,11 @@ class Conversation < ApplicationRecord
     inbox.respond_to?(:active_bot?) && inbox.active_bot?
   end
 
-  def inbox_captain_assistant_present?
+  # The AI may answer in this inbox by itself (the same rule as CaptainInbox.enabled_for_runtime).
+  def inbox_ai_runtime_enabled?
     return false unless Object.const_defined?('CaptainInbox')
 
-    CaptainInbox.joins(:captain_assistant)
-                .where(inbox_id: inbox_id, captain_assistants: { account_id: account_id, active: true })
-                .where('(captain_inboxes.ai_enabled = TRUE OR EXISTS (SELECT 1 FROM inboxes WHERE inboxes.id = captain_inboxes.inbox_id ' \
-                       'AND inboxes.channel_type = \'Channel::Voice\'))')
-                .exists?
+    CaptainInbox.enabled_for_runtime.exists?(inbox_id: inbox_id)
   end
 
   def dispatcher_dispatch(event_name, changed_attributes = nil, performer: Current.executed_by)

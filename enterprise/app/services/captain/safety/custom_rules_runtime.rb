@@ -16,39 +16,41 @@ class Captain::Safety::CustomRulesRuntime
     end
   end
 
-  def self.check_input!(assistant:, context:, text: nil)
+  # The rules are a workspace setting, the same for every agent, so a check belongs to the account. agent_id is the agent that a
+  # stopped turn is attributed to (the holder of the conversation, or nil when nobody holds it: the AI itself).
+  def self.check_input!(account:, context:, text: nil, agent_id: nil)
     text ||= context[:captain_v2_current_input]
     return if text.nil?
 
     candidate = text_content(text)
-    settings = assistant.account_settings.section('safety')['custom_rules']
-    fingerprint = Digest::SHA256.hexdigest([assistant.account_id, candidate, settings].to_json)
+    settings = Captain::AccountSettings.new(account).section('safety')['custom_rules']
+    fingerprint = Digest::SHA256.hexdigest([account.id, candidate, settings].to_json)
     checks = context[INPUT_CACHE_KEY] ||= []
     return if checks.include?(fingerprint)
 
-    result = evaluate(assistant: assistant, direction: 'input', text: candidate, context: context)
-    raise HandoffRequired.new(assistant_id: assistant.id, result: result) if result.matched?
+    result = evaluate(account: account, direction: 'input', text: candidate, context: context)
+    raise HandoffRequired.new(assistant_id: agent_id, result: result) if result.matched?
 
     checks << fingerprint
   end
 
-  def self.check_output!(assistant:, context:, response:)
-    result = evaluate(assistant: assistant, direction: 'output', text: response['response'], context: context)
+  def self.check_output!(account:, context:, response:, agent_id: nil)
+    result = evaluate(account: account, direction: 'output', text: response['response'], context: context)
     return response unless result.matched?
-    raise HandoffRequired.new(assistant_id: assistant.id, result: result) unless result.action == 'rewrite'
+    raise HandoffRequired.new(assistant_id: agent_id, result: result) unless result.action == 'rewrite'
 
     replacement = Captain::Safety::ResponseRewriteEngine.new.rewrite(
-      assistant: assistant, text: response['response'], rule_id: result.rule_id,
+      account: account, text: response['response'], rule_id: result.rule_id,
       last_customer_message: customer_message(context)
     )
-    raise HandoffRequired.new(assistant_id: assistant.id, result: result) if replacement.blank?
+    raise HandoffRequired.new(assistant_id: agent_id, result: result) if replacement.blank?
 
     # Exactly one text-only repair. A second match stops the turn.
-    checked = evaluate(assistant: assistant, direction: 'output', text: replacement, context: context)
-    raise HandoffRequired.new(assistant_id: assistant.id, result: checked) if checked.matched?
+    checked = evaluate(account: account, direction: 'output', text: replacement, context: context)
+    raise HandoffRequired.new(assistant_id: agent_id, result: checked) if checked.matched?
 
     Llm::SafetyPolicy.check!(
-      feature: :assistant, stage: :output, content: replacement, account: assistant.account,
+      feature: :assistant, stage: :output, content: replacement, account: account,
       preferences: context.dig(:state, :captain_runtime)
     )
     response.merge('response' => replacement, 'reasoning' => 'Response revised by a configured safety rule.')
@@ -68,12 +70,12 @@ class Captain::Safety::CustomRulesRuntime
     }
   end
 
-  def self.evaluate(assistant:, direction:, text:, context:)
-    facts = { locale: assistant.account.locale.to_s, source: context[:source].to_s }
+  def self.evaluate(account:, direction:, text:, context:)
+    facts = { locale: account.locale.to_s, source: context[:source].to_s }
     facts[:last_customer_message] = customer_message(context) if direction == 'output'
-    result = Captain::Safety::CustomRulesEvaluator.evaluate(assistant: assistant, direction: direction, text: text, context: facts)
+    result = Captain::Safety::CustomRulesEvaluator.evaluate(account: account, direction: direction, text: text, context: facts)
     Llm::EventBus.publish(
-      'safety.custom_rule', feature: :assistant, stage: direction, assistant_id: assistant.id,
+      'safety.custom_rule', feature: :assistant, stage: direction, account_id: account.id, assistant_id: context.dig(:state, :assistant_id),
       rule: result.rule_id, action: result.action, status: result.status.to_s,
       model: result.model, duration_ms: result.latency_ms, reason: result.reason
     ) unless result.reason == :no_enabled_rules

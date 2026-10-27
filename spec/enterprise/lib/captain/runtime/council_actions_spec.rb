@@ -81,11 +81,11 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
     end
   end
 
-  let(:entry) { create(:captain_assistant) }
+  let!(:entry) { create(:captain_assistant) }
   let(:current_id) { entry.id }
   let(:writer_id) { entry.id + 101 }
   let(:reader_id) { entry.id + 102 }
-  let(:session) { Captain::Conversation::AgentSession.new(entry: entry) }
+  let(:session) { Captain::Conversation::AgentSession.new }
   let(:booking) { CouncilActionsSpecBookingTool.new }
   let(:price) { CouncilActionsSpecPriceTool.new }
   let(:chats) { { "assistant_#{writer_id}" => CouncilActionsSpecChat.new, "assistant_#{reader_id}" => CouncilActionsSpecChat.new } }
@@ -94,7 +94,7 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
   let(:editor) { instance_double(Captain::Runtime::CouncilEditor) }
   let(:actors) { { writer_id => actor(writer_id, [booking]), reader_id => actor(reader_id, [price]) } }
   let(:graph) do
-    instance_double(Captain::AgentGraph, entry: actors[writer_id], inbox: nil, agents: actors.values).tap do |item|
+    instance_double(Captain::AgentGraph, inbox: nil, agents: actors.values).tap do |item|
       allow(item).to receive(:find) { |id| actors[id] }
     end
   end
@@ -111,7 +111,7 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
   end
 
   def new_context(request_id, input)
-    { state: { assistant_id: current_id, entry_assistant_id: entry.id }, agent_graph: agent_graph, agent_session: session,
+    { state: { assistant_id: current_id }, agent_graph: agent_graph, agent_session: session,
       agent_request_id: request_id, parts: session.read['parts'], captain_v2_current_input: input, conversation_history: [] }
   end
 
@@ -371,7 +371,7 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
     let(:writer_id) { real_writer.id }
     let(:reader_id) { real_reader.id }
     let(:conversation) { create(:conversation, account: account, status: :pending) }
-    let(:session) { Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation) }
+    let(:session) { Captain::Conversation::AgentSession.new(conversation: conversation) }
     let(:real_tool) { Captain::Tools::CreateAppointmentTool.new(real_writer) }
     let(:booking) do
       real = real_tool
@@ -412,8 +412,8 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
 
     before do
       account.enable_features!('scheduling')
-      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: entry)
-      entry.update!(handoff_agent_ids: [real_writer.id, real_reader.id])
+      create(:captain_inbox, inbox: conversation.inbox)
+      [real_writer, real_reader]
       appointment = create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation)
       outcome = instance_double(Captain::Tools::ProviderBookingOutcomeService)
       allow(outcome).to receive(:perform).and_raise(

@@ -54,13 +54,15 @@ class Captain::CustomerNoticeService
     - Output only the text of the notice: plain text, no quotes, no markdown, no JSON, no explanation.
   PROMPT
 
-  attr_reader :conversation, :assistant, :kind, :reason_label, :source
+  attr_reader :conversation, :agent, :kind, :reason_label, :source
 
-  def initialize(conversation:, assistant:, kind:, reason_label: nil, generate: true)
+  # agent: the agent the notice is attributed to in the events, when one holds the conversation. The notice is a workspace text: its
+  # settings and its rendering belong to the account, whoever sends it.
+  def initialize(conversation:, kind:, agent: nil, reason_label: nil, generate: true)
     raise ArgumentError, "Unknown notice kind: #{kind}" unless KINDS.include?(kind.to_s)
 
     @conversation = conversation
-    @assistant = assistant
+    @agent = agent
     @kind = kind.to_s
     @reason_label = reason_label.to_s.squish.presence
     @generation_allowed = generate
@@ -85,7 +87,7 @@ class Captain::CustomerNoticeService
   delegate :account, to: :conversation, private: true
 
   def settings
-    @settings ||= assistant.account_settings.section('handoff').fetch(SETTING_KEYS.fetch(kind)).to_h
+    @settings ||= Captain::AccountSettings.new(account).section('handoff').fetch(SETTING_KEYS.fetch(kind)).to_h
   end
 
   def resolve
@@ -107,7 +109,7 @@ class Captain::CustomerNoticeService
     text = settings['text'].to_s.strip
     return if text.blank?
 
-    assistant.render_runtime_text(text, conversation: conversation).to_s.strip.presence
+    Captain::RuntimeText.render(text, account: account, conversation: conversation).to_s.strip.presence
   end
 
   # [text, nil] for a usable answer, else [nil, reason code].
@@ -131,7 +133,7 @@ class Captain::CustomerNoticeService
   def request(model)
     response = Timeout.timeout(TIMEOUT_SECONDS) do
       Llm::Runtime.chat(
-        feature: :customer_notice, account: account, assistant: assistant, conversation: conversation, model: model,
+        feature: :customer_notice, account: account, assistant: agent, conversation: conversation, model: model,
         max_tokens: MAX_OUTPUT_TOKENS,
         reasoning: Llm::RuntimePolicy.no_reasoning_params(model: model, account: account),
         messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: user_payload.to_json }],
@@ -199,7 +201,7 @@ class Captain::CustomerNoticeService
   def publish(event_name, **extra)
     Llm::EventBus.publish(
       event_name,
-      { feature: 'customer_notice', account_id: account.id, assistant_id: assistant.id, conversation_id: conversation.id,
+      { feature: 'customer_notice', account_id: account.id, assistant_id: agent&.id, conversation_id: conversation.id,
         kind: kind }.merge(extra)
     )
   rescue StandardError => e

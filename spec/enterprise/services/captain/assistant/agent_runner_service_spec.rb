@@ -7,19 +7,25 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   let(:inbox) { create(:inbox, account: account) }
   let(:contact) { create(:contact, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact) }
+  # The scope reads the account of the spec itself, so that the examples can stub it.
+  let(:scope) { Captain::ChannelScope.for_inbox(conversation.inbox, account: account) }
   # Every agent of the channel is a peer with a competence card: the router (stubbed below at Llm::DecisionChain) gives the first
   # message to the anchor and keeps the agent that holds the conversation afterwards, as the main agent used to.
-  let(:assistant) { create(:captain_assistant, account: account, routing_description: 'Main agent') }
+  let!(:assistant) { create(:captain_assistant, account: account, routing_description: 'Main agent') }
   let(:scenario) { create(:captain_assistant, account: account, routing_description: 'Specialist') }
   let(:second_scenario) { create(:captain_assistant, account: account, routing_description: 'Second specialist') }
   let(:captain_request_id_matcher) { a_string_matching(/\A\h{8}(-\h{4}){3}-\h{12}\z/) }
+  # A response that no agent produced (nobody holds the conversation and the router chose none) names no agent: it is the AI's own.
   let(:entry_agent_identity) do
     {
-      'agent_id' => assistant.id, 'agent_display_name' => assistant.name,
-      # Every response of a persisted agent carries the id of the runtime request that produced it.
+      'agent_id' => nil, 'agent_display_name' => nil,
+      # Every response carries the id of the runtime request that produced it.
       'captain_request_id' => captain_request_id_matcher
     }
   end
+
+  # A response of the agent the router chose (the stub of the decision chain below always chooses the first agent).
+  let(:routed_agent_identity) { entry_agent_identity.merge('agent_id' => assistant.id, 'agent_display_name' => assistant.name) }
 
   let(:mock_runner) { instance_double(Captain::Runtime::AgentRunner) }
   let(:mock_agent) { instance_double(Captain::Runtime::Agent) }
@@ -48,8 +54,6 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     allow(Llm::Config).to receive(:api_key).with('openai').and_return('openai-key')
     allow(Llm::Config).to receive(:api_key).with('openai', account: account).and_return('openai-key')
     allow(Llm::ApiClient).to receive(:moderate).and_return(instance_double(RubyLLM::Moderation, flagged?: false))
-    assistant.update!(handoff_agent_ids: [scenario.id])
-    scenario.update!(handoff_agent_ids: [assistant.id])
     runtime_agents = { assistant.id => mock_agent, scenario.id => mock_scenario_agent, second_scenario.id => mock_second_scenario_agent }
     allow_any_instance_of(Captain::Assistant).to receive(:agent).and_wrap_original do |method, *_arguments|
       runtime_agents.fetch(method.receiver.id)
@@ -75,23 +79,29 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
   describe '#initialize' do
     it 'sets instance variables correctly' do
-      service = described_class.new(assistant: assistant, conversation: conversation)
+      service = described_class.new(scope: scope, conversation: conversation)
 
-      expect(service.instance_variable_get(:@assistant)).to eq(assistant)
+      expect(service.instance_variable_get(:@scope)).to eq(scope)
+      expect(service.instance_variable_get(:@assistant)).to be_nil
       expect(service.instance_variable_get(:@conversation)).to eq(conversation)
       expect(service.instance_variable_get(:@callbacks)).to eq({})
     end
 
     it 'accepts callbacks parameter' do
       callbacks = { on_agent_thinking: proc { |x| x } }
-      service = described_class.new(assistant: assistant, callbacks: callbacks)
+      service = described_class.new(scope: scope, callbacks: callbacks)
 
       expect(service.instance_variable_get(:@callbacks)).to eq(callbacks)
+    end
+
+    it 'belongs to a channel or to one agent, never to both or to none' do
+      expect { described_class.new(conversation: conversation) }.to raise_error(ArgumentError, /channel scope or to one agent/)
+      expect { described_class.new(scope: scope, assistant: assistant) }.to raise_error(ArgumentError, /channel scope or to one agent/)
     end
   end
 
   describe '#generate_response' do
-    subject(:service) { described_class.new(assistant: assistant, conversation: conversation) }
+    subject(:service) { described_class.new(scope: scope, conversation: conversation) }
 
     context 'when scheduled generation uses an unpersisted assistant copy' do
       let(:generation_assistant) { assistant.dup }
@@ -156,7 +166,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
     it 'decides the language once before the agent and reuses it in the run context' do
       detector = instance_double(Captain::PatientLanguageDetector, call: 'kk', safe_saved_language: nil)
-      allow(Captain::PatientLanguageDetector).to receive(:new).with(conversation: conversation, assistant: assistant).and_return(detector)
+      allow(Captain::PatientLanguageDetector).to receive(:new).with(conversation: conversation).and_return(detector)
 
       service.generate_response(message_history: message_history)
 
@@ -176,7 +186,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       end
 
       before do
-        allow(Captain::PatientLanguageDetector).to receive(:new).with(conversation: conversation, assistant: assistant).and_return(detector)
+        allow(Captain::PatientLanguageDetector).to receive(:new).with(conversation: conversation).and_return(detector)
       end
 
       it 'starts with the history, and is awaited only at the first agent call, after the agents are built' do
@@ -281,7 +291,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       it 'decides nothing for a run without a conversation' do
         allow(Captain::PatientLanguageDetector).to receive(:new)
 
-        described_class.new(assistant: assistant).generate_response(message_history: message_history)
+        described_class.new(scope: Captain::ChannelScope.for_workspace(account)).generate_response(message_history: message_history)
 
         expect(Captain::PatientLanguageDetector).not_to have_received(:new)
         expect_run_in(nil)
@@ -299,7 +309,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
       allow(mock_runner).to receive(:run).and_return(result)
       playground_service = described_class.new(
-        assistant: assistant,
+        scope: scope,
         conversation: conversation,
         source: 'playground'
       )
@@ -313,7 +323,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
     it 'does not apply caller-supplied model settings to non-playground runtime sources' do
       live_service = described_class.new(
-        assistant: assistant,
+        scope: scope,
         conversation: conversation,
         source: 'conversation',
         test_overrides: {
@@ -323,13 +333,13 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         }
       )
       agents = capture_runtime_agents
-      # The entry agent is built lazily; building it must not receive the caller-supplied overrides.
-      expect(assistant).to receive(:agent).with(no_args).and_return(mock_agent)
+      # The agents of the channel are built lazily; building one must not receive the caller-supplied overrides.
       allow(mock_agent).to receive(:model).and_return('assistant-own-model')
 
       live_service.generate_response(message_history: message_history)
 
       expect(agents.first.assistant_id).to eq(assistant.id)
+      expect(agents.first.instance_variable_get(:@options)).to be_blank
       expect(agents.first.model).to eq('assistant-own-model')
     end
 
@@ -364,11 +374,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       mcp_server = create(:captain_mcp_server, account: account, slug: 'selected_server')
       discovery = instance_double(Captain::Mcp::ToolCatalog::DiscoveryService, tools: [])
       allow(Captain::Mcp::ToolCatalog::DiscoveryService).to receive(:new).with(mcp_server).and_return(discovery)
-      allow(assistant).to receive(:config).and_return(
-        'tool_access' => {
-          Captain::ToolAccess::SCOPE_AGENT => { 'tool_ids' => ['mcp__selected_server__lookup'] }
-        }
-      )
+      assistant.update_column(:config, 'tool_access' => { Captain::ToolAccess::SCOPE_AGENT => { 'tool_ids' => ['mcp__selected_server__lookup'] } })
       allow(mock_runner).to receive(:run) do
         expect(Thread.current[Captain::Mcp::ToolCatalog::DISCOVERY_DISABLED_KEY]).to be_nil
         Captain::Mcp::ToolCatalog.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT)
@@ -381,7 +387,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
 
     it 'keeps MCP discovery enabled for an MCP tool referenced by an independent specialist' do
-      scenario.update_column(:description, 'Use mcp__scenario_server__lookup')
+      scenario.update_column(:description, 'Use mcp__scenario_server__lookup') # rubocop:disable Rails/SkipsModelValidations
       allow(mock_runner).to receive(:run) do
         expect(Thread.current[Captain::Mcp::ToolCatalog::DISCOVERY_DISABLED_KEY]).to be_nil
         mock_result
@@ -413,8 +419,6 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
                                                                                              'tool_ids' => ['add_contact_note'] } }))
       second_scenario.update!(config: (second_scenario.config || {}).merge('tool_access' => { 'agent' => { 'enabled' => true,
                                                                                                            'tool_ids' => ['update_priority'] } }))
-      assistant.update!(handoff_agent_ids: [])
-      scenario.update!(handoff_agent_ids: [])
       agents = capture_runtime_agents
 
       service.generate_response(message_history: message_history)
@@ -1453,7 +1457,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         }
       }.with_indifferent_access
 
-      evidence = service.send(:appointment_evidence, 'update_appointment', result)
+      evidence = service.send(:appointment_evidence, 'update_appointment', result, assistant.id)
 
       expect(evidence).to include(
         provider_command_id: 77,
@@ -1647,10 +1651,6 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         end
       end
 
-      def save_custom_rules(actor, *rules)
-        actor.update!(config: actor.config.to_h.deep_merge('safety_settings' => { 'custom_rules' => rules }))
-      end
-
       # Custom rules are one workspace setting shared by every agent; the API names differ from the runtime ones.
       def save_workspace_rules(*rules)
         api_rules = rules.map do |rule|
@@ -1667,36 +1667,31 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         )
       end
 
-      %i[matched].each do |status|
-        it "stops the main runner when the configured input check is #{status}" do
-          save_workspace_rules(input_rule)
-          check = custom_check_result(
-            direction: 'input', status: status, rule_id: (input_rule['id'] if status == :matched),
-            action: ('handoff' if status == :matched), reason: (:engine_unavailable if status == :unavailable)
-          )
-          expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
-            assistant: assistant, direction: 'input', text: 'I need help with my account', context: kind_of(Hash)
-          ).and_return(check)
-          expect(mock_runner).not_to receive(:run)
+      it 'stops the main runner when the configured input check is matched, with no agent named while nobody holds the conversation' do
+        save_workspace_rules(input_rule)
+        check = custom_check_result(direction: 'input', status: :matched, rule_id: input_rule['id'], action: 'handoff')
+        expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
+          account: account, direction: 'input', text: 'I need help with my account', context: kind_of(Hash)
+        ).and_return(check)
+        expect(mock_runner).not_to receive(:run)
 
-          response = service.generate_response(message_history: message_history)
+        response = service.generate_response(message_history: message_history)
 
-          expect(response).to include(
-            'response' => described_class::PROVIDER_ERROR_RESPONSE,
-            described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true,
-            'agent_id' => assistant.id
-          )
-          expect(response.dig('custom_guardrail', 'direction')).to eq('input')
-          expect(response.dig('custom_guardrail', 'reason')).to eq(check.reason.to_s)
-        end
+        expect(response).to include(
+          'response' => described_class::PROVIDER_ERROR_RESPONSE,
+          described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true,
+          'agent_id' => nil
+        )
+        expect(response.dig('custom_guardrail', 'direction')).to eq('input')
+        expect(response.dig('custom_guardrail', 'reason')).to eq(check.reason.to_s)
       end
 
-      it 'checks the rules for the agent that currently holds the conversation before it can continue the run' do
+      it 'checks the workspace rules once and names the agent that currently holds the conversation' do
         destination_rule = input_rule.merge('id' => 'specialist_request')
         save_workspace_rules(destination_rule)
-        Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation).update_routing(actor_id: scenario.id)
-        expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
-          assistant: scenario, direction: 'input', text: 'I need help with my account', context: kind_of(Hash)
+        Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: scenario.id)
+        expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).once.with(
+          account: account, direction: 'input', text: 'I need help with my account', context: kind_of(Hash)
         ).and_return(custom_check_result(
                        direction: 'input', status: :matched, rule_id: destination_rule['id'], action: 'handoff'
                      ))
@@ -1711,7 +1706,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       it 'does not repeat the workspace input check when a routed agent takes over the run' do
         agents = capture_runtime_agents
         expect(Captain::Safety::CustomRulesRuntime).to receive(:check_input!).once.with(
-          assistant: assistant, context: kind_of(Hash), text: 'I need help with my account'
+          account: account, agent_id: nil, context: kind_of(Hash), text: 'I need help with my account'
         ).and_call_original
         expect(mock_runner).to receive(:run) do |_input, context:, **_options|
           destination_preparer = agents.find { |agent| agent.assistant_id == scenario.id }.context_preparer
@@ -1742,13 +1737,13 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       end
 
       it 'uses the routed response actor for the final output policy' do
-        save_custom_rules(scenario, output_rule)
+        save_workspace_rules(output_rule)
         allow(mock_result).to receive(:context).and_return(
           current_agent: "assistant_#{scenario.id}", acting_assistant_id: scenario.id,
           captain_v2_current_input: 'I need help with my account'
         )
         expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
-          assistant: scenario, direction: 'output', text: 'Test response',
+          account: account, direction: 'output', text: 'Test response',
           context: hash_including(last_customer_message: 'I need help with my account')
         ).and_return(custom_check_result(
                        direction: 'output', status: :matched, rule_id: output_rule['id'], action: 'block'
@@ -1763,20 +1758,20 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       it 'returns only a rewritten reply after the replacement passes the output policy' do
         rewrite_rule = output_rule.merge('action' => 'rewrite')
-        save_custom_rules(assistant, rewrite_rule)
+        save_workspace_rules(rewrite_rule)
         rewriter = instance_double(Captain::Safety::ResponseRewriteEngine)
         allow(Captain::Safety::ResponseRewriteEngine).to receive(:new).and_return(rewriter)
         expect(rewriter).to receive(:rewrite).with(
-          assistant: assistant, text: 'Test response', rule_id: rewrite_rule['id'],
+          account: account, text: 'Test response', rule_id: rewrite_rule['id'],
           last_customer_message: 'I need help with my account'
         ).and_return('I will ask staff to check your request.')
         expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
-          assistant: assistant, direction: 'output', text: 'Test response', context: kind_of(Hash)
+          account: account, direction: 'output', text: 'Test response', context: kind_of(Hash)
         ).ordered.and_return(custom_check_result(
                                direction: 'output', status: :matched, rule_id: rewrite_rule['id'], action: 'rewrite'
                              ))
         expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
-          assistant: assistant, direction: 'output', text: 'I will ask staff to check your request.', context: kind_of(Hash)
+          account: account, direction: 'output', text: 'I will ask staff to check your request.', context: kind_of(Hash)
         ).ordered.and_return(custom_check_result(direction: 'output', status: :allowed))
 
         response = service.generate_response(message_history: message_history)
@@ -1786,7 +1781,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       end
 
       it 'runs no output rule on a blank output after tools: it is a failed turn with no public text' do
-        save_custom_rules(assistant, output_rule)
+        save_workspace_rules(output_rule)
         allow(mock_runner).to receive(:run).and_return(
           instance_double(
             Captain::Runtime::Result, output: { 'response' => '' }, error: nil,
@@ -2142,7 +2137,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
             'error_class' => 'StandardError',
             'error_message' => 'Test error',
             described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true
-          }.merge(entry_agent_identity)
+          }.merge(routed_agent_identity)
         )
       end
 
@@ -2196,7 +2191,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       end
 
       context 'when conversation is nil' do
-        subject(:service) { described_class.new(assistant: assistant, conversation: nil) }
+        subject(:service) { described_class.new(scope: Captain::ChannelScope.for_workspace(account), conversation: nil) }
 
         it 'handles missing conversation gracefully' do
           expect(ChatwootExceptionTracker).to receive(:new).with(error, account: nil)
@@ -2210,7 +2205,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
               'error_class' => 'StandardError',
               'error_message' => 'Test error',
               described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true
-            }.merge(entry_agent_identity)
+            }.merge(routed_agent_identity)
           )
         end
       end
@@ -2274,8 +2269,13 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
   end
 
+  # What the agent that answers is told about the conversation: its prompt context is built when the router gives it the turn.
+  def prompt_context_of(state, actor = assistant)
+    actor.prompt_context_state(state)
+  end
+
   describe '#build_context' do
-    subject(:service) { described_class.new(assistant: assistant, conversation: conversation) }
+    subject(:service) { described_class.new(scope: scope, conversation: conversation) }
 
     it 'builds context with conversation history and state' do
       context = service.send(:build_context, message_history)
@@ -2288,7 +2288,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         ],
         state: hash_including(
           account_id: account.id,
-          assistant_id: assistant.id
+          agent_graph_ids: contain_exactly(assistant.id, scenario.id, second_scenario.id)
         ),
         session_id: "#{account.id}_#{conversation.display_id}"
       )
@@ -2354,7 +2354,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   end
 
   describe '#extract_last_user_message' do
-    subject(:service) { described_class.new(assistant: assistant, conversation: conversation) }
+    subject(:service) { described_class.new(scope: scope, conversation: conversation) }
 
     it 'extracts the last user message' do
       result = service.send(:extract_last_user_message, message_history)
@@ -2382,7 +2382,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   end
 
   describe '#extract_text_from_content' do
-    subject(:service) { described_class.new(assistant: assistant, conversation: conversation) }
+    subject(:service) { described_class.new(scope: scope, conversation: conversation) }
 
     it 'extracts text from string content' do
       result = service.send(:extract_text_from_content, 'Simple text')
@@ -2411,7 +2411,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   end
 
   describe '#dynamic_trace_attributes' do
-    subject(:service) { described_class.new(assistant: assistant, conversation: conversation) }
+    subject(:service) { described_class.new(scope: scope, conversation: conversation) }
 
     it 'adds serialized trace input attributes when present in context' do
       context = {
@@ -2433,16 +2433,17 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   end
 
   describe '#build_state' do
-    subject(:service) { described_class.new(assistant: assistant, conversation: conversation) }
+    subject(:service) { described_class.new(scope: scope, conversation: conversation) }
 
     it 'builds state with assistant and account information' do
       state = service.send(:build_state)
 
       expect(state).to include(
         account_id: account.id,
-        assistant_id: assistant.id,
-        assistant_config: assistant.config
+        conversation: hash_including(id: conversation.id)
       )
+      # No agent is named in the state of a run of the channel: the router names it when it gives it the turn.
+      expect(state).not_to include(:assistant_id, :assistant_config, :entry_assistant_id)
     end
 
     it 'uses direct runtime preferences without resolving full model preferences' do
@@ -2539,15 +2540,15 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     it 'includes the labels of the conversation in its state and in the prompt context' do
       conversation.update!(label_list: %w[vip repeat])
 
-      state = described_class.new(assistant: assistant, conversation: conversation.reload).send(:build_state)
+      state = described_class.new(scope: scope, conversation: conversation.reload).send(:build_state)
 
       expect(state[:conversation]).to include(label_list: %w[vip repeat])
-      expect(state.dig(:prompt_context, :conversation, 'label_list')).to eq(%w[vip repeat])
+      expect(prompt_context_of(state).dig(:conversation, 'label_list')).to eq(%w[vip repeat])
     end
 
     it 'includes the response fence used before runtime tool execution' do
       fenced_service = described_class.new(
-        assistant: assistant,
+        scope: scope,
         conversation: conversation,
         response_fence: { control_generation: 4, buffer_token: 'buffer-token', last_message_id: 91 }
       )
@@ -2687,21 +2688,21 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           originating_conversation_id: conversation.id,
           stage_name: deal.stage.name
         )
-        expect(state.dig(:prompt_context, :deal)).to eq(
+        expect(prompt_context_of(state)[:deal]).to eq(
           'stage_name' => deal.stage.name,
           :custom_attributes => { 'sales_region' => 'EMEA' }
         )
-        expect(state.dig(:prompt_context, :visible_fields, :deal)).to eq(['stage_name'])
+        expect(prompt_context_of(state).dig(:visible_fields, :deal)).to eq(['stage_name'])
         expect(state[:task]).to include(
           id: task.id,
           originating_conversation_id: conversation.id,
           status_name: task.status.name
         )
-        expect(state.dig(:prompt_context, :task)).to eq(
+        expect(prompt_context_of(state)[:task]).to eq(
           'status_name' => task.status.name,
           :custom_attributes => { 'follow_up_channel' => 'phone' }
         )
-        expect(state.dig(:prompt_context, :visible_fields, :task)).to eq(['status_name'])
+        expect(prompt_context_of(state).dig(:visible_fields, :task)).to eq(['status_name'])
         expect(state[:appointment]).to include(
           id: appointment.id,
           status: appointment.status,
@@ -2711,14 +2712,14 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         expect(state[:appointment].keys).to match_array(%i[id status resource_name start_date start_time custom_attributes summary])
         expect(state[:appointment][:start_date]).to match(/\A\d{2}\.\d{2}\.\d{4}\z/)
         expect(state[:appointment][:start_time]).to match(/\A\d{2}:\d{2}\z/)
-        expect(state.dig(:prompt_context, :appointment)).to eq(
+        expect(prompt_context_of(state)[:appointment]).to eq(
           'status' => appointment.status,
           :custom_attributes => { 'visit_room' => 'B12' }
         )
-        expect(state.dig(:prompt_context, :appointment).to_json).not_to match(
+        expect(prompt_context_of(state)[:appointment].to_json).not_to match(
           /medelement_|payment|provider|command|conversation_id|contact_id/
         )
-        expect(state.dig(:prompt_context, :visible_fields, :appointment)).to eq(['status'])
+        expect(prompt_context_of(state).dig(:visible_fields, :appointment)).to eq(['status'])
       end
 
       it 'does not select an implicit deal for a generic chat or reinterpret old scalar references as summaries' do
@@ -2726,8 +2727,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
         expect(state[:deal].keys).to eq([:summary])
         expect(state[:deal][:summary]).to include(shown: 1, total: 1)
-        expect(state.dig(:prompt_context, :deal)).to be_blank
-        expect(state.dig(:prompt_context, :context_warnings)).to include(include(field_id: 'deal.stage_name', replacement_field_id: 'deal.summary'))
+        expect(prompt_context_of(state)[:deal]).to be_blank
+        expect(prompt_context_of(state)[:context_warnings]).to include(include(field_id: 'deal.stage_name', replacement_field_id: 'deal.summary'))
       end
 
       it 'rejects another patient deal even when an event caller supplied its exact ID' do
@@ -2741,16 +2742,13 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
 
     context 'when conversation is nil' do
-      subject(:service) { described_class.new(assistant: assistant, conversation: nil) }
+      subject(:service) { described_class.new(scope: Captain::ChannelScope.for_workspace(account), conversation: nil) }
 
       it 'builds state without conversation and contact' do
         state = service.send(:build_state)
 
-        expect(state).to include(
-          account_id: account.id,
-          assistant_id: assistant.id,
-          assistant_config: assistant.config
-        )
+        expect(state).to include(account_id: account.id)
+        expect(state).not_to include(:assistant_id, :assistant_config)
         expect(state).not_to have_key(:conversation)
         expect(state).not_to have_key(:contact)
         expect(state).not_to have_key(:campaign)
@@ -2760,7 +2758,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
   describe '#add_usage_metadata_callback' do
     it 'sets credit_used=false when an authorized handoff tool is used' do
-      service = described_class.new(assistant: assistant, conversation: conversation)
+      service = described_class.new(scope: scope, conversation: conversation)
       runner = instance_double(Captain::Runtime::AgentRunner)
       tool_complete_callback = nil
       run_complete_callback = nil
@@ -2797,14 +2795,14 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
 
     it 'authorizes an enabled handoff tool without matching the customer message against phrases' do
-      service = described_class.new(assistant: assistant, conversation: conversation)
+      service = described_class.new(scope: scope, conversation: conversation)
       runner = instance_double(Captain::Runtime::AgentRunner)
       tool_complete_callback = nil
       assistant.update!(config: assistant.config.merge(
         'handoff_requires_explicit_consent' => true,
         'handoff_consent_reason' => 'Customer requested a human.'
       ))
-      create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+      create(:captain_inbox, inbox: inbox)
       conversation.update!(status: :pending)
       denied_message = create(
         :message, account: account, inbox: inbox, conversation: conversation,
@@ -2845,7 +2843,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
 
     it 'does not infer handoff authorization from the completed tool name and a pending payload' do
-      service = described_class.new(assistant: assistant, conversation: conversation)
+      service = described_class.new(scope: scope, conversation: conversation)
       runner = instance_double(Captain::Runtime::AgentRunner)
       tool_complete_callback = nil
       context_wrapper = Struct.new(:context).new({ pending_human_handoff: { reason: 'stale payload' } })
@@ -2873,7 +2871,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
 
     it 'tracks artifact ids exposed by completed tool results' do
-      service = described_class.new(assistant: assistant, conversation: conversation)
+      service = described_class.new(scope: scope, conversation: conversation)
       runner = instance_double(Captain::Runtime::AgentRunner)
       tool_complete_callback = nil
       context_wrapper = Struct.new(:context).new({})
@@ -2916,7 +2914,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
 
     it 'sets credit_used=true when handoff tool is not used' do
-      service = described_class.new(assistant: assistant, conversation: conversation)
+      service = described_class.new(scope: scope, conversation: conversation)
       runner = instance_double(Captain::Runtime::AgentRunner)
       run_complete_callback = nil
       span_class = Class.new do

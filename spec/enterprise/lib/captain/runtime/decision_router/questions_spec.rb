@@ -231,11 +231,12 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
       end
     end
 
-    it 'needs no answer for a bare thanks and keeps the current agent of the dialog when there is one' do
+    it 'needs no answer for a bare thanks only while an agent leads the dialog; with none the most probable agent takes it' do
       expect(questions.resolve(answered('no_reply_needed', yes: [20])))
         .to have_attributes(kind: 'no_reply', agent_ids: [20], key: 'no_reply_needed', confidence: 0.9)
-      expect(build(3).resolve(answered('no_reply_needed'))).to have_attributes(kind: 'no_reply', agent_ids: [])
-      expect(build(3, message: 'Рахмет, сау болыңыз 🙏').resolve(answered('no_reply_needed')).kind).to eq('no_reply')
+      expect(build(3, current: 20, message: 'Рахмет, сау болыңыз 🙏').resolve(answered('no_reply_needed')).kind).to eq('no_reply')
+      expect(build(3).resolve(answered('no_reply_needed'))).to have_attributes(kind: 'agent', agent_ids: [10], key: 'route_agent_10')
+      expect(build(3, message: 'Рахмет, сау болыңыз 🙏').resolve(answered('no_reply_needed')).kind).to eq('agent')
     end
 
     # Review of df3aaff78: no_reply_needed silences the turn, so an answer that contradicts it never ends as no_reply.

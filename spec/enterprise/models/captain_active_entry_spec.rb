@@ -1,16 +1,16 @@
 require 'rails_helper'
 
-RSpec.describe 'Captain entry activation', type: :model do
+RSpec.describe 'Captain channel activation', type: :model do
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }
-  let(:assistant) do
+  let!(:assistant) do
     create(:captain_assistant, account: account, config: {
              'handoff_message_enabled' => true, 'handoff_message_mode' => 'static', 'handoff_message' => 'Disabled agent message'
            })
   end
 
   before do
-    create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+    create(:captain_inbox, inbox: inbox)
     inbox.reload
     allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_on)
     allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
@@ -38,7 +38,7 @@ RSpec.describe 'Captain entry activation', type: :model do
     receive_customer_message(conversation)
   end
 
-  it 'leaves a new incoming conversation open for people when the entry is disabled' do
+  it 'leaves a new incoming conversation open for people when every agent is disabled' do
     assistant.update_columns(active: false)
     inbox.reload
     conversation = create(:conversation, account: account, inbox: inbox)
@@ -54,9 +54,9 @@ RSpec.describe 'Captain entry activation', type: :model do
     expect(conversation.messages.where(sender: assistant)).to be_empty
   end
 
-  it 'opens an existing pending conversation on incoming activity after a cached entry is disabled' do
+  it 'opens an existing pending conversation on incoming activity after the last agent is disabled behind a cached channel' do
     conversation = create(:conversation, account: account, inbox: inbox)
-    expect(conversation.inbox.captain_assistant).to be_active
+    expect(conversation.inbox.captain_active?).to be true
     Captain::Assistant.find(assistant.id).update_columns(active: false)
     expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
 
@@ -68,22 +68,25 @@ RSpec.describe 'Captain entry activation', type: :model do
     expect(conversation.messages.where(sender: assistant)).to be_empty
   end
 
-  it 'rejects a new inbox assignment to a disabled entry' do
+  it 'keeps the channel open while one agent is disabled and another is enabled' do
+    create(:captain_assistant, account: account)
     assistant.update_columns(active: false)
-    assignment = build(:captain_inbox, captain_assistant: assistant, inbox: create(:inbox, account: account))
-
-    expect(assignment).not_to be_valid
-    expect(assignment.errors[:captain_assistant]).to include('must be an active external agent')
-  end
-
-  it 'keeps existing active internal assignments eligible for legacy operation' do
-    assistant.update_columns(usage_mode: 'internal_assistant')
     inbox.reload
     conversation = create(:conversation, account: account, inbox: inbox)
 
     expect(inbox.captain_active?).to be true
     expect(conversation).to be_pending
     expect(conversation.ai_pending_handler_present?(fresh_inbox: true)).to be true
+  end
+
+  it 'does not count an internal assistant as an agent: the channel stays open for people' do
+    assistant.update_columns(usage_mode: 'internal_assistant')
+    inbox.reload
+    conversation = create(:conversation, account: account, inbox: inbox)
+
+    expect(inbox.captain_active?).to be false
+    expect(conversation).to be_open
+    expect(conversation.ai_pending_handler_present?(fresh_inbox: true)).to be false
   end
 
   context 'with an API inbox that preserves pending status on incoming messages' do

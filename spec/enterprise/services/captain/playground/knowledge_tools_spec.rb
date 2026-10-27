@@ -129,7 +129,7 @@ RSpec.describe Captain::Playground::KnowledgeTools do
     let(:account) { create(:account) }
     let(:user) { create(:user, :administrator, account: account) }
     let(:assistant) { create(:captain_assistant, account: account) }
-    let(:session) { Captain::Playground::Session.new(account: account, user: user, assistant: assistant) }
+    let(:session) { Captain::Playground::Session.new(account: account, user: user) }
 
     before do
       allow(Captain::ToolSafety).to receive(:check_arguments!)
@@ -168,6 +168,7 @@ RSpec.describe Captain::Playground::KnowledgeTools do
       expect(account).not_to receive(:canned_responses)
 
       session.with_lock do |workspace|
+        workspace.activate_agent!(assistant)
         workspace.scenario.data.merge!(fixtures.deep_dup)
         expect(workspace.read_enabled?).to be(false)
         faq = JSON.parse(wrapped(workspace, 'faq_lookup').call(query: 'When does the clinic open?'))

@@ -404,17 +404,9 @@ en:
       description: 'Connect MoySklad (JSON API 1.2) to automatically import and update products, variants, bundles, retail/wholesale/Kaspi prices, and real-time warehouse stock levels in Products & Services.'
   captain:
     channel_matrix:
-      main_agent_in_use: Choose another main agent for enabled channels first.
-      default_agent_in_use: Choose another workspace main agent first.
-      main_agent_not_member: The main agent must work on this channel.
-      main_agent_required: Choose a main agent for the enabled channel.
-      main_agent_inactive: The main agent must be active.
-      invalid_default: Choose an active agent in this workspace.
-      invalid_main_agent: Agent not found in this workspace.
       invalid_assistant: Agent not found in this workspace.
       invalid_channel: Channel not found in this workspace.
       duplicate_inbox: Multiple AI records exist for this channel. Contact an administrator.
-      invalid_scope: Choose a valid channel scope.
       invalid_ai_enabled: Specify whether AI is enabled for the channel.
       invalid_auto_reply_mode: Choose a valid automatic reply mode.
       invalid_state: Channel settings could not be saved. Check the data and try again.

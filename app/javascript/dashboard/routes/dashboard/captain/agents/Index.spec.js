@@ -1,25 +1,27 @@
 /* eslint-disable vue/one-component-per-file */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { computed, defineComponent, h, nextTick } from 'vue';
+import { computed, defineComponent, h } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
 
 import assistantStore from 'dashboard/store/captain/assistant';
 
 const mocks = vi.hoisted(() => ({
   records: [],
+  inboxes: [],
   isAdmin: true,
   paywall: false,
-  matrix: null,
   push: vi.fn(),
   dispatch: vi.fn(),
-  matrixFetch: vi.fn(),
   setActive: vi.fn(),
-  summary: vi.fn(),
   dialogOpen: vi.fn(),
+  switchOffOpen: vi.fn(),
 }));
 
 vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: key => key, te: () => true }),
+  useI18n: () => ({
+    t: (key, params) => (params ? `${key} ${JSON.stringify(params)}` : key),
+    te: () => true,
+  }),
 }));
 
 vi.mock('vue-router', () => ({
@@ -36,7 +38,7 @@ vi.mock('dashboard/composables/store', () => ({
         assistantStore.getters.getRecords({ records: mocks.records })
       );
     }
-    if (key === 'inboxes/getInboxes') return computed(() => []);
+    if (key === 'inboxes/getInboxes') return computed(() => mocks.inboxes);
     return computed(() => ({ fetchingList: false }));
   },
 }));
@@ -46,19 +48,6 @@ vi.mock('dashboard/composables/usePolicy', () => ({
     checkPermissions: () => mocks.isAdmin,
     shouldShowPaywall: () => mocks.paywall,
   }),
-}));
-
-vi.mock('dashboard/store/captain/channelMatrix', () => ({
-  useCaptainChannelMatrixStore: () => ({
-    get getMatrix() {
-      return mocks.matrix;
-    },
-    fetch: (...args) => mocks.matrixFetch(...args),
-  }),
-}));
-
-vi.mock('dashboard/helper/captainChannelMatrix', () => ({
-  agentChannelSummary: (...args) => mocks.summary(...args),
 }));
 
 vi.mock('dashboard/components-next/captain/agent/useAgentActiveToggle', () => ({
@@ -92,15 +81,15 @@ vi.mock('dashboard/components-next/captain/pageComponents/Paywall.vue', () => ({
 }));
 
 // The tests emit the card and dialog events themselves, so the card stub and
-// the dialog stub below declare no events of their own.
+// the dialog stubs below declare no events of their own.
 vi.mock('dashboard/components-next/captain/agent/AgentGalleryCard.vue', () => ({
   default: defineComponent({
     name: 'AgentGalleryCard',
     props: {
       assistant: { type: Object, required: true },
-      stats: { type: Object, default: null },
       canToggle: Boolean,
       toggling: Boolean,
+      enabledCount: { type: Number, default: 0 },
     },
     setup(props) {
       return () =>
@@ -108,9 +97,9 @@ vi.mock('dashboard/components-next/captain/agent/AgentGalleryCard.vue', () => ({
           'div',
           {
             'data-testid': 'agent-card',
-            'data-scope': props.stats?.scope,
             'data-can-toggle': props.canToggle,
             'data-toggling': props.toggling,
+            'data-enabled-count': props.enabledCount,
           },
           props.assistant.name
         );
@@ -145,6 +134,21 @@ vi.mock(
   })
 );
 
+vi.mock(
+  'dashboard/components-next/captain/agent/AgentSwitchOffDialog.vue',
+  () => ({
+    default: defineComponent({
+      name: 'AgentSwitchOffDialog',
+      props: { description: { type: String, default: '' } },
+      setup(props, { expose }) {
+        expose({ open: mocks.switchOffOpen });
+        return () =>
+          h('div', { 'data-testid': 'switch-off-dialog' }, props.description);
+      },
+    }),
+  })
+);
+
 const { default: AgentsIndex } = await import('./Index.vue');
 
 const mountPage = async () => {
@@ -156,6 +160,9 @@ const mountPage = async () => {
 const cardNames = wrapper =>
   wrapper.findAll('[data-testid="agent-card"]').map(card => card.text());
 
+const cards = wrapper =>
+  wrapper.findAllComponents({ name: 'AgentGalleryCard' });
+
 const agents = [
   { id: 3, name: 'Мөлдір', usage_mode: 'external_agent', active: true },
   { id: 9, name: 'Арман', usage_mode: 'external_agent', active: true },
@@ -166,23 +173,16 @@ const helper = { id: 5, name: 'Team helper', usage_mode: 'internal_assistant' };
 describe('Captain agents gallery', () => {
   beforeEach(() => {
     mocks.records = [];
+    mocks.inboxes = [];
     mocks.isAdmin = true;
     mocks.paywall = false;
-    mocks.matrix = null;
     mocks.push.mockReset();
     mocks.dispatch.mockReset();
     mocks.dispatch.mockResolvedValue([]);
-    mocks.matrixFetch.mockReset();
-    mocks.matrixFetch.mockResolvedValue(null);
     mocks.setActive.mockReset();
+    mocks.setActive.mockResolvedValue(true);
     mocks.dialogOpen.mockReset();
-    mocks.summary.mockReset();
-    mocks.summary.mockReturnValue({
-      scope: 'selected',
-      memberInboxIds: [1, 2],
-      mainInboxIds: [1],
-      channels: [],
-    });
+    mocks.switchOffOpen.mockReset();
   });
 
   it('shows one card per AI agent, active agents first, then by name', async () => {
@@ -194,20 +194,21 @@ describe('Captain agents gallery', () => {
     expect(wrapper.text()).not.toContain('Team helper');
   });
 
-  it('loads the agents and the channel matrix for an administrator', async () => {
+  it('loads the agents only: the gallery needs no channel matrix', async () => {
     await mountPage();
 
+    expect(mocks.dispatch).toHaveBeenCalledTimes(1);
     expect(mocks.dispatch).toHaveBeenCalledWith('captainAssistants/get');
-    expect(mocks.matrixFetch).toHaveBeenCalledTimes(1);
   });
 
-  it('does not request the admin-only channel matrix for other users', async () => {
-    mocks.isAdmin = false;
+  it('tells every card how many agents are on', async () => {
+    mocks.records = agents;
 
-    await mountPage();
+    const wrapper = await mountPage();
 
-    expect(mocks.dispatch).toHaveBeenCalledWith('captainAssistants/get');
-    expect(mocks.matrixFetch).not.toHaveBeenCalled();
+    expect(cards(wrapper).every(card => card.props('enabledCount') === 2)).toBe(
+      true
+    );
   });
 
   it('shows the new agent tile and the create dialog only to administrators', async () => {
@@ -269,7 +270,7 @@ describe('Captain agents gallery', () => {
     mocks.records = agents;
     const wrapper = await mountPage();
 
-    wrapper.findAllComponents({ name: 'AgentGalleryCard' })[0].vm.$emit('open');
+    cards(wrapper)[0].vm.$emit('open');
 
     expect(mocks.push).toHaveBeenCalledWith({
       name: 'captain_agent_show',
@@ -288,76 +289,160 @@ describe('Captain agents gallery', () => {
       name: 'captain_agent_show',
       params: { accountId: '1', assistantId: 42 },
     });
-    expect(mocks.matrixFetch).toHaveBeenLastCalledWith({ force: true });
   });
 
-  it('builds the card status line from the channel summary', async () => {
-    mocks.records = [agents[0]];
-    mocks.matrix = { channels: [], assistants: [] };
+  describe('the on/off switch', () => {
+    it('turns an agent off at once when others stay on', async () => {
+      mocks.records = agents;
+      const wrapper = await mountPage();
 
-    const wrapper = await mountPage();
-    const card = wrapper.findComponent({ name: 'AgentGalleryCard' });
+      cards(wrapper)[0].vm.$emit('toggleActive', false);
+      await flushPromises();
 
-    expect(mocks.summary).toHaveBeenCalledWith({
-      assistant: agents[0],
-      matrix: mocks.matrix,
-      inboxes: [],
-    });
-    expect(card.props('stats')).toEqual({
-      scope: 'selected',
-      mainCount: 1,
-      memberCount: 2,
-    });
-  });
-
-  it('leaves the channel count open for an «all channels» agent without the matrix', async () => {
-    mocks.isAdmin = false;
-    mocks.records = [agents[0]];
-    mocks.summary.mockReturnValue({
-      scope: 'all',
-      memberInboxIds: [],
-      mainInboxIds: [7],
-      channels: [],
+      expect(mocks.setActive).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 9 }),
+        false
+      );
+      expect(mocks.switchOffOpen).not.toHaveBeenCalled();
     });
 
-    const wrapper = await mountPage();
+    it('turns an agent on at once', async () => {
+      mocks.records = agents;
+      const wrapper = await mountPage();
 
-    expect(
-      wrapper.findComponent({ name: 'AgentGalleryCard' }).props('stats')
-    ).toEqual({ scope: 'all', mainCount: 1, memberCount: null });
+      cards(wrapper)[2].vm.$emit('toggleActive', true);
+      await flushPromises();
+
+      expect(mocks.setActive).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 4 }),
+        true
+      );
+      expect(mocks.switchOffOpen).not.toHaveBeenCalled();
+    });
+
+    it('lets the former default agent be switched off like any other', async () => {
+      mocks.records = [
+        { id: 1, name: 'Диана', usage_mode: 'external_agent', active: true },
+        ...agents,
+      ];
+      const wrapper = await mountPage();
+
+      const diana = cards(wrapper).find(
+        card => card.props('assistant').id === 1
+      );
+      diana.vm.$emit('toggleActive', false);
+      await flushPromises();
+
+      expect(mocks.setActive).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 1 }),
+        false
+      );
+    });
+
+    it('asks first before the last enabled agent is switched off, and switches it off on confirm', async () => {
+      mocks.records = [agents[0], agents[2]];
+      const wrapper = await mountPage();
+
+      cards(wrapper)[0].vm.$emit('toggleActive', false);
+      await flushPromises();
+
+      expect(mocks.setActive).not.toHaveBeenCalled();
+      expect(mocks.switchOffOpen).toHaveBeenCalledTimes(1);
+      expect(
+        wrapper.find('[data-testid="switch-off-dialog"]').text()
+      ).toContain('CAPTAIN.GALLERY.CONFIRM_DISABLE_LAST');
+
+      wrapper
+        .findComponent({ name: 'AgentSwitchOffDialog' })
+        .vm.$emit('confirm');
+      await flushPromises();
+
+      expect(mocks.setActive).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 3 }),
+        false
+      );
+    });
+
+    it('asks first before an agent that answers a phone number is switched off', async () => {
+      mocks.records = [{ ...agents[0], voice_inbox_ids: [11] }, agents[1]];
+      mocks.inboxes = [
+        {
+          id: 11,
+          channel_type: 'Channel::Voice',
+          name: 'Calls',
+          phone_number: '+77010000000',
+        },
+      ];
+      const wrapper = await mountPage();
+
+      const voiceCard = cards(wrapper).find(
+        card => card.props('assistant').id === 3
+      );
+      voiceCard.vm.$emit('toggleActive', false);
+      await flushPromises();
+
+      expect(mocks.setActive).not.toHaveBeenCalled();
+      expect(
+        wrapper.find('[data-testid="switch-off-dialog"]').text()
+      ).toContain(
+        'CAPTAIN.GALLERY.CONFIRM_DISABLE_VOICE {"numbers":"+77010000000"}'
+      );
+    });
   });
 
-  it('turns an agent off and refreshes the channel matrix after a save', async () => {
-    mocks.records = agents;
-    mocks.setActive.mockResolvedValue(true);
-    const wrapper = await mountPage();
-    mocks.matrixFetch.mockClear();
+  describe('the switch for all agents', () => {
+    it('asks before it switches off every agent, then switches off the ones that are on', async () => {
+      mocks.records = agents;
+      const wrapper = await mountPage();
 
-    wrapper
-      .findAllComponents({ name: 'AgentGalleryCard' })[0]
-      .vm.$emit('toggleActive', false);
-    await flushPromises();
+      await wrapper.find('[data-testid="agents-toggle-all"]').trigger('click');
+      await flushPromises();
 
-    expect(mocks.setActive).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 9 }),
-      false
-    );
-    expect(mocks.matrixFetch).toHaveBeenCalledWith({ force: true });
-  });
+      expect(mocks.setActive).not.toHaveBeenCalled();
+      expect(wrapper.find('[data-testid="switch-off-dialog"]').text()).toBe(
+        'CAPTAIN.GALLERY.CONFIRM_DISABLE_ALL'
+      );
 
-  it('keeps the matrix when the switch could not be saved', async () => {
-    mocks.records = agents;
-    mocks.setActive.mockResolvedValue(false);
-    const wrapper = await mountPage();
-    mocks.matrixFetch.mockClear();
+      wrapper
+        .findComponent({ name: 'AgentSwitchOffDialog' })
+        .vm.$emit('confirm');
+      await flushPromises();
 
-    wrapper
-      .findAllComponents({ name: 'AgentGalleryCard' })[0]
-      .vm.$emit('toggleActive', false);
-    await flushPromises();
-    await nextTick();
+      expect(
+        mocks.setActive.mock.calls.map(([agent, active]) => [agent.id, active])
+      ).toEqual([
+        [9, false],
+        [3, false],
+      ]);
+    });
 
-    expect(mocks.matrixFetch).not.toHaveBeenCalled();
+    it('switches every agent on, with no question, when none is on', async () => {
+      mocks.records = agents.map(agent => ({ ...agent, active: false }));
+      const wrapper = await mountPage();
+
+      expect(wrapper.find('[data-testid="agents-toggle-all"]').text()).toBe(
+        'CAPTAIN.GALLERY.ENABLE_ALL_AGENTS'
+      );
+      await wrapper.find('[data-testid="agents-toggle-all"]').trigger('click');
+      await flushPromises();
+
+      expect(mocks.switchOffOpen).not.toHaveBeenCalled();
+      expect(mocks.setActive).toHaveBeenCalledTimes(3);
+      expect(
+        mocks.setActive.mock.calls.every(([, active]) => active === true)
+      ).toBe(true);
+    });
+
+    it('is offered to administrators only', async () => {
+      mocks.records = agents;
+      mocks.isAdmin = false;
+
+      const wrapper = await mountPage();
+
+      expect(wrapper.find('[data-testid="agents-toggle-all"]').exists()).toBe(
+        false
+      );
+    });
   });
 
   it('shows the paywall without loading anything', async () => {
@@ -367,6 +452,5 @@ describe('Captain agents gallery', () => {
 
     expect(wrapper.find('[data-testid="paywall"]').exists()).toBe(true);
     expect(mocks.dispatch).not.toHaveBeenCalled();
-    expect(mocks.matrixFetch).not.toHaveBeenCalled();
   });
 });

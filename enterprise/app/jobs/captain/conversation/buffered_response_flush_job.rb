@@ -3,22 +3,22 @@ class Captain::Conversation::BufferedResponseFlushJob < MutexApplicationJob
 
   retry_on LockAcquisitionError, wait: 1.second, attempts: 5
 
-  def perform(conversation_id:, assistant_id:, token:)
+  # The buffered response belongs to the channel of the conversation, not to an agent. assistant_id is accepted for a job that an
+  # earlier release queued, and ignored.
+  def perform(conversation_id:, token:, assistant_id: nil) # rubocop:disable Lint/UnusedMethodArgument
     with_lock(lock_key(conversation_id)) do
       state = buffer_state(conversation_id)
-      next unless valid_state?(state, assistant_id, token)
+      next unless valid_state?(state, token)
 
       conversation = Conversation.find_by(id: conversation_id)
-      assistant = Captain::Assistant.find_by(id: assistant_id)
 
-      unless conversation.present? && assistant.present? && should_generate_response?(conversation, assistant)
+      unless conversation.present? && should_generate_response?(conversation)
         clear_state(conversation_id, token)
         next
       end
 
       Captain::Conversation::ResponseBuilderJob.perform_now(
         conversation,
-        assistant,
         buffer_token: token,
         expected_last_message_id: state['last_message_id']
       )
@@ -36,17 +36,14 @@ class Captain::Conversation::BufferedResponseFlushJob < MutexApplicationJob
     nil
   end
 
-  def valid_state?(state, assistant_id, token)
-    state.present? &&
-      state['assistant_id'].to_i == assistant_id.to_i &&
-      state['token'] == token
+  def valid_state?(state, token)
+    state.present? && state['token'] == token
   end
 
-  def should_generate_response?(conversation, assistant)
+  def should_generate_response?(conversation)
     conversation_allows_captain_response?(conversation) &&
       conversation.inbox.captain_active? &&
-      conversation.inbox.captain_auto_reply_allowed? &&
-      conversation.inbox.captain_assistant&.id == assistant.id
+      conversation.inbox.captain_auto_reply_allowed?
   end
 
   def conversation_allows_captain_response?(conversation)

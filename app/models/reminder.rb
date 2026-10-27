@@ -246,6 +246,7 @@ class Reminder < ApplicationRecord
   before_validation :sync_account_from_associations
   before_validation :hydrate_target_defaults
   before_validation :assign_owner_default, on: :create
+  before_validation :pick_captain_writer, on: :create
   before_validation :normalize_repeat_fields
   before_validation :normalize_relative_time_fields
   before_validation :materialize_schedule
@@ -844,6 +845,17 @@ class Reminder < ApplicationRecord
     files.attach(attachments)
   end
 
+  # A touch with an AI text that nobody has given an agent (staff or an automation rule set it up) is written by the agent the router
+  # picks from its instruction. The choice is made once, here, and stored; a touch an agent made already names its writer.
+  def pick_captain_writer
+    return unless agent? || ai_agent_wakeup?
+    return if metadata.to_h['captain_assistant_id'].present?
+    return unless defined?(Captain::Routing::WriterPicker) && account.present?
+
+    writer = Captain::Routing::WriterPicker.pick(account: account, instruction: instructions, source: 'touch')
+    self.metadata = metadata.to_h.merge('captain_assistant_id' => writer.id) if writer
+  end
+
   def normalize_text_mode
     self.text_mode = Reminders::TextModeResolver.call(
       action_type: action_type,
@@ -1213,7 +1225,6 @@ class Reminder < ApplicationRecord
                           )
                         elsif target.present?
                           Captain::Conversation::AgentOwnership.new(conversation: target, assistant: assistant).current?(
-                            expected_entry_id: follow_up['entry_assistant_id'],
                             expected_revision: follow_up['routing_revision'], enforce_revision: true
                           )
                         end

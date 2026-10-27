@@ -6,7 +6,7 @@ RSpec.describe Captain::Playground::CustomerProfileTools, 'through the Playgroun
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account, role: :administrator) }
   let(:assistant) { create(:captain_assistant, account: account) }
-  let(:session) { Captain::Playground::Session.new(account: account, user: user, assistant: assistant) }
+  let(:session) { Captain::Playground::Session.new(account: account, user: user) }
   let(:tool_ids) { described_class::CUSTOMER_PROFILE_ARGUMENTS.keys }
 
   before do
@@ -37,6 +37,7 @@ RSpec.describe Captain::Playground::CustomerProfileTools, 'through the Playgroun
 
   it 'reads the synthetic caller profile with the production payload and refuses unknown arguments' do
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       caller = trial.scenario.contact
       result = invoke(trial, 'get_my_contact')
 
@@ -49,6 +50,7 @@ RSpec.describe Captain::Playground::CustomerProfileTools, 'through the Playgroun
 
   it 'updates only the caller through the production field rules and leaves the scenario untouched on a rejected value' do
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       result = invoke(trial, 'update_my_contact', first_name: '  Updated ', birth_date: '1991-02-03', gender: 'FEMALE', email: 'new@example.test')
 
       expect(result).to include(success: true, simulated: true)
@@ -67,6 +69,7 @@ RSpec.describe Captain::Playground::CustomerProfileTools, 'through the Playgroun
 
   it 'lists only the caller deals with the production status, pipeline and paging rules' do
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       add_deal(trial, id: 502, contact_id: 101, stage_id: 913, title: 'Won deal', updated_at: '2026-10-01T10:00:00+05:00')
       add_deal(trial, id: 503, contact_id: 102, stage_id: 911, title: 'Deal of the son')
 
@@ -91,6 +94,7 @@ RSpec.describe Captain::Playground::CustomerProfileTools, 'through the Playgroun
 
   it 'never routes the customer profile tools to real data, even with real-data permissions enabled' do
     session.with_lock do |trial|
+      trial.activate_agent!(assistant)
       trial.set_permissions!(read: true, write: true)
       executor = Captain::Playground::RealToolExecutor.new(trial)
 

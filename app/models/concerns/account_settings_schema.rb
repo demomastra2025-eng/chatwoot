@@ -13,7 +13,6 @@ module AccountSettingsSchema
         'auto_resolve_label': { 'type': %w[string null] },
         'keep_pending_on_bot_failure': { 'type': %w[boolean null] },
         'captain_auto_resolve_mode': { 'type': %w[string null], 'enum': ['evaluated', 'legacy', 'disabled', nil] },
-        'captain_default_assistant_id': { 'type': %w[integer null] },
         'scheduling_contact_required': { 'type': %w[boolean null] },
         'scheduling_company_enabled': { 'type': %w[boolean null] },
         # The latest local start of a visit the clinic takes ("19:00"): the slot search never offers a later start.

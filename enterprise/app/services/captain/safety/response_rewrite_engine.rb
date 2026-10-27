@@ -9,17 +9,17 @@ class Captain::Safety::ResponseRewriteEngine
     new.rewrite(**attributes)
   end
 
-  def rewrite(assistant:, text:, rule_id:, last_customer_message: nil)
-    return unless assistant.active? && valid_text?(text, MAX_TEXT_LENGTH, required: true)
+  def rewrite(account:, text:, rule_id:, last_customer_message: nil)
+    return unless valid_text?(text, MAX_TEXT_LENGTH, required: true)
     return unless valid_text?(last_customer_message, MAX_CUSTOMER_MESSAGE_LENGTH, required: false)
 
-    rule = rewrite_rule(assistant, rule_id)
+    rule = rewrite_rule(account, rule_id)
     return unless rule
 
-    model = Captain::Safety::CustomRulesStructuredOutputEngine.new(account: assistant.account).model
-    chat = build_chat(assistant.account, model).with_instructions(system_prompt(rule))
+    model = Captain::Safety::CustomRulesStructuredOutputEngine.new(account: account).model
+    chat = build_chat(account, model).with_instructions(system_prompt(rule))
     response = Llm::Runtime.ask(
-      chat, user_payload(text, last_customer_message).to_json, account: assistant.account, model: model,
+      chat, user_payload(text, last_customer_message).to_json, account: account, model: model,
       observability: { operation: 'captain.custom_guardrail_rewrite' }
     )
     rewritten_text(response)
@@ -30,13 +30,13 @@ class Captain::Safety::ResponseRewriteEngine
 
   private
 
-  def rewrite_rule(assistant, rule_id)
+  def rewrite_rule(account, rule_id)
     return unless rule_id.is_a?(String)
 
     # Custom rules live in the workspace AI settings (one set for all agents),
     # the same source CustomRulesRuntime and CustomRulesEvaluator match against.
     rules = begin
-      assistant.account_settings.runtime_rules
+      Captain::AccountSettings.new(account).runtime_rules
     rescue KeyError
       nil
     end

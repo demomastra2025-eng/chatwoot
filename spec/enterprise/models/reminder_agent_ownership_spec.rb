@@ -5,7 +5,7 @@ require 'rails_helper'
 RSpec.describe Reminder, type: :model do
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }
-  let(:entry) { create(:captain_assistant, account: account) }
+  let!(:entry) { create(:captain_assistant, account: account) }
   let(:actor) { create(:captain_assistant, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, status: :pending) }
   let(:anchor) do
@@ -26,15 +26,13 @@ RSpec.describe Reminder, type: :model do
 
   before do
     account.enable_features!('captain_integration')
-    create(:captain_inbox, inbox: inbox, captain_assistant: entry)
-    entry.update!(handoff_agent_ids: [actor.id])
-    actor.update!(handoff_agent_ids: [entry.id])
+    create(:captain_inbox, inbox: inbox)
     create(:message, conversation: conversation, message_type: :incoming, skip_runtime_events: true)
     route_to(actor)
   end
 
   def route_to(assistant)
-    Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation).update_routing(actor_id: assistant.id)
+    Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
   end
 
   def expect_ownership_rejected
@@ -42,13 +40,12 @@ RSpec.describe Reminder, type: :model do
     expect(reminder.errors[:assistant]).to include('must currently control the follow-up conversation')
   end
 
-  it 'persists a follow-up for the current reachable specialist without its own inbox assignment' do
+  it 'persists a follow-up for the agent that holds the conversation, which has no inbox assignment of its own' do
     expect(actor.inboxes).to be_empty
 
     expect { reminder.save! }.to change(described_class, :count).by(1)
-    expect(reminder.metadata['captain_follow_up']).to include(
-      'assistant_id' => actor.id, 'entry_assistant_id' => entry.id, 'routing_revision' => 1
-    )
+    expect(reminder.metadata['captain_follow_up']).to include('assistant_id' => actor.id, 'routing_revision' => 1)
+    expect(reminder.metadata['captain_follow_up']).not_to have_key('entry_assistant_id')
   end
 
   it 'rejects an inactive specialist' do
@@ -58,16 +55,16 @@ RSpec.describe Reminder, type: :model do
     expect_ownership_rejected
   end
 
-  it 'rejects a specialist whose entry is inactive' do
+  it 'keeps the follow-up of the agent that holds the conversation when another agent is switched off' do
     reminder
     entry.update_columns(active: false)
 
-    expect_ownership_rejected
+    expect(reminder).to be_valid
   end
 
   it 'rejects a specialist whose route has been removed' do
     reminder
-    # Routing is channel membership: the specialist leaves this inbox (selected scope without it).
+    # Only enabled external agents answer in a channel: an internal assistant is not one of them.
     actor.update_column(:usage_mode, 'internal_assistant')
 
     expect_ownership_rejected

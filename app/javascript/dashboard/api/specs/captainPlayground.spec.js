@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import CaptainAssistant from '../captain/assistant';
+import CaptainPlayground from '../captain/playground';
 
-describe('CaptainAssistant playground API', () => {
+describe('CaptainPlayground API', () => {
   const originalAxios = window.axios;
   const axiosMock = { post: vi.fn() };
   beforeEach(() => {
@@ -12,9 +12,13 @@ describe('CaptainAssistant playground API', () => {
     window.axios = originalAxios;
   });
 
+  it('posts to the workspace endpoint, with no agent in the path', () => {
+    CaptainPlayground.message({ messageContent: 'Hello' });
+    expect(axiosMock.post.mock.lastCall[0]).toBe('/api/v1/captain/playground');
+  });
+
   it('sends only session controls and explicit per-session model overrides', () => {
-    CaptainAssistant.playground({
-      assistantId: 42,
+    CaptainPlayground.message({
       sessionId: 'workspace-session',
       messageContent: 'Check this response',
       messageHistory: [{ role: 'user', content: 'Forged history' }],
@@ -24,22 +28,18 @@ describe('CaptainAssistant playground API', () => {
         thinkingEffort: 'high',
       },
     });
-    expect(axiosMock.post).toHaveBeenCalledWith(
-      '/api/v1/captain/assistants/42/playground',
-      {
-        playground_mode: 'workspace',
-        playground_session_id: 'workspace-session',
-        message_content: 'Check this response',
-        test_model: 'openai/gpt-5.4',
-        test_temperature: 0.4,
-        test_thinking_effort: 'high',
-      }
-    );
+    expect(axiosMock.post).toHaveBeenCalledWith('/api/v1/captain/playground', {
+      playground_mode: 'workspace',
+      playground_session_id: 'workspace-session',
+      message_content: 'Check this response',
+      test_model: 'openai/gpt-5.4',
+      test_temperature: 0.4,
+      test_thinking_effort: 'high',
+    });
   });
 
   it('ignores legacy Live caller/delivery arguments and preserves zero temperature', () => {
-    CaptainAssistant.playground({
-      assistantId: 42,
+    CaptainPlayground.message({
       sessionId: 'workspace-session',
       messageContent: 'Synthetic',
       mode: 'live',
@@ -60,23 +60,21 @@ describe('CaptainAssistant playground API', () => {
   });
 
   it('sends the chosen channel with a message, a session call, a reset and a confirmation', () => {
-    CaptainAssistant.playground({
-      assistantId: 42,
+    CaptainPlayground.message({
       sessionId: 'workspace-session',
       messageContent: 'Hello',
       inboxId: 7,
     });
     expect(axiosMock.post.mock.lastCall[1]).toMatchObject({ inbox_id: 7 });
 
-    CaptainAssistant.playgroundSession({ assistantId: 42, inboxId: 7 });
+    CaptainPlayground.session({ inboxId: 7 });
     expect(axiosMock.post.mock.lastCall[1]).toEqual({
       playground_action: 'session',
       playground_mode: 'workspace',
       inbox_id: 7,
     });
 
-    CaptainAssistant.playgroundSession({
-      assistantId: 42,
+    CaptainPlayground.session({
       sessionId: 'workspace-session',
       reset: true,
       inboxId: 7,
@@ -86,8 +84,7 @@ describe('CaptainAssistant playground API', () => {
       inbox_id: 7,
     });
 
-    CaptainAssistant.confirmPlaygroundAction({
-      assistantId: 42,
+    CaptainPlayground.confirmAction({
       sessionId: 'workspace-session',
       approval: { id: 'approval-id', digest: 'exact-digest' },
       inboxId: 7,
@@ -98,20 +95,15 @@ describe('CaptainAssistant playground API', () => {
     });
   });
 
-  it('sends no channel when none is chosen, so the agent works alone', () => {
-    CaptainAssistant.playground({
-      assistantId: 42,
-      messageContent: 'Hello',
-      inboxId: null,
-    });
+  it('sends no channel when none is chosen, so the AI works as in a text channel', () => {
+    CaptainPlayground.message({ messageContent: 'Hello', inboxId: null });
     expect(axiosMock.post.mock.lastCall[1]).not.toHaveProperty('inbox_id');
-    CaptainAssistant.playgroundSession({ assistantId: 42 });
+    CaptainPlayground.session();
     expect(axiosMock.post.mock.lastCall[1]).not.toHaveProperty('inbox_id');
   });
 
   it('omits model parameters when provider defaults are selected', () => {
-    CaptainAssistant.playground({
-      assistantId: 42,
+    CaptainPlayground.message({
       messageContent: 'Default',
       testOptions: { temperature: null, thinkingEffort: '' },
     });
@@ -125,8 +117,7 @@ describe('CaptainAssistant playground API', () => {
   });
 
   it('edits and resets the synthetic session through the same endpoint', () => {
-    CaptainAssistant.playgroundSession({
-      assistantId: 42,
+    CaptainPlayground.session({
       sessionId: 'workspace-session',
       reset: true,
       scenario: { contact: { name: 'Mother' } },
@@ -140,8 +131,7 @@ describe('CaptainAssistant playground API', () => {
   });
 
   it('forces write off with read off and confirms only the server-owned preview handle', () => {
-    CaptainAssistant.playgroundPermissions({
-      assistantId: 42,
+    CaptainPlayground.permissions({
       sessionId: 'workspace-session',
       read: false,
       write: true,
@@ -150,8 +140,7 @@ describe('CaptainAssistant playground API', () => {
       real_data_read: false,
       real_data_write: false,
     });
-    CaptainAssistant.confirmPlaygroundAction({
-      assistantId: 42,
+    CaptainPlayground.confirmAction({
       sessionId: 'workspace-session',
       approval: {
         id: 'approval-id',

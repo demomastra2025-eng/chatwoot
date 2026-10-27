@@ -5,7 +5,7 @@ require 'rails_helper'
 RSpec.describe Messages::ImageDescriptionService do
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }
-  let(:assistant) { create(:captain_assistant, account: account) }
+  let!(:assistant) { create(:captain_assistant, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox) }
   let(:message_attributes) { {} }
   let(:message) do
@@ -17,7 +17,7 @@ RSpec.describe Messages::ImageDescriptionService do
 
   before do
     account.enable_features!('captain_integration')
-    create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+    create(:captain_inbox, inbox: inbox)
     allow(Captain::ImageRecognitionService).to receive(:new).and_return(recognition)
   end
 
@@ -57,7 +57,7 @@ RSpec.describe Messages::ImageDescriptionService do
       it('is false') { expect(described_class.enabled_for?(attachment)).to be(false) }
     end
 
-    it 'is false for an inbox without an AI agent' do
+    it 'is true for a text inbox that has no AI row, as long as the workspace has an enabled agent' do
       other_inbox = create(:inbox, account: account)
       other_inbox.captain_inbox&.destroy!
       other_inbox.reload
@@ -65,12 +65,26 @@ RSpec.describe Messages::ImageDescriptionService do
       other_message = create(:message, conversation: other_conversation, account: account, inbox: other_inbox)
       image = other_message.attachments.create!(account_id: account.id, file_type: :image, external_url: 'https://example.com/photo.jpg')
 
+      expect(other_inbox.captain_inbox).to be_nil
+      expect(described_class.enabled_for?(image)).to be(true)
+    end
+
+    it 'is false for a voice number: a call has no images' do
+      voice_inbox = create_voice_inbox(account)
+      create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
+      voice_conversation = create(:conversation, account: account, inbox: voice_inbox)
+      voice_message = create(:message, conversation: voice_conversation, account: account, inbox: voice_inbox)
+      image = voice_message.attachments.create!(account_id: account.id, file_type: :image, external_url: 'https://example.com/photo.jpg')
+
       expect(described_class.enabled_for?(image)).to be(false)
     end
 
-    it 'is false when the agent of the inbox is switched off' do
+    it 'is false when every agent of the workspace is switched off, and true again while any one is on' do
+      second = create(:captain_assistant, account: account)
       assistant.update_columns(active: false) # rubocop:disable Rails/SkipsModelValidations
+      expect(described_class.enabled_for?(attachment)).to be(true)
 
+      second.update_columns(active: false) # rubocop:disable Rails/SkipsModelValidations
       expect(described_class.enabled_for?(attachment)).to be(false)
     end
 

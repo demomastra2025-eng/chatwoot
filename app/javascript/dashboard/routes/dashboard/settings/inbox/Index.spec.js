@@ -113,7 +113,7 @@ describe('Inbox list page', () => {
         forward_to_email: 'forward@example.com',
         imap_enabled: true,
         smtp_enabled: true,
-        captain_assistant: { id: 5, name: 'Алия' },
+        captain_ai_enabled: true,
       },
     ]);
     const text = wrapper.text();
@@ -128,7 +128,8 @@ describe('Inbox list page', () => {
     expect(wrapper.find('[data-test-id="inbox-subtitle"]').text()).toBe(
       'info@example.com'
     );
-    expect(text).toContain('ИИ: Алия');
+    expect(text).toContain('AI');
+    expect(text).not.toContain('Алия');
     ['IMAP', 'SMTP', 'Пересылка', 'forward@example.com'].forEach(technical =>
       expect(text).not.toContain(technical)
     );

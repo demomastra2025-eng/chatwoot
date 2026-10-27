@@ -209,7 +209,7 @@
       "GREETING_MESSAGE_LABEL": "Greeting message text",
       "GREETING_MESSAGE_PLACEHOLDER": "Hello! Thank you for reaching out. We will reply shortly.",
       "GREETING_CHANNELS_LABEL": "Text channels for greeting",
-      "GREETING_AI_BADGE": "AI agent: {name}",
+      "GREETING_AI_BADGE": "AI",
       "GREETING_AI_SKIP_HINT": "When an AI agent is active on a channel, the static greeting is skipped automatically to avoid double greetings.",
       "GREETING_SAVE": "Save greeting",
       "GREETING_UPDATE_SUCCESS": "Greeting settings updated.",

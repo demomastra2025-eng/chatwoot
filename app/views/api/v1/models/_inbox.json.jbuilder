@@ -27,14 +27,12 @@ json.deletion_recovery resource.deletion_recovery_payload if Current.account_use
 channel_missing = resource.channel_missing?
 json.channel_missing channel_missing
 
-if resource.respond_to?(:captain_assistant) && resource.captain_assistant.present? &&
-   (resource.channel_type == 'Channel::Voice' ||
-    (resource.captain_inbox&.ai_enabled? && resource.account.captain_ai_enabled? &&
-     resource.account.captain_default_assistant_id.to_i == resource.captain_inbox.captain_assistant_id))
-  json.captain_assistant do
-    json.id resource.captain_assistant.id
-    json.name resource.captain_assistant.name
-  end
+# The AI answers in this channel by itself: the channel is switched on and the workspace has an enabled agent (a voice number: its
+# agent is enabled). The channel has no agent of its own to show: the router picks one among the enabled agents.
+captain_ai_enabled = resource.respond_to?(:captain_inbox) && resource.captain_inbox.present? &&
+                     Captain::ChannelScope.for_inbox(resource).runtime_enabled?
+json.captain_ai_enabled captain_ai_enabled
+if captain_ai_enabled
   json.captain_auto_reply_mode resource.channel_type == 'Channel::Voice' ? resource.captain_inbox.auto_reply_mode : resource.account.captain_reply_time_mode
   json.captain_reply_to_open_conversations resource.captain_inbox.reply_to_open_conversations?
 end

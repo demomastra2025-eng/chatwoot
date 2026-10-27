@@ -55,7 +55,7 @@ RSpec.describe 'Captain playground model controls' do
       )
       runtime_agent = service.send(:build_and_wire_agents).first
       context = service.send(:build_context, [])
-      expect(context[:state]).to include(entry_assistant_id: assistant.id, playground_thinking_effort: effort)
+      expect(context[:state]).to include(playground_thinking_effort: effort)
       context_wrapper = Captain::Runtime::RunContext.new(context)
       chat = Captain::Runtime::ChatFactory.build(
         agent: runtime_agent, context_wrapper: context_wrapper,

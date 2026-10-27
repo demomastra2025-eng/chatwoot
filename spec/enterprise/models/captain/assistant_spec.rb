@@ -1,11 +1,6 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Assistant, type: :model do
-  describe 'handoff and booking scope' do
-    let(:account) { create(:account) }
-    let(:assistant) { create(:captain_assistant, account: account) }
-  end
-
   describe 'message sender payloads' do
     it 'exposes only public identity fields in events and webhooks' do
       assistant = build(:captain_assistant, description: 'Private agent instructions', config: { 'model' => 'private-model' })
@@ -274,6 +269,32 @@ RSpec.describe Captain::Assistant, type: :model do
         expect(persisted_assistant).not_to be_valid
         expect(persisted_assistant.errors.of_kind?(:config, :fish_voice_invalid_reference)).to be true
       end
+    end
+  end
+
+  describe 'deleting an agent that answers calls' do
+    let(:account) { create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }) }
+    let(:assistant) { create(:captain_assistant, account: account) }
+
+    it 'removes the row of a phone number and clears its routing policy, because a phone number cannot go without its agent' do
+      voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+      row = create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
+      policy = voice_inbox.reload.telephony_number_binding.routing_policy
+
+      assistant.destroy!
+
+      expect(CaptainInbox.exists?(row.id)).to be(false)
+      expect(policy.reload).to have_attributes(captain_assistant_id: nil, ai_enabled: false)
+    end
+
+    it 'only takes the agent away from a WhatsApp number: the row keeps its text settings' do
+      whatsapp_inbox = create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud', sync_templates: false,
+                                                 validate_provider_config: false, provider_config: { 'ai_voice_enabled' => true }).inbox
+      row = create(:captain_inbox, inbox: whatsapp_inbox, captain_assistant: assistant, ai_enabled: true, auto_reply_mode: 'working_hours')
+
+      assistant.destroy!
+
+      expect(row.reload).to have_attributes(captain_assistant_id: nil, ai_enabled: true, auto_reply_mode: 'working_hours')
     end
   end
 
@@ -1134,9 +1155,8 @@ RSpec.describe Captain::Assistant, type: :model do
       )
     end
 
-    it 'does not render a route from a stored allowed-targets list that no channel of the agent shares' do
-      stored_only = create(:captain_assistant, account: account, name: 'Detached agent', channel_scope: 'selected')
-      assistant.update!(handoff_agent_ids: [stored_only.id])
+    it 'does not render another agent of the workspace as a route' do
+      create(:captain_assistant, account: account, name: 'Detached agent')
 
       expect(assistant.agent_instructions).not_to include('Detached agent')
     end

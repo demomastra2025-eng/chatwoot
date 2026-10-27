@@ -110,7 +110,7 @@ RSpec.describe Captain::Runtime::PartRegistry do
     it 'checks the parts with the given block only for a new plan and replays a saved plan as it was' do
       entry = create(:captain_assistant)
       specialist = create(:captain_assistant, account: entry.account)
-      session = Captain::Conversation::AgentSession.new(entry: entry)
+      session = Captain::Conversation::AgentSession.new
       registry_context = { state: { assistant_id: entry.id }, agent_graph: [{ id: entry.id }, { id: specialist.id }], agent_session: session,
                            agent_request_id: 'once', parts: [] }
       checked = []
@@ -148,7 +148,7 @@ RSpec.describe Captain::Runtime::PartRegistry do
 
   it 'keeps a completed operation receipt for its part' do
     entry = create(:captain_assistant)
-    session = Captain::Conversation::AgentSession.new(entry: entry)
+    session = Captain::Conversation::AgentSession.new
     session.change do |data|
       data['parts'] = [{ 'id' => 'synthetic-part', 'version' => 1, 'executor_agent_id' => entry.id, 'state' => 'open' }]
     end
@@ -199,7 +199,7 @@ RSpec.describe Captain::Runtime::PartRegistry do
       let(:entry) { create(:captain_assistant) }
       let(:specialist) { create(:captain_assistant, account: entry.account) }
       let(:conversation) { create(:conversation, account: entry.account) }
-      let(:session) { Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation) }
+      let(:session) { Captain::Conversation::AgentSession.new(conversation: conversation) }
       let(:session_context) do
         { state: { assistant_id: entry.id }, agent_graph: [{ id: entry.id }, { id: specialist.id }], agent_session: session,
           agent_request_id: 'session', parts: [] }

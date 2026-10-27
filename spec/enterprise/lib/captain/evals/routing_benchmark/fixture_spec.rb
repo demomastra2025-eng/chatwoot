@@ -351,7 +351,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
 
       it 'rejects a typo in a row of the workspace as well: a channel, knowledge, contact, doctor, service, slot, appointment or deal' do
         rows = {
-          'channels' => { key: 'api', entry_agent: 'Запись к врачу', entry: 'x' },
+          'channels' => { key: 'api', entri: 'x' },
           'knowledge' => { question: 'Где?', answer: 'Здесь.', agnet: 'Запись к врачу' },
           'contacts' => { key: 'other', name: 'Арсен', phone: '+7 700 000 00 00' },
           'resources' => { key: 'doctor_c', name: 'Врач В', timezon: 'Asia/Almaty' },
@@ -441,7 +441,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
               tool_ids: [search_available_slots, list_my_appointments, create_appointment, update_appointment, get_my_contact, update_my_contact]
               model: openai/gpt-6-luna
           channels:
-            - {key: api, entry_agent: Администратор}
+            - {key: api}
           knowledge:
             - {agent: Администратор, question: "Где вы находитесь?", answer: "Центр и Сайран."}
             - {question: "Есть парковка?", answer: "Да, бесплатная."}

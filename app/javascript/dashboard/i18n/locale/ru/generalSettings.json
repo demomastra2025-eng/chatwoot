@@ -204,7 +204,7 @@
       "GREETING_MESSAGE_LABEL": "Текст приветственного сообщения",
       "GREETING_MESSAGE_PLACEHOLDER": "Здравствуйте! Спасибо за обращение. Мы скоро ответим вам.",
       "GREETING_CHANNELS_LABEL": "Текстовые каналы для приветствия",
-      "GREETING_AI_BADGE": "ИИ-агент: {name}",
+      "GREETING_AI_BADGE": "AI",
       "GREETING_AI_SKIP_HINT": "Если на канале активен ИИ-агент, статическое приветствие автоматически пропускается, чтобы бот не здоровался дважды.",
       "GREETING_SAVE": "Сохранить приветствие",
       "GREETING_UPDATE_SUCCESS": "Настройки приветствия сохранены.",

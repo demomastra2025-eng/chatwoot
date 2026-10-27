@@ -21,12 +21,11 @@ class Captain::Runtime::RoutingSnapshot
   Agent = Struct.new(:id, :label, :card, keyword_init: true)
 
   attr_reader :clinic, :patient_language, :current_agent_id, :agents, :recent_messages, :latest_message, :open_questions,
-              :visited_agent_ids, :trail, :human_available, :source, :anchor_agent_id
+              :visited_agent_ids, :trail, :human_available, :source
 
   # agents: [Agent] (required); latest_message (required); clinic, patient_language, current_agent_id, recent_messages,
   # open_questions, visited_agent_ids, trail (the last routing decisions, oldest first: { 'kind', 'from', 'to' => [ids] }),
-  # human_available, source. suggestion: the turn of a reply suggestion; anchor_agent_id: the anchor of its channel, which answers
-  # a suggestion whose answers name no agent while no agent leads the dialog (see DecisionRouter::Questions).
+  # human_available, source. suggestion: the turn of a reply suggestion.
   def initialize(**attributes)
     @agents = Array(attributes.fetch(:agents))
     @latest_message = attributes.fetch(:latest_message).to_s.strip.first(LATEST_LIMIT)
@@ -105,7 +104,6 @@ class Captain::Runtime::RoutingSnapshot
 
   def assign_conversation(attributes)
     @current_agent_id = candidate_id(attributes[:current_agent_id])
-    @anchor_agent_id = candidate_id(attributes[:anchor_agent_id]) if @suggestion
     @recent_messages = Array(attributes[:recent_messages]).last(MAX_RECENT_MESSAGES)
     @open_questions = Array(attributes[:open_questions]).select { |question| agent_ids.include?(question[:agent_id]) }.last(MAX_OPEN_QUESTIONS)
     @visited_agent_ids = Array(attributes[:visited_agent_ids]).select { |id| agent_ids.include?(id) }.last(MAX_VISITED)
@@ -128,8 +126,7 @@ class Captain::Runtime::RoutingSnapshot
       end
     end
 
-    # context: the prepared run context (see Captain::AgentRunContext#prepare). options: clinic, patient_language, human_available,
-    # anchor_agent_id (a reply suggestion).
+    # context: the prepared run context (see Captain::AgentRunContext#prepare). options: clinic, patient_language, human_available.
     def from_context(context, candidates:, **)
       earlier, unanswered = split_history(context[:conversation_history])
       source = context.dig(:state, :source).to_s.presence || 'live'
@@ -148,7 +145,7 @@ class Captain::Runtime::RoutingSnapshot
 
     # scenario: one scenario of the router scenarios (current, history, message, language, open_questions, trail, human_available).
     # A reply suggestion scenario has sticky (the sticky agent of the dialog, the current agent of the turn; the saved session has
-    # none) or suggestion: true, and anchor (the anchor of the channel).
+    # none) or suggestion: true.
     def from_fixture(candidates:, scenario:, clinic: nil)
       scenario = scenario.to_h.with_indifferent_access
       messages = Array(scenario[:history]).map { |entry| fixture_message(entry.to_h.with_indifferent_access) }
@@ -157,7 +154,7 @@ class Captain::Runtime::RoutingSnapshot
           latest_message: scenario[:message].to_s, open_questions: Array(scenario[:open_questions]).map(&:symbolize_keys),
           visited_agent_ids: messages.filter_map { |message| message[:agent_id] }.reverse.uniq.reverse, trail: Array(scenario[:trail]),
           human_available: scenario.fetch(:human_available, true) != false, source: 'benchmark',
-          suggestion: scenario.key?(:sticky) || scenario[:suggestion] == true, anchor_agent_id: scenario[:anchor])
+          suggestion: scenario.key?(:sticky) || scenario[:suggestion] == true)
     end
 
     def public_message?(message)

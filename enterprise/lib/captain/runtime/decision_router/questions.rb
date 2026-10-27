@@ -164,19 +164,22 @@ class Captain::Runtime::DecisionRouter::Questions
   # No agent has an include probability of YES_PROBABILITY or more (also when there is no agent to ask).
   def nobody_plausible?(yes) = yes.values.none? { |probability| probability >= YES_PROBABILITY }
 
-  # Nothing to answer in substance (a turn, never a council part). The current agent, when one leads the dialog, keeps it: a live
-  # turn runs it for a short courtesy reply or nothing, with no action; a reply suggestion runs no agent. A wrong no_reply silences
-  # a request, so it is taken only when nothing says otherwise: an include answer yes for an agent other than the current one is a
-  # route to the most probable such agent («Спасибо! А УЗИ почек сколько стоит?»), and a message that is no bare thanks, or that
-  # answers a clinic question («Записать вас на 14:00?» - «Ок»), stays with the current agent (with none, the most probable agent).
+  # Nothing to answer in substance (a turn, never a council part). The current agent keeps it: a live turn runs it for a short
+  # courtesy reply or nothing, with no action; a reply suggestion runs no agent. A wrong no_reply silences a request, so it is taken
+  # only when nothing says otherwise: an include answer yes for an agent other than the current one is a route to the most probable
+  # such agent («Спасибо! А УЗИ почек сколько стоит?»), and a message that is no bare thanks, that answers a clinic question
+  # («Записать вас на 14:00?» - «Ок»), or that comes when no agent leads the dialog, stays with the current agent (with none, the most
+  # probable agent).
   def no_reply_outcome(yes)
     return unless @mode == :full
 
     other = top_agent(yes, except: current_id)
     return agent_outcome(other) if other && yes[other] >= YES_PROBABILITY
-    return stay_outcome(yes) unless courtesy_only?
+    # No agent leads the dialog (a new one, or its agent was switched off): nobody is there to hold back a reply, so the most probable
+    # agent takes the message. There is no default agent that would stand in for a missing one.
+    return stay_outcome(yes) unless courtesy_only? && current_id
 
-    Outcome.new(kind: 'no_reply', agent_ids: [current_id].compact, key: NO_REPLY)
+    Outcome.new(kind: 'no_reply', agent_ids: [current_id], key: NO_REPLY)
   end
 
   # A bare thanks, ok, goodbye or emoji in a dialog: no question mark or digit, NO_REPLY_MAX_WORDS words at most, and the last
@@ -225,11 +228,11 @@ class Captain::Runtime::DecisionRouter::Questions
     (agent_ids - [except]).min_by { |id| [-yes[id], id] }
   end
 
-  # The agent with the highest include probability; on a tie the agent that leads the dialog, then the anchor of the channel (a reply
-  # suggestion), then the lower id. Only plausible agents are asked for (a human_handoff of the model with no include of 0.5 or more is
-  # staff, see #human_outcome), so a tie is a model that is as sure of several agents.
+  # The agent with the highest include probability; on a tie the agent that leads the dialog, then the lower id. Only plausible agents
+  # are asked for (a human_handoff of the model with no include of 0.5 or more is staff, see #human_outcome), so a tie is a model that
+  # is as sure of several agents.
   def likeliest_agent(yes)
-    agent_ids.min_by { |id| [-yes[id], id == current_id ? 0 : 1, id == @snapshot.anchor_agent_id ? 0 : 1, id] }
+    agent_ids.min_by { |id| [-yes[id], id == current_id ? 0 : 1, id] }
   end
 
   # The key of route_mode with the highest probability: the chosen key on a tie or when the model gave no probabilities.

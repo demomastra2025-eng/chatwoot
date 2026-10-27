@@ -7,16 +7,17 @@ import MessageList from './MessageList.vue';
 import ModelSettings from './ModelSettings.vue';
 import { resolveModelIcon } from 'dashboard/components-next/captain/agent/agentDraft';
 import PlaygroundScenarioEditor from './PlaygroundScenarioEditor.vue';
-import CaptainAssistant from 'dashboard/api/captain/assistant';
+import CaptainPlayground from 'dashboard/api/captain/playground';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 
+// The Playground tries out the whole AI of the workspace: it has no start
+// agent. The AI picks the agent that answers each message among the enabled
+// agents, and the model controls apply to whichever agent answers.
 const props = defineProps({
-  assistantId: { type: Number, required: true },
   accountId: { type: [String, Number], default: '' },
 });
 const { t } = useI18n();
 const configStore = useCaptainConfigStore();
-const assistant = ref(null);
 const session = ref(null);
 const agentTasks = ref([]);
 const messages = ref([]);
@@ -42,11 +43,7 @@ let pendingTurn = null;
 
 const models = computed(() => configStore.getModelsForFeature('assistant'));
 const profileModel = computed(
-  () =>
-    assistant.value?.playground_model?.id ||
-    assistant.value?.config?.model ||
-    configStore.getSelectedModelForFeature('assistant') ||
-    ''
+  () => configStore.getSelectedModelForFeature('assistant') || ''
 );
 const effectiveModel = computed(
   () => selectedModel.value || profileModel.value
@@ -58,11 +55,7 @@ const selectedModelValue = computed({
   },
 });
 const metadata = computed(
-  () =>
-    models.value.find(model => model.id === effectiveModel.value) ||
-    (assistant.value?.playground_model?.id === effectiveModel.value
-      ? assistant.value.playground_model
-      : {})
+  () => models.value.find(model => model.id === effectiveModel.value) || {}
 );
 const modelOptions = computed(() => {
   const options = models.value
@@ -93,9 +86,7 @@ const messageDisabled = computed(
     isUpdatingPermissions.value ||
     permissionsUnresolved.value ||
     Boolean(configStore.uiFlags?.fetchError) ||
-    !session.value ||
-    !assistant.value ||
-    assistant.value?.usage_mode === 'internal_assistant'
+    !session.value
 );
 const previews = computed(() =>
   realRead.value && realWrite.value ? session.value?.action_previews || [] : []
@@ -171,11 +162,7 @@ const failedActionText = result => {
     : t('CAPTAIN.PLAYGROUND.ACTION_FAILED');
 };
 const displayAgentName = record =>
-  record.agent_display_name ||
-  (Number(record.agent_id) === Number(assistant.value?.id)
-    ? assistant.value?.name
-    : '') ||
-  record.agent_name;
+  record.agent_display_name || record.agent_name;
 const acceptSession = (payload, { restoreHistory = false } = {}) => {
   if (!payload || payload.mode !== 'workspace') return;
   session.value = { ...session.value, ...payload };
@@ -210,8 +197,7 @@ const loadSession = async ({
   isLoadingSession.value = true;
   error.value = '';
   try {
-    const { data } = await CaptainAssistant.playgroundSession({
-      assistantId: props.assistantId,
+    const { data } = await CaptainPlayground.session({
       sessionId: session.value?.session_id,
       reset,
       scenario,
@@ -246,8 +232,7 @@ const setPermissions = async (read, write = false) => {
   isUpdatingPermissions.value = true;
   error.value = '';
   try {
-    const { data } = await CaptainAssistant.playgroundPermissions({
-      assistantId: props.assistantId,
+    const { data } = await CaptainPlayground.permissions({
       sessionId: session.value.session_id,
       read: realRead.value,
       write: realWrite.value,
@@ -303,8 +288,7 @@ const sendMessage = async () => {
   newMessage.value = '';
   isLoading.value = true;
   error.value = '';
-  const flight = CaptainAssistant.playground({
-    assistantId: props.assistantId,
+  const flight = CaptainPlayground.message({
     sessionId: session.value.session_id,
     messageContent: content,
     testOptions: {
@@ -393,8 +377,7 @@ const confirmAction = async approval => {
   const request = turnSequence;
   isLoading.value = true;
   error.value = '';
-  const flight = CaptainAssistant.confirmPlaygroundAction({
-    assistantId: props.assistantId,
+  const flight = CaptainPlayground.confirmAction({
     sessionId: session.value.session_id,
     approval,
   });
@@ -436,14 +419,13 @@ const enter = event => {
   sendMessage();
 };
 watch(
-  () => [String(props.accountId), props.assistantId],
+  () => String(props.accountId),
   async () => {
     identity += 1;
     const current = identity;
     turnSequence += 1;
     sessionSequence += 1;
     permissionEpoch += 1;
-    assistant.value = null;
     session.value = null;
     agentTasks.value = [];
     messages.value = [];
@@ -460,32 +442,10 @@ watch(
     isLoadingSettings.value = false;
     isUpdatingPermissions.value = false;
     permissionsUnresolved.value = false;
-    if (!props.assistantId) return;
     isLoadingSettings.value = true;
     const sessionPromise = loadSession({ restoreHistory: true });
     try {
-      const showPromise = CaptainAssistant.show(props.assistantId).then(
-        response => {
-          if (current === identity) {
-            assistant.value = response.data;
-            if (messages.value.length && assistant.value?.name) {
-              messages.value = messages.value.map(item => ({
-                ...item,
-                agentName: displayAgentName({
-                  agent_id: item.agentId,
-                  agent_display_name: item.agentDisplayName,
-                  agent_name: item.rawAgentName ?? item.agentName,
-                }),
-              }));
-            }
-          }
-          return response;
-        }
-      );
-      await Promise.all([
-        configStore.fetch({ clientMetadataOnly: true }),
-        showPromise,
-      ]);
+      await configStore.fetch({ clientMetadataOnly: true });
       if (current !== identity) return;
       if (configStore.uiFlags.fetchError) throw new Error('metadata');
       isLoadingSettings.value = false;

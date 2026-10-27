@@ -1,6 +1,4 @@
 class Captain::OpenAiMessageBuilderService
-  attr_writer :assistant
-
   META_AD_REFERRAL_CONTEXT_FIELDS = [
     ['channel', [:provider]],
     ['attribution', %i[attribution_type attributionType]],
@@ -28,9 +26,8 @@ class Captain::OpenAiMessageBuilderService
   # is then described from that map, never by a call made here. Without it the description kept on the attachment is used, and an
   # image that has none yet is described once now (Captain::ImageRecognitionService); the history budget limits how many images a
   # run may describe by a new call, and a description that already exists costs nothing.
-  def initialize(message:, assistant: nil, budget: nil, image_descriptions: nil)
+  def initialize(message:, budget: nil, image_descriptions: nil)
     @message = message
-    @assistant = assistant
     @budget = budget
     @image_descriptions = image_descriptions
   end
@@ -226,7 +223,7 @@ class Captain::OpenAiMessageBuilderService
 
   def extract_audio_transcriptions(attachments)
     return '' unless @message.account.audio_transcriptions_enabled?
-    return '' if @assistant.present? && !@assistant.use_audio_transcriptions?
+    return '' unless understanding_settings['voice_messages']
 
     # Keep the customer's order: several voice notes must read in the order they were sent.
     audio_attachments = attachments.where(file_type: :audio).order(:id)
@@ -238,7 +235,7 @@ class Captain::OpenAiMessageBuilderService
   end
 
   def extract_document_texts(attachments)
-    return '' unless Messages::DocumentParsingService.reading_enabled_for?(@assistant, account: @message.account)
+    return '' unless Messages::DocumentParsingService.enabled_for_account?(@message.account)
 
     file_attachments(attachments).filter_map do |attachment|
       document_text = Messages::DocumentParsingService.extracted_text(attachment)
@@ -252,7 +249,7 @@ class Captain::OpenAiMessageBuilderService
   end
 
   def unparsed_attachment_summary(attachments)
-    document_parse_enabled = Messages::DocumentParsingService.reading_enabled_for?(@assistant, account: @message.account)
+    document_parse_enabled = Messages::DocumentParsingService.enabled_for_account?(@message.account)
     unparsed_attachments = attachments.where.not(file_type: %i[image audio]).reject do |attachment|
       document_parse_enabled && attachment.file_type == 'file' && Messages::DocumentParsingService.extracted_text(attachment).present?
     end
@@ -265,9 +262,12 @@ class Captain::OpenAiMessageBuilderService
   end
 
   def image_understanding_enabled?
-    return true if @assistant.blank?
+    understanding_settings['images']
+  end
 
-    @assistant.account_settings.section('understanding')['images']
+  # What the AI may read of a message is a workspace setting (Captain::AccountSettings), the same for every agent.
+  def understanding_settings
+    @understanding_settings ||= Captain::AccountSettings.new(@message.account).section('understanding')
   end
 
   def file_attachments(attachments)

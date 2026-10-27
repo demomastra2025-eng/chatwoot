@@ -57,13 +57,15 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   retry_on ActiveStorage::FileNotFoundError, attempts: 3, wait: 2.seconds
   retry_on Faraday::BadRequestError, attempts: 3, wait: 2.seconds
 
-  def perform(conversation, assistant, buffer_token: nil, expected_last_message_id: nil, expected_control_generation: nil)
-    initialize_response_context(conversation, assistant, buffer_token, expected_last_message_id, expected_control_generation)
+  # The job belongs to the channel of the conversation, not to an agent: the router picks the agent that answers. The agent argument
+  # of a job that an earlier release queued is accepted and ignored.
+  def perform(conversation, _legacy_assistant = nil, buffer_token: nil, expected_last_message_id: nil, expected_control_generation: nil)
+    initialize_response_context(conversation, buffer_token, expected_last_message_id, expected_control_generation)
 
     ensure_response_fence_current!(stage: 'job_start')
     return unless current_buffer_state_valid? && conversation_allows_captain_response?
 
-    Current.executed_by = @assistant
+    Current.executed_by = input_assistant
 
     return process_cancelled_response if response_cancelled?
 
@@ -86,10 +88,13 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   delegate :account, :inbox, to: :@conversation
 
-  def initialize_response_context(conversation, assistant, buffer_token, expected_last_message_id, expected_control_generation)
+  # The agent that held the conversation when the job started, nil when nobody did.
+  attr_reader :input_assistant
+
+  def initialize_response_context(conversation, buffer_token, expected_last_message_id, expected_control_generation)
     @conversation = conversation
     @inbox = conversation.inbox
-    @assistant = assistant
+    @scope = Captain::ChannelScope.for_conversation(conversation)
     @input_assistant = current_input_assistant
     @buffer_token = buffer_token
     @expected_last_message_id = expected_last_message_id || conversation.messages.incoming.last&.id
@@ -103,7 +108,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
     callbacks, tool_trace_steps = build_tool_trace_callbacks
     @response = Captain::Assistant::AgentRunnerService.new(
-      assistant: @assistant,
+      scope: @scope,
       conversation: @conversation,
       incoming_message_id: @expected_last_message_id,
       callbacks: callbacks,
@@ -117,23 +122,25 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     process_response
   end
 
-  def input_assistant
-    @input_assistant || @assistant
-  end
-
+  # The agent the reply is sent as: the one that produced it, else the one that holds the conversation. nil: no agent produced it and
+  # nobody holds the conversation, so it is sent as the AI itself (no sender, no agent id).
   def response_assistant
     @response_assistant || input_assistant
   end
 
   def current_input_assistant
-    ownership = Captain::Conversation::AgentOwnership.new(conversation: @conversation, assistant: @assistant)
-    Captain::AgentGraph.new(@assistant, inbox: @conversation.inbox).find(ownership.current_actor_id) || @assistant
+    Captain::Conversation::AgentOwnership.new(conversation: @conversation).current_assistant
+  end
+
+  def channel_graph
+    Captain::AgentGraph.new(Captain::ChannelScope.for_conversation(@conversation))
   end
 
   def resolve_response_assistant!
-    ownership = Captain::Conversation::AgentOwnership.new(conversation: @conversation, assistant: @assistant)
-    actor_id = @response['agent_id'].presence || ownership.current_actor_id || input_assistant.id
-    @response_assistant = Captain::AgentGraph.new(@assistant.reload, inbox: @conversation.inbox).find(actor_id)
+    actor_id = @response['agent_id'].presence || Captain::Conversation::AgentOwnership.new(conversation: @conversation).current_actor_id
+    return if actor_id.blank?
+
+    @response_assistant = channel_graph.find(actor_id)
     return if @response_assistant
 
     raise Captain::Conversation::ControlGenerationStaleError, 'Captain response agent is no longer reachable'
@@ -142,9 +149,16 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def ensure_response_actor_current!
     response_assistant.reload
     ownership = Captain::Conversation::AgentOwnership.new(conversation: @conversation, assistant: response_assistant)
-    return if ownership.current?(expected_entry_id: @assistant.id)
+    return if ownership.current?
 
     raise Captain::Conversation::ControlGenerationStaleError, 'Captain response agent no longer owns this conversation'
+  end
+
+  # The AI may hand the conversation to staff when the agent that acts may (its handoff tool is on); when no agent acts, when any
+  # agent of the channel may.
+  def handoff_tool_allowed?
+    agents = response_assistant ? [response_assistant] : channel_graph.candidates
+    agents.any? { |agent| agent.handoff_enabled? && agent.selected_agent_tool_ids.include?('handoff') }
   end
 
   def process_response
@@ -192,7 +206,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       feature: 'assistant',
       runtime_mode: 'captain_runtime',
       account_id: account.id,
-      assistant_id: response_assistant.id,
+      assistant_id: response_assistant&.id,
       conversation_id: @conversation.id,
       communication_thread_id: @conversation.communication_thread&.id,
       job_id: job_id
@@ -255,7 +269,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def council_handoff_allowed?
-    response_assistant.handoff_enabled? && response_assistant.selected_agent_tool_ids.include?('handoff')
+    handoff_tool_allowed?
   end
 
   # The staff-facing reason: what was left unanswered (the parts, else the reason the planning agent gave when it asked for staff),
@@ -326,8 +340,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       assistant: response_assistant,
       state: {
         account_id: account.id,
-        assistant_id: response_assistant.id,
-        entry_assistant_id: @assistant.id,
+        assistant_id: response_assistant&.id,
         conversation: { id: @conversation.id },
         captain_response_fence: response_fence,
         captain_resolved_by_tool: v2_resolve_tool_fired?
@@ -401,7 +414,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def history_message_limit
-    input_assistant.history_message_limit_value
+    Captain::Assistant::HISTORY_MESSAGE_LIMIT
   end
 
   def determine_role(message)
@@ -409,7 +422,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def prepare_multimodal_message_content(message, previous_assistant_message: nil, budget: nil)
-    message_builder = Captain::OpenAiMessageBuilderService.new(message: message, assistant: input_assistant, budget: budget)
+    message_builder = Captain::OpenAiMessageBuilderService.new(message: message, budget: budget)
     content = message_builder.generate_content
     return content unless receipt_image_after_request?(message, previous_assistant_message)
 
@@ -436,7 +449,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def wait_for_audio_transcriptions
     return unless account.audio_transcriptions_enabled?
-    return unless input_assistant.use_audio_transcriptions?
+    return unless Captain::AccountSettings.new(account).section('understanding')['voice_messages']
     return unless pending_audio_transcription?
 
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + AUDIO_TRANSCRIPTION_WAIT_TIMEOUT.to_f
@@ -457,7 +470,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def wait_for_document_parsing
-    return unless Messages::DocumentParsingService.reading_enabled_for?(input_assistant)
+    return unless Messages::DocumentParsingService.enabled_for_account?(account)
     return unless pending_document_parsing?
 
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + DOCUMENT_PARSE_WAIT_TIMEOUT.to_f
@@ -493,7 +506,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   # A handoff the agent asked for with its handoff tool, or the router's decision that the patient asked for a live staff member
   # (routing_handoff): both need an agent that may hand conversations to staff.
   def authorized_v2_handoff_requested?
-    response_assistant.handoff_enabled? && response_assistant.selected_agent_tool_ids.include?('handoff') &&
+    handoff_tool_allowed? &&
       ActiveModel::Type::Boolean.new.cast(@response['handoff_authorized']) &&
       (v2_handoff_tool_fired? || routing_handoff?) && @response['response'] == 'conversation_handoff'
   end
@@ -517,7 +530,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def manager_cancelled_response?
-    return false unless @conversation.present? && @assistant.present?
+    return false if @conversation.blank?
 
     response_cancellation_service.cancelled?(
       buffer_token: @buffer_token,
@@ -540,10 +553,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def response_cancellation_service
-    @response_cancellation_service ||= Captain::Conversation::ResponseCancellationService.new(
-      conversation: @conversation,
-      assistant: @assistant
-    )
+    @response_cancellation_service ||= Captain::Conversation::ResponseCancellationService.new(conversation: @conversation)
   end
 
   def handoff_action_name
@@ -586,7 +596,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def create_failed_turn_notifications
-    I18n.with_locale(response_assistant.account.locale) do
+    I18n.with_locale(account.locale) do
       create_provider_error_private_note
       handoff_notice_service.perform
     end
@@ -599,7 +609,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def handoff_notice_service
-    @handoff_notice_service ||= Captain::SystemHandoffMessageService.new(conversation: @conversation, assistant: response_assistant)
+    @handoff_notice_service ||= Captain::SystemHandoffMessageService.new(conversation: @conversation, agent: response_assistant)
   end
 
   # A turn the safety policy blocked, or could not check, has no reply to send.
@@ -654,7 +664,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def record_staff_handoff
     Llm::EventBus.publish('captain.agent.staff_handoff',
-                          account_id: account.id, assistant_id: response_assistant.id, conversation_id: @conversation.id,
+                          account_id: account.id, assistant_id: response_assistant&.id, conversation_id: @conversation.id,
                           request_id: @response['captain_request_id'], run_source: 'live', feature: 'assistant')
   end
 
@@ -674,7 +684,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def create_council_handoff_notifications
-    I18n.with_locale(response_assistant.account.locale) do
+    I18n.with_locale(account.locale) do
       create_private_note(council_handoff_note_content)
       handoff_notice_service.perform
     end
@@ -691,7 +701,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def create_handoff_notifications
-    I18n.with_locale(response_assistant.account.locale) do
+    I18n.with_locale(account.locale) do
       create_handoff_private_note
       handoff_notice_service.perform
     end
@@ -738,7 +748,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def outcome_reason_config
-    @outcome_reason_config ||= Captain::OutcomeReasonConfig.new(response_assistant)
+    @outcome_reason_config ||= Captain::OutcomeReasonConfig.new(response_assistant, account: account)
   end
 
   def handoff_transition_audit
@@ -759,6 +769,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def schedule_first_follow_up(outgoing_message)
     return if @conversation.resolved?
     return schedule_council_follow_ups(outgoing_message) if @response['council_contributors'].present?
+    return if response_assistant.blank?
 
     settings = response_assistant.config.to_h.deep_stringify_keys.fetch('follow_up_settings', {}).to_h
     first_step = Array(settings['steps']).first.to_h.deep_stringify_keys
@@ -777,12 +788,12 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def schedule_council_follow_ups(outgoing_message)
     return unless account.feature_enabled?('captain_integration')
 
-    session = Captain::Conversation::AgentSession.new(entry: @assistant, conversation: @conversation).read
+    session = Captain::Conversation::AgentSession.new(conversation: @conversation).read
     Array(@response['part_refs']).each do |ref|
       part = Array(session['parts']).find { |item| item['id'] == ref['id'] && item['version'].to_i == ref['version'].to_i }
       next unless part && part['state'].in?(%w[answered waiting_customer done])
 
-      actor = Captain::AgentGraph.new(@assistant, inbox: inbox).find(part['executor_agent_id'])
+      actor = channel_graph.find(part['executor_agent_id'])
       next unless actor
 
       settings = actor.config.to_h.deep_stringify_keys.fetch('follow_up_settings', {}).to_h
@@ -859,9 +870,19 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     FAILED_TURN_HANDOFF_NOTE
   end
 
+  def missing_routing_cards?
+    @response&.dig('technical_failure', 'reason') == 'no_routing_cards'
+  end
+
+  def missing_routing_cards_notice
+    I18n.with_locale(account.locale) { I18n.t('captain.reply_suggestion.errors.no_routing_cards') }
+  end
+
   # A tool of the agent failed technically and the customer got no reply: the note says which tool and what kind of failure, and
   # which actions had already been performed, so that staff know the state of the request. Names and codes only.
   def technical_failure_note
+    return missing_routing_cards_notice if missing_routing_cards?
+
     failure = @response['technical_failure'].to_h
     note = "Automatic reply was stopped by a technical error (#{technical_failure_label(failure)}). Handoff to human agent was triggered."
     completed = Array(failure['completed']).map { |name| name.to_s.first(80) }.uniq
@@ -885,7 +906,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     refs = Array(@response['part_refs'])
     return if refs.empty?
 
-    session = Captain::Conversation::AgentSession.new(entry: @assistant, conversation: @conversation)
+    session = Captain::Conversation::AgentSession.new(conversation: @conversation)
     session.change do |data|
       refs.each do |ref|
         part = Array(data['parts']).find { |item| item['id'] == ref['id'] && item['version'].to_i == ref['version'].to_i }
@@ -929,10 +950,15 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def additional_message_attributes(agent_name:, include_trace:, captain_reply: false)
     {}.tap do |attributes|
       add_agent_name_attributes(attributes, agent_name)
-      attributes[:captain_ai_reply] = { assistant_id: response_assistant.id } if captain_reply
+      attributes[:captain_ai_reply] = captain_ai_reply_marker if captain_reply
       attributes[:captain_part_refs] = @response['part_refs'] if captain_reply && @response&.dig('part_refs').present?
       attributes[:captain_trace] = @response['captain_trace'] if include_trace && @response&.dig('captain_trace').present?
     end
+  end
+
+  # Names the agent that wrote the reply; a reply no agent wrote (nobody holds the conversation) is the AI's own and names none.
+  def captain_ai_reply_marker
+    { assistant_id: response_assistant&.id }.compact
   end
 
   def add_agent_name_attributes(attributes, agent_name)
@@ -981,7 +1007,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     @artifact_resolution_error ||= error
     Rails.logger.warn(
       "[CAPTAIN][ARTIFACT] Skipping unavailable response artifact: #{error.class} #{error.message} " \
-      "conversation_id=#{@conversation.id} assistant_id=#{@assistant.id} account_id=#{account.id}"
+      "conversation_id=#{@conversation.id} assistant_id=#{response_assistant&.id} account_id=#{account.id}"
     )
   end
 
@@ -1012,7 +1038,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
     Rails.logger.info(
       '[CAPTAIN][DOCUMENT_ARTIFACT] Auto-attaching the only listed sendable document ' \
-      "conversation_id=#{@conversation.id} assistant_id=#{@assistant.id} account_id=#{account.id}"
+      "conversation_id=#{@conversation.id} assistant_id=#{response_assistant&.id} account_id=#{account.id}"
     )
     artifact_ids
   end
@@ -1114,13 +1140,12 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return explicit_agent_name if explicit_agent_name.present?
     return unless message.sender_type == 'Captain::Assistant'
 
-    inferred_agent_name_from_trace(message.additional_attributes&.dig('captain_trace')) ||
-      ("assistant_#{message.sender_id}" if message.sender_id != @assistant.id)
+    inferred_agent_name_from_trace(message.additional_attributes&.dig('captain_trace')) || "assistant_#{message.sender_id}"
   end
 
   def display_agent_name_for(agent_name)
-    Captain::AgentGraph.new(@assistant, inbox: @conversation.inbox).resolve(agent_name)&.name ||
-      @assistant.scenarios.find { |scenario| scenario.handoff_key == agent_name }&.title
+    channel_graph.resolve(agent_name)&.name ||
+      response_assistant&.scenarios&.find { |scenario| scenario.handoff_key == agent_name }&.title
   end
 
   def inferred_agent_name_from_trace(trace_payload)
@@ -1247,23 +1272,17 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def maintain_typing_indicator
-    return unless @conversation.present? && @assistant.present?
+    return if @conversation.blank?
     return clear_typing_indicator if response_cancelled?
 
-    Captain::Conversation::TypingIndicatorService.turn_on(
-      conversation: @conversation,
-      assistant: @assistant
-    )
+    Captain::Conversation::TypingIndicatorService.turn_on(conversation: @conversation)
     @typing_indicator_active = true
   end
 
   def clear_typing_indicator
     return unless @typing_indicator_active
 
-    Captain::Conversation::TypingIndicatorService.turn_off(
-      conversation: @conversation,
-      assistant: @assistant
-    )
+    Captain::Conversation::TypingIndicatorService.turn_off(conversation: @conversation)
     @typing_indicator_active = false
   end
 
@@ -1384,9 +1403,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def conversation_eligible_for_response?
     return false unless conversation_allows_captain_response? || v2_handoff_tool_fired? || conversation_resolved_by_tool?
-    return false unless @conversation.inbox.captain_active?
 
-    @conversation.inbox.captain_assistant&.id == @assistant.id
+    @conversation.inbox.captain_active?
   end
 
   def control_generation_current?

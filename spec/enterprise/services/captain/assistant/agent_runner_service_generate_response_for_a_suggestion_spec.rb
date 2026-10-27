@@ -5,12 +5,15 @@ require 'rails_helper'
 # What a reply suggestion needs to be right on a Monday morning: the operator answers the patients of the weekend, so the agent must
 # read a Saturday "tomorrow" from Saturday, and a loop of tool calls must still end with a draft and its approval cards.
 RSpec.describe Captain::Assistant::AgentRunnerService, '#generate_response for a suggestion' do
-  let(:service) { described_class.new(assistant: assistant, conversation: conversation, source: 'reply_suggestion', request_id: SecureRandom.uuid) }
+  let(:service) do
+    described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation, source: 'reply_suggestion',
+                        request_id: SecureRandom.uuid)
+  end
 
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account, timezone: 'Asia/Almaty') }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: create(:contact, account: account)) }
-  let(:assistant) { create(:captain_assistant, account: account) }
+  let!(:assistant) { create(:captain_assistant, account: account) }
   let(:almaty) { Time.find_zone('Asia/Almaty') }
   let(:mock_runner) { instance_double(Captain::Runtime::AgentRunner) }
   let(:runs) { [] }

@@ -12,7 +12,7 @@ const { storeDispatch, inboxesState } = vi.hoisted(() => ({
         channel_type: 'Channel::Whatsapp',
         greeting_enabled: true,
         greeting_message: 'Здравствуйте!',
-        captain_assistant: { name: 'Алия ИИ' },
+        captain_ai_enabled: true,
       },
       {
         id: 2,
@@ -33,7 +33,9 @@ const { storeDispatch, inboxesState } = vi.hoisted(() => ({
 }));
 
 vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: (key, params) => (params?.name ? `${key}:${params.name}` : key) }),
+  useI18n: () => ({
+    t: (key, params) => (params?.name ? `${key}:${params.name}` : key),
+  }),
 }));
 
 vi.mock('dashboard/composables', () => ({
@@ -68,7 +70,10 @@ describe('WorkspaceGreetingSettings', () => {
     expect(wrapper.text()).toContain('WhatsApp Clinic');
     expect(wrapper.text()).toContain('Instagram Clinic');
     expect(wrapper.text()).not.toContain('Sipuni Voice');
-    expect(wrapper.text()).toContain('Алия ИИ');
+    expect(wrapper.text()).toContain(
+      'GENERAL_SETTINGS.CONVERSATIONS.GREETING_AI_BADGE'
+    );
+    expect(wrapper.text()).not.toContain('Алия');
   });
 
   it('updates text channels and disables greeting on voice channels when saved', async () => {
@@ -86,8 +91,12 @@ describe('WorkspaceGreetingSettings', () => {
       },
     });
 
-    await wrapper.find('[data-test="workspace-greeting-message"]').setValue('Добрый день!');
-    await wrapper.find('[data-test="workspace-greeting-save"]').trigger('click');
+    await wrapper
+      .find('[data-test="workspace-greeting-message"]')
+      .setValue('Добрый день!');
+    await wrapper
+      .find('[data-test="workspace-greeting-save"]')
+      .trigger('click');
     await flushPromises();
 
     expect(storeDispatch).toHaveBeenCalledWith('inboxes/updateInbox', {

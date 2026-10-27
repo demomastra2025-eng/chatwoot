@@ -3,8 +3,6 @@ module Enterprise::Concerns::Account
 
   included do
     store_accessor :settings, :conversation_required_attributes
-    store_accessor :settings, :captain_default_assistant_id
-    validate :captain_default_assistant_is_eligible
 
     has_many :sla_policies, dependent: :destroy_async
     has_many :applied_slas, dependent: :destroy_async
@@ -32,14 +30,6 @@ module Enterprise::Concerns::Account
     has_many :telephony_events, dependent: :destroy_async, class_name: '::Telephony::Event'
     has_many :voice_channels, dependent: :destroy_async, class_name: '::Channel::Voice'
     has_many :calls, dependent: :destroy_async
-  end
-
-  def captain_default_assistant_is_eligible
-    value = captain_default_assistant_id
-    return if value.blank?
-
-    valid_id = value.to_s.match?(/\A[1-9]\d*\z/) && captain_assistants.entry_eligible.exists?(id: value.to_i)
-    errors.add(:captain_default_assistant_id, I18n.t('captain.channel_matrix.invalid_default')) unless valid_id
   end
 
   def captain_ai_enabled?

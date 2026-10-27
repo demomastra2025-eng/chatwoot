@@ -2,9 +2,9 @@ require 'rails_helper'
 
 RSpec.describe Captain::Conversation::RunFenceService do
   let(:account) { create(:account) }
-  let(:assistant) { create(:captain_assistant, account: account) }
+  let!(:assistant) { create(:captain_assistant, account: account) }
   let(:inbox) { create(:inbox, account: account) }
-  let(:captain_inbox) { create(:captain_inbox, inbox: inbox, captain_assistant: assistant, reply_to_open_conversations: false) }
+  let(:captain_inbox) { create(:captain_inbox, inbox: inbox, reply_to_open_conversations: false) }
   let(:conversation) do
     captain_inbox
     create(:conversation, account: account, inbox: inbox, status: :pending)
@@ -48,11 +48,11 @@ RSpec.describe Captain::Conversation::RunFenceService do
     expect { described_class.new(assistant: assistant, state: state).ensure_current! }.not_to raise_error
   end
 
-  it 'fences an entry disabled by another request after its state was already checked' do
+  it 'fences the acting agent switched off by another request after its state was already checked' do
     fence = described_class.new(assistant: assistant, state: state)
     Captain::Assistant.cache do
       fence.ensure_current!
-      Captain::Assistant.where(id: assistant.id).update_all(active: false)
+      Captain::Assistant.find(assistant.id).update!(active: false)
 
       expect(assistant).to be_active
       expect { fence.ensure_current! }
@@ -60,47 +60,90 @@ RSpec.describe Captain::Conversation::RunFenceService do
     end
   end
 
-  it 'fences a delegated actor after the entry is disabled by another request' do
+  it 'does not fence the run when another agent of the workspace is switched off' do
     peer = create(:captain_assistant, account: account)
-    assistant.update!(handoff_agent_ids: [peer.id])
-    current = state.deep_dup.merge(assistant_id: peer.id, entry_assistant_id: assistant.id)
-    fence = described_class.new(assistant: peer, state: current)
+    fence = described_class.new(assistant: assistant, state: state)
     fence.ensure_current!
-    Captain::Assistant.where(id: assistant.id).update_all(active: false)
+    peer.update!(active: false)
 
-    expect { fence.ensure_current! }
-      .to raise_error(Captain::Conversation::ControlGenerationStaleError, /assistant_changed/)
+    expect { fence.ensure_current! }.not_to raise_error
+  end
+
+  it 'does not fence the run when the agent that was once the default is switched off, if another agent acts' do
+    former_default = create(:captain_assistant, account: account)
+    fence = described_class.new(assistant: assistant, state: state)
+    fence.ensure_current!
+    Captain::Assistant.find(former_default.id).update!(active: false)
+
+    expect { fence.ensure_current! }.not_to raise_error
   end
 
   it 'fences a delegated actor disabled while its loaded model still says active' do
     peer = create(:captain_assistant, account: account)
-    assistant.update!(handoff_agent_ids: [peer.id])
-    current = state.deep_dup.merge(assistant_id: peer.id, entry_assistant_id: assistant.id)
+    current = state.deep_dup.merge(assistant_id: peer.id)
     fence = described_class.new(assistant: peer, state: current)
     fence.ensure_current!
-    Captain::Assistant.where(id: peer.id).update_all(active: false)
+    Captain::Assistant.find(peer.id).update!(active: false)
 
     expect(peer).to be_active
     expect { fence.ensure_current! }
       .to raise_error(Captain::Conversation::ControlGenerationStaleError, /assistant_missing/)
   end
 
-  it 'fences a removed route after an earlier successful check in the same run' do
+  it 'fences a run whose acting agent was taken out of the channel after an earlier successful check' do
     peer = create(:captain_assistant, account: account)
-    current = state.deep_dup.merge(assistant_id: peer.id, entry_assistant_id: assistant.id)
+    current = state.deep_dup.merge(assistant_id: peer.id)
     fence = described_class.new(assistant: peer, state: current)
     fence.ensure_current!
-    # Only active external agents are routes on a text channel.
+    # Only enabled external agents answer in a text channel.
     peer.update!(usage_mode: 'internal_assistant')
 
     expect { fence.ensure_current! }
-      .to raise_error(Captain::Conversation::ControlGenerationStaleError, /assistant_changed/)
+      .to raise_error(Captain::Conversation::ControlGenerationStaleError, /channel_changed/)
+  end
+
+  it 'fences the run when the channel is switched off' do
+    fence = described_class.new(assistant: assistant, state: state)
+    fence.ensure_current!
+    captain_inbox.update!(ai_enabled: false)
+
+    expect { fence.ensure_current! }
+      .to raise_error(Captain::Conversation::ControlGenerationStaleError, /channel_changed/)
+  end
+
+  it 'fences the run when the AI of the workspace is switched off' do
+    fence = described_class.new(assistant: assistant, state: state)
+    fence.ensure_current!
+    Captain::AccountSettings.new(account).update!('routing' => { 'ai_enabled' => false })
+
+    expect { fence.ensure_current! }
+      .to raise_error(Captain::Conversation::ControlGenerationStaleError, /channel_changed/)
+  end
+
+  it 'fences the run of an output no agent produced when the last agent is switched off' do
+    ai_state = state.except(:assistant_id)
+    fence = described_class.new(assistant: nil, state: ai_state)
+    fence.ensure_current!
+    Captain::Assistant.where(account_id: account.id).find_each { |agent| agent.update!(active: false) }
+
+    expect { fence.ensure_current! }
+      .to raise_error(Captain::Conversation::ControlGenerationStaleError, /channel_changed/)
+  end
+
+  it 'keeps the run of an output no agent produced while any agent is enabled' do
+    ai_state = state.except(:assistant_id)
+    other = create(:captain_assistant, account: account)
+    fence = described_class.new(assistant: nil, state: ai_state)
+    fence.ensure_current!
+    assistant.update!(active: false)
+
+    expect(other).to be_active
+    expect { fence.ensure_current! }.not_to raise_error
   end
 
   it 'fences an older actor after A to B to A even with the same incoming message' do
     current = state.deep_dup
-    current[:entry_assistant_id] = assistant.id
-    session = Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation)
+    session = Captain::Conversation::AgentSession.new(conversation: conversation)
     current[:captain_response_fence][:routing_revision] = session.update_routing(actor_id: assistant.id)
     expect { described_class.new(assistant: assistant, state: current).ensure_current! }.not_to raise_error
     peer = create(:captain_assistant, account: account)

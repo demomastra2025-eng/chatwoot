@@ -10,12 +10,7 @@ class Captain::Tools::Account::CancelResponseService < Captain::Tools::Account::
     conversation = current_conversation
     return tool_failure('Conversation not found') unless conversation
 
-    response_assistant = conversation.inbox.captain_assistant || assistant
-    Captain::Conversation::ResponseCancellationService.new(
-      conversation: conversation,
-      assistant: response_assistant,
-      actor: @user
-    ).perform(reason: reason)
+    Captain::Conversation::ResponseCancellationService.new(conversation: conversation, actor: @user).perform(reason: reason)
 
     formatted_payload(
       action: 'cancel_response',

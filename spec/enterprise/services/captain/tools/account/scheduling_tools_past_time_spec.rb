@@ -178,7 +178,7 @@ RSpec.describe 'Scheduling tools and times that have passed' do # rubocop:disabl
     it 'prepares no approval card in a reply suggestion' do
       assistant.update!(config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => %w[create_appointment] } } })
       run_context = Captain::Runtime::RunContext.new(
-        { state: { account_id: account.id, assistant_id: assistant.id, entry_assistant_id: assistant.id, source: 'reply_suggestion',
+        { state: { account_id: account.id, assistant_id: assistant.id, source: 'reply_suggestion',
                    conversation: { id: conversation.id, display_id: conversation.display_id }, contact: { id: contact.id } },
           current_agent: assistant.agent_name, acting_assistant_id: assistant.id }
       )

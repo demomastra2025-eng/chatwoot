@@ -3,7 +3,7 @@ require 'rails_helper'
 RSpec.describe Captain::Runtime::OperationGuard do
   let(:assistant) { create(:captain_assistant) }
   let(:conversation) { create(:conversation, account: assistant.account) }
-  let(:session) { Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation) }
+  let(:session) { Captain::Conversation::AgentSession.new(conversation: conversation) }
   let(:context) { { state: { assistant_id: assistant.id }, agent_session: session, agent_request_id: 'same-input' } }
   let(:tool) { double('Mutation', name: 'create_appointment', metadata: { read_only: false }) }
   let(:arguments) { { service_id: 1, start_at: '2026-10-15T10:00:00Z' } }
