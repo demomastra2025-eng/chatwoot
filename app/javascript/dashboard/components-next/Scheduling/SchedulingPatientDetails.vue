@@ -8,6 +8,8 @@ import { formatSchedulingErrorMessage } from 'dashboard/stores/scheduling/shared
 import {
   formatPatientBirthDate,
   canEditLocalPatient,
+  hasProviderPatientIdentity,
+  maskedPatientIin,
   normalizePatientGender,
   patientBirthDate,
   patientDisplayName,
@@ -17,6 +19,7 @@ import {
 const props = defineProps({
   patient: { type: Object, required: true },
   contextKey: { type: String, default: '' },
+  showName: { type: Boolean, default: true },
 });
 const { t } = useI18n();
 const patientStore = useConversationPatientContextStore();
@@ -103,31 +106,22 @@ const attributes = computed(
 );
 const rows = computed(() => [
   [t('SCHEDULING.CONTACT.BIRTH_DATE'), formatPatientBirthDate(props.patient)],
+  [t('SCHEDULING.CONTACT.IIN'), maskedPatientIin(props.patient)],
   [
-    t('SCHEDULING.CONTACT.IIN'),
-    props.patient.identifier || attributes.value.iin,
-  ],
-  [
-    t('SCHEDULING.CONTACT.GENDER_LABEL'),
-    props.patient.gender &&
-      t(
-        `SCHEDULING.CONTACT.GENDER.${normalizePatientGender(props.patient.gender).toUpperCase()}`
-      ),
-  ],
-  [t('SCHEDULING.CONTACT.PHONE'), props.patient.phone],
-  [
-    t('SCHEDULING.PATIENT_CONTEXT.PROVIDER_ID'),
-    attributes.value.medelement_patient_code,
+    t('SCHEDULING.PATIENT_CONTEXT.MEDELEMENT_CARD'),
+    (hasProviderPatientIdentity(props.patient) ||
+      attributes.value.medelement_patient_card) &&
+      t('SCHEDULING.PATIENT_CONTEXT.CARD_LINKED'),
   ],
 ]);
 </script>
 
 <template>
-  <section class="px-4 py-3" data-test="patient-details">
-    <h3 class="m-0 text-sm font-semibold text-n-slate-12">
+  <section class="px-4 pb-3" data-test="patient-details">
+    <h3 v-if="showName" class="m-0 mb-2 text-sm font-semibold text-n-slate-12">
       {{ patientDisplayName(patient) }}
     </h3>
-    <dl class="mt-2 grid gap-2 text-xs">
+    <dl class="m-0 grid gap-2 text-xs">
       <template v-for="[label, value] in rows" :key="label">
         <div v-if="value" class="flex min-w-0 justify-between gap-3">
           <dt class="text-n-slate-11">{{ label }}</dt>
@@ -141,7 +135,7 @@ const rows = computed(() => [
       v-if="!isEditing && canEdit"
       size="sm"
       variant="ghost"
-      :label="t('SCHEDULING.GENERAL.EDIT')"
+      :label="t('SCHEDULING.PATIENT_CONTEXT.EDIT_PATIENT')"
       @click="startEdit"
     />
     <form v-if="isEditing && canEdit" class="grid gap-3" @submit.prevent="save">

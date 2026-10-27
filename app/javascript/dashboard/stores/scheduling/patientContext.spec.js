@@ -4,8 +4,10 @@ import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
 import {
   conversationPatientContextKey,
   formatPatientBirthDate,
+  maskedPatientIin,
   normalizePatientBirthDate,
   patientBirthDate,
+  patientAge,
   patientBookingContact,
   PATIENT_SELECTION_STORAGE_KEY,
   useConversationPatientContextStore,
@@ -49,6 +51,14 @@ describe('conversation patient context', () => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
     SchedulingContactsAPI.patients.mockResolvedValue(response());
+  });
+
+  it('calculates age at the birthday boundary and masks all but four IIN digits', () => {
+    const person = { birth_date: '2019-10-28', identifier: '191028500123' };
+    expect(patientAge(person, new Date(2026, 9, 27))).toBe(6);
+    expect(patientAge(person, new Date(2026, 9, 28))).toBe(7);
+    expect(maskedPatientIin(person)).toBe('•••• 0123');
+    expect(maskedPatientIin({})).toBe('');
   });
 
   it('scopes remembered selection by account, employee, and dialog kind', () => {

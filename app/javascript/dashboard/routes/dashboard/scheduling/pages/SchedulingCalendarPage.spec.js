@@ -5,6 +5,7 @@ import { createStore } from 'vuex';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
+import ContactsAPI from 'dashboard/api/contacts';
 import SchedulingProviderCommandsAPI from 'dashboard/api/scheduling/providerCommands';
 import SchedulingResourcesAPI from 'dashboard/api/scheduling/resources';
 import { useSchedulingAppointmentFormStore } from 'dashboard/stores/scheduling/appointmentForm';
@@ -67,6 +68,9 @@ vi.mock('dashboard/api/scheduling/appointments', () => ({
     cancel: vi.fn(),
     delete: vi.fn(),
   },
+}));
+vi.mock('dashboard/api/contacts', () => ({
+  default: { show: vi.fn() },
 }));
 vi.mock('dashboard/api/scheduling/resources', () => ({
   default: { get: vi.fn() },
@@ -309,6 +313,7 @@ const mountPage = async (createSlot = slot) => {
 describe('SchedulingCalendarPage pending local booking', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    ContactsAPI.show.mockResolvedValue({ data: { payload: {} } });
     mocks.route = reactive({ params: { accountId: '74' }, query: {} });
     mocks.calendar = reactive({
       anchorDate: '2026-10-10T05:00:00Z',
@@ -356,6 +361,7 @@ describe('SchedulingCalendarPage pending local booking', () => {
   afterEach(() => {
     wrapper?.unmount();
     wrapper = null;
+    window.innerWidth = 1024;
   });
 
   it('shows a saved phone immediately and refreshes the open person dialog', async () => {
@@ -765,8 +771,11 @@ describe('SchedulingCalendarPage pending local booking', () => {
       )
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(
-      wrapper.get('[data-test="calendar-patient-provider-source"]').text()
-    ).not.toContain('SCHEDULING.PATIENT_CONTEXT.PROVIDER_IDENTITY_READ_ONLY');
+      wrapper.find('[data-test="calendar-selected-patient-card"]').exists()
+    ).toBe(true);
+    expect(wrapper.find('[data-test="calendar-patient-search"]').exists()).toBe(
+      false
+    );
     expect(
       wrapper
         .find('button[data-label="SCHEDULING.PATIENT_CONTEXT.OPEN_DIALOG"]')
@@ -939,62 +948,115 @@ describe('SchedulingCalendarPage pending local booking', () => {
     expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledOnce();
   });
 
-  it('opens an existing appointment in the full editable card immediately and navigates to its dedicated appointment page', async () => {
-    await mountPage();
-    mocks.router.push.mockImplementationOnce(target => {
-      if (target?.params?.appointmentId) {
-        mocks.route.params.appointmentId = String(target.params.appointmentId);
-      }
-    });
-    const grid = wrapper.findComponent({ name: 'SchedulingCalendarGrid' });
-    // eslint-disable-next-line vue/custom-event-name-casing -- Preserve the existing calendar grid event contract.
-    grid.vm.$emit('select-appointment', {
-      id: 505,
-      accountId: 74,
-      contactId: 42,
-      clientFirstName: 'Client',
-      clientLastName: 'Patient',
-      clientPhone: '+77001234567',
-      clientComment: 'Follow-up check',
-      resourceId: 3,
-      startsAt: slot.startsAt,
-      endsAt: slot.endsAt,
-      status: 'confirmed',
-    });
-    await flushPromises();
+  it.each([390, 1280])(
+    'shows the selected patient card and change search at %s px',
+    async width => {
+      window.innerWidth = width;
+      ContactsAPI.show.mockResolvedValue({
+        data: {
+          payload: {
+            thumbnail: '/fake-patient-avatar.png',
+            contact_inboxes: [{ inbox: { id: 1, name: 'WhatsApp' } }],
+          },
+        },
+      });
+      const { store } = await mountPage();
+      mocks.router.push.mockImplementationOnce(target => {
+        if (target?.params?.appointmentId) {
+          mocks.route.params.appointmentId = String(
+            target.params.appointmentId
+          );
+        }
+      });
+      const grid = wrapper.findComponent({ name: 'SchedulingCalendarGrid' });
+      // eslint-disable-next-line vue/custom-event-name-casing -- Preserve the existing calendar grid event contract.
+      grid.vm.$emit('select-appointment', {
+        id: 505,
+        accountId: 74,
+        contactId: 42,
+        clientFirstName: 'Client',
+        clientLastName: 'Patient',
+        clientPhone: '+77001234567',
+        clientIdentifier: '840209500123',
+        clientBirthDate: '1984-02-09',
+        clientComment: 'Follow-up check',
+        resourceId: 3,
+        startsAt: slot.startsAt,
+        endsAt: slot.endsAt,
+        status: 'confirmed',
+      });
+      await flushPromises();
 
-    expect(
-      wrapper.find('[data-test="calendar-appointment-compact-view"]').exists()
-    ).toBe(false);
-    expect(wrapper.find('.modal-mask').exists()).toBe(false);
-    expect(
-      wrapper.get('textarea[data-label="SCHEDULING.APPOINTMENT_FORM.COMMENT"]')
-        .element.value
-    ).toBe('Follow-up check');
-    expect(
-      wrapper.find('[data-test="calendar-patient-summary"]').exists()
-    ).toBe(true);
-    expect(
-      wrapper
-        .find('button[data-label="SCHEDULING.CONTACT.SAVE_ACTION"]')
-        .exists()
-    ).toBe(false);
-    const editContactBtn = wrapper.get(
-      '[data-test="calendar-edit-contact-button"]'
-    );
-    await editContactBtn.trigger('click');
-    await flushPromises();
-    expect(
-      wrapper
-        .find('button[data-label="SCHEDULING.CONTACT.SAVE_ACTION"]')
-        .exists()
-    ).toBe(true);
-    expect(mocks.router.push).toHaveBeenCalledWith({
-      name: 'scheduling_appointment_show',
-      params: { accountId: '74', appointmentId: 505 },
-      query: {},
-    });
-  });
+      expect(
+        wrapper.find('[data-test="calendar-appointment-compact-view"]').exists()
+      ).toBe(false);
+      expect(wrapper.find('.modal-mask').exists()).toBe(false);
+      expect(
+        wrapper.get(
+          'textarea[data-label="SCHEDULING.APPOINTMENT_FORM.COMMENT"]'
+        ).element.value
+      ).toBe('Follow-up check');
+      expect(
+        wrapper.find('[data-test="calendar-selected-patient-card"]').exists()
+      ).toBe(true);
+      expect(
+        wrapper.get('[data-test="calendar-selected-patient-card"]').text()
+      ).toContain('WhatsApp');
+      expect(
+        wrapper.get('[data-test="calendar-selected-patient-card"]').text()
+      ).toContain('•••• 0123');
+      expect(
+        wrapper.get('[data-test="calendar-selected-patient-card"]').text()
+      ).not.toContain('840209500123');
+      expect(
+        wrapper
+          .find(
+            'input[data-label^="SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME"]'
+          )
+          .exists()
+      ).toBe(false);
+      const changePatientBtn = wrapper.get(
+        'button[data-label="SCHEDULING.PATIENT_CONTEXT.CHANGE_PATIENT"]'
+      );
+      await changePatientBtn.trigger('click');
+      await flushPromises();
+      expect(
+        wrapper.find('[data-test="calendar-patient-search"]').exists()
+      ).toBe(true);
+      expect(
+        wrapper.find('[data-test="calendar-selected-patient-card"]').exists()
+      ).toBe(true);
+      expect(
+        wrapper
+          .find(
+            'input[data-label^="SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME"]'
+          )
+          .exists()
+      ).toBe(false);
+      const patientSearch = wrapper
+        .findAllComponents(SelectStub)
+        .find(
+          field =>
+            field.attributes('aria-label') ===
+            'SCHEDULING.CONTACT.SELECT_ACTION'
+        );
+      patientSearch.vm.$emit('create');
+      await flushPromises();
+      expect(store.form.contactId).toBe('');
+      expect(
+        wrapper
+          .find(
+            'input[data-label^="SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME"]'
+          )
+          .exists()
+      ).toBe(true);
+      expect(mocks.router.push).toHaveBeenCalledWith({
+        name: 'scheduling_appointment_show',
+        params: { accountId: '74', appointmentId: 505 },
+        query: {},
+      });
+    }
+  );
 
   it('loads a dedicated appointment page by route param with an inline conversation panel and returns to the calendar on close', async () => {
     mocks.route = reactive({

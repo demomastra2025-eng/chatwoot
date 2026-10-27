@@ -207,9 +207,14 @@ const closeAppointmentsSidebar = () => closePanel();
         :patient-context-enabled="patientContextEnabled"
         :patient-context-key="patientContextKey"
       >
-        <template #after-header>
+        <template #after-profile>
           <SchedulingConversationPatientSelector
-            v-if="patientContextEnabled && patientContextKey"
+            v-if="
+              patientContextEnabled &&
+              patientContextKey &&
+              patientEntry?.patients?.length > 1
+            "
+            compact
             :context-key="patientContextKey"
             :entry="patientEntry"
             :conversation-display-id="patientConversationDisplayId"

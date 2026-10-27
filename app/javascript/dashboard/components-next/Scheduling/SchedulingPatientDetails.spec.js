@@ -168,10 +168,12 @@ describe('SchedulingPatientDetails', () => {
     }
   );
 
-  it('keeps a local client editable without a MedElement identity label', async () => {
+  it('keeps a local patient editable and shows a linked card with a masked IIN', async () => {
     const { wrapper } = await mountSelected(84);
     expect(wrapper.text()).toContain('Local Family');
-    expect(wrapper.text()).not.toContain('MedElement');
+    expect(wrapper.text()).toContain('MedElement');
+    expect(wrapper.text()).toContain('•••• 0000');
+    expect(wrapper.text()).not.toContain('090101500000');
     expect(wrapper.find('[data-test="patient-provider-source"]').exists()).toBe(
       false
     );

@@ -75,6 +75,35 @@ export const formatPatientBirthDate = patient => {
   return match ? `${match[3]}.${match[2]}.${match[1]}` : '';
 };
 
+export const patientAge = (patient, today = new Date()) => {
+  const birthDate = patientBirthDate(patient);
+  if (!birthDate) return null;
+  const [year, month, day] = birthDate.split('-').map(Number);
+  let age = today.getFullYear() - year;
+  if (
+    today.getMonth() + 1 < month ||
+    (today.getMonth() + 1 === month && today.getDate() < day)
+  )
+    age -= 1;
+  return age >= 0 ? age : null;
+};
+
+export const patientAgeLabel = (patient, t, locale = 'ru') => {
+  const age = patientAge(patient);
+  if (age === null) return '';
+  const category = new Intl.PluralRules(locale).select(age).toUpperCase();
+  return t(`SCHEDULING.PATIENT_CONTEXT.AGE_${category}`, { age });
+};
+
+export const maskedPatientIin = patient => {
+  const attributes =
+    patient?.custom_attributes || patient?.customAttributes || {};
+  const value = String(
+    patient?.identifier || attributes.iin || attributes.medelement_iin || ''
+  );
+  return value ? `•••• ${value.slice(-4)}` : '';
+};
+
 export const hasProviderPatientIdentity = patient => {
   const attributes =
     patient?.custom_attributes || patient?.customAttributes || {};

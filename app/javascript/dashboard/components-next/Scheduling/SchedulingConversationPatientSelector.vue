@@ -23,6 +23,7 @@ import {
   canEditLocalPatient,
   formatPatientBirthDate,
   normalizePatientGender,
+  patientAgeLabel,
   patientBirthDate,
   patientDisplayName,
   useConversationPatientContextStore,
@@ -32,8 +33,9 @@ const props = defineProps({
   contextKey: { type: String, required: true },
   entry: { type: Object, default: null },
   conversationDisplayId: { type: [Number, String], default: null },
+  compact: { type: Boolean, default: false },
 });
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const patientStore = useConversationPatientContextStore();
 const isCreating = ref(false);
 const isEditing = ref(false);
@@ -69,9 +71,14 @@ const canEditSelected = computed(() =>
 const options = computed(() =>
   (props.entry?.patients || []).map(patient => ({
     value: patient.id,
-    label: [patientDisplayName(patient), formatPatientBirthDate(patient)]
+    label: [
+      patientDisplayName(patient),
+      props.compact
+        ? patientAgeLabel(patient, t, locale?.value || 'ru')
+        : formatPatientBirthDate(patient),
+    ]
       .filter(Boolean)
-      .join(' · '),
+      .join(props.compact ? ', ' : ' · '),
   }))
 );
 const selectedOption = computed(
@@ -269,11 +276,15 @@ const savePatient = async () => {
 
 <template>
   <section
-    class="shrink-0 border-b border-n-weak bg-n-alpha-1 px-3 py-2"
+    class="shrink-0"
+    :class="compact ? 'py-2' : 'border-b border-n-weak bg-n-alpha-1 px-3 py-2'"
     data-test="patient-selector"
   >
     <div class="grid min-w-0 gap-1.5">
-      <div class="flex min-w-0 items-center justify-between gap-1.5">
+      <div
+        v-if="!compact"
+        class="flex min-w-0 items-center justify-between gap-1.5"
+      >
         <label
           for="scheduling-conversation-patient-select"
           class="flex min-w-0 items-center gap-1.5 truncate text-xs font-medium text-n-slate-11"
@@ -322,7 +333,11 @@ const savePatient = async () => {
           @click="toggleDropdown"
         >
           <span class="flex min-w-0 flex-1 items-center gap-2">
+            <span v-if="compact" class="shrink-0 text-xs text-n-slate-11">
+              {{ t('SCHEDULING.PATIENT_CONTEXT.PATIENT') }}:
+            </span>
             <span
+              v-else
               class="i-lucide-user-check size-4 shrink-0 text-n-teal-11"
               aria-hidden="true"
             />

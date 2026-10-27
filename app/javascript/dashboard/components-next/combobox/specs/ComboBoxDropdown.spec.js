@@ -69,6 +69,31 @@ describe('ComboBoxDropdown', () => {
     ).toBe('фывфы');
   });
 
+  it('keeps a patient creation action below remote results with an empty query', async () => {
+    const wrapper = mount(ComboBoxDropdown, {
+      props: {
+        createOptionLabel: '+ Новый пациент',
+        showCreateAlways: true,
+        inline: true,
+        open: true,
+        options: [{ label: 'Пациент OneLink', value: 1 }],
+        remoteOptions: [
+          { token: 'fake-token', fullName: 'Пациент МедЭлемент' },
+        ],
+        remoteTitle: 'Найдено в МедЭлементе',
+        searchValue: '',
+      },
+    });
+
+    const createOption = wrapper.get('[data-testid="combobox-create-option"]');
+    expect(createOption.attributes('aria-label')).toBe('+ Новый пациент');
+    expect(wrapper.text().indexOf('Пациент МедЭлемент')).toBeLessThan(
+      wrapper.text().indexOf('+ Новый пациент')
+    );
+    await createOption.trigger('click');
+    expect(wrapper.emitted('create')).toEqual([['']]);
+  });
+
   it('keeps the regular empty state when creation is unavailable', () => {
     const wrapper = mount(ComboBoxDropdown, {
       props: {

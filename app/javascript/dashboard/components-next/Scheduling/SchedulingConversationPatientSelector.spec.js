@@ -35,6 +35,7 @@ describe('conversation patient selector', () => {
     setActivePinia(pinia);
     window.localStorage.clear();
     vi.clearAllMocks();
+    window.innerWidth = 1024;
     mocks.t.mockImplementation(messageKey => messageKey);
     SchedulingContactsAPI.patients.mockResolvedValue({
       data: {
@@ -66,9 +67,45 @@ describe('conversation patient selector', () => {
     expect(wrapper.vm.isCreating).toBe(true);
   });
 
+  it.each([390, 1280])(
+    'shows a compact patient line and selects from the same store at %s px',
+    async width => {
+      window.innerWidth = width;
+      SchedulingContactsAPI.patients.mockResolvedValueOnce({
+        data: {
+          payload: {
+            contact_id: 42,
+            patients: [
+              { ...owner, full_name: 'Parent', birth_date: '1984-01-01' },
+              { ...patient, full_name: 'Child', birth_date: '2019-01-01' },
+            ],
+          },
+        },
+      });
+      const store = useConversationPatientContextStore();
+      await store.load(key, 42);
+      const wrapper = shallowMount(SchedulingConversationPatientSelector, {
+        props: { contextKey: key, entry: store.contexts[key], compact: true },
+        global: { plugins: [pinia] },
+      });
+      expect(
+        wrapper.find('[data-test="selected-patient-badge"]').exists()
+      ).toBe(false);
+      expect(
+        wrapper.get('[data-test="patient-dropdown-trigger"]').text()
+      ).toContain('Parent');
+      await wrapper
+        .get('[data-test="patient-dropdown-trigger"]')
+        .trigger('click');
+      await wrapper.get('[data-test="patient-option-84"]').trigger('click');
+      expect(store.contexts[key].selectedId).toBe(84);
+      wrapper.unmount();
+    }
+  );
+
   it.each([
     ['en', 'Client', 'Add client'],
-    ['ru', 'Клиент', 'Добавить клиента'],
+    ['ru', 'Клиент', '+ Новый пациент'],
     ['kk', 'Клиент', 'Клиент қосу'],
   ])(
     'uses generic client wording for a local appointment in %s and places the add action inside the opened dropdown',

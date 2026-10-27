@@ -606,6 +606,7 @@ export default {
             @click="openMergeModal"
           />
         </div>
+        <slot />
       </div>
 
       <EditContact
