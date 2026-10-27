@@ -16,7 +16,7 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
     return render_could_not_create_error(error) if error
 
     @automation_rule = Current.account.automation_rules.new(automation_rules_permit)
-    @automation_rule.calendar_managed = ActiveModel::Type::Boolean.new.cast(params[:calendar_managed])
+    @automation_rule.calendar_managed = ActiveModel::Type::Boolean.new.cast(params[:calendar_managed]) == true
     @automation_rule.actions = actions
     @automation_rule.conditions = params[:conditions]
 
