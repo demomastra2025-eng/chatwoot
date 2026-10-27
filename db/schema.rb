@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_27_120000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_27_150000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -836,7 +836,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_27_120000) do
   end
 
   create_table "captain_inboxes", force: :cascade do |t|
-    t.bigint "captain_assistant_id", null: false
+    t.bigint "captain_assistant_id"
     t.bigint "inbox_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
@@ -917,6 +917,15 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_27_120000) do
     t.index ["account_id", "node_type", "normalized_key"], name: "idx_captain_kg_nodes_account_type_norm_key", unique: true
     t.index ["attributes_data"], name: "idx_captain_kg_nodes_attributes_gin", using: :gin
     t.index ["search_stems"], name: "idx_captain_kg_nodes_search_stems_gin", using: :gin
+  end
+
+  create_table "captain_main_agent_backups", force: :cascade do |t|
+    t.string "kind", null: false
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id"
+    t.bigint "assistant_id", null: false
+    t.datetime "created_at", null: false
+    t.index ["kind", "account_id", "inbox_id"], name: "index_captain_main_agent_backups_on_kind_account_inbox"
   end
 
   create_table "captain_mcp_servers", force: :cascade do |t|

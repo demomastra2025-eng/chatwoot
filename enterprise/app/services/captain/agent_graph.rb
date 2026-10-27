@@ -1,30 +1,26 @@
 # frozen_string_literal: true
 
-# The agents of one channel. A text channel reaches every active external agent of the workspace; a voice channel and a run
-# without a channel have their assigned agent only. The assistant the channel is bound to (`entry`) is a technical anchor of
-# the channel (who the job runs as, whose account settings apply): it is not a main agent and has no routing role. Who answers a
-# patient turn is decided by Captain::Runtime::DecisionRouter among the candidates, all of them peers.
+# The agents of one channel (see Captain::ChannelScope). A text channel reaches every enabled external agent of the workspace; a
+# voice channel has the voice agent of its number alone. All of them are peers: there is no main agent and no anchor. Who answers a
+# patient turn is decided by Captain::Runtime::DecisionRouter among the candidates. When there is nobody to choose, the graph is empty
+# and the caller turns that into an outcome (see #unavailable_reason); nothing answers in the place of a missing agent.
 class Captain::AgentGraph
   MAX_AGENTS = 100
+  NO_ACTIVE_AGENT = :no_active_agent
+  NO_ROUTING_CARDS = :no_routing_cards
 
-  # The channel's anchor assistant is switched off, so the channel has no agents. Callers that only ask "who may act" treat this
-  # as "nobody"; it stays an ArgumentError for the others.
-  class EntryDisabledError < ArgumentError; end
-
-  def initialize(entry, inbox: nil, standalone: false)
-    @entry = entry
-    @inbox = inbox
-    @standalone = standalone
+  def initialize(scope)
+    @scope = scope
   end
 
-  attr_reader :entry, :inbox
+  attr_reader :scope
 
-  # Every agent that may act in this channel (ownership, fences, parts): the anchor and the channel members.
+  delegate :account, :inbox, to: :scope
+
+  # Every agent that may act in this channel (ownership, fences, parts): the enabled external agents of the channel.
   def agents
     @agents ||= begin
-      raise EntryDisabledError, 'The entry agent is disabled' unless entry.active?
-
-      members = [entry] + channel_members.reject { |actor| actor.id == entry.id }
+      members = scope.members
       raise ArgumentError, 'Agent routing graph is too large' if members.size > MAX_AGENTS
 
       members.sort_by(&:id)
@@ -35,20 +31,26 @@ class Captain::AgentGraph
     agents.find { |actor| actor.id == id.to_i }
   end
 
-  # The agents the router chooses among for a patient turn: patient-facing (an internal assistant such as Workspace MCP is not a
-  # channel member), not excluded by the platform (config patient_routing false), and with a competence card to be chosen by.
-  # A channel left with no such agent (a voice channel, an internal anchor, agents without cards) has its anchor answer alone.
+  # The agents the router chooses among for a patient turn: the enabled external agents that have a competence card to be chosen by.
+  # A workspace with one enabled agent has no choice to make, so that agent answers whether or not it has a card. With two or more
+  # enabled agents, those without a card are not chosen, and when none has a card nobody answers (see #unavailable_reason).
   def candidates
     @candidates ||= begin
-      routable = agents.select { |actor| actor.external_agent? && actor.config.to_h['patient_routing'] != false }
-      described = routable.select { |actor| actor.routing_description.to_s.strip.present? }
-      described.presence || [entry]
+      routable = agents.select(&:external_agent?)
+      routable.size == 1 ? routable : routable.select { |actor| actor.routing_description.to_s.strip.present? }
     end
   end
 
   # One candidate or none: nothing to choose, the router is not called.
   def solo?
     candidates.size < 2
+  end
+
+  # Why nobody can answer here, or nil when somebody can: every agent is off, or several are on and none has a card to be chosen by.
+  def unavailable_reason
+    return NO_ACTIVE_AGENT if agents.empty?
+
+    NO_ROUTING_CARDS if candidates.empty?
   end
 
   def candidate_rows
@@ -71,17 +73,5 @@ class Captain::AgentGraph
   # The candidates as the run context lists them (who may own a council part): ids and names, no descriptions.
   def payload
     candidates.map { |actor| { id: actor.id, key: "assistant_#{actor.id}", name: actor.name } }
-  end
-
-  private
-
-  # For an external agent on a text channel or in the workspace sandbox, every active external agent is a member.
-  def channel_members
-    return [] if @standalone
-    return [] unless entry.external_agent?
-
-    return [] if inbox&.channel_type == 'Channel::Voice'
-
-    Captain::Assistant.entry_eligible.where(account_id: entry.account_id).order(:id).to_a
   end
 end

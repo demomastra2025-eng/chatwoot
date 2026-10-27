@@ -29,6 +29,8 @@ class Captain::Assistant < ApplicationRecord
   include Concerns::CaptainAgentRouting
 
   self.table_name = 'captain_assistants'
+  # The per-agent channel list (channel_scope) belonged to the retired main agent design: nothing reads or writes it any more.
+  self.ignored_columns += %w[channel_scope]
   INTERNAL_ASSISTANT_INBOX_ERROR = 'Internal assistants cannot be connected to channels. Disconnect connected channels first.'
   DESCRIPTION_MAX_LENGTH = 20_000
   RULES_CONFIG_KEY = 'rules'
@@ -372,7 +374,6 @@ class Captain::Assistant < ApplicationRecord
            dependent: :destroy_async
   has_many :inboxes,
            through: :captain_inboxes
-  has_many :agent_channels, class_name: 'Captain::AgentChannel', dependent: :delete_all
   has_many :messages, as: :sender, dependent: :nullify
   has_many :copilot_threads, dependent: :destroy_async
   has_many :scenarios, class_name: 'Captain::Scenario', dependent: :nullify
@@ -388,16 +389,12 @@ class Captain::Assistant < ApplicationRecord
   before_validation :merge_legacy_rules_into_prompt
   before_destroy :destroy_personal_knowledge, prepend: true
   before_destroy :lock_captain_assignment_before_destroy, prepend: true
-  before_destroy :prevent_enabled_main_agent_destroy, prepend: true
 
   validates :name, presence: true
   validates :description, presence: true
   validates :description, length: { maximum: ->(agent) { [DESCRIPTION_MAX_LENGTH, agent.description_in_database.to_s.length].max } }
   validates :account_id, presence: true
   validates :usage_mode, presence: true, inclusion: { in: %w[external_agent internal_assistant] }
-  validates :channel_scope, inclusion: { in: %w[all selected] }
-  validate :enabled_main_agent_stays_active
-  validate :default_main_agent_stays_active
   validates :message_collapse_window_seconds,
             numericality: { only_integer: true, greater_than_or_equal_to: 0 },
             allow_blank: true
@@ -424,20 +421,9 @@ class Captain::Assistant < ApplicationRecord
     name
   end
 
-  def works_on_inbox?(inbox)
-    return false unless inbox && entry_eligible? && inbox.account_id == account_id
-    return false if inbox.channel_type == 'Channel::Voice'
-
-    true
-  end
-
-  def selected_inbox_ids
-    agent_channels.order(:inbox_id).pluck(:inbox_id)
-  end
-
-  def main_in_inbox_ids
-    CaptainInbox.where(captain_assistant_id: id).joins(:inbox)
-                .where.not(inboxes: { channel_type: 'Channel::Voice' }).order(:inbox_id).pluck(:inbox_id)
+  # The voice numbers that this agent answers (a call has no router, so a number names its agent). A text channel names none.
+  def voice_inbox_ids
+    CaptainInbox.where(captain_assistant_id: id).order(:inbox_id).pluck(:inbox_id)
   end
 
   def handoff_target_name
@@ -887,38 +873,8 @@ class Captain::Assistant < ApplicationRecord
     Account.find(account_id).with_lock { self.class.lock.find(id) }
   end
 
-  def enabled_main_agent_stays_active
-    return unless persisted? && (!active? || !external_agent?)
-    return unless enabled_text_main_inboxes.exists?
-
-    errors.add(:base, I18n.t('captain.channel_matrix.main_agent_in_use'))
-  end
-
-  def default_main_agent_stays_active
-    return unless persisted? && (!active? || !external_agent?)
-    return unless account.captain_default_assistant_id.to_i == id
-
-    errors.add(:base, I18n.t('captain.channel_matrix.default_agent_in_use'))
-  end
-
-  def prevent_enabled_main_agent_destroy
-    if account.captain_default_assistant_id.to_i == id
-      errors.add(:base, I18n.t('captain.channel_matrix.default_agent_in_use'))
-      throw :abort
-    end
-    return unless enabled_text_main_inboxes.exists?
-
-    errors.add(:base, I18n.t('captain.channel_matrix.main_agent_in_use'))
-    throw :abort
-  end
-
   def destroy_personal_knowledge
     Captain::Knowledge::AccessService.release_owner!(assistant: self)
-  end
-
-  def enabled_text_main_inboxes
-    CaptainInbox.where(captain_assistant_id: id, ai_enabled: true).joins(:inbox)
-                .where.not(inboxes: { channel_type: 'Channel::Voice' })
   end
 
   def ensure_usage_mode

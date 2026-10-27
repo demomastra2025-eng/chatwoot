@@ -32,10 +32,6 @@ module Captain
       self.table_name = 'captain_scenarios'
     end
 
-    class LegacyHandoff < ActiveRecord::Base
-      self.table_name = 'captain_agent_handoffs'
-    end
-
     def perform
       report = { converted: 0, existing: 0, skipped: [] }
       LegacyScenario.find_each do |scenario|
@@ -62,7 +58,6 @@ module Captain
         next({ assistant_id: existing.id, created: false }) if existing
 
         agent = LegacyAssistant.create!(converted_attributes(scenario, parent))
-        initialize_routes!(parent, agent)
         { assistant_id: agent.id, created: true, warnings: agent.config.dig('legacy_scenario_migration', 'warnings') }
       end
     end
@@ -148,22 +143,6 @@ module Captain
     def references(texts, pattern)
       Array(texts).flatten.compact.flat_map { |text| text.to_s.scan(pattern).flatten }
                   .map { |reference| reference.gsub(/\\(.)/, '\\1') }.uniq
-    end
-
-    def initialize_routes!(parent, agent)
-      return unless parent.usage_mode == 'external_agent' && agent.usage_mode == 'external_agent'
-
-      scenario_ids = LegacyScenario.where(assistant_id: parent.id, account_id: parent.account_id).pluck(:id)
-      peers = LegacyAssistant.where(legacy_scenario_id: scenario_ids, account_id: parent.account_id, usage_mode: 'external_agent').pluck(:id)
-      peer_ids = ([parent.id] + peers).uniq - [agent.id]
-      now = Time.current
-      rows = peer_ids.flat_map do |peer_id|
-        [
-          { account_id: parent.account_id, source_assistant_id: agent.id, target_assistant_id: peer_id, created_at: now, updated_at: now },
-          { account_id: parent.account_id, source_assistant_id: peer_id, target_assistant_id: agent.id, created_at: now, updated_at: now }
-        ]
-      end
-      LegacyHandoff.insert_all(rows, unique_by: :index_captain_agent_handoffs_on_source_and_target) if rows.any?
     end
   end
 end
