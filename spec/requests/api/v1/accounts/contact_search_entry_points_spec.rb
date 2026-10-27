@@ -27,6 +27,12 @@ RSpec.describe 'Contact search entry points', type: :request do
       get "/api/v1/accounts/#{account.id}/contacts/search", params: { q: text }, headers: headers, as: :json
     end
 
+    it 'finds a structured surname' do
+      patient = create(:contact, account: account, name: 'Аян', last_name: 'Қуаныш')
+      search('ҚУАНЫШ')
+      expect(returned_ids).to eq([patient.id])
+    end
+
     it 'finds the contact by a phone number in any format' do
       aggregate_failures do
         phone_formats.each do |text|
@@ -59,6 +65,12 @@ RSpec.describe 'Contact search entry points', type: :request do
   end
 
   describe 'GET /api/v1/accounts/:id/search/contacts (the global search)' do
+    it 'finds a structured surname' do
+      patient = create(:contact, account: account, name: 'Аян', last_name: 'Қуаныш')
+      get "/api/v1/accounts/#{account.id}/search/contacts", params: { q: 'ҚУАНЫШ' }, headers: headers, as: :json
+      expect(returned_ids).to eq([patient.id])
+    end
+
     it 'finds the contact by a phone number in any format and survives a NUL byte' do
       aggregate_failures do
         phone_formats.each do |text|

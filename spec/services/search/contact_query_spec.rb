@@ -3,8 +3,8 @@ require 'rails_helper'
 RSpec.describe Search::ContactQuery do
   let(:account) { create(:account) }
 
-  def found_names(text, **options)
-    described_class.new(text, **options).apply(account.contacts).order(:name, :id).pluck(:name)
+  def found_names(text, **)
+    described_class.new(text, **).apply(account.contacts).order(:name, :id).pluck(:name)
   end
 
   describe 'the long-standing matching, which stays' do
@@ -102,6 +102,37 @@ RSpec.describe Search::ContactQuery do
     end
   end
 
+  describe 'structured patient names' do
+    before do
+      create(:contact, account: account, name: 'Иван', last_name: 'Иванов', middle_name: 'Иванович')
+      create(:contact, account: account, name: 'Семён', last_name: 'Киселёв', middle_name: 'Андреевич')
+      create(:contact, account: account, name: 'Әлия', last_name: 'Қуаныш', middle_name: 'Ғалымқызы')
+      create(:contact, account: create(:account), name: 'Чужой', last_name: 'Иванов')
+    end
+
+    it 'finds each part and all typed words in any order within the passed account relation' do
+      aggregate_failures do
+        expect(found_names('Иванов')).to eq(['Иван'])
+        expect(found_names('Иванович')).to eq(['Иван'])
+        ['Иванов Иван', 'Иван Иванов', 'Иванов Иван Иванович', 'Иванович Иван Иванов'].each do |query|
+          expect(found_names(query)).to eq(['Иван'])
+        end
+        expect(found_names('Иванов Иван Неизвестный')).to be_empty
+      end
+    end
+
+    it 'treats е and ё alike in surnames in both directions' do
+      expect(found_names('Киселев')).to eq(['Семён'])
+      expect(found_names('Киселёв')).to eq(['Семён'])
+    end
+
+    it 'matches Kazakh Cyrillic letters without collapsing distinct letters' do
+      expect(found_names('ҚУАНЫШ')).to eq(['Әлия'])
+      expect(found_names('ғалымқызы')).to eq(['Әлия'])
+      expect(found_names('Куаныш')).to be_empty
+    end
+  end
+
   describe 'е and ё' do
     before do
       create(:contact, account: account, name: 'Семён Киселёв', email: 'a@test.com')
@@ -158,7 +189,8 @@ RSpec.describe Search::ContactQuery do
       end
 
       aggregate_failures do
-        { '№5' => 'Клиника №5', 'Acme™' => 'Acme™ Ltd', 'м²' => 'Комната 50 м²', 'Ждите…' => 'Ждите… тут', '①' => 'Фото ① кабинет' }.each do |text, name|
+        { '№5' => 'Клиника №5', 'Acme™' => 'Acme™ Ltd', 'м²' => 'Комната 50 м²', 'Ждите…' => 'Ждите… тут',
+          '①' => 'Фото ① кабинет' }.each do |text, name|
           expect(found_names(text)).to eq([name]), "expected #{text.inspect} to find #{name.inspect}"
         end
       end
