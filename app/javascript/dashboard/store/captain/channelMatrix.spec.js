@@ -68,7 +68,7 @@ describe('Captain channel matrix store', () => {
 
     expect(matrix.channels.map(channel => channel.inbox_id)).toEqual([5]);
     expect(matrix.assistants).toHaveLength(1);
-    expect(matrix).not.toHaveProperty('default_main_assistant_id');
+    expect(Object.keys(matrix).sort()).toEqual(['assistants', 'channels']);
     expect(store.getUIFlags).toMatchObject({
       isFetching: false,
       fetchError: false,

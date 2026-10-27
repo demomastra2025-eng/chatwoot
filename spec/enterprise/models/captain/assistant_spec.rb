@@ -1,11 +1,6 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Assistant, type: :model do
-  describe 'handoff and booking scope' do
-    let(:account) { create(:account) }
-    let(:assistant) { create(:captain_assistant, account: account) }
-  end
-
   describe 'message sender payloads' do
     it 'exposes only public identity fields in events and webhooks' do
       assistant = build(:captain_assistant, description: 'Private agent instructions', config: { 'model' => 'private-model' })
