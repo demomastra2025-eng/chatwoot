@@ -1747,7 +1747,6 @@ const saveContactPhone = async phone => {
     const updated = await formStore.updateInlineContact(contactId, { phone });
     if (!updated) return;
 
-    formStore.updateField('clientPhone', updated.phone || phone);
     const cached = { ...appointmentContactableInboxesByContactId.value };
     delete cached[contactId];
     appointmentContactableInboxesByContactId.value = cached;

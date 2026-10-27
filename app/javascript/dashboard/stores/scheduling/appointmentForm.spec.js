@@ -622,6 +622,23 @@ describe('useSchedulingAppointmentFormStore', () => {
     });
   });
 
+  it('uses the saved contact phone instead of a submitted number the server did not retain', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit({
+      ...localAppointment,
+      patientContactId: null,
+      clientPhone: '',
+    });
+    SchedulingContactsAPI.update.mockResolvedValue({
+      data: { payload: { id: 42, account_id: 74, phone: '' } },
+    });
+
+    await store.updateInlineContact(42, { phone: '+77010000001' });
+
+    expect(store.selectedContact.phone).toBe('');
+    expect(store.form.clientPhone).toBe('');
+  });
+
   it('projects recorded clinical fields for a calendar booking without rewriting a raw chat alias', () => {
     const store = useSchedulingAppointmentFormStore();
     const owner = {

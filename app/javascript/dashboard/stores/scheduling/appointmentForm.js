@@ -814,7 +814,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
           ];
           if (phoneOnly) {
             this.selectedContact = updatedContact;
-            this.form.clientPhone = updatedContact.phone || contact.phone;
+            this.form.clientPhone = updatedContact.phone || '';
           } else if (isPatientCard) this.applyPatientContact(updatedContact);
           else this.applyContact(updatedContact);
           return updatedContact;
