@@ -95,6 +95,29 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
 
     expect(response).to have_http_status(:conflict)
     expect(response_body['code']).to eq('SLOT_CONFLICT')
+    expect(response_body.fetch('details')).to include('busy', 'free_starts', 'time_zone')
+    expect(response_body.fetch('details').keys).to match_array(%w[busy free_starts time_zone])
+  end
+
+  it 'returns only time hints for a live provider reception conflict' do
+    make_provider_resource!
+    occupied = [booking_day, booking_day + 30.minutes]
+    result = Integrations::Medelement::ResourceAvailabilityService::Result.new(
+      status: 'fresh', checked_at: Time.current, slots: [], reason: nil, occupied_intervals: [occupied]
+    )
+    allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new) do |**options|
+      options.fetch(:candidate_slots).call([[booking_day - 1.hour, booking_day + 2.hours]])
+      instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: result)
+    end
+
+    post path, params: provider_booking_params(booking_day), headers: headers, as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('APPOINTMENT_SLOT_UNAVAILABLE')
+    expect(response_body.fetch('details').keys).to match_array(%w[provider_checked_at busy free_starts time_zone])
+    expect(response_body.dig('details', 'busy')).to eq(
+      'starts_at' => occupied.first.iso8601, 'ends_at' => occupied.last.iso8601
+    )
   end
 
   it 'creates beyond the background cache when the provider confirms the exact interval' do
@@ -1163,6 +1186,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
 
     expect(response).to have_http_status(:conflict)
     expect(response_body['code']).to eq('SLOT_CONFLICT')
+    expect(response_body.fetch('details').keys).to match_array(%w[busy free_starts time_zone])
   end
 
   it 'rejects inactive service-resource combinations' do

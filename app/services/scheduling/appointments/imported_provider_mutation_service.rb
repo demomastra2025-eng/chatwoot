@@ -89,7 +89,14 @@ class Scheduling::Appointments::ImportedProviderMutationService
     return if result.status == 'fresh' && result.slots.one? && @provider_windows.present?
 
     code = result.status == 'fresh' ? 'APPOINTMENT_SLOT_UNAVAILABLE' : 'MEDELEMENT_AVAILABILITY_UNVERIFIED'
-    raise Scheduling::Error.new(code: code, message: 'The provider interval is not confirmed', status: :conflict)
+    details = if result.status == 'fresh' && result.occupied_intervals.present?
+                Scheduling::SlotConflictDetails.for_provider(
+                  resource: appointment.resource, interval: [@starts_at, @ends_at],
+                  windows: @provider_windows, receptions: result.occupied_intervals,
+                  ignore_appointment_id: appointment.id
+                )
+              end
+    raise Scheduling::Error.new(code: code, message: 'The provider interval is not confirmed', status: :conflict, details: details)
   end
 
   def validate_duration!
@@ -162,11 +169,15 @@ class Scheduling::Appointments::ImportedProviderMutationService
 
   def validate_local_interval!
     ensure_resource_available!
+    zone = ActiveSupport::TimeZone[appointment.resource.timezone] || Time.zone
+    date = @starts_at.in_time_zone(zone).to_date
+    day_start = zone.local(date.year, date.month, date.day)
+    day_end = day_start + 1.day
     result = Scheduling::AvailabilityService.new(
-      resource: appointment.resource, from: @starts_at, to: @ends_at,
+      resource: appointment.resource, from: day_start, to: day_end,
       holidays: [], workday_overrides: [], time_offs: [],
       appointments: account.scheduling_appointments.where(resource_id: appointment.resource_id)
-                           .where('starts_at < ? AND ends_at > ?', @ends_at, @starts_at).to_a,
+                           .where('starts_at < ? AND ends_at > ?', day_end, day_start).to_a,
       ignore_appointment_id: appointment.id, provider_working_windows: @provider_windows, replace_work_rules: true
     ).availability_result(starts_at: @starts_at, ends_at: @ends_at, enforce_grid: @starts_at != appointment.starts_at)
     return if result.available?

@@ -3,7 +3,11 @@ class Integrations::Medelement::ResourceAvailabilityService
   MAX_PAGES = 20
   PROVIDER_TIME_FORMAT = '%d.%m.%Y %H:%M:%S'.freeze
 
-  Result = Data.define(:status, :checked_at, :slots, :reason)
+  Result = Data.define(:status, :checked_at, :slots, :reason, :occupied_intervals) do
+    def initialize(status:, checked_at:, slots:, reason:, occupied_intervals: [])
+      super
+    end
+  end
 
   def initialize(resource:, from:, to:, slots:, **options)
     @resource = resource
@@ -26,18 +30,23 @@ class Integrations::Medelement::ResourceAvailabilityService
     receptions = cabinets.to_h { |cabinet| [cabinet.fetch(:code), provider_receptions(cabinet.fetch(:code))] }
 
     slots = @candidate_slots ? @candidate_slots.call(provider_windows) : @slots
-    Result.new(
-      status: 'fresh',
-      checked_at: checked_at,
-      slots: provider_slots(provider_windows, receptions, checked_at, slots),
-      reason: nil
-    )
+    fresh_result(provider_windows, receptions, checked_at, slots)
   rescue StandardError => e
     log_unavailable(e)
     unavailable(checked_at || Time.current, unavailable_reason(e))
   end
 
   private
+
+  def fresh_result(provider_windows, receptions, checked_at, slots)
+    Result.new(
+      status: 'fresh',
+      checked_at: checked_at,
+      slots: provider_slots(provider_windows, receptions, checked_at, slots),
+      reason: nil,
+      occupied_intervals: @cabinet_code || cabinets.one? ? receptions.fetch(@cabinet_code || cabinets.first.fetch(:code), []) : []
+    )
+  end
 
   def configuration
     hook = resource.account.hooks.enabled.find_by(app_id: 'medelement')
@@ -184,7 +193,7 @@ class Integrations::Medelement::ResourceAvailabilityService
   end
 
   def unavailable(checked_at, reason)
-    Result.new(status: 'unavailable', checked_at: checked_at, slots: [], reason: reason)
+    Result.new(status: 'unavailable', checked_at: checked_at, slots: [], reason: reason, occupied_intervals: [])
   end
 
   def unavailable_reason(error)

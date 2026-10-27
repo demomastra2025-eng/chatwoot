@@ -128,7 +128,11 @@ RSpec.describe Scheduling::Appointments::ImportedProviderMutationService do
       { 'RECEPTION_CODE' => 'other', 'REMOVED' => 0, 'STARTTIME' => "#{date} 11:00", 'ENDTIME' => "#{date} 11:30" }
     ])
 
-    expect_scheduling_error('APPOINTMENT_SLOT_UNAVAILABLE') { perform }
+    expect { perform }.to raise_error(Scheduling::Error) do |error|
+      expect(error.code).to eq('APPOINTMENT_SLOT_UNAVAILABLE')
+      expect(error.details).to include(:busy, :free_starts, :time_zone)
+      expect(error.details.keys).to match_array(%i[busy free_starts time_zone])
+    end
     expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty
     expect(appointment.reload.starts_at).to eq(starts_at - 1.hour)
   end

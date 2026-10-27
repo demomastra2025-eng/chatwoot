@@ -33,7 +33,8 @@ module Scheduling::AvailabilityRefusals
     elsif !@replace_work_rules && overlaps_intervals?(time_off_intervals_for_date(date), **period)
       unavailable('BLOCKED_BY_VACATION', 'Appointment overlaps blocked time')
     elsif overlaps_intervals?(appointment_intervals_for_date(date), **period)
-      unavailable('SLOT_CONFLICT', 'Slot is already occupied')
+      details = Scheduling::SlotConflictDetails.new(availability: self, starts_at: starts_at, ends_at: ends_at).perform
+      unavailable('SLOT_CONFLICT', 'Slot is already occupied', details)
     end
   end
 

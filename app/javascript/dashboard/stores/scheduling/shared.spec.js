@@ -14,6 +14,64 @@ const lookupMessage = (messages, key) =>
   key.split('.').reduce((node, part) => node?.[part], messages);
 
 describe('scheduling shared helpers', () => {
+  it.each([
+    ['ru', ruScheduling, 'Занято с 15:30 до 17:00. Свободно: 15:00, 17:00.'],
+    [
+      'kk',
+      kkScheduling,
+      '15:30 мен 17:00 аралығында уақыт бос емес. Бос уақыт: 15:00, 17:00.',
+    ],
+    ['en', enScheduling, 'Busy from 15:30 to 17:00. Free: 15:00, 17:00.'],
+  ])(
+    'formats the busy interval in the provider zone for %s',
+    (_locale, messages, expected) => {
+      const t = (key, params = {}) =>
+        (lookupMessage(messages, key) || key).replace(
+          /\{(\w+)\}/g,
+          (_match, name) => params[name]
+        );
+      const error = {
+        code: 'APPOINTMENT_SLOT_UNAVAILABLE',
+        details: {
+          busy: {
+            starts_at: '2026-10-29T10:30:00Z',
+            ends_at: '2026-10-29T12:00:00Z',
+          },
+          free_starts: ['2026-10-29T10:00:00Z', '2026-10-29T12:00:00Z'],
+          time_zone: 'Asia/Almaty',
+        },
+      };
+      expect(formatSchedulingErrorMessage(error, t)).toBe(expected);
+      expect(
+        formatSchedulingErrorMessage(
+          { ...error, details: { ...error.details, free_starts: [] } },
+          t
+        )
+      ).toBe(
+        messages.SCHEDULING.ERRORS.BUSY_NO_FREE_STARTS.replace(
+          '{from}',
+          '15:30'
+        ).replace('{to}', '17:00')
+      );
+      expect(
+        formatSchedulingErrorMessage(
+          { ...error, details: { ...error.details, free_starts: undefined } },
+          t
+        )
+      ).toBe(
+        messages.SCHEDULING.ERRORS.BUSY_UNKNOWN_FREE_STARTS.replace(
+          '{from}',
+          '15:30'
+        ).replace('{to}', '17:00')
+      );
+      expect(
+        formatSchedulingErrorMessage(
+          { code: 'APPOINTMENT_SLOT_UNAVAILABLE' },
+          t
+        )
+      ).toBe(messages.SCHEDULING.ERRORS.APPOINTMENT_SLOT_UNAVAILABLE);
+    }
+  );
   it.each(['deleted_from_scheduling', 'deletedFromScheduling'])(
     'recognizes the %s archive flag without changing custom attribute keys',
     key => {

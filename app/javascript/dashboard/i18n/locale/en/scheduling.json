@@ -517,6 +517,10 @@
       "SET_SERVICE_AMOUNT_FIRST": "Set the service amount before recording a payment.",
       "SINGLE_DAY_REQUIRED": "Appointment must stay within one local day.",
       "SLOT_CONFLICT": "This slot is already occupied.",
+      "APPOINTMENT_SLOT_UNAVAILABLE": "The selected time is unavailable. Choose another time.",
+      "BUSY_WITH_FREE_STARTS": "Busy from {from} to {to}. Free: {starts}.",
+      "BUSY_NO_FREE_STARTS": "Busy from {from} to {to}. No free time left that day.",
+      "BUSY_UNKNOWN_FREE_STARTS": "Busy from {from} to {to}.",
       "TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT": "Total received amount cannot exceed the service amount.",
       "MEDELEMENT_PATIENT_IDENTITY_CONFLICT": "The patient identity conflicts with a linked MedElement patient. Select the patient card or create a separate appointment.",
       "MEDELEMENT_CANCELLATION_MODE_CHANGED": "The MedElement cancellation setting changed. Refresh this appointment and review the cancellation mode before trying again."
