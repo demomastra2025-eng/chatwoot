@@ -1377,5 +1377,51 @@ describe('SchedulingVueCalCalendar', () => {
       expect(wrapper.emitted('resizeAppointment')).toBeUndefined();
       expect(useAlert).not.toHaveBeenCalled();
     });
+
+    describe('the click that ends a press on the bottom border', () => {
+      const click = (target, clientY) =>
+        mouse(target, 'click', clientY, { button: 0, buttons: 0 });
+
+      beforeEach(() => {
+        // The cell reads its own height to turn a click into a time.
+        vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(
+          1000
+        );
+      });
+
+      it('control: a plain click on the empty cell still opens a new appointment', async () => {
+        const wrapper = await mountDay([morningVisit(1)]);
+        const schedule = eventOf(wrapper, 'Client 1').closest(
+          '.vuecal__schedule'
+        );
+        const y = yOf(wrapper, 14);
+
+        press(schedule, y);
+        release(schedule, y);
+        click(schedule, y);
+        await nextTick();
+
+        expect(wrapper.emitted('createAppointment')).toHaveLength(1);
+      });
+
+      it('does not open a new appointment when a few pixels of drift take the pointer off the border onto the cell below', async () => {
+        const wrapper = await mountDay([morningVisit(1)]);
+        const card = eventOf(wrapper, 'Client 1');
+        const resizer = card.querySelector('.vuecal__event-resizer');
+        const schedule = card.closest('.vuecal__schedule');
+        const y = yOf(wrapper, 10, 29);
+
+        press(resizer, y);
+        move(y + 3);
+        // The release is on the cell below the card: the click goes to their common ancestor.
+        release(schedule, y + 3);
+        click(schedule, y + 3);
+        await nextTick();
+        await settle();
+
+        expect(wrapper.emitted('createAppointment')).toBeUndefined();
+        expect(wrapper.emitted('resizeAppointment')).toBeUndefined();
+      });
+    });
   });
 });

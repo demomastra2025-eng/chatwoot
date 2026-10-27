@@ -107,8 +107,8 @@ const trackListeners = () => {
   return live;
 };
 
-const mountCal = (listeners = {}) => {
-  events = [{ start: at(10), end: at(11), title: 'A' }];
+const mountCal = (listeners = {}, otherEvents = []) => {
+  events = [{ start: at(10), end: at(11), title: 'A' }, ...otherEvents];
   wrapper = mount(
     {
       render: () =>
@@ -176,8 +176,8 @@ describe('vendored vue-cal hold to resize', () => {
   });
 
   // Mount, then remember what is attached so a gesture can be checked to leave nothing behind.
-  const mountAndBaseline = async listeners => {
-    mountCal(listeners);
+  const mountAndBaseline = async (listeners, otherEvents) => {
+    mountCal(listeners, otherEvents);
     await flush();
     return new Set(liveListeners);
   };
@@ -335,31 +335,150 @@ describe('vendored vue-cal hold to resize', () => {
     expect(range(events[0])).toBe(ORIGINAL);
   });
 
-  it.each([
-    [
-      'Escape',
-      () =>
-        document.dispatchEvent(
-          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
-        ),
-    ],
-    ['the window losing focus', () => window.dispatchEvent(new Event('blur'))],
-  ])('cancels and reverts on %s', async (_, cancel) => {
+  it('shortens the card when the border is dragged up, once past the threshold', async () => {
+    const onEventResizeStart = vi.fn();
     const onEventResizeEnd = vi.fn(() => true);
-    const baseline = await mountAndBaseline({ onEventResizeEnd });
+    await mountAndBaseline({ onEventResizeStart, onEventResizeEnd });
+    const endMinutes = ({ end }) => end.getHours() * 60 + end.getMinutes();
 
     press(resizerOf(), ON_BORDER);
-    move(DRAGGED_TO);
+    move(ON_BORDER - 4); // 4px up is still a click.
     await flush();
-    expect(range(events[0])).toBe(DRAGGED_RANGE);
-
-    cancel();
-    await flush();
-
+    expect(onEventResizeStart).not.toHaveBeenCalled();
     expect(range(events[0])).toBe(ORIGINAL);
-    expect(onEventResizeEnd).not.toHaveBeenCalled();
-    expect(isResizingClass()).toBe(false);
-    expect(liveListeners).toEqual(baseline);
+
+    move(ON_BORDER - 5);
+    await flush();
+    expect(onEventResizeStart).toHaveBeenCalledTimes(1);
+
+    move(209); // About 10:30.
+    await flush();
+    expect(endMinutes(events[0])).toBeLessThan(11 * 60);
+    expect(endMinutes(events[0])).toBeGreaterThan(10 * 60);
+
+    release(resizerOf(), 209);
+    await flush();
+    expect(onEventResizeEnd).toHaveBeenCalledTimes(1);
+    expect(endMinutes(events[0])).toBeLessThan(11 * 60);
+  });
+
+  describe('a second press while a resize is armed or running', () => {
+    const SECOND = 'B';
+    const secondResizer = () =>
+      [...wrapper.element.querySelectorAll('.vuecal__event')]
+        .find(el => el.textContent.includes(SECOND))
+        .querySelector('.vuecal__event-resizer');
+    const SECOND_ON_BORDER = 583; // The bottom border of the 14:00-15:00 event.
+    const secondEvent = { start: at(14), end: at(15), title: SECOND };
+
+    // A touchstart of a further finger: `touches` lists every finger down, the first one first.
+    const addFinger = (target, clientY, firstTarget, firstY) => {
+      const event = new Event('touchstart', {
+        bubbles: true,
+        cancelable: true,
+      });
+      Object.defineProperty(event, 'touches', {
+        value: [
+          { clientX: 50, clientY: firstY, target: firstTarget },
+          { clientX: 50, clientY, target },
+        ],
+      });
+      target.dispatchEvent(event);
+    };
+
+    it('ignores a second finger on another card and lets the first resize carry on', async () => {
+      const onEventResizeEnd = vi.fn(() => true);
+      await mountAndBaseline({ onEventResizeEnd }, [secondEvent]);
+
+      touch('touchstart', resizerOf(), ON_BORDER);
+      touch('touchmove', document, DRAGGED_TO);
+      await flush();
+      expect(range(events[0])).toBe(DRAGGED_RANGE);
+
+      addFinger(secondResizer(), SECOND_ON_BORDER, resizerOf(), DRAGGED_TO);
+      touch('touchmove', document, 350);
+      await flush();
+      touch('touchend', document, 350);
+      await flush();
+
+      // The first card was resized and saved, the second one was never armed.
+      expect(onEventResizeEnd).toHaveBeenCalledTimes(1);
+      expect(onEventResizeEnd.mock.calls[0][0].event.title).toBe('A');
+      expect(range(events[1])).toBe('14:00-15:00');
+      expect(isResizingClass()).toBe(false);
+    });
+
+    it('reverts the card when a second finger lands on it and the app refuses the resize', async () => {
+      const onEventResizeEnd = vi.fn(() => false);
+      await mountAndBaseline({ onEventResizeEnd });
+
+      touch('touchstart', resizerOf(), ON_BORDER);
+      touch('touchmove', document, DRAGGED_TO);
+      await flush();
+      expect(range(events[0])).toBe(DRAGGED_RANGE);
+
+      addFinger(resizerOf(), ON_BORDER, resizerOf(), DRAGGED_TO);
+      touch('touchend', document, DRAGGED_TO);
+      await flush();
+      await settle();
+
+      expect(onEventResizeEnd).toHaveBeenCalledTimes(1);
+      expect(range(events[0])).toBe(ORIGINAL);
+    });
+
+    it('starts over on a new single touch when the end of the previous touch was lost', async () => {
+      const onEventResizeEnd = vi.fn(() => true);
+      const baseline = await mountAndBaseline({ onEventResizeEnd });
+
+      touch('touchstart', resizerOf(), ON_BORDER);
+      touch('touchmove', document, DRAGGED_TO);
+      await flush();
+      expect(range(events[0])).toBe(DRAGGED_RANGE);
+
+      // No touchend nor touchcancel ever came (the card was re-rendered under the finger...).
+      touch('touchstart', resizerOf(), ON_BORDER);
+      expect(range(events[0])).toBe(ORIGINAL);
+
+      touch('touchmove', document, DRAGGED_TO);
+      await flush();
+      touch('touchend', document, DRAGGED_TO);
+      await flush();
+
+      expect(onEventResizeEnd).toHaveBeenCalledTimes(1);
+      expect(range(events[0])).toBe(DRAGGED_RANGE);
+      expect(liveListeners).toEqual(baseline);
+    });
+
+    it('reverts the first card and starts over when the mouse is pressed on another one', async () => {
+      const onEventResizeStart = vi.fn();
+      const onEventResizeEnd = vi.fn(() => true);
+      const baseline = await mountAndBaseline(
+        { onEventResizeStart, onEventResizeEnd },
+        [secondEvent]
+      );
+
+      press(resizerOf(), ON_BORDER);
+      move(DRAGGED_TO);
+      await flush();
+      expect(range(events[0])).toBe(DRAGGED_RANGE);
+
+      // The release of the first press never reached the page.
+      press(secondResizer(), SECOND_ON_BORDER);
+      expect(range(events[0])).toBe(ORIGINAL);
+
+      move(SECOND_ON_BORDER + 40);
+      await flush();
+      release(secondResizer(), SECOND_ON_BORDER + 40);
+      await flush();
+
+      expect(onEventResizeStart).toHaveBeenCalledTimes(2);
+      expect(onEventResizeEnd).toHaveBeenCalledTimes(1);
+      expect(onEventResizeEnd.mock.calls[0][0].event.title).toBe(SECOND);
+      expect(range(events[0])).toBe(ORIGINAL);
+      expect(events[1].end.getHours()).toBe(15);
+      expect(events[1].end.getMinutes()).toBeGreaterThan(0);
+      expect(liveListeners).toEqual(baseline);
+    });
   });
 
   it.each([
@@ -471,6 +590,84 @@ describe('vendored vue-cal hold to resize', () => {
     mouse(card, 'click', 200);
     await flush();
     expect(onEventClick).toHaveBeenCalledTimes(1);
+  });
+
+  describe('the click that ends a press on the resizer', () => {
+    // The release lands on the cell around the card, so the browser sends the click to the cell.
+    const click = y => mouse(cellOf(), 'click', y, { button: 0, buttons: 0 });
+
+    it('control: a click on an empty cell reaches the cell', async () => {
+      const onCellClick = vi.fn();
+      await mountAndBaseline({ onCellClick });
+
+      press(cellOf(), 400);
+      release(cellOf(), 400);
+      click(400);
+      await flush();
+
+      expect(onCellClick).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['drifts off the border by a few pixels', ON_BORDER + 3],
+      ['is a bare click on the border', ON_BORDER],
+      ['was a held resize', DRAGGED_TO],
+    ])('never reaches the cell when the press %s', async (_, to) => {
+      const onCellClick = vi.fn();
+      await mountAndBaseline({ onCellClick, onEventResizeEnd: () => true });
+
+      press(resizerOf(), ON_BORDER);
+      move(to);
+      release(cellOf(), to);
+      click(to);
+      await flush();
+
+      expect(onCellClick).not.toHaveBeenCalled();
+    });
+
+    it('never reaches the cell after a tap, whose touchend is followed by mouse events', async () => {
+      const onCellClick = vi.fn();
+      await mountAndBaseline({ onCellClick });
+
+      touch('touchstart', resizerOf(), ON_BORDER);
+      touch('touchend', resizerOf(), ON_BORDER);
+      press(resizerOf(), ON_BORDER);
+      release(cellOf(), ON_BORDER + 3);
+      click(ON_BORDER + 3);
+      await flush();
+
+      expect(onCellClick).not.toHaveBeenCalled();
+    });
+
+    it('is the only click swallowed', async () => {
+      const onCellClick = vi.fn();
+      await mountAndBaseline({ onCellClick });
+
+      press(resizerOf(), ON_BORDER);
+      release(cellOf(), ON_BORDER + 3);
+      await flush();
+      await settle(); // No click came after the release.
+
+      click(400);
+      await flush();
+      expect(onCellClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('is not waited for when the release never reached the page', async () => {
+      const onCellClick = vi.fn();
+      await mountAndBaseline({ onCellClick });
+
+      press(resizerOf(), ON_BORDER);
+      move(DRAGGED_TO);
+      move(400, 0); // The mouseup was lost: the resize is cancelled.
+      await flush();
+
+      press(cellOf(), 400);
+      release(cellOf(), 400);
+      click(400);
+      await flush();
+      expect(onCellClick).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('does not let a press on the resizer start dragging the card to move it', async () => {

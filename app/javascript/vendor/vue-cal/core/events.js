@@ -783,7 +783,19 @@ export const useEvents = vuecal => {
     }
   };
 
+  // The click that ends a press on a resizer belongs to that press, not to whatever is under the
+  // pointer when the button is released: the browser sends it to the closest common ancestor, which
+  // can be the cell around the event. Swallow it so it never creates or selects anything.
+  const swallowNextClick = () => {
+    const stop = e => e.stopPropagation();
+    document.addEventListener('click', stop, { capture: true, once: true });
+    // The click comes right after the release: if none does, do not eat a later one.
+    setTimeout(() => document.removeEventListener('click', stop, true), 0);
+  };
+
   const onDocumentMouseup = async e => {
+    if (e.type === 'mouseup') swallowNextClick();
+
     const {
       isResizing,
       resizingEvent: event,
@@ -832,8 +844,8 @@ export const useEvents = vuecal => {
     }
   };
 
-  // Abort a resize in progress (button released out of reach, window blur, Escape, touchcancel):
-  // put the event back to its original range, without calling resize-end.
+  // Abort a resize in progress (button released out of reach, touchcancel): put the event back to
+  // its original range, without calling resize-end.
   const cancelResize = () => {
     const {
       isResizing,
@@ -847,10 +859,6 @@ export const useEvents = vuecal => {
     resetResizeState();
   };
 
-  const onDocumentKeydown = e => {
-    if (e.key === 'Escape') cancelResize();
-  };
-
   // Clean up document event listeners and reset the resizing state.
   const resetResizeState = () => {
     document.removeEventListener('mousemove', onDocumentMousemove);
@@ -858,8 +866,6 @@ export const useEvents = vuecal => {
     document.removeEventListener('mouseup', onDocumentMouseup);
     document.removeEventListener('touchend', onDocumentMouseup);
     document.removeEventListener('touchcancel', cancelResize);
-    document.removeEventListener('keydown', onDocumentKeydown);
-    window.removeEventListener('blur', cancelResize);
 
     vuecal.touch.isResizingEvent = false; // Remove the CSS class on wrapper while resizing.
     vuecal.touch.currentHoveredCell = null; // Reset current hovered cell.
@@ -887,6 +893,14 @@ export const useEvents = vuecal => {
 
   // Handle mousedown/touchstart on event elements
   const handleEventResize = (e, event, eventEl) => {
+    // Only one resize at a time. A further finger is not a new press, but any other press while one is
+    // still armed means the end of the first never reached the page: drop that gesture (reverting
+    // it) and start over.
+    if (resizeState.resizingEvent) {
+      if (e.touches?.length > 1) return;
+      cancelResize();
+    }
+
     const domEvent = e.touches?.[0] || e; // Handle click or touch event.
     // If the event target is the resizer, set the resizing flag.
     resizeState.fromResizer = !!domEvent.target.closest(
@@ -924,10 +938,8 @@ export const useEvents = vuecal => {
         e.type === 'touchstart' ? 'touchend' : 'mouseup',
         onDocumentMouseup
       );
-      // Cancel (and revert) if the gesture is taken away: touch cancelled, Escape or window blur.
+      // Cancel (and revert) if the touch is taken away.
       document.addEventListener('touchcancel', cancelResize);
-      document.addEventListener('keydown', onDocumentKeydown);
-      window.addEventListener('blur', cancelResize);
     }
   };
 
