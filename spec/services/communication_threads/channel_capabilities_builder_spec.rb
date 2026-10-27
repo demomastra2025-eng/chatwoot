@@ -279,5 +279,75 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
         channel_key: "inbox:#{voice_inbox.id}"
       )
     end
+
+    describe 'the channels a person with no conversation can be written to first' do
+      let(:contact) { create(:contact, account: account, phone_number: '+77011234567') }
+      let(:whatsapp_inbox) { create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox }
+
+      def unlinked_channels(inboxes, person: contact)
+        described_class.new(links: [], contact: person, available_inboxes: inboxes, include_unlinked: true).perform
+      end
+
+      it 'offers the official WhatsApp by the phone number and asks for a template when the person never wrote', :aggregate_failures do
+        channel = unlinked_channels([whatsapp_inbox]).first
+
+        expect(channel).to include(
+          conversation_id: nil, channel_key: "inbox:#{whatsapp_inbox.id}", requires_template: true, can_send_text: false,
+          disabled_reason: 'template_required'
+        )
+      end
+
+      it 'offers Telegram only to a person who has a Telegram id', :aggregate_failures do
+        telegram_inbox = create(:channel_telegram, account: account).inbox
+        person = create(:contact, account: account, additional_attributes: { 'social_telegram_user_id' => '555000111' })
+
+        expect(unlinked_channels([telegram_inbox], person: person).pluck(:inbox_id)).to eq([telegram_inbox.id])
+        expect(unlinked_channels([telegram_inbox]).pluck(:inbox_id)).to be_empty
+      end
+
+      it 'offers WhatsApp Web only to a person who has already written there', :aggregate_failures do
+        web_inbox = create(:channel_whatsapp_web, account: account).inbox
+
+        expect(unlinked_channels([web_inbox]).pluck(:inbox_id)).to be_empty
+
+        create(:contact_inbox, contact: contact, inbox: web_inbox, source_id: '77011234567')
+        channel = unlinked_channels([web_inbox]).first
+
+        expect(channel).to include(inbox_id: web_inbox.id, can_send_text: true, disabled: false)
+      end
+
+      it 'lists a channel that needs a phone number as disabled, with the reason, for a person without one', :aggregate_failures do
+        person = create(:contact, account: account, phone_number: nil)
+
+        channel = unlinked_channels([whatsapp_inbox], person: person).first
+
+        expect(channel).to include(inbox_id: whatsapp_inbox.id, can_send_text: false, disabled: true, disabled_reason: 'missing_contact_phone_number')
+      end
+
+      it 'calls from a voice inbox when the person has a phone number' do
+        voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+
+        expect(unlinked_channels([voice_inbox]).first).to include(inbox_id: voice_inbox.id, can_call: true, can_send_text: false)
+      end
+
+      it 'puts the official WhatsApp first and a call last, in the same order every time', :aggregate_failures do
+        voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+        email_inbox = create(:inbox, :with_email, account: account)
+        sms_inbox = create(:channel_sms, account: account).inbox
+        person = create(:contact, :with_email, account: account, phone_number: '+77011234567')
+
+        inbox_ids = unlinked_channels([voice_inbox, email_inbox, sms_inbox, whatsapp_inbox], person: person).pluck(:inbox_id)
+
+        expect(inbox_ids).to eq([whatsapp_inbox.id, sms_inbox.id, email_inbox.id, voice_inbox.id])
+        expect(unlinked_channels([whatsapp_inbox, sms_inbox, email_inbox, voice_inbox], person: person).pluck(:inbox_id)).to eq(inbox_ids)
+      end
+
+      it 'does not list a chat channel that cannot be started by staff' do
+        web_inbox = create(:channel_whatsapp_web, account: account).inbox
+        instagram_inbox = create(:channel_instagram, account: account).inbox
+
+        expect(unlinked_channels([web_inbox, instagram_inbox]).pluck(:inbox_id)).to be_empty
+      end
+    end
   end
 end

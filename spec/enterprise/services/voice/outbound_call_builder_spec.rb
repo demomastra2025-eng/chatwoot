@@ -63,8 +63,58 @@ RSpec.describe Voice::OutboundCallBuilder do
       end
     end
 
+    describe 'the conversation the call starts' do
+      let(:dispatcher) { Rails.configuration.dispatcher }
+
+      before do
+        create(:inbox_member, user: user, inbox: inbox)
+        allow(dispatcher).to receive(:dispatch).and_call_original
+      end
+
+      it 'is announced to nobody as a new conversation and gets no assignment line', :aggregate_failures do
+        result = described_class.perform!(account: account, inbox: inbox, user: user, contact: contact)
+
+        expect(dispatcher).not_to have_received(:dispatch).with(Events::Types::CONVERSATION_CREATED, anything, anything)
+        expect(dispatcher).not_to have_received(:dispatch).with(Events::Types::ASSIGNEE_CHANGED, anything, anything)
+        expect(result[:conversation].messages.activity).to be_empty
+        expect(Notification.count).to eq(0)
+      end
+
+      it 'goes to the caller when the person has no owner who works in the inbox' do
+        result = described_class.perform!(account: account, inbox: inbox, user: user, contact: contact)
+
+        expect(result[:conversation].reload.assignee).to eq(user)
+      end
+
+      it 'goes to the owner of the person when he works in the inbox', :aggregate_failures do
+        owner = create(:user, account: account)
+        create(:inbox_member, user: owner, inbox: inbox)
+        contact.update!(owner: owner)
+
+        result = described_class.perform!(account: account, inbox: inbox, user: user, contact: contact)
+
+        expect(result[:conversation].reload.assignee).to eq(owner)
+        expect(contact.reload.owner).to eq(owner)
+      end
+
+      it 'is a new conversation for every call' do
+        allow(channel).to receive(:initiate_call).and_return({ call_sid: 'CA-first' }, { call_sid: 'CA-second' })
+        described_class.perform!(account: account, inbox: inbox, user: user, contact: contact)
+
+        expect { described_class.perform!(account: account, inbox: inbox, user: user, contact: contact) }
+          .to change { account.conversations.where(inbox_id: inbox.id).count }.by(1)
+      end
+
+      it 'leaves no conversation behind when the provider refuses the call' do
+        allow(channel).to receive(:initiate_call).and_raise(ArgumentError, 'provider refused')
+
+        expect { described_class.perform!(account: account, inbox: inbox, user: user, contact: contact) }.to raise_error(ArgumentError)
+        expect([Conversation.count, CommunicationThread.count, Message.count]).to eq([0, 0, 0])
+      end
+    end
+
     it 'locks the shared phone identity and uses the canonical contact inbox contact' do
-      canonical_contact = create(:contact, account: account)
+      canonical_contact = create(:contact, account: account, owner: user)
       canonical_contact.update_column(:phone_number, contact.phone_number)
       canonical_contact_inbox = create(
         :contact_inbox,

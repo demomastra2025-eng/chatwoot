@@ -1549,7 +1549,25 @@ RSpec.describe 'Communication Threads API', type: :request do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.parsed_body['error']).to include('requires a template')
+      expect(response.parsed_body['code']).to eq('template_required')
       expect(conversation.messages.outgoing).to be_empty
+    end
+
+    it 'answers the same echo_id with the message it already created', :aggregate_failures do
+      conversation = create(:conversation, account: account)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      thread = conversation.reload.communication_thread
+      params = { content: 'Sent once', conversation_id: conversation.display_id, echo_id: 'bubble-42' }
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages", params: params, headers: headers, as: :json
+      first_id = response.parsed_body['id']
+
+      expect do
+        post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages", params: params, headers: headers, as: :json
+      end.not_to change(Message, :count)
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body['id']).to eq(first_id)
     end
 
     it 'saves a private note on official WhatsApp outside the reply window without a template', :aggregate_failures do

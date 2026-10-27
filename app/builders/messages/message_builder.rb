@@ -205,6 +205,8 @@ class Messages::MessageBuilder
     attrs[:campaign_run_id] = campaign_run_id if campaign_run_id.present?
     attrs[:campaign_test_send] = true if ActiveModel::Type::Boolean.new.cast(@params[:campaign_test_send])
     attrs[:template_params] = template_params if template_params.present?
+    # The key of the bubble the screen sent: the same key sent again is answered with this message, see CommunicationThreads::MessageCreateService.
+    attrs[:echo_id] = @params[:echo_id].to_s if @params[:echo_id].present?
     attrs[:delivery_policy] = delivery_policy if delivery_policy.present?
     policy = Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: @conversation)
     attrs[Outbound::PlaygroundDeliveryPolicy::ATTRIBUTE_KEY] = policy.deep_dup unless policy.nil?

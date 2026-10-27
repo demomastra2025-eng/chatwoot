@@ -87,6 +87,18 @@ module Contacts::SharedPhone # rubocop:disable Metrics/ModuleLength
     attributes
   end
 
+  # The contact a card without a number of its own is written through: whoever holds the shared number as primary, else the
+  # owner the share was recorded with. nil for a card that has its own number or no effective share.
+  def holder_contact(contact)
+    return if contact.blank? || contact.phone_number.present?
+
+    share = share_of(contact)
+    return if share.blank?
+
+    primary_holder(account_id: contact.account_id, phone: share.phone, excluding: [contact.id]) ||
+      (Contact.find_by(id: share.owner_id, account_id: contact.account_id) if share.owner_id)
+  end
+
   def primary_holder(account_id:, phone:, excluding: [])
     return if phone.blank?
 

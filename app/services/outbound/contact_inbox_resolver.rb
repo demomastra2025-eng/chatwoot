@@ -7,11 +7,12 @@ class Outbound::ContactInboxResolver
     matching_contact_inbox || latest_contact_inbox || create_contact_inbox
   end
 
-  private
-
+  # The chat identity of the contact in the inbox: the given one, else the one the channel itself derives for the contact.
   def resolved_source_id
     @resolved_source_id ||= source_id.presence || Campaigns::TargetResolver.new(inbox: inbox, contact: contact).resolve
   end
+
+  private
 
   def matching_contact_inbox
     inbox.contact_inboxes.find_by(contact: contact, source_id: resolved_source_id)

@@ -432,6 +432,9 @@ Rails.application.routes.draw do
             scope module: :contacts do
               resources :conversations, only: [:index]
               resources :communication_threads, only: [:index]
+              resource :dialog, only: [:show] do
+                post :messages, to: 'dialogs#create_message'
+              end
               resources :contact_inboxes, only: [:create]
               resource :shared_phone, only: [:show] do
                 post :promote

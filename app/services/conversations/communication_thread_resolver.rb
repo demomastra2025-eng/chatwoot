@@ -1,5 +1,3 @@
-require 'digest'
-
 class Conversations::CommunicationThreadResolver # rubocop:disable Metrics/ClassLength
   # The status of a person, from the most urgent to the least: open before pending (a bot has it) before snoozed before
   # resolved. A person is resolved only when every channel is.
@@ -92,10 +90,7 @@ class Conversations::CommunicationThreadResolver # rubocop:disable Metrics/Class
   end
 
   def lock_contact_thread!(account_id, contact_id)
-    identity = "communication-thread:#{account_id}:#{contact_id}"
-    lock_id = Digest::SHA256.digest(identity).unpack1('q>')
-
-    ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock(#{lock_id})")
+    CommunicationThreads::PersonLock.lock!(account_id: account_id, contact_id: contact_id)
   end
 
   def linkable_conversation?

@@ -306,6 +306,17 @@ class Conversation < ApplicationRecord
     ActiveModel::Type::Boolean.new.cast(marker) == true
   end
 
+  # The owner of the person is the natural assignee of a new conversation of that person: he works in this inbox (and in
+  # the team, if the conversation has one). Public because the creation of a conversation by a staff member (see
+  # ConversationBuilder) needs the same answer before the record exists.
+  def contact_owner_assignable_to_conversation?
+    return false if contact&.owner_id.blank?
+    return false unless inbox&.members&.exists?(id: contact.owner_id)
+    return true if team.blank?
+
+    team.members.exists?(id: contact.owner_id)
+  end
+
   def dispatch_read_state_update(actor: Current.user)
     dispatcher_dispatch(CONVERSATION_READ, nil, performer: actor)
   end
@@ -393,14 +404,6 @@ class Conversation < ApplicationRecord
     return unless contact_owner_assignable_to_conversation?
 
     self.assignee = contact.owner
-  end
-
-  def contact_owner_assignable_to_conversation?
-    return false if contact&.owner_id.blank?
-    return false unless inbox&.members&.exists?(id: contact.owner_id)
-    return true if team.blank?
-
-    team.members.exists?(id: contact.owner_id)
   end
 
   def sync_contact_owner_from_assignee

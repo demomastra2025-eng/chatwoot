@@ -300,11 +300,11 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
 
     with_current_account_context do
       ::CommunicationThreads::MessageCreateService.new(
-        communication_thread: communication_thread,
+        contact: communication_thread.contact,
         current_user: actor,
         params: ActionController::Parameters.new(params),
         accessible_inboxes: accessible_inboxes_for_actor,
-        accessible_links: accessible_communication_thread_links(communication_thread)
+        accessible_conversations: permissible_conversations
       ).perform
     end
   end
@@ -423,10 +423,6 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     return inboxes.none if actor.blank?
 
     inboxes.where(id: actor.inboxes.where(account_id: account.id).select(:id))
-  end
-
-  def accessible_communication_thread_links(communication_thread)
-    communication_thread.communication_thread_conversations.where(conversation_id: permissible_conversations.select(:id))
   end
 
   def actor_account_user

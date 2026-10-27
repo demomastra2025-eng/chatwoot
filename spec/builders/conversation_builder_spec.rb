@@ -41,6 +41,65 @@ describe ConversationBuilder do
       expect(conversation.contact_inbox_id).to eq(contact_api_inbox.id)
     end
 
+    context 'when a staff member starts the conversation' do
+      let(:staff) { create(:user, account: account, role: :agent) }
+      let(:dispatcher) { Rails.configuration.dispatcher }
+
+      before { allow(dispatcher).to receive(:dispatch).and_call_original }
+
+      def start(contact_inbox: contact_api_inbox, params: {})
+        described_class.new(contact_inbox: contact_inbox, params: ActionController::Parameters.new(params), started_by: staff).perform
+      end
+
+      it 'announces no new conversation and no assignment', :aggregate_failures do
+        conversation = start
+
+        expect(conversation).to be_persisted
+        expect(dispatcher).not_to have_received(:dispatch).with(Events::Types::CONVERSATION_CREATED, anything, anything)
+        expect(dispatcher).not_to have_received(:dispatch).with(Events::Types::ASSIGNEE_CHANGED, anything, anything)
+        expect(conversation.messages.activity).to be_empty
+        expect(Notification.count).to eq(0)
+      end
+
+      it 'returns a record that is not silenced, so later updates are announced' do
+        conversation = start
+        conversation.update!(priority: :high)
+
+        expect(conversation.skip_runtime_events).to be_falsey
+        expect(dispatcher).to have_received(:dispatch).with(Events::Types::CONVERSATION_UPDATED, anything, hash_including(conversation: conversation))
+      end
+
+      it 'assigns the sender when the person has no owner' do
+        expect(start.assignee).to eq(staff)
+      end
+
+      it 'leaves the assignment to the owner of the person', :aggregate_failures do
+        owner = create(:user, account: account, role: :agent)
+        contact.update!(owner: owner)
+
+        conversation = start
+
+        expect(conversation.assignee).to eq(owner)
+        expect(contact.reload.owner).to eq(owner)
+      end
+
+      it 'takes the team and the priority of the dialog it joins in the first save', :aggregate_failures do
+        team = create(:team, account: account)
+
+        conversation = start(params: { team_id: team.id, priority: 'urgent' })
+
+        expect(conversation).to have_attributes(team_id: team.id, priority: 'urgent')
+        expect(dispatcher).not_to have_received(:dispatch).with(Events::Types::TEAM_CHANGED, anything, anything)
+      end
+
+      it 'creates nothing when the inbox keeps one conversation per person and one exists', :aggregate_failures do
+        existing = described_class.new(contact_inbox: contact_api_inbox, params: {}).perform
+
+        expect { start }.not_to change(Conversation, :count)
+        expect(start).to eq(existing)
+      end
+    end
+
     it 'auto-creates a CRM deal only after a new conversation receives an incoming message when enabled' do
       account.enable_features!('crm_deals')
       pipeline = create(
