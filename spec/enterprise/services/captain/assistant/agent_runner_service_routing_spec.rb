@@ -170,7 +170,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       Captain::Runtime::Result.new(output: { response: 'Записала к ЛОРу на 10:00.' }, messages: [], usage: nil, error: nil, context: context)
     end
     suggestion = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation,
-                                        source: 'reply_suggestion')
+                                     source: 'reply_suggestion')
 
     response = suggestion.generate_response(message_history: history)
 
@@ -202,7 +202,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   it 'routes a reply suggestion without writing anything to the conversation and tells the operator about a staff request' do
     decide('human_handoff', confidence: 0.95)
     suggestion = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation,
-                                        source: 'reply_suggestion')
+                                     source: 'reply_suggestion')
 
     response = suggestion.generate_response(message_history: staff_history)
 
@@ -220,7 +220,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     it 'runs no agent in a reply suggestion and tells the manager why there is no draft' do
       decide('no_reply_needed', confidence: 0.97)
       suggestion = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation,
-                                          source: 'reply_suggestion')
+                                       source: 'reply_suggestion')
 
       response = suggestion.generate_response(message_history: history)
 
@@ -235,7 +235,10 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     # operator asked for the suggestion at 16:00: the visit had ended by then, but it was the visit of the patient when they wrote (the
     # eval of 27.10, c76-1222650). The history writes the send time before the reminder; that time is no time the clinic offered either.
     describe 'a confirmation of a visit, read as the visits stood when the patient wrote it' do
-      def suggestion = described_class.new(assistant: doctors, conversation: conversation, source: 'reply_suggestion')
+      def suggestion
+        described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation,
+                            source: 'reply_suggestion')
+      end
 
       def reminder_history
         [{ role: 'assistant', content: 'Напоминаем: сегодня в 14:00 у вас приём. Ждём вас.', sent_at: Time.zone.parse('2026-10-21 06:00:00 UTC') },
@@ -251,6 +254,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       it 'is a courtesy that runs no agent when the visit of the reminder had not ended when the patient wrote' do
         visit_at('09:00')
+        session.update_routing(actor_id: doctors.id)
         decide('no_reply_needed', confidence: 0.97)
 
         response = travel_to(Time.zone.parse('2026-10-21 11:00:00 UTC')) { suggestion.generate_response(message_history: reminder_history) }
@@ -294,7 +298,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     decide('route_agent', yes: [procedures.id], confidence: 0.5)
     allow(Llm::Runtime).to receive(:build_chat).and_call_original
     suggestion = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation,
-                                        source: 'reply_suggestion')
+                                     source: 'reply_suggestion')
 
     response = suggestion.generate_response(message_history: history)
 
