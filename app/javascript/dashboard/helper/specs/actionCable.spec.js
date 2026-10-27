@@ -633,6 +633,34 @@ describe('ActionCableConnector', () => {
       );
     });
 
+    it('forwards the draft preview of a reply suggestion of the current account to the bus, and drops that of another account', () => {
+      expect(actionCable.events['captain.reply_suggestion.preview']).toBe(
+        actionCable.onCaptainReplySuggestionPreview
+      );
+
+      const preview = {
+        account_id: 1,
+        suggestion_request_id: 'sr-1',
+        conversation_id: 42,
+        seq: 3,
+        text: 'Здравствуйте, Анна!',
+      };
+      actionCable.onReceived({
+        event: 'captain.reply_suggestion.preview',
+        data: preview,
+      });
+      actionCable.onReceived({
+        event: 'captain.reply_suggestion.preview',
+        data: { ...preview, account_id: 2 },
+      });
+
+      expect(emitter.emit).toHaveBeenCalledTimes(1);
+      expect(emitter.emit).toHaveBeenCalledWith(
+        BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_PREVIEW,
+        preview
+      );
+    });
+
     it('drops a reply suggestion result of another account', () => {
       actionCable.onReceived({
         event: 'captain.reply_suggestion.result',

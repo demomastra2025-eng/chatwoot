@@ -154,6 +154,7 @@ class ActionCableConnector extends BaseActionCableConnector {
       'notification.updated': this.onNotificationUpdated,
       'captain.reply_suggestion.progress':
         this.onCaptainReplySuggestionProgress,
+      'captain.reply_suggestion.preview': this.onCaptainReplySuggestionPreview,
       'captain.reply_suggestion.result': this.onCaptainReplySuggestionResult,
       'conversation.read': this.onConversationRead,
       'conversation.updated': this.onConversationUpdated,
@@ -724,6 +725,12 @@ class ActionCableConnector extends BaseActionCableConnector {
   // eslint-disable-next-line class-methods-use-this
   onCaptainReplySuggestionProgress = data => {
     emitter.emit(BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_PROGRESS, data);
+  };
+
+  // The draft so far, while the AI is still writing it.
+  // eslint-disable-next-line class-methods-use-this
+  onCaptainReplySuggestionPreview = data => {
+    emitter.emit(BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_PREVIEW, data);
   };
 
   // eslint-disable-next-line class-methods-use-this

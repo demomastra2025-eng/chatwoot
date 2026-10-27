@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useMessageFormatter } from 'shared/composables/useMessageFormatter';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
@@ -25,6 +25,11 @@ const props = defineProps({
   liveProgress: {
     type: Object,
     default: null,
+  },
+  // The draft so far, while the AI is still writing it
+  streamingText: {
+    type: String,
+    default: '',
   },
   pendingActions: {
     type: Array,
@@ -115,6 +120,58 @@ const normalizedPendingActions = computed(() => {
     });
 });
 
+// The draft as the AI writes it takes the place of the stage sentence, in the
+// panel where the final draft will be: when the run ends the text is replaced
+// by the final one in the same spot, and only the buttons change. The cards
+// wait for the end, as before.
+const isStreamingDraft = computed(
+  () =>
+    props.isGeneratingContent &&
+    !props.showCopilotEditor &&
+    Boolean(props.streamingText.trim())
+);
+
+const showPanel = computed(
+  () =>
+    isStreamingDraft.value ||
+    ((props.showCopilotEditor || normalizedPendingActions.value.length > 0) &&
+      !props.isGeneratingContent)
+);
+
+const draftText = computed(() =>
+  isStreamingDraft.value ? props.streamingText : props.generatedContent
+);
+
+// A long draft scrolls inside the panel: while the text grows its end stays in
+// view, unless the manager scrolled up to read; the final draft starts at the
+// top.
+const draftBox = ref(null);
+let followStream = true;
+const onDraftScroll = () => {
+  const el = draftBox.value;
+  if (!el) return;
+  followStream = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+};
+watch(
+  () => props.streamingText,
+  async () => {
+    await nextTick();
+    const el = draftBox.value;
+    if (el && isStreamingDraft.value && followStream) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }
+);
+watch(
+  () => props.showCopilotEditor,
+  async shown => {
+    if (!shown) return;
+    await nextTick();
+    followStream = true;
+    if (draftBox.value) draftBox.value.scrollTop = 0;
+  }
+);
+
 // «AI предлагает: Записать на приём»: no agent or tool name
 const actionTitleText = action =>
   action.title
@@ -177,10 +234,7 @@ onMounted(() => {
     @after-enter="onAfterEnter"
   >
     <div
-      v-if="
-        (showCopilotEditor || normalizedPendingActions.length) &&
-        !isGeneratingContent
-      "
+      v-if="showPanel"
       key="copilot-editor"
       class="mb-2 space-y-2 outline-none"
       tabindex="-1"
@@ -202,7 +256,7 @@ onMounted(() => {
       <!-- A decided card leaves after its result was shown: it fades out
            (a shorter fade without movement under reduced motion) -->
       <TransitionGroup
-        v-if="normalizedPendingActions.length"
+        v-if="normalizedPendingActions.length && !isStreamingDraft"
         tag="div"
         class="space-y-1.5"
         leave-active-class="transition-all duration-200 ease-in motion-reduce:duration-100"
@@ -385,13 +439,26 @@ onMounted(() => {
       </p>
 
       <div
-        v-if="showCopilotEditor"
+        v-if="showCopilotEditor || isStreamingDraft"
+        ref="draftBox"
         class="max-h-56 overflow-y-auto px-1 pt-1"
+        :aria-busy="isStreamingDraft"
         data-test="copilot-draft"
+        :data-streaming="isStreamingDraft ? 'true' : null"
+        @scroll.passive="onDraftScroll"
       >
+        <span
+          v-if="isStreamingDraft"
+          class="sr-only"
+          role="status"
+          data-test="copilot-draft-writing"
+        >
+          {{ t('CONVERSATION.REPLYBOX.COPILOT_SUGGESTION.WRITING') }}
+        </span>
         <div
-          v-dompurify-html="formatMessage(generatedContent, false)"
+          v-dompurify-html="formatMessage(draftText, false)"
           class="prose-sm text-sm font-normal leading-relaxed text-n-slate-12 [&>*:last-child]:!mb-0"
+          :class="{ 'ai-writing': isStreamingDraft }"
         />
       </div>
     </div>
@@ -408,3 +475,44 @@ onMounted(() => {
     />
   </Transition>
 </template>
+
+<style scoped>
+/* While the AI is still writing, a small blue dot pulses at the end of the
+   text; when the final draft arrives in the same spot, it is gone and the text
+   does not move. Under "Reduce motion" it pulses slower, it never stops. */
+.ai-writing > :deep(:last-child)::after {
+  content: '';
+  display: inline-block;
+  width: 0.4em;
+  height: 0.4em;
+  margin-left: 0.35em;
+  border-radius: 9999px;
+  background: rgb(var(--blue-9));
+  animation: ai-writing-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes ai-writing-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-writing > :deep(:last-child)::after {
+    animation-duration: 2.4s;
+  }
+}
+
+/* High contrast: the system colour, no animation */
+@media (forced-colors: active) {
+  .ai-writing > :deep(:last-child)::after {
+    background: CanvasText;
+    animation: none;
+  }
+}
+</style>

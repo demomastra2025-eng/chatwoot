@@ -483,6 +483,167 @@ describe('useCopilotReply', () => {
     });
   });
 
+  describe('the draft as the AI writes it', () => {
+    const emitPreview = (text, overrides = {}) =>
+      emitter.emit(BUS_EVENTS.CAPTAIN_REPLY_SUGGESTION_PREVIEW, {
+        suggestion_request_id: RUN,
+        account_id: 78,
+        conversation_id: 42,
+        conversation_record_id: 9042,
+        seq: 1,
+        text,
+        ...overrides,
+      });
+
+    // A run that is generating in conversation 42
+    const generating = async () => {
+      const copilot = create();
+      mockStartReplySuggestion.mockResolvedValueOnce({
+        state: suggestionState(),
+      });
+      await copilot.startReplySuggestion();
+      emitProgress(progressEvent());
+      return copilot;
+    };
+
+    it('shows the text so far while the run is generating, and keeps the run generating', async () => {
+      const copilot = await generating();
+      expect(copilot.streamingText.value).toBe('');
+
+      emitPreview('Здравствуйте, Анна!', { seq: 1 });
+      expect(copilot.streamingText.value).toBe('Здравствуйте, Анна!');
+
+      emitPreview('Здравствуйте, Анна! Приём стоит 8000 тенге.', { seq: 2 });
+      expect(copilot.streamingText.value).toBe(
+        'Здравствуйте, Анна! Приём стоит 8000 тенге.'
+      );
+      expect(copilot.suggestionPhase.value).toBe('generating');
+      expect(copilot.isGenerating.value).toBe(true);
+      // not a draft: nothing to insert, the editor is not open
+      expect(copilot.showEditor.value).toBe(false);
+      expect(copilot.canAccept.value).toBe(false);
+      expect(copilot.generatedContent.value).toBe('');
+    });
+
+    it('drops a preview that arrives after a newer one', async () => {
+      const copilot = await generating();
+
+      emitPreview('Здравствуйте, Анна! Приём', { seq: 3 });
+      emitPreview('Здравствуйте', { seq: 2 });
+      emitPreview('Здравствуйте, Анна! Приём', { seq: 3 });
+
+      expect(copilot.streamingText.value).toBe('Здравствуйте, Анна! Приём');
+    });
+
+    it('takes the text back when the server says that what was written is not the answer', async () => {
+      const copilot = await generating();
+      emitPreview('Сейчас проверю расписание', { seq: 1 });
+
+      emitPreview('', { seq: 2 });
+
+      expect(copilot.streamingText.value).toBe('');
+    });
+
+    it('is replaced by the final draft in the same moment, which is ready at once', async () => {
+      const copilot = await generating();
+      emitPreview('Здравствуйте! Ближайшее окно к ЛОР-врачу завтра', {
+        seq: 1,
+      });
+
+      emitResult(draftState());
+
+      expect(copilot.streamingText.value).toBe('');
+      expect(copilot.generatedContent.value).toBe(
+        'Здравствуйте! Ближайшее окно к ЛОР-врачу завтра в 10:00.'
+      );
+      expect(copilot.showEditor.value).toBe(true);
+      expect(copilot.isGenerating.value).toBe(false);
+      // the panel with the text was on screen already: no transition to wait for
+      expect(copilot.isContentReady.value).toBe(true);
+      expect(copilot.isButtonDisabled.value).toBe(false);
+    });
+
+    it('waits for the panel transition as before when no text was shown', async () => {
+      const copilot = await generating();
+
+      emitResult(draftState());
+
+      expect(copilot.isContentReady.value).toBe(false);
+      expect(copilot.isButtonDisabled.value).toBe(true);
+    });
+
+    it('takes the text back when the run ends as a notice or as a failure', async () => {
+      const notice = await generating();
+      emitPreview('Это решит администратор, ждите ответа', { seq: 1 });
+      expect(notice.streamingText.value).not.toBe('');
+
+      emitResult(noticeState('human_needed'));
+
+      expect(notice.streamingText.value).toBe('');
+      expect(notice.showEditor.value).toBe(false);
+      expect(notice.generatedContent.value).toBe('');
+
+      const failed = await generating();
+      emitPreview('Здравствуйте, Анна', { seq: 1 });
+      emitResult(failedState());
+
+      expect(failed.streamingText.value).toBe('');
+    });
+
+    it('takes the text away with «Отменить» and ignores the previews that come after', async () => {
+      const copilot = await generating();
+      emitPreview('Здравствуйте, Анна', { seq: 1 });
+
+      copilot.cancelGeneration();
+      expect(copilot.streamingText.value).toBe('');
+
+      emitPreview('Здравствуйте, Анна! Приём', { seq: 2 });
+      expect(copilot.streamingText.value).toBe('');
+    });
+
+    it('ignores previews of another run, of another conversation and of a run that is not followed', async () => {
+      const copilot = await generating();
+
+      emitPreview('Чужой черновик', {
+        suggestion_request_id: 'sr-other',
+        seq: 1,
+      });
+      emitPreview('Чужой диалог', { conversation_id: 99, seq: 1 });
+      expect(copilot.streamingText.value).toBe('');
+
+      const idle = create();
+      emitPreview('Никто не ждёт', { seq: 5 });
+      expect(idle.streamingText.value).toBe('');
+      expect(idle.suggestionPhase.value).toBe('idle');
+    });
+
+    it('does not show a preview that comes after the run settled', async () => {
+      const copilot = await generating();
+      emitResult(draftState());
+
+      emitPreview('Запоздавший текст', { seq: 9 });
+
+      expect(copilot.streamingText.value).toBe('');
+    });
+
+    it('starts from nothing for the next run', async () => {
+      const copilot = await generating();
+      emitPreview('Здравствуйте, Анна', { seq: 4 });
+      emitResult(draftState());
+      copilot.dismiss();
+
+      mockStartReplySuggestion.mockResolvedValueOnce({
+        state: suggestionState({ suggestion_request_id: 'sr-2' }),
+      });
+      await copilot.startReplySuggestion();
+      emitProgress(progressEvent({ suggestion_request_id: 'sr-2' }));
+      // the numbers start again with the run
+      emitPreview('Новый ответ', { suggestion_request_id: 'sr-2', seq: 1 });
+
+      expect(copilot.streamingText.value).toBe('Новый ответ');
+    });
+  });
+
   describe('start errors', () => {
     it('shows an unavailable notice for a voice conversation without an alert', async () => {
       const copilot = create();
