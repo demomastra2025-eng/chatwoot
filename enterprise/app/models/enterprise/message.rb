@@ -42,11 +42,10 @@ module Enterprise::Message
     thread = conversation.communication_thread
     conversations = thread ? thread.conversations.where(account_id: conversation.account_id).pending : [conversation].select(&:pending?)
     conversations.filter_map do |candidate|
-      # Look the assistant up by inbox: the caller's cached inbox may predate its Captain link.
-      assistant = ::CaptainInbox.enabled_for_runtime.find_by(inbox_id: candidate.inbox_id)&.captain_assistant
-      next unless assistant&.account_id == conversation.account_id
+      # Look the channel up by inbox: the caller's cached inbox may predate its Captain link.
+      next unless candidate.account_id == conversation.account_id && ::CaptainInbox.enabled_for_runtime.exists?(inbox_id: candidate.inbox_id)
 
-      Captain::Conversation::ResponseCancellationService.new(conversation: candidate, assistant: assistant, actor: sender)
+      Captain::Conversation::ResponseCancellationService.new(conversation: candidate, actor: sender)
     end
   end
 

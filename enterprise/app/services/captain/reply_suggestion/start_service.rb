@@ -10,6 +10,8 @@ class Captain::ReplySuggestion::StartService
     disabled: :forbidden,
     quota_exceeded: :too_many_requests,
     api_key_missing: :unprocessable_content,
+    no_active_agent: :unprocessable_content,
+    no_routing_cards: :unprocessable_content,
     voice_channel_unsupported: :unprocessable_content,
     busy: :too_many_requests
   }.freeze
@@ -105,7 +107,7 @@ class Captain::ReplySuggestion::StartService
     engine = task_service.suggestion_engine
     Captain::ReplySuggestion::RequestStore.create!(
       lock_owner(id).merge(
-        'conversation_display_id' => conversation_display_id.to_i, 'engine' => engine[:engine], 'assistant_id' => engine[:assistant_id],
+        'conversation_display_id' => conversation_display_id.to_i, 'engine' => engine[:engine],
         'based_on_message_id' => based_on_message_id, 'budget_seconds' => Captain::ReplySuggestion.budget_seconds(router: routed?(engine))
       )
     )
@@ -113,10 +115,9 @@ class Captain::ReplySuggestion::StartService
 
   # The agent of the request is chosen by the router among two or more agents (and may be a council): the longer budget.
   def routed?(engine)
-    return false unless engine[:engine] == 'agent' && engine[:assistant_id].present?
+    return false unless engine[:engine] == 'agent'
 
-    assistant = account.captain_assistants.find_by(id: engine[:assistant_id])
-    assistant.present? && !Captain::AgentGraph.new(assistant, inbox: conversation.inbox).solo?
+    !Captain::AgentGraph.new(Captain::ChannelScope.for_conversation(conversation)).solo?
   rescue StandardError
     false
   end

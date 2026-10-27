@@ -10,23 +10,14 @@ module Enterprise::Api::V1::Accounts::ConversationsController
     trigger_captain_auto_reply_for_last_incoming(previous_status)
   end
 
+  # Whether the AI answers in the channel of the conversation. The channel has no agent of its own: the router picks one.
   def inbox_assistant
-    assistant = @conversation.inbox.captain_assistant
-
-    if assistant
-      render json: { assistant: { id: assistant.id, name: assistant.name } }
-    else
-      render json: { assistant: nil }
-    end
+    render json: { ai: { enabled: Captain::ChannelScope.for_conversation(@conversation).runtime_enabled? } }
   end
 
   def cancel_captain_response
-    assistant = @conversation.inbox.captain_assistant
-    return render json: { error: 'Captain assistant not found' }, status: :not_found unless assistant
-
     Captain::Conversation::ResponseCancellationService.new(
       conversation: @conversation,
-      assistant: assistant,
       actor: Current.user
     ).perform(reason: params[:reason])
 
@@ -46,18 +37,13 @@ module Enterprise::Api::V1::Accounts::ConversationsController
   def trigger_captain_auto_reply_for_last_incoming(previous_status)
     return unless should_auto_reply_with_captain?(previous_status)
 
-    assistant = @conversation.inbox.captain_assistant
     last_incoming_message = latest_public_incoming_message
-    return unless assistant.present? && last_incoming_message.present?
+    return if last_incoming_message.blank?
 
-    Captain::Conversation::TypingIndicatorService.turn_on(
-      conversation: @conversation,
-      assistant: assistant
-    )
+    Captain::Conversation::TypingIndicatorService.turn_on(conversation: @conversation)
     @conversation.stamp_captain_control_generation!(last_incoming_message)
     Captain::Conversation::ResponseBuilderJob.perform_later(
       @conversation,
-      assistant,
       expected_last_message_id: last_incoming_message.id
     )
   end
@@ -73,11 +59,7 @@ module Enterprise::Api::V1::Accounts::ConversationsController
     return unless previous_status == 'pending' || previous_status == Conversation.statuses[:pending]
     return if @conversation.pending?
 
-    captain_assistant = ::CaptainInbox.find_by(inbox_id: @conversation.inbox_id)&.captain_assistant
-    Captain::Conversation::TypingIndicatorService.turn_off(
-      conversation: @conversation,
-      assistant: captain_assistant
-    )
+    Captain::Conversation::TypingIndicatorService.turn_off(conversation: @conversation)
   end
 
   def latest_public_incoming_message
@@ -95,8 +77,7 @@ module Enterprise::Api::V1::Accounts::ConversationsController
   end
 
   def captain_available_for_auto_reply?
-    assistant = @conversation.inbox&.captain_assistant
-    assistant&.auto_reply_on_last_incoming_enabled? &&
+    Captain::AccountSettings.new(@conversation.account).section('handoff')['auto_reply_on_last_incoming'] &&
       @conversation.inbox&.captain_active? &&
       @conversation.inbox&.captain_auto_reply_allowed?
   end

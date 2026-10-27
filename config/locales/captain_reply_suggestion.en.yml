@@ -10,6 +10,9 @@ en:
         quota_exceeded: The AI reply limit is used up.
         forbidden: You do not have access to this conversation.
         not_found: Suggestion not found.
+        no_active_agent: 'AI is off: all agents are disabled.'
+        no_routing_cards: 'AI cannot pick an agent: fill in “What the agent does” for the agents.'
+        action_agent_unavailable: 'This action is unavailable: the agent that prepared it is off. Ask the AI again.'
       reasons:
         safety_blocked: The safety check stopped the AI reply, please answer the customer yourself.
         agent_rule: 'An agent rule applied: %{reason}. Please answer the customer yourself.'

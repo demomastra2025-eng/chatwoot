@@ -95,7 +95,6 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
       'auto_cancel_on_incoming_explicit' => true,
       'captain_follow_up' => {
         'assistant_id' => payload[:assistant].id,
-        'entry_assistant_id' => ownership.entry&.id,
         'routing_revision' => ownership.routing_revision,
         'part_id' => part&.dig('id') || part&.dig('part_id'),
         'part_version' => part&.dig('version') || part&.dig('part_version'),
@@ -637,7 +636,6 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
     attributes = {
       'captain_follow_up' => {
         'assistant_id' => @assistant.id,
-        'entry_assistant_id' => @reminder.metadata.dig('captain_follow_up', 'entry_assistant_id'),
         'routing_revision' => @reminder.metadata.dig('captain_follow_up', 'routing_revision'),
         'part_id' => @reminder.metadata.dig('captain_follow_up', 'part_id'),
         'part_version' => @reminder.metadata.dig('captain_follow_up', 'part_version'),

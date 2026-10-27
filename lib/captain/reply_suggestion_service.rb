@@ -7,7 +7,8 @@ class Captain::ReplySuggestionService < Captain::BaseTaskService
   # conversation: the conversation the caller already resolved.
   # request: the options of a reply suggestion request (see Captain::ReplySuggestion::GenerateJob):
   #   request_id         the id of the request, shared by every llm event of the run
-  #   engine, assistant_id  fixed when the request started (see #suggestion_engine)
+  #   engine             fixed when the request started (see #suggestion_engine)
+  #   assistant_id       kept in the records of an earlier release, which named an agent; ignored (the router picks the agent)
   #   progress_context   what the live progress events need (suggestion_request_id, requested conversation id, timing)
   def initialize(account:, conversation_display_id:, user:, conversation: nil, **request)
     super(account: account, conversation_display_id: conversation_display_id)
@@ -16,7 +17,6 @@ class Captain::ReplySuggestionService < Captain::BaseTaskService
     @conversation = conversation
     @request_id = request[:request_id]
     @engine = request[:engine]
-    @assistant_id = request[:assistant_id]
     @progress_context = request[:progress_context]
   end
 

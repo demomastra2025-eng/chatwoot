@@ -7,7 +7,8 @@ module Enterprise::MessageTemplates::HookExecutionService
     auto_reply_allowed = inbox.captain_auto_reply_allowed?
     return schedule_captain_response if auto_reply_allowed && inbox.captain_active?
 
-    open_conversation_for_human_response(quota_used_up: auto_reply_allowed && inbox.captain_assistant.active?)
+    # The channel is ready for the AI (switched on, an agent is enabled) but it is not active: the workspace quota is used up.
+    open_conversation_for_human_response(quota_used_up: auto_reply_allowed && channel_ready_for_ai?)
   end
 
   def should_send_greeting?
@@ -31,17 +32,21 @@ module Enterprise::MessageTemplates::HookExecutionService
 
   private
 
+  # The AI answers by itself in this channel: which agent answers is decided by the router when the job runs.
   def schedule_captain_response
-    assistant = conversation.inbox.captain_assistant
     attachment_wait_time = message.attachments.blank? ? 0.seconds : calculate_attachment_wait_time
 
-    Captain::Conversation::TypingIndicatorService.turn_on(conversation: conversation, assistant: assistant)
+    Captain::Conversation::TypingIndicatorService.turn_on(conversation: conversation)
 
-    if assistant.message_collapse_window_seconds_value.zero?
-      schedule_response_builder(assistant, attachment_wait_time)
+    if Captain::AccountSettings.new(conversation.account).message_collapse_window_seconds.zero?
+      schedule_response_builder(attachment_wait_time)
     else
-      schedule_buffered_response(assistant, attachment_wait_time)
+      schedule_buffered_response(attachment_wait_time)
     end
+  end
+
+  def channel_ready_for_ai?
+    Captain::ChannelScope.for_inbox(inbox).runtime_enabled?
   end
 
   def calculate_attachment_wait_time
@@ -53,12 +58,11 @@ module Enterprise::MessageTemplates::HookExecutionService
     base_wait + additional_wait
   end
 
-  def schedule_response_builder(assistant, attachment_wait_time)
-    job_args = [conversation, assistant]
+  def schedule_response_builder(attachment_wait_time)
     conversation.stamp_captain_control_generation!(message)
     if attachment_wait_time.zero?
       return Captain::Conversation::ResponseBuilderJob.perform_later(
-        *job_args,
+        conversation,
         expected_last_message_id: message.id
       )
     end
@@ -66,15 +70,14 @@ module Enterprise::MessageTemplates::HookExecutionService
     Captain::Conversation::ResponseBuilderJob
       .set(wait: attachment_wait_time)
       .perform_later(
-        *job_args,
+        conversation,
         expected_last_message_id: message.id
       )
   end
 
-  def schedule_buffered_response(assistant, attachment_wait_time)
+  def schedule_buffered_response(attachment_wait_time)
     Captain::Conversation::BufferedResponseSchedulerService.new(
       conversation: conversation,
-      assistant: assistant,
       message: message,
       attachment_wait_time: attachment_wait_time
     ).perform
@@ -82,7 +85,7 @@ module Enterprise::MessageTemplates::HookExecutionService
 
   def should_process_captain_response?
     !conversation.group_conversation? && conversation_accepts_captain_response? && message.incoming? &&
-      !message.voice_call? && !message.ai_voice_transcript_turn? && inbox.captain_assistant.present?
+      !message.voice_call? && !message.ai_voice_transcript_turn? && inbox.captain_inbox.present?
   end
 
   def conversation_accepts_captain_response?
@@ -95,8 +98,8 @@ module Enterprise::MessageTemplates::HookExecutionService
   def captain_handling_conversation?
     !conversation.group_conversation? &&
       conversation_accepts_captain_response? &&
-      inbox.respond_to?(:captain_assistant) &&
-      inbox.captain_assistant.present? &&
+      inbox.respond_to?(:captain_inbox) &&
+      inbox.captain_inbox.present? &&
       inbox.captain_auto_reply_allowed? &&
       inbox.captain_active?
   end
@@ -112,7 +115,7 @@ module Enterprise::MessageTemplates::HookExecutionService
     quota_used_up ? handoff_without_captain_quota : open_outside_captain_schedule
     return if conversation.pending?
 
-    Captain::Conversation::TypingIndicatorService.turn_off(conversation: conversation, assistant: inbox.captain_assistant)
+    Captain::Conversation::TypingIndicatorService.turn_off(conversation: conversation)
   ensure
     Current.user, Current.executed_by = previous_current if previous_current
   end
@@ -122,7 +125,7 @@ module Enterprise::MessageTemplates::HookExecutionService
     Conversation.transaction do
       next unless Conversation.lock.find(conversation.id).pending?
 
-      create_staff_handoff_note('Automatic reply is unavailable outside the agent schedule.') if inbox.captain_assistant.active?
+      create_staff_handoff_note('Automatic reply is unavailable outside the agent schedule.') if channel_ready_for_ai?
       Conversations::StatusTransitionService.new(conversation: conversation, params: { status: 'open' }, source: 'system').perform
     end
   end
@@ -139,7 +142,7 @@ module Enterprise::MessageTemplates::HookExecutionService
 
   def create_staff_handoff_note(content)
     conversation.messages.create!(
-      message_type: :outgoing, private: true, sender: inbox.captain_assistant,
+      message_type: :outgoing, private: true, sender: nil,
       account_id: conversation.account_id, inbox_id: conversation.inbox_id, content: content
     )
   end

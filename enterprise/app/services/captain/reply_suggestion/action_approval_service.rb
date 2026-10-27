@@ -772,14 +772,12 @@ class Captain::ReplySuggestion::ActionApprovalService
       target_appt = if tool_id.in?(%w[update_appointment cancel_appointment]) && arguments[:appointment_access_token].present?
                       resolve_target_appointment_quietly(assistant: assistant, conversation: conversation, arguments: arguments)
                     end
-      entry_assistant_id = state[:entry_assistant_id].presence || assistant&.id
       record = {
         'action_id' => SecureRandom.uuid,
         'account_id' => account&.id,
         'conversation_id' => conversation&.id,
         'conversation_display_id' => conversation&.display_id || state.dig(:conversation, :display_id),
         'assistant_id' => assistant&.id,
-        'entry_assistant_id' => entry_assistant_id,
         'tool_name' => tool_id,
         'status' => PENDING_STATUS,
         'digest' => digest,
@@ -1137,11 +1135,11 @@ class Captain::ReplySuggestion::ActionApprovalService
     conversation
   end
 
-  def resolve_execution_assistant!(record, conversation)
-    assistant = @account.captain_assistants.find_by(id: record['assistant_id']) if record['assistant_id'].present?
-    assistant ||= conversation.inbox&.captain_assistant
-    assistant ||= @account.captain_assistants.entry_eligible.order(:id).first
-    raise InvalidStateError, 'Captain assistant is not available' if assistant.blank?
+  # The card is executed by the agent that prepared it, and by nobody else. When that agent is switched off or deleted the card is
+  # stale: the manager asks the AI again.
+  def resolve_execution_assistant!(record, _conversation)
+    assistant = @account.captain_assistants.entry_eligible.find_by(id: record['assistant_id']) if record['assistant_id'].present?
+    raise InvalidStateError, I18n.t('captain.reply_suggestion.errors.action_agent_unavailable') if assistant.blank?
 
     assistant
   end
@@ -1155,7 +1153,7 @@ class Captain::ReplySuggestion::ActionApprovalService
     record.delete('error_message')
     self.class.store_record!(record)
 
-    tool_context = build_execution_tool_context(assistant: assistant, conversation: conversation, record: record)
+    tool_context = build_execution_tool_context(assistant: assistant, conversation: conversation)
     arguments = record['arguments'].to_h.deep_symbolize_keys
     refresh_appointment_access_token!(arguments: arguments, record: record, assistant: assistant, conversation: conversation)
     previous_actor = Current.executed_by
@@ -1175,7 +1173,7 @@ class Captain::ReplySuggestion::ActionApprovalService
       raise ExecutionError.new(error_message, action: self.class.public_payload(record))
     end
 
-    record_done_in_session(record: record, conversation: conversation, assistant: assistant, tool: tool, arguments: arguments, result: raw_result)
+    record_done_in_session(record: record, conversation: conversation, tool: tool, arguments: arguments, result: raw_result)
     record['status'] = APPROVED_STATUS
     record['approved_at'] = Time.current.iso8601
     record['approved_by_id'] = @user&.id
@@ -1217,14 +1215,13 @@ class Captain::ReplySuggestion::ActionApprovalService
     )
   end
 
-  def build_execution_tool_context(assistant:, conversation:, record:)
+  def build_execution_tool_context(assistant:, conversation:)
     runner_service = Captain::Assistant::AgentRunnerService.new(
       assistant: assistant,
       conversation: conversation,
       source: 'operator_approved_suggestion'
     )
     state = runner_service.send(:build_state)
-    state[:entry_assistant_id] = record['entry_assistant_id'] || assistant.id
     run_context = Captain::Runtime::RunContext.new(
       {
         state: state,
@@ -1235,8 +1232,7 @@ class Captain::ReplySuggestion::ActionApprovalService
     Captain::Runtime::ToolContext.new(run_context: run_context)
   end
 
-  def record_done_in_session(record:, conversation:, assistant:, tool:, arguments:, result:)
-    entry_assistant = @account.captain_assistants.find_by(id: record['entry_assistant_id']) || assistant
+  def record_done_in_session(record:, conversation:, tool:, arguments:, result:)
     done = Captain::DoneActions.entry(
       tool_name: tool.name,
       arguments: arguments,
@@ -1245,7 +1241,7 @@ class Captain::ReplySuggestion::ActionApprovalService
     )
     return if done.blank?
 
-    session = Captain::Conversation::AgentSession.new(entry: entry_assistant, conversation: conversation)
+    session = Captain::Conversation::AgentSession.new(conversation: conversation)
     session.change do |data|
       data['done'] = Captain::DoneActions.remember(data['done'], done.deep_stringify_keys)
     end
