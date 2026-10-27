@@ -206,6 +206,7 @@ Rails.application.routes.draw do
           resources :dashboard_apps, only: [:index, :show, :create, :update, :destroy]
 
           namespace :scheduling do
+            resource :appointment_field_fill, only: [:show], controller: 'appointment_field_fill'
             resource :calendar, only: [:show], controller: 'calendar'
             resource :availability, only: [:show], controller: 'availability'
             resources :resources, only: [:index, :show, :create, :update, :destroy] do

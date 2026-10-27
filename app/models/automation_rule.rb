@@ -142,15 +142,19 @@ class AutomationRule < ApplicationRecord
   validate :new_touch_plan_actions_not_supported
   validate :query_operator_presence
   validate :query_operator_value
+  validate :appointment_schedule_override_valid
+  validate :appointment_template_fields_available
   validates :account_id, presence: true
 
   before_validation :normalize_action_ids
   before_destroy :cancel_live_touch_enrollments, prepend: true
+  before_destroy :cancel_open_rule_touches, prepend: true
   after_update_commit :reauthorized!, if: -> { saved_change_to_conditions? }
   after_update_commit :reconcile_live_touch_enrollments,
                       if: -> { saved_change_to_actions? || saved_change_to_active? || saved_change_to_conditions? }
-  after_update_commit :backfill_live_appointment_enrollments,
-                      if: -> { saved_change_to_active? && active? && event_name == 'appointment_created' }
+  after_update_commit :cancel_removed_or_inactive_touches,
+                      if: -> { saved_change_to_actions? || saved_change_to_active? }
+  after_commit :backfill_live_appointment_enrollments, on: %i[create update], if: :backfill_live_appointment_enrollments?
 
   scope :active, -> { where(active: true) }
 
@@ -219,8 +223,51 @@ class AutomationRule < ApplicationRecord
 
   def normalized_touch_action(action, action_id)
     action['action_id'] = action_id
-    action['action_params'] = without_relative_schedule_override(action['action_params']) if action.key?('action_params')
+    if action.key?('action_params')
+      action['action_params'] = if appointment_event?
+                                  normalize_appointment_touch_params(action['action_params'])
+                                else
+                                  without_relative_schedule_override(action['action_params'])
+                                end
+    end
     action
+  end
+
+  def normalize_appointment_touch_params(action_params)
+    return action_params.map { |params| normalize_appointment_touch_param(params) } if action_params.is_a?(Array)
+
+    normalize_appointment_touch_param(action_params)
+  end
+
+  def normalize_appointment_touch_param(params)
+    return params unless params.is_a?(Hash)
+
+    params = params.deep_stringify_keys
+    params.delete('manual_schedule_override') if params['scheduled_at'].blank?
+    params['timezone'] = account.workspace_working_hours_timezone if account.present?
+    params
+  end
+
+  def appointment_schedule_override_valid
+    return unless appointment_event?
+
+    invalid = actions.any? { |action| invalid_appointment_override?(action) }
+    errors.add(:actions, I18n.t('appointment_notifications.schedule_override')) if invalid
+  end
+
+  def invalid_appointment_override?(action)
+    return false unless action['action_name'] == 'create_touch'
+
+    Array.wrap(action['action_params']).any? do |params|
+      params.is_a?(Hash) && params['scheduled_at'].blank? &&
+        ActiveModel::Type::Boolean.new.cast(params['manual_schedule_override']) == true
+    end
+  end
+
+  def appointment_template_fields_available
+    AutomationRules::AppointmentTemplateFieldPolicy.new(rule: self).errors.each do |message|
+      errors.add(:actions, message)
+    end
   end
 
   # The touch editor has no manual-time control, so the flag can only be a leftover of a legacy action: it is dropped
@@ -245,6 +292,33 @@ class AutomationRule < ApplicationRecord
 
   def backfill_live_appointment_enrollments
     Reminders::BackfillAutomationRuleEnrollmentsJob.perform_later(id, updated_at)
+  end
+
+  def backfill_live_appointment_enrollments?
+    (previously_new_record? || saved_change_to_active?) && active? && event_name == 'appointment_created'
+  end
+
+  def cancel_open_rule_touches
+    Reminders::CancelRuleTouchesService.new(rule: self, reason: 'automation_rule_deleted').perform
+  end
+
+  def cancel_removed_or_inactive_touches
+    unless active?
+      Reminders::CancelRuleTouchesService.new(rule: self, reason: 'automation_rule_inactive').perform
+      return
+    end
+
+    old_ids = touch_action_ids(saved_change_to_actions&.first)
+    removed_ids = old_ids - touch_action_ids(actions)
+    return if removed_ids.empty?
+
+    Reminders::CancelRuleTouchesService.new(rule: self, reason: 'automation_action_removed', action_ids: removed_ids).perform
+  end
+
+  def touch_action_ids(action_list)
+    Array(action_list).filter_map do |action|
+      action['action_id'].to_s if action['action_name'] == 'create_touch' && action['action_id'].present?
+    end
   end
 
   def cancel_live_touch_enrollments

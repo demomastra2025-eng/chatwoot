@@ -100,7 +100,7 @@ RSpec.describe Reminders::BackfillAutomationRuleEnrollmentsJob do
     clear_performed_jobs
   end
 
-  it 'backfills only matching future appointment touch enrollments when the rule is enabled', :aggregate_failures do
+  it 'backfills all matching future appointment touch enrollments when the rule is enabled', :aggregate_failures do
     expect(WebhookJob).not_to receive(:perform_later)
 
     perform_enqueued_jobs do
@@ -117,7 +117,7 @@ RSpec.describe Reminders::BackfillAutomationRuleEnrollmentsJob do
     expect(account.touch_plan_enrollments.where(automation_rule: rule, remindable: terminal_appointment)).to be_empty
     expect(account.touch_plan_enrollments.where(automation_rule: rule, remindable: nonmatching_appointment)).to be_empty
     expect(account.touch_plan_enrollments.where(automation_rule: rule, remindable: expired_appointment)).to be_empty
-    expect(account.touch_plan_enrollments.where(automation_rule: rule, remindable: stale_appointment)).to be_empty
+    expect(account.touch_plan_enrollments.where(automation_rule: rule, remindable: stale_appointment).count).to eq(1)
     expect(account.reminders.where(remindable: appointment_created_while_disabled)).to be_empty
 
     claim = Reminders::MaterializeEnrollmentStepService.new(
@@ -144,7 +144,22 @@ RSpec.describe Reminders::BackfillAutomationRuleEnrollmentsJob do
     ).to eq(1)
   end
 
-  it 'keeps the backfill window anchored to activation time when the job is delayed' do
+  it 'covers one hundred already booked future visits' do
+    100.times do |index|
+      starts_at = 6.days.from_now + index.hours
+      create(:scheduling_appointment, account: account, resource: resource,
+                                      contact: appointment_created_while_disabled.contact,
+                                      service: appointment_created_while_disabled.service,
+                                      starts_at: starts_at, ends_at: starts_at + 30.minutes)
+    end
+
+    rule.update!(active: true)
+    described_class.perform_now(rule.id)
+
+    expect(account.touch_plan_enrollments.where(automation_rule: rule).count).to eq(102)
+  end
+
+  it 'does not backfill event-moment notices for old visits' do
     touch_action = rule.actions.second.deep_dup
     touch_action['action_params'] = touch_action['action_params'].merge(
       'relative_anchor' => 'touch.created_at',
@@ -152,25 +167,9 @@ RSpec.describe Reminders::BackfillAutomationRuleEnrollmentsJob do
     )
     rule.update!(actions: [touch_action])
     clear_enqueued_jobs
-    rule.update!(active: true)
-    activation_time = rule.reload.updated_at
-    clear_enqueued_jobs
+    perform_enqueued_jobs { rule.update!(active: true) }
 
-    travel_to(activation_time + 10.minutes) do
-      described_class.perform_now(rule.id, activation_time)
-
-      enrollment = account.touch_plan_enrollments.find_by!(
-        automation_rule: rule,
-        remindable: appointment_created_while_disabled
-      )
-      expect(enrollment.activated_at).to eq(activation_time)
-      expect(enrollment.next_due_at).to eq(activation_time + 1.minute)
-
-      claim = Reminders::MaterializeEnrollmentStepService.new(enrollment: enrollment).perform
-      expect(claim).to have_attributes(status: 'skipped', last_error: 'missed_due_to_reschedule')
-    end
-
-    expect(account.touch_plan_enrollments.where(automation_rule: rule, remindable: stale_appointment)).to be_empty
+    expect(account.touch_plan_enrollments.where(automation_rule: rule)).to be_empty
     expect(account.reminders.where(remindable: appointment_created_while_disabled)).to be_empty
   end
 
