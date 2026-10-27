@@ -59,4 +59,12 @@ RSpec.describe 'Scheduling MedElement patients API', type: :request do
     post "#{path}/search", params: { query: 'Қуаныш' }, headers: headers, as: :json
     expect(response.parsed_body['code']).to eq('SCHEDULING_PROVIDER_NOT_CONFIGURED')
   end
+
+  it 'does not search for a user outside the account' do
+    outsider = create(:user)
+    expect(Integrations::Medelement::Client).not_to receive(:new)
+    post "#{path}/search", params: { query: 'Қуаныш' }, headers: outsider.create_new_auth_token, as: :json
+
+    expect(response).to have_http_status(:unauthorized)
+  end
 end

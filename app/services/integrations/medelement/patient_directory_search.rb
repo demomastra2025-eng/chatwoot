@@ -66,6 +66,7 @@ class Integrations::Medelement::PatientDirectorySearch
 
   def verified_patient_code!(token)
     identity = verifier.verified(token.to_s, purpose: TOKEN_PURPOSE)
+    identity = identity.stringify_keys if identity.is_a?(Hash)
     valid = identity.is_a?(Hash) && identity['account_id'] == account.id && identity['hook_id'] == hook.id &&
             identity['user_id'] == user.id && identity['patient_code'].present?
     raise token_error unless valid

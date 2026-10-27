@@ -88,4 +88,24 @@ RSpec.describe Integrations::Medelement::PatientDirectorySearch do
       expect(error.code).to eq('MEDELEMENT_PATIENT_TOKEN_INVALID')
     end
   end
+
+  it 'rejects tokens from another staff member, account, hook or expired search' do
+    allow(client).to receive(:search_patients_by_name).and_return([row])
+    token = service.search('Қуаныш')[:patients].first[:token]
+    other_user = create(:user, account: account, role: :agent)
+    other_account = create(:account)
+    other_hook = create(:integrations_hook, :medelement, account: other_account)
+
+    [
+      described_class.new(account: account, hook: hook, user: other_user, client: client),
+      described_class.new(account: other_account, hook: hook, user: user, client: client),
+      described_class.new(account: account, hook: other_hook, user: user, client: client)
+    ].each do |directory|
+      expect { directory.import(token) }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_PATIENT_TOKEN_INVALID') }
+    end
+
+    travel 16.minutes do
+      expect { service.import(token) }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_PATIENT_TOKEN_INVALID') }
+    end
+  end
 end
