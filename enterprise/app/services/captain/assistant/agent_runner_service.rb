@@ -253,6 +253,7 @@ class Captain::Assistant::AgentRunnerService
   # fails is dropped with a log line: the agent then reads with its tools as it did before.
   def preload_suggestion_context(context)
     return unless preload_suggestion?
+    return if council_turn?
 
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     preload = read_suggestion_preload(context)
@@ -264,12 +265,15 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def preload_suggestion?
-    suggestion_run? && @assistant.persisted? && @conversation.present?
+    suggestion_run? && @conversation.present? && (graph_run? || @assistant&.persisted?)
   end
 
   def read_suggestion_preload(context)
+    actor = suggestion_actor(context)
+    return {} unless actor
+
     patient = Captain::ReplySuggestion::PatientPreload.build(
-      assistant: @assistant, conversation: @conversation, tool_ids: preload_tool_ids(context)
+      assistant: actor, conversation: @conversation, tool_ids: preload_tool_ids(context)
     )
     faq = preload_faq(context)
     faq.present? ? patient.merge(faq: faq) : patient
@@ -281,7 +285,7 @@ class Captain::Assistant::AgentRunnerService
     @faq_preload = nil
     return unless preload_suggestion?
 
-    @faq_preload = Captain::ReplySuggestion::FaqPreload.start(account: @assistant.account, text: latest_patient_text(message_to_process, context))
+    @faq_preload = Captain::ReplySuggestion::FaqPreload.start(account: account, text: latest_patient_text(message_to_process, context))
   rescue StandardError => e
     Rails.logger.warn("[CAPTAIN][ReplySuggestion] faq preload not started error_class=#{e.class.name}")
   end
@@ -289,7 +293,7 @@ class Captain::Assistant::AgentRunnerService
   def preload_faq(context)
     return if @faq_preload.nil? || council_turn?
 
-    actor = agent_run_context.graph.find(context[:acting_assistant_id] || @acting_assistant_id || @assistant.id)
+    actor = suggestion_actor(context)
     @faq_preload.matches(actor) if actor
   end
 
@@ -301,10 +305,16 @@ class Captain::Assistant::AgentRunnerService
     turn.length > Captain::ReplySuggestion::FaqPreload::MAX_QUERY_CHARS ? current : turn
   end
 
-  # The tools of the agent that answers, or of every participant of a council.
+  # The tools of the agent that answers. Council parts read with their own tools instead of sharing one preload.
   def preload_tool_ids(context)
-    ids = @turn_decision&.council? ? Array(@turn_decision.agent_ids) : [context[:acting_assistant_id] || @acting_assistant_id || @assistant.id]
-    ids.flat_map { |id| Array(agent_run_context.graph.find(id)&.allowed_agent_tool_ids) }.uniq
+    Array(suggestion_actor(context)&.allowed_agent_tool_ids)
+  end
+
+  def suggestion_actor(context)
+    return @assistant unless graph_run?
+
+    id = context[:acting_assistant_id] || @acting_assistant_id || context.dig(:state, :assistant_id)
+    agent_run_context.graph.find(id) if id
   end
 
   # A routed reply suggestion starts with the time of a council (Captain::ReplySuggestion.budget_seconds(router: true)); when the

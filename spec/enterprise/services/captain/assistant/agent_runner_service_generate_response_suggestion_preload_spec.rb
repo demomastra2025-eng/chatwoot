@@ -48,6 +48,23 @@ RSpec.describe Captain::Assistant::AgentRunnerService, '#generate_response' do
     expect(reported.first).to include('parts' => %w[card appointments], 'ms' => be_a(Integer))
   end
 
+  context 'when the suggestion belongs to the conversation channel' do
+    before { assistant }
+
+    let(:service) do
+      described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation,
+                          source: source, request_id: SecureRandom.uuid,
+                          callbacks: { on_suggestion_preload: ->(preload) { reported << preload } })
+    end
+
+    it 'preloads for the agent that answers the channel' do
+      service.generate_response(message_history: message_history)
+
+      expect(run_contexts.first[:suggestion_preload][:card]).to include(first_name: 'Айгуль')
+      expect(reported.first['parts']).to include('card', 'appointments')
+    end
+  end
+
   context 'when the agent has no tool that reads the patient' do
     let(:tool_ids) { %w[faq_lookup] }
 
@@ -112,6 +129,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService, '#generate_response' do
       service.generate_response(message_history: message_history)
 
       expect(faq_preload).not_to have_received(:matches)
+      expect(run_contexts.first).not_to have_key(:suggestion_preload)
+      expect(reported).to be_empty
     end
 
     context 'when the run is a live conversation' do # rubocop:disable RSpec/MultipleMemoizedHelpers
