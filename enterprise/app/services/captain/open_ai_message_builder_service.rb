@@ -1,4 +1,6 @@
 class Captain::OpenAiMessageBuilderService
+  # What the model reads for a message with no text, no readable attachment and no transcript.
+  EMPTY_CONTENT = 'Message without content'.freeze
   META_AD_REFERRAL_CONTEXT_FIELDS = [
     ['channel', [:provider]],
     ['attribution', %i[attribution_type attributionType]],
@@ -45,7 +47,7 @@ class Captain::OpenAiMessageBuilderService
     parts << text_part(referral_context) if referral_context.present?
     parts.concat(attachment_parts(@message.attachments)) if @message.attachments.any?
 
-    return 'Message without content' if parts.blank?
+    return EMPTY_CONTENT if parts.blank?
     return parts.first[:text] if parts.one? && parts.first[:type] == 'text'
 
     parts

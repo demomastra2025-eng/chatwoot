@@ -27,12 +27,19 @@ module Captain::Assistant::RoutingHelper
     @routing_request_id = SecureRandom.uuid
     @routing_snapshot = Captain::Runtime::RoutingSnapshot.from_context(
       context, candidates: graph.candidate_rows, clinic: account&.name, patient_language: saved_patient_language,
-               human_available: routing_human_available?
+               human_available: routing_human_available?,
+               visit: Captain::Runtime::AgreedVisit.for(@conversation, now: patient_message_time)
     )
     @router = Captain::Runtime::DecisionRouter.new(@routing_snapshot, account: account,
                                                                       observability: routing_observability(context),
                                                                       request: { conversation: @conversation }.compact)
     @routing_run = Captain::Runtime::RoutingRun.new(@router, parallel: parallel_routing?)
+  end
+
+  # The moment the patient wrote the message the turn answers (now when the history carries no time): the visits that had not ended by
+  # then are the ones the message can answer about (Captain::Runtime::AgreedVisit).
+  def patient_message_time
+    Captain::PromptClock.parse_time(@current_input_sent_at) || Time.current
   end
 
   # The decision of the turn (nil for a clinic with one agent). Raises Captain::Runtime::DecisionRouter::UnavailableError.

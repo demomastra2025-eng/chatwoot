@@ -106,6 +106,20 @@ RSpec.describe Captain::Runtime::DecisionRouter do
       expect(decision).to have_attributes(key: 'route_agent_84', kind: 'agent', agent_ids: [84], confidence: 0.71, first_message: true)
     end
 
+    # Suggestion eval 27.10 (c78-1250261): the same message went to staff again, because a human_handoff is asked with every include
+    # answer no and all three include probabilities were below 0.5. A plain question about a booking never goes to staff.
+    it 'routes a human_handoff of the model for a plain question to the most probable agent, also when every include probability is low' do
+      mode = { 'route_mode' => { 'human_handoff' => 0.64, 'route_agent' => 0.3, 'council' => 0.06 } }
+      answer_chain(chain_answer('human_handoff', probabilities: mode.merge(includes(84 => 0.31, 119 => 0.12, 120 => 0.05))))
+      question = Captain::Runtime::RoutingSnapshot.new(
+        agents: agents, latest_message: 'Есть ли сегодня или завтра приём ЛОРа для ребёнка?', human_available: true
+      )
+
+      decision = described_class.new(question, account: account).decide
+
+      expect(decision).to have_attributes(key: 'route_agent_84', kind: 'agent', agent_ids: [84], confidence: 0.64, first_message: true)
+    end
+
     it 'routes to the agent with the highest include probability, even when every include answer is no' do
       answer_chain(chain_answer('route_agent', probabilities: includes(84 => 0.32, 119 => 0.41, 120 => 0.08)))
 
@@ -270,6 +284,19 @@ RSpec.describe Captain::Runtime::DecisionRouter do
       'a message that needs no answer (a plain thanks, ok or emoji that asks for nothing and accepts nothing that waits) is no for ' \
       'every agent.'
     )
+  end
+
+  # Suggestion eval 27.10 (c76-1205215, c78-1186457): «Ок Рахмет / Принял / Буду» after an agreed time was answered with a new booking.
+  it 'tells the decision models that a confirmation of an agreed visit is no_reply_needed, with no exception for a clinic voice note' do
+    instructions = described_class::INSTRUCTIONS.squish
+
+    expect(instructions).to include(
+      'So does a confirmation that the patient will come or that a time suits ("спасибо, буду", "хорошо, придём", "рахмет, келемін") ' \
+      'sent after the clinic stated that a visit or a time is agreed, booked, confirmed or reminded; the platform takes it only when the ' \
+      'patient has an upcoming visit. A greeting',
+      'a short reply to it - "ок", "хорошо", "да", "давайте", "жарайды", "иә", a thumbs-up - accepts the offer'
+    )
+    expect(instructions).not_to match(/voice note/i)
   end
 
   # Router benchmark A23: «Перестаньте мне писать» was no_reply_needed; a demand to stop writing is a refusal to go on with the assistant.

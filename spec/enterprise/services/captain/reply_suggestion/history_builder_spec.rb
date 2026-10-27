@@ -40,6 +40,41 @@ RSpec.describe Captain::ReplySuggestion::HistoryBuilder do
     end
   end
 
+  # Suggestion eval 27.10 (c76-1205215, c78-1186457): the operator's voice notes had no transcript, so the agent saw "Message without
+  # content", did not know that the time was agreed, and started the booking again when the patient wrote «Принял / Буду».
+  describe 'the voice notes' do
+    def add_voice_note(type, transcript: nil)
+      message = add_message(type, nil)
+      attachment = message.attachments.create!(account_id: account.id, file_type: :audio, external_url: 'https://example.com/voice.ogg')
+      attachment.update!(meta: { 'transcribed_text' => transcript }) if transcript
+      message
+    end
+
+    before { account.update!(audio_transcriptions: true) }
+
+    it 'gives the transcript of a voice note of the staff as the text of its message, as it does for a patient' do
+      add_voice_note(:outgoing, transcript: 'Записал вас на завтра в 14:00')
+      add_voice_note(:incoming, transcript: 'Принял, буду')
+
+      expect(history.pluck(:content, :role)).to eq([['Записал вас на завтра в 14:00', 'assistant'], ['Принял, буду', 'user']])
+    end
+
+    it 'says that a voice note without a transcript exists and that its words are not available, for the staff and for the patient' do
+      add_voice_note(:outgoing)
+      add_voice_note(:incoming)
+
+      expect(history.pluck(:content)).to eq([described_class::STAFF_VOICE_NOTE, described_class::PATIENT_VOICE_NOTE])
+      expect(described_class::STAFF_VOICE_NOTE).to include('a staff member', 'its words are not available to you')
+      expect(described_class::STAFF_VOICE_NOTE).not_to include('clinic')
+    end
+
+    it 'keeps the placeholder for a message with nothing in it' do
+      add_message(:incoming, nil)
+
+      expect(history.pluck(:content)).to eq([Captain::OpenAiMessageBuilderService::EMPTY_CONTENT])
+    end
+  end
+
   it 'asks for a reply in general when the conversation has no message of the customer' do
     add_message(:outgoing, 'Здравствуйте!')
 

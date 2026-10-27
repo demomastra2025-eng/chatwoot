@@ -12,7 +12,7 @@
 # replies, so a corrected booking may name the time it replaces), the dialog and the patient's message. A knowledge or FAQ text
 # is not a schedule, so a time that only such a text names is still named to the manager. A time the draft names as a bound («до
 # 19:00 окон нет», «после 14:00 только при предоплате», «19:00-ге дейін») offers nothing and is not checked. A council is not
-# checked: its parts read in runs of their own.
+# checked: its parts read in runs of their own. A time under the name of the wrong specialist is Captain::ReplySuggestion::DraftSpecialists.
 module Captain::ReplySuggestion::DraftTimes
   # 9:30, 09:30 and 09:30:00 (an ISO start); never part of a longer number or of a date.
   TIME = /(?<![\d:])([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?(?![\d:])/
@@ -25,11 +25,24 @@ module Captain::ReplySuggestion::DraftTimes
     search_available_slots get_scheduling_resource_availability get_scheduling_resource_schedule search_appointments get_appointment
     list_my_appointments get_my_contact get_contact get_appointment_provider_status
   ].freeze
+  # The reads that name the appointments of the patient: the time of a booking the patient has.
+  APPOINTMENT_TOOLS = %w[list_my_appointments get_appointment search_appointments get_appointment_provider_status].freeze
   # Fields of a read that name a time which is no free time (see Scheduling::AvailableSlotSearchService#last_booking_time and
   # #last_booking_time_by_weekday).
   IGNORED_KEYS = %w[last_booking_time last_booking_time_by_weekday].freeze
 
   module_function
+
+  # The times of the bookings the patient has, from the appointment reads of the run and the patient data of the prompt (the appointment
+  # summary, the actions already done): a draft names them to say where the patient is booked, not to offer them.
+  def booked_times(context)
+    context = context.to_h
+    reads = value(context, Captain::Runtime::ToolWrapper::SUGGESTION_READ_CACHE_KEY).to_h.values.filter_map do |entry|
+      entry = entry.to_h.with_indifferent_access
+      read_text(entry[:result]) if APPOINTMENT_TOOLS.include?(entry[:tool].to_s)
+    end
+    (reads + prompt_texts(context)).flat_map { |text| times(text) }.uniq
+  end
 
   # The times of the draft ("19:00") that the run did not find; empty when the run searched no free times.
   def unverified(draft:, context:)
@@ -45,11 +58,15 @@ module Captain::ReplySuggestion::DraftTimes
 
   # The times of the draft that are no bound («до 19:00», «после 14:00»).
   def offered_times(text)
-    text = text.to_s
+    offered_time_matches(text.to_s).map(&:last).uniq
+  end
+
+  # [position in the text, "09:30"] of every offered time of the text (no bound), in the order of the text.
+  def offered_time_matches(text)
     text.to_enum(:scan, TIME).filter_map do
       match = Regexp.last_match
-      clock(match[1], match[2]) unless bound?(text, match)
-    end.uniq
+      [match.begin(0), clock(match[1], match[2])] unless bound?(text, match)
+    end
   end
 
   def bound?(text, match)

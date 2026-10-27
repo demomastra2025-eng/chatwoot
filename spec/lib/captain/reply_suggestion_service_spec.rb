@@ -244,6 +244,9 @@ RSpec.describe Captain::ReplySuggestionService do
           'status' => 'pending',
           'digest' => 'dig-78'
         }
+        # The check of a silence reads the cards of the conversation too (Captain::Runtime::AgreedVisit), without a request.
+        allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:pending_for)
+          .with(account_id: account.id, conversation_id: conversation.id).and_return([])
         allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:pending_for)
           .with(account_id: account.id, conversation_id: conversation.id, request_id: 'req-1')
           .and_return([stored_pending])
@@ -417,6 +420,63 @@ RSpec.describe Captain::ReplySuggestionService do
           create(:message, conversation: conversation, message_type: :incoming, content: 'Отмена завтра')
           create(:message, conversation: conversation, message_type: :outgoing, content: 'Отменили, хорошего дня!')
           create(:message, conversation: conversation, message_type: :incoming, content: 'Спасибо')
+          allow(runner_double).to receive(:generate_response).and_return(emoji_only_no_reply)
+
+          expect(service.perform).to include(outcome: 'no_reply', reason: 'Пациент отправил только эмодзи.')
+        end
+
+        # Review of quality-fixes-1 (M1): staff offered a time without a question mark and the patient said yes; nothing is booked by a silence.
+        it 'turns a no_reply into human_needed when the patient accepts a time that the last message of staff offered' do
+          create(:message, conversation: conversation, message_type: :incoming, content: 'Хочу на УЗИ щитовидной железы')
+          create(:message, conversation: conversation, message_type: :outgoing, content: 'Есть окно завтра в 14:00.')
+          create(:message, conversation: conversation, message_type: :incoming, content: 'Да, подходит')
+          allow(runner_double).to receive(:generate_response).and_return(emoji_only_no_reply)
+
+          expect(service.perform).to include(outcome: 'human_needed', reason: I18n.t('captain.reply_suggestion.reasons.unsafe_silence'))
+        end
+
+        it 'turns a no_reply into human_needed when the patient confirms a visit that nobody booked' do
+          create(:message, conversation: conversation, message_type: :outgoing, content: 'Ждём вас завтра.')
+          create(:message, conversation: conversation, message_type: :incoming, content: 'Спасибо, буду')
+          allow(runner_double).to receive(:generate_response).and_return(emoji_only_no_reply)
+
+          expect(service.perform).to include(outcome: 'human_needed', reason: I18n.t('captain.reply_suggestion.reasons.unsafe_silence'))
+        end
+
+        it 'keeps a no_reply for the confirmation of a visit the contact has' do
+          create(:message, conversation: conversation, message_type: :outgoing, content: 'Ждём вас завтра.')
+          create(:message, conversation: conversation, message_type: :incoming, content: 'Спасибо, буду')
+          create(:scheduling_appointment, account: account, contact: conversation.contact, resource: create(:scheduling_resource, account: account),
+                                          starts_at: 1.day.from_now, ends_at: 1.day.from_now + 30.minutes)
+          allow(runner_double).to receive(:generate_response).and_return(emoji_only_no_reply)
+
+          expect(service.perform).to include(outcome: 'no_reply', reason: 'Пациент отправил только эмодзи.')
+        end
+
+        # The suggestion is made when the operator asks for it, hours after the patient wrote «буду» to the reminder: the visit it names has
+        # ended by then, but it was the visit of the patient when they wrote (the eval of 27.10, c76-1222650).
+        it 'keeps a no_reply for the confirmation of a visit that has ended since the patient wrote it' do
+          resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
+          conversation.messages.update_all(created_at: Time.zone.parse('2026-10-20 07:00:00 UTC')) # rubocop:disable Rails/SkipsModelValidations
+          travel_to(Time.zone.parse('2026-10-21 07:00:00 UTC')) do
+            create(:message, conversation: conversation, message_type: :outgoing, content: 'Напоминаем: сегодня в 14:00 у вас приём. Ждём вас.')
+            create(:message, conversation: conversation, message_type: :incoming, content: 'Спасибо, буду')
+            create(:scheduling_appointment, account: account, contact: conversation.contact, resource: resource,
+                                            starts_at: Time.zone.parse('2026-10-21 09:00:00 UTC'),
+                                            ends_at: Time.zone.parse('2026-10-21 09:30:00 UTC'))
+          end
+          allow(runner_double).to receive(:generate_response).and_return(emoji_only_no_reply)
+
+          travel_to(Time.zone.parse('2026-10-21 11:00:00 UTC')) do
+            expect(service.perform).to include(outcome: 'no_reply', reason: 'Пациент отправил только эмодзи.')
+          end
+        end
+
+        # The eval of 27.10 (c78-1214235, c78-1244961): the operator's voice note had no transcript and a thanks after it was sent to staff.
+        it 'keeps a no_reply for a bare thanks after a voice note of staff without a transcript' do
+          voice = create(:message, conversation: conversation, message_type: :outgoing, content: nil)
+          voice.attachments.create!(account_id: account.id, file_type: :audio, external_url: 'https://example.com/voice.ogg')
+          create(:message, conversation: conversation, message_type: :incoming, content: 'Ок, спасибо')
           allow(runner_double).to receive(:generate_response).and_return(emoji_only_no_reply)
 
           expect(service.perform).to include(outcome: 'no_reply', reason: 'Пациент отправил только эмодзи.')

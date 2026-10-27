@@ -231,6 +231,43 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(routed_event).to include('decision_key' => 'no_reply_needed', 'kind' => 'no_reply')
     end
 
+    # The suggestion is made when the operator asks for it. The patient answered the reminder of a visit at 14:00 («буду») at 12:00, the
+    # operator asked for the suggestion at 16:00: the visit had ended by then, but it was the visit of the patient when they wrote (the
+    # eval of 27.10, c76-1222650). The history writes the send time before the reminder; that time is no time the clinic offered either.
+    describe 'a confirmation of a visit, read as the visits stood when the patient wrote it' do
+      def suggestion = described_class.new(assistant: doctors, conversation: conversation, source: 'reply_suggestion')
+
+      def reminder_history
+        [{ role: 'assistant', content: 'Напоминаем: сегодня в 14:00 у вас приём. Ждём вас.', sent_at: Time.zone.parse('2026-10-21 06:00:00 UTC') },
+         { role: 'user', content: 'Спасибо, буду', sent_at: Time.zone.parse('2026-10-21 07:00:00 UTC') }]
+      end
+
+      def visit_at(hour)
+        resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
+        create(:scheduling_appointment, account: account, contact: conversation.contact, resource: resource,
+                                        starts_at: Time.zone.parse("2026-10-21 #{hour}:00 UTC"),
+                                        ends_at: Time.zone.parse("2026-10-21 #{hour}:30 UTC"))
+      end
+
+      it 'is a courtesy that runs no agent when the visit of the reminder had not ended when the patient wrote' do
+        visit_at('09:00')
+        decide('no_reply_needed', confidence: 0.97)
+
+        response = travel_to(Time.zone.parse('2026-10-21 11:00:00 UTC')) { suggestion.generate_response(message_history: reminder_history) }
+
+        expect(runs).to be_empty
+        expect(response).to include('response' => '', 'response_mode' => 'suppress', 'routing_no_reply' => true)
+      end
+
+      it 'stays with the agent when the contact had no visit then, since there is nothing to confirm' do
+        decide('no_reply_needed', confidence: 0.97)
+
+        travel_to(Time.zone.parse('2026-10-21 11:00:00 UTC')) { suggestion.generate_response(message_history: reminder_history) }
+
+        expect(runs.size).to eq(1)
+      end
+    end
+
     it 'lets the agent that holds a live conversation write a courtesy reply, with its action tools refused for the turn' do
       session.update_routing(actor_id: procedures.id)
       contexts = []

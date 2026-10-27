@@ -170,6 +170,23 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
     end
   end
 
+  # Suggestion eval 27.10 (c74-1233747): the free times of one gynecologist were given under the name of the other.
+  context 'when the draft gives a time under the name of a specialist whose list does not hold it' do
+    let(:payload) do
+      reply.merge('misattributed_times' => [{ 'name' => 'Князова Жанат', 'time' => '11:00' }, { 'name' => '', 'time' => '12:00' }],
+                  'unverified_times' => ['19:00'])
+    end
+
+    it 'keeps the draft and tells the manager above it which time to check and the name it was given' do
+      expected = [I18n.t('captain.reply_suggestion.reasons.unverified_times', times: '19:00'),
+                  I18n.t('captain.reply_suggestion.reasons.misattributed_times', times: '11:00 (Князова Жанат)')].join(' ')
+
+      expect(outcome).to include(outcome: 'draft', message: reply['response'])
+      expect(outcome[:suggestion_meta]).to include('misattributed_times' => [{ 'name' => 'Князова Жанат', 'time' => '11:00' }],
+                                                   'operator_note' => expected)
+    end
+  end
+
   # Review of the 26.10 prompts: «сколько стоит МРТ поясницы и какая подготовка?» when only staff names the preparation. The draft
   # gives the price, and the note tells the manager what to add.
   context 'when the draft leaves a part of the request to staff' do
@@ -348,6 +365,84 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
 
     it 'does not look at a patient text that was not given' do
       expect(described_class.new(suppressed, trace_collector: trace_collector).perform).to include(outcome: 'no_reply')
+    end
+  end
+
+  # Review of quality-fixes-1 (M1): the router and the agent both decide a silence; the check of the words and the facts is made on their
+  # outcome (Captain::SilenceCheck). A yes to a time staff offered and a confirmation of a visit nobody agreed are not swallowed; a
+  # plain thanks, ok or «буду» is silent also after a voice note of staff (the eval of 27.10: 6 of the 10 wrong handoffs).
+  describe 'a silence about an offer or a visit nobody agreed' do
+    let(:suppressed) do
+      { 'response' => '', 'response_mode' => 'suppress', 'response_suppressed' => true, 'operator_note' => 'Пациент только благодарит.',
+        'usage' => usage }
+    end
+    let(:note) { I18n.t('captain.reply_suggestion.reasons.unsafe_silence') }
+    let(:none) { Captain::Runtime::AgreedVisit::NONE }
+    let(:booked) { Captain::Runtime::AgreedVisit.new(times: ['10:00']) }
+
+    def classify(payload, text, last_clinic:, visit:)
+      described_class.new(payload, trace_collector: trace_collector, patient_text: text, last_clinic: last_clinic, visit: visit).perform
+    end
+
+    it 'turns the no_reply of the agent into human_needed for a yes to a time that staff offered, keeping the agent and the cards' do
+      result = classify(suppressed, 'Да, подходит', last_clinic: 'Есть окно завтра в 14:00.', visit: booked)
+
+      expect(result).to include(outcome: 'human_needed', reason: note, reason_source: 'agent', engine: 'agent', agent: agent_summary,
+                                pending_actions: [{ 'action_id' => 'a-1' }], usage: usage)
+    end
+
+    it 'does it for the no_reply of the router, which names no agent, and for the one of a council' do
+      routed = suppressed.merge('routing_no_reply' => true)
+
+      expect(classify(routed, 'Ок', last_clinic: 'Есть окно завтра в 14:00.', visit: none))
+        .to include(outcome: 'human_needed', reason: note, reason_source: 'router', agent: nil, pending_actions: [])
+      expect(classify(suppressed.merge('council_turn' => true), 'Спасибо, буду', last_clinic: 'Ждём вас завтра', visit: none))
+        .to include(outcome: 'human_needed', reason: note, pending_actions: [{ 'action_id' => 'a-1' }])
+    end
+
+    it 'does it for a confirmation when nothing is booked' do
+      expect(classify(suppressed, 'Спасибо, буду', last_clinic: 'Ваша стоимость 8000 тенге.', visit: none))
+        .to include(outcome: 'human_needed', reason: note)
+    end
+
+    # The eval of 27.10 (c78-1214235, c78-1244961, c76-1205215): a thanks after a voice note of staff was sent to staff.
+    it 'keeps the no_reply of a bare thanks, ok or confirmation after a voice note of staff without a transcript' do
+      voice = "[Mon 26.10 18:59] #{Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE}"
+
+      ['Спасибо', 'Ок', 'Ок, спасибо', 'Рахмет, келемін', 'Спасибо, буду'].each do |text|
+        expect(classify(suppressed, text, last_clinic: voice, visit: booked)).to include(outcome: 'no_reply'), text
+      end
+    end
+
+    # The history writes the send time in front of every message: it is no time that the clinic offered.
+    it 'does not take the send time of the last message of the clinic for a time it offered' do
+      reminder = '[Sat 24.10 09:50] Напоминаем: завтра в 10:00 у вас приём.'
+
+      ['Ок', 'Спасибо, буду', 'Хорошо, придём'].each do |text|
+        expect(classify(suppressed, text, last_clinic: reminder, visit: booked)).to include(outcome: 'no_reply'), text
+      end
+      expect(classify(suppressed, 'Да, подходит', last_clinic: '[Sat 24.10 09:50] Есть окно завтра в 14:00.', visit: booked))
+        .to include(outcome: 'human_needed', reason: note)
+    end
+
+    it 'keeps the no_reply of a confirmation of the visit the contact has, of a plain thanks and of a reminder acknowledged' do
+      reminder = 'Напоминаем: завтра в 10:00 у вас приём.'
+
+      [['Спасибо, буду', reminder], ['Ок', reminder], ['Хорошо, придём', reminder], ['Спасибо!', 'Есть окно завтра в 14:00.'],
+       ['Спасибо', 'УЗИ почек стоит 8000 тенге.']].each do |text, last_clinic|
+        expect(classify(suppressed, text, last_clinic: last_clinic, visit: booked)).to include(outcome: 'no_reply'), text
+      end
+    end
+
+    it 'does not make the check without the facts of the dialog, and leaves the other outcomes as they are' do
+      expect(described_class.new(suppressed, trace_collector: trace_collector, patient_text: 'Да, подходит').perform).to include(outcome: 'no_reply')
+      expect(classify(reply, 'Да, подходит', last_clinic: 'Есть окно завтра в 14:00.', visit: none)).to include(outcome: 'draft')
+    end
+
+    it 'keeps the note of a request to cancel when both apply' do
+      result = classify(suppressed, 'Спасибо, не буду', last_clinic: 'Напоминаем: завтра в 10:00 у вас приём.', visit: booked)
+
+      expect(result).to include(outcome: 'human_needed', reason: I18n.t('captain.reply_suggestion.reasons.swallowed_request'))
     end
   end
 

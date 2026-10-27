@@ -12,9 +12,9 @@
 #   human_request?   the message asks for a person, an operator, an administrator or a call-back, or is a complaint, a refund, a demand
 #                    to stop writing or a legal matter («соедините с оператором», «можете позвонить?», «хочу пожаловаться», «отдайте мои
 #                    деньги», «перестаньте мне писать», «шағым», «админге қосыңыз», «please call me»). The router takes a human_handoff of
-#                    the decision model for such a message whatever the include answers say; for any other message it takes it only when
-#                    no agent is a plausible answer (see Captain::Runtime::DecisionRouter::Questions): the eval of 26.10 sent a question
-#                    about free times for a child, the first message of a dialog, to staff.
+#                    the decision model for such a message whatever the include answers say; for any other message the most probable agent
+#                    answers (see Captain::Runtime::DecisionRouter::Questions): the evals of 26.10 and 27.10 sent a question about free
+#                    times for a child, the first message of a dialog, to staff.
 #
 # The text is compared in lower case with the Kazakh letters folded to the Russian ones (ә→а, ғ→г, қ→к, ң→н, ө→о, ұ→ү→у, һ→х, і→и),
 # because patients write Kazakh on a Russian keyboard without them. A stem matches at the start of a word, with any ending.
@@ -29,6 +29,8 @@ module Captain::PatientIntent
     # Russian: отмена, перенос, запись; «не смогу / не приду» is a cancellation
     'отмен', 'перенес', 'перенос', 'перезапис', 'передвин', 'сдвин', 'запиш', 'записат', 'записыв', 'не смогу', 'не сможем', 'не приду',
     'не придем', 'не успе', 'на другое время', 'на другой день',
+    # Russian: other ways to say that the patient will not come («спасибо, не буду», «не получится», «не пойду», «не могу прийти»)
+    'не буд(?:у|ем)(?![[:alpha:]])', 'не получ', 'не пойд', 'не выйд', 'не (?:могу|можем) (?:прий|прие)',
     # Kazakh: болдырмау, ауыстыру, көшіру, келе алмау, жазылу, жазып қою
     'болдырма', 'ауыстыр', 'кошир', 'келе алмай', 'бара алмай', 'келмей', 'бармай', 'жазыл', 'жазып кой', 'жазып бер', 'жазыныз', 'жазсаныз',
     'жойыныз', 'жойып', 'баска уакыт'
@@ -36,6 +38,36 @@ module Captain::PatientIntent
 
   # A thanks (the stems are folded): «спасибо», «благодарю», «рахмет» and «рақмет», «алғыс», «thanks».
   THANKS_STEMS = %w[спасиб спс благодар рахмет ракмет алгыс thank thx].freeze
+
+  # An answer that accepts what was offered (the stems are folded): «да», «ок», «хорошо», «подходит», «давайте», «жарайды», «иә», «yes».
+  ACCEPT_STEMS = [
+    'да(?![[:alpha:]])', 'ок(?:ей)?(?![[:alpha:]])', 'хорошо', 'ладно', 'подход', 'давайт', 'согласн', 'договорил', 'идет', 'отличн', 'устраивает',
+    'удобно', 'жарайды', 'иа(?![[:alpha:]])', 'болады', 'макул', 'ok(?:ay)?(?![[:alpha:]])', 'yes', 'sure', 'fine'
+  ].freeze
+
+  # The patient says that they will come («буду», «придём», «приеду», «келемін», «барамыз»); a negation («не буду») is a booking_change?.
+  COMING_STEMS = [
+    'буд(?:у|ем)(?![[:alpha:]])', 'прид(?:у|ем)(?![[:alpha:]])', 'приед(?:у|ем)(?![[:alpha:]])', 'подъед', 'келем', 'барам', 'жетем'
+  ].freeze
+
+  # A question put in words, for the message that has no question mark (the stems are folded): «Спасибо, буду. Адрес какой»,
+  # «рахмет, қашан келемін». «что» is left out (it is also the conjunction of «спасибо, что приняли»).
+  QUESTION_STEMS = [
+    'как(?![[:alpha:]])', 'какой', 'какая', 'какое', 'какие', 'каком', 'какого', 'где', 'когда', 'сколько', 'можно', 'почему', 'зачем', 'куда',
+    'откуда', 'каков', 'кто(?![[:alpha:]])', 'ли(?![[:alpha:]])', 'кашан', 'кайда', 'кайсы', 'канша', 'калай', 'кандай', 'неге',
+    'ким(?![[:alpha:]])', 'ма(?![[:alpha:]])', 'ме(?![[:alpha:]])', 'ба(?![[:alpha:]])', 'бе(?![[:alpha:]])', 'па(?![[:alpha:]])',
+    'пе(?![[:alpha:]])'
+  ].freeze
+
+  # A time or a date in a text (the stems are folded): 10:00, 24.10, «завтра», «в четверг», «ертең», «в 10 часов», «25 октября».
+  TIME_STEMS = [
+    '\d{1,2}[:.]\d{2}(?!\d)', '\d{1,2}[./]\d{1,2}[./]\d{2,4}', '\d{1,2}[[:space:]]*(?:час|утра|вечера|дня|ночи)',
+    'сегодня', 'завтра', 'послезавтра', 'понедельник', 'вторник', 'сред[ауые]', 'четверг', 'пятниц', 'суббот', 'воскресень',
+    'январ', 'феврал', 'март', 'апрел', 'мая', 'июн', 'июл', 'август', 'сентябр', 'октябр', 'ноябр', 'декабр',
+    'бугин', 'ертен', 'дуйсенби', 'сейсенби', 'сарсенби', 'бейсенби', 'жума', 'сенби', 'жексенби',
+    'кантар', 'акпан', 'наурыз', 'сауир', 'мамыр', 'маусым', 'шилде', 'тамыз', 'кыркуйек', 'казан', 'караша', 'желтоксан',
+    'today', 'tomorrow'
+  ].freeze
 
   # An action named as done, in the words of a thanks («Спасибо, что перенесли», «Благодарю за перенос», «Рақмет, жазылдым»): it asks for
   # nothing, so it is no request to cancel, move or make a visit. Only the past tense, the short participle and the noun after «за» are
@@ -49,8 +81,8 @@ module Captain::PatientIntent
   ].freeze
 
   # A person, an operator, an administrator, a call-back, a complaint, a refund or a legal matter (the stems are folded). A message that
-  # carries one of them asks for staff whatever the include answers of the router say; a message that carries none may still ask for
-  # staff (the router then asks whether any agent is a plausible answer), so the list leans to the words patients really use.
+  # carries one of them asks for staff whatever the include answers of the router say; a message that carries none goes to an agent,
+  # which can still end with human_needed, so the list leans to the words patients really use.
   HUMAN_STEMS = [
     # Russian: a person, an operator, an administrator, the front desk, a manager
     'оператор', 'админ', 'менеджер', 'сотрудник', 'консультант', 'регистратур', 'ресепш', 'руководител', 'директор', 'главврач',
@@ -59,6 +91,8 @@ module Captain::PatientIntent
     # Russian: a call, a call-back, to get in touch or to talk («позвоночник», «позвонок» and «позвоню» are no call)
     'позвон(?!о[кч]|к|ю)', 'перезвон', 'звон(?:и|ок|к)', 'набери(?:те)?(?![[:alpha:]])', 'свяж', 'связат', 'соедин', 'переключ',
     'переведит', 'позов', 'позвать', 'зовите', 'поговор', 'пообщ',
+    # Russian: anybody alive there, the doctor in person
+    'кто живо\p{L}*', '(?:с|со) (?:врач|доктор)\p{L}* лично', 'лично (?:с|со) (?:врач|доктор)', 'обсуд\p{L}* лично',
     # Russian: a complaint, dissatisfaction, a demand to stop writing («добро пожаловать» is no complaint)
     'жалов', 'пожаловат\p{L}*с', 'пожаловалс', 'жалоб', 'жалуюсь', 'пожалуюсь', 'претензи', 'недовол', 'не довол', 'возмущ', 'возмути', 'безобраз',
     'хамств', 'нахамил', 'нагруб', 'плох\p{L}* обслужив', 'ужасн\p{L}* обслужив', 'перестань', 'прекратите', 'прекрати(?![[:alpha:]])',
@@ -72,7 +106,8 @@ module Captain::PatientIntent
     'наразы', 'акшамды кайтар', 'кайтарыныз', 'кайтарым', 'сот', 'зангер', 'прокуратура',
     # English
     'operator', 'admin', 'manager', 'human', 'real person', 'live person', 'staff', 'reception', 'call me', 'call back', 'callback',
-    'phone me', 'talk to', 'talk with', 'speak to', 'speak with', 'complain', 'refund', 'lawyer', 'bot(?:s)?(?![[:alpha:]])'
+    'phone me', 'talk to', 'talk with', 'speak to', 'speak with', 'complain', 'refund', 'lawyer', 'bot(?:s)?(?![[:alpha:]])',
+    'a person(?![[:alpha:]])', '(?:anyone|anybody|somebody) (?:there|alive)'
   ].freeze
 
   # \p{L} in a stem is a letter of the same word; spaces are any run of spaces. whole_word: the match takes the rest of the word too.
@@ -88,6 +123,10 @@ module Captain::PatientIntent
   # «суд» and «иск» are whole words (not «судороги», «искать»), the others stems.
   HUMAN = pattern(HUMAN_STEMS - %w[суд иск сот])
   WHOLE_WORD_HUMAN = /(?<![[:alpha:]])(?:суд|иск|сот)(?:у|а|е|ы|ом|ка|ке|ты|ти|тан|тен|пен)?(?![[:alpha:]])/
+  ACCEPT = pattern(ACCEPT_STEMS)
+  COMING = pattern(COMING_STEMS)
+  QUESTION = pattern(QUESTION_STEMS)
+  TIME_OR_DATE = pattern(TIME_STEMS)
 
   module_function
 
@@ -105,6 +144,37 @@ module Captain::PatientIntent
   def human_request?(text)
     folded = folded(text)
     folded.match?(HUMAN) || folded.match?(WHOLE_WORD_HUMAN)
+  end
+
+  def thanks?(text)
+    folded(text).match?(THANKS)
+  end
+
+  # The patient accepts what was offered («да», «ок», «хорошо, подходит», «жарайды»).
+  def accepts?(text)
+    folded(text).match?(ACCEPT)
+  end
+
+  # The patient says that they will come («спасибо, буду», «рахмет, келемін»).
+  def confirms_visit?(text)
+    folded(text).match?(COMING)
+  end
+
+  # The patient puts a question in words, with or without a question mark («Спасибо, буду. Адрес какой», «қашан келемін»).
+  def question?(text)
+    folded(text).match?(QUESTION)
+  end
+
+  # The text names a time or a date: 10:00, 24.10, «завтра», «в четверг», «ертең».
+  def names_time?(text)
+    folded(text).match?(TIME_OR_DATE)
+  end
+
+  # The clock times the text names («10:00», «9:30»), as HH:MM. A dotted number is a date («12.10»), never a clock time.
+  def clock_times(text)
+    text.to_s.scan(/(?<![\d:.])([01]?\d|2[0-3]):([0-5]\d)(?![\d:])/).map do |hour, minute|
+      format('%<hour>02d:%<minute>s', hour: hour.to_i, minute: minute)
+    end.uniq
   end
 
   def folded(text)

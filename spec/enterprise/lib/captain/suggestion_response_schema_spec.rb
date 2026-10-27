@@ -103,9 +103,9 @@ RSpec.describe Captain::SuggestionResponseSchema do
           'of the schedule.'
       end
       let(:closing_thanks_rule) do
-        'A thanks, ok or confirmation that closes a topic (after prices or information, a reminder, or a visit already booked or ' \
-          'already prepared) asks for no action: never call create_appointment, update_appointment or cancel_appointment for it; book ' \
-          'only on a clear request or a clear yes to an offered time.'
+        'A thanks, ok or confirmation that closes a topic (after prices or information, a reminder, a time already agreed, or a ' \
+          'visit already booked or already prepared) asks for no action: never call create_appointment, update_appointment or ' \
+          'cancel_appointment for it; book only on a clear request or a clear yes to an offered time.'
       end
       let(:silence_rule) do
         '(only thanks, ok or an emoji with no doctor, service, date, time or question in them, or staff already answered them), set ' \
@@ -138,8 +138,9 @@ RSpec.describe Captain::SuggestionResponseSchema do
                                 'certificates, use faq_lookup first. A catalog price is an answer even when the schedule is not confirmed.',
                                 '- Offer only start times a slot search returned, exactly as returned; opening hours or a last booking ' \
                                 'time in the clinic texts are not free times.',
-                                'A thanks, ok or confirmation that closes a topic (after prices or information, a reminder, or a visit ' \
-                                'already booked) asks for no action: never book, change or cancel anything for it.')
+                                'A thanks, ok or confirmation that closes a topic (after prices or information, a reminder, a time ' \
+                                'already agreed, or a visit already booked), also one that says the patient will come ' \
+                                '("спасибо, буду", "рахмет, келемін"), asks for no action: never book, change or cancel anything for it.')
         expect(live).not_to include(lookup_rule, slots_first_rule, future_rule, exact_time_rule, thanks_request_rule, price_rule,
                                     closing_thanks_rule)
       end

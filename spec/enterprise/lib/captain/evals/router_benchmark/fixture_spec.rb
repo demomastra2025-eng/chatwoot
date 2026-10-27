@@ -38,7 +38,7 @@ RSpec.describe Captain::Evals::RouterBenchmark::Fixture do
     committed = JSON.parse(File.read(Rails.root.join('script/captain/router_benchmark/router_scenarios.json')))
     ids = committed['suites'].flat_map { |suite| suite['scenarios'].pluck('id') }
 
-    expect(ids.size).to eq(101)
+    expect(ids.size).to eq(106)
     expect(ids).to include('AM01', 'IM01')
     expect(ids).to include('SZ01', 'A11', 'I06')
     # A plain thanks needs no answer (no_reply_needed), whoever leads the dialog, and is never a council; a thanks that also asks for
@@ -56,8 +56,12 @@ RSpec.describe Captain::Evals::RouterBenchmark::Fixture do
     # Review of the human_handoff gate: a call-back asked as a question, the front desk, a demand to stop writing, English and the Kazakh
     # slang «админ» are wordings a keyword list may miss; the staff decision of the model stands when no agent is a plausible answer.
     expect(expected.values_at('A22', 'A23', 'I22', 'I23', 'SZ24', 'SZ25')).to eq(%w[human_handoff] * 6)
+    # Review of quality-fixes-1: a request for a person with no keyword (anybody alive, the doctor in person, English) went to an agent.
+    expect(expected.values_at('A24', 'A25', 'A26')).to eq(%w[human_handoff] * 3)
+    # A yes to a time that staff offered, and a refusal after a reminder, are no courtesy: the agent answers.
+    expect(expected.values_at('AS08', 'AS09')).to eq(%w[stay_current] * 2)
     traps = committed['suites'].flat_map { |suite| suite['scenarios'] }.filter_map { |scenario| scenario['trap'] }
-    expect(traps.tally).to eq('human' => 13, 'injection' => 4, 'false_council' => 9)
+    expect(traps.tally).to eq('human' => 16, 'injection' => 4, 'false_council' => 9)
     expect(committed['suites'].flat_map { |suite| suite['scenarios'].pluck('expected') }).to all(match(described_class::KEY))
   end
 

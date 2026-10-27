@@ -33,6 +33,24 @@ RSpec.describe Captain::ReplySuggestion::DraftTimes do
     expect(described_class.unverified(draft: draft, context: context)).to eq(%w[09:30 17:02])
   end
 
+  # Review of quality-fixes-1 (L1): the time of a booking the patient has is no free time the draft offers.
+  describe '.booked_times' do
+    it 'gives the times of the bookings the run read and the patient data of the prompt, never a free slot or a clinic text' do
+      booking = JSON.generate('appointments' => [{ 'id' => 5, 'date' => '30.10.2026', 'time' => '11:00', 'doctor' => 'Князова Ж.' }])
+      reads = { 'digest-3' => { result: booking, tool: 'list_my_appointments' } }
+      prompt = { state: { prompt_context: { context_summaries: { appointment: 'Nearest: Fri 30.10.2026 14:30' } } } }
+
+      times = described_class.booked_times(context.merge(cache_key => context[cache_key].merge(reads)).merge(prompt))
+
+      expect(times).to contain_exactly('11:00', '14:30')
+    end
+
+    it 'is empty without such a read and for no context' do
+      expect(described_class.booked_times(context)).to eq([])
+      expect(described_class.booked_times(nil)).to eq([])
+    end
+  end
+
   it 'checks only a run that searched free times' do
     without_search = context.merge(captain_v2_completed_tool_names: %w[faq_lookup])
 

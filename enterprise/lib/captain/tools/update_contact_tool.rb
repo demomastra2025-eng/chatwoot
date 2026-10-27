@@ -11,7 +11,7 @@ class Captain::Tools::UpdateContactTool < Captain::Tools::BasePublicTool
       name: name,
       email: email,
       phone_number: phone_number,
-      identifier: identifier,
+      identifier: checked_identifier(identifier, custom_attributes),
       custom_attributes: custom_attributes
     )
 
@@ -24,6 +24,14 @@ class Captain::Tools::UpdateContactTool < Captain::Tools::BasePublicTool
   end
 
   private
+
+  # The identifier of a patient of an account that identifies patients by an IIN is the IIN: 12 digits, never a phone number or any other text, also when it is
+  # written as the iin of the custom attributes. The contacts of any other account keep the identifier as it is given.
+  def checked_identifier(identifier, custom_attributes)
+    return identifier unless Scheduling::IinValidator.in_use?(assistant.account)
+
+    Scheduling::IinValidator.require_valid_in!(identifier: identifier, custom_attributes: custom_attributes)
+  end
 
   def operations(state)
     Captain::Tools::Operations::ContactOperations.new(

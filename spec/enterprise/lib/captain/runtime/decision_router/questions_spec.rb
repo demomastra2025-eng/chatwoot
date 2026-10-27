@@ -3,14 +3,16 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Runtime::DecisionRouter::Questions do
-  # A dialog in which the clinic asked the patient nothing.
+  # A dialog in which the clinic asked the patient nothing, and the visit it states is the one the contact has.
   def dialog = [{ role: 'clinic', agent_id: 20, text: 'Вы записаны на четверг.' }]
 
+  def booked = Captain::Runtime::AgreedVisit.new(times: ['10:00'])
+
   def snapshot(count, current: nil, human: true, card: 'Услуги агента', suggestion: false, anchor: nil, # rubocop:disable Metrics/ParameterLists
-               history: dialog, message: 'Спасибо!')
+               history: dialog, message: 'Спасибо!', visit: booked)
     agents = (1..count).map { |id| Captain::Runtime::RoutingSnapshot::Agent.new(id: id * 10, label: "Agent #{id}", card: card) }
     Captain::Runtime::RoutingSnapshot.new(agents: agents, latest_message: message, current_agent_id: current, human_available: human,
-                                          suggestion: suggestion, anchor_agent_id: anchor, recent_messages: history)
+                                          suggestion: suggestion, anchor_agent_id: anchor, recent_messages: history, visit: visit)
   end
 
   def build(count, mode: :full, **)
@@ -43,6 +45,19 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
                                    'a thumbs-up that answers a clinic question offering a time or a booking accepts it: not this')
     expect(description).not_to include('greets')
     expect(build(3, current: 10).mode_keys).to include('no_reply_needed')
+  end
+
+  # Suggestion eval 27.10 (c76-1205215, c78-1186457, c77-1198258): after a time was agreed (a voice note of the operator had no text)
+  # the patient wrote «Ок Рахмет / Принял / Буду» and the agent started the booking again. The platform sends no such confirmation to
+  # staff, also after a voice note: nothing in the questions mentions one.
+  it 'describes a bare confirmation of an agreed visit as no_reply_needed, with no exception for a clinic voice note' do
+    description = build(3).to_h['route_mode'][:criteria]['no_reply_needed']
+
+    expect(description).to include('A thanks, ok or "буду", "придём", "келемін" that only confirms a visit or a time the clinic already ' \
+                                   'agreed, booked or confirmed closes the topic: this. A greeting opens or resumes the dialog: not this',
+                                   'a thumbs-up that answers a clinic question offering a time or a booking accepts it: not this')
+    expect(description).not_to match(/voice/i)
+    expect(description.length).to be <= described_class::MAX_DESCRIPTION
   end
 
   # Router benchmark A23 (26.10, review of the human_handoff gate): «Перестаньте мне писать» was no_reply_needed, which no keyword gate sees.
@@ -144,38 +159,42 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
       end
     end
 
-    # Suggestion eval 26.10 (Sezim): the decision model answered human_handoff (0.71) for the first message of a dialog, a question
-    # about free times for a child; the dialog never reached an agent. The words did not ask for a person and an agent is a plausible
-    # answer (its include probability is 0.5 or more), so that agent answers.
-    describe 'a human_handoff of the model for a message that asks for no person and that an agent handles' do
+    # The review of the human_handoff gate (26.10) kept staff for a human_handoff that no agent fits (every include probability below
+    # 0.5). Suggestion eval 27.10 (c78-1250261): a human_handoff is asked with every include answer no, so those probabilities say
+    # nothing about whether an agent fits, and a plain question about a children's ENT, the first message of a dialog, went to staff in
+    # both runs. Staff take the turn for the words of a person, a complaint, a refund or a legal matter, and for no agent to ask.
+    describe 'a human_handoff of the model for a message that asks for no person, whatever the include probabilities' do
       let(:plain) { 'Есть окно сегодня или завтра для ребёнка к ЛОРу?' }
-      let(:probabilities) { { 10 => 0.2, 20 => 0.7, 30 => 0.4 } }
+      let(:unknown) { 'Мне нужен кто-то, кто решит мой вопрос' }
+      let(:below_half) { { 10 => 0.1, 20 => 0.45, 30 => 0.3 } }
 
-      it 'goes to the agent with the highest include probability' do
-        expect(build(3, message: plain).resolve(answered('human_handoff', include_probabilities: probabilities)))
-          .to have_attributes(kind: 'agent', agent_ids: [20], key: 'route_agent_20', confidence: 0.9)
-        expect(build(3, current: 30, message: plain).resolve(answered('human_handoff', include_probabilities: probabilities)).key)
-          .to eq('route_agent_20')
+      it 'goes to the agent with the highest include probability, also when every include probability is below 0.5' do
+        expect(Captain::PatientIntent.human_request?(plain)).to be(false)
+        expect(Captain::PatientIntent.human_request?(unknown)).to be(false)
+
+        [plain, unknown].each do |text|
+          expect(build(3, message: text).resolve(answered('human_handoff', include_probabilities: below_half)))
+            .to have_attributes(kind: 'agent', agent_ids: [20], key: 'route_agent_20', confidence: 0.9)
+          expect(build(3, current: 30, message: text).resolve(answered('human_handoff', include_probabilities: below_half)).key)
+            .to eq('route_agent_20')
+          expect(build(3, current: 20, message: text).resolve(answered('human_handoff', include_probabilities: below_half)))
+            .to have_attributes(kind: 'stay', agent_ids: [20], key: 'stay_current')
+        end
       end
 
-      it 'is a stay when the current agent is the most probable one' do
-        resolved = build(3, current: 30, message: plain)
-                   .resolve(answered('human_handoff', include_probabilities: { 10 => 0.1, 20 => 0.1, 30 => 0.9 }))
-
-        expect(resolved).to have_attributes(kind: 'stay', agent_ids: [30], key: 'stay_current')
-      end
-
-      it 'prefers the current agent, then the anchor of the channel, then the lower id, when the plausible agents are all alike' do
+      it 'prefers the current agent, then the anchor of the channel, then the lower id, when the agents are all alike or none fits' do
         alike = answered('human_handoff', yes: [10, 20, 30])
+        none = answered('human_handoff')
 
         expect(build(3, current: 20, message: plain).resolve(alike).key).to eq('stay_current')
         expect(build(3, suggestion: true, anchor: 30, message: plain).resolve(alike).key).to eq('route_agent_30')
         expect(build(3, message: plain).resolve(alike).key).to eq('route_agent_10')
+        expect(build(3, message: plain).resolve(none).key).to eq('route_agent_10')
+        expect(build(3, suggestion: true, anchor: 30, message: plain).resolve(none).key).to eq('route_agent_30')
+        expect(build(3, current: 20, message: plain).resolve(none).key).to eq('stay_current')
       end
 
-      it 'takes an include probability of exactly 0.5 for a plausible agent, and a model without probabilities by its yes' do
-        expect(build(3, message: plain).resolve(answered('human_handoff', include_probabilities: { 10 => 0.2, 20 => 0.5, 30 => 0.4 })))
-          .to have_attributes(kind: 'agent', key: 'route_agent_20')
+      it 'takes a model that gave no probabilities by its yes' do
         expect(build(3, message: plain).resolve(answered('human_handoff', yes: [30]))).to have_attributes(kind: 'agent', key: 'route_agent_30')
       end
 
@@ -185,32 +204,8 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
         expect(part.resolve(answered('human_handoff', all: [20, 30]))).to have_attributes(kind: 'human', key: 'human_handoff')
         expect(part.resolve(answered('human_handoff', yes: [20, 30], all: [20, 30]))).to have_attributes(kind: 'human', key: 'human_handoff')
       end
-    end
 
-    # Review of the human_handoff gate: the keywords cannot know every wording («Можете мне позвонить?», «Админге қосыңыз»), and the gate
-    # sent such a message to an agent that is no answer to it. When no agent is a plausible answer, the staff decision of the model stands.
-    describe 'a human_handoff of the model for a message that no agent is a plausible answer to' do
-      let(:unknown) { 'Мне нужен кто-то, кто решит мой вопрос' }
-
-      it 'gives staff when every include probability is below 0.5, whatever the words say' do
-        expect(Captain::PatientIntent.human_request?(unknown)).to be(false)
-
-        [10, 20, 30].each do |current|
-          resolved = build(3, current: current, message: unknown)
-                     .resolve(answered('human_handoff', include_probabilities: { 10 => 0.1, 20 => 0.45, 30 => 0.3 }))
-
-          expect(resolved).to have_attributes(kind: 'human', agent_ids: [], key: 'human_handoff', confidence: 0.9), "current agent #{current}"
-        end
-      end
-
-      it 'gives staff on the first message of a dialog and in a reply suggestion, and for a model that gave no probabilities' do
-        expect(build(3, message: unknown).resolve(answered('human_handoff'))).to have_attributes(kind: 'human', key: 'human_handoff')
-        expect(build(3, suggestion: true, anchor: 30, message: unknown).resolve(answered('human_handoff')))
-          .to have_attributes(kind: 'human', key: 'human_handoff')
-        expect(build(3, current: 20, message: unknown).resolve(answered('human_handoff'))).to have_attributes(kind: 'human', key: 'human_handoff')
-      end
-
-      it 'gives staff for the wordings of a call, the front desk and the administrator that the first keyword list missed' do
+      it 'gives staff for the wordings of a person, a call, the front desk and the administrator, a complaint, a refund and a legal matter' do
         ['Можете позвонить?', 'Можете мне позвонить?', 'Можете перезвонить?', 'Позвони мне', 'Свяжите с регистратурой', 'Отдайте мои деньги',
          'Я недоволен вашим сервисом', 'Перестаньте мне писать', 'operator', 'administrator', 'please call me', 'I want to talk to a manager',
          'Админге қосыңыз', 'Хочу пожаловаться'].each do |text|
@@ -223,12 +218,6 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
       it 'gives staff when there is no agent to ask' do
         expect(build(0, message: unknown).resolve(answered('human_handoff', all: []))).to have_attributes(kind: 'human', key: 'human_handoff')
       end
-
-      it 'does not give staff for a message that an agent is a plausible answer to, when the words ask for no person' do
-        resolved = build(3, message: unknown).resolve(answered('human_handoff', include_probabilities: { 10 => 0.1, 20 => 0.8, 30 => 0.3 }))
-
-        expect(resolved).to have_attributes(kind: 'agent', agent_ids: [20], key: 'route_agent_20')
-      end
     end
 
     it 'needs no answer for a bare thanks only while an agent leads the dialog; with none the most probable agent takes it' do
@@ -237,6 +226,86 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
       expect(build(3, current: 20, message: 'Рахмет, сау болыңыз 🙏').resolve(answered('no_reply_needed')).kind).to eq('no_reply')
       expect(build(3).resolve(answered('no_reply_needed'))).to have_attributes(kind: 'agent', agent_ids: [10], key: 'route_agent_10')
       expect(build(3, message: 'Рахмет, сау болыңыз 🙏').resolve(answered('no_reply_needed')).kind).to eq('agent')
+    end
+
+    # Suggestion eval 27.10 (c78-1214235, c78-1244961): the operator's voice note had no text, so the last clinic message asks nothing, and a
+    # bare thanks, ok or «буду» after it needs no answer, as after any other message. A question, or a refusal to come, is still answered.
+    it 'takes a no_reply_needed for a bare thanks, ok or confirmation after a clinic voice note whose words are unknown' do
+      voice = [{ role: 'clinic', agent_id: 20, text: "[Mon 26.10 18:59] #{Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE}" }]
+
+      ['Ок Рахмет Принял Буду', 'Спасибо, буду', 'Рахмет, келемін', 'Спасибо', 'Ок, спасибо'].each do |text|
+        expect(build(3, current: 20, message: text, history: voice).resolve(answered('no_reply_needed')))
+          .to have_attributes(kind: 'no_reply', key: 'no_reply_needed'), text
+      end
+      ['А во сколько?', 'Спасибо, не буду'].each do |text|
+        expect(build(3, current: 20, message: text, history: voice).resolve(answered('no_reply_needed')))
+          .to have_attributes(kind: 'stay', key: 'stay_current'), text
+      end
+      expect(build(3, message: 'Спасибо, буду', history: voice).resolve(answered('no_reply_needed', include_probabilities: { 10 => 0.1, 20 => 0.4 })))
+        .to have_attributes(kind: 'no_reply')
+    end
+
+    # The history writes the send time in front of every message ("[Wed 28.10 12:53] Спасибо"): its digits are no word of the patient, and
+    # its clock is no time that the clinic offered.
+    it 'reads the words of the messages, not the send time the history writes in front of them' do
+      reminder = [{ role: 'clinic', agent_id: 20, text: '[Wed 28.10 12:01] Напоминаем: завтра в 10:00 у вас приём. Ждём вас.' }]
+
+      ['Ок', 'Спасибо, буду', 'Хорошо, придём', "Спасибо\nБуду"].each do |text|
+        expect(build(3, current: 20, message: text, history: reminder).resolve(answered('no_reply_needed')).kind).to eq('no_reply'), text
+      end
+    end
+
+    # Review of quality-fixes-1 (H2): «спасибо, буду» is a courtesy, «спасибо, не буду» is a cancellation. The words of the cancellation
+    # are checked in the router, as they are in the classifier.
+    it 'keeps a refusal to come, and any other cancellation behind a thanks, with the current agent' do
+      ['Спасибо, не буду', 'Не получится', 'Рахмет, келмеймін', 'Спасибо, не пойду', 'Не могу прийти', 'Спасибо. Отмена'].each do |text|
+        expect(build(3, current: 20, message: text).resolve(answered('no_reply_needed'))).to have_attributes(kind: 'stay', key: 'stay_current'), text
+      end
+    end
+
+    # Review of quality-fixes-1 (L6): a question without a question mark is no bare thanks.
+    it 'keeps a question put in words, with no question mark, with the current agent' do
+      ['Спасибо, буду. Адрес какой', 'Рахмет, қашан келемін', 'Спасибо, можно позже', 'Ок где вы находитесь'].each do |text|
+        expect(build(3, current: 20, message: text).resolve(answered('no_reply_needed'))).to have_attributes(kind: 'stay', key: 'stay_current'), text
+      end
+    end
+
+    # Review of quality-fixes-1 (M1): staff offered a time without a question mark; a yes accepts it, and nothing is booked by a silence.
+    describe 'a short answer to a time that the clinic offered' do
+      let(:offer) { [{ role: 'clinic', agent_id: 20, text: 'Есть окно завтра в 14:00.' }] }
+      let(:reminder) { [{ role: 'clinic', agent_id: 20, text: 'Напоминаем: завтра в 10:00 у вас приём. Ждём вас.' }] }
+      let(:no_visit) { Captain::Runtime::AgreedVisit::NONE }
+
+      it 'is an acceptance, so the current agent answers it, whether or not the contact has another visit' do
+        ['Да, подходит', 'Ок', 'Хорошо', 'Жарайды', 'Давайте'].each do |text|
+          [booked, no_visit].each do |visit|
+            expect(build(3, current: 20, message: text, history: offer, visit: visit).resolve(answered('no_reply_needed')))
+              .to have_attributes(kind: 'stay', key: 'stay_current'), text
+          end
+        end
+      end
+
+      it 'is a courtesy after the reminder of a visit the contact has, and not after the same words when nothing is agreed' do
+        ['Ок', 'Хорошо', 'Спасибо, буду', 'Хорошо, придём', 'Рахмет, келемін'].each do |text|
+          expect(build(3, current: 20, message: text, history: reminder).resolve(answered('no_reply_needed')))
+            .to have_attributes(kind: 'no_reply', key: 'no_reply_needed'), text
+          expect(build(3, current: 20, message: text, history: reminder, visit: no_visit).resolve(answered('no_reply_needed')).kind)
+            .to eq('stay'), text
+        end
+      end
+
+      it 'is a courtesy, with a booking card that waits for approval, after the time the card was prepared for' do
+        pending_card = Captain::Runtime::AgreedVisit.new(pending: true)
+
+        expect(build(3, current: 20, message: 'Спасибо, буду', history: offer, visit: pending_card).resolve(answered('no_reply_needed')).kind)
+          .to eq('no_reply')
+      end
+
+      it 'does not stop a plain thanks, which accepts nothing' do
+        thanks = build(3, current: 20, message: 'Спасибо!', history: offer, visit: no_visit)
+
+        expect(thanks.resolve(answered('no_reply_needed')).kind).to eq('no_reply')
+      end
     end
 
     # Review of df3aaff78: no_reply_needed silences the turn, so an answer that contradicts it never ends as no_reply.

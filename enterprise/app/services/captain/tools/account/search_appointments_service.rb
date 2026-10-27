@@ -34,7 +34,7 @@ class Captain::Tools::Account::SearchAppointmentsService < Captain::Tools::Accou
                  end
     resource_id = verified_optional_record_id(resource_id, scope: account.scheduling_resources, field_name: 'resource_id')
 
-    appointments = (patient_scope ? patient_scope.appointments : account.scheduling_appointments).includes(
+    appointments = (patient_scope ? patient_scope.booked_appointments : account.scheduling_appointments).includes(
       :resource,
       :service,
       :company,
@@ -54,7 +54,7 @@ class Captain::Tools::Account::SearchAppointmentsService < Captain::Tools::Accou
 
     if patient_scope
       records = appointments.order(starts_at: :desc, id: :desc).limit(Captain::Tools::Agent::AppointmentResult::MAX_SEARCH_RESULTS + 1).to_a
-      return formatted_payload(
+      payload = {
         success: true,
         appointments: records.first(Captain::Tools::Agent::AppointmentResult::MAX_SEARCH_RESULTS).map do |appointment|
           Captain::Tools::Agent::AppointmentResult.appointment(appointment).merge(
@@ -65,7 +65,8 @@ class Captain::Tools::Account::SearchAppointmentsService < Captain::Tools::Accou
           )
         end,
         has_more: records.size > Captain::Tools::Agent::AppointmentResult::MAX_SEARCH_RESULTS
-      )
+      }
+      return formatted_payload(records.empty? ? payload.merge(note: Captain::AppointmentContext::NOTHING_FOUND_NOTE) : payload)
     end
 
     total_count = appointments.count

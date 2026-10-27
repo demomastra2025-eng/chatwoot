@@ -16,8 +16,9 @@
 # after any successful mutation; the Russian "выполнен*" needs the noun of an operation in its clause ("УЗИ было выполнено 8 октября" is
 # an exam of the past). #kinds returns the claim kinds found; KIND_TOOLS lists the successful tool calls that support each.
 #
-# Only the benchmark scorer uses this detector, to score replies after the fact. The runtime never reads it: no reply
-# is filtered or rewritten by it.
+# The benchmark scorer uses this detector to score replies after the fact. A reply suggestion reads it too, to name to the manager a
+# cancellation or a move that its draft claims and the run did not do (Captain::ReplySuggestion::DraftClaims): no reply is filtered
+# or rewritten by it, the draft stays as the agent wrote it.
 class Captain::Evals::RoutingBenchmark::SuccessClaims
   def self.words(*stems) = /(?<!\p{L})(?:#{stems.join('|')})(?!\p{L})/i
 

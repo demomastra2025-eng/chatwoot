@@ -21,8 +21,22 @@ RSpec.describe Captain::AssistantPrompt do
       global_system_instruction: 'Shared',
       clinic_context: nil,
       now_text: 'Monday, 12 October 2026 (2026-10-12), 23:56, Almaty (UTC+5). Tomorrow: Tuesday, 13 October 2026 (2026-10-13).',
-      patient_lines: ['Aigerim, +77000000000.']
+      patient_lines: ['Aigerim, +77000000000.'],
+      iin_enabled: false
     )
+  end
+
+  # Review of quality-fixes-1 (M5): the rules about an IIN are written for the accounts whose contact attributes hold an IIN only.
+  it 'says whether the account identifies its patients by an IIN, and gives a suggestion the line of a voice note of staff' do
+    expect(variables[:iin_enabled]).to be(false)
+    expect(variables).not_to have_key(:staff_voice_note)
+
+    create(:custom_attribute_definition, account: account, attribute_key: 'iin', attribute_model: :contact_attribute)
+
+    expect(variables[:iin_enabled]).to be(true)
+    suggestion = described_class.new(assistant: assistant, context: context, state: {}, prompt_state: {}, suggestion: true).variables
+    expect(suggestion[:staff_voice_note]).to eq(Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE)
+    expect(suggestion[:operator_language]).to be_present
   end
 
   it 'resolves the contact field of the clinic context, which the clinic instruction does not link' do
@@ -62,9 +76,15 @@ RSpec.describe Captain::AssistantPrompt do
 
     expect(variables(state: { runtime_clock: monday })[:now_text].split("\n")).to eq(
       [
-        'Monday, 26 October 2026 (2026-10-26), 09:00, Almaty (UTC+5). Tomorrow: Tuesday, 27 October 2026 (2026-10-27).',
-        "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago): " \
-        'read its today, tomorrow and weekdays from that day.'
+        'Monday, 26 October 2026 (2026-10-26), 09:00, Almaty (UTC+5).',
+        "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago). " \
+        'Read its relative days from that day, never from the clock above: ' \
+        'today (сегодня, бүгін) = Saturday, 24 October 2026 (2026-10-24), ' \
+        'tomorrow (завтра, ертең) = Sunday, 25 October 2026 (2026-10-25), ' \
+        'the day after tomorrow (послезавтра) = Monday, 26 October 2026 (2026-10-26). ' \
+        'By the clock above: 2026-10-24 has passed (2 days ago), 2026-10-25 has passed (yesterday), 2026-10-26 is today, ' \
+        '2026-10-27 is tomorrow. ' \
+        'In your reply name such a day by its date, and call a day today or tomorrow only when it is today or tomorrow by the clock above.'
       ]
     )
   end

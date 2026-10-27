@@ -250,6 +250,20 @@ RSpec.describe Captain::Tools::Agent::AppointmentResult do
     expect(technical.map { |error| described_class.failure(error)[:error_class] }).to all(eq('technical'))
   end
 
+  # Review of quality-fixes-1 (M3): a visit of the clinic system that cannot be cancelled from here was found; the agent hands it to staff
+  # naming the visit, it does not ask for an IIN again or say that there is nothing to cancel.
+  it 'tells the agent that an imported appointment cannot be changed from here and what to do instead' do
+    error = Scheduling::Error.new(code: 'APPOINTMENT_READ_ONLY', message: 'Imported Medelement appointments are read-only',
+                                  status: :unprocessable_content)
+
+    result = described_class.failure(error)
+
+    expect(result).to include(success: false, reason: 'validation_error', code: 'APPOINTMENT_READ_ONLY', error_class: 'business')
+    expect(result.fetch(:correction)).to include('belongs to the clinic system', 'do not tell the patient it is cancelled or moved',
+                                                 'Hand the request to staff, naming this visit', 'the change was refused')
+    expect(result.fetch(:correction)).not_to include('IIN')
+  end
+
   it 'carries the flag through the tool result of an input failure and keeps it recognised as a failure' do
     error = Scheduling::Error.new(code: 'INVALID_DATE', message: 'x', status: :unprocessable_content, details: { mutation_executed: false })
     result = Captain::ToolResult.normalize(described_class.failure_output(error))

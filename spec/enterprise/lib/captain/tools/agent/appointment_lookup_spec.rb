@@ -29,6 +29,16 @@ RSpec.describe Captain::Tools::Agent::AppointmentLookup do
     )).to eq(appointment)
   end
 
+  # Review of quality-fixes-1 (M4): an IIN or a name that finds nothing proves nothing, it may differ from the booking.
+  it 'tells the agent that nothing found is no proof of the absence of a booking, and says nothing of the kind when something is found' do
+    empty = lookup(client_identifier: '850505501230')
+
+    expect(empty).to include(success: true, appointments: [], has_more: false)
+    expect(empty.fetch(:note)).to eq(Captain::AppointmentContext::NOTHING_FOUND_NOTE)
+    expect(empty.fetch(:note)).to include('does not prove', 'Never tell the patient', 'nothing to cancel', 'staff')
+    expect(lookup(client_identifier: '940720300129')).not_to have_key(:note)
+  end
+
   it 'requires an exact full name, doctor and bounded day when no IIN is given' do
     expect { lookup(client_name: 'Test') }.to raise_error(ArgumentError)
     expect { lookup(client_name: 'Test Son', resource_id: resource.id, from: starts_at.iso8601, to: (starts_at + 2.days).iso8601) }

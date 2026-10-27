@@ -108,11 +108,73 @@ RSpec.describe Captain::PromptClock do
     it 'names the day and the time of a message sent on an earlier day, and how long ago' do
       line = described_class.message_line(monday.merge(message_sent_at: '2026-10-24T04:50:00Z'))
 
-      expect(line).to eq(
-        "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago): " \
-        'read its today, tomorrow and weekdays from that day.'
-      )
+      expect(line).to start_with("Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago). ")
       expect(described_class.message_line(monday.merge(message_sent_at: '2026-10-25T15:00:00Z'))).to include('(yesterday)')
+    end
+
+    # Suggestion eval 27.10 (c77-1167712, c78-1194483): «завтра 09:00» written the day before was offered for the day after the
+    # clock's tomorrow. The relative days of the message are written out as dates, so the model reads them instead of counting.
+    it 'writes out today, tomorrow and the day after tomorrow of the day the message was sent, with the words patients write' do
+      line = described_class.message_line(monday.merge(message_sent_at: '2026-10-24T04:50:00Z'))
+
+      expect(line).to eq(
+        "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago). " \
+        'Read its relative days from that day, never from the clock above: ' \
+        'today (сегодня, бүгін) = Saturday, 24 October 2026 (2026-10-24), ' \
+        'tomorrow (завтра, ертең) = Sunday, 25 October 2026 (2026-10-25), ' \
+        'the day after tomorrow (послезавтра) = Monday, 26 October 2026 (2026-10-26). ' \
+        'By the clock above: 2026-10-24 has passed (2 days ago), 2026-10-25 has passed (yesterday), 2026-10-26 is today, ' \
+        '2026-10-27 is tomorrow. ' \
+        'In your reply name such a day by its date, and call a day today or tomorrow only when it is today or tomorrow by the clock above.'
+      )
+    end
+
+    # Suggestion eval 27.10 (c77-1167712): the patient wrote «завтра 09:00» on Tuesday 27 October and the operator answered on Wednesday
+    # 28 October; the model searched Thursday, the clock's tomorrow. The line says that the patient's tomorrow is today by the clock.
+    it 'says where each of the three days stands by the clock, so the patient\'s tomorrow of yesterday is read as today' do
+      wednesday = clock('Asia/Almaty', '2026-10-28T02:01:37Z')
+      line = described_class.message_line(wednesday.merge(message_sent_at: '2026-10-27T03:30:00Z'))
+
+      expect(line).to include('sent Tuesday, 27 October 2026 (2026-10-27), 08:30 (yesterday)',
+                              'tomorrow (завтра, ертең) = Wednesday, 28 October 2026 (2026-10-28)',
+                              'By the clock above: 2026-10-27 has passed (yesterday), 2026-10-28 is today, 2026-10-29 is tomorrow.',
+                              'In your reply name such a day by its date')
+    end
+
+    # Suggestion eval 27.10 (c77-1167712): the model read the «ертең» of yesterday's message as the "Tomorrow:" of the clock line, though the
+    # message line named the day. With a message of an earlier day the clock line has no "Tomorrow:", and the message line says which
+    # day is the clock's tomorrow.
+    it 'leaves the "Tomorrow" out of the clock line when the message being answered was sent on an earlier day' do
+      wednesday = clock('Asia/Almaty', '2026-10-28T02:01:37Z')
+
+      expect(described_class.now_line(wednesday.merge(message_sent_at: '2026-10-27T03:30:00Z')))
+        .to eq('Wednesday, 28 October 2026 (2026-10-28), 07:01, Almaty (UTC+5).')
+      expect(described_class.now_line(wednesday.merge(message_sent_at: '2026-10-27T03:30:00Z'))).not_to include('Tomorrow')
+      expect(described_class.now_line(wednesday.merge(message_sent_at: '2026-10-28T01:30:00Z')))
+        .to eq('Wednesday, 28 October 2026 (2026-10-28), 07:01, Almaty (UTC+5). Tomorrow: Thursday, 29 October 2026 (2026-10-29).')
+      expect(described_class.now_line(wednesday)).to end_with('Tomorrow: Thursday, 29 October 2026 (2026-10-29).')
+    end
+
+    # Suggestion eval 27.10 (c78-1186952): the patient's «сегодня» of yesterday was named «Сегодня, 29 октября» in the reply.
+    it 'says that the patient\'s today of an earlier day has passed, and when a day is further ahead' do
+      friday = clock('Asia/Almaty', '2026-10-30T08:51:00Z')
+
+      expect(described_class.message_line(friday.merge(message_sent_at: '2026-10-29T08:33:00Z')))
+        .to include('By the clock above: 2026-10-29 has passed (yesterday), 2026-10-30 is today, 2026-10-31 is tomorrow.')
+      expect(described_class.message_line(friday.merge(message_sent_at: '2026-10-23T08:33:00Z')))
+        .to include('By the clock above: 2026-10-23 has passed (7 days ago), 2026-10-24 has passed (6 days ago), ' \
+                    '2026-10-25 has passed (5 days ago), 2026-10-30 is today, 2026-10-31 is tomorrow.')
+      future = clock('Asia/Almaty', '2026-10-24T08:00:00Z').merge(message_sent_at: '2026-10-23T08:33:00Z')
+      expect(described_class.message_line(future)).to include('2026-10-23 has passed (yesterday), 2026-10-24 is today, 2026-10-25 is tomorrow.')
+    end
+
+    it 'writes the dates of the message across the end of a month, not those of the clock' do
+      line = described_class.message_line(clock('Asia/Almaty', '2026-11-03T07:00:00Z').merge(message_sent_at: '2026-10-30T13:00:00Z'))
+
+      expect(line).to include('sent Friday, 30 October 2026 (2026-10-30), 18:00 (4 days ago)',
+                              'today (сегодня, бүгін) = Friday, 30 October 2026 (2026-10-30)',
+                              'tomorrow (завтра, ертең) = Saturday, 31 October 2026 (2026-10-31)',
+                              'the day after tomorrow (послезавтра) = Sunday, 1 November 2026 (2026-11-01)')
     end
 
     it 'writes nothing for a message of today, a missing time or a clock without a zone' do
@@ -121,16 +183,32 @@ RSpec.describe Captain::PromptClock do
       expect(described_class.message_line(message_sent_at: '2026-10-24T04:50:00Z')).to be_nil
     end
 
-    it 'reads the night of the message instead of the night of the clock when the message is of an earlier day' do
-      night_message = 'The patient\'s last message was sent after midnight, at 01:30: their "tomorrow" may mean that day, ' \
-                      'Saturday, 24 October 2026 (2026-10-24).'
+    # Review of quality-fixes-1 (M7): a message sent at 01:30 and answered two days later got the line that said tomorrow was the next
+    # day and the night line that said it might be the same day. The one line of the message gives both readings.
+    it 'gives both readings of tomorrow, in the one line, for a message of an earlier day that was sent after midnight' do
+      sent_at_night = monday.merge(message_sent_at: '2026-10-23T20:30:00Z')
+
+      line = described_class.message_line(sent_at_night)
+
+      expect(line).to start_with("Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 01:30 (2 days ago), after midnight. ")
+      expect(line).to include(
+        'today (сегодня, бүгін) = Saturday, 24 October 2026 (2026-10-24)',
+        'tomorrow (завтра, ертең) = Saturday, 24 October 2026 (2026-10-24) or Sunday, 25 October 2026 (2026-10-25) ' \
+        '(after midnight "tomorrow" may mean the same day)',
+        'the day after tomorrow (послезавтра) = Sunday, 25 October 2026 (2026-10-25) or Monday, 26 October 2026 (2026-10-26)',
+        'offer free slots with the full date and book after the patient picks one'
+      )
+      expect(described_class.night_line(sent_at_night)).to be_nil
+    end
+
+    it 'leaves the night line to the clock when the message is of an earlier day and the clock is in the night, and to the message of today' do
       monday_night = clock('Asia/Almaty', '2026-10-25T20:30:00Z')
 
-      expect(described_class.night_line(monday.merge(message_sent_at: '2026-10-23T20:30:00Z'))).to eq(night_message)
       expect(described_class.night_line(monday.merge(message_sent_at: '2026-10-24T04:50:00Z'))).to be_nil
       expect(described_class.night_line(monday_night.merge(message_sent_at: '2026-10-25T17:50:00Z'))).to be_nil
       expect(described_class.night_line(monday_night.merge(message_sent_at: '2026-10-25T20:20:00Z')))
         .to start_with('It is after midnight: a patient\'s "tomorrow" may mean today, Monday, 26 October 2026 (2026-10-26).')
+      expect(described_class.message_line(monday.merge(message_sent_at: '2026-10-24T04:50:00Z'))).not_to include('after midnight')
     end
 
     # A patient writes at 01:30 on Monday and the operator asks for a suggestion at 09:00 the same day: no other line names the time

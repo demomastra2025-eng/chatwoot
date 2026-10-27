@@ -71,6 +71,15 @@ RSpec.describe 'Scheduling tools and times that have passed' do # rubocop:disabl
       expect(answer).not_to have_key('requested_range_status')
     end
 
+    # Suggestion eval 27.10 (c74-1245884): a search for later times started from tomorrow and said there was nothing before Thursday.
+    it 'lists the free times of today first when a longer range starts today, and today alone when it is the only day' do
+      answer = search(from: '2026-04-21', to: '2026-04-24')
+
+      expect(answer['days'].pluck('date')).to eq(%w[2026-04-21 2026-04-22 2026-04-23])
+      expect(answer['days'].first['times']).to all(be >= '12:00')
+      expect(search(from: '2026-04-21', to: '2026-04-22')['days'].pluck('date')).to eq(['2026-04-21'])
+    end
+
     it 'keeps the range staff ask for' do
       payload = JSON.parse(staff(tool_class).execute(from: '2026-04-20T09:00:00+05:00', to: '2026-04-20T10:00:00+05:00',
                                                      resource_ids: [resource.id], service_id: consultation.id))
@@ -94,6 +103,18 @@ RSpec.describe 'Scheduling tools and times that have passed' do # rubocop:disabl
 
       expect(payload['slots']).not_to be_empty
       expect(payload['slots'].pluck('starts_at')).to all(be >= '2026-04-21T12:00:00+05:00')
+    end
+
+    # Suggestion eval 27.10 (c74-1233747): the times of one specialist were given under the name of another. Every slot of the agent
+    # names its specialist, as a day of search_available_slots does; staff keep the slots as they were.
+    it 'names the specialist on every free window of a patient conversation, and leaves the windows of staff as they were' do
+      agent_slots = JSON.parse(agent(tool_class).execute(resource_id: resource.id, from: '2026-04-21T09:00', to: '2026-04-21T18:00'))['slots']
+      staff_slots = JSON.parse(staff(tool_class).execute(resource_id: resource.id, from: '2026-04-21T09:00:00+05:00',
+                                                         to: '2026-04-21T18:00:00+05:00'))['slots']
+
+      expect(agent_slots).not_to be_empty
+      expect(agent_slots.pluck('resource_name').uniq).to eq(['Aigerim'])
+      expect(staff_slots.first).not_to have_key('resource_name')
     end
 
     it 'keeps the range staff ask for' do

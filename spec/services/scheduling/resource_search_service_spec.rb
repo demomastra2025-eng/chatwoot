@@ -41,6 +41,25 @@ RSpec.describe Scheduling::ResourceSearchService do
     expect(perform(query: 'therapist', search_by: 'all')[:resources].pluck(:id)).to eq([therapist.id])
   end
 
+  # Suggestion eval 27.10 (c43-1201845): the Kazakh spelling of the doctor's name found nobody; the Russian spelling found her.
+  describe 'the Kazakh letters' do
+    let!(:russian) { create(:scheduling_resource, account: account, name: 'Касымова Алия', specialty: 'Гинеколог') }
+    let!(:kazakh) { create(:scheduling_resource, account: account, name: 'Ұлтан Қуаныш', specialty: 'Жүрек') }
+
+    it 'finds a specialist stored in Russian letters by the Kazakh spelling of the name, and by the Russian one' do
+      expect(perform(query: 'Қасымова Әлия', search_by: 'name')[:resources].pluck(:id)).to eq([russian.id])
+      expect(perform(query: 'Касымова Алия', search_by: 'name')[:resources].pluck(:id)).to eq([russian.id])
+      expect(perform(query: 'гинеколог', search_by: 'specialty')[:resources].pluck(:id)).to eq([russian.id])
+    end
+
+    it 'finds a specialist stored in Kazakh letters by either spelling, and a different name still finds nobody' do
+      expect(perform(query: 'Ұлтан Қуаныш', search_by: 'name')[:resources].pluck(:id)).to eq([kazakh.id])
+      expect(perform(query: 'Ултан Куаныш', search_by: 'name')[:resources].pluck(:id)).to eq([kazakh.id])
+      expect(perform(query: 'Журек', search_by: 'specialty')[:resources].pluck(:id)).to eq([kazakh.id])
+      expect(perform(query: 'Султан Куаныш', search_by: 'name')[:resources]).to be_empty
+    end
+  end
+
   it 'finds a specialist regardless of the order of name tokens' do
     expect(perform(query: 'Sarsembayeva Aigerim', search_by: 'name')[:resources].pluck(:id)).to eq([therapist.id])
     expect(perform(query: 'Aigerim Sarsembayeva', search_by: 'all')[:resources].pluck(:id)).to eq([therapist.id])

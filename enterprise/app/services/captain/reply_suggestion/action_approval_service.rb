@@ -441,6 +441,9 @@ class Captain::ReplySuggestion::ActionApprovalService
         validate_update_appointment(assistant: assistant, account: account, conversation: conversation, arguments: arguments)
       when 'cancel_appointment'
         validate_cancel_appointment(assistant: assistant, account: account, conversation: conversation, arguments: arguments)
+      when 'update_contact', 'update_my_contact'
+        invalid_iin_failure(account, arguments) ||
+          validate_generic_domain_call(tool_id: tool_id, account: account, conversation: conversation, state: state, arguments: arguments)
       else
         validate_generic_domain_call(tool_id: tool_id, account: account, conversation: conversation, state: state, arguments: arguments)
       end
@@ -749,6 +752,19 @@ class Captain::ReplySuggestion::ActionApprovalService
         return business_failure('Current task is not available', reason: 'not_found') if task.blank?
       end
       nil
+    end
+
+    # A card that writes the IIN of the patient is prepared only for an IIN: 12 digits with the check digit, never a phone number (the
+    # eval of 27.10 raised a card to write a payment phone number as the ID number). Only for the accounts that identify patients by it.
+    def invalid_iin_failure(account, arguments)
+      return unless Scheduling::IinValidator.in_use?(account)
+
+      Scheduling::IinValidator.require_valid_in!(
+        identifier: arguments[:identifier].presence || arguments[:iin], custom_attributes: arguments[:custom_attributes]
+      )
+      nil
+    rescue Scheduling::Error => e
+      business_failure(e.message, reason: 'validation_error')
     end
 
     def business_failure(message, reason: 'validation_error')

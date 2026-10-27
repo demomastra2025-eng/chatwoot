@@ -145,7 +145,27 @@
           "message": "Можете мне позвонить?", "expected": "human_handoff" },
         { "id": "A23", "trap": "human", "title": "a patient who refuses to go on writing with the assistant", "current": 77,
           "history": [ { "role": "agent", "agent_id": 77, "text": "Подскажите, на какой день вам удобно?" } ],
-          "message": "Перестаньте мне писать", "expected": "human_handoff" }
+          "message": "Перестаньте мне писать", "expected": "human_handoff" },
+        { "id": "A24", "trap": "human", "title": "a request for a person in words no keyword list held: is anybody alive there", "current": 77,
+          "history": [ { "role": "agent", "agent_id": 77, "text": "Подскажите, на какой день вам удобно?" } ],
+          "message": "Есть кто живой?", "expected": "human_handoff" },
+        { "id": "A25", "trap": "human", "title": "a request to talk to the doctor in person", "current": 77,
+          "history": [ { "role": "agent", "agent_id": 77, "text": "Подскажите, на какой день вам удобно?" } ],
+          "message": "Хочу обсудить с врачом лично", "expected": "human_handoff" },
+        { "id": "A26", "trap": "human", "title": "an English request for a person", "current": 77, "language": "en",
+          "history": [ { "role": "agent", "agent_id": 77, "text": "Подскажите, на какой день вам удобно?" } ],
+          "message": "I want a person", "expected": "human_handoff" },
+        { "id": "AS08", "type": "suggestion_short_reply", "title": "suggestion: a yes to a time that staff offered without a question accepts it: stay_current, never no_reply_needed",
+          "current": null, "sticky": 109,
+          "history": [
+            { "role": "patient", "text": "Хочу сделать УЗИ щитовидной железы" },
+            { "role": "agent", "text": "УЗИ щитовидной железы есть окно завтра в 14:00 у Салимовой К.В." } ],
+          "message": "Да, подходит", "expected": "stay_current" },
+        { "id": "AS09", "type": "suggestion_short_reply", "title": "suggestion: thanks and a refusal after a reminder is a cancellation: stay_current, never no_reply_needed",
+          "current": null, "sticky": 109, "visit_times": ["10:00"],
+          "history": [
+            { "role": "agent", "text": "Напоминаем: завтра в 10:00 у вас УЗИ малого таза. Ждём вас." } ],
+          "message": "Спасибо, не буду", "expected": "stay_current" }
       ]
     },
     {
