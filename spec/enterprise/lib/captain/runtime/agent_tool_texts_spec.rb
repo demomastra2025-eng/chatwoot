@@ -276,6 +276,12 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
       .to include('When the Patient block already lists the upcoming appointments, call it only for other dates, past or cancelled appointments')
   end
 
+  it 'tells the agent to call faq_lookup only for another question when the prompt already lists possibly relevant FAQ answers' do
+    expect(described_class.for_tool('faq_lookup').description)
+      .to include('When the prompt lists possibly relevant FAQ answers for the patient\'s latest message, call it only for another question ' \
+                  'or when none of them answers')
+  end
+
   it 'has no entry for a tool that is not part of the file' do
     expect(described_class.for_tool('no_such_tool')).to be_nil
   end

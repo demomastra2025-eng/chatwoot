@@ -72,4 +72,11 @@
 {{ line }}
 {% endfor -%}
 {% endif -%}
+{% if reply_suggestion_mode and faq_lines.size > 0 -%}
+# Possibly relevant FAQ
+Reference answers of the clinic found for the patient's latest message. Use one only if it answers what the patient asks; otherwise ignore it. A tool result is more current than an answer here.
+{% for line in faq_lines -%}
+{{ line }}
+{% endfor -%}
+{% endif -%}
 {% endif -%}

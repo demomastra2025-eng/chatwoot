@@ -254,7 +254,7 @@ tools:
     hidden_params: []
 
   faq_lookup:
-    description: "Search the clinic's FAQ for the patient's question. Returns result found with the matching answers, or not_found. Call it for a clinic question that the clinic instructions and data do not answer."
+    description: "Search the clinic's FAQ for the patient's question. Returns result found with the matching answers, or not_found. Call it for a clinic question that the clinic instructions and data do not answer. When the prompt lists possibly relevant FAQ answers for the patient's latest message, call it only for another question or when none of them answers."
     params:
       query: "Short question or keywords translated into the language of the clinic instructions."
     hidden_params: []

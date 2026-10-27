@@ -36,7 +36,9 @@ class Captain::AssistantPrompt
       @prompt_state, bound_tool_ids: bound_tool_ids, time_zone: time_zone
     )
     variables = texts.merge(now_text: now_text, patient_lines: patient_lines)
-    @suggestion ? variables.merge(operator_language: operator_language, booking_search: booking_search?) : variables
+    return variables unless @suggestion
+
+    variables.merge(operator_language: operator_language, booking_search: booking_search?, faq_lines: faq_lines)
   end
 
   private
@@ -95,6 +97,15 @@ class Captain::AssistantPrompt
       *preload_lines,
       *Captain::DoneActions.lines(@done)
     ].compact
+  end
+
+  # The FAQ answers close to the patient's latest message that the suggestion found before the first model call (Captain::ReplySuggestion::
+  # FaqPreload), as labelled reference text for the template. Never part of the Patient block: they are the clinic's texts, no patient data.
+  def faq_lines
+    Array(@preload[:faq]).map do |match|
+      answer = Captain::EncodingNormalizer.string(match[:answer].to_s).strip.gsub(/\n+/, "\n  ")
+      "- Q: #{Captain::EncodingNormalizer.string(match[:question].to_s).strip}\n  A: #{answer}\n  (match #{match[:score]})"
+    end
   end
 
   # What the suggestion read of the patient when it started, for an agent that has the tool that would have read it.
