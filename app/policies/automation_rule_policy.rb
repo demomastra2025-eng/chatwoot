@@ -15,6 +15,10 @@ class AutomationRulePolicy < ApplicationPolicy
     @account_user.administrator?
   end
 
+  def adopt_calendar_notification?
+    update?
+  end
+
   def clone?
     @account_user.administrator?
   end
