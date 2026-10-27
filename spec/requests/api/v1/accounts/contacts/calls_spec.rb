@@ -36,11 +36,12 @@ RSpec.describe 'Contact call API', type: :request do
 
     it 'leaves nothing behind when the call is refused', :aggregate_failures do
       allow_any_instance_of(Channel::Voice).to receive(:initiate_call).and_raise(ArgumentError, 'provider refused') # rubocop:disable RSpec/AnyInstance
+      counts = [Conversation.count, CommunicationThread.count, Message.count]
 
       post "/api/v1/accounts/#{account.id}/contacts/#{contact.id}/call", params: { inbox_id: voice_inbox.id }, headers: headers, as: :json
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect([Conversation.count, CommunicationThread.count, Message.count]).to eq([0, 0, 0])
+      expect([Conversation.count, CommunicationThread.count, Message.count]).to eq(counts)
     end
   end
 end

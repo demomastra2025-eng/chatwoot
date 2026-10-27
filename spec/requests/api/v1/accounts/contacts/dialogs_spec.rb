@@ -33,6 +33,10 @@ RSpec.describe 'Contact dialog API', type: :request do
     }
   end
 
+  def row_deltas(before_counts)
+    row_counts.to_h { |key, count| [key, count - before_counts.fetch(key)] }
+  end
+
   # Every user of the account is a member of every inbox when the inbox is made; an inbox the agent does not work in is one he
   # was removed from.
   def inbox_without_agent
@@ -187,10 +191,11 @@ RSpec.describe 'Contact dialog API', type: :request do
     end
 
     it 'starts the dialog with an approved template and sends it', :aggregate_failures do
+      before_counts = row_counts
       expect { post_message(start_params) }.to change(Message, :count).by(1)
 
       expect(response).to have_http_status(:success)
-      expect(row_counts).to include(contact_inboxes: 1, conversations: 1, threads: 1, links: 1, messages: 1)
+      expect(row_deltas(before_counts)).to include(contact_inboxes: 1, conversations: 1, threads: 1, links: 1, messages: 1)
       body = response.parsed_body
       message = Message.last
       expect(message).to have_attributes(content: 'Shipping update: 2', message_type: 'outgoing', sender_id: agent.id)
@@ -217,22 +222,24 @@ RSpec.describe 'Contact dialog API', type: :request do
     end
 
     it 'puts two different sends into one conversation and one thread', :aggregate_failures do
+      before_counts = row_counts
       post_message(start_params)
       post_message(start_params(echo_id: SecureRandom.uuid, content: 'Second'))
 
       expect(response).to have_http_status(:success)
-      expect(row_counts).to include(conversations: 1, threads: 1, links: 1, messages: 2)
+      expect(row_deltas(before_counts)).to include(conversations: 1, threads: 1, links: 1, messages: 2)
     end
 
     it 'puts the sends of two staff members for the same person into one dialog', :aggregate_failures do
       colleague = create(:user, account: account, role: :agent)
       create(:inbox_member, user: colleague, inbox: whatsapp_inbox)
+      before_counts = row_counts
 
       post_message(start_params)
       post "#{dialog_path}/messages", params: start_params(echo_id: SecureRandom.uuid), headers: colleague.create_new_auth_token, as: :json
 
       expect(response).to have_http_status(:success)
-      expect(row_counts).to include(conversations: 1, threads: 1, messages: 2)
+      expect(row_deltas(before_counts)).to include(conversations: 1, threads: 1, messages: 2)
     end
 
     it 'joins the thread of a person who has a dialog in another channel', :aggregate_failures do
@@ -241,11 +248,12 @@ RSpec.describe 'Contact dialog API', type: :request do
       existing = create(:conversation, account: account, contact: contact, inbox: other_inbox,
                                        contact_inbox: create(:contact_inbox, contact: contact, inbox: other_inbox))
       thread = existing.reload.communication_thread
+      before_counts = row_counts
 
       post_message(start_params)
 
       expect(response).to have_http_status(:success)
-      expect(row_counts).to include(threads: 1, conversations: 2, links: 2)
+      expect(row_deltas(before_counts)).to include(threads: 0, conversations: 1, links: 1)
       expect(response.parsed_body['communication_thread_id']).to eq(thread.display_id)
     end
 
@@ -334,12 +342,13 @@ RSpec.describe 'Contact dialog API', type: :request do
 
     it 'puts the send into the conversation the dialog got in that inbox a moment ago, whatever the inbox setting', :aggregate_failures do
       whatsapp_inbox.update!(lock_to_single_conversation: false)
+      before_counts = row_counts
 
       post_message(start_params)
       post_message(start_params(echo_id: SecureRandom.uuid, content: 'Second'))
 
       expect(response).to have_http_status(:success)
-      expect(row_counts).to include(conversations: 1, threads: 1, links: 1, messages: 2)
+      expect(row_deltas(before_counts)).to include(conversations: 1, threads: 1, links: 1, messages: 2)
     end
 
     it 'does not start a conversation in a bot or AI status: it is open and nobody waits for a reply', :aggregate_failures do
@@ -362,10 +371,11 @@ RSpec.describe 'Contact dialog API', type: :request do
     end
 
     it 'starts the dialog with a private note on the empty screen', :aggregate_failures do
+      before_counts = row_counts
       post_message({ channel_key: "inbox:#{whatsapp_inbox.id}", echo_id: echo_id, content: 'Call back after 18:00', private: true })
 
       expect(response).to have_http_status(:success)
-      expect(row_counts).to include(conversations: 1, threads: 1, messages: 1)
+      expect(row_deltas(before_counts)).to include(conversations: 1, threads: 1, messages: 1)
       expect(Message.last).to have_attributes(content: 'Call back after 18:00', private: true)
     end
   end
