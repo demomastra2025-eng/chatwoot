@@ -92,7 +92,7 @@ RSpec.describe Captain::Runtime::Runner, '#run streaming a reply suggestion' do
 
   def run_as(source, callbacks: {}, context: {})
     state = { source: source }
-    session = Captain::Conversation::AgentSession.new(entry: build_stubbed(:captain_assistant))
+    session = Captain::Conversation::AgentSession.new(ephemeral: true)
     options = { context: { state: state, agent_session: session }.merge(context), registry: { agent.name => agent }, llm_context: llm_context,
                 account: account, callbacks: callbacks }
     described_class.new.run(agent, 'Сколько стоит приём терапевта?', **options)

@@ -73,7 +73,7 @@ RSpec.describe Captain::SuggestionResponseSchema do
     describe 'the rules of a suggestion before it hands over, asks or stays silent' do
       let(:lookup_rule) do
         '- Before you decide that the sources have no answer, call the tools the clinic instructions and this request need: ' \
-          'search_available_slots for a doctor, a booking or free times, search_scheduling_services for a price, faq_lookup for documents ' \
+          'a slot search for a doctor, a booking or free times, search_scheduling_services for a price, faq_lookup for documents ' \
           'and certificates. When they return several tariffs or prices, list each with its condition instead of handing over; when it ' \
           'is unclear which service or visit the patient means, ask the patient.'
       end
@@ -82,7 +82,7 @@ RSpec.describe Captain::SuggestionResponseSchema do
           'specialty when no doctor is named) and ask only what they cannot settle.'
       end
       let(:future_rule) do
-        'Offer only start times that search_available_slots returned in this run, exactly as returned and all later than Now. Opening ' \
+        'Offer only start times that a slot search returned in this run, exactly as returned and all later than Now. Opening ' \
           'hours or a last booking time in the clinic texts ("последняя запись 19:00") are not free times: never offer a time the search ' \
           'did not return. Name a date only with the times the search returned for that very date. Never say that a time is taken, not ' \
           'free or has no window unless search_available_slots for that exact time (from = to) returned no start in this run: the times ' \

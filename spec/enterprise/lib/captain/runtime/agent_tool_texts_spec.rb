@@ -307,7 +307,8 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
   it 'tells the agent that the Patient block may already hold the card and the upcoming appointments that these tools read' do
     expect(described_class.for_tool('get_my_contact').description).to include('unless the Patient block already has the card')
     expect(described_class.for_tool('list_my_appointments').description)
-      .to include('When the Patient block already lists the upcoming appointments, call it only for other dates, past or cancelled appointments')
+      .to include("When the Patient block already lists the patient's upcoming appointments, use it for those visits; " \
+                  "call this tool for other dates, past or cancelled appointments, or to get another patient's access token")
   end
 
   it 'tells the agent to call faq_lookup only for another question when the prompt already lists possibly relevant FAQ answers' do
