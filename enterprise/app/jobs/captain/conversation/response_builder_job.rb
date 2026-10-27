@@ -870,9 +870,19 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     FAILED_TURN_HANDOFF_NOTE
   end
 
+  def missing_routing_cards?
+    @response&.dig('technical_failure', 'reason') == 'no_routing_cards'
+  end
+
+  def missing_routing_cards_notice
+    I18n.with_locale(account.locale) { I18n.t('captain.reply_suggestion.errors.no_routing_cards') }
+  end
+
   # A tool of the agent failed technically and the customer got no reply: the note says which tool and what kind of failure, and
   # which actions had already been performed, so that staff know the state of the request. Names and codes only.
   def technical_failure_note
+    return missing_routing_cards_notice if missing_routing_cards?
+
     failure = @response['technical_failure'].to_h
     note = "Automatic reply was stopped by a technical error (#{technical_failure_label(failure)}). Handoff to human agent was triggered."
     completed = Array(failure['completed']).map { |name| name.to_s.first(80) }.uniq

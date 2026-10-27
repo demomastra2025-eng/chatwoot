@@ -140,4 +140,16 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     expect(session.read).to include('current_assistant_id' => nil, 'routing_revision' => 2)
     expect(conversation.messages.where(private: true).where.not(sender_id: nil)).to be_empty
   end
+
+  it 'asks staff to fill agent descriptions when no enabled agent has a routing card' do
+    [doctors, procedures, surgery].each { |agent| agent.update!(routing_description: '') }
+
+    described_class.perform_now(conversation)
+
+    notice = I18n.with_locale(account.locale) { I18n.t('captain.reply_suggestion.errors.no_routing_cards') }
+    expect(conversation.reload.status).to eq('open')
+    expect(staff_notes).to include(notice)
+    expect(conversation.messages.outgoing.where(private: false)).to be_empty
+    expect(runtime_runner).not_to have_received(:run)
+  end
 end
