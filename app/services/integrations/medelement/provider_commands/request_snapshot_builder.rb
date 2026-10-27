@@ -93,6 +93,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
   def metadata_snapshot
     {
       'requested_by_id' => actor&.id, 'actor' => actor_descriptor,
+      'appointment_client_phone' => linked_reception? ? appointment_attribute('client_phone').to_s.presence : nil,
       Integrations::Medelement::AppointmentPatientIdentity::BINDING_KEY => appointment&.patient_contact_id,
       Integrations::Medelement::AppointmentPatientIdentity::SNAPSHOT_KEY => appointment_identity_snapshot
     }.compact

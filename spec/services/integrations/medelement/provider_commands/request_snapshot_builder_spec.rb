@@ -16,6 +16,12 @@ RSpec.describe Integrations::Medelement::ProviderCommands::RequestSnapshotBuilde
       expect(snapshot['provider_patient_code']).to eq('fake-patient-1')
       expect(snapshot['patient_phone_numbers']).to be_nil
 
+      changed = described_class.new(account: account, hook: hook, operation: 'create_reception', appointment: appointment,
+                                    contact: owner, desired_attributes: { 'client_phone' => '+77010000001' }).build
+      expect(changed['appointment_client_phone']).to eq('+77010000001')
+      expect(changed['patient_phone_numbers']).to be_nil
+      expect(described_class.fingerprint(changed)).not_to eq(described_class.fingerprint(snapshot))
+
       new_contact = create(:contact, account: account, name: 'Болат', last_name: 'Аянұлы', phone_number: nil)
       expect do
         described_class.new(account: account, hook: hook, operation: 'create_patient', contact: new_contact).build
