@@ -63,8 +63,11 @@ RSpec.describe Captain::AssistantPrompt do
     expect(variables(state: { runtime_clock: monday })[:now_text].split("\n")).to eq(
       [
         'Monday, 26 October 2026 (2026-10-26), 09:00, Almaty (UTC+5). Tomorrow: Tuesday, 27 October 2026 (2026-10-27).',
-        "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago): " \
-        'read its today, tomorrow and weekdays from that day.'
+        "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago). " \
+        'Read its relative days from that day, never from the clock above: ' \
+        'today (сегодня, бүгін) = Saturday, 24 October 2026 (2026-10-24), ' \
+        'tomorrow (завтра, ертең) = Sunday, 25 October 2026 (2026-10-25), ' \
+        'the day after tomorrow (послезавтра) = Monday, 26 October 2026 (2026-10-26).'
       ]
     )
   end

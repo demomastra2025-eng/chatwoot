@@ -108,11 +108,31 @@ RSpec.describe Captain::PromptClock do
     it 'names the day and the time of a message sent on an earlier day, and how long ago' do
       line = described_class.message_line(monday.merge(message_sent_at: '2026-10-24T04:50:00Z'))
 
-      expect(line).to eq(
-        "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago): " \
-        'read its today, tomorrow and weekdays from that day.'
-      )
+      expect(line).to start_with("Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago). ")
       expect(described_class.message_line(monday.merge(message_sent_at: '2026-10-25T15:00:00Z'))).to include('(yesterday)')
+    end
+
+    # Suggestion eval 27.10 (c77-1167712, c78-1194483): «завтра 09:00» written the day before was offered for the day after the
+    # clock's tomorrow. The relative days of the message are written out as dates, so the model reads them instead of counting.
+    it 'writes out today, tomorrow and the day after tomorrow of the day the message was sent, with the words patients write' do
+      line = described_class.message_line(monday.merge(message_sent_at: '2026-10-24T04:50:00Z'))
+
+      expect(line).to eq(
+        "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago). " \
+        'Read its relative days from that day, never from the clock above: ' \
+        'today (сегодня, бүгін) = Saturday, 24 October 2026 (2026-10-24), ' \
+        'tomorrow (завтра, ертең) = Sunday, 25 October 2026 (2026-10-25), ' \
+        'the day after tomorrow (послезавтра) = Monday, 26 October 2026 (2026-10-26).'
+      )
+    end
+
+    it 'writes the dates of the message across the end of a month, not those of the clock' do
+      line = described_class.message_line(clock('Asia/Almaty', '2026-11-03T07:00:00Z').merge(message_sent_at: '2026-10-30T13:00:00Z'))
+
+      expect(line).to include('sent Friday, 30 October 2026 (2026-10-30), 18:00 (4 days ago)',
+                              'today (сегодня, бүгін) = Friday, 30 October 2026 (2026-10-30)',
+                              'tomorrow (завтра, ертең) = Saturday, 31 October 2026 (2026-10-31)',
+                              'the day after tomorrow (послезавтра) = Sunday, 1 November 2026 (2026-11-01)')
     end
 
     it 'writes nothing for a message of today, a missing time or a clock without a zone' do

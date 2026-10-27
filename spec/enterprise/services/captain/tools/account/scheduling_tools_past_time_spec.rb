@@ -71,6 +71,15 @@ RSpec.describe 'Scheduling tools and times that have passed' do # rubocop:disabl
       expect(answer).not_to have_key('requested_range_status')
     end
 
+    # Suggestion eval 27.10 (c74-1245884): a search for later times started from tomorrow and said there was nothing before Thursday.
+    it 'lists the free times of today first when a longer range starts today, and today alone when it is the only day' do
+      answer = search(from: '2026-04-21', to: '2026-04-24')
+
+      expect(answer['days'].pluck('date')).to eq(%w[2026-04-21 2026-04-22 2026-04-23])
+      expect(answer['days'].first['times']).to all(be >= '12:00')
+      expect(search(from: '2026-04-21', to: '2026-04-22')['days'].pluck('date')).to eq(['2026-04-21'])
+    end
+
     it 'keeps the range staff ask for' do
       payload = JSON.parse(staff(tool_class).execute(from: '2026-04-20T09:00:00+05:00', to: '2026-04-20T10:00:00+05:00',
                                                      resource_ids: [resource.id], service_id: consultation.id))

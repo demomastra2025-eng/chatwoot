@@ -22,7 +22,13 @@ class Captain::PromptClock
   # a patient's "today", "tomorrow" or "on Monday" was written on (a message of Saturday answered on Monday).
   STAMP_FORMAT = '[%a %d.%m %H:%M]'
   STAMP_PATTERN = /\A\s*\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{2}\.\d{2} \d{2}:\d{2}\]\s*/
-  MESSAGE_LINE = "Patient's last message was sent %<sent>s, %<time>s (%<ago>s): read its today, tomorrow and weekdays from that day."
+  # The three days a patient names with a word, written out for the day the last message was sent: a model that is only told to count
+  # from that day counted from the clock (suggestion eval 27.10: «завтра 09:00» written the day before was offered for the day after
+  # the clock's tomorrow). The words are the ones the patients of this platform write; the model reads the dates, not the words.
+  MESSAGE_LINE = <<~LINE.squish.freeze
+    Patient's last message was sent %<sent>s, %<time>s (%<ago>s). Read its relative days from that day, never from the clock above:
+    today (сегодня, бүгін) = %<today>s, tomorrow (завтра, ертең) = %<tomorrow>s, the day after tomorrow (послезавтра) = %<after>s.
+  LINE
 
   class << self
     # "Monday, 12 October 2026 (2026-10-12), 12:34, Almaty (UTC+5). Tomorrow: Tuesday, 13 October 2026 (2026-10-13)." or nil when
@@ -51,8 +57,10 @@ class Captain::PromptClock
       format(NIGHT_MESSAGE_LINE, time: sent.strftime('%H:%M'), day: sent.strftime(LONG_DATE_FORMAT))
     end
 
-    # "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago): ..." when the message being
-    # answered (message_sent_at of the clock) was sent on an earlier day than now; nil when it was sent today or is unknown.
+    # "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago). Read its relative days from that day,
+    # never from the clock above: today (...) = Saturday, 24 October 2026 (2026-10-24), tomorrow (...) = Sunday, 25 October 2026
+    # (2026-10-25), the day after tomorrow (...) = ..." when the message being answered (message_sent_at of the clock) was sent on an
+    # earlier day than now; nil when it was sent today or is unknown.
     def message_line(runtime_clock)
       local, = local_clock(runtime_clock)
       return if local.blank?
@@ -61,7 +69,9 @@ class Captain::PromptClock
       return if sent.nil? || sent.to_date >= local.to_date
 
       days = (local.to_date - sent.to_date).to_i
-      format(MESSAGE_LINE, sent: sent.strftime(LONG_DATE_FORMAT), time: sent.strftime('%H:%M'), ago: days == 1 ? 'yesterday' : "#{days} days ago")
+      format(MESSAGE_LINE, sent: sent.strftime(LONG_DATE_FORMAT), time: sent.strftime('%H:%M'), ago: days == 1 ? 'yesterday' : "#{days} days ago",
+                           today: sent.strftime(LONG_DATE_FORMAT), tomorrow: (sent + 1.day).strftime(LONG_DATE_FORMAT),
+                           after: (sent + 2.days).strftime(LONG_DATE_FORMAT))
     end
 
     # "[Sat 24.10 09:50]": the send time of a message (a time or an ISO 8601 string) in the given zone; nil without a usable time.

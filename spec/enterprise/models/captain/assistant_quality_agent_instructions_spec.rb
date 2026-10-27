@@ -12,8 +12,8 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
     { now_utc: '2026-10-12T08:00:00Z', now_local: '2026-10-12T13:00:00+05:00', timezone: 'Asia/Almaty' }
   end
 
-  def run_context(source)
-    state = { source: source, runtime_clock: clock }.compact
+  def run_context(source, runtime_clock = clock)
+    state = { source: source, runtime_clock: runtime_clock }.compact
     instance_double(Captain::Runtime::RunContext, context: { state: state })
   end
 
@@ -42,7 +42,8 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
     end
 
     it 'sends a part of a council to staff by the rules of its part, not by response_mode' do
-      part = instance_double(Captain::Runtime::RunContext, context: { part_run: true, state: { source: 'reply_suggestion', runtime_clock: clock } })
+      part = instance_double(Captain::Runtime::RunContext,
+                             context: { part_run: true, state: { source: 'reply_suggestion', runtime_clock: clock } })
 
       rules = assistant.agent_instructions(part).split("\n\n").first
 
@@ -65,6 +66,40 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
 
       expect(live_rules).to include('say that you could not find the booking and that staff will check it.')
       expect(live_rules).not_to include('handoff rule below')
+    end
+  end
+
+  # Suggestion eval 27.10 (c77-1167712, c78-1194483, c74-1245884): "tomorrow 09:00" written the day before was offered for the wrong
+  # day because the model counted from the clock; a search for earlier or later times started from tomorrow and skipped today's.
+  describe 'the days a patient names and where a search of free times starts' do
+    let(:day_rule) do
+      'the patient\'s last message has no stamp, its day is written under Now when it was sent before today. Read today, tomorrow, the ' \
+        'day after tomorrow and weekdays in every patient message from the day that message was sent, never from Now (under Now they ' \
+        'are written out for the last message); if the day the patient meant has passed, say so and offer the nearest free times with ' \
+        'full dates.'
+    end
+    let(:search_rule) do
+      '- Search free times from today: when the patient names no day, or asks for the nearest, an earlier or a later time, start the ' \
+        'search today (from = today\'s date; the free times of today that are later than Now are offered too) and offer a later day ' \
+        'only when today has none; never start the search from tomorrow.'
+    end
+
+    it 'reads the days of every patient message from the day it was sent, and starts a search today, in a suggestion and in a live run' do
+      [suggestion_rules, live_rules].each do |rules|
+        expect(rules).to include(day_rule, search_rule)
+        expect(rules).not_to include('not from Now;')
+      end
+    end
+
+    it 'shows the day of the last message of the patient under Now with its relative days written out when it was sent before today' do
+      monday_clock = { now_utc: '2026-10-26T04:00:00Z', now_local: '2026-10-26T09:00:00+05:00', timezone: 'Asia/Almaty',
+                       message_sent_at: '2026-10-24T04:50:00Z' }
+
+      rendered = assistant.agent_instructions(run_context('reply_suggestion', monday_clock))
+
+      expect(rendered).to include('Monday, 26 October 2026 (2026-10-26), 09:00, Almaty (UTC+5). Tomorrow: Tuesday, 27 October 2026',
+                                  "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago).",
+                                  'tomorrow (завтра, ертең) = Sunday, 25 October 2026 (2026-10-25)')
     end
   end
 end

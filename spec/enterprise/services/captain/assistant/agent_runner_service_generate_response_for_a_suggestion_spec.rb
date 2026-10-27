@@ -77,9 +77,12 @@ RSpec.describe Captain::Assistant::AgentRunnerService, '#generate_response for a
 
       expect(prompt).to include(
         'Monday, 26 October 2026 (2026-10-26), 09:00, Almaty (UTC+5). Tomorrow: Tuesday, 27 October 2026 (2026-10-27).',
-        "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago): " \
-        'read its today, tomorrow and weekdays from that day.',
-        'Read today, tomorrow and weekdays in a message from the day it was sent, not from Now'
+        "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago). " \
+        'Read its relative days from that day, never from the clock above: ' \
+        'today (сегодня, бүгін) = Saturday, 24 October 2026 (2026-10-24), ' \
+        'tomorrow (завтра, ертең) = Sunday, 25 October 2026 (2026-10-25), ' \
+        'the day after tomorrow (послезавтра) = Monday, 26 October 2026 (2026-10-26).',
+        'Read today, tomorrow, the day after tomorrow and weekdays in every patient message from the day that message was sent, never from Now'
       )
       expect(prompt).not_to include('It is after midnight')
     end

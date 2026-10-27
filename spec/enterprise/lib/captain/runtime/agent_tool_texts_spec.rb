@@ -139,6 +139,13 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
                   'a patient that list_my_appointments does not show')
   end
 
+  # Suggestion eval 27.10 (c74-1245884): a search for earlier or later times started from tomorrow and skipped the free times of today.
+  it 'tells the agent to start a search of free slots today when no day is named, never from tomorrow' do
+    from = described_class.for_tool('search_available_slots').params['from']
+
+    expect(from).to include("pass today's date: the free times of today that are later than now are returned too", 'never start from tomorrow')
+  end
+
   it 'names the patient of create_appointment positively: the person the appointment is for when it is not the person in the conversation' do
     entry = described_class.for_tool('create_appointment')
 
