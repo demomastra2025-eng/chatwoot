@@ -71,7 +71,12 @@ describe('ContactPanel selected patient details', () => {
             template:
               '<div><slot v-for="element in list" name="item" :element="element" /></div>',
           },
-          AccordionItem: { template: '<div><slot /></div>' },
+          AccordionItem: {
+            name: 'AccordionItem',
+            props: ['title', 'isOpen'],
+            emits: ['toggle'],
+            template: '<div><slot /></div>',
+          },
           ContactInfo: {
             name: 'ContactInfo',
             props: ['contact'],
@@ -109,6 +114,18 @@ describe('ContactPanel selected patient details', () => {
         .findComponent({ name: 'SchedulingPatientDetails' })
         .props('patient').id
     ).toBe(84);
+    wrapper
+      .findAllComponents({ name: 'AccordionItem' })
+      .find(
+        item =>
+          item.props('title') === 'CONTACT_PANEL.SECTION_ATTRIBUTES_MACROS'
+      )
+      .vm.$emit('toggle', true);
+    wrapper
+      .findAllComponents({ name: 'AccordionItem' })
+      .find(item => item.props('title') === 'CONTACT_PANEL.SECTION_NOTES')
+      .vm.$emit('toggle', true);
+    await flushPromises();
     expect(
       wrapper.findComponent({ name: 'CustomAttributes' }).props('contactId')
     ).toBe(84);
@@ -157,7 +174,12 @@ describe('ContactPanel for a person who has no dialog yet', () => {
       template:
         '<div><slot v-for="element in list" name="item" :element="element" /></div>',
     },
-    AccordionItem: { template: '<div><slot /></div>' },
+    AccordionItem: {
+      name: 'AccordionItem',
+      props: ['title', 'isOpen'],
+      emits: ['toggle'],
+      template: '<div><slot /></div>',
+    },
     ConversationAction: { name: 'ConversationAction', template: '<div />' },
     MacrosList: { name: 'MacrosList', template: '<div />' },
     SharedFiles: { name: 'SharedFiles', template: '<div />' },
@@ -202,7 +224,24 @@ describe('ContactPanel for a person who has no dialog yet', () => {
 
   it('keeps what belongs to the person: attributes and notes', async () => {
     const wrapper = await mountPanel(true);
-
+    expect(wrapper.findComponent({ name: 'CustomAttributes' }).exists()).toBe(
+      false
+    );
+    expect(wrapper.findComponent({ name: 'ContactNotes' }).exists()).toBe(
+      false
+    );
+    wrapper
+      .findAllComponents({ name: 'AccordionItem' })
+      .find(
+        item =>
+          item.props('title') === 'CONTACT_PANEL.SECTION_ATTRIBUTES_MACROS'
+      )
+      .vm.$emit('toggle', true);
+    wrapper
+      .findAllComponents({ name: 'AccordionItem' })
+      .find(item => item.props('title') === 'CONTACT_PANEL.SECTION_NOTES')
+      .vm.$emit('toggle', true);
+    await flushPromises();
     expect(wrapper.findComponent({ name: 'CustomAttributes' }).exists()).toBe(
       true
     );
@@ -219,12 +258,26 @@ describe('ContactPanel for a person who has no dialog yet', () => {
     expect(wrapper.findComponent({ name: 'SharedFiles' }).exists()).toBe(false);
   });
 
-  it('shows all of them for a dialog that exists', async () => {
+  it('shows dialog controls while keeping attachments collapsed initially', async () => {
     const wrapper = await mountPanel(false);
 
     expect(wrapper.findComponent({ name: 'ConversationAction' }).exists()).toBe(
       true
     );
+    expect(wrapper.findComponent({ name: 'MacrosList' }).exists()).toBe(false);
+    expect(wrapper.findComponent({ name: 'SharedFiles' }).exists()).toBe(false);
+    wrapper
+      .findAllComponents({ name: 'AccordionItem' })
+      .find(
+        item =>
+          item.props('title') === 'CONTACT_PANEL.SECTION_ATTRIBUTES_MACROS'
+      )
+      .vm.$emit('toggle', true);
+    wrapper
+      .findAllComponents({ name: 'AccordionItem' })
+      .find(item => item.props('title') === 'CONTACT_PANEL.SECTION_FILES')
+      .vm.$emit('toggle', true);
+    await flushPromises();
     expect(wrapper.findComponent({ name: 'MacrosList' }).exists()).toBe(true);
     expect(wrapper.findComponent({ name: 'SharedFiles' }).exists()).toBe(true);
   });

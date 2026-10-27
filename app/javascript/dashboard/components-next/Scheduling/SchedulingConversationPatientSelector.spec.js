@@ -103,6 +103,25 @@ describe('conversation patient selector', () => {
     }
   );
 
+  it('shows one patient chip and a family member action in the contact panel', async () => {
+    const i18n = createI18n({
+      legacy: false,
+      locale: 'ru',
+      messages: { ru },
+    });
+    mocks.t.mockImplementation(i18n.global.t);
+    const wrapper = await mountLoaded();
+    await wrapper.setProps({ chips: true });
+
+    expect(
+      wrapper.get('[data-test="patient-chips"]').findAll('button')
+    ).toHaveLength(1);
+    expect(wrapper.find('label').exists()).toBe(false);
+    expect(
+      wrapper.findAllComponents({ name: 'Button' })[0].props('label')
+    ).toBe('+ Член семьи');
+  });
+
   it.each([
     ['en', 'Client', 'Add client'],
     ['ru', 'Клиент', '+ Новый пациент'],

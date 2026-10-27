@@ -598,6 +598,7 @@ const startCreateDeal = () => {
   }
   scrollDealsToTop();
 };
+defineExpose({ startCreateDeal });
 
 const cancelCreateDeal = () => {
   if (savingDealKey.value) return;

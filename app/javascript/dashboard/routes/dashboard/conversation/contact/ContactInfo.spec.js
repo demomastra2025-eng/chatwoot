@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { shallowMount } from '@vue/test-utils';
 
 import ContactInfo from './ContactInfo.vue';
+import CrmTasksAPI from 'dashboard/api/crm/tasks';
 
 const routerPushMock = vi.fn();
 const dispatchMock = vi.fn();
@@ -11,6 +12,9 @@ const useUISettingsMock = vi.fn();
 
 vi.mock('dashboard/composables/useAdmin', () => ({
   useAdmin: (...args) => useAdminMock(...args),
+}));
+vi.mock('dashboard/api/crm/tasks', () => ({
+  default: { create: vi.fn() },
 }));
 
 vi.mock('dashboard/composables/useUISettings', () => ({
@@ -78,6 +82,8 @@ const buildWrapper = ({ conversations = [], contact = {} } = {}) =>
         ContactChannelLabels: true,
         ContactInfoRow: true,
         ContactMergeModal: true,
+        CrmConversationDealsSidebar: true,
+        SchedulingConversationAppointmentsSidebar: true,
         ComboBox: true,
         EditContact: true,
         NextButton: true,
@@ -113,34 +119,6 @@ describe('ContactInfo', () => {
     expect(wrapper.vm.openChannelConversation).toBeUndefined();
   });
 
-  it('turns the empty dialog into the dialog of the call that was started from the card', () => {
-    const wrapper = buildWrapper();
-    wrapper.vm.$store.getters.getSelectedChat = {
-      id: 'draft-154',
-      is_draft: true,
-      person_contact_id: 154,
-    };
-
-    wrapper.vm.onCallInitiated({ communication_thread_id: 77 });
-
-    expect(dispatchMock).toHaveBeenCalledWith('promotePersonDialog', {
-      contactId: 154,
-      communicationThreadId: 77,
-    });
-  });
-
-  it('leaves a dialog that already exists alone when a call starts', () => {
-    const wrapper = buildWrapper();
-    wrapper.vm.$store.getters.getSelectedChat = { id: 77 };
-
-    wrapper.vm.onCallInitiated({ communication_thread_id: 77 });
-
-    expect(dispatchMock).not.toHaveBeenCalledWith(
-      'promotePersonDialog',
-      expect.anything()
-    );
-  });
-
   it('marks only non-resolved inbox conversations as active', () => {
     const wrapper = buildWrapper({
       conversations: [
@@ -163,7 +141,7 @@ describe('ContactInfo', () => {
     expect(wrapper.vm.showEditModal).toBe(false);
   });
 
-  it('prefills a calendar appointment by opaque record ids only', () => {
+  it('opens the appointment panel without leaving the dialog', () => {
     const wrapper = buildWrapper({
       contact: {
         name: 'Айжан',
@@ -175,19 +153,34 @@ describe('ContactInfo', () => {
 
     wrapper.vm.onCreateAppointment();
 
-    expect(routerPushMock).toHaveBeenCalledWith({
-      name: 'scheduling_calendar',
-      params: { accountId: 1 },
-      query: {
-        action: 'new',
-        contactId: wrapper.vm.contact.id,
-        conversationId: Number(wrapper.vm.$route.params.id),
-        source: 'contact',
-      },
-    });
+    expect(wrapper.vm.appointmentOpen).toBe(true);
+    expect(routerPushMock).not.toHaveBeenCalled();
   });
 
-  it('updates the shared contact owner from the owner combobox', async () => {
+  it('opens the existing deal form over the dialog', async () => {
+    const wrapper = buildWrapper();
+    wrapper.vm.onCreateDeal();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.vm.dealOpen).toBe(true);
+    expect(routerPushMock).not.toHaveBeenCalled();
+  });
+
+  it('creates a task from a popup without navigating away', async () => {
+    CrmTasksAPI.create.mockResolvedValue({ data: { payload: { id: 16 } } });
+    const wrapper = buildWrapper();
+    wrapper.vm.onCreateTask();
+    await wrapper.setData({ taskTitle: 'Позвонить пациенту' });
+    await wrapper.vm.saveTask();
+    expect(CrmTasksAPI.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Позвонить пациенту',
+        activity_type: 'task',
+      })
+    );
+    expect(routerPushMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps the contact owner in the edit modal instead of the panel', async () => {
     const wrapper = buildWrapper({
       contact: {
         owner_id: 7,
@@ -195,20 +188,12 @@ describe('ContactInfo', () => {
       },
     });
 
-    const ownerSelector = wrapper.findComponent({ name: 'ComboBox' });
-    expect(ownerSelector.props('modelValue')).toBe(7);
-    expect(ownerSelector.props('options')).toEqual([
-      { value: '', label: 'CONTACT_PANEL.OWNER_UNASSIGNED' },
-      { value: 7, label: 'Aigerim Agent' },
-      { value: 9, label: 'Bob Agent' },
-    ]);
-
-    await ownerSelector.vm.$emit('update:modelValue', 9);
-
-    expect(dispatchMock).toHaveBeenCalledWith('contacts/update', {
-      id: 154,
-      owner_id: 9,
-    });
+    expect(wrapper.findComponent({ name: 'ComboBox' }).exists()).toBe(false);
+    wrapper.vm.openEditModal();
+    await wrapper.vm.$nextTick();
+    expect(
+      wrapper.findComponent({ name: 'EditContact' }).props('contact').owner_id
+    ).toBe(7);
   });
 
   it('does not request contactable inboxes or conversations when contact id is missing', () => {

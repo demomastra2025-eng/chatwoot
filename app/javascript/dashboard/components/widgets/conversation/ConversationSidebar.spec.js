@@ -179,7 +179,7 @@ describe('ConversationSidebar', () => {
     });
   });
 
-  it('hides the patient selector when the contact is the only patient', async () => {
+  it('keeps the patient chip and add action when the contact is the only patient', async () => {
     mocks.uiSettings = ref({ is_contact_sidebar_open: true });
     SchedulingContactsAPI.patients.mockResolvedValueOnce({
       data: {
@@ -199,8 +199,8 @@ describe('ConversationSidebar', () => {
     expect(
       wrapper
         .findComponent({ name: 'SchedulingConversationPatientSelector' })
-        .exists()
-    ).toBe(false);
+        .props('chips')
+    ).toBe(true);
   });
 
   it('passes selected clinical context while keeping the chat recipient intact', async () => {

@@ -212,9 +212,9 @@ const closeAppointmentsSidebar = () => closePanel();
             v-if="
               patientContextEnabled &&
               patientContextKey &&
-              patientEntry?.patients?.length > 1
+              patientEntry?.patients?.length
             "
-            compact
+            chips
             :context-key="patientContextKey"
             :entry="patientEntry"
             :conversation-display-id="patientConversationDisplayId"

@@ -1,5 +1,20 @@
 {
   "SCHEDULING": {
+    "RESCHEDULE": {
+      "TITLE": "Reschedule",
+      "CURRENT": "Current",
+      "DOCTOR": "Doctor",
+      "PREVIOUS": "Previous week",
+      "NEXT": "Next week",
+      "LOADING": "Finding free times…",
+      "NO_SLOTS": "No free times",
+      "SCHEDULE_NOT_CONFIRMED": "The doctor's schedule is not confirmed yet",
+      "NOTICE": "The patient will receive an appointment rescheduled message. Reminders will move to the new time.",
+      "CONFIRMATION_RESET": "Confirmation will be cleared when the day changes.",
+      "CONFIRM_AT": "Reschedule to {date}, {time}",
+      "PATIENT_CHANGE_BLOCKED": "The patient of a MedElement appointment cannot be changed here",
+      "CHANGE_PATIENT": "Change patient"
+    },
     "PATIENT_SEARCH": {
       "TITLE": "Found in MedElement",
       "LOADING": "Searching patients…",
@@ -15,6 +30,7 @@
       "SCHEDULING_PROVIDER_NOT_CONFIGURED": "Patient search is not available yet"
     },
     "NOTIFICATIONS": {
+      "PATIENT_TITLE": "Patient notifications",
       "TITLE": "Notifications",
       "SUBTITLE": "Appointment messages and delivery",
       "ADD": "Add notification",
@@ -129,6 +145,7 @@
       "SELECTION_SCOPE": "Your selection is saved for this conversation.",
       "LOAD_ERROR": "Unable to load clients for this conversation",
       "NEW_PATIENT": "Add client",
+      "ADD_FAMILY_MEMBER": "Add family member",
       "OWN_PHONE": "Client's own phone, if different",
       "CREATE_DESCRIPTION": "Create a separate client card for this shared number. The conversation will stay the same.",
       "PROVIDER_ID": "MedElement patient code",
@@ -307,6 +324,7 @@
       "TITLE": "No contact in this appointment"
     },
     "APPOINTMENT_FORM": {
+      "SAVED_SHORT": "Saved",
       "AVAILABILITY": {
         "DATE": "Appointment date",
         "LOADING": "Loading available times…",

@@ -34,6 +34,7 @@ const props = defineProps({
   entry: { type: Object, default: null },
   conversationDisplayId: { type: [Number, String], default: null },
   compact: { type: Boolean, default: false },
+  chips: { type: Boolean, default: false },
 });
 const { t, locale } = useI18n();
 const patientStore = useConversationPatientContextStore();
@@ -71,14 +72,18 @@ const canEditSelected = computed(() =>
 const options = computed(() =>
   (props.entry?.patients || []).map(patient => ({
     value: patient.id,
-    label: [
-      patientDisplayName(patient),
-      props.compact
-        ? patientAgeLabel(patient, t, locale?.value || 'ru')
-        : formatPatientBirthDate(patient),
-    ]
-      .filter(Boolean)
-      .join(props.compact ? ', ' : ' · '),
+    label:
+      [
+        patientDisplayName(patient),
+        props.compact || props.chips
+          ? patientAgeLabel(patient, t, locale?.value || 'ru')
+          : formatPatientBirthDate(patient),
+      ]
+        .filter(Boolean)
+        .join(props.compact || props.chips ? ', ' : ' · ') +
+      (props.chips && Number(patient.id) === Number(props.entry?.contactId)
+        ? ` · ${t('CONTACT_PANEL.SELF_PATIENT')}`
+        : ''),
   }))
 );
 const selectedOption = computed(
@@ -280,9 +285,38 @@ const savePatient = async () => {
     :class="compact ? 'py-2' : 'border-b border-n-weak bg-n-alpha-1 px-3 py-2'"
     data-test="patient-selector"
   >
+    <div
+      v-if="chips && !isCreating && !isEditing"
+      class="flex flex-wrap gap-1.5"
+      data-test="patient-chips"
+    >
+      <button
+        v-for="option in options"
+        :key="option.value"
+        type="button"
+        :disabled="!entry?.loaded || entry?.loading || entry?.saving"
+        :aria-pressed="isOptionSelected(option)"
+        class="rounded-full border px-2.5 py-1 text-xs text-n-slate-12"
+        :class="
+          isOptionSelected(option)
+            ? 'border-n-teal-7 bg-n-teal-3 text-n-teal-11'
+            : 'border-n-weak bg-n-alpha-1'
+        "
+        @click="selectPatient(option.value)"
+      >
+        {{ option.label }}
+      </button>
+      <Button
+        size="xs"
+        variant="faded"
+        icon="i-lucide-plus"
+        :label="t('SCHEDULING.PATIENT_CONTEXT.ADD_FAMILY_MEMBER')"
+        @click="startCreate"
+      />
+    </div>
     <div class="grid min-w-0 gap-1.5">
       <div
-        v-if="!compact"
+        v-if="!compact && !chips"
         class="flex min-w-0 items-center justify-between gap-1.5"
       >
         <label
@@ -319,6 +353,7 @@ const savePatient = async () => {
       </div>
 
       <div
+        v-if="!chips"
         v-show="!isCreating && !isEditing"
         ref="dropdownRootRef"
         class="relative min-w-0"

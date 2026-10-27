@@ -28,6 +28,23 @@ const emit = defineEmits(['select']);
 
 const { t } = useI18n();
 
+const channelName = (channelType, medium) => {
+  if (medium === 'whatsapp' || /whatsapp/i.test(channelType)) return 'WhatsApp';
+  if (/telegram/i.test(channelType)) return 'Telegram';
+  if (/instagram/i.test(channelType)) return 'Instagram';
+  if (/webwidget/i.test(channelType)) return t('CONTACT_PANEL.CHANNEL_WEB');
+  if (/voice/i.test(channelType)) return t('CONTACT_PANEL.CHANNEL_CALLS');
+  if (/email/i.test(channelType)) return 'Email';
+  return t('CONTACT_PANEL.CHANNEL_OTHER');
+};
+
+const readableIdentifier = sourceId => {
+  const value = String(sourceId || '').trim();
+  return /^(\+?[\d\s()-]{7,}|@[\w.]+|[^\s@]+@[^\s@]+\.[^\s@]+)$/.test(value)
+    ? value
+    : '';
+};
+
 const existingConversationInboxIdSet = computed(() => {
   if (!Array.isArray(props.existingConversationInboxIds)) {
     return null;
@@ -56,11 +73,17 @@ const channelLabels = computed(() => {
         inboxId: inbox?.id || null,
         sourceId,
         inboxName: inbox?.name || '',
+        label: [
+          channelName(channelType, medium),
+          inbox?.name || readableIdentifier(sourceId),
+        ]
+          .filter(Boolean)
+          .join(' · '),
         icon: getInboxIconByType(channelType, medium, 'line'),
         willCreateNewConversation,
       };
     })
-    .filter(channelLabel => channelLabel.sourceId)
+    .filter(channelLabel => channelLabel.inboxId || channelLabel.sourceId)
     .sort((left, right) => {
       if (left.willCreateNewConversation !== right.willCreateNewConversation) {
         return (
@@ -96,24 +119,12 @@ const handleChannelIdentityClick = async channelLabel => {
         type="button"
         class="inline-flex max-w-full items-center gap-2 rounded-full border border-n-weak bg-n-slate-9/10 px-2.5 py-1 text-xs text-n-slate-12 shadow-sm transition-colors hover:border-n-slate-4 hover:bg-n-alpha-1"
         :class="channelLabel.willCreateNewConversation ? 'border-dashed' : ''"
-        :title="
-          channelLabel.inboxName
-            ? `${channelLabel.inboxName}: ${channelLabel.sourceId}`
-            : channelLabel.sourceId
-        "
+        :title="channelLabel.label"
         @click="handleChannelIdentityClick(channelLabel)"
       >
-        <span
-          v-if="channelLabel.willCreateNewConversation"
-          data-testid="new-conversation-indicator"
-          class="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-n-weak bg-n-alpha-1 text-[10px] font-semibold text-n-slate-12"
-          :title="t('CONTACT_PANEL.NO_CHANNEL_CONVERSATION')"
-        >
-          <span class="i-lucide-plus size-2.5" />
-        </span>
         <span class="size-3.5 flex-shrink-0" :class="channelLabel.icon" />
         <span class="max-w-[14rem] truncate">
-          {{ channelLabel.sourceId }}
+          {{ channelLabel.label }}
         </span>
       </button>
     </div>

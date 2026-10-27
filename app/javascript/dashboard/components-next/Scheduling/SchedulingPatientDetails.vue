@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
+import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
+import { normalizePayload } from 'dashboard/stores/scheduling/shared';
 import { formatSchedulingErrorMessage } from 'dashboard/stores/scheduling/shared';
 import {
   formatPatientBirthDate,
@@ -25,6 +27,8 @@ const { t } = useI18n();
 const patientStore = useConversationPatientContextStore();
 const isEditing = ref(false);
 const error = ref('');
+const nearestAppointment = ref(null);
+let appointmentRequestId = 0;
 let editSnapshot = null;
 const saving = computed(() =>
   Boolean(patientStore.contexts[props.contextKey]?.saving)
@@ -101,6 +105,41 @@ watch(
     error.value = '';
   }
 );
+watch(
+  () => props.patient.id,
+  async id => {
+    appointmentRequestId += 1;
+    const currentRequest = appointmentRequestId;
+    nearestAppointment.value = null;
+    if (!id) return;
+    try {
+      const { data } = await SchedulingAppointmentsAPI.get({
+        patient_contact_ids: id,
+        from: new Date().toISOString(),
+      });
+      if (currentRequest !== appointmentRequestId) return;
+      nearestAppointment.value =
+        normalizePayload(data)
+          .filter(item => item.status !== 'cancelled')
+          .sort((left, right) =>
+            String(left.startsAt).localeCompare(String(right.startsAt))
+          )[0] || null;
+    } catch {
+      // Clinical details remain readable if appointment history is unavailable.
+    }
+  },
+  { immediate: true }
+);
+const nearestAppointmentLabel = computed(() => {
+  if (!nearestAppointment.value?.startsAt) return '';
+  return new Intl.DateTimeFormat('ru', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(nearestAppointment.value.startsAt));
+});
 const attributes = computed(
   () => props.patient.custom_attributes || props.patient.customAttributes || {}
 );
@@ -113,6 +152,7 @@ const rows = computed(() => [
       attributes.value.medelement_patient_card) &&
       t('SCHEDULING.PATIENT_CONTEXT.CARD_LINKED'),
   ],
+  [t('CONTACT_PANEL.NEAREST_APPOINTMENT'), nearestAppointmentLabel.value],
 ]);
 </script>
 

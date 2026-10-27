@@ -244,21 +244,39 @@ export default {
     </div>
     <div>
       <ContactDetailsItem compact :title="$t('CONVERSATION.PRIORITY.TITLE')" />
-      <MultiselectDropdown
-        :options="priorityOptions"
-        :selected-item="assignedPriority"
-        :multiselector-title="$t('CONVERSATION.PRIORITY.TITLE')"
-        :multiselector-placeholder="
-          $t('CONVERSATION.PRIORITY.CHANGE_PRIORITY.SELECT_PLACEHOLDER')
-        "
-        :no-search-result="
-          $t('CONVERSATION.PRIORITY.CHANGE_PRIORITY.NO_RESULTS')
-        "
-        :input-placeholder="
-          $t('CONVERSATION.PRIORITY.CHANGE_PRIORITY.INPUT_PLACEHOLDER')
-        "
-        @select="onClickAssignPriority"
-      />
+      <div
+        class="flex flex-wrap gap-1 rounded-lg border border-n-weak bg-n-alpha-1 p-1"
+        role="group"
+        :aria-label="$t('CONVERSATION.PRIORITY.TITLE')"
+      >
+        <button
+          v-for="priority in priorityOptions.filter(
+            item =>
+              item.id === null ||
+              item.id === 'high' ||
+              item.id === 'urgent' ||
+              item.id === assignedPriority.id
+          )"
+          :key="priority.id || 'none'"
+          type="button"
+          :aria-pressed="priority.id === assignedPriority.id"
+          class="min-w-0 flex-1 rounded-md px-2 py-1 text-xs text-n-slate-12"
+          :class="
+            priority.id === assignedPriority.id
+              ? 'bg-n-solid-2 font-semibold shadow-sm'
+              : 'hover:bg-n-alpha-2'
+          "
+          @click="assignedPriority = priority"
+        >
+          {{
+            priority.id === null
+              ? $t('CONTACT_PANEL.PRIORITY_NORMAL')
+              : priority.id === 'urgent'
+                ? $t('CONTACT_PANEL.PRIORITY_URGENT')
+                : priority.name
+          }}
+        </button>
+      </div>
     </div>
     <ContactDetailsItem
       compact

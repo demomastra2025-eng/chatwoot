@@ -50,11 +50,7 @@ export default {
 </script>
 
 <template>
-  <woot-modal
-    v-model:show="localShow"
-    modal-type="right-aligned"
-    @close="onCancel"
-  >
+  <woot-modal v-model:show="localShow" modal-type="centered" @close="onCancel">
     <div class="flex flex-col h-auto overflow-auto">
       <woot-modal-header
         :header-title="`${$t('EDIT_CONTACT.TITLE')} - ${

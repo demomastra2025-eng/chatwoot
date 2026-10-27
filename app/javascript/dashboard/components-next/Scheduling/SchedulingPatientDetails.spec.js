@@ -3,11 +3,15 @@ import { createPinia, setActivePinia } from 'pinia';
 import { defineComponent, h } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
 import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
+import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import { useConversationPatientContextStore } from 'dashboard/stores/scheduling/patientContext';
 import SchedulingPatientDetails from './SchedulingPatientDetails.vue';
 
 vi.mock('dashboard/api/scheduling/contacts', () => ({
   default: { patients: vi.fn(), update: vi.fn() },
+}));
+vi.mock('dashboard/api/scheduling/appointments', () => ({
+  default: { get: vi.fn() },
 }));
 
 const InputStub = defineComponent({
@@ -115,6 +119,7 @@ describe('SchedulingPatientDetails', () => {
     SchedulingContactsAPI.patients.mockResolvedValue(
       response([owner, patient, otherPatient])
     );
+    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
   });
 
   const mountSelected = async id => {
@@ -179,6 +184,25 @@ describe('SchedulingPatientDetails', () => {
     );
     expect(wrapper.find('button').exists()).toBe(true);
     expect(SchedulingContactsAPI.update).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('shows the nearest future appointment for the selected patient', async () => {
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: {
+        payload: [
+          { id: 1, startsAt: '2099-11-03T09:00:00Z', status: 'scheduled' },
+          { id: 2, startsAt: '2099-11-01T09:00:00Z', status: 'scheduled' },
+        ],
+      },
+    });
+    const { wrapper } = await mountSelected(84);
+    await flushPromises();
+    expect(SchedulingAppointmentsAPI.get).toHaveBeenCalledWith(
+      expect.objectContaining({ patient_contact_ids: 84 })
+    );
+    expect(wrapper.text()).toContain('Next appointment');
+    expect(wrapper.text()).toContain('01.11.2099');
     wrapper.unmount();
   });
 

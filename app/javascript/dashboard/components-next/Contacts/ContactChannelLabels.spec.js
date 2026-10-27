@@ -21,14 +21,16 @@ const createWrapper = props =>
   });
 
 describe('ContactChannelLabels', () => {
-  it('shows a new conversation indicator when no conversation exists yet', () => {
+  it('shows a readable channel and inbox without a plus indicator', () => {
     const wrapper = createWrapper({
       existingConversationInboxIds: [],
     });
 
+    expect(wrapper.text()).toContain('Email · Support Email');
+    expect(wrapper.text()).not.toContain('user@example.com');
     expect(
       wrapper.find('[data-testid="new-conversation-indicator"]').exists()
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('hides the new conversation indicator when an inbox already has a conversation', () => {

@@ -2033,6 +2033,7 @@ const startCreateAppointment = async ({ scroll = true } = {}) => {
   }
   if (scroll) await scrollToTop();
 };
+defineExpose({ startCreateAppointment });
 
 const manualTimeChanged = (form, field) => {
   if (field === 'duration' || field === 'end') form.durationEdited = true;
