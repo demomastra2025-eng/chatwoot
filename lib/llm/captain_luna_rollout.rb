@@ -119,8 +119,11 @@ class Llm::CaptainLunaRollout
       Llm::CaptainLunaRollout::AgentModels.new
     end
 
+    # The features that follow the installation default. The image readers have a platform default of their own since the image
+    # pipeline (Llm::Config::OWN_DEFAULT_MODEL_FEATURES): the cut-over still blanks their rows and clears the account choices, but
+    # what they resolve to is not Luna 6 and is not checked.
     def effective_models
-      FEATURES.index_with { |feature| Llm::Config.model_for(feature: feature, fallback: nil) }
+      (FEATURES - Llm::Config::OWN_DEFAULT_MODEL_FEATURES).index_with { |feature| Llm::Config.model_for(feature: feature, fallback: nil) }
     end
 
     # The snapshot has to be taken before the cut-over: afterwards it could not tell what to go back to.

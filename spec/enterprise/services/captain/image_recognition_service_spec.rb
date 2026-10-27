@@ -10,36 +10,44 @@ RSpec.describe Captain::ImageRecognitionService do
       external_url: 'https://example.com/image.jpg'
     )
   end
-  let(:response) { instance_double(RubyLLM::Message, content: 'Screenshot with an order error') }
+  let(:reading) do
+    Captain::ImageReading::Reader::Reading.new(description: 'Screenshot with an order error', reader: :ordinary, model: 'gpt-5.4-mini')
+  end
+  let(:reader) { instance_double(Captain::ImageReading::Reader, read: reading) }
   let(:service) { described_class.new(account: account, attachment: attachment, image_url: attachment.external_url) }
 
   before do
-    allow(service).to receive(:model).and_return('gpt-5.4-mini')
-    allow(Llm::Config).to receive(:provider_for_model).with('gpt-5.4-mini', account: account).and_return('openai')
+    allow(service).to receive_messages(model: 'gpt-5.4-mini', handwriting_model: 'openai/gpt-6.1-terra')
+    allow(Captain::ImageReading::Reader).to receive(:new).and_return(reader)
   end
 
-  it 'recognizes an image through the configured image recognition model and caches the result' do
-    expect(Llm::Runtime).to receive(:chat) do |feature:, account:, model:, messages:, observability:, options:|
-      content = messages.first[:content]
-      expect(feature).to eq(:image_recognition)
-      expect(account).to eq(service.account)
-      expect(model).to eq('gpt-5.4-mini')
-      expect(content).to be_a(RubyLLM::Content)
-      expect(content.text).to include('Describe the attached customer-shared image')
-      expect(content.attachments.first.source.to_s).to eq('https://example.com/image.jpg')
-      expect(observability).to include(runtime_mode: 'image_recognition', feature_name: 'image_recognition')
-      expect(options).to include(temperature: 0)
-      response
-    end
-
+  it 'reads the image through the image reader with the two platform models and caches the text with the reader that made it' do
     expect(service.perform).to eq('Screenshot with an order error')
-    expect(attachment.reload.meta).to include('image_recognition_description' => 'Screenshot with an order error')
+
+    expect(Captain::ImageReading::Reader).to have_received(:new).with(
+      account: account, attachment: attachment, image_url: 'https://example.com/image.jpg',
+      models: { ordinary: 'gpt-5.4-mini', handwriting: 'openai/gpt-6.1-terra' }
+    )
+    expect(attachment.reload.meta).to include(
+      'image_recognition_description' => 'Screenshot with an order error',
+      'image_recognition_reader' => 'ordinary',
+      'image_recognition_model' => 'gpt-5.4-mini'
+    )
   end
 
-  it 'uses cached image recognition without calling the model' do
+  it 'caches which reader read an image with handwriting' do
+    handwriting = Captain::ImageReading::Reader::Reading.new(description: 'Рецепт', reader: :handwriting, model: 'openai/gpt-6.1-terra')
+    allow(reader).to receive(:read).and_return(handwriting)
+
+    service.perform
+
+    expect(attachment.reload.meta).to include('image_recognition_reader' => 'handwriting', 'image_recognition_model' => 'openai/gpt-6.1-terra')
+  end
+
+  it 'uses cached image recognition without reading the image again' do
     attachment.update!(meta: { 'image_recognition_description' => 'Cached image description' })
 
-    expect(Llm::Runtime).not_to receive(:chat)
+    expect(Captain::ImageReading::Reader).not_to receive(:new)
 
     expect(service.perform).to eq('Cached image description')
   end
@@ -47,9 +55,43 @@ RSpec.describe Captain::ImageRecognitionService do
   it 'returns a safe fallback when no image recognition model is available' do
     allow(service).to receive(:model).and_return(nil)
 
-    expect(Llm::Runtime).not_to receive(:chat)
+    expect(Captain::ImageReading::Reader).not_to receive(:new)
 
     expect(service.perform).to eq('User shared an image, but image recognition is temporarily unavailable.')
+  end
+
+  it 'returns the fallback, and caches nothing, when the image cannot be read' do
+    allow(reader).to receive(:read).and_raise(Captain::ImageReading::Picture::Unreadable, 'the file is not an image')
+
+    expect(service.perform).to eq(described_class::FALLBACK_DESCRIPTION)
+    expect(attachment.reload.meta).not_to have_key('image_recognition_description')
+  end
+
+  it 'returns the fallback when the reader gave no text' do
+    allow(reader).to receive(:read).and_return(Captain::ImageReading::Reader::Reading.new(description: nil, reader: :ordinary, model: 'm'))
+
+    expect(service.perform).to eq(described_class::FALLBACK_DESCRIPTION)
+    expect(attachment.reload.meta).not_to have_key('image_recognition_description')
+  end
+
+  it 'returns the fallback when the provider rejects the key' do
+    allow(reader).to receive(:read).and_raise(RubyLLM::UnauthorizedError.new(nil, 'bad key'))
+
+    expect(service.perform).to eq(described_class::FALLBACK_DESCRIPTION)
+  end
+
+  describe 'the models' do
+    let(:plain) { described_class.new(account: account, attachment: attachment, image_url: attachment.external_url) }
+
+    it 'resolves the ordinary model and the handwriting model from the two platform settings, not from the default model' do
+      allow(Llm::Config).to receive(:model_for).and_call_original
+
+      plain.model
+      plain.handwriting_model
+
+      expect(Llm::Config).to have_received(:model_for).with(feature: 'image_recognition', account: account, fallback: Llm::Config::DEFAULT_MODEL)
+      expect(Llm::Config).to have_received(:model_for).with(feature: 'image_handwriting', account: account, fallback: nil)
+    end
   end
 
   # The description made when the image arrived and the one a reply suggestion asks for must not be two paid calls.
@@ -59,7 +101,6 @@ RSpec.describe Captain::ImageRecognitionService do
 
     before do
       stub_const("#{described_class}::POLL_SECONDS", 0.01)
-      allow(Llm::Runtime).to receive(:chat).and_return(response)
     end
 
     after { Redis::Alfred.delete(lock_key) }
@@ -77,20 +118,25 @@ RSpec.describe Captain::ImageRecognitionService do
     it 'describes the image itself when nobody else does, and frees the lock afterwards' do
       expect(service.perform).to eq('Screenshot with an order error')
 
-      expect(Llm::Runtime).to have_received(:chat).once
+      expect(reader).to have_received(:read).once
       expect(Redis::Alfred.exists?(lock_key)).to be(false)
     end
 
     it 'holds the lock while it describes the image' do
       held = nil
-      allow(Llm::Runtime).to receive(:chat) do
+      allow(reader).to receive(:read) do
         held = Redis::Alfred.exists?(lock_key)
-        response
+        reading
       end
 
       service.perform
 
       expect(held).to be(true)
+    end
+
+    it 'holds the lock long enough for a slow reading and waits for one as long' do
+      expect(described_class::LOCK_TTL_SECONDS).to be >= 60
+      expect(described_class::WAIT_SECONDS).to be >= 20
     end
 
     it 'waits for the description another call is making instead of making a second one' do
@@ -99,7 +145,7 @@ RSpec.describe Captain::ImageRecognitionService do
       expect(service.perform).to eq('Описание из фонового задания')
       worker.join
 
-      expect(Llm::Runtime).not_to have_received(:chat)
+      expect(reader).not_to have_received(:read)
     end
 
     it 'describes the image itself when the other call ends without a description' do
@@ -108,7 +154,7 @@ RSpec.describe Captain::ImageRecognitionService do
       expect(service.perform).to eq('Screenshot with an order error')
       worker.join
 
-      expect(Llm::Runtime).to have_received(:chat).once
+      expect(reader).to have_received(:read).once
       expect(attachment.reload.meta).to include(cache_key => 'Screenshot with an order error')
     end
 
@@ -118,7 +164,7 @@ RSpec.describe Captain::ImageRecognitionService do
 
       expect(service.perform).to eq('Screenshot with an order error')
 
-      expect(Llm::Runtime).to have_received(:chat).once
+      expect(reader).to have_received(:read).once
       # The stuck holder keeps its lock; this call never took it.
       expect(Redis::Alfred.get(lock_key)).to eq('stuck-process')
     end
@@ -130,7 +176,7 @@ RSpec.describe Captain::ImageRecognitionService do
       end
 
       expect(service.perform).to eq('Описание, которое только что сохранили')
-      expect(Llm::Runtime).not_to have_received(:chat)
+      expect(reader).not_to have_received(:read)
     end
 
     it 'describes the image without a lock when Redis fails: the lock only saves a call' do
@@ -139,18 +185,18 @@ RSpec.describe Captain::ImageRecognitionService do
       allow(Redis::LockManager).to receive(:new).and_return(lock_manager)
 
       expect(service.perform).to eq('Screenshot with an order error')
-      expect(Llm::Runtime).to have_received(:chat).once
+      expect(reader).to have_received(:read).once
     end
 
     it 'makes one call when the job of the arrival and a reply suggestion ask for the same image together' do
       calls = Concurrent::AtomicFixnum.new(0)
-      allow(Llm::Runtime).to receive(:chat) do
+      allow(reader).to receive(:read) do
         calls.increment
         sleep 0.3
-        response
+        reading
       end
       other = described_class.new(account: account, attachment: Attachment.find(attachment.id), image_url: attachment.external_url)
-      allow(other).to receive(:model).and_return('gpt-5.4-mini')
+      allow(other).to receive_messages(model: 'gpt-5.4-mini', handwriting_model: 'openai/gpt-6.1-terra')
 
       results = [service, other].map { |recognition| Thread.new { recognition.perform } }.map(&:value)
 
@@ -167,7 +213,7 @@ RSpec.describe Captain::ImageRecognitionService do
     end
 
     it 'frees the lock when the call fails' do
-      allow(Llm::Runtime).to receive(:chat).and_raise(Faraday::TimeoutError)
+      allow(reader).to receive(:read).and_raise(Faraday::TimeoutError)
 
       expect(service.perform).to eq(described_class::FALLBACK_DESCRIPTION)
       expect(Redis::Alfred.exists?(lock_key)).to be(false)

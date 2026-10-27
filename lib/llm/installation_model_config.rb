@@ -20,6 +20,7 @@ module Llm::InstallationModelConfig
   # «nothing given»: read the value from the settings that are stored (the call of a single setting). A form that saves
   # several settings at once passes the values it is about to save instead, so the rules are checked against the whole.
   NOT_GIVEN = Object.new.freeze
+  UNTRUSTED_IMAGE_MODEL_MESSAGE = 'картинки клиентов отдаются только моделям Google, OpenAI и Perplexity: модель «%s» не подходит'
   Result = Struct.new(:value, :error) do
     def valid? = error.nil?
   end
@@ -49,9 +50,20 @@ module Llm::InstallationModelConfig
     def normalize_slot(name, value)
       model_name = Llm::Models.canonical_model_name(value.to_s.strip)
       return Result.new(model_name) if model_name.blank?
-      return Result.new(model_name) if Llm::Models.model_allowed_for_feature?(SLOT_FEATURES[name], model_name)
 
-      Result.new(nil, "модель «#{model_name}» не найдена в каталоге или не подходит для этой функции")
+      feature = SLOT_FEATURES[name]
+      unless Llm::Models.model_allowed_for_feature?(feature, model_name)
+        return Result.new(nil, "модель «#{model_name}» не найдена в каталоге или не подходит для этой функции")
+      end
+      return Result.new(nil, UNTRUSTED_IMAGE_MODEL_MESSAGE % model_name) if untrusted_image_model?(feature, model_name)
+
+      Result.new(model_name)
+    end
+
+    # A customer's image goes only to the providers the platform trusts with it (Llm::OpenRouterRoutingProfile::TRUSTED_IMAGE_PROVIDERS).
+    def untrusted_image_model?(feature, model_name)
+      Llm::OpenRouterRoutingProfile::IMAGE_FEATURES.include?(feature) &&
+        Llm::OpenRouterRoutingProfile.trusted_image_providers(model_name).blank?
     end
 
     def normalize_default_model(value, allowlist: NOT_GIVEN)

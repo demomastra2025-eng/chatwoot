@@ -71,7 +71,8 @@ RSpec.describe Llm::FeatureProfile do
 
   it 'derives the decision features from the profiles instead of a fixed list' do
     expect(described_class.decision_feature_keys).to contain_exactly(
-      'outcome_classification', 'language_detection', 'custom_guardrail', 'agent_routing', 'fact_check_gate', 'inbound_triage'
+      'outcome_classification', 'language_detection', 'custom_guardrail', 'agent_routing', 'fact_check_gate', 'inbound_triage',
+      'image_routing'
     )
     expect(described_class.decision_feature?(:agent_routing)).to be(true)
     expect(described_class.decision_feature?('custom_guardrail')).to be(true)
@@ -89,6 +90,18 @@ RSpec.describe Llm::FeatureProfile do
     %i[agent_routing fact_check_gate inbound_triage assistant].each do |feature|
       expect(described_class.for(feature).decision_fallback_models).to eq([])
     end
+  end
+
+  it 'registers the router of customer images as a decision feature with a longer bound and a larger request, and no fallback model' do
+    routing = described_class.for(:image_routing)
+
+    expect(routing).to be_decisions.and be_strict_timeout
+    expect(routing).to have_attributes(
+      required_capabilities: %w[decision_classification], timeout_seconds: 8, max_retries: 0, max_request_bytes: 1_048_576,
+      decision_fallback_models: []
+    )
+    expect(described_class.for(:agent_routing).max_request_bytes).to be_nil
+    expect(described_class.for(:language_detection).max_request_bytes).to be_nil
   end
 
   it 'registers the escalation of the router and the council split as structured chat features, not decision features' do

@@ -139,7 +139,16 @@ RSpec.describe 'Super admin settings pages', type: :request do
     end
 
     it 'follows the default model of the installation for a blank slot when that is its built-in value' do
-      expect(text(card('CAPTAIN_IMAGE_RECOGNITION_MODEL').at_css('[data-testid="slot-status"]'))).to eq('Используется встроенная: GPT-5.6 Luna')
+      expect(text(card('CAPTAIN_LABEL_SUGGESTION_MODEL').at_css('[data-testid="slot-status"]'))).to eq('Используется встроенная: GPT-5.6 Luna')
+    end
+
+    it 'names the model of their own as the built-in value of the three image slots, not the default model of the installation' do
+      expect(text(card('CAPTAIN_IMAGE_RECOGNITION_MODEL').at_css('[data-testid="slot-status"]')))
+        .to eq('Используется встроенная: Gemini 3.1 Flash Lite')
+      expect(text(card('CAPTAIN_IMAGE_HANDWRITING_MODEL').at_css('[data-testid="slot-status"]')))
+        .to eq('Используется встроенная: GPT-6.1 Terra')
+      expect(text(card('CAPTAIN_IMAGE_ROUTER_MODEL').at_css('[data-testid="slot-status"]')))
+        .to eq('Используется встроенная: Perplexity Decider 1.2')
     end
 
     it 'ticks the models of the short list and no others' do

@@ -1,15 +1,20 @@
+# The text of a customer's image, made once and kept in the meta of the attachment. The reading itself is Captain::ImageReading::Reader:
+# a router looks at the image, then one of two platform models reads it (see there). This service is the cache and the rule that one
+# call at a time describes an image.
 class Captain::ImageRecognitionService < Llm::BaseAiService
-  include Integrations::LlmInstrumentation
-
   CACHE_KEY = 'image_recognition_description'.freeze
+  # Which reader made the description (:ordinary or :handwriting, as a string) and which model, kept next to the text.
+  READER_KEY = 'image_recognition_reader'.freeze
+  MODEL_KEY = 'image_recognition_model'.freeze
   FALLBACK_DESCRIPTION = 'User shared an image, but image recognition is temporarily unavailable.'.freeze
   # One call at a time describes an image (see #describe_once): the description made when the image arrived (Messages::ImageDescriptionJob)
   # and the one a reply suggestion or an agent run asks for are never two paid calls.
   LOCK_PREFIX = 'captain:image_description'.freeze
-  LOCK_TTL_SECONDS = 60
-  # How long a caller waits for the call another process is making: about the time of a call, so a stuck holder costs the waiter
-  # little more than describing the image itself would.
-  WAIT_SECONDS = 15
+  # Longer than a reading takes at its slowest: the load, the router, a reasoning reader (about 14 s) and a retry of the provider.
+  LOCK_TTL_SECONDS = 90
+  # How long a caller waits for the call another process is making: about the time of a slow reading, so a stuck holder costs the
+  # waiter little more than describing the image itself would.
+  WAIT_SECONDS = 25
   POLL_SECONDS = 0.25
 
   attr_reader :account, :attachment, :image_url
@@ -30,6 +35,7 @@ class Captain::ImageRecognitionService < Llm::BaseAiService
     Rails.logger.warn("Skipping image recognition: LLM provider configuration is invalid or disabled (#{e.class}).")
     FALLBACK_DESCRIPTION
   rescue StandardError => e
+    # The class and the message of the error: the message of a fetch or a decode names no URL and no content.
     Rails.logger.warn(
       'Skipping image recognition: ' \
       "attachment_id=#{attachment&.id} account_id=#{account&.id} error=#{e.class}: #{e.message}"
@@ -37,29 +43,23 @@ class Captain::ImageRecognitionService < Llm::BaseAiService
     FALLBACK_DESCRIPTION
   end
 
+  # `model` (Llm::BaseAiService) is the model of an ordinary image (CAPTAIN_IMAGE_RECOGNITION_MODEL); this is the model of an image
+  # with significant handwriting (CAPTAIN_IMAGE_HANDWRITING_MODEL).
+  def handwriting_model
+    @handwriting_model ||= Llm::Config.model_for(feature: 'image_handwriting', account: account, fallback: nil)
+  end
+
   private
 
   def recognize
-    response = instrument_image_recognition(instrumentation_params) do
-      Llm::Runtime.chat(
-        feature: :image_recognition,
-        account: account,
-        model: model,
-        messages: [
-          {
-            role: 'user',
-            content: RubyLLM::Content.new(recognition_prompt, [image_url])
-          }
-        ],
-        observability: instrumentation_params.merge(runtime_mode: 'image_recognition'),
-        options: { temperature: 0 }
-      )
-    end
+    reading = Captain::ImageReading::Reader.new(
+      account: account, attachment: attachment, image_url: image_url,
+      models: { ordinary: model, handwriting: handwriting_model }
+    ).read
+    return FALLBACK_DESCRIPTION if reading.description.blank?
 
-    description = response.respond_to?(:content) ? response.content.to_s.strip : response.to_s.strip
-    description = description.presence || FALLBACK_DESCRIPTION
-    cache_description(description)
-    description
+    cache_reading(reading)
+    reading.description
   end
 
   # An image is described by one call at a time. A caller that finds another one describing it (the job that runs when the image
@@ -138,38 +138,17 @@ class Captain::ImageRecognitionService < Llm::BaseAiService
     account
   end
 
-  def instrumentation_params
-    {
-      span_name: 'llm.captain.image_recognition',
-      model: model,
-      provider: Llm::Config.provider_for_model(model, account: account),
-      account_id: account&.id,
-      feature_name: 'image_recognition',
-      attachment_id: attachment&.id,
-      image_url: image_url
-    }
-  end
-
-  def instrument_image_recognition(observability, &)
-    instrument_llm_call(observability, &)
-  end
-
-  def recognition_prompt
-    <<~PROMPT.squish
-      Describe the attached customer-shared image for a support AI agent.
-      Return concise factual text only. Include visible text, product names, order numbers,
-      error messages, UI states, documents, receipts, damages, or screenshots if present.
-      Do not guess hidden facts. If the image is unclear, say what is unclear.
-    PROMPT
-  end
-
   def cached_description
     attachment&.meta.to_h[CACHE_KEY].to_s.strip.presence
   end
 
-  def cache_description(description)
-    return if attachment.blank? || description.blank? || description == FALLBACK_DESCRIPTION
+  def cache_reading(reading)
+    return if attachment.blank? || reading.description.blank? || reading.description == FALLBACK_DESCRIPTION
 
-    attachment.update!(meta: attachment.meta.to_h.merge(CACHE_KEY => description))
+    attachment.update!(
+      meta: attachment.meta.to_h.merge(
+        CACHE_KEY => reading.description, READER_KEY => reading.reader.to_s, MODEL_KEY => reading.model
+      )
+    )
   end
 end

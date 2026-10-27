@@ -46,6 +46,47 @@ RSpec.describe Llm::OpenRouterDecisionClient do
     end
   end
 
+  describe 'a state that carries an image (the image router)' do
+    let(:image_state) { ['An image a customer sent.', { type: 'image_url', image_url: { url: "data:image/jpeg;base64,#{'A' * 300_000}" } }] }
+
+    def choose_image(**overrides)
+      choose(state: image_state, **overrides)
+    end
+
+    it 'takes a state that is a list of parts, not only an object' do
+      stub = stub_request(:post, endpoint).with { |request| JSON.parse(request.body)['state'].is_a?(Array) }
+                                          .to_return(status: 200, body: response_body.to_json)
+
+      expect(choose(state: ['text', { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,AAAA' } }]).choice).to eq('solved')
+      expect(stub).to have_been_requested.once
+    end
+
+    it 'keeps the guard of 128 KB for a call that does not ask for a larger body' do
+      expect { choose_image }.to raise_error(ArgumentError, /too large/)
+    end
+
+    it 'sends a larger body when the call asks for one' do
+      stub = stub_request(:post, endpoint).to_return(status: 200, body: response_body.to_json)
+
+      expect(choose_image(max_request_bytes: 1_048_576).choice).to eq('solved')
+      expect(stub).to have_been_requested.once
+    end
+
+    it 'still refuses a body above the limit the call asked for' do
+      expect { choose_image(max_request_bytes: 200_000) }.to raise_error(ArgumentError, /too large/)
+    end
+
+    it 'never takes a limit above the absolute bound, or below the default guard' do
+      [described_class::MAX_IMAGE_REQUEST_BYTES + 1, described_class::MAX_REQUEST_BYTES - 1, 0, '1048576', 1.5].each do |limit|
+        expect { choose_image(max_request_bytes: limit) }.to raise_error(ArgumentError, /request limit/)
+      end
+    end
+
+    it 'does not take a state that is neither an object nor a list' do
+      expect { choose(state: 'a string') }.to raise_error(ArgumentError, /Invalid decision state/)
+    end
+  end
+
   it 'returns the probabilities of the offered choices only, each between 0 and 1' do
     body = response_body.deep_merge(answers: { reason: { probabilities: { solved: 0.8, other: 0.15, invented: 0.05 } } })
     stub_request(:post, endpoint).to_return(status: 200, body: body.to_json)

@@ -56,7 +56,6 @@ class Llm::OpenRouterRoutingProfile
     'copilot' => %w[openai/gpt-5.4-mini],
     'editor' => %w[openai/gpt-5.4-mini openai/gpt-4.1-mini],
     'label_suggestion' => %w[openai/gpt-5.4-mini openai/gpt-4.1-mini],
-    'image_recognition' => %w[openai/gpt-5.4-mini openai/gpt-5.4],
     'audio_transcription' => %w[openai/gpt-4o-mini-transcribe openai/gpt-audio-mini],
     'moderation' => %w[openai/gpt-oss-safeguard-20b],
     'embedding' => %w[text-embedding-3-small],
@@ -64,7 +63,17 @@ class Llm::OpenRouterRoutingProfile
   }.freeze
   LUNA_PRIMARY_MODEL = 'openai/gpt-6-luna'
   LUNA_FALLBACK_MODEL = 'openai/gpt-5.6-luna'
-  LUNA_CHAT_FEATURES = %w[copilot editor label_suggestion image_recognition customer_notice].freeze
+  LUNA_CHAT_FEATURES = %w[copilot editor label_suggestion customer_notice].freeze
+  # A customer's image goes only to providers the platform trusts with it, and a feature of the images (the two readers and the
+  # router) has no fallback model. `data_collection: deny` alone does not keep an image from a provider that is not listed: a
+  # screen of 27.10 reached endpoints of Chinese vendors for models that had them. The providers are named by the vendor of the model
+  # (the first part of its id) with their OpenRouter slugs.
+  IMAGE_FEATURES = %w[image_recognition image_handwriting image_routing].freeze
+  TRUSTED_IMAGE_PROVIDERS = {
+    'google' => %w[google-vertex google-ai-studio].freeze,
+    'openai' => %w[openai azure].freeze,
+    'perplexity' => %w[perplexity].freeze
+  }.freeze
   # OpenRouter rejects a request whose `models` array has more than three items ("'models' array must have 3 items or fewer").
   MAX_MODELS = 3
   EXCLUDED_CAPTAIN_PROVIDER_ENDPOINTS = %w[openai/fast openai/priority openai/flex].freeze
@@ -78,7 +87,18 @@ class Llm::OpenRouterRoutingProfile
   attr_reader :feature_key, :model, :account, :models, :provider_preferences, :plugins, :headers, :native_endpoint,
               :workspace_policy, :runtime_preferences
 
+  # An image model that has no trusted provider (a vendor that is not in TRUSTED_IMAGE_PROVIDERS, or a model id without a vendor).
+  class UntrustedImageModelError < ArgumentError; end
+
   class << self
+    # The OpenRouter provider slugs that may serve an image model, nil for a vendor the platform does not trust with images.
+    def trusted_image_providers(model)
+      vendor, name = model.to_s.split('/', 2)
+      return if name.blank?
+
+      TRUSTED_IMAGE_PROVIDERS[vendor.downcase]
+    end
+
     def standardize_captain_provider(provider)
       EXCLUDED_CAPTAIN_PROVIDER_ENDPOINTS.include?(provider.to_s.downcase) ? 'openai' : provider
     end
@@ -219,8 +239,22 @@ class Llm::OpenRouterRoutingProfile
       preserve_model_priority!(provider_preferences)
       enforce_luna_provider_selection!(provider_preferences)
       exclude_captain_fast_endpoints!(provider_preferences)
+      enforce_trusted_image_providers!(provider_preferences)
       enforce_workspace_privacy!(provider_preferences)
     end
+  end
+
+  # Only the trusted providers of the model, whatever a runtime preference of the account asks for; an image model without any
+  # is refused here, so no request for it is built.
+  def enforce_trusted_image_providers!(provider_preferences)
+    return unless IMAGE_FEATURES.include?(feature_key) && model.present?
+
+    trusted = self.class.trusted_image_providers(model)
+    raise UntrustedImageModelError, "No trusted provider for the image model #{model.inspect}" if trusted.blank?
+
+    provider_preferences[:only] = trusted.dup
+    ordered = Array(provider_preferences[:order]) & trusted
+    ordered.present? ? provider_preferences[:order] = ordered : provider_preferences.delete(:order)
   end
 
   def enforce_luna_provider_selection!(provider_preferences)
