@@ -160,7 +160,7 @@ export default {
       if (this.entityKey !== 'appointment') return [];
       return appointmentFieldIds([
         this.normalizedValue.body,
-        ...Object.values(
+        JSON.stringify(
           this.normalizedValue.template_params?.processed_params || {}
         ),
       ]);
