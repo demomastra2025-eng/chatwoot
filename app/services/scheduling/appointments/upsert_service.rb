@@ -687,10 +687,12 @@ class Scheduling::Appointments::UpsertService
   def identified_medelement_patient?
     patient = if params[:patient_contact_id].present?
                 account.contacts.find_by(id: params[:patient_contact_id])
+              elsif appointment.patient_contact.present?
+                appointment.patient_contact
               elsif params[:contact_id].present?
                 account.contacts.find_by(id: params[:contact_id])
               else
-                appointment.patient_contact || appointment.contact
+                appointment.contact
               end
     patient&.custom_attributes.to_h['medelement_patient_code'].present?
   end

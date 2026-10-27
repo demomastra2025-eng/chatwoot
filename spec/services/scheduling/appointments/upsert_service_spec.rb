@@ -667,6 +667,21 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       expect { service.send(:validate_medelement_patient!) }.not_to raise_error
     end
 
+    it 'keeps the linked patient phone optional when the communication contact differs' do
+      patient = create(
+        :contact, account: account, name: 'Аян', last_name: 'Қуаныш',
+                  custom_attributes: { 'medelement_patient_code' => 'fake-patient-1' }
+      )
+      appointment.update!(patient_contact: patient, service: nil, client_first_name: 'Аян', client_last_name: 'Қуаныш', client_phone: nil,
+                          custom_attributes: appointment.custom_attributes.except('service_ids', 'services'))
+      communication_contact = create(:contact, account: account)
+      upsert = described_class.new(account: account, appointment: appointment,
+                                   params: { contact_id: communication_contact.id, client_phone: '' })
+
+      expect { upsert.send(:validate_provider_draft!, []) }.not_to raise_error
+      expect { upsert.send(:validate_medelement_patient!) }.not_to raise_error
+    end
+
     it 'rejects an appointment without a Medelement cabinet before persistence' do
       appointment.update!(
         service: nil,
