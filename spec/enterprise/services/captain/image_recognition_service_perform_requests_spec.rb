@@ -85,7 +85,7 @@ RSpec.describe Captain::ImageRecognitionService, '#perform', type: :service do
       expect(chat['model']).to eq('google/gemini-3.1-flash-lite')
       expect(chat['provider']).to include('only' => %w[google-vertex google-ai-studio], 'data_collection' => 'deny')
       expect(chat['models']).to eq(['google/gemini-3.1-flash-lite']) # the reader only: no fallback model
-      expect(chat['max_tokens']).to eq(2500)
+      expect(chat['max_tokens']).to eq(4000)
       expect(chat['temperature']).to eq(0)
     end
 
@@ -102,7 +102,7 @@ RSpec.describe Captain::ImageRecognitionService, '#perform', type: :service do
     end
 
     it 'sends a small image as it is' do
-      small = Vips::Image.black(800, 600, bands: 3).new_from_image([10, 20, 30]).write_to_buffer('.jpg')
+      small = Vips::Image.black(800, 600, bands: 3).new_from_image([10, 20, 30]).write_to_buffer('.jpg', strip: true)
       attachment.file.attach(io: StringIO.new(small), filename: 'small.jpg', content_type: 'image/jpeg')
 
       service.perform
@@ -154,7 +154,7 @@ RSpec.describe Captain::ImageRecognitionService, '#perform', type: :service do
       expect(chat['model']).to eq('openai/gpt-6.1-terra')
       expect(chat['provider']).to include('only' => %w[openai azure], 'data_collection' => 'deny')
       expect(chat).not_to have_key('temperature')
-      expect(chat['max_tokens']).to eq(2500)
+      expect(chat['max_tokens']).to eq(4000)
       expect(chat['models']).to eq(['openai/gpt-6.1-terra'])
       expect(attachment.reload.meta).to include('image_recognition_reader' => 'handwriting', 'image_recognition_model' => 'openai/gpt-6.1-terra')
     end

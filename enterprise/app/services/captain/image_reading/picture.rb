@@ -8,8 +8,10 @@ require 'vips'
 # request, never as a link: a provider that fetches a link does it at every request, and a link to a customer's file is no business
 # of a provider (owner 27.10).
 #
-# for_reader: the image as it is when its long side is at most READER_LONG_SIDE (and its type is one that providers take), else a
-# JPEG of that long side. A smaller image costs fewer tokens and reads as well (benchmark 27.10, 80 images).
+# for_reader: the image as it is when its long side is at most READER_LONG_SIDE, its type is one that providers take and it carries no
+# metadata (EXIF, XMP, IPTC: the place and the time of a photo are no business of a provider, and an EXIF orientation is a turn that a
+# provider may not apply); else a JPEG of that long side, turned upright and without metadata. A smaller image costs fewer tokens and
+# reads as well (benchmark 27.10, 80 images).
 # for_router: always a JPEG whose long side is at most ROUTER_LONG_SIDE; the router only has to tell whether there is handwriting.
 # libvips (the library of the product's image processing) does the resizing: about 0.05-0.2 s, header-only for the size check.
 class Captain::ImageReading::Picture
@@ -21,6 +23,13 @@ class Captain::ImageReading::Picture
   EXTENSIONS = { 'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp' }.freeze
   # An original larger than this is not read (the largest file a provider takes is about 20 MB).
   MAX_ORIGINAL_BYTES = 25 * 1024 * 1024
+  # An image with more pixels is not decoded: a small file can hold billions of pixels (a decompression bomb) and would tie up a
+  # thread of a run or a worker. The size is read from the header, so the check costs nothing. The photo of an ordinary phone camera
+  # (12 to 48 MP) is far below it; a file above MAX_ORIGINAL_BYTES is refused before that.
+  MAX_PIXELS = 100_000_000
+  # The fields of libvips that hold the metadata of a file, and the one that holds its turn (1 = upright).
+  METADATA_FIELDS = %w[exif-data xmp-data iptc-data].freeze
+  ORIENTATION_FIELD = 'orientation'
 
   # The file or the type of the image cannot be used, or it could not be fetched. The message names no URL and no content.
   class Unreadable < StandardError; end
@@ -75,15 +84,15 @@ class Captain::ImageReading::Picture
 
   def long_side
     @long_side ||= begin
-      image = Vips::Image.new_from_buffer(@bytes, '')
-      [image.width, image.height].max
+      width, height = dimensions
+      raise Unreadable, 'the image is too large' if width * height > MAX_PIXELS
+
+      [width, height].max
     end
-  rescue Vips::Error
-    raise Unreadable, 'the image cannot be decoded'
   end
 
   def for_reader
-    @for_reader ||= if long_side <= READER_LONG_SIDE && SENDABLE_TYPES.include?(content_type)
+    @for_reader ||= if as_is?
                       Form.new(bytes: bytes, content_type: content_type)
                     else
                       jpeg(READER_LONG_SIDE, READER_JPEG_QUALITY)
@@ -96,8 +105,33 @@ class Captain::ImageReading::Picture
 
   private
 
+  # The header of the image, read without decoding its pixels.
+  def header
+    @header ||= Vips::Image.new_from_buffer(@bytes, '')
+  rescue Vips::Error
+    raise Unreadable, 'the image cannot be decoded'
+  end
+
+  def dimensions
+    [header.width, header.height]
+  end
+
+  # Whether the stored file goes out unchanged: small enough, of a type providers take, upright and without metadata.
+  def as_is?
+    long_side <= READER_LONG_SIDE && SENDABLE_TYPES.include?(content_type) && !metadata? && upright?
+  end
+
+  def metadata?
+    header.get_fields.intersect?(METADATA_FIELDS)
+  end
+
+  def upright?
+    header.get_fields.exclude?(ORIENTATION_FIELD) || header.get(ORIENTATION_FIELD) == 1
+  end
+
   # `size: :down` never enlarges a small image; thumbnail turns the image the way its EXIF orientation says.
   def jpeg(side, quality)
+    long_side # refuses an image with too many pixels before anything decodes it
     image = Vips::Image.thumbnail_buffer(bytes, side, height: side, size: :down)
     image = image.flatten(background: [255, 255, 255]) if image.has_alpha?
     Form.new(bytes: image.write_to_buffer('.jpg', Q: quality, strip: true), content_type: 'image/jpeg')

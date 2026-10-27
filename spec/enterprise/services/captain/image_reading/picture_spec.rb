@@ -1,13 +1,26 @@
 require 'rails_helper'
 
 RSpec.describe Captain::ImageReading::Picture do
+  # libvips writes an EXIF block (the resolution) into a file unless it is told to strip: the fixtures carry no metadata.
   def encoded(width, height, suffix = '.jpg', bands: 3)
-    Vips::Image.black(width, height, bands: bands).new_from_image([120] * bands).write_to_buffer(suffix)
+    Vips::Image.black(width, height, bands: bands).new_from_image([120] * bands).write_to_buffer(suffix, strip: true)
   end
 
   def dimensions_of(form)
     image = Vips::Image.new_from_buffer(form.bytes, '')
     [image.width, image.height]
+  end
+
+  def fields_of(form)
+    Vips::Image.new_from_buffer(form.bytes, '').get_fields
+  end
+
+  # A jpeg with an EXIF segment (APP1) put right after the start-of-image marker: a tiff header and one entry, the orientation.
+  def with_exif_orientation(jpeg, orientation)
+    tiff = [0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01, 0x00, 0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00,
+            orientation, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00].pack('C*')
+    segment = "Exif\x00\x00".b + tiff
+    jpeg.b[0, 2] + [0xFF, 0xE1, segment.bytesize + 2].pack('CCn') + segment + jpeg.b[2..]
   end
 
   describe '#for_reader' do
@@ -60,6 +73,62 @@ RSpec.describe Captain::ImageReading::Picture do
 
       expect(form.content_type).to eq('image/jpeg')
       expect(Vips::Image.new_from_buffer(form.bytes, '').has_alpha?).to be(false)
+    end
+
+    # The place and the time of a photo are no business of a provider, and an EXIF turn is one that a provider may not apply.
+    context 'with metadata' do
+      let(:plain) { encoded(300, 200) }
+
+      it 'sees the metadata the fixture puts in (the premise of the examples below)' do
+        marked = Vips::Image.new_from_buffer(with_exif_orientation(plain, 1), '').get_fields
+
+        expect(marked).to include('exif-data')
+      end
+
+      it 'sends a small upright image that carries EXIF as a jpeg without any metadata, not as it is' do
+        bytes = with_exif_orientation(plain, 1)
+        form = described_class.new(bytes: bytes, content_type: 'image/jpeg').for_reader
+
+        expect(form.bytes).not_to eq(bytes.b)
+        expect(form.content_type).to eq('image/jpeg')
+        expect(dimensions_of(form)).to eq([300, 200])
+        expect(fields_of(form) & %w[exif-data xmp-data iptc-data]).to be_empty
+      end
+
+      it 'turns a small image upright when its EXIF says it is turned' do
+        form = described_class.new(bytes: with_exif_orientation(plain, 6), content_type: 'image/jpeg').for_reader
+
+        expect(dimensions_of(form)).to eq([200, 300])
+        expect(fields_of(form)).not_to include('exif-data')
+      end
+
+      it 'sends an image without metadata exactly as it is' do
+        form = described_class.new(bytes: plain, content_type: 'image/jpeg').for_reader
+
+        expect(form.bytes).to eq(plain.b)
+      end
+    end
+  end
+
+  describe 'an image with too many pixels' do
+    it 'is refused from its header, before anything is decoded, for the reader and for the router' do
+      stub_const("#{described_class}::MAX_PIXELS", 5_000)
+      picture = described_class.new(bytes: encoded(100, 100), content_type: 'image/jpeg')
+      allow(Vips::Image).to receive(:thumbnail_buffer).and_call_original
+
+      expect { picture.for_reader }.to raise_error(described_class::Unreadable, /too large/)
+      expect { picture.for_router }.to raise_error(described_class::Unreadable, /too large/)
+      expect(Vips::Image).not_to have_received(:thumbnail_buffer)
+    end
+
+    it 'reads an image of exactly the limit' do
+      stub_const("#{described_class}::MAX_PIXELS", 10_000)
+
+      expect(described_class.new(bytes: encoded(100, 100), content_type: 'image/jpeg').long_side).to eq(100)
+    end
+
+    it 'has a limit above the photo of any ordinary phone camera (48 MP)' do
+      expect(described_class::MAX_PIXELS).to be > 48_000_000
     end
   end
 

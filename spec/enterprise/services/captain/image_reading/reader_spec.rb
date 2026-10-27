@@ -77,7 +77,7 @@ RSpec.describe Captain::ImageReading::Reader do
     it 'asks for an answer with room for a reasoning reader' do
       reader.read
 
-      expect(sent_request[:max_tokens]).to eq(2500)
+      expect(sent_request[:max_tokens]).to eq(4000)
     end
 
     it 'sends the temperature 0 to a model that takes one' do
@@ -92,6 +92,62 @@ RSpec.describe Captain::ImageReading::Reader do
       logged = sent_request[:observability]
       expect(logged).to include(runtime_mode: 'image_recognition', feature_name: 'image_recognition', attachment_id: attachment.id)
       expect(logged.to_s).not_to match(/image_url|base64|example\.com/)
+    end
+  end
+
+  describe 'a text that the output limit cut off' do
+    def answered_with(finish_reason)
+      raw = instance_double(Faraday::Response, body: { 'choices' => [{ 'finish_reason' => finish_reason }] })
+      instance_double(RubyLLM::Message, content: 'Анализ крови: гемоглобин 134', input_tokens: 1200, output_tokens: 4000, raw: raw)
+    end
+
+    it 'says so at its end, so the agent does not take it for the whole text' do
+      allow(Llm::Runtime).to receive(:chat).and_return(answered_with('length'))
+
+      reading = reader.read
+
+      expect(reading.description).to eq("Анализ крови: гемоглобин 134\n#{described_class::CUT_MARK}")
+      expect(reading.finish_reason).to eq('length')
+    end
+
+    it 'leaves a text that ended by itself as it is' do
+      allow(Llm::Runtime).to receive(:chat).and_return(answered_with('stop'))
+
+      expect(reader.read.description).to eq('Анализ крови: гемоглобин 134')
+    end
+
+    it 'puts the reason the model stopped into the record of the reading' do
+      allow(Llm::Runtime).to receive(:chat).and_return(answered_with('length'))
+      published = []
+      subscriber = ActiveSupport::Notifications.subscribe(described_class::EVENT) { |*, payload| published << payload }
+
+      reader.read
+
+      expect(published.first).to include('finish_reason' => 'length')
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber)
+    end
+
+    it 'is no fault when the provider says nothing about it' do
+      expect(reader.read).to have_attributes(finish_reason: nil, description: 'Приём 12.10')
+    end
+  end
+
+  describe 'an image that cannot be decoded' do
+    let(:picture) { Captain::ImageReading::Picture.new(bytes: "\xFF\xD8\xFF\xE0\x00\x10JFIF damaged".b, content_type: 'image/jpeg') }
+
+    it 'ends the reading as an unreadable image, before the router is asked and without a failed router on the record' do
+      published = []
+      subscriber = ActiveSupport::Notifications.subscribe(described_class::EVENT) { |*, payload| published << payload }
+
+      expect { reader.read }.to raise_error(Captain::ImageReading::Picture::Unreadable)
+
+      expect(Captain::ImageReading::Router).not_to have_received(:new)
+      expect(Llm::Runtime).not_to have_received(:chat)
+      expect(published.first).to include('status' => 'error', 'error_class' => 'Captain::ImageReading::Picture::Unreadable')
+      expect(published.first).not_to have_key('router_status')
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber)
     end
   end
 

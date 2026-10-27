@@ -14,11 +14,15 @@ class Captain::ImageReading::Reader
   include Integrations::LlmInstrumentation
 
   EVENT = 'captain.image.read'
-  # A reasoning reader spends part of its output on thinking before it writes the text (Terra), so the limit leaves room for both.
-  MAX_OUTPUT_TOKENS = 2500
+  # A reasoning reader spends part of its output on thinking before it writes the text (Terra: up to about 950 tokens of thinking
+  # and 1,800 of text in the benchmark of 27.10), so the limit leaves room for both with a margin; a dense page is long.
+  MAX_OUTPUT_TOKENS = 4000
   ZERO_TEMPERATURE = 0
+  # The end of a text that the output limit cut off: the agent must not take it for the whole text of the image.
+  CUT_MARK = '[…текст обрезан]'
+  CUT_FINISH_REASON = 'length'
 
-  Reading = Struct.new(:description, :reader, :model, keyword_init: true)
+  Reading = Struct.new(:description, :reader, :model, :finish_reason, keyword_init: true)
 
   class NoReaderModel < StandardError; end
 
@@ -45,6 +49,10 @@ class Captain::ImageReading::Reader
 
   def run(event)
     picture = Captain::ImageReading::Picture.load(attachment: @attachment, url: @image_url)
+    # Both forms are made before anybody is asked: an image that cannot be decoded ends the reading here, as an unreadable image,
+    # and is not logged as a failed router.
+    picture.for_reader
+    picture.for_router
     decision = route(picture)
     # The decision is on the record also when the reader fails after it.
     event.merge!(router_fields(decision))
@@ -53,8 +61,9 @@ class Captain::ImageReading::Reader
 
     started = monotonic_now
     response = request_reading(picture, model)
-    event.merge!(reader_fields(decision, model, response, latency_ms(started)))
-    Reading.new(description: text_of(response).presence, reader: decision.reader, model: model)
+    finish = finish_reason_of(response)
+    event.merge!(reader_fields(decision, model, response, latency_ms(started), finish))
+    Reading.new(description: description_of(response, finish), reader: decision.reader, model: model, finish_reason: finish)
   end
 
   def route(picture)
@@ -65,6 +74,23 @@ class Captain::ImageReading::Reader
 
   def text_of(response)
     response.respond_to?(:content) ? response.content.to_s.strip : response.to_s.strip
+  end
+
+  # The text, marked when the output limit cut it off.
+  def description_of(response, finish_reason)
+    text = text_of(response).presence
+    return text unless text && finish_reason == CUT_FINISH_REASON
+
+    "#{text}\n#{CUT_MARK}"
+  end
+
+  # Why the model stopped (`stop`, or `length` when the limit cut the text), from the body of the provider's answer.
+  def finish_reason_of(response)
+    body = response.respond_to?(:raw) ? response.raw&.body : nil
+    body = JSON.parse(body) if body.is_a?(String)
+    body.is_a?(Hash) ? body.dig('choices', 0, 'finish_reason').to_s.presence : nil
+  rescue StandardError
+    nil
   end
 
   def request_reading(picture, model)
@@ -99,13 +125,13 @@ class Captain::ImageReading::Reader
     }.compact
   end
 
-  def reader_fields(decision, model, response, reader_ms)
+  def reader_fields(decision, model, response, reader_ms, finish_reason)
     input = token_count(response, :input_tokens)
     output = token_count(response, :output_tokens)
     cost = reader_cost(model, input, output)
     {
       'model' => model, 'reader_ms' => reader_ms, 'reader_usage' => { 'input_tokens' => input, 'output_tokens' => output }.compact.presence,
-      'reader_cost' => cost, 'total_cost' => total_cost(decision.cost, cost)
+      'reader_cost' => cost, 'total_cost' => total_cost(decision.cost, cost), 'finish_reason' => finish_reason
     }.compact
   end
 
