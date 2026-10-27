@@ -19,10 +19,14 @@ describe('WhatsAppTemplateParser appointment fields', () => {
           components: [{ type: 'BODY', text: 'Visit {{1}}' }],
         },
         initialProcessedParams: {
-          body: { 1: '[Service](field://appointment.service_name)' },
+          body: { 1: '[Service](field://appointment.service_name_snapshot)' },
         },
         appointmentFieldStats: [
-          { field_id: 'appointment.service_name', share: 0.38, blocking: true },
+          {
+            field_id: 'appointment.service_name_snapshot',
+            share: 0.38,
+            blocking: true,
+          },
         ],
       },
       global: {
