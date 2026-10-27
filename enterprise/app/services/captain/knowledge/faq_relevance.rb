@@ -2,6 +2,10 @@
 # FAQ question and answer. Rescue only its leading native candidate when the
 # question independently corroborates every meaningful query term.
 class Captain::Knowledge::FaqRelevance
+  # Set for text-embedding-3-large, whose scores for a related FAQ are 0.3-0.55. google/gemini-embedding-001 gives the best FAQ of
+  # any question, even one without an answer, 0.57 or more, so this floor no longer rejects anything; the guard is the corroboration of
+  # every query term below. Checked 27.10 on 164 questions with that model: floors 0.4-0.65 and margins 0.04-0.12 gave the same result
+  # (the rule fired once in 164, wrongly), so the constants stay; with the 0.7 threshold of the lookup the rule is nearly idle.
   MINIMUM_SIMILARITY = 0.4
   MINIMUM_QUESTION_COVERAGE = 1.0 / 3
   MINIMUM_MARGIN = 0.08

@@ -7,6 +7,8 @@
 #  documentable_type :string
 #  edited            :boolean          default(FALSE), not null
 #  embedding         :vector(1536)
+#  embedding_checksum :string
+#  embedding_model   :string
 #  question          :string           not null
 #  status            :integer          default("approved"), not null
 #  visibility        :integer          default("general"), not null
@@ -97,14 +99,13 @@ class Captain::AssistantResponse < ApplicationRecord
   def self.search(query, account_id:, assistant_id: nil, limit: 5)
     return none if account_id.blank?
 
-    embedding = Captain::Llm::EmbeddingService.new(account_id: account_id).get_embedding(
-      query,
-      input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE
-    )
+    # Only the vectors of the model that embeds the question are compared with it: vectors of two models cannot be compared.
+    embedder = Captain::Llm::EmbeddingService.new(account_id: account_id)
+    embedding = embedder.get_embedding(query, input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE)
     nearest_neighbors(:embedding, embedding, distance: 'cosine')
       .approved
       .visible_to_assistant(assistant_id)
-      .where(account_id: account_id)
+      .where(account_id: account_id, embedding_model: embedder.embedding_model)
       .where.not(embedding: nil)
       .limit(limit)
   end

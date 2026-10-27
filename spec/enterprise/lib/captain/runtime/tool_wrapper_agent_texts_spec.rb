@@ -47,10 +47,11 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       wrapper = wrapper_for('search_scheduling_services')
 
       expect(wrapper.description).to eq(texts('search_scheduling_services').description)
-      %w[limit offset query].each do |name|
+      %w[limit queries].each do |name|
         expect(wrapper.params_schema.dig('properties', name, 'description')).to eq(texts('search_scheduling_services').params.fetch(name))
       end
-      expect(wrapper.params_schema.dig('properties', 'query', 'description')).not_to match(/\p{Cyrillic}/)
+      expect(wrapper.params_schema.dig('properties', 'queries', 'description')).not_to match(/\p{Cyrillic}/)
+      expect(wrapper.params_schema['properties'].keys).to contain_exactly('queries', 'limit')
     end
 
     it 'shows the model the short English texts of a direct tool and keeps the validation of its required fields' do
@@ -104,13 +105,13 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     it 'keeps its own text for a parameter without an entry' do
       allow(Captain::Runtime::AgentToolTexts).to receive(:for_tool).and_call_original
       entry = Captain::Runtime::AgentToolTexts::Entry.new(
-        description: 'Short', params: { 'query' => 'Short query' }, hidden_params: []
+        description: 'Short', params: { 'queries' => 'Short queries' }, hidden_params: []
       )
       allow(Captain::Runtime::AgentToolTexts).to receive(:for_tool).with('search_scheduling_services').and_return(entry)
       wrapper = wrapper_for('search_scheduling_services')
 
-      expect(wrapper.params_schema.dig('properties', 'query', 'description')).to eq('Short query')
-      expect(wrapper.params_schema.dig('properties', 'limit', 'description')).to eq('Maximum number of services to return')
+      expect(wrapper.params_schema.dig('properties', 'queries', 'description')).to eq('Short queries')
+      expect(wrapper.params_schema.dig('properties', 'limit', 'description')).to eq('Maximum number of services per mention')
     end
 
     it 'does not touch a tool that is not a built-in registry tool, whatever its name is' do
@@ -164,10 +165,10 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       expect(normalized).to eq(resource_id: 1, starts_at: '2026-10-14T10:30')
     end
 
-    it 'drops include_inactive from a catalog search before the tool runs' do
+    it 'drops include_inactive and offset from a catalog search before the tool runs' do
       wrapper = wrapper_for('search_scheduling_services')
 
-      expect(wrapper.send(:normalize_args, query: 'терапевт', include_inactive: true)).to eq(query: 'терапевт')
+      expect(wrapper.send(:normalize_args, queries: ['терапевт'], include_inactive: true, offset: 5)).to eq(queries: ['терапевт'])
     end
 
     it 'drops search_by from a specialist search before the tool runs, so the search covers names and specialties' do

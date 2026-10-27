@@ -5,11 +5,11 @@
 # the search. It never holds the admin view of a record (custom attributes, timestamps, account ids, compensation fields, empty
 # fields). Staff and Copilot keep the full payload of the admin API; this module is used for the agent scope only.
 module Captain::Tools::Agent::CatalogPayload
-  # A service answer lists at most this many entries: more would only be read again on every step. Paging goes on with next_offset.
+  # A service answer lists at most this many entries per mention: more would only be read again on every step.
   SERVICE_LIMIT = 10
-  # The short English text of an empty query: the catalog is never dumped, the model searches again with words of a name.
-  REFINE_QUERY_INSTRUCTION = 'The catalog is not listed without a query. Search again with the words of the service name ' \
-                             '(its category or direction) that the patient asked about.'
+  # The short English text of an empty list of queries: the catalog is never dumped, the model searches again with service names.
+  REFINE_QUERY_INSTRUCTION = 'The catalog is not listed without queries. Search again with queries: the names of the services ' \
+                             '(or their category) that the patient asked about.'
   # The hint of an empty query lists the categories so that the model can pick words; this many at most.
   CATEGORY_HINT_LIMIT = 15
 

@@ -812,8 +812,16 @@ RSpec.describe Llm::Models do
 
       help_center_config = described_class.feature_config(:help_center_search)
 
-      expect(help_center_config[:default]).to eq('text-embedding-3-small')
+      expect(help_center_config[:default]).to eq('google/gemini-embedding-001')
       expect(help_center_config[:models]).to include(
+        hash_including(
+          id: 'google/gemini-embedding-001',
+          provider: 'openrouter',
+          capabilities: include('embedding'),
+          context_length: 20_000,
+          requested_embedding_dimensions: 1536,
+          supports_embedding_dimension_override: true
+        ),
         hash_including(
           id: 'text-embedding-3-small',
           provider: 'openrouter',
@@ -823,6 +831,13 @@ RSpec.describe Llm::Models do
         )
       )
       expect(help_center_config[:required_capabilities]).to eq(%w[embedding])
+    end
+
+    it 'accepts the platform embedding model for the knowledge search and refuses a model that cannot give 1536 numbers' do
+      expect(described_class.model_allowed_for_feature?(:help_center_search, 'google/gemini-embedding-001')).to be true
+      expect(described_class.provider_for('google/gemini-embedding-001')).to eq('openrouter')
+      expect(described_class.supports_embedding?('google/gemini-embedding-001')).to be true
+      expect(described_class.model_allowed_for_feature?(:help_center_search, 'google/gemini-embedding-001-unlisted')).to be false
     end
 
     it 'includes dynamically fetched OpenRouter embedding models compatible with the knowledge index' do
@@ -900,7 +915,7 @@ RSpec.describe Llm::Models do
       help_center_config = described_class.feature_config(:help_center_search)
       runtime_models = described_class.models_for(:help_center_search)
 
-      expect(help_center_config[:default]).to eq('openai/text-embedding-3-small')
+      expect(help_center_config[:default]).to eq('google/gemini-embedding-001')
       expect(help_center_config[:models]).to include(
         hash_including(
           id: 'openai/text-embedding-3-small',
@@ -960,7 +975,7 @@ RSpec.describe Llm::Models do
       expect(runtime_models).to include('openai/text-embedding-long-context')
       expect(runtime_models).not_to include('openai/text-embedding-3-small')
       expect(described_class.valid_model_for?(:help_center_search, 'openai/text-embedding-3-small', account: account)).to be false
-      expect(help_center_config[:default]).to eq('openai/text-embedding-long-context')
+      expect(help_center_config[:default]).to eq('google/gemini-embedding-001')
     end
 
     it 'exposes chunk size options backed by compatible OpenRouter embedding models' do

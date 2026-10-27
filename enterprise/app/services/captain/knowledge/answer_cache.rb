@@ -1,13 +1,16 @@
 # frozen_string_literal: true
 
 require 'digest'
-require 'timeout'
 
+# The answers of the FAQ lookup, kept for the same question (the same words, ignoring case and spacing) until the knowledge of the
+# account changes. There is no cache of similar questions: with google/gemini-embedding-001 at 1536 numbers a similarity high enough
+# to return a stored answer (0.85) is reached by 4 of 194 pairs of questions with the same answer and by 2 of 2,415 pairs with
+# different answers (checked 27.10 on 164 questions of five clinics), so about a third of such hits would be another question's answer,
+# and 0.90 gives 0 right and 1 wrong; with the former model the tier never fired. It would also cost one embedding call per write.
 class Captain::Knowledge::AnswerCache
   DEFAULT_TTL = 24.hours
   CACHEABLE_STRATEGIES = %w[semantic_chunk semantic_faq].freeze
   RETRIEVAL_VERSION = 'faq-response-v5-shared-agent-access'
-  QUERY_EMBEDDING_TIMEOUT_SECONDS = 4
 
   def initialize(account:, assistant:, query:, semantic: true, ttl: DEFAULT_TTL)
     @account = account
@@ -20,12 +23,8 @@ class Captain::Knowledge::AnswerCache
   def fetch(overrides: {})
     return unless enabled?
 
-    if (entry = exact_entry)
-      return decorate_hit_payload(entry, match: 'exact', overrides: overrides)
-    end
-
-    entry = semantic_entry
-    decorate_hit_payload(entry, match: 'semantic', overrides: overrides) if entry.present?
+    entry = exact_entry
+    decorate_hit_payload(entry, match: 'exact', overrides: overrides) if entry.present?
   rescue StandardError => e
     log_cache_error('read', e)
     nil
@@ -40,7 +39,7 @@ class Captain::Knowledge::AnswerCache
       query_sha256: query_sha256,
       source_fingerprint: source_fingerprint
     )
-    entry.assign_attributes(cache_attributes(payload, entry))
+    entry.assign_attributes(query: normalized_query, payload: stored_payload(payload), expires_at: ttl.from_now)
     entry.save!
 
     decorate_store_payload(payload, entry: entry)
@@ -53,34 +52,12 @@ class Captain::Knowledge::AnswerCache
 
   attr_reader :account, :assistant, :query, :semantic, :ttl
 
-  def cache_attributes(payload, entry)
-    attributes = {
-      query: normalized_query,
-      payload: stored_payload(payload),
-      expires_at: ttl.from_now
-    }
-    embedding = safe_query_embedding
-    attributes[:embedding] = embedding if embedding.present? || entry.new_record?
-    attributes
-  end
-
   def enabled?
     semantic && account.present? && assistant.present? && assistant.account_id == account.id && normalized_query.present?
   end
 
   def exact_entry
     cache_scope.find_by(query_sha256: query_sha256)
-  end
-
-  def semantic_entry
-    return unless cache_scope.where.not(embedding: nil).exists?
-
-    Captain::KnowledgeAnswerCacheEntry.semantic_match(
-      embedding: query_embedding,
-      account: account,
-      assistant: assistant,
-      source_fingerprint: source_fingerprint
-    )
   end
 
   def cache_scope
@@ -104,8 +81,7 @@ class Captain::Knowledge::AnswerCache
       'match' => match,
       'entry_id' => entry.id,
       'hit_count' => entry.hit_count,
-      'source_fingerprint' => source_fingerprint,
-      'semantic_distance' => semantic_distance(entry, match)
+      'source_fingerprint' => source_fingerprint
     }.compact
     payload
   end
@@ -121,12 +97,6 @@ class Captain::Knowledge::AnswerCache
         'source_fingerprint' => source_fingerprint
       }.compact
     end
-  end
-
-  def semantic_distance(entry, match)
-    return unless match == 'semantic' && entry.respond_to?(:neighbor_distance)
-
-    entry.neighbor_distance
   end
 
   def cacheable_payload?(payload)
@@ -157,22 +127,6 @@ class Captain::Knowledge::AnswerCache
 
   def query_sha256
     @query_sha256 ||= Digest::SHA256.hexdigest(normalized_query)
-  end
-
-  def query_embedding
-    @query_embedding ||= Timeout.timeout(QUERY_EMBEDDING_TIMEOUT_SECONDS) do
-      Captain::Llm::EmbeddingService.new(account_id: account.id).get_embedding(
-        normalized_query,
-        input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE
-      )
-    end
-  end
-
-  def safe_query_embedding
-    query_embedding
-  rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError => e
-    log_cache_error('embedding', e)
-    nil
   end
 
   def source_fingerprint

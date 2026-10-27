@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_25_120000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_27_120000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -181,6 +181,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_25_120000) do
     t.vector "embedding", limit: 1536
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "embedding_model"
     t.index ["embedding"], name: "index_article_embeddings_on_embedding", using: :ivfflat
   end
 
@@ -710,6 +711,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_25_120000) do
     t.bigint "document_chunk_id"
     t.integer "visibility", default: 0, null: false
     t.boolean "restricted_to_assistants", default: false, null: false
+    t.string "embedding_model"
+    t.string "embedding_checksum"
     t.index ["account_id", "visibility"], name: "idx_captain_responses_account_visibility"
     t.index ["account_id"], name: "index_captain_assistant_responses_on_account_id"
     t.index ["assistant_id"], name: "index_captain_assistant_responses_on_assistant_id"
@@ -777,6 +780,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_25_120000) do
     t.integer "embedding_status", default: 0, null: false
     t.text "embedding_error"
     t.datetime "embedding_updated_at"
+    t.string "embedding_model"
     t.index ["account_id"], name: "index_captain_document_chunks_on_account_id"
     t.index ["assistant_id"], name: "index_captain_document_chunks_on_assistant_id"
     t.index ["content_sha256"], name: "index_captain_document_chunks_on_content_sha256"
@@ -3287,6 +3291,10 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_25_120000) do
     t.jsonb "custom_attributes", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.vector "embedding", limit: 1536
+    t.string "embedding_model"
+    t.string "embedding_checksum"
+    t.datetime "embedded_at"
     t.index "account_id, ((custom_attributes ->> 'medelement_nomenclature_code'::text))", name: "idx_scheduling_services_account_medelement_code_unique", unique: true, where: "(NULLIF(btrim((custom_attributes ->> 'medelement_nomenclature_code'::text)), ''::text) IS NOT NULL)"
     t.index ["account_id", "active", "name"], name: "idx_scheduling_services_on_account_active_name"
     t.index ["account_id"], name: "index_scheduling_services_on_account_id"

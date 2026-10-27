@@ -26,12 +26,17 @@ module Captain::Playground::SchedulingCatalogTools
 
   def scheduling_services
     records = @data['services'].select { |record| record['active'] }
-    query = @args['query'].presence || @args['name'].presence
-    records = records.select { |record| record['name'].downcase.include?(query.downcase) } if query
+    queries = service_queries
+    records = records.select { |record| queries.any? { |query| record['name'].downcase.include?(query) } } if queries.any?
     if @args['resource_id']
       resource = resource!(@args['resource_id'])
       records = records.select { |record| resource['service_ids'].include?(record['id']) }
     end
     { services: records.deep_dup, total_count: records.size, simulated: true }
+  end
+
+  # The service search takes a list of mentions (queries); the older single query or name still works in a simulated run.
+  def service_queries
+    Array(@args['queries'].presence || @args['query'].presence || @args['name'].presence).map { |query| query.to_s.downcase }
   end
 end

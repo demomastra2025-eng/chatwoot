@@ -33,6 +33,104 @@ RSpec.describe Captain::Llm::UpdateEmbeddingJob do
     expect(chunk.embedding_updated_at).to be_present
   end
 
+  describe 'a chunk longer than the model reads' do
+    let(:embedding) { Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.2) }
+
+    def run_with(model, content)
+      service = instance_double(Captain::Llm::EmbeddingService, embedding_model: model, get_embedding: embedding)
+      allow(Captain::Llm::EmbeddingService).to receive(:new).with(account_id: account.id).and_return(service)
+      chunk.update_columns(content: content) # rubocop:disable Rails/SkipsModelValidations
+      messages = []
+      allow(Rails.logger).to receive(:info) { |message| messages << message.to_s }
+      described_class.perform_now(chunk.reload, content)
+      messages.find { |message| message.include?('Indexed Captain embedding') }
+    end
+
+    it 'is logged as over the limit of the model, because the model ignores everything after its first 2048 tokens' do
+      expect(run_with('google/gemini-embedding-001', 'Текст ' * 1500)).to include('over_model_limit: true')
+    end
+
+    it 'is not flagged when it fits, or when the limit of the model is not known' do
+      expect(run_with('google/gemini-embedding-001', 'Короткий текст')).not_to include('over_model_limit')
+      expect(run_with('text-embedding-3-small', 'Текст ' * 1500)).not_to include('over_model_limit')
+    end
+  end
+
+  describe 'which model made the vector' do
+    let(:embedding) { Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.2) }
+    let(:embedding_service) { instance_double(Captain::Llm::EmbeddingService, embedding_model: 'google/gemini-embedding-001') }
+    let(:response) { create(:captain_assistant_response, account: account, assistant: assistant, question: 'Where?', answer: 'Here') }
+    let(:content) { 'Where?: Here' }
+
+    before { allow(Captain::Llm::EmbeddingService).to receive(:new).with(account_id: account.id).and_return(embedding_service) }
+
+    it 'stores the model name and the checksum of the text with the vector of an FAQ' do
+      allow(embedding_service).to receive(:get_embedding).and_return(embedding)
+
+      described_class.perform_now(response, content)
+
+      expect(response.reload).to have_attributes(embedding_model: 'google/gemini-embedding-001',
+                                                 embedding_checksum: Captain::Llm::EmbeddingService.checksum(content))
+    end
+
+    it 'stores the model name with the vector of a knowledge chunk' do
+      allow(embedding_service).to receive(:get_embedding).and_return(embedding)
+
+      described_class.perform_now(chunk, chunk.content)
+
+      expect(chunk.reload.embedding_model).to eq('google/gemini-embedding-001')
+    end
+
+    it 'does not call the model for an FAQ whose text and model are those of its vector' do
+      response.update_columns(embedding_model: 'google/gemini-embedding-001', embedding_checksum: Captain::Llm::EmbeddingService.checksum(content)) # rubocop:disable Rails/SkipsModelValidations
+      expect(embedding_service).not_to receive(:get_embedding)
+
+      described_class.perform_now(response, content)
+    end
+
+    it 'calls the model again when the text changed or the vector was made by another model' do
+      allow(embedding_service).to receive(:get_embedding).and_return(embedding)
+      response.update_columns(embedding_model: 'google/gemini-embedding-001', # rubocop:disable Rails/SkipsModelValidations
+                              embedding_checksum: Captain::Llm::EmbeddingService.checksum('Old: text'))
+      described_class.perform_now(response, content)
+      expect(embedding_service).to have_received(:get_embedding).once
+
+      response.update_columns(embedding_model: 'text-embedding-3-large') # rubocop:disable Rails/SkipsModelValidations
+      described_class.perform_now(response, content)
+      expect(embedding_service).to have_received(:get_embedding).twice
+      expect(response.reload.embedding_model).to eq('google/gemini-embedding-001')
+    end
+
+    it 'stores no vector of the old model after the platform model was switched, and embeds the text again with the new one' do
+      response.update_columns(embedding: nil, embedding_model: nil) # rubocop:disable Rails/SkipsModelValidations
+      old_embedder = instance_double(Captain::Llm::EmbeddingService, embedding_model: 'text-embedding-3-large', get_embedding: embedding)
+      new_embedder = instance_double(Captain::Llm::EmbeddingService, embedding_model: 'google/gemini-embedding-001')
+      # the job makes its embedder before the switch; the check under the lock builds another one after it
+      allow(Captain::Llm::EmbeddingService).to receive(:new).with(account_id: account.id).and_return(old_embedder, new_embedder)
+
+      expect { described_class.perform_now(response, content) }
+        .to have_enqueued_job(described_class).with(response, content, input_type: Captain::Llm::EmbeddingService::SEARCH_DOCUMENT_INPUT_TYPE)
+
+      expect(response.reload).to have_attributes(embedding: nil, embedding_model: nil)
+    end
+
+    it 'stores the vector when the model in force is still the one that made it' do
+      response # made first: the callbacks of its creation queue a job of their own
+      allow(embedding_service).to receive(:get_embedding).and_return(embedding)
+
+      expect { described_class.perform_now(response, content) }.not_to have_enqueued_job(described_class)
+
+      expect(response.reload.embedding_model).to eq('google/gemini-embedding-001')
+    end
+
+    it 'ignores spacing when it compares the text with the checksum' do
+      response.update_columns(embedding_model: 'google/gemini-embedding-001', embedding_checksum: Captain::Llm::EmbeddingService.checksum(content)) # rubocop:disable Rails/SkipsModelValidations
+      expect(embedding_service).not_to receive(:get_embedding)
+
+      described_class.perform_now(response, "Where?:   Here\n")
+    end
+  end
+
   it 'does not store an embedding for stale content' do
     embedding = Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.2)
     service = instance_double(Captain::Llm::EmbeddingService)

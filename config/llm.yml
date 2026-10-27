@@ -384,6 +384,41 @@ models:
     supported_embedding_dimensions: [1536]
     supports_embedding_dimension_override: true
     supports_embedding_input_type: true
+  # The platform embedding model. Its answer has 3072 numbers by default; every request asks for 1536 (the vector(1536) columns)
+  # and a response of any other size is refused (Llm::OpenRouterEmbeddingClient). A model that can give 1536 numbers is added
+  # here only after it was checked to do so; there is no other list of embedding models.
+  #
+  # service_min_score: the cosine similarity below which no catalog service is the service of a mention (the service search,
+  # Captain::Tools::Account::SearchSchedulingServicesService). A score means something only for the model that made it, so the
+  # number is calibrated per model, and a model without it cannot search or index the service catalog (Scheduling::ServiceIndex).
+  # 0.66 was calibrated on 345 mentions of five clinics (299 with a service in the catalog, 46 without) embedded by this model
+  # at 1536 numbers: a service that exists is found in 91% of the mentions; the same mentions embedded by text-embedding-3-large
+  # find it in 24% at this number.
+  #
+  # context_length is the number OpenRouter lists (20000); the knowledge chunk size options are derived from it. What the model really
+  # reads is max_input_tokens, measured 27.10 through OpenRouter: a request of up to at least 6000 tokens is accepted without a word, but
+  # the vector ignores everything after the first 2048 tokens (a changed tail moved the vector, cosine 0.977, at 1593 tokens and not at
+  # all, cosine 1.0, at 2120 and 2826 tokens). Only the knowledge chunks can be that long (the FAQ, the articles' search terms and the
+  # service texts are far shorter; the chunk table of production is empty), and the default chunk size (20000 characters, about 8000
+  # tokens of Russian text) is far above the limit: lower it before documents are chunked again. The update job logs a chunk over the limit.
+  google/gemini-embedding-001:
+    provider: openrouter
+    display_name: 'Gemini Embedding 001'
+    credit_multiplier: 1
+    type: embedding
+    capabilities: [embedding, text_input]
+    source: static_openrouter_default
+    service_min_score: 0.66
+    max_input_tokens: 2048
+    context_length: 20000
+    input_modalities: [text]
+    output_modalities: [embeddings]
+    supported_parameters: [dimensions, input_type]
+    embedding_dimensions: 3072
+    requested_embedding_dimensions: 1536
+    supported_embedding_dimensions: [768, 1536, 3072]
+    supports_embedding_dimension_override: true
+    supports_embedding_input_type: true
 
 features:
   editor:
@@ -554,8 +589,8 @@ features:
     models: [perplexity/pplx-decider-v1.2, perplexity/pplx-decider-flash-v1.2, openai/gpt-6-luna-decisions]
     default: perplexity/pplx-decider-v1.2
   help_center_search:
-    models: [text-embedding-3-small]
-    default: text-embedding-3-small
+    models: [google/gemini-embedding-001, text-embedding-3-small]
+    default: google/gemini-embedding-001
   knowledge_rerank:
     models: []
     default:

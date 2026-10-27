@@ -1832,7 +1832,7 @@
             },
             "search_scheduling_services": {
               "TITLE": "Search services",
-              "DESCRIPTION": "Search scheduling services by name, category, or direction."
+              "DESCRIPTION": "Search scheduling services by meaning: every service of a request in one call, each with candidate services from the catalog and a similarity score, or not in the catalog when none is close. A candidate counts only when its name is the service asked for."
             },
             "search_available_slots": {
               "TITLE": "Search available slots",

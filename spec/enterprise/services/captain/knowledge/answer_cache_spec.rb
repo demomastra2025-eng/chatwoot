@@ -20,12 +20,8 @@ RSpec.describe Captain::Knowledge::AnswerCache do
       }
     }
   end
-  let(:embedding) { Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.1) }
 
-  before do
-    embedding_service = instance_double(Captain::Llm::EmbeddingService, get_embedding: embedding)
-    allow(Captain::Llm::EmbeddingService).to receive(:new).with(account_id: account.id).and_return(embedding_service)
-  end
+  before { allow(Captain::Llm::EmbeddingService).to receive(:new) }
 
   it 'stores cacheable semantic knowledge payloads and exposes store trace' do
     result = described_class.new(account: account, assistant: assistant, query: 'Refund policy').write(payload)
@@ -39,6 +35,14 @@ RSpec.describe Captain::Knowledge::AnswerCache do
       'stored' => true,
       'entry_id' => entry.id
     )
+  end
+
+  it 'never calls an embedding model: the cache serves the same question, not a similar one' do
+    described_class.new(account: account, assistant: assistant, query: 'Refund policy').write(payload)
+    described_class.new(account: account, assistant: assistant, query: 'Refund policy').fetch
+
+    expect(Captain::Llm::EmbeddingService).not_to have_received(:new)
+    expect(Captain::KnowledgeAnswerCacheEntry.column_names).not_to include('embedding')
   end
 
   it 'versions the source fingerprint to invalidate entries from older retrieval algorithms' do
@@ -106,30 +110,10 @@ RSpec.describe Captain::Knowledge::AnswerCache do
     expect(Captain::DocumentChunk.visible_to_assistant(assistant.id)).not_to include(chunk)
   end
 
-  it 'can serve semantic cache matches through the vector entry boundary' do
-    entry = described_class.new(account: account, assistant: assistant, query: 'Refund policy').write(payload)
-    cache_entry = Captain::KnowledgeAnswerCacheEntry.last
-    allow(Captain::KnowledgeAnswerCacheEntry).to receive(:semantic_match).and_return(cache_entry)
-
-    result = described_class.new(account: account, assistant: assistant, query: 'How do refunds work?').fetch
-
-    expect(result.dig('retrieval_trace', 'answer_cache')).to include(
-      'hit' => true,
-      'match' => 'semantic',
-      'entry_id' => cache_entry.id
-    )
-    expect(entry.dig('retrieval_trace', 'answer_cache')).to include('stored' => true)
-  end
-
-  it 'does not block cache lookup when query embedding exceeds the bounded timeout' do
+  it 'does not serve the answer of a similar question: only the same words, ignoring case and spacing' do
     described_class.new(account: account, assistant: assistant, query: 'Refund policy').write(payload)
 
-    expect(Timeout).to receive(:timeout)
-      .with(described_class::QUERY_EMBEDDING_TIMEOUT_SECONDS)
-      .and_raise(Timeout::Error, 'execution expired')
-
-    result = described_class.new(account: account, assistant: assistant, query: 'How do refunds work?').fetch
-
-    expect(result).to be_nil
+    expect(described_class.new(account: account, assistant: assistant, query: 'How do refunds work?').fetch).to be_nil
+    expect(described_class.new(account: account, assistant: assistant, query: 'REFUND   policy').fetch).to be_present
   end
 end

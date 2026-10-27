@@ -540,8 +540,8 @@ RSpec.describe Llm::Config do
         }
       )
 
-      expect(described_class.model_for(feature: 'help_center_search')).to eq('text-embedding-3-small')
-      expect(described_class.provider_for_model('text-embedding-3-small')).to eq('openrouter')
+      expect(described_class.model_for(feature: 'help_center_search')).to eq('google/gemini-embedding-001')
+      expect(described_class.provider_for_model('google/gemini-embedding-001')).to eq('openrouter')
       expect(described_class.model_for(feature: 'help_center_search')).not_to eq('openai/text-embedding-3-small')
     end
   end

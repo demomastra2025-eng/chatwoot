@@ -168,17 +168,17 @@ class Captain::Evals::RoutingBenchmark::Workspace
   # the last failure is raised. Identical FAQ entries across benchmark dialogues reuse the real embedding vector once computed.
   def index!(response)
     text = "#{response.question}: #{response.answer}"
-    if (cached = self.class.faq_embedding_cache[text])
-      response.update!(embedding: cached)
-      return
-    end
+    # A vector is reused only for the same text and the same embedding model: the lookup compares vectors of one model only.
+    model = Captain::Llm::EmbeddingService.embedding_model(account: account)
+    cache_key = "#{model}|#{text}"
+    return use_cached_vector!(response, cache_key, model, text) if self.class.faq_embedding_cache.key?(cache_key)
 
     attempts = 0
     begin
       attempts += 1
       Captain::Llm::UpdateEmbeddingJob.perform_now(response, text)
       if response.embedding.present?
-        self.class.faq_embedding_cache[text] = response.embedding.to_a
+        self.class.faq_embedding_cache[cache_key] = response.embedding.to_a
         self.class.persist_faq_embedding_cache!
       end
     rescue Captain::Llm::EmbeddingService::EmbeddingsError
@@ -187,6 +187,11 @@ class Captain::Evals::RoutingBenchmark::Workspace
       sleep(attempts)
       retry
     end
+  end
+
+  def use_cached_vector!(response, cache_key, model, text)
+    response.update!(embedding: self.class.faq_embedding_cache[cache_key], embedding_model: model,
+                     embedding_checksum: Captain::Llm::EmbeddingService.checksum(text))
   end
 
   def create_calendar!

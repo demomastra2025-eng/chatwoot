@@ -32,11 +32,12 @@
 class Captain::KnowledgeAnswerCacheEntry < ApplicationRecord
   self.table_name = 'captain_knowledge_answer_cache_entries'
 
-  DEFAULT_DISTANCE_THRESHOLD = 0.15
+  # The vector of an entry (made when the cache still looked up similar questions, see Captain::Knowledge::AnswerCache) is not used any
+  # more; it is not read with the entry.
+  self.ignored_columns += %w[embedding]
 
   belongs_to :account
   belongs_to :assistant, class_name: 'Captain::Assistant', optional: true
-  has_neighbors :embedding, normalize: true
 
   validates :query, presence: true
   validates :query_sha256, presence: true
@@ -48,17 +49,6 @@ class Captain::KnowledgeAnswerCacheEntry < ApplicationRecord
   scope :for_scope, lambda { |account:, assistant:, source_fingerprint:|
     where(account_id: account.id, assistant_id: assistant&.id, source_fingerprint: source_fingerprint)
   }
-
-  def self.semantic_match(embedding:, account:, assistant:, source_fingerprint:, distance_threshold: DEFAULT_DISTANCE_THRESHOLD)
-    return if embedding.blank?
-
-    for_scope(account: account, assistant: assistant, source_fingerprint: source_fingerprint)
-      .active
-      .where.not(embedding: nil)
-      .nearest_neighbors(:embedding, embedding, distance: 'cosine')
-      .limit(1)
-      .detect { |entry| entry.neighbor_distance.to_f <= distance_threshold }
-  end
 
   private
 

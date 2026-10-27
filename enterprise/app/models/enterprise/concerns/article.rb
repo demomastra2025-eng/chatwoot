@@ -11,10 +11,8 @@ module Enterprise::Concerns::Article
     add_article_embedding_association
 
     def self.vector_search(params)
-      embedding = Captain::Llm::EmbeddingService.new(account_id: params[:account_id]).get_embedding(
-        params['query'],
-        input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE
-      )
+      embedder = Captain::Llm::EmbeddingService.new(account_id: params[:account_id])
+      embedding = embedder.get_embedding(params['query'], input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE)
       records = joins(
         :category
       ).search_by_category_slug(
@@ -29,7 +27,8 @@ module Enterprise::Concerns::Article
       # if using add the filter block to the below query
       # .filter { |ae| ae.neighbor_distance <= distance_threshold }
 
-      article_ids = ArticleEmbedding.where(article_id: filtered_article_ids)
+      # Only the vectors of the model that embeds the question are compared with it: vectors of two models cannot be compared.
+      article_ids = ArticleEmbedding.where(article_id: filtered_article_ids, embedding_model: embedder.embedding_model)
                                     .nearest_neighbors(:embedding, embedding, distance: 'cosine')
                                     .limit(5)
                                     .pluck(:article_id)

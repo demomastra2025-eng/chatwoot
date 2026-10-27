@@ -8,6 +8,7 @@
 #  content_sha256       :string           not null
 #  embedding            :vector(1536)
 #  embedding_error      :text
+#  embedding_model      :string
 #  embedding_status     :integer          default("pending"), not null
 #  embedding_updated_at :datetime
 #  created_at           :datetime         not null
@@ -67,12 +68,11 @@ class Captain::DocumentChunk < ApplicationRecord
   def self.search(query, account_id: nil, assistant_id: nil)
     return none if account_id.blank?
 
-    embedding = Captain::Llm::EmbeddingService.new(account_id: account_id).get_embedding(
-      query,
-      input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE
-    )
+    # Only the vectors of the model that embeds the question are compared with it: vectors of two models cannot be compared.
+    embedder = Captain::Llm::EmbeddingService.new(account_id: account_id)
+    embedding = embedder.get_embedding(query, input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE)
     nearest_neighbors(:embedding, embedding, distance: 'cosine')
-      .where(account_id: account_id)
+      .where(account_id: account_id, embedding_model: embedder.embedding_model)
       .visible_to_assistant(assistant_id)
       .where(embedding_status: embedding_statuses[:indexed])
       .where.not(embedding: nil)

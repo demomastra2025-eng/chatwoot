@@ -3,7 +3,12 @@
 class Captain::Knowledge::FaqMergerService
   include Captain::Knowledge::Graph::Lexicon
 
-  EMBEDDING_DUPLICATE_DISTANCE = 0.14
+  # A semantic neighbour (cosine distance 0.05, similarity 0.95) lets two FAQs of the same subject count as duplicates although their
+  # intent words differ. Checked 27.10 with google/gemini-embedding-001 at 1536 numbers on the FAQs of five clinics (250 rows; three
+  # clinics share one set of 67): different FAQs of one clinic are up to 0.924 close (the FAQs written from a template, one per doctor
+  # or branch, are 0.88-0.92 close), so a looser number would merge, and then delete, distinct FAQs. The former number (0.14, similarity
+  # 0.86) was set for text-embedding-3-large, which almost never reached it (6 of 250 FAQs have such a neighbour; with Gemini 171 do).
+  EMBEDDING_DUPLICATE_DISTANCE = 0.05
   EXTRA_FILLER_WORDS = %w[нужен нужна нужно нужны перед после ли же бы].freeze
 
   def self.merge_records!(records, use_llm: true)
@@ -159,9 +164,10 @@ class Captain::Knowledge::FaqMergerService
   end
 
   def semantic_duplicate_ids(record, scope)
-    return Set.new if record.embedding.blank?
+    return Set.new if record.embedding.blank? || record.embedding_model.blank?
 
-    scope.nearest_neighbors(:embedding, record.embedding, distance: 'cosine')
+    # Only the FAQs whose vector was made by the model of the record's own vector are compared with it.
+    scope.where(embedding_model: record.embedding_model).nearest_neighbors(:embedding, record.embedding, distance: 'cosine')
          .limit(5)
          .select { |neighbor| neighbor.neighbor_distance.to_f <= EMBEDDING_DUPLICATE_DISTANCE }
          .to_set(&:id)

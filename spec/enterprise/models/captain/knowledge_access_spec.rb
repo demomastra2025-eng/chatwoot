@@ -9,7 +9,8 @@ RSpec.describe Concerns::CaptainKnowledgeAccess do
 
   before do
     allow(Captain::Llm::EmbeddingService).to receive(:new)
-      .with(account_id: account.id).and_return(instance_double(Captain::Llm::EmbeddingService, get_embedding: embedding))
+      .with(account_id: account.id)
+      .and_return(instance_double(Captain::Llm::EmbeddingService, get_embedding: embedding, embedding_model: 'test-model'))
   end
 
   def selected_document(**attributes)
@@ -20,6 +21,7 @@ RSpec.describe Concerns::CaptainKnowledgeAccess do
   def selected_response(**attributes)
     create(:captain_assistant_response, account: account, assistant: nil, visibility: :personal,
                                         allowed_assistant_ids: [first_agent.id, second_agent.id], embedding: embedding,
+                                        embedding_model: 'test-model',
                                         question: 'Shared refund policy', answer: 'Refund within thirty days', **attributes)
   end
 
@@ -39,7 +41,7 @@ RSpec.describe Concerns::CaptainKnowledgeAccess do
   it 'shares documents and indexed chunks with exactly the selected agents' do
     document = selected_document
     chunk = create(:captain_document_chunk, document: document, account: account, assistant: nil,
-                                           embedding: embedding, embedding_status: :indexed)
+                                           embedding: embedding, embedding_model: 'test-model', embedding_status: :indexed)
     [first_agent, second_agent].each do |agent|
       expect(Captain::Document.visible_to_assistant(agent.id)).to include(document)
       expect(Captain::DocumentChunk.visible_to_assistant(agent.id)).to include(chunk)

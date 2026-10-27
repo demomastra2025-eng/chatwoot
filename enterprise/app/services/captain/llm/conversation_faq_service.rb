@@ -1,7 +1,14 @@
 class Captain::Llm::ConversationFaqService < Llm::BaseAiService
   include Integrations::LlmInstrumentation
 
-  DISTANCE_THRESHOLD = 0.3
+  # Two FAQs are the same FAQ when their texts (question: answer) are this close (cosine distance 0.05 = similarity 0.95): the new FAQ
+  # is then not saved. A wrongly dropped FAQ is lost knowledge, a wrongly kept one is reviewed before it is approved, so the number is
+  # strict. Checked 27.10 with google/gemini-embedding-001 at 1536 numbers on the FAQs of five clinics (250 rows; three clinics share
+  # one set of 67): the most similar pair of different FAQs of one clinic is 0.924 (the FAQs written from a template, one per doctor or
+  # branch, are 0.88-0.92 close), the median nearest neighbour is 0.87, and 249 of the 250 FAQs have a neighbour above 0.7. The former
+  # number (0.3, similarity 0.7) was set for text-embedding-3-large, whose median nearest neighbour is 0.70 (124 of 250 above 0.7);
+  # with Gemini it would drop almost every new FAQ.
+  DISTANCE_THRESHOLD = 0.05
   MAX_OUTPUT_TOKENS = 4096
 
   def initialize(assistant, conversation, content: nil, raise_on_error: false)
@@ -89,16 +96,16 @@ class Captain::Llm::ConversationFaqService < Llm::BaseAiService
 
   def find_embedding_duplicates(faq)
     combined_text = "#{faq['question']}: #{faq['answer']}"
-    embedding = Captain::Llm::EmbeddingService.new(account_id: @conversation.account_id).get_embedding(
-      combined_text,
-      input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE
-    )
-    find_similar_faqs(embedding)
+    embedder = Captain::Llm::EmbeddingService.new(account_id: @conversation.account_id)
+    embedding = embedder.get_embedding(combined_text, input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE)
+    find_similar_faqs(embedding, embedder.embedding_model)
   end
 
-  def find_similar_faqs(embedding)
+  # Only the FAQs whose vector was made by the model that embeds the new one are compared with it.
+  def find_similar_faqs(embedding, model)
     similar_faqs = deduplication_responses
                    .where.not(embedding: nil)
+                   .where(embedding_model: model)
                    .nearest_neighbors(:embedding, embedding, distance: 'cosine')
     Rails.logger.debug(similar_faqs.map { |faq| [faq.question, faq.neighbor_distance] })
     similar_faqs.select { |record| record.neighbor_distance < DISTANCE_THRESHOLD }
