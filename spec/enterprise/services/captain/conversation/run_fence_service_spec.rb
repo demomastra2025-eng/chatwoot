@@ -52,7 +52,7 @@ RSpec.describe Captain::Conversation::RunFenceService do
     fence = described_class.new(assistant: assistant, state: state)
     Captain::Assistant.cache do
       fence.ensure_current!
-      assistant.update!(active: false)
+      Captain::Assistant.find(assistant.id).update!(active: false)
 
       expect(assistant).to be_active
       expect { fence.ensure_current! }
@@ -73,7 +73,7 @@ RSpec.describe Captain::Conversation::RunFenceService do
     former_default = create(:captain_assistant, account: account)
     fence = described_class.new(assistant: assistant, state: state)
     fence.ensure_current!
-    Captain::Assistant.where(id: former_default.id).update_all(active: false)
+    Captain::Assistant.find(former_default.id).update!(active: false)
 
     expect { fence.ensure_current! }.not_to raise_error
   end
@@ -83,7 +83,7 @@ RSpec.describe Captain::Conversation::RunFenceService do
     current = state.deep_dup.merge(assistant_id: peer.id)
     fence = described_class.new(assistant: peer, state: current)
     fence.ensure_current!
-    peer.update!(active: false)
+    Captain::Assistant.find(peer.id).update!(active: false)
 
     expect(peer).to be_active
     expect { fence.ensure_current! }

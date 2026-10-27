@@ -20,6 +20,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       account.enable_features!('captain_integration', 'captain_tasks')
       create(:captain_inbox, inbox: inbox)
       create(:message, conversation: conversation, content: 'Hello', message_type: :incoming)
+      # These older cases exercise a conversation already held by the agent. New conversations start without a holder.
+      Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
       allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(agent_runner_service)
       allow(agent_runner_service).to receive(:generate_response).and_return({ 'response' => 'Hey, welcome to Captain V2' })
       allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_on)
@@ -36,6 +38,10 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     end
 
     describe 'the job belongs to the channel, not to an agent' do
+      before do
+        Captain::Conversation::AgentSession.new(conversation: conversation).release_holder(assistant.id)
+      end
+
       def hold_as(agent)
         Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: agent.id)
       end
@@ -212,6 +218,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         )
       )
       job = described_class.new
+      job.instance_variable_set(:@conversation, conversation)
       job.instance_variable_set(:@response_assistant, assistant)
       job.instance_variable_set(:@response, {
                                   'handoff_outcome_reason_id' => 'technical_queue',
@@ -298,7 +305,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
     it 'uses Captain::Assistant::AgentRunnerService with runtime callbacks' do
       expect(Captain::Assistant::AgentRunnerService).to receive(:new).with(
-        assistant: assistant,
+        scope: an_instance_of(Captain::ChannelScope),
         conversation: conversation,
         incoming_message_id: conversation.messages.incoming.last.id,
         callbacks: hash_including(
@@ -416,7 +423,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(agent_runner_service).to receive(:generate_response).with(
         message_history: [
           { content: 'Question from WhatsApp', role: 'user', sent_at: sent_time },
-          { content: 'Earlier Captain answer', role: 'assistant', sent_at: sent_time },
+          { content: 'Earlier Captain answer', role: 'assistant', agent_name: "assistant_#{assistant.id}", sent_at: sent_time },
           { content: 'Hello', role: 'user', sent_at: sent_time }
         ]
       )
@@ -479,8 +486,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(agent_runner_service).to receive(:generate_response).with(
         message_history: [
           { content: 'Original question', role: 'user', sent_at: sent_time },
-          { content: 'Earlier Captain reply', role: 'assistant', sent_at: sent_time },
-          { content: 'Static follow-up', role: 'assistant', sent_at: sent_time },
+          { content: 'Earlier Captain reply', role: 'assistant', agent_name: "assistant_#{assistant.id}", sent_at: sent_time },
+          { content: 'Static follow-up', role: 'assistant', agent_name: "assistant_#{assistant.id}", sent_at: sent_time },
           { content: 'I still have a question', role: 'user', sent_at: sent_time }
         ]
       )
@@ -881,7 +888,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       last_incoming_message_id = conversation.messages.incoming.last.id
 
       allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |**kwargs|
-        expect(kwargs[:assistant]).to eq(assistant)
+        expect(kwargs[:scope]).to have_attributes(inbox: inbox, kind: :text)
         expect(kwargs[:conversation]).to eq(conversation)
         callbacks = kwargs[:callbacks]
         agent_runner_service
@@ -1142,6 +1149,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       create(:captain_inbox, inbox: whatsapp_inbox)
       whatsapp_conversation = create(:conversation, inbox: whatsapp_inbox, account: account, status: :pending)
       create(:message, conversation: whatsapp_conversation, content: 'вышли файлы', message_type: :incoming)
+      Captain::Conversation::AgentSession.new(conversation: whatsapp_conversation).update_routing(actor_id: assistant.id)
       whatsapp_conversation.update!(status: :pending)
 
       first_document = create_sendable_document(name: 'First', filename: 'first.pdf')
@@ -2337,7 +2345,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.reload.status).to eq('open')
         expect(conversation.captain_handoff_applied_at).to be_present
         expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_off)
-          .with(conversation: conversation, assistant: assistant).at_least(:once)
+          .with(conversation: conversation).at_least(:once)
       end
 
       it 'creates a private note for agents without leaking provider error details' do
@@ -2697,10 +2705,11 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     before do
       create(:captain_inbox, inbox: inbox)
       create(:message, conversation: conversation, content: 'Hello with image', message_type: :incoming)
+      Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
       allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(agent_runner_service)
       # History content is built against the shared history budget (history preset).
       allow(Captain::OpenAiMessageBuilderService).to receive(:new)
-        .with(message: anything, assistant: assistant, budget: kind_of(Captain::Conversation::HistoryBudget))
+        .with(message: anything, budget: kind_of(Captain::Conversation::HistoryBudget))
         .and_return(mock_message_builder)
       allow(mock_message_builder).to receive(:generate_content).and_return('Hello with image')
       allow(agent_runner_service).to receive(:generate_response).and_return({ 'response' => 'Test response' })
@@ -2810,7 +2819,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       it 'does not inherit handoff fields from a polluted failed response' do
         job = described_class.new
-        job.send(:initialize_response_context, conversation, assistant, nil, conversation.messages.incoming.last.id, 0)
+        job.send(:initialize_response_context, conversation, nil, conversation.messages.incoming.last.id, 0)
         job.instance_variable_set(
           :@response,
           {

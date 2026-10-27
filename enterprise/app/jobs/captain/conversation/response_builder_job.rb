@@ -1144,7 +1144,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def display_agent_name_for(agent_name)
-    channel_graph.resolve(agent_name)&.name
+    channel_graph.resolve(agent_name)&.name ||
+      response_assistant&.scenarios&.find { |scenario| scenario.handoff_key == agent_name }&.title
   end
 
   def inferred_agent_name_from_trace(trace_payload)
