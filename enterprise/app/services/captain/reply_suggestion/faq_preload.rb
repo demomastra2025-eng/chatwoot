@@ -23,7 +23,7 @@ class Captain::ReplySuggestion::FaqPreload
   LONG_NUMBER = /\+?\d(?:[\s().-]?\d){8,}/
   # The longest wait for the vector of the message, in seconds (the embedding request has its own, longer limits).
   EMBEDDING_WAIT_SECONDS = 3
-  # The answers of one prompt may total this many characters, the first answer always whole.
+  # The answers of one prompt may total this many characters. An oversized answer stays available through faq_lookup.
   MAX_ANSWER_CHARS = 4000
 
   class << self
@@ -92,9 +92,11 @@ class Captain::ReplySuggestion::FaqPreload
 
   def answers(responses)
     kept = []
-    responses.first(MAX_MATCHES).each do |response|
+    responses.each do |response|
+      break if kept.size >= MAX_MATCHES
+
       answer = response.answer.to_s.strip
-      break if kept.any? && kept.sum { |item| item[:answer].length } + answer.length > MAX_ANSWER_CHARS
+      next if answer.blank? || kept.sum { |item| item[:answer].length } + answer.length > MAX_ANSWER_CHARS
 
       kept << { question: response.question.to_s.strip, answer: answer, score: (1.0 - response.neighbor_distance.to_f).round(2) }
     end

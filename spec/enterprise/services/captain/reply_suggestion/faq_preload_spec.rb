@@ -46,7 +46,8 @@ RSpec.describe Captain::ReplySuggestion::FaqPreload do
   it 'does not send a phone number or an IIN of the message to the embedding provider' do
     faq('Вопрос', 'Ответ', unit_vector(0))
 
-    described_class.start(account: account, text: 'Мой ИИН 900101300123, телефон +7 701 000 00 01. Сколько стоит МРТ за 28.10.2026?').matches(assistant)
+    text = 'Мой ИИН 900101300123, телефон +7 701 000 00 01. Сколько стоит МРТ за 28.10.2026?'
+    described_class.start(account: account, text: text).matches(assistant)
 
     expect(embedder).to have_received(:get_embedding).with('Мой ИИН , телефон . Сколько стоит МРТ за 28.10.2026?',
                                                            input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE)
@@ -78,7 +79,7 @@ RSpec.describe Captain::ReplySuggestion::FaqPreload do
       expect(preload.matches(assistant).pluck(:question)).to eq(['Как подготовиться к УЗИ?', 'Второй', 'Третий'])
     end
 
-    it 'keeps the total of the answers within the budget, the first answer whole' do
+    it 'keeps the total of the answers within the budget' do
       near.update!(answer: 'А' * 3500)
       faq('Второй', 'Б' * 600, vector_at(0, 0.95))
 
@@ -86,6 +87,13 @@ RSpec.describe Captain::ReplySuggestion::FaqPreload do
 
       expect(matches.pluck(:question)).to eq(['Как подготовиться к УЗИ?'])
       expect(matches.first[:answer].length).to eq(3500)
+    end
+
+    it 'skips an oversized answer and keeps a shorter relevant one' do
+      near.update!(answer: 'А' * (described_class::MAX_ANSWER_CHARS + 1))
+      faq('Другой подходящий вопрос', 'Короткий ответ', vector_at(0, 0.95))
+
+      expect(preload.matches(assistant).pluck(:answer)).to eq(['Короткий ответ'])
     end
 
     it 'reads only what the agent may see: the FAQ of another agent that is not shared is not read' do
