@@ -291,29 +291,31 @@ const save = async () => {
       },
     };
   }
+  const conditionPayload = item => {
+    const unchanged =
+      item.original &&
+      item.field === item.original.attribute_key &&
+      item.operator === item.original.filter_operator &&
+      String(item.value) === String(item.original.values?.[0]);
+    if (unchanged) return item.original;
+    return {
+      attribute_key: item.field,
+      filter_operator: item.operator || 'equal_to',
+      values: [String(item.value)],
+      query_operator: item.original ? item.original.query_operator : 'AND',
+    };
+  };
   const originalConditions = draft.originalRule?.conditions || [];
-  const otherConditions = originalConditions.filter(
-    item => !conditionFields.includes(item.attribute_key)
-  );
-  const conditions = [
-    ...otherConditions,
+  const conditions = originalConditions.flatMap(original => {
+    const edited = draft.conditions.find(item => item.original === original);
+    if (edited) return edited.value ? [conditionPayload(edited)] : [];
+    return conditionFields.includes(original.attribute_key) ? [] : [original];
+  });
+  conditions.push(
     ...draft.conditions
-      .filter(item => item.value)
-      .map(item => {
-        const unchanged =
-          item.original &&
-          item.field === item.original.attribute_key &&
-          item.operator === item.original.filter_operator &&
-          String(item.value) === String(item.original.values?.[0]);
-        if (unchanged) return item.original;
-        return {
-          attribute_key: item.field,
-          filter_operator: item.operator || 'equal_to',
-          values: [String(item.value)],
-          query_operator: 'AND',
-        };
-      }),
-  ];
+      .filter(item => !item.original && item.value)
+      .map(conditionPayload)
+  );
   if (!conditions.length)
     conditions.push({
       attribute_key: 'source',

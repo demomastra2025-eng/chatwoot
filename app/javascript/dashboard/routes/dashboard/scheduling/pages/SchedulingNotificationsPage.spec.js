@@ -4,6 +4,7 @@ import { ref } from 'vue';
 import SchedulingNotificationsPage from './SchedulingNotificationsPage.vue';
 import ResourcesAPI from 'dashboard/api/scheduling/resources';
 import ServicesAPI from 'dashboard/api/scheduling/services';
+import AutomationAPI from 'dashboard/api/automation';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn().mockResolvedValue(undefined),
@@ -84,6 +85,9 @@ vi.mock('dashboard/composables/useAccount', () => ({
   }),
 }));
 vi.mock('dashboard/composables', () => ({ useAlert: vi.fn() }));
+vi.mock('dashboard/api/automation', () => ({
+  default: { update: vi.fn(), create: vi.fn() },
+}));
 vi.mock('dashboard/api/scheduling/resources', () => ({
   default: { get: vi.fn().mockResolvedValue({ data: { payload: [] } }) },
 }));
@@ -114,6 +118,49 @@ describe('SchedulingNotificationsPage', () => {
     ).toHaveLength(1);
     expect(wrapper.text()).toContain(
       'SCHEDULING.REMINDERS.PRESETS.appointment_day_before.TITLE'
+    );
+  });
+
+  it('keeps existing custom condition order and values when saving a message edit', async () => {
+    const originalConditions = [
+      {
+        attribute_key: 'source',
+        filter_operator: 'equal_to',
+        values: ['manual'],
+        query_operator: 'OR',
+      },
+      {
+        attribute_key: 'custom_visit_type',
+        filter_operator: 'equal_to',
+        values: ['first'],
+        query_operator: 'AND',
+      },
+      {
+        attribute_key: 'status',
+        filter_operator: 'equal_to',
+        values: ['scheduled', 'confirmed'],
+        query_operator: null,
+      },
+    ];
+    mocks.rules[0].conditions = originalConditions;
+    ResourcesAPI.get.mockResolvedValue({ data: { payload: [] } });
+    ServicesAPI.get.mockResolvedValue({ data: { payload: [] } });
+    AutomationAPI.update.mockResolvedValue({ data: {} });
+    const wrapper = shallowMount(SchedulingNotificationsPage);
+    await flushPromises();
+    await wrapper
+      .findAll('button')
+      .find(button => button.text() === 'SCHEDULING.NOTIFICATIONS.EDIT')
+      .trigger('click');
+    await wrapper
+      .findAll('button')
+      .find(button => button.text() === 'SCHEDULING.NOTIFICATIONS.SAVE')
+      .trigger('click');
+    await flushPromises();
+
+    expect(AutomationAPI.update).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ conditions: originalConditions })
     );
   });
 });
