@@ -153,6 +153,8 @@ RSpec.describe Captain::Runtime::Council do
       context[:agent_run_context_object] = Object.new
       context[:captain_v2_tool_result_cache] = { 'x' => 1 }
       context[:captain_v2_bound_tool_ids] = ['create_appointment']
+      context[Captain::Runtime::ToolLoopGuard::REQUEST_COUNTS_KEY] = { total: 3 }
+      context[Captain::Runtime::ToolLoopGuard::WARNED_BATCH_KEY] = 'step-1'
       context[:routing_trail] = [{ 'kind' => 'agent', 'to' => [1] }]
       context[:pending_human_handoff] = { reason: 'x' }
       items = parts
@@ -174,6 +176,10 @@ RSpec.describe Captain::Runtime::Council do
       expect(writer[:conversation_history]).to eq([{ role: 'user', content: 'Здравствуйте' }, { role: 'assistant', content: 'Добрый день!' }])
       %i[agent_graph agent_graph_object agent_run_context_object parts captain_v2_tool_result_cache captain_v2_bound_tool_ids
          pending_human_handoff routing_trail].each { |key| expect(writer).not_to have_key(key) }
+      [Captain::Runtime::ToolLoopGuard::REQUEST_COUNTS_KEY, Captain::Runtime::ToolLoopGuard::WARNED_BATCH_KEY].each do |key|
+        expect(writer).not_to have_key(key)
+        expect(reader).not_to have_key(key)
+      end
       expect(reader[:state]).to include(assistant_id: 2)
       expect(reader[:active_part_id]).to eq('part-1')
     end
