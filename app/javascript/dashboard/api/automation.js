@@ -10,6 +10,12 @@ class AutomationsAPI extends ApiClient {
     return axios.post(`${this.url}/${automationId}/clone`);
   }
 
+  adoptCalendarNotification(automationId) {
+    return axios.post(
+      `${this.url}/${automationId}/adopt_calendar_notification`
+    );
+  }
+
   // Contacts for the "Contact" condition: a page found by name or phone
   // ({ q, page }) or the contacts behind saved ids ({ ids }).
   contactOptions(params = {}) {

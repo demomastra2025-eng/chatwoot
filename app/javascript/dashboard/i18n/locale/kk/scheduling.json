@@ -86,7 +86,9 @@
         "RESOURCE_ID": "Маман",
         "MEDELEMENT_CABINET_CODE": "Кабинет",
         "STATUS": "Мәртебе",
-        "SOURCE": "Дереккөз"
+        "SOURCE": "Дереккөз",
+        "APPOINTMENT_TYPE": "Тип приёма",
+        "PAYMENT_STATUS": "Оплата"
       },
       "STATUS": {
         "SCHEDULED": "Жоспарланған",
@@ -103,7 +105,103 @@
         "STARTED": "Қабылдау басталуы",
         "COMPLETED": "Қабылдау аяқталуы",
         "NO_SHOW": "Келмеді"
-      }
+      },
+      "RULE_COUNT": "Правил",
+      "APPROVED": "Одобрено",
+      "PENDING": "На проверке",
+      "REJECTED": "Отклонено",
+      "CONNECT_CHANNEL": "Для уведомлений подключите канал WhatsApp.",
+      "CONNECT": "Подключить канал",
+      "TEMPLATE_PACK": "Набор шаблонов",
+      "NEW_TEMPLATE": "Новый шаблон",
+      "SYNC_META": "Обновить из Meta",
+      "NO_TEMPLATE": "Шаблон не выбран",
+      "NO_CHANNEL": "Канал не выбран",
+      "OTHER_RULES": "Другие правила",
+      "FIRST_RUN": "Настройте первый сценарий и создайте набор шаблонов. Все шесть сценариев пока выключены.",
+      "TEMPLATE_STATUS": {
+        "APPROVED": "Одобрен",
+        "PENDING": "Ждёт одобрения Meta",
+        "REJECTED": "Отклонён Meta",
+        "DISABLED": "Отключён"
+      },
+      "REVIEW_ADOPT": "Проверить и принять",
+      "ADOPT": "Принять правило",
+      "ADOPTED": "Правило принято",
+      "ADOPTION_FAILED": "Правило не прошло проверку",
+      "STEPS": {
+        "1": "Событие",
+        "2": "Условия",
+        "3": "Сообщение",
+        "4": "Итог"
+      },
+      "FIELD": "Поле",
+      "OPERATOR": "Сравнение",
+      "VALUE": "Значение",
+      "JOIN": "Связь",
+      "AND": "И",
+      "OR": "ИЛИ",
+      "OPERATORS": {
+        "EQUAL_TO": "Равно",
+        "NOT_EQUAL_TO": "Не равно",
+        "CONTAINS": "Содержит",
+        "DOES_NOT_CONTAIN": "Не содержит",
+        "STARTS_WITH": "Начинается с",
+        "IS_PRESENT": "Заполнено",
+        "IS_NOT_PRESENT": "Не заполнено",
+        "IS_GREATER_THAN": "Больше",
+        "IS_LESS_THAN": "Меньше"
+      },
+      "SUMMARY_TO": "Пациенту через канал",
+      "SAVE_OFF": "Сохранить выключенным",
+      "SAVE_ON": "Сохранить включённым",
+      "BACK": "Назад",
+      "NEXT": "Далее",
+      "DELIVERED": "Доставлено",
+      "READ": "Прочитано",
+      "OPEN_MESSAGE": "Открыть сообщение",
+      "ADOPTION_ERRORS": {
+        "ALREADY_MANAGED": "Правило уже принято в календарь",
+        "APPOINTMENT_EVENT_REQUIRED": "Нужно событие записи",
+        "MESSAGE_ACTION_REQUIRED": "Нужно одно действие отправки сообщения",
+        "WHATSAPP_REQUIRED": "Нужен подключённый канал WhatsApp",
+        "SEND_PLAN_REQUIRED": "Проверьте время и порядок отправки",
+        "MESSAGE_TEXT_REQUIRED": "Добавьте текст сообщения",
+        "APPROVED_TEMPLATE_REQUIRED": "Выберите одобренный шаблон Meta",
+        "INVALID_RULE": "Проверьте условия и действие правила"
+      },
+      "ACTIONS_COUNT": "Действий",
+      "NO_CONDITIONS": "Без условий",
+      "APPOINTMENT_TITLE": "Уведомления пациенту",
+      "YES": "Да",
+      "NO": "Нет",
+      "ACTION": "Действие",
+      "UNIT_WORDS": {
+        "DAYS": {
+          "ONE": "день",
+          "FEW": "дня",
+          "MANY": "дней",
+          "OTHER": "дней"
+        },
+        "HOURS": {
+          "ONE": "час",
+          "FEW": "часа",
+          "MANY": "часов",
+          "OTHER": "часов"
+        },
+        "MINUTES": {
+          "ONE": "минуту",
+          "FEW": "минуты",
+          "MANY": "минут",
+          "OTHER": "минут"
+        }
+      },
+      "VISIT_START": "начала приёма",
+      "VISIT_END": "конца приёма",
+      "RULE_EVENT": "события",
+      "BEFORE_ANCHOR": "до",
+      "AFTER_ANCHOR": "после",
+      "SEND_PLAN_INVALID": "План отправки не задан"
     },
     "APPOINTMENT_SOURCE": {
       "manual": "Қолмен",
