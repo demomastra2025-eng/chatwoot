@@ -8,11 +8,14 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
 
   def booked = Captain::Runtime::AgreedVisit.new(times: ['10:00'])
 
-  def snapshot(count, current: nil, human: true, card: 'Услуги агента', suggestion: false, anchor: nil, # rubocop:disable Metrics/ParameterLists
-               history: dialog, message: 'Спасибо!', visit: booked)
-    agents = (1..count).map { |id| Captain::Runtime::RoutingSnapshot::Agent.new(id: id * 10, label: "Agent #{id}", card: card) }
-    Captain::Runtime::RoutingSnapshot.new(agents: agents, latest_message: message, current_agent_id: current, human_available: human,
-                                          suggestion: suggestion, anchor_agent_id: anchor, recent_messages: history, visit: visit)
+  def snapshot(count, **options)
+    agents = (1..count).map do |id|
+      Captain::Runtime::RoutingSnapshot::Agent.new(id: id * 10, label: "Agent #{id}", card: options.fetch(:card, 'Услуги агента'))
+    end
+    Captain::Runtime::RoutingSnapshot.new(agents: agents, latest_message: options.fetch(:message, 'Спасибо!'),
+                                          current_agent_id: options[:current], human_available: options.fetch(:human, true),
+                                          suggestion: options.fetch(:suggestion, false), recent_messages: options.fetch(:history, dialog),
+                                          visit: options.fetch(:visit, booked))
   end
 
   def build(count, mode: :full, **)
@@ -182,15 +185,15 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
         end
       end
 
-      it 'prefers the current agent, then the anchor of the channel, then the lower id, when the agents are all alike or none fits' do
+      it 'prefers the current agent, then the lower id, when the agents are all alike or none fits' do
         alike = answered('human_handoff', yes: [10, 20, 30])
         none = answered('human_handoff')
 
         expect(build(3, current: 20, message: plain).resolve(alike).key).to eq('stay_current')
-        expect(build(3, suggestion: true, anchor: 30, message: plain).resolve(alike).key).to eq('route_agent_30')
+        expect(build(3, suggestion: true, message: plain).resolve(alike).key).to eq('route_agent_10')
         expect(build(3, message: plain).resolve(alike).key).to eq('route_agent_10')
         expect(build(3, message: plain).resolve(none).key).to eq('route_agent_10')
-        expect(build(3, suggestion: true, anchor: 30, message: plain).resolve(none).key).to eq('route_agent_30')
+        expect(build(3, suggestion: true, message: plain).resolve(none).key).to eq('route_agent_10')
         expect(build(3, current: 20, message: plain).resolve(none).key).to eq('stay_current')
       end
 
@@ -339,8 +342,8 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
         .to have_attributes(kind: 'agent', key: 'route_agent_10')
     end
 
-    it 'has no default of a reply suggestion: the anchor answers only when it is the most probable agent' do
-      suggestion = build(3, suggestion: true, anchor: 30)
+    it 'has no default agent for a reply suggestion' do
+      suggestion = build(3, suggestion: true)
 
       expect(suggestion.resolve(answered('route_agent', include_probabilities: { 10 => 0.4, 20 => 0.1, 30 => 0.2 })).key).to eq('route_agent_10')
     end

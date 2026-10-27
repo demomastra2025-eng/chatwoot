@@ -249,7 +249,7 @@ RSpec.describe Captain::Runtime::DecisionRouter do
     let(:history) { [{ role: 'clinic', text: 'Свободно 16:30 и 17:00. Какое время удобно?' }] }
     let(:snapshot) do
       Captain::Runtime::RoutingSnapshot.new(agents: agents, latest_message: message, current_agent_id: sticky, human_available: true,
-                                            recent_messages: history, suggestion: true, anchor_agent_id: 84)
+                                            recent_messages: history, suggestion: true)
     end
 
     it 'keeps a short reply with the sticky agent, also at a low confidence and when it names no agent' do

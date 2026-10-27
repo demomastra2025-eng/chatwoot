@@ -73,14 +73,12 @@ RSpec.describe Captain::Runtime::RoutingSnapshot do
       expect(snapshot.to_state.to_json).not_to include('701 123')
     end
 
-    it 'marks the turn of a reply suggestion and keeps its anchor, which a live turn has not' do
-      suggestion = described_class.from_context(context, candidates: candidates, anchor_agent_id: 84)
-      live = described_class.from_context(context.merge(state: { source: 'incoming_message' }), candidates: candidates, anchor_agent_id: 84)
+    it 'marks the turn of a reply suggestion but not a live turn' do
+      suggestion = described_class.from_context(context, candidates: candidates)
+      live = described_class.from_context(context.merge(state: { source: 'incoming_message' }), candidates: candidates)
 
       expect(suggestion).to be_suggestion
-      expect(suggestion.anchor_agent_id).to eq(84)
       expect(live).not_to be_suggestion
-      expect(live.anchor_agent_id).to be_nil
     end
 
     it 'has no current agent when the saved one is no longer a candidate' do
@@ -138,8 +136,9 @@ RSpec.describe Captain::Runtime::RoutingSnapshot do
     expect(snapshot.current_agent_id).to eq(119)
     expect(snapshot).to be_suggestion
     expect(snapshot.to_state[:recent_messages]).to eq([{ role: 'clinic', text: 'Ертең бос уақыт: 16:30 және 17:00.' }])
-    anchored = described_class.from_fixture(candidates: candidates, scenario: scenario.except('sticky').merge('suggestion' => true, 'anchor' => 84))
-    expect(anchored).to have_attributes(current_agent_id: nil, anchor_agent_id: 84)
+    without_sticky = described_class.from_fixture(candidates: candidates, scenario: scenario.except('sticky').merge('suggestion' => true))
+    expect(without_sticky).to have_attributes(current_agent_id: nil)
+    expect(without_sticky).to be_suggestion
   end
 
   it 'builds the same state from a benchmark scenario' do

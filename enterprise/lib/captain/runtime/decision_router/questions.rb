@@ -192,10 +192,14 @@ class Captain::Runtime::DecisionRouter::Questions
     last = @snapshot.recent_messages.last.to_h.with_indifferent_access
     clinic = last[:role].to_s == 'clinic' ? last[:text].to_s : nil
     text = @snapshot.latest_message.to_s
-    return false if clinic&.match?(/[?？]/) || text.match?(NO_REPLY_BREAKERS) || text.split.size > NO_REPLY_MAX_WORDS
-    return false if Captain::PatientIntent.booking_change?(text) || Captain::PatientIntent.question?(text)
+    return false unless short_plain_message?(text, clinic)
 
     Captain::SilenceCheck.unsafe_reason(text: text, last_clinic: clinic, visit: @snapshot.visit).nil?
+  end
+
+  def short_plain_message?(text, clinic)
+    !clinic&.match?(/[?？]/) && !text.match?(NO_REPLY_BREAKERS) && text.split.size <= NO_REPLY_MAX_WORDS &&
+      !Captain::PatientIntent.booking_change?(text) && !Captain::PatientIntent.question?(text)
   end
 
   # The current agent; with no current agent, the agent with the highest include probability.
