@@ -193,6 +193,17 @@ class Llm::FeatureProfile
       cost_policy: 'balanced',
       fallback_strategy: 'vision_reliable'
     },
+    # Looks at a customer image once, before it is read (Captain::ImageReading::Router): does it hold significant handwriting. The image
+    # travels in the request (a 1024 px JPEG as a data URL), so the request may be larger than a text decision, and the call is bounded
+    # by a longer timeout than a decision inside a patient turn; it runs in the background when the image arrives. No fallback model:
+    # when it fails, the safe reader reads the image.
+    'image_routing' => TURN_DECISION_DEFINITION.merge(
+      config_feature_key: 'image_routing',
+      timeout_seconds: 8,
+      cost_policy: 'speed_cost',
+      fallback_strategy: 'skip',
+      max_request_bytes: 1_048_576
+    ),
     'audio_transcription' => {
       config_feature_key: 'audio_transcription',
       required_capabilities: %w[audio_input transcription],
@@ -317,6 +328,8 @@ class Llm::FeatureProfile
   def fallback_strategy = definition[:fallback_strategy]
 
   def decisions? = definition[:decisions] == true
+  # The largest request body of a decision call that carries more than text (nil: the transport default of the client).
+  def max_request_bytes = definition[:max_request_bytes]
   # The decision models asked, in order, when the resolved one fails (see Llm::OpenRouterRuntime#decide).
   def decision_fallback_models = Array(definition[:decision_fallback_models])
   def strict_timeout? = definition[:strict_timeout] == true

@@ -2352,14 +2352,19 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         conversation.messages.where.not(id: message_with_image.id).destroy_all
       end
 
-      it 'includes image URL directly in the message history for vision analysis' do
+      it 'gives the agent the text of the image in the message history, never the image or a link to it' do
+        image_attachment.update!(meta: { 'image_recognition_description' => 'Скриншот ошибки: database connection refused' })
+
         expect(agent_runner_service).to receive(:generate_response) do |message_history:|
           last_entry = message_history.last
           expect(last_entry[:content]).to be_an(Array)
           expect(last_entry[:content].any? { |part| part[:type] == 'text' && part[:text] == 'Can you help with this error?' }).to be(true)
-          expect(last_entry[:content].any? do |part|
-            part[:type] == 'image_url' && part[:image_url][:url] == 'https://example.com/error.jpg'
-          end).to be(true)
+          expect(last_entry[:content].none? { |part| part[:type] == 'image_url' }).to be(true)
+          expect(last_entry[:content].to_json).not_to include('example.com')
+          expect(last_entry[:content]).to include(
+            { type: 'text',
+              text: 'Image attachment (automatic description, it may be inaccurate): Скриншот ошибки: database connection refused' }
+          )
 
           { 'response' => 'I can see the error in your image. It appears to be a database connection issue.' }
         end
@@ -2388,9 +2393,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
           expect(last_entry[:content].any? do |part|
             part[:type] == 'text' && part[:text].include?('Treat the image as the requested receipt/payment confirmation')
           end).to be(true)
-          expect(last_entry[:content].any? do |part|
-            part[:type] == 'image_url' && part[:image_url][:url] == 'https://example.com/error.jpg'
-          end).to be(true)
+          expect(last_entry[:content].none? { |part| part[:type] == 'image_url' }).to be(true)
+          expect(last_entry[:content].any? { |part| part[:type] == 'text' && part[:text].start_with?('Image attachment') }).to be(true)
 
           { 'response' => 'Спасибо, чек получил. Подтверждаю бронь.' }
         end

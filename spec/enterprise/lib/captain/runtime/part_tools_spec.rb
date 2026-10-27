@@ -33,6 +33,7 @@ RSpec.describe Captain::Runtime::PartTools do
     account = create(:account)
     account.enable_features!('scheduling')
     owner = create(:captain_assistant, account: account)
+    create(:captain_assistant_response, assistant: owner, account: account)
     owner.update!(config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['handoff'] } } })
 
     tools = owner.agent.tools

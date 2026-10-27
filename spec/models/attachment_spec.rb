@@ -402,6 +402,53 @@ RSpec.describe Attachment do
     end
   end
 
+  describe 'image description enqueue' do
+    let(:assistant) { create(:captain_assistant, account: message.account) }
+
+    def build_image_attachment
+      message.attachments.create!(account_id: message.account_id, file_type: :image, external_url: 'https://example.com/photo.jpg')
+    end
+
+    context 'with an AI agent on the inbox of the message' do
+      before do
+        message.account.enable_features!('captain_integration')
+        create(:captain_inbox, inbox: message.inbox, captain_assistant: assistant)
+        message.reload
+      end
+
+      it 'describes the image when it arrives, in the background' do
+        expect { build_image_attachment }.to have_enqueued_job(Messages::ImageDescriptionJob).on_queue('audio_transcription')
+      end
+
+      it 'does not describe a file that is not an image' do
+        expect do
+          message.attachments.create!(account_id: message.account_id, file_type: :file, external_url: 'https://example.com/a.pdf')
+        end.not_to have_enqueued_job(Messages::ImageDescriptionJob)
+      end
+
+      it 'does not describe the image when the arrival switch is off' do
+        with_modified_env(Messages::ImageDescriptionService::SWITCH => 'off') do
+          expect { build_image_attachment }.not_to have_enqueued_job(Messages::ImageDescriptionJob)
+        end
+      end
+
+      it 'never fails the attachment over its description' do
+        allow(Messages::ImageDescriptionService).to receive(:enabled_for?).and_raise(StandardError, 'redis is down')
+
+        expect { build_image_attachment }.not_to raise_error
+        expect(message.attachments.count).to eq(1)
+      end
+    end
+
+    it 'does not describe the image of an inbox without an AI agent' do
+      message.account.enable_features!('captain_integration')
+      message.inbox.captain_inbox&.destroy!
+      message.reload
+
+      expect { build_image_attachment }.not_to have_enqueued_job(Messages::ImageDescriptionJob)
+    end
+  end
+
   describe 'set_extension' do
     it 'sets extension from filename on save' do
       attachment = message.attachments.new(account_id: message.account_id, file_type: :file)

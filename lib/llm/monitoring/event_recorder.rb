@@ -18,6 +18,7 @@ class Llm::Monitoring::EventRecorder
       captain.council.part_finished
       captain.customer_notice.fallback
       captain.customer_notice.generated
+      captain.image.read
       captain.reply_suggestion.complete
       captain.tool.technical_failure
       llm.agent.handoff

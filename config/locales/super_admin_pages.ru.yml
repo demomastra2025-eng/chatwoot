@@ -111,6 +111,8 @@ ru:
         customer_notice: "Сообщения при передаче и завершении"
         label_suggestion: "Подсказки меток"
         image_recognition: "Распознавание изображений"
+        image_handwriting: "Распознавание рукописного текста"
+        image_routing: "Выбор чтеца картинки"
         audio_transcription: "Расшифровка голоса"
         moderation: "Модерация"
         embedding: "Поиск по базе знаний"

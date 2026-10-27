@@ -12,14 +12,23 @@ module Integrations::LlmInstrumentation
 
     result = nil
     executed = false
+    call_error = nil
     tracer.in_span(params[:span_name]) do |span|
       setup_span_attributes(span, params)
-      result = yield
+      result = begin
+        yield
+      rescue StandardError => e
+        call_error = e
+        raise
+      end
       executed = true
       record_completion(span, result, params)
       result
     end
   rescue StandardError => e
+    # The error of the call itself is the caller's: the call is not made a second time (it would be paid twice).
+    raise if e.equal?(call_error)
+
     ChatwootExceptionTracker.new(e, account: resolve_account(params)).capture_exception
     executed ? result : yield
   end

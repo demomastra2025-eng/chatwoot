@@ -310,6 +310,63 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
     expect(LlmUsageEvent.where(account_id: account.id)).to be_empty
   end
 
+  describe 'the router of customer images' do
+    let(:router_model) { 'perplexity/pplx-decider-v1.2' }
+    let(:image_state) { ['An image a customer sent.', { type: 'image_url', image_url: { url: "data:image/jpeg;base64,#{'A' * 200_000}" } }] }
+    let(:image_criteria) { { 'handwriting' => 'Handwriting.', 'no_handwriting' => 'No handwriting.' } }
+    let(:answer) do
+      response_body.merge(model: router_model, provider: 'Perplexity',
+                          answers: { reason: { choice: 'handwriting', confidence: 0.9, probabilities: { handwriting: 0.9, no_handwriting: 0.1 } } })
+    end
+
+    def routing_request(input:)
+      Llm::FeatureRequest.new(
+        feature: :image_routing, account: account, model: router_model, input: input,
+        options: { decision_criteria: image_criteria, decision_instructions: 'Is there handwriting?', decision_fallback: false }
+      )
+    end
+
+    it 'sends an image in the state, in a request larger than the default guard, only to the trusted provider, without a fallback model' do
+      stub = stub_request(:post, endpoint).with do |http_request|
+        body = JSON.parse(http_request.body)
+        expect(http_request.body.bytesize).to be > Llm::OpenRouterDecisionClient::MAX_REQUEST_BYTES
+        expect(body['state']).to be_an(Array)
+        expect(body['model']).to eq(router_model)
+        expect(body['provider']).to include('only' => %w[perplexity], 'data_collection' => 'deny')
+      end.to_return(status: 200, body: answer.to_json)
+
+      result = Llm::Runtime.decide(routing_request(input: image_state))
+
+      expect(stub).to have_been_requested.once
+      expect(result).to have_attributes(choice: 'handwriting', model: router_model)
+      expect(result.probabilities).to eq('handwriting' => 0.9, 'no_handwriting' => 0.1)
+    end
+
+    it 'keeps the guard: a request above the limit of the feature is refused before it is sent' do
+      huge = ['An image.', { type: 'image_url', image_url: { url: "data:image/jpeg;base64,#{'A' * 1_100_000}" } }]
+
+      expect { Llm::Runtime.decide(routing_request(input: huge)) }.to raise_error(ArgumentError, /too large/)
+      expect(a_request(:post, endpoint)).not_to have_been_made
+    end
+
+    it 'does not widen the guard of the other decisions' do
+      stub_request(:post, endpoint).to_return(status: 200, body: response_body.to_json)
+
+      expect { Llm::Runtime.decide(decision_request(input: { 'text' => 'x' * 200_000 })) }.to raise_error(ArgumentError, /too large/)
+      expect(a_request(:post, endpoint)).not_to have_been_made
+    end
+
+    it 'records the call without the image in the llm_event' do
+      stub_request(:post, endpoint).to_return(status: 200, body: answer.to_json)
+
+      Llm::Runtime.decide(routing_request(input: image_state))
+
+      event = LlmEvent.find_by!(account_id: account.id, event_name: 'llm.decision.complete')
+      expect(event).to have_attributes(feature: 'image_routing', model: router_model, status: 'success')
+      expect(event.attributes.to_json).not_to include('base64')
+    end
+  end
+
   %i[captain_agent moderation].each do |feature|
     it "rejects #{feature} before invoking the decision client" do
       expect(Llm::OpenRouterDecisionClient).not_to receive(:choose)

@@ -3,6 +3,37 @@
 require 'rails_helper'
 
 RSpec.describe Llm::InstallationModelConfig do
+  describe 'the slots of the image models' do
+    it 'refuse a model whose vendor is not trusted with customer images' do
+      %w[CAPTAIN_IMAGE_RECOGNITION_MODEL CAPTAIN_IMAGE_HANDWRITING_MODEL CAPTAIN_IMAGE_ROUTER_MODEL].each do |name|
+        allow(Llm::Models).to receive(:model_allowed_for_feature?).and_return(true)
+
+        result = described_class.normalize(name, 'qwen/qwen3-vl-235b')
+
+        expect(result).not_to be_valid
+        expect(result.error).to include('Google, OpenAI и Perplexity')
+      end
+    end
+
+    it 'take the models of the trusted vendors' do
+      allow(Llm::Models).to receive(:model_allowed_for_feature?).and_return(true)
+
+      expect(described_class.normalize('CAPTAIN_IMAGE_RECOGNITION_MODEL', 'google/gemini-3.1-flash-lite').value).to eq('google/gemini-3.1-flash-lite')
+      expect(described_class.normalize('CAPTAIN_IMAGE_HANDWRITING_MODEL', 'openai/gpt-6.1-terra').value).to eq('openai/gpt-6.1-terra')
+      expect(described_class.normalize('CAPTAIN_IMAGE_ROUTER_MODEL', 'perplexity/pplx-decider-v1.2').value).to eq('perplexity/pplx-decider-v1.2')
+    end
+
+    it 'take a blank value: the platform default applies' do
+      expect(described_class.normalize('CAPTAIN_IMAGE_HANDWRITING_MODEL', '').value).to eq('')
+    end
+
+    it 'do not look at the vendor of the other slots' do
+      allow(Llm::Models).to receive(:model_allowed_for_feature?).and_return(true)
+
+      expect(described_class.normalize('CAPTAIN_COUNCIL_SPLIT_MODEL', 'qwen/qwen3-vl-235b').value).to eq('qwen/qwen3-vl-235b')
+    end
+  end
+
   describe '.manages?' do
     it 'covers every platform-managed model slot and the short list' do
       Llm::Config::INSTALLATION_MANAGED_MODEL_CONFIGS.each_value do |config_name|

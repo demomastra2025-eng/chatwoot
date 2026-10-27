@@ -93,7 +93,7 @@ class Captain::Runtime::ToolWrapper
 
     repeated_read = repeated_read_entry(normalized_args)
     request_stop = requested_tool_stop_result(normalized_args, count: counted_request?(repeated_read))
-    return complete_and_halt(request_stop) if request_stop
+    return refuse_or_halt(request_stop) if request_stop
 
     early_result = early_tool_result(normalized_args)
     return complete_and_halt(early_result) if terminal_early_result?(early_result)
@@ -101,7 +101,7 @@ class Captain::Runtime::ToolWrapper
     return complete_repeated_read(repeated_read) if repeated_read
 
     attempt_error = register_tool_execution_attempt(normalized_args)
-    return complete_and_halt(attempt_error) if attempt_error
+    return refuse_or_halt(attempt_error) if attempt_error
 
     execute_registered_tool(normalized_args)
   rescue Captain::Conversation::ControlGenerationStaleError
@@ -279,7 +279,7 @@ class Captain::Runtime::ToolWrapper
   def invalid_tool_arguments_result(error)
     normalized_args = {}
     request_stop = requested_tool_stop_result(normalized_args)
-    return complete_and_halt(request_stop) if request_stop
+    return refuse_or_halt(request_stop) if request_stop
 
     complete_and_render(
       Captain::ToolResult.failure(
@@ -611,6 +611,19 @@ class Captain::Runtime::ToolWrapper
     Captain::OutcomeFacts.record_tool(context_wrapper_context, @tool.name, result)
     @context_wrapper.callback_manager.emit_tool_complete(@tool.name, result, @context_wrapper)
     Captain::ToolResult.render(result)
+  end
+
+  # A refusal of the loop guard (a request budget, the attempt limit) ends the tool loop: the run takes no further step, and in a
+  # reply suggestion a second call without tools has to write the draft (AgentRunnerService#finalization_only_retry_response). A
+  # model that asks for more calls in one step than a budget allows must still be able to answer, so the first refusal of a reply
+  # suggestion is only the result of its call: the model sees it, the calls after it run as usual, and the model writes the draft in
+  # its next step, in the same chat. A refusal in a later step, or after the loop already ended, ends the run (ToolLoopGuard#first_strike?).
+  def refuse_or_halt(result)
+    if reply_suggestion_run? && !terminal_tool_stop? && tool_loop_guard.first_strike?(current_tool_batch_id)
+      return complete_and_render(Captain::ToolResult.normalize(result, retryable: false))
+    end
+
+    complete_and_halt(result)
   end
 
   def complete_and_halt(result)

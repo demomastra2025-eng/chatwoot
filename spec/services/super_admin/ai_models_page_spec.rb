@@ -96,14 +96,27 @@ RSpec.describe SuperAdmin::AiModelsPage do
     it 'follows the default model of the installation for the slots that have no model of their own' do
       values['CAPTAIN_DEFAULT_MODEL'] = 'openai/gpt-5.6-luna'
 
-      %w[CAPTAIN_CUSTOMER_NOTICE_MODEL CAPTAIN_IMAGE_RECOGNITION_MODEL CAPTAIN_LABEL_SUGGESTION_MODEL].each do |key|
+      %w[CAPTAIN_CUSTOMER_NOTICE_MODEL CAPTAIN_LABEL_SUGGESTION_MODEL].each do |key|
         expect(slot(key)).to have_attributes(default: 'openai/gpt-5.6-luna', default_note: :default_model), key
       end
       expect(slot('CAPTAIN_MODERATION_MODEL').default_note).to be_nil
     end
 
     it 'follows the built-in default model when the installation default is blank too' do
-      expect(slot('CAPTAIN_IMAGE_RECOGNITION_MODEL').default).to eq(Llm::Config::DEFAULT_MODEL)
+      expect(slot('CAPTAIN_LABEL_SUGGESTION_MODEL').default).to eq(Llm::Config::DEFAULT_MODEL)
+    end
+
+    it 'shows the models of their own as the built-in value of the image slots, whatever the default model of the installation is' do
+      values['CAPTAIN_DEFAULT_MODEL'] = 'openai/gpt-5.6-luna'
+
+      expect(slot('CAPTAIN_IMAGE_RECOGNITION_MODEL')).to have_attributes(default: 'google/gemini-3.1-flash-lite', default_note: nil)
+      expect(slot('CAPTAIN_IMAGE_HANDWRITING_MODEL')).to have_attributes(default: 'openai/gpt-6.1-terra', default_note: nil)
+      expect(slot('CAPTAIN_IMAGE_ROUTER_MODEL')).to have_attributes(default: 'perplexity/pplx-decider-v1.2', default_note: nil)
+    end
+
+    it 'puts the three image models in the group of the images' do
+      expect(described_class::GROUPS.fetch('images'))
+        .to eq(%w[CAPTAIN_IMAGE_RECOGNITION_MODEL CAPTAIN_IMAGE_HANDWRITING_MODEL CAPTAIN_IMAGE_ROUTER_MODEL])
     end
 
     it 'has a built-in value for the endpoint and for the short list of models' do

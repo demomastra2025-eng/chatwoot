@@ -65,7 +65,11 @@ RSpec.describe Captain::ReplySuggestion::HistoryBuilder do
     end
 
     def description_texts(entry)
-      entry[:content].filter_map { |part| part[:text] if part[:type] == 'text' && part[:text].start_with?('Image attachment:') }
+      entry[:content].filter_map { |part| part[:text] if part[:type] == 'text' && part[:text].start_with?('Image attachment') }
+    end
+
+    def automatic(text)
+      "Image attachment (automatic description, it may be inaccurate): #{text}"
     end
 
     it 'describes every image of the history, in one go, and never inside the builder of a message' do
@@ -79,17 +83,18 @@ RSpec.describe Captain::ReplySuggestion::HistoryBuilder do
       expect(Captain::ReplySuggestion::ImageDescriber).to have_received(:new).with(
         account: account, targets: images.map { |image| [image, image.external_url] }
       )
-      expect(result.flat_map { |entry| description_texts(entry) }).to eq(images.map { |image| "Image attachment: Снимок #{image.id}" })
+      expect(result.flat_map { |entry| description_texts(entry) }).to eq(images.map { |image| automatic("Снимок #{image.id}") })
     end
 
-    it 'sends the pixels of the newest images only, and the description of all of them' do
+    it 'sends the description of every image and the pixels or a link of none' do
       describer = instance_double(Captain::ReplySuggestion::ImageDescriber, perform: images.to_h { |image| [image.id, "Снимок #{image.id}"] })
       allow(Captain::ReplySuggestion::ImageDescriber).to receive(:new).and_return(describer)
 
       first, second, third = history
 
-      expect([first, second, third].map { |entry| image_parts(entry).size }).to eq([0, 1, 1])
+      expect([first, second, third].map { |entry| image_parts(entry).size }).to eq([0, 0, 0])
       expect([first, second, third].map { |entry| description_texts(entry).size }).to eq([1, 1, 1])
+      expect(history.to_json).not_to include('example.com')
     end
 
     it 'describes the images in parallel through the real describer and reuses the descriptions already cached' do
@@ -107,7 +112,7 @@ RSpec.describe Captain::ReplySuggestion::HistoryBuilder do
       result = history
 
       expect(calls).to match_array(images.last(2).map(&:id))
-      expect(description_texts(result.first)).to eq(['Image attachment: Уже описано'])
+      expect(description_texts(result.first)).to eq([automatic('Уже описано')])
     end
 
     it 'does not describe images when the assistant does not read images' do

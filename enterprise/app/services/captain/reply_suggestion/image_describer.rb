@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 # Descriptions of ALL the images of the history that the agent of a reply suggestion receives, never one after another:
-# a description that is already cached on the attachment is reused; the rest are made in parallel, at most MAX_CONCURRENCY at a time.
+# a description that is already cached on the attachment is reused (nearly always: it was made when the image arrived, see
+# Messages::ImageDescriptionService); the rest are made in parallel, at most MAX_CONCURRENCY at a time. An image that another call is
+# describing right now is not described twice: Captain::ImageRecognitionService waits for that description.
 #
 # targets: [[attachment, image_url], ...] (see Captain::OpenAiMessageBuilderService#describable_images).
 # Returns { attachment_id => description }. Image recognition never raises: it answers with its fallback text when it fails.

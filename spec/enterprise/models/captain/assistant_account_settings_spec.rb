@@ -17,6 +17,7 @@ RSpec.describe Captain::Assistant do
 
   it 'gives both external agents mandatory tools and common conversation settings' do
     [first, second].each do |assistant|
+      create(:captain_assistant_response, assistant: assistant, account: account)
       expect(assistant.selected_agent_tool_ids).to include('faq_lookup', 'handoff')
       expect(assistant.allowed_agent_tool_ids).to include('faq_lookup', 'handoff')
       expect(assistant.selected_agent_tool_ids).not_to include('resolve_conversation')

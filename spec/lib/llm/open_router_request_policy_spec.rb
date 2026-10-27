@@ -87,7 +87,7 @@ RSpec.describe Llm::OpenRouterRequestPolicy do
     end
 
     it 'never sends OpenRouter more than three models when it compiles a chat of a Luna 6 feature that has four fallbacks listed' do
-      %i[editor label_suggestion image_recognition].each do |feature|
+      %i[editor label_suggestion].each do |feature|
         chat = OpenRouterRequestPolicySpecChat.new(model: OpenRouterRequestPolicySpecModel.new('openai/gpt-6-luna', 'openrouter'))
 
         described_class.require_parameters!(chat, feature: feature, model: 'openai/gpt-6-luna', reasoning: true)
@@ -95,6 +95,14 @@ RSpec.describe Llm::OpenRouterRequestPolicy do
         expect(chat.params[:models].size).to be <= 3
         expect(chat.params[:models].first(2)).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
       end
+    end
+
+    it 'sends a customer image to the one reader the platform named, with no fallback model' do
+      chat = OpenRouterRequestPolicySpecChat.new(model: OpenRouterRequestPolicySpecModel.new('openai/gpt-6-luna', 'openrouter'))
+
+      described_class.require_parameters!(chat, feature: :image_recognition, model: 'openai/gpt-6-luna', reasoning: true)
+
+      expect(chat.params[:models]).to eq(['openai/gpt-6-luna'])
     end
 
     it 'uses tagged account and feature metadata for existing chat instances' do

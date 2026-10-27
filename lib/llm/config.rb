@@ -11,6 +11,8 @@ module Llm::Config
   INSTALLATION_MANAGED_MODEL_CONFIGS = {
     'audio_transcription' => 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL',
     'image_recognition' => 'CAPTAIN_IMAGE_RECOGNITION_MODEL',
+    'image_handwriting' => 'CAPTAIN_IMAGE_HANDWRITING_MODEL',
+    'image_routing' => 'CAPTAIN_IMAGE_ROUTER_MODEL',
     'help_center_search' => 'CAPTAIN_EMBEDDING_MODEL',
     'moderation' => 'CAPTAIN_MODERATION_MODEL',
     'custom_guardrail' => 'CAPTAIN_CUSTOM_GUARDRAIL_MODEL',
@@ -21,6 +23,9 @@ module Llm::Config
     'agent_routing_escalation' => 'CAPTAIN_AGENT_ROUTING_ESCALATION_MODEL',
     'council_split' => 'CAPTAIN_COUNCIL_SPLIT_MODEL'
   }.freeze
+  # The image readers have a platform default of their own (config/llm.yml): a blank slot is that default, never the installation default
+  # model (CAPTAIN_DEFAULT_MODEL), so moving the agent to another model never moves the reading of images with it.
+  OWN_DEFAULT_MODEL_FEATURES = %w[image_recognition image_handwriting].freeze
   OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1'.freeze
   OPENROUTER_DEFAULT_API_BASE = 'https://openrouter.ai/api/v1'.freeze
   RUNTIME_CACHE_KEY = :llm_config_runtime_cache
@@ -82,7 +87,7 @@ module Llm::Config
       explicit_model = explicit_model_for(feature_key, account: account)
       return explicit_model if explicit_model.present?
 
-      installation_model = installation_model_for(feature_key, account: account) unless Llm::FeatureProfile.decision_feature?(feature_key)
+      installation_model = installation_model_for(feature_key, account: account) unless follows_no_installation_default?(feature_key)
       return installation_model if installation_model.present?
 
       if feature_key.present?
@@ -378,6 +383,12 @@ module Llm::Config
       return unless runtime_usable_model?(canonical_model, account: account)
 
       canonical_model
+    end
+
+    # A decision feature picks among decision models, and an image reader has its own platform default: neither follows the
+    # installation default model.
+    def follows_no_installation_default?(feature_key)
+      Llm::FeatureProfile.decision_feature?(feature_key) || OWN_DEFAULT_MODEL_FEATURES.include?(feature_key.to_s)
     end
 
     def feature_model_allowed?(feature_key, model_name, account: nil)

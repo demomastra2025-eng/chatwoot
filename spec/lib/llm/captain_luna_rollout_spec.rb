@@ -44,23 +44,28 @@ RSpec.describe Llm::CaptainLunaRollout do
       expect(models_of(already_updated)).to eq({})
       expect(models_of(no_choice)).to be_blank
       [old_account, unset_account, already_updated, no_choice].each do |account|
-        described_class::FEATURES.each do |feature|
+        (described_class::FEATURES - Llm::Config::OWN_DEFAULT_MODEL_FEATURES).each do |feature|
           expect(Llm::Config.model_for(feature: feature, account: account)).to eq(target_model)
         end
+        # The image readers have a platform default of their own: the cut-over clears their account choices but never moves them to Luna.
+        expect(Llm::Config.model_for(feature: 'image_recognition', account: account)).to eq('google/gemini-3.1-flash-lite')
       end
       expect(config_value('CAPTAIN_DEFAULT_MODEL')).to eq(target_model)
       expect(InstallationConfig.where(name: %w[CAPTAIN_IMAGE_RECOGNITION_MODEL CAPTAIN_LABEL_SUGGESTION_MODEL])).to be_empty
       expect(InstallationConfig.find_by(name: 'CAPTAIN_AI_AGENT_DEFAULT_MODEL')).to be_nil
     end
 
-    it 'finds nothing to move at deploy: the seeded slot rows are blank and follow the default until the cut-over', :aggregate_failures do
+    it 'finds nothing to move at deploy: the seeded hint slot is blank and follows the default until the cut-over', :aggregate_failures do
       slots = %w[CAPTAIN_IMAGE_RECOGNITION_MODEL CAPTAIN_LABEL_SUGGESTION_MODEL]
       InstallationConfig.where(name: slots).destroy_all
 
       ConfigLoader.new.process
 
-      expect(InstallationConfig.where(name: slots).map(&:value)).to eq([nil, nil])
-      %i[image_recognition label_suggestion].each { |feature| expect(Llm::Config.model_for(feature: feature, fallback: nil)).to eq(old_model) }
+      expect(config_value('CAPTAIN_LABEL_SUGGESTION_MODEL')).to be_nil
+      expect(Llm::Config.model_for(feature: :label_suggestion, fallback: nil)).to eq(old_model)
+      # The image slot is seeded with the model of its own and never follows the default.
+      expect(config_value('CAPTAIN_IMAGE_RECOGNITION_MODEL')).to eq('google/gemini-3.1-flash-lite')
+      expect(Llm::Config.model_for(feature: :image_recognition, fallback: nil)).to eq('google/gemini-3.1-flash-lite')
     end
 
     it 'blanks the image recognition and label slots so they follow the default, and puts them back', :aggregate_failures do
@@ -74,10 +79,13 @@ RSpec.describe Llm::CaptainLunaRollout do
 
       expect(config_value('CAPTAIN_IMAGE_RECOGNITION_MODEL')).to be_blank
       expect(InstallationConfig.exists?(name: 'CAPTAIN_LABEL_SUGGESTION_MODEL')).to be(true)
-      %i[image_recognition label_suggestion].each { |feature| expect(Llm::Config.model_for(feature: feature, account: account)).to eq(target_model) }
+      expect(Llm::Config.model_for(feature: :label_suggestion, account: account)).to eq(target_model)
+      # Blank, the image slot is the platform default of the images, not Luna.
+      expect(Llm::Config.model_for(feature: :image_recognition, account: account)).to eq('google/gemini-3.1-flash-lite')
 
       InstallationConfig.find_by!(name: 'CAPTAIN_DEFAULT_MODEL').update!(value: old_model)
-      %i[image_recognition label_suggestion].each { |feature| expect(Llm::Config.model_for(feature: feature, account: account)).to eq(old_model) }
+      expect(Llm::Config.model_for(feature: :label_suggestion, account: account)).to eq(old_model)
+      expect(Llm::Config.model_for(feature: :image_recognition, account: account)).to eq('google/gemini-3.1-flash-lite')
 
       described_class.rollback!(plan)
       expect(config_value('CAPTAIN_IMAGE_RECOGNITION_MODEL')).to eq('openai/gpt-5.4-mini')

@@ -33,6 +33,8 @@ module Llm::Models
     'copilot' => %w[structured_output tool_calling tool_choice],
     'audio_transcription' => %w[audio_input transcription],
     'image_recognition' => %w[image_input],
+    'image_handwriting' => %w[image_input],
+    'image_routing' => %w[decision_classification],
     'help_center_search' => %w[embedding],
     'knowledge_rerank' => %w[rerank text_input text_output],
     'moderation' => %w[text_input text_output structured_output moderation]

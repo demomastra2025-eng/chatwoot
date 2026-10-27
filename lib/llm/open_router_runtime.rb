@@ -216,7 +216,8 @@ class Llm::OpenRouterRuntime
       Llm::OpenRouterDecisionClient.choose(
         state: request.input, **decision_question_arguments(request),
         model: model, api_key: api_key!(request), api_base: api_base(request),
-        provider: profile.provider_preferences, headers: headers.headers, timeout: decision_timeout_seconds(request)
+        provider: profile.provider_preferences, headers: headers.headers, timeout: decision_timeout_seconds(request),
+        max_request_bytes: request.profile.max_request_bytes
       )
     end
   end

@@ -79,6 +79,26 @@ RSpec.describe Integrations::LlmInstrumentation do
         expect(result).to eq('my_result')
       end
 
+      # The call is paid: an error of the call itself goes to the caller, and the call is not made a second time.
+      it 'does not run a call that failed a second time, and lets its error through' do
+        mock_span = instance_double(OpenTelemetry::Trace::Span)
+        allow(mock_span).to receive(:set_attribute)
+        allow(mock_span).to receive(:status=)
+        mock_tracer = instance_double(OpenTelemetry::Trace::Tracer)
+        allow(instance).to receive(:tracer).and_return(mock_tracer)
+        allow(mock_tracer).to receive(:in_span).and_yield(mock_span)
+        calls = 0
+
+        expect do
+          instance.instrument_llm_call(params) do
+            calls += 1
+            raise Faraday::TimeoutError, 'the provider did not answer'
+          end
+        end.to raise_error(Faraday::TimeoutError, 'the provider did not answer')
+
+        expect(calls).to eq(1)
+      end
+
       it 'handles errors gracefully and captures exceptions' do
         mock_span = instance_double(OpenTelemetry::Trace::Span)
         allow(mock_span).to receive(:status=)

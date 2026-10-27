@@ -490,6 +490,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     end
 
     it 'returns grouped agent and assistant tools with selection state' do
+      create(:captain_assistant_response, assistant: assistant, account: account)
       get "/api/v1/accounts/#{account.id}/captain/assistants/tools",
           params: { assistant_id: assistant.id },
           headers: admin.create_new_auth_token,

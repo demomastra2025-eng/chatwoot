@@ -175,6 +175,7 @@ RSpec.describe Captain::AgentRunContext do
     end
 
     it 'gives an agent of a multi-agent channel its own tools and prompt only: no plan, no transfer, no colleagues' do
+      create(:captain_assistant_response, assistant: entry, account: entry.account)
       runtime = described_class.new(entry: entry, conversation: conversation)
       runtime.prepare(context)
       runtime.activate(entry, context)

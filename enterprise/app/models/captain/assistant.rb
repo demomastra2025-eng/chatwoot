@@ -549,7 +549,7 @@ class Captain::Assistant < ApplicationRecord
       Captain::ToolAccess::SCOPE_AGENT,
       fallback_ids: fallback_ids
     )
-    selected_ids |= %w[faq_lookup handoff] if external_agent?
+    selected_ids = with_external_agent_tools(selected_ids) if external_agent?
     selected_ids -= ['resolve_conversation'] unless auto_completion_enabled?
     selected_ids
   end
@@ -752,6 +752,21 @@ class Captain::Assistant < ApplicationRecord
     external_agent?
   end
 
+  # Whether the agent has anything for faq_lookup to find: an approved FAQ entry it sees, or a chunk of a document it sees (the lookup
+  # falls back to the words of the documents when no entry answers; Captain::Tools::Account::FaqLookupService). Both are read in the
+  # scope of the lookup itself. An agent with neither has no faq_lookup tool: each call could only answer «nothing found», at the price
+  # of one more model step (about 0.8 s on PROD 27.10). The answer is kept for the life of the object; `reload` forgets it.
+  def faq_entries?
+    return @faq_entries if defined?(@faq_entries)
+
+    @faq_entries = id.present? && (faq_responses_visible? || document_chunks_visible?)
+  end
+
+  def reload(*)
+    remove_instance_variable(:@faq_entries) if defined?(@faq_entries)
+    super
+  end
+
   def handoff_enabled?
     external_agent?
   end
@@ -789,6 +804,14 @@ class Captain::Assistant < ApplicationRecord
   end
 
   private
+
+  def faq_responses_visible?
+    Captain::AssistantResponse.approved.visible_to_assistant(id).exists?
+  end
+
+  def document_chunks_visible?
+    Captain::DocumentChunk.where(account_id: account_id).visible_to_assistant(id).exists?
+  end
 
   def validate_conversational_model
     return if model.blank?
@@ -919,7 +942,7 @@ class Captain::Assistant < ApplicationRecord
       global_system_instruction: Llm::Config.global_agent_system_prompt,
       clinic_context: prompt_clinic_context,
       instruction: system_instruction,
-      faq_enabled: faq_enabled?,
+      faq_enabled: faq_enabled? && faq_entries?,
       human_handoff_enabled: handoff_enabled? && selected_agent_tool_ids.include?(HANDOFF_TOOL_ID),
       runtime_tool_ids: prompt_runtime_agent_tools.pluck(:id)
     }
@@ -1111,6 +1134,12 @@ class Captain::Assistant < ApplicationRecord
     return [] if legacy_scenario_id.blank?
 
     Array(config.to_h.dig('legacy_scenario_migration', 'explicit_tool_ids')).map(&:to_s) & selected_agent_tool_ids
+  end
+
+  # The tools every agent of the channel has: the transfer to staff, and the FAQ lookup where the agent has a FAQ (faq_entries?).
+  def with_external_agent_tools(tool_ids)
+    tool_ids |= %w[handoff]
+    faq_entries? ? tool_ids | %w[faq_lookup] : tool_ids - %w[faq_lookup]
   end
 
   def effective_tool_ids_for(scope_name, referenced_tool_ids:)

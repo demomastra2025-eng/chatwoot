@@ -60,7 +60,7 @@ RSpec.describe 'Customer attachments and the input guardrails' do
     }
   end
 
-  it 'scans the description of an image, which reaches the model beside the picture itself' do
+  it 'scans the description of an image, which is the only way the image reaches the model: never the picture or a link to it' do
     recognition = instance_double(Captain::ImageRecognitionService, perform: injection)
     allow(Captain::ImageRecognitionService).to receive(:new).and_return(recognition)
     attachment = message.attachments.build(account_id: message.account_id, file_type: :image, external_url: 'https://example.com/scan.jpg')
@@ -68,8 +68,9 @@ RSpec.describe 'Customer attachments and the input guardrails' do
 
     input = customer_input
 
-    expect(input).to be_a(RubyLLM::Content)
-    expect(input.attachments).not_to be_empty
+    expect(input).to be_a(String)
+    expect(input).to include('automatic description, it may be inaccurate', injection)
+    expect(input).not_to include('example.com')
     expect { check_input!(input) }.to raise_error(Llm::SafetyPolicy::UnsafeContentError) { |error|
       expect(error.reason).to eq(:prompt_injection)
     }

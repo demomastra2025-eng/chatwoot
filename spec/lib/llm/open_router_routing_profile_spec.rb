@@ -162,7 +162,7 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
     end
 
     it 'tries Luna 5.6 before the cheaper fallbacks when another chat feature runs on Luna 6' do
-      %i[copilot editor label_suggestion image_recognition].each do |feature|
+      %i[copilot editor label_suggestion].each do |feature|
         profile = described_class.for(feature: feature, model: 'openai/gpt-6-luna')
 
         expect(profile.models.first(2)).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
@@ -180,8 +180,61 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
       end
       expect(described_class.for(feature: :editor, model: 'openai/gpt-6-luna').models)
         .to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna openai/gpt-5.4-mini])
-      expect(described_class.for(feature: :image_recognition, model: 'openai/gpt-6-luna').models)
-        .to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna openai/gpt-5.4-mini])
+      expect(described_class.for(feature: :image_recognition, model: 'openai/gpt-6-luna').models).to eq(%w[openai/gpt-6-luna])
+    end
+
+    describe 'customer images' do
+      it 'have no fallback model: the reader named by the platform is the only one asked' do
+        %w[google/gemini-3.1-flash-lite openai/gpt-6.1-terra openai/gpt-6-luna openai/gpt-5.4-mini].each do |model|
+          profile = described_class.for(feature: :image_recognition, model: model)
+
+          expect(profile.models).to eq([model])
+          expect(profile.fallback_models).to be_empty
+        end
+        expect(described_class::FALLBACK_MODELS).not_to have_key('image_recognition')
+      end
+
+      it 'go only to the providers of Google for Gemini, of OpenAI or Azure for Terra, and of Perplexity for the router' do
+        {
+          'google/gemini-3.1-flash-lite' => %w[google-vertex google-ai-studio],
+          'openai/gpt-6.1-terra' => %w[openai azure],
+          'perplexity/pplx-decider-v1.2' => %w[perplexity]
+        }.each do |model, providers|
+          feature = model.start_with?('perplexity') ? :image_routing : :image_recognition
+          profile = described_class.for(feature: feature, model: model)
+
+          expect(profile.provider_preferences[:only]).to eq(providers)
+        end
+      end
+
+      it 'keep the providers the platform trusts whatever an account asks for' do
+        profile = described_class.for(
+          feature: :image_recognition, model: 'google/gemini-3.1-flash-lite',
+          runtime_preferences: { 'openrouter_provider_only' => %w[alibaba], 'openrouter_provider_order' => %w[alibaba google-vertex] }
+        )
+
+        expect(profile.provider_preferences[:only]).to eq(%w[google-vertex google-ai-studio])
+        expect(profile.provider_preferences[:order]).to eq(%w[google-vertex])
+      end
+
+      it 'refuse a model of a vendor the platform does not trust with images, and a model id without a vendor' do
+        %w[qwen/qwen3-vl-235b moonshotai/kimi-k3 gpt-5-mini].each do |model|
+          expect { described_class.for(feature: :image_recognition, model: model) }
+            .to raise_error(described_class::UntrustedImageModelError)
+        end
+        expect(described_class.trusted_image_providers('anthropic/claude-sonnet-5.5')).to be_nil
+      end
+
+      it 'keep the privacy preference of the workspace next to the providers' do
+        profile = described_class.for(feature: :image_recognition, model: 'openai/gpt-6.1-terra')
+
+        expect(profile.provider_preferences[:data_collection]).to eq('deny')
+        expect(profile.provider_preferences[:only]).to eq(%w[openai azure])
+      end
+
+      it 'do not change the routing of the other features' do
+        expect(described_class.for(feature: :editor, model: 'openai/gpt-5.4-mini').provider_preferences).not_to have_key(:only)
+      end
     end
 
     it 'keeps Luna 6 first for the editor, hints and copilot instead of ranking all listed models together' do

@@ -20,6 +20,8 @@ class Llm::OpenRouterDecisionClient
   REQUEST_TIMEOUT_SECONDS = 110
   MAX_RESPONSE_BYTES = 1_048_576
   MAX_REQUEST_BYTES = 131_072
+  # A call whose state carries an image (Llm::FeatureProfile#max_request_bytes) may ask for a larger body, up to this bound.
+  MAX_IMAGE_REQUEST_BYTES = 2_097_152
   SINGLE_QUESTION = 'reason'
   MAX_QUESTIONS = 16
   QUESTION_NAME = /\A[a-zA-Z0-9_-]{1,64}\z/
@@ -69,10 +71,16 @@ class Llm::OpenRouterDecisionClient
     def validate_request!(state, questions, options)
       raise ArgumentError, 'Unsupported decision model.' unless supported_model?(options[:model])
       raise ArgumentError, 'OpenRouter decision key is required.' unless options[:api_key].is_a?(String) && options[:api_key].present?
-      raise ArgumentError, 'Invalid decision state.' unless state.is_a?(Hash)
-      raise ArgumentError, 'Invalid decision timeout.' unless valid_timeout?(options[:timeout])
 
+      validate_state_and_bounds!(state, options)
       validate_questions!(questions)
+    end
+
+    # The state is an object, or a list of parts when it carries an image; the timeout and the request limit are bounded.
+    def validate_state_and_bounds!(state, options)
+      raise ArgumentError, 'Invalid decision state.' unless state.is_a?(Hash) || state.is_a?(Array)
+      raise ArgumentError, 'Invalid decision timeout.' unless valid_timeout?(options[:timeout])
+      raise ArgumentError, 'Invalid decision request limit.' unless valid_request_limit?(options[:max_request_bytes])
     end
 
     def validate_questions!(questions)
@@ -103,11 +111,15 @@ class Llm::OpenRouterDecisionClient
       timeout.nil? || (timeout.is_a?(Numeric) && timeout.finite? && timeout.positive? && timeout <= REQUEST_TIMEOUT_SECONDS)
     end
 
+    def valid_request_limit?(limit)
+      limit.nil? || (limit.is_a?(Integer) && limit.between?(MAX_REQUEST_BYTES, MAX_IMAGE_REQUEST_BYTES))
+    end
+
     # The Decisions endpoint rejects `"provider": null` (HTTP 400), so a blank preference is left out of the body.
     def build_request(uri, state, questions, options)
       body = JSON.generate({ model: options[:model], state: state, questions: question_bodies(questions),
                              provider: options[:provider].presence }.compact)
-      raise ArgumentError, 'Decision request too large.' if body.bytesize > MAX_REQUEST_BYTES
+      raise ArgumentError, 'Decision request too large.' if body.bytesize > (options[:max_request_bytes] || MAX_REQUEST_BYTES)
 
       Net::HTTP::Post.new(uri).tap do |request|
         request['Authorization'] = "Bearer #{options[:api_key]}"

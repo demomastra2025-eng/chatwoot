@@ -431,6 +431,8 @@ RSpec.describe Captain::Assistant, type: :model do
   describe 'tool access' do
     let(:account) { create(:account) }
     let(:assistant) { create(:captain_assistant, account: account) }
+    # The FAQ lookup is bound to an agent that has FAQ entries (see 'the FAQ lookup of an agent').
+    let!(:faq_entry) { create(:captain_assistant_response, assistant: assistant, account: account) } # rubocop:disable RSpec/LetSetup
 
     it 'keeps the default agent runtime on faq and handoff by default' do
       expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
@@ -869,6 +871,148 @@ RSpec.describe Captain::Assistant, type: :model do
     end
   end
 
+  # faq_lookup is bound to an agent that has FAQ entries to look up. Without any, each call could only answer «nothing found», at the
+  # price of one more model step (about 0.8 s on PROD 27.10).
+  describe 'the FAQ lookup of an agent' do
+    let(:account) { create(:account) }
+    let(:assistant) { create(:captain_assistant, account: account) }
+
+    def faq_tools(record)
+      [record.selected_agent_tool_ids, record.allowed_agent_tool_ids, record.direct_agent_tool_ids, record.agent_tools.map(&:name)]
+    end
+
+    context 'without FAQ entries' do
+      it 'is not among the tools of the agent in any form, and the handoff stays' do
+        expect(faq_tools(assistant)).to all(satisfy { |tool_ids| tool_ids.exclude?('faq_lookup') })
+        expect(assistant.selected_agent_tool_ids).to include('handoff')
+        expect(assistant.prompt_runtime_agent_tools.pluck(:id)).not_to include('faq_lookup')
+        expect(assistant.voice_runtime_agent_tools.pluck(:id)).not_to include('faq_lookup')
+      end
+
+      it 'is left out also when the clinic selected it in the tools of the agent' do
+        assistant.update!(config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup handoff] } } })
+
+        expect(assistant.selected_agent_tool_ids).not_to include('faq_lookup')
+        expect(assistant.agent_tools.map(&:name)).not_to include('faq_lookup')
+      end
+
+      it 'is not promised in the prompt: the sources are the instructions, the data and the tool results, without a FAQ' do
+        expect(assistant.send(:prompt_context)[:faq_enabled]).to be(false)
+        expect(assistant.agent_instructions).to include('tool results').and(satisfy { |text| text.exclude?('tool results and the FAQ') })
+      end
+
+      it 'keeps the platform switch of the FAQ as it is: only the binding follows the entries' do
+        expect(assistant.faq_enabled?).to be(true)
+        expect(assistant.faq_entries?).to be(false)
+      end
+    end
+
+    context 'with FAQ entries' do
+      before { create(:captain_assistant_response, assistant: assistant, account: account) }
+
+      it 'binds the tool in every form, and promises the FAQ in the prompt' do
+        expect(faq_tools(assistant)).to all(include('faq_lookup'))
+        expect(assistant.send(:prompt_context)[:faq_enabled]).to be(true)
+        expect(assistant.agent_instructions).to include('tool results and the FAQ')
+      end
+
+      it 'forgets the tool when the last entry is deleted and the agent is reloaded' do
+        expect(assistant.selected_agent_tool_ids).to include('faq_lookup')
+
+        Captain::AssistantResponse.where(assistant_id: assistant.id).destroy_all
+
+        expect(assistant.reload.selected_agent_tool_ids).not_to include('faq_lookup')
+      end
+    end
+
+    context 'with entries that the agent cannot look up' do
+      it 'does not count an entry that waits for approval' do
+        create(:captain_assistant_response, assistant: assistant, account: account, status: :pending)
+
+        expect(assistant.faq_entries?).to be(false)
+        expect(assistant.selected_agent_tool_ids).not_to include('faq_lookup')
+      end
+
+      it 'does not count a personal entry of another agent' do
+        other = create(:captain_assistant, account: account)
+        create(:captain_assistant_response, assistant: other, account: account, visibility: :personal)
+
+        expect(assistant.faq_entries?).to be(false)
+      end
+
+      it 'does not count the entry of another workspace' do
+        create(:captain_assistant_response, assistant: create(:captain_assistant, account: create(:account)))
+
+        expect(assistant.faq_entries?).to be(false)
+      end
+
+      it 'counts an entry that belongs to the whole workspace, which the lookup also finds' do
+        create(:captain_assistant_response, assistant: nil, account: account)
+
+        expect(assistant.faq_entries?).to be(true)
+        expect(assistant.selected_agent_tool_ids).to include('faq_lookup')
+      end
+
+      it 'counts a general entry of another agent of the workspace' do
+        other = create(:captain_assistant, account: account)
+        create(:captain_assistant_response, assistant: other, account: account, visibility: :general)
+
+        expect(assistant.faq_entries?).to be(true)
+      end
+    end
+
+    # faq_lookup also searches the words of the documents when no entry answers: an agent with documents and no entry keeps its way in.
+    context 'with documents and no FAQ entries' do
+      it 'binds the tool when the agent sees a document chunk, and promises the sources in the prompt' do
+        document = create(:captain_document, account: account, assistant: assistant)
+        create(:captain_document_chunk, account: account, assistant: assistant, document: document)
+
+        expect(assistant.faq_entries?).to be(true)
+        expect(assistant.selected_agent_tool_ids).to include('faq_lookup')
+        expect(assistant.send(:prompt_context)[:faq_enabled]).to be(true)
+      end
+
+      it 'counts the general document of another agent of the workspace' do
+        other = create(:captain_assistant, account: account)
+        document = create(:captain_document, account: account, assistant: other, visibility: :general)
+        create(:captain_document_chunk, account: account, assistant: other, document: document)
+
+        expect(assistant.faq_entries?).to be(true)
+      end
+
+      it 'does not count the personal document of another agent' do
+        other = create(:captain_assistant, account: account)
+        document = create(:captain_document, account: account, assistant: other, visibility: :personal)
+        create(:captain_document_chunk, account: account, assistant: other, document: document)
+
+        expect(assistant.faq_entries?).to be(false)
+        expect(assistant.selected_agent_tool_ids).not_to include('faq_lookup')
+      end
+
+      it 'does not count the document of another workspace' do
+        other_account = create(:account)
+        other = create(:captain_assistant, account: other_account)
+        document = create(:captain_document, account: other_account, assistant: other, visibility: :general)
+        create(:captain_document_chunk, account: other_account, assistant: other, document: document)
+
+        expect(assistant.faq_entries?).to be(false)
+      end
+
+      it 'does not count a document that has no chunks yet' do
+        create(:captain_document, account: account, assistant: assistant)
+
+        expect(assistant.faq_entries?).to be(false)
+      end
+    end
+
+    it 'leaves the tools of an assistant that does not talk to customers as they were: only external agents follow the entries' do
+      assistant.update!(usage_mode: 'internal_assistant')
+
+      expect(assistant.faq_enabled?).to be(false)
+      expect(assistant.selected_agent_tool_ids).to include('faq_lookup')
+    end
+  end
+
   describe 'legacy rule storage' do
     it 'moves custom rules into the editable prompt and clears the separate lists' do
       assistant = create(:captain_assistant, description: 'Own instructions', response_guidelines: ['Be concise'],
@@ -884,6 +1028,8 @@ RSpec.describe Captain::Assistant, type: :model do
   describe '#agent_instructions' do
     let(:account) { create(:account) }
     let(:assistant) { create(:captain_assistant, account: account) }
+    # The FAQ is promised in the prompt and its lookup is bound for an agent that has FAQ entries.
+    let!(:faq_entry) { create(:captain_assistant_response, assistant: assistant, account: account) } # rubocop:disable RSpec/LetSetup
     let(:clock) do
       {
         now_utc: '2026-10-12T18:56:00Z', now_local: '2026-10-12T23:56:00+05:00', timezone: 'Asia/Almaty',
@@ -1340,6 +1486,7 @@ RSpec.describe Captain::Assistant, type: :model do
   describe 'instruction and rule reference validation' do
     let(:account) { create(:account) }
     let(:assistant) { create(:captain_assistant, account: account) }
+    let!(:faq_entry) { create(:captain_assistant_response, assistant: assistant, account: account) } # rubocop:disable RSpec/LetSetup
 
     before do
       assistant.update!(

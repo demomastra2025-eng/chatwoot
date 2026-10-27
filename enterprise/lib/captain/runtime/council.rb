@@ -70,6 +70,7 @@ class Captain::Runtime::Council
     :__otel_tracing,
     :__llm_event_bus,
     Captain::Runtime::ToolLoopGuard::REQUEST_COUNTS_KEY, Captain::Runtime::ToolLoopGuard::TERMINAL_STOP_KEY,
+    Captain::Runtime::ToolLoopGuard::WARNED_BATCH_KEY,
     Captain::Runtime::TracingCallbacks::TRACE_EVENT_CONTEXT_KEY
   ].freeze
   # What a part must not hold of the main run: its durable session (only a writer gets it back), its graph, queue and plan.

@@ -225,6 +225,8 @@ RSpec.describe Llm::Config do
       expect(described_class::INSTALLATION_MANAGED_MODEL_CONFIGS).to eq(
         'audio_transcription' => 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL',
         'image_recognition' => 'CAPTAIN_IMAGE_RECOGNITION_MODEL',
+        'image_handwriting' => 'CAPTAIN_IMAGE_HANDWRITING_MODEL',
+        'image_routing' => 'CAPTAIN_IMAGE_ROUTER_MODEL',
         'help_center_search' => 'CAPTAIN_EMBEDDING_MODEL',
         'moderation' => 'CAPTAIN_MODERATION_MODEL',
         'custom_guardrail' => 'CAPTAIN_CUSTOM_GUARDRAIL_MODEL',
@@ -366,15 +368,60 @@ RSpec.describe Llm::Config do
       upsert_installation_config('CAPTAIN_IMAGE_RECOGNITION_MODEL', 'vendor/does-not-exist')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(transcription_catalog)
 
-      expect(described_class.model_for(feature: 'image_recognition')).to eq('openai/gpt-6-luna')
+      expect(described_class.model_for(feature: 'image_recognition')).to eq('google/gemini-3.1-flash-lite')
     end
 
     it 'defaults every chat-completion feature to Luna 6 before any catalog refresh when the platform chose nothing' do
       upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
 
-      %w[assistant editor copilot label_suggestion image_recognition].each do |feature|
+      %w[assistant editor copilot label_suggestion].each do |feature|
         expect(described_class.model_for(feature: feature)).to eq('openai/gpt-6-luna')
+      end
+    end
+
+    describe 'the image readers and their router' do
+      before do
+        upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+        allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
+        %w[CAPTAIN_IMAGE_RECOGNITION_MODEL CAPTAIN_IMAGE_HANDWRITING_MODEL CAPTAIN_IMAGE_ROUTER_MODEL].each do |name|
+          upsert_installation_config(name, '')
+        end
+      end
+
+      it 'have a platform default of their own when the settings are blank, the same for every account' do
+        account = create(:account, captain_models: { 'image_recognition' => 'gpt-5.4' })
+
+        [nil, account].each do |scope|
+          expect(described_class.model_for(feature: 'image_recognition', account: scope)).to eq('google/gemini-3.1-flash-lite')
+          expect(described_class.model_for(feature: 'image_handwriting', account: scope)).to eq('openai/gpt-6.1-terra')
+          expect(described_class.model_for(feature: 'image_routing', account: scope)).to eq('perplexity/pplx-decider-v1.2')
+        end
+      end
+
+      it 'never follow the default model of the installation' do
+        upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-5.6-luna')
+
+        expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-5.6-luna')
+        expect(described_class.model_for(feature: 'image_recognition')).to eq('google/gemini-3.1-flash-lite')
+        expect(described_class.model_for(feature: 'image_handwriting')).to eq('openai/gpt-6.1-terra')
+      end
+
+      it 'use the platform settings when they are filled' do
+        upsert_installation_config('CAPTAIN_IMAGE_RECOGNITION_MODEL', 'openai/gpt-6-luna')
+        upsert_installation_config('CAPTAIN_IMAGE_HANDWRITING_MODEL', 'openai/gpt-5.6-luna')
+        upsert_installation_config('CAPTAIN_IMAGE_ROUTER_MODEL', 'perplexity/pplx-decider-flash-v1.2')
+
+        expect(described_class.model_for(feature: 'image_recognition')).to eq('openai/gpt-6-luna')
+        expect(described_class.model_for(feature: 'image_handwriting')).to eq('openai/gpt-5.6-luna')
+        expect(described_class.model_for(feature: 'image_routing')).to eq('perplexity/pplx-decider-flash-v1.2')
+      end
+
+      it 'fall back to their own default, not to the default model, when a setting names an unusable model' do
+        upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-5.6-luna')
+        upsert_installation_config('CAPTAIN_IMAGE_HANDWRITING_MODEL', 'vendor/does-not-exist')
+
+        expect(described_class.model_for(feature: 'image_handwriting')).to eq('openai/gpt-6.1-terra')
       end
     end
 

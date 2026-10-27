@@ -189,6 +189,7 @@ RSpec.describe Captain::ReplySuggestionService do
       end
 
       it 'builds read-only agent tools and suggestion tools with action interception, and uses ephemeral session' do
+        create(:captain_assistant_response, assistant: assistant, account: account)
         runtime_agent = assistant.agent(read_only_tools: true)
         tool_names = runtime_agent.tools.map(&:name)
 
@@ -488,7 +489,8 @@ RSpec.describe Captain::ReplySuggestionService do
           service.perform
 
           parts = received_history.last[:content]
-          expect(parts).to include({ type: 'text', text: 'Image attachment: Снимок уха' })
+          expect(parts).to include({ type: 'text', text: 'Image attachment (automatic description, it may be inaccurate): Снимок уха' })
+          expect(parts.pluck(:type)).not_to include('image_url')
         end
       end
 
