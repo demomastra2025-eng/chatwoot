@@ -2,6 +2,7 @@
 import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import { useUISettings } from 'dashboard/composables/useUISettings';
+import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import {
   CRM_DEAL_MANAGE_PERMISSIONS,
@@ -58,9 +59,11 @@ export default {
   setup() {
     const { isAdmin } = useAdmin();
     const { updateUISettings } = useUISettings();
+    const { openPanel } = useConversationSidepanelAvailability();
     return {
       isAdmin,
       updateUISettings,
+      openPanel,
     };
   },
   data() {
@@ -304,7 +307,7 @@ export default {
         isAConversationRoute(this.$route.name) ||
         isAInboxViewRoute(this.$route.name)
       ) {
-        this.updateUISettings({
+        this.openPanel('deals', {
           is_contact_sidebar_open: false,
           is_crm_deal_panel_open: true,
         });

@@ -8,6 +8,7 @@ import MoreActions from './MoreActions.vue';
 import Avatar from 'next/avatar/Avatar.vue';
 import SLACardLabel from './components/SLACardLabel.vue';
 import wootConstants from 'dashboard/constants/globals';
+import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
 import { conversationListPageURL } from 'dashboard/helper/URLHelper';
 import { conversationListReturnPath } from 'dashboard/helper/conversationListReturnContext';
 import { snoozedReopenTime } from 'dashboard/helper/snoozeHelpers';
@@ -38,6 +39,7 @@ const props = defineProps({
 
 const { t } = useI18n();
 const store = useStore();
+const { openPanel } = useConversationSidepanelAvailability();
 const route = useRoute();
 const conversationHeader = ref(null);
 const { width } = useElementSize(conversationHeader);
@@ -242,29 +244,8 @@ const appointmentsSummaryTooltip = computed(() =>
     .join(' · ')
 );
 
-const updateSidebarPanel = panelSettings => {
-  const currentUiSettings = store?.getters?.getUISettings || {};
-  store?.dispatch?.('updateUISettings', {
-    uiSettings: {
-      ...currentUiSettings,
-      ...panelSettings,
-    },
-  });
-};
-
-const openDealsSidebar = () =>
-  updateSidebarPanel({
-    is_contact_sidebar_open: false,
-    is_crm_deal_panel_open: true,
-    is_scheduling_appointments_panel_open: false,
-  });
-
-const openAppointmentsSidebar = () =>
-  updateSidebarPanel({
-    is_contact_sidebar_open: false,
-    is_crm_deal_panel_open: false,
-    is_scheduling_appointments_panel_open: true,
-  });
+const openDealsSidebar = () => openPanel('deals');
+const openAppointmentsSidebar = () => openPanel('appointments');
 
 const communicationContactIdentityLabels = computed(() => {
   const contact = currentContact.value || props.chat.meta?.sender || {};
@@ -452,7 +433,9 @@ const statusMeta = computed(() => {
               >
                 <span
                   class="size-3 shrink-0"
-                  :class="appointmentStatusIcon(primaryAppointmentStatus.status)"
+                  :class="
+                    appointmentStatusIcon(primaryAppointmentStatus.status)
+                  "
                 />
                 <span class="max-w-36 truncate">
                   {{ appointmentStatusLabel(primaryAppointmentStatus.status) }}

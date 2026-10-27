@@ -65,7 +65,9 @@ vi.mock('dashboard/composables/useUISettings', () => ({
 }));
 
 vi.mock('dashboard/composables', () => ({ useTrack: vi.fn() }));
-vi.mock('shared/helpers/mitt', () => ({ emitter: { emit: vi.fn() } }));
+vi.mock('shared/helpers/mitt', () => ({
+  emitter: { emit: vi.fn(), on: vi.fn(), off: vi.fn() },
+}));
 
 const closedPanels = {
   is_contact_sidebar_open: false,

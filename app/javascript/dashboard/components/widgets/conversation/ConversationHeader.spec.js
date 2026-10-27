@@ -10,6 +10,7 @@ import { snoozedReopenTime } from 'dashboard/helper/snoozeHelpers';
 
 const storeState = vi.hoisted(() => ({
   selectedChat: { id: 7, status: 'open' },
+  openPanel: vi.fn(),
 }));
 const routeState = vi.hoisted(() => ({
   name: 'communication_thread_conversation',
@@ -91,6 +92,12 @@ vi.mock('vue-i18n', () => ({
 
 vi.mock('dashboard/composables/useInbox', () => ({
   useInbox: () => ({ isAWebWidgetInbox: { value: false } }),
+}));
+
+vi.mock('dashboard/composables/useConversationSidepanelAvailability', () => ({
+  useConversationSidepanelAvailability: () => ({
+    openPanel: storeState.openPanel,
+  }),
 }));
 
 const mountComponent = props =>
@@ -270,7 +277,8 @@ describe('ConversationHeader', () => {
     expect(identityRow.text()).not.toContain('Открыт');
   });
 
-  it('renders compact deal and appointment chips with +N counters when multiple items exist', () => {
+  it('renders compact deal and appointment chips with +N counters when multiple items exist', async () => {
+    storeState.openPanel.mockClear();
     const wrapper = mountComponent({
       chat: {
         id: 7,
@@ -321,6 +329,10 @@ describe('ConversationHeader', () => {
     );
 
     expect(contextRow.exists()).toBe(true);
+    await stages.trigger('click');
+    await statuses.trigger('click');
+    expect(storeState.openPanel).toHaveBeenNthCalledWith(1, 'deals');
+    expect(storeState.openPanel).toHaveBeenNthCalledWith(2, 'appointments');
     expect(
       titleRow.find('[data-test-id="conversation-header-context-row"]').exists()
     ).toBe(true);

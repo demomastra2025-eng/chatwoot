@@ -10,11 +10,8 @@ import {
   patientContactId,
   useConversationPatientContextStore,
 } from 'dashboard/stores/scheduling/patientContext';
-import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
-import { useWindowSize } from '@vueuse/core';
 import { vOnClickOutside } from '@vueuse/components';
-import wootConstants from 'dashboard/constants/globals';
 
 const props = defineProps({
   currentChat: {
@@ -35,8 +32,7 @@ const SchedulingConversationAppointmentsSidebar = defineAsyncComponent(
     )
 );
 
-const { uiSettings, updateUISettings } = useUISettings();
-const { activePanel, appointmentsAvailable } =
+const { activePanel, appointmentsAvailable, closePanel, isSmallScreen } =
   useConversationSidepanelAvailability();
 const route = useRoute();
 const router = useRouter();
@@ -107,7 +103,6 @@ watch(
   },
   { immediate: true }
 );
-const { width: windowWidth } = useWindowSize();
 const clickOutsideOptions = {
   ignore: [
     '[data-modal-safe-interaction]',
@@ -180,40 +175,12 @@ const refreshBoundPatient = async appointment => {
   await patientStore.load(key, owner, { force: true });
 };
 
-const isSmallScreen = computed(
-  () => windowWidth.value < wootConstants.SMALL_SCREEN_BREAKPOINT
-);
-
 const closeSidebar = () => {
-  if (
-    isSmallScreen.value &&
-    (uiSettings.value?.is_contact_sidebar_open ||
-      uiSettings.value?.is_crm_deal_panel_open ||
-      uiSettings.value?.is_scheduling_appointments_panel_open)
-  ) {
-    updateUISettings({
-      is_contact_sidebar_open: false,
-      is_crm_deal_panel_open: false,
-      is_scheduling_appointments_panel_open: false,
-    });
-  }
+  if (isSmallScreen.value && activePanel.value) closePanel();
 };
 
-const closeDealsSidebar = () => {
-  updateUISettings({
-    is_contact_sidebar_open: false,
-    is_crm_deal_panel_open: false,
-    is_scheduling_appointments_panel_open: false,
-  });
-};
-
-const closeAppointmentsSidebar = () => {
-  updateUISettings({
-    is_contact_sidebar_open: false,
-    is_crm_deal_panel_open: false,
-    is_scheduling_appointments_panel_open: false,
-  });
-};
+const closeDealsSidebar = () => closePanel();
+const closeAppointmentsSidebar = () => closePanel();
 </script>
 
 <template>

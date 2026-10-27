@@ -20,7 +20,6 @@ import SchedulingSelectField from 'dashboard/components-next/Scheduling/Scheduli
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
-import { useUISettings } from 'dashboard/composables/useUISettings';
 import { PERSON_DIALOG_OPENER } from 'dashboard/composables/useOpenPersonDialog';
 
 const props = defineProps({
@@ -113,9 +112,12 @@ const store = useStore();
 const getConversationById = useMapGetter('getConversationById');
 const getAllConversations = useMapGetter('getAllConversations');
 const currentChat = useMapGetter('getSelectedChat');
-const { activePanel, appointmentsAvailable } =
-  useConversationSidepanelAvailability();
-const { updateUISettings } = useUISettings();
+const {
+  activePanel,
+  appointmentsAvailable,
+  openPanel,
+  closePanel: closeConversationSidepanel,
+} = useConversationSidepanelAvailability();
 const appointmentsSidebarId = `crm-deal-appointments-${useId()}`;
 const appointmentsOpened = ref(false);
 
@@ -325,7 +327,7 @@ const showAppointmentsSidebar = computed(
 );
 const closeAppointmentsSidebar = () => {
   appointmentsOpened.value = false;
-  updateUISettings({ is_scheduling_appointments_panel_open: false });
+  closeConversationSidepanel({ is_scheduling_appointments_panel_open: false });
 };
 const toggleAppointmentsSidebar = () => {
   if (!canOpenAppointments.value) return;
@@ -335,11 +337,7 @@ const toggleAppointmentsSidebar = () => {
   }
 
   appointmentsOpened.value = true;
-  updateUISettings({
-    is_contact_sidebar_open: false,
-    is_crm_deal_panel_open: false,
-    is_scheduling_appointments_panel_open: true,
-  });
+  openPanel('appointments');
 };
 
 const clearConversationState = () => {

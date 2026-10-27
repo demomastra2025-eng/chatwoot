@@ -1,58 +1,24 @@
 <script setup>
 import Button from 'dashboard/components-next/button/Button.vue';
 import ButtonGroup from 'dashboard/components-next/buttonGroup/ButtonGroup.vue';
-import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
-import { computed } from 'vue';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
 
-const { uiSettings, updateUISettings } = useUISettings();
 const {
+  activePanel,
+  closePanel,
   dealsAvailable: showDealAction,
   appointmentsAvailable: showAppointmentAction,
+  openPanel,
 } = useConversationSidepanelAvailability();
 
-const isContactSidebarOpen = computed(
-  () => uiSettings.value.is_contact_sidebar_open
-);
-const isDealsSidebarOpen = computed(
-  () => uiSettings.value.is_crm_deal_panel_open
-);
-const isAppointmentsSidebarOpen = computed(
-  () => uiSettings.value.is_scheduling_appointments_panel_open
-);
-
 const toggleConversationSidebarToggle = () => {
-  updateUISettings({
-    is_contact_sidebar_open: !isContactSidebarOpen.value,
-    is_crm_deal_panel_open: false,
-    is_scheduling_appointments_panel_open: false,
-  });
+  if (activePanel.value === 'contact') closePanel();
+  else openPanel('contact');
 };
 
-const handleConversationSidebarToggle = () => {
-  updateUISettings({
-    is_contact_sidebar_open: true,
-    is_crm_deal_panel_open: false,
-    is_scheduling_appointments_panel_open: false,
-  });
-};
-
-const openDealsSidebar = () => {
-  updateUISettings({
-    is_contact_sidebar_open: false,
-    is_crm_deal_panel_open: true,
-    is_scheduling_appointments_panel_open: false,
-  });
-};
-
-const openAppointmentsSidebar = () => {
-  updateUISettings({
-    is_contact_sidebar_open: false,
-    is_crm_deal_panel_open: false,
-    is_scheduling_appointments_panel_open: true,
-  });
-};
+const openDealsSidebar = () => openPanel('deals');
+const openAppointmentsSidebar = () => openPanel('appointments');
 
 const keyboardEvents = {
   'Alt+KeyO': {
@@ -73,10 +39,10 @@ useKeyboardEvents(keyboardEvents);
       sm
       class="!rounded-full transition-all duration-[250ms] ease-out active:!scale-95 active:!brightness-105 active:duration-75"
       :class="{
-        'bg-n-alpha-2 active:shadow-sm': isContactSidebarOpen,
+        'bg-n-alpha-2 active:shadow-sm': activePanel === 'contact',
       }"
       icon="i-ph-user-bold"
-      @click="handleConversationSidebarToggle"
+      @click="openPanel('contact')"
     />
     <Button
       v-if="showDealAction"
@@ -86,7 +52,7 @@ useKeyboardEvents(keyboardEvents);
       sm
       class="!rounded-full transition-all duration-[250ms] ease-out active:!scale-95 active:duration-75"
       :class="{
-        'bg-n-alpha-2 active:shadow-sm': isDealsSidebarOpen,
+        'bg-n-alpha-2 active:shadow-sm': activePanel === 'deals',
       }"
       icon="i-lucide-briefcase-business"
       @click="openDealsSidebar"
@@ -99,7 +65,7 @@ useKeyboardEvents(keyboardEvents);
       sm
       class="!rounded-full transition-all duration-[250ms] ease-out active:!scale-95 active:duration-75"
       :class="{
-        'bg-n-alpha-2 active:shadow-sm': isAppointmentsSidebarOpen,
+        'bg-n-alpha-2 active:shadow-sm': activePanel === 'appointments',
       }"
       icon="i-lucide-calendar-clock"
       @click="openAppointmentsSidebar"
