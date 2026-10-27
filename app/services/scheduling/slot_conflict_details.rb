@@ -62,7 +62,7 @@ class Scheduling::SlotConflictDetails
     overlapping = merge_intervals(blocking_intervals).select do |first, last|
       first < @ends_at && last > @starts_at
     end
-    [overlapping.first.first, overlapping.last.last] if overlapping.any?
+    overlapping.first if overlapping.one?
   end
 
   def merge_intervals(intervals)

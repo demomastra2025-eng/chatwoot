@@ -40,6 +40,19 @@ RSpec.describe Scheduling::SlotConflictDetails do
                                occupied_intervals: []).perform).to eq({})
   end
 
+  it 'does not describe a free gap as one busy block' do
+    separate_visits = [
+      Struct.new(:id, :status, :starts_at, :ends_at).new(1, 'scheduled', busy_start, busy_start + 30.minutes),
+      Struct.new(:id, :status, :starts_at, :ends_at).new(2, 'scheduled', busy_start + 1.hour, busy_end)
+    ]
+    allow(availability).to receive(:appointments).and_return(separate_visits)
+
+    result = described_class.new(availability: availability, starts_at: busy_start + 15.minutes,
+                                 ends_at: busy_start + 75.minutes).perform
+
+    expect(result).to eq({})
+  end
+
   it 'uses the scheduling grid and working windows for the requested duration' do
     account = create(:account)
     doctor = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty',
