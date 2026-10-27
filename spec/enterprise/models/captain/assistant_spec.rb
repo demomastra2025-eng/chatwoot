@@ -961,6 +961,50 @@ RSpec.describe Captain::Assistant, type: :model do
       end
     end
 
+    # faq_lookup also searches the words of the documents when no entry answers: an agent with documents and no entry keeps its way in.
+    context 'with documents and no FAQ entries' do
+      it 'binds the tool when the agent sees a document chunk, and promises the sources in the prompt' do
+        document = create(:captain_document, account: account, assistant: assistant)
+        create(:captain_document_chunk, account: account, assistant: assistant, document: document)
+
+        expect(assistant.faq_entries?).to be(true)
+        expect(assistant.selected_agent_tool_ids).to include('faq_lookup')
+        expect(assistant.send(:prompt_context)[:faq_enabled]).to be(true)
+      end
+
+      it 'counts the general document of another agent of the workspace' do
+        other = create(:captain_assistant, account: account)
+        document = create(:captain_document, account: account, assistant: other, visibility: :general)
+        create(:captain_document_chunk, account: account, assistant: other, document: document)
+
+        expect(assistant.faq_entries?).to be(true)
+      end
+
+      it 'does not count the personal document of another agent' do
+        other = create(:captain_assistant, account: account)
+        document = create(:captain_document, account: account, assistant: other, visibility: :personal)
+        create(:captain_document_chunk, account: account, assistant: other, document: document)
+
+        expect(assistant.faq_entries?).to be(false)
+        expect(assistant.selected_agent_tool_ids).not_to include('faq_lookup')
+      end
+
+      it 'does not count the document of another workspace' do
+        other_account = create(:account)
+        other = create(:captain_assistant, account: other_account)
+        document = create(:captain_document, account: other_account, assistant: other, visibility: :general)
+        create(:captain_document_chunk, account: other_account, assistant: other, document: document)
+
+        expect(assistant.faq_entries?).to be(false)
+      end
+
+      it 'does not count a document that has no chunks yet' do
+        create(:captain_document, account: account, assistant: assistant)
+
+        expect(assistant.faq_entries?).to be(false)
+      end
+    end
+
     it 'leaves the tools of an assistant that does not talk to customers as they were: only external agents follow the entries' do
       assistant.update!(usage_mode: 'internal_assistant')
 

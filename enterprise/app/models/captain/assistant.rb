@@ -752,13 +752,14 @@ class Captain::Assistant < ApplicationRecord
     external_agent?
   end
 
-  # Whether the agent has a FAQ to look up: the approved entries it sees (the scope of the lookup itself, Captain::AssistantResponse).
-  # An agent without any has no faq_lookup tool: each call could only answer «nothing found», at the price of one more model step
-  # (about 0.8 s on PROD 27.10). The answer is kept for the life of the object; `reload` forgets it.
+  # Whether the agent has anything for faq_lookup to find: an approved FAQ entry it sees, or a chunk of a document it sees (the lookup
+  # falls back to the words of the documents when no entry answers; Captain::Tools::Account::FaqLookupService). Both are read in the
+  # scope of the lookup itself. An agent with neither has no faq_lookup tool: each call could only answer «nothing found», at the price
+  # of one more model step (about 0.8 s on PROD 27.10). The answer is kept for the life of the object; `reload` forgets it.
   def faq_entries?
     return @faq_entries if defined?(@faq_entries)
 
-    @faq_entries = id.present? && Captain::AssistantResponse.approved.visible_to_assistant(id).exists?
+    @faq_entries = id.present? && (faq_responses_visible? || document_chunks_visible?)
   end
 
   def reload(*)
@@ -803,6 +804,14 @@ class Captain::Assistant < ApplicationRecord
   end
 
   private
+
+  def faq_responses_visible?
+    Captain::AssistantResponse.approved.visible_to_assistant(id).exists?
+  end
+
+  def document_chunks_visible?
+    Captain::DocumentChunk.where(account_id: account_id).visible_to_assistant(id).exists?
+  end
 
   def validate_conversational_model
     return if model.blank?
