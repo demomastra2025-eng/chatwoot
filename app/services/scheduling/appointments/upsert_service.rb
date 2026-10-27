@@ -149,6 +149,7 @@ class Scheduling::Appointments::UpsertService
 
     normalized_phone = Integrations::Medelement::PhoneNumber.normalize(appointment.client_phone)
     return if normalized_phone.blank?
+    return if recorded_shared_phone?(target_contact, normalized_phone)
     return unless Contacts::SharedPhone.assignable_primary?(
       account_id: account.id,
       phone: normalized_phone,
@@ -156,6 +157,10 @@ class Scheduling::Appointments::UpsertService
     )
 
     target_contact.update!(phone_number: normalized_phone)
+  end
+
+  def recorded_shared_phone?(contact, phone)
+    Contacts::SharedPhone.share_of(contact)&.phone == phone
   end
 
   def confirm_attendance!
