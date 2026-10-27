@@ -43,9 +43,6 @@ describe('buildAgentDraft', () => {
       model: 'smart-model',
       thinkingEffort: 'low',
       temperature: 0.4,
-      faqLookup: true,
-      serviceSearch: true,
-      toolAccess: {},
     });
   });
 
@@ -57,28 +54,7 @@ describe('buildAgentDraft', () => {
       model: '',
       thinkingEffort: '',
       temperature: null,
-      faqLookup: true,
-      serviceSearch: true,
-      toolAccess: {},
     });
-  });
-
-  it('reads the switched-off FAQ lookup and service search from tool_access', () => {
-    const draft = buildAgentDraft({
-      ...assistant,
-      config: {
-        tool_access: {
-          agent: {
-            enabled: true,
-            tool_ids: ['handoff'],
-            disabled_tool_ids: ['faq_lookup'],
-          },
-        },
-      },
-    });
-    expect(draft.faqLookup).toBe(false);
-    expect(draft.serviceSearch).toBe(true);
-    expect(draft.toolAccess.agent.tool_ids).toEqual(['handoff']);
   });
 });
 
@@ -102,10 +78,6 @@ describe('isAgentDraftDirty', () => {
     );
     expect(isAgentDraftDirty(base, { ...base, model: '' })).toBe(true);
     expect(isAgentDraftDirty(base, { ...base, temperature: 0.9 })).toBe(true);
-    expect(isAgentDraftDirty(base, { ...base, faqLookup: false })).toBe(true);
-    expect(isAgentDraftDirty(base, { ...base, serviceSearch: false })).toBe(
-      true
-    );
   });
 
   it('does not count parameters the model does not support as changes', () => {
@@ -231,82 +203,6 @@ describe('buildAgentUpdatePayload', () => {
         temperature: 0.8,
       },
     });
-  });
-
-  it('sends the whole tool_access with the switched-off tools when a switch changes', () => {
-    const withAccess = buildAgentDraft({
-      ...assistant,
-      config: {
-        ...assistant.config,
-        tool_access: { agent: { enabled: true, tool_ids: ['handoff'] } },
-        context_access: { untouched: true },
-      },
-    });
-
-    expect(
-      buildAgentUpdatePayload(
-        withAccess,
-        { ...withAccess, faqLookup: false },
-        smartModel
-      )
-    ).toEqual({
-      config: {
-        tool_access: {
-          agent: {
-            enabled: true,
-            tool_ids: ['handoff'],
-            disabled_tool_ids: ['faq_lookup'],
-          },
-        },
-      },
-    });
-
-    const off = buildAgentDraft({
-      ...assistant,
-      config: {
-        tool_access: {
-          agent: {
-            enabled: true,
-            tool_ids: ['handoff'],
-            disabled_tool_ids: ['faq_lookup', 'search_scheduling_services'],
-          },
-        },
-      },
-    });
-    const turnedOn = buildAgentUpdatePayload(
-      off,
-      { ...off, faqLookup: true },
-      smartModel
-    );
-    expect(turnedOn.config.tool_access.agent.disabled_tool_ids).toEqual([
-      'search_scheduling_services',
-    ]);
-    const allOn = buildAgentUpdatePayload(
-      off,
-      { ...off, faqLookup: true, serviceSearch: true },
-      smartModel
-    );
-    expect(allOn.config.tool_access.agent).toEqual({
-      enabled: true,
-      tool_ids: ['handoff'],
-    });
-  });
-
-  it('sends the switches together with the model group in one config', () => {
-    const payload = buildAgentUpdatePayload(
-      base,
-      { ...base, model: 'plain-model', serviceSearch: false },
-      plainModel
-    );
-    expect(Object.keys(payload.config).sort()).toEqual([
-      'model',
-      'temperature',
-      'thinking_effort',
-      'tool_access',
-    ]);
-    expect(payload.config.tool_access.agent.disabled_tool_ids).toEqual([
-      'search_scheduling_services',
-    ]);
   });
 
   it('stores the platform default model as null', () => {

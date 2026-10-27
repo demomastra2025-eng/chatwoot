@@ -533,11 +533,9 @@ class Captain::Assistant < ApplicationRecord
     explicit_tool_ids = companion_expanded_tool_ids(Array(referenced_tool_ids).map(&:to_s))
     explicit_tool_ids -= capability_controlled_tool_ids_for_scope(Captain::ToolAccess::SCOPE_AGENT)
 
-    switched_off_ids = Captain::ToolAccess.switched_off_tool_ids(self)
-
     (scenario_default_tool_ids + explicit_tool_ids)
       .uniq
-      .select { |tool_id| available_ids.include?(tool_id) && tool_id != 'get_appointment_provider_status' && switched_off_ids.exclude?(tool_id) }
+      .select { |tool_id| available_ids.include?(tool_id) && tool_id != 'get_appointment_provider_status' }
   end
 
   def selected_agent_tool_ids
@@ -551,8 +549,7 @@ class Captain::Assistant < ApplicationRecord
       Captain::ToolAccess::SCOPE_AGENT,
       fallback_ids: fallback_ids
     )
-    selected_ids |= %w[handoff] if external_agent?
-    selected_ids |= %w[faq_lookup] if faq_enabled?
+    selected_ids |= %w[faq_lookup handoff] if external_agent?
     selected_ids -= ['resolve_conversation'] unless auto_completion_enabled?
     selected_ids
   end
@@ -603,7 +600,6 @@ class Captain::Assistant < ApplicationRecord
     selected_ids = selected_agent_tool_ids
     referenced_ids = prompt_referenced_tool_ids_for_template(:assistant)
     prompt_ids = companion_expanded_tool_ids(referenced_ids) - capability_controlled_tool_ids_for_scope(Captain::ToolAccess::SCOPE_AGENT)
-    prompt_ids -= Captain::ToolAccess.switched_off_tool_ids(self)
     direct_tools = Captain::ToolCatalog.available_tools_for_ids(self, Captain::ToolAccess::SCOPE_AGENT, selected_ids)
     prompt_tools = Captain::ToolCatalog.available_tools_for_ids(self, Captain::ToolAccess::SCOPE_AGENT, prompt_ids).select do |tool|
       prompt_visible_tool?(tool, scope_name: Captain::ToolAccess::SCOPE_AGENT)
@@ -752,9 +748,8 @@ class Captain::Assistant < ApplicationRecord
     Captain::AccountSettings::MESSAGE_MODE_FROM_API.fetch(account_settings.section('handoff').dig('handoff_message', 'mode'))
   end
 
-  # The FAQ lookup is on for every customer-facing agent unless the agent has switched it off (Captain::ToolAccess.switched_off_tool_ids).
   def faq_enabled?
-    external_agent? && !Captain::ToolAccess.tool_switched_off?(self, 'faq_lookup')
+    external_agent?
   end
 
   def handoff_enabled?
@@ -1126,11 +1121,9 @@ class Captain::Assistant < ApplicationRecord
     explicit_tool_ids = companion_expanded_tool_ids(Array(referenced_tool_ids).map(&:to_s))
     explicit_tool_ids -= capability_controlled_tool_ids_for_scope(scope_name)
 
-    switched_off_ids = scope_name.to_s == Captain::ToolAccess::SCOPE_AGENT ? Captain::ToolAccess.switched_off_tool_ids(self) : []
-
     companion_expanded_tool_ids(selected_ids + explicit_tool_ids)
       .uniq
-      .select { |tool_id| available_ids.include?(tool_id) && switched_off_ids.exclude?(tool_id) }
+      .select { |tool_id| available_ids.include?(tool_id) }
   end
 
   def companion_expanded_tool_ids(tool_ids)

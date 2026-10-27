@@ -10,12 +10,10 @@ import {
 import AgentToolChips from './AgentToolChips.vue';
 import AgentModelBlock from './AgentModelBlock.vue';
 import AgentFollowUpsSummary from './AgentFollowUpsSummary.vue';
-import AgentReadToolsBlock from './AgentReadToolsBlock.vue';
 
 // «Инструкция» tab: the instruction editor with the @ tools / $ fields
-// pickers and the read-only tool chips; side column with the «Модель»,
-// «Что агент ищет сам» (FAQ and service search switches) and «Дожимы»
-// blocks. The page owns the draft and the save.
+// pickers and the read-only tool chips; side column with the «Модель»
+// and «Дожимы» blocks. The page owns the draft and the save.
 const props = defineProps({
   assistant: { type: Object, required: true },
   draft: { type: Object, required: true },
@@ -152,11 +150,6 @@ const instructionError = computed(() => {
         v-model:effort="thinkingEffort"
         :assistant="assistant"
         :disabled="!canEdit"
-      />
-      <AgentReadToolsBlock
-        :draft="draft"
-        :disabled="!canEdit"
-        @update:draft="emit('update:draft', $event)"
       />
       <AgentFollowUpsSummary
         :assistant="assistant"

@@ -3891,13 +3891,6 @@
         "NONE": "The agent does not work in any channel",
         "CONFIGURE": "Configure"
       },
-      "READ_TOOLS": {
-        "TITLE": "What the agent looks up",
-        "FAQ": "FAQ answers",
-        "FAQ_HINT": "Answer questions from the question-and-answer base",
-        "SERVICES": "Services and prices",
-        "SERVICES_HINT": "Find catalog services and their prices"
-      },
       "FOLLOW_UPS": {
         "TITLE": "Follow-ups",
         "ON": "On",
