@@ -80,6 +80,103 @@ RSpec.describe Captain::ImageRecognitionService do
     expect(service.perform).to eq(described_class::FALLBACK_DESCRIPTION)
   end
 
+  # A reading that fails costs up to 90 s; it must not be paid again by every suggestion and every run of the conversation.
+  describe 'a reading that fails' do
+    let(:failures_key) { described_class::FAILURE_KEY }
+
+    before { allow(reader).to receive(:read).and_raise(Captain::ImageReading::Picture::Unreadable, 'the image cannot be decoded') }
+
+    it 'is written down on the attachment: the number of attempts, the time and the class of the error, nothing of the image' do
+      service.perform
+
+      expect(attachment.reload.meta[failures_key]).to include(
+        'count' => 1, 'error' => 'Captain::ImageReading::Picture::Unreadable', 'at' => be_a(String)
+      )
+      expect(attachment.meta.to_json).not_to match(/example\.com|cannot be decoded/)
+    end
+
+    it 'is tried once more, and then no more: the third call gets the fallback at once, without any reading' do
+      3.times { expect(service.perform).to eq(described_class::FALLBACK_DESCRIPTION) }
+
+      expect(reader).to have_received(:read).twice
+      expect(attachment.reload.meta[failures_key]['count']).to eq(2)
+    end
+
+    it 'stops the calls of a service made later too, because the memory is on the attachment' do
+      2.times { service.perform }
+      later = described_class.new(account: account, attachment: Attachment.find(attachment.id), image_url: attachment.external_url)
+      allow(later).to receive_messages(model: 'gpt-5.4-mini', handwriting_model: 'openai/gpt-6.1-terra')
+
+      expect(later.perform).to eq(described_class::FALLBACK_DESCRIPTION)
+      expect(reader).to have_received(:read).twice
+    end
+
+    it 'is read again once the waiting time has passed, and a good reading wipes the memory' do
+      2.times { service.perform }
+
+      travel_to((described_class::RETRY_AFTER + 1.minute).from_now) do
+        allow(reader).to receive(:read).and_return(reading)
+
+        expect(service.perform).to eq('Screenshot with an order error')
+      end
+      expect(attachment.reload.meta).not_to have_key(failures_key)
+      expect(attachment.meta).to include('image_recognition_description' => 'Screenshot with an order error')
+    end
+
+    it 'waits again after a failed attempt that follows the waiting time' do
+      2.times { service.perform }
+
+      travel_to((described_class::RETRY_AFTER + 1.minute).from_now) do
+        service.perform
+        service.perform
+      end
+      expect(reader).to have_received(:read).exactly(3).times
+      expect(attachment.reload.meta[failures_key]['count']).to eq(3)
+    end
+
+    it 'counts a reading that gave no text as a failure' do
+      allow(reader).to receive(:read).and_return(Captain::ImageReading::Reader::Reading.new(description: nil, reader: :ordinary, model: 'm'))
+
+      service.perform
+
+      expect(attachment.reload.meta[failures_key]).to include('count' => 1, 'error' => 'EmptyReading')
+    end
+
+    it 'does not write the key or the models of the platform down against the image' do
+      allow(reader).to receive(:read).and_raise(RubyLLM::UnauthorizedError.new(nil, 'bad key'))
+      3.times { service.perform }
+      allow(reader).to receive(:read).and_raise(Captain::ImageReading::Reader::NoReaderModel, 'no model for the handwriting reader')
+      3.times { service.perform }
+
+      expect(attachment.reload.meta).not_to have_key(failures_key)
+      expect(reader).to have_received(:read).exactly(6).times
+    end
+
+    it 'never raises when the memory cannot be written: the caller gets the fallback' do
+      allow(attachment).to receive(:update!).and_raise(ActiveRecord::StatementInvalid)
+
+      expect(service.perform).to eq(described_class::FALLBACK_DESCRIPTION)
+    end
+
+    it 'does not make a waiter try for the third time when the holder failed for the second' do
+      lock_key = "#{described_class::LOCK_PREFIX}:#{attachment.id}"
+      stub_const("#{described_class}::POLL_SECONDS", 0.01)
+      Redis::Alfred.set(lock_key, 'other-process', nx: true, ex: 30)
+      worker = Thread.new do
+        sleep 0.1
+        Attachment.find(attachment.id).update!(meta: { failures_key => { 'count' => 2, 'at' => Time.current.iso8601, 'error' => 'X' } })
+        Redis::Alfred.delete(lock_key)
+      end
+
+      expect(service.perform).to eq(described_class::FALLBACK_DESCRIPTION)
+      worker.join
+
+      expect(reader).not_to have_received(:read)
+    ensure
+      Redis::Alfred.delete(lock_key)
+    end
+  end
+
   describe 'the models' do
     let(:plain) { described_class.new(account: account, attachment: attachment, image_url: attachment.external_url) }
 
@@ -135,7 +232,8 @@ RSpec.describe Captain::ImageRecognitionService do
     end
 
     it 'holds the lock long enough for a slow reading and waits for one as long' do
-      expect(described_class::LOCK_TTL_SECONDS).to be >= 60
+      # the router (up to 8 s) and a reader that times out (45 s) and is tried once more: 98 s, and the lock must outlive them
+      expect(described_class::LOCK_TTL_SECONDS).to be >= 150
       expect(described_class::WAIT_SECONDS).to be >= 20
     end
 

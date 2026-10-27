@@ -5,7 +5,7 @@
 class Messages::ImageDescriptionJob < ApplicationJob
   queue_as :audio_transcription
 
-  retry_on ActiveStorage::FileNotFoundError, wait: 2.seconds, attempts: 3
+  # A file that is attached but not yet in the storage is NotReady too (see Messages::ImageDescriptionService#perform).
   retry_on Messages::ImageDescriptionService::NotReady, wait: 3.seconds, attempts: 4 do |job, error|
     Rails.logger.info("[CAPTAIN][ImageDescription] attachment_id=#{job.arguments.first} left for the run: #{error.message}")
   end

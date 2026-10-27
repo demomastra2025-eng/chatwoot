@@ -18,7 +18,8 @@ class Messages::ImageDescriptionService
   MAX_MESSAGE_AGE = 6.hours
   MESSAGE_TYPES = %w[incoming outgoing].freeze
 
-  # The file of the image is not attached yet (some channels attach it after the message is saved).
+  # The file of the image is not attached yet (some channels attach it after the message is saved), or is attached but its bytes are not
+  # in the storage yet (the record is saved before its upload ends).
   class NotReady < StandardError; end
 
   class << self
@@ -71,6 +72,7 @@ class Messages::ImageDescriptionService
 
     url = image_url
     return if url.blank?
+    raise NotReady, "image attachment #{attachment.id} is not in the storage yet" unless stored?
 
     Captain::ImageRecognitionService.new(account: attachment.message.account, attachment: attachment, image_url: url).perform
   end
@@ -83,6 +85,12 @@ class Messages::ImageDescriptionService
     return target.last if target
 
     raise NotReady, "image attachment #{attachment.id} has no file yet" if awaiting_file?
+  end
+
+  # The reading would fail on a file that is not in the storage yet, and the failure would be written down against the image: wait for it.
+  def stored?
+    blob = attachment.file.blob if attachment.file.attached?
+    blob.nil? || blob.service.exist?(blob.key)
   end
 
   def awaiting_file?

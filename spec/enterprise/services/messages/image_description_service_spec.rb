@@ -140,5 +140,28 @@ RSpec.describe Messages::ImageDescriptionService do
         expect(Captain::ImageRecognitionService).to have_received(:new).with(hash_including(account: account, attachment: attachment))
       end
     end
+
+    # The record is saved before its upload ends: a reading then fails on the missing file and the failure would be written against
+    # the image. The job waits for the bytes instead (it retries on NotReady).
+    context 'when the file is attached but its bytes are not in the storage yet' do
+      let(:attachment_attributes) { {} }
+
+      before do
+        attachment.file.attach(io: Rails.root.join('spec/assets/avatar.png').open, filename: 'avatar.png', content_type: 'image/png')
+      end
+
+      it 'asks for another try later and reads nothing' do
+        allow(attachment.file.blob.service).to receive(:exist?).with(attachment.file.blob.key).and_return(false)
+
+        expect { described_class.new(attachment).perform }.to raise_error(described_class::NotReady, /not in the storage/)
+        expect(Captain::ImageRecognitionService).not_to have_received(:new)
+      end
+
+      it 'reads the image once the bytes are there' do
+        described_class.new(attachment).perform
+
+        expect(recognition).to have_received(:perform)
+      end
+    end
   end
 end
