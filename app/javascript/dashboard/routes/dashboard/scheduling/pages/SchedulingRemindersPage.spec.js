@@ -7,6 +7,7 @@ import kkScheduling from 'dashboard/i18n/locale/kk/scheduling.json';
 import enScheduling from 'dashboard/i18n/locale/en/scheduling.json';
 import SchedulingRemindersPage from './SchedulingRemindersPage.vue';
 import AppointmentTemplatePackDialog from 'dashboard/components-next/Scheduling/AppointmentTemplatePackDialog.vue';
+import { fetchAppointmentFieldFill } from 'dashboard/helper/appointmentFieldFill';
 
 const mockAlert = vi.fn();
 vi.mock('dashboard/composables', () => ({
@@ -79,6 +80,7 @@ describe('SchedulingRemindersPage', () => {
 
   beforeEach(() => {
     mockAlert.mockReset();
+    fetchAppointmentFieldFill.mockResolvedValue([]);
 
     if (typeof HTMLDialogElement !== 'undefined') {
       HTMLDialogElement.prototype.showModal =
@@ -303,6 +305,38 @@ describe('SchedulingRemindersPage', () => {
       4: '[Специалист](field://appointment.resource_name)',
       5: '[Услуга](field://appointment.service_name_snapshot)',
     });
+  });
+
+  it('warns beside a mapped field and disables save when future visits lack its value', async () => {
+    fetchAppointmentFieldFill.mockResolvedValue([
+      {
+        field_id: 'appointment.service_name_snapshot',
+        total: 100,
+        empty: 38,
+        share: 0.38,
+        blocking: true,
+      },
+    ]);
+    mountPage();
+    await flushPromises();
+
+    wrapper.vm.presetStates.appointment_day_before.variableBindings['5'] =
+      'service_name';
+    wrapper.vm.expandedPresetKey = 'appointment_day_before';
+    await flushPromises();
+
+    const card = wrapper.find(
+      '[data-testid="reminder-preset-card-appointment_day_before"]'
+    );
+    expect(card.text()).toContain('38%');
+    expect(
+      card.find('button[role="switch"]').attributes('disabled')
+    ).toBeDefined();
+    const saveButton = card
+      .findAll('button')
+      .find(button => button.text().includes('Сохранить сценарий'));
+    expect(saveButton.attributes('disabled')).toBeDefined();
+    expect(createAutomationAction).not.toHaveBeenCalled();
   });
 
   it.each(['ru', 'kk', 'en'])(

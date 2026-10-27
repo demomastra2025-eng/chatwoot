@@ -576,7 +576,7 @@ const savePreset = async preset => {
       currentAccount.value?.id,
       mappedFieldIds(preset)
     );
-    if (blockedFields(preset).length && presetStates[preset.key].enabled) {
+    if (blockedFields(preset).length) {
       const share = Math.round(blockedFields(preset)[0].share * 100);
       useAlert(t('SCHEDULING.REMINDERS.ERRORS.FIELD_EMPTY_WARNING', { share }));
       return;
@@ -925,8 +925,7 @@ onMounted(() => {
                       :disabled="
                         !presetStates[preset.key].templateKey ||
                         missingBindings(preset) ||
-                        (presetStates[preset.key].enabled &&
-                          blockedFields(preset).length > 0)
+                        blockedFields(preset).length > 0
                       "
                       @click="savePreset(preset)"
                     />
