@@ -762,10 +762,12 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
     if (data.suggestion_request_id !== suggestionRequestId.value) return;
     if (!shouldAcceptEvent(data)) return;
     if (suggestionPhase.value !== PHASE.GENERATING) return;
+    if (!sameConversation(data.conversation_id, trackedConversationId.value))
+      return;
 
-    const seq = Number(data.seq) || 0;
-    if (seq && seq <= lastPreviewSeq) return;
-    if (seq) lastPreviewSeq = seq;
+    const seq = Number(data.seq);
+    if (!Number.isSafeInteger(seq) || seq <= lastPreviewSeq) return;
+    lastPreviewSeq = seq;
     streamingText.value = typeof data.text === 'string' ? data.text : '';
   }
 

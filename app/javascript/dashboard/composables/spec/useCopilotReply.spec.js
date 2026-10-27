@@ -535,6 +535,19 @@ describe('useCopilotReply', () => {
       expect(copilot.streamingText.value).toBe('Здравствуйте, Анна! Приём');
     });
 
+    it('requires a conversation and an increasing positive sequence', async () => {
+      const copilot = await generating();
+
+      emitPreview('Текст без диалога', { conversation_id: null });
+      emitPreview('Текст без номера', { seq: undefined });
+      emitPreview('Текст с нулевым номером', { seq: 0 });
+      expect(copilot.streamingText.value).toBe('');
+
+      emitPreview('Здравствуйте, Анна!', { seq: 1 });
+      emitPreview('Устаревший текст', { seq: 1 });
+      expect(copilot.streamingText.value).toBe('Здравствуйте, Анна!');
+    });
+
     it('takes the text back when the server says that what was written is not the answer', async () => {
       const copilot = await generating();
       emitPreview('Сейчас проверю расписание', { seq: 1 });
