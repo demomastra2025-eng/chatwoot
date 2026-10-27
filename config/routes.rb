@@ -228,7 +228,6 @@ Rails.application.routes.draw do
             resources :cabinets, only: [:index]
             resources :appointments, only: [:index, :show, :create, :update, :destroy] do
               post :cancel, on: :member
-              post :conversation, action: :create_conversation, on: :member
             end
             resources :provider_commands, only: [:index, :show, :create] do
               post :confirm, on: :member
