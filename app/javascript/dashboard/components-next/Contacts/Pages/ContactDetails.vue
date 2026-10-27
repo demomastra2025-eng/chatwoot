@@ -3,13 +3,13 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
+import { useOpenPersonDialog } from 'dashboard/composables/useOpenPersonDialog';
 import { dynamicTime } from 'shared/helpers/timeHelper';
 import camelcaseKeys from 'camelcase-keys';
 
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ContactLabels from 'dashboard/components-next/Contacts/ContactLabels/ContactLabels.vue';
-import ComposeConversation from 'dashboard/components-next/NewConversation/ComposeConversation.vue';
 import ContactsForm from 'dashboard/components-next/Contacts/ContactsForm/ContactsForm.vue';
 import ConfirmContactDeleteDialog from 'dashboard/components-next/Contacts/ContactsForm/ConfirmContactDeleteDialog.vue';
 import Policy from 'dashboard/components/policy.vue';
@@ -33,7 +33,7 @@ const { t } = useI18n();
 const store = useStore();
 
 const confirmDeleteContactDialogRef = ref(null);
-const composeConversationRef = ref(null);
+const { openPersonDialog } = useOpenPersonDialog();
 
 const avatarFile = ref(null);
 const avatarUrl = ref('');
@@ -289,11 +289,9 @@ const handleAvatarDelete = async () => {
   }
 };
 
-const openChannelConversation = async channelIdentity => {
-  await composeConversationRef.value?.openWithChannel({
-    contact: contactData.value,
-    channelIdentity,
-  });
+// A channel of the person was chosen: the dialog of the person opens, the channel is picked in its reply box.
+const openChannelConversation = () => {
+  openPersonDialog(props.selectedContact?.id);
 };
 </script>
 
@@ -399,11 +397,6 @@ const openChannelConversation = async channelIdentity => {
             />
           </div>
         </details>
-        <ComposeConversation
-          ref="composeConversationRef"
-          :contact-id="String(selectedContact?.id || '')"
-          is-modal
-        />
       </div>
     </div>
     <div class="flex flex-col items-start gap-6">

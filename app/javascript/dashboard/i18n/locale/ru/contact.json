@@ -20,7 +20,7 @@
     "IDENTIFIERS": "Идентификаторы",
     "CHANNEL_IDENTITIES": "Каналы связи",
     "NO_CHANNEL_CONVERSATION": "Открыть новый диалог в этом канале.",
-    "CALL": "Вызов",
+    "CALL": "Позвонить",
     "CALL_INITIATED": "Звоним контакту…",
     "CALL_FAILED": "Не удалось начать звонок. Попробуйте еще раз.",
     "OWNER": "Сотрудник",
@@ -324,7 +324,7 @@
         "SEARCH_PLACEHOLDER": "Поиск организаций"
       },
       "MESSAGE_BUTTON": "Сообщение",
-      "SEND_MESSAGE": "Отправить сообщение",
+      "SEND_MESSAGE": "Написать",
       "BLOCK_CONTACT": "Заблокировать контакт",
       "UNBLOCK_CONTACT": "Разблокировать контакт",
       "BREADCRUMB": {
@@ -664,10 +664,6 @@
       "ERROR_MESSAGE": "Поиск не удался. Пожалуйста, попробуйте еще раз."
     },
     "FORM": {
-      "GO_TO_CONVERSATION": "Просмотр",
-      "SUCCESS_MESSAGE": "Сообщение успешно отправлено!",
-      "ERROR_MESSAGE": "Произошла ошибка при создании диалога. Пожалуйста, повторите попытку позже.",
-      "NO_INBOX_ALERT": "Для этого контакта нет доступного канала для создания диалога.",
       "CONTACT_SELECTOR": {
         "LABEL": "Кому:",
         "TAG_INPUT_PLACEHOLDER": "Поиск контакта с именем, email или номером телефона",
@@ -676,42 +672,6 @@
       "INBOX_SELECTOR": {
         "LABEL": "Через:",
         "BUTTON": "Показать входящие"
-      },
-      "EMAIL_OPTIONS": {
-        "SUBJECT_LABEL": "Тема :",
-        "SUBJECT_PLACEHOLDER": "Введите тему email",
-        "CC_LABEL": "Копия:",
-        "CC_PLACEHOLDER": "Поиск контакта с email адресом",
-        "BCC_LABEL": "Скрытая копия:",
-        "BCC_PLACEHOLDER": "Поиск контакта с email адресом",
-        "BCC_BUTTON": "Скрытая копия"
-      },
-      "MESSAGE_EDITOR": {
-        "PLACEHOLDER": "Напишите здесь ваше сообщение..."
-      },
-      "WHATSAPP_OPTIONS": {
-        "LABEL": "Выбрать шаблон",
-        "SEARCH_PLACEHOLDER": "Поиск шаблонов",
-        "EMPTY_STATE": "Шаблоны не найдены",
-        "TEMPLATE_PARSER": {
-          "TEMPLATE_NAME": "Шаблон WhatsApp: {templateName}",
-          "VARIABLES": "Переменные",
-          "BACK": "Вернуться",
-          "SEND_MESSAGE": "Отправить сообщение"
-        }
-      },
-      "TWILIO_OPTIONS": {
-        "LABEL": "Выбрать шаблон",
-        "SEARCH_PLACEHOLDER": "Поиск шаблонов",
-        "EMPTY_STATE": "Шаблоны не найдены",
-        "TEMPLATE_PARSER": {
-          "BACK": "Вернуться",
-          "SEND_MESSAGE": "Отправить сообщение"
-        }
-      },
-      "ACTION_BUTTONS": {
-        "DISCARD": "Сбросить",
-        "SEND": "Отправить ({keyCode})"
       }
     }
   },

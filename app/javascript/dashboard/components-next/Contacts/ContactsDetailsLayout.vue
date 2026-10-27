@@ -6,8 +6,7 @@ import { vOnClickOutside } from '@vueuse/components';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import Breadcrumb from 'dashboard/components-next/breadcrumb/Breadcrumb.vue';
-import ComposeConversation from 'dashboard/components-next/NewConversation/ComposeConversation.vue';
-import VoiceCallButton from 'dashboard/components-next/Contacts/VoiceCallButton.vue';
+import PersonDialogActions from 'dashboard/components-next/Contacts/PersonDialogActions.vue';
 
 const props = defineProps({
   selectedContact: {
@@ -100,21 +99,10 @@ const closeMobileSidebar = () => {
                 :disabled="isUpdating"
                 @click="toggleBlock"
               />
-              <VoiceCallButton
-                :phone="selectedContact?.phoneNumber"
+              <PersonDialogActions
                 :contact-id="contactId"
-                :label="$t('CONTACT_PANEL.CALL')"
-                size="sm"
+                :phone="selectedContact?.phoneNumber"
               />
-              <ComposeConversation :contact-id="contactId">
-                <template #trigger="{ toggle }">
-                  <Button
-                    :label="$t('CONTACTS_LAYOUT.HEADER.SEND_MESSAGE')"
-                    size="sm"
-                    @click="toggle"
-                  />
-                </template>
-              </ComposeConversation>
             </div>
           </div>
         </div>

@@ -1,37 +1,27 @@
 <script setup>
-import { reactive, ref, computed, onMounted, watch } from 'vue';
-import { useRouter } from 'vue-router';
-import { useStore, useMapGetter } from 'dashboard/composables/store';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useWindowSize } from '@vueuse/core';
-import { useUISettings } from 'dashboard/composables/useUISettings';
 import { vOnClickOutside } from '@vueuse/components';
-import { useAlert } from 'dashboard/composables';
-import { ExceptionWithMessage } from 'shared/helpers/CustomErrors';
 import { debounce } from '@chatwoot/utils';
+import { useAlert } from 'dashboard/composables';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
-import { emitter } from 'shared/helpers/mitt';
-import { BUS_EVENTS } from 'shared/constants/busEvents';
+import { useOpenPersonDialog } from 'dashboard/composables/useOpenPersonDialog';
 import {
   createContactSearcher,
   createNewContact,
-  fetchContactableInboxes,
-  processContactableInboxes,
-  mergeInboxDetails,
 } from 'dashboard/components-next/NewConversation/helpers/composeConversationHelper';
+
 import wootConstants from 'dashboard/constants/globals';
-import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
 
-import ComposeNewConversationForm from 'dashboard/components-next/NewConversation/components/ComposeNewConversationForm.vue';
+import ContactSelector from 'dashboard/components-next/NewConversation/components/ContactSelector.vue';
 
+// «Новое сообщение»: only finds (or creates) the person. The conversation itself is the dialog of the person, the same screen as
+// everywhere else, and it exists only after the first message, see useOpenPersonDialog.
 const props = defineProps({
   alignPosition: {
     type: String,
     default: 'left',
-  },
-  contactId: {
-    type: String,
-    default: null,
   },
   isModal: {
     type: Boolean,
@@ -41,72 +31,33 @@ const props = defineProps({
 
 const emit = defineEmits(['close']);
 
-const searchContacts = createContactSearcher();
-const store = useStore();
-const router = useRouter();
 const { t } = useI18n();
+const { openPersonDialog } = useOpenPersonDialog();
+const searchContacts = createContactSearcher();
+
 const { width: windowWidth } = useWindowSize();
-
-const { fetchSignatureFlagFromUISettings } = useUISettings();
-
-const isSmallScreen = computed(
-  () => windowWidth.value < wootConstants.SMALL_SCREEN_BREAKPOINT
+const viewInModal = computed(
+  () =>
+    props.isModal || windowWidth.value < wootConstants.SMALL_SCREEN_BREAKPOINT
 );
 
-const viewInModal = computed(() => props.isModal || isSmallScreen.value);
-
+const isOpen = ref(false);
 const contacts = ref([]);
-const selectedContact = ref(null);
-const targetInbox = ref(null);
-const isCreatingContact = ref(false);
-const isFetchingInboxes = ref(false);
 const isSearching = ref(false);
-const showComposeNewConversation = ref(false);
+const isCreatingContact = ref(false);
+const showContactsDropdown = ref(false);
 
-const formState = reactive({
-  message: '',
-  subject: '',
-  ccEmails: '',
-  bccEmails: '',
-  attachedFiles: [],
-});
-
-const clearFormState = () => {
-  Object.assign(formState, {
-    message: '',
-    subject: '',
-    ccEmails: '',
-    bccEmails: '',
-    attachedFiles: [],
-  });
-};
-
-const contactById = useMapGetter('contacts/getContactById');
-const contactsUiFlags = useMapGetter('contacts/getUIFlags');
-const currentUser = useMapGetter('getCurrentUser');
-const currentAccountId = useMapGetter('getCurrentAccountId');
-const globalConfig = useMapGetter('globalConfig/get');
-const uiFlags = useMapGetter('contactConversations/getUIFlags');
-const messageSignature = useMapGetter('getMessageSignature');
-const inboxesList = useMapGetter('inboxes/getInboxes');
-
-const sendWithSignature = computed(() =>
-  fetchSignatureFlagFromUISettings(targetInbox.value?.channelType)
-);
-
-const directUploadsEnabled = computed(
-  () => globalConfig.value.directUploadsEnabled
-);
-
-const activeContact = computed(() => contactById.value(props.contactId));
-
-const composePopoverClass = computed(() => {
+const popoverClass = computed(() => {
   if (viewInModal.value) return '';
 
   return props.alignPosition === 'right'
-    ? 'absolute ltr:left-0 ltr:right-[unset] rtl:right-0 rtl:left-[unset]'
-    : 'absolute rtl:left-0 rtl:right-[unset] ltr:right-0 ltr:left-[unset]';
+    ? 'absolute top-full mt-2 ltr:left-0 ltr:right-[unset] rtl:right-0 rtl:left-[unset]'
+    : 'absolute top-full mt-2 rtl:left-0 rtl:right-[unset] ltr:right-0 ltr:left-[unset]';
 });
+
+const resetContacts = () => {
+  contacts.value = [];
+};
 
 const onContactSearch = debounce(
   async query => {
@@ -114,300 +65,96 @@ const onContactSearch = debounce(
     contacts.value = [];
     try {
       const results = await searchContacts(query);
-      // null means the request was aborted (a newer search is in-flight),
+      // null means the request was aborted: a newer search is in flight
       if (results === null) return;
       contacts.value = results;
+      showContactsDropdown.value = true;
       isSearching.value = false;
     } catch (error) {
       isSearching.value = false;
-      useAlert(t('COMPOSE_NEW_CONVERSATION.CONTACT_SEARCH.ERROR_MESSAGE'));
+      useAlert(t('PERSON_DIALOG.PICKER.SEARCH_ERROR'));
     }
   },
   400,
   false
 );
 
-const resetContacts = () => {
-  contacts.value = [];
+const close = () => {
+  if (!isOpen.value) return;
+  isOpen.value = false;
+  showContactsDropdown.value = false;
+  resetContacts();
+  emit('close');
 };
 
-const prepareContactWithInboxes = async contact => {
-  if (!contact?.id) return null;
-
-  let contactInboxes;
-  isFetchingInboxes.value = true;
-  try {
-    contactInboxes = await fetchContactableInboxes(contact.id);
-  } finally {
-    isFetchingInboxes.value = false;
+const toggle = () => {
+  if (isOpen.value) {
+    close();
+    return;
   }
-
-  return {
-    ...contact,
-    contactInboxes: mergeInboxDetails(contactInboxes, inboxesList.value),
-  };
+  isOpen.value = true;
 };
 
 const handleSelectedContact = async ({ value, action, ...rest }) => {
-  let contact;
+  let contact = rest;
   if (action === 'create') {
     isCreatingContact.value = true;
     try {
       contact = await createNewContact(value);
-      isCreatingContact.value = false;
     } catch (error) {
-      isCreatingContact.value = false;
       return;
-    }
-  } else {
-    contact = rest;
-  }
-  selectedContact.value = contact;
-  contacts.value = [];
-  if (contact?.id) {
-    try {
-      selectedContact.value = await prepareContactWithInboxes(contact);
-    } catch (error) {
-      // no-op
+    } finally {
+      isCreatingContact.value = false;
     }
   }
+  if (!contact?.id) return;
+
+  close();
+  await openPersonDialog(contact.id);
 };
 
-const clearSelectedContact = () => {
-  selectedContact.value = null;
-  targetInbox.value = null;
-  clearFormState();
-};
-
-const closeCompose = () => {
-  showComposeNewConversation.value = false;
-  if (!props.contactId) {
-    // If contactId is passed as prop
-    // Then don't allow to remove the selected contact
-    selectedContact.value = null;
-  }
-  targetInbox.value = null;
-  resetContacts();
-  emit('close');
-};
-
-const handleTargetInbox = inbox => {
-  targetInbox.value = inbox;
-  if (
-    inbox?.channelType === 'Channel::Whatsapp' &&
-    inbox.activeConversationId
-  ) {
-    const conversationPath = frontendURL(
-      conversationUrl({
-        accountId: currentAccountId.value,
-        activeInbox: inbox.id,
-        id: inbox.activeConversationId,
-      })
-    );
-    closeCompose();
-    router.push(conversationPath);
-    return;
-  }
-  if (!inbox) clearFormState();
-  resetContacts();
-};
-
-const discardCompose = () => {
-  clearFormState();
-  closeCompose();
-};
-
-const createConversation = async ({ payload, isFromWhatsApp }) => {
-  try {
-    const data = await store.dispatch('contactConversations/create', {
-      params: payload,
-      isFromWhatsApp,
-    });
-    const inboxId = data.inbox_id || data.inboxId;
-    const conversationPath = frontendURL(
-      conversationUrl({
-        accountId: data.account_id,
-        activeInbox: inboxId,
-        id: data.id,
-      })
-    );
-    const action = {
-      type: 'link',
-      to: conversationPath,
-      message: t('COMPOSE_NEW_CONVERSATION.FORM.GO_TO_CONVERSATION'),
-    };
-    discardCompose();
-    useAlert(t('COMPOSE_NEW_CONVERSATION.FORM.SUCCESS_MESSAGE'), action);
-    return true; // Return success
-  } catch (error) {
-    if (targetInbox.value?.channelType === 'Channel::Whatsapp') {
-      const currentInbox = targetInbox.value;
-      try {
-        selectedContact.value = await prepareContactWithInboxes(
-          selectedContact.value
-        );
-        targetInbox.value = selectedContact.value?.contactInboxes?.find(
-          inbox =>
-            Number(inbox.id) === Number(currentInbox.id) &&
-            inbox.sourceId === currentInbox.sourceId
-        );
-      } catch {
-        // Keep the current selection when reply-window refresh fails.
-      }
-    }
-    useAlert(
-      error instanceof ExceptionWithMessage
-        ? error.data
-        : t('COMPOSE_NEW_CONVERSATION.FORM.ERROR_MESSAGE')
-    );
-    return false; // Return failure
-  }
-};
-
-const toggle = async () => {
-  showComposeNewConversation.value = !showComposeNewConversation.value;
-  if (showComposeNewConversation.value && selectedContact.value?.id) {
-    try {
-      selectedContact.value = await prepareContactWithInboxes(
-        selectedContact.value
-      );
-    } catch {
-      // Keep the existing contact inboxes if a refresh fails.
-    }
-  }
-};
-
-const openWithChannel = async ({ contact, channelIdentity }) => {
-  const baseContact = contact || activeContact.value;
-  if (!baseContact?.id) return false;
-
-  clearFormState();
-  selectedContact.value = await prepareContactWithInboxes(baseContact);
-
-  const matchingInbox = selectedContact.value?.contactInboxes?.find(
-    inbox => Number(inbox.id) === Number(channelIdentity?.inboxId)
-  );
-
-  if (!matchingInbox) {
-    useAlert(t('NEW_CONVERSATION.NO_INBOX'));
-    return false;
-  }
-
-  showComposeNewConversation.value = true;
-  emitter.emit(BUS_EVENTS.NEW_CONVERSATION_MODAL, true);
-  handleTargetInbox(matchingInbox);
-  return true;
-};
-
-watch(
-  activeContact,
-  (currentContact, previousContact) => {
-    if (currentContact && props.contactId) {
-      // Reset on contact change
-      if (currentContact?.id !== previousContact?.id) {
-        clearSelectedContact();
-        clearFormState();
-        formState.message = '';
-      }
-
-      // First process the contactable inboxes to get the right structure
-      const processedInboxes = processContactableInboxes(
-        currentContact.contactInboxes || []
-      );
-      // Then Merge processedInboxes with the inboxes list
-      selectedContact.value = {
-        ...currentContact,
-        contactInboxes: mergeInboxDetails(processedInboxes, inboxesList.value),
-      };
-    }
-  },
-  { immediate: true, deep: true }
-);
-
-const handleClickOutside = () => {
-  if (!showComposeNewConversation.value) return;
-
-  showComposeNewConversation.value = false;
-  emit('close');
-};
-
-const onModalBackdropClick = () => {
-  if (!viewInModal.value) return;
-  handleClickOutside();
-};
-
-onMounted(() => resetContacts());
-
-const keyboardEvents = {
+useKeyboardEvents({
   Escape: {
-    action: () => {
-      if (showComposeNewConversation.value) {
-        showComposeNewConversation.value = false;
-        emit('close');
-        emitter.emit(BUS_EVENTS.NEW_CONVERSATION_MODAL, false);
-      }
-    },
+    action: () => close(),
   },
-};
-
-useKeyboardEvents(keyboardEvents);
-
-defineExpose({
-  toggle,
-  openWithChannel,
 });
+
+defineExpose({ toggle });
 </script>
 
 <template>
   <div
-    v-on-click-outside="[
-      handleClickOutside,
-      // Fixed and edge case https://github.com/chatwoot/chatwoot/issues/10785
-      // This will prevent closing the compose conversation modal when the editor Create link popup is open
-      { ignore: ['dialog.ProseMirror-prompt-backdrop'] },
-    ]"
+    v-on-click-outside="close"
     class="relative"
-    :class="{
-      'z-50': showComposeNewConversation && !viewInModal,
-    }"
+    :class="{ 'z-50': isOpen && !viewInModal }"
   >
-    <slot
-      name="trigger"
-      :is-open="showComposeNewConversation"
-      :toggle="toggle"
-    />
+    <slot name="trigger" :is-open="isOpen" :toggle="toggle" />
     <div
-      v-if="showComposeNewConversation"
+      v-if="isOpen"
       :class="{
-        'fixed z-50 bg-n-alpha-black1 backdrop-blur-[4px] flex items-start pt-[clamp(3rem,15vh,12rem)] justify-center inset-0':
+        'fixed z-50 inset-0 flex items-start justify-center bg-n-alpha-black1 pt-[clamp(3rem,15vh,12rem)] backdrop-blur-[4px]':
           viewInModal,
       }"
-      @click.self="onModalBackdropClick"
+      @click.self="viewInModal && close()"
     >
-      <ComposeNewConversationForm
-        :form-state="formState"
-        :class="[{ 'mt-2': !viewInModal }, composePopoverClass]"
-        :contacts="contacts"
-        :contact-id="contactId"
-        :is-loading="isSearching"
-        :current-user="currentUser"
-        :selected-contact="selectedContact"
-        :target-inbox="targetInbox"
-        :is-creating-contact="isCreatingContact"
-        :is-fetching-inboxes="isFetchingInboxes"
-        :is-direct-uploads-enabled="directUploadsEnabled"
-        :contact-conversations-ui-flags="uiFlags"
-        :contacts-ui-flags="contactsUiFlags"
-        :message-signature="messageSignature"
-        :send-with-signature="sendWithSignature"
-        @search-contacts="onContactSearch"
-        @reset-contact-search="resetContacts"
-        @update-selected-contact="handleSelectedContact"
-        @update-target-inbox="handleTargetInbox"
-        @clear-selected-contact="clearSelectedContact"
-        @create-conversation="createConversation"
-        @discard="discardCompose"
-      />
+      <div
+        class="w-[22rem] max-w-[calc(100vw-2rem)] overflow-visible rounded-xl border border-n-strong bg-n-alpha-3 shadow-sm backdrop-blur-[100px]"
+        :class="popoverClass"
+        data-test-id="person-picker"
+      >
+        <ContactSelector
+          :contacts="contacts"
+          :selected-contact="null"
+          :show-contacts-dropdown="showContactsDropdown"
+          :is-loading="isSearching"
+          :is-creating-contact="isCreatingContact"
+          :show-inboxes-dropdown="false"
+          @search-contacts="onContactSearch"
+          @set-selected-contact="handleSelectedContact"
+          @clear-selected-contact="resetContacts"
+          @update-dropdown="(_name, open) => (showContactsDropdown = open)"
+        />
+      </div>
     </div>
   </div>
 </template>

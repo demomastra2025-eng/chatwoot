@@ -1,17 +1,9 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const routerPush = vi.hoisted(() => vi.fn());
-const getContactableInboxes = vi.hoisted(() => vi.fn());
-const storeDispatch = vi.hoisted(() => vi.fn());
-
-vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: routerPush }),
-}));
-
-vi.mock('dashboard/api/contacts', () => ({
-  default: { getContactableInboxes },
-}));
+const openPersonDialog = vi.hoisted(() => vi.fn());
+const searchContacts = vi.hoisted(() => vi.fn());
+const createNewContact = vi.hoisted(() => vi.fn());
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key }),
@@ -21,178 +13,127 @@ vi.mock('@vueuse/core', () => ({
   useWindowSize: () => ({ width: { value: 1440 } }),
 }));
 
-vi.mock('dashboard/composables/store', async () => {
-  const { ref } = await import('vue');
-  const getterValues = {
-    'contacts/getContactById': () => null,
-    'contacts/getUIFlags': { isFetchingInboxes: false },
-    getCurrentUser: { id: 2 },
-    getCurrentAccountId: 1,
-    'globalConfig/get': { directUploadsEnabled: false },
-    'contactConversations/getUIFlags': { isCreating: false },
-    getMessageSignature: '',
-    'inboxes/getInboxes': [],
-  };
-
-  return {
-    useStore: () => ({ dispatch: storeDispatch }),
-    useMapGetter: key => ref(getterValues[key]),
-  };
-});
-
-vi.mock('dashboard/composables/useUISettings', () => ({
-  useUISettings: () => ({
-    fetchSignatureFlagFromUISettings: () => false,
-  }),
-}));
-
-vi.mock('dashboard/composables/useKeyboardEvents', () => ({
-  useKeyboardEvents: vi.fn(),
+vi.mock('@chatwoot/utils', () => ({
+  // no waiting in the spec: the search runs at once
+  debounce: fn => fn,
 }));
 
 vi.mock('dashboard/composables', () => ({
   useAlert: vi.fn(),
 }));
 
-vi.mock('shared/helpers/mitt', () => ({
-  emitter: { emit: vi.fn() },
+vi.mock('dashboard/composables/useKeyboardEvents', () => ({
+  useKeyboardEvents: vi.fn(),
 }));
 
-vi.mock('dashboard/helper/URLHelper', () => ({
-  frontendURL: path => path,
-  conversationUrl: ({ accountId, activeInbox, id }) =>
-    `/accounts/${accountId}/inbox/${activeInbox}/conversation/${id}`,
+vi.mock('dashboard/composables/useOpenPersonDialog', () => ({
+  useOpenPersonDialog: () => ({ openPersonDialog }),
 }));
 
-import ComposeNewConversationForm from './components/ComposeNewConversationForm.vue';
+vi.mock(
+  'dashboard/components-next/NewConversation/helpers/composeConversationHelper',
+  () => ({
+    createContactSearcher: () => searchContacts,
+    createNewContact,
+  })
+);
+
 import ComposeConversation from './ComposeConversation.vue';
 
-describe('ComposeConversation active WhatsApp conversation reuse', () => {
-  beforeEach(() => {
-    routerPush.mockClear();
-    getContactableInboxes.mockReset();
-    storeDispatch.mockReset();
+const ContactSelectorStub = {
+  props: ['contacts', 'isCreatingContact'],
+  emits: ['searchContacts', 'setSelectedContact'],
+  template: '<div data-test="contact-selector" />',
+};
+
+const mountPicker = (props = {}) =>
+  shallowMount(ComposeConversation, {
+    props,
+    global: {
+      directives: { 'on-click-outside': {} },
+      stubs: { ContactSelector: ContactSelectorStub },
+    },
+    slots: {
+      trigger: `<template #trigger="{ toggle }"><button data-test="trigger" @click="toggle" /></template>`,
+    },
   });
 
-  it('opens the active conversation instead of leaving the new conversation form open', async () => {
-    const wrapper = shallowMount(ComposeConversation, {
-      props: { isModal: true },
-      global: {
-        directives: { onClickOutside: {} },
-      },
-    });
-    await wrapper.vm.toggle();
+describe('ComposeConversation (the picker of «Новое сообщение»)', () => {
+  beforeEach(() => {
+    openPersonDialog.mockReset();
+    searchContacts.mockReset();
+    createNewContact.mockReset();
+  });
+
+  it('is closed until its trigger is pressed', async () => {
+    const wrapper = mountPicker();
+
+    expect(wrapper.find('[data-test="contact-selector"]').exists()).toBe(false);
+
+    await wrapper.find('[data-test="trigger"]').trigger('click');
+
+    expect(wrapper.find('[data-test="contact-selector"]').exists()).toBe(true);
+  });
+
+  it('finds the contacts of a query', async () => {
+    searchContacts.mockResolvedValue([{ id: 7, name: 'Aigul' }]);
+    const wrapper = mountPicker();
+    await wrapper.find('[data-test="trigger"]').trigger('click');
 
     wrapper
-      .getComponent(ComposeNewConversationForm)
-      .vm.$emit('updateTargetInbox', {
-        id: 43,
-        channelType: 'Channel::Whatsapp',
-        activeConversationId: 321,
-      });
-    await wrapper.vm.$nextTick();
+      .findComponent(ContactSelectorStub)
+      .vm.$emit('searchContacts', 'Aig');
+    await flushPromises();
 
-    expect(routerPush).toHaveBeenCalledWith(
-      '/accounts/1/inbox/43/conversation/321'
-    );
-    expect(wrapper.findComponent(ComposeNewConversationForm).exists()).toBe(
-      false
-    );
+    expect(searchContacts).toHaveBeenCalledWith('Aig');
+    expect(
+      wrapper.findComponent(ContactSelectorStub).props('contacts')
+    ).toEqual([{ id: 7, name: 'Aigul' }]);
   });
 
-  it('uses the authoritative active conversation when opened from a channel shortcut', async () => {
-    getContactableInboxes.mockResolvedValue({
-      data: {
-        payload: [
-          {
-            inbox: { id: 43, channel_type: 'Channel::Whatsapp' },
-            source_id: '15551234567',
-            active_conversation_id: 654,
-            reply_window_open: true,
-          },
-        ],
-      },
-    });
-    const wrapper = shallowMount(ComposeConversation, {
-      props: { isModal: true },
-      global: {
-        directives: { onClickOutside: {} },
-      },
-    });
+  it('opens the dialog of the chosen person and closes; it creates no conversation', async () => {
+    const wrapper = mountPicker();
+    await wrapper.find('[data-test="trigger"]').trigger('click');
 
-    await wrapper.vm.openWithChannel({
-      contact: { id: 7 },
-      channelIdentity: {
-        inboxId: 43,
-        sourceId: 'AB.provider-specific-identity',
-      },
-    });
-
-    expect(routerPush).toHaveBeenCalledWith(
-      '/accounts/1/inbox/43/conversation/654'
-    );
-    expect(wrapper.findComponent(ComposeNewConversationForm).exists()).toBe(
-      false
-    );
-  });
-
-  it('preserves the draft and refreshes WhatsApp state after a create error', async () => {
-    getContactableInboxes
-      .mockResolvedValueOnce({
-        data: {
-          payload: [
-            {
-              inbox: { id: 43, channel_type: 'Channel::Whatsapp' },
-              source_id: '15551234567',
-              contact_inbox_id: 88,
-              reply_window_open: true,
-            },
-          ],
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          payload: [
-            {
-              inbox: { id: 43, channel_type: 'Channel::Whatsapp' },
-              source_id: '15551234567',
-              contact_inbox_id: 88,
-              active_conversation_id: 777,
-              reply_window_open: false,
-            },
-          ],
-        },
-      });
-    storeDispatch.mockRejectedValue(new Error('reply window expired'));
-    const wrapper = shallowMount(ComposeConversation, {
-      props: { isModal: true },
-      global: {
-        directives: { onClickOutside: {} },
-      },
-    });
-
-    await wrapper.vm.openWithChannel({
-      contact: { id: 7 },
-      channelIdentity: { inboxId: 43 },
-    });
-    const form = wrapper.getComponent(ComposeNewConversationForm);
-    form.props('formState').message = 'unsent draft';
-    form.props('formState').attachedFiles.push({ name: 'brochure.pdf' });
-    form.vm.$emit('createConversation', {
-      payload: { inboxId: 43 },
-      isFromWhatsApp: false,
+    wrapper.findComponent(ContactSelectorStub).vm.$emit('setSelectedContact', {
+      id: 7,
+      name: 'Aigul',
+      action: 'contact',
     });
     await flushPromises();
 
-    const refreshedForm = wrapper.getComponent(ComposeNewConversationForm);
-    expect(refreshedForm.props('formState')).toMatchObject({
-      message: 'unsent draft',
-      attachedFiles: [{ name: 'brochure.pdf' }],
+    expect(openPersonDialog).toHaveBeenCalledWith(7);
+    expect(wrapper.find('[data-test="contact-selector"]').exists()).toBe(false);
+    expect(wrapper.emitted('close')).toHaveLength(1);
+  });
+
+  it('creates a contact from a typed number and opens their dialog', async () => {
+    createNewContact.mockResolvedValue({ id: 11, name: '77011234567' });
+    const wrapper = mountPicker();
+    await wrapper.find('[data-test="trigger"]').trigger('click');
+
+    wrapper.findComponent(ContactSelectorStub).vm.$emit('setSelectedContact', {
+      value: '+77011234567',
+      action: 'create',
     });
-    expect(refreshedForm.props('targetInbox')).toMatchObject({
-      id: 43,
-      activeConversationId: 777,
-      replyWindowOpen: false,
+    await flushPromises();
+
+    expect(createNewContact).toHaveBeenCalledWith('+77011234567');
+    expect(openPersonDialog).toHaveBeenCalledWith(11);
+  });
+
+  it('stays open when the contact could not be created', async () => {
+    createNewContact.mockRejectedValue(new Error('no'));
+    const wrapper = mountPicker();
+    await wrapper.find('[data-test="trigger"]').trigger('click');
+
+    wrapper.findComponent(ContactSelectorStub).vm.$emit('setSelectedContact', {
+      value: 'x@example.com',
+      action: 'create',
     });
+    await flushPromises();
+
+    expect(openPersonDialog).not.toHaveBeenCalled();
+    expect(wrapper.find('[data-test="contact-selector"]').exists()).toBe(true);
   });
 });

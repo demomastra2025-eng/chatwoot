@@ -13,8 +13,6 @@ import { useSidebarKeyboardShortcuts } from './useSidebarKeyboardShortcuts';
 import { vOnClickOutside } from '@vueuse/components';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { useWindowSize } from '@vueuse/core';
-import { emitter } from 'shared/helpers/mitt';
-import { BUS_EVENTS } from 'shared/constants/busEvents';
 
 import SidebarGroup from './SidebarGroup.vue';
 import SidebarSecondaryColumn from './SidebarSecondaryColumn.vue';
@@ -285,6 +283,7 @@ const conversationStatusActiveOn = [
   'conversation_through_inbox',
   'communication_threads_dashboard',
   'communication_thread_conversation',
+  'communication_thread_contact',
   'label_conversations',
   'conversations_through_label',
   'team_conversations',
@@ -680,17 +679,8 @@ const closeMobileSidebar = () => {
   emit('closeMobileSidebar');
 };
 
-const onComposeOpen = toggleFn => {
-  toggleFn();
-  emitter.emit(BUS_EVENTS.NEW_CONVERSATION_MODAL, true);
-};
-
 const openComposeConversation = () => {
-  onComposeOpen(() => composeConversationRef.value?.toggle?.());
-};
-
-const onComposeClose = () => {
-  emitter.emit(BUS_EVENTS.NEW_CONVERSATION_MODAL, false);
+  composeConversationRef.value?.toggle?.();
 };
 
 const companiesRoute = computed(() =>
@@ -1883,11 +1873,7 @@ const desktopSidebarWidth = computed(() => {
       :sidebar-offset="notificationPanelOffset"
     />
     <Teleport to="body">
-      <ComposeConversation
-        ref="composeConversationRef"
-        is-modal
-        @close="onComposeClose"
-      />
+      <ComposeConversation ref="composeConversationRef" is-modal />
       <woot-modal
         v-model:show="showCreateLabelPopup"
         @close="hideCreateLabelPopup"
