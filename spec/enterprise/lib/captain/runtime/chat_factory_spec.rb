@@ -55,6 +55,33 @@ RSpec.describe Captain::Runtime::ChatFactory do
       )
     end
 
+    describe 'the answer of a reply suggestion' do
+      def build_with(state:, callbacks: {}, part_run: false)
+        sent = nil
+        allow(Llm::Runtime).to receive(:build_chat) do |**attributes|
+          sent = attributes
+          chat
+        end
+        allow(chat).to receive(:with_instructions).and_return(chat)
+        allow(chat).to receive(:with_tools).and_return(chat)
+        wrapper = Captain::Runtime::RunContext.new({ state: state, part_run: part_run }, callbacks: callbacks)
+        described_class.build(agent: agent, context_wrapper: wrapper, llm_context: :llm_context, runtime_headers: {}, runtime_params: {})
+        sent
+      end
+
+      it 'builds the chat to stream when the run has a listener for the answer' do
+        sent = build_with(state: { source: 'reply_suggestion' }, callbacks: { answer_delta: [->(*) {}] })
+
+        expect(sent).to include(stream: true)
+      end
+
+      it 'builds the same chat as before for a run nobody listens to, a live conversation and a council part' do
+        expect(build_with(state: { source: 'reply_suggestion' })).not_to have_key(:stream)
+        expect(build_with(state: { source: 'incoming_message' }, callbacks: { answer_delta: [->(*) {}] })).not_to have_key(:stream)
+        expect(build_with(state: { source: 'reply_suggestion' }, callbacks: { answer_delta: [->(*) {}] }, part_run: true)).not_to have_key(:stream)
+      end
+    end
+
     it 'forwards a snapshot of resolved current actor preferences after preparing its context' do
       resolved = {
         'openrouter_provider_only' => ['anthropic'], 'openrouter_allow_fallbacks' => false,

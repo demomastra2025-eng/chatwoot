@@ -12,10 +12,16 @@ class Captain::Runtime::CallbackManager
     agent_thinking
     llm_call_complete
     chat_created
+    answer_delta
   ].freeze
 
   def initialize(callbacks = {})
     @callbacks = callbacks.dup.freeze
+  end
+
+  # Whether anything listens to the event (a run that nobody listens to does not do the work that only the listener needs).
+  def listening?(event_type)
+    Array(@callbacks[event_type]).any?
   end
 
   def emit(event_type, *args)

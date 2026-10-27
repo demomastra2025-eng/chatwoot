@@ -70,6 +70,20 @@ RSpec.describe Llm::Runtime do
     expect(described_class.ask(chat, 'hello', account: account, model: 'openai/gpt-5.4-mini', observability: {})).to eq(:response)
   end
 
+  it 'passes the block of a streaming ask and of a streaming continuation on to the OpenRouter runtime' do
+    chat = instance_double(RubyLLM::Chat)
+    openrouter_runtime = instance_double(Llm::OpenRouterRuntime)
+    pieces = []
+    allow(Llm::OpenRouterRuntime).to receive(:new).with(account: account).and_return(openrouter_runtime)
+    allow(openrouter_runtime).to receive(:ask) { |*, **, &block| block.call(:ask_piece) }
+    allow(openrouter_runtime).to receive(:complete) { |*, **, &block| block.call(:complete_piece) }
+
+    described_class.ask(chat, 'hello', account: account, model: 'openai/gpt-5.4-mini') { |piece| pieces << piece }
+    described_class.complete(chat, account: account, model: 'openai/gpt-5.4-mini') { |piece| pieces << piece }
+
+    expect(pieces).to eq(%i[ask_piece complete_piece])
+  end
+
   it 'dispatches history continuation without supplying another user input' do
     chat = instance_double(RubyLLM::Chat)
     observability = { assistant_id: 17, conversation_record_id: 25 }

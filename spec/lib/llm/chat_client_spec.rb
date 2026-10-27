@@ -224,6 +224,15 @@ RSpec.describe Llm::ChatClient do
   end
 
   describe '.complete' do
+    it 'gives its block to the chat, so that the continuation streams' do
+      pieces = []
+      expect(chat).to receive(:complete).and_yield(:piece)
+
+      described_class.complete(chat) { |piece| pieces << piece }
+
+      expect(pieces).to eq([:piece])
+    end
+
     it 'continues existing history through structured output policy without adding a user turn' do
       history = [RubyLLM::Message.new(role: :user, content: 'Already present')]
       response = RubyLLM::Message.new(role: :assistant, content: 'Done')
@@ -334,6 +343,18 @@ RSpec.describe Llm::ChatClient do
       expect(chat).to receive(:ask).with('Hello')
 
       described_class.ask(chat, 'Hello')
+    end
+
+    it 'gives its block to the chat, so that the answer streams, for plain text and for content with attachments' do
+      allow(chat).to receive(:model).and_return(chat_model)
+      pieces = []
+      expect(chat).to receive(:ask).with('Hello').and_yield(:plain)
+      expect(chat).to receive(:ask).with('Describe this', with: [instance_of(URI::HTTPS)]).and_yield(:attached)
+
+      described_class.ask(chat, 'Hello') { |piece| pieces << piece }
+      described_class.ask(chat, RubyLLM::Content.new('Describe this', ['https://example.com/image.png'])) { |piece| pieces << piece }
+
+      expect(pieces).to eq(%i[plain attached])
     end
 
     it 'asks with multimodal content attachments when present' do

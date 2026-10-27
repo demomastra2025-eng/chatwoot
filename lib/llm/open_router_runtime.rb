@@ -59,16 +59,16 @@ class Llm::OpenRouterRuntime
     Llm::ChatClient.build(**)
   end
 
-  def ask(chat, content, model: nil, observability: nil)
+  def ask(chat, content, model: nil, observability: nil, &)
     enriched_observability = observed_ask_observability(chat, observability)
     enforce_observed_ask_budget!(model: model, observability: enriched_observability)
-    Llm::ChatClient.ask(chat, content, model: model, observability: enriched_observability, account: account)
+    Llm::ChatClient.ask(chat, content, model: model, observability: enriched_observability, account: account, &)
   end
 
-  def complete(chat, model: nil, observability: nil)
+  def complete(chat, model: nil, observability: nil, &)
     enriched_observability = observed_ask_observability(chat, observability)
     enforce_observed_ask_budget!(model: model, observability: enriched_observability)
-    Llm::ChatClient.complete(chat, model: model, observability: enriched_observability)
+    Llm::ChatClient.complete(chat, model: model, observability: enriched_observability, &)
   end
 
   def transcribe(request)

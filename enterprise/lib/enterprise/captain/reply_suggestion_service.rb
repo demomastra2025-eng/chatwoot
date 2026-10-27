@@ -236,6 +236,7 @@ module Enterprise::Captain::ReplySuggestionService
       @pending_actions = []
       @superseded_action_ids = []
       @reasoning = nil
+      @draft_stream = build_draft_stream
       init_agent_catalog!(assistant)
       # While the router decides who answers, the manager sees that, and no agent.
       @phase = @routed ? 'routing' : 'thinking'
@@ -249,7 +250,7 @@ module Enterprise::Captain::ReplySuggestionService
         on_tool_complete: method(:handle_tool_complete),
         on_agent_routed: method(:handle_agent_routed),
         on_llm_call_complete: method(:handle_llm_call_complete)
-      }
+      }.merge(@draft_stream ? { on_answer_delta: method(:handle_answer_delta) } : {})
     end
 
     def broadcast_initial!
@@ -287,6 +288,24 @@ module Enterprise::Captain::ReplySuggestionService
 
     private
 
+    # The agent that answers the manager streams its answer (Captain::Runtime::AnswerStream): what it has written so far is shown as
+    # the first words of the draft. A new turn or a tool that runs means that what was written was not the answer.
+    def build_draft_stream
+      fields = request_progress_fields
+      return if fields[:suggestion_request_id].blank?
+
+      Captain::ReplySuggestion::DraftStream.new(
+        broadcaster: @broadcaster,
+        identity: fields.slice(:suggestion_request_id, :account_id, :conversation_id, :conversation_record_id).compact
+      )
+    end
+
+    def handle_answer_delta(_agent_name, text = nil, context_wrapper = nil)
+      return if part_run?(context_wrapper)
+
+      @monitor.synchronize { @draft_stream.feed(text) }
+    end
+
     def handle_agent_thinking(agent_name, _input = nil, context_wrapper = nil)
       @monitor.synchronize do
         actor = actor_from_context(context_wrapper, agent_name)
@@ -298,6 +317,7 @@ module Enterprise::Captain::ReplySuggestionService
           @phase = 'thinking'
           @turns += 1
           activate_agent!(actor)
+          @draft_stream&.reset!
         end
         broadcast_progress!
       end
@@ -307,6 +327,7 @@ module Enterprise::Captain::ReplySuggestionService
       @monitor.synchronize do
         actor = actor_from_context(context_wrapper)
         in_council = part_run?(context_wrapper)
+        @draft_stream&.reset! unless in_council
         record_working_agent(actor, role: in_council ? 'council' : nil)
         @phase = in_council ? 'council_running' : 'tool_running'
         @tools_called += 1
@@ -403,6 +424,7 @@ module Enterprise::Captain::ReplySuggestionService
     end
 
     def handle_llm_call_complete(agent_name, _model = nil, response = nil, context_wrapper = nil)
+      @monitor.synchronize { @draft_stream&.finish! } unless part_run?(context_wrapper)
       raw_content = extract_llm_content(response)
       return if raw_content.blank?
 

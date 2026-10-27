@@ -74,7 +74,13 @@ class Captain::Runtime::ChatFactory
           context: llm_context,
           headers: merged_headers(agent, runtime_headers)
         }.merge(parameters)
-      }
+      }.merge(streaming_answer?(context_wrapper) ? { stream: true } : {})
+    end
+
+    # The answer of a reply suggestion streams (see Captain::Runtime::AnswerStream): the request is compiled for it, so it carries
+    # no plugin that works on a complete response only (the repair of malformed JSON) and the chat is tagged as streaming.
+    def streaming_answer?(context_wrapper)
+      Captain::Runtime::AnswerStream.enabled?(context_wrapper)
     end
 
     def configure(chat, agent, context_wrapper, account: nil, finalization_only: false)
