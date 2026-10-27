@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { VueCal } from 'vue-cal';
+import { useAlert } from 'dashboard/composables';
 
 import SchedulingVueCalCalendar from './SchedulingVueCalCalendar.vue';
 
@@ -1165,5 +1166,262 @@ describe('SchedulingVueCalCalendar', () => {
     expect(
       unsyncedCard.find('.scheduling-vue-cal__event-medelement-meta').exists()
     ).toBe(false);
+  });
+
+  describe('changing a time with the mouse', () => {
+    const rules = [
+      {
+        id: 1,
+        active: true,
+        resourceId: 12,
+        startMinute: 540,
+        endMinute: 1020,
+        weekday: 1,
+      },
+    ];
+    // 10:00-10:30 on the Workspace calendar (Asia/Almaty is UTC+5).
+    const morningVisit = (id, overrides = {}) =>
+      visit(id, {
+        endsAt: '2026-03-09T05:30:00.000Z',
+        startsAt: '2026-03-09T05:00:00.000Z',
+        ...overrides,
+      });
+    let rejections;
+    let savedRejectionListeners;
+
+    const mouse = (target, type, clientY, init = {}) =>
+      target.dispatchEvent(
+        new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: 50,
+          clientY,
+          ...init,
+        })
+      );
+    const press = (target, clientY) =>
+      mouse(target, 'mousedown', clientY, { button: 0, buttons: 1 });
+    const move = (clientY, buttons = 1) =>
+      mouse(document, 'mousemove', clientY, { buttons });
+    const release = (target, clientY) =>
+      mouse(target, 'mouseup', clientY, { button: 0, buttons: 0 });
+
+    // The mocked cell is 1000px tall for the visible window: the y of a time on the calendar.
+    const yOf = (wrapper, hours, minutes = 0) => {
+      const { timeFrom, timeTo } = wrapper.findComponent(VueCal).props();
+      return ((hours * 60 + minutes - timeFrom) * 1000) / (timeTo - timeFrom);
+    };
+    const mountDay = async appointments => {
+      const wrapper = mountCalendar({
+        appointments,
+        view: 'day',
+        workRules: rules,
+        workspaceTimezone: 'Asia/Almaty',
+      });
+      await nextTick();
+      await nextTick();
+      return wrapper;
+    };
+    const settle = () =>
+      new Promise(resolve => {
+        setTimeout(resolve, 10);
+      });
+    const isResizing = wrapper =>
+      wrapper.find('.vuecal').classes().includes('vuecal--resizing-event');
+    // The calendar event element that holds the card of a visit (background events come first).
+    const eventOf = (wrapper, name) =>
+      cardFor(wrapper, name).element.closest('.vuecal__event');
+
+    beforeEach(() => {
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(
+        () => ({
+          top: 0,
+          left: 0,
+          width: 300,
+          height: 1000,
+          right: 300,
+          bottom: 1000,
+          x: 0,
+          y: 0,
+        })
+      );
+      // Capture unhandled promise rejections here instead of failing the whole run.
+      rejections = [];
+      savedRejectionListeners = process.listeners('unhandledRejection');
+      process.removeAllListeners('unhandledRejection');
+      process.on('unhandledRejection', reason => rejections.push(reason));
+    });
+
+    afterEach(async () => {
+      await settle();
+      process.removeAllListeners('unhandledRejection');
+      savedRejectionListeners.forEach(listener =>
+        process.on('unhandledRejection', listener)
+      );
+      vi.restoreAllMocks();
+    });
+
+    it('leaves a card that does not fit its slot untouched when its bottom border is only clicked', async () => {
+      // Two visits of the same specialist overlap, so neither range is accepted as a new booking.
+      const wrapper = await mountDay([
+        morningVisit(1),
+        morningVisit(2, {
+          endsAt: '2026-03-09T05:45:00.000Z',
+          startsAt: '2026-03-09T05:15:00.000Z',
+        }),
+      ]);
+      const card = eventOf(wrapper, 'Client 1');
+      const style = card.getAttribute('style');
+      const resizer = card.querySelector('.vuecal__event-resizer');
+      const bottom = yOf(wrapper, 10, 28);
+
+      press(resizer, bottom);
+      release(resizer, bottom);
+      await nextTick();
+      await settle();
+
+      expect(useAlert).not.toHaveBeenCalled();
+      expect(wrapper.emitted('resizeAppointment')).toBeUndefined();
+      expect(isResizing(wrapper)).toBe(false);
+      expect(rejections).toEqual([]);
+
+      // The mouse then moves around with no button held: the card stays where it is.
+      move(yOf(wrapper, 14), 0);
+      move(yOf(wrapper, 9), 0);
+      await nextTick();
+      expect(card.getAttribute('style')).toBe(style);
+    });
+
+    it('resizes a card only while its bottom border is held and commits once on release', async () => {
+      const wrapper = await mountDay([morningVisit(1)]);
+      const card = eventOf(wrapper, 'Client 1');
+      const style = card.getAttribute('style');
+      const resizer = card.querySelector('.vuecal__event-resizer');
+      const bottom = yOf(wrapper, 10, 28);
+
+      press(resizer, bottom);
+      move(bottom + 3);
+      await nextTick();
+      // Not dragged far enough yet: still a click.
+      expect(card.getAttribute('style')).toBe(style);
+
+      move(yOf(wrapper, 11));
+      await nextTick();
+      expect(card.getAttribute('style')).not.toBe(style);
+      expect(wrapper.emitted('resizeAppointment')).toBeUndefined();
+
+      release(resizer, yOf(wrapper, 11));
+      await nextTick();
+      await settle();
+
+      expect(wrapper.emitted('resizeAppointment')).toEqual([
+        [
+          {
+            appointment: expect.objectContaining({ id: 1 }),
+            endsAt: '2026-03-09T06:00:00.000Z',
+            startsAt: '2026-03-09T05:00:00.000Z',
+          },
+        ],
+      ]);
+      expect(isResizing(wrapper)).toBe(false);
+    });
+
+    it('puts the card back and warns once when a held resize is refused', async () => {
+      const wrapper = await mountDay([
+        morningVisit(1),
+        morningVisit(2, {
+          endsAt: '2026-03-09T05:45:00.000Z',
+          startsAt: '2026-03-09T05:15:00.000Z',
+        }),
+      ]);
+      const card = eventOf(wrapper, 'Client 1');
+      const style = card.getAttribute('style');
+      const resizer = card.querySelector('.vuecal__event-resizer');
+
+      press(resizer, yOf(wrapper, 10, 28));
+      move(yOf(wrapper, 11));
+      await nextTick();
+      expect(card.getAttribute('style')).not.toBe(style);
+
+      release(resizer, yOf(wrapper, 11));
+      await nextTick();
+      await settle();
+
+      expect(useAlert).toHaveBeenCalledTimes(1);
+      expect(wrapper.emitted('resizeAppointment')).toBeUndefined();
+      expect(card.getAttribute('style')).toBe(style);
+      expect(isResizing(wrapper)).toBe(false);
+      expect(rejections).toEqual([]);
+
+      move(yOf(wrapper, 13), 0);
+      await nextTick();
+      expect(card.getAttribute('style')).toBe(style);
+    });
+
+    it('puts the card back when the release is lost and the mouse moves on without the button', async () => {
+      const wrapper = await mountDay([morningVisit(1)]);
+      const card = eventOf(wrapper, 'Client 1');
+      const style = card.getAttribute('style');
+      const resizer = card.querySelector('.vuecal__event-resizer');
+
+      press(resizer, yOf(wrapper, 10, 28));
+      move(yOf(wrapper, 11));
+      await nextTick();
+      expect(card.getAttribute('style')).not.toBe(style);
+
+      move(yOf(wrapper, 13), 0);
+      await nextTick();
+
+      expect(card.getAttribute('style')).toBe(style);
+      expect(isResizing(wrapper)).toBe(false);
+      expect(wrapper.emitted('resizeAppointment')).toBeUndefined();
+      expect(useAlert).not.toHaveBeenCalled();
+    });
+
+    describe('the click that ends a press on the bottom border', () => {
+      const click = (target, clientY) =>
+        mouse(target, 'click', clientY, { button: 0, buttons: 0 });
+
+      beforeEach(() => {
+        // The cell reads its own height to turn a click into a time.
+        vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(
+          1000
+        );
+      });
+
+      it('control: a plain click on the empty cell still opens a new appointment', async () => {
+        const wrapper = await mountDay([morningVisit(1)]);
+        const schedule = eventOf(wrapper, 'Client 1').closest(
+          '.vuecal__schedule'
+        );
+        const y = yOf(wrapper, 14);
+
+        press(schedule, y);
+        release(schedule, y);
+        click(schedule, y);
+        await nextTick();
+
+        expect(wrapper.emitted('createAppointment')).toHaveLength(1);
+      });
+
+      it('does not open a new appointment when a few pixels of drift take the pointer off the border onto the cell below', async () => {
+        const wrapper = await mountDay([morningVisit(1)]);
+        const card = eventOf(wrapper, 'Client 1');
+        const resizer = card.querySelector('.vuecal__event-resizer');
+        const schedule = card.closest('.vuecal__schedule');
+        const y = yOf(wrapper, 10, 29);
+
+        press(resizer, y);
+        move(y + 3);
+        // The release is on the cell below the card: the click goes to their common ancestor.
+        release(schedule, y + 3);
+        click(schedule, y + 3);
+        await nextTick();
+        await settle();
+
+        expect(wrapper.emitted('createAppointment')).toBeUndefined();
+        expect(wrapper.emitted('resizeAppointment')).toBeUndefined();
+      });
+    });
   });
 });

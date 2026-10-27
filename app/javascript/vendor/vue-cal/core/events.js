@@ -619,10 +619,13 @@ export const useEvents = vuecal => {
     return endTimestamp > rangeStart && startTimestamp < rangeEnd;
   };
 
+  // A press on the resizer only becomes a resize once the pointer travelled further than this (px).
+  const RESIZE_MIN_DRAG = 4;
+
   // Resizing state management.
   const resizeState = reactive({
-    isResizing: false,
-    fromResizer: false,
+    isResizing: false, // True once the pointer was dragged past RESIZE_MIN_DRAG while pressed.
+    fromResizer: false, // True from the press on the resizer until the end of the gesture.
     resizingEvent: null,
     resizingOriginalEvent: null,
     resizingLastAcceptedEvent: null,
@@ -636,6 +639,8 @@ export const useEvents = vuecal => {
     movePercentageY: 0,
     documentMouseX: 0,
     documentMouseY: 0,
+    pressX: 0, // The pointer position (client coords) at the press on the resizer.
+    pressY: 0,
     resizeStartDate: null,
     cellEl: null,
     schedule: null,
@@ -694,14 +699,24 @@ export const useEvents = vuecal => {
 
   // Document event handlers for event resizing.
   const onDocumentMousemove = async e => {
+    // The mouse button is no longer held (its release never reached the page): cancel the resize
+    // instead of letting the event follow the pointer.
+    if (e.type === 'mousemove' && !(e.buttons & 1)) {
+      cancelResize();
+      return;
+    }
+
     const { clientX, clientY } = e.touches?.[0] || e; // Handle click or touch event.
 
-    // Only the first mousemove to store original event and fire resize-start.
-    if (resizeState.fromResizer && !resizeState.resizingOriginalEvent) {
-      resizeState.resizingOriginalEvent = {
-        ...resizeState.resizingEvent,
-        _: { ...resizeState.resizingEvent._ },
-      };
+    // A press only becomes a resize once dragged past the threshold: a click changes nothing.
+    // Only on this first drag move, fire resize-start.
+    if (!resizeState.isResizing) {
+      const dragged = config.horizontal
+        ? clientX - resizeState.pressX
+        : clientY - resizeState.pressY;
+      if (Math.abs(dragged) <= RESIZE_MIN_DRAG) return;
+
+      resizeState.isResizing = true;
 
       // If there's an @event-resize-start external listener, call it.
       const eventListeners = config.eventListeners?.event || {};
@@ -743,6 +758,8 @@ export const useEvents = vuecal => {
           }),
         });
       }
+      // The resize may have ended (released or cancelled) while the external handler was answering.
+      if (!resizeState.isResizing) return;
       // If the event resizing is accepted, apply to new time range to the event.
       if (acceptResize !== false) {
         resizeState.resizingEvent.start = newStart;
@@ -766,66 +783,93 @@ export const useEvents = vuecal => {
     }
   };
 
+  // The click that ends a press on a resizer belongs to that press, not to whatever is under the
+  // pointer when the button is released: the browser sends it to the closest common ancestor, which
+  // can be the cell around the event. Swallow it so it never creates or selects anything.
+  const swallowNextClick = () => {
+    const stop = e => e.stopPropagation();
+    document.addEventListener('click', stop, { capture: true, once: true });
+    // The click comes right after the release: if none does, do not eat a later one.
+    setTimeout(() => document.removeEventListener('click', stop, true), 0);
+  };
+
   const onDocumentMouseup = async e => {
-    if (vuecal.touch?.isResizingEvent && resizeState.resizingEvent) {
-      // Get the cell start date from the resizing event's cell.
-      const cellStart = new Date(parseInt(resizeState.cellEl.dataset.start));
-      const { newStart, newEnd } = computeEventStartEnd(
-        resizeState.resizingEvent,
-        cellStart
-      );
+    if (e.type === 'mouseup') swallowNextClick();
 
-      // If there's an @event-resize-end external listener, call it.
-      let acceptResize = true;
-      const eventListeners = config.eventListeners?.event || {};
-      const resizeEndHandler = eventListeners['resize-end'];
-      // Call external validation of event resize-end. If successful, update the event details.
-      if (resizeEndHandler) {
-        acceptResize = await resizeEndHandler({
-          e,
-          event: resizeState.resizingEvent,
-          original: resizeState.resizingOriginalEvent, // Original event details before resizing.
-          overlaps: getEventOverlaps(resizeState.resizingEvent, {
-            start: newStart,
-            end: newEnd,
-          }),
-        });
-      }
+    const {
+      isResizing,
+      resizingEvent: event,
+      resizingOriginalEvent: original, // Original event details before resizing.
+      resizingLastAcceptedEvent: lastAccepted,
+    } = resizeState;
 
-      // If the event resize is accepted apply new range, if refused (SPECIFICALLY FALSE) revert to original.
-      resizeState.resizingEvent.start =
-        acceptResize === false
-          ? (
-              resizeState.resizingLastAcceptedEvent ||
-              resizeState.resizingOriginalEvent
-            ).start
-          : resizeState.resizingLastAcceptedEvent?.start || newStart;
-      resizeState.resizingEvent.end =
-        acceptResize === false
-          ? (
-              resizeState.resizingLastAcceptedEvent ||
-              resizeState.resizingOriginalEvent
-            ).end
-          : resizeState.resizingLastAcceptedEvent?.end || newEnd;
-      // If resizing to less than 1 minute, revert to original.
-      if (resizeState.resizingEvent._.duration < 1) {
-        resizeState.resizingEvent.start =
-          resizeState.resizingOriginalEvent.start;
-        resizeState.resizingEvent.end = resizeState.resizingOriginalEvent.end;
-      }
-      vuecal.touch.isResizingEvent = false; // Add a CSS class on wrapper while resizing.
-      vuecal.touch.currentHoveredCell = null; // Reset current hovered cell.
+    // A press released without dragging is a click: nothing was resized, so nothing to commit.
+    if (!isResizing) {
+      resetResizeState();
+      return;
     }
 
-    // Clean up document event listeners.
-    document.removeEventListener(
-      e.type === 'touchend' ? 'touchmove' : 'mousemove',
-      onDocumentMousemove,
-      { passive: !resizeState.fromResizer }
-    );
+    // Get the cell start date from the resizing event's cell.
+    const cellStart = new Date(parseInt(resizeState.cellEl.dataset.start));
+    const { newStart, newEnd } = computeEventStartEnd(event, cellStart);
+    const overlaps = getEventOverlaps(event, { start: newStart, end: newEnd });
 
-    // Reset resizing state.
-    vuecal.touch.isResizingEvent = false;
+    // The pointer is done: clean up now, whatever the external handler answers or throws.
+    resetResizeState();
+
+    // If there's an @event-resize-end external listener, call it.
+    const eventListeners = config.eventListeners?.event || {};
+    const resizeEndHandler = eventListeners['resize-end'];
+    let acceptResize = false; // Stays false (revert) if the handler throws.
+    try {
+      // Call external validation of event resize-end. If successful, update the event details.
+      acceptResize = resizeEndHandler
+        ? await resizeEndHandler({ e, event, original, overlaps })
+        : true;
+    } finally {
+      // If the event resize is accepted apply new range, if refused (SPECIFICALLY FALSE) revert to original.
+      event.start =
+        acceptResize === false
+          ? (lastAccepted || original).start
+          : lastAccepted?.start || newStart;
+      event.end =
+        acceptResize === false
+          ? (lastAccepted || original).end
+          : lastAccepted?.end || newEnd;
+      // If resizing to less than 1 minute, revert to original.
+      if (event._.duration < 1) {
+        event.start = original.start;
+        event.end = original.end;
+      }
+    }
+  };
+
+  // Abort a resize in progress (button released out of reach, touchcancel): put the event back to
+  // its original range, without calling resize-end.
+  const cancelResize = () => {
+    const {
+      isResizing,
+      resizingEvent: event,
+      resizingOriginalEvent: original,
+    } = resizeState;
+    if (isResizing) {
+      event.start = original.start;
+      event.end = original.end;
+    }
+    resetResizeState();
+  };
+
+  // Clean up document event listeners and reset the resizing state.
+  const resetResizeState = () => {
+    document.removeEventListener('mousemove', onDocumentMousemove);
+    document.removeEventListener('touchmove', onDocumentMousemove);
+    document.removeEventListener('mouseup', onDocumentMouseup);
+    document.removeEventListener('touchend', onDocumentMouseup);
+    document.removeEventListener('touchcancel', cancelResize);
+
+    vuecal.touch.isResizingEvent = false; // Remove the CSS class on wrapper while resizing.
+    vuecal.touch.currentHoveredCell = null; // Reset current hovered cell.
+    resizeState.isResizing = false;
     resizeState.fromResizer = false;
     resizeState.resizingEvent = null;
     resizeState.resizingOriginalEvent = null;
@@ -840,6 +884,8 @@ export const useEvents = vuecal => {
     resizeState.movePercentageY = 0;
     resizeState.documentMouseX = 0;
     resizeState.documentMouseY = 0;
+    resizeState.pressX = 0;
+    resizeState.pressY = 0;
     resizeState.cellEl = null;
     resizeState.resizeStartDate = null;
     resizeState.schedule = null;
@@ -847,6 +893,14 @@ export const useEvents = vuecal => {
 
   // Handle mousedown/touchstart on event elements
   const handleEventResize = (e, event, eventEl) => {
+    // Only one resize at a time. A further finger is not a new press, but any other press while one is
+    // still armed means the end of the first never reached the page: drop that gesture (reverting
+    // it) and start over.
+    if (resizeState.resizingEvent) {
+      if (e.touches?.length > 1) return;
+      cancelResize();
+    }
+
     const domEvent = e.touches?.[0] || e; // Handle click or touch event.
     // If the event target is the resizer, set the resizing flag.
     resizeState.fromResizer = !!domEvent.target.closest(
@@ -862,24 +916,30 @@ export const useEvents = vuecal => {
       resizeState.startY = domEvent.clientY - rect.top; // Handle click or touch event coords.
       resizeState.startPercentageX = (resizeState.startX * 100) / rect.width;
       resizeState.startPercentageY = (resizeState.startY * 100) / rect.height;
+      // Store where the press happened: the event only resizes once dragged away from here.
+      resizeState.pressX = domEvent.clientX;
+      resizeState.pressY = domEvent.clientY;
       // Store the cell DOM node for a more efficient resizing calc in mousemove/touchmove.
       resizeState.cellEl = eventEl.closest('.vuecal__cell');
       // Store the event start to apply on event end when resizing and end < start.
       resizeState.resizeStartDate = event.start;
       // Store the event being resized.
       resizeState.resizingEvent = event;
+      // Store the original event details to revert to when cancelling.
+      resizeState.resizingOriginalEvent = { ...event, _: { ...event._ } };
 
-      // Make the event listener non-passive if resizing so we can prevent default scrolling.
+      // Make the event listener non-passive so we can prevent default scrolling while resizing.
       document.addEventListener(
         e.type === 'touchstart' ? 'touchmove' : 'mousemove',
         onDocumentMousemove,
-        { passive: !resizeState.fromResizer }
+        { passive: false }
       );
       document.addEventListener(
         e.type === 'touchstart' ? 'touchend' : 'mouseup',
-        onDocumentMouseup,
-        { once: true }
+        onDocumentMouseup
       );
+      // Cancel (and revert) if the touch is taken away.
+      document.addEventListener('touchcancel', cancelResize);
     }
   };
 
