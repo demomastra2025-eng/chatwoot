@@ -21,6 +21,7 @@ import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
 import { PERSON_DIALOG_OPENER } from 'dashboard/composables/useOpenPersonDialog';
+import { getCommunicationReplyInboxId } from 'dashboard/helper/communicationThreadHelper';
 
 const props = defineProps({
   sourceDealId: {
@@ -72,6 +73,10 @@ const props = defineProps({
     default: false,
   },
   inline: {
+    type: Boolean,
+    default: false,
+  },
+  hydrateReplyContext: {
     type: Boolean,
     default: false,
   },
@@ -431,7 +436,12 @@ const activateConversation = async () => {
     if (!isCurrentActivation()) return;
     let conversation = activeChat.value;
 
-    if (!conversation) {
+    if (
+      !conversation ||
+      (props.hydrateReplyContext &&
+        (!conversation.dataFetched ||
+          (targetIsCommunicationThread && !conversation.channels?.length)))
+    ) {
       conversation =
         (await store.dispatch(
           targetIsCommunicationThread
@@ -445,6 +455,22 @@ const activateConversation = async () => {
 
     if (!conversation) {
       throw new Error(loadErrorText.value);
+    }
+
+    // The reply editor detects WhatsApp from the inbox record. Appointment
+    // pages can open directly, before the main conversation route loads inboxes.
+    const replyInboxId =
+      conversation.active_reply_channel?.inbox_id ||
+      getCommunicationReplyInboxId(conversation);
+    const getInbox = store.getters?.['inboxes/getInbox'];
+    if (
+      props.hydrateReplyContext &&
+      replyInboxId &&
+      getInbox &&
+      !getInbox(replyInboxId)?.channel_type
+    ) {
+      await store.dispatch('inboxes/get');
+      if (!isCurrentActivation()) return;
     }
 
     await store.dispatch('setActiveChat', { data: conversation });

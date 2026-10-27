@@ -20,6 +20,7 @@ import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { PERSON_DIALOG_OPENER } from 'dashboard/composables/useOpenPersonDialog';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import ContactsAPI from 'dashboard/api/contacts';
+import ContactInfo from 'dashboard/routes/dashboard/conversation/contact/ContactInfo.vue';
 import SchedulingMedelementPatientsAPI from 'dashboard/api/scheduling/medelementPatients';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
@@ -39,6 +40,7 @@ import SchedulingContactPhoneEditor from 'dashboard/components-next/Scheduling/S
 import SchedulingCustomFieldAdvancedFilter from 'dashboard/components-next/Scheduling/SchedulingCustomFieldAdvancedFilter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingAppointmentTimeFields from 'dashboard/components-next/Scheduling/SchedulingAppointmentTimeFields.vue';
+import SchedulingRescheduleDialog from 'dashboard/components-next/Scheduling/SchedulingRescheduleDialog.vue';
 import AppointmentNotifications from 'dashboard/components-next/Scheduling/AppointmentNotifications.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
@@ -178,6 +180,11 @@ const contactEditorMode = ref(null);
 const contactSelectorFieldRef = ref(null);
 const contactProfile = ref(null);
 const isPatientSearchOpen = ref(false);
+const appointmentMenuOpen = ref(false);
+const rescheduleDialogRef = ref(null);
+const savedFormSnapshot = ref('');
+const justSaved = ref(false);
+const appointmentContactPanelOpen = ref(false);
 const inlineContactDraftInitialized = ref(false);
 const customFieldFilters = ref({});
 const filterDialogRef = ref(null);
@@ -719,6 +726,15 @@ const appointmentPatient = computed(() => ({
 const appointmentPatientContactId = computed(
   () => formStore.form.patientContactId || formStore.form.contactId
 );
+const appointmentContactPanelContact = computed(() => ({
+  ...(contactProfile.value || {}),
+  id: appointmentPatientContactId.value,
+  name: appointmentPatient.value.fullName || appointmentClientName(),
+  phone_number:
+    contactProfile.value?.phone_number ||
+    formStore.selectedContact?.phone ||
+    formStore.form.clientPhone,
+}));
 watch(appointmentPatientContactId, async id => {
   contactProfile.value = null;
   if (!id) return;
@@ -880,8 +896,42 @@ const appointmentDurationMin = computed({
 
 const drawerConfirmLabel = computed(() =>
   formStore.mode === 'edit'
-    ? t('SCHEDULING.GENERAL.UPDATE')
+    ? t('SCHEDULING.GENERAL.SAVE')
     : t('SCHEDULING.GENERAL.CREATE')
+);
+const isAppointmentDirty = computed(
+  () => JSON.stringify(formStore.form) !== savedFormSnapshot.value
+);
+const appointmentStatusLine = computed(() => {
+  const start = formStore.form.startsAt;
+  if (!start) return '';
+  const date = new Intl.DateTimeFormat('ru-RU', {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(new Date(`${start.slice(0, 10)}T12:00:00`));
+  const doctor = resourceOptions.value.find(
+    option => Number(option.value) === Number(formStore.form.resourceId)
+  )?.label;
+  const cabinet = selectedFormMedelementCabinets.value.find(
+    item => String(item.code) === String(formStore.form.medelementCabinetCode)
+  );
+  return [
+    `${date} · ${start.slice(11, 16)}–${formStore.form.endsAt?.slice(11, 16) || ''}`,
+    doctor,
+    cabinet?.name || cabinet?.number,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+});
+watch(
+  () => [formStore.recordId, formStore.mode],
+  () => {
+    if (formStore.mode === 'edit') {
+      savedFormSnapshot.value = JSON.stringify(formStore.form);
+    }
+  }
 );
 
 const appointmentConversationMatchesSelectedContact = computed(() => {
@@ -944,11 +994,18 @@ const patientDialogRoute = computed(() =>
 const openPatientDialog = () => {
   if (!patientDialogRoute.value) return;
   updateUISettings({
-    is_contact_sidebar_open: false,
+    is_contact_sidebar_open: true,
     is_crm_deal_panel_open: false,
-    is_scheduling_appointments_panel_open: true,
+    is_scheduling_appointments_panel_open: false,
   });
   router.push(patientDialogRoute.value);
+};
+const openAppointmentContactPanel = () => {
+  if (isAppointmentPage.value) {
+    appointmentContactPanelOpen.value = true;
+  } else {
+    openPatientDialog();
+  }
 };
 const store = useStore();
 // «Написать» in the drawer opens the chat beside the appointment (on the appointment page: its «Чат» tab) and does not leave the page.
@@ -1340,6 +1397,7 @@ const consumeAppointmentPrefillQuery = async () => {
 };
 
 const handleDrawerClose = () => {
+  appointmentContactPanelOpen.value = false;
   appointmentDeleteDialogRef.value?.close();
   showAppointmentConversationPanel.value = false;
   appointmentConversationContactCreateRequested.value = false;
@@ -1515,6 +1573,7 @@ const syncCalendarContextToAppointment = appointment => {
 
 const openEditAppointment = appointment => {
   formStore.openEdit(appointment);
+  savedFormSnapshot.value = JSON.stringify(formStore.form);
   appointmentPageTab.value = 'appointment';
   resetAppointmentConversationDraft();
   appointmentConversationContactCreateRequested.value = false;
@@ -2237,6 +2296,7 @@ const selectProviderPatientCandidate = token => {
 
 const handleAppointmentSubmit = async () => {
   if (formStore.ui.isSaving || formStore.ui.isCreatingContact) return;
+  justSaved.value = false;
 
   if (!isSelectedAppointmentProviderOwned.value) {
     if (isMedelementCabinetMissing.value) {
@@ -2297,6 +2357,10 @@ const handleAppointmentSubmit = async () => {
       if (isAppointmentPage.value) {
         syncCalendarContextToAppointment(appointment);
         openEditAppointment(appointment);
+        justSaved.value = true;
+        window.setTimeout(() => {
+          justSaved.value = false;
+        }, 2500);
       } else {
         handleDrawerClose();
       }
@@ -2326,6 +2390,29 @@ const handleAppointmentSubmit = async () => {
     },
     onError: error => useAlert(formatErrorMessage(error)),
   });
+};
+
+const changeAppointmentPatient = () => {
+  appointmentMenuOpen.value = false;
+  if (isSelectedAppointmentInMedelement.value) {
+    useAlert(t('SCHEDULING.RESCHEDULE.PATIENT_CHANGE_BLOCKED'));
+    return;
+  }
+  openContactSelector();
+};
+
+const applyReschedule = async ({ startsAt, endsAt, resourceId }) => {
+  if (
+    isSelectedAppointmentProviderOwned.value &&
+    Number(resourceId) !== Number(formStore.selectedAppointment?.resourceId)
+  ) {
+    useAlert(t('SCHEDULING.MEDELEMENT.RESOURCE_CHANGE_UNSUPPORTED'));
+    return;
+  }
+  formStore.updateField('resourceId', resourceId);
+  formStore.updateField('startsAt', startsAt);
+  formStore.updateField('endsAt', endsAt);
+  await handleAppointmentSubmit();
 };
 
 const cancelSelectedAppointment = async () => {
@@ -2871,77 +2958,65 @@ onMounted(async () => {
                 :label="$t('SCHEDULING.GENERAL.BACK')"
                 @click="closeAppointmentEditor"
               />
-              <input
-                id="scheduling-appointment-drawer-title"
-                :disabled="formStore.ui.isSaving"
-                class="reset-base min-w-0 flex-1 border-none bg-transparent text-base font-semibold text-n-slate-12 outline-none placeholder:text-n-slate-10"
-                :aria-label="
-                  $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')
-                "
-                :placeholder="drawerTitle"
-                :value="formStore.form.clientFirstName"
-                @input="
-                  formStore.updateField('clientFirstName', $event.target.value)
-                "
-              />
-
-              <span
-                v-if="selectedAppointmentMedelementStatus"
-                v-tooltip.bottom="selectedAppointmentMedelementStatus.label"
-                :title="selectedAppointmentMedelementStatus.label"
-                :aria-label="selectedAppointmentMedelementStatus.label"
-                :data-sync-state="selectedAppointmentMedelementStatus.state"
-                data-test="calendar-appointment-medelement-meta"
-                role="status"
-                class="inline-flex size-7 shrink-0 items-center justify-center rounded-lg border transition-colors"
-                :class="
-                  {
-                    synced: 'border-n-teal-6/50 bg-n-teal-3 text-n-teal-11',
-                    pending: 'border-n-amber-6/50 bg-n-amber-3 text-n-amber-11',
-                    warning: 'border-n-amber-6/50 bg-n-amber-3 text-n-amber-11',
-                    error: 'border-n-ruby-6/50 bg-n-ruby-3 text-n-ruby-11',
-                    not_synced: 'border-n-weak bg-n-alpha-2 text-n-slate-11',
-                  }[selectedAppointmentMedelementStatus.state]
-                "
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="size-4 shrink-0"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M2.25 9.25L4.85 6.75H5.55V8.3C6.35 7.25 7.55 6.55 9.05 6.55C10.7 6.55 11.95 7.25 12.55 8.55C13.45 7.25 14.8 6.55 16.45 6.55C18.95 6.55 20.45 8.2 20.45 11.05V17.25H17.15V11.55C17.15 9.95 16.4 9.15 15.15 9.15C13.85 9.15 13.05 10.05 13.05 11.65V17.25H9.75V11.55C9.75 9.95 9.0 9.15 7.75 9.15C6.45 9.15 5.65 10.05 5.65 11.65V17.25H2.25V9.25Z"
-                    fill="currentColor"
-                  />
-                  <rect
-                    x="21.1"
-                    y="13.85"
-                    width="2.4"
-                    height="3.4"
-                    rx="0.5"
-                    fill="currentColor"
-                  />
-                </svg>
-                <span class="sr-only">
-                  {{ selectedAppointmentMedelementStatus.label }}
-                </span>
-              </span>
-
-              <PersonDialogActions
-                v-if="
-                  canOpenAppointmentConversation && formStore.form.contactId
-                "
-                :contact-id="formStore.form.contactId"
-                :phone="
-                  formStore.selectedContact?.phone || formStore.form.clientPhone
-                "
-                :show-write="
-                  isAppointmentPage || !shouldShowAppointmentConversationPanel
-                "
-                icon-only
-                @call-initiated="handleAppointmentCallInitiated"
+              <div class="flex min-w-0 flex-1 items-center gap-2">
+                <Avatar
+                  v-if="appointmentPatientContactId"
+                  :name="appointmentPatient.fullName || appointmentClientName()"
+                  :src="
+                    contactProfile?.thumbnail ||
+                    formStore.selectedContact?.thumbnail ||
+                    ''
+                  "
+                  :size="40"
+                  rounded-full
+                />
+                <div class="min-w-0 flex-1">
+                  <button
+                    v-if="appointmentPatientContactId"
+                    data-test="appointment-patient-name"
+                    type="button"
+                    class="block max-w-full truncate text-left text-base font-semibold text-n-slate-12"
+                    @click="openAppointmentContactPanel"
+                  >
+                    {{ appointmentPatient.fullName || appointmentClientName() }}
+                  </button>
+                  <h2
+                    v-else
+                    class="m-0 truncate text-base font-semibold text-n-slate-12"
+                  >
+                    {{ drawerTitle }}
+                  </h2>
+                  <div
+                    v-if="appointmentPatientContactId"
+                    data-test="appointment-patient-summary"
+                    class="flex min-w-0 flex-wrap items-center gap-1 text-xs text-n-slate-11"
+                  >
+                    <span v-if="appointmentPatientAge">{{
+                      appointmentPatientAge
+                    }}</span>
+                    <span v-if="appointmentPatientIin"
+                      >· {{ $t('SCHEDULING.CONTACT.IIN') }}
+                      {{ appointmentPatientIin }}</span
+                    >
+                    <SchedulingContactPhoneEditor
+                      :contact-id="appointmentPatientContactId"
+                      :phone="
+                        formStore.selectedContact?.phone ||
+                        formStore.form.clientPhone
+                      "
+                      :saving="isPhoneSaving || formStore.ui.isSaving"
+                      :error="phoneEditorError"
+                      @save="saveContactPhone"
+                    />
+                  </div>
+                </div>
+              </div>
+              <Button
+                v-if="formStore.mode === 'edit'"
+                size="sm"
+                variant="faded"
+                :label="$t('SCHEDULING.RESCHEDULE.TITLE')"
+                @click="rescheduleDialogRef?.open()"
               />
               <Button
                 size="sm"
@@ -2950,12 +3025,66 @@ onMounted(async () => {
                   formStore.isFormInvalid ||
                   formStore.ui.isSaving ||
                   formStore.ui.isCreatingContact ||
+                  (formStore.mode === 'edit' && !isAppointmentDirty) ||
                   (!isSelectedAppointmentProviderOwned &&
                     (isMedelementCabinetMissing || isMedelementContactMissing))
                 "
                 :label="drawerConfirmLabel"
                 @click="handleAppointmentSubmit"
               />
+              <span
+                v-if="justSaved"
+                role="status"
+                class="text-xs text-n-teal-11"
+                >{{ $t('SCHEDULING.APPOINTMENT_FORM.SAVED_SHORT') }}</span
+              >
+              <div v-if="formStore.mode === 'edit'" class="relative">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon="i-lucide-ellipsis"
+                  data-test="appointment-more-actions"
+                  :aria-label="$t('SCHEDULING.GENERAL.ACTIONS')"
+                  @click="appointmentMenuOpen = !appointmentMenuOpen"
+                />
+                <div
+                  v-if="appointmentMenuOpen"
+                  class="absolute right-0 z-30 mt-1 min-w-48 rounded-lg border border-n-weak bg-n-solid-2 p-1 shadow-lg"
+                >
+                  <button
+                    type="button"
+                    data-test="appointment-change-patient"
+                    class="block w-full rounded px-3 py-2 text-left text-sm text-n-slate-12 hover:bg-n-alpha-2"
+                    @click="changeAppointmentPatient"
+                  >
+                    {{ $t('SCHEDULING.RESCHEDULE.CHANGE_PATIENT') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="block w-full rounded px-3 py-2 text-left text-sm text-n-slate-12 hover:bg-n-alpha-2"
+                    @click="
+                      appointmentMenuOpen = false;
+                      handleAppointmentCancel();
+                    "
+                  >
+                    {{ $t('SCHEDULING.APPOINTMENT_FORM.CANCEL_APPOINTMENT') }}
+                  </button>
+                  <button
+                    type="button"
+                    :disabled="
+                      isSelectedAppointmentProviderOwned ||
+                      formStore.form.status !== 'cancelled'
+                    "
+                    class="block w-full rounded px-3 py-2 text-left text-sm text-n-ruby-11 hover:bg-n-alpha-2 disabled:opacity-50"
+                    @click="
+                      appointmentMenuOpen = false;
+                      openAppointmentDeleteDialog();
+                    "
+                  >
+                    {{ $t('SCHEDULING.APPOINTMENT_FORM.DELETE_APPOINTMENT') }}
+                  </button>
+                </div>
+              </div>
               <Button
                 v-if="!isAppointmentPage"
                 size="sm"
@@ -2965,6 +3094,27 @@ onMounted(async () => {
                 @click="closeAppointmentEditor"
               />
             </header>
+
+            <div
+              v-if="formStore.mode === 'edit'"
+              class="flex flex-wrap items-center gap-2 border-b border-n-weak px-4 py-2 text-xs text-n-slate-11"
+            >
+              <span
+                class="rounded-full bg-n-slate-3 px-2 py-0.5 text-n-slate-12"
+                >{{
+                  appointmentStatusOptions.find(
+                    option => option.value === formStore.form.status
+                  )?.label
+                }}</span
+              >
+              <span
+                v-if="selectedAppointmentMedelementStatus"
+                data-test="calendar-appointment-medelement-meta"
+                :data-sync-state="selectedAppointmentMedelementStatus.state"
+                >{{ selectedAppointmentMedelementStatus.label }}</span
+              >
+              <span>{{ appointmentStatusLine }}</span>
+            </div>
 
             <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
               <fieldset
@@ -3029,6 +3179,7 @@ onMounted(async () => {
 
                   <div
                     v-if="
+                      formStore.mode === 'create' &&
                       !isContactEditorOpen &&
                       (formStore.form.contactId ||
                         formStore.form.patientContactId)
@@ -3879,6 +4030,7 @@ onMounted(async () => {
 
           <CrmDealConversationPanel
             data-testid="scheduling-appointment-chat"
+            hydrate-reply-context
             :active="!isAppointmentPage || appointmentPageTab === 'chat'"
             :inline="isAppointmentPage"
             :communication-thread-id="appointmentCommunicationThreadId"
@@ -3906,6 +4058,33 @@ onMounted(async () => {
         </div>
       </div>
     </Transition>
+
+    <aside
+      v-if="appointmentContactPanelOpen"
+      class="fixed inset-y-0 right-0 z-[150] w-full max-w-[26rem] overflow-y-auto border-l border-n-weak bg-n-solid-2 shadow-xl"
+      role="dialog"
+      :aria-label="$t('CONVERSATION.SIDEBAR.CONTACT')"
+    >
+      <div class="flex justify-end border-b border-n-weak p-2">
+        <Button
+          icon="i-lucide-x"
+          variant="ghost"
+          :aria-label="$t('CONTACT_PANEL.CLOSE')"
+          @click="appointmentContactPanelOpen = false"
+        />
+      </div>
+      <ContactInfo :contact="appointmentContactPanelContact" />
+    </aside>
+
+    <SchedulingRescheduleDialog
+      ref="rescheduleDialogRef"
+      :appointment="formStore.selectedAppointment"
+      :resources="filterableResources"
+      :timezone="workspaceTimezone"
+      :cabinet-code="formStore.form.medelementCabinetCode || ''"
+      :resource-change-blocked="isSelectedAppointmentProviderOwned"
+      @select="applyReschedule"
+    />
 
     <Dialog
       ref="filterDialogRef"

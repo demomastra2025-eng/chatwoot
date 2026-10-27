@@ -267,8 +267,10 @@ const stubs = {
   TagMultiSelectComboBox: true,
   Checkbox: true,
   CrmDealConversationPanel: true,
+  ContactInfo: true,
   AppointmentDealSelector: true,
   Dialog: DialogStub,
+  SchedulingRescheduleDialog: true,
   SchedulingCalendarGrid: true,
   SchedulingCustomFieldAdvancedFilter: true,
   SchedulingErrorState: true,
@@ -362,6 +364,40 @@ describe('SchedulingCalendarPage pending local booking', () => {
     wrapper?.unmount();
     wrapper = null;
     window.innerWidth = 1024;
+  });
+
+  it('keeps the new appointment title separate from patient search text', async () => {
+    const { store, contact } = await mountPage();
+    store.updateField('contactId', '');
+    store.updateField('patientContactId', '');
+    store.selectedContact = null;
+    await flushPromises();
+    contact.vm.$emit('search', 'Тест');
+    await flushPromises();
+    expect(wrapper.get('.modal-mask h2').text()).toBe(
+      'SCHEDULING.APPOINTMENT_FORM.CREATE_TITLE'
+    );
+    expect(wrapper.get('.modal-mask h2').text()).not.toContain('Тест');
+  });
+
+  it('opens the contact panel from the patient name on an appointment page', async () => {
+    const { store } = await mountPage();
+    mocks.route.params.appointmentId = '505';
+    store.openEdit({
+      id: 505,
+      accountId: 74,
+      contactId: 42,
+      clientFirstName: 'Patient',
+      resourceId: 3,
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+    });
+    await flushPromises();
+    await wrapper
+      .get('[data-test="appointment-patient-name"]')
+      .trigger('click');
+    expect(wrapper.findComponent({ name: 'ContactInfo' }).exists()).toBe(true);
+    expect(mocks.router.push).not.toHaveBeenCalled();
   });
 
   it('shows a saved phone immediately and refreshes the open person dialog', async () => {
@@ -561,9 +597,9 @@ describe('SchedulingCalendarPage pending local booking', () => {
     const controls = wrapper.get('[data-test="appointment-form-controls"]');
     expect(controls.element.disabled).toBe(true);
     expect(controls.attributes()).toHaveProperty('inert');
-    expect(
-      wrapper.get('#scheduling-appointment-drawer-title').element.disabled
-    ).toBe(true);
+    expect(wrapper.find('#scheduling-appointment-drawer-title').exists()).toBe(
+      false
+    );
     expect(comment.element.disabled).toBe(true);
 
     // Simulate callbacks from popups opened before submit, even if a child
@@ -595,9 +631,7 @@ describe('SchedulingCalendarPage pending local booking', () => {
         .findComponent(InputStub)
         .vm.$emit('update:modelValue', 'Late nested popup');
     });
-    await wrapper
-      .get('#scheduling-appointment-drawer-title')
-      .setValue('Late name');
+    store.updateField('clientFirstName', 'Late name');
     await comment.setValue('Late DOM comment');
     await save.trigger('click');
     await flushPromises();
@@ -739,7 +773,7 @@ describe('SchedulingCalendarPage pending local booking', () => {
       '[data-test="calendar-appointment-medelement-meta"]'
     );
     expect(medelementMeta.attributes('data-sync-state')).toBe('synced');
-    expect(medelementMeta.find('svg').exists()).toBe(true);
+    expect(medelementMeta.find('svg').exists()).toBe(false);
     expect(medelementMeta.text()).toContain(
       'SCHEDULING.MEDELEMENT.SYNC_STATUS.SYNCED'
     );
@@ -772,7 +806,7 @@ describe('SchedulingCalendarPage pending local booking', () => {
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(
       wrapper.find('[data-test="calendar-selected-patient-card"]').exists()
-    ).toBe(true);
+    ).toBe(false);
     expect(wrapper.find('[data-test="calendar-patient-search"]').exists()).toBe(
       false
     );
@@ -783,9 +817,9 @@ describe('SchedulingCalendarPage pending local booking', () => {
     ).toBe(false);
 
     const saveButton = wrapper.get(
-      'button[data-label="SCHEDULING.GENERAL.UPDATE"]'
+      'button[data-label="SCHEDULING.GENERAL.SAVE"]'
     );
-    expect(saveButton.element.disabled).toBe(false);
+    expect(saveButton.element.disabled).toBe(true);
     await commentTextarea.setValue('Внутренняя заметка по приёму');
     SchedulingAppointmentsAPI.update.mockResolvedValueOnce({
       data: {
@@ -903,7 +937,7 @@ describe('SchedulingCalendarPage pending local booking', () => {
       '[data-test="calendar-appointment-medelement-meta"]'
     );
     expect(cancelledMeta.attributes('data-sync-state')).toBe('warning');
-    expect(cancelledMeta.find('svg').exists()).toBe(true);
+    expect(cancelledMeta.find('svg').exists()).toBe(false);
     expect(
       wrapper.get('input[data-field-key="medelement_reception_code"]').element
         .value
@@ -936,7 +970,7 @@ describe('SchedulingCalendarPage pending local booking', () => {
     // eslint-disable-next-line vue/custom-event-name-casing -- Preserve the existing calendar grid event contract.
     grid.vm.$emit('create-appointment', nextSlot);
     await flushPromises();
-    await wrapper.get('#scheduling-appointment-drawer-title').setValue('Other');
+    store.updateField('clientFirstName', 'Other');
     const freshForm = JSON.parse(JSON.stringify(store.form));
     pending.resolve({ data: { payload: { id: 501, contact_id: 42 } } });
     await flushPromises();
@@ -998,15 +1032,15 @@ describe('SchedulingCalendarPage pending local booking', () => {
       ).toBe('Follow-up check');
       expect(
         wrapper.find('[data-test="calendar-selected-patient-card"]').exists()
-      ).toBe(true);
+      ).toBe(false);
       expect(
-        wrapper.get('[data-test="calendar-selected-patient-card"]').text()
-      ).toContain('WhatsApp');
+        wrapper.get('[data-test="appointment-patient-name"]').text()
+      ).toContain('Client Patient');
       expect(
-        wrapper.get('[data-test="calendar-selected-patient-card"]').text()
+        wrapper.get('[data-test="appointment-patient-summary"]').text()
       ).toContain('•••• 0123');
       expect(
-        wrapper.get('[data-test="calendar-selected-patient-card"]').text()
+        wrapper.get('[data-test="appointment-patient-summary"]').text()
       ).not.toContain('840209500123');
       expect(
         wrapper
@@ -1015,8 +1049,11 @@ describe('SchedulingCalendarPage pending local booking', () => {
           )
           .exists()
       ).toBe(false);
+      await wrapper
+        .get('[data-test="appointment-more-actions"]')
+        .trigger('click');
       const changePatientBtn = wrapper.get(
-        'button[data-label="SCHEDULING.PATIENT_CONTEXT.CHANGE_PATIENT"]'
+        '[data-test="appointment-change-patient"]'
       );
       await changePatientBtn.trigger('click');
       await flushPromises();
@@ -1025,7 +1062,7 @@ describe('SchedulingCalendarPage pending local booking', () => {
       ).toBe(true);
       expect(
         wrapper.find('[data-test="calendar-selected-patient-card"]').exists()
-      ).toBe(true);
+      ).toBe(false);
       expect(
         wrapper
           .find(

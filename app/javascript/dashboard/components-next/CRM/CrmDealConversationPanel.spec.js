@@ -87,6 +87,7 @@ const mountPanel = ({
   sourceDealId = null,
   showOpenFullScreen = false,
   inline = false,
+  hydrateReplyContext = false,
 } = {}) =>
   mount(CrmDealConversationPanel, {
     props: {
@@ -103,6 +104,7 @@ const mountPanel = ({
       sourceDealId,
       showOpenFullScreen,
       inline,
+      hydrateReplyContext,
       visible: true,
     },
     global: {
@@ -354,6 +356,42 @@ describe('CrmDealConversationPanel', () => {
     });
     expect(wrapper.find('conversation-box-stub').exists()).toBe(true);
     expect(wrapper.find('spinner-stub').exists()).toBe(false);
+  });
+
+  it('refreshes a cached summary before opening the appointment reply editor', async () => {
+    conversations.value = [{ id: 185, inbox_id: 7, dataFetched: false }];
+    const getInbox = vi.fn(() => ({}));
+    useStore.mockReturnValue({
+      dispatch,
+      getters: { 'inboxes/getInbox': getInbox },
+    });
+    const wrapper = mountPanel({ hydrateReplyContext: true });
+    await flushPromises();
+
+    expect(dispatch).toHaveBeenCalledWith('getConversation', 185);
+    expect(dispatch).toHaveBeenCalledWith('inboxes/get');
+    expect(wrapper.find('conversation-box-stub').exists()).toBe(true);
+  });
+
+  it('loads the active reply channel inbox for the appointment editor', async () => {
+    conversations.value = [
+      {
+        id: 185,
+        inbox_id: 9,
+        active_reply_channel: { inbox_id: 7 },
+        dataFetched: true,
+      },
+    ];
+    const getInbox = vi.fn(() => ({}));
+    useStore.mockReturnValue({
+      dispatch,
+      getters: { 'inboxes/getInbox': getInbox },
+    });
+    mountPanel({ hydrateReplyContext: true });
+    await flushPromises();
+
+    expect(getInbox).toHaveBeenCalledWith(7);
+    expect(dispatch).toHaveBeenCalledWith('inboxes/get');
   });
 
   describe('appointments from the embedded deal chat', () => {

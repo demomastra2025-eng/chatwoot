@@ -69,7 +69,7 @@ watch(
     data-testid="appointment-notifications"
   >
     <h3 class="mb-2 text-sm font-semibold">
-      {{ $t('SCHEDULING.NOTIFICATIONS.TITLE') }}
+      {{ $t('SCHEDULING.NOTIFICATIONS.PATIENT_TITLE') }}
     </h3>
     <p v-if="!loading && !items.length" class="m-0 text-sm text-n-slate-11">
       {{ $t('SCHEDULING.NOTIFICATIONS.NO_ITEMS') }}
