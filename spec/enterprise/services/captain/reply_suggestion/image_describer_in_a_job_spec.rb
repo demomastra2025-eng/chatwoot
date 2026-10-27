@@ -20,7 +20,10 @@ RSpec.describe Captain::ReplySuggestion::ImageDescriber do
     message.attachments.create!(account_id: account.id, file_type: :image, external_url: 'https://example.com/image.jpg')
   end
   let(:lock_key) { "#{Captain::ImageRecognitionService::LOCK_PREFIX}:#{attachment.id}" }
-  let(:own_description) { instance_double(RubyLLM::Message, content: 'Own description of the run') }
+  let(:own_reading) do
+    Captain::ImageReading::Reader::Reading.new(description: 'Own description of the run', reader: :ordinary, model: 'gpt-5.4-mini')
+  end
+  let(:reader) { instance_double(Captain::ImageReading::Reader, read: own_reading) }
   # Set when a worker has looked at the cache and at the lock once: from then on the job of the arrival may finish.
   let(:worker_looked) { Queue.new }
 
@@ -30,7 +33,7 @@ RSpec.describe Captain::ReplySuggestion::ImageDescriber do
     allow(Captain::ImageRecognitionService).to receive(:new).and_wrap_original do |original, **options|
       original.call(**options).tap { |recognition| allow(recognition).to receive(:model).and_return('gpt-5.4-mini') }
     end
-    allow(Llm::Runtime).to receive(:chat).and_return(own_description)
+    allow(Captain::ImageReading::Reader).to receive(:new).and_return(reader)
     allow(Redis::Alfred).to receive(:exists?).and_wrap_original do |original, *args|
       original.call(*args).tap { worker_looked << true }
     end
@@ -53,6 +56,6 @@ RSpec.describe Captain::ReplySuggestion::ImageDescriber do
     arrival_job.join
 
     expect(descriptions).to eq(attachment.id => 'Description from the arrival job')
-    expect(Llm::Runtime).not_to have_received(:chat)
+    expect(reader).not_to have_received(:read)
   end
 end

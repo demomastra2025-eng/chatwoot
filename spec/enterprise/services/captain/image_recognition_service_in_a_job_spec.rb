@@ -21,14 +21,17 @@ RSpec.describe Captain::ImageRecognitionService do
   end
   let(:lock_key) { "#{described_class::LOCK_PREFIX}:#{attachment.id}" }
   let(:cache_key) { described_class::CACHE_KEY }
-  let(:own_description) { instance_double(RubyLLM::Message, content: 'Own description of the waiter') }
+  let(:own_reading) do
+    Captain::ImageReading::Reader::Reading.new(description: 'Own description of the waiter', reader: :ordinary, model: 'gpt-5.4-mini')
+  end
+  let(:reader) { instance_double(Captain::ImageReading::Reader, read: own_reading) }
   # Set when the waiter has looked at the cache and at the lock once: from then on the holder may finish.
   let(:waiter_looked) { Queue.new }
 
   before do
     stub_const("#{described_class}::POLL_SECONDS", 0.02)
     allow(Llm::Config).to receive(:provider_for_model).and_return('openai')
-    allow(Llm::Runtime).to receive(:chat).and_return(own_description)
+    allow(Captain::ImageReading::Reader).to receive(:new).and_return(reader)
     allow(Redis::Alfred).to receive(:exists?).and_wrap_original do |original, *args|
       original.call(*args).tap { waiter_looked << true }
     end
@@ -61,7 +64,7 @@ RSpec.describe Captain::ImageRecognitionService do
     expect(waiter.perform).to eq('Description from the holder')
     holder.join
 
-    expect(Llm::Runtime).not_to have_received(:chat)
+    expect(reader).not_to have_received(:read)
   end
 
   it 'takes the description of the holder inside the executor of a job, where the query cache is on' do
@@ -74,7 +77,7 @@ RSpec.describe Captain::ImageRecognitionService do
     holder.join
 
     expect(result).to eq('Description from the holder')
-    expect(Llm::Runtime).not_to have_received(:chat)
+    expect(reader).not_to have_received(:read)
   end
 
   it 'describes the image once inside the executor of a job when the holder ends without a description' do
@@ -84,6 +87,6 @@ RSpec.describe Captain::ImageRecognitionService do
     holder.join
 
     expect(result).to eq('Own description of the waiter')
-    expect(Llm::Runtime).to have_received(:chat).once
+    expect(reader).to have_received(:read).once
   end
 end
