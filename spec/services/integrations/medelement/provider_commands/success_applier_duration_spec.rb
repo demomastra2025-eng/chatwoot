@@ -77,6 +77,29 @@ RSpec.describe Integrations::Medelement::ProviderCommands::SuccessApplier do
     end
   end
 
+  context 'when the patient had confirmed the visit' do
+    before { appointment.update!(status: 'confirmed') }
+
+    it 'asks for a new confirmation once the provider confirms the move to another day' do
+      destination_start = starts_at + 1.day
+      command = stage_command(operation: 'move_reception', destination_start: destination_start, destination_end: destination_start + 30.minutes)
+      expect(appointment.reload.status).to eq('confirmed')
+
+      expect(described_class.new(command: command).reception_moved!).to be(true)
+
+      expect(appointment.reload).to have_attributes(status: 'scheduled', starts_at: destination_start)
+    end
+
+    it 'keeps the confirmation when the provider confirms a move within the same day' do
+      destination_start = starts_at + 1.hour
+      command = stage_command(operation: 'move_reception', destination_start: destination_start, destination_end: destination_start + 30.minutes)
+
+      expect(described_class.new(command: command).reception_moved!).to be(true)
+
+      expect(appointment.reload).to have_attributes(status: 'confirmed', starts_at: destination_start)
+    end
+  end
+
   context 'when a new confirmed reception has an existing local duration' do
     let(:source) { 'manual' }
 

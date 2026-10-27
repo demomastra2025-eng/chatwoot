@@ -222,6 +222,131 @@ RSpec.describe Scheduling::Appointment do
     end
   end
 
+  describe 'confirmation after a move to another day' do
+    let(:account) { create(:account) }
+    let(:resource) { create(:scheduling_resource, account: account, timezone: 'Asia/Almaty') }
+    let(:starts_at) { Time.utc(2026, 10, 27, 10, 30) } # 15:30 on 27.10 in Almaty
+    let(:status) { 'confirmed' }
+    let(:appointment) do
+      create(:scheduling_appointment, account: account, resource: resource, status: status,
+                                      starts_at: starts_at, ends_at: starts_at + 30.minutes)
+    end
+
+    def move_to(new_starts_at, **extra)
+      appointment.update!(starts_at: new_starts_at, ends_at: new_starts_at + 30.minutes, **extra)
+      appointment.reload
+    end
+
+    it 'sets a confirmed appointment back to scheduled when it moves to another day' do
+      appointment.update_columns(attendance_confirmed_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
+
+      move_to(starts_at + 1.day)
+
+      expect(appointment).to have_attributes(status: 'scheduled', attendance_confirmed_at: nil)
+    end
+
+    it 'keeps the confirmation when only the time changes within the same day' do
+      move_to(starts_at + 2.hours)
+
+      expect(appointment.status).to eq('confirmed')
+    end
+
+    it 'keeps the confirmation when other fields change without a new start' do
+      appointment.update!(client_comment: 'Bring the analysis')
+
+      expect(appointment.reload.status).to eq('confirmed')
+    end
+
+    it 'changes the status in the same save that moves the day, so the saved row and the dispatched change agree' do
+      captured = []
+      allow(Rails.configuration.dispatcher).to receive(:dispatch) { |name, _, data| captured << [name, data] }
+      appointment
+
+      move_to(starts_at + 3.days)
+
+      changes = captured.reverse.find { |name, _| name == Events::Types::APPOINTMENT_UPDATED }.last[:changed_attributes]
+      expect(changes).to include('starts_at', 'status' => %w[confirmed scheduled])
+    end
+
+    context 'when the day changes only in the timezone of the specialist' do
+      let(:starts_at) { Time.utc(2026, 10, 27, 18, 30) } # 23:30 on 27.10 in Almaty
+
+      it 'resets the confirmation although the UTC date stays the same' do
+        move_to(Time.utc(2026, 10, 27, 19, 30)) # 00:30 on 28.10 in Almaty
+
+        expect(appointment.status).to eq('scheduled')
+      end
+    end
+
+    context 'when the UTC date changes but the day of the specialist does not' do
+      let(:starts_at) { Time.utc(2026, 10, 27, 20, 30) } # 01:30 on 28.10 in Almaty
+
+      it 'keeps the confirmation' do
+        move_to(Time.utc(2026, 10, 28, 1, 0)) # 06:00 on 28.10 in Almaty
+
+        expect(appointment.status).to eq('confirmed')
+      end
+    end
+
+    context 'when the specialist works in another timezone' do
+      let(:resource) { create(:scheduling_resource, account: account, timezone: 'America/New_York') }
+      let(:starts_at) { Time.utc(2026, 10, 27, 14, 0) } # 10:00 on 27.10 in New York
+
+      it 'compares the days in that timezone' do
+        move_to(Time.utc(2026, 10, 28, 3, 0)) # 23:00 on 27.10 in New York
+
+        expect(appointment.status).to eq('confirmed')
+
+        move_to(Time.utc(2026, 10, 28, 5, 0)) # 01:00 on 28.10 in New York
+
+        expect(appointment.status).to eq('scheduled')
+      end
+    end
+
+    %w[cancelled completed no_show].each do |terminal_status|
+      context "when the appointment is #{terminal_status}" do
+        let(:status) { terminal_status }
+
+        it 'is not touched by a move to another day' do
+          move_to(starts_at + 1.day)
+
+          expect(appointment.status).to eq(terminal_status)
+        end
+      end
+    end
+
+    context 'when the appointment is scheduled' do
+      let(:status) { 'scheduled' }
+
+      it 'stays scheduled' do
+        move_to(starts_at + 1.day)
+
+        expect(appointment.status).to eq('scheduled')
+      end
+
+      it 'is confirmed by the same save that moves it, as that is the staff confirming the new date' do
+        move_to(starts_at + 1.day, status: 'confirmed')
+
+        expect(appointment.status).to eq('confirmed')
+      end
+    end
+
+    it 'does not touch a new appointment created as confirmed' do
+      created = create(:scheduling_appointment, account: account, resource: resource, status: 'confirmed', starts_at: starts_at + 5.days)
+
+      expect(created.reload.status).to eq('confirmed')
+    end
+
+    it 'asks again for a second move to another day after the new date was confirmed' do
+      move_to(starts_at + 1.day)
+      appointment.update!(status: 'confirmed')
+
+      move_to(starts_at + 2.days)
+
+      expect(appointment.status).to eq('scheduled')
+    end
+  end
+
   describe 'inside a MedElement reconciliation' do
     let(:appointment) { create(:scheduling_appointment) }
     let(:event_names) { [] }
