@@ -45,6 +45,17 @@ const props = defineProps({
     type: Array,
     required: true,
   },
+  remoteOptions: { type: Array, default: () => [] },
+  remoteTitle: { type: String, default: '' },
+  remoteLoading: { type: Boolean, default: false },
+  remoteError: { type: Boolean, default: false },
+  remoteTruncated: { type: Boolean, default: false },
+  remoteLoadingLabel: { type: String, default: '' },
+  remoteErrorLabel: { type: String, default: '' },
+  remoteTruncatedLabel: { type: String, default: '' },
+  remotePhoneLabel: { type: String, default: '' },
+  remoteHint: { type: String, default: '' },
+  remoteBusyToken: { type: String, default: '' },
   placeholder: {
     type: String,
     default: '',
@@ -75,7 +86,14 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['create', 'open', 'search', 'update:modelValue']);
+const emit = defineEmits([
+  'create',
+  'open',
+  'close',
+  'search',
+  'selectRemote',
+  'update:modelValue',
+]);
 const comboBoxRef = ref(null);
 const debouncedSearch = useDebounceFn(
   value => emit('search', value),
@@ -91,8 +109,9 @@ const handleSearch = value => {
 };
 
 const open = () => comboBoxRef.value?.open();
+const close = () => comboBoxRef.value?.close();
 
-defineExpose({ open });
+defineExpose({ open, close });
 
 defineOptions({
   inheritAttrs: false,
@@ -118,6 +137,17 @@ defineOptions({
       v-bind="$attrs"
       :model-value="modelValue"
       :options="options"
+      :remote-options="remoteOptions"
+      :remote-title="remoteTitle"
+      :remote-loading="remoteLoading"
+      :remote-error="remoteError"
+      :remote-truncated="remoteTruncated"
+      :remote-loading-label="remoteLoadingLabel"
+      :remote-error-label="remoteErrorLabel"
+      :remote-truncated-label="remoteTruncatedLabel"
+      :remote-phone-label="remotePhoneLabel"
+      :remote-hint="remoteHint"
+      :remote-busy-token="remoteBusyToken"
       :inline-dropdown="inlineDropdown"
       :placeholder="placeholder"
       :search-placeholder="searchPlaceholder"
@@ -133,7 +163,9 @@ defineOptions({
       input-like
       @create="emit('create', $event)"
       @open="emit('open')"
+      @close="emit('close')"
       @search="handleSearch"
+      @select-remote="emit('selectRemote', $event)"
       @update:model-value="emit('update:modelValue', $event)"
     >
       <template v-if="$slots.append" #append>

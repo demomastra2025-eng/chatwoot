@@ -22,6 +22,16 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
     response.parsed_body
   end
 
+  it 'finds a patient by a surname stored outside the first-name field' do
+    target = create(:contact, account: account, name: 'Аян', last_name: 'Қуаныш')
+    create(:contact, account: account, name: 'Аян', last_name: 'Болат')
+
+    get path, params: { search: 'қУАНЫШ' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body['payload'].pluck('id')).to eq([target.id])
+  end
+
   it 'loads one account-scoped contact by id with structured name fields' do
     target = create(
       :contact,

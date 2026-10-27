@@ -207,6 +207,9 @@ Rails.application.routes.draw do
 
           namespace :scheduling do
             resource :appointment_field_fill, only: [:show], controller: 'appointment_field_fill'
+            resources :medelement_patients, only: [:create] do
+              post :search, on: :collection
+            end
             resource :calendar, only: [:show], controller: 'calendar'
             resource :availability, only: [:show], controller: 'availability'
             resources :resources, only: [:index, :show, :create, :update, :destroy] do

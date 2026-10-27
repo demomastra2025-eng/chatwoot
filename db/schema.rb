@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_27_150000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_27_160000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1473,6 +1473,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_27_150000) do
     t.index ["company_id"], name: "index_contacts_on_company_id"
     t.index ["email", "account_id"], name: "uniq_email_per_account_contact", unique: true
     t.index ["identifier", "account_id"], name: "uniq_identifier_per_account_contact", unique: true
+    t.index ["last_name", "middle_name"], name: "index_contacts_on_name_parts_trgm", opclass: :gin_trgm_ops, using: :gin
     t.index ["name", "email", "phone_number", "identifier"], name: "index_contacts_on_name_email_phone_number_identifier", opclass: :gin_trgm_ops, using: :gin
     t.index ["owner_id"], name: "index_contacts_on_owner_id"
     t.index ["phone_number", "account_id"], name: "index_contacts_on_phone_number_and_account_id"

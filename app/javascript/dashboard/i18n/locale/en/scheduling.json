@@ -1,5 +1,19 @@
 {
   "SCHEDULING": {
+    "PATIENT_SEARCH": {
+      "TITLE": "Found in MedElement",
+      "LOADING": "Searching patients…",
+      "SEARCH_ERROR": "MedElement did not respond. Please try again.",
+      "IMPORT_ERROR": "Could not add the patient. Search again.",
+      "TRUNCATED": "Showing the first 20. Refine your search.",
+      "IIN_LABEL": "IIN",
+      "PHONE_KNOWN": "Phone on file",
+      "INVALID_IIN": "Check the IIN",
+      "MEDELEMENT_PATIENT_SEARCH_UNAVAILABLE": "MedElement did not respond. Please try again.",
+      "MEDELEMENT_PATIENT_TOKEN_INVALID": "Search for the patient again",
+      "MEDELEMENT_PATIENT_UNAVAILABLE": "Could not add the patient now. Try again later.",
+      "SCHEDULING_PROVIDER_NOT_CONFIGURED": "Patient search is not available yet"
+    },
     "APPOINTMENT_SOURCE": {
       "manual": "Manual",
       "medelement": "MedElement",

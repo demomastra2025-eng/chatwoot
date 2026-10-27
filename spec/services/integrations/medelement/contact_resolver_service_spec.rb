@@ -237,7 +237,8 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
     expect(account.contacts.count).to eq(2)
     expect(run.observed_conflicts.find_by(conflict_type: 'phone_owned_by_another_contact')).to have_attributes(
       status: 'open',
-      details: hash_including('contact_id' => first_result.id, 'conflicting_contact_id' => conflicting_contact.id)
+      details: hash_including('contact_id' => first_result.id, 'conflicting_contact_id' => conflicting_contact.id,
+                              'provider_phone_last4' => primary_phone.last(4))
     )
   end
 
@@ -627,6 +628,40 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
 
     expect(client).not_to have_received(:get_patient)
     expect(resolved_contact.id).to eq(contact.id)
+  end
+
+  it 'applies an explicit prefetched card even when the linked contact is fresh' do
+    contact = create(:contact, account: account, name: 'Old', custom_attributes: {
+                       'medelement_patient_code' => patient_code, 'medelement_last_synced_at' => Time.current.iso8601
+                     })
+    allow(client).to receive(:get_patient)
+
+    resolved = service.sync_patient!(patient_code, prefetched_patient: patient_payload, require_verified_card: true)
+
+    expect(client).not_to have_received(:get_patient)
+    expect(resolved.id).to eq(contact.id)
+    expect(resolved.reload.name).to eq('Светлана')
+    expect(resolved.phone_number).to eq(primary_phone)
+  end
+
+  it 'returns the same contact on repeated explicit imports' do
+    first = service.sync_patient!(patient_code, prefetched_patient: patient_payload, require_verified_card: true)
+    second = service.sync_patient!(patient_code, prefetched_patient: patient_payload, require_verified_card: true)
+
+    expect(second.id).to eq(first.id)
+    expect(account.contacts.where("custom_attributes ->> 'medelement_patient_code' = ?", patient_code).count).to eq(1)
+  end
+
+  it 'does not return a stale linked contact when explicit card verification fails' do
+    contact = create(:contact, account: account, name: 'Old', custom_attributes: {
+                       'medelement_patient_code' => patient_code, 'medelement_last_synced_at' => Time.current.iso8601
+                     })
+    allow(client).to receive(:search_patients_by_codes).with(patient_codes: [patient_code]).and_return([])
+
+    resolved = service.sync_patient!(patient_code, prefetched_patient: patient_payload, require_verified_card: true)
+
+    expect(resolved).to be_nil
+    expect(contact.reload.name).to eq('Old')
   end
 
   it 'preserves a Contact with a foreign owner and records an integrity conflict' do

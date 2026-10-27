@@ -13,16 +13,16 @@ class Integrations::Medelement::ContactResolverService
     @organization_id = organization_id
   end
 
-  def sync_patient!(patient_code, preferred_contact: nil, prefetched_patient: :not_prefetched)
+  def sync_patient!(patient_code, preferred_contact: nil, prefetched_patient: :not_prefetched, require_verified_card: false)
     validate_preferred_contact!(preferred_contact)
     existing_contact = preferred_contact || find_by_patient_code(patient_code)
-    return existing_contact if fresh?(existing_contact)
+    return existing_contact if use_fresh_contact?(existing_contact, require_verified_card)
 
     patient, patient_code, existing_contact = fetch_or_resolve_patient(patient_code, existing_contact, prefetched_patient)
-    return existing_contact if patient.blank?
+    return verified_fallback(existing_contact, require_verified_card) if patient.blank?
 
     validate_patient!(patient, expected_patient_code: patient_code)
-    return existing_contact if provider_read_models_conflict?(patient_code, patient, existing_contact)
+    return verified_fallback(existing_contact, require_verified_card) if provider_read_models_conflict?(patient_code, patient, existing_contact)
 
     upsert_contact(patient, preferred_contact: preferred_contact)
   end
@@ -65,6 +65,14 @@ class Integrations::Medelement::ContactResolverService
   private
 
   attr_reader :account, :client, :conflict_tracker, :organization_id
+
+  def use_fresh_contact?(contact, require_verified_card)
+    !require_verified_card && fresh?(contact)
+  end
+
+  def verified_fallback(contact, require_verified_card)
+    contact unless require_verified_card
+  end
 
   def validate_preferred_contact!(preferred_contact)
     return if preferred_contact.blank? || preferred_contact.account_id == account.id
@@ -484,7 +492,9 @@ class Integrations::Medelement::ContactResolverService
     update_shared_phone_owner!(contact, patient)
     contact.save!
     contact.dispatch_shared_phone_update_event if Current.executed_by.nil?
-    record_phone_conflict(identity[:patient_code], contact, phone_conflict_comment) if phone_conflict_comment.present?
+    if phone_conflict_comment.present?
+      record_phone_conflict(identity[:patient_code], contact, phone_conflict_comment, provider_phone: provider_phones(patient).first)
+    end
     enqueue_shared_phone_promotion(contact)
     contact
   end
@@ -575,7 +585,7 @@ class Integrations::Medelement::ContactResolverService
     contact
   end
 
-  def record_phone_conflict(patient_code, contact, comment)
+  def record_phone_conflict(patient_code, contact, comment, provider_phone:)
     conflict_type = comment.include?('belongs to') ? 'phone_owned_by_another_contact' : 'phone_mismatch'
     conflicting_contact_id = comment[/contact #(\d+)/, 1]&.to_i
     conflict_tracker&.record!(
@@ -588,14 +598,11 @@ class Integrations::Medelement::ContactResolverService
         conflicting_contact_id: conflicting_contact_id,
         reason: conflict_type,
         local_phone_last4: Integrations::Medelement::PhoneNumber.normalize(contact.phone_number).to_s.last(4),
-        provider_phone_last4: provider_phone_from_comment(comment).to_s.last(4)
+        provider_phone_last4: provider_phone.to_s.last(4)
       }.compact
     )
   end
 
-  def provider_phone_from_comment(comment)
-    comment.to_s[/(?:Medelement phone|Phone) (\+\d+)/, 1]
-  end
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 end
 # rubocop:enable Metrics/ClassLength

@@ -248,6 +248,14 @@ export const useSchedulingAppointmentFormStore = defineStore(
     }),
 
     getters: {
+      isProviderPatientCodeLinked: state => {
+        const selected = state.selectedContact || state.selectedAppointment;
+        const attributes =
+          selected?.customAttributes || selected?.custom_attributes || {};
+        return Boolean(
+          attributes.medelement_patient_code || attributes.medelementPatientCode
+        );
+      },
       isProviderPatientIdentity: state =>
         hasProviderPatientIdentity(state.selectedContact) ||
         isAppointmentProviderOwned(state.selectedAppointment) ||
@@ -291,7 +299,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
               : '',
           clientLastName:
             !providerOwned &&
-            !this.isProviderPatientIdentity &&
+            !this.isProviderPatientCodeLinked &&
             state.requirements.medelementIdentityRequired &&
             !state.form.clientLastName?.trim()
               ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_LAST_NAME_REQUIRED'
@@ -304,6 +312,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
               : '',
           clientPhone:
             !providerOwned &&
+            !this.isProviderPatientCodeLinked &&
             state.requirements.medelementPhoneRequired &&
             !isKazakhstanE164Phone(state.form.clientPhone)
               ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_PHONE_REQUIRED'

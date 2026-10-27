@@ -25,6 +25,24 @@ RSpec.describe Integrations::Medelement::Request do
   let(:base_url) { Integrations::Medelement::Client::BASE_URL }
 
   describe '#call' do
+    it 'limits interactive indexed reads to two short attempts and one-second slot waits' do
+      lookup = described_class.new(
+        configuration: configuration, sleeper: ->(seconds) { sleeps << seconds },
+        randomizer: ->(_minimum, maximum) { maximum }, rate_limiter: rate_limiter, retry_profile: :lookup,
+        deadline: Integrations::Medelement::RequestDeadline.new
+      )
+      provider_request = stub_request(:get, "#{base_url}/doctor/v1/patients?lastname=Fake&skip=0")
+                         .to_return(Array.new(2) { { status: 429, body: '{}', headers: { 'Content-Type' => 'application/json' } } })
+
+      expect do
+        lookup.indexed_get('/doctor/v1/patients', query: 'lastname=Fake&skip=0', operation: 'patient search')
+      end.to raise_error(Integrations::Medelement::Client::ApiError) { |error| expect(error.status).to eq(429) }
+
+      expect(provider_request).to have_been_requested.twice
+      expect(rate_limiter).to have_received(:wait!).with(operation: 'patient search', write: false, max_wait_ms: 1000).twice
+      expect(sleeps).to eq([0.25])
+    end
+
     it 'does not retry a timetable rate limit when the caller opts out' do
       provider_request = stub_request(:get, "#{base_url}/v1/timetable/get_timetable")
                          .to_return(status: 429, body: '{}', headers: { 'Content-Type' => 'application/json' })

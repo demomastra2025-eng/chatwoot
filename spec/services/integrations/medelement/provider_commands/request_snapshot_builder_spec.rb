@@ -2,6 +2,32 @@ require 'rails_helper'
 
 RSpec.describe Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder do
   describe '#build' do
+    it 'builds a code-linked reception without a phone but still requires one to create a patient' do
+      account = create(:account)
+      owner = create(:contact, account: account, phone_number: '+77010000001')
+      patient = create(:contact, account: account, name: 'Аян', last_name: 'Қуаныш', phone_number: nil,
+                                 custom_attributes: { 'medelement_patient_code' => 'fake-patient-1' })
+      appointment = create(:scheduling_appointment, account: account, contact: owner, patient_contact: patient,
+                                                    client_first_name: 'Аян', client_last_name: 'Қуаныш', client_phone: nil)
+      hook = build_stubbed(:integrations_hook, account: account, app_id: 'medelement', settings: { 'organization_id' => 'fake-company' })
+
+      snapshot = described_class.new(account: account, hook: hook, operation: 'create_reception',
+                                     appointment: appointment, contact: owner).build
+      expect(snapshot['provider_patient_code']).to eq('fake-patient-1')
+      expect(snapshot['patient_phone_numbers']).to be_nil
+
+      changed = described_class.new(account: account, hook: hook, operation: 'create_reception', appointment: appointment,
+                                    contact: owner, desired_attributes: { 'client_phone' => '+77010000001' }).build
+      expect(changed['appointment_client_phone']).to eq('+77010000001')
+      expect(changed['patient_phone_numbers']).to be_nil
+      expect(described_class.fingerprint(changed)).not_to eq(described_class.fingerprint(snapshot))
+
+      new_contact = create(:contact, account: account, name: 'Болат', last_name: 'Аянұлы', phone_number: nil)
+      expect do
+        described_class.new(account: account, hook: hook, operation: 'create_patient', contact: new_contact).build
+      end.to raise_error(ArgumentError)
+    end
+
     it 'uses structured appointment names in the MedElement patient payload' do
       account = create(:account)
       contact = create(

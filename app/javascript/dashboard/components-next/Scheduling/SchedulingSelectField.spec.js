@@ -129,6 +129,93 @@ describe('SchedulingSelectField', () => {
     wrapper.unmount();
   });
 
+  it('keeps a remote patient row within a 375-pixel viewport and reaches it by keyboard', async () => {
+    const width = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(375);
+    const patient = {
+      token: 'opaque',
+      fullName: 'Қуаныш Аян Болатұлы',
+      birthDate: '01.01.2000',
+      iinMasked: 'ЖСН ••••0001',
+    };
+    const wrapper = mountComponent({
+      dropdownMinWidth: 405,
+      remoteOptions: [patient],
+      remoteTitle: 'MedElement жүйесінен табылды',
+    });
+    wrapper.findComponent(ComboBox).element.getBoundingClientRect = () => ({
+      bottom: 140,
+      height: 40,
+      left: 250,
+      right: 350,
+      top: 100,
+      width: 100,
+      x: 250,
+      y: 100,
+      toJSON: () => {},
+    });
+
+    wrapper.vm.open();
+    await wrapper.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+    const dropdown = document.body.querySelector(
+      '.dashboard-combobox-dropdown'
+    );
+    expect(dropdown.style.width).toBe('359px');
+    expect(dropdown.style.left).toBe('8px');
+    expect(dropdown.textContent).toContain(patient.fullName);
+    const input = dropdown.querySelector('input');
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })
+    );
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })
+    );
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    );
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted('selectRemote')).toEqual([[patient]]);
+    wrapper.unmount();
+    width.mockRestore();
+  });
+
+  it('starts ArrowUp navigation at the last remote patient', async () => {
+    const patient = { token: 'opaque', fullName: 'Қуаныш Аян' };
+    const wrapper = mountComponent({ remoteOptions: [patient] });
+    wrapper.vm.open();
+    await wrapper.vm.$nextTick();
+
+    const input = document.body.querySelector(
+      '.dashboard-combobox-dropdown input'
+    );
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })
+    );
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    );
+
+    expect(wrapper.emitted('selectRemote')).toEqual([[patient]]);
+    wrapper.unmount();
+  });
+
+  it('keeps local options visible when the remote search fails', async () => {
+    const wrapper = mountComponent({
+      remoteTitle: 'Найдено в МедЭлементе',
+      remoteError: true,
+      remoteErrorLabel: 'МедЭлемент не ответил, повторите',
+    });
+    wrapper.vm.open();
+    await wrapper.vm.$nextTick();
+
+    const text = document.body.querySelector(
+      '.dashboard-combobox-dropdown'
+    ).textContent;
+    expect(text).toContain('Contact');
+    expect(text).toContain('МедЭлемент не ответил, повторите');
+    wrapper.unmount();
+  });
+
   it('flips dropdown placement above the trigger when near the bottom of the viewport so all options remain visible', async () => {
     const wrapper = mount(ComboBox, {
       attachTo: document.body,

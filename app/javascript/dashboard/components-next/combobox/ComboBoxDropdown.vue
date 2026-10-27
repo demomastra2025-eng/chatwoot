@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
@@ -25,6 +25,17 @@ const props = defineProps({
     type: Array,
     required: true,
   },
+  remoteOptions: { type: Array, default: () => [] },
+  remoteTitle: { type: String, default: '' },
+  remoteLoading: { type: Boolean, default: false },
+  remoteError: { type: Boolean, default: false },
+  remoteTruncated: { type: Boolean, default: false },
+  remoteLoadingLabel: { type: String, default: '' },
+  remoteErrorLabel: { type: String, default: '' },
+  remoteTruncatedLabel: { type: String, default: '' },
+  remotePhoneLabel: { type: String, default: '' },
+  remoteHint: { type: String, default: '' },
+  remoteBusyToken: { type: String, default: '' },
   searchPlaceholder: {
     type: String,
     default: '',
@@ -55,7 +66,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['create', 'select', 'search']);
+const emit = defineEmits(['create', 'select', 'selectRemote', 'search']);
 
 const { t } = useI18n();
 
@@ -65,6 +76,37 @@ const searchValue = defineModel('searchValue', {
 });
 
 const searchInput = ref(null);
+const activeIndex = ref(-1);
+const selectable = computed(() => [
+  ...props.options.map(option => ({ option, remote: false })),
+  ...props.remoteOptions.map(option => ({ option, remote: true })),
+]);
+watch(
+  () => [props.options, props.remoteOptions],
+  () => {
+    activeIndex.value = -1;
+  }
+);
+
+const onKeydown = event => {
+  if (!selectable.value.length) return;
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    const offset = event.key === 'ArrowDown' ? 1 : -1;
+    if (activeIndex.value < 0) {
+      activeIndex.value =
+        event.key === 'ArrowDown' ? 0 : selectable.value.length - 1;
+    } else {
+      activeIndex.value =
+        (activeIndex.value + offset + selectable.value.length) %
+        selectable.value.length;
+    }
+  } else if (event.key === 'Enter' && activeIndex.value >= 0) {
+    event.preventDefault();
+    const selected = selectable.value[activeIndex.value];
+    emit(selected.remote ? 'selectRemote' : 'select', selected.option);
+  }
+};
 
 const isSelected = option => {
   if (Array.isArray(props.selectedValues)) {
@@ -128,6 +170,7 @@ defineExpose({
             :placeholder="searchPlaceholder || t('COMBOBOX.SEARCH_PLACEHOLDER')"
             class="reset-base h-10 w-full appearance-none rounded-lg border-none bg-n-alpha-black2 py-2 pl-5 pr-10 text-sm text-n-slate-12 outline outline-1 outline-n-weak focus:outline-n-brand rtl:pr-5 rtl:pl-10"
             @input="onInputSearch"
+            @keydown="onKeydown"
           />
         </div>
       </div>
@@ -141,7 +184,8 @@ defineExpose({
           :key="option.value"
           class="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-colors duration-150 hover:bg-n-alpha-2"
           :class="{
-            'bg-n-alpha-2': isSelected(option),
+            'bg-n-alpha-2':
+              isSelected(option) || activeIndex === options.indexOf(option),
           }"
           role="option"
           :aria-selected="isSelected(option)"
@@ -199,6 +243,83 @@ defineExpose({
           />
         </li>
         <li
+          v-if="
+            remoteTitle &&
+            (remoteLoading ||
+              remoteError ||
+              remoteOptions.length ||
+              remoteTruncated ||
+              remoteHint)
+          "
+          class="border-t border-n-weak px-3 pt-3 pb-1 text-xs font-medium text-n-slate-11"
+          role="presentation"
+        >
+          {{ remoteTitle }}
+        </li>
+        <li
+          v-for="(option, index) in remoteOptions"
+          :key="option.token"
+          class="min-w-0 cursor-pointer rounded-lg px-3 py-2 text-sm text-n-slate-12 hover:bg-n-alpha-2"
+          :class="{
+            'bg-n-alpha-2': activeIndex === options.length + index,
+            'opacity-60': remoteBusyToken === option.token,
+          }"
+          role="option"
+          :aria-selected="activeIndex === options.length + index"
+          @click="emit('selectRemote', option)"
+        >
+          <div class="min-w-0 break-words font-medium">
+            {{ option.fullName }}
+          </div>
+          <div
+            class="flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-n-slate-11"
+          >
+            <span v-if="option.birthDate">{{ option.birthDate }}</span>
+            <span v-if="option.iinMasked">{{ option.iinMasked }}</span>
+            <span
+              v-if="option.phoneKnown"
+              class="inline-flex items-center gap-1"
+            >
+              <span class="i-lucide-phone size-3" aria-hidden="true" />{{
+                remotePhoneLabel
+              }}
+            </span>
+            <span
+              v-if="remoteBusyToken === option.token"
+              class="i-lucide-loader-circle size-3 animate-spin"
+              aria-hidden="true"
+            />
+          </div>
+        </li>
+        <li
+          v-if="remoteLoading"
+          class="px-3 py-2 text-xs text-n-slate-11"
+          role="status"
+        >
+          {{ remoteLoadingLabel }}
+        </li>
+        <li
+          v-if="remoteError"
+          class="px-3 py-2 text-xs text-n-slate-11"
+          role="status"
+        >
+          {{ remoteErrorLabel }}
+        </li>
+        <li
+          v-if="remoteTruncated"
+          class="px-3 py-2 text-xs text-n-slate-11"
+          role="status"
+        >
+          {{ remoteTruncatedLabel }}
+        </li>
+        <li
+          v-if="remoteHint"
+          class="px-3 py-2 text-xs text-n-slate-11"
+          role="status"
+        >
+          {{ remoteHint }}
+        </li>
+        <li
           v-if="searchValue.trim() && createOptionLabel"
           data-testid="combobox-create-option"
           class="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-n-slate-11 transition-colors duration-150 hover:bg-n-alpha-2 hover:text-n-slate-12"
@@ -225,7 +346,13 @@ defineExpose({
           </span>
         </li>
         <li
-          v-else-if="options.length === 0"
+          v-else-if="
+            options.length === 0 &&
+            !remoteOptions.length &&
+            !remoteLoading &&
+            !remoteError &&
+            !remoteHint
+          "
           class="px-3 py-3 text-sm text-n-slate-11"
         >
           {{ emptyState || t('COMBOBOX.EMPTY_STATE') }}

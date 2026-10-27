@@ -38,6 +38,7 @@ import setNewPassword from './setNewPassword.json';
 const scheduling = {
   SCHEDULING: {
     ...ruScheduling.SCHEDULING,
+    PATIENT_SEARCH: kkScheduling.SCHEDULING.PATIENT_SEARCH,
     CONTACT: {
       ...ruScheduling.SCHEDULING.CONTACT,
       ...kkScheduling.SCHEDULING.CONTACT,

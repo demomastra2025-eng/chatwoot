@@ -6,10 +6,12 @@ class Integrations::Medelement::RequestRetryPolicy
   # A command (a write and the reads right before it) has someone waiting for the answer, so a failing read is retried
   # only twice and quickly. Background reads and syncs keep the patient default above.
   COMMAND_PROFILE = { read_retry_limit: 2, base_delay_seconds: 1, max_delay_seconds: 5 }.freeze
+  LOOKUP_PROFILE = { read_retry_limit: 1, base_delay_seconds: 0.25, max_delay_seconds: 0.5 }.freeze
 
   # rubocop:disable Metrics/ParameterLists
   def initialize(rate_limiter:, transport_errors:, sleeper:, randomizer:, clock: nil, read_retry_limit: READ_RETRY_LIMIT,
-                 base_delay_seconds: BASE_RETRY_DELAY_SECONDS, max_delay_seconds: MAX_RETRY_DELAY_SECONDS)
+                 base_delay_seconds: BASE_RETRY_DELAY_SECONDS, max_delay_seconds: MAX_RETRY_DELAY_SECONDS,
+                 deadline: nil, slot_wait_ms: nil)
     @rate_limiter = rate_limiter
     @transport_errors = transport_errors
     @sleeper = sleeper
@@ -18,6 +20,8 @@ class Integrations::Medelement::RequestRetryPolicy
     @read_retry_limit = read_retry_limit
     @base_delay_seconds = base_delay_seconds
     @max_delay_seconds = max_delay_seconds
+    @deadline = deadline
+    @slot_wait_ms = slot_wait_ms
   end
   # rubocop:enable Metrics/ParameterLists
 
@@ -25,6 +29,7 @@ class Integrations::Medelement::RequestRetryPolicy
     retry_index = 0
 
     loop do
+      @deadline&.check!
       attempt = perform_attempt(operation, write, &request)
       if attempt.error
         raise attempt.error if write || retry_index >= read_retry_limit
@@ -48,7 +53,10 @@ class Integrations::Medelement::RequestRetryPolicy
   # Every attempt, including a retry, takes its own slot for this request type before it goes out.
   def perform_attempt(operation, write, &)
     perform_transport do
-      rate_limiter.wait!(operation: operation, write: write)
+      wait_options = { operation: operation, write: write }
+      wait_options[:max_wait_ms] = @slot_wait_ms if @slot_wait_ms
+      rate_limiter.wait!(**wait_options)
+      @deadline&.check!
       yield
     end
   end
@@ -73,6 +81,8 @@ class Integrations::Medelement::RequestRetryPolicy
       "[MEDELEMENT::REQUEST] retrying operation=#{operation} #{reason} " \
       "attempt=#{retry_index + 1}/#{read_retry_limit} wait_seconds=#{format('%.3f', delay)}"
     )
+    @deadline&.check!
+    delay = [delay, @deadline.remaining].min if @deadline
     sleeper.call(delay)
   end
 

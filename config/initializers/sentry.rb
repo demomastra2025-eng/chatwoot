@@ -1,7 +1,17 @@
+module SentryPatientSearchPrivacy
+  PATH = '/scheduling/medelement_patients'.freeze
+
+  def self.redact_request!(event)
+    request = event.request
+    request.data = nil if request&.url.to_s.include?(PATH)
+    event
+  end
+end
+
 if ENV['SENTRY_DSN'].present?
   Sentry.init do |config|
-    enable_transactions = ActiveModel::Type::Boolean.new.cast(ENV['ENABLE_SENTRY_TRANSACTIONS'])
-    disable_pii = ActiveModel::Type::Boolean.new.cast(ENV['DISABLE_SENTRY_PII'])
+    enable_transactions = ActiveModel::Type::Boolean.new.cast(ENV.fetch('ENABLE_SENTRY_TRANSACTIONS', nil))
+    disable_pii = ActiveModel::Type::Boolean.new.cast(ENV.fetch('DISABLE_SENTRY_PII', nil))
 
     config.dsn = ENV['SENTRY_DSN']
     config.enabled_environments = %w[staging production]
@@ -15,5 +25,24 @@ if ENV['SENTRY_DSN'].present?
 
     # to track post data in sentry
     config.send_default_pii = true unless disable_pii
+
+    # Indexed patient lookups carry an IIN, phone or name in the provider URL.
+    # Drop those outbound HTTP records rather than retaining their query strings.
+    patient_lookup_path = '/doctor/v1/patients'
+    config.before_breadcrumb = lambda do |breadcrumb, _hint|
+      values = [breadcrumb.message, *breadcrumb.data.to_h.values]
+      breadcrumb unless values.any? { |value| value.to_s.include?(patient_lookup_path) }
+    end
+    config.before_send = lambda do |event, _hint|
+      SentryPatientSearchPrivacy.redact_request!(event)
+    end
+    config.before_send_transaction = lambda do |event, _hint|
+      SentryPatientSearchPrivacy.redact_request!(event)
+      event.spans.reject! do |span|
+        values = [span[:description], span['description'], *span.fetch(:data, {}).to_h.values, *span.fetch('data', {}).to_h.values]
+        values.any? { |value| value.to_s.include?(patient_lookup_path) }
+      end
+      event
+    end
   end
 end
