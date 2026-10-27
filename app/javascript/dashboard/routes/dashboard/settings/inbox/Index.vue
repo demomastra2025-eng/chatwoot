@@ -37,12 +37,10 @@ const inboxes = useMapGetter('inboxes/getInboxes');
 const getCapabilityChips = inbox => {
   const chips = [];
 
-  if (inbox.captain_assistant?.name) {
-    chips.push(
-      t('INBOX_MGMT.LIST.CHIPS.CAPTAIN', {
-        name: inbox.captain_assistant.name,
-      })
-    );
+  // The AI answers by itself in this channel. A channel names no agent: the
+  // AI picks one among the enabled agents, so the chip says just «AI».
+  if (inbox.captain_ai_enabled) {
+    chips.push(t('INBOX_MGMT.LIST.CHIPS.CAPTAIN'));
   }
 
   if (

@@ -57,6 +57,12 @@ const formState = {
   ),
   cannedResponses: useMapGetter('getCannedResponses'),
 };
+// AI writing is available while at least one agent of the workspace is on:
+// the AI picks the agent that writes the message from the instruction.
+const captainAgents = useMapGetter('captainAssistants/getRecords');
+const hasEnabledAgent = computed(() =>
+  (captainAgents.value || []).some(agent => agent.active !== false)
+);
 
 const initialState = {
   instructions: '',
@@ -132,7 +138,7 @@ const supportsAiAuthoring = computed(() => {
     return false;
   }
 
-  if (!selectedInbox.value.captainAssistant?.id) {
+  if (!hasEnabledAgent.value) {
     return false;
   }
 
@@ -684,6 +690,7 @@ watch(
 onMounted(() => {
   clearPreviewState();
   store.dispatch('getCannedResponse', { searchKey: '' });
+  store.dispatch('captainAssistants/get').catch(() => {});
 });
 onBeforeUnmount(clearPreviewState);
 

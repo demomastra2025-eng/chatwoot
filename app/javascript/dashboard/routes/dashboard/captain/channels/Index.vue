@@ -28,8 +28,14 @@ const textChannels = result =>
   (result?.channels || []).filter(
     channel => channel.channel_type !== 'Channel::Voice'
   );
-const hasMain = computed(() =>
-  Boolean(matrix.value?.default_main_assistant_id)
+// The agents of the workspace. A channel names no agent: the AI picks one
+// among the enabled agents for every message.
+const agents = computed(() => matrix.value?.assistants || []);
+const hasNoAgents = computed(
+  () => Boolean(matrix.value) && !agents.value.length
+);
+const noActiveAgents = computed(
+  () => agents.value.length > 0 && !agents.value.some(agent => agent.active)
 );
 const anyChannelEnabled = computed(() =>
   draft.value.some(channel => channel.ai_enabled === true)
@@ -47,7 +53,7 @@ const channelIcon = channel =>
   getInboxIconByType(channel?.channel_type, channel?.medium, 'fill');
 
 const toggleAllChannels = () => {
-  if (!hasMain.value || saving.value || !draft.value.length) return;
+  if (saving.value || !draft.value.length) return;
   const nextState = !anyChannelEnabled.value;
   draft.value = draft.value.map(channel => ({
     ...channel,
@@ -129,15 +135,26 @@ onMounted(load);
             variant="faded"
             size="sm"
             class="shrink-0"
-            :disabled="!hasMain || saving"
+            :disabled="saving"
             data-testid="channels-toggle-all"
             @click="toggleAllChannels"
           />
         </div>
 
-        <p v-if="!hasMain" class="mb-0 text-body-main text-n-slate-11">
+        <p
+          v-if="hasNoAgents"
+          class="mb-0 text-body-main text-n-slate-11"
+          data-testid="channels-no-agents"
+        >
           {{ t('CAPTAIN.CHANNEL_MATRIX.NO_AGENTS') }}
         </p>
+        <Banner
+          v-else-if="noActiveAgents"
+          color="amber"
+          data-testid="channels-no-active-agents"
+        >
+          {{ t('CAPTAIN.CHANNEL_MATRIX.NO_ACTIVE_AGENTS') }}
+        </Banner>
 
         <div
           v-if="draft.length"
@@ -166,7 +183,7 @@ onMounted(load);
               </span>
               <Switch
                 v-model="channel.ai_enabled"
-                :disabled="!hasMain || saving"
+                :disabled="saving"
                 :aria-label="
                   t('CAPTAIN.CHANNEL_MATRIX.AI_TOGGLE', {
                     channel: channel.name,

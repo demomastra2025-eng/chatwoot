@@ -1,15 +1,14 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { useStore } from 'dashboard/composables/store';
 import CaptainAssistantAPI from 'dashboard/api/captain/assistant';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
-import { parseMainAgentInUseError } from './agentErrors';
+import { voiceInboxesForAgent } from './agentVoice';
 
-// «Удалить агента» confirmation. The API client is called directly so the
-// 422 MAIN_AGENT_IN_USE body (the agent answers first in AI channels) can be
-// turned into a clear message with the channel names.
+// «Удалить агента» confirmation. Any agent can be deleted; when it answers the
+// calls of a number, the number loses its AI, and the dialog says so.
 const props = defineProps({
   assistant: { type: Object, required: true },
 });
@@ -21,27 +20,17 @@ const store = useStore();
 const dialogRef = ref(null);
 const isDeleting = ref(false);
 
-const channelNames = inboxIds => {
-  const inboxes = store.getters['inboxes/getInboxes'] || [];
-  return inboxIds
-    .map(
-      inboxId =>
-        inboxes.find(inbox => Number(inbox.id) === Number(inboxId))?.name ||
-        `#${inboxId}`
-    )
-    .join(', ');
-};
+const voiceNumbers = computed(() =>
+  voiceInboxesForAgent(props.assistant, store.getters['inboxes/getInboxes'])
+    .map(inbox => inbox.phone_number || inbox.name || `#${inbox.id}`)
+    .join(', ')
+);
 
-const failureMessage = error => {
-  const mainAgentError = parseMainAgentInUseError(error);
-  if (!mainAgentError) return t('CAPTAIN.ASSISTANTS.DELETE.ERROR_MESSAGE');
-  if (mainAgentError.inboxIds.length) {
-    return t('CAPTAIN.GALLERY.ERRORS.MAIN_AGENT_IN_USE', {
-      channels: channelNames(mainAgentError.inboxIds),
-    });
-  }
-  return mainAgentError.message || t('CAPTAIN.ASSISTANTS.DELETE.ERROR_MESSAGE');
-};
+const description = computed(() =>
+  voiceNumbers.value
+    ? `${t('CAPTAIN.ASSISTANTS.DELETE.DESCRIPTION')} ${t('CAPTAIN.GALLERY.CONFIRM_DELETE_VOICE', { numbers: voiceNumbers.value })}`
+    : t('CAPTAIN.ASSISTANTS.DELETE.DESCRIPTION')
+);
 
 const open = () => dialogRef.value?.open();
 const close = () => dialogRef.value?.close();
@@ -53,10 +42,10 @@ const handleConfirm = async () => {
   isDeleting.value = true;
   try {
     await CaptainAssistantAPI.delete(id);
-  } catch (error) {
+  } catch {
     isDeleting.value = false;
     close();
-    useAlert(failureMessage(error));
+    useAlert(t('CAPTAIN.ASSISTANTS.DELETE.ERROR_MESSAGE'));
     return;
   }
 
@@ -80,7 +69,7 @@ defineExpose({ open, close });
     ref="dialogRef"
     type="alert"
     :title="t('CAPTAIN.ASSISTANTS.DELETE.TITLE')"
-    :description="t('CAPTAIN.ASSISTANTS.DELETE.DESCRIPTION')"
+    :description="description"
     :confirm-button-label="t('CAPTAIN.ASSISTANTS.DELETE.CONFIRM')"
     :is-loading="isDeleting"
     @confirm="handleConfirm"

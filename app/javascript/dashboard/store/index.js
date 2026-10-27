@@ -46,7 +46,6 @@ import webhooks from './modules/webhooks';
 import captainAssistants from './captain/assistant';
 import captainDocuments from './captain/document';
 import captainResponses from './captain/response';
-import captainInboxes from './captain/inboxes';
 import captainBulkActions from './captain/bulkActions';
 import captainScenarios from './captain/scenarios';
 import captainTools from './captain/tools';
@@ -103,7 +102,6 @@ export default createStore({
     captainAssistants,
     captainDocuments,
     captainResponses,
-    captainInboxes,
     captainBulkActions,
     captainScenarios,
     captainTools,

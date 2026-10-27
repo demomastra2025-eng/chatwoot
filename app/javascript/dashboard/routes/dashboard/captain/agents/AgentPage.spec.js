@@ -47,7 +47,6 @@ const configStore = {
   ],
   getSelectedModelForFeature: () => 'default-model',
 };
-const matrixStore = { fetch: vi.fn() };
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key, te: () => true }),
@@ -91,10 +90,6 @@ vi.mock('dashboard/composables/useAccount', () => ({
 
 vi.mock('dashboard/store/captain/preferences', () => ({
   useCaptainConfigStore: () => configStore,
-}));
-
-vi.mock('dashboard/store/captain/channelMatrix', () => ({
-  useCaptainChannelMatrixStore: () => matrixStore,
 }));
 
 vi.mock('dashboard/api/captain/assistant', () => ({
@@ -265,7 +260,6 @@ describe('Agent page', () => {
     assistantRecord.value = buildAssistant();
     leaveGuards.length = 0;
     updateGuards.length = 0;
-    matrixStore.fetch.mockClear();
     configStore.fetch.mockClear();
     routerPushMock.mockReset();
     routerReplaceMock.mockReset();
@@ -370,7 +364,9 @@ describe('Agent page', () => {
     const wrapper = mountPage();
     await flushPromises();
 
-    expect(wrapper.find('[data-stub="AgentFollowUpsTab"]').exists()).toBe(false);
+    expect(wrapper.find('[data-stub="AgentFollowUpsTab"]').exists()).toBe(
+      false
+    );
 
     await wrapper.find('button[data-tab="follow-ups"]').trigger('click');
     expect(routerReplaceMock).toHaveBeenLastCalledWith({
@@ -383,7 +379,9 @@ describe('Agent page', () => {
     await nextTick();
     const followUpsTab = wrapper.find('[data-stub="AgentFollowUpsTab"]');
     expect(followUpsTab.exists()).toBe(true);
-    expect(followUpsTab.attributes('style') || '').not.toContain('display: none');
+    expect(followUpsTab.attributes('style') || '').not.toContain(
+      'display: none'
+    );
     // The instruction tab stays mounted (hidden) to keep its state.
     expect(
       wrapper.find('[data-stub="AgentInstructionTab"]').attributes('style')
@@ -433,6 +431,5 @@ describe('Agent page', () => {
       false
     );
     expect(wrapper.text()).toContain('Администратор');
-    expect(matrixStore.fetch).not.toHaveBeenCalled();
   });
 });

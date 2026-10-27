@@ -50,8 +50,15 @@ vi.mock('dashboard/components-next/captain/PageLayout.vue', () => ({
 }));
 
 const { default: ChannelsPage } = await import('./Index.vue');
-const payload = main => ({
-  default_main_assistant_id: main,
+const agent = (id, active = true) => ({
+  id,
+  name: `Agent ${id}`,
+  active,
+  has_card: true,
+  avatar_url: null,
+});
+const payload = (assistants = [agent(12), agent(13)]) => ({
+  assistants,
   channels: [
     {
       inbox_id: 5,
@@ -76,7 +83,12 @@ const payload = main => ({
 
 const mountPage = async () => {
   const wrapper = mount(ChannelsPage, {
-    global: { stubs: { CaptainPaywall: true, Banner: true } },
+    global: {
+      stubs: {
+        CaptainPaywall: true,
+        Banner: { template: '<div data-testid="banner"><slot /></div>' },
+      },
+    },
   });
   await flushPromises();
   return wrapper;
@@ -87,7 +99,7 @@ describe('Captain text channel switches', () => {
     state.fetch.mockReset();
     state.save.mockReset();
     state.alert.mockReset();
-    state.matrix = payload(12);
+    state.matrix = payload();
     state.fetch.mockResolvedValue(state.matrix);
     state.save.mockImplementation(async patch => {
       state.matrix = {
@@ -130,14 +142,62 @@ describe('Captain text channel switches', () => {
     });
   });
 
-  it('holds switches when no main agent has been starred', async () => {
-    state.matrix = payload(null);
-    state.fetch.mockResolvedValue(state.matrix);
+  it('has no main agent: the switches work with no agent chosen', async () => {
     const wrapper = await mountPage();
+    expect(wrapper.text()).not.toContain('CAPTAIN.CHANNEL_MATRIX.MAIN');
     expect(
       wrapper
         .findAll('[role="switch"]')
-        .every(input => input.attributes('disabled') !== undefined)
+        .every(input => input.attributes('disabled') === undefined)
     ).toBe(true);
+    expect(
+      wrapper.find('[data-testid="channels-toggle-all"]').attributes('disabled')
+    ).toBeUndefined();
+  });
+
+  it('tells that the AI stays silent when no agent is on, and the switches still save', async () => {
+    state.matrix = payload([agent(12, false), agent(13, false)]);
+    state.fetch.mockResolvedValue(state.matrix);
+    const wrapper = await mountPage();
+
+    expect(
+      wrapper.find('[data-testid="channels-no-active-agents"]').text()
+    ).toBe('CAPTAIN.CHANNEL_MATRIX.NO_ACTIVE_AGENTS');
+    expect(
+      wrapper
+        .findAll('[role="switch"]')
+        .every(input => input.attributes('disabled') === undefined)
+    ).toBe(true);
+
+    await wrapper.findAll('[role="switch"]')[1].trigger('click');
+    await wrapper.find('[data-testid="save"]').trigger('click');
+    await flushPromises();
+    expect(state.save).toHaveBeenCalledWith({
+      channels: [{ inbox_id: 6, ai_enabled: true }],
+    });
+  });
+
+  it('says there are no agents when the workspace has none', async () => {
+    state.matrix = payload([]);
+    state.fetch.mockResolvedValue(state.matrix);
+    const wrapper = await mountPage();
+
+    expect(wrapper.find('[data-testid="channels-no-agents"]').text()).toBe(
+      'CAPTAIN.CHANNEL_MATRIX.NO_AGENTS'
+    );
+    expect(
+      wrapper.find('[data-testid="channels-no-active-agents"]').exists()
+    ).toBe(false);
+  });
+
+  it('shows no notice while at least one agent is on', async () => {
+    const wrapper = await mountPage();
+
+    expect(
+      wrapper.find('[data-testid="channels-no-active-agents"]').exists()
+    ).toBe(false);
+    expect(wrapper.find('[data-testid="channels-no-agents"]').exists()).toBe(
+      false
+    );
   });
 });

@@ -37,7 +37,6 @@ import {
   validateAgentDraft,
 } from 'dashboard/components-next/captain/agent/agentDraft';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
-import { useCaptainChannelMatrixStore } from 'dashboard/store/captain/channelMatrix';
 
 // One AI agent: header (name, description, active, «Проверить», «Сохранить»)
 // and the tabs «Инструкция» · «Дожимы» · «Проверка» · «Голос», driven by the
@@ -55,7 +54,6 @@ const store = useStore();
 const { checkPermissions, shouldShowPaywall } = usePolicy();
 const { isCloudFeatureEnabled } = useAccount();
 const captainConfigStore = useCaptainConfigStore();
-const channelMatrixStore = useCaptainChannelMatrixStore();
 
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
 const inboxes = useMapGetter('inboxes/getInboxes');
@@ -282,7 +280,6 @@ watch(
 onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload);
   captainConfigStore.fetch();
-  if (isAdmin.value) channelMatrixStore.fetch();
 });
 
 onBeforeUnmount(() => {

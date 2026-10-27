@@ -187,10 +187,7 @@ const saveGreetingSettings = async () => {
             </div>
           </div>
 
-          <p
-            v-if="!textInboxes.length"
-            class="m-0 text-sm text-n-slate-11"
-          >
+          <p v-if="!textInboxes.length" class="m-0 text-sm text-n-slate-11">
             {{ t('GENERAL_SETTINGS.CONVERSATIONS.NO_TEXT_CHANNELS') }}
           </p>
 
@@ -213,17 +210,13 @@ const saveGreetingSettings = async () => {
                 <span class="truncate">{{ inbox.name }}</span>
               </span>
               <span
-                v-if="inbox.captain_assistant?.name"
+                v-if="inbox.captain_ai_enabled"
                 class="shrink-0 rounded-md bg-n-amber-3 px-2 py-0.5 text-xs text-n-amber-11"
                 :title="
                   t('GENERAL_SETTINGS.CONVERSATIONS.GREETING_AI_SKIP_HINT')
                 "
               >
-                {{
-                  t('GENERAL_SETTINGS.CONVERSATIONS.GREETING_AI_BADGE', {
-                    name: inbox.captain_assistant.name,
-                  })
-                }}
+                {{ t('GENERAL_SETTINGS.CONVERSATIONS.GREETING_AI_BADGE') }}
               </span>
             </label>
           </div>
