@@ -127,9 +127,10 @@ RSpec.describe CommunicationThreads::MessageCreateService do
       whatsapp_inbox = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
       create(:inbox_member, user: agent, inbox: whatsapp_inbox)
       service = build_service(start_params(channel_key: "inbox:#{whatsapp_inbox.id}"))
+      counts = [ContactInbox.count, Conversation.count, CommunicationThread.count, Message.count]
 
       expect { service.perform }.to raise_error(described_class::Error) { |error| expect(error.code).to eq('template_required') }
-      expect([ContactInbox.count, Conversation.count, CommunicationThread.count, Message.count]).to eq([0, 0, 0, 0])
+      expect([ContactInbox.count, Conversation.count, CommunicationThread.count, Message.count]).to eq(counts)
     end
 
     it 'starts the dialog with a private note' do
