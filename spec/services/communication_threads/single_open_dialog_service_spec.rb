@@ -192,8 +192,7 @@ RSpec.describe CommunicationThreads::SingleOpenDialogService do
       perform_enqueued_jobs(only: Conversations::ActivityMessageJob)
 
       new_messages = Message.where(account_id: account.id).where.not(id: messages_before)
-      expect(new_messages.pluck(:message_type)).to eq(['activity'])
-      expect(new_messages.pluck(:content_type)).not_to include('input_csat')
+      expect(new_messages).to be_empty
       expect(CsatSurveyService).not_to have_received(:new)
       expect(SendReplyJob).not_to have_been_enqueued
       expect(voice.reload).to be_resolved
@@ -253,28 +252,38 @@ RSpec.describe CommunicationThreads::SingleOpenDialogService do
       end
     end
 
-    it 'writes an activity note into the kept conversation that says what was merged', :aggregate_failures do
+    it 'writes no activity message when a call is merged, and the merge still happens', :aggregate_failures do
       account.update!(locale: 'ru')
+      messages_before = Message.where(account_id: account.id).pluck(:id)
 
-      described_class.new(thread: thread).perform
-      perform_enqueued_jobs(only: Conversations::ActivityMessageJob)
+      expect { described_class.new(thread: thread).perform }.not_to have_enqueued_job(Conversations::ActivityMessageJob)
+      perform_enqueued_jobs
 
-      note = whatsapp.messages.activity.order(:id).last
-      expect(note.content).to eq("Объединено: звонок из канала «#{voice_inbox.name}»")
-      expect(note.additional_attributes['single_open_dialog_merged_conversation_id']).to eq(voice.id)
+      expect(Message.where(account_id: account.id).where.not(id: messages_before)).to be_empty
+      expect(whatsapp.messages.activity).to be_empty
+      expect(statuses(whatsapp, voice)).to eq(%w[open resolved])
+      expect(voice.status_transitions.order(:id).last.metadata['single_open_dialog']).to eq('kept_conversation_id' => whatsapp.id)
+      expect(CommunicationThreadConversation.where(communication_thread_id: thread.id).pluck(:conversation_id))
+        .to match_array([whatsapp.id, voice.id])
     end
 
-    it 'says dialog instead of call for a messenger' do
-      account.update!(locale: 'ru')
+    it 'writes no activity message when a messenger dialog is merged either, in any language of the account', :aggregate_failures do
       old_inbox = create(:channel_whatsapp_web, account: account).inbox
       old_dialog = open_dialog(old_inbox, minutes_ago: 400)
       voice.update_columns(status: Conversation.statuses.fetch('resolved')) # rubocop:disable Rails/SkipsModelValidations
+      messages_before = Message.where(account_id: account.id).pluck(:id)
 
-      described_class.new(thread: thread).perform
-      perform_enqueued_jobs(only: Conversations::ActivityMessageJob)
+      %w[ru en kk].each do |locale|
+        account.update!(locale: locale)
+        old_dialog.update_columns(status: Conversation.statuses.fetch('open')) # rubocop:disable Rails/SkipsModelValidations
+        described_class.new(thread: thread).perform
+        perform_enqueued_jobs
 
-      expect(whatsapp.messages.activity.pluck(:content)).to include("Объединено: диалог из канала «#{old_inbox.name}»")
-      expect(old_dialog.reload).to be_resolved
+        expect(old_dialog.reload).to be_resolved
+      end
+
+      expect(Message.where(account_id: account.id).where.not(id: messages_before)).to be_empty
+      expect(whatsapp.reload).to be_open
     end
   end
 

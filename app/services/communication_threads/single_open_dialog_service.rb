@@ -9,7 +9,9 @@
 #   "system" and the dashboards are told through the realtime listener only),
 # - the labels, the assignee, the team and the "waiting for a callback" state are kept (see
 #   CommunicationThreads::SingleOpenDialogCarryOver),
-# - the kept conversation gets an activity note that says what was merged.
+# - nothing is written into the kept conversation about the merge (no activity message: a call or a channel joining the
+#   person is not a line of the dialog); what records it is the system status transition of every resolved conversation,
+#   with the id of the one that was kept, and the thread links of all of them.
 #
 # A person whose conversations that are not resolved are all snoozed is merged only when the caller asks for it
 # (all_snoozed): the person update (CommunicationThreads::UpdateService, which snoozes one conversation) and the one-off
@@ -22,7 +24,6 @@ class CommunicationThreads::SingleOpenDialogService
   Plan = CommunicationThreads::SingleOpenDialogPlanner::Plan
   OPEN_STATUSES = CommunicationThreads::SingleOpenDialogPlanner::OPEN_STATUSES
   ACTIVE_STATUSES = CommunicationThreads::SingleOpenDialogPlanner::ACTIVE_STATUSES
-  MERGED_NOTE_ATTRIBUTE = 'single_open_dialog_merged_conversation_id'
 
   # Threads of the account (all accounts when nil) that have two or more conversations that are not resolved (open, pending or
   # snoozed). Pass all_snoozed: true to the service to merge every one of them.
@@ -89,7 +90,7 @@ class CommunicationThreads::SingleOpenDialogService
       plan = plan_for(active_conversations(lock: true))
       kept_changed = apply(plan) if plan&.closed.present?
     end
-    announce_after_commit(plan, kept_changed) if plan&.closed.present?
+    broadcast_after_commit(plan, kept_changed) if plan&.closed.present?
     plan
   end
 
@@ -134,33 +135,11 @@ class CommunicationThreads::SingleOpenDialogService
     ).perform
   end
 
-  def announce_after_commit(plan, kept_changed)
+  def broadcast_after_commit(plan, kept_changed)
     ActiveRecord.after_all_transactions_commit do
-      plan.closed.each { |conversation| add_merge_note(plan.kept, conversation) }
       broadcast(plan, kept_changed)
     rescue StandardError => e
-      Rails.logger.warn("[CommunicationThreads] single open dialog notes skipped thread=#{@thread.id}: #{e.class}: #{e.message}")
-    end
-  end
-
-  def add_merge_note(kept, merged)
-    Conversations::ActivityMessageJob.perform_later(
-      kept,
-      {
-        account_id: kept.account_id,
-        inbox_id: kept.inbox_id,
-        message_type: :activity,
-        content: merge_note(kept.account, merged),
-        additional_attributes: { MERGED_NOTE_ATTRIBUTE => merged.id }
-      }
-    )
-  end
-
-  def merge_note(account, merged)
-    key = CommunicationThreads::SingleOpenDialogPlanner.voice?(merged) ? 'merged_call' : 'merged_dialog'
-    locale = account.locale.presence
-    I18n.with_locale(locale && I18n.locale_available?(locale) ? locale : I18n.default_locale) do
-      I18n.t("conversations.activity.single_open_dialog.#{key}", channel: merged.inbox.name)
+      Rails.logger.warn("[CommunicationThreads] single open dialog broadcast skipped thread=#{@thread.id}: #{e.class}: #{e.message}")
     end
   end
 

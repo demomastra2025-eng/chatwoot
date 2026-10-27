@@ -257,9 +257,6 @@ en:
       delivery_status:
         error_code: 'Error code: %{error_code}'
     activity:
-      single_open_dialog:
-        merged_call: 'Merged: call from channel "%{channel}"'
-        merged_dialog: 'Merged: dialog from channel "%{channel}"'
       number_history_transfer:
         medelement: 'Chat history of %{phone} was moved from contact "%{from}" to contact "%{to}". Basis: MedElement (automatic). %{time}.'
         administrator: 'Chat history of %{phone} was moved from contact "%{from}" to contact "%{to}". Basis: administrator %{user_name}. %{time}.'
