@@ -15,8 +15,13 @@ export const useOpenPersonDialog = () => {
   const store = useStore();
   const panelOpener = inject(PERSON_DIALOG_OPENER, null);
 
-  const openPersonDialog = (contactId, { patientContactId = null } = {}) => {
-    if (panelOpener) return panelOpener(contactId, { patientContactId });
+  const openPersonDialog = (
+    contactId,
+    { patientContactId = null, replyInboxId = null } = {}
+  ) => {
+    if (panelOpener) {
+      return panelOpener(contactId, { patientContactId, replyInboxId });
+    }
 
     return router.push(
       personDialogRoute({
@@ -24,6 +29,7 @@ export const useOpenPersonDialog = () => {
           route?.params?.accountId || store.getters.getCurrentAccountId,
         contactId,
         patientContactId,
+        replyInboxId,
       })
     );
   };

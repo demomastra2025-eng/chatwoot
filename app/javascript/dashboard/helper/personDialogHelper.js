@@ -5,12 +5,17 @@ import { isCommunicationChannelReplyable } from './communicationThreadHelper';
 
 export const PERSON_DIALOG_ROUTE_NAME = 'communication_thread_contact';
 
+// The query that names the channel the reply box starts on: the person was opened from one of their channels (the card lists them).
+export const REPLY_INBOX_QUERY = 'replyInbox';
+
 // patientContactId: the patient the dialog is about when it is held with someone else (a child whose mother's number it is). The
 // sidebar of the dialog shows that patient's card (patientContactId) next to the chat of the one written to (patientChatContactId).
+// replyInboxId: the inbox of the channel the reply box starts on, instead of the channel of the last activity.
 export const personDialogRoute = ({
   accountId,
   contactId,
   patientContactId = null,
+  replyInboxId = null,
 }) => {
   const hasPatient =
     patientContactId && Number(patientContactId) !== Number(contactId);
@@ -18,12 +23,15 @@ export const personDialogRoute = ({
   return {
     name: PERSON_DIALOG_ROUTE_NAME,
     params: { accountId, contact_id: contactId },
-    query: hasPatient
-      ? {
-          patientContactId: String(patientContactId),
-          patientChatContactId: String(contactId),
-        }
-      : {},
+    query: {
+      ...(hasPatient
+        ? {
+            patientContactId: String(patientContactId),
+            patientChatContactId: String(contactId),
+          }
+        : {}),
+      ...(replyInboxId ? { [REPLY_INBOX_QUERY]: String(replyInboxId) } : {}),
+    },
   };
 };
 
@@ -32,6 +40,7 @@ const PERSON_DIALOG_ERROR_CODES = [
   'foreign_chat_identity',
   'template_required',
   'channel_unavailable',
+  'no_reachable_channel',
   'contact_blocked',
 ];
 

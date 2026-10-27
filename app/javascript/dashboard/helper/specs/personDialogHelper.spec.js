@@ -1,3 +1,4 @@
+import { isCommunicationChannelReplyable } from '../communicationThreadHelper';
 import {
   PERSON_DIALOG_ROUTE_NAME,
   personDialogEmptyStateKind,
@@ -12,11 +13,19 @@ const whatsappTemplateOnly = {
   can_reply: false,
   can_send_text: false,
 };
+// The official WhatsApp of a card without a number, exactly as the server answers it (GET contacts/:id/dialog): a template cannot
+// reach a person the channel has no number for, so the channel asks for none and only says why it is disabled.
 const disabledNoPhone = {
+  conversation_id: null,
   inbox_id: 12,
   channel: 'Channel::Whatsapp',
+  channel_key: 'inbox:12',
   can_reply: false,
   can_send_text: false,
+  can_send_attachments: false,
+  can_call: false,
+  requires_template: false,
+  reply_window_open: false,
   disabled: true,
   disabled_reason: 'missing_contact_phone_number',
 };
@@ -30,6 +39,12 @@ describe('#personDialogRoute', () => {
       params: { accountId: 3, contact_id: 5 },
       query: {},
     });
+  });
+
+  it('names the channel the reply box starts on when the dialog is opened from one of the channels of the person', () => {
+    expect(
+      personDialogRoute({ accountId: 3, contactId: 5, replyInboxId: 12 }).query
+    ).toEqual({ replyInbox: '12' });
   });
 
   it('names the patient when the dialog is held with someone else', () => {
@@ -73,6 +88,11 @@ describe('#personDialogEmptyStateKind', () => {
     expect(personDialogEmptyStateKind({ channels: [], contact: {} })).toBe(
       'needs_phone'
     );
+  });
+
+  it('does not take a channel that cannot reach the person for one a template opens', () => {
+    expect(isCommunicationChannelReplyable(disabledNoPhone)).toBe(false);
+    expect(isCommunicationChannelReplyable(whatsappTemplateOnly)).toBe(true);
   });
 
   it('offers to write to the holder of a shared number', () => {
@@ -119,6 +139,15 @@ describe('#personDialogErrorText', () => {
     expect(personDialogErrorText(error, t)).toBe(
       'PERSON_DIALOG.ERRORS.foreign_chat_identity|Aigul'
     );
+  });
+
+  it('has words for a person nobody can be written to or noted on', () => {
+    expect(
+      personDialogErrorText(
+        { response: { data: { code: 'no_reachable_channel' } } },
+        t
+      )
+    ).toBe('PERSON_DIALOG.ERRORS.no_reachable_channel|');
   });
 
   it('leaves an error without a text of its own to the caller', () => {

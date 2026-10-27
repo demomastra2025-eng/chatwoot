@@ -3,7 +3,6 @@ import { reactive, ref, provide, useTemplateRef } from 'vue';
 import { useElementSize } from '@vueuse/core';
 // composable
 import { useLabelSuggestions } from 'dashboard/composables/useLabelSuggestions';
-import { useSnakeCase } from 'dashboard/composables/useTransformKeys';
 import { useAlert } from 'dashboard/composables';
 
 // components
@@ -919,10 +918,17 @@ export default {
 
       this.$store.dispatch('markMessagesRead', { id: this.currentChat.id });
     },
+    // The bubble the list hands over is a camel-cased copy made for display: it has lost the channel, the template and the other
+    // keys the send was built from. The send needs the message as the store holds it, with the echo_id it had, so a retry of a
+    // first message is answered by the server with the message it already made.
     async handleMessageRetry(message) {
       if (!message) return;
-      const payload = useSnakeCase(message);
-      await this.$store.dispatch('sendMessageWithData', payload);
+      const stored = (this.currentChat?.messages || []).find(
+        item => String(item.id) === String(message.id)
+      );
+      if (!stored) return;
+
+      await this.$store.dispatch('sendMessageWithData', stored);
     },
     async cancelCaptainResponse() {
       const conversationId = this.captainResponseConversationId;

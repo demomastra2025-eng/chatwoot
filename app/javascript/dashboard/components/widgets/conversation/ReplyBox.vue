@@ -65,8 +65,12 @@ import {
   isCommunicationThread,
   isCommunicationVoiceChannel,
   isDraftDialog,
+  isPersonDialogSending,
 } from 'dashboard/helper/communicationThreadHelper';
-import { personDialogErrorText } from 'dashboard/helper/personDialogHelper';
+import {
+  REPLY_INBOX_QUERY,
+  personDialogErrorText,
+} from 'dashboard/helper/personDialogHelper';
 
 import { LOCAL_STORAGE_KEYS } from 'dashboard/constants/localStorage';
 import { LocalStorage } from 'shared/helpers/localStorage';
@@ -192,6 +196,11 @@ export default {
     isDraft() {
       return isDraftDialog(this.currentChat);
     },
+    // The first message of a person who has no dialog yet is on its way. A second send now (a double click, the template window
+    // opened again) would be a second message of its own, a template sent twice, before the dialog is there to take it.
+    isFirstSendInFlight() {
+      return this.isDraft && isPersonDialogSending(this.currentChat);
+    },
     communicationChannels() {
       return getCommunicationReplyChannels(this.currentChat?.channels || []);
     },
@@ -309,6 +318,7 @@ export default {
       return this.maxLength - this.message.length;
     },
     isReplyButtonDisabled() {
+      if (this.isFirstSendInFlight) return true;
       if (this.isCommunicationCallReplyAction) return true;
       if (this.isEditorDisabled) return true;
       if (this.isATwitterInbox) return true;
@@ -777,14 +787,28 @@ export default {
       }
 
       this.selectedDirectReplyAction = COMMUNICATION_CHANNEL_ACTIONS.MESSAGE;
-      const currentChannel = getCommunicationReplyChannel(
-        conversation,
-        this.selectedReplyConversationId
-      );
+      // Nothing is chosen yet: the channel the dialog was opened from (the card lists the channels of the person), else the
+      // channel of the last activity.
+      const currentChannel = this.selectedReplyConversationId
+        ? getCommunicationReplyChannel(
+            conversation,
+            this.selectedReplyConversationId
+          )
+        : this.requestedReplyChannel(conversation);
       const nextChannel =
         currentChannel || getCommunicationReplyChannel(conversation);
       this.selectedReplyConversationId =
         nextChannel?.channel_key || nextChannel?.conversation_id || null;
+    },
+    requestedReplyChannel(conversation) {
+      const inboxId = this.$route?.query?.[REPLY_INBOX_QUERY];
+      if (!inboxId) return null;
+
+      return (
+        getCommunicationReplyChannels(conversation?.channels || []).find(
+          channel => String(channel.inbox_id) === String(inboxId)
+        ) || null
+      );
     },
     syncReplyModeWithSelectedChannel() {
       if (this.isOnPrivateNote) {
@@ -1063,12 +1087,14 @@ export default {
       this.showVariablesMenu = value;
     },
     openWhatsappTemplateModal() {
+      if (this.isFirstSendInFlight) return;
       this.showWhatsAppTemplatesModal = true;
     },
     hideWhatsappTemplatesModal() {
       this.showWhatsAppTemplatesModal = false;
     },
     openContentTemplateModal() {
+      if (this.isFirstSendInFlight) return;
       this.showContentTemplatesModal = true;
     },
     hideContentTemplatesModal() {
@@ -1323,6 +1349,7 @@ export default {
       }
     },
     async onSendWhatsAppReply(messagePayload) {
+      if (this.isFirstSendInFlight) return;
       this.sendMessage({
         conversationId: this.conversationId,
         ...messagePayload,
@@ -1330,6 +1357,7 @@ export default {
       this.hideWhatsappTemplatesModal();
     },
     async onSendContentTemplateReply(messagePayload) {
+      if (this.isFirstSendInFlight) return;
       this.sendMessage({
         conversationId: this.conversationId,
         ...messagePayload,

@@ -1043,6 +1043,30 @@ describe('communicationThreadHelper', () => {
       );
     });
 
+    it('does not default to a WhatsApp that cannot reach the person (no number), as the server answers it, when another channel can', () => {
+      const withoutNumber = {
+        ...whatsappCloud,
+        requires_template: false,
+        can_send_attachments: false,
+        reply_window_open: false,
+        disabled: true,
+        disabled_reason: 'missing_contact_phone_number',
+      };
+      const email = {
+        ...sms,
+        inbox_id: 14,
+        inbox_name: 'Mail',
+        channel: 'Channel::Email',
+        channel_key: 'inbox:14',
+      };
+      const chat = buildPersonDialogChat({
+        ...personDialog,
+        channels: [withoutNumber, email],
+      });
+
+      expect(chat.active_reply_channel.channel_key).toBe('inbox:14');
+    });
+
     it('sends the message to the person, with the selected channel and no thread', () => {
       const chat = buildPersonDialogChat(personDialog);
 

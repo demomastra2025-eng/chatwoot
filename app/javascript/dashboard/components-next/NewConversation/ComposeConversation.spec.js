@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const openPersonDialog = vi.hoisted(() => vi.fn());
 const searchContacts = vi.hoisted(() => vi.fn());
 const createNewContact = vi.hoisted(() => vi.fn());
+const useAlert = vi.hoisted(() => vi.fn());
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key }),
@@ -19,7 +20,7 @@ vi.mock('@chatwoot/utils', () => ({
 }));
 
 vi.mock('dashboard/composables', () => ({
-  useAlert: vi.fn(),
+  useAlert,
 }));
 
 vi.mock('dashboard/composables/useKeyboardEvents', () => ({
@@ -63,6 +64,7 @@ describe('ComposeConversation (the picker of «Новое сообщение»)'
     openPersonDialog.mockReset();
     searchContacts.mockReset();
     createNewContact.mockReset();
+    useAlert.mockReset();
   });
 
   it('is closed until its trigger is pressed', async () => {
@@ -122,7 +124,7 @@ describe('ComposeConversation (the picker of «Новое сообщение»)'
     expect(openPersonDialog).toHaveBeenCalledWith(11);
   });
 
-  it('stays open when the contact could not be created', async () => {
+  it('stays open and says so when the contact could not be created', async () => {
     createNewContact.mockRejectedValue(new Error('no'));
     const wrapper = mountPicker();
     await wrapper.find('[data-test="trigger"]').trigger('click');
@@ -134,6 +136,7 @@ describe('ComposeConversation (the picker of «Новое сообщение»)'
     await flushPromises();
 
     expect(openPersonDialog).not.toHaveBeenCalled();
+    expect(useAlert).toHaveBeenCalledWith('PERSON_DIALOG.PICKER.CREATE_ERROR');
     expect(wrapper.find('[data-test="contact-selector"]').exists()).toBe(true);
   });
 });

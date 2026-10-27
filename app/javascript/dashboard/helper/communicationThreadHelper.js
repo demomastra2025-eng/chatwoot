@@ -1,4 +1,4 @@
-import { MESSAGE_TYPE } from 'shared/constants/messages';
+import { MESSAGE_STATUS, MESSAGE_TYPE } from 'shared/constants/messages';
 import { timestampInSeconds } from './timestampHelper';
 
 export const isCommunicationThread = chat => {
@@ -771,6 +771,13 @@ export const buildCommunicationThreadConversation = thread => {
 export const PERSON_DIALOG_CHAT_TYPE = 'person_dialog';
 
 export const personDialogChatId = contactId => `draft-${contactId}`;
+
+// The first message of the draft is on its way: the answer of the server makes the dialog, nothing else may, or the screen would
+// show the message twice (the server's copy and the bubble that is still waiting).
+export const isPersonDialogSending = personDialog =>
+  (personDialog?.messages || []).some(
+    message => message?.status === MESSAGE_STATUS.PROGRESS
+  );
 
 export const buildPersonDialogChat = personDialog => {
   if (!personDialog) return {};

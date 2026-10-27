@@ -161,6 +161,7 @@ const buildStore = (dispatched = []) =>
 const mountReplyBox = async ({
   chat = draftChat(),
   replyChannelState,
+  query = {},
 } = {}) => {
   mockChat.value = chat;
   const dispatched = [];
@@ -169,6 +170,7 @@ const mountReplyBox = async ({
     global: {
       plugins: [buildStore(dispatched)],
       directives: { 'on-clickaway': {} },
+      mocks: { $route: { query } },
       provide: replyChannelState ? { replyChannelState } : {},
       stubs: {
         NextButton: NextButtonStub,
@@ -300,6 +302,7 @@ describe('ReplyBox in the empty dialog of a person', () => {
     ['template_required', ERRORS.template_required],
     ['contact_blocked', ERRORS.contact_blocked],
     ['channel_unavailable', ERRORS.channel_unavailable],
+    ['no_reachable_channel', ERRORS.no_reachable_channel],
   ])('says %s in plain words', async (code, text) => {
     sendMessageAction.mockRejectedValueOnce({
       response: { data: { code, error: 'technical text' } },
@@ -377,6 +380,87 @@ describe('ReplyBox in the empty dialog of a person', () => {
     expect(wrapper.dispatchedDraftKeys).toEqual(
       expect.arrayContaining(['draft-draft-5-REPLY', 'draft-draft-5-NOTE'])
     );
+  });
+
+  describe('while the first message is on its way', () => {
+    const sendingChat = () =>
+      draftChat(
+        [
+          {
+            ...whatsappChannel,
+            requires_template: false,
+            can_reply: true,
+            can_send_text: true,
+          },
+        ],
+        {
+          messages: [
+            {
+              id: 'echo-1',
+              echo_id: 'echo-1',
+              status: 'progress',
+              content: 'Hi',
+            },
+          ],
+        }
+      );
+
+    it('locks the send, so a double click cannot make a second message', async () => {
+      wrapper = await mountReplyBox({ chat: sendingChat() });
+      wrapper.vm.message = 'Second';
+
+      expect(wrapper.vm.isFirstSendInFlight).toBe(true);
+      expect(wrapper.vm.isReplyButtonDisabled).toBe(true);
+
+      await wrapper.vm.confirmOnSendReply();
+
+      expect(sendMessageAction).not.toHaveBeenCalled();
+    });
+
+    it('opens no template window and sends no template meanwhile', async () => {
+      wrapper = await mountReplyBox({ chat: sendingChat() });
+
+      wrapper.vm.openWhatsappTemplateModal();
+      await wrapper.vm.onSendWhatsAppReply({
+        message: 'Shipping update',
+        templateParams: { name: 'hello' },
+      });
+
+      expect(wrapper.vm.showWhatsAppTemplatesModal).toBe(false);
+      expect(sendMessageAction).not.toHaveBeenCalled();
+    });
+
+    it('sends again once the first message has failed', async () => {
+      const chat = sendingChat();
+      chat.messages = [{ ...chat.messages[0], status: 'failed' }];
+      wrapper = await mountReplyBox({ chat });
+
+      expect(wrapper.vm.isFirstSendInFlight).toBe(false);
+    });
+  });
+
+  it('starts on the channel the dialog was opened from, not on the one of the last activity', async () => {
+    const sms = {
+      conversation_id: null,
+      inbox_id: 13,
+      inbox_name: 'SMS',
+      channel: 'Channel::Sms',
+      channel_key: 'inbox:13',
+      can_reply: true,
+      can_send_text: true,
+    };
+    wrapper = await mountReplyBox({
+      chat: draftChat([whatsappChannel, sms]),
+      query: { replyInbox: '13' },
+    });
+
+    expect(wrapper.vm.selectedReplyConversationId).toBe('inbox:13');
+  });
+
+  it('starts on the default channel when the channel asked for cannot be written to', async () => {
+    wrapper = await mountReplyBox({ query: { replyInbox: '99' } });
+
+    expect(wrapper.vm.selectedReplyConversationId).toBe('inbox:12');
   });
 
   it('tells the empty screen which channel is selected', async () => {

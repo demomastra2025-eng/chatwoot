@@ -289,9 +289,11 @@ const handleAvatarDelete = async () => {
   }
 };
 
-// A channel of the person was chosen: the dialog of the person opens, the channel is picked in its reply box.
-const openChannelConversation = () => {
-  openPersonDialog(props.selectedContact?.id);
+// A channel of the person was chosen: the dialog of the person opens, with the reply box on that channel.
+const openChannelConversation = channelIdentity => {
+  openPersonDialog(props.selectedContact?.id, {
+    replyInboxId: channelIdentity?.inboxId,
+  });
 };
 </script>
 

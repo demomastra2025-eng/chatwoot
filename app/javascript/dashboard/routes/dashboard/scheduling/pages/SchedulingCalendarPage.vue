@@ -121,7 +121,6 @@ import {
 } from 'dashboard/stores/scheduling/providerCommands';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 import { parseIinMetadata } from 'dashboard/stores/scheduling/iin';
-import {} from 'dashboard/components-next/NewConversation/helpers/composeConversationHelper.js';
 
 const { t, locale } = useI18n();
 const calendarStore = useSchedulingCalendarStore();

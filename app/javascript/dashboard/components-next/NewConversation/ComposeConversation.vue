@@ -102,6 +102,7 @@ const handleSelectedContact = async ({ value, action, ...rest }) => {
     try {
       contact = await createNewContact(value);
     } catch (error) {
+      useAlert(t('PERSON_DIALOG.PICKER.CREATE_ERROR'));
       return;
     } finally {
       isCreatingContact.value = false;

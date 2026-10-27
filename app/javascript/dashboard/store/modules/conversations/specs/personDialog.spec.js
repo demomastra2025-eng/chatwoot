@@ -347,6 +347,44 @@ describe('the dialog of a person who has none yet', () => {
       expect(store.state.selectedChatId).toBe(77);
     });
 
+    it('does not keep a second copy of a bubble whose message the thread read already holds', async () => {
+      const made = {
+        id: 900,
+        conversation_id: 301,
+        content: 'Hello',
+        message_type: 1,
+        status: 'sent',
+        additional_attributes: { echo_id: 'echo-1' },
+      };
+      CommunicationThreadApi.show.mockResolvedValue({
+        data: { ...SENT_THREAD, messages: [made] },
+      });
+      const store = await openDraft();
+      mutations[types.UPSERT_PERSON_DIALOG_MESSAGE](store.state, {
+        id: 'echo-1',
+        echo_id: 'echo-1',
+        status: 'progress',
+        content: 'Hello',
+      });
+      mutations[types.UPSERT_PERSON_DIALOG_MESSAGE](store.state, {
+        id: 'echo-2',
+        echo_id: 'echo-2',
+        status: 'failed',
+        content: 'Another one that failed',
+      });
+
+      await actions.promotePersonDialog(store, {
+        contactId: 5,
+        communicationThreadId: 77,
+      });
+
+      const thread = store.state.allConversations.find(chat => chat.id === 77);
+      const ids = thread.messages.map(message => message.id);
+      expect(ids).toHaveLength(2);
+      expect(ids).toEqual(expect.arrayContaining([900, 'echo-2']));
+      expect(ids).not.toContain('echo-1');
+    });
+
     it('does nothing for a draft of another person or when there is no draft', async () => {
       CommunicationThreadApi.show.mockResolvedValue({ data: SENT_THREAD });
       const store = await openDraft();
@@ -392,6 +430,62 @@ describe('the dialog of a person who has none yet', () => {
       PersonDialogApi.show.mockResolvedValue({ data: DRAFT_RESPONSE });
       const store = buildStore();
       await actions.openPersonDialog(store, { contactId: 5 });
+
+      await actions.updateCommunicationThreadRealtime(store, {
+        id: 77,
+        communication_thread_id: 77,
+        contact_id: 5,
+        is_communication_thread: true,
+        meta: { sender: { id: 5, name: 'Aigul' } },
+        channels: SENT_THREAD.channels,
+        source_event: 'message.created',
+        updated_at: 1710000001.25,
+      });
+
+      expect(store.dispatch).toHaveBeenCalledWith('promotePersonDialog', {
+        contactId: 5,
+        communicationThreadId: 77,
+      });
+    });
+
+    it('waits for the answer of the server while the first message is on its way', async () => {
+      PersonDialogApi.show.mockResolvedValue({ data: DRAFT_RESPONSE });
+      const store = buildStore();
+      await actions.openPersonDialog(store, { contactId: 5 });
+      mutations[types.UPSERT_PERSON_DIALOG_MESSAGE](store.state, {
+        id: 'echo-1',
+        echo_id: 'echo-1',
+        status: 'progress',
+      });
+
+      // the own message.created of the sender can arrive before the answer of the POST
+      await actions.updateCommunicationThreadRealtime(store, {
+        id: 77,
+        communication_thread_id: 77,
+        contact_id: 5,
+        is_communication_thread: true,
+        meta: { sender: { id: 5, name: 'Aigul' } },
+        channels: SENT_THREAD.channels,
+        source_event: 'message.created',
+        updated_at: 1710000001.25,
+      });
+
+      expect(store.dispatch).not.toHaveBeenCalledWith(
+        'promotePersonDialog',
+        expect.anything()
+      );
+      expect(store.state.personDialog).not.toBeNull();
+    });
+
+    it('promotes again once the first message has failed', async () => {
+      PersonDialogApi.show.mockResolvedValue({ data: DRAFT_RESPONSE });
+      const store = buildStore();
+      await actions.openPersonDialog(store, { contactId: 5 });
+      mutations[types.UPSERT_PERSON_DIALOG_MESSAGE](store.state, {
+        id: 'echo-1',
+        echo_id: 'echo-1',
+        status: 'failed',
+      });
 
       await actions.updateCommunicationThreadRealtime(store, {
         id: 77,

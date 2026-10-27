@@ -23,29 +23,36 @@ const withoutDuplicates = messages => {
   });
 };
 
+// The key of the bubble a message of the server was made from (a message that is read back carries it in its attributes).
+const echoIdOf = message =>
+  message?.echo_id || message?.additional_attributes?.echo_id;
+
 // The bubbles of the draft that are still on their way (or failed) when it becomes the dialog: they stay on the screen as they
-// were, and the answer of the server replaces each one by its echo_id.
-const bubblesStillOpen = (draft, sentMessage) =>
-  (draft.messages || []).filter(
+// were, and the answer of the server replaces each one by its echo_id. A bubble whose message the server already made, and that
+// is among the loaded messages, is that message: it does not stay as a second copy.
+const bubblesStillOpen = (draft, loadedMessages = []) => {
+  const loadedEchoIds = new Set(
+    loadedMessages.map(echoIdOf).filter(Boolean).map(String)
+  );
+  return (draft.messages || []).filter(
     bubble =>
       bubble.status !== MESSAGE_STATUS.SENT &&
-      !(
-        sentMessage?.echo_id &&
-        String(bubble.echo_id) === String(sentMessage.echo_id)
-      )
+      !loadedEchoIds.has(String(bubble.echo_id))
   );
+};
 
 // A thread payload of the server (the answer of a first message, or of reading the thread) as the chat the screen shows.
-const buildPromotedThread = ({ thread, message, leftover = [] }) =>
-  buildCommunicationThreadConversation({
+const buildPromotedThread = ({ thread, message, draft }) => {
+  const loaded = [...(thread.messages || []), message].filter(Boolean);
+  return buildCommunicationThreadConversation({
     ...thread,
     id: thread.communication_thread_id || thread.id,
     messages: withoutDuplicates([
-      ...(thread.messages || []),
-      message,
-      ...leftover,
+      ...loaded,
+      ...bubblesStillOpen(draft, loaded),
     ]),
   });
+};
 
 const personDialogActions = {
   // Opens the dialog of a person. Resolves { communicationThreadId } when the person already has a dialog (the caller opens it)
@@ -86,20 +93,28 @@ const personDialogActions = {
     const draftContactId = state.personDialog.contactId;
     if (contactId && String(contactId) !== String(draftContactId)) return null;
 
-    const leftover = bubblesStillOpen(state.personDialog, message);
     let promotedThread = null;
     if (thread) {
-      promotedThread = buildPromotedThread({ thread, message, leftover });
+      promotedThread = buildPromotedThread({
+        thread,
+        message,
+        draft: state.personDialog,
+      });
     } else if (communicationThreadId) {
       const read = await dispatch('getCommunicationThread', {
         conversationId: communicationThreadId,
       });
-      promotedThread = read && {
+      // The screen may have moved on while the thread was read; the bubbles are those of the draft as it is now.
+      if (!read || !sameDraft(state, draftContactId)) return null;
+
+      promotedThread = {
         ...read,
-        messages: withoutDuplicates([...(read.messages || []), ...leftover]),
+        messages: withoutDuplicates([
+          ...(read.messages || []),
+          ...bubblesStillOpen(state.personDialog, read.messages || []),
+        ]),
       };
     }
-    // The screen may have moved on while the thread was read.
     if (!promotedThread || !sameDraft(state, draftContactId)) return null;
 
     commit(types.SET_ALL_CONVERSATION, [promotedThread]);

@@ -717,10 +717,12 @@
       "foreign_chat_identity": "This number is already linked to another contact: {name}. Check the card.",
       "template_required": "In WhatsApp only a template can be sent right now.",
       "channel_unavailable": "You cannot write through this channel right now. Choose another one.",
+      "no_reachable_channel": "There is no way to write to this person yet, and nowhere to leave a note. Add a phone number or another contact in the card.",
       "contact_blocked": "The contact is blocked. Unblock it in the card to write."
     },
     "PICKER": {
-      "SEARCH_ERROR": "Could not search contacts. Please try again."
+      "SEARCH_ERROR": "Could not search contacts. Please try again.",
+      "CREATE_ERROR": "Could not create the contact. Check the number or the email address and try again."
     }
   }
 }

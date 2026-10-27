@@ -9,6 +9,7 @@ import {
   buildCommunicationThreadConversation,
   isCommunicationThread,
   isMessageInCommunicationThread,
+  isPersonDialogSending,
 } from 'dashboard/helper/communicationThreadHelper';
 import {
   buildConversationList,
@@ -1683,6 +1684,7 @@ const actions = {
     // The person wrote, or a colleague wrote first, while their empty dialog was open: it is a real dialog now.
     if (
       state?.personDialog &&
+      !isPersonDialogSending(state.personDialog) &&
       String(payload?.contact_id) === String(state.personDialog.contactId)
     ) {
       dispatch('promotePersonDialog', {

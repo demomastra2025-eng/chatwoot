@@ -4,6 +4,13 @@ import { createStore } from 'vuex';
 import { ref } from 'vue';
 
 import inboxes from 'dashboard/store/modules/inboxes';
+import PersonDialogApi from 'dashboard/api/personDialog';
+import { buildDialogMessageData } from 'dashboard/api/inbox/communicationThread';
+import { useCamelCase } from 'dashboard/composables/useTransformKeys';
+import { mutations } from 'dashboard/store/modules/conversations';
+import actions from 'dashboard/store/modules/conversations/actions';
+import getters from 'dashboard/store/modules/conversations/getters';
+import types from 'dashboard/store/mutation-types';
 import { buildPersonDialogChat } from 'dashboard/helper/communicationThreadHelper';
 import MessagesView from './MessagesView.vue';
 import ReplyBox from './ReplyBox.vue';
@@ -248,5 +255,91 @@ describe('MessagesView with the empty dialog of a person', () => {
     expect(
       requests.filter(([, url]) => /toggle_typing/.test(String(url)))
     ).toEqual([]);
+  });
+});
+
+describe('retrying the first message of a person that failed', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // The real mutations and actions on one state, so the retry runs the path the screen takes: the list hands over a camel-cased
+  // copy of the bubble, the screen finds the stored message, the store sends it.
+  const buildFlow = () => {
+    const state = {
+      allConversations: [],
+      selectedChatId: null,
+      selectedChatType: null,
+      personDialog: null,
+      conversationFilters: {},
+      deletionOperations: [],
+    };
+    const context = { state, rootState: {}, rootGetters: {} };
+    context.commit = vi.fn((type, payload) =>
+      mutations[type]?.(state, payload)
+    );
+    context.dispatch = vi.fn((name, payload) =>
+      actions[name]?.(context, payload)
+    );
+    mutations[types.SET_PERSON_DIALOG](state, {
+      contactId: 5,
+      contact: { id: 5 },
+      channels: [whatsappChannel],
+    });
+    return { state, context };
+  };
+
+  it('sends it again with the channel, the template and the echo_id it was first sent with', async () => {
+    const failure = { response: { data: { code: 'channel_unavailable' } } };
+    vi.spyOn(PersonDialogApi, 'createMessage')
+      .mockRejectedValueOnce(failure)
+      .mockRejectedValueOnce(failure);
+    const { state, context } = buildFlow();
+    const pending = {
+      id: 'echo-1',
+      echo_id: 'echo-1',
+      message: 'Shipping update',
+      content: 'Shipping update',
+      person_contact_id: 5,
+      channelKey: 'inbox:12',
+      targetInboxId: 12,
+      contentKind: 'channel_template',
+      templateParams: { name: 'shipping', language: 'en_US' },
+    };
+    await actions.sendMessageWithData(context, pending).catch(() => {});
+
+    const bubbleOnScreen = useCamelCase(
+      getters.getSelectedChat(state).messages[0],
+      { deep: true }
+    );
+    await MessagesView.methods.handleMessageRetry
+      .call(
+        { currentChat: getters.getSelectedChat(state), $store: context },
+        bubbleOnScreen
+      )
+      .catch(() => {});
+
+    const [first, second] = PersonDialogApi.createMessage.mock.calls.map(
+      ([, message]) => buildDialogMessageData(message)
+    );
+    expect(second).toEqual(first);
+    expect(second).toMatchObject({
+      channel_key: 'inbox:12',
+      target_inbox_id: 12,
+      content_kind: 'channel_template',
+      template_params: { name: 'shipping', language: 'en_US' },
+      echo_id: 'echo-1',
+    });
+  });
+
+  it('retries nothing for a bubble the screen no longer holds', async () => {
+    const dispatch = vi.fn();
+
+    await MessagesView.methods.handleMessageRetry.call(
+      { currentChat: { messages: [{ id: 'other' }] }, $store: { dispatch } },
+      { id: 'gone' }
+    );
+
+    expect(dispatch).not.toHaveBeenCalled();
   });
 });
