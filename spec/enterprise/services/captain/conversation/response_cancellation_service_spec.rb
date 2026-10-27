@@ -5,7 +5,7 @@ RSpec.describe Captain::Conversation::ResponseCancellationService do
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:conversation) { create(:conversation, account: account, status: :pending) }
   let!(:incoming) { create(:message, conversation: conversation, message_type: :incoming, skip_runtime_events: true) }
-  let(:service) { described_class.new(conversation: conversation, assistant: assistant) }
+  let(:service) { described_class.new(conversation: conversation) }
   let(:state_key) { format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: conversation.id) }
   let(:buffer_key) { format(Redis::Alfred::CAPTAIN_MESSAGE_BUFFER_STATE, conversation_id: conversation.id) }
 
@@ -20,7 +20,7 @@ RSpec.describe Captain::Conversation::ResponseCancellationService do
     snapshot = service.snapshot
     expect(Redis::Alfred.get(state_key)).to be_nil
     expect(snapshot).to include(
-      account_id: account.id, conversation_id: conversation.id, assistant_id: assistant.id,
+      account_id: account.id, conversation_id: conversation.id,
       control_generation: 0, status_transition_id: 0, last_message_id: incoming.id
     )
     expect(service.perform(snapshot: snapshot)).to be true
@@ -83,18 +83,15 @@ RSpec.describe Captain::Conversation::ResponseCancellationService do
     expect(Redis::Alfred.get(state_key)).to eq(replacement)
   end
 
-  it 'rejects a snapshot for another account, conversation or assistant' do
+  it 'rejects a snapshot for another account or conversation' do
     snapshot = service.snapshot
-    %i[account_id conversation_id assistant_id].each do |key|
+    %i[account_id conversation_id].each do |key|
       expect(service.perform(snapshot: snapshot.merge(key => snapshot.fetch(key) + 1))).to be false
     end
     expect(Redis::Alfred.get(state_key)).to be_nil
   end
 
-  it 'rejects an assistant from another account' do
-    foreign_assistant = create(:captain_assistant)
-    foreign_service = described_class.new(conversation: conversation, assistant: foreign_assistant)
-    expect(foreign_service.perform).to be false
-    expect(Redis::Alfred.get(state_key)).to be_nil
+  it 'names no agent in the snapshot: the cancellation belongs to the conversation' do
+    expect(service.snapshot).not_to have_key(:assistant_id)
   end
 end

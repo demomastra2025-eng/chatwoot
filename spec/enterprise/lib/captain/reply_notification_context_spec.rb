@@ -7,7 +7,7 @@ RSpec.describe Captain::ReplyNotificationContext do
   let(:conversation) { create(:conversation, account: account, contact: contact) }
 
   def context_for(message)
-    described_class.for(account: account, conversation: conversation, incoming_message_id: message.id, assistant: assistant)
+    described_class.for(account: account, conversation: conversation, incoming_message_id: message.id)
   end
 
   it 'identifies a reminder and its current-contact appointment through an explicit reply link' do

@@ -17,8 +17,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   let(:councils) { [] }
   let(:events) { [] }
   let(:runtime_runner) { instance_double(Captain::Runtime::Runner) }
-  let(:service) { described_class.new(assistant: doctors, conversation: conversation) }
-  let(:session) { Captain::Conversation::AgentSession.new(entry: doctors, conversation: conversation) }
+  let(:service) { described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation) }
+  let(:session) { Captain::Conversation::AgentSession.new(conversation: conversation) }
 
   around do |example|
     subscriber = ActiveSupport::Notifications.subscribe(/\Acaptain\.agent\./) { |name, *, payload| events << [name, payload] }
@@ -169,7 +169,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       context[:parts] = context[:parts].map { |part| part['id'] == asked ? part.merge('state' => 'waiting_customer') : part }
       Captain::Runtime::Result.new(output: { response: 'Записала к ЛОРу на 10:00.' }, messages: [], usage: nil, error: nil, context: context)
     end
-    suggestion = described_class.new(assistant: doctors, conversation: conversation, source: 'reply_suggestion')
+    suggestion = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation,
+                                        source: 'reply_suggestion')
 
     response = suggestion.generate_response(message_history: history)
 
@@ -200,7 +201,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
   it 'routes a reply suggestion without writing anything to the conversation and tells the operator about a staff request' do
     decide('human_handoff', confidence: 0.95)
-    suggestion = described_class.new(assistant: doctors, conversation: conversation, source: 'reply_suggestion')
+    suggestion = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation,
+                                        source: 'reply_suggestion')
 
     response = suggestion.generate_response(message_history: staff_history)
 
@@ -217,7 +219,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
     it 'runs no agent in a reply suggestion and tells the manager why there is no draft' do
       decide('no_reply_needed', confidence: 0.97)
-      suggestion = described_class.new(assistant: doctors, conversation: conversation, source: 'reply_suggestion')
+      suggestion = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation,
+                                          source: 'reply_suggestion')
 
       response = suggestion.generate_response(message_history: history)
 
@@ -253,7 +256,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   it 'runs the agent the decision models named at a low confidence, with no other model call' do
     decide('route_agent', yes: [procedures.id], confidence: 0.5)
     allow(Llm::Runtime).to receive(:build_chat).and_call_original
-    suggestion = described_class.new(assistant: doctors, conversation: conversation, source: 'reply_suggestion')
+    suggestion = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation,
+                                        source: 'reply_suggestion')
 
     response = suggestion.generate_response(message_history: history)
 
@@ -283,7 +287,9 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   end
 
   describe 'a reply suggestion with a sticky agent' do
-    let(:suggestion) { described_class.new(assistant: doctors, conversation: conversation, source: 'reply_suggestion') }
+    let(:suggestion) do
+      described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation, source: 'reply_suggestion')
+    end
     let(:history) do
       [{ role: 'user', content: 'Хочу на промывание миндалин завтра' },
        { role: 'assistant', content: 'Завтра свободно 16:30 и 17:00. Какое время удобно?' },

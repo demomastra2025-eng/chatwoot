@@ -89,7 +89,7 @@ RSpec.describe Captain::Runtime::Runner, '#run' do
   # The scheduling budget (four searches) is enforced for the accounts that have the grounding guard, as on PROD.
   def run_as(source)
     state = { source: source, captain_scheduling_grounding_guard_enabled: true }
-    session = Captain::Conversation::AgentSession.new(entry: build_stubbed(:captain_assistant))
+    session = Captain::Conversation::AgentSession.new
     options = { context: { state: state, agent_session: session }, registry: { agent.name => agent }, llm_context: llm_context, account: account }
     described_class.new.run(agent, 'Сколько стоит приём терапевта?', **options)
   end

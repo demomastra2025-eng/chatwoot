@@ -115,7 +115,7 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
   # Closing a conversation is a workspace setting (handoff.auto_completion_enabled), the same for every agent. The conversation is
   # closed as the agent that holds it, or as the AI itself when nobody does.
   def auto_completion_context(conversation)
-    return unless Captain::AccountSettings.new(conversation.account).section('handoff')['auto_completion_enabled']
+    return unless auto_completion_enabled?(conversation.account)
 
     ownership = Captain::Conversation::AgentOwnership.new(conversation: conversation)
     {
@@ -135,12 +135,18 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
         fence = context[:fence]
         next unless holder_unchanged?(ownership, context[:assistant], fence[:routing_revision])
         next unless control_fence_current?(conversation, fence) && still_resolvable_after_evaluation?(conversation)
+        # The workspace switch is read again: staff may have turned the completion off while the evaluation ran.
+        next unless auto_completion_enabled?(conversation.account)
 
         assistant = ownership.current_assistant
         Current.executed_by = assistant
         yield assistant
       end
     end
+  end
+
+  def auto_completion_enabled?(account)
+    Captain::AccountSettings.new(account).section('handoff')['auto_completion_enabled']
   end
 
   # The same agent still holds the conversation at the same routing revision, or still nobody does.

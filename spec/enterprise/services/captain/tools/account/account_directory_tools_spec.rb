@@ -4,7 +4,7 @@ require 'rails_helper'
 
 RSpec.describe 'Captain account directory copilot tools' do
   let(:account) { create(:account) }
-  let(:assistant) { create(:captain_assistant, account: account) }
+  let!(:assistant) { create(:captain_assistant, account: account) }
   let(:admin) { create(:user, :administrator, account: account) }
 
   describe Captain::Tools::Account::ListAccountUsersService do
@@ -106,7 +106,7 @@ RSpec.describe 'Captain account directory copilot tools' do
       policy = create(:assignment_policy, account: account, name: 'Sales Round Robin', assign_online_only: false)
       create(:inbox_assignment_policy, inbox: inbox, assignment_policy: policy)
       account.update!(conversation_assignment_policy_id: policy.id)
-      create(:captain_inbox, inbox: inbox, captain_assistant: assistant, auto_reply_mode: CaptainInbox::AUTO_REPLY_WORKING_HOURS)
+      create(:captain_inbox, inbox: inbox, auto_reply_mode: CaptainInbox::AUTO_REPLY_WORKING_HOURS)
 
       payload = JSON.parse(service.execute(query: 'sales'))
 
@@ -135,7 +135,7 @@ RSpec.describe 'Captain account directory copilot tools' do
     it 'filters by Captain connection state and rejects direct non-admin execution' do
       create(:inbox, account: account, name: 'Manual Inbox')
       connected = create(:inbox, account: account, name: 'Captain Inbox')
-      create(:captain_inbox, inbox: connected, captain_assistant: assistant)
+      create(:captain_inbox, inbox: connected)
 
       payload = JSON.parse(service.execute(captain_enabled: true))
       agent = create(:user, account: account)

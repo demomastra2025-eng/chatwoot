@@ -4,7 +4,7 @@ RSpec.describe Captain::Playground::ExecutionBoundary, 'workspace through the pr
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account, role: :administrator) }
   let(:assistant) { create(:captain_assistant, account: account) }
-  let(:session) { Captain::Playground::Session.new(account: account, user: user, assistant: assistant) }
+  let(:session) { Captain::Playground::Session.new(account: account, user: user) }
 
   before do
     account.enable_features!('scheduling', 'crm_deals', 'crm_tasks')
@@ -36,6 +36,7 @@ RSpec.describe Captain::Playground::ExecutionBoundary, 'workspace through the pr
     expect(Scheduling::Appointments::UpsertService).not_to receive(:new)
     expect(Messages::MessageBuilder).not_to receive(:new)
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       contact_id = workspace.payload.dig(:scenario, :contact, 'id')
       get_contact = wrapper(workspace, 'get_contact')
       expect(get_contact.params_schema.dig('properties', 'contact_id', 'anyOf')).to be_present
@@ -60,6 +61,7 @@ RSpec.describe Captain::Playground::ExecutionBoundary, 'workspace through the pr
 
   it 'keeps negative synthetic references in JSON with real reads enabled, even when their positive local IDs exist' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       workspace.set_permissions!(read: true, write: false)
       # Contacts use a 32-bit primary key in this schema. Keep the namespace
       # fixture in that range to exercise an actual abs-ID database collision.
@@ -82,6 +84,7 @@ RSpec.describe Captain::Playground::ExecutionBoundary, 'workspace through the pr
   it 'rejects foreign-session and unknown local negative references before any real lookup' do
     foreign = Captain::Playground::SyntheticNamespace.new(SecureRandom.uuid).encode({ contact_id: 101 })[:contact_id]
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       expect(wrapper(workspace, 'get_contact').call(contact_id: foreign)).to include('another Playground session')
       unknown = workspace.namespace.encode({ contact_id: 3030 })[:contact_id]
       expect(wrapper(workspace, 'get_contact').call(contact_id: unknown)).to include('Record is not available')
@@ -92,6 +95,7 @@ RSpec.describe Captain::Playground::ExecutionBoundary, 'workspace through the pr
     contact = create(:contact, account: account, name: 'Real allowed card')
     foreign = create(:contact)
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       expect(wrapper(workspace, 'get_contact').call(contact_id: contact.id)).to include('Reading real data is disabled')
       workspace.set_permissions!(read: true, write: false)
       before_counts = counts
@@ -104,6 +108,7 @@ RSpec.describe Captain::Playground::ExecutionBoundary, 'workspace through the pr
   it 'blocks real mutations until separately confirmed and revokes previews immediately outside the turn lock' do
     deal = create(:crm_deal, account: account)
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       workspace.set_permissions!(read: true, write: false)
       expect(wrapper(workspace, 'update_deal').call(deal_id: deal.id, title: 'Not written')).to include('Changing real data is disabled')
       workspace.set_permissions!(read: true, write: true)
@@ -122,7 +127,7 @@ RSpec.describe Captain::Playground::ExecutionBoundary, 'workspace through the pr
     tool = Captain::Tools::Agent::AccountToolAdapter.new(assistant, tool_id: 'get_contact')
     expect(tool).not_to receive(:execute)
     expect(Captain::Runtime::ToolWrapper.new(tool, context).call(contact_id: 1)).to include('Playground')
-    expect { Captain::Playground::Session.new(account: account, user: user, assistant: assistant, mode: 'live') }
+    expect { Captain::Playground::Session.new(account: account, user: user, mode: 'live') }
       .to raise_error(ArgumentError, /Legacy Live/)
   end
 end

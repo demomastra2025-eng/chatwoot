@@ -94,6 +94,7 @@ RSpec.describe 'voice handoff and Captain follow-up dispatch lock order' do
     channel = create(
       :channel_whatsapp,
       provider: 'whatsapp_cloud',
+      provider_config: { 'ai_voice_enabled' => true },
       validate_provider_config: false,
       sync_templates: false
     )
@@ -125,6 +126,7 @@ RSpec.describe 'voice handoff and Captain follow-up dispatch lock order' do
       }
     )
     create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+    Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
     number_binding = create(:telephony_number_binding, account: account, inbox: inbox)
     create(
       :telephony_routing_policy,

@@ -410,6 +410,7 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
         :channel_whatsapp,
         account: account,
         provider: 'whatsapp_cloud',
+        provider_config: { 'ai_voice_enabled' => true },
         sync_templates: false,
         validate_provider_config: false
       )
@@ -511,7 +512,7 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
 
   describe '#with_captain_assistant_assignment_lock' do
     let(:account) { create(:account) }
-    let(:inbox) { create(:inbox, account: account) }
+    let(:inbox) { create_voice_inbox(account) }
     let(:conversation) { create(:conversation, account: account, inbox: inbox) }
     let(:call_session) do
       create(
@@ -859,7 +860,7 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
 
   describe '#perform request_transfer' do
     let(:account) { create(:account) }
-    let(:inbox) { create(:inbox, account: account) }
+    let(:inbox) { create_voice_inbox(account) }
     let(:number_binding) { create(:telephony_number_binding, account: account, inbox: inbox) }
     let(:assistant) { create(:captain_assistant, account: account) }
     let(:conversation) { create(:conversation, account: account, inbox: inbox, status: 'pending') }

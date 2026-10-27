@@ -40,18 +40,12 @@ RSpec.describe 'Enterprise Conversations API', type: :request do
   end
 
   describe 'POST /api/v1/accounts/{account.id}/conversations/:id/toggle_status' do
-    let(:assistant) do
-      create(
-        :captain_assistant,
-        account: account,
-        config: { 'auto_reply_on_last_incoming' => true }
-      )
-    end
     let(:conversation) { create(:conversation, account: account, status: :open) }
 
     before do
+      create(:captain_assistant, account: account, config: { 'auto_reply_on_last_incoming' => true })
       Captain::AccountSettings.new(account).update!('handoff' => { 'auto_reply_on_last_incoming' => true })
-      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+      create(:captain_inbox, inbox: conversation.inbox)
       create(:message, conversation: conversation, account: account, message_type: :incoming, private: false, content: 'Need help')
       allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_on)
       allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
@@ -68,12 +62,10 @@ RSpec.describe 'Enterprise Conversations API', type: :request do
 
       expect(response).to have_http_status(:success)
       expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_on).with(
-        conversation: conversation,
-        assistant: assistant
+        conversation: conversation
       )
       expect(Captain::Conversation::ResponseBuilderJob).to have_received(:perform_later).with(
         conversation,
-        assistant,
         expected_last_message_id: conversation.messages.incoming.last.id
       )
       # An explicit staff return to pending starts a new Captain run (ControlService#prepare_ai!):
@@ -92,8 +84,7 @@ RSpec.describe 'Enterprise Conversations API', type: :request do
 
       expect(response).to have_http_status(:success)
       expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_off).with(
-        conversation: conversation,
-        assistant: assistant
+        conversation: conversation
       )
     end
   end

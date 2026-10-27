@@ -11,12 +11,20 @@ RSpec.describe Captain::SystemHandoffMessageService do
     configure_notice(account, 'handoff_message', enabled: enabled, mode: mode, text: text, instruction: instruction)
   end
 
-  it 'posts the configured static handoff message as the assistant' do
+  it 'posts the configured static handoff message as the agent that holds the conversation' do
     configure(enabled: true, mode: 'fixed', text: 'Передаю администратору.')
 
-    message = described_class.new(conversation: conversation, assistant: assistant).perform
+    message = described_class.new(conversation: conversation, agent: assistant).perform
 
     expect(message).to have_attributes(content: 'Передаю администратору.', message_type: 'outgoing', private: false, sender: assistant)
+  end
+
+  it 'posts the handoff message as the AI itself, with no sender, when nobody holds the conversation' do
+    configure(enabled: true, mode: 'fixed', text: 'Передаю администратору.')
+
+    message = described_class.new(conversation: conversation).perform
+
+    expect(message).to have_attributes(content: 'Передаю администратору.', message_type: 'outgoing', private: false, sender: nil)
   end
 
   it 'posts the text the notice model wrote in AI mode' do
@@ -24,7 +32,7 @@ RSpec.describe Captain::SystemHandoffMessageService do
     create(:message, conversation: conversation, account: account, inbox: inbox, message_type: :incoming, content: 'Нужен администратор')
     stub_notice_model('Администратор продолжит диалог с вами.')
 
-    message = described_class.new(conversation: conversation, assistant: assistant).perform
+    message = described_class.new(conversation: conversation, agent: assistant).perform
 
     expect(message).to have_attributes(content: 'Администратор продолжит диалог с вами.', sender: assistant, private: false)
   end
@@ -32,19 +40,19 @@ RSpec.describe Captain::SystemHandoffMessageService do
   it 'falls back to the configured text, then to a neutral sentence, when the notice model fails' do
     configure(enabled: true, mode: 'generated', text: 'Configured text')
     stub_notice_model(error: StandardError.new('boom'))
-    expect(described_class.new(conversation: conversation, assistant: assistant).content).to eq('Configured text')
+    expect(described_class.new(conversation: conversation, agent: assistant).content).to eq('Configured text')
 
     configure(enabled: true, mode: 'generated', text: '')
-    expect(described_class.new(conversation: conversation, assistant: assistant).content)
+    expect(described_class.new(conversation: conversation, agent: assistant).content)
       .to eq('Сотрудник продолжит диалог с вами.')
   end
 
   it 'posts nothing when the handoff message is disabled or has no fixed text' do
     configure(enabled: false, text: 'Configured text')
-    expect(described_class.new(conversation: conversation, assistant: assistant).perform).to be_nil
+    expect(described_class.new(conversation: conversation, agent: assistant).perform).to be_nil
 
     configure(enabled: true, mode: 'fixed', text: '')
-    expect(described_class.new(conversation: conversation, assistant: assistant).perform).to be_nil
+    expect(described_class.new(conversation: conversation, agent: assistant).perform).to be_nil
 
     expect(conversation.messages.outgoing).to be_empty
   end
@@ -53,14 +61,14 @@ RSpec.describe Captain::SystemHandoffMessageService do
     configure(enabled: false, mode: 'generated', text: 'Configured text')
     expect(Llm::Runtime).not_to receive(:chat)
 
-    expect(described_class.new(conversation: conversation, assistant: assistant).perform).to be_nil
+    expect(described_class.new(conversation: conversation, agent: assistant).perform).to be_nil
   end
 
   it 'writes the text once in #prepare, before the lock, and posts it in #perform' do
     configure(enabled: true, mode: 'generated')
     stub_notice_model('Администратор продолжит диалог с вами.')
     expect(Llm::Runtime).to receive(:chat).once.and_return(Struct.new(:content).new('Администратор продолжит диалог с вами.'))
-    service = described_class.new(conversation: conversation, assistant: assistant)
+    service = described_class.new(conversation: conversation, agent: assistant)
 
     expect(service.prepare).to eq(service)
     expect(service.perform).to have_attributes(content: 'Администратор продолжит диалог с вами.')
@@ -69,11 +77,11 @@ RSpec.describe Captain::SystemHandoffMessageService do
   it 'posts the fixed text, then the neutral sentence, without any model call when generate: false' do
     stub_notice_model
     configure(enabled: true, mode: 'generated', text: 'Configured text')
-    posted = described_class.new(conversation: conversation, assistant: assistant, generate: false).perform
+    posted = described_class.new(conversation: conversation, agent: assistant, generate: false).perform
     expect(posted).to have_attributes(content: 'Configured text', sender: assistant, private: false)
 
     configure(enabled: true, mode: 'generated', text: '')
-    expect(described_class.new(conversation: conversation, assistant: assistant, generate: false).content)
+    expect(described_class.new(conversation: conversation, agent: assistant, generate: false).content)
       .to eq('Сотрудник продолжит диалог с вами.')
     expect(Llm::Runtime).not_to have_received(:chat).with(hash_including(feature: :customer_notice))
   end
@@ -82,6 +90,6 @@ RSpec.describe Captain::SystemHandoffMessageService do
     assistant.update!(config: assistant.config.merge('handoff_message_enabled' => true, 'handoff_message_mode' => 'static',
                                                      'handoff_message' => 'Legacy agent text'))
 
-    expect(described_class.new(conversation: conversation, assistant: assistant).content).to be_nil
+    expect(described_class.new(conversation: conversation, agent: assistant).content).to be_nil
   end
 end

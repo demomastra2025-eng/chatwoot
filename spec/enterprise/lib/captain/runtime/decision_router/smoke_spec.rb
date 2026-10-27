@@ -49,12 +49,12 @@ RSpec.describe Captain::Runtime::DecisionRouter::Smoke do
 
   it 'checks by default every account whose channel routes among two or more agents, not the account of the first agent' do
     solo = create(:account)
-    create(:captain_inbox, captain_assistant: create(:captain_assistant, account: solo, active: true, routing_description: 'Всё'),
-                           inbox: create(:inbox, account: solo))
+    create(:captain_assistant, account: solo, active: true, routing_description: 'Всё')
+    create(:captain_inbox, inbox: create(:inbox, account: solo))
     clinic = create(:account)
-    doctors = create(:captain_assistant, account: clinic, active: true, routing_description: 'Запись к ЛОР-врачам')
+    create(:captain_assistant, account: clinic, active: true, routing_description: 'Запись к ЛОР-врачам')
     create(:captain_assistant, account: clinic, active: true, routing_description: 'ЛОР-процедуры')
-    create(:captain_inbox, captain_assistant: doctors, inbox: create(:inbox, account: clinic))
+    create(:captain_inbox, inbox: create(:inbox, account: clinic))
 
     expect(described_class.routed_accounts).to eq([clinic])
   end

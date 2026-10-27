@@ -14,7 +14,7 @@ RSpec.describe Captain::Runtime::ChatFactory, '.system_prompt_parts' do
     create(:captain_assistant, account: account, description: 'SPECIALIST CLINIC INSTRUCTIONS', routing_description: 'Детский приём')
   end
   let(:conversation) { create(:conversation, account: account) }
-  let(:runtime) { Captain::AgentRunContext.new(entry: entry, conversation: conversation) }
+  let(:runtime) { Captain::AgentRunContext.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation) }
   let(:morning) { { now_utc: '2026-10-12T05:23:00Z', timezone: 'Asia/Almaty' } }
   let(:night) { { now_utc: '2026-10-14T20:41:00Z', timezone: 'Asia/Almaty' } }
   let(:first_request) do

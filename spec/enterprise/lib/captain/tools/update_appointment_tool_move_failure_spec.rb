@@ -10,7 +10,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
   around { |example| travel_to(Time.utc(2026, 4, 19, 12)) { example.run } }
 
   let(:account) { create(:account, locale: 'ru').tap { |record| record.enable_features!('scheduling') } }
-  let(:assistant) { create(:captain_assistant, account: account, usage_mode: 'external_agent') }
+  let!(:assistant) { create(:captain_assistant, account: account, usage_mode: 'external_agent') }
   let(:tool) { described_class.new(assistant) }
   let(:status) { Integrations::Medelement::AppointmentProviderStatus }
   let(:original_starts_at) { Time.zone.parse('2026-04-20 09:00:00 +0500') }
@@ -41,7 +41,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
   let(:execute_commands_inline) { true }
 
   before do
-    create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+    create(:captain_inbox, inbox: conversation.inbox)
     create(:integrations_hook, :medelement, account: account,
                                             settings: attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true))
     availability = Integrations::Medelement::ResourceAvailabilityService::Result.new(

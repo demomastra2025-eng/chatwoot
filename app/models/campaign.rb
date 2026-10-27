@@ -96,7 +96,7 @@ class Campaign < ApplicationRecord
   end
 
   before_validation :normalize_text_mode
-  before_validation :pick_captain_assistant, on: :create
+  before_validation :pick_captain_assistant
   before_validation :ensure_correct_campaign_attributes
   after_commit :set_display_id, unless: :display_id?
   after_destroy_commit :enqueue_audience_import_cleanup
@@ -327,7 +327,8 @@ class Campaign < ApplicationRecord
     errors.add(:template_params, e.message)
   end
 
-  # The router picks the writer from the instruction of the campaign, once, when it is made; the chosen agent is stored.
+  # The router picks the writer from the instruction of the campaign, once, when the campaign becomes an AI-authored one; the chosen
+  # agent is stored, and a campaign that names a writer keeps it.
   def pick_captain_assistant
     return unless agent?
     return if captain_assistant.present?

@@ -14,7 +14,7 @@ RSpec.describe 'Captain follow-up provider dispatch boundary', type: :job do
     end
   end
 
-  def materialized_follow_up
+  def materialized_follow_up # rubocop:disable Metrics/AbcSize
     account = create(:account)
     account.enable_features!('captain_integration')
     inbox = create(:inbox, account: account)
@@ -30,7 +30,8 @@ RSpec.describe 'Captain follow-up provider dispatch boundary', type: :job do
         }
       }
     )
-    create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+    create(:captain_inbox, inbox: inbox)
+    Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
     incoming = create(
       :message,
       account: account,
@@ -201,10 +202,9 @@ RSpec.describe 'Captain follow-up provider dispatch boundary', type: :job do
     dispatch_thread&.join(2)
   end
 
-  it 'serializes requested inbox settings and detach/reassignment behind provider dispatch' do
-    account, inbox, _conversation, assistant, _reminder, message = materialized_follow_up
-    assignment = CaptainInbox.find_by!(inbox_id: inbox.id, captain_assistant_id: assistant.id)
-    replacement = create(:captain_assistant, account: account)
+  it 'serializes requested inbox settings and detach/recreation of the channel row behind provider dispatch' do
+    _account, inbox, _conversation, _assistant, _reminder, message = materialized_follow_up
+    assignment = CaptainInbox.find_by!(inbox_id: inbox.id)
     entered, release, provider_finished, provider = paused_provider
     dispatch_thread = in_thread { SendReplyJob.perform_now(message.id) }
     wait_for_signal(entered, dispatch_thread)
@@ -215,10 +215,7 @@ RSpec.describe 'Captain follow-up provider dispatch boundary', type: :job do
       writer_started << true
       CaptainInbox.find(assignment.id).update!(auto_reply_mode: 'working_hours')
       CaptainInbox.find(assignment.id).destroy!
-      CaptainInbox.create!(
-        captain_assistant_id: replacement.id,
-        inbox_id: inbox.id
-      )
+      CaptainInbox.create!(inbox_id: inbox.id)
       writer_finished << :complete
     end
     wait_for_blocked_writer(writer_thread, writer_started, writer_finished)
@@ -229,7 +226,7 @@ RSpec.describe 'Captain follow-up provider dispatch boundary', type: :job do
     expect(provider_finished.size).to eq(1)
     expect(provider).to have_received(:perform).once
     expect(writer_finished.pop).to eq(:complete)
-    expect(CaptainInbox.find_by!(inbox_id: inbox.id).captain_assistant_id).to eq(replacement.id)
+    expect(CaptainInbox.find_by!(inbox_id: inbox.id).captain_assistant_id).to be_nil
   ensure
     release << true if defined?(release) && release.empty?
     writer_thread&.join(2)
@@ -237,8 +234,8 @@ RSpec.describe 'Captain follow-up provider dispatch boundary', type: :job do
   end
 
   it 'suppresses dispatch when the inbox assignment was removed first' do
-    _account, inbox, _conversation, assistant, reminder, message = materialized_follow_up
-    CaptainInbox.find_by!(inbox_id: inbox.id, captain_assistant_id: assistant.id).destroy!
+    _account, inbox, _conversation, _assistant, reminder, message = materialized_follow_up
+    CaptainInbox.find_by!(inbox_id: inbox.id).destroy!
     provider = instance_double(Messages::SendEmailNotificationService, perform: true)
     allow(Messages::SendEmailNotificationService).to receive(:new).and_return(provider)
 

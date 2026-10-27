@@ -7,9 +7,19 @@ RSpec.describe Captain::CustomerNoticeService do
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:kind) { :handoff }
   let(:reason_label) { nil }
-  let(:service) { described_class.new(conversation: conversation, assistant: assistant, kind: kind, reason_label: reason_label) }
+  let(:service) { described_class.new(conversation: conversation, agent: assistant, kind: kind, reason_label: reason_label) }
+
   let(:handoff_key) { 'handoff_message' }
   let(:answer) { 'Сотрудник продолжит диалог с вами.' }
+
+  it 'is a workspace text: it needs no agent to be written or rendered' do
+    configure_notice(account, handoff_key, mode: 'fixed', text: 'Сейчас подключится сотрудник.')
+
+    notice = described_class.new(conversation: conversation, kind: :handoff)
+
+    expect(notice.text).to eq('Сейчас подключится сотрудник.')
+    expect(notice.source).to eq('fixed')
+  end
 
   def customer_says(content)
     create(:message, conversation: conversation, account: account, inbox: inbox, message_type: :incoming, content: content)
@@ -42,7 +52,7 @@ RSpec.describe Captain::CustomerNoticeService do
     it 'writes nothing for a disabled closing message' do
       configure_notice(account, 'resolution_message', enabled: false, text: 'Configured text')
 
-      expect(described_class.new(conversation: conversation, assistant: assistant, kind: :resolution).text).to be_nil
+      expect(described_class.new(conversation: conversation, agent: assistant, kind: :resolution).text).to be_nil
     end
 
     it 'has no built-in wording for a fixed message without text' do
@@ -56,12 +66,12 @@ RSpec.describe Captain::CustomerNoticeService do
   describe 'a fixed message' do
     it 'is the owner text, rendered with the runtime text rendering, and never calls the model' do
       configure_notice(account, handoff_key, mode: 'fixed', text: 'Сейчас подключится сотрудник.')
-      allow(assistant).to receive(:render_runtime_text).and_call_original
+      allow(Captain::RuntimeText).to receive(:render).and_call_original
       expect(Llm::Runtime).not_to receive(:chat)
 
       expect(service.text).to eq('Сейчас подключится сотрудник.')
       expect(service.source).to eq('fixed')
-      expect(assistant).to have_received(:render_runtime_text).with('Сейчас подключится сотрудник.', conversation: conversation)
+      expect(Captain::RuntimeText).to have_received(:render).with('Сейчас подключится сотрудник.', account: account, conversation: conversation)
     end
 
     it 'writes a $ field as the value alone, so the customer never reads a label or a field id' do
@@ -98,7 +108,7 @@ RSpec.describe Captain::CustomerNoticeService do
                        content: 'Внутренняя заметка')
       request = stub_notice_answer(answer)
 
-      described_class.new(conversation: conversation, assistant: assistant, kind: :handoff, reason_label: 'Нужен человек').text
+      described_class.new(conversation: conversation, agent: assistant, kind: :handoff, reason_label: 'Нужен человек').text
 
       expect(user_data(request)).to eq(
         'kind' => 'handoff',
@@ -120,7 +130,7 @@ RSpec.describe Captain::CustomerNoticeService do
       configure_notice(account, 'resolution_message', mode: 'generated', instruction: 'Поблагодарите клиента.')
       request = stub_notice_answer('Диалог закрыт, спасибо за обращение.')
 
-      notice = described_class.new(conversation: conversation, assistant: assistant, kind: :resolution)
+      notice = described_class.new(conversation: conversation, agent: assistant, kind: :resolution)
 
       expect(notice.text).to eq('Диалог закрыт, спасибо за обращение.')
       expect(user_data(request)).to include('kind' => 'resolution', 'style_guide' => 'Поблагодарите клиента.')
@@ -137,11 +147,11 @@ RSpec.describe Captain::CustomerNoticeService do
 
     it 'is not rendered as a template' do
       stub_notice_answer(answer)
-      allow(assistant).to receive(:render_runtime_text).and_call_original
+      allow(Captain::RuntimeText).to receive(:render).and_call_original
 
       service.text
 
-      expect(assistant).not_to have_received(:render_runtime_text)
+      expect(Captain::RuntimeText).not_to have_received(:render)
     end
   end
 
@@ -173,7 +183,7 @@ RSpec.describe Captain::CustomerNoticeService do
 
     it 'goes straight to the fixed text without a model call when generation is not allowed' do
       stub_notice_model
-      notice = described_class.new(conversation: conversation, assistant: assistant, kind: kind, generate: false)
+      notice = described_class.new(conversation: conversation, agent: assistant, kind: kind, generate: false)
 
       expect(notice.text).to eq('Запасной текст')
       expect(notice.source).to eq('fallback_fixed')
@@ -184,7 +194,7 @@ RSpec.describe Captain::CustomerNoticeService do
       configure_notice(account, handoff_key, mode: 'generated', text: '')
       stub_notice_model
 
-      notice = described_class.new(conversation: conversation, assistant: assistant, kind: kind, generate: false)
+      notice = described_class.new(conversation: conversation, agent: assistant, kind: kind, generate: false)
 
       expect(notice.text).to eq('Сотрудник продолжит диалог с вами.')
       expect(notice.source).to eq('fallback_builtin')
@@ -194,7 +204,7 @@ RSpec.describe Captain::CustomerNoticeService do
     it 'still writes nothing for a disabled message' do
       configure_notice(account, handoff_key, enabled: false, mode: 'generated', text: 'Запасной текст')
 
-      expect(described_class.new(conversation: conversation, assistant: assistant, kind: kind, generate: false).text).to be_nil
+      expect(described_class.new(conversation: conversation, agent: assistant, kind: kind, generate: false).text).to be_nil
     end
   end
 
@@ -237,7 +247,7 @@ RSpec.describe Captain::CustomerNoticeService do
       configure_notice(account, 'resolution_message', mode: 'generated', text: '')
       stub_notice_model(error: StandardError.new('boom'))
 
-      expect(described_class.new(conversation: conversation, assistant: assistant, kind: :resolution).text)
+      expect(described_class.new(conversation: conversation, agent: assistant, kind: :resolution).text)
         .to eq('Диалог закрыт. Если появятся вопросы, напишите нам снова.')
     end
 
@@ -390,7 +400,7 @@ RSpec.describe Captain::CustomerNoticeService do
   end
 
   it 'rejects an unknown kind' do
-    expect { described_class.new(conversation: conversation, assistant: assistant, kind: :welcome) }
+    expect { described_class.new(conversation: conversation, agent: assistant, kind: :welcome) }
       .to raise_error(ArgumentError, /Unknown notice kind/)
   end
 end

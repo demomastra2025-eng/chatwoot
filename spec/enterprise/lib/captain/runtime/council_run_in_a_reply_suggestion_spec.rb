@@ -12,7 +12,7 @@ RSpec.describe Captain::Runtime::Council, '#run in a reply suggestion' do
   let(:built) { [] }
   let(:actors) { { 1 => actor(1), 2 => actor(2), 3 => actor(3) } }
   let(:graph) do
-    instance_double(Captain::AgentGraph, entry: actors[1], inbox: nil, agents: actors.values).tap do |item|
+    instance_double(Captain::AgentGraph, inbox: nil, agents: actors.values).tap do |item|
       allow(item).to receive(:find) { |id| actors[id] }
     end
   end

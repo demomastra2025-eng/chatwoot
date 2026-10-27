@@ -229,7 +229,8 @@ RSpec.describe Conversation do
     end
 
     it 'runs conversation transferred to AI event when a Captain conversation becomes pending' do
-      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: create(:captain_assistant, account: account))
+      create(:captain_assistant, account: account)
+      create(:captain_inbox, inbox: conversation.inbox)
 
       conversation.update!(status: :pending)
       status_change = conversation.status_change
@@ -254,7 +255,8 @@ RSpec.describe Conversation do
     end
 
     it 'does not repeat conversation transferred to AI event for later AI messages' do
-      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: create(:captain_assistant, account: account))
+      create(:captain_assistant, account: account)
+      create(:captain_inbox, inbox: conversation.inbox)
       conversation.update!(status: :pending)
 
       create(:message, :bot_message, conversation: conversation, account: account, inbox: conversation.inbox)
@@ -525,9 +527,8 @@ RSpec.describe Conversation do
     end
 
     it 'keeps a legacy open-reply worker from responding during a rolling handoff' do
-      create(:captain_inbox, inbox: conversation.inbox,
-                             captain_assistant: create(:captain_assistant, account: conversation.account),
-                             reply_to_open_conversations: true)
+      create(:captain_assistant, account: conversation.account)
+      create(:captain_inbox, inbox: conversation.inbox, reply_to_open_conversations: true)
       conversation.bot_handoff!
 
       legacy_can_reply = conversation.reload.open? && conversation.inbox.captain_inbox.reply_to_open_conversations? &&
@@ -597,8 +598,8 @@ RSpec.describe Conversation do
     end
 
     it 'skips a stale handoff and its notifications when a human reply committed first' do
-      assistant = create(:captain_assistant, account: conversation.account)
-      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+      create(:captain_assistant, account: conversation.account)
+      create(:captain_inbox, inbox: conversation.inbox)
       trigger_message = create(:message, conversation: conversation, message_type: :incoming)
       expected_generation = conversation.captain_control_generation
       create(:message, conversation: conversation, message_type: :outgoing)
@@ -1513,7 +1514,7 @@ RSpec.describe Conversation do
     end
 
     context 'when an AI assistant responds between customer messages' do
-      let(:assistant) { create(:captain_assistant, account: account) }
+      let!(:assistant) { create(:captain_assistant, account: account) }
 
       def create_bot_message(conversation, created_at: Time.current)
         message = nil

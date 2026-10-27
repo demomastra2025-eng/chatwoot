@@ -4,7 +4,7 @@ RSpec.describe Outbound::PlaygroundMutationPolicy do
   let(:account) { create(:account).tap { |item| item.enable_features!('scheduling') } }
   let(:user) { create(:user, account: account, role: :administrator) }
   let(:assistant) { create(:captain_assistant, account: account) }
-  let(:session) { Captain::Playground::Session.new(account: account, user: user, assistant: assistant) }
+  let(:session) { Captain::Playground::Session.new(account: account, user: user) }
   let(:patient) do
     create(:contact, account: account, name: 'Messaging alias', custom_attributes: {
              'medelement_patient_card' => true, 'medelement_iin' => '900101400013',
@@ -29,8 +29,9 @@ RSpec.describe Outbound::PlaygroundMutationPolicy do
       } }
   end
 
-  def with_approved_policy(inbox: nil)
+  def with_approved_policy(inbox: nil) # rubocop:disable Metrics/AbcSize
     session.with_lock(inbox_id: inbox&.id) do |workspace|
+      workspace.activate_agent!(assistant)
       workspace.set_permissions!(read: true, write: true)
       args = { 'resource_id' => 9, 'service_id' => 10, 'starts_at' => starts, 'ends_at' => ends, 'duration_min' => 30,
                'custom_attributes' => { 'medelement_cabinet_code' => 'cabinet-1' } }

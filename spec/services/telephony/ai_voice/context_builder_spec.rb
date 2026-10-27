@@ -33,6 +33,7 @@ RSpec.describe Telephony::AiVoice::ContextBuilder do
         :channel_whatsapp,
         account: account,
         provider: 'whatsapp_cloud',
+        provider_config: { 'ai_voice_enabled' => true },
         sync_templates: false,
         validate_provider_config: false
       )
@@ -97,7 +98,8 @@ RSpec.describe Telephony::AiVoice::ContextBuilder do
   describe '#fast_captain_voice_prompt' do
     let(:account) { create(:account) }
     let(:whatsapp_channel) do
-      create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud', sync_templates: false, validate_provider_config: false)
+      create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud', sync_templates: false, validate_provider_config: false,
+                                provider_config: { 'ai_voice_enabled' => true })
     end
     let(:inbox) { whatsapp_channel.inbox }
     let(:conversation) { create(:conversation, account: account, inbox: inbox) }

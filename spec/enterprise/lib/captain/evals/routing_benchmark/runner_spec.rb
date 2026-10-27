@@ -37,9 +37,10 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
 
   # The scripted runtime reports what the workspace holds when it is called, then leaves rows behind. A block that returns
   # a Hash adds its keys to the response of that turn ({ 'handoff_tool_called' => true }); a block with two parameters also gets
-  # the entry agent.
+  # the first agent of the workspace.
   def script_runtime(text: 'Здравствуйте!', **extra, &block)
-    allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |assistant:, conversation:, **|
+    allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |scope:, conversation:, **|
+      assistant = scope.members.first
       more = block.arity == 2 ? block.call(conversation, assistant) : block.call(conversation)
       answer = { 'agent_id' => assistant.id, 'response' => text, 'captain_request_id' => 'synthetic-request' }
                .merge(extra.stringify_keys).merge(more.is_a?(Hash) ? more : {})
@@ -488,9 +489,9 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
       stub_fixture
       calls = 0
       parts = nil
-      script_runtime do |conversation, assistant|
+      script_runtime do |conversation, _assistant|
         calls += 1
-        session = Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation)
+        session = Captain::Conversation::AgentSession.new(conversation: conversation)
         if calls == 1
           session.change { |data| data['parts'] = [{ 'id' => 'p1', 'version' => 1, 'state' => 'done', 'acted' => true, 'delivered' => [] }] }
           { 'part_refs' => [{ 'id' => 'p1', 'version' => 1 }, { 'id' => 'gone', 'version' => 1 }] }
@@ -509,9 +510,9 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
       stub_fixture
       calls = 0
       parts = nil
-      script_runtime do |conversation, assistant|
+      script_runtime do |conversation, _assistant|
         calls += 1
-        session = Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation)
+        session = Captain::Conversation::AgentSession.new(conversation: conversation)
         if calls == 1
           session.change { |data| data['parts'] = [{ 'id' => 'p1', 'version' => 1, 'state' => 'done', 'acted' => true, 'delivered' => [] }] }
           { 'response' => 'conversation_handoff', 'handoff_tool_called' => true, 'part_refs' => [{ 'id' => 'p1', 'version' => 1 }] }

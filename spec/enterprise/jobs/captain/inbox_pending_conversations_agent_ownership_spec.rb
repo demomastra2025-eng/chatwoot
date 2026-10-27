@@ -5,7 +5,7 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
   let(:inbox) { create(:inbox, account: account) }
   # Legacy per-agent message settings stay in the config for rollback but are
   # no longer read: completion and handoff texts come from the account settings.
-  let(:entry) do
+  let!(:entry) do
     create(:captain_assistant, account: account, config: {
              'resolution_message_enabled' => true, 'resolution_message_mode' => 'static', 'resolution_message' => 'Entry closure',
              'handoff_message_enabled' => true, 'handoff_message_mode' => 'static', 'handoff_message' => 'Entry transfer'
@@ -28,9 +28,7 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
         'handoff_message' => { 'enabled' => true, 'mode' => 'fixed', 'text' => 'Account transfer' }
       }
     )
-    create(:captain_inbox, inbox: inbox, captain_assistant: entry)
-    entry.update!(handoff_agent_ids: [specialist.id])
-    specialist.update!(handoff_agent_ids: [entry.id])
+    create(:captain_inbox, inbox: inbox)
     inbox.reload
     allow(inbox.account).to receive(:feature_enabled?).and_call_original
     allow(inbox.account).to receive(:feature_enabled?).with('captain_tasks').and_return(true)
@@ -39,7 +37,7 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
   end
 
   def route_to(assistant)
-    Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation).update_routing(actor_id: assistant.id)
+    Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
   end
 
   def disable_account_auto_completion
@@ -91,26 +89,42 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
     expect(conversation.status_transitions.last.actor).to eq(specialist)
   end
 
-  it 'does not fall back to the entry after a specialist is disabled' do
+  # Nobody holds the conversation once its holder is switched off or is no longer an agent of the channel: the AI closes it as itself,
+  # and no other agent takes the place of the holder.
+  def expect_closed_by_the_ai_itself # rubocop:disable Metrics/AbcSize
+    described_class.perform_now(inbox)
+
+    expect(conversation.reload).to be_resolved
+    expect(conversation.messages.outgoing.where(private: false).last).to have_attributes(content: 'Account closure', sender: nil)
+    expect(conversation.messages.where(private: true).last).to have_attributes(content: 'Auto-resolved: Answered', sender: nil)
+    expect(conversation.status_transitions.last).to have_attributes(actor: nil, source: 'system')
+  end
+
+  it 'closes the conversation as the AI itself, not as another agent, after the specialist that held it is disabled' do
     specialist.update!(active: false)
 
-    expect_no_auto_action
-    expect(Captain::ConversationCompletionService).not_to have_received(:new)
+    expect_closed_by_the_ai_itself
   end
 
-  it 'does not auto-complete a specialist conversation after the entry is disabled' do
-    entry.update_columns(active: false)
+  it 'keeps closing a specialist conversation as its holder after another agent is disabled' do
+    entry.update!(active: false)
 
-    expect_no_auto_action
-    expect(Captain::ConversationCompletionService).not_to have_received(:new)
+    described_class.perform_now(inbox)
+
+    expect(conversation.reload).to be_resolved
+    expect(conversation.status_transitions.last.actor).to eq(specialist)
   end
 
-  it 'does not fall back to the entry after access to the specialist is removed' do
-    # Routing is channel membership: the specialist leaves this inbox (selected scope without it).
+  it 'closes the conversation as the AI itself after the specialist is no longer an agent of the channel' do
     specialist.update_column(:usage_mode, 'internal_assistant')
 
-    expect_no_auto_action
-    expect(Captain::ConversationCompletionService).not_to have_received(:new)
+    expect_closed_by_the_ai_itself
+  end
+
+  it 'closes a conversation that nobody holds as the AI itself' do
+    Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: nil)
+
+    expect_closed_by_the_ai_itself
   end
 
   it 'fences an evaluation when the conversation transfers to the entry' do

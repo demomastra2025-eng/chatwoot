@@ -5,44 +5,41 @@ RSpec.describe Captain::AccountSettingsBackfill do
   let(:older) { create(:captain_assistant, account: account, config: { 'feature_faq' => false }) }
   let(:main) { create(:captain_assistant, account: account, config: { 'feature_faq' => true }) }
 
-  it 'selects the active agent with the most conversations on its AI channel in 30 days' do
-    old_inbox = create(:inbox, account: account)
-    main_inbox = create(:inbox, account: account)
-    create(:captain_inbox, captain_assistant: older, inbox: old_inbox)
-    create(:captain_inbox, captain_assistant: main, inbox: main_inbox)
-    create(:conversation, account: account, inbox: old_inbox)
-    2.times { create(:conversation, account: account, inbox: main_inbox) }
+  it 'seeds the workspace settings from the most recently changed enabled agent, with no channel or main agent involved' do
+    older
+    main.update!(updated_at: 1.minute.from_now)
+    create(:conversation, account: account, inbox: create(:inbox, account: account))
 
-    expect(described_class.main_assistant(account)).to eq(main)
+    expect(described_class.reference_assistant(account)).to eq(main)
     expect(described_class.backfill!(account)).to be(true)
     expect(Captain::AccountSettings.new(account.reload).section('faq')['generate_from_resolved']).to be(true)
     expect(described_class.backfill!(account)).to be(false)
     expect(main.reload.config['feature_faq']).to be(true)
   end
 
-  it 'falls back to the most recently updated active external agent' do
+  it 'ignores a disabled agent and an internal assistant' do
     older
-    main.update!(updated_at: 1.minute.from_now)
+    main.update!(updated_at: 1.minute.from_now, active: false)
+    create(:captain_assistant, account: account, usage_mode: 'internal_assistant', updated_at: 2.minutes.from_now)
 
-    expect(described_class.main_assistant(account)).to eq(main)
+    expect(described_class.reference_assistant(account)).to eq(older)
   end
 
-  it 'prefers a connected channel agent over a newer unconnected agent when no conversations are recent' do
-    inbox = create(:inbox, account: account)
-    create(:captain_inbox, captain_assistant: older, inbox: inbox)
-    main.update!(updated_at: 1.minute.from_now)
+  it 'has no reference agent in a workspace with no enabled agent' do
+    main.update!(active: false)
 
-    expect(described_class.main_assistant(account)).to eq(older)
+    expect(described_class.reference_assistant(account)).to be_nil
   end
 
   it 'reports only IDs and differing setting names' do
     older
-    main
+    main.update!(updated_at: 1.minute.from_now)
     conflicts = described_class.conflicts(account)
 
     expect(conflicts.size).to eq(1)
     expect(conflicts.first[:settings]).to include('faq.generate_from_resolved')
-    expect(conflicts.first.keys).to contain_exactly(:account_id, :main_agent_id, :agent_id, :settings)
+    expect(conflicts.first.keys).to contain_exactly(:account_id, :reference_agent_id, :agent_id, :settings)
+    expect(conflicts.first).to include(reference_agent_id: main.id, agent_id: older.id)
   end
 
   describe 'the handoff and closing messages of the old per-agent settings' do
@@ -134,7 +131,7 @@ RSpec.describe Captain::AccountSettingsBackfill do
     end
   end
 
-  it 'copies the main agent custom rules without changing the old stored rules' do
+  it 'copies the custom rules of the reference agent without changing the old stored rules' do
     rule = { 'id' => 'urgent_1', 'name' => 'Urgent request', 'direction' => 'input',
              'instruction' => 'Route a fictional emergency.', 'action' => 'handoff', 'enabled' => true, 'message' => '' }
     main.update!(config: main.config.merge('safety_settings' => { 'custom_rules' => [rule] }))

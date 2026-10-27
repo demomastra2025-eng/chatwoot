@@ -9,10 +9,10 @@ RSpec.describe Campaigns::CaptainGeneratedMessageService do
     let(:contact_inbox) { create(:contact_inbox, contact: contact, inbox: inbox, source_id: 'customer@example.com') }
     let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox) }
 
-    it 'uses the assistant fixed on the campaign even if the active inbox assistant changes before execution' do
+    it 'uses the assistant fixed on the campaign even if the workspace enables another agent before execution' do
       fixed_assistant = create(:captain_assistant, account: account, name: 'Fixed Campaign AI')
-      active_assistant = create(:captain_assistant, account: account, name: 'New Inbox AI')
-      captain_inbox = create(:captain_inbox, inbox: inbox, captain_assistant: fixed_assistant)
+      create(:captain_assistant, account: account, name: 'New Workspace AI')
+      create(:captain_inbox, inbox: inbox)
       campaign = create(
         :campaign,
         account: account,
@@ -22,7 +22,6 @@ RSpec.describe Campaigns::CaptainGeneratedMessageService do
         instructions: 'Write a short follow-up',
         captain_assistant: fixed_assistant
       )
-      captain_inbox.update!(captain_assistant: active_assistant)
       runner = instance_double(Captain::Assistant::AgentRunnerService, generate_response: { response: 'Fixed assistant message' })
 
       allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |**kwargs|

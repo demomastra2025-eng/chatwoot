@@ -6,14 +6,13 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
   let(:account) { create(:account, custom_attributes: { plan_name: 'startups' }) }
   let(:inbox) { create(:inbox, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, status: :pending) }
-  let(:entry) { create(:captain_assistant, account: account, config: follow_up_config('Entry follow-up')) }
+  let!(:entry) { create(:captain_assistant, account: account, config: follow_up_config('Entry follow-up')) }
   let(:actor) { create(:captain_assistant, account: account, config: follow_up_config('Specialist follow-up')) }
   let(:runner) { instance_double(Captain::Assistant::AgentRunnerService) }
 
   before do
     account.enable_features!('captain_integration', 'captain_tasks')
-    create(:captain_inbox, inbox: inbox, captain_assistant: entry)
-    entry.update!(handoff_agent_ids: [actor.id])
+    create(:captain_inbox, inbox: inbox)
     create(:message, conversation: conversation, message_type: :incoming, content: 'Help with my booking')
     allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner)
     allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_on)
@@ -26,7 +25,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
   end
 
   def route_to(assistant)
-    Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation).update_routing(actor_id: assistant.id)
+    Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
   end
 
   def response_from(assistant, attributes = {})
@@ -36,25 +35,24 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     end
   end
 
-  it 'keeps the input buffer on the entry agent and sends the specialist reply with its own follow-up settings' do
+  it 'clears the input buffer and sends the reply of the agent the router chose with its own follow-up settings' do
     incoming = conversation.messages.incoming.last
     buffer_key = format(Redis::Alfred::CAPTAIN_MESSAGE_BUFFER_STATE, conversation_id: conversation.id)
-    Redis::Alfred.set(buffer_key, { token: 'entry-buffer', assistant_id: entry.id, last_message_id: incoming.id,
+    Redis::Alfred.set(buffer_key, { token: 'entry-buffer', last_message_id: incoming.id,
                                   control_generation: conversation.current_captain_control_generation }.to_json, ex: 60)
     response_from(actor)
 
-    described_class.perform_now(conversation, entry, buffer_token: 'entry-buffer', expected_last_message_id: incoming.id)
+    described_class.perform_now(conversation, buffer_token: 'entry-buffer', expected_last_message_id: incoming.id)
 
     reply = conversation.messages.outgoing.where(private: false).last
     expect(reply.sender).to eq(actor)
     expect(reply.additional_attributes).to include('agent_name' => "assistant_#{actor.id}", 'agentName' => actor.name,
                                                  'captain_ai_reply' => { 'assistant_id' => actor.id })
-    expect(Captain::Assistant::AgentRunnerService).to have_received(:new).with(hash_including(assistant: entry))
+    expect(Captain::Assistant::AgentRunnerService).to have_received(:new).with(hash_including(scope: an_instance_of(Captain::ChannelScope)))
     reminder = account.reminders.captain_follow_up.last
     expect(reminder).to be_present
-    expect(reminder.metadata['captain_follow_up']).to include(
-      'assistant_id' => actor.id, 'entry_assistant_id' => entry.id, 'routing_revision' => 1
-    )
+    expect(reminder.metadata['captain_follow_up']).to include('assistant_id' => actor.id, 'routing_revision' => 1)
+    expect(reminder.metadata['captain_follow_up']).not_to have_key('entry_assistant_id')
     expect(Redis::Alfred.get(buffer_key)).to be_nil
   ensure
     Redis::Alfred.delete(buffer_key) if defined?(buffer_key)
@@ -68,7 +66,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     )
     response_from(actor, 'response' => 'conversation_handoff', 'handoff_tool_called' => true, 'handoff_authorized' => true)
 
-    described_class.perform_now(conversation, entry)
+    described_class.perform_now(conversation)
 
     expect(conversation.reload).to be_open
     notice = conversation.messages.outgoing.where(private: false).last
@@ -80,17 +78,17 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
   it 'drops a reachable actor result that no longer owns the conversation' do
     allow(runner).to receive(:generate_response).and_return('response' => 'Stale specialist reply', 'agent_id' => actor.id)
 
-    described_class.perform_now(conversation, entry)
+    described_class.perform_now(conversation)
 
     expect(conversation.messages.outgoing).to be_empty
     expect(account.reminders.captain_follow_up).to be_empty
   end
 
-  it 'rejects an assistant outside the entry graph even if its ID appears in the result' do
-    outsider = create(:captain_assistant, account: account, channel_scope: 'selected')
+  it 'rejects an assistant that is not an enabled agent of the channel even if its ID appears in the result' do
+    outsider = create(:captain_assistant, account: account, usage_mode: 'internal_assistant')
     allow(runner).to receive(:generate_response).and_return('response' => 'Unreachable reply', 'agent_id' => outsider.id)
 
-    described_class.perform_now(conversation, entry)
+    described_class.perform_now(conversation)
 
     expect(conversation.messages.outgoing).to be_empty
   end
@@ -100,7 +98,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
                          'council_contributors' => [{ id: entry.id, name: entry.name, avatar_url: entry.avatar_url },
                                                     { id: actor.id, name: actor.name, avatar_url: actor.avatar_url }])
 
-    described_class.perform_now(conversation, entry)
+    described_class.perform_now(conversation)
 
     reply = conversation.messages.outgoing.where(private: false).last
     expect(reply.sender).to eq(entry)
@@ -110,7 +108,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
   it 'schedules an unresolved council part through its executor' do
     part_id = SecureRandom.uuid
-    session = Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation)
+    session = Captain::Conversation::AgentSession.new(conversation: conversation)
     session.change do |data|
       data['parts'] = [{ 'id' => part_id, 'version' => 1, 'executor_agent_id' => actor.id,
                          'state' => 'waiting_customer', 'delivered' => [] }]
@@ -120,7 +118,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
                          'council_contributors' => [{ id: entry.id, name: entry.name, avatar_url: entry.avatar_url },
                                                     { id: actor.id, name: actor.name, avatar_url: actor.avatar_url }])
 
-    described_class.perform_now(conversation, entry)
+    described_class.perform_now(conversation)
 
     reply = conversation.messages.outgoing.where(private: false).last
     reminder = account.reminders.captain_follow_up.last
@@ -129,13 +127,13 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     expect(reminder.metadata.dig('captain_follow_up', 'assistant_id')).to eq(actor.id)
   end
 
-  it 'preserves an existing internal entry conversation without enabling external follow-up' do
+  it 'sends no reply that an internal assistant wrote: only enabled external agents answer in a channel' do
     entry.update_column(:usage_mode, 'internal_assistant') # rubocop:disable Rails/SkipsModelValidations
     allow(runner).to receive(:generate_response).and_return('response' => 'Internal response', 'agent_id' => entry.id)
 
-    described_class.perform_now(conversation, entry.reload)
+    described_class.perform_now(conversation)
 
-    expect(conversation.messages.outgoing.where(private: false).last.sender).to eq(entry)
+    expect(conversation.messages.outgoing.where(private: false)).to be_empty
     expect(account.reminders.captain_follow_up).to be_empty
   end
 end

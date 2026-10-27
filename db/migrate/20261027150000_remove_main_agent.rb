@@ -1,9 +1,15 @@
 # Removes the «main agent»: every agent of a workspace is a peer with the same on/off switch, and a text channel names no agent.
 # The old values are copied to captain_main_agent_backups first, so that `down` restores them. Voice numbers keep their agent.
+# A WhatsApp number whose AI voice is on keeps its agent too: its calls have no router either.
 # captain_assistants.channel_scope, captain_agent_channels and captain_agent_handoffs are left in place (nothing reads them any more).
 class RemoveMainAgent < ActiveRecord::Migration[7.2]
   ACCOUNT_DEFAULT = 'account_default'.freeze
   TEXT_INBOX_AGENT = 'text_inbox_agent'.freeze
+  # The rows that name an agent for calls and keep it: a phone number, and a WhatsApp number whose AI voice is on.
+  KEEPS_AGENT = <<~SQL.squish.freeze
+    i.channel_type = 'Channel::Voice' OR (i.channel_type = 'Channel::Whatsapp' AND EXISTS (
+      SELECT 1 FROM channel_whatsapp w WHERE w.id = i.channel_id AND w.provider_config ->> 'ai_voice_enabled' = 'true'))
+  SQL
 
   def up
     create_table :captain_main_agent_backups do |t|
@@ -20,7 +26,7 @@ class RemoveMainAgent < ActiveRecord::Migration[7.2]
     change_column_null :captain_inboxes, :captain_assistant_id, true
     execute <<~SQL.squish
       UPDATE captain_inboxes SET captain_assistant_id = NULL
-      WHERE inbox_id IN (SELECT id FROM inboxes WHERE channel_type <> 'Channel::Voice')
+      WHERE inbox_id IN (SELECT i.id FROM inboxes i WHERE NOT (#{KEEPS_AGENT}))
     SQL
     execute "UPDATE accounts SET settings = settings - 'captain_default_assistant_id' WHERE settings ? 'captain_default_assistant_id'"
   end
@@ -50,7 +56,7 @@ class RemoveMainAgent < ActiveRecord::Migration[7.2]
       INSERT INTO captain_main_agent_backups (kind, account_id, inbox_id, assistant_id, created_at)
       SELECT '#{TEXT_INBOX_AGENT}', i.account_id, i.id, ci.captain_assistant_id, NOW()
       FROM captain_inboxes ci JOIN inboxes i ON i.id = ci.inbox_id
-      WHERE i.channel_type <> 'Channel::Voice' AND ci.captain_assistant_id IS NOT NULL
+      WHERE NOT (#{KEEPS_AGENT}) AND ci.captain_assistant_id IS NOT NULL
     SQL
   end
 

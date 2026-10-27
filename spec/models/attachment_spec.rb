@@ -403,7 +403,7 @@ RSpec.describe Attachment do
   end
 
   describe 'image description enqueue' do
-    let(:assistant) { create(:captain_assistant, account: message.account) }
+    before { create(:captain_assistant, account: message.account) }
 
     def build_image_attachment
       message.attachments.create!(account_id: message.account_id, file_type: :image, external_url: 'https://example.com/photo.jpg')
@@ -412,7 +412,8 @@ RSpec.describe Attachment do
     context 'with an AI agent on the inbox of the message' do
       before do
         message.account.enable_features!('captain_integration')
-        create(:captain_inbox, inbox: message.inbox, captain_assistant: assistant)
+        create(:captain_assistant, account: message.account)
+        create(:captain_inbox, inbox: message.inbox)
         message.reload
       end
 
@@ -440,9 +441,9 @@ RSpec.describe Attachment do
       end
     end
 
-    it 'does not describe the image of an inbox without an AI agent' do
+    it 'does not describe the image of a workspace where every AI agent is switched off' do
       message.account.enable_features!('captain_integration')
-      message.inbox.captain_inbox&.destroy!
+      create(:captain_assistant, account: message.account, active: false)
       message.reload
 
       expect { build_image_attachment }.not_to have_enqueued_job(Messages::ImageDescriptionJob)

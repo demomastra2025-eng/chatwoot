@@ -9,8 +9,8 @@ RSpec.describe Captain::Runtime::TurnDispatcher do
   let!(:procedures) { create(:captain_assistant, account: account, routing_description: 'ЛОР-процедуры', config: tool_config) }
   let!(:surgery) { create(:captain_assistant, account: account, routing_description: 'ЛОР-операции', config: tool_config) }
   let(:conversation) { create(:conversation, account: account) }
-  let(:run_context) { Captain::AgentRunContext.new(entry: doctors, conversation: conversation) }
-  let(:session) { Captain::Conversation::AgentSession.new(entry: doctors, conversation: conversation) }
+  let(:run_context) { Captain::AgentRunContext.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation) }
+  let(:session) { Captain::Conversation::AgentSession.new(conversation: conversation) }
   let(:context) do
     run_context.prepare({ state: { account_id: account.id, assistant_id: doctors.id }, conversation_history: [],
                           captain_v2_current_input: 'Хочу к ЛОРу и аудиометрию', agent_request_id: 'req-1' })
@@ -84,6 +84,7 @@ RSpec.describe Captain::Runtime::TurnDispatcher do
     end
 
     it 'gives the turn to the agent that holds the conversation when no agent leads the dialog' do
+      session.update_routing(actor_id: doctors.id)
       dispatcher(decision('no_reply_needed', 'no_reply', [])).prepare!(context)
 
       expect(context[:current_agent]).to eq("assistant_#{run_context.holder.id}")
@@ -158,7 +159,8 @@ RSpec.describe Captain::Runtime::TurnDispatcher do
   end
 
   it 'writes nothing into the conversation for a reply suggestion' do
-    suggestion = Captain::AgentRunContext.new(entry: doctors, conversation: conversation, ephemeral_session: true)
+    suggestion = Captain::AgentRunContext.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation,
+                                              ephemeral_session: true)
     suggestion_context = suggestion.prepare({ state: { account_id: account.id, assistant_id: doctors.id, source: 'reply_suggestion' },
                                               conversation_history: [] })
     described_class.new(graph: suggestion.graph, run_context: suggestion, account: account,

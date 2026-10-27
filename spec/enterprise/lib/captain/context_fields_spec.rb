@@ -640,7 +640,7 @@ RSpec.describe Captain::ContextFields do
       expect(state[:channel_type]).to eq(conversation_record.inbox.channel_type)
     end
 
-    it 'filters communication-thread channels to the assistant connected inboxes' do
+    it 'covers the thread of the person in every inbox of the account: an agent is not tied to inboxes of its own' do
       second_inbox = create(:inbox, account: account)
       second_contact_inbox = create(:contact_inbox, contact: conversation_record.contact, inbox: second_inbox)
       second_conversation = create(
@@ -651,7 +651,7 @@ RSpec.describe Captain::ContextFields do
         contact_inbox: second_contact_inbox
       )
       captain_assistant = create(:captain_assistant, account: account)
-      create(:captain_inbox, captain_assistant: captain_assistant, inbox: conversation_record.inbox)
+      create(:captain_inbox, inbox: conversation_record.inbox)
 
       state = described_class.runtime_state_for(
         account: account,
@@ -659,9 +659,8 @@ RSpec.describe Captain::ContextFields do
         assistant: captain_assistant
       )
 
-      expect(state[:communication_thread][:conversation_ids]).to contain_exactly(conversation_record.display_id)
-      expect(state[:communication_thread][:conversation_ids]).not_to include(second_conversation.display_id)
-      expect(state[:communication_thread][:channels].pluck(:inbox_id)).to contain_exactly(conversation_record.inbox_id)
+      expect(state[:communication_thread][:conversation_ids]).to contain_exactly(conversation_record.display_id, second_conversation.display_id)
+      expect(state[:communication_thread][:channels].pluck(:inbox_id)).to contain_exactly(conversation_record.inbox_id, second_inbox.id)
     end
 
     it 'filters communication-thread channels to the actor accessible inboxes' do

@@ -45,20 +45,26 @@ RSpec.describe Conversations::PermissionFilterService do
     end
 
     context 'when actor is a Captain assistant' do
-      let(:assistant) { create(:captain_assistant, account: account) }
+      let!(:assistant) { create(:captain_assistant, account: account) }
       let(:other_inbox) { create(:inbox, account: account) }
       let!(:other_conversation) { create(:conversation, account: account, inbox: other_inbox) }
 
       before do
-        create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+        create(:captain_inbox, inbox: inbox)
       end
 
-      it 'returns conversations from the assistant connected inboxes only' do
+      it 'returns the conversations of every inbox of the workspace: an agent is not tied to inboxes of its own' do
         result = described_class.new(account.conversations, assistant, account).perform
 
-        expect(result).to include(conversation)
-        expect(result).to include(another_conversation)
-        expect(result).not_to include(other_conversation)
+        expect(result).to include(conversation, another_conversation, other_conversation)
+      end
+
+      it 'returns nothing for an agent of another workspace, and for an internal assistant' do
+        foreign = create(:captain_assistant)
+        internal = create(:captain_assistant, account: account, usage_mode: 'internal_assistant')
+
+        expect(described_class.new(account.conversations, foreign, account).perform).to be_empty
+        expect(described_class.new(account.conversations, internal, account).perform).to be_empty
       end
     end
   end

@@ -121,7 +121,6 @@ RSpec.describe Captain::Conversation::ControlService do
   end
 
   context 'when an employee replies from a non-Captain channel' do
-    let(:assistant) { create(:captain_assistant, account: account) }
     let!(:incoming) do
       message = build(:message, conversation: second_conversation, message_type: :incoming)
       message.skip_runtime_events = true
@@ -131,8 +130,9 @@ RSpec.describe Captain::Conversation::ControlService do
     let(:key) { format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: second_conversation.id) }
 
     before do
+      create(:captain_assistant, account: account)
       first_conversation.update!(status: :open)
-      create(:captain_inbox, inbox: second_conversation.inbox, captain_assistant: assistant)
+      create(:captain_inbox, inbox: second_conversation.inbox)
       allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
     end
 
@@ -202,8 +202,7 @@ RSpec.describe Captain::Conversation::ControlService do
 
     %i[open resolved snoozed].each do |status|
       it "keeps a Captain #{status} source unchanged when no pending target has an assistant" do
-        assistant = create(:captain_assistant, account: account)
-        create(:captain_inbox, inbox: first_conversation.inbox, captain_assistant: assistant)
+        create(:captain_inbox, inbox: first_conversation.inbox)
         first_conversation.update!(status: status)
         generation = thread.reload.captain_control_generation
         expect(Captain::Conversation::ResponseCancellationService).not_to receive(:new)

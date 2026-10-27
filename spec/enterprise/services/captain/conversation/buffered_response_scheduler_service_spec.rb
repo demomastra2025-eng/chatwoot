@@ -34,7 +34,7 @@ RSpec.describe Captain::Conversation::BufferedResponseSchedulerService do
       message_type: :incoming,
       skip_runtime_events: true
     )
-    described_class.new(conversation: conversation, assistant: assistant, message: first_message).perform
+    described_class.new(conversation: conversation, message: first_message).perform
     first_state = JSON.parse(Redis::Alfred.get(state_key))
 
     second_message = create(
@@ -44,15 +44,15 @@ RSpec.describe Captain::Conversation::BufferedResponseSchedulerService do
       message_type: :incoming,
       skip_runtime_events: true
     )
-    described_class.new(conversation: conversation, assistant: assistant, message: second_message).perform
+    described_class.new(conversation: conversation, message: second_message).perform
     second_state = JSON.parse(Redis::Alfred.get(state_key))
 
     expect(first_state['last_message_id']).to eq(first_message.id)
     expect(second_state['last_message_id']).to eq(second_message.id)
-    expect(second_state['assistant_id']).to eq(assistant.id)
+    expect(second_state).not_to have_key('assistant_id')
     expect(second_state['control_generation']).to eq(0)
     expect(second_state['token']).not_to eq(first_state['token'])
-    expect(scheduled_payloads.map { |payload| payload[:args] }).to eq([[conversation, assistant], [conversation, assistant]])
+    expect(scheduled_payloads.map { |payload| payload[:args] }).to eq([[conversation], [conversation]])
     expect(scheduled_payloads.map { |payload| payload.dig(:kwargs, :buffer_token) }).to eq([first_state['token'], second_state['token']])
     expect(scheduled_payloads.map { |payload| payload.dig(:kwargs, :expected_last_message_id) }).to eq([first_message.id, second_message.id])
     expect(second_message.reload.additional_attributes['captain_control_generation']).to eq(0)
@@ -69,7 +69,6 @@ RSpec.describe Captain::Conversation::BufferedResponseSchedulerService do
 
     described_class.new(
       conversation: conversation,
-      assistant: assistant,
       message: message,
       attachment_wait_time: 5.seconds
     ).perform
@@ -88,7 +87,6 @@ RSpec.describe Captain::Conversation::BufferedResponseSchedulerService do
 
     described_class.new(
       conversation: conversation,
-      assistant: assistant,
       message: message,
       attachment_wait_time: 1.second
     ).perform

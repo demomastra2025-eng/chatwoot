@@ -4,7 +4,7 @@ RSpec.describe Captain::Playground::ContactCompanyTools, 'through the production
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account, role: :administrator) }
   let(:assistant) { create(:captain_assistant, account: account) }
-  let(:session) { Captain::Playground::Session.new(account: account, user: user, assistant: assistant) }
+  let(:session) { Captain::Playground::Session.new(account: account, user: user) }
   let(:tool_ids) { described_class::CONTACT_COMPANY_ARGUMENTS.keys }
 
   before do
@@ -47,6 +47,7 @@ RSpec.describe Captain::Playground::ContactCompanyTools, 'through the production
 
   it 'uses required production ID schemas, returns native contact fields, and denies a different patient' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       caller = workspace.scenario.contact
       id = synthetic_id(workspace, 'contact_id', caller['id'])
       schema = wrapper(workspace, 'get_contact').params_schema
@@ -64,6 +65,7 @@ RSpec.describe Captain::Playground::ContactCompanyTools, 'through the production
 
   it 'searches only the caller with exact email/phone filters and the production ILIKE wildcard semantics' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       caller = workspace.scenario.contact
       caller['name'] = 'Caller A_B%Tester'
       expect(invoke(workspace, 'search_contacts', email: caller['email'], phone_number: caller['phone_number'], name: 'caller a_b%')['total_count']).to eq(1)
@@ -79,6 +81,7 @@ RSpec.describe Captain::Playground::ContactCompanyTools, 'through the production
 
   it 'creates a company with native normalization/defaults and links only the caller, with zero business writes' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       before_counts = counts
       expect(Captain::Tools::Operations::ContactOperations).not_to receive(:new)
       expect(Company).not_to receive(:create!)
@@ -100,6 +103,7 @@ RSpec.describe Captain::Playground::ContactCompanyTools, 'through the production
 
   it 'filters companies before count/limit and orders equal names by ID without invented offset paging' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       workspace.scenario.data['companies'] = [
         { 'id' => 1204, 'name' => 'Gamma', 'domain' => 'gamma.test' },
         { 'id' => 1203, 'name' => 'Beta', 'domain' => 'two.example.test' },
@@ -118,6 +122,7 @@ RSpec.describe Captain::Playground::ContactCompanyTools, 'through the production
 
   it 'updates the linked company, preserves defaults, and rejects invalid or duplicate domains atomically' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       created = invoke(workspace, 'create_company', name: 'Original', domain: 'original.test')
       workspace.scenario.data['companies'] << { 'id' => 1202, 'name' => 'Other', 'domain' => 'other.test' }
       changed = invoke(workspace, 'update_company', name: ' Changed ', description: '  ')
@@ -134,6 +139,7 @@ RSpec.describe Captain::Playground::ContactCompanyTools, 'through the production
 
   it 'does not allocate IDs or link the caller after invalid creation and rejects foreign-session handles' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       before_data = workspace.scenario.data.deep_dup
       expect(invoke(workspace, 'create_company', name: 'Invalid', domain: 'not a domain')['success']).to be(false)
       expect(invoke(workspace, 'create_company', name: 'x' * (Limits::COMPANY_NAME_LENGTH_LIMIT + 1))['success']).to be(false)
@@ -146,6 +152,7 @@ RSpec.describe Captain::Playground::ContactCompanyTools, 'through the production
 
   it 'uses native contact normalization and preserves protected patient/share attributes' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       caller = workspace.scenario.contact
       caller['additional_attributes']['country_code'] = 'KZ'
       caller['custom_attributes'].merge!('medelement_patient_code' => 'synthetic-card', 'secondary_phones' => ['+77010000001'])
@@ -161,6 +168,7 @@ RSpec.describe Captain::Playground::ContactCompanyTools, 'through the production
 
   it 'rejects invalid email/duplicate identity without changing either contact and never reads native companies' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       patient = workspace.scenario.data['contacts'].find { |record| record != workspace.scenario.contact }
       patient['email'] = 'other@example.test'
       before_data = workspace.scenario.data.deep_dup
@@ -179,6 +187,7 @@ RSpec.describe Captain::Playground::ContactCompanyTools, 'through the production
 
   it 'rejects a non-existent birth date like the production update_contact tool and changes nothing' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       before_data = workspace.scenario.data.deep_dup
 
       ['1990-02-30', '2026-04-31', '1990-13-40', '1990-05-01T25:99:00Z'].each do |value|
@@ -195,6 +204,7 @@ RSpec.describe Captain::Playground::ContactCompanyTools, 'through the production
 
   it 'keeps another caller reserved family number out of the current contact while accepting unrelated edits' do
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       caller = workspace.scenario.contact
       original_phone = caller['phone_number']
       patient = workspace.scenario.data['contacts'].find { |record| record != caller }

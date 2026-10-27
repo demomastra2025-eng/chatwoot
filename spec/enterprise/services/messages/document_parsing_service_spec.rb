@@ -21,23 +21,22 @@ RSpec.describe Messages::DocumentParsingService, type: :service do
     account.enable_features!('captain_integration')
   end
 
-  describe '.reading_enabled_for?' do
-    let(:assistant) { build(:captain_assistant, account: account, config: {}) }
+  describe '.enabled_for_account?' do
+    before { allow(Llm::RuntimePolicy).to receive(:web_access_enabled?).with(:document_parse, account: account).and_return(true) }
 
-    it 'keeps document reading enabled for existing assistants without the new setting' do
-      allow(described_class).to receive(:enabled_for_account?).with(account).and_return(true)
+    it 'reads the workspace setting of the account: document reading is the same for every agent' do
+      create(:captain_assistant, account: account, config: { 'feature_document_reading' => false })
 
-      expect(described_class.reading_enabled_for?(assistant)).to be(true)
-    end
-
-    it 'uses the account flag instead of the old per-agent flag' do
-      allow(described_class).to receive(:enabled_for_account?).with(account).and_return(true)
-      assistant.config = { 'feature_document_reading' => false }
-
-      expect(described_class.reading_enabled_for?(assistant)).to be(true)
+      expect(described_class.enabled_for_account?(account)).to be(true)
       Captain::AccountSettings.new(account).update!('understanding' => { 'documents' => false })
 
-      expect(described_class.reading_enabled_for?(assistant)).to be(false)
+      expect(described_class.enabled_for_account?(account)).to be(false)
+    end
+
+    it 'is off for an account without AI' do
+      account.disable_features!('captain_integration')
+
+      expect(described_class.enabled_for_account?(account)).to be(false)
     end
   end
 

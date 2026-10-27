@@ -31,7 +31,6 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
         state: {
           account_id: account.id,
           assistant_id: assistant.id,
-          entry_assistant_id: assistant.id,
           source: 'reply_suggestion',
           conversation: {
             id: conversation.id,
@@ -712,7 +711,7 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
       expect(approved['status']).to eq('approved')
       expect(approved['result_summary']).to eq('Д-р Смит — 2026-10-25, 10:00')
 
-      session = Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation.reload)
+      session = Captain::Conversation::AgentSession.new(conversation: conversation.reload)
       expect(session.read['done']).to be_present
 
       # Subsequent approve! call is idempotent

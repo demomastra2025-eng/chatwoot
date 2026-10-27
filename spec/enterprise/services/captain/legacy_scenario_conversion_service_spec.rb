@@ -11,17 +11,15 @@ RSpec.describe Captain::LegacyScenarioConversionService do
     Captain::Assistant.find_by!(legacy_scenario_id: legacy_scenario.id)
   end
 
-  it 'keeps stable mappings and preserves later agent edits and removed routes when rerun' do
+  it 'keeps stable mappings and preserves later agent edits when rerun' do
     converter = described_class.new
     expect { converter.perform }.to change(Captain::Assistant, :count).by(1)
     agent = converted_agent
     agent.update!(description: 'Edited independent instruction')
-    agent.outgoing_agent_handoffs.delete_all
 
     expect { converter.perform }.not_to change(Captain::Assistant, :count)
     expect(converted_agent.id).to eq(agent.id)
     expect(converted_agent.description).to eq('Edited independent instruction')
-    expect(converted_agent.handoff_agent_ids).to be_empty
     expect(Captain::Scenario.find(scenario.id).instruction).to eq('Only the scenario instruction')
   end
 
@@ -59,18 +57,15 @@ RSpec.describe Captain::LegacyScenarioConversionService do
     )
   end
 
-  it 'reproduces parent and sibling routes, preserves disabled state and filters dormant targets at runtime' do
+  it 'preserves the disabled state of a scenario and writes no route between agents: every agent is a peer' do
     sibling = create(:captain_scenario, assistant: parent, account: account, enabled: false)
     described_class.new.perform
-    agent = converted_agent
     dormant = converted_agent(sibling)
 
     expect(dormant).not_to be_active
-    expect(parent.reload.handoff_agent_ids).to contain_exactly(agent.id, dormant.id)
-    expect(agent.handoff_agent_ids).to contain_exactly(parent.id, dormant.id)
-    expect(dormant.handoff_agent_ids).to contain_exactly(parent.id, agent.id)
-    expect(parent.handoff_targets).to contain_exactly(agent)
-    expect(agent.handoff_targets).to contain_exactly(parent)
+    expect(converted_agent).to be_active
+    handoffs = Class.new(ApplicationRecord) { self.table_name = 'captain_agent_handoffs' }
+    expect(handoffs.where(account_id: account.id)).not_to exist
   end
 
   it 'does not grant a handoff tool when the parent tool scope is disabled' do

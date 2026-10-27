@@ -370,10 +370,12 @@ class Captain::Assistant < ApplicationRecord
            class_name: 'Captain::KnowledgeAnswerCacheEntry',
            dependent: :nullify
   has_many :responses, class_name: 'Captain::AssistantResponse', dependent: :nullify
+  # Only a number whose calls the AI answers names an agent (see CaptainInbox#answers_calls_with_ai?). Deleting that agent takes it
+  # away from the number in the same step, before the agent row goes (see #release_channel_assignments).
   has_many :captain_inboxes,
            class_name: 'CaptainInbox',
            foreign_key: :captain_assistant_id,
-           dependent: :destroy_async
+           dependent: nil
   has_many :inboxes,
            through: :captain_inboxes
   has_many :messages, as: :sender, dependent: :nullify
@@ -391,6 +393,7 @@ class Captain::Assistant < ApplicationRecord
   before_validation :merge_legacy_rules_into_prompt
   before_destroy :destroy_personal_knowledge, prepend: true
   before_destroy :lock_captain_assignment_before_destroy, prepend: true
+  before_destroy :release_channel_assignments
 
   validates :name, presence: true
   validates :description, presence: true
@@ -864,6 +867,20 @@ class Captain::Assistant < ApplicationRecord
     return default unless raw.key?(key)
 
     ActiveModel::Type::Boolean.new.cast(raw[key])
+  end
+
+  # A phone number loses its AI with its agent (the row goes and the routing policy of the number is cleared); a WhatsApp number only
+  # loses the agent of its calls and keeps its text settings. A routing policy that still names the agent is cleared too: it keeps a
+  # foreign key to the agent row.
+  def release_channel_assignments
+    captain_inboxes.includes(:inbox).find_each do |row|
+      if row.inbox&.channel_type == CaptainInbox::VOICE_CHANNEL_TYPE
+        row.destroy!
+      else
+        row.update!(captain_assistant: nil)
+      end
+    end
+    Telephony::RoutingPolicy.where(captain_assistant_id: id).update_all(captain_assistant_id: nil, ai_enabled: false) # rubocop:disable Rails/SkipsModelValidations
   end
 
   def lock_captain_assignment_before_destroy

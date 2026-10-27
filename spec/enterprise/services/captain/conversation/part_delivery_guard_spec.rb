@@ -3,13 +3,13 @@ require 'rails_helper'
 RSpec.describe Captain::Conversation::PartDeliveryGuard do
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }
-  let(:entry) { create(:captain_assistant, account: account) }
+  let!(:entry) { create(:captain_assistant, account: account) }
   let(:specialist) { create(:captain_assistant, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, status: :pending) }
-  let(:session) { Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation) }
+  let(:session) { Captain::Conversation::AgentSession.new(conversation: conversation) }
 
   before do
-    create(:captain_inbox, inbox: inbox, captain_assistant: entry)
+    create(:captain_inbox, inbox: inbox)
     session.change do |data|
       data['parts'] = [{ 'id' => 'synthetic-part', 'version' => 1,
                          'executor_agent_id' => specialist.id, 'state' => 'answered' }]

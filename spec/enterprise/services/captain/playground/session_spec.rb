@@ -6,20 +6,23 @@ RSpec.describe Captain::Playground::Session do
   let(:assistant) { create(:captain_assistant, account: account) }
 
   def session(**)
-    described_class.new(assistant: assistant, account: account, user: user, **)
+    described_class.new(account: account, user: user, **)
   end
 
   after { Current.reset }
 
-  it 'starts from the workspace main agent even when opened from another agent card' do
-    main = assistant
-    colleague = create(:captain_assistant, account: account)
-    account.update!(captain_default_assistant_id: main.id)
+  it 'starts with no agent: the router picks the one that answers, and the session knows it after the first turn' do
+    first = assistant
+    create(:captain_assistant, account: account)
 
-    session(assistant: colleague).with_lock do |workspace|
-      expect(workspace.entry_assistant).to eq(main)
-      expect(workspace.assistant).to eq(main)
-      expect(workspace.context_reference).to include(entry_assistant_id: main.id)
+    session.with_lock do |workspace|
+      expect(workspace.assistant).to be_nil
+      expect(workspace.scope).to have_attributes(kind: :workspace)
+      expect(workspace.context_reference).to include(assistant_id: nil)
+      expect(workspace.context_reference).not_to have_key(:entry_assistant_id)
+      workspace.activate_agent!(first)
+      expect(workspace.assistant).to eq(first)
+      expect(workspace.context_reference).to include(assistant_id: first.id)
     end
   end
 
@@ -44,15 +47,13 @@ RSpec.describe Captain::Playground::Session do
     expect([Contact, Conversation, Message, Scheduling::Appointment, Crm::Deal].map(&:count)).to eq(counts)
   end
 
-  it 'rejects session references belonging to a different operator, account or profile and rejects legacy Live' do
+  it 'rejects session references belonging to a different operator or account and rejects legacy Live' do
     id = nil
     session.with_lock { |workspace| id = workspace.id }
     other_user = create(:user, account: account)
     other_account = create(:account)
-    other_assistant = create(:captain_assistant, account: account)
     expect { session(user: other_user, session_id: id).with_lock { true } }.to raise_error(Captain::Playground::SessionStore::Stale)
-    expect { session(assistant: other_assistant, session_id: id).with_lock { true } }.to raise_error(Captain::Playground::SessionStore::Stale)
-    expect { session(account: other_account, session_id: id) }.to raise_error(ArgumentError)
+    expect { session(account: other_account, session_id: id).with_lock { true } }.to raise_error(Captain::Playground::SessionStore::Stale)
     expect { session(mode: 'live', session_id: id) }.to raise_error(ArgumentError, /Legacy Live/)
   end
 
@@ -108,14 +109,15 @@ RSpec.describe Captain::Playground::Session do
   end
 
   it 'rejects overlapping turns and bounds the expiring Redis entry' do
-    store = Captain::Playground::SessionStore.new(account: account, user: user, assistant: assistant)
+    store = Captain::Playground::SessionStore.new(account: account, user: user)
+    expect(store.instance_variable_get(:@key)).to eq("captain:playground:v3:#{account.id}:#{user.id}")
     store.with_lock { expect { store.with_lock { true } }.to raise_error(Captain::Playground::SessionStore::Busy) }
     expect { store.write('value' => 'x' * Captain::Playground::SessionStore::MAX_BYTES) }.to raise_error(ArgumentError)
     expect(Redis::Alfred).to receive(:set).with(anything, anything, ex: Captain::Playground::SessionStore::TTL).and_call_original
     store.write('id' => SecureRandom.uuid)
   end
 
-  it 'persists the active agent under the original entry session and restores it before confirmation' do
+  it 'persists the active agent in the session and restores it before confirmation' do
     destination = create(:captain_assistant, account: account)
     inbox = create(:inbox, account: account)
     id = nil
@@ -123,8 +125,7 @@ RSpec.describe Captain::Playground::Session do
       id = workspace.id
       workspace.activate_agent!(destination)
       expect(workspace.assistant).to eq(destination)
-      expect(workspace.entry_assistant).to eq(assistant)
-      expect(workspace.context_reference).to include(assistant_id: destination.id, entry_assistant_id: assistant.id)
+      expect(workspace.context_reference).to include(assistant_id: destination.id)
       expect(workspace.deep_dup).to equal(workspace)
     end
 
@@ -141,10 +142,10 @@ RSpec.describe Captain::Playground::Session do
       expect { workspace.activate_agent!(create(:captain_assistant)) }.to raise_error(Pundit::NotAuthorizedError)
       workspace.activate_agent!(destination)
       destination.update!(active: false)
-      expect { workspace.validate_active_agent! }.to raise_error(Pundit::NotAuthorizedError, /disabled or no longer reachable/)
+      expect { workspace.validate_active_agent! }.to raise_error(Pundit::NotAuthorizedError, /disabled or not an agent of this Playground channel/)
       destination.update!(active: true)
       destination.update!(usage_mode: 'internal_assistant')
-      expect { workspace.validate_active_agent! }.to raise_error(Pundit::NotAuthorizedError, /disabled or no longer reachable/)
+      expect { workspace.validate_active_agent! }.to raise_error(Pundit::NotAuthorizedError, /disabled or not an agent of this Playground channel/)
     end
   end
 
@@ -152,9 +153,12 @@ RSpec.describe Captain::Playground::Session do
     let(:peer) { create(:captain_assistant, account: account) }
     let(:inbox) { create(:inbox, account: account) }
 
-    # The peers of the entry agent are the agents of the chosen channel, so the session works on a channel.
-    def routed_session(&)
-      session.with_lock(inbox_id: inbox.id, &)
+    # The agents of the chosen channel are the peers; the session works on a channel, with one agent active.
+    def routed_session
+      session.with_lock(inbox_id: inbox.id) do |workspace|
+        workspace.activate_agent!(assistant)
+        yield workspace
+      end
     end
 
     def state_for(workspace, actor)
@@ -182,14 +186,14 @@ RSpec.describe Captain::Playground::Session do
       end
     end
 
-    it 'still refuses an agent that is foreign, disabled, or not reachable from the entry agent' do
+    it 'still refuses an agent that is foreign, disabled, or not an agent of the channel' do
       routed_session do |workspace|
         expect { workspace.acting_as(create(:captain_assistant).id) }.to raise_error(Pundit::NotAuthorizedError)
         internal = create(:captain_assistant, account: account, usage_mode: 'internal_assistant')
-        expect { workspace.acting_as(internal.id) }.to raise_error(Pundit::NotAuthorizedError, /no longer reachable/)
+        expect { workspace.acting_as(internal.id) }.to raise_error(Pundit::NotAuthorizedError, /not an agent of this Playground channel/)
         view = workspace.acting_as(peer.id)
         peer.update!(active: false)
-        expect { view.validate_active_agent! }.to raise_error(Pundit::NotAuthorizedError, /disabled or no longer reachable/)
+        expect { view.validate_active_agent! }.to raise_error(Pundit::NotAuthorizedError, /disabled or not an agent of this Playground channel/)
       end
     end
 
@@ -205,11 +209,11 @@ RSpec.describe Captain::Playground::Session do
 
   it 'uses a selected real inbox for Playground routing when one is recorded' do
     inbox = create(:inbox, account: account)
-    member = create(:captain_assistant, account: account, channel_scope: 'selected')
+    member = create(:captain_assistant, account: account)
     session.with_lock do |workspace|
       workspace.data['inbox_id'] = inbox.id
       expect(workspace.routing_inbox).to eq(inbox)
-      # Text channels expose every active external agent, including selected legacy profiles.
+      # A text channel exposes every enabled external agent of the workspace.
       expect(workspace.activate_agent!(member)).to eq(member)
     end
   end
@@ -223,21 +227,26 @@ RSpec.describe Captain::Playground::Session do
     end
   end
 
-  it 'routes to every active external agent on the chosen channel' do
+  it 'routes to every enabled external agent on a chosen text channel, and to the agent of the number on a voice channel' do
     inbox = create(:inbox, account: account)
-    attached = create(:captain_assistant, account: account, channel_scope: 'selected')
-    detached = create(:captain_assistant, account: account, channel_scope: 'selected')
-    Captain::AgentChannel.create!(account: account, inbox: inbox, assistant: attached)
-    assistant.update!(handoff_agent_ids: [detached.id])
+    assistant
+    other = create(:captain_assistant, account: account)
+    voice_inbox = create_voice_inbox(account)
+    create(:captain_inbox, inbox: voice_inbox, captain_assistant: other)
 
     session.with_lock(inbox_id: inbox.id) do |workspace|
       expect(workspace.routing_inbox).to eq(inbox)
-      expect(workspace.activate_agent!(detached)).to eq(detached)
-      expect(workspace.activate_agent!(attached)).to eq(attached)
+      expect(workspace.graph.agents.map(&:id)).to contain_exactly(assistant.id, other.id)
+      expect(workspace.activate_agent!(assistant)).to eq(assistant)
+      expect(workspace.activate_agent!(other)).to eq(other)
+    end
+    session.with_lock(inbox_id: voice_inbox.id) do |workspace|
+      expect(workspace.graph.agents).to eq([other])
+      expect { workspace.activate_agent!(assistant) }.to raise_error(Pundit::NotAuthorizedError, /not an agent of this Playground channel/)
     end
   end
 
-  it 'keeps the chosen channel in the session and starts from the entry agent when another channel is chosen' do
+  it 'keeps the chosen channel in the session and starts again with no agent when another channel is chosen' do
     inbox = create(:inbox, account: account)
     other_inbox = create(:inbox, account: account)
     destination = create(:captain_assistant, account: account)
@@ -253,8 +262,8 @@ RSpec.describe Captain::Playground::Session do
     end
     session(session_id: id).with_lock(inbox_id: other_inbox.id) do |workspace|
       expect(workspace.routing_inbox).to eq(other_inbox)
-      expect(workspace.assistant).to eq(assistant)
-      expect(workspace.data['active_assistant_id']).to eq(assistant.id)
+      expect(workspace.assistant).to be_nil
+      expect(workspace.data['active_assistant_id']).to be_nil
     end
   end
 
@@ -266,7 +275,7 @@ RSpec.describe Captain::Playground::Session do
     session.with_lock(inbox_id: inbox.id) do |workspace|
       id = workspace.id
       workspace.activate_agent!(peer)
-      Captain::Conversation::AgentSession.new(entry: assistant, playground: workspace).update_routing(actor_id: peer.id)
+      Captain::Conversation::AgentSession.new(playground: workspace).update_routing(actor_id: peer.id)
       expect(workspace.data[Captain::Conversation::AgentSession::ATTRIBUTE]).to include('current_assistant_id' => peer.id)
     end
 
@@ -274,10 +283,10 @@ RSpec.describe Captain::Playground::Session do
       expect(workspace.data).not_to have_key(Captain::Conversation::AgentSession::ATTRIBUTE)
       context = { state: { account_id: account.id, assistant_id: assistant.id }, conversation_history: [] }
 
-      Captain::AgentRunContext.new(entry: assistant, playground: workspace).prepare(context)
+      Captain::AgentRunContext.new(scope: workspace.scope, playground: workspace).prepare(context)
 
-      expect(context[:current_agent]).to eq("assistant_#{assistant.id}")
       expect(context[:routing_current_agent_id]).to be_nil
+      expect(context[:routing_trail]).to eq([])
     end
   end
 
@@ -288,7 +297,7 @@ RSpec.describe Captain::Playground::Session do
     session.with_lock(inbox_id: inbox.id) do |workspace|
       id = workspace.id
       workspace.data['action_previews'] = [{ 'id' => 'p1', 'status' => 'pending' }]
-      workspace.data[Captain::Conversation::AgentSession::ATTRIBUTE] = { 'entry_assistant_id' => assistant.id, 'marker' => 'kept' }
+      workspace.data[Captain::Conversation::AgentSession::ATTRIBUTE] = { 'marker' => 'kept' }
     end
 
     session(session_id: id).with_lock(inbox_id: inbox.id) do |workspace|

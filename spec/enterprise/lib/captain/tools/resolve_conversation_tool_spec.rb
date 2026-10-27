@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe Captain::Tools::ResolveConversationTool do
   let(:account) { create(:account) }
-  let(:assistant) { create(:captain_assistant, account: account) }
+  let!(:assistant) { create(:captain_assistant, account: account) }
   let(:inbox) { create(:inbox, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, status: :open) }
   let(:tool) { described_class.new(assistant) }
@@ -146,7 +146,7 @@ RSpec.describe Captain::Tools::ResolveConversationTool do
     end
 
     it 'creates a conversation_resolved reporting event' do
-      create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+      create(:captain_inbox, inbox: inbox)
 
       expect do
         perform_enqueued_jobs do

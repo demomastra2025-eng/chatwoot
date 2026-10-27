@@ -45,8 +45,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Rejudge do
     allow(Captain::Evals::RoutingBenchmark::Fixture).to receive(:load).and_call_original
     allow(Captain::Evals::RoutingBenchmark::Fixture).to receive(:load).with('synthetic/case.yml').and_return(fixture)
     calls = 0
-    allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |assistant:, **|
-      answer = { 'agent_id' => assistant.id, 'response' => replies.fetch(calls), 'captain_request_id' => 'synthetic-request' }
+    allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |scope:, **|
+      answer = { 'agent_id' => scope.members.first.id, 'response' => replies.fetch(calls), 'captain_request_id' => 'synthetic-request' }
       calls += 1
       instance_double(Captain::Assistant::AgentRunnerService, generate_response: answer)
     end

@@ -6,7 +6,7 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
   include ActiveJob::TestHelper
 
   let(:account) { create(:account, locale: 'ru').tap { |record| record.enable_features!('scheduling') } }
-  let(:assistant) { create(:captain_assistant, account: account, usage_mode: 'external_agent') }
+  let!(:assistant) { create(:captain_assistant, account: account, usage_mode: 'external_agent') }
   let(:contact) { create(:contact, account: account) }
   let(:inbox) { create(:inbox, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact, status: :pending) }
@@ -36,7 +36,7 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
   end
 
   before do
-    create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+    create(:captain_inbox, inbox: inbox)
     command
     clear_enqueued_jobs
   end

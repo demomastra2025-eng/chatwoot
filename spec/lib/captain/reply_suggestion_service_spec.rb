@@ -117,6 +117,7 @@ RSpec.describe Captain::ReplySuggestionService do
           account: account,
           name: 'Координатор',
           active: true,
+          routing_description: 'Запись на приём и ответы клиники',
           config: {
             'tool_access' => {
               'agent' => {
@@ -131,7 +132,7 @@ RSpec.describe Captain::ReplySuggestionService do
       it 'delegates reply suggestion to Captain::Assistant::AgentRunnerService in read-only mode with follow_up_context' do
         runner_double = instance_double(Captain::Assistant::AgentRunnerService)
         allow(Captain::Assistant::AgentRunnerService).to receive(:new).with(
-          assistant: assistant,
+          scope: an_instance_of(Captain::ChannelScope),
           conversation: conversation,
           source: 'reply_suggestion',
           callbacks: kind_of(Hash),
@@ -208,7 +209,8 @@ RSpec.describe Captain::ReplySuggestionService do
         expect(prompt).to include('pending_operator_approval')
         expect(prompt).not_to include('Call handoff once')
 
-        run_context = Captain::AgentRunContext.new(entry: assistant, conversation: conversation, ephemeral_session: true)
+        run_context = Captain::AgentRunContext.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation,
+                                                   ephemeral_session: true)
         session = run_context.prepare(state: { source: 'reply_suggestion' })[:agent_session]
         session.update_routing(actor_id: assistant.id, trail: { 'kind' => 'agent', 'to' => [assistant.id] })
 
@@ -430,21 +432,48 @@ RSpec.describe Captain::ReplySuggestionService do
       end
 
       describe 'the engine of the request' do
-        it 'is the agent when the account has one' do
-          expect(service.suggestion_engine).to eq(engine: 'agent', assistant_id: assistant.id)
+        it 'is the agent when the account has one; the request names no agent, the router or the only agent answers' do
+          expect(service.suggestion_engine).to eq(engine: 'agent', assistant_id: nil)
         end
 
-        it 'keeps the engine the request started with: a deleted agent fails the run, the one-shot prompt does not take over' do
-          assistant_id = assistant.id
+        it 'keeps the engine the request started with: when every agent is gone the run fails, the one-shot prompt does not take over' do
           assistant.destroy!
           fixed_engine = described_class.new(
-            account: account, conversation_display_id: conversation.display_id, user: agent, engine: 'agent', assistant_id: assistant_id
+            account: account, conversation_display_id: conversation.display_id, user: agent, engine: 'agent'
           )
 
           result = fixed_engine.perform
 
-          expect(result).to include(outcome: 'failed', reason_code: 'agent_unavailable')
+          expect(result).to include(outcome: 'failed', reason_code: 'no_active_agent')
           expect(captured_messages).to be_empty
+        end
+
+        it 'fails with no_active_agent when every agent was switched off after the request started' do
+          assistant.update!(active: false)
+          fixed_engine = described_class.new(
+            account: account, conversation_display_id: conversation.display_id, user: agent, engine: 'agent'
+          )
+
+          expect(fixed_engine.perform).to include(outcome: 'failed', reason_code: 'no_active_agent')
+        end
+
+        it 'fails with no_routing_cards when several agents are on and none has a card' do
+          assistant.update!(routing_description: '')
+          create(:captain_assistant, account: account, active: true)
+
+          expect(service.perform).to include(outcome: 'failed', reason_code: 'no_routing_cards')
+        end
+
+        it 'reads the record of a request from an earlier release, which named an agent, and ignores that agent' do
+          other = create(:captain_assistant, account: account, active: true)
+          fixed_engine = described_class.new(
+            account: account, conversation_display_id: conversation.display_id, user: agent, engine: 'agent', assistant_id: other.id
+          )
+          runner = instance_double(Captain::Assistant::AgentRunnerService, generate_response: { 'response' => 'Draft' })
+          allow(Captain::Assistant::AgentRunnerService).to receive(:new).with(hash_including(scope: an_instance_of(Captain::ChannelScope)))
+                                                                        .and_return(runner)
+
+          expect(fixed_engine.perform).to include(outcome: 'draft')
         end
 
         it 'runs the one-shot prompt when the request was started without an agent, even if an agent exists now' do

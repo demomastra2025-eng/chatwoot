@@ -427,7 +427,7 @@ RSpec.describe 'Campaigns API', type: :request do
       it 'serializes the configured AI agent for AI-authored scheduled campaigns' do
         email_channel = create(:channel_email, account: account)
         assistant = create(:captain_assistant, account: account, name: 'Sales AI')
-        create(:captain_inbox, inbox: email_channel.inbox, captain_assistant: assistant)
+        create(:captain_inbox, inbox: email_channel.inbox)
 
         post "/api/v1/accounts/#{account.id}/campaigns",
              params: {
@@ -455,7 +455,8 @@ RSpec.describe 'Campaigns API', type: :request do
 
       it 'rejects an explicitly provided AI agent from another account' do
         email_channel = create(:channel_email, account: account)
-        create(:captain_inbox, inbox: email_channel.inbox, captain_assistant: create(:captain_assistant, account: account))
+        create(:captain_assistant, account: account)
+        create(:captain_inbox, inbox: email_channel.inbox)
         external_assistant = create(:captain_assistant, account: create(:account), name: 'External AI')
 
         post "/api/v1/accounts/#{account.id}/campaigns",
@@ -475,23 +476,56 @@ RSpec.describe 'Campaigns API', type: :request do
         expect(Campaign.where(account: account, title: 'AI follow-up')).to be_empty
       end
 
-      it 'rejects an explicitly provided AI agent that is not configured for the selected inbox' do
-        email_channel = create(:channel_email, account: account)
-        create(:captain_inbox, inbox: email_channel.inbox, captain_assistant: create(:captain_assistant, account: account))
-        other_assistant = create(:captain_assistant, account: account, name: 'Other AI')
-
+      def post_ai_campaign(inbox, **extra)
         post "/api/v1/accounts/#{account.id}/campaigns",
              params: {
-               inbox_id: email_channel.inbox.id,
-               title: 'AI follow-up',
-               message: '',
-               instructions: 'Write a short follow-up',
-               text_mode: 'agent',
-               captain_assistant_id: other_assistant.id,
+               inbox_id: inbox.id, title: 'AI follow-up', message: '', instructions: 'Write a short follow-up', text_mode: 'agent',
                scheduled_at: 1.day.from_now
-             },
+             }.merge(extra),
              headers: administrator.create_new_auth_token,
              as: :json
+      end
+
+      it 'accepts any enabled agent of the workspace as the writer, with or without an AI row on the selected inbox' do
+        email_channel = create(:channel_email, account: account)
+        create(:captain_assistant, account: account)
+        other_assistant = create(:captain_assistant, account: account, name: 'Other AI')
+
+        post_ai_campaign(email_channel.inbox, captain_assistant_id: other_assistant.id)
+
+        expect(response).to have_http_status(:success)
+        expect(Campaign.find_by!(account: account, title: 'AI follow-up').captain_assistant).to eq(other_assistant)
+      end
+
+      it 'rejects an explicitly provided AI agent that is switched off' do
+        email_channel = create(:channel_email, account: account)
+        create(:captain_assistant, account: account)
+        off_assistant = create(:captain_assistant, account: account, name: 'Off AI', active: false)
+
+        post_ai_campaign(email_channel.inbox, captain_assistant_id: off_assistant.id)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(Campaign.where(account: account, title: 'AI follow-up')).to be_empty
+      end
+
+      it 'lets the router choose the writer from the instruction when none is given, and stores it' do
+        email_channel = create(:channel_email, account: account)
+        create(:captain_assistant, account: account, routing_description: 'Doctors')
+        chosen = create(:captain_assistant, account: account, routing_description: 'Lab tests')
+        allow(Captain::Routing::WriterPicker).to receive(:pick).with(account: account, instruction: 'Write a short follow-up', source: 'campaign')
+                                                               .and_return(chosen)
+
+        post_ai_campaign(email_channel.inbox)
+
+        expect(response).to have_http_status(:success)
+        expect(Campaign.find_by!(account: account, title: 'AI follow-up').captain_assistant).to eq(chosen)
+      end
+
+      it 'rejects an AI-authored campaign when no enabled agent can write it' do
+        email_channel = create(:channel_email, account: account)
+        create(:captain_assistant, account: account, active: false)
+
+        post_ai_campaign(email_channel.inbox)
 
         expect(response).to have_http_status(:unprocessable_content)
         expect(Campaign.where(account: account, title: 'AI follow-up')).to be_empty

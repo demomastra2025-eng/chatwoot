@@ -74,8 +74,9 @@ RSpec.describe Captain::Playground::AvailabilitySnapshot do
     allow(Captain::ToolSafety).to receive(:check_result!)
     expect(account).not_to receive(:scheduling_resources)
     expect(Scheduling::Resource).not_to receive(:find)
-    session = Captain::Playground::Session.new(account: account, user: user, assistant: assistant)
+    session = Captain::Playground::Session.new(account: account, user: user)
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       workspace.scenario.data['resources'][0] = resource.deep_dup
       workspace.scenario.data['appointments'][0].merge!(appointments.first)
       workspace.set_permissions!(read: true, write: false)

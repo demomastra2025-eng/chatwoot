@@ -18,9 +18,11 @@
 #
 # The AI settings of one channel. A text channel row holds the channel settings only (ai_enabled, auto_reply_mode,
 # reply_to_open_conversations) and no agent: which agent answers is decided by the router among the enabled agents of the workspace
-# (see Captain::ChannelScope). A voice channel row names the voice agent of the number, because a call has no router.
+# (see Captain::ChannelScope). A number whose calls the AI answers (a voice channel, or a WhatsApp number with AI voice on) names the
+# agent that answers them, because a call has no router.
 class CaptainInbox < ApplicationRecord
   VOICE_CHANNEL_TYPE = 'Channel::Voice'.freeze
+  WHATSAPP_CHANNEL_TYPE = 'Channel::Whatsapp'.freeze
   AUTO_REPLY_ALWAYS = 'always'.freeze
   AUTO_REPLY_WORKING_HOURS = 'working_hours'.freeze
   AUTO_REPLY_OUTSIDE_WORKING_HOURS = 'outside_working_hours'.freeze
@@ -51,7 +53,7 @@ class CaptainInbox < ApplicationRecord
 
   validates :inbox_id, uniqueness: true
   validates :auto_reply_mode, inclusion: { in: AUTO_REPLY_MODES }
-  validate :text_channel_has_no_agent
+  validate :agent_only_on_a_channel_that_takes_calls
   validate :voice_channel_has_an_eligible_agent
 
   before_validation :set_default_auto_reply_mode
@@ -64,6 +66,15 @@ class CaptainInbox < ApplicationRecord
 
   def self.sync_voice_routing_policies!
     includes(inbox: :channel).find_each(&:sync_voice_routing_policy!)
+  end
+
+  # The AI answers the calls of this number, so the row names the agent for them: a phone number, or a WhatsApp number with AI voice
+  # on. Every other channel is text only and names no agent.
+  def answers_calls_with_ai?
+    return true if voice_channel?
+
+    inbox&.channel_type == WHATSAPP_CHANNEL_TYPE &&
+      ActiveModel::Type::Boolean.new.cast(inbox.channel&.provider_config.to_h['ai_voice_enabled']) == true
   end
 
   def auto_reply_allowed_now?
@@ -113,10 +124,15 @@ class CaptainInbox < ApplicationRecord
     inbox&.channel_type == VOICE_CHANNEL_TYPE
   end
 
-  def text_channel_has_no_agent
-    return if voice_channel? || captain_assistant_id.blank?
+  def agent_only_on_a_channel_that_takes_calls
+    return if captain_assistant_id.blank?
 
-    errors.add(:captain_assistant, 'is set by the voice number only: a text channel has no agent')
+    unless answers_calls_with_ai?
+      errors.add(:captain_assistant, 'is set only on a number whose calls the AI answers: a text channel has no agent')
+      return
+    end
+
+    errors.add(:captain_assistant, 'must belong to the channel workspace') unless captain_assistant&.account_id == inbox.account_id
   end
 
   def voice_channel_has_an_eligible_agent

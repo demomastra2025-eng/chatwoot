@@ -945,7 +945,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
 
   describe 'correcting a mutation rejected before execution' do
     let(:assistant) { build_stubbed(:captain_assistant) }
-    let(:agent_session) { Captain::Conversation::AgentSession.new(entry: assistant) }
+    let(:agent_session) { Captain::Conversation::AgentSession.new }
     let(:mutating_tool) { ToolWrapperSpecMutatingTool.new }
     let(:mutating_wrapper) { described_class.new(mutating_tool, context_wrapper) }
     let(:unexecuted_failure) do
@@ -1823,7 +1823,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
 
     it 'ends the run for a write with an unknown outcome and keeps its receipt as unknown' do
       assistant = build_stubbed(:captain_assistant)
-      session = Captain::Conversation::AgentSession.new(entry: assistant)
+      session = Captain::Conversation::AgentSession.new
       context_wrapper.context[:state].merge!(assistant_id: assistant.id, account_id: assistant.account_id)
       context_wrapper.context[:agent_session] = session
       context_wrapper.context[:agent_request_id] = 'technical-request'

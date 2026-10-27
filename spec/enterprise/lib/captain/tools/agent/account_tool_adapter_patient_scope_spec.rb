@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
   let(:account) { create(:account) }
-  let(:assistant) { create(:captain_assistant, account: account) }
+  let!(:assistant) { create(:captain_assistant, account: account) }
   let(:contact) { create(:contact, account: account, name: 'Patient Alpha') }
   let(:other_contact) { create(:contact, account: account, name: 'Patient Beta') }
   let(:conversation) { create(:conversation, account: account, contact: contact) }
@@ -170,7 +170,7 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
   end
 
   it 'keeps a message to the current patient conversation available' do
-    create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+    create(:captain_inbox, inbox: conversation.inbox)
 
     result = call_tool(
       'send_message_to_conversation', conversation_id: conversation.display_id,

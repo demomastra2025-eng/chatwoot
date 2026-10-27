@@ -4,12 +4,11 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox) }
-  let(:assistant) { create(:captain_assistant, account: account, config: { 'history_message_limit' => 0 }) }
+  let(:assistant) { create(:captain_assistant, account: account) }
 
   def history
     job = described_class.new
     job.instance_variable_set(:@conversation, conversation)
-    job.instance_variable_set(:@assistant, assistant)
     job.instance_variable_set(:@input_assistant, assistant)
     job.send(:collect_previous_messages)
   end

@@ -2,11 +2,11 @@ require 'rails_helper'
 
 RSpec.describe Captain::Conversation::FollowUpControlFence do
   let(:account) { create(:account) }
-  let(:assistant) { create(:captain_assistant, account: account, usage_mode: 'external_agent') }
+  let!(:assistant) { create(:captain_assistant, account: account, usage_mode: 'external_agent') }
   let(:conversation) { create(:conversation, account: account, status: :pending) }
 
   before do
-    create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+    create(:captain_inbox, inbox: conversation.inbox)
     conversation.inbox.reload
   end
 
@@ -14,7 +14,7 @@ RSpec.describe Captain::Conversation::FollowUpControlFence do
     own_message = create(:message, conversation: conversation, message_type: :incoming, skip_runtime_events: true)
     thread = create(:communication_thread, account: account, contact: conversation.contact)
     sibling = create(:conversation, account: account, contact: conversation.contact, status: :pending)
-    expect(sibling.inbox.captain_inbox.captain_assistant_id).to eq(assistant.id)
+    create(:captain_inbox, inbox: sibling.inbox)
     sibling.inbox.reload
     [conversation, sibling].each do |candidate|
       create(:communication_thread_conversation, communication_thread: thread, conversation: candidate)
@@ -25,6 +25,7 @@ RSpec.describe Captain::Conversation::FollowUpControlFence do
     anchor = create(:message, conversation: conversation, sender: assistant, message_type: :outgoing,
                               additional_attributes: { captain_ai_reply: { assistant_id: assistant.id } })
     reminder = build(:reminder, account: account, conversation: conversation, action_type: :captain_follow_up)
+    Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
 
     fence = described_class.resolve(reminder: reminder, conversation: conversation, assistant: assistant, anchor_message: anchor)
 

@@ -45,7 +45,8 @@ RSpec.describe Reminders::DeliverMaterializedMessageJob do
     inbox = create(:inbox, account: account)
     conversation = create(:conversation, account: account, inbox: inbox, status: :pending)
     assistant = create(:captain_assistant, account: account, config: follow_up_config)
-    create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+    create(:captain_inbox, inbox: inbox)
+    Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: assistant.id)
     incoming = create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :incoming, content: 'Please help.')
     anchor = captain_ai_anchor(account, inbox, conversation, assistant)
     fence = {
@@ -162,9 +163,6 @@ RSpec.describe Reminders::DeliverMaterializedMessageJob do
       status: :pending,
       body: 'Existing patient reminder'
     )
-    # A main agent of a channel with AI enabled cannot be deleted (channel rules), so AI is switched off on its channel first.
-    CaptainInbox.find_by!(captain_assistant_id: assistant.id).update!(ai_enabled: false)
-    account.update_columns(settings: account.settings.to_h.except('captain_default_assistant_id'))
     assistant.destroy!
     allow(SendReplyJob).to receive(:perform_now_with_follow_up_finalizer)
 

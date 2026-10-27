@@ -12,9 +12,7 @@ class Api::V1::Accounts::Captain::PlaygroundController < Api::V1::Accounts::Base
 
   def create
     test_overrides, invalid_override = Captain::Playground::TestOverrides.new(playground_params, account: Current.account).resolve
-    if invalid_override
-      return render json: { error: 'unsupported_playground_setting', field: invalid_override }, status: :unprocessable_entity
-    end
+    return render json: { error: 'unsupported_playground_setting', field: invalid_override }, status: :unprocessable_entity if invalid_override
 
     render json: playground_response(test_overrides)
   rescue Captain::Playground::SessionStore::Busy, Captain::Playground::SessionStore::Stale => e
@@ -66,16 +64,20 @@ class Api::V1::Accounts::Captain::PlaygroundController < Api::V1::Accounts::Base
     session = playground_session(attributes)
     return permissions_response(session, attributes) if action == 'permissions'
 
-    session.with_lock(
-      reset: action == 'reset', scenario_input: attributes[:scenario]&.to_h,
-      inbox_id: attributes[:inbox_id].presence || attributes[:live_inbox_id], delivery_enabled: attributes[:external_delivery_enabled],
-      delivery_target: attributes[:controlled_test_number]
-    ) do
+    session.with_lock(**lock_options(action, attributes)) do
       next confirm_response(session, attributes) if action == 'confirm'
       next { playground: session.payload } unless action == 'message'
 
       message_response(session, attributes[:message_content], test_overrides)
     end
+  end
+
+  def lock_options(action, attributes)
+    {
+      reset: action == 'reset', scenario_input: attributes[:scenario]&.to_h,
+      inbox_id: attributes[:inbox_id].presence || attributes[:live_inbox_id], delivery_enabled: attributes[:external_delivery_enabled],
+      delivery_target: attributes[:controlled_test_number]
+    }
   end
 
   def delivery_requested?

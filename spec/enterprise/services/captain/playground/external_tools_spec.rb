@@ -8,7 +8,7 @@ RSpec.describe 'Playground external tool isolation' do
   let(:user) { create(:user, account: account, role: :administrator) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:inbox) { create(:channel_sms, account: account).inbox }
-  let(:session) { Captain::Playground::Session.new(account: account, user: user, assistant: assistant) }
+  let(:session) { Captain::Playground::Session.new(account: account, user: user) }
   let(:legacy_policy) { Outbound::PlaygroundDeliveryPolicy.issue(mode: 'live', run_id: SecureRandom.uuid, delivery_enabled: true) }
   let(:legacy_conversation) do
     create(:conversation, account: account, inbox: inbox, additional_attributes: { 'captain_playground' => legacy_policy })
@@ -99,12 +99,13 @@ RSpec.describe 'Playground external tool isolation' do
 
       it 'blocks dynamically built HTTP, MCP and script tools in the actual chat wrapper before their executors' do
         session.with_lock do |live|
+          live.activate_agent!(assistant)
           live.set_permissions!(read: real_access, write: real_access)
           block_transports!
           expect(Captain::Tools::HttpRequestExecutor).not_to receive(:new)
           expect(Captain::Mcp::ExecutionService).not_to receive(:new)
           expect(Captain::SkillScriptRunner).not_to receive(:new)
-          runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, source: 'playground', playground_session: live)
+          runner = Captain::Assistant::AgentRunnerService.new(scope: live.scope, source: 'playground', playground_session: live)
           wrappers, = wrappers_for(runner, playground: live)
 
           expect(external_tools.first.class.superclass).to eq(Captain::Tools::HttpTool)
@@ -116,7 +117,8 @@ RSpec.describe 'Playground external tool isolation' do
       it 'blocks a later ordinary runner for a captured legacy conversation without a Playground session' do
         session.with_lock do
           block_transports!
-          runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, conversation: legacy_conversation)
+          runner = Captain::Assistant::AgentRunnerService.new(scope: Captain::ChannelScope.for_conversation(legacy_conversation),
+                                                                 conversation: legacy_conversation)
           allow(runner).to receive(:generate_response_in_runtime_cache) do
             expect(Current.playground_run_policy).to eq(legacy_policy)
             wrappers, context = wrappers_for(runner)
@@ -136,6 +138,7 @@ RSpec.describe 'Playground external tool isolation' do
 
       it 'blocks the shared HTTP/MCP/subprocess transport entrypoints with the captured signed policy' do
         session.with_lock do |live|
+          live.activate_agent!(assistant)
           live.set_permissions!(read: real_access, write: real_access)
           block_transports!
           Outbound::PlaygroundDeliveryPolicy.with(live.run_policy) do
@@ -148,10 +151,11 @@ RSpec.describe 'Playground external tool isolation' do
 
       it 'does not discover MCP tools for a workspace source even before Current has been installed' do
         session.with_lock do |live|
+          live.activate_agent!(assistant)
           live.set_permissions!(read: real_access, write: real_access)
           block_transports!
           expect(Captain::Mcp::ToolCatalog::DiscoveryService).not_to receive(:new)
-          runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, source: 'playground', playground_session: live)
+          runner = Captain::Assistant::AgentRunnerService.new(scope: live.scope, source: 'playground', playground_session: live)
           expect(Current.playground_run_policy).to be_nil
           runner.send(:with_mcp_discovery_policy) do
             expect(Captain::Mcp::ToolCatalog.available_tools_for(assistant, 'agent')).to eq([])
@@ -176,7 +180,8 @@ RSpec.describe 'Playground external tool isolation' do
   it 'blocks direct tool execution from a persisted test caller context even without Current or a session' do
     session.with_lock do
       block_transports!
-      runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, conversation: legacy_conversation)
+      runner = Captain::Assistant::AgentRunnerService.new(scope: Captain::ChannelScope.for_conversation(legacy_conversation),
+                                                             conversation: legacy_conversation)
       context = Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new({ state: runner.send(:build_state) }))
 
       expect(Current.playground_run_policy).to be_nil

@@ -1046,7 +1046,6 @@ RSpec.describe 'Conversations API', type: :request do
 
   describe 'POST /api/v1/accounts/{account.id}/conversations/:id/cancel_captain_response' do
     let(:conversation) { create(:conversation, account: account, status: :pending) }
-    let(:assistant) { create(:captain_assistant, account: account) }
     let(:agent) { create(:user, account: account, role: :agent) }
     let(:cancellation_key) do
       format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: conversation.id)
@@ -1054,7 +1053,7 @@ RSpec.describe 'Conversations API', type: :request do
 
     before do
       create(:inbox_member, user: agent, inbox: conversation.inbox)
-      create(:captain_inbox, captain_assistant: assistant, inbox: conversation.inbox)
+      create(:captain_inbox, inbox: conversation.inbox)
       create(:message, conversation: conversation, content: 'Hello', message_type: :incoming)
       allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
     end
@@ -1079,13 +1078,12 @@ RSpec.describe 'Conversations API', type: :request do
       expect(response).to have_http_status(:success)
       cancellation_state = JSON.parse(Redis::Alfred.get(cancellation_key))
       expect(cancellation_state).to include(
-        'assistant_id' => assistant.id,
         'last_message_id' => conversation.messages.incoming.last.id,
         'cancelled_by_id' => agent.id
       )
+      expect(cancellation_state).not_to have_key('assistant_id')
       expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_off).with(
-        conversation: conversation,
-        assistant: assistant
+        conversation: conversation
       )
     end
 
@@ -1109,8 +1107,7 @@ RSpec.describe 'Conversations API', type: :request do
         expect(response).to have_http_status(:success)
         expect(JSON.parse(Redis::Alfred.get(cancellation_key))).to include('cancelled_by_id' => agent.id)
         expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_off).with(
-          conversation: conversation,
-          assistant: assistant
+          conversation: conversation
         )
       end
 

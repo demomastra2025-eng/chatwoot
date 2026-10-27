@@ -2,105 +2,60 @@ require 'rails_helper'
 
 RSpec.describe Concerns::CaptainAgentRouting, type: :model do
   let(:account) { create(:account) }
-  let(:source) { create(:captain_assistant, account: account) }
-  let(:target) { create(:captain_assistant, account: account) }
+  let(:agent) { create(:captain_assistant, account: account) }
 
-  it 'stages route edits until a successful settings save' do
-    source.handoff_agent_ids = [target.id]
+  describe '#entry_eligible?' do
+    it 'is true for an enabled external agent, whichever agent it is: every agent is a peer' do
+      other = create(:captain_assistant, account: account)
 
-    expect(Captain::AgentHandoff.where(source_assistant_id: source.id)).not_to exist
-    source.save!
-    expect(source.reload.handoff_agent_ids).to eq([target.id])
-    expect(source.handoff_targets).to contain_exactly(target)
-  end
-
-  it 'retains dormant configured routes while runtime targets follow the target activity' do
-    source.update!(handoff_agent_ids: [target.id])
-    target.update!(active: false)
-
-    expect(source.reload.handoff_agent_ids).to eq([target.id])
-    expect(source.handoff_targets).to be_empty
-    source.update!(name: 'Edited settings', handoff_agent_ids: [target.id])
-    target.update!(active: true)
-    expect(source.reload.handoff_targets).to contain_exactly(target)
-  end
-
-  it 'rejects a newly selected dormant target' do
-    target.update!(active: false)
-    source.handoff_agent_ids = [target.id]
-
-    expect(source).not_to be_valid
-    expect(source.errors[:handoff_agent_ids]).to include('new targets must be active external agents')
-  end
-
-  it 'rejects malformed and cross workspace IDs' do
-    source.handoff_agent_ids = ['1 trailing text']
-    expect(source).not_to be_valid
-    source.handoff_agent_ids = [create(:captain_assistant).id]
-    expect(source).not_to be_valid
-    expect(source.errors[:handoff_agent_ids]).to include('must belong to this workspace')
-  end
-
-  it 'keeps the existing graph when the prompt edit fails validation' do
-    source.update!(handoff_agent_ids: [target.id])
-    source.assign_attributes(description: '', handoff_agent_ids: [])
-
-    expect(source.save).to be(false)
-    expect(Captain::Assistant.find(source.id).handoff_agent_ids).to eq([target.id])
-  end
-
-  describe '#channel_peers' do
-    let(:inbox) { create(:inbox, account: account) }
-    let(:other_inbox) { create(:inbox, account: account) }
-
-    def attach(agent, channel)
-      Captain::AgentChannel.create!(account: account, inbox: channel, assistant: agent)
+      expect(agent).to be_entry_eligible
+      expect(other).to be_entry_eligible
     end
 
-    it 'lists the other active agents that work in a channel of the agent, whatever the stored allowed targets say' do
-      source.update!(handoff_agent_ids: [])
-      target
-
-      expect(source.channel_peers).to eq([target])
-      expect(target.channel_peers).to eq([source])
+    it 'is false for an agent that is switched off or is not an external agent' do
+      expect(create(:captain_assistant, account: account, active: false)).not_to be_entry_eligible
+      expect(create(:captain_assistant, account: account, usage_mode: 'internal_assistant')).not_to be_entry_eligible
     end
+  end
 
-    it 'leaves out the agent itself, switched-off agents and internal assistants' do
+  describe '.entry_eligible' do
+    it 'lists the enabled external agents of every workspace and nothing else' do
+      other_workspace = create(:captain_assistant)
       create(:captain_assistant, account: account, active: false)
       create(:captain_assistant, account: account, usage_mode: 'internal_assistant')
-      target
 
-      expect(source.channel_peers).to eq([target])
+      expect(Captain::Assistant.entry_eligible.where(account_id: [account.id, other_workspace.account_id])).to contain_exactly(agent, other_workspace)
+    end
+  end
+
+  describe 'the agent card (routing_description)' do
+    it 'is optional' do
+      agent.routing_description = nil
+
+      expect(agent).to be_valid
     end
 
-    it 'follows the channel grid for agents that work in selected channels only' do
-      first = create(:captain_assistant, account: account, channel_scope: 'selected')
-      second = create(:captain_assistant, account: account, channel_scope: 'selected')
-      attach(first, inbox)
-      attach(second, other_inbox)
-      source.update!(channel_scope: 'selected')
-      attach(source, inbox)
+    it 'is limited in length' do
+      agent.routing_description = 'a' * (described_class::ROUTING_DESCRIPTION_MAX_LENGTH + 1)
 
-      expect(source.channel_peers).to eq([first, second])
-      attach(source, other_inbox)
-      expect(source.reload.channel_peers).to eq([first, second])
+      expect(agent).not_to be_valid
+      expect(agent.errors[:routing_description]).to be_present
     end
+  end
 
-    it 'meets an agent of all channels only when the other works in at least one channel' do
-      nowhere = create(:captain_assistant, account: account, channel_scope: 'selected')
-      source
+  it 'has no per-agent routing graph: no allowed targets, no channel peers' do
+    expect(agent).not_to respond_to(:handoff_agent_ids)
+    expect(agent).not_to respond_to(:handoff_targets)
+    expect(agent).not_to respond_to(:channel_peers)
+    expect(agent).not_to respond_to(:main_in_inbox_ids)
+  end
 
-      expect(source.channel_peers).to eq([nowhere])
-      attach(nowhere, inbox)
-      expect(source.channel_peers).to eq([nowhere])
-      expect(nowhere.channel_peers).to eq([source])
-    end
+  it 'lets any agent be switched off, the last one included' do
+    agent
+    other = create(:captain_assistant, account: account)
 
-    it 'has no peers for an agent that is switched off or is not an external agent' do
-      target
-      source.update!(active: false)
-
-      expect(source.channel_peers).to eq([])
-    end
+    expect(other.update(active: false)).to be(true)
+    expect(agent.update(active: false)).to be(true)
+    expect(account.captain_assistants.entry_eligible).to be_empty
   end
 end

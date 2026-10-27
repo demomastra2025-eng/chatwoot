@@ -1170,8 +1170,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(assistant.reload.usage_mode).to eq('internal_assistant')
       end
 
-      it 'does not allow switching a connected assistant to internal mode' do
-        link = create(:captain_inbox, captain_assistant: assistant, inbox: create(:inbox, account: account))
+      it 'does not allow switching an agent that answers a phone number to internal mode' do
+        voice_inbox = create_voice_inbox(account)
+        link = create(:captain_inbox, captain_assistant: assistant, inbox: voice_inbox)
         # One session for both requests: a second fresh token for the same user is rejected as a replaced session.
         auth_headers = admin.create_new_auth_token
 
@@ -1181,12 +1182,10 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
               as: :json
 
         expect(response).to have_http_status(:unprocessable_content)
-        expect(json_response.dig(:errors, 0, :code)).to eq('MAIN_AGENT_IN_USE')
+        expect(response.body).to include('Internal assistants cannot be connected to channels')
         expect(assistant.reload.usage_mode).to eq('external_agent')
 
         link.update!(ai_enabled: false)
-        account.update_columns(settings: account.settings.to_h.except('captain_default_assistant_id'))
-        account.update_columns(settings: account.settings.to_h.except('captain_default_assistant_id'))
 
         patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
               params: { assistant: { usage_mode: 'internal_assistant' } },
@@ -1196,6 +1195,35 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(response).to have_http_status(:unprocessable_content)
         expect(response.body).to include('Internal assistants cannot be connected to channels')
         expect(assistant.reload.usage_mode).to eq('external_agent')
+      end
+
+      it 'switches off any agent, the last enabled one included, and answers with no channel fields of the retired main agent' do
+        other = create(:captain_assistant, account: account)
+        create(:captain_inbox, inbox: create(:inbox, account: account), ai_enabled: true)
+        auth_headers = admin.create_new_auth_token
+
+        [other, assistant].each do |item|
+          patch "/api/v1/accounts/#{account.id}/captain/assistants/#{item.id}",
+                params: { assistant: { active: false } },
+                headers: auth_headers,
+                as: :json
+
+          expect(response).to have_http_status(:success)
+          expect(item.reload).not_to be_active
+        end
+        expect(json_response).not_to include(:main_in_inbox_ids, :channel_scope, :inbox_ids)
+      end
+
+      it 'ignores the channel fields of the retired main agent design' do
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: { assistant: { routing_description: 'Billing', channel_scope: 'selected', inbox_ids: [create(:inbox, account: account).id],
+                                     handoff_agent_ids: [create(:captain_assistant, account: account).id] } },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.routing_description).to eq('Billing')
+        expect(json_response).not_to include(:channel_scope, :inbox_ids, :main_in_inbox_ids, :handoff_agent_ids)
       end
 
       it 'allows clearing context_access to an explicit empty hash' do
@@ -1295,6 +1323,49 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
         expect(response).to have_http_status(:no_content)
       end
+
+      it 'deletes any agent, the last one of a workspace with a switched-on channel included: every agent is a peer' do
+        create(:captain_inbox, inbox: create(:inbox, account: account), ai_enabled: true)
+
+        delete "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+               headers: admin.create_new_auth_token,
+               as: :json
+
+        expect(response).to have_http_status(:no_content)
+        expect(Captain::Assistant.exists?(assistant.id)).to be false
+        expect(response.body).not_to include('MAIN_AGENT_IN_USE')
+      end
+
+      context 'when the agent answers a phone number' do
+        it 'deletes the agent and takes the AI of that number away' do
+          voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+          row = create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
+          policy = voice_inbox.reload.telephony_number_binding.routing_policy
+          expect(policy.captain_assistant_id).to eq(assistant.id)
+          headers = admin.create_new_auth_token
+
+          delete "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}", headers: headers, as: :json
+
+          expect(response).to have_http_status(:no_content)
+          expect(CaptainInbox.where(id: row.id)).not_to exist
+          expect(policy.reload).to have_attributes(captain_assistant_id: nil, ai_enabled: false)
+        end
+      end
+
+      context 'when the agent answers the calls of a WhatsApp number' do
+        it 'deletes the agent and keeps the text settings of the number, without an agent' do
+          whatsapp_inbox = create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud', sync_templates: false,
+                                                     validate_provider_config: false,
+                                                     provider_config: { 'ai_voice_enabled' => true }).inbox
+          row = create(:captain_inbox, inbox: whatsapp_inbox, captain_assistant: assistant, ai_enabled: true)
+          headers = admin.create_new_auth_token
+
+          delete "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}", headers: headers, as: :json
+
+          expect(response).to have_http_status(:no_content)
+          expect(row.reload).to have_attributes(captain_assistant_id: nil, ai_enabled: true)
+        end
+      end
     end
   end
 
@@ -1351,7 +1422,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         ]
       }
     end
-    let(:agent_runner_service) { instance_double(Captain::Assistant::AgentRunnerService) }
 
     context 'when it is an un-authenticated user' do
       it 'returns unauthorized' do
@@ -1363,231 +1433,16 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       end
     end
 
-    context 'when it is an authenticated user' do
-      before do
-        allow_any_instance_of(Captain::Assistant).to receive(:resolved_agent_model).and_return('openai/gpt-6-luna')
-        allow(Captain::Assistant::AgentRunnerService).to receive(:new).with(
-          assistant: assistant,
-          source: 'playground',
-          playground_session: an_instance_of(Captain::Playground::Session)
-        ).and_return(agent_runner_service)
-        allow(agent_runner_service).to receive(:generate_response).and_return({ response: 'Assistant response' })
-      end
-
-      it 'generates a response with the agent runner service' do
-        expect(Captain::Assistant::AgentRunnerService).to receive(:new).with(
-          assistant: assistant,
-          source: 'playground',
-          playground_session: an_instance_of(Captain::Playground::Session)
-        ).and_return(agent_runner_service)
+    context 'when the assistant is a customer-facing agent' do
+      it 'has no playground of its own: the whole AI is tried out in the workspace Playground' do
+        expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
 
         post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
              params: valid_params,
              headers: agent.create_new_auth_token,
              as: :json
 
-        expect(response).to have_http_status(:success)
-        expect(agent_runner_service).to have_received(:generate_response).with(
-          message_history: [{ role: 'user', content: valid_params[:message_content] }]
-        )
-        expect(json_response[:response]).to eq('Assistant response')
-      end
-
-      it 'uses empty array as default' do
-        params_without_history = { message_content: 'Hello assistant' }
-
-        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-             params: params_without_history,
-             headers: agent.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(agent_runner_service).to have_received(:generate_response).with(
-          message_history: [{ role: 'user', content: params_without_history[:message_content] }]
-        )
-      end
-
-      %i[inbox_id live_inbox_id].each do |param|
-        it "records the channel sent as #{param} in the playground session so its grid decides who the agent can transfer to" do
-          inbox = create(:inbox, account: account)
-
-          post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-               params: { :playground_action => 'session', param => inbox.id },
-               headers: agent.create_new_auth_token,
-               as: :json
-
-          expect(response).to have_http_status(:success)
-          store = Captain::Playground::SessionStore.new(account: account, user: agent, assistant: assistant)
-          expect(store.read(session_id: json_response.dig(:playground, :session_id))['inbox_id']).to eq(inbox.id)
-        end
-      end
-
-      it 'rejects a playground channel of another workspace' do
-        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-             params: { playground_action: 'session', live_inbox_id: create(:inbox).id },
-             headers: agent.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:unprocessable_entity)
-        expect(json_response[:error]).to eq('invalid_playground_scenario')
-      end
-
-      it 'does not duplicate the latest user message if it is already in history' do
-        params_with_latest_message = {
-          message_content: 'Hello assistant',
-          message_history: [{ role: 'user', content: 'Hello assistant' }]
-        }
-
-        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-             params: params_with_latest_message,
-             headers: agent.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(agent_runner_service).to have_received(:generate_response).with(
-          message_history: params_with_latest_message[:message_history]
-        )
-      end
-
-      it 'passes supported playground overrides to one runtime request without saving the assistant' do
-        original_config = assistant.config.deep_dup
-        requested_overrides = {
-          model: 'openai/gpt-5.4',
-          temperature: 0.4,
-          thinking_effort: 'high'
-        }
-        allow(Llm::Config).to receive(:model_for).with(feature: :assistant, account: account)
-                                                 .and_return('openai/gpt-6-luna')
-        allow(Llm::Models).to receive(:curated_model_names_for).with(:assistant, account: account)
-                                                               .and_return(%w[openai/gpt-6-luna openai/gpt-5.4])
-        allow(Llm::Models).to receive(:valid_model_for?).with(:assistant, 'openai/gpt-5.4', account: account)
-                                                        .and_return(true)
-        allow(Llm::Models).to receive(:supports_temperature?).with('openai/gpt-5.4', account: account)
-                                                             .and_return(true)
-        allow(Llm::Models).to receive(:supports_thinking?).with('openai/gpt-5.4', account: account)
-                                                          .and_return(true)
-        allow(Llm::Models).to receive(:reasoning_efforts_for).with('openai/gpt-5.4', account: account)
-                                                             .and_return(['high'])
-        allow(Captain::Assistant::AgentRunnerService).to receive(:new).with(
-          assistant: assistant,
-          source: 'playground',
-          playground_session: an_instance_of(Captain::Playground::Session),
-          test_overrides: requested_overrides
-        ).and_return(agent_runner_service)
-        allow(agent_runner_service).to receive(:generate_response).and_return({ response: 'Test response' })
-
-        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-             params: valid_params.merge(
-               test_model: 'openai/gpt-5.4',
-               test_temperature: 0.4,
-               test_thinking_effort: 'high'
-             ),
-             headers: agent.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(Captain::Assistant::AgentRunnerService).to have_received(:new).with(
-          assistant: assistant,
-          source: 'playground',
-          playground_session: an_instance_of(Captain::Playground::Session),
-          test_overrides: requested_overrides
-        )
-        expect(assistant.reload.config).to eq(original_config)
-      end
-
-      it 'rejects temperature controls the selected model does not advertise' do
-        allow(Llm::Config).to receive(:model_for).with(feature: :assistant, account: account)
-                                                 .and_return('openai/gpt-6-luna')
-        allow(Llm::Models).to receive(:supports_temperature?).with('openai/gpt-6-luna', account: account)
-                                                             .and_return(false)
-        expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
-
-        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-             params: valid_params.merge(test_temperature: 0.4),
-             headers: agent.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:unprocessable_content)
-        expect(json_response).to eq(error: 'unsupported_playground_setting', field: 'test_temperature')
-      end
-
-      it 'passes zero and an advertised none override without persisting assistant or workspace settings' do
-        original_config = assistant.config.deep_dup
-        original_runtime = account.captain_runtime.deep_dup
-        overrides = { temperature: 0.0, thinking_effort: 'none' }
-        allow(Llm::Models).to receive(:supports_temperature?).with('openai/gpt-6-luna', account: account).and_return(true)
-        allow(Llm::Models).to receive(:reasoning_efforts_for).with('openai/gpt-6-luna', account: account).and_return(%w[none high])
-        allow(Captain::Assistant::AgentRunnerService).to receive(:new)
-          .with(assistant: assistant, source: 'playground', playground_session: an_instance_of(Captain::Playground::Session), test_overrides: overrides)
-          .and_return(agent_runner_service)
-
-        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-             params: valid_params.merge(test_temperature: 0, test_thinking_effort: 'none'),
-             headers: agent.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(Captain::Assistant::AgentRunnerService).to have_received(:new)
-          .with(assistant: assistant, source: 'playground', playground_session: an_instance_of(Captain::Playground::Session), test_overrides: overrides)
-        expect(assistant.reload.config).to eq(original_config)
-        expect(account.reload.captain_runtime).to eq(original_runtime)
-      end
-
-      it 'rejects none for models that cannot disable reasoning before starting the runtime' do
-        allow(Llm::Models).to receive(:reasoning_efforts_for).with('openai/gpt-6-luna', account: account).and_return(%w[low medium high])
-        expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
-
-        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-             params: valid_params.merge(test_thinking_effort: 'none'),
-             headers: agent.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:unprocessable_content)
-        expect(json_response).to eq(error: 'unsupported_playground_setting', field: 'test_thinking_effort')
-      end
-
-      it 'rejects reasoning effort when the selected model does not support reasoning' do
-        allow(Llm::Config).to receive(:model_for).with(feature: :assistant, account: account)
-                                                 .and_return('openai/gpt-6-luna')
-        allow(Llm::Models).to receive(:supports_thinking?).with('openai/gpt-6-luna', account: account)
-                                                          .and_return(false)
-        expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
-
-        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-             params: valid_params.merge(test_thinking_effort: 'high'),
-             headers: agent.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:unprocessable_content)
-        expect(json_response).to eq(error: 'unsupported_playground_setting', field: 'test_thinking_effort')
-      end
-
-      it 'rejects a real conversation in Trial before starting the runtime' do
-        inbox = create(:inbox, account: account)
-        conversation = create(:conversation, account: account, inbox: inbox)
-
-        expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
-
-        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-             params: valid_params.merge(conversation_id: conversation.display_id),
-             headers: admin.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:unprocessable_content)
-      end
-
-      it 'rejects a conversation outside of the current account before starting the runtime' do
-        other_account = create(:account)
-        foreign_conversation = create(:conversation, account: other_account)
-
-        expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
-
-        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-             params: valid_params.merge(conversation_id: foreign_conversation.display_id),
-             headers: admin.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:unprocessable_content)
+        expect(response).to have_http_status(:not_found)
       end
     end
 
@@ -1683,25 +1538,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
              as: :json
 
         expect(response).to have_http_status(:unauthorized)
-      end
-
-      it 'keeps the customer-facing agent playground on the agent runner' do
-        allow(Captain::Copilot::ChatService).to receive(:new)
-        allow(Captain::Assistant::AgentRunnerService).to receive(:new).with(
-          assistant: assistant,
-          source: 'playground',
-          playground_session: an_instance_of(Captain::Playground::Session)
-        ).and_return(agent_runner_service)
-        allow(agent_runner_service).to receive(:generate_response).and_return({ response: 'Assistant response' })
-
-        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-             params: valid_params,
-             headers: agent.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(json_response[:response]).to eq('Assistant response')
-        expect(Captain::Copilot::ChatService).not_to have_received(:new)
       end
     end
   end

@@ -4,13 +4,14 @@ RSpec.describe Captain::Playground::ReplyDelivery do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account, role: :administrator) }
   let(:assistant) { create(:captain_assistant, account: account) }
-  let(:session) { Captain::Playground::Session.new(assistant: assistant, account: account, user: user) }
+  let(:session) { Captain::Playground::Session.new(account: account, user: user) }
 
   after { Current.reset }
 
   it 'keeps replies in the transcript with both real permissions off or on and never queues delivery' do
     expect(Messages::MessageBuilder).not_to receive(:new)
     session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
       [false, true].each do |enabled|
         workspace.set_permissions!(read: enabled, write: enabled)
         expect do
