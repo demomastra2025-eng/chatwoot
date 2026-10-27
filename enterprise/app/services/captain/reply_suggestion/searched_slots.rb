@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
-# The free starts that the slot reads of one reply suggestion run returned (search_available_slots, search_booking_options, get_scheduling_resource_availability),
+# The free starts that the slot reads of one reply suggestion run returned (search_available_slots, search_booking_options,
+# get_scheduling_resource_availability),
 # read from the cache of the reads of the run (see Captain::Runtime::ToolWrapper#cache_suggestion_read_result). A start counts as
 # returned when the answer the agent read lists it for that specialist: a time of a specialist-day of the compact answer ({ resource_id,
 # date, times, more }, also under next_available) or a slot with its own start. The times of a day are a sample (at most five, the rest

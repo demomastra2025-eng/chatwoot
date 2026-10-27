@@ -222,8 +222,7 @@ module Enterprise::Captain::ReplySuggestionService
       @pending_actions = []
       @superseded_action_ids = []
       @reasoning = nil
-      @draft_stream = build_draft_stream
-      init_agent_catalog!(scope)
+      init_stream_and_agents(scope)
       # While the router decides who answers, the manager sees that, and no agent.
       @phase = @routed ? 'routing' : 'thinking'
     end
@@ -281,6 +280,11 @@ module Enterprise::Captain::ReplySuggestionService
     end
 
     private
+
+    def init_stream_and_agents(scope)
+      @draft_stream = build_draft_stream
+      init_agent_catalog!(scope)
+    end
 
     # The agent that answers the manager streams its answer (Captain::Runtime::AnswerStream): what it has written so far is shown as
     # the first words of the draft. A new turn or a tool that runs means that what was written was not the answer.

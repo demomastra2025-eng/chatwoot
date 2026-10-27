@@ -7,6 +7,10 @@ module Captain::Assistant::RunnerCallbacksHelper
     runner = add_tool_progress_callback(runner) if @callbacks[:on_tool_progress]
     runner = add_tool_complete_callback(runner) if @callbacks[:on_tool_complete]
     runner = add_llm_call_complete_callback(runner) if @callbacks[:on_llm_call_complete]
+    add_observation_callbacks(runner)
+  end
+
+  def add_observation_callbacks(runner)
     runner = add_llm_step_callback(runner) if @callbacks[:on_llm_step]
     runner = add_answer_delta_callback(runner) if @callbacks[:on_answer_delta]
     runner
