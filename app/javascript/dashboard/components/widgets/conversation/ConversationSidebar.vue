@@ -10,9 +10,7 @@ import {
   useConversationPatientContextStore,
 } from 'dashboard/stores/scheduling/patientContext';
 import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
-import { useWindowSize } from '@vueuse/core';
 import { vOnClickOutside } from '@vueuse/components';
-import wootConstants from 'dashboard/constants/globals';
 
 const props = defineProps({
   currentChat: {
@@ -33,7 +31,7 @@ const SchedulingConversationAppointmentsSidebar = defineAsyncComponent(
     )
 );
 
-const { activePanel, appointmentsAvailable, closePanel } =
+const { activePanel, appointmentsAvailable, closePanel, isSmallScreen } =
   useConversationSidepanelAvailability();
 const route = useRoute();
 const router = useRouter();
@@ -93,7 +91,6 @@ watch(
   },
   { immediate: true }
 );
-const { width: windowWidth } = useWindowSize();
 const clickOutsideOptions = {
   ignore: [
     '[data-modal-safe-interaction]',
@@ -162,10 +159,6 @@ const refreshBoundPatient = async appointment => {
   patientStore.rememberSelection(key, patientId);
   await patientStore.load(key, owner, { force: true });
 };
-
-const isSmallScreen = computed(
-  () => windowWidth.value < wootConstants.SMALL_SCREEN_BREAKPOINT
-);
 
 const closeSidebar = () => {
   if (isSmallScreen.value && activePanel.value) closePanel();

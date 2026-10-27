@@ -206,6 +206,17 @@ describe('useConversationSidepanelAvailability', () => {
     stop();
   });
 
+  it('uses the same 768px mobile boundary as the conversation layout', () => {
+    testState.uiSettings.value = { is_contact_sidebar_open: true };
+    testState.width.value = 768;
+    const { activePanel, stop } = buildAvailability();
+
+    expect(activePanel.value).toBeNull();
+    testState.width.value = 769;
+    expect(activePanel.value).toBe('contact');
+    stop();
+  });
+
   it('retains desktop panel updates through the shared buttons', () => {
     const { activePanel, openPanel, closePanel, stop } = buildAvailability();
 

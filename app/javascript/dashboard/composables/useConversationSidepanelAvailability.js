@@ -41,7 +41,7 @@ export const useConversationSidepanelAvailability = () => {
   const route = useRoute();
   const { width } = useWindowSize();
   const isSmallScreen = computed(
-    () => width.value < wootConstants.SMALL_SCREEN_BREAKPOINT
+    () => width.value <= wootConstants.SMALL_SCREEN_BREAKPOINT
   );
   const currentConversationKey = computed(() => conversationKey(route));
   const currentAccountId = useMapGetter('getCurrentAccountId');
@@ -142,6 +142,7 @@ export const useConversationSidepanelAvailability = () => {
     appointmentsAvailable,
     closePanel,
     dealsAvailable,
+    isSmallScreen,
     openPanel,
   };
 };
