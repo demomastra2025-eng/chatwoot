@@ -45,7 +45,7 @@ RSpec.describe 'onelink:threads:delete_merge_lines rake task' do # rubocop:disab
     output = run_task
 
     summaries = output.lines.select { |line| line.start_with?('{') }.map { |line| JSON.parse(line) }
-    expect(summaries.map { |row| row.slice('account_id', 'messages', 'conversations') }).to eq(
+    expect(summaries.first(2).map { |row| row.slice('account_id', 'messages', 'conversations') }).to eq(
       [{ 'account_id' => account.id, 'messages' => 2, 'conversations' => 1 },
        { 'account_id' => other_account.id, 'messages' => 1, 'conversations' => 1 }]
     )

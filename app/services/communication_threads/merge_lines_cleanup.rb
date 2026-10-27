@@ -146,10 +146,9 @@ class CommunicationThreads::MergeLinesCleanup
     present = Message.unscoped.where(id: rows.pluck('id')).pluck(:id).to_set
     alive = Conversation.where(id: rows.pluck('conversation_id')).pluck(:id).to_set
     lambda do |row|
-      if present.include?(row['id']) then :already_present
-      elsif alive.include?(row['conversation_id']) then :to_restore
-      else :conversation_missing
-      end
+      next :already_present if present.include?(row['id'])
+
+      alive.include?(row['conversation_id']) ? :to_restore : :conversation_missing
     end
   end
 
