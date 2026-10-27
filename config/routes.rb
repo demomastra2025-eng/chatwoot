@@ -181,6 +181,7 @@ Rails.application.routes.draw do
           end
           resources :automation_rules, only: [:index, :create, :show, :update, :destroy] do
             post :clone
+            post :adopt_calendar_notification, on: :member
             get :contact_options, on: :collection
           end
           resources :macros, only: [:index, :create, :show, :update, :destroy] do

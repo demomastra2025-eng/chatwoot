@@ -2,7 +2,7 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
   include AttachmentConcern
 
   before_action :check_authorization
-  before_action :fetch_automation_rule, only: [:show, :update, :destroy, :clone]
+  before_action :fetch_automation_rule, only: [:show, :update, :destroy, :clone, :adopt_calendar_notification]
   before_action :ensure_calendar_management, only: [:update, :destroy, :clone]
 
   def index
@@ -59,6 +59,13 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
     new_rule = automation_rule.dup
     new_rule.save!
     @automation_rule = new_rule
+  end
+
+  def adopt_calendar_notification
+    result = AutomationRules::CalendarNotificationAdoption.new(@automation_rule).perform
+    return render json: { errors: result.errors }, status: :unprocessable_content unless result.success?
+
+    render json: { id: @automation_rule.id, calendar_managed: true }
   end
 
   # Contacts for the "Contact" condition: a page found by text (q, page) or the contacts behind saved ids (ids).
