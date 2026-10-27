@@ -116,6 +116,7 @@
       "SUCCESS_CANCEL": "Жазба болдырылмады",
       "SUCCESS_CANCEL_LOCAL_ONLY": "Жазба OneLink-те болдырылмады. МедЭлементте қабылдау қалды — дәрігердің уақытын сонда қолмен босатыңыз.",
       "ERRORS": {
+        "MEDELEMENT_PHONE_REQUIRED": "Телефонды +7XXXXXXXXXX түрінде енгізіңіз",
         "INVALID_DURATION": "5 пен 1440 аралығындағы бүтін минут санын көрсетіңіз",
         "CLIENT_LAST_NAME_REQUIRED": "Тегін көрсетіңіз",
         "MEDELEMENT_LAST_NAME_REQUIRED": "MedElement жазбасы үшін тегін көрсетіңіз",
@@ -129,6 +130,11 @@
     "CONTACT": {
       "IIN_REQUIRED": "ЖСН көрсетіңіз",
       "SAVE_ACTION": "Сақтау",
+      "PHONE": "Телефон",
+      "ADD_PHONE": "Телефон қосу",
+      "CHANGE_PHONE": "Өзгерту",
+      "CANCEL_ACTION": "Бас тарту",
+      "PHONE_SAVED": "Телефон сақталды",
       "SELECT_ACTION": "Тізімнен таңдау",
       "SELECTED_BADGE": "Таңдалған",
       "NEW_ACTION": "+ Жаңа контакт құру",
@@ -137,6 +143,8 @@
     },
     "ERRORS": {
       "SLOT_CONFLICT": "Бұл уақыт бос емес.",
+      "MEDELEMENT_PATIENT_PHONE_INVALID": "Қазақстанның жарамды телефон нөмірін енгізіңіз.",
+      "CONTACT_PHONE_TAKEN": "Бұл нөмір басқа пациенттің картасында сақталған.",
       "APPOINTMENT_SLOT_UNAVAILABLE": "Таңдалған уақыт бос емес. Басқа уақытты таңдаңыз.",
       "BUSY_WITH_FREE_STARTS": "{from} мен {to} аралығында уақыт бос емес. Бос уақыт: {starts}.",
       "BUSY_NO_FREE_STARTS": "{from} мен {to} аралығында уақыт бос емес. Бұл күні бос уақыт жоқ.",

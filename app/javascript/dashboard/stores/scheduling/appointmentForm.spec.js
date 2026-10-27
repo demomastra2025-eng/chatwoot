@@ -497,6 +497,24 @@ describe('useSchedulingAppointmentFormStore', () => {
     });
   });
 
+  it('sends only the phone when updating a linked patient card from the compact editor', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit({ ...localAppointment, clientPhone: '' });
+    SchedulingContactsAPI.update.mockResolvedValue({
+      data: { payload: { id: 84, account_id: 74, phone: '+77010000001' } },
+    });
+    SchedulingContactsAPI.patients.mockResolvedValue(
+      patientsResponse([{ ...localPatient, phone: '+77010000001' }])
+    );
+
+    await store.updateInlineContact(84, { phone: '+77010000001' });
+
+    expect(SchedulingContactsAPI.update).toHaveBeenCalledWith(84, {
+      phone: '+77010000001',
+    });
+    expect(store.form.clientPhone).toBe('+77010000001');
+  });
+
   it.each([42, 84])(
     'updates bound provider patient %s when inline contact edit is requested',
     async patientId => {
@@ -576,6 +594,32 @@ describe('useSchedulingAppointmentFormStore', () => {
     expect(SchedulingContactsAPI.update).not.toHaveBeenCalled();
     expect(store.selectedContact).toBeNull();
     expect(store.form.patientContactId).toBe('');
+  });
+
+  it('lets an imported appointment without a selected patient card save its contact phone only', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit({
+      ...localAppointment,
+      patientContactId: null,
+      clientPhone: '',
+      source: 'medelement',
+      externalRef: 'medelement:reception:legacy-reception',
+      customAttributes: { medelement_reception_code: 'legacy-reception' },
+    });
+    SchedulingContactsAPI.update.mockResolvedValue({
+      data: { payload: { id: 42, account_id: 74, phone: '+77010000001' } },
+    });
+
+    await store.updateInlineContact(42, { phone: '+77010000001' });
+
+    expect(SchedulingContactsAPI.update).toHaveBeenCalledWith(42, {
+      phone: '+77010000001',
+    });
+    expect(store.form).toMatchObject({
+      clientName: 'Patient Family',
+      clientPhone: '+77010000001',
+      patientContactId: '',
+    });
   });
 
   it('projects recorded clinical fields for a calendar booking without rewriting a raw chat alias', () => {

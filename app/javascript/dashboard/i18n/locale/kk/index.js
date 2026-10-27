@@ -31,10 +31,30 @@ import macros from './macros.json';
 import report from './report.json';
 import resetPassword from './resetPassword.json';
 import search from './search.json';
-// Scheduling intentionally uses the complete Russian catalog until a full
-// Kazakh translation is available, avoiding partial keys and raw fallbacks.
-import scheduling from '../ru/scheduling.json';
+import ruScheduling from '../ru/scheduling.json';
+import kkScheduling from './scheduling.json';
 import setNewPassword from './setNewPassword.json';
+
+const scheduling = {
+  SCHEDULING: {
+    ...ruScheduling.SCHEDULING,
+    CONTACT: {
+      ...ruScheduling.SCHEDULING.CONTACT,
+      ...kkScheduling.SCHEDULING.CONTACT,
+    },
+    ERRORS: {
+      ...ruScheduling.SCHEDULING.ERRORS,
+      ...kkScheduling.SCHEDULING.ERRORS,
+    },
+    APPOINTMENT_FORM: {
+      ...ruScheduling.SCHEDULING.APPOINTMENT_FORM,
+      ERRORS: {
+        ...ruScheduling.SCHEDULING.APPOINTMENT_FORM.ERRORS,
+        ...kkScheduling.SCHEDULING.APPOINTMENT_FORM.ERRORS,
+      },
+    },
+  },
+};
 import settings from './settings.json';
 import whatsappUsage from './whatsappUsage.json';
 import signup from './signup.json';

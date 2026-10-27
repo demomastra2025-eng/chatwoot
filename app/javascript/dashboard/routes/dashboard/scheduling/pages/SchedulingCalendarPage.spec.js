@@ -10,6 +10,8 @@ import SchedulingResourcesAPI from 'dashboard/api/scheduling/resources';
 import { useSchedulingAppointmentFormStore } from 'dashboard/stores/scheduling/appointmentForm';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
+import SchedulingContactPhoneEditor from 'dashboard/components-next/Scheduling/SchedulingContactPhoneEditor.vue';
+import { fetchContactableInboxes } from 'dashboard/components-next/NewConversation/helpers/composeConversationHelper.js';
 import SchedulingCalendarPage from './SchedulingCalendarPage.vue';
 
 const mocks = vi.hoisted(() => ({
@@ -87,6 +89,13 @@ vi.mock('dashboard/api/scheduling/providerCommands', () => ({
     cancel: vi.fn(),
   },
 }));
+vi.mock(
+  'dashboard/components-next/NewConversation/helpers/composeConversationHelper.js',
+  async importOriginal => ({
+    ...(await importOriginal()),
+    fetchContactableInboxes: vi.fn(),
+  })
+);
 
 const owner = {
   id: 42,
@@ -356,6 +365,47 @@ describe('SchedulingCalendarPage pending local booking', () => {
   afterEach(() => {
     wrapper?.unmount();
     wrapper = null;
+  });
+
+  it('shows a saved phone immediately and reloads a previously empty channel list', async () => {
+    fetchContactableInboxes.mockResolvedValue([]);
+    const { store } = await mountPage();
+    mocks.route.params.appointmentId = '505';
+    store.openEdit({
+      id: 505,
+      accountId: 74,
+      contactId: 42,
+      clientFirstName: 'Patient',
+      resourceId: 3,
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+    });
+    store.selectedContact = { ...owner, phone: '' };
+    store.form.clientPhone = '';
+    await flushPromises();
+    wrapper
+      .findComponent({ name: 'CrmDealConversationPanel' })
+      // eslint-disable-next-line vue/custom-event-name-casing -- Preserve the conversation panel event contract.
+      .vm.$emit('select-contact', 42);
+    await flushPromises();
+    expect(fetchContactableInboxes).toHaveBeenCalledTimes(1);
+    vi.spyOn(store, 'updateInlineContact').mockImplementation(async () => {
+      store.selectedContact = { ...owner, phone: '+77010000001' };
+      return store.selectedContact;
+    });
+
+    wrapper
+      .findComponent(SchedulingContactPhoneEditor)
+      .vm.$emit('save', '+77010000001');
+    await flushPromises();
+
+    expect(store.updateInlineContact).toHaveBeenCalledWith(42, {
+      phone: '+77010000001',
+    });
+    expect(wrapper.get('[data-test="contact-phone-editor"]').text()).toContain(
+      '+77010000001'
+    );
+    expect(fetchContactableInboxes).toHaveBeenCalledTimes(2);
   });
 
   it('selects only active nonarchived resources from the raw API, excluding inactive specialists', async () => {

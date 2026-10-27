@@ -28,6 +28,7 @@ import PhoneNumberInput from 'dashboard/components-next/phonenumberinput/PhoneNu
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import SchedulingCalendarGrid from 'dashboard/components-next/Scheduling/SchedulingCalendarGrid.vue';
+import SchedulingContactPhoneEditor from 'dashboard/components-next/Scheduling/SchedulingContactPhoneEditor.vue';
 import SchedulingCustomFieldAdvancedFilter from 'dashboard/components-next/Scheduling/SchedulingCustomFieldAdvancedFilter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingAppointmentTimeFields from 'dashboard/components-next/Scheduling/SchedulingAppointmentTimeFields.vue';
@@ -193,6 +194,8 @@ const appointmentConversationDraft = reactive({
   isLoadingInboxes: false,
 });
 const appointmentContactableInboxesByContactId = ref({});
+const phoneEditorError = ref('');
+const isPhoneSaving = ref(false);
 const appointmentConversationContactCreateRequested = ref(false);
 let appointmentConversationCreateRequestId = 0;
 let appointmentConversationDisposed = false;
@@ -1734,6 +1737,33 @@ const handleInlineContactSave = async () => {
   }
 };
 
+const saveContactPhone = async phone => {
+  const contactId = formStore.form.patientContactId || formStore.form.contactId;
+  if (!contactId || isPhoneSaving.value) return;
+
+  phoneEditorError.value = '';
+  isPhoneSaving.value = true;
+  try {
+    const updated = await formStore.updateInlineContact(contactId, { phone });
+    if (!updated) return;
+
+    formStore.updateField('clientPhone', updated.phone || phone);
+    const cached = { ...appointmentContactableInboxesByContactId.value };
+    delete cached[contactId];
+    appointmentContactableInboxesByContactId.value = cached;
+    if (Number(appointmentConversationDraft.contactId) === Number(contactId)) {
+      await loadAppointmentConversationInboxes(
+        appointmentConversationDraft.contextRequestId
+      );
+    }
+    useAlert(t('SCHEDULING.CONTACT.PHONE_SAVED'));
+  } catch (error) {
+    phoneEditorError.value = formatErrorMessage(error);
+  } finally {
+    isPhoneSaving.value = false;
+  }
+};
+
 watch(
   () => [formStore.mode, formStore.recordId],
   ([mode]) => {
@@ -3080,7 +3110,9 @@ onMounted(async () => {
                       <div
                         v-if="
                           formStore.form.clientPhone &&
-                          !needsProviderPatientPhoneInput
+                          !needsProviderPatientPhoneInput &&
+                          !formStore.form.patientContactId &&
+                          !formStore.form.contactId
                         "
                         class="appointment-drawer-row"
                       >
@@ -3093,6 +3125,19 @@ onMounted(async () => {
                           {{ formStore.form.clientPhone }}
                         </span>
                       </div>
+                      <SchedulingContactPhoneEditor
+                        v-if="
+                          formStore.form.patientContactId ||
+                          formStore.form.contactId
+                        "
+                        :phone="
+                          formStore.selectedContact?.phone ||
+                          formStore.form.clientPhone
+                        "
+                        :saving="isPhoneSaving || formStore.ui.isSaving"
+                        :error="phoneEditorError"
+                        @save="saveContactPhone"
+                      />
                       <div
                         v-if="formStore.form.clientIdentifier"
                         class="appointment-drawer-row"
@@ -3120,7 +3165,11 @@ onMounted(async () => {
                         </span>
                       </div>
                       <div
-                        v-if="needsProviderPatientPhoneInput"
+                        v-if="
+                          needsProviderPatientPhoneInput &&
+                          !formStore.form.patientContactId &&
+                          !formStore.form.contactId
+                        "
                         class="appointment-drawer-row pt-1"
                       >
                         <span class="appointment-drawer-label">

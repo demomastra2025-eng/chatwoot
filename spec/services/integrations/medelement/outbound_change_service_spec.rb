@@ -457,6 +457,19 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
     expect(command.confirmation_request).to have_attributes(status: 'confirmed', resolution_source: 'system')
   end
 
+  it 'captures a phone-only patient update with the provider profile and phone parts' do
+    command = described_class.new(
+      entity_type: 'contact', entity_id: contact.id, event_name: 'contact_updated', actor_id: actor.id,
+      change: { changed_attributes: { 'phone_number' => [nil, contact.phone_number] } }
+    ).perform
+
+    expect(command.operation).to eq('update_patient')
+    expect(command.request_snapshot.dig('patient', 'payload')).to include(
+      'profile_code' => 'patient-1', 'patient_phone_2[0]' => '7',
+      'patient_phone_2[1]' => '701', 'patient_phone_2[2]' => '0000001'
+    )
+  end
+
   it 'queues and system-confirms a patient creation for an actor-backed patient event' do
     contact.update!(
       name: 'Ivan',

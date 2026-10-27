@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import enScheduling from '../../i18n/locale/en/scheduling.json';
 import kkScheduling from '../../i18n/locale/kk/scheduling.json';
+import kkMessages from '../../i18n/locale/kk';
 import ruScheduling from '../../i18n/locale/ru/scheduling.json';
 import {
   formatSchedulingErrorMessage,
@@ -14,6 +15,12 @@ const lookupMessage = (messages, key) =>
   key.split('.').reduce((node, part) => node?.[part], messages);
 
 describe('scheduling shared helpers', () => {
+  it('uses the Kazakh scheduling text in the active locale catalog', () => {
+    expect(kkMessages.SCHEDULING.CONTACT.PHONE_SAVED).toBe('Телефон сақталды');
+    expect(kkMessages.SCHEDULING.ERRORS.BUSY_NO_FREE_STARTS).toBe(
+      kkScheduling.SCHEDULING.ERRORS.BUSY_NO_FREE_STARTS
+    );
+  });
   it.each([
     ['ru', ruScheduling, 'Занято с 15:30 до 17:00. Свободно: 15:00, 17:00.'],
     [
