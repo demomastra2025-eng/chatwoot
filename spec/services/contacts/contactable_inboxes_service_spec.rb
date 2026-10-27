@@ -50,6 +50,7 @@ describe Contacts::ContactableInboxesService do
         { source_id: '77010000001', inbox: whatsapp_web_inbox }
       )
     end
+
     it 'returns the contactable inboxes for the contact' do
       contactable_inboxes = described_class.new(contact: contact).get
 

@@ -7,7 +7,7 @@ RSpec.describe Integrations::Medelement::ReceptionCalendarRange do
       time_zone: 'Asia/Almaty'
     )
 
-    expect(range).to exclude(range.end)
+    expect(range.exclude_end?).to be(true)
     expect(range.begin.iso8601).to eq('2026-09-07T00:00:00+05:00')
     expect(range.end.iso8601).to eq('2026-09-09T00:00:00+05:00')
   end

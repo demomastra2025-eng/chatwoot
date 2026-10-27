@@ -31,6 +31,7 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
     contact = create(:contact, account: account, name: 'Local', phone_number: '+77010000001',
                                custom_attributes: { 'medelement_patient_code' => patient_code })
     card = patient_payload.except('PATIENT_PHONE_2_STR', 'PATIENT_PHONE_3_STR', 'IIN')
+    allow(client).to receive(:search_patients_by_codes).with(patient_codes: [patient_code]).and_return([card])
 
     expect { service.sync_patient_payload!(card, preferred_contact: contact) }
       .not_to have_enqueued_job(Integrations::Medelement::OutboundChangeJob)
