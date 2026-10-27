@@ -58,6 +58,25 @@ RSpec.describe Scheduling::SlotConflictDetails do
     end
   end
 
+  it 'blocks the provider reception when choosing starts for a longer visit' do
+    account = create(:account)
+    doctor = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty',
+                                          custom_attributes: { 'medelement_specialist_code' => 'doctor-1',
+                                                               'medelement_reception_time' => 30 })
+    zone = ActiveSupport::TimeZone['Asia/Almaty']
+    at = ->(hour, minute = 0) { zone.local(2026, 10, 29, hour, minute) }
+
+    travel_to at.call(13) do
+      result = described_class.for_provider(
+        resource: doctor, interval: [at.call(15, 30), at.call(16, 15)],
+        windows: [[at.call(14), at.call(18)]], receptions: [[at.call(15, 30), at.call(17)]]
+      )
+
+      expect(result[:busy]).to eq(starts_at: at.call(15, 30).iso8601, ends_at: at.call(17).iso8601)
+      expect(result[:free_starts]).to eq([at.call(14), at.call(14, 30), at.call(17)].map(&:iso8601))
+    end
+  end
+
   it 'never offers starts from a different local day or from the past' do
     account = create(:account)
     doctor = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty',

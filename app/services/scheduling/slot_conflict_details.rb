@@ -19,7 +19,7 @@ class Scheduling::SlotConflictDetails
   def self.provider_appointments(resource, day_start, day_end, receptions)
     local = resource.account.scheduling_appointments.where(resource_id: resource.id)
                     .where('starts_at < ? AND ends_at > ?', day_end, day_start).to_a
-    local + receptions.map { |first, last| Occupied.new(nil, 'scheduled', first, last) }
+    local + receptions.each_with_index.map { |(first, last), index| Occupied.new(-index - 1, 'scheduled', first, last) }
   end
 
   def initialize(availability:, starts_at:, ends_at:, occupied_intervals: nil, free_starts_known: true)
