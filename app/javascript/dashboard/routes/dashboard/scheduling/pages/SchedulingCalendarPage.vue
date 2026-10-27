@@ -1636,6 +1636,17 @@ const saveContactPhone = async phone => {
     if (!updated) return;
 
     useAlert(t('SCHEDULING.CONTACT.PHONE_SAVED'));
+    if (
+      Number(appointmentConversationDraft.contactId) === Number(contactId) &&
+      Number(store.state.conversations?.personDialog?.contactId) ===
+        Number(contactId)
+    ) {
+      try {
+        await store.dispatch('openPersonDialog', { contactId });
+      } catch (error) {
+        useAlert(formatErrorMessage(error));
+      }
+    }
   } catch (error) {
     if (
       Number(formStore.form.patientContactId || formStore.form.contactId) ===
