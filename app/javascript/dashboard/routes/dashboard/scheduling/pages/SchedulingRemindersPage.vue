@@ -564,13 +564,14 @@ const buildAutomationRulePayload = preset => {
 const savePreset = async preset => {
   if (!selectedInboxId.value) {
     useAlert(t('SCHEDULING.REMINDERS.ERRORS.INBOX_REQUIRED'));
-    return;
+    return false;
   }
 
   if (missingBindings(preset)) {
     useAlert(t('SCHEDULING.REMINDERS.ERRORS.FIELD_REQUIRED'));
-    return;
+    return false;
   }
+  let saved = false;
   try {
     fieldStats.value = await fetchAppointmentFieldFill(
       currentAccount.value?.id,
@@ -579,7 +580,7 @@ const savePreset = async preset => {
     if (blockedFields(preset).length) {
       const share = Math.round(blockedFields(preset)[0].share * 100);
       useAlert(t('SCHEDULING.REMINDERS.ERRORS.FIELD_EMPTY_WARNING', { share }));
-      return;
+      return false;
     }
     savingPresetKey.value = preset.key;
     const payload = buildAutomationRulePayload(preset);
@@ -593,11 +594,14 @@ const savePreset = async preset => {
     } else {
       await store.dispatch('automations/create', payload);
     }
+    saved = true;
 
     await store.dispatch('automations/get');
     useAlert(t('SCHEDULING.REMINDERS.SAVE_SUCCESS'));
+    return true;
   } catch (error) {
     useAlert(error.message || t('SCHEDULING.REMINDERS.SAVE_ERROR'));
+    return saved;
   } finally {
     savingPresetKey.value = '';
   }
@@ -606,13 +610,17 @@ const savePreset = async preset => {
 const handleTogglePreset = async (preset, nextEnabled) => {
   if (nextEnabled && (missingBindings(preset) || blockedFields(preset).length))
     return;
+  const previousEnabled = presetStates[preset.key].enabled;
   presetStates[preset.key].enabled = nextEnabled;
   const template = getSelectedTemplateForPreset(preset.key);
   if (!template) {
+    presetStates[preset.key].enabled = previousEnabled;
     expandedPresetKey.value = preset.key;
     return;
   }
-  await savePreset(preset);
+  if (!(await savePreset(preset))) {
+    presetStates[preset.key].enabled = previousEnabled;
+  }
 };
 
 onMounted(() => {

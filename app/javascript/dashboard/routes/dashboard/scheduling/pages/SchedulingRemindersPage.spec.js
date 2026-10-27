@@ -339,6 +339,42 @@ describe('SchedulingRemindersPage', () => {
     expect(createAutomationAction).not.toHaveBeenCalled();
   });
 
+  it('restores the switch when saving an enabled reminder fails', async () => {
+    createAutomationAction.mockRejectedValue(new Error('Save failed'));
+    mountPage();
+    await flushPromises();
+
+    wrapper.vm.presetStates.appointment_day_before.variableBindings['5'] =
+      'service_name';
+    await wrapper.vm.$nextTick();
+    const card = wrapper.find(
+      '[data-testid="reminder-preset-card-appointment_day_before"]'
+    );
+    await card.find('button[role="switch"]').trigger('click');
+    await flushPromises();
+
+    expect(createAutomationAction).toHaveBeenCalledTimes(1);
+    expect(wrapper.vm.presetStates.appointment_day_before.enabled).toBe(false);
+  });
+
+  it('keeps the switch enabled when saving succeeds but refreshing rules fails', async () => {
+    mountPage();
+    await flushPromises();
+    getAutomationsAction.mockRejectedValueOnce(new Error('Refresh failed'));
+
+    wrapper.vm.presetStates.appointment_day_before.variableBindings['5'] =
+      'service_name';
+    await wrapper.vm.$nextTick();
+    const card = wrapper.find(
+      '[data-testid="reminder-preset-card-appointment_day_before"]'
+    );
+    await card.find('button[role="switch"]').trigger('click');
+    await flushPromises();
+
+    expect(createAutomationAction).toHaveBeenCalledTimes(1);
+    expect(wrapper.vm.presetStates.appointment_day_before.enabled).toBe(true);
+  });
+
   it.each(['ru', 'kk', 'en'])(
     'opens AppointmentTemplatePackDialog without vue-i18n nested placeholder errors in %s locale and submits missing templates',
     async locale => {
