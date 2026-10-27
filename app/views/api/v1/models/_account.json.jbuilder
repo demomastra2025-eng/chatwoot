@@ -1,4 +1,5 @@
 json.settings resource.settings
+json.workspace_working_hours_timezone resource.workspace_working_hours_timezone
 json.created_at resource.created_at
 if resource.custom_attributes.present?
   json.custom_attributes do

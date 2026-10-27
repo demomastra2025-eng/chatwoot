@@ -19,13 +19,16 @@ vi.mock('dashboard/composables', () => ({ useAlert: mocks.useAlert }));
 
 const ERRORS = enCampaign.OUTBOUND_WORKSPACE.TOUCHES.ERRORS;
 
-const buildStore = () =>
+const buildStore = (timezone = 'Asia/Almaty') =>
   createStore({
     getters: {
       getCurrentAccountId: () => 1,
       getCannedResponses: () => [],
       'inboxes/getAllInboxes': () => [],
       'inboxes/getFilteredWhatsAppTemplates': () => () => [],
+      'accounts/getAccount': () => () => ({
+        workspace_working_hours_timezone: timezone,
+      }),
     },
     actions: { getCannedResponse: () => {} },
   });
@@ -42,17 +45,21 @@ const existingReminder = {
   attachments: [],
 };
 
-const mountDrawer = () =>
+const mountDrawer = ({
+  touch = existingReminder,
+  remindableType = 'Conversation',
+  timezone,
+} = {}) =>
   mount(TouchEditorDrawer, {
     props: {
       modelValue: true,
       conversationId: 5,
       remindableId: 5,
-      remindableType: 'Conversation',
-      touch: existingReminder,
+      remindableType,
+      touch,
     },
     global: {
-      plugins: [buildStore()],
+      plugins: [buildStore(timezone)],
       stubs: {
         TouchEditorShell: {
           name: 'TouchEditorShell',
@@ -87,6 +94,21 @@ describe('TouchEditorDrawer error toasts (reminders)', () => {
   beforeEach(() => {
     mocks.useAlert.mockReset();
     mocks.update.mockReset();
+  });
+
+  it('shows the account timezone for an appointment reminder', async () => {
+    const wrapper = mountDrawer({
+      timezone: 'Asia/Aqtobe',
+      remindableType: 'Scheduling::Appointment',
+      touch: {
+        ...existingReminder,
+        remindable_type: 'Scheduling::Appointment',
+        remindable: { id: 5, type: 'Scheduling::Appointment' },
+        timezone: 'Europe/Berlin',
+      },
+    });
+    await flushPromises();
+    expect(wrapper.vm.form.timezone).toBe('Asia/Aqtobe');
   });
 
   it('shows the localized text for a duplicate reminder instead of the backend «touch» text', async () => {

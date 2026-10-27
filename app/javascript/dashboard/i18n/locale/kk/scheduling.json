@@ -285,6 +285,8 @@
       "ERRORS": {
         "INBOX_REQUIRED": "WhatsApp арнасын таңдаңыз",
         "TEMPLATE_REQUIRED": "Сценарий үшін WhatsApp үлгісін таңдаңыз",
+        "FIELD_REQUIRED": "Әр айнымалыға өріс таңдаңыз",
+        "FIELD_EMPTY_WARNING": "Алдағы жазбалардың {share}%-ында бұл өріс бос — хабарлама жіберілмейді",
         "INVALID_LOCATION_URL": "Картаға дұрыс сілтеме енгізіңіз (https://)",
         "TEMPLATE_NAME_REQUIRED": "Үлгінің жүйелік атауын енгізіңіз",
         "TEMPLATE_NAME_FORMAT": "Үлгі атауы тек кіші латын әріптерінен, сандардан және _ белгісінен тұруы керек",

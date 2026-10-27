@@ -655,6 +655,8 @@
       "ERRORS": {
         "INBOX_REQUIRED": "Please select a WhatsApp channel",
         "TEMPLATE_REQUIRED": "Please select a WhatsApp template for this scenario",
+        "FIELD_REQUIRED": "Choose a field for every variable",
+        "FIELD_EMPTY_WARNING": "This field is empty for {share}% of upcoming visits — the message will not be sent",
         "INVALID_LOCATION_URL": "Please enter a valid map URL starting with https://",
         "TEMPLATE_NAME_REQUIRED": "Template name is required",
         "TEMPLATE_NAME_FORMAT": "Template name can only contain lowercase letters, numbers, and underscores",

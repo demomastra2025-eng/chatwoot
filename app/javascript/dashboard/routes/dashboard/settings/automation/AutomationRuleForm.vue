@@ -16,6 +16,11 @@ import {
   showActionInput,
 } from 'dashboard/helper/automationHelper';
 import { validateAutomation } from 'dashboard/helper/validations';
+import {
+  appointmentFieldIds,
+  blockingFieldStats,
+  fetchAppointmentFieldFill,
+} from 'dashboard/helper/appointmentFieldFill';
 import { useAutomationContactsStore } from 'dashboard/stores/automation/contacts';
 import { AUTOMATION_RULE_EVENTS, AUTOMATION_ACTION_TYPES } from './constants';
 
@@ -77,7 +82,7 @@ const INPUT_TYPE_MAP = {
 };
 
 const { t, tm } = useI18n();
-const { isCloudFeatureEnabled } = useAccount();
+const { isCloudFeatureEnabled, currentAccount } = useAccount();
 const getters = useStoreGetters();
 const { operators } = useOperators();
 const contactsStore = useAutomationContactsStore();
@@ -91,6 +96,43 @@ const REMOTE_OPTION_SOURCES = {
 const dialogRef = ref(null);
 const conditionsRef = useTemplateRef('conditionsRef');
 const errors = ref({});
+const fieldStats = ref([]);
+const fieldFillLoading = ref(false);
+const initialMappedFields = ref('');
+const initialActive = ref(false);
+const mappedAppointmentFields = computed(() =>
+  automation.value?.event_name?.startsWith('appointment_')
+    ? appointmentFieldIds([JSON.stringify(automation.value?.actions || [])])
+    : []
+);
+const blockedAppointmentFields = computed(() =>
+  blockingFieldStats(fieldStats.value, mappedAppointmentFields.value)
+);
+const fieldSaveBlocked = computed(
+  () =>
+    automation.value?.active !== false &&
+    blockedAppointmentFields.value.length > 0 &&
+    (props.mode === 'create' ||
+      !initialActive.value ||
+      mappedAppointmentFields.value.join(',') !== initialMappedFields.value)
+);
+
+watch(
+  () => mappedAppointmentFields.value.join(','),
+  async value => {
+    fieldFillLoading.value = Boolean(value);
+    try {
+      fieldStats.value = await fetchAppointmentFieldFill(
+        currentAccount.value?.id,
+        value ? value.split(',') : []
+      );
+    } catch {
+      fieldStats.value = [];
+    } finally {
+      fieldFillLoading.value = false;
+    }
+  }
+);
 
 const isEditMode = computed(() => props.mode === 'edit');
 
@@ -386,6 +428,8 @@ const syncCustomAttributeTypes = () => {
 
 const open = () => {
   resetValidation();
+  initialMappedFields.value = mappedAppointmentFields.value.join(',');
+  initialActive.value = automation.value?.active !== false;
   dialogRef.value?.open();
 };
 
@@ -395,6 +439,7 @@ const close = () => {
 };
 
 const emitSaveAutomation = () => {
+  if (fieldSaveBlocked.value) return;
   syncCustomAttributeTypes();
   const conditionsValid = isConditionsValid();
   errors.value = {
@@ -587,6 +632,7 @@ defineExpose({ open, close });
             blue
             type="button"
             :label="submitLabel"
+            :disabled="fieldFillLoading || fieldSaveBlocked"
             @click.prevent="emitSaveAutomation"
           />
         </div>

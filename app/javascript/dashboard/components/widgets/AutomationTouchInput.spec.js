@@ -98,6 +98,28 @@ const applyLastPayload = async wrapper => {
 };
 
 describe('AutomationTouchInput', () => {
+  it('uses the account zone for appointment rules despite an older client zone', () => {
+    const wrapper = mountComponent({
+      eventName: 'appointment_created',
+      modelValue: { timezone: 'Europe/Berlin' },
+      storeGetters: {
+        'accounts/getAccount': () => ({
+          workspace_working_hours_timezone: 'Asia/Aqtobe',
+        }),
+      },
+    });
+
+    expect(wrapper.vm.normalizedValue.timezone).toBe('Asia/Aqtobe');
+    expect(wrapper.vm.cleanPayload(wrapper.vm.normalizedValue).timezone).toBe(
+      'Asia/Aqtobe'
+    );
+    expect(
+      wrapper.vm.cleanPayload({
+        ...wrapper.vm.normalizedValue,
+        manual_schedule_override: true,
+      })
+    ).not.toHaveProperty('manual_schedule_override');
+  });
   it('defaults new automation touches to full relative touch params and no auto-cancel unless explicitly enabled', () => {
     const wrapper = mountComponent();
 

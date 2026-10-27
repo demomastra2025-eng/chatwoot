@@ -15,8 +15,19 @@ vi.mock('dashboard/composables', () => ({
 
 vi.mock('dashboard/composables/useAccount', () => ({
   useAccount: () => ({
-    currentAccount: { value: { id: 1, name: 'Universal Studio' } },
+    currentAccount: {
+      value: {
+        id: 1,
+        name: 'Universal Studio',
+        workspace_working_hours_timezone: 'Asia/Almaty',
+      },
+    },
   }),
+}));
+
+vi.mock('dashboard/helper/appointmentFieldFill', async importOriginal => ({
+  ...(await importOriginal()),
+  fetchAppointmentFieldFill: vi.fn().mockResolvedValue([]),
 }));
 
 const createTestI18n = (locale = 'ru') =>
@@ -243,7 +254,7 @@ describe('SchedulingRemindersPage', () => {
     ).toBe(true);
   });
 
-  it('auto-binds booking_reminder_1d template and creates an AutomationRule with confirm_appointment action when toggled on', async () => {
+  it('requires an explicit field for a surplus variable before enabling a confirmation reminder', async () => {
     mountPage();
     await flushPromises();
 
@@ -251,6 +262,10 @@ describe('SchedulingRemindersPage', () => {
       '[data-testid="reminder-preset-card-appointment_day_before"]'
     );
     const toggleBtn = dayBeforeCard.find('button[role="switch"]');
+    expect(toggleBtn.attributes('disabled')).toBeDefined();
+    wrapper.vm.presetStates.appointment_day_before.variableBindings['5'] =
+      'service_name';
+    await wrapper.vm.$nextTick();
     await toggleBtn.trigger('click');
     await flushPromises();
 
@@ -277,6 +292,7 @@ describe('SchedulingRemindersPage', () => {
     expect(touchParams.relative_offset_seconds).toBe(-86400);
     expect(touchParams.relative_time_mode).toBe('fixed_time_of_day');
     expect(touchParams.relative_time_of_day).toBe('15:00');
+    expect(touchParams.timezone).toBe('Asia/Almaty');
     expect(touchParams.response_action).toBe('confirm_appointment');
     expect(touchParams.response_button_index).toBe(0);
     expect(touchParams.template_params.name).toBe('booking_reminder_1d');

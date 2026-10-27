@@ -673,6 +673,8 @@
       "ERRORS": {
         "INBOX_REQUIRED": "Выберите канал WhatsApp",
         "TEMPLATE_REQUIRED": "Выберите шаблон WhatsApp для сценария",
+        "FIELD_REQUIRED": "Выберите поле для каждой переменной",
+        "FIELD_EMPTY_WARNING": "У {share}% будущих записей это поле пустое — сообщение не уйдёт",
         "INVALID_LOCATION_URL": "Укажите корректную ссылку на карту (начинающуюся с https://)",
         "TEMPLATE_NAME_REQUIRED": "Укажите системное имя шаблона",
         "TEMPLATE_NAME_FORMAT": "Имя шаблона может содержать только строчные латинские буквы, цифры и _",
