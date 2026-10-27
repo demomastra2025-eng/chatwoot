@@ -32,7 +32,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     service_amount
   ].freeze
 
-  before_action :set_appointment, only: [:show, :update, :cancel, :destroy]
+  before_action :set_appointment, only: [:show, :update, :cancel, :destroy, :notifications]
   before_action :ensure_editable_appointment!, only: [:destroy]
 
   def index
@@ -45,6 +45,10 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
 
   def show
     render_payload(Scheduling::PayloadBuilder.appointment(@appointment))
+  end
+
+  def notifications
+    render_payload(Scheduling::AppointmentNotificationsSummary.new(account: Current.account, appointment: @appointment).perform)
   end
 
   def create

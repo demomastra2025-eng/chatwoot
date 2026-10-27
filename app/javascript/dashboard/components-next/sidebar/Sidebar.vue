@@ -1332,8 +1332,8 @@ const menuItems = computed(() => {
                 {
                   name: 'Scheduling Reminders',
                   visibilityKey: 'Scheduling:Reminders',
-                  label: t('SIDEBAR.SCHEDULING_REMINDERS'),
-                  to: accountScopedRoute('scheduling_reminders'),
+                  label: t('SCHEDULING.NOTIFICATIONS.TITLE'),
+                  to: accountScopedRoute('scheduling_notifications'),
                 },
                 ...(hasSchedulingSettings.value
                   ? [

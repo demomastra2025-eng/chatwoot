@@ -71,6 +71,12 @@ const APPOINTMENT_AUTOMATION_CONDITIONS = [
     inputType: 'search_select',
     filterOperators: SERVICE_SET_OPERATOR_TYPES,
   },
+  {
+    key: 'resource_id',
+    name: 'APPOINTMENT_RESOURCE',
+    inputType: 'search_select',
+    filterOperators: OPERATOR_TYPES_1,
+  },
   CONTACT_AUTOMATION_CONDITION,
   {
     key: 'medelement_cabinet_code',
@@ -537,6 +543,10 @@ export const AUTOMATIONS = {
     conditions: APPOINTMENT_AUTOMATION_CONDITIONS,
     actions: APPOINTMENT_AUTOMATION_ACTIONS,
   },
+  appointment_no_show: {
+    conditions: APPOINTMENT_AUTOMATION_CONDITIONS,
+    actions: APPOINTMENT_AUTOMATION_ACTIONS,
+  },
   deal_created: {
     conditions: DEAL_AUTOMATION_CONDITIONS,
     actions: DEAL_AUTOMATION_ACTIONS,
@@ -627,6 +637,10 @@ export const AUTOMATION_RULE_EVENTS = [
   {
     key: 'appointment_completed',
     value: 'APPOINTMENT_COMPLETED',
+  },
+  {
+    key: 'appointment_no_show',
+    value: 'APPOINTMENT_NO_SHOW',
   },
   {
     key: 'deal_created',

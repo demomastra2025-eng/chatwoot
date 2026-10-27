@@ -59,6 +59,7 @@ class AutomationRule < ApplicationRecord
     appointment_rescheduled
     appointment_cancelled
     appointment_completed
+    appointment_no_show
   ].freeze
   SUPPORTED_EVENT_NAMES = (
     CONVERSATION_EVENT_NAMES +
@@ -116,7 +117,7 @@ class AutomationRule < ApplicationRecord
     mail_subject phone_number priority conversation_language labels private_note contact_id
   ].freeze
   APPOINTMENT_CONDITION_ATTRIBUTES = %w[
-    status payment_status appointment_type source starts_at_weekday starts_at_time service_id medelement_cabinet_code contact_id
+    status payment_status appointment_type source starts_at_weekday starts_at_time service_id resource_id medelement_cabinet_code contact_id
   ].freeze
 
   include Rails.application.routes.url_helpers
@@ -144,6 +145,7 @@ class AutomationRule < ApplicationRecord
   validate :query_operator_value
   validate :appointment_schedule_override_valid
   validate :appointment_template_fields_available
+  validate :calendar_managed_appointment_event
   validates :account_id, presence: true
 
   before_validation :normalize_action_ids
@@ -157,6 +159,13 @@ class AutomationRule < ApplicationRecord
   after_commit :backfill_live_appointment_enrollments, on: %i[create update], if: :backfill_live_appointment_enrollments?
 
   scope :active, -> { where(active: true) }
+
+  def calendar_managed_appointment_event
+    return unless calendar_managed?
+
+    errors.add(:event_name, :invalid) unless appointment_event?
+    errors.add(:actions, :invalid) unless actions.any? { |action| action['action_name'] == 'create_touch' }
+  end
 
   def conditions_attributes
     return APPOINTMENT_CONDITION_ATTRIBUTES if appointment_event?

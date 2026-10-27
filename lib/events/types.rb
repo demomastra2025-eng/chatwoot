@@ -58,6 +58,7 @@ module Events::Types
   APPOINTMENT_UPDATED = 'appointment.updated'
   APPOINTMENT_CANCELLED = 'appointment.cancelled'
   APPOINTMENT_COMPLETED = 'appointment.completed'
+  APPOINTMENT_NO_SHOW = 'appointment.no_show'
 
   # CRM deal events
   CRM_DEAL_CREATED = 'crm.deal.created'

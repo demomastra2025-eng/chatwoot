@@ -11,8 +11,8 @@ const SchedulingProductsPage = () =>
   import('./pages/SchedulingProductsPage.vue');
 const SchedulingExceptionsPage = () =>
   import('./pages/SchedulingExceptionsPage.vue');
-const SchedulingRemindersPage = () =>
-  import('./pages/SchedulingRemindersPage.vue');
+const SchedulingNotificationsPage = () =>
+  import('./pages/SchedulingNotificationsPage.vue');
 
 const schedulingMeta = {
   featureFlag: FEATURE_FLAGS.SCHEDULING,
@@ -100,8 +100,13 @@ export const routes = [
   },
   {
     path: frontendURL('accounts/:accountId/scheduling/reminders'),
-    name: 'scheduling_reminders',
-    component: SchedulingRemindersPage,
+    redirect: to => ({ name: 'scheduling_notifications', params: to.params }),
+    meta: schedulingAdminMeta,
+  },
+  {
+    path: frontendURL('accounts/:accountId/scheduling/notifications'),
+    name: 'scheduling_notifications',
+    component: SchedulingNotificationsPage,
     meta: schedulingAdminMeta,
   },
 ];

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_27_160000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_27_170000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -346,6 +346,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_27_160000) do
     t.boolean "active", default: true, null: false
     t.jsonb "execution_schedule", default: {}, null: false
     t.bigint "lifecycle_generation", default: 1, null: false
+    t.boolean "calendar_managed", default: false, null: false
+    t.index ["account_id", "calendar_managed"], name: "index_automation_rules_on_account_and_calendar_managed"
     t.index ["account_id"], name: "index_automation_rules_on_account_id"
   end
 

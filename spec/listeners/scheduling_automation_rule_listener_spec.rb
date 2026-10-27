@@ -89,6 +89,25 @@ RSpec.describe SchedulingAutomationRuleListener do
     end
   end
 
+  describe 'appointment_no_show' do
+    let!(:automation_rule) do
+      create(:automation_rule, account: account, event_name: 'appointment_no_show',
+                               conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['no_show'], query_operator: nil }],
+                               actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/visits'] }])
+    end
+
+    it 'runs matching rules after the visit is marked no-show' do
+      event = Events::Base.new('appointment_no_show', Time.zone.now, appointment: appointment,
+                                                                     changed_attributes: { 'status' => %w[scheduled no_show] })
+
+      listener.appointment_no_show(event)
+
+      expect(AutomationRules::AppointmentActionService).to have_received(:new).with(
+        automation_rule, account, appointment, changed_attributes: { 'status' => %w[scheduled no_show] }
+      )
+    end
+  end
+
   describe 'appointment_updated rescheduling' do
     let!(:automation_rule) do
       create(

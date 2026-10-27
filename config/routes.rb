@@ -231,6 +231,7 @@ Rails.application.routes.draw do
             resources :services, only: [:index, :show, :create, :update, :destroy]
             resources :cabinets, only: [:index]
             resources :appointments, only: [:index, :show, :create, :update, :destroy] do
+              get :notifications, on: :member
               post :cancel, on: :member
             end
             resources :provider_commands, only: [:index, :show, :create] do

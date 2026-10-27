@@ -265,6 +265,7 @@ export function useAutomation(startValue = null) {
       'appointment_rescheduled',
       'appointment_cancelled',
       'appointment_completed',
+      'appointment_no_show',
     ].forEach(eventToUpdate => {
       const standardConditions = automationTypes[
         eventToUpdate

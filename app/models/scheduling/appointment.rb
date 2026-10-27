@@ -101,8 +101,8 @@ class Scheduling::Appointment < ApplicationRecord
   before_validation :mark_local_medelement_cancellation, on: :update
   before_save :reset_confirmation_when_moved_to_another_day, unless: :new_record?
   after_update :capture_updated_changes_for_commit
-  after_save :stamp_crm_appointment_delivery_policy
   before_destroy :cancel_deferred_touch_enrollments, prepend: true
+  after_save :stamp_crm_appointment_delivery_policy
   after_create_commit :dispatch_created_event
   after_update_commit :dispatch_updated_events
   after_update_commit :retime_visit_touches
@@ -277,13 +277,11 @@ class Scheduling::Appointment < ApplicationRecord
   end
 
   def dispatch_status_event(changed_attributes)
-    event_name =
-      case status
-      when 'cancelled'
-        APPOINTMENT_CANCELLED
-      when 'completed'
-        APPOINTMENT_COMPLETED
-      end
+    event_name = {
+      'cancelled' => APPOINTMENT_CANCELLED,
+      'completed' => APPOINTMENT_COMPLETED,
+      'no_show' => APPOINTMENT_NO_SHOW
+    }[status]
 
     return if event_name.blank?
 
@@ -321,7 +319,10 @@ class Scheduling::Appointment < ApplicationRecord
   def assign_duration_min
     return if starts_at.blank? || ends_at.blank?
 
-    self.duration_min = [((ends_at - starts_at) / 60).round, Scheduling::Constants::MIN_DURATION_MINUTES].max if duration_min.blank? || duration_min.to_i <= 0
+    return unless duration_min.blank? || duration_min.to_i <= 0
+
+    self.duration_min = [((ends_at - starts_at) / 60).round,
+                         Scheduling::Constants::MIN_DURATION_MINUTES].max
   end
 
   def associations_belong_to_account
