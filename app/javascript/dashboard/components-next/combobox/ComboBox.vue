@@ -34,6 +34,7 @@ const props = defineProps({
   searchInTrigger: { type: Boolean, default: false },
   emptyState: { type: String, default: '' },
   createOptionLabel: { type: String, default: '' },
+  showCreateAlways: { type: Boolean, default: false },
   message: { type: String, default: '' },
   hasError: { type: Boolean, default: false },
   useApiResults: { type: Boolean, default: false }, // useApiResults prop to determine if search is handled by API
@@ -440,6 +441,7 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
         :show-search-input="!searchInTrigger"
         :empty-state="emptyState"
         :create-option-label="createOptionLabel"
+        :show-create-always="showCreateAlways"
         :selected-values="selectedValue"
         :dropdown-style="dropdownStyle"
         :selected-label-preview="selectedLabelPreview"

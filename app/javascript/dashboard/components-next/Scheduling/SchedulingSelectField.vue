@@ -21,6 +21,7 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  showCreateAlways: { type: Boolean, default: false },
   hasError: {
     type: Boolean,
     default: false,
@@ -154,6 +155,7 @@ defineOptions({
       :search-in-trigger="searchInTrigger"
       :empty-state="emptyState"
       :create-option-label="createOptionLabel"
+      :show-create-always="showCreateAlways"
       :message="message"
       :has-error="hasError"
       :disabled="disabled"
