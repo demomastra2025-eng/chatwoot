@@ -295,6 +295,10 @@ RSpec.describe Captain::AssistantPrompt do
     it 'is no variable of the prompt of a conversation' do
       expect(variables(state: {})).not_to have_key(:booking_search)
     end
+
+    it 'tells the agent to call the tools that do not depend on each other in the same step' do
+      expect(stable_rules(suggestion_variables(%w[faq_lookup]))).to include('Call the tools that do not depend on each other in the same step')
+    end
   end
 
   describe 'what a reply suggestion read at its start' do

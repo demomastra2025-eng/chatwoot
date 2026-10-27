@@ -227,6 +227,7 @@ module Enterprise::Captain::ReplySuggestionService
       @broadcaster = Captain::ReplySuggestion::Broadcaster.new(user: user)
       @turns = 0
       @tools_called = 0
+      @steps = @tool_steps = @parallel_steps = @max_tools_in_step = 0
       @preload = nil
       @monitor = Monitor.new
       @council_parts = {}
@@ -250,6 +251,7 @@ module Enterprise::Captain::ReplySuggestionService
         on_tool_complete: method(:handle_tool_complete),
         on_agent_routed: method(:handle_agent_routed),
         on_llm_call_complete: method(:handle_llm_call_complete),
+        on_llm_step: method(:handle_llm_step),
         on_suggestion_preload: method(:handle_suggestion_preload)
       }
     end
@@ -259,9 +261,12 @@ module Enterprise::Captain::ReplySuggestionService
     end
 
     # Counters for the outcome event.
+    # steps: the answers of the model in the whole run, councils included (turns counts the turns of the agent that answers; a turn runs
+    # many steps); tool_steps: the steps that asked for tools; parallel_steps: those that asked for more than one; max_tools_in_step.
     def stats
       @monitor.synchronize do
-        { tools_called: @tools_called, turns: @turns, handoffs_count: @handoffs.size, preloaded: @preload&.fetch('parts', nil).presence,
+        { tools_called: @tools_called, turns: @turns, handoffs_count: @handoffs.size, steps: @steps, tool_steps: @tool_steps,
+          parallel_steps: @parallel_steps, max_tools_in_step: @max_tools_in_step, preloaded: @preload&.fetch('parts', nil).presence,
           preload_ms: @preload&.fetch('ms', nil) }.compact
       end
     end
@@ -305,6 +310,17 @@ module Enterprise::Captain::ReplySuggestionService
           activate_agent!(actor)
         end
         broadcast_progress!
+      end
+    end
+
+    # One answer of the model: how many tool calls it asked for.
+    def handle_llm_step(_agent_name, tool_calls_count = 0, _context_wrapper = nil)
+      @monitor.synchronize do
+        @steps += 1
+        count = tool_calls_count.to_i
+        @tool_steps += 1 if count.positive?
+        @parallel_steps += 1 if count > 1
+        @max_tools_in_step = [@max_tools_in_step, count].max
       end
     end
 

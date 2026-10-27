@@ -68,6 +68,9 @@ class Captain::Runtime::TracingCallbacks
     )
   end
 
+  # A model step is counted by the suggestion trace (Enterprise::Captain::ReplySuggestionService::TraceCollector); the spans have no use for it.
+  def on_llm_step(_agent_name, _tool_calls_count, _context_wrapper); end
+
   def on_agent_complete(_agent_name, _result, _error, context_wrapper)
     tracing = tracing_state(context_wrapper)
     finish_agent_span(tracing) if tracing

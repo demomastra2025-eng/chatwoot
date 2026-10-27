@@ -11,6 +11,7 @@ class Captain::Runtime::CallbackManager
     tool_complete
     agent_thinking
     llm_call_complete
+    llm_step
     chat_created
   ].freeze
 

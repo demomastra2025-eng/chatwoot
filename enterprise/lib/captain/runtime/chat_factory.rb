@@ -90,6 +90,7 @@ class Captain::Runtime::ChatFactory
       system_prompt = system_prompt_for(agent, context_wrapper, finalization_only: finalization_only)
       chat.with_instructions(system_prompt) if system_prompt.present?
       track_tool_call_batches!(chat, context_wrapper)
+      report_model_steps!(chat, agent, context_wrapper)
       shorten_consumed_tool_results!(chat)
       enforce_openrouter_tool_parameters!(chat, agent_tools, account: account, schema: agent.response_schema)
       chat.with_tools(*agent_tools, replace: true, concurrency: false) if agent_tools.present?
@@ -203,6 +204,18 @@ class Captain::Runtime::ChatFactory
         context_wrapper.context[:captain_v2_current_tool_batch_id] = batch_id
         context_wrapper.context[:captain_v2_mutating_tool_calls_by_batch] ||= {}
         context_wrapper.context[:captain_v2_mutating_tool_calls_by_batch][batch_id] = []
+      end
+    end
+
+    # Every answer of the model is one step of the run, with the tool calls it asked for (more than one: the model asked for several tools
+    # in the same step, which the chat then runs one after another). The reply suggestion counts them: steps cost about 2.5 s each.
+    def report_model_steps!(chat, agent, context_wrapper)
+      return unless chat.respond_to?(:after_message)
+
+      chat.after_message do |message|
+        next unless message.respond_to?(:role) && message.role.to_s == 'assistant'
+
+        context_wrapper.callback_manager.emit_llm_step(agent.name, message.tool_calls.to_h.size, context_wrapper)
       end
     end
 
